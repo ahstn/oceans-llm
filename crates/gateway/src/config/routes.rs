@@ -59,7 +59,8 @@ pub struct ModelRouteConfig {
 impl ModelRouteConfig {
     /// Capabilities that the route's provider and compatibility profile already determine.
     /// Explicit `capabilities` flags override these, and validation still rejects flags a
-    /// profile cannot serve. The policy lives in [`route_capability_defaults`] so seeded route
+    /// profile cannot serve. `images` here means the profile can serve image generation; a route
+    /// still enables it explicitly (see [`RouteCapabilitiesConfig::resolve`]). The policy lives in [`route_capability_defaults`] so seeded route
     /// flags and request routing cannot drift apart.
     pub(super) fn capability_defaults(
         &self,
@@ -138,6 +139,7 @@ impl ModelRouteConfig {
             validate_aws_bedrock_route_compatibility(model_id, self, provider, capabilities)?;
         }
         validate_decisions_route_capability(model_id, self, provider, capabilities)?;
+        validate_images_route_capability(model_id, self, provider)?;
         if provider.is_some() {
             self.validate_capabilities_within_profile(model_id, provider)?;
         }
@@ -163,6 +165,7 @@ impl ModelRouteConfig {
             ("responses", explicit.responses, defaults.responses),
             ("stream", explicit.stream, defaults.stream),
             ("embeddings", explicit.embeddings, defaults.embeddings),
+            ("images", explicit.images, defaults.images),
             ("tools", explicit.tools, defaults.tools),
             ("vision", explicit.vision, defaults.vision),
             ("json_schema", explicit.json_schema, defaults.json_schema),
@@ -194,6 +197,8 @@ pub struct RoutePricingOverrideConfig {
     pub cache_read_usd_per_million_tokens: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_yaml_string")]
     pub cache_write_usd_per_million_tokens: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_yaml_string")]
+    pub image_output_usd_per_million_tokens: Option<String>,
 }
 
 fn deserialize_yaml_string<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -228,28 +233,33 @@ impl RoutePricingOverrideConfig {
                 &self.output_usd_per_million_tokens,
                 &format!("{label}.output_usd_per_million_tokens"),
             )?,
-            cache_read_cost_per_million_tokens: self
-                .cache_read_usd_per_million_tokens
-                .as_deref()
-                .map(|value| {
-                    parse_non_negative_rate(
-                        value,
-                        &format!("{label}.cache_read_usd_per_million_tokens"),
-                    )
-                })
-                .transpose()?,
-            cache_write_cost_per_million_tokens: self
-                .cache_write_usd_per_million_tokens
-                .as_deref()
-                .map(|value| {
-                    parse_non_negative_rate(
-                        value,
-                        &format!("{label}.cache_write_usd_per_million_tokens"),
-                    )
-                })
-                .transpose()?,
+            cache_read_cost_per_million_tokens: parse_optional_non_negative_rate(
+                self.cache_read_usd_per_million_tokens.as_deref(),
+                label,
+                "cache_read_usd_per_million_tokens",
+            )?,
+            cache_write_cost_per_million_tokens: parse_optional_non_negative_rate(
+                self.cache_write_usd_per_million_tokens.as_deref(),
+                label,
+                "cache_write_usd_per_million_tokens",
+            )?,
+            image_output_cost_per_million_tokens: parse_optional_non_negative_rate(
+                self.image_output_usd_per_million_tokens.as_deref(),
+                label,
+                "image_output_usd_per_million_tokens",
+            )?,
         })
     }
+}
+
+fn parse_optional_non_negative_rate(
+    value: Option<&str>,
+    label: &str,
+    field: &str,
+) -> anyhow::Result<Option<Money4>> {
+    value
+        .map(|value| parse_non_negative_rate(value, &format!("{label}.{field}")))
+        .transpose()
 }
 
 fn parse_non_negative_rate(value: &str, label: &str) -> anyhow::Result<Money4> {
@@ -274,6 +284,9 @@ pub struct RouteCapabilitiesConfig {
     pub stream: Option<bool>,
     #[serde(default)]
     pub embeddings: Option<bool>,
+    /// Images API generation. Off unless set: enable it only on image-model routes.
+    #[serde(default)]
+    pub images: Option<bool>,
     #[serde(default)]
     pub decisions: Option<bool>,
     #[serde(default)]
@@ -293,6 +306,9 @@ impl RouteCapabilitiesConfig {
             responses: self.responses.unwrap_or(defaults.responses),
             stream: self.stream.unwrap_or(defaults.stream),
             embeddings: self.embeddings.unwrap_or(defaults.embeddings),
+            // Image generation is opt-in even where the profile can serve it: only image models
+            // serve the Images API, so the profile default would wrongly enable it.
+            images: self.images.unwrap_or(false),
             decisions: self.decisions.unwrap_or(defaults.decisions),
             tools: self.tools.unwrap_or(defaults.tools),
             vision: self.vision.unwrap_or(defaults.vision),
@@ -518,6 +534,7 @@ fn validate_decisions_route_capability(
         ("chat_completions", capabilities.chat_completions),
         ("responses", capabilities.responses),
         ("embeddings", capabilities.embeddings),
+        ("images", capabilities.images),
         ("stream", capabilities.stream),
         ("tools", capabilities.tools),
         ("vision", capabilities.vision),
@@ -530,6 +547,29 @@ fn validate_decisions_route_capability(
                 route.provider
             );
         }
+    }
+    Ok(())
+}
+
+/// Only the OpenAI-compatible client implements the Images API. An unknown
+/// provider is left to the caller, which reports it by name.
+fn validate_images_route_capability(
+    model_id: &str,
+    route: &ModelRouteConfig,
+    provider: Option<&ProviderConfig>,
+) -> anyhow::Result<()> {
+    if route.capabilities.images == Some(true)
+        && provider.is_some_and(|provider| {
+            !matches!(
+                provider,
+                ProviderConfig::OpenAiCompat(_) | ProviderConfig::GcpCloudRunOpenAiCompat(_)
+            )
+        })
+    {
+        bail!(
+            "model `{model_id}` route for provider `{}` enables capabilities.images but image generation requires an openai_compat or gcp_cloud_run_openai_compat provider",
+            route.provider
+        );
     }
     Ok(())
 }

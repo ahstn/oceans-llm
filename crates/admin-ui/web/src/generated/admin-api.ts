@@ -2325,6 +2325,7 @@ export interface components {
             status: components["schemas"]["AdminModelStatusView"];
             supports_attachments?: boolean | null;
             supports_decisions?: boolean | null;
+            supports_image_generation?: boolean | null;
             supports_streaming?: boolean | null;
             supports_structured_output?: boolean | null;
             supports_tool_calling?: boolean | null;

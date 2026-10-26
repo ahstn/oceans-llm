@@ -180,6 +180,7 @@
         "crates/gateway/src/http/handlers/inference.rs",
         "crates/gateway/src/http/handlers/decisions.rs",
         "crates/gateway/src/http/handlers/embeddings.rs",
+        "crates/gateway/src/http/handlers/json_operation.rs",
         "crates/gateway/src/http/request_body.rs",
         "crates/gateway/src/http/request_tracing.rs",
         "crates/gateway/src/http/response_cache.rs",
@@ -367,6 +368,20 @@
         "crates/gateway-store/src/{routing,any_store_routing}.rs",
         "crates/gateway-store/src/libsql_store/routing.rs",
         "crates/gateway/src/provider_routing_identity.rs"
+      ]
+    },
+    {
+      "id": "image-generation",
+      "file": "image-generation.md",
+      "proof": {
+        "manual": true
+      },
+      "paid": true,
+      "paths": [
+        "crates/gateway/src/http/handlers/images.rs",
+        "crates/gateway-service/src/redaction/large_fields.rs",
+        "crates/gateway-service/src/model_metadata/listing.rs",
+        "crates/gateway-service/src/service/reported_usage_cost.rs"
       ]
     },
     {

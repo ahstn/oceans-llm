@@ -182,6 +182,7 @@ const modelPage: ModelPageView = {
         },
       ],
       supports_decisions: true,
+      supports_image_generation: false,
       tags: ['fast', 'cheap'],
       allowlist: null,
       status: 'healthy',
@@ -213,6 +214,7 @@ const modelPage: ModelPageView = {
       supports_attachments: false,
       benchmark_scores: [],
       supports_decisions: false,
+      supports_image_generation: false,
       tags: ['anthropic', 'reasoning'],
       allowlist: {
         users: ['alice@example.com', 'bob@example.com'],
@@ -312,6 +314,7 @@ const modelPage: ModelPageView = {
       supports_attachments: true,
       benchmark_scores: [],
       supports_decisions: false,
+      supports_image_generation: false,
       tags: ['fast', 'fallback'],
       allowlist: null,
       status: 'degraded',
@@ -805,6 +808,40 @@ describe('ModelsPage table content', () => {
     const mobileList = screen.getByTestId('models-mobile-list')
     const decisionsBadges = within(mobileList).getAllByText('Decisions')
     expect(decisionsBadges.length).toBeGreaterThan(0)
+  })
+
+  it('renders an Image Generation badge only for image-capable models', () => {
+    const claude = modelPage.items[1]
+    expect(claude).toBeDefined()
+    const page: ModelPageView = {
+      ...modelPage,
+      items: [
+        { ...(modelPage.items[0] as ModelPageView['items'][number]) },
+        { ...(claude as ModelPageView['items'][number]), supports_image_generation: true },
+      ],
+    }
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+
+    const { unmount } = render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+    expect(
+      within(screen.getByTestId('models-mobile-list')).queryByText('Image Generation'),
+    ).not.toBeInTheDocument()
+    unmount()
+
+    routeMock.useLoaderData.mockReturnValue({ data: page })
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+    const imageBadges = within(screen.getByTestId('models-mobile-list')).getAllByText(
+      'Image Generation',
+    )
+    expect(imageBadges.length).toBeGreaterThan(0)
   })
 })
 

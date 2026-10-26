@@ -113,6 +113,9 @@ fn pricing_override_matches_catalog(
             == configured.cache_read_cost_per_million_tokens
         && catalog.cache_write_cost_per_million_tokens
             == configured.cache_write_cost_per_million_tokens
+        // The catalog has no image rate, so it bills image tokens at the output rate. An override
+        // with its own image rate bills them differently.
+        && configured.image_output_cost_per_million_tokens.is_none()
 }
 
 impl<S, P> GatewayService<S, P>
@@ -316,6 +319,7 @@ mod tests {
             output_cost_per_million_tokens: money("0.60"),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            image_output_cost_per_million_tokens: None,
         };
         let mut catalog = EffectiveRoutePricing {
             input_cost_per_million_tokens: Some(money("0.1500")),
@@ -339,5 +343,16 @@ mod tests {
         };
         catalog.output_cost_per_million_tokens = Some(money("0.60"));
         assert!(!pricing_override_matches_catalog(&with_cache, &catalog));
+
+        // An image rate changes how image tokens bill, so the override is not redundant.
+        let with_image_rate = RoutePricingOverride {
+            image_output_cost_per_million_tokens: Some(money("0.60")),
+            ..configured
+        };
+        assert!(pricing_override_matches_catalog(&configured, &catalog));
+        assert!(!pricing_override_matches_catalog(
+            &with_image_rate,
+            &catalog
+        ));
     }
 }

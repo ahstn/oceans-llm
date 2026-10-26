@@ -648,6 +648,7 @@ mod tests {
                         output: Some(Money4::from_scaled(80_000)),
                         cache_read: None,
                         cache_write: None,
+                        image_output: None,
                     }),
                     policy: BatchPricingPolicy::HalfAllTokenRates,
                 }),

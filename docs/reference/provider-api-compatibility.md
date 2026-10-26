@@ -17,13 +17,15 @@ The gateway currently exposes:
 - `POST /messages/count_tokens`
 - `POST /v1/responses`
 - `POST /v1/embeddings`
+- `POST /v1/images`
+- `POST /v1/images/generations`
 - `POST /v1/decisions`
 - `POST /v1/systemone`
 - `POST /api/v1/batches`
 
-The Responses and Decisions APIs are first-class API families. Neither is translated through Chat Completions.
+The Responses, Images, and Decisions APIs are first-class API families. None is translated through Chat Completions.
 
-`POST /chat/completions`, `POST /responses`, `POST /embeddings`, `POST /decisions`, and `GET /models` are unversioned aliases of the matching `/v1` endpoints. They share the same handlers and body limits.
+`POST /chat/completions`, `POST /responses`, `POST /embeddings`, `POST /images`, `POST /images/generations`, `POST /decisions`, and `GET /models` are unversioned aliases of the matching `/v1` endpoints. They share the same handlers and body limits.
 
 ## API-Family Matrix
 
@@ -32,6 +34,7 @@ The Responses and Decisions APIs are first-class API families. Neither is transl
 | OpenAI Chat Completions | Supported for `openai_compat` providers | `crates/gateway-providers/src/openai_compat.rs` | Route-level `openai_compat` profile can declare request-shape quirks and streaming usage support. |
 | OpenAI Responses API | Supported for `openai_compat` providers | `crates/gateway-providers/src/openai_compat.rs` | Uses a distinct typed request/core/provider boundary and preserves Responses event-stream semantics. |
 | OpenAI Embeddings | Supported for `openai_compat` providers and native Vertex text-embedding routes | `crates/gateway-providers/src/openai_compat.rs`, `crates/gateway-providers/src/vertex/embeddings.rs` | OpenAI-compatible providers receive the OpenAI-shaped request. Vertex text embeddings use a provider-specific `:predict` mapper with explicit local validation. |
+| OpenAI Images generation | Supported for `openai_compat` and `gcp_cloud_run_openai_compat` routes with `capabilities.images: true` | `crates/gateway/src/http/handlers/images.rs`, `crates/gateway-providers/src/openai_compat.rs` | Non-streaming. Only `model` and `prompt` are typed; other fields pass through to `{base_url}/images`, and the provider's response body is returned. See [Model Routing and APIs: Images](../configuration/model-routing-and-api-behavior.md#images). |
 | Decisions (System One and OpenAI formats) | Supported for native TypeSafe, OpenAI-format `openai_compat` routes, and the alpha route | `crates/gateway-core/src/protocol/decisions/`, `crates/gateway-providers/src/typesafe.rs`, `crates/gateway-providers/src/openai_compat/decisions.rs` | Callers send either format. A neutral core request is translated into each route's format, and responses come back in the caller's format. |
 | Anthropic Messages | Supported for `/v1/messages` and `/messages` through the chat execution boundary | `crates/gateway/src/http/handlers.rs`, `crates/gateway-providers/src/anthropic_compat.rs`, `crates/gateway-providers/src/vertex/anthropic_request.rs`, `crates/gateway-providers/src/openai_compat/anthropic_messages.rs` | Accepts Anthropic Messages request shape and returns Anthropic Messages response/SSE for chat-capable routes such as Anthropic-on-Vertex and `anthropic_compat` providers. `openai_compat` routes receive a Chat Completions translation; see [Anthropic Messages on OpenAI-compatible routes](#anthropic-messages-on-openai-compatible-routes). |
 | Durable batches | Supported for providers with a configured batch adapter | `crates/gateway/src/http/batches.rs` and provider-specific batch adapters | The outer `endpoint` selects Chat Completions, Responses, or Embeddings. Chat and Responses item bodies use the same model effort policy as synchronous requests and are validated before persistence. |
@@ -42,14 +45,14 @@ The Responses and Decisions APIs are first-class API families. Neither is transl
 
 This matrix is about current execution support, not provider marketing claims.
 
-| Provider type | Chat Completions | Responses | Embeddings | Decisions |
-| --- | --- | --- | --- | --- |
-| `openai_compat` | Supported. Route profiles can rewrite known request-shape quirks. | Supported through the distinct Responses path. | Supported. | Supported for routes with `compatibility.openai_compat.decisions_api: openai` (OpenAI format) or `compatibility.openrouter.api: decisions` (System One format). |
-| `gcp_cloud_run_openai_compat` | Supported with Cloud Run ID-token auth. | Supported when the service exposes Responses. | Supported when the service exposes embeddings. | Not enabled by route validation. |
-| `anthropic_compat` | Supported through native Anthropic Messages translation. | Not implemented. | Not implemented. | Not implemented. |
-| `gcp_vertex` | Supported for configured Google and Anthropic publisher routes. | Not implemented. | Supported for explicit supported Google text-embedding routes. | Not implemented. |
-| `aws_bedrock` | Supported through the configured Bedrock API style. | Supported for `mantle_openai_responses`. | Not implemented. | Not implemented. |
-| `typesafe` | Not implemented. | Not implemented. | Not implemented. | Supported through native `/v1/systemone`. |
+| Provider type | Chat Completions | Responses | Embeddings | Images | Decisions |
+| --- | --- | --- | --- | --- | --- |
+| `openai_compat` | Supported. Route profiles can rewrite known request-shape quirks. | Supported through the distinct Responses path. | Supported. | Supported for routes with `capabilities.images: true`. | Supported for routes with `compatibility.openai_compat.decisions_api: openai` (OpenAI format) or `compatibility.openrouter.api: decisions` (System One format). |
+| `gcp_cloud_run_openai_compat` | Supported with Cloud Run ID-token auth. | Supported when the service exposes Responses. | Supported when the service exposes embeddings. | Supported for routes with `capabilities.images: true` when the service exposes `/images`. | Not enabled by route validation. |
+| `anthropic_compat` | Supported through native Anthropic Messages translation. | Not implemented. | Not implemented. | Rejected by route validation. | Not implemented. |
+| `gcp_vertex` | Supported for configured Google and Anthropic publisher routes. | Not implemented. | Supported for explicit supported Google text-embedding routes. | Rejected by route validation. | Not implemented. |
+| `aws_bedrock` | Supported through the configured Bedrock API style. | Supported for `mantle_openai_responses`. | Not implemented. | Rejected by route validation. | Not implemented. |
+| `typesafe` | Not implemented. | Not implemented. | Not implemented. | Rejected by route validation. | Supported through native `/v1/systemone`. |
 
 Route capability flags are still useful when a provider implementation does not support a public API family. They make failures happen at the gateway edge instead of later inside the provider adapter.
 

@@ -1084,6 +1084,9 @@ pub struct UsageLedgerRecord {
     #[serde(default)]
     pub cache_write_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
+    /// Image tokens the provider reported within `completion_tokens`.
+    #[serde(default)]
+    pub image_output_tokens: Option<i64>,
     pub total_tokens: Option<i64>,
     pub provider_usage: Value,
     pub pricing_status: UsagePricingStatus,
@@ -1101,6 +1104,8 @@ pub struct UsageLedgerRecord {
     pub cache_read_cost_per_million_tokens: Option<Money4>,
     #[serde(default)]
     pub cache_write_cost_per_million_tokens: Option<Money4>,
+    #[serde(default)]
+    pub image_output_cost_per_million_tokens: Option<Money4>,
     pub computed_cost_usd: Money4,
     pub occurred_at: OffsetDateTime,
 }
@@ -2683,6 +2688,10 @@ pub struct RoutePricingOverride {
     pub output_cost_per_million_tokens: Money4,
     pub cache_read_cost_per_million_tokens: Option<Money4>,
     pub cache_write_cost_per_million_tokens: Option<Money4>,
+    /// Rate for image output tokens. Without it, image tokens bill at the output rate.
+    /// Overrides persisted before this field existed deserialize without it.
+    #[serde(default)]
+    pub image_output_cost_per_million_tokens: Option<Money4>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -2947,6 +2956,10 @@ pub struct ProviderCapabilities {
     pub stream: bool,
     #[serde(default = "default_true")]
     pub embeddings: bool,
+    /// Images API generation (`POST /v1/images`). Opt-in per route: only
+    /// image models serve it.
+    #[serde(default)]
+    pub images: bool,
     #[serde(default)]
     pub decisions: bool,
     #[serde(default = "default_true")]
@@ -2967,6 +2980,7 @@ impl ProviderCapabilities {
             responses: false,
             stream: false,
             embeddings: false,
+            images: false,
             decisions: false,
             tools: false,
             vision: false,
@@ -3003,6 +3017,7 @@ impl ProviderCapabilities {
             responses: false,
             stream,
             embeddings,
+            images: false,
             decisions: false,
             tools,
             vision,
@@ -3023,6 +3038,7 @@ impl ProviderCapabilities {
             responses: true,
             stream: true,
             embeddings: true,
+            images: true,
             decisions: false,
             tools: true,
             vision: true,
@@ -3038,6 +3054,7 @@ impl ProviderCapabilities {
             responses: false,
             stream: true,
             embeddings: false,
+            images: false,
             decisions: false,
             tools: true,
             vision: true,
@@ -3053,6 +3070,7 @@ impl ProviderCapabilities {
             responses: true,
             stream: true,
             embeddings: false,
+            images: false,
             decisions: false,
             tools: true,
             vision: true,
@@ -3097,6 +3115,7 @@ impl ProviderCapabilities {
             responses: true,
             stream: true,
             embeddings: true,
+            images: true,
             decisions: true,
             tools: true,
             vision: true,
@@ -3112,6 +3131,7 @@ impl ProviderCapabilities {
             responses: self.responses && other.responses,
             stream: self.stream && other.stream,
             embeddings: self.embeddings && other.embeddings,
+            images: self.images && other.images,
             decisions: self.decisions && other.decisions,
             tools: self.tools && other.tools,
             vision: self.vision && other.vision,
@@ -3159,6 +3179,7 @@ pub const fn vertex_text_embedding_capabilities() -> ProviderCapabilities {
         responses: false,
         stream: false,
         embeddings: true,
+        images: false,
         decisions: false,
         tools: false,
         vision: false,
@@ -3280,6 +3301,7 @@ pub fn github_copilot_route_capabilities(
         responses: compatibility.supports_responses,
         stream: supports_inference && upstream_supports.streaming,
         embeddings: compatibility.supports_embeddings,
+        images: false,
         decisions: false,
         tools: supports_inference && upstream_supports.tool_calls,
         vision: supports_inference && upstream_supports.vision,

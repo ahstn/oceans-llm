@@ -366,6 +366,25 @@ fn session_usage_fact(record: &UsageLedgerRecord) -> SessionUsageFact {
             .and_then(|(tokens, rate)| scaled_cost_for_tokens(tokens, rate).ok())
             .map(Money4::as_scaled_i64)
     };
+    // Image tokens are part of the completion tokens; with an image rate they
+    // are charged at it and the rest at the output rate, as in usage pricing.
+    let output_cost_10000 = match (
+        record.image_output_tokens,
+        record.image_output_cost_per_million_tokens,
+    ) {
+        (Some(image_tokens), Some(image_rate)) => component_cost(
+            record
+                .completion_tokens
+                .map(|tokens| tokens.saturating_sub(image_tokens)),
+            record.output_cost_per_million_tokens,
+        )
+        .zip(component_cost(Some(image_tokens), Some(image_rate)))
+        .map(|(text, image)| text + image),
+        _ => component_cost(
+            record.completion_tokens,
+            record.output_cost_per_million_tokens,
+        ),
+    };
     SessionUsageFact {
         fresh_input_tokens: record.uncached_input_tokens,
         cache_read_tokens: record.cache_read_tokens,
@@ -389,10 +408,7 @@ fn session_usage_fact(record: &UsageLedgerRecord) -> SessionUsageFact {
             record.cache_write_tokens,
             record.cache_write_cost_per_million_tokens,
         ),
-        output_cost_10000: component_cost(
-            record.completion_tokens,
-            record.output_cost_per_million_tokens,
-        ),
+        output_cost_10000,
         reasoning_cost_10000: None,
         legacy_cost_10000: None,
         normalized_cost_10000: priced.then_some(record.computed_cost_usd.as_scaled_i64()),

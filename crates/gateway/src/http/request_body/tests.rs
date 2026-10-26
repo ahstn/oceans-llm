@@ -164,6 +164,7 @@ async fn unauthenticated_inference_never_polls_body() {
         "/v1/responses",
         "/v1/chat/completions",
         "/v1/embeddings",
+        "/v1/images",
         "/v1/messages",
         "/messages",
     ] {

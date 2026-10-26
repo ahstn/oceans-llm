@@ -72,7 +72,7 @@ Each `capabilities` flag is optional. An omitted flag takes the value implied by
 - **Decisions transports** (`typesafe`, `openai_compat` with `decisions_api: openai`, and OpenRouter `api: decisions`): `decisions` only.
 - **Copilot routes:** `github_copilot_route_capabilities` from the route's compatibility block.
 - **Bedrock routes:** the `api_style` rules.
-- **Any other route:** everything except `decisions`.
+- **Any other route:** everything except `decisions` and `images`. Image generation stays opt-in per route, even where the profile can serve it, because only image models serve the Images API.
 
 An explicit flag replaces the derived value. Validation still rejects flags a profile cannot serve. At request time route flags are still intersected with provider capability.
 

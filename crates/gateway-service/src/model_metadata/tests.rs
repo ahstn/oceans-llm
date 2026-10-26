@@ -66,6 +66,7 @@ fn billing_modifiers_suppress_catalog_prices_but_preserve_explicit_overrides() {
         output_cost_per_million_tokens: Money4::from_scaled(12345),
         cache_read_cost_per_million_tokens: None,
         cache_write_cost_per_million_tokens: None,
+        image_output_cost_per_million_tokens: None,
     });
     let configured = route_metadata(&route, Some(&provider()), &snapshot);
     assert_eq!(configured.pricing_source, Some("configured_override"));
@@ -558,6 +559,134 @@ async fn decision_models_report_the_openrouter_decisions_output_modality() {
     );
     assert_eq!(card["supported_endpoint_types"], json!([]));
     assert!(card.get("client_hints").is_none());
+}
+
+fn image_listing(capabilities: ProviderCapabilities) -> (GatewayModel, ListingRepo) {
+    let model = GatewayModel {
+        id: Uuid::new_v4(),
+        model_key: "flare".into(),
+        alias_target_model_key: None,
+        max_reasoning_effort: None,
+        routing: None,
+        description: None,
+        tags: vec![],
+        rank: 0,
+    };
+    let mut image_route = route();
+    image_route.model_id = model.id;
+    image_route.provider_key = "openrouter".into();
+    // Absent from the models.dev OpenRouter catalog.
+    image_route.upstream_model = "openai/gpt-image-2.5-flare".into();
+    image_route.context_window_tokens = None;
+    image_route.capabilities = capabilities;
+    let repo = ListingRepo {
+        models: vec![model.clone()],
+        routes: vec![image_route],
+        provider: ProviderConnection {
+            provider_key: "openrouter".into(),
+            provider_type: "openai_compat".into(),
+            config: json!({"pricing_provider_id":"openrouter"}),
+            secrets: None,
+        },
+    };
+    (model, repo)
+}
+
+async fn image_listing_card(capabilities: ProviderCapabilities) -> serde_json::Value {
+    let (model, repo) = image_listing(capabilities);
+    listing_card(model, repo).await
+}
+
+async fn listing_card(model: GatewayModel, repo: ListingRepo) -> serde_json::Value {
+    let listed = super::listing::list_models(
+        &repo,
+        vec![model],
+        &crate::pricing_catalog::load_vendored_fallback_snapshot(),
+    )
+    .await
+    .unwrap();
+    serde_json::to_value(&listed.data[0]).unwrap()
+}
+
+#[tokio::test]
+async fn image_only_routes_report_the_image_output_modality_without_catalog_data() {
+    let card = image_listing_card(ProviderCapabilities {
+        images: true,
+        ..ProviderCapabilities::none()
+    })
+    .await;
+
+    assert_eq!(card["architecture"]["output_modalities"], json!(["image"]));
+    assert_eq!(card["architecture"]["input_modalities"], json!(["text"]));
+    assert_eq!(card["supported_endpoint_types"], json!([]));
+    assert!(card.get("client_hints").is_none());
+}
+
+#[tokio::test]
+async fn routes_without_the_images_capability_keep_unknown_modalities() {
+    let card = image_listing_card(ProviderCapabilities {
+        images: false,
+        ..ProviderCapabilities::openai_compat_baseline()
+    })
+    .await;
+
+    assert_eq!(
+        card["architecture"],
+        json!({"input_modalities": null, "output_modalities": null})
+    );
+}
+
+#[tokio::test]
+async fn chat_and_image_routes_without_catalog_data_report_text_and_image_output() {
+    let card = image_listing_card(ProviderCapabilities::openai_compat_baseline()).await;
+
+    assert_eq!(
+        card["architecture"]["output_modalities"],
+        json!(["image", "text"])
+    );
+}
+
+#[tokio::test]
+async fn separate_chat_and_image_only_routes_report_text_and_image_output() {
+    let (model, mut repo) = image_listing(ProviderCapabilities {
+        images: true,
+        ..ProviderCapabilities::none()
+    });
+    let mut chat_route = repo.routes[0].clone();
+    chat_route.id = Uuid::new_v4();
+    chat_route.upstream_model = "openai/gpt-5".into();
+    chat_route.capabilities = ProviderCapabilities {
+        images: false,
+        ..ProviderCapabilities::openai_compat_baseline()
+    };
+    repo.routes.push(chat_route);
+
+    let card = listing_card(model, repo).await;
+
+    assert_eq!(
+        card["architecture"]["output_modalities"],
+        json!(["image", "text"])
+    );
+}
+
+#[test]
+fn route_metadata_adds_image_output_only_for_image_capable_routes() {
+    let snapshot = crate::pricing_catalog::load_vendored_fallback_snapshot();
+    let mut chat = route();
+    chat.capabilities.images = false;
+    let catalog = route_metadata(&chat, Some(&provider()), &snapshot)
+        .modalities
+        .expect("catalog modalities");
+    assert!(!catalog.output.iter().any(|value| value == "image"));
+
+    chat.capabilities.images = true;
+    let images = route_metadata(&chat, Some(&provider()), &snapshot)
+        .modalities
+        .expect("catalog modalities");
+    assert_eq!(images.input, catalog.input);
+    let mut expected_output = catalog.output.clone();
+    expected_output.push("image".to_string());
+    assert_eq!(images.output, expected_output);
 }
 
 #[tokio::test]

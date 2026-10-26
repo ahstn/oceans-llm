@@ -95,6 +95,21 @@ Embeddings token, cost, and usage-record totals stay on the shared `gateway.chat
 
 Earlier releases recorded embeddings guardrail blocks and budget rejections as `gateway.chat.requests` and `gateway.chat.request.duration` samples labelled `http.route=/v1/chat/completions`, plus `gateway.chat.tool_cardinality` samples with `operation=embeddings`. The gateway no longer emits those samples. Dashboards that counted embeddings rejections through the chat metrics should switch to `gateway.embeddings.requests`.
 
+### Images Request Metrics
+
+`POST /v1/images`, `POST /v1/images/generations`, and their unversioned aliases record `gateway.images.requests` and `gateway.images.request.duration`. Image generation never streams and carries no tools, so it records no `gateway.chat.requests`, `gateway.chat.request.duration` or tool-cardinality samples.
+
+Coverage matches Embeddings: one sample per request once the model resolves, including rate-limit rejections, requests with no compatible route, guardrail blocks, budget rejections, and provider failures after billable upstream usage. Authentication, body parsing, and model resolution failures record no sample. Neither does a request with `stream: true`, which is rejected before model resolution.
+
+Labels:
+
+- `http.route`: always `/v1/images`
+- `requested_model` and `resolved_model`
+- `provider`: the selected provider key, or `unavailable` when no route was selected
+- `http.response.status_code` and `outcome`: `success`, or the error type such as `invalid_request_error`, `budget_error` or `upstream_error`
+
+Image token, cost, and usage-record totals stay on the shared `gateway.chat.tokens`, `gateway.chat.cost.usd`, and `gateway.chat.usage_records` metrics. Request logs record image requests with `operation=images`.
+
 ## Tagging and Attribution
 
 The request-log surface records caller-supplied request tags for filtering and attribution. The tag header contract, validation rules, examples, and identity tag guidance live in [Tagging](tagging.md).
@@ -292,7 +307,14 @@ Sensitive built-in JSON keys include:
 
 Built-in URL query redaction preserves the scheme, authority, and path while replacing query components in retained media URL fields and HTTPS URLs echoed in retained error messages.
 
-Known bulky provider fields are shape-preserving truncated before the whole-payload byte budget is applied. Built-ins cover OpenAI-compatible image/audio/file payloads, Vertex Gemini inline data, and Vertex Anthropic base64 source data.
+Known bulky provider fields are shape-preserving truncated before the whole-payload byte budget is applied: each matching string becomes `{ truncated, size_bytes, preview }` with a 96-byte preview, and the surrounding JSON, including `usage`, is kept. Built-ins cover OpenAI-compatible image/audio/file payloads, Vertex Gemini inline data, and Vertex Anthropic base64 source data. Image generation adds these paths:
+
+- generated chat images at `body.choices.*.message.images.*.image_url.url` and streamed `events.*.choices.*.delta.images.*.image_url.url`
+- assistant images replayed in multi-turn edit requests at `body.messages.*.images.*.image_url.url`
+- Images API reference images at `body.input_references.*.image_url.url` and generated images at `body.data.*.b64_json`
+- opaque reasoning state at `body.choices.*.message.reasoning_details.*.data`, `events.*.choices.*.delta.reasoning_details.*.data`, and `body.messages.*.reasoning_details.*.data`
+
+Media paths truncate `data:` URLs and standard-alphabet base64 longer than 256 bytes; remote URLs stay intact. Reasoning `data` paths also accept the URL-safe base64 alphabet (`-` and `_`), because encrypted reasoning tokens use it.
 
 Request budgets use the uncompressed serialized JSON byte count. Database compression does not reduce gateway serialization work, API transfer size, JSON parsing work, or admin UI rendering work. The default persisted-request cap is 128 KiB, and 256 KiB is the absolute inline ceiling even for policies constructed outside YAML validation. These are gateway engineering levels, not database limits:
 

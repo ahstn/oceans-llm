@@ -343,6 +343,7 @@ async fn every_inference_route_shares_the_limit_in_its_own_envelope() {
         ),
         ("/v1/responses", json!({"model": "fast", "input": "hello"})),
         ("/v1/embeddings", json!({"model": "fast", "input": "hello"})),
+        ("/v1/images", json!({"model": "fast", "prompt": "hello"})),
         (
             "/v1/decisions",
             json!({
@@ -531,6 +532,7 @@ async fn rejected_requests_keep_one_request_metric_sample_per_route() {
             json!({"model": "fast", "max_tokens": 16, "messages": chat_messages}),
         ),
         ("/v1/embeddings", json!({"model": "fast", "input": "hello"})),
+        ("/v1/images", json!({"model": "fast", "prompt": "hello"})),
         (
             "/v1/decisions",
             json!({
@@ -565,6 +567,21 @@ async fn rejected_requests_keep_one_request_metric_sample_per_route() {
         rate_limited(
             after
                 .embeddings_requests
+                .iter()
+                .flat_map(|(sample, count)| {
+                    std::iter::repeat_n(
+                        (sample.status_code, sample.outcome.clone()),
+                        *count as usize,
+                    )
+                })
+                .collect()
+        ),
+        1
+    );
+    assert_eq!(
+        rate_limited(
+            after
+                .images_requests
                 .iter()
                 .flat_map(|(sample, count)| {
                     std::iter::repeat_n(

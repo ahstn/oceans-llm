@@ -198,6 +198,10 @@ pub struct BatchTokenRates {
     pub output: Option<Money4>,
     pub cache_read: Option<Money4>,
     pub cache_write: Option<Money4>,
+    /// Rate for image tokens within the completion tokens; absent in snapshots
+    /// taken before image rates existed.
+    #[serde(default)]
+    pub image_output: Option<Money4>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

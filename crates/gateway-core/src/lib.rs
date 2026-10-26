@@ -157,7 +157,8 @@ pub use protocol::anthropic::{AnthropicMessage, AnthropicMessagesRequest};
 pub use protocol::core::{
     ChatMessage as CoreChatMessage, ChatRequest as CoreChatRequest,
     ContentPartType as CoreContentPartType, EmbeddingsRequest as CoreEmbeddingsRequest,
-    RequestRequirements as CoreRequestRequirements, ResponsesRequest as CoreResponsesRequest,
+    ImagesRequest, RequestRequirements as CoreRequestRequirements,
+    ResponsesRequest as CoreResponsesRequest,
 };
 pub use protocol::decisions::{
     DECISIONS_CHOICE_MAX_OPTIONS, DECISIONS_SCORE_MAX_LEVELS, DECISIONS_SCORE_MIN_LEVELS,

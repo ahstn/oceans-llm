@@ -413,6 +413,34 @@ models:
       provider: openrouter
       upstream_model: anthropic/claude-haiku-5.5
 
+  gpt-image-2.5-flare:
+    description: GPT Image through the OpenRouter Images API (POST /v1/images only)
+    route:
+      provider: openrouter
+      upstream_model: openai/gpt-image-2.5-flare
+      capabilities:
+        chat_completions: false
+        responses: false
+        stream: false
+        embeddings: false
+        images: true
+        tools: false
+        vision: false
+        json_schema: false
+        developer_role: false
+
+  gemini-nano-banana-2.1:
+    description: Gemini image model through OpenRouter Chat Completions (send modalities ["image","text"])
+    route:
+      provider: openrouter
+      upstream_model: google/gemini-nano-banana-2.1
+
+  gemini-3.1-flash-lite-image:
+    description: Low-cost Gemini image model through OpenRouter Chat Completions for image verification
+    route:
+      provider: openrouter
+      upstream_model: google/gemini-3.1-flash-lite-image
+
   deepseek-v4-flash-0731:
     description: Older pinned DeepSeek Flash; prefer deepseek-v4.1-flash
     route:

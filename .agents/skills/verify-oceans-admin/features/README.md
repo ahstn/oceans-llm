@@ -67,6 +67,7 @@ Each feature file starts with an H1 title and one paragraph that describes user-
 - [Agent sessions](./agent-sessions.md) covers the seeded session list, filters, and detail sheet.
 - [Request logs](./request-logs.md) covers the seeded request list, filters, and request detail.
 - [Live LLM requests](./live-llm-requests.md) covers bounded paid canaries through OpenRouter or Bedrock and their request-log evidence.
+- [Image generation](./image-generation.md) covers the Images API routes, chat image output, provider-reported image cost, image-safe request logs, and image output modalities in `/v1/models`.
 - [Anthropic Messages](./anthropic-messages.md) covers `/v1/messages`, thinking/display/effort regressions, native transport boundaries, SSE, tool continuity, safeguards and one scoped public-endpoint canary.
 - [Backend gateway](./backend-gateway.md) covers the OpenRouter route for `deepseek-v4.1-flash`, deterministic and generated-tool guardrails, request-log evidence, and temporary key cleanup.
 - [Usage costs](./usage-costs.md) covers the spend KPIs, the 7- and 30-day windows, the owner filter, breakdowns, FOCUS export, and spend-report API parity.

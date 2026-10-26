@@ -568,6 +568,7 @@ mod tests {
             cache_read_tokens: None,
             cache_write_tokens: None,
             completion_tokens: Some(50),
+            image_output_tokens: None,
             total_tokens: Some(150),
             provider_usage: json!({"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150}),
             pricing_status,
@@ -583,6 +584,7 @@ mod tests {
             output_cost_per_million_tokens: Some(Money4::from_scaled(200_000)),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            image_output_cost_per_million_tokens: None,
             computed_cost_usd,
             occurred_at,
         }

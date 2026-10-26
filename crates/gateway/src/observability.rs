@@ -30,6 +30,8 @@ pub struct GatewayMetrics {
     decisions_request_duration: Histogram<f64>,
     embeddings_requests: Counter<u64>,
     embeddings_request_duration: Histogram<f64>,
+    images_requests: Counter<u64>,
+    images_request_duration: Histogram<f64>,
     tokens: Counter<u64>,
     cost_usd: Counter<f64>,
     tool_cardinality: Histogram<u64>,
@@ -87,11 +89,12 @@ pub struct DecisionsRequestMetric<'a> {
     pub latency_seconds: f64,
 }
 
-/// One `POST /v1/embeddings` request. Embeddings has its own request metric
-/// for the same reasons as Decisions: no streaming, no tools, and a latency
-/// profile that would skew the chat duration histogram.
+/// One `POST /v1/embeddings` or `POST /v1/images` request. Each operation has
+/// its own request metric pair for the same reasons as Decisions: no
+/// streaming, no tools, and a latency profile that would skew the chat
+/// duration histogram.
 #[derive(Debug, Clone)]
-pub struct EmbeddingsRequestMetric<'a> {
+pub struct OperationRequestMetric<'a> {
     pub requested_model: &'a str,
     pub resolved_model: &'a str,
     pub provider_key: &'a str,
@@ -123,6 +126,7 @@ struct TestMetricCounters {
     request_outcomes: Mutex<BTreeMap<String, u64>>,
     decisions_requests: Mutex<BTreeMap<TestDecisionsRequest, u64>>,
     embeddings_requests: Mutex<BTreeMap<TestEmbeddingsRequest, u64>>,
+    images_requests: Mutex<BTreeMap<TestImagesRequest, u64>>,
 }
 
 #[cfg(any(test, debug_assertions))]
@@ -134,6 +138,7 @@ pub struct TestMetricSnapshot {
     /// cardinality rather than by traffic.
     pub decisions_requests: BTreeMap<TestDecisionsRequest, u64>,
     pub embeddings_requests: BTreeMap<TestEmbeddingsRequest, u64>,
+    pub images_requests: BTreeMap<TestImagesRequest, u64>,
 }
 
 #[cfg(any(test, debug_assertions))]
@@ -149,6 +154,14 @@ pub struct TestDecisionsRequest {
 #[cfg(any(test, debug_assertions))]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TestEmbeddingsRequest {
+    pub provider_key: String,
+    pub status_code: i64,
+    pub outcome: String,
+}
+
+#[cfg(any(test, debug_assertions))]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TestImagesRequest {
     pub provider_key: String,
     pub status_code: i64,
     pub outcome: String,
@@ -191,6 +204,15 @@ impl GatewayMetrics {
                 .f64_histogram("gateway.embeddings.request.duration")
                 .with_unit("s")
                 .with_description("Embeddings request duration in seconds")
+                .build(),
+            images_requests: meter
+                .u64_counter("gateway.images.requests")
+                .with_description("Total image generation requests")
+                .build(),
+            images_request_duration: meter
+                .f64_histogram("gateway.images.request.duration")
+                .with_unit("s")
+                .with_description("Image generation request duration in seconds")
                 .build(),
             tokens: meter
                 .u64_counter("gateway.chat.tokens")
@@ -315,20 +337,13 @@ impl GatewayMetrics {
         }
     }
 
-    pub fn record_embeddings_request(&self, metric: &EmbeddingsRequestMetric<'_>) {
-        let attrs = [
-            KeyValue::new("requested_model", metric.requested_model.to_string()),
-            KeyValue::new("resolved_model", metric.resolved_model.to_string()),
-            KeyValue::new("provider", metric.provider_key.to_string()),
-            KeyValue::new("http.route", "/v1/embeddings"),
-            KeyValue::new("http.method", "POST"),
-            KeyValue::new("http.response.status_code", metric.status_code),
-            KeyValue::new("outcome", metric.outcome.to_string()),
-        ];
-
-        self.embeddings_requests.add(1, &attrs);
-        self.embeddings_request_duration
-            .record(metric.latency_seconds, &attrs);
+    pub fn record_embeddings_request(&self, metric: &OperationRequestMetric<'_>) {
+        record_operation_request(
+            &self.embeddings_requests,
+            &self.embeddings_request_duration,
+            "/v1/embeddings",
+            metric,
+        );
         #[cfg(any(test, debug_assertions))]
         {
             *self
@@ -337,6 +352,31 @@ impl GatewayMetrics {
                 .lock()
                 .expect("embeddings requests lock")
                 .entry(TestEmbeddingsRequest {
+                    provider_key: metric.provider_key.to_string(),
+                    status_code: metric.status_code,
+                    outcome: metric.outcome.to_string(),
+                })
+                .or_default() += 1;
+        }
+    }
+
+    /// Every Images API path records `http.route=/v1/images`, as the
+    /// embeddings alias records `/v1/embeddings`.
+    pub fn record_images_request(&self, metric: &OperationRequestMetric<'_>) {
+        record_operation_request(
+            &self.images_requests,
+            &self.images_request_duration,
+            "/v1/images",
+            metric,
+        );
+        #[cfg(any(test, debug_assertions))]
+        {
+            *self
+                .test_counters
+                .images_requests
+                .lock()
+                .expect("images requests lock")
+                .entry(TestImagesRequest {
                     provider_key: metric.provider_key.to_string(),
                     status_code: metric.status_code,
                     outcome: metric.outcome.to_string(),
@@ -518,8 +558,34 @@ impl GatewayMetrics {
                 .lock()
                 .expect("embeddings requests lock")
                 .clone(),
+            images_requests: self
+                .test_counters
+                .images_requests
+                .lock()
+                .expect("images requests lock")
+                .clone(),
         }
     }
+}
+
+/// One sample of an operation's own request counter and duration histogram.
+fn record_operation_request(
+    requests: &Counter<u64>,
+    duration: &Histogram<f64>,
+    http_route: &'static str,
+    metric: &OperationRequestMetric<'_>,
+) {
+    let attrs = [
+        KeyValue::new("requested_model", metric.requested_model.to_string()),
+        KeyValue::new("resolved_model", metric.resolved_model.to_string()),
+        KeyValue::new("provider", metric.provider_key.to_string()),
+        KeyValue::new("http.route", http_route),
+        KeyValue::new("http.method", "POST"),
+        KeyValue::new("http.response.status_code", metric.status_code),
+        KeyValue::new("outcome", metric.outcome.to_string()),
+    ];
+    requests.add(1, &attrs);
+    duration.record(metric.latency_seconds, &attrs);
 }
 
 fn usage_reason_category(reason: &str) -> &str {

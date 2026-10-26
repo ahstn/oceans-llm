@@ -1247,6 +1247,7 @@ pub(crate) mod tests {
             cache_read_tokens: Some(80),
             cache_write_tokens: Some(10),
             completion_tokens: Some(50),
+            image_output_tokens: Some(40),
             total_tokens: Some(150),
             provider_usage: json!({
                 "prompt_tokens": 100,
@@ -1266,6 +1267,7 @@ pub(crate) mod tests {
             output_cost_per_million_tokens: Some(Money4::from_scaled(10_000)),
             cache_read_cost_per_million_tokens: Some(Money4::from_scaled(125)),
             cache_write_cost_per_million_tokens: Some(Money4::from_scaled(250)),
+            image_output_cost_per_million_tokens: Some(Money4::from_scaled(300_000)),
             computed_cost_usd: Money4::from_scaled(computed_cost_10000),
             occurred_at,
         }
@@ -7307,6 +7309,7 @@ pub(crate) mod tests {
                     output_cost_per_million_tokens: Money4::from_scaled(50_000),
                     cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_250)),
                     cache_write_cost_per_million_tokens: None,
+                    image_output_cost_per_million_tokens: Some(Money4::from_scaled(300_000)),
                 }),
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
@@ -7517,6 +7520,14 @@ pub(crate) mod tests {
                 .expect("route pricing override")
                 .cache_read_cost_per_million_tokens,
             Some(Money4::from_scaled(1_250))
+        );
+        assert_eq!(
+            routes[0]
+                .pricing_override
+                .as_ref()
+                .expect("route pricing override")
+                .image_output_cost_per_million_tokens,
+            Some(Money4::from_scaled(300_000))
         );
         let profile = routes[0]
             .compatibility
@@ -8137,6 +8148,11 @@ pub(crate) mod tests {
         assert_eq!(kept_usage.uncached_input_tokens, Some(10));
         assert_eq!(kept_usage.cache_read_tokens, Some(80));
         assert_eq!(kept_usage.cache_write_tokens, Some(10));
+        assert_eq!(kept_usage.image_output_tokens, Some(40));
+        assert_eq!(
+            kept_usage.image_output_cost_per_million_tokens,
+            Some(Money4::from_scaled(300_000))
+        );
 
         // Repeat deletes are no-ops, which is what makes reseeding idempotent.
         assert_eq!(
@@ -8410,6 +8426,11 @@ pub(crate) mod tests {
         assert_eq!(kept_usage.uncached_input_tokens, Some(10));
         assert_eq!(kept_usage.cache_read_tokens, Some(80));
         assert_eq!(kept_usage.cache_write_tokens, Some(10));
+        assert_eq!(kept_usage.image_output_tokens, Some(40));
+        assert_eq!(
+            kept_usage.image_output_cost_per_million_tokens,
+            Some(Money4::from_scaled(300_000))
+        );
 
         // Repeat deletes are no-ops, which is what makes reseeding idempotent.
         assert_eq!(
@@ -11945,6 +11966,7 @@ pub(crate) mod tests {
                     output_cost_per_million_tokens: Money4::from_scaled(50_000),
                     cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_250)),
                     cache_write_cost_per_million_tokens: Some(Money4::from_scaled(2_500)),
+                    image_output_cost_per_million_tokens: Some(Money4::from_scaled(300_000)),
                 }),
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
@@ -12043,6 +12065,7 @@ pub(crate) mod tests {
                 output_cost_per_million_tokens: Money4::from_scaled(50_000),
                 cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_250)),
                 cache_write_cost_per_million_tokens: Some(Money4::from_scaled(2_500)),
+                image_output_cost_per_million_tokens: Some(Money4::from_scaled(300_000)),
             })
         );
 
@@ -12252,6 +12275,7 @@ pub(crate) mod tests {
             cache_read_tokens: None,
             cache_write_tokens: None,
             completion_tokens: Some(5),
+            image_output_tokens: None,
             total_tokens: Some(15),
             provider_usage: json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}),
             pricing_status: UsagePricingStatus::Priced,
@@ -12267,6 +12291,7 @@ pub(crate) mod tests {
             output_cost_per_million_tokens: pricing_record.output_cost_per_million_tokens,
             cache_read_cost_per_million_tokens: pricing_record.cache_read_cost_per_million_tokens,
             cache_write_cost_per_million_tokens: pricing_record.cache_write_cost_per_million_tokens,
+            image_output_cost_per_million_tokens: None,
             computed_cost_usd: Money4::from_scaled(25),
             occurred_at: pricing_time,
         };
@@ -12288,6 +12313,7 @@ pub(crate) mod tests {
             cache_read_tokens: None,
             cache_write_tokens: None,
             completion_tokens: Some(5),
+            image_output_tokens: None,
             total_tokens: Some(15),
             provider_usage: json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}),
             pricing_status: UsagePricingStatus::Unpriced,
@@ -12303,6 +12329,7 @@ pub(crate) mod tests {
             output_cost_per_million_tokens: None,
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            image_output_cost_per_million_tokens: None,
             computed_cost_usd: Money4::ZERO,
             occurred_at: pricing_time,
         };

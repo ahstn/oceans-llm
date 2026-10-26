@@ -39,6 +39,9 @@ use crate::{
 
 mod route_overrides;
 pub use route_overrides::OverriddenRoutes;
+mod reported_usage_cost;
+
+use reported_usage_cost::{apply_provider_reported_cost, provider_reported_cost};
 
 const AGENT_ANALYSIS_MAX_IN_FLIGHT_INGESTIONS: usize = 64;
 const AGENT_ANALYSIS_QUEUE_RETENTION: Duration = Duration::days(7);
@@ -442,6 +445,26 @@ where
         request_tags: RequestTags,
     ) -> RequestLogContext {
         self.request_logging.begin_embeddings_request(
+            request_id,
+            requested_model_key,
+            resolved_model_key,
+            request,
+            request_headers,
+            request_tags,
+        )
+    }
+
+    #[must_use]
+    pub fn begin_images_request_log(
+        &self,
+        request_id: &str,
+        requested_model_key: &str,
+        resolved_model_key: &str,
+        request: &gateway_core::ImagesRequest,
+        request_headers: &std::collections::BTreeMap<String, String>,
+        request_tags: RequestTags,
+    ) -> RequestLogContext {
+        self.request_logging.begin_images_request(
             request_id,
             requested_model_key,
             resolved_model_key,
@@ -956,6 +979,7 @@ where
             cache_read_tokens: usage_summary.cache_read_tokens,
             cache_write_tokens: usage_summary.cache_write_tokens,
             completion_tokens: usage_summary.completion_tokens,
+            image_output_tokens: usage_summary.image_output_tokens,
             total_tokens: usage_summary.total_tokens,
             provider_usage,
             pricing_status: UsagePricingStatus::UsageMissing,
@@ -971,44 +995,12 @@ where
             output_cost_per_million_tokens: None,
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            image_output_cost_per_million_tokens: None,
             computed_cost_usd: Money4::ZERO,
             occurred_at,
         };
-
-        if usage_summary.has_usage() {
-            match self.resolve_route_pricing(route, occurred_at).await? {
-                PricingResolution::Exact { pricing } => {
-                    apply_exact_pricing(&mut record, &pricing, &usage_summary.cache_usage)?
-                }
-                PricingResolution::ConfiguredOverride { pricing } => {
-                    apply_configured_pricing(&mut record, &pricing, &usage_summary.cache_usage)?
-                }
-                PricingResolution::Unpriced { reason } => {
-                    record.pricing_status = UsagePricingStatus::Unpriced;
-                    let pricing_reason = unpriced_reason_string(&reason);
-                    record.unpriced_reason = Some(match record.unpriced_reason.take() {
-                        Some(normalization_reason) => {
-                            format!("{normalization_reason};pricing_unavailable:{pricing_reason}")
-                        }
-                        None => pricing_reason,
-                    });
-                    warn!(
-                        request_id = %request_id,
-                        provider_key = %route.provider_key,
-                        model_key = %model.model_key,
-                        reason = %record.unpriced_reason.as_deref().unwrap_or("unknown"),
-                        "usage ledger recorded without matching pricing"
-                    );
-                }
-            }
-        } else {
-            warn!(
-                request_id = %request_id,
-                provider_key = %route.provider_key,
-                model_key = %model.model_key,
-                "usage ledger recorded without provider usage details"
-            );
-        }
+        self.price_usage(&mut record, &usage_summary, model, route, occurred_at)
+            .await?;
 
         let overruns = self
             .budget_guard
@@ -1046,6 +1038,70 @@ where
         span.record("gateway.usage.cost_usd", recorded.cost_usd);
 
         Ok(recorded)
+    }
+
+    /// Prices `record`. A provider-reported cost is the provider's own bill, so
+    /// it wins over the route override and the catalog; token rates price the
+    /// request only when the provider reports no cost.
+    async fn price_usage(
+        &self,
+        record: &mut UsageLedgerRecord,
+        usage_summary: &UsageSummary,
+        model: &GatewayModel,
+        route: &ModelRoute,
+        occurred_at: OffsetDateTime,
+    ) -> Result<(), GatewayError> {
+        let reported_cost =
+            provider_reported_cost(&record.provider_usage).unwrap_or_else(|reason| {
+                warn!(
+                    request_id = %record.request_id,
+                    provider_key = %route.provider_key,
+                    model_key = %model.model_key,
+                    reason = %reason,
+                    "ignoring malformed provider-reported usage cost; pricing from token rates"
+                );
+                None
+            });
+        if let Some(cost_usd) = reported_cost {
+            apply_provider_reported_cost(record, cost_usd);
+            return Ok(());
+        }
+        if !usage_summary.has_usage() {
+            warn!(
+                request_id = %record.request_id,
+                provider_key = %route.provider_key,
+                model_key = %model.model_key,
+                "usage ledger recorded without provider usage details"
+            );
+            return Ok(());
+        }
+        let cache_usage = &usage_summary.cache_usage;
+        match self.resolve_route_pricing(route, occurred_at).await? {
+            PricingResolution::Exact { pricing } => {
+                apply_exact_pricing(record, &pricing, cache_usage)
+            }
+            PricingResolution::ConfiguredOverride { pricing } => {
+                apply_configured_pricing(record, &pricing, cache_usage)
+            }
+            PricingResolution::Unpriced { reason } => {
+                record.pricing_status = UsagePricingStatus::Unpriced;
+                let pricing_reason = unpriced_reason_string(&reason);
+                record.unpriced_reason = Some(match record.unpriced_reason.take() {
+                    Some(normalization_reason) => {
+                        format!("{normalization_reason};pricing_unavailable:{pricing_reason}")
+                    }
+                    None => pricing_reason,
+                });
+                warn!(
+                    request_id = %record.request_id,
+                    provider_key = %route.provider_key,
+                    model_key = %model.model_key,
+                    reason = %record.unpriced_reason.as_deref().unwrap_or("unknown"),
+                    "usage ledger recorded without matching pricing"
+                );
+                Ok(())
+            }
+        }
     }
 
     pub async fn record_batch_usage(
@@ -1126,6 +1182,7 @@ where
             cache_read_tokens: usage.cache_read_tokens,
             cache_write_tokens: usage.cache_write_tokens,
             completion_tokens: usage.completion_tokens,
+            image_output_tokens: usage.image_output_tokens,
             total_tokens: usage.total_tokens,
             provider_usage: json!({
                 "processing_mode": "batch",
@@ -1146,6 +1203,7 @@ where
             output_cost_per_million_tokens: None,
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            image_output_cost_per_million_tokens: None,
             computed_cost_usd: cost_usd,
             occurred_at,
         };
@@ -1225,6 +1283,8 @@ fn aggregate_batch_usage(
             add_optional(aggregate.cache_write_tokens, usage.cache_write_tokens)?;
         aggregate.completion_tokens =
             add_optional(aggregate.completion_tokens, usage.completion_tokens)?;
+        aggregate.image_output_tokens =
+            add_optional(aggregate.image_output_tokens, usage.image_output_tokens)?;
         aggregate.total_tokens = add_optional(aggregate.total_tokens, usage.total_tokens)?;
     }
     if !complete || !aggregate.has_usage() {
@@ -1252,6 +1312,12 @@ fn aggregate_batch_usage(
                     completion_tokens: provider_aggregate
                         .completion_tokens
                         .or(aggregate.completion_tokens),
+                    // Image tokens are part of completion tokens, so take both from one source.
+                    image_output_tokens: if provider_aggregate.completion_tokens.is_some() {
+                        provider_aggregate.image_output_tokens
+                    } else {
+                        aggregate.image_output_tokens
+                    },
                     total_tokens: provider_aggregate.total_tokens.or(aggregate.total_tokens),
                     cache_usage: provider_aggregate.cache_usage,
                 },
@@ -1286,6 +1352,8 @@ pub(crate) struct UsageSummary {
     pub(crate) cache_read_tokens: Option<i64>,
     pub(crate) cache_write_tokens: Option<i64>,
     pub(crate) completion_tokens: Option<i64>,
+    /// Image tokens within `completion_tokens`; never more than them.
+    pub(crate) image_output_tokens: Option<i64>,
     pub(crate) total_tokens: Option<i64>,
     pub(crate) cache_usage: CacheUsageNormalization,
 }
@@ -1347,6 +1415,7 @@ pub(crate) fn usage_summary_from_value(
                 Some(tokens.cache_write_tokens),
             )
         });
+    let image_output_tokens = image_output_tokens_within_completion(usage, completion_tokens);
 
     Ok(UsageSummary {
         prompt_tokens,
@@ -1354,9 +1423,43 @@ pub(crate) fn usage_summary_from_value(
         cache_read_tokens,
         cache_write_tokens,
         completion_tokens,
+        image_output_tokens,
         total_tokens,
         cache_usage,
     })
+}
+
+/// Image tokens within the completion tokens, from Chat Completions
+/// `completion_tokens_details` or Responses `output_tokens_details`.
+///
+/// A count that is not an integer from zero to the completion tokens is
+/// dropped with a warning rather than failing or unpricing the request. Image
+/// tokens are a subset of completion tokens, so dropping the split loses no
+/// tokens: every completion token then bills at the output rate, as it did
+/// before image rates existed.
+fn image_output_tokens_within_completion(
+    usage: &serde_json::Map<String, Value>,
+    completion_tokens: Option<i64>,
+) -> Option<i64> {
+    let image_tokens = ["completion_tokens_details", "output_tokens_details"]
+        .into_iter()
+        .find_map(|details| {
+            usage
+                .get(details)?
+                .get("image_tokens")
+                .filter(|tokens| !tokens.is_null())
+        })?;
+    let valid = image_tokens.as_i64().filter(|tokens| {
+        *tokens >= 0 && completion_tokens.is_some_and(|completion| *tokens <= completion)
+    });
+    if valid.is_none() {
+        warn!(
+            image_tokens = %image_tokens,
+            completion_tokens = ?completion_tokens,
+            "ignoring image token count outside the completion tokens; image output bills at the output rate"
+        );
+    }
+    valid
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1615,6 +1718,7 @@ fn apply_configured_pricing(
     record.output_cost_per_million_tokens = Some(pricing.output_cost_per_million_tokens);
     record.cache_read_cost_per_million_tokens = pricing.cache_read_cost_per_million_tokens;
     record.cache_write_cost_per_million_tokens = pricing.cache_write_cost_per_million_tokens;
+    record.image_output_cost_per_million_tokens = pricing.image_output_cost_per_million_tokens;
 
     apply_token_rates(
         record,
@@ -1644,12 +1748,7 @@ fn apply_token_rates(
             return Ok(());
         }
         record.pricing_status = UsagePricingStatus::LegacyEstimated;
-        record.computed_cost_usd = compute_usage_cost(
-            record.prompt_tokens,
-            input_rate,
-            record.completion_tokens,
-            output_rate,
-        )?;
+        record.computed_cost_usd = compute_usage_cost(record, input_rate, output_rate)?;
         return Ok(());
     }
     let input_tokens_requiring_standard_rate = record
@@ -1684,12 +1783,7 @@ fn apply_token_rates(
     record.computed_cost_usd = if record.uncached_input_tokens.is_some() {
         compute_cache_aware_usage_cost(record, input_rate, output_rate)?
     } else {
-        compute_usage_cost(
-            record.prompt_tokens,
-            input_rate,
-            record.completion_tokens,
-            output_rate,
-        )?
+        compute_usage_cost(record, input_rate, output_rate)?
     };
     Ok(())
 }
@@ -1699,7 +1793,8 @@ fn compute_cache_aware_usage_cost(
     input_rate: Option<Money4>,
     output_rate: Option<Money4>,
 ) -> Result<Money4, GatewayError> {
-    let components = [
+    let (text_output_tokens, image_output_tokens) = output_token_buckets(record);
+    sum_component_costs([
         (record.uncached_input_tokens, input_rate),
         (
             record.cache_read_tokens,
@@ -1709,8 +1804,48 @@ fn compute_cache_aware_usage_cost(
             record.cache_write_tokens,
             record.cache_write_cost_per_million_tokens,
         ),
-        (record.completion_tokens, output_rate),
-    ];
+        (text_output_tokens, output_rate),
+        (
+            image_output_tokens,
+            record.image_output_cost_per_million_tokens,
+        ),
+    ])
+}
+
+fn compute_usage_cost(
+    record: &UsageLedgerRecord,
+    input_rate: Option<Money4>,
+    output_rate: Option<Money4>,
+) -> Result<Money4, GatewayError> {
+    let (text_output_tokens, image_output_tokens) = output_token_buckets(record);
+    sum_component_costs([
+        (record.prompt_tokens, input_rate),
+        (text_output_tokens, output_rate),
+        (
+            image_output_tokens,
+            record.image_output_cost_per_million_tokens,
+        ),
+    ])
+}
+
+/// Splits completion tokens into text and image buckets. Only an image output
+/// rate splits them; without one, every completion token bills at the output
+/// rate. `UsageSummary` keeps image tokens within the completion tokens.
+fn output_token_buckets(record: &UsageLedgerRecord) -> (Option<i64>, Option<i64>) {
+    match (
+        record.completion_tokens,
+        record.image_output_tokens,
+        record.image_output_cost_per_million_tokens,
+    ) {
+        (Some(completion), Some(image), Some(_)) => (Some(completion - image), Some(image)),
+        (completion, _, _) => (completion, None),
+    }
+}
+
+/// Adds each priced component's subtotal, each rounded half up to Money4.
+fn sum_component_costs(
+    components: impl IntoIterator<Item = (Option<i64>, Option<Money4>)>,
+) -> Result<Money4, GatewayError> {
     components
         .into_iter()
         .try_fold(Money4::ZERO, |total, (tokens, rate)| {
@@ -1722,26 +1857,6 @@ fn compute_cache_aware_usage_cost(
                 .checked_add(component)
                 .ok_or_else(|| GatewayError::Internal("usage cost overflow".to_string()))
         })
-}
-
-fn compute_usage_cost(
-    prompt_tokens: Option<i64>,
-    input_rate: Option<Money4>,
-    completion_tokens: Option<i64>,
-    output_rate: Option<Money4>,
-) -> Result<Money4, GatewayError> {
-    let input_cost = match (prompt_tokens, input_rate) {
-        (Some(tokens), Some(rate)) => scaled_cost_for_tokens(tokens, rate)?,
-        _ => Money4::ZERO,
-    };
-    let output_cost = match (completion_tokens, output_rate) {
-        (Some(tokens), Some(rate)) => scaled_cost_for_tokens(tokens, rate)?,
-        _ => Money4::ZERO,
-    };
-
-    input_cost
-        .checked_add(output_cost)
-        .ok_or_else(|| GatewayError::Internal("usage cost overflow".to_string()))
 }
 
 pub(crate) fn scaled_cost_for_tokens(
@@ -1832,6 +1947,7 @@ mod tests {
             output: Some(Money4::from_scaled(20_000)),
             cache_read: Some(Money4::from_scaled(1_000)),
             cache_write: Some(Money4::from_scaled(12_500)),
+            image_output: None,
         };
 
         assert_eq!(
@@ -1843,6 +1959,37 @@ mod tests {
             compute_batch_usage_cost(&usage, rates, BatchPricingPolicy::VertexHalfNonCachedRates,)
                 .expect("Vertex price"),
             Some(Money4::from_scaled(240))
+        );
+    }
+
+    #[test]
+    fn batch_pricing_charges_image_tokens_at_configured_image_rate() {
+        let usage = usage_summary_from_value(Some(&json!({
+            "prompt_tokens": 0,
+            "completion_tokens": 1_200,
+            "completion_tokens_details": {"image_tokens": 1_000},
+            "total_tokens": 1_200
+        })))
+        .expect("usage");
+        let mut rates = BatchRates {
+            input: Some(Money4::from_scaled(10_000)),
+            output: Some(Money4::from_scaled(15_000)),
+            cache_read: None,
+            cache_write: None,
+            image_output: Some(Money4::from_scaled(300_000)),
+        };
+
+        // (200 * $1.50 + 1000 * $30) / 1M, halved: $0.01515 rounds to $0.0152.
+        assert_eq!(
+            compute_batch_usage_cost(&usage, rates, BatchPricingPolicy::HalfAllTokenRates)
+                .expect("image batch price"),
+            Some(Money4::from_scaled(152))
+        );
+        rates.image_output = None;
+        assert_eq!(
+            compute_batch_usage_cost(&usage, rates, BatchPricingPolicy::HalfAllTokenRates)
+                .expect("text batch price"),
+            Some(Money4::from_scaled(9))
         );
     }
 
@@ -1859,6 +2006,7 @@ mod tests {
             output: Some(Money4::ZERO),
             cache_read: None,
             cache_write: None,
+            image_output: None,
         };
 
         assert_eq!(
@@ -2058,6 +2206,7 @@ mod tests {
             output_cost_per_million_tokens: Money4::from_scaled(20_000),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            image_output_cost_per_million_tokens: None,
         });
         let occurred_at = OffsetDateTime::now_utc();
         let scope = BudgetScope::User {
@@ -2704,6 +2853,7 @@ mod tests {
             output_cost_per_million_tokens: Money4::from_scaled(20_000),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            image_output_cost_per_million_tokens: None,
         });
         let service_with = |route: ModelRoute| {
             GatewayService::new(
@@ -2742,6 +2892,7 @@ mod tests {
             output_cost_per_million_tokens: Money4::from_scaled(20_000),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            image_output_cost_per_million_tokens: None,
         });
         let mut second = first.clone();
         second.id = Uuid::new_v4();
@@ -2780,6 +2931,7 @@ mod tests {
             output_cost_per_million_tokens: Money4::from_scaled(20_000),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            image_output_cost_per_million_tokens: None,
         });
         let mut second = first.clone();
         second.id = Uuid::new_v4();
@@ -2861,6 +3013,7 @@ mod tests {
             output_cost_per_million_tokens: Money4::from_scaled(20_000),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            image_output_cost_per_million_tokens: None,
         });
         let provider = openai_provider(&route.provider_key);
         let service = GatewayService::new(
@@ -3086,6 +3239,7 @@ mod tests {
             output_cost_per_million_tokens: Money4::from_scaled(20_000),
             cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
             cache_write_cost_per_million_tokens: None,
+            image_output_cost_per_million_tokens: None,
         });
         let provider = openai_provider(&route.provider_key);
         let mut conflicting_catalog_pricing = pricing_record(Some(256_000));
@@ -3196,6 +3350,7 @@ mod tests {
             output_cost_per_million_tokens: Money4::from_scaled(50_000),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: Some(Money4::from_scaled(15_000)),
+            image_output_cost_per_million_tokens: None,
         });
         let service = GatewayService::new(
             Arc::new(UsageAccountingRepo::default()),
@@ -3232,6 +3387,7 @@ mod tests {
             output_cost_per_million_tokens: Money4::ZERO,
             cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
             cache_write_cost_per_million_tokens: None,
+            image_output_cost_per_million_tokens: None,
         });
         let repo = Arc::new(UsageAccountingRepo::default());
         let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
@@ -3282,6 +3438,7 @@ mod tests {
             output_cost_per_million_tokens: Money4::from_scaled(20_000),
             cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
             cache_write_cost_per_million_tokens: Some(Money4::from_scaled(12_500)),
+            image_output_cost_per_million_tokens: None,
         });
         let repo = Arc::new(UsageAccountingRepo::default());
         let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
@@ -3420,6 +3577,7 @@ mod tests {
             output_cost_per_million_tokens: Money4::from_scaled(20_000),
             cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
             cache_write_cost_per_million_tokens: None,
+            image_output_cost_per_million_tokens: None,
         });
         let repo = Arc::new(UsageAccountingRepo::default());
         let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
@@ -3463,6 +3621,7 @@ mod tests {
             output_cost_per_million_tokens: Money4::from_scaled(20_000),
             cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
             cache_write_cost_per_million_tokens: Some(Money4::from_scaled(12_500)),
+            image_output_cost_per_million_tokens: None,
         });
         let repo = Arc::new(UsageAccountingRepo::default());
         let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
@@ -3534,4 +3693,6 @@ mod tests {
         assert!(reason.starts_with("invalid_cache_token_usage:"));
         assert!(reason.contains(";pricing_unavailable:"));
     }
+
+    mod reported_cost_and_image_usage;
 }

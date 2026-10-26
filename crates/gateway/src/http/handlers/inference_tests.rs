@@ -4,15 +4,16 @@ use async_trait::async_trait;
 use axum::{Extension, Json, body::to_bytes, extract::State, http::HeaderMap, response::Response};
 use gateway_core::{
     BudgetCadence, BudgetRepository, BudgetScope, BudgetSettings, CoreChatRequest,
-    CoreEmbeddingsRequest, CoreResponsesRequest, Money4, ProviderCapabilities, ProviderClient,
-    ProviderError, ProviderRequestContext, ProviderStream, RequestAttemptStatus, RequestLogDetail,
-    RequestLogQuery,
+    CoreEmbeddingsRequest, CoreResponsesRequest, ImagesRequest, Money4, ProviderCapabilities,
+    ProviderClient, ProviderError, ProviderRequestContext, ProviderStream, RequestAttemptStatus,
+    RequestLogDetail, RequestLogQuery,
 };
 use serde_json::{Value, json};
 use tower_http::request_id::RequestId;
 
 use super::{
-    AppError, v1_chat_completions, v1_decisions, v1_embeddings, v1_messages_inner, v1_responses,
+    AppError, v1_chat_completions, v1_decisions, v1_embeddings, v1_images, v1_messages_inner,
+    v1_responses,
 };
 use crate::http::{
     state::AppState,
@@ -25,6 +26,7 @@ enum Endpoint {
     Responses,
     Messages,
     Embeddings,
+    Images,
     Decisions,
 }
 
@@ -97,6 +99,21 @@ impl Endpoint {
                 }))
                 .unwrap();
                 v1_embeddings(
+                    State(state),
+                    request_id,
+                    headers,
+                    Default::default(),
+                    auth,
+                    Json(request),
+                )
+                .await
+            }
+            Self::Images => {
+                let request = serde_json::from_value(json!({
+                    "model": "fast", "prompt": "hello",
+                }))
+                .unwrap();
+                v1_images(
                     State(state),
                     request_id,
                     headers,
@@ -209,6 +226,14 @@ impl ProviderClient for RecordingProvider {
         _context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
         panic!("inference endpoints must not dispatch embeddings")
+    }
+
+    async fn images(
+        &self,
+        _request: &ImagesRequest,
+        _context: &ProviderRequestContext,
+    ) -> Result<Value, ProviderError> {
+        panic!("inference endpoints must not dispatch images")
     }
 }
 
@@ -352,6 +377,7 @@ async fn inference_endpoints_reject_exhausted_budget_before_dispatch() {
         (Endpoint::Messages, false),
         (Endpoint::Messages, true),
         (Endpoint::Embeddings, false),
+        (Endpoint::Images, false),
         (Endpoint::Decisions, false),
     ] {
         let (_directory, state, provider) = setup().await;
@@ -386,12 +412,13 @@ async fn inference_endpoints_reject_exhausted_budget_before_dispatch() {
         assert_eq!(error.0.http_status_code(), 422);
         assert!(provider.calls.lock().unwrap().is_empty());
         let metrics = state.metrics.test_snapshot();
-        // Decisions and embeddings record their own request metric, never the
-        // chat one.
+        // Decisions, embeddings and images record their own request metric,
+        // never the chat one.
         let request_outcomes = match endpoint {
             Endpoint::Decisions => {
                 assert_eq!(metrics.requests, 0);
                 assert!(metrics.embeddings_requests.is_empty());
+                assert!(metrics.images_requests.is_empty());
                 metrics
                     .decisions_requests
                     .iter()
@@ -404,8 +431,22 @@ async fn inference_endpoints_reject_exhausted_budget_before_dispatch() {
             Endpoint::Embeddings => {
                 assert_eq!(metrics.requests, 0);
                 assert!(metrics.decisions_requests.is_empty());
+                assert!(metrics.images_requests.is_empty());
                 metrics
                     .embeddings_requests
+                    .iter()
+                    .map(|(request, count)| {
+                        assert_eq!(*count, 1);
+                        request.outcome.as_str()
+                    })
+                    .collect()
+            }
+            Endpoint::Images => {
+                assert_eq!(metrics.requests, 0);
+                assert!(metrics.decisions_requests.is_empty());
+                assert!(metrics.embeddings_requests.is_empty());
+                metrics
+                    .images_requests
                     .iter()
                     .map(|(request, count)| {
                         assert_eq!(*count, 1);
@@ -417,6 +458,7 @@ async fn inference_endpoints_reject_exhausted_budget_before_dispatch() {
                 assert_eq!(metrics.requests, 1);
                 assert!(metrics.decisions_requests.is_empty());
                 assert!(metrics.embeddings_requests.is_empty());
+                assert!(metrics.images_requests.is_empty());
                 metrics
                     .request_outcomes
                     .keys()

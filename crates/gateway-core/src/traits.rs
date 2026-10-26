@@ -58,7 +58,7 @@ use crate::{
     },
     error::{ProviderError, RouteError, StoreError},
     protocol::{
-        core::{ChatRequest, EmbeddingsRequest, ResponsesRequest},
+        core::{ChatRequest, EmbeddingsRequest, ImagesRequest, ResponsesRequest},
         decisions::{DecisionsRequest, ProviderDecisionsResponse},
     },
     rate_limits::{
@@ -2046,6 +2046,20 @@ pub trait ProviderClient: Send + Sync {
         let _ = (request, context);
         Err(ProviderError::NotImplemented(format!(
             "{} does not support token counting",
+            self.provider_type()
+        )))
+    }
+
+    /// Generate images through an Images API upstream. Returns the upstream
+    /// `{created, data: [{b64_json, media_type}], usage}` body as JSON.
+    async fn images(
+        &self,
+        request: &ImagesRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<Value, ProviderError> {
+        let _ = (request, context);
+        Err(ProviderError::NotImplemented(format!(
+            "{} does not support image generation",
             self.provider_type()
         )))
     }

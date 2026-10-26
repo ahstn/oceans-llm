@@ -15,8 +15,8 @@ use crate::model_resolution::{
     alias_chain_reasoning_ceiling, execution_model_from_snapshot, load_missing_alias_targets,
 };
 use gateway_core::{
-    GatewayError, GatewayModel, ModelRepository, ModelRoute, ProviderConnection,
-    ProviderRepository, ReasoningEffort,
+    GatewayError, GatewayModel, ModelRepository, ModelRoute, ProviderCapabilities,
+    ProviderConnection, ProviderRepository, ReasoningEffort,
 };
 use serde::Serialize;
 use uuid::Uuid;
@@ -241,7 +241,7 @@ fn route_metadata(
         catalog_metadata: catalog.metadata,
         merge_report: catalog.merge_report,
         deprecated_date: catalog.deprecated_date,
-        modalities: catalog.modalities,
+        modalities: with_image_generation(catalog.modalities, transport),
         pricing,
         pricing_source,
         display_name: catalog.display_name,
@@ -251,6 +251,29 @@ fn route_metadata(
 
 fn gated(transport: bool, catalog: Option<bool>) -> Option<bool> {
     if transport { catalog } else { Some(false) }
+}
+
+/// A route opted into `/v1/images` outputs images even when the catalog (models.dev has no
+/// image-only models such as `openai/gpt-image-*`) lacks modality data. The images prompt is
+/// text, and only a chat-capable transport also answers with text.
+fn with_image_generation(
+    modalities: Option<PricingCatalogModalitiesDocument>,
+    transport: ProviderCapabilities,
+) -> Option<PricingCatalogModalitiesDocument> {
+    if !transport.images {
+        return modalities;
+    }
+    let mut modalities = modalities.unwrap_or_default();
+    if modalities.input.is_empty() {
+        modalities.input.push("text".to_string());
+    }
+    if modalities.output.is_empty() && (transport.chat_completions || transport.responses) {
+        modalities.output.push("text".to_string());
+    }
+    if !modalities.output.iter().any(|value| value == "image") {
+        modalities.output.push("image".to_string());
+    }
+    Some(modalities)
 }
 
 fn summarize(id: String, routes: Vec<RouteMetadata>) -> ModelMetadata {

@@ -17,6 +17,7 @@ pub enum RoutingEndpoint {
     Messages,
     Responses,
     Embeddings,
+    Images,
     Decisions,
 }
 
@@ -34,6 +35,7 @@ impl RoutingEndpoint {
             Self::Messages => "messages",
             Self::Responses => "responses",
             Self::Embeddings => "embeddings",
+            Self::Images => "images",
             Self::Decisions => "decisions",
         }
     }
