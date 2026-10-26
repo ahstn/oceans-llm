@@ -57,9 +57,8 @@ Set these values in `deploy/.env` before treating the stack as usable:
 - `GATEWAY_API_KEY`
 - `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD`
 - `OPENAI_API_KEY`
-- `OPENAI_API_KEY_SECONDARY`
 
-The mounted gateway config references both OpenAI keys and the bootstrap admin password through env-backed secrets. Empty provider keys can let the containers start, but provider-backed requests will fail when those routes execute.
+The mounted gateway config references the OpenAI key and the bootstrap admin password through env-backed secrets. Empty provider keys can let the containers start, but provider-backed requests will fail when those routes execute.
 
 ## What Gets Created
 

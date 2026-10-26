@@ -22,7 +22,7 @@ Backend gateway verification proves that an authenticated OpenAI-compatible requ
 Preconditions:
 
 - `control-oceans-admin doctor` passes for the stack owned by this verification run.
-- `OPENROUTER_API_KEY` is available through Mise. The harness never reads, prints, or saves it.
+- `OPENROUTER_API_KEY` resolves through fnox, which hands it to `dev-stack` (see Launch in [SKILL.md](../SKILL.md)). The harness never reads, prints, or saves it.
 - The operator accepts one short paid request. Use only the synthetic command in the driver.
 - Root `gateway.yaml` keeps the default guardrail policy in `audit` mode. Under another mode, update the expected action before driving.
 

@@ -32,13 +32,13 @@ Preconditions:
 
 - Use the owned local stack and require `control-oceans-admin doctor` to pass. The platform administrator needs the `mcp`, `api_keys`, and `mcp_invocations` pages plus `create_api_key` and `revoke_api_key` actions. Root `gateway.yaml` grants these through the configured permission groups.
 - `launch` sets `GATEWAY_CLIENT_CONFIG_BASE_URL` to the run's gateway URL unless you export another origin first. This value controls generated client configuration. The driver expects the endpoint the gateway generates from it (trailing `/` and a final `/v1` removed, then `/mcp`), so a candidate file needs `expected_gateway_url` only to assert a different value.
-- Load the required credential aliases into the gateway before launch, either exported in the launching shell or set in a gitignored `mise.local.toml`. The gateway reads them only at startup. `launch` records which `OCEANS_MCP_DISCOVERY_*` names its stack environment resolved (names only, never values) in `stack-env.json`, and the driver marks any candidate whose alias is missing from that record `blocked`. Exporting an alias after launch, or only in the shell that runs `drive`, has no effect; relaunch instead. The example maps these sources to aliases:
+- Export the required credential aliases in the launching shell before launch, for example `export OCEANS_MCP_DISCOVERY_EXA_VERIFY="$(fnox get EXA_API_KEY)"`. The gateway reads them only at startup. `launch` records which `OCEANS_MCP_DISCOVERY_*` names its stack environment resolved (names only, never values) in `stack-env.json`, and the driver marks any candidate whose alias is missing from that record `blocked`. Exporting an alias after launch, or only in the shell that runs `drive`, has no effect; relaunch instead. The example maps these sources to aliases:
 
   | Source | Alias |
   | --- | --- |
   | `gh auth token --hostname github.com` | `OCEANS_MCP_DISCOVERY_GITHUB_VERIFY` |
-  | `EXA_API_KEY` (Mise) | `OCEANS_MCP_DISCOVERY_EXA_VERIFY` |
-  | `REUI_LICENSE_KEY` (Mise, a ReUI Pro license) | `OCEANS_MCP_DISCOVERY_REUI_VERIFY` |
+  | `fnox get EXA_API_KEY` | `OCEANS_MCP_DISCOVERY_EXA_VERIFY` |
+  | `fnox get REUI_LICENSE_KEY` (a ReUI Pro license) | `OCEANS_MCP_DISCOVERY_REUI_VERIFY` |
   | Any invalid value | `OCEANS_MCP_DISCOVERY_EXA_INVALID_VERIFY` |
   | Any invalid value | `OCEANS_MCP_DISCOVERY_REUI_INVALID_VERIFY` |
 

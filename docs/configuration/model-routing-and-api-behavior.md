@@ -72,8 +72,8 @@ models:
           vision: true
           json_schema: true
           developer_role: true
-      - provider: openai-secondary
-        upstream_model: gpt-5-mini
+      - provider: openrouter
+        upstream_model: openai/gpt-5-mini
         priority: 10
         weight: 1
         enabled: true
@@ -94,7 +94,7 @@ See [Configuration Reference](configuration-reference.md) for complete field syn
 
 ### Use the GPT-6 Astra routes
 
-The root and deployment gateway configurations route `openai-fast` and `openai-fast-v2` to `gpt-6-astra`. The root local configuration also exposes `gpt-6-astra` directly. The two OpenAI routes retain their 9:1 weights and existing credential references.
+The root and deployment gateway configurations route `openai-fast` and `openai-fast-v2` to `gpt-6-astra`. The root local configuration also exposes `gpt-6-astra` directly. Each uses the single `openai-prod` route and its `OPENAI_API_KEY` credential.
 
 Clients must follow the [official OpenAI migration guide](https://developers.openai.com/api/docs/guides/latest-model):
 
@@ -116,7 +116,7 @@ For example, send this body to `/v1/responses` through an authorized gateway key
 
 The gateway forwards client parameters; these route changes do not remove unsupported fields or change client reasoning settings. General route capabilities do not express Astra's endpoint-specific tool restriction. Check client request bodies before switching existing traffic.
 
-Apply changed configuration through the normal config-seeding workflow. Editing these files does not update an already seeded deployment. Confirm Astra access for both OpenAI credentials, refresh pricing metadata, and verify a Responses request before enabling traffic. Configuration validation does not prove provider access or live inference. See [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md) for pricing refresh and missing-price behavior.
+Apply changed configuration through the normal config-seeding workflow. Editing these files does not update an already seeded deployment. Confirm Astra access for the OpenAI credential, refresh pricing metadata, and verify a Responses request before enabling traffic. Configuration validation does not prove provider access or live inference. See [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md) for pricing refresh and missing-price behavior.
 
 ## Understand requested and resolved models
 
@@ -227,8 +227,8 @@ models:
         priority: 10
         weight: 3
       - id: secondary
-        provider: openai-secondary
-        upstream_model: gpt-6-sol
+        provider: openrouter
+        upstream_model: openai/gpt-6-sol
         priority: 10
         weight: 1
 ```

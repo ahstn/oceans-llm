@@ -150,6 +150,7 @@
         "crates/gateway/src/local_demo_seed/mod.rs",
         "gateway.yaml",
         "mise.toml",
+        "fnox.toml",
         "Cargo.toml",
         "Cargo.lock",
         ".agents/skills/verify-oceans-admin/scripts/control-oceans-admin",

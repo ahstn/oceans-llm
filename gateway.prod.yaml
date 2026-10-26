@@ -107,14 +107,6 @@ providers:
       kind: bearer
       token: env.OPENAI_API_KEY
 
-  - id: openai-secondary
-    type: openai_compat
-    base_url: https://api.openai.com/v1
-    pricing_provider_id: openai
-    auth:
-      kind: bearer
-      token: env.OPENAI_API_KEY_SECONDARY
-
   - id: vertex-adc
     type: gcp_vertex
     project_id: your-gcp-project
@@ -132,14 +124,10 @@ providers:
 
 models:
   - id: openai-fast-v2
-    description: GPT-6 Astra via OpenAI with weighted route selection; use Responses for tools
+    description: GPT-6 Astra via OpenAI; use Responses for tools
     routes:
       - provider: openai-prod
         upstream_model: gpt-6-astra
-        weight: 9.0
-      - provider: openai-secondary
-        upstream_model: gpt-6-astra
-        weight: 1.0
 
   - id: openai-fast
     description: Alias kept for backward compatibility

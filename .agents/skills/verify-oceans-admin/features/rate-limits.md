@@ -22,7 +22,7 @@ Preconditions:
 
 - `control-oceans-admin doctor` passes, and you are signed in as the seeded `admin@local`.
 - The default `gateway.yaml` defines no `rate_limits.policies`, so the page starts empty. A reused `gateway.db` may hold policies from earlier runs; delete any `verify-*` policy first.
-- `rate-limits-enforce` sends one short paid request. Follow [Live LLM requests](./live-llm-requests.md): `OPENROUTER_API_KEY` must be in the launch environment, and you create a temporary key limited to `deepseek-v4.1-flash` through [API keys](./api-keys.md). Without the credential, record `rate-limits-enforce` as `blocked`. The rejection itself never reaches the provider.
+- `rate-limits-enforce` sends one short paid request. Follow [Live LLM requests](./live-llm-requests.md): `OPENROUTER_API_KEY` must resolve through fnox for the launched stack, and you create a temporary key limited to `deepseek-v4.1-flash` through [API keys](./api-keys.md). Without the credential, record `rate-limits-enforce` as `blocked`. The rejection itself never reaches the provider.
 
 - **Open.** Choose `Rate Limits`. The `Rate Limits` heading and the `Policies` card are visible, with `No rate limits` on a fresh seed.
 - **Create.** Choose `New rate limit`. Fill `Name` with a unique `verify-<run id>`, leave `Traffic` as `Inference requests`, choose `API key` in `Counted per`, choose the temporary key in `Applies to`, set `Limit` to `1`, keep `Per minute (sliding)`, and choose `Create rate limit`. The row shows `1 requests / minute`, `Inference requests`, `API key: <key name>`, and `Enforced`.

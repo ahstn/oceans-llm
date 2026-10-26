@@ -5,7 +5,7 @@
 toml-version = "v1.0.0"
 
 [files]
-exclude = ["**/node_modules/**", "videos/**", "**/mise.local.toml"]
+exclude = ["**/node_modules/**", "videos/**", "**/mise.local.toml", "**/fnox.local.toml"]
 
 [format.rules]
 # Matches the width most dependency tables already use.
