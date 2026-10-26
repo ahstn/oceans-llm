@@ -850,7 +850,7 @@ function ClientConfigDialog({
                     onActiveKeyChange(value)
                   }
                 }}
-                variant="outline"
+                variant="checked"
                 size="sm"
                 spacing={1}
                 className="max-w-full min-w-0 flex-wrap"
@@ -858,7 +858,11 @@ function ClientConfigDialog({
               >
                 {clientConfigurations.map((config) => (
                   <ToggleGroupItem key={config.key} value={config.key} aria-label={config.label}>
-                    <AgentHarnessLabel className="px-2" harnessKey={config.key}>
+                    <AgentHarnessLabel
+                      className="px-2"
+                      harnessKey={config.key}
+                      iconClassName="group-data-[state=on]/toggle:text-primary"
+                    >
                       {config.label}
                     </AgentHarnessLabel>
                   </ToggleGroupItem>

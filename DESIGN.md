@@ -294,6 +294,11 @@ Where motion appears:
 - **Destructive:** a rose-tinted fill until confirmed.
 - **Active:** non-menu buttons can translate down by `1px`; keep this tactile and subtle.
 
+### Toggles
+
+- **On cards:** `ToggleGroup` with the `outline` variant. Hover and pressed take `bg-muted`, one step lighter than the card.
+- **On popovers and dialogs:** the `checked` variant. `bg-muted` is darker than `--popover`, so hover takes a neutral ink wash with a stronger hairline, and the checked item takes a lilac ring and tint with ink text. A leading icon turns lilac with `group-data-[state=on]/toggle:text-primary`. The Client config harness picker on Models is the reference.
+
 ### Chips
 
 - **Style:** badges are compact pills (`h-5`, `rounded-4xl`, `0.75rem` text) with variants for success, warning, destructive, outline and secondary.

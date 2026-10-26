@@ -81,16 +81,18 @@ export function AgentHarnessLabel({
   children,
   className,
   harnessKey,
+  iconClassName,
   iconSize = 16,
 }: {
   children: ReactNode
   className?: string
   harnessKey: string
+  iconClassName?: string
   iconSize?: number
 }) {
   return (
     <span className={cn('inline-flex items-center gap-1.5', className)}>
-      <AgentHarnessIcon harnessKey={harnessKey} size={iconSize} />
+      <AgentHarnessIcon className={iconClassName} harnessKey={harnessKey} size={iconSize} />
       <span>{children}</span>
     </span>
   )
