@@ -99,6 +99,7 @@ async fn model_group_info_converts_per_million_prices_to_per_token_costs() {
         output_cost_per_million_tokens: Money4::from_scaled(200_000),
         cache_read_cost_per_million_tokens: Some(Money4::from_scaled(2_000)),
         cache_write_cost_per_million_tokens: Some(Money4::from_scaled(50_000)),
+        image_output_cost_per_million_tokens: None,
     });
     let configured = group_info(model("gpt"), vec![priced], provider()).await;
     assert_costs(&configured, &[4e-6, 20e-6, 0.2e-6, 5e-6]);
@@ -127,6 +128,7 @@ async fn model_group_info_keeps_known_prices_when_a_cache_rate_is_missing() {
         output_cost_per_million_tokens: Money4::from_scaled(20_000),
         cache_read_cost_per_million_tokens: None,
         cache_write_cost_per_million_tokens: None,
+        image_output_cost_per_million_tokens: None,
     });
     let configured = group_info(model("gpt"), vec![partial], provider()).await;
     assert_costs(&configured, &[1e-6, 2e-6]);

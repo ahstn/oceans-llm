@@ -467,6 +467,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V74__external_mcp_server_status_revision.sql"
         ),
     },
+    MigrationManifest {
+        version: 75,
+        name: "usage_image_output_tokens",
+        checksum: "V75__usage_image_output_tokens.sql",
+        libsql_sql: include_str!("../migrations/V75__usage_image_output_tokens.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V75__usage_image_output_tokens.sql"),
+    },
 ];
 
 #[cfg(test)]

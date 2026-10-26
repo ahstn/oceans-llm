@@ -753,6 +753,7 @@ impl ProviderClient for BedrockProvider {
             responses: true,
             stream: true,
             embeddings: false,
+            images: false,
             decisions: false,
             tools: true,
             vision: true,

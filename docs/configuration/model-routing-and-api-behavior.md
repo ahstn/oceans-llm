@@ -15,6 +15,8 @@ The gateway exposes these authenticated endpoints:
 | `POST /v1/chat/completions` | OpenAI Chat Completions | `chat_completions: true` |
 | `POST /v1/responses` | OpenAI Responses | `responses: true` |
 | `POST /v1/embeddings` | OpenAI Embeddings | `embeddings: true` |
+| `POST /v1/images` | OpenAI Images generation | `images: true` |
+| `POST /v1/images/generations` | OpenAI Images generation, at the OpenAI SDK path | `images: true` |
 | `POST /v1/decisions` | Decisions, in the System One or OpenAI format | `decisions: true` |
 | `POST /v1/systemone` | Decisions, in the System One format only | `decisions: true` |
 | `POST /v1/messages` | Anthropic Messages | Chat-capable route with provider support |
@@ -23,9 +25,9 @@ The gateway exposes these authenticated endpoints:
 | `POST /messages/count_tokens` | Anthropic Messages token counting alias | Chat-capable route whose provider has an upstream count API |
 | `POST /api/v1/batches` | Durable batch admission for Chat Completions, Responses, or Embeddings items | Capability matching the batch `endpoint` |
 
-Clients whose base URL stops at the gateway root can drop the `/v1` prefix. `POST /chat/completions`, `POST /responses`, `POST /embeddings`, `POST /decisions`, and `GET /models` share the handler, authentication, and body limit of their `/v1` endpoint. These aliases sit beside the admin UI (served under `/admin` by default) and the `/api/*` admin and batch routes without overlapping them. `/v1/model-metadata` and `/api/v1/batches` have no unversioned alias. `/model_group/info` has no `/v1` form, because LiteLLM serves it at the root.
+Clients whose base URL stops at the gateway root can drop the `/v1` prefix. `POST /chat/completions`, `POST /responses`, `POST /embeddings`, `POST /images`, `POST /images/generations`, `POST /decisions`, and `GET /models` share the handler, authentication, and body limit of their `/v1` endpoint. These aliases sit beside the admin UI (served under `/admin` by default) and the `/api/*` admin and batch routes without overlapping them. `/v1/model-metadata` and `/api/v1/batches` have no unversioned alias. `/model_group/info` has no `/v1` form, because LiteLLM serves it at the root.
 
-Provider support varies by API family. A provider that supports Chat Completions does not necessarily support Responses, embeddings, Anthropic Messages, or every hosted tool. Use [Provider API Compatibility](../reference/provider-api-compatibility.md) as the current support matrix.
+Provider support varies by API family. A provider that supports Chat Completions does not necessarily support Responses, embeddings, image generation, Anthropic Messages, or every hosted tool. Use [Provider API Compatibility](../reference/provider-api-compatibility.md) as the current support matrix.
 
 ## Follow the request path
 
@@ -263,7 +265,7 @@ If a database error prevents a soft affinity refresh, the gateway preserves the 
 
 An active binding takes precedence over the routing strategy while its route remains eligible. Adding a more preferred route does not move active sessions. After the idle deadline, or when the bound route is disabled, removed, changed, or no longer eligible, the next request uses the routing strategy again. A late completion from an old binding cannot refresh a replacement binding.
 
-Affinity applies to Chat Completions, Responses, and Anthropic Messages. The API family forms part of the execution fingerprint because provider state and cache behavior can differ by API. Switching API families within a session can therefore create a new binding. The routing strategy also applies to embeddings and decisions, which do not use session affinity. Durable batch admission keeps its existing route selection and stored route lifecycle.
+Affinity applies to Chat Completions, Responses, and Anthropic Messages. The API family forms part of the execution fingerprint because provider state and cache behavior can differ by API. Switching API families within a session can therefore create a new binding. The routing strategy also applies to embeddings, images, and decisions, which do not use session affinity. Durable batch admission keeps its existing route selection and stored route lifecycle.
 
 The idle timeout controls gateway routing state. It does not set provider cache retention or prove a cache hit. Provider eviction, account and region boundaries, prompt changes, and routing within a provider can still affect cache reuse. Keep OpenRouter's own provider policy stable when cache continuity depends on its selected upstream.
 
@@ -292,6 +294,7 @@ Capabilities remove incompatible routes before provider execution:
 | `chat_completions` | `/v1/chat/completions` or a compatible chat path |
 | `responses` | `/v1/responses` |
 | `embeddings` | `/v1/embeddings` |
+| `images` | `/v1/images` or `/v1/images/generations` |
 | `decisions` | `/v1/decisions` or `/v1/systemone` |
 | `stream` | Streaming output |
 | `tools` | Function, custom, MCP, or other supported tools |
@@ -302,6 +305,20 @@ Capabilities remove incompatible routes before provider execution:
 Effective support is the intersection of configured capability metadata and provider runtime support. Capability defaults are permissive, so partial provider routes should explicitly disable unsupported families and features.
 
 `decisions` defaults to `false`. A decisions route must explicitly enable it and disable `chat_completions`, `responses`, `embeddings`, and `stream`. Current Decisions transports are native TypeSafe, `openai_compat` routes with `compatibility.openai_compat.decisions_api: openai`, and the alpha route with `compatibility.openrouter.api: decisions`.
+
+`images` also defaults to `false`, so image generation is opt-in per route. Only `openai_compat` and `gcp_cloud_run_openai_compat` providers serve it. Enabling it on any other provider type, or on a decisions route, fails startup. An image-only route should also disable the API families its model does not serve:
+
+```yaml
+routes:
+  - provider: openrouter
+    upstream_model: openai/gpt-image-2.5-flare
+    capabilities:
+      images: true
+      chat_completions: false
+      responses: false
+      embeddings: false
+      stream: false
+```
 
 For example, an embedding-only route should normally disable unrelated capabilities:
 
@@ -362,7 +379,7 @@ The context value is metadata, not request-time token enforcement. Oceans does n
 | `display_name`, `name` | Catalog display name, else the model key; `name` is the OpenRouter spelling |
 | `description`, `alias_of` | Gateway model configuration |
 | `context_length`, `max_input_tokens`, `max_tokens` | Conservative limits across enabled routes |
-| `architecture` | Input and output modalities every route with catalog data shares; decision-capable models add a `decisions` output modality |
+| `architecture` | Input and output modalities every route with catalog data shares; decision-capable models add a `decisions` output modality and image-capable models add an `image` output modality |
 | `capabilities` | Anthropic `ModelCapabilities` shape (see below) |
 | `supported_endpoint_types` | new-api endpoint types, preferred first (see below) |
 | `client_hints` | Harness settings for chat-shaped models (see below) |
@@ -391,6 +408,8 @@ The context value is metadata, not request-time token enforcement. Oceans does n
 omp (Oh My Pi) can also read this field with `discovery.type: proxy`. That mode ignores prices and the Responses endpoint type, and it sends no reasoning effort to OpenAI-family models. Configure omp with `discovery.type: litellm` instead, as the next section shows.
 
 Decision models served through `POST /v1/decisions` have no new-api endpoint type, so their `supported_endpoint_types` is empty and they carry no `client_hints`. Following OpenRouter, they report `decisions` in `architecture.output_modalities`. Proxy-discovery clients that do not read that modality may list them as chat models.
+
+Models with an eligible `capabilities.images` route report `image` in `architecture.output_modalities`, following OpenRouter. The catalog has no modality data for image-only models such as `openai/gpt-image-2.5-flare`, so such a route reports `text` input (the prompt) and `image` output. It also reports `text` output when the route serves Chat Completions or Responses. `GET /v1/model-metadata` adds the same modalities to that route's `modalities`. An image-only model has no chat endpoint, so its `supported_endpoint_types` is empty and it carries no `client_hints`.
 
 Visibility does not guarantee that a route can execute every API family. A model can be visible while all routes are disabled, non-viable, or incompatible with the requested operation.
 
@@ -575,6 +594,14 @@ See [TypeSafe](../providers/typesafe.md) for the System One request shape and [P
 `POST /v1/embeddings` requires the `embeddings` capability. OpenAI-compatible routes support provider-compatible embeddings endpoints. Native Vertex text embeddings require an explicitly supported Google embedding model and text input.
 
 The Vertex mapper rejects unsupported token arrays, nested arrays, non-string values, empty input, multimodal payloads, and `encoding_format: "base64"` before provider execution. See [Provider API Compatibility](../reference/provider-api-compatibility.md) for the current model list.
+
+### Images
+
+`POST /v1/images` and `POST /v1/images/generations` generate images through the OpenAI Images API and require the `images` capability. A request needs `model` and `prompt`. Other fields, such as `n`, `size`, `quality`, `aspect_ratio`, or `input_references`, pass to the provider unchanged. The gateway sets `model` to the route's upstream model and sends the request to `{base_url}/images`.
+
+The response is the provider's body: `created`, `data[]` entries with `b64_json` and `media_type`, and `usage`. It has no `model` field. If a provider adds one, the gateway replaces it with the gateway model name, so the upstream name never reaches the caller.
+
+Image generation does not stream. A request with `stream: true` gets 400 before model resolution, with no request log. Prompt guardrails inspect the request. Model-response guardrails do not run on generated images. Image requests still go through gateway authentication, model grants, rate limits, budgets, request logs, provider attempts, and usage accounting. The `inference` API key scope covers them. Image requests record their own request metrics instead of the chat request metrics; see [Images Request Metrics](../operations/observability-and-request-logs.md#images-request-metrics) for what they record.
 
 ## Diagnose routing failures
 

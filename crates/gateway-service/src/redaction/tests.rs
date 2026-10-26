@@ -1,13 +1,15 @@
 use std::collections::BTreeMap;
 
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::{
     MAX_INLINE_REQUEST_BYTES, PayloadSecretRedactor, RequestLogPayloadCaptureMode,
     RequestLogPayloadPolicy, is_sensitive_json_key, mask_secret_leaf_values, parse_payload_path,
     redact_header_value, redact_json_value, redact_json_value_with_policy,
     sanitize_diagnostic_headers, truncate_large_payload_fields,
+    truncate_large_payload_fields_with_count,
 };
+use crate::payload_bounding::{bound_request_payload_after_known_fields, serialized_size};
 
 #[test]
 fn request_policy_enforces_the_absolute_inline_ceiling() {
@@ -541,4 +543,239 @@ fn policy_metadata_records_secret_redaction_settings() {
         scanning.metadata_value()["secret_redaction"],
         json!({"tiers": ["credentials"]})
     );
+}
+
+fn png_data_url(base64_bytes: usize) -> String {
+    format!(
+        "data:image/png;base64,iVBORw0KGgo{}",
+        "A".repeat(base64_bytes)
+    )
+}
+
+/// Fernet-style encrypted reasoning state, which uses the URL-safe base64 alphabet.
+fn encrypted_reasoning_data(bytes: usize) -> String {
+    let mut data = String::from("gAAAAAB");
+    while data.len() < bytes {
+        data.push_str("Zm9v-_YmFy");
+    }
+    data
+}
+
+fn assert_blob_truncated(value: &Value, original: &str) {
+    assert_eq!(value["truncated"], true, "blob not truncated: {value}");
+    assert_eq!(value["size_bytes"], original.len());
+    assert_eq!(value["preview"], original[..96]);
+}
+
+/// Mirrors non-stream response logging: wrap, redact, reduce known large fields, and
+/// require the result to fit `response_max_bytes` so the whole-response marker is unused.
+fn logged_response_payload(payload: Value) -> Value {
+    let policy = RequestLogPayloadPolicy::default();
+    let stored = truncate_large_payload_fields(&redact_json_value_with_policy(&payload, &policy));
+    let stored_size = serialized_size(&stored).expect("stored payload serializes");
+    assert!(
+        stored_size <= policy.response_max_bytes,
+        "stored response is {stored_size} bytes and would hit the whole-payload fallback"
+    );
+    stored
+}
+
+#[test]
+fn bounds_chat_image_response_without_whole_payload_fallback() {
+    let image = png_data_url(1_500_000);
+    let reasoning = encrypted_reasoning_data(1_000_000);
+    let usage = json!({
+        "prompt_tokens": 12,
+        "completion_tokens": 1306,
+        "total_tokens": 1318,
+        "completion_tokens_details": {"reasoning_tokens": 16, "image_tokens": 1290}
+    });
+    let response = json!({
+        "id": "gen-1",
+        "object": "chat.completion",
+        "choices": [{
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+                "role": "assistant",
+                "content": "Here is your image.",
+                "images": [{"type": "image_url", "image_url": {"url": image}}],
+                "reasoning_details": [{
+                    "type": "reasoning.encrypted",
+                    "format": "google-gemini-v1",
+                    "index": 0,
+                    "data": reasoning
+                }]
+            }
+        }],
+        "usage": usage
+    });
+
+    let stored = logged_response_payload(json!({ "body": response }));
+
+    let message = &stored["body"]["choices"][0]["message"];
+    assert_blob_truncated(&message["images"][0]["image_url"]["url"], &image);
+    assert_eq!(message["images"][0]["type"], "image_url");
+    assert_blob_truncated(&message["reasoning_details"][0]["data"], &reasoning);
+    assert_eq!(
+        message["reasoning_details"][0]["type"],
+        "reasoning.encrypted"
+    );
+    assert_eq!(message["content"], "Here is your image.");
+    assert_eq!(stored["body"]["usage"], usage);
+}
+
+#[test]
+fn bounds_images_api_response_b64_json_without_whole_payload_fallback() {
+    let image = format!("iVBORw0KGgo{}", "A".repeat(1_260_000));
+    let usage = json!({
+        "prompt_tokens": 14,
+        "completion_tokens": 229,
+        "total_tokens": 243,
+        "cost": 0,
+        "is_byok": true,
+        "cost_details": {"upstream_inference_cost": 0.00694},
+        "completion_tokens_details": {"reasoning_tokens": 0, "image_tokens": 229}
+    });
+    let response = json!({
+        "created": 1_792_995_439,
+        "data": [{"b64_json": image, "media_type": "image/png"}],
+        "usage": usage
+    });
+
+    let stored = logged_response_payload(json!({ "body": response }));
+
+    assert_blob_truncated(&stored["body"]["data"][0]["b64_json"], &image);
+    assert_eq!(stored["body"]["data"][0]["media_type"], "image/png");
+    assert_eq!(stored["body"]["created"], 1_792_995_439);
+    assert_eq!(stored["body"]["usage"], usage);
+}
+
+#[test]
+fn bounds_streamed_image_and_reasoning_deltas() {
+    let image = png_data_url(1_500_000);
+    let reasoning = encrypted_reasoning_data(1_000_000);
+    let usage = json!({"prompt_tokens": 12, "completion_tokens": 1306, "total_tokens": 1318});
+    let payload = json!({
+        "stream": true,
+        "events": [
+            {"choices": [{"index": 0, "delta": {
+                "reasoning_details": [{"type": "reasoning.encrypted", "data": reasoning}]
+            }}]},
+            {"choices": [{"index": 0, "delta": {
+                "role": "assistant",
+                "images": [{"type": "image_url", "image_url": {"url": image}}]
+            }}]},
+            {"choices": [], "usage": usage}
+        ],
+        "usage": usage,
+        "error": null
+    });
+
+    let stored = logged_response_payload(payload);
+
+    let events = &stored["events"];
+    assert_blob_truncated(
+        &events[0]["choices"][0]["delta"]["reasoning_details"][0]["data"],
+        &reasoning,
+    );
+    assert_blob_truncated(
+        &events[1]["choices"][0]["delta"]["images"][0]["image_url"]["url"],
+        &image,
+    );
+    assert_eq!(events[1]["choices"][0]["delta"]["role"], "assistant");
+    assert_eq!(events[2]["usage"], usage);
+    assert_eq!(stored["usage"], usage);
+}
+
+#[test]
+fn bounds_multi_turn_image_edit_request_without_whole_payload_fallback() {
+    let previous_image = png_data_url(1_500_000);
+    let reasoning = encrypted_reasoning_data(1_000_000);
+    let user_image = png_data_url(600_000);
+    let request = json!({
+        "model": "google/gemini-3.1-flash-lite-image",
+        "modalities": ["image", "text"],
+        "messages": [
+            {"role": "user", "content": "Draw a red panda."},
+            {
+                "role": "assistant",
+                "content": "Here is your red panda.",
+                "images": [{"type": "image_url", "image_url": {"url": previous_image}}],
+                "reasoning_details": [{"type": "reasoning.encrypted", "data": reasoning}]
+            },
+            {"role": "user", "content": [
+                {"type": "text", "text": "Give it this hat."},
+                {"type": "image_url", "image_url": {"url": user_image}}
+            ]}
+        ]
+    });
+    let policy = RequestLogPayloadPolicy::default();
+    let redacted = redact_json_value_with_policy(&json!({"headers": {}, "body": request}), &policy);
+    let (storage, known_large_fields) = truncate_large_payload_fields_with_count(&redacted);
+
+    let (stored, truncated) = bound_request_payload_after_known_fields(
+        storage,
+        policy.request_max_bytes,
+        serialized_size(&redacted).ok(),
+        known_large_fields,
+    );
+
+    assert_eq!(known_large_fields, 3);
+    assert!(truncated);
+    assert!(stored.get("body").is_some(), "hard fallback: {stored}");
+    assert_eq!(stored["truncation"]["known_large_fields_truncated"], 3);
+    let messages = &stored["body"]["messages"];
+    assert_blob_truncated(
+        &messages[1]["images"][0]["image_url"]["url"],
+        &previous_image,
+    );
+    assert_blob_truncated(&messages[1]["reasoning_details"][0]["data"], &reasoning);
+    assert_eq!(messages[1]["content"], "Here is your red panda.");
+    assert_blob_truncated(&messages[2]["content"][1]["image_url"]["url"], &user_image);
+    assert_eq!(messages[2]["content"][0]["text"], "Give it this hat.");
+    assert_eq!(stored["body"]["modalities"], json!(["image", "text"]));
+}
+
+#[test]
+fn bounds_images_api_input_references() {
+    let reference = png_data_url(800_000);
+    let input = json!({"body": {
+        "model": "openai/gpt-image-2.5-flare",
+        "prompt": "make this scene look like a watercolor painting",
+        "input_references": [
+            {"type": "image_url", "image_url": {"url": reference}},
+            {"type": "image_url", "image_url": {"url": "https://example.com/photo.jpg"}}
+        ]
+    }});
+
+    let (truncated, count) = truncate_large_payload_fields_with_count(&input);
+
+    assert_eq!(count, 1);
+    let references = &truncated["body"]["input_references"];
+    assert_blob_truncated(&references[0]["image_url"]["url"], &reference);
+    assert_eq!(
+        references[1]["image_url"]["url"],
+        "https://example.com/photo.jpg"
+    );
+}
+
+#[test]
+fn url_safe_base64_is_only_treated_as_opaque_at_reasoning_paths() {
+    let opaque = encrypted_reasoning_data(400);
+    let input = json!({"body": {
+        "data": [{"b64_json": opaque}],
+        "choices": [{"message": {"reasoning_details": [
+            {"type": "reasoning.encrypted", "data": opaque},
+            {"type": "reasoning.encrypted", "data": "gAAAAAB-short_token"}
+        ]}}]
+    }});
+
+    let (truncated, count) = truncate_large_payload_fields_with_count(&input);
+
+    assert_eq!(count, 1);
+    assert_eq!(truncated["body"]["data"][0]["b64_json"], opaque);
+    let details = &truncated["body"]["choices"][0]["message"]["reasoning_details"];
+    assert_blob_truncated(&details[0]["data"], &opaque);
+    assert_eq!(details[1]["data"], "gAAAAAB-short_token");
 }

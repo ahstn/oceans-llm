@@ -102,6 +102,7 @@ impl DecisionsRequest {
             responses: false,
             stream: false,
             embeddings: false,
+            images: false,
             decisions: true,
             tools: false,
             vision: false,

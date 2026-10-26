@@ -110,6 +110,7 @@ impl ProviderClient for TypeSafeProvider {
             responses: false,
             stream: false,
             embeddings: false,
+            images: false,
             decisions: true,
             tools: false,
             vision: false,

@@ -78,7 +78,8 @@ async fn model_metadata_requires_authentication_and_matches_visible_models() {
                 "context_length": null,
                 "max_input_tokens": null,
                 "max_tokens": null,
-                "architecture": {"input_modalities": null, "output_modalities": null},
+                // The fixture route enables every capability, `images` included.
+                "architecture": {"input_modalities": ["text"], "output_modalities": ["image", "text"]},
                 "capabilities": {
                     "batch": {"supported": false},
                     "citations": {"supported": false},

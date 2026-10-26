@@ -173,6 +173,7 @@ impl ProviderClient for AnthropicCompatProvider {
             responses: false,
             stream: true,
             embeddings: false,
+            images: false,
             decisions: false,
             tools: true,
             vision: true,

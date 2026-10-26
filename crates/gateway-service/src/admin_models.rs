@@ -84,6 +84,7 @@ pub struct AdminModelSummary {
     pub supports_attachments: Option<bool>,
     pub benchmark_scores: Vec<ModelBenchmarkScore>,
     pub supports_decisions: Option<bool>,
+    pub supports_image_generation: Option<bool>,
     pub client_configurations: Vec<ClientConfig>,
 }
 
@@ -445,6 +446,7 @@ where
                         .map(supports_attachments),
                     benchmark_scores: self.benchmark_scores(&by_key, &model, primary_route),
                     supports_decisions: route_capabilities.map(|caps| caps.decisions),
+                    supports_image_generation: route_capabilities.map(|caps| caps.images),
                     client_configurations,
                 },
                 client_config_input,
@@ -491,8 +493,8 @@ fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientC
     );
     if !capabilities.chat_completions && !capabilities.responses {
         // OpenCode/Pi/Claude/Codex snippets target chat-shaped clients; a
-        // decisions-only model cannot use them, so emit no configs instead
-        // of misleading instructions.
+        // decisions-only or image-only model cannot use them, so emit no
+        // configs instead of misleading instructions.
         return None;
     }
     let pricing = context
@@ -1122,7 +1124,7 @@ mod tests {
     }
 
     #[test]
-    fn decisions_only_routes_suppress_chat_shaped_client_configs() {
+    fn decisions_and_image_only_routes_suppress_chat_shaped_client_configs() {
         let model = GatewayModel {
             id: Uuid::new_v4(),
             model_key: "jev".to_string(),
@@ -1133,20 +1135,6 @@ mod tests {
             tags: Vec::new(),
             rank: 1,
         };
-        let route = model_route(
-            "typesafe/jev-1.13",
-            ProviderCapabilities {
-                chat_completions: false,
-                responses: false,
-                stream: false,
-                embeddings: false,
-                decisions: true,
-                tools: false,
-                vision: false,
-                json_schema: false,
-                developer_role: false,
-            },
-        );
         let provider = ProviderConnection {
             provider_key: "openrouter".to_string(),
             provider_type: "openai_compat".to_string(),
@@ -1159,20 +1147,41 @@ mod tests {
             output: None,
         };
 
-        let input = super::build_client_config_input(super::ClientConfigContext {
-            model: &model,
-            execution_model: &model,
-            reasoning_ceiling: None,
-            primary_route: Some(&route),
-            primary_provider: Some(&provider),
-            provider_display: None,
-            metadata: None,
-            limits: &limits,
-            route_capabilities: Some(route.capabilities),
-            gateway_base_url: "http://127.0.0.1:3000",
-        });
+        for (upstream_model, capabilities) in [
+            (
+                "typesafe/jev-1.13",
+                ProviderCapabilities {
+                    decisions: true,
+                    ..ProviderCapabilities::none()
+                },
+            ),
+            (
+                "openai/gpt-image-2.5-flare",
+                ProviderCapabilities {
+                    images: true,
+                    ..ProviderCapabilities::none()
+                },
+            ),
+        ] {
+            let route = model_route(upstream_model, capabilities);
+            let input = super::build_client_config_input(super::ClientConfigContext {
+                model: &model,
+                execution_model: &model,
+                reasoning_ceiling: None,
+                primary_route: Some(&route),
+                primary_provider: Some(&provider),
+                provider_display: None,
+                metadata: None,
+                limits: &limits,
+                route_capabilities: Some(route.capabilities),
+                gateway_base_url: "http://127.0.0.1:3000",
+            });
 
-        assert!(input.is_none());
+            assert!(
+                input.is_none(),
+                "{upstream_model} must not get chat configs"
+            );
+        }
     }
     #[test]
     fn copilot_provider_uses_upstream_evidence_and_operator_policy() {
@@ -1492,6 +1501,7 @@ mod tests {
         assert_eq!(alias.supports_structured_output, Some(true));
         assert_eq!(alias.supports_attachments, Some(true));
         assert_eq!(alias.supports_decisions, Some(true));
+        assert_eq!(alias.supports_image_generation, Some(true));
         assert_eq!(
             alias
                 .allowlist
@@ -2047,6 +2057,7 @@ mod tests {
                 responses: true,
                 stream: false,
                 embeddings: true,
+                images: false,
                 decisions: false,
                 tools: true,
                 vision: true,
@@ -2071,6 +2082,7 @@ mod tests {
                 responses: true,
                 stream: false,
                 embeddings: true,
+                images: false,
                 decisions: false,
                 tools: true,
                 vision: true,

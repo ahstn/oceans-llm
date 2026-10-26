@@ -266,6 +266,7 @@ fn supports_requirements(
         && (!requirements.responses || capabilities.responses)
         && (!requirements.stream || capabilities.stream)
         && (!requirements.embeddings || capabilities.embeddings)
+        && (!requirements.images || capabilities.images)
         && (!requirements.decisions || capabilities.decisions)
         && (!requirements.tools || capabilities.tools)
         && (!requirements.vision || capabilities.vision)

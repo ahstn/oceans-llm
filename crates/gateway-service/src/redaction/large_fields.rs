@@ -122,6 +122,84 @@ const LARGE_FIELD_PATHS: &[BuiltInPayloadPath] = &[
         BuiltInPathSegment::Key("source"),
         BuiltInPathSegment::Key("data"),
     ]),
+    // Generated images: chat responses, streamed deltas, assistant turns replayed in
+    // multi-turn edit requests, Images API references and Images API responses.
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("choices"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("message"),
+        BuiltInPathSegment::Key("images"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("image_url"),
+        BuiltInPathSegment::Key("url"),
+    ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("events"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("choices"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("delta"),
+        BuiltInPathSegment::Key("images"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("image_url"),
+        BuiltInPathSegment::Key("url"),
+    ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("messages"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("images"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("image_url"),
+        BuiltInPathSegment::Key("url"),
+    ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("input_references"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("image_url"),
+        BuiltInPathSegment::Key("url"),
+    ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("data"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("b64_json"),
+    ]),
+];
+
+/// Opaque provider reasoning state (`reasoning_details[].data`). Encrypted reasoning
+/// uses URL-safe base64 (for example Fernet-style `gAAAAAB...` tokens with `-` and
+/// `_`), which the standard-alphabet media predicate would skip.
+const OPAQUE_REASONING_PATHS: &[BuiltInPayloadPath] = &[
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("choices"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("message"),
+        BuiltInPathSegment::Key("reasoning_details"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("data"),
+    ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("events"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("choices"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("delta"),
+        BuiltInPathSegment::Key("reasoning_details"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("data"),
+    ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("messages"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("reasoning_details"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("data"),
+    ]),
 ];
 
 const LARGE_FIELD_PREVIEW_BYTES: usize = 96;
@@ -143,11 +221,8 @@ fn truncate_large_fields_at_path(
     path: &mut Vec<PathSegment>,
     truncated_field_count: &mut usize,
 ) -> Value {
-    if LARGE_FIELD_PATHS
-        .iter()
-        .any(|candidate| candidate.matches(path))
-        && let Some(text) = value.as_str()
-        && should_truncate_known_large_field(text)
+    if let Some(text) = value.as_str()
+        && should_truncate_known_large_field(path, text)
     {
         *truncated_field_count = truncated_field_count.saturating_add(1);
         return json!({
@@ -183,14 +258,23 @@ fn truncate_large_fields_at_path(
     }
 }
 
-fn should_truncate_known_large_field(value: &str) -> bool {
-    value.starts_with("data:") || is_probably_base64_payload(value)
+fn should_truncate_known_large_field(path: &[PathSegment], value: &str) -> bool {
+    if path_matches_any(LARGE_FIELD_PATHS, path) {
+        return value.starts_with("data:") || is_probably_base64_payload(value, false);
+    }
+    path_matches_any(OPAQUE_REASONING_PATHS, path) && is_probably_base64_payload(value, true)
 }
 
-fn is_probably_base64_payload(value: &str) -> bool {
+fn path_matches_any(candidates: &[BuiltInPayloadPath], path: &[PathSegment]) -> bool {
+    candidates.iter().any(|candidate| candidate.matches(path))
+}
+
+fn is_probably_base64_payload(value: &str, allow_url_safe: bool) -> bool {
     value.len() > 256
         && value.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=' | b'\n' | b'\r')
+            byte.is_ascii_alphanumeric()
+                || matches!(byte, b'+' | b'/' | b'=' | b'\n' | b'\r')
+                || (allow_url_safe && matches!(byte, b'-' | b'_'))
         })
 }
 

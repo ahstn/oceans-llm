@@ -2,11 +2,11 @@
 
 `See also`: [Configuration Reference](../configuration/configuration-reference.md), [Model Routing and APIs](../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md)
 
-This page shows how to set up OpenRouter routes, including TypeSafe Jev over OpenRouter's Decisions API.
+This page shows how to set up OpenRouter routes, including image generation models and TypeSafe Jev over OpenRouter's Decisions API.
 
 ## Current Runtime Boundary
 
-Configure OpenRouter with the generic `openai_compat` provider type. Chat Completions, Responses, and embeddings use OpenAI-compatible paths. Decisions routes use OpenRouter's separate alpha path. Put the selected API and provider policy in route data under `compatibility.openrouter`. Do not hide that policy in `extra_body.provider`.
+Configure OpenRouter with the generic `openai_compat` provider type. Chat Completions, Responses, embeddings, and the Images API use OpenAI-compatible paths. Decisions routes use OpenRouter's separate alpha path. Put the selected API and provider policy in route data under `compatibility.openrouter`. Do not hide that policy in `extra_body.provider`.
 
 Use generic `openai_compat` without `compatibility.openrouter` for other OpenAI-compatible endpoints. Use `compatibility.openrouter` only for routes that call `https://openrouter.ai/api/v1`. These routes can use OpenRouter's upstream routing controls.
 
@@ -97,3 +97,32 @@ models:
 The route must enable `decisions` and disable `chat_completions`, `responses`, `embeddings`, and `stream`. Jev does not produce chat text and does not support streaming.
 
 See [TypeSafe](typesafe.md) for the public request shape and native TypeSafe provider configuration.
+
+## Image generation
+
+OpenRouter serves image models in two ways:
+
+- Image-only models, such as GPT Image, FLUX, Recraft, and Seedream, are served only on `POST https://openrouter.ai/api/v1/images`. Oceans exposes them at `POST /v1/images` and `POST /v1/images/generations`. OpenRouter rejects these models on Chat Completions with a 404.
+- Chat image models, such as the Gemini image models, use Chat Completions. Callers send `modalities: ["image","text"]`, and the response has `choices[].message.images[]` (`delta.images` when streaming). Use a normal chat route for them.
+
+Configure an image-only model as an Images-only route. With the other API families off, Oceans rejects a Chat Completions request to the model before it calls OpenRouter:
+
+```yaml
+models:
+  - id: gpt-image-2.5-flare
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-image-2.5-flare
+        capabilities:
+          chat_completions: false
+          responses: false
+          stream: false
+          embeddings: false
+          images: true
+          tools: false
+          vision: false
+          json_schema: false
+          developer_role: false
+```
+
+OpenRouter reports the request cost in `usage.cost`. Oceans records that cost for image and text requests. With a BYOK provider key, OpenRouter reports `cost` as its own fee and the provider bill in `usage.cost_details.upstream_inference_cost`, and Oceans records the sum. See [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md).
