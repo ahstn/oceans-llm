@@ -1,0 +1,26 @@
+#:schema https://fnox.jdx.dev/schema.json
+# Project secrets, resolved by fnox (https://fnox.jdx.dev). This file only declares the
+# keys oceans expects. Each maintainer's gitignored fnox.local.toml holds the 1Password
+# references (copy fnox.local.toml.example). OPENROUTER_API_KEY, EXA_API_KEY and the other
+# shared provider keys come from your global ~/.config/fnox/config.toml, which also defines
+# the `op` and `sync-age` providers.
+#
+# Values stay out of the shell. A mise task receives only the keys it lists in `secrets`
+# (see [secrets.fnox] in mise.toml), and `mise tasks validate` fails on a granted key that
+# no fnox config defines. For a one-off command, use `mise x --secrets KEY -- <command>`
+# or `fnox exec -- <command>`.
+#
+# `mise run secrets-sync` caches every value, encrypted, in fnox.local.toml beside its
+# references. .worktreeinclude copies that file into new worktrees, so tasks that agents
+# run there resolve without prompting for 1Password.
+
+# Stop the upward search, so a worktree under .claude/worktrees/ never loads the main
+# checkout's fnox files.
+root = true
+env = "exec"
+
+# Declarations only. A key defined here replaces its definition in any parent or global
+# config, so keys that come from the global config are not declared.
+[secrets]
+OPENAI_API_KEY = { description = "OpenAI provider key; gateway.yaml and gateway.prod.yaml need it to start" }
+REUI_LICENSE_KEY = { description = "ReUI Pro license for the reui MCP server in .mcp.json", if_missing = "warn" }

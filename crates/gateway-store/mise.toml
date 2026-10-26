@@ -48,7 +48,7 @@ run = "cargo test -p gateway-store postgres_"
 [tasks."smoke:postgres"]
 description = "Migrate, seed, and boot the gateway against Postgres, then probe its health endpoints"
 depends = ["//crates/gateway:build"]
-env = { POSTGRES_URL = { required = true }, GATEWAY_CONFIG = "../../gateway.prod.yaml", OPENAI_API_KEY = "${OPENAI_API_KEY:-test-openai-key}", OPENAI_API_KEY_SECONDARY = "${OPENAI_API_KEY_SECONDARY:-test-openai-key-secondary}" }
+env = { POSTGRES_URL = { required = true }, GATEWAY_CONFIG = "../../gateway.prod.yaml", OPENAI_API_KEY = "${OPENAI_API_KEY:-test-openai-key}" }
 run = """
 gateway="$CARGO_TARGET_DIR/debug/gateway"
 log="${TMPDIR:-/tmp}/gateway-postgres-smoke.log"

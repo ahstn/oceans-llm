@@ -1,6 +1,8 @@
 #:schema https://mise.jdx.dev/schema/mise.json
 # Gateway operator tasks. From the repo root: `mise run //crates/gateway:<task>`.
 # Each task mirrors a `gateway` subcommand. `prod:*` tasks use gateway.prod.yaml and need POSTGRES_URL.
+# Tasks that resolve provider `env.` tokens (serve and seeding) list them in `secrets`; fnox
+# supplies them through the root `[secrets.fnox]`.
 
 [task_config]
 # gateway.yaml, gateway.db, .local/, and the vendored data paths are all relative to the repo root.
@@ -13,6 +15,7 @@ run = "cargo build -p gateway --bin gateway"
 [tasks.serve]
 description = "Run `gateway serve` against gateway.yaml"
 extends = "gateway-local"
+secrets = ["OPENAI_API_KEY", "OPENROUTER_API_KEY"]
 run = 'OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY="${OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY:-$(scripts/local-provider-credential-key.sh)}" cargo run -p gateway --bin gateway -- serve'
 
 [tasks.migrate]
@@ -28,17 +31,20 @@ run = "cargo run -p gateway --bin gateway -- bootstrap-admin"
 [tasks.seed-config]
 description = "Run `gateway seed-config` against gateway.yaml"
 extends = "gateway-local"
+secrets = ["OPENAI_API_KEY", "OPENROUTER_API_KEY"]
 run = "cargo run -p gateway --bin gateway -- seed-config"
 
 [tasks.seed-local-demo]
 description = "Seed the local-only demo dataset (identity, budgets, API keys, request history, and agent session diagnostics)"
 extends = "gateway-local"
+secrets = ["OPENAI_API_KEY", "OPENROUTER_API_KEY"]
 # Pin gateway.yaml so a selfhost GATEWAY_CONFIG can never receive demo data.
 run = "cargo run -p gateway --bin gateway -- --config gateway.yaml seed-local-demo"
 
 [tasks.reset-local-demo]
 description = "Recreate gateway.db with the local-only demo dataset"
 extends = "gateway-local"
+secrets = ["OPENAI_API_KEY", "OPENROUTER_API_KEY"]
 run = [
   "rm -f gateway.db",
   "cargo run -p gateway --bin gateway -- --config gateway.yaml seed-local-demo",
@@ -70,6 +76,7 @@ run = "cargo run -p gateway --bin sync_model_benchmarks"
 [tasks."prod:serve"]
 description = "Run `gateway serve` against gateway.prod.yaml"
 extends = "gateway-prod"
+secrets = ["OPENAI_API_KEY"]
 run = "cargo run -p gateway --bin gateway -- serve"
 
 [tasks."prod:migrate"]
@@ -85,6 +92,7 @@ run = "cargo run -p gateway --bin gateway -- bootstrap-admin"
 [tasks."prod:seed-config"]
 description = "Run `gateway seed-config` against gateway.prod.yaml"
 extends = "gateway-prod"
+secrets = ["OPENAI_API_KEY"]
 run = "cargo run -p gateway --bin gateway -- seed-config"
 
 [tasks."prod:purge-request-logs"]
