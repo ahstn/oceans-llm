@@ -1,0 +1,21 @@
+crates/gateway/mise.toml
+  s_e0810ecc789e8a::t_0117e45ce188d3 4-5,18,34,40,47,79,95
+docs/adr/2026-10-24-local-secrets-with-fnox.md
+  s_e0810ecc789e8a::t_8d6e5bd5e6851e 24-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b25275f6a64f84fc3e071f90cc75c9d2b9387e5f",
+  "prompts": {},
+  "sessions": {
+    "s_e0810ecc789e8a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a2dfbd6-2d57-41f1-b4eb-ca1372ddd7cc",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
