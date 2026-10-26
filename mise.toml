@@ -293,7 +293,7 @@ description = "Run the local dev stack (gateway + admin UI dev server); override
 extends = "gateway-local"
 depends = ["//crates/admin-ui/web:install"]
 # gateway.yaml reads these at startup.
-secrets = ["OPENAI_API_KEY", "OPENAI_API_KEY_SECONDARY", "OPENROUTER_API_KEY"]
+secrets = ["OPENAI_API_KEY", "OPENROUTER_API_KEY"]
 env = { GATEWAY_PORT = "${GATEWAY_PORT:-8080}", UI_PORT = "${UI_PORT:-3001}", AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED = "${AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED:-true}" }
 run = """
 trap 'kill $(jobs -p) 2>/dev/null' EXIT
@@ -309,7 +309,7 @@ description = "Run the production-shaped local stack (gateway + admin UI SSR ser
 extends = "gateway-prod"
 depends = ["//crates/admin-ui/web:install"]
 # gateway.prod.yaml reads these at startup.
-secrets = ["OPENAI_API_KEY", "OPENAI_API_KEY_SECONDARY"]
+secrets = ["OPENAI_API_KEY"]
 env = { GATEWAY_PORT = "${GATEWAY_PORT:-8080}", UI_PORT = "${UI_PORT:-3001}" }
 run = """
 trap 'kill $(jobs -p) 2>/dev/null' EXIT

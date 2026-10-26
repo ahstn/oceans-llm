@@ -21,7 +21,7 @@ Resolve local secrets with [fnox](https://fnox.jdx.dev), with 1Password as the s
 
 - `fnox.toml` sets `root = true`, so a worktree under `.claude/worktrees/` doesn't load the main checkout's fnox files, and `env = "exec"`, so project keys stay out of the shell.
 - The `op` and `sync-age` providers, along with keys shared across projects such as `OPENROUTER_API_KEY` and `EXA_API_KEY`, come from each developer's global `~/.config/fnox/config.toml`.
-- `dev-stack` is granted the two OpenAI keys and `OPENROUTER_API_KEY`, and `prod-stack` the two OpenAI keys, because their gateway configs read them at startup.
+- `dev-stack` is granted `OPENAI_API_KEY` and `OPENROUTER_API_KEY`, and `prod-stack` `OPENAI_API_KEY`, because their gateway configs read them at startup.
 - `.mcp.json` passes the ReUI license through `headersHelper` and `fnox get`, not by expanding an environment variable.
 - The verify skill's `launch` runs `mise run dev-stack`. Without a terminal, mise runs fnox with `--non-interactive --no-daemon`, so agents depend on the `secrets-sync` cache.
 

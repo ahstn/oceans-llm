@@ -18,9 +18,8 @@ root = true
 env = "exec"
 
 [secrets]
-# The gateway needs both OpenAI keys to start (gateway.yaml and gateway.prod.yaml).
+# The gateway needs the OpenAI key to start (gateway.yaml and gateway.prod.yaml).
 OPENAI_API_KEY = { provider = "op", value = "op://Development/OpenAI API Key/credential" }
-OPENAI_API_KEY_SECONDARY = { provider = "op", value = "op://Development/OpenAI API Key (Secondary)/credential" }
 REUI_LICENSE_KEY = { provider = "op", value = "op://Development/ReUI License Key/credential", if_missing = "warn" }
 LLM_STATS_API_KEY = { provider = "op", value = "op://Development/LLM Stats API Key/credential", if_missing = "warn" }
 ARTIFICIAL_ANALYSIS_API_KEY = { provider = "op", value = "op://Development/Artificial Analysis API Key/credential", if_missing = "warn" }
