@@ -37,6 +37,7 @@ Resolve local secrets with [fnox](https://fnox.jdx.dev), with 1Password as the s
 ## Trade-offs
 
 - **Same-user access:** this prevents accidental exposure but is not a boundary against a deliberate same-user process. Anything running as the maintainer can read the age key or run `fnox get`.
+- **Broad sync, accepted:** `secrets-sync` passes no key names, so the cache holds every secret fnox can see, the global ones included, and each worktree receives a copy. This keeps the task from drifting out of step with the fnox configs, and caches global keys such as `OPENROUTER_API_KEY` that granted tasks need without a terminal. It doesn't widen access: fnox loads the global config in every directory, so `fnox get` already resolves those keys, and the copies are encrypted to the maintainer's own age key.
 - **Staleness:** `fnox.local.toml` is copied once, when the worktree is created. After a key rotates, or after a new key is added, update `fnox.local.toml` and rerun `mise run secrets-sync` in each live worktree.
 - **Setup:** a new main checkout has no `fnox.local.toml`, so a maintainer creates it from the example before any project key resolves. Worktrees receive the main checkout's copy.
 - **Requirements:** mise 2026.10.4 or later, fnox on `PATH`, and the experimental `[secrets.fnox]` feature.
