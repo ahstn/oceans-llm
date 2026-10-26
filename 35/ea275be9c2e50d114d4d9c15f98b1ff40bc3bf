@@ -1,0 +1,169 @@
+.agents/skills/verify-oceans-admin/SKILL.md
+  s_dd118f467446e0::t_49cea4cbc1f4dd 37-38,111
+.agents/skills/verify-oceans-admin/features/backend-gateway.md
+  s_dd118f467446e0::t_c5539b37c35a26 25
+.agents/skills/verify-oceans-admin/features/live-llm-requests.md
+  s_dd118f467446e0::t_e6dffe115d8a70 33
+.agents/skills/verify-oceans-admin/features/mcp.md
+  s_dd118f467446e0::t_a4afcd5b9f4d99 35,40-41
+.agents/skills/verify-oceans-admin/features/models.md
+  s_dd118f467446e0::t_bbada516ec2848 14,36
+.agents/skills/verify-oceans-admin/features/rate-limits.md
+  s_dd118f467446e0::t_57bc47e7291000 25
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_dd118f467446e0::t_a2d5d55e17d465 153,212
+.agents/skills/verify-oceans-admin/features/skills.md
+  s_dd118f467446e0::t_99ded2b5af6dc5 34
+.agents/skills/verify-oceans-admin/scripts/drive-mcp.mjs
+  s_dd118f467446e0::t_55c17add108151 75
+.github/workflows/release-product.yml
+  s_dd118f467446e0::t_0501c1be57ec7b 58-62,104
+.gitignore
+  s_dd118f467446e0::t_b56ba8f88c3d57 5-6
+.mcp.json
+  s_dd118f467446e0::t_fb7299ee0622ee 6
+.worktreeinclude
+  s_dd118f467446e0::t_ee610e20e462fd 1-6
+CHANGELOG.md
+  s_dd118f467446e0::t_63b4ae33b25e52 9-23
+Cargo.lock
+  s_dd118f467446e0::t_33c6bef0e83ab2 7,57,240,242,271,273,307,309,333,335,369,371,394,396,419,421,445,447,467,469,499,501,510,512,531,533,561,563,581,583,594,596,617,619,646,648,657,659,682,684,694,696,1345,1347,1838,1891,1901,1911,1930,1951,1966,1997,2029,2048,3343,3359,5127,5239,5241,5812,5814,6024
+actions/review-agent/README.md
+  s_dd118f467446e0::t_1d54e83f9347f9 3
+actions/review-agent/action.yml
+  s_dd118f467446e0::t_6c7bd837099eb9 68,71,73
+actions/review-agent/bun.lock
+  s_dd118f467446e0::t_2054752a8c9658 10-14,16,20-23,81,83,85,87,89,91,93,179,181,183,185,187,189,191,193,195,197,199,201,203,205,207,209,211,213,215,217,219,221,223,225,227,229,231,233,235,237,239,241,243,245,247,249,251,253,255,257,259,261,263,265,383,653-654,695,697,699,713,715,717,819
+actions/review-agent/package.json
+  s_dd118f467446e0::t_1c3c80eb9ad99e 18-22,24,28,30-32
+compose.local.yaml
+  s_dd118f467446e0::t_422946bd4e0b0e 8-9
+crates/admin-ui/Cargo.toml
+  s_dd118f467446e0::t_7236f518dba897 5
+crates/admin-ui/web/bun.lock
+  s_dd118f467446e0::t_0612fc7638762d 11,16-18,20,22,30-31,34,41,43,45,48,50,52-54,56,59,61,70,72,136,138,140,142,144,146,188,246,248,250,252,254,256,258,260,262,264,266,268,270,272,274,276,278,280,282,284,286,288,290,292,294,296,298,300,302,304,306,308,310,312,314,316,318,320,322,324,326,328,330,332,462-466,468,470,472,474,476,478,480,482,484,486,488,490,492,496,584,586,588,590,592,596,598,600,602,608,610,612,614,618,620,624,626,628,634,640,684,698,700,702,766,852,962,1022,1106,1154,1260,1284,1286,1288,1330,1362,1364,1410,1436,1476,1480,1516,1534,1558,1560,1604,1610,1612,1620,1624,1660-1661,1664-1665,1668-1669,1684-1687,1748,1754-1755
+crates/admin-ui/web/e2e/gateway-contract.e2e.ts
+  s_dd118f467446e0::t_af50947f829755 132-175
+crates/admin-ui/web/package.json
+  s_dd118f467446e0::t_52b4afebccf74c 26,31-33,35,37,45-46,49,56,58,60,63,65,67-69,71,74,76
+crates/admin-ui/web/src/test/components/code-block.test.tsx
+  s_dd118f467446e0::t_72f482f49295ac 2,37-40,42-43
+crates/admin-ui/web/src/test/routes/models-route.test.tsx
+  s_dd118f467446e0::t_8c9ec07bd60c64 2,1095-1101
+crates/agent-session-analysis/Cargo.toml
+  s_dd118f467446e0::t_f56787bd222af3 5
+crates/gateway-client-config/Cargo.toml
+  s_dd118f467446e0::t_259ad58c7554de 5
+crates/gateway-client-ip/Cargo.toml
+  s_dd118f467446e0::t_fd737ad2feece1 5
+crates/gateway-core/Cargo.toml
+  s_dd118f467446e0::t_6b3d509b545a3a 5
+crates/gateway-guardrails/Cargo.toml
+  s_dd118f467446e0::t_97f7222f9ef3a5 5
+crates/gateway-mcp/Cargo.toml
+  s_dd118f467446e0::t_1a4b8c9f3ce871 5
+crates/gateway-providers/Cargo.toml
+  s_dd118f467446e0::t_47fc81391e79b1 5
+crates/gateway-service/Cargo.toml
+  s_dd118f467446e0::t_fde30d9d16e7b9 5
+crates/gateway-service/data/model_benchmarks.json
+  s_dd118f467446e0::t_2229b7b431528a 8,651-660,801-810
+crates/gateway-service/data/pricing_catalog_fallback.json
+  s_dd118f467446e0::t_d3cfb2fad710fd 4-5,1664-1713,4287,4289,9495,9497,16542,16966,17288,17321-17323,17371-17373,17500-17547,18161-18162,18202-18203,18413,18461,18621,18811,18853-18854,18902-18903,18909,18952-18953,19073,19123,19281-19282,19495-19498,19502-19505,19513-19516,20051-20052,20211-20212,20219,20255-20256,20267,20298-20299,20334-20335,20342,20426-20428,20432-20433,20444,20847,20854,20929,20960-20961,21234-21238,21268-21269,21274,21676,21713,21874-21875,22115-22126,22293,23753,23807,24787-24789,24834-24836,24881-24883,24929-24931,25110,25151,25196,25261,25326,25379,25422,25463,25611,25713,25781,25849,25902,25955,26008,26060,26112,26164,26490-26492,26500,27094-27130,27408,27413-27414,27423,27550-27551,27558,27577-27578,28237-28238,28247,28338-28340,28346,28365-28367,28373,29076-29077,29472,29518-29569,29989-29991,30654,30662,33015-33016,33054-33055,34670,35278-35280,35288,35321-35323,35331,35525-35527,35535,35954-35956,35964,36170-36206,36234,36236,36244,38707,39004,39006,39450-39452,39498-39500,39597,39665,39712-39714,40192-40194,40202,40240,40242
+crates/gateway-service/src/model_metadata.rs
+  s_dd118f467446e0::t_c28bb8f0d11de3 4,11
+crates/gateway-service/src/model_metadata/listing.rs
+  s_dd118f467446e0::t_5f7613392dc08b 11-12,17,27,53,67-71,152,163-166,168-170,172-304,307-400,406-410,419,426,449,457,466
+crates/gateway-service/src/model_metadata/litellm.rs
+  s_dd118f467446e0::t_5f5f00666502f8 1-227
+crates/gateway-service/src/model_metadata/tests.rs
+  s_dd118f467446e0::t_1e89b7e8763d5a 6-7,460
+crates/gateway-service/src/model_metadata/tests/model_group_info.rs
+  s_dd118f467446e0::t_dfa307b4c72cab 1-394
+crates/gateway-service/src/service.rs
+  s_dd118f467446e0::t_e81aec0a7f92b0 316-327
+crates/gateway-skills/Cargo.toml
+  s_dd118f467446e0::t_6f870a16b40fcb 5
+crates/gateway-store/Cargo.toml
+  s_dd118f467446e0::t_60ef5f3a89a705 5
+crates/gateway-store/mise.toml
+  s_dd118f467446e0::t_ba8b97b41ea718 51
+crates/gateway/Cargo.toml
+  s_dd118f467446e0::t_c8a8bc6ceeafb8 5
+crates/gateway/Dockerfile
+  s_dd118f467446e0::t_9ac546220c04e9 3-4
+crates/gateway/mise.toml
+  s_dd118f467446e0::t_90550cc6d63c29 4-5,18,34,40,47,79,95
+crates/gateway/src/http/handlers.rs
+  s_dd118f467446e0::t_b3bfb94333eb57 13-14,170-187
+crates/gateway/src/http/handlers/model_group_info_tests.rs
+  s_dd118f467446e0::t_fd97ba1e78541b 1-170
+crates/gateway/src/http/mod.rs
+  s_dd118f467446e0::t_5f6f3ae7377e81 527
+crates/gateway/src/local_demo_seed/mod.rs
+  s_dd118f467446e0::t_7846a241b6bebb 792-793,915
+crates/gateway/src/local_demo_seed/usage.rs
+  s_dd118f467446e0::t_d0994686a0238d 37,237,737,912
+crates/oceans-cli/Cargo.toml
+  s_dd118f467446e0::t_67ebc8022bddfb 5
+deny.toml
+  s_dd118f467446e0::t_0f2fe553d61880 34-36
+deploy/README.md
+  s_dd118f467446e0::t_9086216bc8e24f 61
+deploy/config/gateway.local.yaml
+  s_dd118f467446e0::t_7d9280bca47b46 155,161
+deploy/config/gateway.yaml
+  s_dd118f467446e0::t_4a309eb7bef605 177,185
+docs/access/identity-and-access.md
+  s_dd118f467446e0::t_813ce0126ccdaa 183
+docs/access/oidc-and-sso-status.md
+  s_dd118f467446e0::t_eed37e36ad1b4d 87,145
+docs/adr/2026-05-15-local-sso-compose-fixture-and-browser-origin.md
+  s_dd118f467446e0::t_39cb57788f08df 15-16
+docs/adr/2026-09-06-source-review-action-with-pi-sdk.md
+  s_dd118f467446e0::t_d77e540d2711f6 8-9,79-94
+docs/adr/2026-09-24-models-list-client-hints.md
+  s_dd118f467446e0::t_9ffa665f1dfc8e 39-40
+docs/adr/2026-10-21-litellm-model-group-info.md
+  s_dd118f467446e0::t_a122b642de6309 1-94
+docs/adr/2026-10-24-local-secrets-with-fnox.md
+  s_dd118f467446e0::t_e1ea23731d1cbf 1-48
+docs/configuration/model-routing-and-api-behavior.md
+  s_dd118f467446e0::t_8656cb79c9d564 14,26,75-76,97,119,230-231,389-391,397-474
+docs/contributing/development/authentication-testing.md
+  s_dd118f467446e0::t_ddf511964f397d 12,61
+fnox.local.toml.example
+  s_dd118f467446e0::t_69cbf6249872d8 1-8
+fnox.toml
+  s_dd118f467446e0::t_57bb3e39d1f19d 1-26
+gateway.prod.yaml
+  s_dd118f467446e0::t_a3440ad53e5244 123
+gateway.yaml
+  s_dd118f467446e0::t_c7efe8c51fcf12 372
+mise.lock
+  s_dd118f467446e0::t_403d984f922605 72,76-77,80-81,84-85,88-89,92-93,396,400-401,404-405,408-409,412-413,416-417,506
+mise.toml
+  s_dd118f467446e0::t_baa68ad87e3e76 6,10,38,40-41,70-73,216-221,295-296,311-312
+tests/harness-integration/package-lock.json
+  s_dd118f467446e0::t_38e11b673894de 17,19,2351-2353,2456-2458,2462,2534-2550,2552-2554,2569-2571,2586-2588,2603-2605,2620-2622,2637-2639,2657-2659,2677-2679,2697-2699,2717-2719,2737-2739,2757-2759,2774-2776,2791-2793,2927-2929,2932,2942-2944,2950-2951,2960-2962,2966,2987-2989,3000-3002,3006,3014-3016,3020-3021,3030-3032,3040-3042,3046,3251-3253,4129-4131,4145-4155,4159-4161,4180-4182,4201-4203,4222-4224,4243-4245,4264-4266,4288-4290,4312-4314,4336-4338,4360-4362,4381-4383,4491-4493,4921-4923,4943-4945,4963,4965,5148-5150,5154,5164-5178,5387-5389,5470-5472,5552-5554,5576-5578,5582-5585,5602,5654-5656,5660-5666,5694-5699
+tests/harness-integration/package.json
+  s_dd118f467446e0::t_a7ed88dd086c07 17,19
+tombi.toml
+  s_dd118f467446e0::t_5d80ab6638da25 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "35ea275be9c2e50d114d4d9c15f98b1ff40bc3bf",
+  "prompts": {},
+  "sessions": {
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
