@@ -141,6 +141,8 @@ mise run //gateway:migrate
 
 If the migration error says `database reset required`, the running database carries pre-baseline history that this release no longer accepts. Recreate the libsql/Postgres database, then rerun migrations and seeding/bootstrap steps against the fresh `V17` baseline.
 
+If a PostgreSQL index migration fails with `canceling statement due to statement timeout` or `lock timeout`, the table was too large or too busy to index inside the migration's time limit. Migrations run in a transaction, so they cannot build indexes concurrently. Build the index online with the statement from the migration file, with `CONCURRENTLY` added. For `V76__batch_jobs_route_index`, that is `CREATE INDEX CONCURRENTLY IF NOT EXISTS batch_jobs_route_idx ON batch_jobs (route_id);`. Then rerun migrations; the migration finds the index and does nothing.
+
 If the error is not a reset-required failure, stop and inspect it before retrying. Do not assume manual repair is safer than recreation.
 
 ## Broken Admin Login
