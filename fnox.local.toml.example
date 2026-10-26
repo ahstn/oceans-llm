@@ -1,0 +1,7 @@
+#:schema https://fnox.jdx.dev/schema.json
+# Copy to fnox.local.toml (gitignored) and point each key at your own 1Password item.
+# The `op` provider comes from your global ~/.config/fnox/config.toml.
+# Then run `mise run secrets-sync`, which adds an encrypted copy beside each reference.
+[secrets]
+OPENAI_API_KEY = { provider = "op", value = "op://<vault>/<item>/credential" }
+REUI_LICENSE_KEY = { provider = "op", value = "op://<vault>/<item>/credential", if_missing = "warn" }
