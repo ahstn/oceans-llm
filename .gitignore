@@ -2,6 +2,8 @@
 mise.local.toml
 mise.*.local.toml
 .miserc.local.toml
+fnox.local.toml
+.fnox.local.toml
 
 target/
 .local/

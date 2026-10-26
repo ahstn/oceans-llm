@@ -1,0 +1,26 @@
+#:schema https://fnox.jdx.dev/schema.json
+# Project secrets, resolved by fnox (https://fnox.jdx.dev). Committed, so 1Password
+# references only, never values. OPENROUTER_API_KEY, EXA_API_KEY and the other shared
+# provider keys come from your global ~/.config/fnox/config.toml, which also defines the
+# `op` and `sync-age` providers used here.
+#
+# Values stay out of the shell. A mise task receives only the keys it lists in `secrets`
+# (see [secrets.fnox] in mise.toml). For a one-off command, use
+# `mise x --secrets KEY -- <command>` or `fnox exec -- <command>`.
+#
+# `mise run secrets-sync` caches every value, encrypted, in the gitignored fnox.local.toml.
+# .worktreeinclude copies that cache into new worktrees, so tasks that agents run there
+# resolve without prompting for 1Password.
+
+# Stop the upward search, so a worktree under .claude/worktrees/ never loads the main
+# checkout's fnox files.
+root = true
+env = "exec"
+
+[secrets]
+# The gateway needs both OpenAI keys to start (gateway.yaml and gateway.prod.yaml).
+OPENAI_API_KEY = { provider = "op", value = "op://Development/OpenAI API Key/credential" }
+OPENAI_API_KEY_SECONDARY = { provider = "op", value = "op://Development/OpenAI API Key (Secondary)/credential" }
+REUI_LICENSE_KEY = { provider = "op", value = "op://Development/ReUI License Key/credential", if_missing = "warn" }
+LLM_STATS_API_KEY = { provider = "op", value = "op://Development/LLM Stats API Key/credential", if_missing = "warn" }
+ARTIFICIAL_ANALYSIS_API_KEY = { provider = "op", value = "op://Development/Artificial Analysis API Key/credential", if_missing = "warn" }

@@ -1,2 +1,6 @@
-# Copy the ignored local mise environment into Codex-managed worktrees.
+# Gitignored files copied into each new Claude Code or Codex worktree, once, at creation.
+# fnox's encrypted secret cache (`mise run secrets-sync`), so tasks agents run resolve
+# without 1Password. Rerun the sync in a worktree after a key rotates.
+fnox.local.toml
+# Local mise overrides that aren't secrets; provider keys live in fnox.toml.
 mise.local.toml
