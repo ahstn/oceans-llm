@@ -722,6 +722,7 @@ mod tests {
             cache_read_tokens: Some(80),
             cache_write_tokens: Some(0),
             completion_tokens: Some(50),
+            image_output_tokens: None,
             total_tokens: Some(150),
             provider_usage: json!({}),
             pricing_status: UsagePricingStatus::Priced,
@@ -737,6 +738,7 @@ mod tests {
             output_cost_per_million_tokens: None,
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            image_output_cost_per_million_tokens: None,
             computed_cost_usd: gateway_core::Money4::from_scaled(1_234),
             occurred_at: log.occurred_at,
         }

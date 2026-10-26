@@ -8803,6 +8803,12 @@
               "null"
             ]
           },
+          "supports_image_generation": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "supports_streaming": {
             "type": [
               "boolean",

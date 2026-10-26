@@ -134,6 +134,45 @@ const MEDIA_URL_PATHS: &[BuiltInPayloadPath] = &[
         BuiltInPathSegment::Wildcard,
         BuiltInPathSegment::Key("audio_url"),
     ]),
+    // Image generation: Images API reference images, assistant images replayed
+    // in edit requests, and generated images that a provider returns as URLs.
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("input_references"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("image_url"),
+        BuiltInPathSegment::Key("url"),
+    ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("messages"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("images"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("image_url"),
+        BuiltInPathSegment::Key("url"),
+    ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("body"),
+        BuiltInPathSegment::Key("choices"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("message"),
+        BuiltInPathSegment::Key("images"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("image_url"),
+        BuiltInPathSegment::Key("url"),
+    ]),
+    BuiltInPayloadPath::new(&[
+        BuiltInPathSegment::Key("events"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("choices"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("delta"),
+        BuiltInPathSegment::Key("images"),
+        BuiltInPathSegment::Wildcard,
+        BuiltInPathSegment::Key("image_url"),
+        BuiltInPathSegment::Key("url"),
+    ]),
 ];
 
 const ERROR_TEXT_PATHS: &[BuiltInPayloadPath] = &[

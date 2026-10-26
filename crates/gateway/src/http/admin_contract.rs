@@ -434,6 +434,7 @@ pub struct AdminModelView {
     pub supports_attachments: Option<bool>,
     pub benchmark_scores: Vec<AdminModelBenchmarkScoreView>,
     pub supports_decisions: Option<bool>,
+    pub supports_image_generation: Option<bool>,
     pub client_configurations: Vec<AdminModelClientConfigView>,
 }
 

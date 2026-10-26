@@ -122,7 +122,9 @@ models:
 
 `context_window_tokens` is an optional positive integer. It caps the effective route context but cannot raise a known catalog context limit. Startup rejects a configured cap above a known catalog limit; when catalog context is unknown, the configured value is accepted as admin policy.
 
-`pricing_override` is optional. When present, `input_usd_per_million_tokens` and `output_usd_per_million_tokens` are required. Cache rates are optional and remain absent when omitted; they do not fall back to catalog cache rates. All rates use exact fixed-point decimal strings with at most four fractional digits. Zero is valid; negative, malformed, floating-point, and overflowing values are rejected.
+`pricing_override` is optional. When present, `input_usd_per_million_tokens` and `output_usd_per_million_tokens` are required. Cache rates and `image_output_usd_per_million_tokens` are optional and remain absent when omitted; they do not fall back to catalog rates. All rates use exact fixed-point decimal strings with at most four fractional digits. Zero is valid; negative, malformed, floating-point, and overflowing values are rejected.
+
+`image_output_usd_per_million_tokens` prices the image tokens a provider reports in `completion_tokens_details.image_tokens` or `output_tokens_details.image_tokens`. The remaining completion tokens use the output rate. A cost the provider reports in its usage, such as OpenRouter's `usage.cost`, takes precedence over the whole override. See [Pricing Catalog and Accounting](pricing-catalog-and-accounting.md#provider-reported-cost).
 
 ## Agent Session Analysis
 
@@ -1195,7 +1197,7 @@ Important fields:
 
 Every route needs an explicit `id` when `routing` is present, including `routing: {}`. Unknown routing fields and strategy names fail configuration loading. Omitting `routing` preserves existing weighted selection without affinity.
 
-Policies apply to online chat, messages, Responses, embeddings, and decisions. Session affinity applies to chat, messages, and Responses. Durable batches keep their existing route lifecycle. Policy configuration is YAML-only; reseed the deployment to apply changes.
+Policies apply to online chat, messages, Responses, embeddings, images, and decisions. Session affinity applies to chat, messages, and Responses. Durable batches keep their existing route lifecycle. Policy configuration is YAML-only; reseed the deployment to apply changes.
 
 See [Model Routing and APIs](model-routing-and-api-behavior.md#control-route-selection) for examples, priority rules, caller-scoped session IDs, response-origin tracking, and cache limits.
 
@@ -1275,9 +1277,11 @@ Capability flags default permissively. A route can constrain provider capability
 
 Compatibility metadata is separate from capabilities. Capabilities decide whether a route may execute; compatibility describes explicit request and stream-shape transforms for the selected provider route.
 
-Capability flags include API-family gates such as `chat_completions`, `responses`, `embeddings`, and `decisions`, plus feature gates such as `stream`, `tools`, `vision`, `json_schema`, and `developer_role`.
+Capability flags include API-family gates such as `chat_completions`, `responses`, `embeddings`, `images`, and `decisions`, plus feature gates such as `stream`, `tools`, `vision`, `json_schema`, and `developer_role`.
 
 `decisions` defaults to `false`. A Decisions route must set it to `true` and set `chat_completions`, `responses`, `embeddings`, and `stream` to `false`. Current valid transports are `type: typesafe`, an `openai_compat` route with `compatibility.openai_compat.decisions_api: openai`, and an OpenRouter route with `compatibility.openrouter.api: decisions`.
+
+`images` defaults to `false`. Set it to `true` on routes that serve `POST /v1/images` and its aliases. Only `openai_compat` and `gcp_cloud_run_openai_compat` providers can enable it, and a Decisions route cannot. See [Model Routing and APIs: Images](model-routing-and-api-behavior.md#images).
 
 Vertex embedding-only route:
 

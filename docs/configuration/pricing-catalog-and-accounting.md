@@ -6,7 +6,7 @@ This page explains how Oceans LLM turns provider usage into spend records, why s
 
 ## What Admins Should Expect
 
-Oceans LLM charges only when it has both:
+When the provider reports what it billed for a request, such as OpenRouter's `usage.cost`, Oceans LLM charges that amount; see [Provider-Reported Cost](#provider-reported-cost). Otherwise it charges only when it has both:
 
 - provider usage: input token counts and output token counts
 - an exact pricing match for the selected provider, model, location, and supported billing shape
@@ -42,9 +42,17 @@ The runtime uses three layers:
 
 The effective-dated rows are what matter for durable accounting. They let Oceans keep older spend stable after an upstream catalog changes.
 
-Startup, scheduled refreshes, and manual refreshes own catalog reconciliation. Request-time accounting first checks the selected route for an admin-authored pricing override. Without one, it looks up the persisted effective catalog row for the selected provider, model, location, and billing shape. It does not fetch `models.dev`, read a catalog snapshot, or reconcile pricing rows while handling a request.
+Startup, scheduled refreshes, and manual refreshes own catalog reconciliation. Request-time accounting first uses a cost the provider reports in its usage. Without one, it checks the selected route for an admin-authored pricing override. Without an override, it looks up the persisted effective catalog row for the selected provider, model, location, and billing shape. It does not fetch `models.dev`, read a catalog snapshot, or reconcile pricing rows while handling a request.
 
-Oceans copies the selected rates and provenance onto the spend event at request time. Catalog-priced events include the pricing provider and model. They also include the source, ETag, and fetch time. Configured-price events identify `configured_override` and omit catalog-only identity and generation fields. They also keep the selected route id. Historical spend remains explainable and immutable after catalog or route config changes.
+Oceans copies the selected rates and provenance onto the spend event at request time. Catalog-priced events include the pricing provider and model. They also include the source, ETag, and fetch time. Configured-price events identify `configured_override` and omit catalog-only identity and generation fields. They also keep the selected route id. Provider-reported events identify `provider_reported` and store no rates. Historical spend remains explainable and immutable after catalog or route config changes.
+
+## Provider-Reported Cost
+
+OpenRouter reports what it billed for a request in `usage.cost`. When the usage has a `cost`, Oceans records it as the request cost with `pricing_source: provider_reported`. A reported cost takes precedence over route pricing overrides and catalog rates, so a negotiated rate or markup in `pricing_override` does not apply to responses that report a cost.
+
+On bring-your-own-key requests (`usage.is_byok: true`), `cost` is only OpenRouter's fee, and the upstream provider bills `cost_details.upstream_inference_cost` to your key. Oceans records the sum of both. It reads the reported amounts as exact decimals, adds them, and rounds the total half up once to the nearest `$0.0001`.
+
+A reported cost is charged even when the usage has no token counts. A malformed or negative cost, or a BYOK report without `cost_details.upstream_inference_cost`, is ignored with a warning, and the request is priced from token rates as usual.
 
 ## Route Pricing Overrides
 
@@ -63,11 +71,24 @@ models:
           cache_write_usd_per_million_tokens: "1.5000"
 ```
 
-Input and output rates are required when the block is present. Cache read and cache write rates are optional. Omitted cache rates remain absent rather than inheriting catalog values. Rates are exact non-negative Money4 strings; `"0"` and `"0.0000"` are valid authoritative prices.
+Input and output rates are required when the block is present. Cache read, cache write, and image output rates are optional. Omitted optional rates remain absent rather than inheriting catalog values. Rates are exact non-negative Money4 strings; `"0"` and `"0.0000"` are valid authoritative prices.
 
-Each input and output token subtotal is calculated with integer fixed-point arithmetic from the per-million rate, rounded half up to the nearest `$0.0001`, then added to the request cost. Floating-point rate values are rejected at configuration load so binary floating-point conversion cannot change an admin-authored rate.
+Each token subtotal is calculated with integer fixed-point arithmetic from the per-million rate, rounded half up to the nearest `$0.0001`, then added to the request cost. Floating-point rate values are rejected at configuration load so binary floating-point conversion cannot change an admin-authored rate.
 
-An override takes precedence over catalog lookup for its route, including when a conflicting catalog row exists or no catalog row can be resolved. Catalog refresh does not modify overrides or historical spend events.
+An override takes precedence over catalog lookup for its route, including when a conflicting catalog row exists or no catalog row can be resolved. A [provider-reported cost](#provider-reported-cost) takes precedence over the override. Catalog refresh does not modify overrides or historical spend events.
+
+### Image Output Rate
+
+Image models count the image tokens they generate as completion tokens and report them in `completion_tokens_details.image_tokens`, or `output_tokens_details.image_tokens` on Responses. Set `image_output_usd_per_million_tokens` to charge those tokens at the image rate and the remaining completion tokens at the output rate:
+
+```yaml
+pricing_override:
+  input_usd_per_million_tokens: "0.2500"
+  output_usd_per_million_tokens: "1.5000"
+  image_output_usd_per_million_tokens: "30.0000"
+```
+
+The catalog has no image output rate. Without an image rate, every completion token, image tokens included, is charged at the output rate. The spend event stores the image token count and the image rate it used. Batch pricing snapshots keep the image rate and apply the same split before the batch discount. An image token count that is not a whole number from zero to the completion tokens is ignored with a warning, and every completion token is charged at the output rate.
 
 ## Configure Routes For Chargeable Traffic
 
@@ -176,8 +197,10 @@ The catalog and provider responses can contain more billing signals than Oceans 
 | total tokens | stored for reporting and validation context |
 | cache read/write rates | stored on spend events, propagated to generated client metadata, and used for positive normalized cache buckets |
 | cache read/write token counts | retained raw and normalized for supported response shapes |
+| image output tokens | charged from the route's image output rate when one is set; otherwise charged with the other completion tokens at the output rate |
+| provider-reported cost (`usage.cost`, plus `cost_details.upstream_inference_cost` for BYOK) | charged as the request cost, ahead of overrides and catalog rates |
 | reasoning tokens or traces | not charged separately yet |
-| image, audio, and file modality counters | not charged yet |
+| image input, audio, and file modality counters | not charged separately yet |
 
 AWS Bedrock Anthropic Claude responses preserve the raw Anthropic usage object under `usage.provider_usage`, including cache counters such as `cache_read_input_tokens` and `cache_creation_input_tokens` when Bedrock returns them. Oceans normalizes these totals when one write-price class is sufficient. Mixed 5-minute and 1-hour cache writes remain unpriced until the ledger and pricing catalog represent each class separately. Bedrock Claude thinking and Converse reasoning blocks are preserved as provider metadata on Chat Completions messages or stream deltas, but they are not priced as separate ledger dimensions.
 

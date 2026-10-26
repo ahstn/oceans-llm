@@ -76,7 +76,7 @@ pub struct ModelCard {
 
 #[derive(Debug, Serialize)]
 pub struct ModelArchitecture {
-    /// `None` when no enabled route has catalog modality data.
+    /// `None` when no enabled route has catalog modality data or serves image generation.
     pub input_modalities: Option<Vec<String>>,
     pub output_modalities: Option<Vec<String>>,
 }
@@ -380,6 +380,7 @@ fn served_apis(eligible: &[EligibleRoute<'_>]) -> ProviderCapabilities {
                 chat_completions: acc.chat_completions || caps.chat_completions,
                 responses: acc.responses || caps.responses,
                 embeddings: acc.embeddings || caps.embeddings,
+                images: acc.images || caps.images,
                 decisions: acc.decisions || caps.decisions,
                 ..acc
             }
@@ -422,14 +423,14 @@ fn model_card(view: &ModelView<'_>) -> ModelCard {
             .as_ref()
             .map(|modalities| &modalities.input)
     });
-    let output_modalities = with_decisions_output(
+    let output_modalities = with_served_outputs(
         common_modalities(details, |route| {
             route
                 .modalities
                 .as_ref()
                 .map(|modalities| &modalities.output)
         }),
-        transport.decisions,
+        transport,
     );
 
     let image_input = summary.capabilities.vision == Some(true);
@@ -589,17 +590,30 @@ fn common_modalities<'a>(
         .map(|values| values.into_iter().collect())
 }
 
-/// OpenRouter marks System One decision models with a `decisions` output modality. The
-/// catalog has no decision models, so the gateway adds it from route capabilities.
-fn with_decisions_output(modalities: Option<Vec<String>>, decisions: bool) -> Option<Vec<String>> {
-    if !decisions {
+/// Outputs a request can reach on some eligible route, which the intersection of catalog
+/// modalities would drop. OpenRouter marks System One decision models with a `decisions`
+/// output modality and image generators with `image`; the catalog has no decision models
+/// and no image-only models, so the gateway adds both from route capabilities. A separate
+/// image-only or decisions-only route also empties that intersection, so text comes back
+/// whenever some route serves chat.
+fn with_served_outputs(
+    modalities: Option<Vec<String>>,
+    transport: ProviderCapabilities,
+) -> Option<Vec<String>> {
+    if !transport.decisions && !transport.images {
         return modalities;
     }
     let mut modalities = modalities.unwrap_or_default();
-    if !modalities.iter().any(|value| value == "decisions") {
-        modalities.push("decisions".to_string());
-        modalities.sort();
+    for (served, modality) in [
+        (transport.decisions, "decisions"),
+        (transport.images, "image"),
+        (transport.chat_completions || transport.responses, "text"),
+    ] {
+        if served && !modalities.iter().any(|value| value == modality) {
+            modalities.push(modality.to_string());
+        }
     }
+    modalities.sort();
     Some(modalities)
 }
 

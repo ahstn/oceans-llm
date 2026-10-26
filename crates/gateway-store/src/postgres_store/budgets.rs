@@ -415,7 +415,8 @@ impl BudgetRepository for PostgresStore {
                 output_cost_per_million_tokens_10000,
                 cache_read_cost_per_million_tokens_10000,
                 cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
-                uncached_input_tokens, cache_read_tokens, cache_write_tokens
+                uncached_input_tokens, cache_read_tokens, cache_write_tokens,
+                image_output_tokens, image_output_cost_per_million_tokens_10000
             FROM usage_cost_events
             WHERE request_id = $1
               AND ownership_scope_key = $2
@@ -452,7 +453,8 @@ impl BudgetRepository for PostgresStore {
                 output_cost_per_million_tokens_10000,
                 cache_read_cost_per_million_tokens_10000,
                 cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
-                uncached_input_tokens, cache_read_tokens, cache_write_tokens
+                uncached_input_tokens, cache_read_tokens, cache_write_tokens,
+                image_output_tokens, image_output_cost_per_million_tokens_10000
             FROM usage_cost_events
             WHERE request_id = ANY($1)
               AND ownership_scope_key = $2
@@ -486,7 +488,8 @@ impl BudgetRepository for PostgresStore {
                 output_cost_per_million_tokens_10000,
                 cache_read_cost_per_million_tokens_10000,
                 cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
-                uncached_input_tokens, cache_read_tokens, cache_write_tokens
+                uncached_input_tokens, cache_read_tokens, cache_write_tokens,
+                image_output_tokens, image_output_cost_per_million_tokens_10000
             FROM usage_cost_events AS ledger
             WHERE ledger.request_id = ANY($1)
               AND (
@@ -1520,11 +1523,12 @@ impl BudgetRepository for PostgresStore {
                 output_cost_per_million_tokens_10000,
                 cache_read_cost_per_million_tokens_10000,
                 cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
-                uncached_input_tokens, cache_read_tokens, cache_write_tokens
+                uncached_input_tokens, cache_read_tokens, cache_write_tokens,
+                image_output_tokens, image_output_cost_per_million_tokens_10000
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
                 $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28,
-                $29, $30, $31, $32, $33, $34
+                $29, $30, $31, $32, $33, $34, $35, $36
             )
             ON CONFLICT (request_id, ownership_scope_key) DO NOTHING
             "#,
@@ -1583,6 +1587,12 @@ impl BudgetRepository for PostgresStore {
         .bind(event.uncached_input_tokens)
         .bind(event.cache_read_tokens)
         .bind(event.cache_write_tokens)
+        .bind(event.image_output_tokens)
+        .bind(
+            event
+                .image_output_cost_per_million_tokens
+                .map(Money4::as_scaled_i64),
+        )
         .execute(&self.pool)
         .await
         .map_err(to_query_error)?;

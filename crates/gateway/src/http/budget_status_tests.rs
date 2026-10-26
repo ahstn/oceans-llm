@@ -7,8 +7,9 @@ use async_trait::async_trait;
 use axum::body::{Body, to_bytes};
 use gateway_core::{
     BatchCapabilities, BudgetCadence, BudgetExceededStatus, BudgetRepository, BudgetScope,
-    BudgetSettings, CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, Money4,
-    ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
+    BudgetSettings, CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, ImagesRequest,
+    Money4, ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext,
+    ProviderStream,
 };
 use gateway_service::{GatewayService, WeightedRoutePlanner};
 use http::{Request, StatusCode};
@@ -68,6 +69,14 @@ impl ProviderClient for UnreachableProvider {
         panic!("over-budget embeddings request reached the provider")
     }
 
+    async fn images(
+        &self,
+        _request: &ImagesRequest,
+        _context: &ProviderRequestContext,
+    ) -> Result<Value, ProviderError> {
+        panic!("over-budget images request reached the provider")
+    }
+
     async fn responses(
         &self,
         _request: &CoreResponsesRequest,
@@ -107,6 +116,11 @@ fn cases() -> Vec<Case> {
         Case {
             path: "/v1/embeddings",
             body: json!({"model": "fast", "input": "hello"}),
+            anthropic_envelope: false,
+        },
+        Case {
+            path: "/v1/images",
+            body: json!({"model": "fast", "prompt": "hello"}),
             anthropic_envelope: false,
         },
         Case {

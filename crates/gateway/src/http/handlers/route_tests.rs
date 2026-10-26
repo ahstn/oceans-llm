@@ -13,8 +13,8 @@ use axum::{
 };
 use gateway_core::{
     BudgetCadence, BudgetRepository, BudgetScope, BudgetSettings, CoreChatRequest,
-    CoreEmbeddingsRequest, CoreResponsesRequest, Money4, ProviderCapabilities, ProviderClient,
-    ProviderError, ProviderRequestContext, ProviderStream, RequestLogQuery,
+    CoreEmbeddingsRequest, CoreResponsesRequest, ImagesRequest, Money4, ProviderCapabilities,
+    ProviderClient, ProviderError, ProviderRequestContext, ProviderStream, RequestLogQuery,
 };
 use gateway_guardrails::{
     FailureDisposition, GuardPhase, GuardrailEngine, ManagedCheckConfig, ManagedCheckKind,
@@ -109,6 +109,18 @@ impl ProviderClient for RecordingProvider {
             "model": "fast-upstream",
             "data": [{"object": "embedding", "index": 0, "embedding": [0.5]}],
             "usage": {"prompt_tokens": 1, "total_tokens": 1},
+        }))
+    }
+
+    async fn images(
+        &self,
+        _request: &ImagesRequest,
+        _context: &ProviderRequestContext,
+    ) -> Result<Value, ProviderError> {
+        self.record("images");
+        Ok(json!({
+            "created": 1,
+            "data": [{"b64_json": "aGk=", "media_type": "image/png"}],
         }))
     }
 
@@ -455,6 +467,7 @@ async fn unversioned_aliases_share_the_versioned_handlers() {
     let chat = json!({"model": "fast", "messages": [{"role": "user", "content": "hi"}]});
     let responses = json!({"model": "fast", "input": "hi"});
     let embeddings = json!({"model": "fast", "input": "hi"});
+    let images = json!({"model": "fast", "prompt": "hi"});
     let decisions = json!({"model": "fast", "state": {}});
 
     for (method, versioned, alias, body, operation) in [
@@ -478,6 +491,20 @@ async fn unversioned_aliases_share_the_versioned_handlers() {
             "/embeddings",
             Some(embeddings),
             Some("embeddings"),
+        ),
+        (
+            "POST",
+            "/v1/images",
+            "/images",
+            Some(images.clone()),
+            Some("images"),
+        ),
+        (
+            "POST",
+            "/v1/images/generations",
+            "/images/generations",
+            Some(images),
+            Some("images"),
         ),
         ("POST", "/v1/decisions", "/decisions", Some(decisions), None),
         ("GET", "/v1/models", "/models", None, None),

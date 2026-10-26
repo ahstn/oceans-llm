@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use async_trait::async_trait;
 use gateway_core::{
     BatchCapabilities, CoreChatRequest, CoreDecisionsRequest, CoreEmbeddingsRequest,
-    CoreResponsesRequest, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
+    CoreResponsesRequest, ImagesRequest, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
     OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
     ProviderBatchRequest, ProviderBatchResult, ProviderBatchState, ProviderCapabilities,
     ProviderClient, ProviderDecisionsResponse, ProviderError, ProviderRequestContext,
@@ -243,6 +243,16 @@ impl OpenAiCompatProvider {
     }
 
     #[tracing::instrument(name = "gateway.provider.prepare_request", skip_all)]
+    async fn build_authenticated_images_request(
+        &self,
+        request: &ImagesRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<reqwest::Request, ProviderError> {
+        let token = self.auth_token().await?;
+        self.build_images_request_with_token(request, context, token.as_deref())
+    }
+
+    #[tracing::instrument(name = "gateway.provider.prepare_request", skip_all)]
     async fn build_authenticated_responses_request(
         &self,
         request: &CoreResponsesRequest,
@@ -320,6 +330,25 @@ impl OpenAiCompatProvider {
         }
 
         self.build_request("embeddings", body, context, false, false, bearer_token)
+    }
+
+    fn build_images_request_with_token(
+        &self,
+        request: &ImagesRequest,
+        context: &ProviderRequestContext,
+        bearer_token: Option<&str>,
+    ) -> Result<reqwest::Request, ProviderError> {
+        let mut body = serde_json::to_value(request)
+            .map_err(|error| ProviderError::Transport(error.to_string()))?;
+
+        if let Some(object) = body.as_object_mut() {
+            object.insert(
+                "model".to_string(),
+                Value::String(context.upstream_model.clone()),
+            );
+        }
+
+        self.build_request("images", body, context, false, false, bearer_token)
     }
 
     fn build_responses_request_with_token(
@@ -430,8 +459,15 @@ impl OpenAiCompatProvider {
         if apply_compatibility_profile {
             apply_openai_compat_request_profile(&mut body, context);
         }
-        if matches!(endpoint_suffix, "chat/completions" | "responses") {
+        if matches!(endpoint_suffix, "chat/completions" | "responses" | "images") {
             apply_openrouter_routing_policy(&mut body, context)?;
+        }
+        // The gateway serves images only as one JSON response, so neither the
+        // caller nor a route `extra_body` may ask the upstream for a stream.
+        if endpoint_suffix == "images"
+            && let Some(object) = body.as_object_mut()
+        {
+            object.remove("stream");
         }
         if let Some(object) = body.as_object_mut()
             && enforce_stream
@@ -742,6 +778,17 @@ impl ProviderClient for OpenAiCompatProvider {
         self.execute_json_request(request).await
     }
 
+    async fn images(
+        &self,
+        request: &ImagesRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<Value, ProviderError> {
+        let request = self
+            .build_authenticated_images_request(request, context)
+            .await?;
+        self.execute_json_request(request).await
+    }
+
     async fn responses(
         &self,
         request: &CoreResponsesRequest,
@@ -806,11 +853,12 @@ mod tests {
     use bytes::Bytes;
     use futures_util::{StreamExt, stream};
     use gateway_core::{
-        CoreChatMessage, CoreChatRequest, CoreResponsesRequest, OpenAiCompatDeveloperRole,
-        OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
-        OpenAiCompatRouteCompatibility, OpenRouterMaxPrice, OpenRouterPercentileCutoffs,
-        OpenRouterPercentilePreference, OpenRouterProviderRouting, OpenRouterRouteCompatibility,
-        ProviderClient, ProviderError, ProviderRequestContext, RouteCompatibility,
+        CoreChatMessage, CoreChatRequest, CoreResponsesRequest, ImagesRequest,
+        OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField,
+        OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility, OpenRouterMaxPrice,
+        OpenRouterPercentileCutoffs, OpenRouterPercentilePreference, OpenRouterProviderRouting,
+        OpenRouterRouteCompatibility, ProviderClient, ProviderError, ProviderRequestContext,
+        RouteCompatibility,
     };
     use serde_json::{Map, Value, json};
     use tokio::net::TcpListener;
@@ -1299,6 +1347,51 @@ mod tests {
         let body_json = request_body_json(&built);
 
         assert!(body_json.get("provider").is_none());
+    }
+
+    #[test]
+    fn openrouter_policy_overrides_caller_provider_preferences_for_images() {
+        let mut extra = BTreeMap::new();
+        extra.insert("provider".into(), json!({"zdr": false, "only": ["other"]}));
+        let request = ImagesRequest {
+            model: "gpt-image".to_string(),
+            prompt: "A small red circle".to_string(),
+            stream: false,
+            extra,
+        };
+        let context = context_with_openrouter_policy(OpenRouterProviderRouting {
+            zdr: Some(true),
+            only: vec!["openai".into()],
+            ..Default::default()
+        });
+        let built = provider()
+            .build_images_request_with_token(&request, &context, None)
+            .expect("build request");
+        assert_eq!(
+            request_body_json(&built)["provider"],
+            json!({"zdr": true, "only": ["openai"]})
+        );
+    }
+
+    #[test]
+    fn images_request_drops_stream_from_route_extra_body() {
+        let request = ImagesRequest {
+            model: "gpt-image".to_string(),
+            prompt: "A small red circle".to_string(),
+            stream: false,
+            extra: BTreeMap::new(),
+        };
+        let mut context = default_context();
+        context.extra_body.insert("stream".into(), json!(true));
+        context.extra_body.insert("quality".into(), json!("low"));
+
+        let built = provider()
+            .build_images_request_with_token(&request, &context, None)
+            .expect("build request");
+        let body = request_body_json(&built);
+
+        assert!(body.get("stream").is_none(), "{body}");
+        assert_eq!(body["quality"], "low");
     }
 
     #[test]
@@ -1926,6 +2019,89 @@ mod tests {
             ProviderError::UpstreamHttp { status, .. } => assert_eq!(status, 429),
             other => panic!("unexpected error variant: {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn images_forwards_body_and_returns_upstream_json() {
+        let response_body = json!({
+            "created": 1_700_000_000,
+            "data": [{"b64_json": "aGVsbG8=", "media_type": "image/png"}],
+            "usage": {"input_tokens": 12, "output_tokens": 34, "total_tokens": 46}
+        });
+        let served = response_body.clone();
+        let app = Router::new().route(
+            "/v1/images",
+            post(move |Json(body): Json<Value>| {
+                let served = served.clone();
+                async move {
+                    assert_eq!(body["model"], "gpt-image-upstream");
+                    assert_eq!(body["prompt"], "a red fox");
+                    assert_eq!(body["quality"], "high");
+                    assert_eq!(
+                        body["input_references"],
+                        json!([{"image_url": "https://example.com/ref.png"}])
+                    );
+                    assert!(body.get("stream").is_none());
+                    Json(served)
+                }
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve app");
+        });
+
+        let provider = OpenAiCompatProvider::new(OpenAiCompatConfig {
+            provider_key: "openai-prod".to_string(),
+            provider_type: "openai_compat".to_string(),
+            base_url: format!("http://{addr}/v1"),
+            bearer_token: None,
+            bearer_auth_header: super::BearerAuthHeader::Authorization,
+            identity_token_source: None,
+            routing_auth_identity: None,
+            default_headers: BTreeMap::new(),
+            request_timeout_ms: 10_000,
+            batch: OpenAiBatchConfig::default(),
+            decisions_url: None,
+        })
+        .expect("provider");
+
+        let request = ImagesRequest {
+            model: "image-model".to_string(),
+            prompt: "a red fox".to_string(),
+            stream: false,
+            extra: BTreeMap::from([
+                ("quality".to_string(), json!("high")),
+                (
+                    "input_references".to_string(),
+                    json!([{"image_url": "https://example.com/ref.png"}]),
+                ),
+            ]),
+        };
+        let context = ProviderRequestContext {
+            request_id: "req-img".to_string(),
+            model_key: "image-model".to_string(),
+            provider_key: "openai-prod".to_string(),
+            upstream_model: "gpt-image-upstream".to_string(),
+            owner_user_id: None,
+            expected_provider_credential_id: None,
+            chat_protocol: Default::default(),
+            extra_headers: Map::new(),
+            extra_body: Map::new(),
+            request_headers: BTreeMap::new(),
+            compatibility: Default::default(),
+        };
+
+        let response = provider
+            .images(&request, &context)
+            .await
+            .expect("images response");
+        assert_eq!(response, response_body);
     }
 
     #[tokio::test]

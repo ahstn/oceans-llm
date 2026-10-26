@@ -55,12 +55,15 @@ pub struct ModelGroupInfo {
 }
 
 /// LiteLLM has no mode that excludes System One decision models, so they stay `chat`;
-/// clients list them as chat models either way.
+/// clients list them as chat models either way. Image-only models use LiteLLM's
+/// `image_generation` mode so that clients do not offer them for chat.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ModelGroupMode {
     Chat,
     Embedding,
+    #[serde(rename = "image_generation")]
+    ImageGeneration,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -136,8 +139,12 @@ fn per_token_costs(pricing: &PricingCatalogCostDocument) -> Option<TokenCosts> {
 }
 
 fn mode(transport: ProviderCapabilities) -> ModelGroupMode {
-    if transport.embeddings && !transport.chat_completions && !transport.responses {
+    if transport.chat_completions || transport.responses {
+        ModelGroupMode::Chat
+    } else if transport.embeddings {
         ModelGroupMode::Embedding
+    } else if transport.images {
+        ModelGroupMode::ImageGeneration
     } else {
         ModelGroupMode::Chat
     }

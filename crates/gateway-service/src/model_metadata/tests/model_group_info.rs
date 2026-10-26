@@ -99,6 +99,7 @@ async fn model_group_info_converts_per_million_prices_to_per_token_costs() {
         output_cost_per_million_tokens: Money4::from_scaled(200_000),
         cache_read_cost_per_million_tokens: Some(Money4::from_scaled(2_000)),
         cache_write_cost_per_million_tokens: Some(Money4::from_scaled(50_000)),
+        image_output_cost_per_million_tokens: None,
     });
     let configured = group_info(model("gpt"), vec![priced], provider()).await;
     assert_costs(&configured, &[4e-6, 20e-6, 0.2e-6, 5e-6]);
@@ -127,6 +128,7 @@ async fn model_group_info_keeps_known_prices_when_a_cache_rate_is_missing() {
         output_cost_per_million_tokens: Money4::from_scaled(20_000),
         cache_read_cost_per_million_tokens: None,
         cache_write_cost_per_million_tokens: None,
+        image_output_cost_per_million_tokens: None,
     });
     let configured = group_info(model("gpt"), vec![partial], provider()).await;
     assert_costs(&configured, &[1e-6, 2e-6]);
@@ -261,6 +263,24 @@ async fn model_group_info_marks_embeddings_only_models() {
     assert_eq!(card["mode"], json!("embedding"));
     // No chat route serves Responses, so the OpenAI vendor is not claimed.
     assert_eq!(card["providers"], json!(["openai_compat"]));
+}
+
+#[tokio::test]
+async fn model_group_info_marks_image_only_models() {
+    let mut images = route();
+    images.upstream_model = "openai/gpt-image-2.5-flare".into();
+    images.capabilities = ProviderCapabilities {
+        images: true,
+        ..ProviderCapabilities::none()
+    };
+    let card = group_info(model("flare"), vec![images.clone()], provider()).await;
+    assert_eq!(card["mode"], json!("image_generation"));
+
+    // A chat route on the same model keeps it a chat model.
+    let mut chat = route();
+    chat.capabilities.images = false;
+    let mixed = group_info(model("flare"), vec![images, chat], provider()).await;
+    assert_eq!(mixed["mode"], json!("chat"));
 }
 
 #[tokio::test]

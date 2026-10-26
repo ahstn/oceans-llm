@@ -254,6 +254,7 @@ fn map_model_summary(model: AdminModelSummary, include_admin_details: bool) -> A
             })
             .collect(),
         supports_decisions: model.supports_decisions,
+        supports_image_generation: model.supports_image_generation,
         client_configurations: model
             .client_configurations
             .into_iter()
@@ -365,6 +366,7 @@ mod tests {
             supports_attachments: None,
             benchmark_scores: Vec::new(),
             supports_decisions: None,
+            supports_image_generation: None,
             client_configurations: Vec::new(),
         }
     }

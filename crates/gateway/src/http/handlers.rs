@@ -6,9 +6,13 @@ mod decisions_tests;
 mod embeddings;
 #[cfg(test)]
 mod embeddings_tests;
+mod images;
+#[cfg(test)]
+mod images_tests;
 mod inference;
 #[cfg(test)]
 mod inference_tests;
+mod json_operation;
 #[cfg(test)]
 mod model_group_info_tests;
 #[cfg(test)]
@@ -24,6 +28,7 @@ pub use count_tokens::{CountTokensLimiter, v1_messages_count_tokens};
 pub use decisions::{v1_decisions, v1_systemone};
 pub use embeddings::v1_embeddings;
 use gateway_service::routing::{RoutingEndpoint, RoutingReceipt};
+pub use images::v1_images;
 use routing::{SelectedProviderRoute, no_compatible_route_error, select_provider_route};
 
 use std::{collections::BTreeMap, sync::Arc, time::Instant};

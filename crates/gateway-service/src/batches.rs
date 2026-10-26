@@ -125,12 +125,14 @@ where
                 output: pricing.output_cost_per_million_tokens,
                 cache_read: pricing.cache_read_cost_per_million_tokens,
                 cache_write: pricing.cache_write_cost_per_million_tokens,
+                image_output: None,
             }),
             PricingResolution::ConfiguredOverride { pricing } => Some(BatchRates {
                 input: Some(pricing.input_cost_per_million_tokens),
                 output: Some(pricing.output_cost_per_million_tokens),
                 cache_read: pricing.cache_read_cost_per_million_tokens,
                 cache_write: pricing.cache_write_cost_per_million_tokens,
+                image_output: pricing.image_output_cost_per_million_tokens,
             }),
             PricingResolution::Unpriced { .. } => None,
         };
@@ -169,7 +171,19 @@ fn batch_usage_cost_numerator(
         }
         CacheUsageNormalization::Unsupported(_) => return Ok(None),
     }
-    components.push((usage.completion_tokens, rates.output, true));
+    // Image tokens are part of the completion tokens; with an image rate they
+    // are charged at it and the rest at the output rate, as in usage pricing.
+    match (
+        usage.completion_tokens,
+        usage.image_output_tokens,
+        rates.image_output,
+    ) {
+        (Some(completion), Some(image), Some(image_rate)) => {
+            components.push((Some(completion - image), rates.output, true));
+            components.push((Some(image), Some(image_rate), true));
+        }
+        _ => components.push((usage.completion_tokens, rates.output, true)),
+    }
 
     let mut total = 0_i128;
     for (tokens, rate, discounted) in components {
@@ -479,6 +493,7 @@ mod tests {
                 output: Some(Money4::ZERO),
                 cache_read: None,
                 cache_write: None,
+                image_output: None,
             }),
             policy: BatchPricingPolicy::HalfAllTokenRates,
         };
