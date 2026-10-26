@@ -61,6 +61,8 @@ Policy fields:
 
 Provider slugs must match OpenRouter's provider names. Oceans checks the data shape and conflicts. It does not maintain an OpenRouter provider catalog.
 
+Oceans sends the policy as the upstream `provider` object on Chat Completions, Responses, and Images requests. The route policy replaces any `provider` object that the caller sends.
+
 ## Decisions API
 
 Oceans exposes System One requests at `POST /v1/decisions`. An OpenRouter Decisions route sends the same request to `POST https://openrouter.ai/api/alpha/decisions`.

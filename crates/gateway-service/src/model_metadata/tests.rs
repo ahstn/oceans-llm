@@ -594,6 +594,10 @@ fn image_listing(capabilities: ProviderCapabilities) -> (GatewayModel, ListingRe
 
 async fn image_listing_card(capabilities: ProviderCapabilities) -> serde_json::Value {
     let (model, repo) = image_listing(capabilities);
+    listing_card(model, repo).await
+}
+
+async fn listing_card(model: GatewayModel, repo: ListingRepo) -> serde_json::Value {
     let listed = super::listing::list_models(
         &repo,
         vec![model],
@@ -635,6 +639,29 @@ async fn routes_without_the_images_capability_keep_unknown_modalities() {
 #[tokio::test]
 async fn chat_and_image_routes_without_catalog_data_report_text_and_image_output() {
     let card = image_listing_card(ProviderCapabilities::openai_compat_baseline()).await;
+
+    assert_eq!(
+        card["architecture"]["output_modalities"],
+        json!(["image", "text"])
+    );
+}
+
+#[tokio::test]
+async fn separate_chat_and_image_only_routes_report_text_and_image_output() {
+    let (model, mut repo) = image_listing(ProviderCapabilities {
+        images: true,
+        ..ProviderCapabilities::none()
+    });
+    let mut chat_route = repo.routes[0].clone();
+    chat_route.id = Uuid::new_v4();
+    chat_route.upstream_model = "openai/gpt-5".into();
+    chat_route.capabilities = ProviderCapabilities {
+        images: false,
+        ..ProviderCapabilities::openai_compat_baseline()
+    };
+    repo.routes.push(chat_route);
+
+    let card = listing_card(model, repo).await;
 
     assert_eq!(
         card["architecture"]["output_modalities"],

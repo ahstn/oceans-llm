@@ -48,7 +48,7 @@ New large-field paths cover chat `choices[].message.images[].image_url.url`, str
 
 ### 5. Image output modality
 
-`/v1/models` and the admin model metadata add `image` to the output modalities of a model with an `images` route, also when the catalog has no modality data. The admin model view adds `supports_image_generation`, and the Models page shows an `Image Generation` badge.
+`/v1/models` and the admin model metadata add `image` to the output modalities of a model with an `images` route, also when the catalog has no modality data. A model with a separate chat route keeps `text` output. `GET /model_group/info` reports `mode: image_generation` for an image-only model, so LiteLLM clients do not offer it for chat. The admin model view adds `supports_image_generation`, which is true when any eligible route serves images, and the Models page shows an `Image Generation` badge.
 
 ## Why
 

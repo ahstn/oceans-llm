@@ -2013,6 +2013,7 @@ mod tests {
             output: Some(Money4::from_scaled(20_000)),
             cache_read: Some(Money4::from_scaled(1_000)),
             cache_write: Some(Money4::from_scaled(12_500)),
+            image_output: None,
         };
 
         assert_eq!(
@@ -2024,6 +2025,37 @@ mod tests {
             compute_batch_usage_cost(&usage, rates, BatchPricingPolicy::VertexHalfNonCachedRates,)
                 .expect("Vertex price"),
             Some(Money4::from_scaled(240))
+        );
+    }
+
+    #[test]
+    fn batch_pricing_charges_image_tokens_at_configured_image_rate() {
+        let usage = usage_summary_from_value(Some(&json!({
+            "prompt_tokens": 0,
+            "completion_tokens": 1_200,
+            "completion_tokens_details": {"image_tokens": 1_000},
+            "total_tokens": 1_200
+        })))
+        .expect("usage");
+        let mut rates = BatchRates {
+            input: Some(Money4::from_scaled(10_000)),
+            output: Some(Money4::from_scaled(15_000)),
+            cache_read: None,
+            cache_write: None,
+            image_output: Some(Money4::from_scaled(300_000)),
+        };
+
+        // (200 * $1.50 + 1000 * $30) / 1M, halved: $0.01515 rounds to $0.0152.
+        assert_eq!(
+            compute_batch_usage_cost(&usage, rates, BatchPricingPolicy::HalfAllTokenRates)
+                .expect("image batch price"),
+            Some(Money4::from_scaled(152))
+        );
+        rates.image_output = None;
+        assert_eq!(
+            compute_batch_usage_cost(&usage, rates, BatchPricingPolicy::HalfAllTokenRates)
+                .expect("text batch price"),
+            Some(Money4::from_scaled(9))
         );
     }
 
@@ -2040,6 +2072,7 @@ mod tests {
             output: Some(Money4::ZERO),
             cache_read: None,
             cache_write: None,
+            image_output: None,
         };
 
         assert_eq!(

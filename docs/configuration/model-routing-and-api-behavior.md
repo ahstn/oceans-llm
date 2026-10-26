@@ -409,7 +409,7 @@ omp (Oh My Pi) can also read this field with `discovery.type: proxy`. That mode 
 
 Decision models served through `POST /v1/decisions` have no new-api endpoint type, so their `supported_endpoint_types` is empty and they carry no `client_hints`. Following OpenRouter, they report `decisions` in `architecture.output_modalities`. Proxy-discovery clients that do not read that modality may list them as chat models.
 
-Models with an eligible `capabilities.images` route report `image` in `architecture.output_modalities`, following OpenRouter. The catalog has no modality data for image-only models such as `openai/gpt-image-2.5-flare`, so such a route reports `text` input (the prompt) and `image` output. It also reports `text` output when the route serves Chat Completions or Responses. `GET /v1/model-metadata` adds the same modalities to that route's `modalities`. An image-only model has no chat endpoint, so its `supported_endpoint_types` is empty and it carries no `client_hints`.
+Models with an eligible `capabilities.images` route report `image` in `architecture.output_modalities`, following OpenRouter. The catalog has no modality data for image-only models such as `openai/gpt-image-2.5-flare`, so such a route reports `text` input (the prompt) and `image` output. The model also reports `text` output when any eligible route serves Chat Completions or Responses, also when that is a different route than the image route. `GET /v1/model-metadata` adds the same modalities to that route's `modalities`. An image-only model has no chat endpoint, so its `supported_endpoint_types` is empty and it carries no `client_hints`.
 
 Visibility does not guarantee that a route can execute every API family. A model can be visible while all routes are disabled, non-viable, or incompatible with the requested operation.
 
@@ -429,7 +429,7 @@ Each row has these fields:
 | --- | --- | --- |
 | `model_group` | Gateway model key | Equal to `id` in `/v1/models` |
 | `providers` | One lowercase vendor of the primary route's upstream model | `["openai"]` only when every eligible chat route serves the Responses API, and always when no route serves Chat Completions. See below |
-| `mode` | Route transport | `chat` when the model serves Chat Completions or Responses. `embedding` when the model serves only embeddings |
+| `mode` | Route transport | `chat` when the model serves Chat Completions or Responses. Otherwise `embedding` when the model serves embeddings, or `image_generation` when it serves only `/v1/images` |
 | `max_input_tokens` | Conservative input limit, else the context window | `null` when unknown. omp uses this value as the context window |
 | `max_output_tokens` | Conservative output limit | `null` when unknown |
 | `input_cost_per_token`, `output_cost_per_token`, `cache_read_input_token_cost`, `cache_creation_input_token_cost` | Primary route price | USD per token. Input and output are present together, or no cost field is present. A cache cost is present only when its price is known |

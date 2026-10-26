@@ -446,7 +446,14 @@ where
                         .map(supports_attachments),
                     benchmark_scores: self.benchmark_scores(&by_key, &model, primary_route),
                     supports_decisions: route_capabilities.map(|caps| caps.decisions),
-                    supports_image_generation: route_capabilities.map(|caps| caps.images),
+                    // `/v1/images` can land on any eligible route, not only the display route.
+                    supports_image_generation: route_capabilities.map(|caps| {
+                        caps.images
+                            || routes.iter().any(|route| {
+                                route.capabilities.images
+                                    && route_is_eligible(&providers_by_key, route)
+                            })
+                    }),
                     client_configurations,
                 },
                 client_config_input,
@@ -1783,6 +1790,60 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["opencode", "pi"]
         );
+    }
+
+    #[tokio::test]
+    async fn image_generation_support_counts_non_display_routes() {
+        let model = plain_model("mixed", None);
+        let model_id = model.id;
+        let route = |upstream_model: &str, priority, capabilities| ModelRoute {
+            model_id,
+            provider_key: "openai".to_string(),
+            priority,
+            ..model_route(upstream_model, capabilities)
+        };
+        let repo = Arc::new(CountingRepo {
+            models: vec![model],
+            routes_by_model: HashMap::from([(
+                model_id,
+                vec![
+                    route(
+                        "chat-upstream",
+                        0,
+                        ProviderCapabilities {
+                            images: false,
+                            ..ProviderCapabilities::openai_compat_baseline()
+                        },
+                    ),
+                    route(
+                        "image-upstream",
+                        1,
+                        ProviderCapabilities {
+                            images: true,
+                            ..ProviderCapabilities::none()
+                        },
+                    ),
+                ],
+            )]),
+            providers_by_key: HashMap::from([(
+                "openai".to_string(),
+                ProviderConnection {
+                    provider_key: "openai".to_string(),
+                    provider_type: "openai_compat".to_string(),
+                    config: json!({}),
+                    secrets: None,
+                },
+            )]),
+            ..Default::default()
+        });
+
+        let items = AdminModelsService::new(repo)
+            .list_models()
+            .await
+            .expect("admin models");
+
+        assert_eq!(items[0].upstream_model.as_deref(), Some("chat-upstream"));
+        assert_eq!(items[0].supports_image_generation, Some(true));
     }
 
     #[tokio::test]

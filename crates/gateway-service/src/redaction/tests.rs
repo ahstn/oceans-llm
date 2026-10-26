@@ -449,6 +449,45 @@ fn redacts_media_url_userinfo_from_retained_payloads() {
 }
 
 #[test]
+fn redacts_signed_image_generation_urls() {
+    let input = json!({
+        "body": {
+            "input_references": [{
+                "type": "image_url",
+                "image_url": {"url": "https://user:password@media.example.invalid/ref.png?X-Amz-Signature=ref-secret"}
+            }],
+            "messages": [{
+                "role": "assistant",
+                "images": [{"image_url": {"url": "https://media.example.invalid/prev.png?sig=replay-secret"}}]
+            }],
+            "choices": [{
+                "message": {
+                    "images": [{"image_url": {"url": "https://media.example.invalid/out.png?sig=out-secret"}}]
+                }
+            }]
+        },
+        "events": [{
+            "choices": [{
+                "delta": {
+                    "images": [{"image_url": {"url": "https://media.example.invalid/delta.png?sig=delta-secret"}}]
+                }
+            }]
+        }]
+    });
+
+    let redacted = redact_json_value(&input);
+
+    assert_eq!(
+        redacted["body"]["input_references"][0]["image_url"]["url"],
+        "https://media.example.invalid/ref.png?<redacted>"
+    );
+    let retained = redacted.to_string();
+    for secret in ["password", "ref-secret", "replay-secret", "out-secret", "delta-secret"] {
+        assert!(!retained.contains(secret), "{secret} retained");
+    }
+}
+
+#[test]
 fn redacts_signed_media_urls_echoed_in_error_messages() {
     let input = json!({
         "body": {

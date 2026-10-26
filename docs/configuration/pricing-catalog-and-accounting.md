@@ -88,7 +88,7 @@ pricing_override:
   image_output_usd_per_million_tokens: "30.0000"
 ```
 
-The catalog has no image output rate. Without an image rate, every completion token, image tokens included, is charged at the output rate. The spend event stores the image token count and the image rate it used. An image token count that is not a whole number from zero to the completion tokens is ignored with a warning, and every completion token is charged at the output rate.
+The catalog has no image output rate. Without an image rate, every completion token, image tokens included, is charged at the output rate. The spend event stores the image token count and the image rate it used. Batch pricing snapshots keep the image rate and apply the same split before the batch discount. An image token count that is not a whole number from zero to the completion tokens is ignored with a warning, and every completion token is charged at the output rate.
 
 ## Configure Routes For Chargeable Traffic
 

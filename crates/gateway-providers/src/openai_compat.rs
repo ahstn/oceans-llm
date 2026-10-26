@@ -462,7 +462,7 @@ impl OpenAiCompatProvider {
         if apply_compatibility_profile {
             apply_openai_compat_request_profile(&mut body, context);
         }
-        if matches!(endpoint_suffix, "chat/completions" | "responses") {
+        if matches!(endpoint_suffix, "chat/completions" | "responses" | "images") {
             apply_openrouter_routing_policy(&mut body, context)?;
         }
         if let Some(object) = body.as_object_mut()
@@ -1343,6 +1343,30 @@ mod tests {
         let body_json = request_body_json(&built);
 
         assert!(body_json.get("provider").is_none());
+    }
+
+    #[test]
+    fn openrouter_policy_overrides_caller_provider_preferences_for_images() {
+        let mut extra = BTreeMap::new();
+        extra.insert("provider".into(), json!({"zdr": false, "only": ["other"]}));
+        let request = ImagesRequest {
+            model: "gpt-image".to_string(),
+            prompt: "A small red circle".to_string(),
+            stream: false,
+            extra,
+        };
+        let context = context_with_openrouter_policy(OpenRouterProviderRouting {
+            zdr: Some(true),
+            only: vec!["openai".into()],
+            ..Default::default()
+        });
+        let built = provider()
+            .build_images_request_with_token(&request, &context, None)
+            .expect("build request");
+        assert_eq!(
+            request_body_json(&built)["provider"],
+            json!({"zdr": true, "only": ["openai"]})
+        );
     }
 
     #[test]

@@ -266,6 +266,24 @@ async fn model_group_info_marks_embeddings_only_models() {
 }
 
 #[tokio::test]
+async fn model_group_info_marks_image_only_models() {
+    let mut images = route();
+    images.upstream_model = "openai/gpt-image-2.5-flare".into();
+    images.capabilities = ProviderCapabilities {
+        images: true,
+        ..ProviderCapabilities::none()
+    };
+    let card = group_info(model("flare"), vec![images.clone()], provider()).await;
+    assert_eq!(card["mode"], json!("image_generation"));
+
+    // A chat route on the same model keeps it a chat model.
+    let mut chat = route();
+    chat.capabilities.images = false;
+    let mixed = group_info(model("flare"), vec![images, chat], provider()).await;
+    assert_eq!(mixed["mode"], json!("chat"));
+}
+
+#[tokio::test]
 async fn model_group_info_offers_reasoning_effort_without_anthropic_routes() {
     // `/v1/models` hides thinking here because the route is not Anthropic Messages native;
     // `reasoning_effort` on chat completions and Responses needs no such gate.

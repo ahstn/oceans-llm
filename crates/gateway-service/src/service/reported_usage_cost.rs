@@ -63,8 +63,10 @@ struct ReportedAmount {
 impl ReportedAmount {
     fn parse(value: &Value, field: &str) -> Result<Self, String> {
         let text = match value {
-            // serde_json prints a float as its shortest round-trip decimal: the
-            // amount the provider wrote, which `f64` arithmetic would not keep.
+            // serde_json prints a float as its shortest round-trip decimal. That
+            // is the amount the provider wrote when it has at most 15 significant
+            // digits (OpenRouter costs have far fewer); summing the decimals
+            // avoids the error `f64` addition would add on top.
             Value::Number(number) => Cow::Owned(number.to_string()),
             Value::String(text) => Cow::Borrowed(text.trim()),
             _ => return Err(format!("`{field}` must be a number or a decimal string")),

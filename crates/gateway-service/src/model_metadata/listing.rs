@@ -593,7 +593,9 @@ fn common_modalities<'a>(
 /// Outputs a request can reach on some eligible route, which the intersection of catalog
 /// modalities would drop. OpenRouter marks System One decision models with a `decisions`
 /// output modality and image generators with `image`; the catalog has no decision models
-/// and no image-only models, so the gateway adds both from route capabilities.
+/// and no image-only models, so the gateway adds both from route capabilities. A separate
+/// image-only or decisions-only route also empties that intersection, so text comes back
+/// whenever some route serves chat.
 fn with_served_outputs(
     modalities: Option<Vec<String>>,
     transport: ProviderCapabilities,
@@ -605,6 +607,7 @@ fn with_served_outputs(
     for (served, modality) in [
         (transport.decisions, "decisions"),
         (transport.images, "image"),
+        (transport.chat_completions || transport.responses, "text"),
     ] {
         if served && !modalities.iter().any(|value| value == modality) {
             modalities.push(modality.to_string());

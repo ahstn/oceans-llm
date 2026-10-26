@@ -28,7 +28,7 @@ Preconditions:
 - `control-oceans-admin doctor` passes.
 - `OPENROUTER_API_KEY` is in the launch environment. If it is not set, `source ~/.config/zsh/.zsh-private` before `launch`.
 - The operator accepts three short paid requests: two Images API calls (about $0.007 each at `quality: low`) and one chat image call (about $0.035). The 403 check and `/v1/models` are free.
-- Create a unique temporary gateway API key through the API Keys recipe with only the `inference` capability and grants for `gpt-image-2.5-flare` and the selected Gemini image model. Create a second temporary key with a grant for `deepseek-v4.1-flash` only, for the 403 check. Keep both keys in memory or only in the current shell. Do not write them to evidence or command history.
+- Create a unique temporary gateway API key through the API Keys recipe with only the `inference` capability and grants for `gpt-image-2.5-flare`, `gemini-nano-banana-2.1` and `gemini-3.1-flash-lite-image`, so the chat fallback below needs no grant change. Create a second temporary key with a grant for `deepseek-v4.1-flash` only, for the 403 check. Keep both keys in memory or only in the current shell. Do not write them to evidence or command history.
 
 - **Images API.** Send `POST /v1/images` with `{"model":"gpt-image-2.5-flare","prompt":"A small red circle on a white background","quality":"low"}` and a unique `x-request-id`. Expect 200, `data[0].b64_json` (a base64 PNG), `data[0].media_type`, and `usage` with `completion_tokens_details.image_tokens`. Save only the status, the `b64_json` length and the usage numbers, not the image.
 - **Alias.** Send the same body to `POST /v1/images/generations`. Expect the same response shape.
