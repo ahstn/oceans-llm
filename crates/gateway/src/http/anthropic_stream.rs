@@ -245,6 +245,9 @@ fn append_anthropic_usage_delta(
     ));
 }
 
+/// OpenRouter billing fields that usage accounting reads as the provider-reported cost.
+const REPORTED_COST_USAGE_FIELDS: [&str; 3] = ["cost", "is_byok", "cost_details"];
+
 fn anthropic_stream_usage_from_openai(value: Option<&Value>) -> Option<Value> {
     let usage = value?.as_object()?;
     let mut anthropic_usage = serde_json::Map::new();
@@ -256,6 +259,11 @@ fn anthropic_stream_usage_from_openai(value: Option<&Value>) -> Option<Value> {
     }
     if let Some(provider_usage) = usage.get("provider_usage") {
         anthropic_usage.insert("provider_usage".to_string(), provider_usage.clone());
+    }
+    for field in REPORTED_COST_USAGE_FIELDS {
+        if let Some(value) = usage.get(field) {
+            anthropic_usage.insert(field.to_string(), value.clone());
+        }
     }
     if anthropic_usage.is_empty() {
         None
@@ -726,6 +734,30 @@ mod tests {
                     "cache_creation_input_tokens": 1
                 }
             }))
+        );
+    }
+
+    #[tokio::test]
+    async fn anthropic_messages_stream_adapter_preserves_reported_cost_for_accounting() {
+        let upstream: ProviderStream = Box::pin(stream::iter(vec![Ok(Bytes::from(concat!(
+            "data: {\"id\":\"gen-1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"gen-1\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: {\"id\":\"gen-1\",\"choices\":[],\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":3,\"total_tokens\":15,\"cost\":0,\"is_byok\":true,\"cost_details\":{\"upstream_inference_cost\":0.0000033}}}\n\n",
+            "data: [DONE]\n\n"
+        )))]));
+
+        let rendered = render_stream(upstream).await;
+        let mut collector = StreamResponseCollector::default();
+        collector.observe_chunk(rendered.as_bytes());
+
+        let usage = collector.usage().expect("collected usage");
+        assert_eq!(usage["input_tokens"], 12);
+        assert_eq!(usage["output_tokens"], 3);
+        assert_eq!(usage["cost"], 0);
+        assert_eq!(usage["is_byok"], true);
+        assert_eq!(
+            usage["cost_details"],
+            json!({"upstream_inference_cost": 0.0000033})
         );
     }
 

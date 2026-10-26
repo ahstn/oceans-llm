@@ -38,7 +38,7 @@ An image-only route sets `images: true` and turns the other API families off. Ro
 
 ### 3. Provider-reported cost first
 
-When the provider usage has `cost`, the gateway records it as the request cost with `pricing_source: provider_reported`. When `usage.is_byok` is true, it records `cost + cost_details.upstream_inference_cost`: OpenRouter's own fee plus what the provider bills the operator's key. The amounts are parsed as exact decimals, summed, and rounded half up once to four decimal places. A malformed or negative amount, or a BYOK report without the upstream amount, logs a warning and falls back to token rates.
+When the provider usage has `cost`, the gateway records it as the request cost with `pricing_source: provider_reported`. When `usage.is_byok` is true, it records `cost + cost_details.upstream_inference_cost`: OpenRouter's own fee plus what the provider bills the admin's own provider key. The amounts are parsed as exact decimals, summed, and rounded half up once to four decimal places. A malformed or negative amount, or a BYOK report without the upstream amount, logs a warning and falls back to token rates.
 
 Only when the usage has no reported cost does the gateway use the catalog or the route `pricing_override`. `usage.completion_tokens_details.image_tokens` (or `output_tokens_details.image_tokens`) are then charged at the new optional `pricing_override.image_output_usd_per_million_tokens`, and the other completion tokens at the output rate. The catalog has no image rate. When no image rate exists, all completion tokens use the output rate, as before. The ledger stores `image_output_tokens` and the image rate on `usage_cost_events`.
 
@@ -59,7 +59,7 @@ New large-field paths cover chat `choices[].message.images[].image_url.url`, str
 
 ## Trade-offs
 
-- **Provider-reported cost overrides `pricing_override`.** A route with a configured override, such as a negotiated rate or an internal markup, now records the provider's reported cost when the provider sends one. Before this change the override was always authoritative. Operators who need the override must use a provider that does not report cost.
+- **Provider-reported cost overrides `pricing_override`.** A route with a configured override, such as a negotiated rate or an internal markup, now records the provider's reported cost when the provider sends one. Before this change the override was always authoritative. Admins who need the override must use a provider that does not report cost.
 - **The recorded cost depends on the provider.** A provider that reports a wrong `cost` is recorded as-is. Today only OpenRouter-style providers report it.
 - **Four decimal places.** A very small reported cost rounds to `$0.0000` or differs by up to $0.00005, the same as catalog pricing.
 - **No catalog image rate.** Catalog-priced routes without a reported cost, such as a native provider without an override, still charge image tokens at the output rate. For native OpenAI and Google entries in models.dev the `output` rate is already the image rate, but for aggregator entries it is the text rate.

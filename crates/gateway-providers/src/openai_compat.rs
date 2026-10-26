@@ -346,9 +346,6 @@ impl OpenAiCompatProvider {
                 "model".to_string(),
                 Value::String(context.upstream_model.clone()),
             );
-            if !request.stream {
-                object.remove("stream");
-            }
         }
 
         self.build_request("images", body, context, false, false, bearer_token)
@@ -464,6 +461,13 @@ impl OpenAiCompatProvider {
         }
         if matches!(endpoint_suffix, "chat/completions" | "responses" | "images") {
             apply_openrouter_routing_policy(&mut body, context)?;
+        }
+        // The gateway serves images only as one JSON response, so neither the
+        // caller nor a route `extra_body` may ask the upstream for a stream.
+        if endpoint_suffix == "images"
+            && let Some(object) = body.as_object_mut()
+        {
+            object.remove("stream");
         }
         if let Some(object) = body.as_object_mut()
             && enforce_stream
@@ -1367,6 +1371,27 @@ mod tests {
             request_body_json(&built)["provider"],
             json!({"zdr": true, "only": ["openai"]})
         );
+    }
+
+    #[test]
+    fn images_request_drops_stream_from_route_extra_body() {
+        let request = ImagesRequest {
+            model: "gpt-image".to_string(),
+            prompt: "A small red circle".to_string(),
+            stream: false,
+            extra: BTreeMap::new(),
+        };
+        let mut context = default_context();
+        context.extra_body.insert("stream".into(), json!(true));
+        context.extra_body.insert("quality".into(), json!("low"));
+
+        let built = provider()
+            .build_images_request_with_token(&request, &context, None)
+            .expect("build request");
+        let body = request_body_json(&built);
+
+        assert!(body.get("stream").is_none(), "{body}");
+        assert_eq!(body["quality"], "low");
     }
 
     #[test]

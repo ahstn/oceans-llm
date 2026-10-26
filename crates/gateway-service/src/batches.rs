@@ -173,7 +173,11 @@ fn batch_usage_cost_numerator(
     }
     // Image tokens are part of the completion tokens; with an image rate they
     // are charged at it and the rest at the output rate, as in usage pricing.
-    match (usage.completion_tokens, usage.image_output_tokens, rates.image_output) {
+    match (
+        usage.completion_tokens,
+        usage.image_output_tokens,
+        rates.image_output,
+    ) {
         (Some(completion), Some(image), Some(image_rate)) => {
             components.push((Some(completion - image), rates.output, true));
             components.push((Some(image), Some(image_rate), true));

@@ -482,8 +482,14 @@ fn redacts_signed_image_generation_urls() {
         "https://media.example.invalid/ref.png?<redacted>"
     );
     let retained = redacted.to_string();
-    for secret in ["password", "ref-secret", "replay-secret", "out-secret", "delta-secret"] {
-        assert!(!retained.contains(secret), "{secret} retained");
+    for secret in [
+        "password",
+        "ref-secret",
+        "replay-secret",
+        "out-secret",
+        "delta-secret",
+    ] {
+        assert!(!retained.contains(secret));
     }
 }
 
