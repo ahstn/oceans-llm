@@ -36,8 +36,7 @@
     --vp-button-brand-hover-text: #ffffff;
     --vp-button-brand-active-text: #ffffff;
     --vp-font-family-base: "Geist Variable", ui-sans-serif, sans-serif;
-    --vp-font-family-mono:
-        "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    --vp-font-family-mono: "Geist Mono Variable", ui-monospace, monospace;
     --docs-scrollbar-thumb: color-mix(
         in oklch,
         var(--vp-c-text-3) 42%,

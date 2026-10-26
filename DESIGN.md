@@ -62,6 +62,10 @@ typography:
     fontSize: "0.75rem"
     fontWeight: 500
     lineHeight: 1.333
+  mono:
+    fontFamily: "Geist Mono Variable, ui-monospace, monospace"
+    fontSize: "0.875rem"
+    fontWeight: 400
 rounded:
   sm: "calc(var(--radius) * 0.6)"
   md: "calc(var(--radius) * 0.8)"
@@ -199,7 +203,8 @@ Two pairs sit close together, and both are accepted:
 
 **Display Font:** Geist Variable, with `ui-sans-serif, sans-serif` fallback.
 **Body Font:** Geist Variable, with `ui-sans-serif, sans-serif` fallback.
-**Label/Mono Font:** Geist Variable for labels; use monospace only for identifiers, request IDs, keys, code and snippets.
+**Label Font:** Geist Variable.
+**Mono Font:** Geist Mono Variable, with `ui-monospace, monospace` fallback, through the `--font-mono` token (`font-mono`). Use it only for identifiers, request IDs, keys, code and snippets.
 
 **Character:** One technical sans family carries the full UI. The type should read as precise and operational, not branded for its own sake.
 
@@ -218,7 +223,7 @@ Letter spacing is 0 by default. Uppercase labels are tracked, and new ones take 
 
 ### Named Rules
 
-**The One-Family Rule.** Do not introduce display fonts or decorative pairings in the admin UI. Product trust comes from consistency, not typographic novelty.
+**The One-Family Rule.** Do not introduce display fonts or decorative pairings in the admin UI. Geist Mono is Geist's own monospace, so it is part of the family, not a pairing; reach it through `font-mono` rather than a per-component `font-family`. Product trust comes from consistency, not typographic novelty.
 
 **The Identifier Rule.** Use monospace only when the string is machine-like: request IDs, keys, JSON, config snippets or code. Do not make the whole console terminal-themed.
 

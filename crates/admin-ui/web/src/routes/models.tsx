@@ -448,7 +448,7 @@ export function ModelsPage() {
                                 {model.upstream_model ?? 'Not currently routed'}
                               </span>
                             </div>
-                            <div className="tracking-label text-muted-foreground flex min-w-0 items-center gap-2 truncate text-xs">
+                            <div className="text-muted-foreground flex min-w-0 items-center gap-2 truncate text-xs">
                               <BrandIcon
                                 iconKey={model.provider_icon_key}
                                 size={14}

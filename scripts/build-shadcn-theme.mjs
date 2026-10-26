@@ -73,6 +73,7 @@ for (const [name, value] of rootTokens) {
 const theme = {
   'font-sans': "'Geist Variable', ui-sans-serif, sans-serif",
   'font-heading': "'Geist Variable', ui-sans-serif, sans-serif",
+  'font-mono': "'Geist Mono Variable', ui-monospace, monospace",
 }
 for (const [name, value] of declarations(block(css, '\n@theme inline').body)) {
   if (!name.startsWith('font-')) theme[name] = value
@@ -119,7 +120,7 @@ const registry = {
       title: 'Oceans Gateway',
       description:
         'The Oceans Gateway admin theme: Reef surfaces, Tokyo Night lilac for actions and Tokyo Night colours for data and status. Dark only.',
-      docs: "Dark only: keep class=\"dark\" on <html>, which these tokens target. The type utilities use Geist; install @fontsource-variable/geist and import it, or swap --font-sans. Generated from crates/admin-ui/web/src/styles/globals.css by scripts/build-shadcn-theme.mjs; DESIGN.md describes how to use each token.",
+      docs: "Dark only: keep class=\"dark\" on <html>, which these tokens target. The type utilities use Geist and code uses Geist Mono; install @fontsource-variable/geist and @fontsource-variable/geist-mono and import them, or swap --font-sans and --font-mono. Generated from crates/admin-ui/web/src/styles/globals.css by scripts/build-shadcn-theme.mjs; DESIGN.md describes how to use each token.",
       cssVars: { theme, light, dark },
       css: cssRules,
     },
