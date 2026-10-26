@@ -19,8 +19,8 @@ Resolve local secrets with [fnox](https://fnox.jdx.dev), with 1Password as the s
 
 ## Implementation
 
-- `fnox.toml` sets `root = true`, so a worktree under `.claude/worktrees/` doesn't load the main checkout's fnox files, and `env = "exec"`, so project keys stay out of the shell.
-- The `op` and `sync-age` providers, along with keys shared across projects such as `OPENROUTER_API_KEY` and `EXA_API_KEY`, come from each developer's global `~/.config/fnox/config.toml`.
+- [`fnox.toml`](../../fnox.toml) sets `root = true`, so a worktree under `.claude/worktrees/` doesn't load the main checkout's fnox files, and `env = "exec"`, so project keys stay out of the shell. Its comments, and those on `[secrets.fnox]` and `secrets-sync` in [`mise.toml`](../../mise.toml), explain the scoping, worktree, and cache choices.
+- The `op` and `sync-age` providers, along with keys shared across projects such as `OPENROUTER_API_KEY` and `EXA_API_KEY`, come from each maintainer's global `~/.config/fnox/config.toml`.
 - Tasks that resolve provider `env.` tokens are granted them: `dev-stack` and the `//crates/gateway` `serve`, `seed-config`, `seed-local-demo`, and `reset-local-demo` tasks get `OPENAI_API_KEY` and `OPENROUTER_API_KEY`; `prod-stack`, `prod:serve`, and `prod:seed-config` get `OPENAI_API_KEY`.
 - Existing checkouts must migrate. Move each provider key from `mise.local.toml` `[env]` into 1Password and delete it there, in the main checkout and in every worktree. mise refuses to run a task that is granted a key `[env]` also sets. Then run `mise tasks validate` and `mise run secrets-sync`.
 - `.mcp.json` passes the ReUI license through `headersHelper` and `fnox get`, not by expanding an environment variable.
@@ -34,7 +34,7 @@ Resolve local secrets with [fnox](https://fnox.jdx.dev), with 1Password as the s
 
 ## Trade-offs
 
-- **Same-user access:** this prevents accidental exposure but is not a boundary against a deliberate same-user process. Anything running as the developer can read the age key or run `fnox get`.
+- **Same-user access:** this prevents accidental exposure but is not a boundary against a deliberate same-user process. Anything running as the maintainer can read the age key or run `fnox get`.
 - **Staleness:** the cache is copied once, when the worktree is created. After a key rotates, or after `fnox.toml` gains a key, rerun `mise run secrets-sync` in each live worktree. A stale local entry overrides the committed reference until then.
 - **Requirements:** mise 2026.10.4 or later, fnox on `PATH`, and the experimental `[secrets.fnox]` feature.
 
