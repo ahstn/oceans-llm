@@ -55,7 +55,11 @@ jobs:
 
       - name: Resolve tool versions
         id: versions
-        run: echo "bun=$(mise tool bun --requested)" >> "$GITHUB_OUTPUT"
+        run: |
+          {
+            echo "bun=$(mise tool bun --requested)"
+            echo "rust=$(mise tool rust --requested)"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         if: contains(matrix.platforms, 'linux/arm64')
@@ -97,6 +101,7 @@ jobs:
           file: ${{ matrix.dockerfile }}
           build-args: |
             BUN_VERSION=${{ steps.versions.outputs.bun }}
+            RUST_VERSION=${{ steps.versions.outputs.rust }}
           platforms: ${{ matrix.platforms }}
           push: true
           provenance: false

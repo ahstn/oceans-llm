@@ -1,12 +1,14 @@
 //! API-key-scoped discovery. Reads stored catalogs only; no upstream requests.
 mod catalog;
 pub(crate) mod listing;
+pub(crate) mod litellm;
 pub use catalog::{FieldConflict, MergeReport, SupplementProvenance};
 pub use listing::{
     CapabilitySupport, ContextManagementCapability, EffortCapability, ModelArchitecture,
     ModelCapabilities as AnthropicModelCapabilities, ModelCard, ModelsListResponse,
     ThinkingCapability, ThinkingTypes,
 };
+pub use litellm::{ModelGroupInfo, ModelGroupInfoResponse, ModelGroupMode};
 use std::collections::{BTreeSet, HashMap};
 
 use crate::model_resolution::{

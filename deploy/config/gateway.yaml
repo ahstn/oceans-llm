@@ -172,25 +172,15 @@ providers:
     auth:
       token: env.OPENAI_API_KEY
 
-  openai-secondary:
-    type: openai_compat
-    base_url: https://api.openai.com/v1
-    auth:
-      token: env.OPENAI_API_KEY_SECONDARY
-
 models:
   openai-fast-v2:
-    description: GPT-6 Astra via OpenAI with weighted route selection; use Responses for tools
+    description: GPT-6 Astra via OpenAI; use Responses for tools
     routes:
       - provider: openai-prod
         upstream_model: gpt-6-astra
         # Optional route context and pricing overrides are documented in
         # docs/configuration/configuration-reference.md.
-        weight: 9.0
-      - provider: openai-secondary
-        upstream_model: gpt-6-astra
-        weight: 1.0
 
   openai-fast:
-    description: Stable alias for the weighted OpenAI route set
+    description: Stable alias for openai-fast-v2
     alias_of: openai-fast-v2

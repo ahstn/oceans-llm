@@ -150,6 +150,7 @@
         "crates/gateway/src/local_demo_seed/mod.rs",
         "gateway.yaml",
         "mise.toml",
+        "fnox.toml",
         "Cargo.toml",
         "Cargo.lock",
         ".agents/skills/verify-oceans-admin/scripts/control-oceans-admin",
@@ -208,6 +209,7 @@
       "paths": [
         "crates/admin-ui/web/src/routes/models.tsx",
         "crates/gateway/src/http/models.rs",
+        "crates/gateway/src/http/handlers.rs",
         "crates/gateway-service/src/admin_models.rs",
         "crates/gateway-service/src/effective_route_metadata.rs",
         "crates/gateway-service/src/model_metadata.rs",

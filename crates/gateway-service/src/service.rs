@@ -313,6 +313,18 @@ where
         crate::model_metadata::listing::list_models(self.store.as_ref(), models, &snapshot).await
     }
 
+    /// The LiteLLM `/model_group/info` listing: the same models as `/v1/models`, with
+    /// per-token costs and the flags omp `discovery.type: litellm` reads.
+    pub async fn model_group_info_for_api_key(
+        &self,
+        auth: &AuthenticatedApiKey,
+    ) -> Result<crate::model_metadata::ModelGroupInfoResponse, GatewayError> {
+        let models = self.model_access.list_models_for_api_key(auth).await?;
+        let snapshot = self.pricing_catalog.metadata_snapshot().await?;
+        crate::model_metadata::litellm::list_model_groups(self.store.as_ref(), models, &snapshot)
+            .await
+    }
+
     pub async fn list_models_for_api_key(
         &self,
         auth: &AuthenticatedApiKey,

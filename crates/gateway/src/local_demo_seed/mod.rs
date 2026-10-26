@@ -789,9 +789,8 @@ fn demo_longform_completion(fixture: &LocalDemoRequestFixture) -> String {
 }
 
 /// Provider routing attempts for a demo request log: failed requests record a
-/// retryable first attempt plus a terminal retry, secondary-provider requests
-/// record the failed primary attempt before the fallback success, and
-/// everything else records a single successful attempt.
+/// retryable first attempt plus a terminal retry, and everything else records
+/// a single successful attempt.
 fn demo_attempts(
     fixture: &LocalDemoRequestFixture,
     request_log_id: Uuid,
@@ -846,32 +845,6 @@ fn demo_attempts(
             status: RequestAttemptStatus::ProviderError,
             error_code: Some(error_code.to_string()),
             error_detail: Some(format!("attempt 2: {}", fixture.completion)),
-            ..final_attempt
-        };
-        return vec![first, second];
-    }
-
-    if fixture.provider_key == "openai-secondary" {
-        let first = RequestAttemptRecord {
-            route_id: demo_route_uuid(fixture.model_key, "openai-prod"),
-            provider_key: "openai-prod".to_string(),
-            status: RequestAttemptStatus::ProviderError,
-            status_code: Some(503),
-            error_code: Some("upstream_http_503".to_string()),
-            error_detail: Some(
-                "primary openai route unavailable; retrying on the secondary provider".to_string(),
-            ),
-            retryable: true,
-            terminal: false,
-            produced_final_response: false,
-            started_at: first_started_at,
-            completed_at: Some(first_completed_at),
-            latency_ms: Some(first_latency),
-            ..final_attempt.clone()
-        };
-        let second = RequestAttemptRecord {
-            request_attempt_id: demo_attempt_uuid(fixture.request_id, 2),
-            attempt_number: 2,
             ..final_attempt
         };
         return vec![first, second];
@@ -939,7 +912,7 @@ fn demo_context_window_tokens(upstream_model: &str) -> i64 {
 
 fn pricing_provider_id_for_demo_provider(provider_key: &str) -> Option<&'static str> {
     match provider_key {
-        "openai-prod" | "openai-secondary" => Some("openai"),
+        "openai-prod" => Some("openai"),
         "vertex-adc" => Some("google-vertex"),
         "vertex-claude" => Some("google-vertex-anthropic"),
         _ => None,
@@ -972,7 +945,6 @@ mod tests {
     fn demo_seed_prerequisites() -> DemoSeedPrerequisites {
         let providers = [
             "openai-prod",
-            "openai-secondary",
             "vertex-adc",
             "vertex-claude",
             "bedrock-us-east-1",

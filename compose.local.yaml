@@ -5,6 +5,8 @@ services:
     build:
       context: .
       dockerfile: crates/gateway/Dockerfile
+      args:
+        RUST_VERSION: ${RUST_VERSION:?set RUST_VERSION from mise.toml, e.g. RUST_VERSION="$(mise tool rust --requested)"}
     depends_on:
       admin-ui:
         condition: service_started
@@ -15,7 +17,6 @@ services:
       GATEWAY_CONFIG: /app/gateway.yaml
       ADMIN_UI_UPSTREAM: http://admin-ui:3000
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_API_KEY_SECONDARY: ${OPENAI_API_KEY_SECONDARY:-}
       GATEWAY_API_KEY: ${GATEWAY_API_KEY:-gwk_localdev.replace-me}
       OCEANS_API_KEY_SECRET_ENCRYPTION_KEY: ${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
       GATEWAY_BOOTSTRAP_ADMIN_PASSWORD: ${GATEWAY_BOOTSTRAP_ADMIN_PASSWORD:-admin}

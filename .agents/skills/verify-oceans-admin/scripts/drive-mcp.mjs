@@ -72,7 +72,7 @@ try {
     // A missing alias at launch means the running gateway cannot authenticate discovery.
     const credential = candidate.auth_config?.secret_ref?.replace(/^env\//, "");
     if (credential && !stackEnv.aliases.has(credential)) {
-      Object.assign(result, { discovery: "blocked", failure: `${credential} was not set for the launched gateway; export it or add it to mise.local.toml, then relaunch` });
+      Object.assign(result, { discovery: "blocked", failure: `${credential} was not set for the launched gateway; export it before launch (for example from fnox get), then relaunch` });
       recorder.add({ id: `candidate-${candidate.key}`, status: "blocked", required: result.required, note: result.failure });
       continue;
     }

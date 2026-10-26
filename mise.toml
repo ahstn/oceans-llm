@@ -3,11 +3,11 @@
 # (see config_roots); run them from anywhere with `mise run //<dir>:<task>`, or list
 # everything with `mise tasks ls --all`.
 
-min_version = "2026.9.16"  # [monorepo.path_aliases]
+min_version = "2026.10.4"  # [secrets.fnox]
 monorepo_root = true
 
 [settings]
-# Required for [daemons].
+# Required for [daemons] and [secrets.fnox].
 experimental = true
 
 [monorepo]
@@ -35,10 +35,10 @@ store = "crates/gateway-store"
 ui = "crates/admin-ui/web"
 
 [tools]
-rust = { version = "1.99.0", components = ["rustfmt", "clippy", "llvm-tools-preview"] }
+rust = { version = "1.99.1", components = ["rustfmt", "clippy", "llvm-tools-preview"] }
 "aqua:taiki-e/cargo-llvm-cov" = "0.9.1"
-node = "lts"
-bun = "1.4.3"
+node = "26"
+bun = "1.4.4"
 postgres = { version = "18", os = ["macos"] }
 gh = "latest"
 helm = "latest"
@@ -66,6 +66,10 @@ kubeconform = "0.8.0"
 # dir keyed by workspace path. These override the caller's shell values.
 CARGO_TARGET_DIR = "{{config_root}}/target"
 CARGO_BUILD_BUILD_DIR = "$HOME/.cache/cargo/build/{workspace-path-hash}"
+
+# Provider keys come from fnox (fnox.toml), never from [env]. A task receives only the keys
+# it lists in `secrets`; the shell, `mise env`, hooks and other tasks receive none.
+[secrets.fnox]
 
 # Local Postgres for development and Postgres-backed tests. Supervised by pitchfork
 # through `mise daemons`; manage it with the `postgres:*` tasks in crates/gateway-store.
@@ -209,6 +213,12 @@ description = "Scan the full git history for secrets with gitleaks"
 env = { GIT_CONFIG_COUNT = "1", GIT_CONFIG_KEY_0 = "color.ui", GIT_CONFIG_VALUE_0 = "never" }
 run = "gitleaks git --redact --no-banner"
 
+# Without key names, fnox syncs every secret this checkout sees, the global ones included.
+# Rerun after a key rotates or fnox.toml gains a key; each worktree keeps its own copy.
+[tasks.secrets-sync]
+description = "Cache this checkout's fnox secrets from 1Password, encrypted, in the gitignored fnox.local.toml"
+run = "fnox sync --provider sync-age --local-file --force"
+
 [tasks.repo-lint]
 description = "Run language-agnostic checks for TOML, spelling, secrets, links, and GitHub Actions"
 depends = ["toml-check", "typos", "secrets-check", "links-check", "actions-audit"]
@@ -282,6 +292,8 @@ run = [
 description = "Run the local dev stack (gateway + admin UI dev server); override with GATEWAY_PORT and UI_PORT"
 extends = "gateway-local"
 depends = ["//crates/admin-ui/web:install"]
+# gateway.yaml reads these at startup.
+secrets = ["OPENAI_API_KEY", "OPENROUTER_API_KEY"]
 env = { GATEWAY_PORT = "${GATEWAY_PORT:-8080}", UI_PORT = "${UI_PORT:-3001}", AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED = "${AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED:-true}" }
 run = """
 trap 'kill $(jobs -p) 2>/dev/null' EXIT
@@ -296,6 +308,8 @@ PORT="$GATEWAY_PORT" ADMIN_UI_UPSTREAM="http://localhost:$UI_PORT" cargo run -p 
 description = "Run the production-shaped local stack (gateway + admin UI SSR server); override with GATEWAY_PORT and UI_PORT"
 extends = "gateway-prod"
 depends = ["//crates/admin-ui/web:install"]
+# gateway.prod.yaml reads these at startup.
+secrets = ["OPENAI_API_KEY"]
 env = { GATEWAY_PORT = "${GATEWAY_PORT:-8080}", UI_PORT = "${UI_PORT:-3001}" }
 run = """
 trap 'kill $(jobs -p) 2>/dev/null' EXIT

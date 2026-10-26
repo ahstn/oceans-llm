@@ -8,13 +8,13 @@ use gateway_client_config::{
     client_hints,
 };
 use gateway_core::{
-    GatewayError, GatewayModel, ModelRepository, ProviderCapabilities, ProviderRepository,
-    ReasoningEffort,
+    GatewayError, GatewayModel, ModelRepository, ModelRoute, ProviderCapabilities,
+    ProviderConnection, ProviderRepository, ReasoningEffort,
 };
 use serde::Serialize;
 use time::{Date, Month, OffsetDateTime, format_description::well_known::Rfc3339};
 
-use super::{RouteMetadata, load_routes, route_metadata, summarize};
+use super::{LoadedRoutes, ModelMetadata, RouteMetadata, load_routes, route_metadata, summarize};
 use crate::{
     admin_models::{
         reasoning_level, route_is_eligible, route_thinking_policy, select_display_route,
@@ -24,7 +24,7 @@ use crate::{
     resolve_provider_display,
 };
 
-const MODEL_OWNER: &str = "oceans-llm";
+pub(super) const MODEL_OWNER: &str = "oceans-llm";
 
 #[derive(Debug, Serialize)]
 pub struct ModelsListResponse {
@@ -50,7 +50,7 @@ pub struct ModelCard {
     pub created_at: String,
     pub owned_by: &'static str,
     pub display_name: String,
-    /// OpenRouter and new-api spelling of `display_name`, read by omp proxy discovery.
+    /// OpenRouter and new-api spelling of `display_name`, read by proxy-style discovery clients.
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -64,9 +64,11 @@ pub struct ModelCard {
     pub architecture: ModelArchitecture,
     /// Anthropic `ModelCapabilities` shape; features the gateway cannot serve report `false`.
     pub capabilities: ModelCapabilities,
-    /// new-api endpoint types for the inference APIs, preferred first. omp `discovery.type: proxy` picks the wire
-    /// from this list and lets `anthropic` win, so `anthropic` appears only for models that
-    /// prefer Anthropic Messages. `client_hints.api_formats` lists every accepted format.
+    /// new-api endpoint types for the inference APIs, preferred first. Proxy-style discovery
+    /// clients pick the wire from this list and let `anthropic` win, so `anthropic` appears
+    /// only for models that prefer Anthropic Messages. `client_hints.api_formats` lists every
+    /// accepted format. omp should use `discovery.type: litellm`, which reads
+    /// `/model_group/info` instead of this list.
     pub supported_endpoint_types: Vec<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_hints: Option<ClientHints>,
@@ -147,76 +149,7 @@ where
     let data = models
         .iter()
         .enumerate()
-        .map(|(index, model)| {
-            let details = loaded
-                .enabled_routes(index)
-                .map(|route| {
-                    route_metadata(route, loaded.providers.get(&route.provider_key), snapshot)
-                })
-                .collect::<Vec<_>>();
-            let execution = loaded.execution(index).unwrap_or(model);
-            let routes = loaded
-                .routes
-                .get(&execution.id)
-                .map(Vec::as_slice)
-                .unwrap_or(&[]);
-            let primary = select_display_route(&loaded.providers, routes).and_then(|route| {
-                loaded
-                    .providers
-                    .get(&route.provider_key)
-                    .map(|provider| (route, provider))
-            });
-            let thinking_policy = primary.and_then(|(route, provider)| {
-                let display = resolve_provider_display(&route.provider_key, Some(provider));
-                route_thinking_policy(model, execution, route, provider, Some(&display))
-            });
-            // A request can land on any eligible route: the planner picks by weight within a
-            // priority tier and falls back to later tiers. Served APIs are therefore the union,
-            // while Anthropic request features need every chat-capable route to honour them.
-            let eligible = routes
-                .iter()
-                .filter(|route| route_is_eligible(&loaded.providers, route))
-                .filter_map(|route| {
-                    let provider = loaded.providers.get(&route.provider_key)?;
-                    let capabilities = effective_provider_route_capabilities(
-                        Some(route.capabilities),
-                        Some(provider),
-                        Some(route),
-                    );
-                    Some((route, provider, capabilities))
-                })
-                .collect::<Vec<_>>();
-            let transport =
-                eligible
-                    .iter()
-                    .fold(ProviderCapabilities::none(), |acc, (_, _, caps)| {
-                        ProviderCapabilities {
-                            chat_completions: acc.chat_completions || caps.chat_completions,
-                            responses: acc.responses || caps.responses,
-                            decisions: acc.decisions || caps.decisions,
-                            ..acc
-                        }
-                    });
-            let mut chat_routes = eligible
-                .iter()
-                .filter(|(_, _, caps)| caps.chat_completions)
-                .peekable();
-            let messages_native = chat_routes.peek().is_some()
-                && chat_routes.all(|(route, provider, _)| {
-                    native_api_format(provider, route) == Some(ApiFormat::AnthropicMessages)
-                });
-            model_card(ModelCardContext {
-                model,
-                reasoning_ceiling: loaded.reasoning_ceilings[index],
-                messages_native,
-                details,
-                thinking_policy,
-                transport,
-                upstream_model: primary.map(|(route, _)| route.upstream_model.clone()),
-                native_api_format: primary
-                    .and_then(|(route, provider)| native_api_format(provider, route)),
-            })
-        })
+        .map(|(index, model)| model_card(&ModelView::build(&loaded, index, model, snapshot)))
         .collect::<Vec<_>>();
     Ok(ModelsListResponse {
         object: "list",
@@ -227,30 +160,254 @@ where
     })
 }
 
-struct ModelCardContext<'a> {
-    model: &'a GatewayModel,
+/// Per-model facts shared by `/v1/models` and `/model_group/info`, so the two listings
+/// cannot drift apart.
+pub(super) struct ModelView<'a> {
+    pub(super) model: &'a GatewayModel,
     /// The strictest ceiling along the alias chain, as enforced at request time.
-    reasoning_ceiling: Option<ReasoningEffort>,
+    pub(super) reasoning_ceiling: Option<ReasoningEffort>,
+    /// Union of the APIs the eligible routes serve.
+    pub(super) transport: ProviderCapabilities,
     /// Every chat-capable route speaks Anthropic Messages upstream.
-    messages_native: bool,
-    details: Vec<RouteMetadata>,
-    thinking_policy: Option<ThinkingPolicy>,
-    transport: ProviderCapabilities,
-    upstream_model: Option<String>,
-    native_api_format: Option<gateway_client_config::ApiFormat>,
+    pub(super) messages_native: bool,
+    /// Every chat-capable route (chat completions or Responses) serves the Responses API.
+    pub(super) responses_everywhere: bool,
+    /// The display route: the first eligible route, as the admin listing picks it.
+    pub(super) primary: Option<(&'a ModelRoute, &'a ProviderConnection)>,
+    /// Index of the primary route in `summary.routes`, when that route is enabled.
+    pub(super) primary_detail: Option<usize>,
+    pub(super) thinking_policy: Option<ThinkingPolicy>,
+    /// Reasoning that every chat-capable route honours.
+    pub(super) chat_reasoning: ChatReasoning,
+    /// Request features a chat request can rely on, after routing filters on them.
+    pub(super) chat_features: ChatFeatures,
+    /// Limits and capabilities summarised across the enabled routes.
+    pub(super) summary: ModelMetadata,
 }
 
-fn model_card(context: ModelCardContext<'_>) -> ModelCard {
-    let ModelCardContext {
+/// Reasoning a client can rely on whichever chat-capable route serves the request.
+/// Providers reject `reasoning_effort` for a model that cannot think, and route selection
+/// does not check for reasoning, so one route without it removes it for the model.
+#[derive(Debug, Default)]
+pub(super) struct ChatReasoning {
+    pub(super) reasons: bool,
+    /// Effort levels every chat-capable route accepts, within the model's ceiling.
+    pub(super) effort_levels: Vec<ReasoningEffort>,
+}
+
+/// Request features routing filters on. A request that uses one goes only to the eligible
+/// routes whose transport serves it, so those routes alone decide the answer: at least one
+/// must exist, and each must serve a model the catalog says has the feature. Routes without
+/// the transport do not count against it.
+#[derive(Debug, Default, Clone, Copy)]
+pub(super) struct ChatFeatures {
+    pub(super) stream: bool,
+    pub(super) tools: bool,
+    pub(super) vision: bool,
+    pub(super) structured_output: bool,
+}
+
+type EligibleRoute<'a> = (&'a ModelRoute, &'a ProviderConnection, ProviderCapabilities);
+/// An eligible chat-capable route and its metadata.
+type ChatRoute<'a, 'b> = (&'b EligibleRoute<'a>, Option<&'b RouteMetadata>);
+
+impl<'a> ModelView<'a> {
+    pub(super) fn build(
+        loaded: &'a LoadedRoutes,
+        index: usize,
+        model: &'a GatewayModel,
+        snapshot: &PricingCatalogSnapshot,
+    ) -> Self {
+        let enabled = loaded.enabled_routes(index).collect::<Vec<_>>();
+        let details = enabled
+            .iter()
+            .map(|route| route_metadata(route, loaded.providers.get(&route.provider_key), snapshot))
+            .collect::<Vec<_>>();
+        let execution = loaded.execution(index).unwrap_or(model);
+        let routes = loaded
+            .routes
+            .get(&execution.id)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        let primary = select_display_route(&loaded.providers, routes).and_then(|route| {
+            loaded
+                .providers
+                .get(&route.provider_key)
+                .map(|provider| (route, provider))
+        });
+        let thinking_policy = primary.and_then(|(route, provider)| {
+            let display = resolve_provider_display(&route.provider_key, Some(provider));
+            route_thinking_policy(model, execution, route, provider, Some(&display))
+        });
+        // A request can land on any eligible route: the planner picks by weight within a
+        // priority tier and falls back to later tiers. Served APIs are therefore the union.
+        // Features routing filters on need only the routes that pass the filter; others,
+        // such as reasoning, need every chat-capable route to honour them.
+        let eligible = eligible_routes(loaded, routes);
+        let chat_routes = eligible
+            .iter()
+            .filter(|(_, _, caps)| caps.chat_completions || caps.responses)
+            .map(|eligible| {
+                let detail = enabled
+                    .iter()
+                    .position(|enabled| enabled.id == eligible.0.id)
+                    .map(|position| &details[position]);
+                (eligible, detail)
+            })
+            .collect::<Vec<ChatRoute<'_, '_>>>();
+        let reasoning_ceiling = loaded.reasoning_ceilings[index];
+        let chat_reasoning = chat_reasoning(&chat_routes, reasoning_ceiling, |route, provider| {
+            let display = resolve_provider_display(&route.provider_key, Some(provider));
+            route_thinking_policy(model, execution, route, provider, Some(&display))
+        });
+        let chat_features = chat_features(&chat_routes);
+        Self {
+            model,
+            reasoning_ceiling,
+            transport: served_apis(&eligible),
+            messages_native: every_chat_route(
+                &eligible,
+                |caps| caps.chat_completions,
+                |(route, provider, _)| {
+                    native_api_format(provider, route) == Some(ApiFormat::AnthropicMessages)
+                },
+            ),
+            responses_everywhere: every_chat_route(
+                &eligible,
+                |caps| caps.chat_completions || caps.responses,
+                |(_, _, caps)| caps.responses,
+            ),
+            primary_detail: primary
+                .and_then(|(primary, _)| enabled.iter().position(|route| route.id == primary.id)),
+            primary,
+            thinking_policy,
+            chat_reasoning,
+            chat_features,
+            summary: summarize(model.model_key.clone(), details),
+        }
+    }
+
+    /// Catalog reasoning, or a thinking policy that implies it, whatever wire the client uses.
+    pub(super) fn can_reason(&self) -> bool {
+        self.summary.capabilities.reasoning == Some(true) || implies_reasoning(self.thinking_policy)
+    }
+}
+
+fn implies_reasoning(policy: Option<ThinkingPolicy>) -> bool {
+    matches!(
+        policy,
+        Some(
+            ThinkingPolicy::AnthropicSafeEffort
+                | ThinkingPolicy::GeminiLevel { .. }
+                | ThinkingPolicy::GeminiBudget
+        )
+    )
+}
+
+/// Intersects the reasoning of every chat-capable route: its catalog reasoning flag, or a
+/// thinking policy from `policy` that implies reasoning.
+fn chat_reasoning(
+    chat_routes: &[ChatRoute<'_, '_>],
+    ceiling: Option<ReasoningEffort>,
+    policy: impl Fn(&ModelRoute, &ProviderConnection) -> Option<ThinkingPolicy>,
+) -> ChatReasoning {
+    chat_routes
+        .iter()
+        .map(|((route, provider, _), detail)| {
+            let catalog = detail.and_then(|detail| detail.capabilities.reasoning);
+            let policy = policy(route, provider);
+            let reasons = catalog == Some(true) || implies_reasoning(policy);
+            ChatReasoning {
+                reasons,
+                effort_levels: effort_levels(reasons, policy, ceiling),
+            }
+        })
+        .reduce(|acc, next| ChatReasoning {
+            reasons: acc.reasons && next.reasons,
+            effort_levels: acc
+                .effort_levels
+                .into_iter()
+                .filter(|level| next.effort_levels.contains(level))
+                .collect(),
+        })
+        .unwrap_or_default()
+}
+
+fn chat_features(chat_routes: &[ChatRoute<'_, '_>]) -> ChatFeatures {
+    let routed = |transport: fn(&ProviderCapabilities) -> bool,
+                  catalog: fn(&super::ModelCapabilities) -> Option<bool>| {
+        let mut serving = chat_routes
+            .iter()
+            .filter(|((_, _, caps), _)| transport(caps))
+            .peekable();
+        serving.peek().is_some()
+            && serving.all(|(_, detail)| {
+                detail.is_some_and(|detail| catalog(&detail.capabilities) == Some(true))
+            })
+    };
+    ChatFeatures {
+        stream: chat_routes.iter().any(|((_, _, caps), _)| caps.stream),
+        tools: routed(|caps| caps.tools, |catalog| catalog.tools),
+        vision: routed(|caps| caps.vision, |catalog| catalog.vision),
+        structured_output: routed(|caps| caps.json_schema, |catalog| catalog.structured_output),
+    }
+}
+
+fn eligible_routes<'a>(
+    loaded: &'a LoadedRoutes,
+    routes: &'a [ModelRoute],
+) -> Vec<EligibleRoute<'a>> {
+    routes
+        .iter()
+        .filter(|route| route_is_eligible(&loaded.providers, route))
+        .filter_map(|route| {
+            let provider = loaded.providers.get(&route.provider_key)?;
+            let capabilities = effective_provider_route_capabilities(
+                Some(route.capabilities),
+                Some(provider),
+                Some(route),
+            );
+            Some((route, provider, capabilities))
+        })
+        .collect()
+}
+
+fn served_apis(eligible: &[EligibleRoute<'_>]) -> ProviderCapabilities {
+    eligible
+        .iter()
+        .fold(ProviderCapabilities::none(), |acc, (_, _, caps)| {
+            ProviderCapabilities {
+                chat_completions: acc.chat_completions || caps.chat_completions,
+                responses: acc.responses || caps.responses,
+                embeddings: acc.embeddings || caps.embeddings,
+                decisions: acc.decisions || caps.decisions,
+                ..acc
+            }
+        })
+}
+
+/// At least one route is chat-capable by `chat`, and every such route satisfies `holds`.
+fn every_chat_route(
+    eligible: &[EligibleRoute<'_>],
+    chat: impl Fn(&ProviderCapabilities) -> bool,
+    holds: impl Fn(&EligibleRoute<'_>) -> bool,
+) -> bool {
+    let mut chat_routes = eligible.iter().filter(|(_, _, caps)| chat(caps)).peekable();
+    chat_routes.peek().is_some() && chat_routes.all(holds)
+}
+
+fn model_card(view: &ModelView<'_>) -> ModelCard {
+    let ModelView {
         model,
         reasoning_ceiling,
         messages_native,
-        details,
         thinking_policy,
         transport,
-        upstream_model,
-        native_api_format,
-    } = context;
+        primary,
+        ref summary,
+        ..
+    } = *view;
+    let details = &summary.routes;
     let display_name = details
         .iter()
         .find_map(|route| route.display_name.clone())
@@ -259,14 +416,14 @@ fn model_card(context: ModelCardContext<'_>) -> ModelCard {
         .iter()
         .find_map(|route| route.release_date.as_deref().and_then(parse_release_date))
         .unwrap_or(OffsetDateTime::UNIX_EPOCH);
-    let input_modalities = common_modalities(&details, |route| {
+    let input_modalities = common_modalities(details, |route| {
         route
             .modalities
             .as_ref()
             .map(|modalities| &modalities.input)
     });
     let output_modalities = with_decisions_output(
-        common_modalities(&details, |route| {
+        common_modalities(details, |route| {
             route
                 .modalities
                 .as_ref()
@@ -274,7 +431,6 @@ fn model_card(context: ModelCardContext<'_>) -> ModelCard {
         }),
         transport.decisions,
     );
-    let summary = summarize(model.model_key.clone(), details);
 
     let image_input = summary.capabilities.vision == Some(true);
     let pdf_input = image_input
@@ -287,19 +443,10 @@ fn model_card(context: ModelCardContext<'_>) -> ModelCard {
             .filter(|value| image_input || !matches!(value.as_str(), "image" | "pdf"))
             .collect()
     });
-    let reasoning = summary.capabilities.reasoning == Some(true)
-        || matches!(
-            thinking_policy,
-            Some(
-                ThinkingPolicy::AnthropicSafeEffort
-                    | ThinkingPolicy::GeminiLevel { .. }
-                    | ThinkingPolicy::GeminiBudget
-            )
-        );
     // `capabilities` describes Anthropic Messages request features. `/v1/messages` hands
     // content blocks, `thinking`, and `output_config` to the route unchanged, so they are only
     // advertised when every route a request could land on speaks Anthropic Messages upstream.
-    let reasoning = messages_native && reasoning;
+    let reasoning = messages_native && view.can_reason();
     let efforts = effort_levels(reasoning, thinking_policy, reasoning_ceiling);
     let effort = |level| CapabilitySupport::from(efforts.contains(&level));
     let adaptive = reasoning && thinking_policy == Some(ThinkingPolicy::AnthropicSafeEffort);
@@ -307,7 +454,7 @@ fn model_card(context: ModelCardContext<'_>) -> ModelCard {
     let hints = client_hints(&ClientConfigInput {
         model_id: model.model_key.clone(),
         display_name: display_name.clone(),
-        upstream_model,
+        upstream_model: primary.map(|(route, _)| route.upstream_model.clone()),
         capabilities: ClientModelCapabilities {
             chat_completions: transport.chat_completions,
             responses: transport.responses,
@@ -316,7 +463,7 @@ fn model_card(context: ModelCardContext<'_>) -> ModelCard {
             vision: image_input,
         },
         thinking_policy,
-        native_api_format,
+        native_api_format: primary.and_then(|(route, provider)| native_api_format(provider, route)),
         max_reasoning_effort: reasoning_ceiling.map(reasoning_level),
         ..ClientConfigInput::default()
     });

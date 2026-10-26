@@ -3,6 +3,8 @@ use gateway_core::{Money4, ProviderCapabilities, RoutePricingOverride};
 use serde_json::json;
 use uuid::Uuid;
 
+mod model_group_info;
+
 fn route() -> ModelRoute {
     ModelRoute {
         id: Uuid::new_v4(),
@@ -455,7 +457,7 @@ async fn models_list_describes_claude_routes_from_catalog_and_provider_type() {
     let card = &listed["data"][0];
     assert_eq!(card["display_name"], json!("Claude Opus 4.7"));
     assert_eq!(card["name"], json!("Claude Opus 4.7"));
-    // omp proxy discovery routes this model over `/v1/messages` because `anthropic` is listed.
+    // Proxy-style discovery routes this model over `/v1/messages` because `anthropic` is listed.
     assert_eq!(
         card["supported_endpoint_types"],
         json!(["anthropic", "openai"])

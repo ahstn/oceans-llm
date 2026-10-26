@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.44.0](https://github.com/ahstn/oceans-llm/compare/v0.43.2...v0.44.0) - 2026-10-26
+
+### :rocket: New features
+- *(gateway)* Serve LiteLLM /model_group/info for omp discovery by @ahstn in [#571](https://github.com/ahstn/oceans-llm/pull/571)
+
+### Changed
+- *(deps)* Bump the aws-sdk group across 1 directory with 5 updates by @dependabot[bot] in [#569](https://github.com/ahstn/oceans-llm/pull/569)
+- *(deps)* Bump the pi group across 1 directory with 3 updates by @dependabot[bot] in [#563](https://github.com/ahstn/oceans-llm/pull/563)
+- *(deps)* Bump shadcn from 4.22.0 to 4.22.1 in /crates/admin-ui/web in the ui-components-and-assets group across 1 directory by @dependabot[bot] in [#560](https://github.com/ahstn/oceans-llm/pull/560)
+- *(deps-dev)* Bump postcss from 8.5.30 to 8.5.31 in /crates/admin-ui/web in the styling group across 1 directory by @dependabot[bot] in [#561](https://github.com/ahstn/oceans-llm/pull/561)
+- *(deps)* Bump the react group across 1 directory with 2 updates by @dependabot[bot] in [#551](https://github.com/ahstn/oceans-llm/pull/551)
+- *(deps-dev)* Bump the code-quality group across 1 directory with 3 updates by @dependabot[bot] in [#562](https://github.com/ahstn/oceans-llm/pull/562)
+- *(deps)* Bump the tanstack group across 1 directory with 5 updates by @dependabot[bot] in [#552](https://github.com/ahstn/oceans-llm/pull/552)
+- *(deps)* Bump tokio from 1.53.3 to 1.54.1 in the async-runtime group by @dependabot[bot] in [#573](https://github.com/ahstn/oceans-llm/pull/573)
+
 ## [0.43.2](https://github.com/ahstn/oceans-llm/compare/v0.43.1...v0.43.2) - 2026-10-21
 
 ### :bug: Bug fixes

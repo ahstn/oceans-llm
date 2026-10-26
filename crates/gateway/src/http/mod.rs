@@ -524,6 +524,7 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
         .route("/v1/models", get(v1_models))
         .route("/models", get(v1_models))
         .route("/v1/model-metadata", get(v1_model_metadata))
+        .route("/model_group/info", get(v1_model_group_info))
         .merge(inference_router)
         .merge(skills::router())
         .merge(mcp_client_oauth::public_router())

@@ -30,7 +30,7 @@ Preconditions:
 
 - `control-oceans-admin doctor` passes.
 - The task affects behavior that needs real upstream proof. UI-only, documentation-only, seed-only, and unrelated configuration changes do not qualify.
-- `OPENROUTER_API_KEY` is available for the generic and Messages canaries, or the AWS default credential chain can call Bedrock Mantle for a Bedrock-specific canary. A Decisions canary needs a working credential for the `jev` alpha route.
+- `OPENROUTER_API_KEY` resolves through fnox for the launched stack (see Launch in [SKILL.md](../SKILL.md)) for the generic and Messages canaries, or the AWS default credential chain can call Bedrock Mantle for a Bedrock-specific canary. A Decisions canary needs a working credential for the `jev` alpha route.
 - The operator accepts one short paid request. A Decisions canary makes two paid calls, one per format, and the operator must accept both. Its mixed-format 400 check is free. Use synthetic input and do not include repository content, user data, or secrets.
 - Create a unique temporary gateway API key through the API Keys recipe with exactly the selected model grant and only the `inference` capability. Keep it in memory (or only the current shell as `OCEANS_VERIFY_API_KEY`). Do not write it to evidence or command history.
 
