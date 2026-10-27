@@ -35,6 +35,31 @@ const RequestLogDetailSchema = z.object({
 type RequestLog = z.infer<typeof RequestLogSchema>;
 export type RequestLogDetail = z.infer<typeof RequestLogDetailSchema>;
 
+const ClientConfigsSchema = z.object({
+  client_configurations: z.array(
+    z.object({
+      key: z.string(),
+      blocks: z.array(z.object({ content: z.string() })),
+    }),
+  ),
+});
+
+/** Fetches the OpenCode config that Oceans generates for `model`, as shown in the admin UI. */
+export async function fetchGeneratedOpenCodeConfig(
+  runtime: GatewayRuntime,
+  model: string,
+): Promise<Record<string, unknown>> {
+  const admin = new GatewayAdminClient(runtime);
+  await admin.login();
+  const { client_configurations } = await admin.generateClientConfigs([model]);
+  const content = client_configurations.find((config) => config.key === "opencode")?.blocks[0]
+    ?.content;
+  if (!content) {
+    throw new Error(`Oceans generated no OpenCode config for model ${model}`);
+  }
+  return z.record(z.string(), z.unknown()).parse(JSON.parse(content));
+}
+
 export class GatewayAdminClient {
   readonly #runtime: GatewayRuntime;
   #cookie: string | undefined;
@@ -63,6 +88,20 @@ export class GatewayAdminClient {
     this.#cookie = setCookie.split(";", 1)[0];
   }
 
+  async generateClientConfigs(modelKeys: string[]): Promise<z.infer<typeof ClientConfigsSchema>> {
+    if (!this.#cookie) {
+      throw new Error("GatewayAdminClient.login() must be called first");
+    }
+    const response = await fetchWithTimeout(
+      `${this.#runtime.baseUrl}/api/v1/admin/models/client-configs`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: this.#cookie },
+        body: JSON.stringify({ model_keys: modelKeys }),
+      },
+    );
+    return readEnvelope(response, "model client configs", ClientConfigsSchema);
+  }
 
   async waitForSuccessfulModelLog(requestTag: string): Promise<RequestLog> {
     const deadline = Date.now() + 30_000;

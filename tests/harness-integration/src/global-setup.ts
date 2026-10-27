@@ -71,7 +71,13 @@ export default async function setup(context: TestProject): Promise<() => Promise
     const upstreamModel = process.env.OPENROUTER_TEST_MODEL ?? DEFAULT_OPENROUTER_MODEL;
     await writeFile(configPath, gatewayConfig(port, databasePath, upstreamModel), "utf8");
 
-    const runningGateway = startGateway(gatewayBinary, configPath, runtimeDir, openRouterApiKey);
+    const runningGateway = startGateway(
+      gatewayBinary,
+      configPath,
+      runtimeDir,
+      openRouterApiKey,
+      baseUrl,
+    );
     managed = runningGateway;
     const runtime: GatewayRuntime = {
       adminEmail: MANAGED_ADMIN_EMAIL,
@@ -167,11 +173,14 @@ function startGateway(
   configPath: string,
   runtimeDir: string,
   openRouterApiKey: string,
+  baseUrl: string,
 ): ManagedGateway {
   const gatewayProcess = spawn(gatewayBinary, [], {
     cwd: ROOT_DIR,
     env: {
       ...process.env,
+      // Generated client configs (the OpenCode harness config) must point at this gateway.
+      GATEWAY_CLIENT_CONFIG_BASE_URL: baseUrl,
       GATEWAY_CONFIG: configPath,
       GATEWAY_IDENTITY_TOKEN_SECRET: "harness-integration-identity-secret",
       HARNESS_OCEANS_API_KEY: MANAGED_API_KEY,
