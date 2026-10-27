@@ -5,7 +5,7 @@
     "benchmark_source_url": "https://artificialanalysis.ai",
     "retrieved_via": "openrouter",
     "source_url": "https://openrouter.ai/api/v1/models?sort=intelligence-high-to-low&limit=200",
-    "updated_at": "2026-10-26T09:06:51Z"
+    "updated_at": "2026-10-27T00:43:10Z"
   },
   "models": {
     "amazon/nova-2-lite-v1": {
@@ -197,6 +197,16 @@
         "agentic_index": 1.0
       },
       "updated_at": "2026-09-24T00:59:11Z"
+    },
+    "cohere/command-a-plus": {
+      "name": "Cohere: Command A+",
+      "canonical_slug": "cohere/command-a-plus-05-2026",
+      "artificial_analysis": {
+        "intelligence_index": 13.1,
+        "coding_index": 27.8,
+        "agentic_index": 1.0
+      },
+      "updated_at": "2026-10-27T00:43:10Z"
     },
     "deepseek/deepseek-chat-v3-0324": {
       "name": "DeepSeek: DeepSeek V3 0324",
@@ -1067,6 +1077,16 @@
         "agentic_index": null
       },
       "updated_at": "2026-10-18T12:23:11Z"
+    },
+    "openai/gpt-6.1-terra": {
+      "name": "OpenAI: GPT-6.1 Terra",
+      "canonical_slug": "openai/gpt-6.1-terra-20261026",
+      "artificial_analysis": {
+        "intelligence_index": 48.1,
+        "coding_index": null,
+        "agentic_index": null
+      },
+      "updated_at": "2026-10-27T00:43:10Z"
     },
     "openai/gpt-oss-120b": {
       "name": "OpenAI: gpt-oss-120b",

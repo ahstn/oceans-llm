@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.45.0](https://github.com/ahstn/oceans-llm/compare/v0.44.0...v0.45.0) - 2026-10-27
+
+### :rocket: New features
+- *(gateway)* Add image generation API and image-aware pricing by @ahstn in [#577](https://github.com/ahstn/oceans-llm/pull/577)
+
+### Changed
+- *(deps)* Bump uuid from 1.28.0 to 1.29.0 in the utilities group by @dependabot[bot] in [#584](https://github.com/ahstn/oceans-llm/pull/584)
+- *(deps)* Bump the aws-sdk group with 2 updates by @dependabot[bot] in [#583](https://github.com/ahstn/oceans-llm/pull/583)
+- *(deps)* Bump @vitest/mocker and vitest in /tests/harness-integration by @dependabot[bot] in [#570](https://github.com/ahstn/oceans-llm/pull/570)
+- *(deps)* Bump @lobehub/icons-static-svg from 1.95.1 to 1.98.0 in /crates/admin-ui/web in the ui-components-and-assets group across 1 directory by @dependabot[bot] in [#578](https://github.com/ahstn/oceans-llm/pull/578)
+- *(deps)* Bump the tanstack group across 1 directory with 3 updates by @dependabot[bot] in [#579](https://github.com/ahstn/oceans-llm/pull/579)
+- *(deps-dev)* Bump oxlint-tsgolint from 7.0.2004 to 7.0.2005 in /crates/admin-ui/web in the code-quality group across 1 directory by @dependabot[bot] in [#580](https://github.com/ahstn/oceans-llm/pull/580)
+- *(deps)* Bump the pi group in /actions/review-agent with 6 updates by @dependabot[bot] in [#581](https://github.com/ahstn/oceans-llm/pull/581)
+- *(deps-dev)* Bump the review-agent-tooling group in /actions/review-agent with 3 updates by @dependabot[bot] in [#582](https://github.com/ahstn/oceans-llm/pull/582)
+
 ## [0.44.0](https://github.com/ahstn/oceans-llm/compare/v0.43.2...v0.44.0) - 2026-10-26
 
 ### :rocket: New features
