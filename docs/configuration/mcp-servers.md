@@ -473,7 +473,16 @@ For `gateway_bearer_token`:
 }
 ```
 
-Credentialed modes require an HTTPS `server_url`. Secret references must use `env/OCEANS_MCP_DISCOVERY_*`. The environment variable is resolved by the gateway process during discovery and proxying.
+Credentialed modes require an HTTPS `server_url`, with two exceptions for `gateway_static_header` and `gateway_bearer_token`:
+
+- A loopback host, such as `http://127.0.0.1:8080/mcp`, for local development.
+- A Kubernetes Service in the same cluster as Oceans, such as `http://github-mcp.tools.svc.cluster.local:8080/mcp`. The host must have the form `<service>.<namespace>.svc.<cluster domain>`. The cluster domain is `cluster.local` by default. If your cluster uses a different domain, set `mcp.kubernetes.cluster_domain` in the [configuration reference](configuration-reference.md).
+
+`oauth_obo` never sends a token over plain HTTP to a Kubernetes Service. It needs HTTPS, or a loopback host.
+
+Plain HTTP does not change which addresses a server can reach. A Service name resolves to a private cluster address. A platform-owned server can reach it. A team-owned server can reach it only when a platform admin lists the cluster domain under `mcp.oauth.private_network_hosts`, for example `svc.cluster.local`.
+
+Secret references must use `env/OCEANS_MCP_DISCOVERY_*`. The environment variable is resolved by the gateway process during discovery and proxying.
 
 Inbound Oceans credentials are always stripped before forwarding upstream. The gateway forwards only MCP protocol/runtime headers plus configured gateway-managed upstream auth.
 

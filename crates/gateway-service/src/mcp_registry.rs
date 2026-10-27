@@ -24,9 +24,9 @@ use uuid::Uuid;
 
 use crate::admin_audit::AuditProgress;
 use crate::mcp_upstream_auth::{
-    gateway_mcp_upstream_headers, gateway_mcp_upstream_query, mcp_oauth_server_config,
-    normalize_mcp_server_key, supports_public_discovery, validate_mcp_auth_config,
-    validate_mcp_server_auth_destination,
+    McpServerUrlPolicy, gateway_mcp_upstream_headers, gateway_mcp_upstream_query,
+    mcp_oauth_server_config, normalize_mcp_server_key, supports_public_discovery,
+    validate_mcp_auth_config, validate_mcp_server_auth_destination,
 };
 use crate::mcp_upstream_http::McpUpstreamClients;
 
@@ -167,15 +167,6 @@ pub struct HttpMcpDiscoveryClient {
     clients: McpUpstreamClients,
 }
 
-/// Without configured private network hosts. Built once and shared, since
-/// many handlers make a registry service per request without discovering.
-impl Default for HttpMcpDiscoveryClient {
-    fn default() -> Self {
-        static CLIENTS: OnceLock<McpUpstreamClients> = OnceLock::new();
-        Self::new(CLIENTS.get_or_init(McpUpstreamClients::default).clone())
-    }
-}
-
 impl HttpMcpDiscoveryClient {
     #[must_use]
     pub fn new(clients: McpUpstreamClients) -> Self {
@@ -191,7 +182,7 @@ impl McpDiscoveryClient for HttpMcpDiscoveryClient {
         headers: Option<&BTreeMap<String, String>>,
     ) -> Result<Vec<NormalizedMcpTool>, McpClientError> {
         let timeout = Duration::from_millis(server.timeout_ms.max(1) as u64);
-        let query_credential = gateway_mcp_upstream_query(server)
+        let query_credential = gateway_mcp_upstream_query(server, self.clients.url_policy())
             .map_err(|error| McpClientError::InvalidHeader(error.to_string()))?;
         let client = self
             .clients
@@ -212,17 +203,20 @@ impl McpDiscoveryClient for HttpMcpDiscoveryClient {
 pub struct McpRegistryService<R, C = HttpMcpDiscoveryClient> {
     repo: Arc<R>,
     client: Arc<C>,
+    url_policy: McpServerUrlPolicy,
 }
 
 impl<R> McpRegistryService<R, HttpMcpDiscoveryClient>
 where
     R: McpRegistryRepository,
 {
+    /// Discovers through `clients`, and holds server URLs to its policy.
     #[must_use]
-    pub fn new(repo: Arc<R>) -> Self {
+    pub fn new(repo: Arc<R>, clients: &McpUpstreamClients) -> Self {
         Self {
             repo,
-            client: Arc::new(HttpMcpDiscoveryClient::default()),
+            client: Arc::new(HttpMcpDiscoveryClient::new(clients.clone())),
+            url_policy: clients.url_policy().clone(),
         }
     }
 }
@@ -233,8 +227,12 @@ where
     C: McpDiscoveryClient,
 {
     #[must_use]
-    pub fn with_client(repo: Arc<R>, client: Arc<C>) -> Self {
-        Self { repo, client }
+    pub fn with_client(repo: Arc<R>, client: Arc<C>, url_policy: McpServerUrlPolicy) -> Self {
+        Self {
+            repo,
+            client,
+            url_policy,
+        }
     }
 
     pub fn recommended_servers(
@@ -310,6 +308,7 @@ where
             &resolved.server_url,
             auth_mode,
             &resolved.auth_config,
+            &self.url_policy,
         )?;
         let timeout_ms = validate_timeout_ms(resolved.timeout_ms)?;
         let now = OffsetDateTime::now_utc();
@@ -350,7 +349,12 @@ where
         validate_server_url(&input.server_url)?;
         let auth_mode = parse_auth_mode(&input.auth_mode)?;
         validate_mcp_auth_config(auth_mode, &input.auth_config)?;
-        validate_mcp_server_auth_destination(&input.server_url, auth_mode, &input.auth_config)?;
+        validate_mcp_server_auth_destination(
+            &input.server_url,
+            auth_mode,
+            &input.auth_config,
+            &self.url_policy,
+        )?;
         let timeout_ms = validate_timeout_ms(input.timeout_ms)?;
         // An omitted contact is resolved by the store, under its write lock.
         let owner_contact = input
@@ -577,29 +581,30 @@ where
         let started_at = OffsetDateTime::now_utc();
         // The query credential is resolved again by the client; checking it here
         // records a missing secret as a configuration failure.
-        let headers = match gateway_mcp_upstream_headers(&server)
-            .and_then(|headers| gateway_mcp_upstream_query(&server).map(|_| headers))
-        {
-            Ok(headers) => headers,
-            Err(error) => {
-                return self
-                    .record_discovery_failure(
-                        server,
-                        DiscoveryFailure {
-                            status: ExternalMcpDiscoveryStatus::Failed,
-                            started_at,
-                            summary: bounded_error_summary(error.to_string()),
-                            kind: Some(DiscoveryFailureKind {
-                                kind: McpDiscoveryErrorKind::InvalidAuthConfig,
-                                http_status: None,
-                            }),
-                            details: json!({"reason": "invalid_discovery_auth_config"}),
-                        },
-                        &persist,
-                    )
-                    .await;
-            }
-        };
+        let headers =
+            match gateway_mcp_upstream_headers(&server, &self.url_policy).and_then(|headers| {
+                gateway_mcp_upstream_query(&server, &self.url_policy).map(|_| headers)
+            }) {
+                Ok(headers) => headers,
+                Err(error) => {
+                    return self
+                        .record_discovery_failure(
+                            server,
+                            DiscoveryFailure {
+                                status: ExternalMcpDiscoveryStatus::Failed,
+                                started_at,
+                                summary: bounded_error_summary(error.to_string()),
+                                kind: Some(DiscoveryFailureKind {
+                                    kind: McpDiscoveryErrorKind::InvalidAuthConfig,
+                                    http_status: None,
+                                }),
+                                details: json!({"reason": "invalid_discovery_auth_config"}),
+                            },
+                            &persist,
+                        )
+                        .await;
+                }
+            };
         match self.client.list_tools(&server, headers.as_ref()).await {
             Ok(tools) => {
                 let finished_at = OffsetDateTime::now_utc();
@@ -1108,6 +1113,7 @@ mod tests {
         let service = McpRegistryService::with_client(
             Arc::new(NoopMcpRegistryRepository),
             Arc::new(NoopMcpDiscoveryClient),
+            McpServerUrlPolicy::default(),
         );
         let resolved = service
             .resolve_create_input(CreateExternalMcpServerInput {
@@ -1134,6 +1140,7 @@ mod tests {
         let service = McpRegistryService::with_client(
             Arc::new(NoopMcpRegistryRepository),
             Arc::new(NoopMcpDiscoveryClient),
+            McpServerUrlPolicy::default(),
         );
         let server_id = Uuid::new_v4();
         // Stand in for a refresh waiting on a slow upstream, holding the server's discovery lock.

@@ -199,8 +199,11 @@ pub(super) async fn proxy_lifecycle(
     server: ExternalMcpServerRecord,
     is_initialize: bool,
 ) -> Response<Body> {
-    let gateway = McpGatewayService::new(state.store.clone())
-        .with_oauth_runtime(state.mcp_oauth_runtime.clone());
+    let gateway = McpGatewayService::new(
+        state.store.clone(),
+        state.mcp_http_clients.url_policy().clone(),
+    )
+    .with_oauth_runtime(state.mcp_oauth_runtime.clone());
     let upstream = match gateway
         .prepare_upstream_for_auth(auth, server.clone())
         .await
