@@ -71,7 +71,11 @@ fn responses_only_models_use_responses_even_with_claude_aliases() {
             .iter()
             .find(|config| config.key == "opencode")
             .unwrap();
-        assert!(opencode.blocks[0].content.contains("@ai-sdk/openai\""));
+        assert!(
+            opencode.blocks[0]
+                .content
+                .contains("\"@opencode/ai/providers/openai-compatible/responses\"")
+        );
     }
 }
 
@@ -146,7 +150,7 @@ fn setup_href<'a>(config: &'a ClientConfig, label: &str) -> &'a str {
 fn opencode_shape_includes_required_cost_and_limits() {
     let rendered = OpenCodeConfigTemplate.render(&input(Some(ThinkingPolicy::AnthropicSafeEffort)));
     let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
-    let model = &value["provider"]["oceans-llm"]["models"]["claude-sonnet"];
+    let model = &value["providers"]["oceans-llm"]["models"]["claude-sonnet"];
 
     assert_eq!(value["$schema"], "https://opencode.ai/config.json");
     assert_eq!(
@@ -162,7 +166,8 @@ fn opencode_shape_includes_required_cost_and_limits() {
     assert_eq!(model["limit"]["output"], 64_000);
     assert_eq!(model["cost"]["input"], 3.0);
     assert_eq!(model["cost"]["output"], 15.0);
-    assert_eq!(model["cost"]["cache_read"], 0.3);
+    assert_eq!(model["cost"]["cache"]["read"], 0.3);
+    assert_eq!(model["cost"]["cache"]["write"], 0.75);
 }
 
 #[test]
@@ -204,8 +209,8 @@ fn pi_cache_costs_default_to_zero_when_missing() {
         serde_json::from_str(&PiConfigTemplate.render(&input).blocks[0].content).expect("json");
 
     assert!(
-        opencode["provider"]["oceans-llm"]["models"]["claude-sonnet"]["cost"]
-            .get("cache_read")
+        opencode["providers"]["oceans-llm"]["models"]["claude-sonnet"]["cost"]
+            .get("cache")
             .is_none()
     );
     assert_eq!(
@@ -230,7 +235,7 @@ fn client_context_window_is_capped_with_note() {
     let pi_value: Value = serde_json::from_str(&pi.blocks[0].content).expect("json");
 
     assert_eq!(
-        opencode_value["provider"]["oceans-llm"]["models"]["claude-sonnet"]["limit"]["context"],
+        opencode_value["providers"]["oceans-llm"]["models"]["claude-sonnet"]["limit"]["context"],
         200_000
     );
     assert_eq!(
@@ -371,7 +376,7 @@ fn safe_thinking_variants_are_emitted_for_newer_claude_models() {
         serde_json::from_str(&PiConfigTemplate.render(&input).blocks[0].content).expect("json");
 
     assert_eq!(
-        opencode["provider"]["oceans-llm"]["models"]["claude-sonnet"]["variants"]["high"]["reasoningEffort"],
+        opencode["providers"]["oceans-llm"]["models"]["claude-sonnet"]["variants"][0]["settings"]["effort"],
         "high"
     );
     assert_eq!(
@@ -390,13 +395,18 @@ fn opencode_safe_effort_config_matches_expected_full_shape() {
         serde_json::json!({
             "$schema": "https://opencode.ai/config.json",
             "model": "oceans-llm/claude-sonnet",
-            "provider": {
+            "providers": {
                 "oceans-llm": {
                     "models": {
                         "claude-sonnet": {
-                            "attachment": true,
+                            "capabilities": {
+                                "input": ["text", "image", "pdf"],
+                                "output": ["text"],
+                                "reasoning": {"supported": true},
+                                "tools": true
+                            },
                             "cost": {
-                                "cache_read": 0.3,
+                                "cache": {"read": 0.3, "write": 0.75},
                                 "input": 3.0,
                                 "output": 15.0
                             },
@@ -405,22 +415,28 @@ fn opencode_safe_effort_config_matches_expected_full_shape() {
                                 "output": 64000
                             },
                             "name": "Claude Sonnet",
-                            "reasoning": true,
-                            "tool_call": true,
-                            "variants": {
-                                "high": {
-                                    "reasoningEffort": "high"
+                            "variants": [
+                                {
+                                    "id": "high",
+                                    "settings": {
+                                        "thinking": {"type": "adaptive", "display": "summarized"},
+                                        "effort": "high"
+                                    }
                                 },
-                                "max": {
-                                    "reasoningEffort": "xhigh"
+                                {
+                                    "id": "max",
+                                    "settings": {
+                                        "thinking": {"type": "adaptive", "display": "summarized"},
+                                        "effort": "xhigh"
+                                    }
                                 }
-                            }
+                            ]
                         }
                     },
                     "name": "oceans-llm",
-                    "npm": "@ai-sdk/anthropic",
-                    "options": {
-                        "apiKey": "{env:OCEANS_LLM_API_KEY}",
+                    "env": ["OCEANS_LLM_API_KEY"],
+                    "package": "@opencode/ai/providers/anthropic-compatible",
+                    "settings": {
                         "baseURL": "http://127.0.0.1:3000"
                     }
                 }
@@ -558,10 +574,13 @@ fn manual_budget_models_do_not_emit_variants() {
     let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
 
     assert_eq!(policy, Some(ThinkingPolicy::AnthropicManualBudget));
-    assert!(
-        value["provider"]["oceans-llm"]["models"]["claude-sonnet"]
-            .get("variants")
-            .is_none()
+    let model = &value["providers"]["oceans-llm"]["models"]["claude-sonnet"];
+    assert!(model.get("variants").is_none());
+    // A bare `supported: true` stops OpenCode generating adaptive effort variants that
+    // manual-budget models reject.
+    assert_eq!(
+        model["capabilities"]["reasoning"],
+        serde_json::json!({"supported": true})
     );
     assert!(!rendered.notes.is_empty());
 }
@@ -766,40 +785,26 @@ fn opencode_gemini_variants_follow_supported_thinking_levels() {
         let value: Value =
             serde_json::from_str(&OpenCodeConfigTemplate.render(input).blocks[0].content)
                 .expect("json");
-        value["provider"]["oceans-llm"]["models"][input.model_id.as_str()].clone()
+        value["providers"]["oceans-llm"]["models"][input.model_id.as_str()].clone()
+    };
+    let efforts = |levels: &[&str]| -> Value {
+        levels
+            .iter()
+            .map(|level| serde_json::json!({"id": level, "settings": {"reasoningEffort": level}}))
+            .collect()
     };
 
     let flash_model = render(&flash);
-    assert_eq!(flash_model["reasoning"], true);
-    assert_eq!(
-        flash_model["variants"],
-        serde_json::json!({
-            "low": {"reasoningEffort": "low"},
-            "medium": {"reasoningEffort": "medium"},
-            "high": {"reasoningEffort": "high"}
-        })
-    );
+    assert_eq!(flash_model["capabilities"]["reasoning"]["supported"], true);
+    assert_eq!(flash_model["variants"], efforts(&["low", "medium", "high"]));
 
     let pro_model = render(&pro);
-    assert_eq!(pro_model["reasoning"], true);
-    assert_eq!(
-        pro_model["variants"],
-        serde_json::json!({
-            "low": {"reasoningEffort": "low"},
-            "high": {"reasoningEffort": "high"}
-        })
-    );
+    assert_eq!(pro_model["variants"], efforts(&["low", "high"]));
 
     let budget_model = render(&budget);
-    assert_eq!(budget_model["reasoning"], true);
     assert_eq!(
         budget_model["variants"],
-        serde_json::json!({
-            "minimal": {"reasoningEffort": "minimal"},
-            "low": {"reasoningEffort": "low"},
-            "medium": {"reasoningEffort": "medium"},
-            "high": {"reasoningEffort": "high"}
-        })
+        efforts(&["minimal", "low", "medium", "high"])
     );
 }
 
@@ -814,12 +819,23 @@ fn non_anthropic_models_use_openai_compatible_client_surfaces() {
         serde_json::from_str(&PiConfigTemplate.render(&input).blocks[0].content).expect("json");
 
     assert_eq!(
-        opencode["provider"]["oceans-llm"]["npm"],
-        "@ai-sdk/openai-compatible"
+        opencode["providers"]["oceans-llm"]["package"],
+        "@opencode/ai/providers/openai-compatible"
     );
     assert_eq!(
-        opencode["provider"]["oceans-llm"]["options"]["baseURL"],
+        opencode["providers"]["oceans-llm"]["settings"]["baseURL"],
         "http://127.0.0.1:3000/v1"
+    );
+    // Without an explicit `supported: false`, OpenCode invents effort variants and assumes
+    // tool and image support for models outside its catalog.
+    assert_eq!(
+        opencode["providers"]["oceans-llm"]["models"]["qwen-coder"]["capabilities"],
+        serde_json::json!({
+            "tools": true,
+            "input": ["text"],
+            "output": ["text"],
+            "reasoning": {"supported": false}
+        })
     );
     assert_eq!(pi["providers"]["oceans-llm"]["api"], "openai-completions");
     assert_eq!(
@@ -849,28 +865,28 @@ fn opencode_and_pi_group_mixed_api_styles_into_separate_providers() {
         .expect("opencode config");
     let opencode: Value = serde_json::from_str(&opencode_config.blocks[0].content).expect("json");
     assert_eq!(
-        opencode["provider"]["oceans-llm-anthropic-messages"]["npm"],
-        "@ai-sdk/anthropic"
+        opencode["providers"]["oceans-llm-anthropic-messages"]["package"],
+        "@opencode/ai/providers/anthropic-compatible"
     );
     assert_eq!(
-        opencode["provider"]["oceans-llm-anthropic-messages"]["options"]["baseURL"],
+        opencode["providers"]["oceans-llm-anthropic-messages"]["settings"]["baseURL"],
         "http://127.0.0.1:3000"
     );
     assert_eq!(
-        opencode["provider"]["oceans-llm-openai-compatible"]["npm"],
-        "@ai-sdk/openai-compatible"
+        opencode["providers"]["oceans-llm-openai-compatible"]["package"],
+        "@opencode/ai/providers/openai-compatible"
     );
     assert_eq!(
-        opencode["provider"]["oceans-llm-openai-compatible"]["options"]["baseURL"],
+        opencode["providers"]["oceans-llm-openai-compatible"]["settings"]["baseURL"],
         "http://127.0.0.1:3000/v1"
     );
     assert!(
-        opencode["provider"]["oceans-llm-anthropic-messages"]["models"]
+        opencode["providers"]["oceans-llm-anthropic-messages"]["models"]
             .get("claude-sonnet")
             .is_some()
     );
     assert!(
-        opencode["provider"]["oceans-llm-openai-compatible"]["models"]
+        opencode["providers"]["oceans-llm-openai-compatible"]["models"]
             .get("qwen-coder")
             .is_some()
     );
@@ -1308,11 +1324,23 @@ fn client_hints_mirror_rendered_templates_without_endpoints() {
             "preferred_api_format": "anthropic-messages",
             "harnesses": {
                 "opencode": {
-                    "npm": "@ai-sdk/anthropic",
-                    "variants": {
-                        "high": {"reasoningEffort": "high"},
-                        "max": {"reasoningEffort": "xhigh"}
-                    }
+                    "package": "@opencode/ai/providers/anthropic-compatible",
+                    "variants": [
+                        {
+                            "id": "high",
+                            "settings": {
+                                "thinking": {"type": "adaptive", "display": "summarized"},
+                                "effort": "high"
+                            }
+                        },
+                        {
+                            "id": "max",
+                            "settings": {
+                                "thinking": {"type": "adaptive", "display": "summarized"},
+                                "effort": "xhigh"
+                            }
+                        }
+                    ]
                 },
                 "pi": {
                     "api": "anthropic-messages",
@@ -1344,7 +1372,10 @@ fn native_api_format_overrides_model_name_matching() {
     aliased.native_api_format = Some(ApiFormat::AnthropicMessages);
     let hints = client_hints(&aliased).expect("hints");
     assert_eq!(hints.preferred_api_format, ApiFormat::AnthropicMessages);
-    assert_eq!(hints.harnesses.opencode.npm, "@ai-sdk/anthropic");
+    assert_eq!(
+        hints.harnesses.opencode.package,
+        "@opencode/ai/providers/anthropic-compatible"
+    );
     assert!(hints.harnesses.claude_code.is_some());
 
     let mut named_claude = input(None);
@@ -1362,10 +1393,11 @@ fn effort_presets_respect_the_gateway_ceiling() {
     let hints = client_hints(&capped).expect("hints");
 
     // OpenCode's `max` preset sends `xhigh`, which the gateway would reject.
-    assert_eq!(
-        hints.harnesses.opencode.variants,
-        Some(serde_json::json!({"high": {"reasoningEffort": "high"}}))
-    );
+    let high_only = serde_json::json!([{
+        "id": "high",
+        "settings": {"thinking": {"type": "adaptive", "display": "summarized"}, "effort": "high"}
+    }]);
+    assert_eq!(hints.harnesses.opencode.variants, Some(high_only.clone()));
     assert_eq!(
         hints.harnesses.pi.thinking_level_map,
         Some(serde_json::json!({
@@ -1377,8 +1409,8 @@ fn effort_presets_respect_the_gateway_ceiling() {
     let rendered = OpenCodeConfigTemplate.render(&capped);
     let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
     assert_eq!(
-        value["provider"]["oceans-llm"]["models"]["claude-sonnet"]["variants"],
-        serde_json::json!({"high": {"reasoningEffort": "high"}})
+        value["providers"]["oceans-llm"]["models"]["claude-sonnet"]["variants"],
+        high_only
     );
 
     capped.max_reasoning_effort = Some(ReasoningLevel::Low);
@@ -1405,7 +1437,10 @@ fn responses_native_routes_prefer_responses_when_chat_is_also_served() {
     input.native_api_format = Some(ApiFormat::OpenAiResponses);
     let hints = client_hints(&input).expect("hints");
     assert_eq!(hints.preferred_api_format, ApiFormat::OpenAiResponses);
-    assert_eq!(hints.harnesses.opencode.npm, "@ai-sdk/openai");
+    assert_eq!(
+        hints.harnesses.opencode.package,
+        "@opencode/ai/providers/openai-compatible/responses"
+    );
     assert_eq!(hints.harnesses.pi.api, "openai-responses");
     assert_eq!(hints.harnesses.pi.compat, None);
 }

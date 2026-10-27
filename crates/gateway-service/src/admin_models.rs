@@ -544,10 +544,13 @@ fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientC
             chat_completions: capabilities.chat_completions,
             responses: capabilities.responses,
             tool_calling: capabilities.tools,
-            attachments: context
-                .metadata
-                .and_then(|metadata| metadata.modalities.as_ref())
-                .is_some_and(supports_attachments),
+            // Matches `/v1/models` hints: the gateway only routes file parts to vision
+            // routes, so PDF input needs both.
+            attachments: capabilities.vision
+                && context
+                    .metadata
+                    .and_then(|metadata| metadata.modalities.as_ref())
+                    .is_some_and(|modalities| modalities.input.iter().any(|value| value == "pdf")),
             vision: capabilities.vision,
         },
         thinking_policy,
@@ -2043,20 +2046,22 @@ mod tests {
                 .iter()
                 .any(|item| item.value == "~/.config/opencode/opencode.json")
         );
-        assert!(
-            items[0].client_configurations[0].blocks[0]
-                .content
-                .contains("\"cache_read\": 0.3")
-        );
-        assert!(
-            items[0].client_configurations[0].blocks[0]
-                .content
-                .contains("\"variants\"")
-        );
-        assert!(
-            items[0].client_configurations[0].blocks[0]
-                .content
-                .contains("\"tool_call\": true")
+        let opencode: serde_json::Value =
+            serde_json::from_str(&items[0].client_configurations[0].blocks[0].content)
+                .expect("opencode json");
+        let opencode_model = opencode["providers"]
+            .as_object()
+            .and_then(|providers| providers.values().next())
+            .and_then(|provider| provider["models"].as_object())
+            .and_then(|models| models.values().next())
+            .expect("opencode model");
+        assert_eq!(opencode_model["cost"]["cache"]["read"], 0.3);
+        assert!(opencode_model["variants"].is_array());
+        assert_eq!(opencode_model["capabilities"]["tools"], true);
+        // The catalog lists image but not PDF input, so OpenCode must not send PDFs.
+        assert_eq!(
+            opencode_model["capabilities"]["input"],
+            json!(["text", "image"])
         );
         assert_eq!(items[0].client_configurations[1].key, "pi");
         assert!(items[0].client_configurations[1].setup.iter().any(|item| {
