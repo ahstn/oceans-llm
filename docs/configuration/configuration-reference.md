@@ -638,6 +638,16 @@ mcp:
 
 `OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY` is also required when this provider list is not empty. It must contain a base64-encoded 32-byte key.
 
+MCP servers that run in the same Kubernetes cluster as Oceans can receive a gateway-managed API key (`gateway_static_header` or `gateway_bearer_token`) over plain HTTP. The server URL host must have the form `<service>.<namespace>.svc.<cluster domain>`. Set the cluster domain under `mcp.kubernetes`:
+
+```yaml
+mcp:
+  kubernetes:
+    cluster_domain: cluster.local
+```
+
+`cluster_domain` defaults to `cluster.local`, the Kubernetes default. Change it when your cluster uses another DNS domain, as set by the kubelet `--cluster-domain` flag. It must be a bare domain, without a scheme, port, or wildcard. The value is not case-sensitive, and a trailing dot is ignored. OAuth (`oauth_obo`) servers still need HTTPS. This setting does not let a team-owned server reach cluster addresses; for that, list the domain under `mcp.oauth.private_network_hosts`. See [MCP Servers](mcp-servers.md#gateway-managed-upstream-credentials).
+
 OAuth sign-in for MCP clients connecting to the gateway is the opposite direction: Oceans is the authorization server. Configure it under `mcp.client_oauth`:
 
 ```yaml

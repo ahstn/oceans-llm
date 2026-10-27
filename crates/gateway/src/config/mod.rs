@@ -161,7 +161,7 @@ impl GatewayConfig {
         self.permissions.resolve()?;
         self.auth.oidc.validate(&self.teams)?;
         self.auth.oauth.validate(&self.teams)?;
-        self.mcp.oauth.validate()?;
+        self.mcp.validate()?;
         self.mcp_client_oauth_settings()?;
 
         let provider_by_id = self
