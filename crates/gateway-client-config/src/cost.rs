@@ -13,8 +13,15 @@ pub(crate) fn opencode_cost(input: &ClientConfigInput) -> Value {
             required_money4_to_number(input.output_cost_per_million_tokens_usd_10000),
         ),
     ]);
-    if let Some(cache_read) = money4_to_number(input.cache_read_cost_per_million_tokens_usd_10000) {
-        cost.insert("cache_read".to_string(), cache_read);
+    let cache: Map<String, Value> = [
+        ("read", input.cache_read_cost_per_million_tokens_usd_10000),
+        ("write", input.cache_write_cost_per_million_tokens_usd_10000),
+    ]
+    .into_iter()
+    .filter_map(|(key, value)| Some((key.to_string(), money4_to_number(value)?)))
+    .collect();
+    if !cache.is_empty() {
+        cost.insert("cache".to_string(), Value::Object(cache));
     }
     Value::Object(cost)
 }

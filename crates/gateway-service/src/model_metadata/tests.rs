@@ -497,8 +497,8 @@ async fn models_list_describes_claude_routes_from_catalog_and_provider_type() {
     let hints = &card["client_hints"];
     assert_eq!(hints["preferred_api_format"], json!("anthropic-messages"));
     assert_eq!(
-        hints["harnesses"]["opencode"]["npm"],
-        json!("@ai-sdk/anthropic")
+        hints["harnesses"]["opencode"]["package"],
+        json!("@opencode/ai/providers/anthropic-compatible")
     );
     assert_eq!(hints["harnesses"]["pi"]["api"], json!("anthropic-messages"));
     assert_eq!(

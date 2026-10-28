@@ -394,7 +394,7 @@ The context value is metadata, not request-time token enforcement. Oceans does n
   "api_formats": ["openai-chat-completions", "openai-responses", "anthropic-messages"],
   "preferred_api_format": "anthropic-messages",
   "harnesses": {
-    "opencode": { "npm": "@ai-sdk/anthropic", "variants": { "...": "..." } },
+    "opencode": { "package": "@opencode/ai/providers/anthropic-compatible", "variants": [{ "id": "...", "settings": { "...": "..." } }] },
     "pi": { "api": "anthropic-messages", "compat": { "forceAdaptiveThinking": true } },
     "claude_code": { "model_env_var": "ANTHROPIC_DEFAULT_OPUS_MODEL" }
   }

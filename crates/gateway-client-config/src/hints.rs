@@ -38,7 +38,7 @@ pub struct HarnessHints {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct OpenCodeHints {
-    pub npm: &'static str,
+    pub package: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub variants: Option<Value>,
 }
@@ -76,8 +76,8 @@ pub fn client_hints(input: &ClientConfigInput) -> Option<ClientHints> {
         preferred_api_format: style,
         harnesses: HarnessHints {
             opencode: OpenCodeHints {
-                npm: opencode_provider_package_for_style(style),
-                variants: opencode_variants(input),
+                package: opencode_provider_package_for_style(style),
+                variants: opencode_variants(input, style),
             },
             pi: PiHints {
                 api: pi_provider_api_for_style(style),
