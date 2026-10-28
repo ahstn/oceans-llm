@@ -65,28 +65,79 @@ pub struct ModelAllowlistConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "RawModelConfig")]
 pub struct ModelConfig {
     pub id: String,
     /// OpenRouter model ID used to look up vendored Artificial Analysis scores,
     /// e.g. `anthropic/claude-sonnet-4.6`. Overrides the ID derived from the primary route.
-    #[serde(default)]
     pub benchmark_model_id: Option<String>,
-    #[serde(default)]
     pub alias_of: Option<String>,
-    #[serde(default)]
     pub max_reasoning_effort: Option<ReasoningEffort>,
-    #[serde(default)]
     pub description: Option<String>,
-    #[serde(default)]
     pub tags: Vec<String>,
-    #[serde(default = "default_model_rank")]
     pub rank: i32,
-    #[serde(default)]
     pub routing: Option<ModelRoutingPolicy>,
-    #[serde(default)]
     pub routes: Vec<ModelRouteConfig>,
     pub allowlist: Option<ModelAllowlistConfig>,
+}
+
+/// Wire shape of a model entry. `route` is shorthand for a single-element `routes` list.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawModelConfig {
+    id: String,
+    #[serde(default)]
+    benchmark_model_id: Option<String>,
+    #[serde(default)]
+    alias_of: Option<String>,
+    #[serde(default)]
+    max_reasoning_effort: Option<ReasoningEffort>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default = "default_model_rank")]
+    rank: i32,
+    #[serde(default)]
+    routing: Option<ModelRoutingPolicy>,
+    #[serde(default)]
+    route: Option<ModelRouteConfig>,
+    /// `None` when absent, so `route` alongside an explicit `routes: []` is still rejected.
+    #[serde(default)]
+    routes: Option<Vec<ModelRouteConfig>>,
+    #[serde(default)]
+    allowlist: Option<ModelAllowlistConfig>,
+}
+
+impl TryFrom<RawModelConfig> for ModelConfig {
+    type Error = String;
+
+    fn try_from(raw: RawModelConfig) -> Result<Self, Self::Error> {
+        let routes = match (raw.route, raw.routes) {
+            (Some(_), Some(_)) => {
+                return Err(format!(
+                    "model `{}` cannot define both route and routes",
+                    raw.id
+                ));
+            }
+            (Some(route), None) => vec![route],
+            (None, routes) => routes.unwrap_or_default(),
+        };
+        let mut routes = routes;
+        infer_route_ids(&mut routes);
+        Ok(Self {
+            id: raw.id,
+            benchmark_model_id: raw.benchmark_model_id,
+            alias_of: raw.alias_of,
+            max_reasoning_effort: raw.max_reasoning_effort,
+            description: raw.description,
+            tags: raw.tags,
+            rank: raw.rank,
+            routing: raw.routing,
+            routes,
+            allowlist: raw.allowlist,
+        })
+    }
 }
 
 fn is_valid_benchmark_model_id(value: &str) -> bool {
@@ -100,6 +151,39 @@ fn is_valid_benchmark_model_id(value: &str) -> bool {
         && !value.chars().any(char::is_whitespace)
 }
 
+/// Defaults each unnamed route's id to its provider key when that provider appears once in the
+/// model and the key is a valid route id. Named routes keep their identity when routes are
+/// reordered or reprioritized.
+/// Gives each unnamed route its provider key as id when that provider appears once in the model,
+/// the key is a valid route id, and no explicit route id in the model already uses it.
+fn infer_route_ids(routes: &mut [ModelRouteConfig]) {
+    let mut provider_counts = BTreeMap::<String, usize>::new();
+    for route in routes.iter() {
+        *provider_counts.entry(route.provider.clone()).or_default() += 1;
+    }
+    let explicit_ids = routes
+        .iter()
+        .filter_map(|route| route.id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    for route in routes {
+        if route.id.is_none()
+            && provider_counts.get(&route.provider) == Some(&1)
+            && is_valid_route_id(&route.provider)
+            && !explicit_ids.contains(&route.provider)
+        {
+            route.id = Some(route.provider.clone());
+        }
+    }
+}
+
+pub(super) fn is_valid_route_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 128
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-'))
+}
+
 fn validate_route_ids(model: &ModelConfig) -> anyhow::Result<()> {
     let mut route_ids = std::collections::BTreeSet::new();
     for route in &model.routes {
@@ -109,8 +193,9 @@ fn validate_route_ids(model: &ModelConfig) -> anyhow::Result<()> {
             }
             None if model.routing.is_some() => {
                 bail!(
-                    "model `{}` requires an explicit id for every route when routing is configured",
-                    model.id
+                    "model `{}` route for provider `{}` needs an explicit id when routing is configured; ids default to the provider key only when that provider appears once in the model and is a valid route id",
+                    model.id,
+                    route.provider
                 );
             }
             _ => {}
@@ -124,6 +209,13 @@ pub(super) fn validate_models(
     model_by_id: &BTreeMap<&str, &ModelConfig>,
     provider_by_id: &BTreeMap<String, &ProviderConfig>,
 ) -> anyhow::Result<()> {
+    let mut model_ids = std::collections::BTreeSet::new();
+    for model in models {
+        if !model_ids.insert(model.id.trim()) {
+            bail!("duplicate model id `{}`", model.id.trim());
+        }
+    }
+
     for model in models {
         if let Some(benchmark_model_id) = model.benchmark_model_id.as_deref()
             && !is_valid_benchmark_model_id(benchmark_model_id)

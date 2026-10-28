@@ -126,8 +126,9 @@ pub use domain::{
     UserRecord, UserSessionRecord, UserStatus, VERTEX_TEXT_EMBEDDING_MODEL_IDS, budget_window_utc,
     github_copilot_route_capabilities, is_supported_vertex_google_chat_upstream_model,
     is_supported_vertex_text_embedding_model_id, is_supported_vertex_text_embedding_upstream_model,
-    validate_entity_tags, validate_tag_key, validate_tag_value,
-    vertex_route_capabilities_for_upstream_model, vertex_text_embedding_capabilities,
+    route_capability_defaults, route_provider_capabilities, validate_entity_tags, validate_tag_key,
+    validate_tag_value, vertex_route_capabilities_for_upstream_model,
+    vertex_text_embedding_capabilities,
 };
 pub use error::{AuthError, GatewayError, ProviderError, RouteError, StoreError};
 pub use gateway_keys::{

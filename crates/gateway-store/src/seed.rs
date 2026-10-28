@@ -22,11 +22,241 @@ use uuid::Uuid;
 
 use crate::GatewayStore;
 
+/// Batch-referenced route rows of one model that survived the reseed delete, by id and by
+/// `(provider, upstream, priority)` key.
+#[derive(Default)]
+pub(crate) struct RouteSurvivors {
+    by_key: std::collections::HashMap<(String, String, i64), Uuid>,
+    by_id: std::collections::HashMap<Uuid, (String, String, i64)>,
+    /// Every survivor with its original key, kept after claims for [`Self::parking_plan`].
+    all: Vec<(Uuid, (String, String, i64))>,
+}
+
+impl RouteSurvivors {
+    pub(crate) fn insert(
+        &mut self,
+        id: Uuid,
+        provider_key: String,
+        upstream_model: String,
+        priority: i64,
+    ) {
+        let key = (provider_key, upstream_model, priority);
+        self.by_key.insert(key.clone(), id);
+        self.by_id.insert(id, key.clone());
+        self.all.push((id, key));
+    }
+
+    /// Survivor rows to move to an unused priority before upserting, given each configured
+    /// route's claimed row and target `(provider, upstream, priority)`. Upserts run one at a
+    /// time against the `(model, provider, upstream, priority)` unique key, so a claimed row
+    /// whose priority changes, or an unclaimed row sitting on a configured route's target, could
+    /// block another route; two routes swapping priorities would block each other. Parked rows
+    /// take priorities below every existing and configured priority of their provider and
+    /// upstream group, or above it, or in an unused gap when the group spans the whole i32
+    /// range, so they cannot collide. Claimed rows then get their real priority from
+    /// the upsert; unclaimed ones stay parked as disabled history.
+    pub(crate) fn parking_plan(
+        &self,
+        claimed: &[(Uuid, (String, String, i64))],
+    ) -> Vec<(Uuid, i64)> {
+        let target_of = claimed
+            .iter()
+            .map(|(id, key)| (*id, key))
+            .collect::<std::collections::HashMap<_, _>>();
+        let targets = claimed
+            .iter()
+            .map(|(_, key)| key)
+            .collect::<std::collections::HashSet<_>>();
+        // Priorities in use per provider and upstream group, across survivors and configured
+        // targets. Parked priorities are added as they are assigned.
+        let mut used =
+            std::collections::HashMap::<(&str, &str), std::collections::BTreeSet<i64>>::new();
+        for (provider, upstream, priority) in self
+            .all
+            .iter()
+            .map(|(_, key)| key)
+            .chain(claimed.iter().map(|(_, key)| key))
+        {
+            used.entry((provider.as_str(), upstream.as_str()))
+                .or_default()
+                .insert(*priority);
+        }
+
+        let mut blocking = self
+            .all
+            .iter()
+            .filter(|(id, key)| match target_of.get(id) {
+                Some(target) => *target != key,
+                None => targets.contains(key),
+            })
+            .collect::<Vec<_>>();
+        blocking.sort_by_key(|(id, _)| *id);
+        blocking
+            .into_iter()
+            .map(|(id, (provider, upstream, _))| {
+                let used = used
+                    .get_mut(&(provider.as_str(), upstream.as_str()))
+                    .expect("every survivor has a priority group");
+                let parked = free_priority(used);
+                used.insert(parked);
+                (*id, parked)
+            })
+            .collect()
+    }
+
+    /// The row each configured route should upsert, given each route's own deterministic id and
+    /// target `(provider, upstream, priority)`, in config order. Claims run in two passes so the
+    /// result does not depend on route order: first every route whose own id survived keeps it,
+    /// even when its priority changed; then each remaining route may reuse a survivor with the
+    /// same `(provider, upstream, priority)`, which covers a renamed route. A route whose own id
+    /// already had a row before this seed (`established`) was not renamed, so it keeps its own id
+    /// rather than taking another row. Each survivor is claimed once, so two configured routes
+    /// never share a row.
+    pub(crate) fn claim_all(
+        &mut self,
+        routes: &[(Uuid, (String, String, i64))],
+        established: &std::collections::HashSet<Uuid>,
+    ) -> Vec<Uuid> {
+        let mut claimed = routes
+            .iter()
+            .map(|(own_id, _)| {
+                self.by_id.remove(own_id).map(|key| {
+                    self.by_key.remove(&key);
+                    *own_id
+                })
+            })
+            .collect::<Vec<_>>();
+        for ((own_id, key), slot) in routes.iter().zip(&mut claimed) {
+            if slot.is_none() {
+                let reused = if established.contains(own_id) {
+                    None
+                } else {
+                    self.by_key.remove(key)
+                };
+                let id = match reused {
+                    Some(id) => {
+                        self.by_id.remove(&id);
+                        id
+                    }
+                    None => *own_id,
+                };
+                *slot = Some(id);
+            }
+        }
+        claimed.into_iter().flatten().collect()
+    }
+}
+
+/// An unused priority for a parked row: below the group, else above it, else the first gap
+/// inside the i32 range. The group is never the whole range, because it holds one priority per
+/// configured route and survivor.
+fn free_priority(used: &std::collections::BTreeSet<i64>) -> i64 {
+    let (min, max) = (i64::from(i32::MIN), i64::from(i32::MAX));
+    let low = used.first().copied().unwrap_or(0);
+    let high = used.last().copied().unwrap_or(0);
+    if low > min {
+        return low - 1;
+    }
+    if high < max {
+        return high + 1;
+    }
+    (min..=max)
+        .find(|priority| !used.contains(priority))
+        .expect("a priority group cannot fill the i32 range")
+}
+
 pub(crate) fn model_uuid(model_key: &str) -> Uuid {
     Uuid::new_v5(
         &Uuid::NAMESPACE_OID,
         format!("model:{model_key}").as_bytes(),
     )
+}
+
+/// The id a configured route upserts under. Before route ids defaulted to the provider key, a
+/// route without an `id` took the positional legacy id, so after upgrading it carries a key equal
+/// to its provider. Its legacy id stays while a row under it already exists, because responses
+/// and request logs refer to route ids. The route moves to the keyed id once the legacy id would
+/// have changed anyway, when its priority or position in the model changes. An existing keyed row
+/// wins over a legacy one, so reverting that change, while batch history keeps the legacy row,
+/// does not move the route back.
+pub(crate) fn configured_route_uuid(
+    model_key: &str,
+    route: &gateway_core::SeedModelRoute,
+    route_index: usize,
+    existing_ids: &std::collections::HashSet<Uuid>,
+) -> Uuid {
+    let (keyed, legacy) = route_id_candidates(model_key, route, route_index);
+    match legacy {
+        Some(legacy) if !existing_ids.contains(&keyed) && existing_ids.contains(&legacy) => legacy,
+        _ => keyed,
+    }
+}
+
+/// A route's keyed id, and its legacy id when its key equals its provider key.
+fn route_id_candidates(
+    model_key: &str,
+    route: &gateway_core::SeedModelRoute,
+    route_index: usize,
+) -> (Uuid, Option<Uuid>) {
+    let keyed = route_uuid(
+        model_key,
+        route.route_key.as_deref(),
+        &route.provider_key,
+        &route.upstream_model,
+        route.priority,
+        route_index,
+    );
+    let legacy = (route.route_key.as_deref() == Some(route.provider_key.as_str())).then(|| {
+        route_uuid(
+            model_key,
+            None,
+            &route.provider_key,
+            &route.upstream_model,
+            route.priority,
+            route_index,
+        )
+    });
+    (keyed, legacy)
+}
+
+/// The distinct `(model id, provider, upstream model)` groups the configured routes belong to.
+/// Surviving rows outside them never matter to seeding: a route's own id encodes its provider and
+/// upstream model, a renamed route reuses only a row with the same provider, upstream model, and
+/// priority, and parking moves rows only within one group.
+pub(crate) fn configured_route_groups(
+    models: &[gateway_core::SeedModel],
+) -> std::collections::BTreeSet<(Uuid, String, String)> {
+    models
+        .iter()
+        .flat_map(|model| {
+            let model_id = model_uuid(&model.model_key);
+            model.routes.iter().map(move |route| {
+                (
+                    model_id,
+                    route.provider_key.clone(),
+                    route.upstream_model.clone(),
+                )
+            })
+        })
+        .collect()
+}
+
+/// Every id [`configured_route_uuid`] may pick for these models. Seeding checks which of them
+/// already exist, so it never reads route history beyond the current configuration.
+pub(crate) fn configured_route_candidate_ids(models: &[gateway_core::SeedModel]) -> Vec<Uuid> {
+    models
+        .iter()
+        .flat_map(|model| {
+            model
+                .routes
+                .iter()
+                .enumerate()
+                .flat_map(|(route_index, route)| {
+                    let (keyed, legacy) = route_id_candidates(&model.model_key, route, route_index);
+                    std::iter::once(keyed).chain(legacy)
+                })
+        })
+        .collect()
 }
 
 pub(crate) fn route_uuid(
@@ -959,5 +1189,57 @@ fn current_membership(user: &IdentityUserRecord) -> Option<(Uuid, MembershipRole
     match (user.team_id, user.membership_role) {
         (Some(team_id), Some(role)) => Some((team_id, role)),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod route_survivor_tests {
+    use uuid::Uuid;
+
+    use super::RouteSurvivors;
+
+    fn key(priority: i64) -> (String, String, i64) {
+        ("openai".to_string(), "gpt".to_string(), priority)
+    }
+
+    #[test]
+    fn parks_above_the_group_when_below_would_leave_the_i32_range() {
+        let route = Uuid::from_u128(1);
+        let mut survivors = RouteSurvivors::default();
+        survivors.insert(route, "openai".to_string(), "gpt".to_string(), 10);
+
+        // The route moves to i32::MIN, so it must be parked before its upsert, but nothing fits
+        // below the group.
+        let targets = vec![(route, key(i64::from(i32::MIN)))];
+        let claimed = survivors
+            .claim_all(&targets, &std::collections::HashSet::new())
+            .into_iter()
+            .zip(targets.into_iter().map(|(_, key)| key))
+            .collect::<Vec<_>>();
+        let plan = survivors.parking_plan(&claimed);
+
+        assert_eq!(plan, vec![(route, 11)]);
+        assert!(i32::try_from(plan[0].1).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod free_priority_tests {
+    use std::collections::BTreeSet;
+
+    use super::free_priority;
+
+    #[test]
+    fn finds_an_in_range_gap_when_both_edges_are_taken() {
+        let used = BTreeSet::from([i64::from(i32::MIN), i64::from(i32::MAX)]);
+        let parked = free_priority(&used);
+        assert!(i32::try_from(parked).is_ok());
+        assert!(!used.contains(&parked));
+        assert_eq!(free_priority(&BTreeSet::from([10, 20])), 9);
+        assert_eq!(
+            free_priority(&BTreeSet::from([i64::from(i32::MIN), 5])),
+            6,
+            "parks above when the group reaches i32::MIN"
+        );
     }
 }
