@@ -7,7 +7,12 @@ import { fileURLToPath } from "node:url";
 import type { TestProject } from "vitest/node";
 import { z } from "zod";
 
-import { assertSuccessful, fetchWithTimeout, readEnvelope } from "./gateway-client.js";
+import {
+  assertSuccessful,
+  fetchWithTimeout,
+  parseCredentialUrl,
+  readEnvelope,
+} from "./gateway-client.js";
 import { delay, runCommand } from "./process.js";
 import type { GatewayRuntime } from "./types.js";
 
@@ -120,11 +125,7 @@ function externalRuntime(baseUrl: string): GatewayRuntime {
 }
 
 export function normalizeExternalBaseUrl(value: string): string {
-  const url = new URL(value);
-  const isLoopback = ["127.0.0.1", "[::1]", "::1", "localhost"].includes(url.hostname);
-  if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopback)) {
-    throw new Error("GATEWAY_BASE_URL must use HTTPS unless it targets a loopback host");
-  }
+  const url = parseCredentialUrl(value, "GATEWAY_BASE_URL");
   if (url.search || url.hash) {
     throw new Error("GATEWAY_BASE_URL must not include a query string or fragment");
   }

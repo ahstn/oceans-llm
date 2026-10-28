@@ -151,6 +151,19 @@ export class GatewayAdminClient {
   }
 }
 
+/**
+ * Parses a URL that will receive an Oceans API key. Keys may only travel over HTTPS, or over HTTP to
+ * a loopback host.
+ */
+export function parseCredentialUrl(value: string, label: string): URL {
+  const url = new URL(value);
+  const isLoopback = ["127.0.0.1", "[::1]", "::1", "localhost"].includes(url.hostname);
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopback)) {
+    throw new Error(`${label} must use HTTPS unless it targets a loopback host`);
+  }
+  return url;
+}
+
 export function fetchWithTimeout(
   input: string | URL,
   init: RequestInit = {},

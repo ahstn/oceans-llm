@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { z } from "zod";
 
-import { fetchGeneratedOpenCodeConfig } from "../gateway-client.js";
+import { fetchGeneratedOpenCodeConfig, parseCredentialUrl } from "../gateway-client.js";
 import { delay, runCommand } from "../process.js";
 import type { GatewayRuntime, HarnessAdapter, HarnessRun } from "../types.js";
 import { parseAssistantOutput, parseToolCalls } from "./events.js";
@@ -30,12 +30,26 @@ const GeneratedConfigSchema = z
           env: z.array(z.string()).min(1),
           headers: z.record(z.string(), z.string()).optional(),
           models: z.record(z.string(), z.unknown()),
+          settings: z.object({ baseURL: z.string() }).passthrough(),
         })
         .passthrough(),
     ),
   })
   .passthrough();
 type GeneratedConfig = z.infer<typeof GeneratedConfigSchema>;
+
+/**
+ * Parses the generated config. The adapter gives each provider the Oceans API key, and OpenCode
+ * sends that key to the provider's `settings.baseURL`. That URL comes from the gateway's
+ * client-config setting, not from `GATEWAY_BASE_URL`, so it gets the same cleartext check.
+ */
+export function parseGeneratedOpenCodeConfig(value: unknown): GeneratedConfig {
+  const config = GeneratedConfigSchema.parse(value);
+  for (const [id, provider] of Object.entries(config.providers)) {
+    parseCredentialUrl(provider.settings.baseURL, `Generated OpenCode provider ${id} baseURL`);
+  }
+  return config;
+}
 
 export class OpenCodeAdapter implements HarnessAdapter {
   readonly key = "opencode" as const;
@@ -52,7 +66,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
     // Drive OpenCode with the config Oceans generates for users, so the suite proves that config
     // works in the real client. Only harness-specific settings are layered on top.
     this.#generated ??= fetchGeneratedOpenCodeConfig(this.#runtime, this.#runtime.model).then(
-      (config) => GeneratedConfigSchema.parse(config),
+      parseGeneratedOpenCodeConfig,
     );
     const generated = await this.#generated;
     const isolated = await createIsolatedPaths(workspace, this.key);
