@@ -160,6 +160,20 @@ describe("shell guardrail hooks", () => {
     });
     await expect(openCodeHook("printf safe")).rejects.toThrow("invalid response");
   });
+
+  test("OpenCode rejects moving the session out of the workspace", async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock;
+    const { beforeTool } = await loadOpenCodeHooks();
+
+    // Code Mode reports namespaced names, so cover both spellings.
+    for (const tool of ["session_move", "opencode_session_move"]) {
+      await expect(beforeTool({ tool, input: { directory: "/" } })).rejects.toThrow(
+        "moving the session",
+      );
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
 
 type PiHook = (event: {
@@ -169,7 +183,7 @@ type PiHook = (event: {
 
 /** Runs a shell command through both OpenCode hooks and returns the command that would spawn. */
 type OpenCodeHook = (command: string) => Promise<string>;
-type OpenCodeToolEvent = { tool: string; input: { command: string } };
+type OpenCodeToolEvent = { tool: string; input: Record<string, unknown> };
 type OpenCodeShellEvent = { command: string };
 
 async function loadPiHook(): Promise<PiHook> {
@@ -189,7 +203,10 @@ async function loadPiHook(): Promise<PiHook> {
   return hook;
 }
 
-async function loadOpenCodeHook(): Promise<OpenCodeHook> {
+async function loadOpenCodeHooks(): Promise<{
+  beforeTool: (event: OpenCodeToolEvent) => Promise<void>;
+  beforeShell: (event: OpenCodeShellEvent) => void;
+}> {
   const module = (await loadSource(
     guardrailPluginSource("/tmp/guardrail-workspace"),
     "opencode",
@@ -211,11 +228,15 @@ async function loadOpenCodeHook(): Promise<OpenCodeHook> {
     },
   });
   if (!toolHook || !shellHook) throw new Error("OpenCode guardrail hooks were not registered");
-  const [beforeTool, beforeShell] = [toolHook, shellHook];
+  return { beforeTool: toolHook, beforeShell: shellHook };
+}
+
+async function loadOpenCodeHook(): Promise<OpenCodeHook> {
+  const { beforeTool, beforeShell } = await loadOpenCodeHooks();
   return async (command) => {
-    const toolEvent = { tool: "shell", input: { command } };
+    const toolEvent = { tool: "shell", input: { command } as Record<string, unknown> };
     await beforeTool(toolEvent);
-    const shellEvent = { command: toolEvent.input.command };
+    const shellEvent = { command: String(toolEvent.input.command) };
     beforeShell(shellEvent);
     return shellEvent.command;
   };

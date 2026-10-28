@@ -1,18 +1,22 @@
-import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
+import { randomBytes, randomUUID } from "node:crypto";
+import { once } from "node:events";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 import { z } from "zod";
 
 import { fetchGeneratedOpenCodeConfig } from "../gateway-client.js";
-import { runCommand } from "../process.js";
+import { delay, runCommand } from "../process.js";
 import type { GatewayRuntime, HarnessAdapter, HarnessRun } from "../types.js";
 import { parseAssistantOutput, parseToolCalls } from "./events.js";
 import { createHarnessEnvironment, createIsolatedPaths } from "./isolation.js";
 
 const PACKAGE_ROOT = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const OPENCODE_BINARY = join(PACKAGE_ROOT, "node_modules", ".bin", "opencode");
+const MCP_READY_TIMEOUT_MS = 60_000;
 
 // The subset of the generated native V2 config that the adapter relies on. Other fields pass
 // through unchanged so OpenCode itself validates the full generated shape.
@@ -114,35 +118,96 @@ export class OpenCodeAdapter implements HarnessAdapter {
       OPENCODE_DISABLE_FREE_MODELS: "true",
       OPENCODE_DISABLE_MODELS_FETCH: "true",
     });
-    // `--standalone` runs a private server per command. Without it OpenCode V2 reuses a shared
-    // background service that ignores this process's environment and config.
-    // V2 connects MCP servers asynchronously after a standalone server boots, so `opencode mcp list`
-    // reports nothing yet. The aggregate MCP contract proves the connection through tool events.
-    const result = await runCommand(
-      OPENCODE_BINARY,
-      [
-        "run",
-        "--standalone",
-        "--format",
-        "json",
-        "--model",
-        generated.model,
-        "--auto",
-        "--",
-        prompt,
-      ],
-      {
-        cwd: workspace,
-        env: environment,
-        timeoutMs: 90_000,
-      },
-    );
+    const result = await withPrivateServer(workspace, environment, async (server) => {
+      // V2 connects MCP servers in the background after the server starts. Wait until Oceans MCP
+      // is connected on this server, so the first model request already lists its tools.
+      await waitForOceansMcp(workspace, server);
+      return runCommand(
+        OPENCODE_BINARY,
+        [
+          "run",
+          "--server",
+          server.url,
+          "--format",
+          "json",
+          "--model",
+          generated.model,
+          "--auto",
+          "--",
+          prompt,
+        ],
+        { cwd: workspace, env: server.env, timeoutMs: 90_000 },
+      );
+    });
     return {
       output: parseAssistantOutput(result.stdout),
       requestTag,
       toolCalls: parseToolCalls(result.stdout),
     };
   }
+}
+
+interface PrivateServer {
+  url: string;
+  /** Client environment, including the server password. */
+  env: NodeJS.ProcessEnv;
+}
+
+/**
+ * Starts a private OpenCode server with the isolated environment, as `--standalone` does, but keeps
+ * it running across several client commands. Without a private server, OpenCode V2 reuses a shared
+ * background service that ignores this process's environment and config.
+ */
+async function withPrivateServer<T>(
+  workspace: string,
+  environment: NodeJS.ProcessEnv,
+  use: (server: PrivateServer) => Promise<T>,
+): Promise<T> {
+  const env = { ...environment, OPENCODE_PASSWORD: randomBytes(32).toString("base64url") };
+  // The server ends its lease when stdin closes, so it cannot outlive this process.
+  const child = spawn(OPENCODE_BINARY, ["serve", "--stdio", "--port", "0"], {
+    cwd: workspace,
+    env,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  const stderr: string[] = [];
+  child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk.toString()));
+  const exited = once(child, "close").then(() => undefined);
+  try {
+    const lines = createInterface({ input: child.stdout });
+    const readyLine = await Promise.race([
+      once(lines, "line").then(([line]) => String(line)),
+      exited,
+      delay(30_000).then(() => undefined),
+    ]);
+    if (readyLine === undefined) {
+      throw new Error(`OpenCode server did not report readiness:\n${stderr.join("")}`);
+    }
+    const { url } = z.object({ url: z.string() }).parse(JSON.parse(readyLine));
+    return await use({ url, env });
+  } finally {
+    child.stdin.end();
+    child.kill("SIGTERM");
+    await Promise.race([exited, delay(5_000)]);
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+  }
+}
+
+async function waitForOceansMcp(workspace: string, server: PrivateServer): Promise<void> {
+  const deadline = Date.now() + MCP_READY_TIMEOUT_MS;
+  let status = "";
+  while (Date.now() < deadline) {
+    const result = await runCommand(OPENCODE_BINARY, ["mcp", "list", "--server", server.url], {
+      cwd: workspace,
+      env: server.env,
+      timeoutMs: 15_000,
+    });
+    status = result.stdout.split("\n").find((line) => /\boceans\b/.test(line)) ?? result.stdout;
+    if (/\boceans\s+connected\b/.test(status)) return;
+    if (/\boceans\s+(failed|needs authentication)/.test(status)) break;
+    await delay(250);
+  }
+  throw new Error(`OpenCode did not connect to Oceans MCP: ${status.trim()}`);
 }
 
 export function guardrailPluginSource(workspace: string): string {
@@ -184,7 +249,13 @@ function confineShell(command) {
   return null;
 }
 
-async function evaluateShellCommand(event) {
+async function guardToolCall(event) {
+  // session_move relocates the session, which would move the workspace boundary that the
+  // external_directory rule enforces. It has no permission check, so reject it here. Code Mode
+  // calls also pass through this hook.
+  if (event.tool.endsWith("session_move")) {
+    throw new Error("Oceans harness denies moving the session out of its workspace");
+  }
   if (event.tool !== "shell") return;
   const command = event.input?.command;
   if (typeof command !== "string") {
@@ -228,7 +299,7 @@ function confineShellProcess(invocation) {
 export default {
   id: "oceans.guardrails",
   async setup(ctx) {
-    await ctx.tool.hook("execute.before", evaluateShellCommand);
+    await ctx.tool.hook("execute.before", guardToolCall);
     await ctx.shell.hook("create.before", confineShellProcess);
   },
 };

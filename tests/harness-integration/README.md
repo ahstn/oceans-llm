@@ -24,7 +24,9 @@ The suite runs the native OpenCode V2 CLI (`@opencode/cli`). It does not hand-wr
 
 In managed mode, the gateway starts with `GATEWAY_CLIENT_CONFIG_BASE_URL` set to its local URL, so the generated config points at it. In external mode, the generated config uses the deployment's own client-config base URL.
 
-Each OpenCode command runs with `--standalone`, so it uses a private server with the isolated environment instead of a shared background service. The Oceans MCP server sets `codemode: false`, so aggregate MCP calls show as direct tool calls in the event stream. The guardrail plugin is a V2 plugin. It checks each `shell` tool call with Oceans in `tool` `execute.before`, and it confines the command in `shell` `create.before`, after OpenCode checks permissions.
+Each run starts a private `opencode serve` process with the isolated environment, in the same way as `--standalone`, instead of using a shared background service. The adapter waits until `opencode mcp list --server <url>` reports Oceans as connected, and then sends the prompt with `opencode run --server <url>`. V2 connects MCP servers in the background, so without this wait the first model request can have no Oceans tools. The Oceans MCP server sets `codemode: false`, so aggregate MCP calls show as direct tool calls in the event stream.
+
+The guardrail plugin is a V2 plugin. It checks each `shell` tool call with Oceans in `tool` `execute.before`, and it confines the command in `shell` `create.before`, after OpenCode checks permissions. It also rejects `session_move`. That tool has no permission check, and it would move the workspace boundary that the `external_directory` deny rule enforces.
 
 ## External gateway
 
