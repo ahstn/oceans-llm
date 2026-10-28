@@ -386,6 +386,20 @@ fn safe_thinking_variants_are_emitted_for_newer_claude_models() {
 }
 
 #[test]
+fn opencode_image_only_models_do_not_accept_pdf() {
+    let mut input = input(None);
+    input.capabilities.attachments = false;
+    let rendered = OpenCodeConfigTemplate.render(&input);
+    let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
+
+    // OpenCode sends PDFs to any model whose input lists "pdf"; image support alone must not add it.
+    assert_eq!(
+        value["providers"]["oceans-llm"]["models"]["claude-sonnet"]["capabilities"]["input"],
+        serde_json::json!(["text", "image"])
+    );
+}
+
+#[test]
 fn opencode_safe_effort_config_matches_expected_full_shape() {
     let rendered = OpenCodeConfigTemplate.render(&input(Some(ThinkingPolicy::AnthropicSafeEffort)));
     let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
