@@ -139,7 +139,7 @@ impl TestRequest {
                 pricing_override: None,
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
-                capabilities: ProviderCapabilities::all_enabled(),
+                capabilities: ProviderCapabilities::all_enabled().into(),
                 compatibility: Default::default(),
             })
             .collect();
@@ -189,6 +189,7 @@ impl TestRequest {
                 },
                 routes,
                 provider_connections,
+                capability_hints: Default::default(),
             },
             extra: BTreeMap::new(),
             headers: BTreeMap::new(),

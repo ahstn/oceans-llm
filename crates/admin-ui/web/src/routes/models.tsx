@@ -49,7 +49,7 @@ import {
   getModels,
   refreshModelPricing,
 } from '@/server/admin-data.functions'
-import type { ModelView } from '@/types/api'
+import type { ModelView, RefreshModelPricingCatalogResponse } from '@/types/api'
 import { ModelInfoDialog, type ModelInfoSectionKey } from '@/routes/-model-info-dialog'
 import { ModelListPagination, ModelSearch } from '@/routes/-model-list-controls'
 import { formatCost, formatWindow, providerTypeLabel } from '@/routes/-model-formatting'
@@ -64,6 +64,32 @@ const DEFAULT_PAGE_SIZE = 30
 
 const CLIENT_HARNESS_CONFIGURATION_URL =
   'https://oceans-llm.com/configuration/client-harness-configuration.html'
+
+type PricingSourceRefresh = RefreshModelPricingCatalogResponse['sources'][number]
+
+const PRICING_SOURCE_NAMES: Record<PricingSourceRefresh['source'], string> = {
+  models_dev: 'models.dev',
+  openrouter: 'OpenRouter',
+  litellm: 'LiteLLM',
+}
+
+/** One toast per refresh: success when every source refreshed, a warning naming failed sources otherwise. */
+function toastPricingRefresh(sources: PricingSourceRefresh[]) {
+  const failed = sources
+    .filter((source) => source.outcome === 'failed')
+    .map((source) => PRICING_SOURCE_NAMES[source.source])
+  const summary = sources
+    .filter((source) => source.outcome !== 'failed')
+    .map((source) => `${PRICING_SOURCE_NAMES[source.source]} ${source.outcome}`)
+    .join(', ')
+
+  if (failed.length === 0) {
+    toast.success(summary ? `Pricing refreshed: ${summary}` : 'Pricing refreshed')
+    return
+  }
+  const failure = `Pricing refresh failed for ${failed.join(', ')}`
+  toast.warning(summary ? `${failure}; ${summary}` : failure)
+}
 
 export const Route = createFileRoute('/models')({
   validateSearch: (search: Record<string, unknown>) => normalizeModelsSearch(search),
@@ -195,8 +221,8 @@ export function ModelsPage() {
   async function refreshPricing() {
     setIsRefreshingPricing(true)
     try {
-      await refreshModelPricing()
-      toast.success('Pricing refreshed')
+      const response = await refreshModelPricing()
+      toastPricingRefresh(response.data.sources)
     } catch {
       toast.error('Pricing refresh failed')
       setIsRefreshingPricing(false)
@@ -464,9 +490,15 @@ export function ModelsPage() {
                         <TableCell className="px-3 py-1 whitespace-normal">
                           <StackedMetric
                             topLabel="Input"
-                            topValue={formatCost(model.input_cost_per_million_tokens_usd_10000)}
+                            topValue={formatBaseCost(
+                              model,
+                              model.input_cost_per_million_tokens_usd_10000,
+                            )}
                             bottomLabel="Output"
-                            bottomValue={formatCost(model.output_cost_per_million_tokens_usd_10000)}
+                            bottomValue={formatBaseCost(
+                              model,
+                              model.output_cost_per_million_tokens_usd_10000,
+                            )}
                           />
                         </TableCell>
                         {visibleColumns.contextWindow ? (
@@ -672,9 +704,9 @@ function ModelCard({
             value={
               <StackedMetric
                 topLabel="Input"
-                topValue={formatCost(model.input_cost_per_million_tokens_usd_10000)}
+                topValue={formatBaseCost(model, model.input_cost_per_million_tokens_usd_10000)}
                 bottomLabel="Output"
-                bottomValue={formatCost(model.output_cost_per_million_tokens_usd_10000)}
+                bottomValue={formatBaseCost(model, model.output_cost_per_million_tokens_usd_10000)}
               />
             }
           />
@@ -1024,6 +1056,12 @@ function ModelNotes({ model }: { model: ModelView }) {
       ) : null}
     </div>
   )
+}
+
+/** Tiered models list their base rate; higher context tiers appear in the model info dialog. */
+function formatBaseCost(model: ModelView, value: number | null | undefined) {
+  const cost = formatCost(value)
+  return value != null && model.pricing_tiers.length > 0 ? `from ${cost}` : cost
 }
 
 function StackedMetric({

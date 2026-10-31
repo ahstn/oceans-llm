@@ -8608,6 +8608,7 @@
           "aliases",
           "tags",
           "status",
+          "pricing_tiers",
           "pricing_varies_by_route",
           "benchmark_scores",
           "client_configurations"
@@ -8738,6 +8739,13 @@
                 "$ref": "#/components/schemas/EffectiveMetadataSourceView"
               }
             ]
+          },
+          "pricing_tiers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminPricingTierView"
+            },
+            "description": "Catalog context tiers for the same primary route as the base prices, ascending by\nthreshold. Empty when the price comes from a route pricing override."
           },
           "pricing_varies_by_route": {
             "type": "boolean"
@@ -8998,6 +9006,47 @@
           "team_admins",
           "users"
         ]
+      },
+      "AdminPricingTierView": {
+        "type": "object",
+        "description": "Rates that replace the base prices for a whole request whose prompt tokens (cache\nincluded) exceed `above_input_tokens`. A null rate inherits the base rate.",
+        "required": [
+          "above_input_tokens"
+        ],
+        "properties": {
+          "above_input_tokens": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cache_read_cost_per_million_tokens_usd_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "cache_write_cost_per_million_tokens_usd_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "input_cost_per_million_tokens_usd_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "output_cost_per_million_tokens_usd_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
       },
       "AdminProviderCredentialStatusView": {
         "type": "object",
@@ -15578,11 +15627,15 @@
           "data": {
             "type": "object",
             "required": [
-              "refreshed"
+              "sources"
             ],
             "properties": {
-              "refreshed": {
-                "type": "boolean"
+              "sources": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PricingCatalogSourceRefreshView"
+                },
+                "description": "One entry per catalog source, in the order models_dev, openrouter, litellm."
               }
             }
           },
@@ -18684,6 +18737,51 @@
           }
         }
       },
+      "PricingCatalogRefreshOutcomeView": {
+        "type": "string",
+        "enum": [
+          "updated",
+          "unchanged",
+          "failed"
+        ]
+      },
+      "PricingCatalogSourceRefreshView": {
+        "type": "object",
+        "required": [
+          "source",
+          "outcome"
+        ],
+        "properties": {
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Stable error code of a failed refresh; never upstream response text."
+          },
+          "fetched_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "RFC 3339 generation of the source snapshot now in use, cached or vendored."
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/PricingCatalogRefreshOutcomeView"
+          },
+          "source": {
+            "$ref": "#/components/schemas/PricingCatalogSourceView"
+          }
+        }
+      },
+      "PricingCatalogSourceView": {
+        "type": "string",
+        "enum": [
+          "models_dev",
+          "openrouter",
+          "litellm"
+        ]
+      },
       "ProviderIconKeyView": {
         "type": "string",
         "enum": [
@@ -19017,11 +19115,15 @@
       "RefreshModelPricingCatalogResponse": {
         "type": "object",
         "required": [
-          "refreshed"
+          "sources"
         ],
         "properties": {
-          "refreshed": {
-            "type": "boolean"
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PricingCatalogSourceRefreshView"
+            },
+            "description": "One entry per catalog source, in the order models_dev, openrouter, litellm."
           }
         }
       },

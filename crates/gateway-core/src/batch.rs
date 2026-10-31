@@ -3,7 +3,7 @@ use serde_json::Value;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::Money4;
+use crate::{ContextPricingTier, Money4};
 
 pub const MAX_BATCH_PAGE_SIZE: u32 = 500;
 pub const MAX_BATCH_RESULT_PAGE_SIZE: u32 = 1_000;
@@ -204,9 +204,31 @@ pub struct BatchTokenRates {
     pub image_output: Option<Money4>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+impl BatchTokenRates {
+    /// These rates with `tier`'s rates in place of the base; an unset tier rate keeps the
+    /// base rate. The image output rate has no tiers.
+    #[must_use]
+    pub fn with_context_tier(self, tier: &ContextPricingTier) -> Self {
+        Self {
+            input: tier.input.or(self.input),
+            output: tier.output.or(self.output),
+            cache_read: tier.cache_read.or(self.cache_read),
+            cache_write: tier.cache_write.or(self.cache_write),
+            image_output: self.image_output,
+        }
+    }
+}
+
+/// The pricing schedule a batch is billed with, frozen when the batch is created.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BatchPricingSnapshot {
+    /// Base rates.
     pub rates: Option<BatchTokenRates>,
+    /// Catalog context tiers over `rates`, sorted ascending by threshold; each item bills
+    /// at the tier its own normalized prompt tokens select. Empty for override pricing and
+    /// in snapshots taken before tiers existed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub context_tiers: Vec<ContextPricingTier>,
     pub policy: BatchPricingPolicy,
 }
 

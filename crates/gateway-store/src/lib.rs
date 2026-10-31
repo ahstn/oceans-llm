@@ -106,8 +106,8 @@ pub(crate) mod tests {
         NewExternalMcpServerRecord, NewReviewAgentRepositoryRecord, NewReviewAgentRunRecord,
         OauthJitPolicy, OidcLoginStateRecord, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
         OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
-        PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-        PricingProvenance, ProviderCapabilities, ProviderRequestContext,
+        PartialCapabilities, PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits,
+        PricingModalities, PricingProvenance, ProviderRequestContext,
         ProviderUserCredentialRepository, RefreshMcpOauthCredentialBindingRecord,
         RequestAttemptRecord, RequestAttemptStatus, RequestLogPayloadRecord, RequestLogQuery,
         RequestLogRecord, RequestLogRepository, RequestTag, RequestTags, RequestToolCardinality,
@@ -799,9 +799,120 @@ pub(crate) mod tests {
             cache_read_cost_per_million_tokens: Some(Money4::from_scaled(125)),
             cache_write_cost_per_million_tokens: Some(Money4::from_scaled(250)),
             image_output_cost_per_million_tokens: Some(Money4::from_scaled(300_000)),
+            pricing_tier_above_input_tokens: None,
             computed_cost_usd: Money4::from_scaled(computed_cost_10000),
             occurred_at,
         }
+    }
+
+    fn tiered_model_pricing_record(
+        pricing_model_id: &str,
+        fetched_at: OffsetDateTime,
+    ) -> ModelPricingRecord {
+        ModelPricingRecord {
+            model_pricing_id: Uuid::new_v4(),
+            pricing_provider_id: "openai".to_string(),
+            pricing_model_id: pricing_model_id.to_string(),
+            display_name: "Tiered".to_string(),
+            input_cost_per_million_tokens: Some(Money4::from_scaled(100_000)),
+            output_cost_per_million_tokens: Some(Money4::from_scaled(500_000)),
+            cache_read_cost_per_million_tokens: Some(Money4::from_scaled(10_000)),
+            cache_write_cost_per_million_tokens: None,
+            input_audio_cost_per_million_tokens: None,
+            output_audio_cost_per_million_tokens: None,
+            output_image_usd_per_million: Some(Money4::from_scaled(400_000)),
+            context_tiers: vec![
+                gateway_core::ContextPricingTier {
+                    above_input_tokens: 200_000,
+                    input: Some(Money4::from_scaled(150_000)),
+                    output: Some(Money4::from_scaled(600_000)),
+                    cache_read: None,
+                    cache_write: None,
+                },
+                gateway_core::ContextPricingTier {
+                    above_input_tokens: 272_000,
+                    input: Some(Money4::from_scaled(200_000)),
+                    output: Some(Money4::from_scaled(750_000)),
+                    cache_read: Some(Money4::from_scaled(20_000)),
+                    cache_write: Some(Money4::from_scaled(250_000)),
+                },
+            ],
+            release_date: "2026-01-01".to_string(),
+            last_updated: "2026-01-01".to_string(),
+            effective_start_at: fetched_at,
+            effective_end_at: None,
+            limits: PricingLimits {
+                context: Some(1_000_000),
+                input: None,
+                output: None,
+            },
+            modalities: PricingModalities {
+                input: vec!["text".to_string()],
+                output: vec!["text".to_string(), "image".to_string()],
+            },
+            provenance: PricingProvenance {
+                source: "test".to_string(),
+                etag: Some("etag-tiers".to_string()),
+                fetched_at,
+            },
+            created_at: fetched_at,
+            updated_at: fetched_at,
+        }
+    }
+
+    /// Context tiers and the catalog image rate survive both insert paths.
+    async fn exercise_model_pricing_context_tiers_round_trip<S>(store: &S)
+    where
+        S: PricingCatalogRepository,
+    {
+        let model_id = format!("gpt-tiered-{}", Uuid::new_v4().simple());
+        // Pricing syncs must not predate any active row, and the Postgres database is shared
+        // with other tests, so start after the newest active row.
+        let base_at = OffsetDateTime::from_unix_timestamp(1_700_000_000).expect("timestamp");
+        let first_at = store
+            .list_active_model_pricing()
+            .await
+            .expect("list active pricing")
+            .into_iter()
+            .map(|record| record.provenance.fetched_at)
+            .fold(base_at, OffsetDateTime::max)
+            + Duration::hours(1);
+        let first = tiered_model_pricing_record(&model_id, first_at);
+        store
+            .insert_model_pricing(&first)
+            .await
+            .expect("insert tiered pricing");
+        assert_eq!(
+            store
+                .resolve_model_pricing_at("openai", &model_id, first_at)
+                .await
+                .expect("resolve tiered pricing"),
+            Some(first.clone())
+        );
+
+        let second_at = first_at + Duration::hours(1);
+        let mut second = tiered_model_pricing_record(&model_id, second_at);
+        second.context_tiers.truncate(1);
+        second.output_image_usd_per_million = None;
+        store
+            .apply_model_pricing_sync(
+                &gateway_core::ModelPricingSyncChanges {
+                    close_model_pricing_ids: vec![first.model_pricing_id],
+                    update_provenance: Vec::new(),
+                    insert_model_pricing: vec![second.clone()],
+                },
+                second_at,
+            )
+            .await
+            .expect("apply tiered pricing sync");
+        let active = store
+            .list_active_model_pricing()
+            .await
+            .expect("list active pricing")
+            .into_iter()
+            .find(|record| record.pricing_model_id == model_id)
+            .expect("active tiered pricing");
+        assert_eq!(active, second);
     }
 
     async fn exercise_review_agent_repository<S>(store: &S)
@@ -1320,7 +1431,7 @@ pub(crate) mod tests {
                 pricing_override: None,
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
-                capabilities: ProviderCapabilities::all_enabled(),
+                capabilities: PartialCapabilities::default(),
                 compatibility: Default::default(),
             }],
             allowlist: None,
@@ -4934,7 +5045,7 @@ pub(crate) mod tests {
                     pricing_override: None,
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
-                    capabilities: ProviderCapabilities::all_enabled(),
+                    capabilities: PartialCapabilities::default(),
                     compatibility: Default::default(),
                 }],
                 allowlist: None,
@@ -4958,7 +5069,7 @@ pub(crate) mod tests {
                     pricing_override: None,
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
-                    capabilities: ProviderCapabilities::all_enabled(),
+                    capabilities: PartialCapabilities::default(),
                     compatibility: Default::default(),
                 }],
                 allowlist: None,
@@ -6727,9 +6838,12 @@ pub(crate) mod tests {
                 }),
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
-                capabilities: ProviderCapabilities::with_dimensions(
-                    true, false, true, false, false, true, true,
-                ),
+                capabilities: PartialCapabilities {
+                    chat_completions: Some(true),
+                    stream: Some(false),
+                    tools: Some(false),
+                    ..PartialCapabilities::default()
+                },
                 compatibility: RouteCompatibility {
                     openai_compat: Some(OpenAiCompatRouteCompatibility {
                         supports_store: false,
@@ -6923,9 +7037,44 @@ pub(crate) mod tests {
         assert_eq!(routes[0].id, seeded_route.id);
         assert_eq!(routes[0].priority, 20);
         assert_eq!(routes[0].provider_key, "openai-prod");
-        assert!(!routes[0].capabilities.stream);
-        assert!(!routes[0].capabilities.tools);
-        assert!(!routes[0].capabilities.vision);
+        assert_eq!(
+            routes[0].capabilities, models[0].routes[0].capabilities,
+            "unset, true, and false capability fields roundtrip"
+        );
+
+        // Rows written before tri-state capabilities hold every field; they decode as explicit.
+        store
+            .connection()
+            .execute(
+                "UPDATE model_routes SET capabilities_json = ?1 WHERE id = ?2",
+                libsql::params![
+                    r#"{"chat_completions":true,"responses":false,"stream":true,"embeddings":true,"images":false,"decisions":false,"tools":true,"vision":false,"json_schema":true,"developer_role":true}"#,
+                    seeded_route.id.to_string()
+                ],
+            )
+            .await
+            .expect("write legacy capabilities");
+        let legacy = store
+            .list_routes_for_model(accessible_models[0].id)
+            .await
+            .expect("model routes")
+            .remove(0)
+            .capabilities;
+        assert_eq!(
+            legacy,
+            PartialCapabilities {
+                chat_completions: Some(true),
+                responses: Some(false),
+                stream: Some(true),
+                embeddings: Some(true),
+                images: Some(false),
+                decisions: Some(false),
+                tools: Some(true),
+                vision: Some(false),
+                json_schema: Some(true),
+                developer_role: Some(true),
+            }
+        );
         assert_eq!(routes[0].context_window_tokens, Some(128_000));
         assert_eq!(
             routes[0]
@@ -7484,7 +7633,7 @@ pub(crate) mod tests {
             1_000,
             now - Duration::hours(2),
         );
-        let kept_event = build_usage_ledger_record(
+        let mut kept_event = build_usage_ledger_record(
             "req-kept",
             "user:scope-kept".to_string(),
             api_key.id,
@@ -7497,6 +7646,7 @@ pub(crate) mod tests {
             2_000,
             now,
         );
+        kept_event.pricing_tier_above_input_tokens = Some(272_000);
         assert!(
             store
                 .insert_usage_ledger_if_absent(&seeded_event)
@@ -7567,6 +7717,7 @@ pub(crate) mod tests {
             kept_usage.image_output_cost_per_million_tokens,
             Some(Money4::from_scaled(300_000))
         );
+        assert_eq!(kept_usage.pricing_tier_above_input_tokens, Some(272_000));
 
         // Repeat deletes are no-ops, which is what makes reseeding idempotent.
         assert_eq!(
@@ -7762,7 +7913,7 @@ pub(crate) mod tests {
             1_000,
             now - Duration::hours(2),
         );
-        let kept_event = build_usage_ledger_record(
+        let mut kept_event = build_usage_ledger_record(
             "req-kept-postgres",
             "user:scope-kept".to_string(),
             api_key.id,
@@ -7775,6 +7926,7 @@ pub(crate) mod tests {
             2_000,
             now,
         );
+        kept_event.pricing_tier_above_input_tokens = Some(272_000);
         assert!(
             store
                 .insert_usage_ledger_if_absent(&seeded_event)
@@ -7845,6 +7997,7 @@ pub(crate) mod tests {
             kept_usage.image_output_cost_per_million_tokens,
             Some(Money4::from_scaled(300_000))
         );
+        assert_eq!(kept_usage.pricing_tier_above_input_tokens, Some(272_000));
 
         // Repeat deletes are no-ops, which is what makes reseeding idempotent.
         assert_eq!(
@@ -7937,7 +8090,7 @@ pub(crate) mod tests {
                     pricing_override: None,
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
-                    capabilities: ProviderCapabilities::all_enabled(),
+                    capabilities: PartialCapabilities::default(),
                     compatibility: Default::default(),
                 }],
                 allowlist: None,
@@ -9745,7 +9898,7 @@ pub(crate) mod tests {
                 pricing_override: None,
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
-                capabilities: ProviderCapabilities::all_enabled(),
+                capabilities: PartialCapabilities::default(),
                 compatibility: Default::default(),
             }],
             allowlist: None,
@@ -10943,7 +11096,7 @@ pub(crate) mod tests {
                 pricing_override: None,
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
-                capabilities: ProviderCapabilities::all_enabled(),
+                capabilities: PartialCapabilities::default(),
                 compatibility: Default::default(),
             }],
             allowlist: None,
@@ -11331,6 +11484,20 @@ pub(crate) mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn libsql_model_pricing_round_trips_context_tiers_and_image_rate() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("gateway.db");
+        run_migrations(&db_path).await.expect("migrations");
+
+        let store = LibsqlStore::new_local(db_path.to_str().expect("db path"))
+            .await
+            .expect("store");
+
+        exercise_model_pricing_context_tiers_round_trip(&store).await;
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn postgres_store_supports_migrations_and_core_operations() {
         let Some(test_db) = create_postgres_test_database().await else {
             eprintln!("skipping postgres store test because TEST_POSTGRES_URL is not set");
@@ -11384,9 +11551,12 @@ pub(crate) mod tests {
                 }),
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
-                capabilities: ProviderCapabilities::with_dimensions(
-                    true, false, true, true, false, true, true,
-                ),
+                capabilities: PartialCapabilities {
+                    stream: Some(false),
+                    vision: Some(false),
+                    tools: Some(true),
+                    ..PartialCapabilities::default()
+                },
                 compatibility: Default::default(),
             }],
             allowlist: None,
@@ -11470,7 +11640,10 @@ pub(crate) mod tests {
             .await
             .expect("list routes");
         assert_eq!(routes.len(), 1);
-        assert!(!routes[0].capabilities.vision);
+        assert_eq!(
+            routes[0].capabilities, models[0].routes[0].capabilities,
+            "unset, true, and false capability fields roundtrip"
+        );
         assert_eq!(routes[0].context_window_tokens, Some(128_000));
         assert_eq!(
             routes[0].pricing_override,
@@ -11638,6 +11811,8 @@ pub(crate) mod tests {
             cache_write_cost_per_million_tokens: None,
             input_audio_cost_per_million_tokens: None,
             output_audio_cost_per_million_tokens: None,
+            output_image_usd_per_million: None,
+            context_tiers: Vec::new(),
             release_date: "2025-01-01".to_string(),
             last_updated: "2025-01-01".to_string(),
             effective_start_at: pricing_time,
@@ -11670,6 +11845,7 @@ pub(crate) mod tests {
                 .expect("resolve model pricing")
                 .is_some()
         );
+        exercise_model_pricing_context_tiers_round_trip(&store).await;
 
         let priced_event = UsageLedgerRecord {
             usage_event_id: Uuid::new_v4(),
@@ -11706,6 +11882,7 @@ pub(crate) mod tests {
             cache_read_cost_per_million_tokens: pricing_record.cache_read_cost_per_million_tokens,
             cache_write_cost_per_million_tokens: pricing_record.cache_write_cost_per_million_tokens,
             image_output_cost_per_million_tokens: None,
+            pricing_tier_above_input_tokens: None,
             computed_cost_usd: Money4::from_scaled(25),
             occurred_at: pricing_time,
         };
@@ -11744,6 +11921,7 @@ pub(crate) mod tests {
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
+            pricing_tier_above_input_tokens: None,
             computed_cost_usd: Money4::ZERO,
             occurred_at: pricing_time,
         };
@@ -12120,7 +12298,7 @@ pub(crate) mod tests {
                 pricing_override: None,
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
-                capabilities: ProviderCapabilities::all_enabled(),
+                capabilities: PartialCapabilities::default(),
                 compatibility: Default::default(),
             }],
             allowlist: None,
@@ -12610,7 +12788,7 @@ pub(crate) mod tests {
                     pricing_override: None,
                     extra_headers: Map::new(),
                     extra_body: Map::new(),
-                    capabilities: ProviderCapabilities::all_enabled(),
+                    capabilities: PartialCapabilities::default(),
                     compatibility: Default::default(),
                 }],
                 allowlist: None,

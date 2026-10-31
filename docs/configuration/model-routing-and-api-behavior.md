@@ -65,32 +65,18 @@ models:
         priority: 10
         weight: 3
         enabled: true
-        capabilities:
-          chat_completions: true
-          responses: true
-          embeddings: false
-          stream: true
-          tools: true
-          vision: true
-          json_schema: true
-          developer_role: true
       - provider: openrouter
         upstream_model: openai/gpt-5-mini
         priority: 10
         weight: 1
         enabled: true
         capabilities:
-          chat_completions: true
-          responses: true
           embeddings: false
-          stream: true
-          tools: true
-          vision: true
-          json_schema: true
-          developer_role: true
 ```
 
 The model ID is the stable name callers send in the `model` field. Each route identifies a configured provider and the model name expected by that provider.
+
+Routes set only the capability flags that the gateway cannot find for itself. The OpenAI route sets none: the catalog states its API endpoints, tools, and image input. The OpenRouter catalog does not state API endpoints, so that route turns off `embeddings`. See [Gate routes by capability](#gate-routes-by-capability).
 
 See [Configuration Reference](configuration-reference.md) for complete field syntax, provider credentials, compatibility profiles, and validation constraints.
 
@@ -302,11 +288,49 @@ Capabilities remove incompatible routes before provider execution:
 | `json_schema` | Structured output using JSON Schema |
 | `developer_role` | A developer-role message |
 
-Effective support is the intersection of configured capability metadata and provider runtime support. Capability defaults are permissive, so partial provider routes should explicitly disable unsupported families and features.
+### How the gateway finds each flag
 
-`decisions` defaults to `false`. A decisions route must explicitly enable it and disable `chat_completions`, `responses`, `embeddings`, and `stream`. Current Decisions transports are native TypeSafe, `openai_compat` routes with `compatibility.openai_compat.decisions_api: openai`, and the alpha route with `compatibility.openrouter.api: decisions`.
+Each capability flag can be `true`, `false`, or not set. Omit a flag to let the gateway find its value. Set a flag only to override that value. The gateway finds each flag in this order, and the first source with a value wins:
 
-`images` also defaults to `false`, so image generation is opt-in per route. Only `openai_compat` and `gcp_cloud_run_openai_compat` providers serve it. Enabling it on any other provider type, or on a decisions route, fails startup. An image-only route should also disable the API families its model does not serve:
+1. **Route config.** A flag that you set in `capabilities`.
+2. **Compatibility.** Facts that the route's `compatibility` settings and provider type guarantee. See the table below.
+3. **Catalog hints.** Facts from the [pricing catalog](pricing-catalog-and-accounting.md#pricing-catalog-refresh) entry of the route's upstream model.
+4. **Defaults.** `images` and `decisions` are `false`. All other flags are `true`.
+
+The provider adapter then caps the result. A route can turn off a feature that the provider supports, but it cannot turn on a feature that the provider does not support.
+
+The gateway infers these flags from route compatibility:
+
+| Route | Inferred flags |
+| --- | --- |
+| Bedrock `runtime_converse`, `runtime_openai_chat`, `mantle_openai_chat`, `mantle_anthropic_messages` | `chat_completions` and `stream` on. `responses`, `json_schema`, `embeddings`, `images`, and `decisions` off |
+| Bedrock `runtime_anthropic_invoke` | `chat_completions` on. `responses`, `stream`, `json_schema`, `embeddings`, `images`, and `decisions` off |
+| Bedrock `mantle_openai_responses` | `responses` and `stream` on. `chat_completions`, `embeddings`, `images`, and `decisions` off. `tools`, `vision`, and `json_schema` depend on the model |
+| GitHub Copilot with `compatibility.github_copilot` | Every flag, from the Copilot route evidence |
+| Native TypeSafe, `compatibility.openai_compat.decisions_api`, or `compatibility.openrouter.api: decisions` | `decisions` on. Every other flag off |
+| Any other route | None |
+
+Catalog hints fill these flags when the catalog states them:
+
+| Flag | Catalog hint |
+| --- | --- |
+| `chat_completions`, `responses`, `embeddings`, `images` | The model's API endpoints. LiteLLM states them for many native models, for example an embedding model serves only embeddings. OpenRouter states them only for image-only models. models.dev does not state them |
+| `tools` | The model supports tool calls |
+| `json_schema` | The model supports structured output |
+| `vision` | The model's input modalities include `image` |
+| `stream`, `developer_role`, `decisions` | Never hinted |
+
+A hint only fills a flag that config and compatibility leave unset. A hint can set such a flag to `false`. A hint never changes a flag that you set. Hints follow the catalog, so a catalog refresh can change a hinted flag. Set the flag explicitly when a route must not change.
+
+Startup validation checks route config, then compatibility, then defaults. It does not use hints. It rejects a flag you set that contradicts compatibility, such as `stream: true` on a `runtime_anthropic_invoke` route, or `chat_completions: true` on a Decisions route.
+
+Route selection, batches, the admin Models page, `GET /v1/models`, and `GET /v1/model-metadata` all use the same effective flags.
+
+### Decisions and images
+
+`decisions` defaults to `false`. Current Decisions transports are native TypeSafe, `openai_compat` routes with `compatibility.openai_compat.decisions_api: openai`, and the alpha route with `compatibility.openrouter.api: decisions`. On these routes the gateway turns `decisions` on and every other flag off, so they need no `capabilities` block.
+
+`images` also defaults to `false`, so image generation is opt-in per route. Only `openai_compat` and `gcp_cloud_run_openai_compat` providers serve it. Enabling it on any other provider type, or on a decisions route, fails startup. The OpenRouter catalog marks image-only models such as `openai/gpt-image-2.5-flare`, so their routes get `images` on and the other API families off from catalog hints. Set the flags explicitly when the catalog does not list the model, or to keep the route stable:
 
 ```yaml
 routes:
@@ -320,7 +344,7 @@ routes:
       stream: false
 ```
 
-For example, an embedding-only route should normally disable unrelated capabilities:
+When the catalog does not describe an embedding model, an embedding-only route should disable unrelated capabilities:
 
 ```yaml
 capabilities:
@@ -360,7 +384,7 @@ The Models admin API reports logical-model metadata conservatively across select
 - Each token-limit dimension is the minimum known value.
 - A dimension is unknown when any selectable route lacks it.
 - Context provenance is `configured_override`, `catalog`, or `mixed`.
-- Pricing uses the primary route and reports when pricing varies by route.
+- Pricing uses the primary route and reports when pricing varies by route. Catalog [context tiers](pricing-catalog-and-accounting.md#context-tiers) of the primary route appear in the model info dialog.
 
 Generated client configurations and `GET /v1/models` use the same conservative limits. Route-level detail, pricing, and source provenance stay in `GET /v1/model-metadata`.
 
@@ -409,7 +433,7 @@ omp (Oh My Pi) can also read this field with `discovery.type: proxy`. That mode 
 
 Decision models served through `POST /v1/decisions` have no new-api endpoint type, so their `supported_endpoint_types` is empty and they carry no `client_hints`. Following OpenRouter, they report `decisions` in `architecture.output_modalities`. Proxy-discovery clients that do not read that modality may list them as chat models.
 
-Models with an eligible `capabilities.images` route report `image` in `architecture.output_modalities`, following OpenRouter. The catalog has no modality data for image-only models such as `openai/gpt-image-2.5-flare`, so such a route reports `text` input (the prompt) and `image` output. The model also reports `text` output when any eligible route serves Chat Completions or Responses, also when that is a different route than the image route. `GET /v1/model-metadata` adds the same modalities to that route's `modalities`. An image-only model has no chat endpoint, so its `supported_endpoint_types` is empty and it carries no `client_hints`.
+Models with an eligible `capabilities.images` route report `image` in `architecture.output_modalities`, following OpenRouter. When the catalog has no modality data for an image-only model, its route reports `text` input (the prompt) and `image` output. The model also reports `text` output when any eligible route serves Chat Completions or Responses, also when that is a different route than the image route. `GET /v1/model-metadata` adds the same modalities to that route's `modalities`. An image-only model has no chat endpoint, so its `supported_endpoint_types` is empty and it carries no `client_hints`.
 
 Visibility does not guarantee that a route can execute every API family. A model can be visible while all routes are disabled, non-viable, or incompatible with the requested operation.
 
@@ -567,19 +591,9 @@ models:
           input_usd_per_million_tokens: "<OpenAI input rate>"
           cache_read_usd_per_million_tokens: "<OpenAI cached input rate>"
           output_usd_per_million_tokens: "0"
-        capabilities:
-          chat_completions: false
-          responses: false
-          stream: false
-          embeddings: false
-          decisions: true
-          tools: false
-          vision: false
-          json_schema: false
-          developer_role: false
 ```
 
-`decisions_api` requires an `openai_compat` provider and `capabilities.decisions: true`. It cannot be combined with `compatibility.openrouter`. Decisions pricing for `gpt-6-luna` is input-only, so the route override sets output to zero. Use OpenAI's published input and cached-input rates.
+`decisions_api` requires an `openai_compat` provider. It turns `decisions` on and every other capability off, so the route needs no `capabilities` block. An explicit `decisions: false`, or an explicit `true` for another flag, fails startup. It cannot be combined with `compatibility.openrouter`. Decisions pricing for `gpt-6-luna` is input-only, so the route override sets output to zero. Use OpenAI's published input and cached-input rates.
 
 Oceans selects only routes whose format can carry the request. When none can, it returns 400 before the upstream call. `safety_identifier` works only on OpenAI-format routes, and System One routes reject image inputs. Decisions routes are non-streaming and skip prompt and model-response guardrails. They still use gateway authentication, model grants, budgets, request logs, provider attempts, and usage accounting. Decisions requests have their own request metrics instead of the chat request metrics; see [Decisions Request Metrics](../operations/observability-and-request-logs.md#decisions-request-metrics) for what they record.
 

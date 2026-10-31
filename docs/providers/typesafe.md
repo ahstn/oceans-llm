@@ -33,19 +33,11 @@ models:
         pricing_override:
           input_usd_per_million_tokens: "0.0420"
           output_usd_per_million_tokens: "0.0000"
-        capabilities:
-          chat_completions: false
-          responses: false
-          stream: false
-          embeddings: false
-          decisions: true
-          tools: false
-          vision: false
-          json_schema: false
-          developer_role: false
 ```
 
-`pricing_provider_id` must name a supported catalog family. The native model alias `jev-latest` does not have an exact OpenRouter catalog identity, so the example uses a route pricing override. The checked-in OpenRouter route uses `typesafe/jev-1.13`, which has fallback catalog metadata for a 32,000-token context and rates of $0.042 input and $0 output per million tokens.
+A `typesafe` route serves only Decisions. The gateway turns `decisions` on and every other route capability off, so the route needs no `capabilities` block. An explicit `true` for another capability fails startup.
+
+`pricing_provider_id` must name a supported catalog family. The native model alias `jev-latest` does not have an exact OpenRouter catalog identity, so the example uses a route pricing override. The checked-in OpenRouter route uses `typesafe/jev-1.13`. The vendored OpenRouter catalog lists it with a 262,144-token context and rates of $0.042 input and $0 output per million tokens.
 
 ## Request Contract
 

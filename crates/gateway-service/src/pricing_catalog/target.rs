@@ -1,17 +1,19 @@
 use gateway_core::{ModelRoute, PricingUnpricedReason, ProviderConnection};
 use serde_json::Value;
 
-const AMAZON_BEDROCK_PRICING_PROVIDER_ID: &str = "amazon-bedrock";
-const GOOGLE_VERTEX_PRICING_PROVIDER_ID: &str = "google-vertex";
-const GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID: &str = "google-vertex-anthropic";
-const OPENAI_PRICING_PROVIDER_ID: &str = "openai";
-const OPENROUTER_PRICING_PROVIDER_ID: &str = "openrouter";
+pub(super) const AMAZON_BEDROCK_PRICING_PROVIDER_ID: &str = "amazon-bedrock";
+pub(super) const GITHUB_COPILOT_PRICING_PROVIDER_ID: &str = "github-copilot";
+pub(super) const GOOGLE_VERTEX_PRICING_PROVIDER_ID: &str = "google-vertex";
+pub(super) const GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID: &str = "google-vertex-anthropic";
+pub(super) const OPENAI_PRICING_PROVIDER_ID: &str = "openai";
+pub(super) const OPENROUTER_PRICING_PROVIDER_ID: &str = "openrouter";
 const OPENCODE_PRICING_PROVIDER_ID: &str = "opencode";
 const BEDROCK_GPT_OSS_120B_PRICING_MODEL_ID: &str = "openai.gpt-oss-120b-1:0";
 const BEDROCK_GPT_OSS_20B_PRICING_MODEL_ID: &str = "openai.gpt-oss-20b-1:0";
 
-pub const SUPPORTED_PRICING_PROVIDER_IDS: [&str; 6] = [
+pub const SUPPORTED_PRICING_PROVIDER_IDS: [&str; 7] = [
     AMAZON_BEDROCK_PRICING_PROVIDER_ID,
+    GITHUB_COPILOT_PRICING_PROVIDER_ID,
     GOOGLE_VERTEX_PRICING_PROVIDER_ID,
     GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID,
     OPENAI_PRICING_PROVIDER_ID,

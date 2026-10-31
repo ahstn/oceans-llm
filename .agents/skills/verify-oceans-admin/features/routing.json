@@ -99,7 +99,7 @@
         ".mcp.json",
         ".impeccable/**",
         "scripts/check-*.sh",
-        "scripts/*sync-model-metadata.py",
+        "scripts/sync-model-metadata.py",
         "scripts/copilot-*",
         "scripts/mock-openai-upstream.mjs",
         "scripts/register-e2e-mcp-server.mjs",
@@ -217,6 +217,7 @@
         "crates/gateway-service/src/model_metadata/**",
         "crates/gateway-service/src/pricing_catalog.rs",
         "crates/gateway-service/src/pricing_catalog/**",
+        "crates/gateway-service/src/{capability_hints,catalog_fetch}.rs",
         "crates/gateway-service/src/icon_identity.rs",
         "crates/gateway-store/src/libsql_store/{models,providers,pricing_catalog}.rs",
         "crates/gateway-store/src/pricing_sync.rs",
@@ -226,7 +227,7 @@
         "crates/admin-ui/web/src/routes/-model-*.{ts,tsx}",
         "crates/gateway-service/src/admin_models/**",
         "crates/gateway-service/src/benchmark_catalog.rs",
-        "crates/gateway-service/data/{model_benchmarks,model_metadata_supplement,pricing_catalog_fallback}.json",
+        "crates/gateway-service/data/{model_benchmarks,model_metadata_supplement,pricing_catalog_fallback,litellm_catalog_fallback,openrouter_catalog_fallback}.json",
         "crates/gateway/src/bin/{sync_model_benchmarks,sync_pricing_catalog}.rs"
       ]
     },
@@ -364,7 +365,7 @@
         "crates/gateway-store/src/any_store_provider_user_credentials.rs",
         "crates/gateway/src/http/handlers/routing.rs",
         "crates/gateway/src/http/handlers/count_tokens.rs",
-        "crates/gateway-service/src/{routing,client_session}.rs",
+        "crates/gateway-service/src/{routing,client_session,capability_hints}.rs",
         "crates/gateway-store/src/{routing,any_store_routing}.rs",
         "crates/gateway-store/src/libsql_store/routing.rs",
         "crates/gateway/src/provider_routing_identity.rs"
@@ -381,6 +382,7 @@
         "crates/gateway/src/http/handlers/images.rs",
         "crates/gateway-service/src/redaction/large_fields.rs",
         "crates/gateway-service/src/model_metadata/listing.rs",
+        "crates/gateway-service/src/capability_hints.rs",
         "crates/gateway-service/src/service/reported_usage_cost.rs"
       ]
     },

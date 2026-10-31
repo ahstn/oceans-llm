@@ -22,13 +22,25 @@ This is intentional. Oceans avoids approximate charging because approximate char
 
 ## Pricing Catalog Refresh
 
-Oceans uses pricing metadata from `models.dev` when it is available. Admins can refresh that metadata from the Models page with **Refresh pricing**.
+Oceans merges model prices, limits, and feature flags from three catalog sources:
 
-A refresh updates the gateway's cached catalog snapshot and reconciles effective pricing rows for models with exact coverage. Scheduled refreshes run the same reconciliation workflow. The Models page then reloads so newly priced models can show input and output rates.
+| Source | What it adds |
+| --- | --- |
+| [models.dev](https://models.dev/api.json) | The main source for native providers, including `github-copilot` |
+| [OpenRouter](https://openrouter.ai/api/v1/models?output_modalities=all) | The `openrouter` catalog, including image-only models and image output rates |
+| [LiteLLM](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json) | Limits, flags, API endpoints, and prices for exact OpenAI, GitHub Copilot, Bedrock, and Vertex model IDs |
 
-The gateway also keeps a vendored fallback catalog so a new environment can start when the remote catalog is unavailable. The fallback is a bootstrap and outage safety net, not a replacement for refreshing current pricing in a deployed environment.
+For each model, each field comes from the first source that has a value: OpenRouter (only for `openrouter` models), then models.dev, then LiteLLM. An explicit `false` or zero counts as a value. Prices are one whole schedule from one source: the first source that has both an input and an output rate. Oceans never mixes rates from two sources. When sources disagree, `GET /v1/model-metadata` shows the conflict, but Oceans does not pick the smaller value. See [Model metadata discovery](../reference/request-lifecycle-and-failure-modes.md#model-metadata-discovery).
 
-Before the gateway starts serving requests, it materializes effective pricing rows from the cached snapshot or, when no cached snapshot is available, from the vendored fallback. This startup step ensures request accounting can use persisted pricing without depending on `models.dev` availability.
+Each source refreshes when its snapshot is older than 6 hours. models.dev and LiteLLM send an ETag, so an unchanged catalog returns `304 Not Modified`. OpenRouter sends no ETag, so Oceans compares a checksum of the catalog instead. A catalog request times out after 5 seconds to connect or 30 seconds in total, and a response larger than the source's size limit is rejected. A source that fails keeps its last snapshot, and the other sources still refresh.
+
+Admins can force a refresh of all three sources from the Models page with **Refresh pricing**. The message names each source and shows `updated`, `unchanged`, or `failed`. A failed source keeps its last snapshot. `POST /api/v1/admin/models/pricing-catalog/refresh` returns the same result per source, with the fetch time of the snapshot in use and a short error code such as `request_failed` or `response_too_large`.
+
+After any source changes, Oceans rebuilds the merged catalog and reconciles effective pricing rows once for models with exact coverage. Rows that did not change are not rewritten. The Models page then reloads so newly priced models can show their rates.
+
+The gateway also keeps a vendored fallback snapshot of each source, so a new environment can start when the remote catalogs are unavailable. The fallbacks are a bootstrap and outage safety net, not a replacement for refreshing current pricing in a deployed environment. Maintainers refresh them with `mise run //crates/gateway:sync-pricing-catalog`; the release task runs it.
+
+Before the gateway starts serving requests, it refreshes stale sources, then materializes effective pricing rows from each source's cached snapshot or, when a source has no cached snapshot, from its vendored fallback. A source that cannot be reached does not stop startup.
 
 Refreshing the catalog does not rewrite old request charges. Historical spend keeps the rate that was resolved when the request was recorded.
 
@@ -36,15 +48,34 @@ Refreshing the catalog does not rewrite old request charges. Historical spend ke
 
 The runtime uses three layers:
 
-1. a vendored normalized fallback snapshot
-2. a cached normalized remote snapshot
+1. a vendored normalized fallback snapshot per source
+2. a cached normalized remote snapshot per source, merged into one catalog
 3. effective-dated pricing rows used for request-time lookup
 
 The effective-dated rows are what matter for durable accounting. They let Oceans keep older spend stable after an upstream catalog changes.
 
-Startup, scheduled refreshes, and manual refreshes own catalog reconciliation. Request-time accounting first uses a cost the provider reports in its usage. Without one, it checks the selected route for an admin-authored pricing override. Without an override, it looks up the persisted effective catalog row for the selected provider, model, location, and billing shape. It does not fetch `models.dev`, read a catalog snapshot, or reconcile pricing rows while handling a request.
+Startup, scheduled refreshes, and manual refreshes own catalog reconciliation. Request-time accounting first uses a cost the provider reports in its usage. Without one, it checks the selected route for an admin-authored pricing override. Without an override, it looks up the persisted effective catalog row for the selected provider, model, location, and billing shape. It does not fetch a catalog source or reconcile pricing rows while handling a request.
 
-Oceans copies the selected rates and provenance onto the spend event at request time. Catalog-priced events include the pricing provider and model. They also include the source, ETag, and fetch time. Configured-price events identify `configured_override` and omit catalog-only identity and generation fields. They also keep the selected route id. Provider-reported events identify `provider_reported` and store no rates. Historical spend remains explainable and immutable after catalog or route config changes.
+Oceans copies the selected rates and provenance onto the spend event at request time. Catalog-priced events include the pricing provider and model. They also include the source that supplied the price, its ETag or checksum, and its fetch time. Configured-price events identify `configured_override` and omit catalog-only identity and generation fields. They also keep the selected route id. Provider-reported events identify `provider_reported` and store no rates. Historical spend remains explainable and immutable after catalog or route config changes.
+
+## Context Tiers
+
+Some models cost more when the prompt is long. For example, a model can charge a higher rate when the prompt is above 272,000 tokens. The catalog stores these rates as context tiers. Each tier has a threshold and its own input, output, cache read, and cache write rates.
+
+Oceans bills a tier with these rules:
+
+- A tier applies when the prompt tokens, cached tokens included, are greater than its threshold. A prompt of exactly the threshold uses the lower rates.
+- When more than one tier applies, the tier with the highest threshold is used.
+- The tier rates apply to the whole request, not only to the tokens above the threshold.
+- When a tier does not set a rate, such as cache read, the base rate for that bucket is used.
+- A provider-reported cost and a route `pricing_override` take precedence over the catalog, tiers included. An override has no tiers.
+- Each item in a batch selects its tier from its own prompt tokens.
+
+The spend event stores the threshold of the tier it used in `pricing_tier_above_input_tokens`. The value is empty for base rates, overrides, and provider-reported cost.
+
+Tiers come from models.dev `tiers` entries of type `context`, and from LiteLLM `*_above_<N>k_tokens` prices. Oceans does not make a tier from the models.dev `context_over_200k` condition, because that condition often has the wrong threshold. Other price dimensions, such as priority, flex, and batch tiers, are not billed.
+
+On the Models page, a model with tiers shows its base input and output rates as `from $X`. The model info dialog shows the base rates and one **Above N tokens** block for each tier.
 
 ## Provider-Reported Cost
 
@@ -88,7 +119,7 @@ pricing_override:
   image_output_usd_per_million_tokens: "30.0000"
 ```
 
-The catalog has no image output rate. Without an image rate, every completion token, image tokens included, is charged at the output rate. The spend event stores the image token count and the image rate it used. Batch pricing snapshots keep the image rate and apply the same split before the batch discount. An image token count that is not a whole number from zero to the completion tokens is ignored with a warning, and every completion token is charged at the output rate.
+Without an override, Oceans uses the catalog image output rate when the catalog has one. OpenRouter and LiteLLM publish image output rates; models.dev does not. Without an image rate, every completion token, image tokens included, is charged at the output rate. The spend event stores the image token count and the image rate it used. Batch pricing snapshots keep the image rate and apply the same split before the batch discount. An image token count that is not a whole number from zero to the completion tokens is ignored with a warning, and every completion token is charged at the output rate.
 
 ## Configure Routes For Chargeable Traffic
 
@@ -96,10 +127,12 @@ Route configuration affects pricing. The selected route tells Oceans which provi
 
 Current exact catalog coverage, used only when a route has no pricing override, is intentionally narrow:
 
-- `openai_compat` and `anthropic_compat` routes need a supported `pricing_provider_id`
+- `openai_compat` and `anthropic_compat` routes need a supported `pricing_provider_id`: `openai`, `openrouter`, `opencode`, `github-copilot`, `amazon-bedrock`, `google-vertex`, or `google-vertex-anthropic`
 - OpenRouter `openai_compat` routes should use `pricing_provider_id: openrouter`
 - native `typesafe` routes need a supported `pricing_provider_id` and should use a route pricing override when their upstream alias has no exact catalog identity
 - OpenCode Zen `anthropic_compat` routes should use `pricing_provider_id: opencode`
+- GitHub Copilot routes should use `pricing_provider_id: github-copilot`, which matches Copilot model IDs such as `claude-haiku-4.5`
+- AWS Bedrock routes are priced as `amazon-bedrock` from the upstream model ID
 - Vertex routes are priced from the upstream publisher prefix
 - `google/...` maps to Google Vertex pricing
 - `anthropic/...` maps to Anthropic-on-Vertex pricing
@@ -143,7 +176,7 @@ pricing_override:
   output_usd_per_million_tokens: "0"
 ```
 
-The vendored OpenRouter fallback includes `typesafe/jev-1.13` at $0.042 input and $0 output per million tokens with a 32,000-token context. A native TypeSafe route commonly uses `jev-latest`, which is not the same catalog key. Configure the known rates on that route instead of relying on alias inference.
+The vendored OpenRouter catalog includes `typesafe/jev-1.13` at $0.042 input and $0 output per million tokens with a 262,144-token context. A native TypeSafe route commonly uses `jev-latest`, which is not the same catalog key. Configure the known rates on that route instead of relying on alias inference.
 
 ## Vertex Text Embeddings
 
@@ -194,10 +227,11 @@ The catalog and provider responses can contain more billing signals than Oceans 
 | --- | --- |
 | prompt/input tokens | charged from the effective input rate |
 | completion/output tokens | charged from the effective output rate |
+| context tiers | the whole request is charged at the tier's rates when the prompt is above the tier threshold |
 | total tokens | stored for reporting and validation context |
 | cache read/write rates | stored on spend events, propagated to generated client metadata, and used for positive normalized cache buckets |
 | cache read/write token counts | retained raw and normalized for supported response shapes |
-| image output tokens | charged from the route's image output rate when one is set; otherwise charged with the other completion tokens at the output rate |
+| image output tokens | charged from the route's image output rate, else the catalog image output rate; otherwise charged with the other completion tokens at the output rate |
 | provider-reported cost (`usage.cost`, plus `cost_details.upstream_inference_cost` for BYOK) | charged as the request cost, ahead of overrides and catalog rates |
 | reasoning tokens or traces | not charged separately yet |
 | image input, audio, and file modality counters | not charged separately yet |

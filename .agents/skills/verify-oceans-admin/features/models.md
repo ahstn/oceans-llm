@@ -5,8 +5,8 @@ Models lets a signed-in user review configured model IDs, routing status, provid
 ## Sub-features
 
 - `models-open` opens Models from the Control Plane sidebar.
-- `models-list` shows the configured model count and desktop or mobile list, including the always-visible Intelligence Index.
-- `models-info` opens overview, routing, economics, benchmarks, and (for platform admins) access details for one model.
+- `models-list` shows the configured model count and desktop or mobile list, including the always-visible Intelligence Index. A model with context pricing tiers lists its base rate with a `from` prefix in `Cost / 1M tokens`.
+- `models-info` opens overview, routing, economics (base rates plus one `Above N tokens` section per context pricing tier), benchmarks, and (for platform admins) access details for one model.
 - `models-columns` toggles the optional context-window and capability columns.
 - `models-client-config` opens client configuration for a configurable model via the row `Config` button.
 - `models-select-config` selects several configurable models with `Select model <id>` and opens one `Client config` dialog through `Generate config`.
@@ -30,6 +30,7 @@ Preconditions:
 - **Automated proof.** Run `control-oceans-admin drive models`. It ensures Playwright Chromium is installed, signs in, follows the `Models` link, reads the `Model pagination` range (`first–last of total`, next to `Rows per page`), checks the displayed range size against rendered rows and the total against `/api/v1/admin/models?page=1&page_size=100&include_aliases=false` (the same direct-model view the page loads), checks the always-visible Intelligence Index against that API response, checks all four platform-admin information sections (`Overview`, including `Pricing and limits`, `Routing`, `Benchmarks`, and `Access`), compares the benchmark state with that API response, checks the Artificial Analysis attribution below the model list, enables the optional Context window and Capabilities columns, and opens client configuration for `gpt-6-astra`.
 - **Known model.** Locate `models-desktop-cell-gpt-6-astra`. The cell shows `gpt-6-astra` and a status indicator.
 - **Model detail.** In the same table row, choose `Info`. A dialog headed `Model info` contains `gpt-6-astra` and navigation named `Model info sections`.
+- **Pricing tiers.** The `gpt-6-astra` row's `Cost / 1M tokens` cell reads `Input from $10.00` and `Output from $50.00`. In its `Model info` dialog, `Pricing and limits` shows the base `Input cost` `$10.00` and `Output cost` `$50.00`, then the sentence `Tier rates apply to the whole request when the prompt, including cached tokens, is larger than the threshold.` and a region named `Above 272k tokens` with `Input cost` `$20.00`, `Output cost` `$75.00`, `Cache read` `$2.00`, and `Cache write` `$25.00`. These values come from the bundled catalog; a runtime refresh can change them, so compare against `pricing_tiers` in the `/api/v1/admin/models` row rather than the literals when they differ. A model without tiers shows no `from` prefix, no `Above` section, and no whole-request sentence.
 - **Columns.** Intelligence Index is always visible. Choose `Columns`, then select `Context window` or `Capabilities`. The matching optional table header becomes visible without a route change.
 - **Client configuration.** Choose the button named `Generate client config for gpt-6-astra`. A dialog headed `Client config` appears. Do not treat generated configuration as live-provider proof.
 - **Decisions-only model.** The `jev` row shows `—` in its Config cell, and `Select model jev` is disabled.
@@ -40,6 +41,6 @@ Preconditions:
 
 - The mobile list replaces `models-desktop-table` below the `md` breakpoint.
 - Startup requires `env.*` credential references to be configured and present, but it does not validate credential correctness or upstream connectivity. A healthy Models page does not prove upstream access.
-- `Refresh pricing` can call the pricing refresh boundary and is outside the read-only baseline.
+- `Refresh pricing` can call the pricing refresh boundary and is outside the read-only baseline. It refreshes models.dev, OpenRouter, and LiteLLM and shows one toast: `Pricing refreshed: models.dev <outcome>, OpenRouter <outcome>, LiteLLM <outcome>` (each outcome `updated` or `unchanged`) when every source succeeds, or the warning `Pricing refresh failed for <sources>; <remaining summary>` when any source fails. `Pricing refreshed, but the model list did not reload` is an error toast for a failed list reload after a successful refresh.
 - Some aliases and decisions-only models such as `jev` have no client configuration. Use `gpt-6-astra` for the baseline detail proof.
 - Demo model IDs follow `gateway.yaml`. When a proof times out waiting for a model cell, check whether the model was renamed there before suspecting the UI.

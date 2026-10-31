@@ -4,10 +4,11 @@ use std::{
 };
 
 use gateway_core::{
-    AuthenticatedApiKey, GatewayError, GatewayModel, ModelRepository, ProviderConnection,
-    ReasoningEffort, RouteError,
+    AuthenticatedApiKey, GatewayError, GatewayModel, ModelRepository, ModelRoute,
+    PartialCapabilities, ProviderConnection, ReasoningEffort, RouteError,
 };
 use serde_json::Value;
+use uuid::Uuid;
 
 use crate::redaction::mask_secret_leaf_values;
 
@@ -128,8 +129,21 @@ impl ResolvedProviderConnection {
 pub struct ResolvedGatewayRequest {
     pub auth: AuthenticatedApiKey,
     pub selection: ResolvedModelSelection,
-    pub routes: Vec<gateway_core::ModelRoute>,
+    pub routes: Vec<ModelRoute>,
     pub provider_connections: HashMap<String, ResolvedProviderConnection>,
+    /// Catalog capability hints by route id, read from one catalog snapshot at resolution.
+    pub capability_hints: HashMap<Uuid, PartialCapabilities>,
+}
+
+impl ResolvedGatewayRequest {
+    /// Catalog hints for one of [`Self::routes`]; empty when the catalog says nothing.
+    #[must_use]
+    pub fn capability_hints_for(&self, route: &ModelRoute) -> PartialCapabilities {
+        self.capability_hints
+            .get(&route.id)
+            .copied()
+            .unwrap_or_default()
+    }
 }
 
 #[derive(Clone)]

@@ -5,8 +5,8 @@ use tokio::sync::Semaphore;
 use gateway_core::{
     AgentAnalysisDesiredVersions, AgentSessionAnalysisRepository, AuthenticatedApiKey,
     BatchJobRecord, BatchPricingStatus, BudgetAlertRepository, BudgetExceededStatus, BudgetRecord,
-    BudgetRepository, ChatCompletionsRequest, GatewayError, GatewayModel, IdentityRepository,
-    McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationQuery,
+    BudgetRepository, ChatCompletionsRequest, ContextPricingTier, GatewayError, GatewayModel,
+    IdentityRepository, McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationQuery,
     McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, PricingCatalogRepository,
     PricingResolution, PricingUnpricedReason, ProviderBatchResult, ProviderRepository,
     RequestLogDetail, RequestLogPage, RequestLogPurgeResult, RequestLogQuery, RequestLogRecord,
@@ -342,6 +342,15 @@ where
         self.model_access.list_models_for_api_key(auth).await
     }
 
+    /// Capability hints from the current catalog snapshot, for admin model views.
+    pub async fn catalog_capability_hints(
+        &self,
+    ) -> Result<crate::CatalogCapabilityHints, GatewayError> {
+        Ok(crate::CatalogCapabilityHints::new(
+            self.pricing_catalog.metadata_snapshot().await?,
+        ))
+    }
+
     #[tracing::instrument(
         name = "gateway.request.resolve",
         skip_all,
@@ -367,8 +376,10 @@ where
             .await?;
         let planned_routes = self.planner.plan_routes(&routes)?;
 
+        let catalog = self.pricing_catalog.metadata_snapshot().await?;
         let mut viable_routes = Vec::new();
         let mut provider_connections = std::collections::HashMap::new();
+        let mut capability_hints = std::collections::HashMap::new();
         for route in planned_routes {
             if let Some(provider) = self.store.get_provider_by_key(&route.provider_key).await? {
                 provider_connections
@@ -376,6 +387,10 @@ where
                     .or_insert_with(|| {
                         ResolvedProviderConnection::from_provider_connection(&provider)
                     });
+                let hints = crate::capability_hints::hints_for_route(&catalog, &provider, &route);
+                if hints != gateway_core::PartialCapabilities::default() {
+                    capability_hints.insert(route.id, hints);
+                }
                 viable_routes.push(route);
             } else {
                 warn!(
@@ -398,6 +413,7 @@ where
             selection,
             routes: viable_routes,
             provider_connections,
+            capability_hints,
         })
     }
 
@@ -839,21 +855,18 @@ where
         self.warn_on_route_context_override_conflicts().await
     }
 
-    pub async fn refresh_pricing_catalog_now(&self) -> Result<(), GatewayError> {
-        self.refresh_pricing_catalog_now_tracked(&AuditProgress::default())
-            .await
-    }
-
-    /// Like [`Self::refresh_pricing_catalog_now`], marking `progress` once the
-    /// catalog cache is written.
+    /// Refresh every catalog source and reconcile pricing, marking `progress` once a
+    /// source's snapshot is cached. Returns one result per source.
     pub async fn refresh_pricing_catalog_now_tracked(
         &self,
         progress: &AuditProgress,
-    ) -> Result<(), GatewayError> {
-        self.pricing_catalog
+    ) -> Result<Vec<crate::PricingCatalogSourceRefresh>, GatewayError> {
+        let sources = self
+            .pricing_catalog
             .refresh_now_and_sync_tracked(progress)
             .await?;
-        self.warn_on_route_context_override_conflicts().await
+        self.warn_on_route_context_override_conflicts().await?;
+        Ok(sources)
     }
 
     pub async fn validate_route_context_overrides(&self) -> Result<(), GatewayError> {
@@ -1062,6 +1075,7 @@ where
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
+            pricing_tier_above_input_tokens: None,
             computed_cost_usd: Money4::ZERO,
             occurred_at,
         };
@@ -1270,6 +1284,7 @@ where
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
+            pricing_tier_above_input_tokens: None,
             computed_cost_usd: cost_usd,
             occurred_at,
         };
@@ -1749,6 +1764,9 @@ fn money_to_f64(value: Money4) -> Option<f64> {
     }
 }
 
+/// Catalog pricing for one request. The context tier its normalized prompt tokens select
+/// replaces the base rates for the whole request, a tier rate that is unset inheriting the
+/// base; the ledger records the rates actually billed and the tier threshold.
 fn apply_exact_pricing(
     record: &mut UsageLedgerRecord,
     pricing: &ResolvedModelPricing,
@@ -1761,17 +1779,40 @@ fn apply_exact_pricing(
     record.pricing_source_etag = pricing.provenance.etag.clone();
     record.pricing_source_fetched_at = Some(pricing.provenance.fetched_at);
     record.pricing_last_updated = Some(pricing.last_updated.clone());
-    record.input_cost_per_million_tokens = pricing.input_cost_per_million_tokens;
-    record.output_cost_per_million_tokens = pricing.output_cost_per_million_tokens;
-    record.cache_read_cost_per_million_tokens = pricing.cache_read_cost_per_million_tokens;
-    record.cache_write_cost_per_million_tokens = pricing.cache_write_cost_per_million_tokens;
 
-    apply_token_rates(
-        record,
-        pricing.input_cost_per_million_tokens,
-        pricing.output_cost_per_million_tokens,
-        cache_usage,
-    )
+    let tier = select_context_tier(&pricing.context_tiers, record.prompt_tokens);
+    let input_rate = tier
+        .and_then(|tier| tier.input)
+        .or(pricing.input_cost_per_million_tokens);
+    let output_rate = tier
+        .and_then(|tier| tier.output)
+        .or(pricing.output_cost_per_million_tokens);
+    record.input_cost_per_million_tokens = input_rate;
+    record.output_cost_per_million_tokens = output_rate;
+    record.cache_read_cost_per_million_tokens = tier
+        .and_then(|tier| tier.cache_read)
+        .or(pricing.cache_read_cost_per_million_tokens);
+    record.cache_write_cost_per_million_tokens = tier
+        .and_then(|tier| tier.cache_write)
+        .or(pricing.cache_write_cost_per_million_tokens);
+    record.image_output_cost_per_million_tokens = pricing.output_image_usd_per_million;
+    record.pricing_tier_above_input_tokens = tier.map(|tier| tier.above_input_tokens);
+
+    apply_token_rates(record, input_rate, output_rate, cache_usage)
+}
+
+/// The context tier billing a whole request: the one with the greatest threshold strictly
+/// below its normalized prompt tokens (cache included). A request of exactly a threshold,
+/// or with unknown prompt tokens, stays on the lower schedule.
+pub(crate) fn select_context_tier(
+    tiers: &[ContextPricingTier],
+    prompt_tokens: Option<i64>,
+) -> Option<&ContextPricingTier> {
+    let prompt_tokens = prompt_tokens?;
+    tiers
+        .iter()
+        .filter(|tier| tier.above_input_tokens < prompt_tokens)
+        .max_by_key(|tier| tier.above_input_tokens)
 }
 
 fn apply_configured_pricing(
@@ -2826,7 +2867,7 @@ mod tests {
             pricing_override: None,
             extra_headers: Map::new(),
             extra_body: Map::new(),
-            capabilities: ProviderCapabilities::all_enabled(),
+            capabilities: ProviderCapabilities::all_enabled().into(),
             compatibility: Default::default(),
         }
     }
@@ -2853,6 +2894,8 @@ mod tests {
             cache_write_cost_per_million_tokens: None,
             input_audio_cost_per_million_tokens: None,
             output_audio_cost_per_million_tokens: None,
+            output_image_usd_per_million: None,
+            context_tiers: Vec::new(),
             release_date: "2026-01-01".to_string(),
             last_updated: "2026-01-01".to_string(),
             effective_start_at: now,
@@ -3629,5 +3672,6 @@ mod tests {
         assert!(reason.contains(";pricing_unavailable:"));
     }
 
+    mod context_tier_pricing;
     mod reported_cost_and_image_usage;
 }

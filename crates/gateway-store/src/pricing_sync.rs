@@ -111,6 +111,8 @@ mod tests {
             cache_write_cost_per_million_tokens: None,
             input_audio_cost_per_million_tokens: None,
             output_audio_cost_per_million_tokens: None,
+            output_image_usd_per_million: None,
+            context_tiers: Vec::new(),
             release_date: "2025-01-01".to_string(),
             last_updated: "2025-01-01".to_string(),
             effective_start_at: now,

@@ -1,41 +1,36 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use anyhow::Context;
 use gateway_core::{
-    GatewayError, ModelPricingProvenanceUpdate, ModelPricingRecord, ModelPricingSyncChanges,
-    ModelRoute, Money4, PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits,
-    PricingModalities, PricingProvenance, PricingResolution, PricingUnpricedReason,
-    ProviderConnection, ResolvedModelPricing, StoreError,
+    GatewayError, ModelPricingRecord, ModelRoute, PricingCatalogRepository, PricingResolution,
+    PricingUnpricedReason, ProviderConnection, ResolvedModelPricing, StoreError,
 };
-use reqwest::{
-    Client, StatusCode,
-    header::{ETAG, IF_NONE_MATCH},
-};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::Number;
+use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 use tracing::warn;
-use uuid::Uuid;
 
-use crate::admin_audit::AuditProgress;
+use crate::{admin_audit::AuditProgress, catalog_fetch::catalog_http_client};
 
-pub const DEFAULT_PRICING_CATALOG_SOURCE_URL: &str = "https://models.dev/api.json";
-pub const PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v3";
-const PREVIOUS_PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v2";
-pub const DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL: Duration = Duration::from_secs(15 * 60);
-pub const DEFAULT_PRICING_CATALOG_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
-const REMOTE_SOURCE: &str = "models_dev_api";
-const VENDORED_SOURCE: &str = "vendored_models_dev";
-const VENDORED_FALLBACK_JSON: &str = include_str!("../data/pricing_catalog_fallback.json");
+pub const DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 const MAX_PRICING_SYNC_ATTEMPTS: usize = 3;
 
+pub(crate) mod merge;
 pub mod metadata;
+mod reconcile;
+mod refresh;
+pub(crate) mod sources;
 mod target;
 
+use merge::{MergedModelReport, merge_catalogs};
+#[cfg(test)]
+pub(crate) use reconcile::build_model_pricing_record;
+use refresh::{CatalogSource, RefreshMode};
+pub use refresh::{
+    PricingCatalogRefreshError, PricingCatalogRefreshOutcome, PricingCatalogSourceRefresh,
+};
+use sources::{CatalogSourceId, Providers};
 #[cfg(test)]
 use target::normalize_bedrock_pricing_model_id;
 use target::{PricingTarget, pricing_target_for_route};
@@ -45,21 +40,18 @@ pub(crate) use target::{
     catalog_pricing_supported_for_route,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RefreshMode {
-    Conditional,
-    Unconditional,
-}
-
+/// The pricing and discovery catalog merged from models.dev, OpenRouter and LiteLLM.
+///
+/// Each source is refreshed and cached on its own; the merged snapshot is rebuilt when a
+/// source's snapshot changes and reconciled into `model_pricing` as one generation.
 #[derive(Clone)]
 pub struct PricingCatalog<R> {
     repo: Arc<R>,
     client: Client,
-    source_url: String,
-    catalog_key: String,
     refresh_interval: Duration,
-    fallback_snapshot: PricingCatalogSnapshot,
-    metadata_snapshot: Arc<tokio::sync::Mutex<Option<Arc<PricingCatalogSnapshot>>>>,
+    /// Every source, in [`CatalogSourceId::ALL`] order.
+    sources: Arc<[CatalogSource; 3]>,
+    snapshot: Arc<tokio::sync::Mutex<Option<Arc<PricingCatalogSnapshot>>>>,
 }
 
 impl<R> PricingCatalog<R>
@@ -68,179 +60,66 @@ where
 {
     #[must_use]
     pub fn new(repo: Arc<R>) -> Self {
-        Self::with_options(
+        Self::with_sources(
             repo,
-            DEFAULT_PRICING_CATALOG_SOURCE_URL.to_string(),
-            PRICING_CATALOG_CACHE_KEY.to_string(),
             DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL,
+            CatalogSourceId::ALL.map(CatalogSource::vendored),
         )
     }
 
-    #[must_use]
-    pub fn with_options(
-        repo: Arc<R>,
-        source_url: String,
-        catalog_key: String,
-        refresh_interval: Duration,
-    ) -> Self {
+    /// `sources` must be in [`CatalogSourceId::ALL`] order.
+    fn with_sources(repo: Arc<R>, refresh_interval: Duration, sources: [CatalogSource; 3]) -> Self {
         Self {
             repo,
-            client: pricing_catalog_http_client(),
-            source_url,
-            catalog_key,
+            client: catalog_http_client(),
             refresh_interval,
-            fallback_snapshot: load_vendored_fallback_snapshot(),
-            metadata_snapshot: Default::default(),
+            sources: Arc::new(sources),
+            snapshot: Default::default(),
         }
     }
 
-    #[cfg(test)]
-    fn with_fallback_snapshot(
-        repo: Arc<R>,
-        source_url: String,
-        catalog_key: String,
-        refresh_interval: Duration,
-        fallback_snapshot: PricingCatalogSnapshot,
-    ) -> Self {
-        Self {
-            repo,
-            client: pricing_catalog_http_client(),
-            source_url,
-            catalog_key,
-            refresh_interval,
-            fallback_snapshot,
-            metadata_snapshot: Default::default(),
-        }
+    /// Refresh the stale sources, then reconcile pricing from the current snapshots. A
+    /// source that fails to refresh keeps its snapshot and is retried next time.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the snapshots cannot be loaded or reconciliation fails.
+    pub async fn refresh_if_stale_and_sync(&self) -> Result<(), GatewayError> {
+        self.refresh_sources(RefreshMode::IfStale).await;
+        self.sync_latest_snapshot_with_retry().await?;
+        Ok(())
     }
 
-    pub async fn refresh_if_stale(&self) -> Result<(), GatewayError> {
-        let current = self.load_stored_cache().await?;
-        let cache_is_invalid = current
-            .as_ref()
-            .is_some_and(|cache| !cached_document_is_valid(cache));
-        let current_fetched_at = current
-            .as_ref()
-            .filter(|cache| cached_document_is_valid(cache))
-            .map(|cache| cache.fetched_at)
-            .unwrap_or(self.fallback_snapshot.metadata.fetched_at);
-        let now = OffsetDateTime::now_utc();
-        if !cache_is_invalid
-            && now
-                .unix_timestamp()
-                .saturating_sub(current_fetched_at.unix_timestamp())
-                < self.refresh_interval.as_secs() as i64
-        {
-            return Ok(());
-        }
-
-        self.refresh_remote_snapshot(current, RefreshMode::Conditional)
-            .await
-    }
-
-    pub async fn refresh_now_and_sync(&self) -> Result<(), GatewayError> {
-        self.refresh_now_and_sync_tracked(&AuditProgress::default())
-            .await
-    }
-
-    /// Like [`Self::refresh_now_and_sync`]; `progress` is marked once the fetched
-    /// catalog is cached, so an audit entry can record a refresh whose sync fails.
+    /// Refresh every source unconditionally, then reconcile pricing. `progress` is
+    /// marked once a source's snapshot is cached, so an audit entry can record a refresh
+    /// whose reconciliation fails.
+    ///
+    /// Returns one result per source, in [`CatalogSourceId::ALL`] order; a failed source
+    /// keeps its cached or vendored snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Fails only when the snapshots cannot be loaded or reconciliation fails.
     pub async fn refresh_now_and_sync_tracked(
         &self,
         progress: &AuditProgress,
-    ) -> Result<(), GatewayError> {
-        let current = self.load_stored_cache().await?;
-        self.refresh_remote_snapshot(current, RefreshMode::Unconditional)
-            .await?;
-        progress.landed();
-        self.sync_latest_snapshot_with_retry().await
-    }
-
-    async fn refresh_remote_snapshot(
-        &self,
-        current: Option<PricingCatalogCacheRecord>,
-        mode: RefreshMode,
-    ) -> Result<(), GatewayError> {
-        let mut request = self.client.get(&self.source_url);
-        if mode == RefreshMode::Conditional
-            && let Some(etag) = current
-                .as_ref()
-                .filter(|cache| cached_document_is_valid(cache))
-                .and_then(|cache| cache.etag.clone())
+    ) -> Result<Vec<PricingCatalogSourceRefresh>, GatewayError> {
+        let outcomes = self.refresh_sources(RefreshMode::Forced).await;
+        if outcomes
+            .iter()
+            .any(|(_, outcome)| *outcome == PricingCatalogRefreshOutcome::Updated)
         {
-            request = request.header(IF_NONE_MATCH, etag);
+            progress.landed();
         }
-
-        let response = request.send().await.map_err(|error| {
-            GatewayError::Internal(format!("pricing catalog refresh request failed: {error}"))
-        })?;
-        let result = match response.status() {
-            StatusCode::NOT_MODIFIED => Ok(()),
-            StatusCode::OK => {
-                let expected_fetched_at = current.as_ref().map(|cache| cache.fetched_at);
-                let fetched_at =
-                    next_catalog_generation_at(expected_fetched_at, OffsetDateTime::now_utc());
-                let etag = response
-                    .headers()
-                    .get(ETAG)
-                    .and_then(|value| value.to_str().ok())
-                    .map(str::to_string);
-                let body = response.text().await.map_err(|error| {
-                    GatewayError::Internal(format!(
-                        "pricing catalog refresh body read failed: {error}"
-                    ))
-                })?;
-                let snapshot = project_models_dev_snapshot(&body, REMOTE_SOURCE, etag, fetched_at)?;
-                let snapshot_json =
-                    serde_json::to_string_pretty(&snapshot.document).map_err(|error| {
-                        GatewayError::Internal(format!(
-                            "failed serializing pricing catalog snapshot: {error}"
-                        ))
-                    })?;
-                let stored = self
-                    .repo
-                    .compare_and_swap_pricing_catalog_cache(
-                        &PricingCatalogCacheRecord {
-                            catalog_key: self.catalog_key.clone(),
-                            source: snapshot.metadata.source.clone(),
-                            etag: snapshot.metadata.etag.clone(),
-                            fetched_at: snapshot.metadata.fetched_at,
-                            snapshot_json,
-                        },
-                        expected_fetched_at,
-                    )
-                    .await?;
-                if !stored {
-                    self.confirm_superseding_cache_write(expected_fetched_at)
-                        .await?;
-                }
-                Ok(())
-            }
-            status => Err(GatewayError::Internal(format!(
-                "pricing catalog refresh failed with HTTP {}",
-                status.as_u16()
-            ))),
-        };
-        if result.is_ok() {
-            *self.metadata_snapshot.lock().await = None;
-        }
-        result
-    }
-
-    async fn confirm_superseding_cache_write(
-        &self,
-        expected_fetched_at: Option<OffsetDateTime>,
-    ) -> Result<(), GatewayError> {
-        let latest = self.load_stored_cache().await?;
-        let was_superseded = match expected_fetched_at {
-            Some(expected) => latest.is_some_and(|cache| cache.fetched_at > expected),
-            None => latest.is_some(),
-        };
-
-        if was_superseded {
-            Ok(())
-        } else {
-            Err(StoreError::PricingSyncConflict.into())
-        }
+        let snapshot = self.sync_latest_snapshot_with_retry().await?;
+        Ok(outcomes
+            .into_iter()
+            .map(|(source, outcome)| PricingCatalogSourceRefresh {
+                source,
+                outcome,
+                fetched_at: snapshot.sources[&source].fetched_at,
+            })
+            .collect())
     }
 
     pub async fn resolve_for_provider_connection(
@@ -277,208 +156,58 @@ where
         })
     }
 
-    pub async fn refresh_if_stale_and_sync(&self) -> Result<(), GatewayError> {
-        if let Err(error) = self.refresh_if_stale().await {
-            warn!(
-                catalog_key = %self.catalog_key,
-                source_url = %self.source_url,
-                error = %error,
-                "pricing catalog refresh failed; falling back to cached snapshot"
-            );
-        }
-
-        self.sync_latest_snapshot_with_retry().await
-    }
-
-    async fn sync_latest_snapshot_with_retry(&self) -> Result<(), GatewayError> {
+    /// Reconcile the latest merged snapshot, reloading and retrying when another
+    /// reconciliation raced this one. Returns the reconciled snapshot.
+    async fn sync_latest_snapshot_with_retry(
+        &self,
+    ) -> Result<Arc<PricingCatalogSnapshot>, GatewayError> {
         for attempt in 1..=MAX_PRICING_SYNC_ATTEMPTS {
-            // Re-read on each reconciliation attempt, including changes from other replicas.
-            let snapshot = {
-                let mut cached = self.metadata_snapshot.lock().await;
-                let snapshot = Arc::new(self.load_snapshot_from_store_or_fallback().await?);
-                *cached = Some(Arc::clone(&snapshot));
-                snapshot
-            };
-            match self.sync_model_pricing_snapshot(&snapshot).await {
+            // Re-read on each attempt, including changes from other replicas.
+            let snapshot = self.reload_snapshot().await?;
+            match reconcile::reconcile_model_pricing(self.repo.as_ref(), &snapshot).await {
                 Err(GatewayError::Store(StoreError::PricingSyncConflict))
                     if attempt < MAX_PRICING_SYNC_ATTEMPTS =>
                 {
                     warn!(
-                        catalog_key = %self.catalog_key,
                         attempt,
                         "pricing catalog changed during reconciliation; retrying latest snapshot"
                     );
                 }
-                result => return result,
+                result => return result.map(|()| snapshot),
             }
         }
 
         unreachable!("pricing sync attempts always return on their final iteration")
     }
 
-    /// Share the parsed discovery catalog until the next refresh cycle.
+    /// Share the merged catalog until a source's snapshot changes.
     pub(crate) async fn metadata_snapshot(
         &self,
     ) -> Result<Arc<PricingCatalogSnapshot>, GatewayError> {
-        let mut cached = self.metadata_snapshot.lock().await;
+        let mut cached = self.snapshot.lock().await;
         if let Some(snapshot) = cached.as_ref() {
             return Ok(Arc::clone(snapshot));
         }
-        let snapshot = Arc::new(self.load_snapshot_from_store_or_fallback().await?);
+        let snapshot = Arc::new(PricingCatalogSnapshot::from_sources(
+            self.load_source_snapshots().await?,
+        ));
         *cached = Some(Arc::clone(&snapshot));
         Ok(snapshot)
     }
 
-    pub(crate) async fn load_snapshot_from_store_or_fallback(
-        &self,
-    ) -> Result<PricingCatalogSnapshot, GatewayError> {
-        if let Some(snapshot) = self.load_stored_snapshot(&self.catalog_key).await? {
-            return Ok(snapshot);
-        }
-        // Read the old projection during an offline upgrade, but never reuse its
-        // ETag for v3 refreshes or write a v2 document under the v3 key.
-        if self.catalog_key == PRICING_CATALOG_CACHE_KEY
-            && let Some(snapshot) = self
-                .load_stored_snapshot(PREVIOUS_PRICING_CATALOG_CACHE_KEY)
-                .await?
+    /// Load every source's snapshot and replace the shared merged snapshot only when one
+    /// of them differs from the snapshot it was merged from.
+    async fn reload_snapshot(&self) -> Result<Arc<PricingCatalogSnapshot>, GatewayError> {
+        let mut cached = self.snapshot.lock().await;
+        let sources = self.load_source_snapshots().await?;
+        if let Some(current) = cached.as_ref()
+            && current.is_merged_from(&sources)
         {
-            return Ok(snapshot);
+            return Ok(Arc::clone(current));
         }
-        Ok(self.fallback_snapshot.clone())
-    }
-
-    async fn load_stored_snapshot(
-        &self,
-        catalog_key: &str,
-    ) -> Result<Option<PricingCatalogSnapshot>, GatewayError> {
-        let Some(cache) = self.repo.get_pricing_catalog_cache(catalog_key).await? else {
-            return Ok(None);
-        };
-
-        match serde_json::from_str::<PricingCatalogDocument>(&cache.snapshot_json) {
-            Ok(document) => Ok(Some(PricingCatalogSnapshot {
-                metadata: PricingCatalogSnapshotMetadata {
-                    source: cache.source,
-                    etag: cache.etag,
-                    fetched_at: cache.fetched_at,
-                },
-                document,
-            })),
-            Err(error) => {
-                warn!(
-                    catalog_key = %catalog_key,
-                    error = %error,
-                    "stored pricing catalog cache is invalid; trying fallback snapshot"
-                );
-                Ok(None)
-            }
-        }
-    }
-
-    async fn load_stored_cache(&self) -> Result<Option<PricingCatalogCacheRecord>, GatewayError> {
-        Ok(self
-            .repo
-            .get_pricing_catalog_cache(&self.catalog_key)
-            .await?)
-    }
-
-    async fn sync_model_pricing_snapshot(
-        &self,
-        snapshot: &PricingCatalogSnapshot,
-    ) -> Result<(), GatewayError> {
-        let active_rows = self.repo.list_active_model_pricing().await?;
-        if snapshot_is_already_synced(&active_rows, snapshot) {
-            return Ok(());
-        }
-        if active_rows
-            .iter()
-            .any(|row| row.provenance.fetched_at > snapshot.metadata.fetched_at)
-        {
-            return Err(GatewayError::Store(StoreError::PricingSyncConflict));
-        }
-
-        let active_by_target = active_rows
-            .into_iter()
-            .map(|record| {
-                (
-                    (
-                        record.pricing_provider_id.clone(),
-                        record.pricing_model_id.clone(),
-                    ),
-                    record,
-                )
-            })
-            .collect::<BTreeMap<_, _>>();
-
-        let mut snapshot_keys = BTreeSet::new();
-        let mut changes = ModelPricingSyncChanges::default();
-        for (pricing_provider_id, provider_document) in &snapshot.document.providers {
-            for (pricing_model_id, model_document) in &provider_document.models {
-                let desired = build_model_pricing_record(
-                    &snapshot.metadata,
-                    pricing_provider_id,
-                    pricing_model_id,
-                    model_document,
-                )?;
-                let key = (pricing_provider_id.clone(), pricing_model_id.clone());
-                snapshot_keys.insert(key.clone());
-
-                match active_by_target.get(&key) {
-                    Some(existing)
-                        if existing.provenance.fetched_at == snapshot.metadata.fetched_at =>
-                    {
-                        if existing.provenance != desired.provenance
-                            || !pricing_record_matches(existing, &desired)
-                        {
-                            return Err(GatewayError::Store(StoreError::PricingSyncConflict));
-                        }
-                    }
-                    Some(existing) if pricing_record_matches(existing, &desired) => {
-                        if existing.provenance != desired.provenance {
-                            changes
-                                .update_provenance
-                                .push(ModelPricingProvenanceUpdate {
-                                    model_pricing_id: existing.model_pricing_id,
-                                    provenance: desired.provenance,
-                                    updated_at: snapshot.metadata.fetched_at,
-                                });
-                        }
-                    }
-                    Some(existing) => {
-                        changes
-                            .close_model_pricing_ids
-                            .push(existing.model_pricing_id);
-                        changes.insert_model_pricing.push(desired);
-                    }
-                    None => {
-                        changes.insert_model_pricing.push(desired);
-                    }
-                }
-            }
-        }
-
-        for (key, existing) in &active_by_target {
-            if !snapshot_keys.contains(key) {
-                if existing.provenance.fetched_at == snapshot.metadata.fetched_at {
-                    return Err(GatewayError::Store(StoreError::PricingSyncConflict));
-                }
-                changes
-                    .close_model_pricing_ids
-                    .push(existing.model_pricing_id);
-            }
-        }
-
-        if changes.close_model_pricing_ids.is_empty()
-            && changes.update_provenance.is_empty()
-            && changes.insert_model_pricing.is_empty()
-        {
-            return Ok(());
-        }
-
-        self.repo
-            .apply_model_pricing_sync(&changes, snapshot.metadata.fetched_at)
-            .await?;
-        Ok(())
+        let snapshot = Arc::new(PricingCatalogSnapshot::from_sources(sources));
+        *cached = Some(Arc::clone(&snapshot));
+        Ok(snapshot)
     }
 }
 
@@ -511,37 +240,24 @@ where
     Ok(record)
 }
 
-pub async fn fetch_vendored_snapshot(
-    source_url: &str,
-) -> anyhow::Result<PricingCatalogSnapshotFile> {
-    let client = pricing_catalog_http_client();
-    let response = client
-        .get(source_url)
-        .send()
-        .await
-        .with_context(|| format!("failed fetching pricing catalog from `{source_url}`"))?;
-    let status = response.status();
-    if status != StatusCode::OK {
-        anyhow::bail!("pricing catalog fetch returned HTTP {}", status.as_u16());
-    }
-
-    let etag = response
-        .headers()
-        .get(ETAG)
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_string);
-    let body = response
-        .text()
-        .await
-        .context("failed reading pricing catalog response body")?;
-    let snapshot =
-        project_models_dev_snapshot(&body, VENDORED_SOURCE, etag, OffsetDateTime::now_utc())
-            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
-
-    Ok(PricingCatalogSnapshotFile {
-        metadata: snapshot.metadata,
-        providers: snapshot.document.providers,
-    })
+/// Whether the vendored snapshot file `existing_json` holds the same projected providers
+/// document as `fetched`, so a sync can leave the file, metadata included, untouched. A
+/// file that does not parse never matches.
+#[must_use]
+pub fn vendored_snapshot_is_unchanged(
+    existing_json: &str,
+    fetched: &PricingCatalogSnapshotFile,
+) -> bool {
+    let Ok(existing) = serde_json::from_str::<PricingCatalogSnapshotFile>(existing_json) else {
+        return false;
+    };
+    // Re-serialize rather than trust the file's own checksum, which an older sync may
+    // not have written.
+    let Ok(existing_document_json) = canonical_document_json(&existing.providers) else {
+        return false;
+    };
+    fetched.metadata.checksum.as_deref()
+        == Some(document_checksum(&existing_document_json).as_str())
 }
 
 pub fn snapshot_to_pretty_json(snapshot: &PricingCatalogSnapshotFile) -> anyhow::Result<String> {
@@ -550,32 +266,6 @@ pub fn snapshot_to_pretty_json(snapshot: &PricingCatalogSnapshotFile) -> anyhow:
     // The repository's end-of-file-fixer hook rejects a commit of the file without it.
     json.push('\n');
     Ok(json)
-}
-
-fn pricing_catalog_http_client() -> Client {
-    Client::builder()
-        .timeout(DEFAULT_PRICING_CATALOG_REQUEST_TIMEOUT)
-        .build()
-        .expect("pricing catalog HTTP client configuration is valid")
-}
-
-fn cached_document_is_valid(cache: &PricingCatalogCacheRecord) -> bool {
-    serde_json::from_str::<PricingCatalogDocument>(&cache.snapshot_json).is_ok()
-}
-
-fn next_catalog_generation_at(
-    current_fetched_at: Option<OffsetDateTime>,
-    now: OffsetDateTime,
-) -> OffsetDateTime {
-    let current_timestamp = current_fetched_at
-        .map(OffsetDateTime::unix_timestamp)
-        .unwrap_or(i64::MIN);
-    let next_timestamp = now
-        .unix_timestamp()
-        .max(current_timestamp.saturating_add(1));
-
-    OffsetDateTime::from_unix_timestamp(next_timestamp)
-        .expect("catalog generation timestamp remains in range")
 }
 
 fn resolved_model_pricing(record: &ModelPricingRecord) -> ResolvedModelPricing {
@@ -590,6 +280,8 @@ fn resolved_model_pricing(record: &ModelPricingRecord) -> ResolvedModelPricing {
         cache_write_cost_per_million_tokens: record.cache_write_cost_per_million_tokens,
         input_audio_cost_per_million_tokens: record.input_audio_cost_per_million_tokens,
         output_audio_cost_per_million_tokens: record.output_audio_cost_per_million_tokens,
+        output_image_usd_per_million: record.output_image_usd_per_million,
+        context_tiers: record.context_tiers.clone(),
         release_date: record.release_date.clone(),
         last_updated: record.last_updated.clone(),
         effective_start_at: record.effective_start_at,
@@ -600,233 +292,168 @@ fn resolved_model_pricing(record: &ModelPricingRecord) -> ResolvedModelPricing {
     }
 }
 
-pub(crate) fn build_model_pricing_record(
-    metadata: &PricingCatalogSnapshotMetadata,
-    pricing_provider_id: &str,
-    pricing_model_id: &str,
-    document: &PricingCatalogModelDocument,
-) -> Result<ModelPricingRecord, GatewayError> {
-    Ok(ModelPricingRecord {
-        model_pricing_id: Uuid::new_v4(),
-        pricing_provider_id: pricing_provider_id.to_string(),
-        pricing_model_id: pricing_model_id.to_string(),
-        display_name: document.display_name.clone(),
-        input_cost_per_million_tokens: parse_money(document.cost.input.as_deref())?,
-        output_cost_per_million_tokens: parse_money(document.cost.output.as_deref())?,
-        cache_read_cost_per_million_tokens: parse_money(document.cost.cache_read.as_deref())?,
-        cache_write_cost_per_million_tokens: parse_money(document.cost.cache_write.as_deref())?,
-        input_audio_cost_per_million_tokens: parse_money(document.cost.input_audio.as_deref())?,
-        output_audio_cost_per_million_tokens: parse_money(document.cost.output_audio.as_deref())?,
-        release_date: document.release_date.clone(),
-        last_updated: document.last_updated.clone(),
-        effective_start_at: metadata.fetched_at,
-        effective_end_at: None,
-        limits: PricingLimits {
-            context: document.limit.context,
-            input: document.limit.input,
-            output: document.limit.output,
-        },
-        modalities: PricingModalities {
-            input: document.modalities.input.clone(),
-            output: document.modalities.output.clone(),
-        },
-        provenance: PricingProvenance {
-            source: metadata.source.clone(),
-            etag: metadata.etag.clone(),
-            fetched_at: metadata.fetched_at,
-        },
-        created_at: metadata.fetched_at,
-        updated_at: metadata.fetched_at,
-    })
+/// A projected source snapshot and the canonical document JSON its checksum covers, so a
+/// cache write stores those bytes without serializing the document again.
+struct ProjectedSnapshot {
+    snapshot: PricingCatalogSnapshotFile,
+    document_json: String,
 }
 
-fn pricing_record_matches(existing: &ModelPricingRecord, desired: &ModelPricingRecord) -> bool {
-    existing.display_name == desired.display_name
-        && existing.input_cost_per_million_tokens == desired.input_cost_per_million_tokens
-        && existing.output_cost_per_million_tokens == desired.output_cost_per_million_tokens
-        && existing.cache_read_cost_per_million_tokens == desired.cache_read_cost_per_million_tokens
-        && existing.cache_write_cost_per_million_tokens
-            == desired.cache_write_cost_per_million_tokens
-        && existing.input_audio_cost_per_million_tokens
-            == desired.input_audio_cost_per_million_tokens
-        && existing.output_audio_cost_per_million_tokens
-            == desired.output_audio_cost_per_million_tokens
-        && existing.release_date == desired.release_date
-        && existing.last_updated == desired.last_updated
-        && existing.limits == desired.limits
-        && existing.modalities == desired.modalities
-}
-
-fn snapshot_is_already_synced(
-    active_rows: &[ModelPricingRecord],
-    snapshot: &PricingCatalogSnapshot,
-) -> bool {
-    let snapshot_keys = snapshot
-        .document
-        .providers
-        .iter()
-        .flat_map(|(provider_id, provider)| {
-            provider
-                .models
-                .keys()
-                .map(move |model_id| (provider_id.clone(), model_id.clone()))
-        })
-        .collect::<BTreeSet<_>>();
-
-    !snapshot_keys.is_empty()
-        && active_rows.len() == snapshot_keys.len()
-        && active_rows.iter().all(|row| {
-            row.provenance.source == snapshot.metadata.source
-                && row.provenance.etag == snapshot.metadata.etag
-                && row.provenance.fetched_at == snapshot.metadata.fetched_at
-                && snapshot_keys.contains(&(
-                    row.pricing_provider_id.clone(),
-                    row.pricing_model_id.clone(),
-                ))
-        })
-}
-
-fn parse_money(value: Option<&str>) -> Result<Option<Money4>, GatewayError> {
-    value
-        .map(|raw| {
-            Money4::from_decimal_str(raw).map_err(|error| {
-                GatewayError::Internal(format!(
-                    "invalid pricing catalog money value `{raw}`: {error}"
-                ))
-            })
-        })
-        .transpose()
-}
-
-fn project_models_dev_snapshot(
-    body: &str,
+/// Stamp a projected providers document with its metadata and checksum.
+fn projected_snapshot(
+    providers: Providers,
     source: &str,
     etag: Option<String>,
     fetched_at: OffsetDateTime,
-) -> Result<PricingCatalogSnapshot, GatewayError> {
-    let providers = serde_json::from_str::<BTreeMap<String, ModelsDevProviderDocument>>(body)
-        .map_err(|error| {
-            GatewayError::Internal(format!("failed parsing models.dev response: {error}"))
-        })?;
-
-    let mut projected_providers = BTreeMap::new();
-    for supported_provider_id in SUPPORTED_PRICING_PROVIDER_IDS {
-        let Some(provider) = providers.get(supported_provider_id) else {
-            continue;
-        };
-
-        let mut projected_models = BTreeMap::new();
-        for (fallback_key, model) in &provider.models {
-            let model_id = if model.id.trim().is_empty() {
-                fallback_key.clone()
-            } else {
-                model.id.clone()
-            };
-            projected_models.insert(
-                model_id.clone(),
-                PricingCatalogModelDocument {
-                    id: model_id,
-                    display_name: model.name.clone(),
-                    release_date: model.release_date.clone(),
-                    last_updated: model.last_updated.clone(),
-                    metadata: model.metadata.clone(),
-                    cost: PricingCatalogCostDocument {
-                        input: project_models_dev_cost(model.cost.input.as_ref())?,
-                        output: project_models_dev_cost(model.cost.output.as_ref())?,
-                        cache_read: project_models_dev_cost(model.cost.cache_read.as_ref())?,
-                        cache_write: project_models_dev_cost(model.cost.cache_write.as_ref())?,
-                        input_audio: project_models_dev_cost(model.cost.input_audio.as_ref())?,
-                        output_audio: project_models_dev_cost(model.cost.output_audio.as_ref())?,
-                        conditions: model.cost.conditions.clone(),
-                    },
-                    limit: PricingCatalogLimitDocument {
-                        context: model.limit.context,
-                        input: model.limit.input,
-                        output: model.limit.output,
-                    },
-                    modalities: PricingCatalogModalitiesDocument {
-                        input: model.modalities.input.clone(),
-                        output: model.modalities.output.clone(),
-                    },
-                },
-            );
-        }
-
-        projected_providers.insert(
-            supported_provider_id.to_string(),
-            PricingCatalogProviderDocument {
-                display_name: provider.name.clone(),
-                models: projected_models,
+) -> Result<ProjectedSnapshot, GatewayError> {
+    let document_json = canonical_document_json(&providers).map_err(|error| {
+        GatewayError::Internal(format!(
+            "failed serializing pricing catalog snapshot: {error}"
+        ))
+    })?;
+    Ok(ProjectedSnapshot {
+        snapshot: PricingCatalogSnapshotFile {
+            metadata: PricingCatalogSnapshotMetadata {
+                source: source.to_string(),
+                etag,
+                fetched_at,
+                checksum: Some(document_checksum(&document_json)),
             },
-        );
-    }
-
-    Ok(PricingCatalogSnapshot {
-        metadata: PricingCatalogSnapshotMetadata {
-            source: source.to_string(),
-            etag,
-            fetched_at,
+            providers,
         },
-        document: PricingCatalogDocument {
-            providers: projected_providers,
-        },
+        document_json,
     })
 }
 
-fn project_models_dev_cost(value: Option<&Number>) -> Result<Option<String>, GatewayError> {
-    value.map(normalize_models_dev_money).transpose()
+/// The canonical JSON of a projected providers document: pretty-printed, exactly as
+/// [`PricingCatalogDocument`] serializes, and stored as the cache row's `snapshot_json`.
+fn canonical_document_json(providers: &Providers) -> serde_json::Result<String> {
+    /// Borrowing twin of [`PricingCatalogDocument`], so serializing needs no clone.
+    #[derive(Serialize)]
+    struct DocumentRef<'doc> {
+        providers: &'doc Providers,
+    }
+    serde_json::to_string_pretty(&DocumentRef { providers })
 }
 
-fn normalize_models_dev_money(number: &Number) -> Result<String, GatewayError> {
-    let raw = number.to_string();
-    if let Ok(money) = Money4::from_decimal_str(&raw) {
-        return Ok(money.format_4dp());
-    }
-
-    let value = number.as_f64().ok_or_else(|| {
-        GatewayError::Internal(format!(
-            "failed normalizing models.dev cost `{raw}`: not finite"
-        ))
-    })?;
-    let scaled = (value * Money4::SCALE as f64).round();
-    if scaled < i64::MIN as f64 || scaled > i64::MAX as f64 {
-        return Err(GatewayError::Internal(format!(
-            "failed normalizing models.dev cost `{raw}`: rounded value overflowed"
-        )));
-    }
-
-    Ok(Money4::from_scaled(scaled as i64).format_4dp())
+/// SHA-256, as lowercase hex, of [`canonical_document_json`] output.
+#[must_use]
+fn document_checksum(document_json: &str) -> String {
+    format!("{:x}", Sha256::digest(document_json.as_bytes()))
 }
 
+/// The merged snapshot of the three checked-in source snapshots.
+#[cfg(test)]
 pub(crate) fn load_vendored_fallback_snapshot() -> PricingCatalogSnapshot {
-    let snapshot = serde_json::from_str::<PricingCatalogSnapshotFile>(VENDORED_FALLBACK_JSON)
-        .expect("vendored pricing catalog fallback should deserialize");
-    PricingCatalogSnapshot {
-        metadata: snapshot.metadata,
-        document: PricingCatalogDocument {
-            providers: snapshot.providers,
-        },
-    }
+    PricingCatalogSnapshot::from_sources(
+        CatalogSourceId::ALL
+            .into_iter()
+            .map(|source| (source, source.descriptor().vendored_snapshot()))
+            .collect(),
+    )
 }
 
+/// The merged catalog: precedence applied per field, with per-source provenance.
 #[derive(Debug, Clone)]
 pub(crate) struct PricingCatalogSnapshot {
-    pub(crate) metadata: PricingCatalogSnapshotMetadata,
+    /// Merged providers document (precedence applied).
     pub(crate) document: PricingCatalogDocument,
+    /// Provenance of the snapshot each source contributed (vendored or remote). Always
+    /// has all three keys.
+    pub(crate) sources: BTreeMap<CatalogSourceId, PricingCatalogSnapshotMetadata>,
+    /// Merge provenance and conflicts keyed by (provider_id, model_id).
+    pub(crate) reports: BTreeMap<(String, String), MergedModelReport>,
 }
 
+impl PricingCatalogSnapshot {
+    /// Merge one snapshot per source; `sources` must hold every [`CatalogSourceId`].
+    pub(crate) fn from_sources(
+        sources: BTreeMap<CatalogSourceId, PricingCatalogSnapshotFile>,
+    ) -> Self {
+        let empty = Providers::new();
+        let providers =
+            |source: CatalogSourceId| sources.get(&source).map_or(&empty, |file| &file.providers);
+        let merged = merge_catalogs(
+            providers(CatalogSourceId::ModelsDev),
+            providers(CatalogSourceId::OpenRouter),
+            providers(CatalogSourceId::LiteLlm),
+        );
+        Self {
+            document: PricingCatalogDocument {
+                providers: merged.providers,
+            },
+            sources: sources
+                .into_iter()
+                .map(|(source, file)| (source, file.metadata))
+                .collect(),
+            reports: merged.reports,
+        }
+    }
+
+    /// The merged model at exactly `provider_id` / `model_id`.
+    pub(crate) fn model(
+        &self,
+        provider_id: &str,
+        model_id: &str,
+    ) -> Option<&PricingCatalogModelDocument> {
+        self.document
+            .providers
+            .get(provider_id)?
+            .models
+            .get(model_id)
+    }
+
+    /// The merge report of the model at exactly `provider_id` / `model_id`.
+    pub(crate) fn report(&self, provider_id: &str, model_id: &str) -> Option<&MergedModelReport> {
+        self.reports
+            .get(&(provider_id.to_string(), model_id.to_string()))
+    }
+
+    /// The newest source `fetched_at`: pricing rows reconciled from this snapshot take
+    /// effect then.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the snapshot has no sources, which [`Self::from_sources`] rules out.
+    pub(crate) fn generation_at(&self) -> OffsetDateTime {
+        self.sources
+            .values()
+            .map(|metadata| metadata.fetched_at)
+            .max()
+            .expect("a merged snapshot has every source")
+    }
+
+    /// Whether this snapshot was merged from exactly `sources`' snapshot metadata,
+    /// checksums included.
+    fn is_merged_from(
+        &self,
+        sources: &BTreeMap<CatalogSourceId, PricingCatalogSnapshotFile>,
+    ) -> bool {
+        self.sources.len() == sources.len()
+            && sources
+                .iter()
+                .all(|(source, file)| self.sources.get(source) == Some(&file.metadata))
+    }
+}
+
+/// A source snapshot as vendored on disk and cached at runtime: provenance plus the
+/// projected providers document.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PricingCatalogSnapshotFile {
     pub metadata: PricingCatalogSnapshotMetadata,
     pub providers: BTreeMap<String, PricingCatalogProviderDocument>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PricingCatalogSnapshotMetadata {
     pub source: String,
     pub etag: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
     pub fetched_at: OffsetDateTime,
+    /// SHA-256 (lowercase hex) of the projected providers document's canonical JSON; the
+    /// metadata itself is not covered, so a refetch of unchanged content keeps it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checksum: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -856,6 +483,7 @@ pub struct PricingCatalogModelDocument {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PricingCatalogCostDocument {
     /// Source-shaped conditional rates, in USD per million tokens; informational only.
+    /// A source's context tiers live in [`Self::tiers`], not here, once they are typed.
     #[serde(default)]
     pub conditions: BTreeMap<String, serde_json::Value>,
     pub input: Option<String>,
@@ -864,6 +492,25 @@ pub struct PricingCatalogCostDocument {
     pub cache_write: Option<String>,
     pub input_audio: Option<String>,
     pub output_audio: Option<String>,
+    /// USD per million image output tokens.
+    #[serde(default)]
+    pub output_image: Option<String>,
+    /// Sorted ascending by `above_input_tokens`, thresholds unique.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tiers: Vec<PricingCatalogContextTier>,
+}
+
+/// Rates that replace the base schedule for a whole request above a context size.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PricingCatalogContextTier {
+    /// Tier applies when normalized prompt tokens (cache included) are strictly greater
+    /// than this.
+    pub above_input_tokens: i64,
+    /// USD per million tokens, 4 dp, like the base fields; `None` inherits the base rate.
+    pub input: Option<String>,
+    pub output: Option<String>,
+    pub cache_read: Option<String>,
+    pub cache_write: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -877,59 +524,6 @@ pub struct PricingCatalogLimitDocument {
 pub struct PricingCatalogModalitiesDocument {
     pub input: Vec<String>,
     pub output: Vec<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct ModelsDevProviderDocument {
-    name: String,
-    #[serde(default)]
-    models: BTreeMap<String, ModelsDevModelDocument>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct ModelsDevModelDocument {
-    #[serde(flatten)]
-    metadata: metadata::CatalogModelMetadata,
-    #[serde(default)]
-    id: String,
-    name: String,
-    #[serde(default)]
-    release_date: String,
-    #[serde(default)]
-    last_updated: String,
-    #[serde(default)]
-    cost: ModelsDevCostDocument,
-    #[serde(default)]
-    limit: ModelsDevLimitDocument,
-    #[serde(default)]
-    modalities: ModelsDevModalitiesDocument,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-struct ModelsDevCostDocument {
-    #[serde(flatten)]
-    conditions: BTreeMap<String, serde_json::Value>,
-    input: Option<Number>,
-    output: Option<Number>,
-    cache_read: Option<Number>,
-    cache_write: Option<Number>,
-    input_audio: Option<Number>,
-    output_audio: Option<Number>,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-struct ModelsDevLimitDocument {
-    context: Option<i64>,
-    input: Option<i64>,
-    output: Option<i64>,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-struct ModelsDevModalitiesDocument {
-    #[serde(default)]
-    input: Vec<String>,
-    #[serde(default)]
-    output: Vec<String>,
 }
 
 #[cfg(test)]

@@ -481,6 +481,7 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
+            pricing_tier_above_input_tokens: None,
             computed_cost_usd: Money4::from_scaled(fixture.cost_scaled),
             occurred_at,
         };
@@ -983,7 +984,7 @@ mod tests {
                         pricing_override: None,
                         extra_headers: serde_json::Map::new(),
                         extra_body: serde_json::Map::new(),
-                        capabilities: ProviderCapabilities::all_enabled(),
+                        capabilities: ProviderCapabilities::all_enabled().into(),
                         compatibility: RouteCompatibility::default(),
                     }]
                 } else {

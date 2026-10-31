@@ -3,6 +3,8 @@
 - Date: 2026-03-06
 - Status: Accepted
 
+> **Amended by** [ADR: Multi-Source Model Catalog and Tri-State Route Capabilities](2026-10-31-multi-source-model-catalog.md) (2026-10-31). The catalog now merges models.dev, OpenRouter, and LiteLLM. Each source refreshes every 6 hours with an ETag or checksum. `github-copilot` is a supported pricing provider ID, and context tiers are billed.
+
 ## Current state
 
 - [../pricing-catalog-and-accounting.md](../configuration/pricing-catalog-and-accounting.md)
@@ -124,7 +126,7 @@ Positive:
 - future spend-ledger work can reuse the normalized catalog and cache table.
 
 Tradeoffs:
-- pricing freshness is bounded by the 15-minute refresh interval and remote availability,
+- pricing freshness is bounded by the refresh interval (now 6 hours) and remote availability,
 - unsupported billing modifiers intentionally remain unpriced,
 - vendored snapshot maintenance now requires an explicit sync step.
 

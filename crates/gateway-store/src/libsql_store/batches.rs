@@ -650,6 +650,7 @@ mod tests {
                         cache_write: None,
                         image_output: None,
                     }),
+                    context_tiers: Vec::new(),
                     policy: BatchPricingPolicy::HalfAllTokenRates,
                 }),
             },
