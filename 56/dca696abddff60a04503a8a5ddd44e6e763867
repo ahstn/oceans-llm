@@ -1,0 +1,116 @@
+crates/gateway-core/src/domain.rs
+  h_2f452a9c375069 10,1110-1113,2722-2733,2746-2750,2772-2776,2897-2900,3522-3524
+crates/gateway-core/src/lib.rs
+  h_2f452a9c375069 17,74-77,206-209
+crates/gateway-core/src/route_capabilities.rs
+  h_2f452a9c375069 1-363
+crates/gateway-service/src/admin_models.rs
+  h_2f452a9c375069 14-16,326-332,379-381,461-467,495-496,510,763-766,1059-1060,1109,1199-1203,1243,1245,1269,1271,1530-1532,1656,1757-1758,1931-1932,2014,2234-2235,2245-2249,2287,2350
+crates/gateway-service/src/batches.rs
+  h_2f452a9c375069 7-10,418,422-427,429-431
+crates/gateway-service/src/benchmark_catalog.rs
+  h_2f452a9c375069 16-17,408-409,412-417
+crates/gateway-service/src/budget_guard.rs
+  h_2f452a9c375069 588
+crates/gateway-service/src/catalog_fetch.rs
+  h_2f452a9c375069 1-184
+crates/gateway-service/src/effective_route_metadata.rs
+  h_2f452a9c375069 4-6,193-195,197,199,201-208,401,423
+crates/gateway-service/src/lib.rs
+  h_2f452a9c375069 11,150
+crates/gateway-service/src/model_metadata.rs
+  h_2f452a9c375069 18-20,192,194,196-201,207,212,217,262-271
+crates/gateway-service/src/model_metadata/listing.rs
+  h_2f452a9c375069 11-12,366,368
+crates/gateway-service/src/model_metadata/tests.rs
+  h_2f452a9c375069 2,21-26,49,586,666-667,682,688
+crates/gateway-service/src/model_metadata/tests/model_group_info.rs
+  h_2f452a9c375069 147,158,215-218,259-260,275-276,282
+crates/gateway-service/src/pricing_catalog.rs
+  h_2f452a9c375069 3-4,14,17,19,22-25,30-33,66-68,94,100,114,120,129-131,169-176,192-227,229-254,389,546-547,550-560,568-587,627-628,656-657,692-693,742,746-747,804-834,836,840-858,913-916
+crates/gateway-service/src/pricing_catalog/metadata.rs
+  h_2f452a9c375069 31,36-37
+crates/gateway-service/src/pricing_catalog/tests/reconciliation.rs
+  h_2f452a9c375069 211,283,339
+crates/gateway-service/src/pricing_catalog/tests/refresh.rs
+  h_2f452a9c375069 27-56,242-354
+crates/gateway-service/src/pricing_catalog/tests/resolution.rs
+  h_2f452a9c375069 523
+crates/gateway-service/src/pricing_catalog/tests/support.rs
+  h_2f452a9c375069 38-39,325,336
+crates/gateway-service/src/route_planner.rs
+  h_2f452a9c375069 106
+crates/gateway-service/src/routing/tests.rs
+  h_2f452a9c375069 142
+crates/gateway-service/src/service.rs
+  h_2f452a9c375069 1065,1274,2831,2858-2859
+crates/gateway-store/migrations/V76__pricing_context_tiers.sql
+  h_2f452a9c375069 1-3
+crates/gateway-store/migrations/postgres/V76__pricing_context_tiers.sql
+  h_2f452a9c375069 1-6
+crates/gateway-store/src/lib.rs
+  h_2f452a9c375069 109-110,802,808-907,1424,5038,5062,6831-6836,7030-7067,7626,7639,7710,7906,7919,7990,8083,9891,11089,11475-11488,11544-11549,11633-11636,11804-11805,11838,11875,11914,12291,12781
+crates/gateway-store/src/libsql_store/budgets.rs
+  h_2f452a9c375069 377-378,422-423,464-465,1554-1555,1559,1611-1612
+crates/gateway-store/src/libsql_store/pricing_catalog.rs
+  h_2f452a9c375069 91-92,113,128-129,132,168-172,285,299-300,303,339-343,409-410
+crates/gateway-store/src/libsql_store/support.rs
+  h_2f452a9c375069 709,755,782-784,802-805
+crates/gateway-store/src/migration_registry.rs
+  h_2f452a9c375069 477-483
+crates/gateway-store/src/postgres_store/budgets.rs
+  h_2f452a9c375069 419-420,458-459,494-495,1530-1531,1535,1600
+crates/gateway-store/src/postgres_store/pricing_catalog.rs
+  h_2f452a9c375069 78-79,95,109-110,113,162-167,280,294-295,298,347-352,415-416
+crates/gateway-store/src/postgres_store/support.rs
+  h_2f452a9c375069 666,712,739-741,759-762
+crates/gateway-store/src/pricing_sync.rs
+  h_2f452a9c375069 114-115
+crates/gateway-store/src/tests/route_identity.rs
+  h_2f452a9c375069 2,78
+crates/gateway/src/bin/sync_pricing_catalog.rs
+  h_2f452a9c375069 1,6,26-37,39,46
+crates/gateway/src/config/routes.rs
+  h_2f452a9c375069 9-11,113,115,117-118,121-143,231-233,236,238-255,259-260,406,433,435,440,442,446,448,452,462-470,488,490,653,712,722,733,741
+crates/gateway/src/config/seeding.rs
+  h_2f452a9c375069 371
+crates/gateway/src/config/tests/bedrock.rs
+  h_2f452a9c375069 2,586,589-608,612-613,618-619,624-625,630-631,636-637,642-643,655-667,672-678
+crates/gateway/src/config/tests/openrouter.rs
+  h_2f452a9c375069 287,343,346,360-375,378-381,385-387
+crates/gateway/src/config/tests/providers.rs
+  h_2f452a9c375069 754,877,880,890-900,903-906,909
+crates/gateway/src/config/tests/routes.rs
+  h_2f452a9c375069 217-232,568,573,596-601,603-655,731-734
+crates/gateway/src/http/handlers.rs
+  h_2f452a9c375069 2436,2438,2907,2912-2924,2977,2988,2998,3024,3031,3046
+crates/gateway/src/http/handlers/decisions.rs
+  h_2f452a9c375069 641
+crates/gateway/src/http/handlers/images_tests.rs
+  h_2f452a9c375069 412
+crates/gateway/src/http/handlers/routing.rs
+  h_2f452a9c375069 10-12,210-215
+crates/gateway/src/http/handlers/routing_tests.rs
+  h_2f452a9c375069 272
+crates/gateway/src/http/observability/request_logs.rs
+  h_2f452a9c375069 742
+crates/gateway/src/http/spend_budget_increases/handler_tests.rs
+  h_2f452a9c375069 193
+crates/gateway/src/http/test_support.rs
+  h_2f452a9c375069 103
+crates/gateway/src/local_demo_seed/history.rs
+  h_2f452a9c375069 330
+crates/gateway/src/local_demo_seed/mod.rs
+  h_2f452a9c375069 484,987
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "56dca696abddff60a04503a8a5ddd44e6e763867",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
