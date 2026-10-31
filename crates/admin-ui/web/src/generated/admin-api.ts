@@ -2314,6 +2314,11 @@ export interface components {
             /** Format: int64 */
             output_window_tokens?: number | null;
             pricing_source?: null | components["schemas"]["EffectiveMetadataSourceView"];
+            /**
+             * @description Catalog context tiers for the same primary route as the base prices, ascending by
+             *     threshold. Empty when the price comes from a route pricing override.
+             */
+            pricing_tiers: components["schemas"]["AdminPricingTierView"][];
             pricing_varies_by_route: boolean;
             provider_icon_key?: null | components["schemas"]["ProviderIconKeyView"];
             provider_key?: string | null;
@@ -2366,6 +2371,22 @@ export interface components {
         AdminPage: "api_keys" | "models" | "mcp" | "review_agent" | "usage_costs" | "spend_controls" | "rate_limits" | "leaderboard" | "agent_harnesses" | "agent_sessions" | "request_logs" | "mcp_invocations" | "teams" | "users" | "service_accounts";
         /** @enum {string} */
         AdminPermissionGroup: "platform_admins" | "team_admins" | "users";
+        /**
+         * @description Rates that replace the base prices for a whole request whose prompt tokens (cache
+         *     included) exceed `above_input_tokens`. A null rate inherits the base rate.
+         */
+        AdminPricingTierView: {
+            /** Format: int64 */
+            above_input_tokens: number;
+            /** Format: int64 */
+            cache_read_cost_per_million_tokens_usd_10000?: number | null;
+            /** Format: int64 */
+            cache_write_cost_per_million_tokens_usd_10000?: number | null;
+            /** Format: int64 */
+            input_cost_per_million_tokens_usd_10000?: number | null;
+            /** Format: int64 */
+            output_cost_per_million_tokens_usd_10000?: number | null;
+        };
         AdminProviderCredentialStatusView: {
             configured: boolean;
             last_used_at?: string | null;

@@ -641,7 +641,7 @@ async fn price_results(
         }
         return Ok(BatchPricingStatus::ProviderReported);
     }
-    let pricer = if let Some(snapshot) = job.pricing_snapshot {
+    let pricer = if let Some(snapshot) = job.pricing_snapshot.clone() {
         BatchPricer::from_snapshot(snapshot)
     } else {
         let route = service

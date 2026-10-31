@@ -25,6 +25,11 @@ const model: ModelView = {
   benchmark_scores: [],
   client_configurations: [],
   pricing_varies_by_route: false,
+  input_cost_per_million_tokens_usd_10000: 100_000,
+  output_cost_per_million_tokens_usd_10000: 500_000,
+  cache_read_cost_per_million_tokens_usd_10000: 10_000,
+  cache_write_cost_per_million_tokens_usd_10000: null,
+  pricing_tiers: [],
   routing: {
     strategy: 'round_robin',
     affinity: { idle_timeout_seconds: 3_600 },
@@ -305,5 +310,56 @@ describe('ModelInfoDialog routing', () => {
 
     await waitFor(() => expect(error).toHaveBeenCalledWith('Clipboard access failed'))
     expect(success).not.toHaveBeenCalled()
+  })
+})
+
+describe('ModelInfoDialog pricing tiers', () => {
+  function metricValue(container: HTMLElement, label: string) {
+    return within(container).getByText(label).closest('div')!.querySelector('dd')!.textContent
+  }
+
+  it('lists each context tier with its rates below the base rates', () => {
+    renderDialog(
+      {
+        ...model,
+        pricing_tiers: [
+          {
+            above_input_tokens: 272_000,
+            input_cost_per_million_tokens_usd_10000: 200_000,
+            output_cost_per_million_tokens_usd_10000: 750_000,
+            cache_read_cost_per_million_tokens_usd_10000: 20_000,
+            cache_write_cost_per_million_tokens_usd_10000: null,
+          },
+        ],
+      },
+      { initialSection: 'overview' },
+    )
+
+    const dialog = screen.getByRole('dialog', { name: 'Model info' })
+    const base = within(dialog).getByTestId('model-pricing-costs')
+    expect(metricValue(base, 'Input cost')).toBe('$10.00')
+    expect(metricValue(base, 'Output cost')).toBe('$50.00')
+
+    const tiers = within(dialog).getByTestId('model-pricing-tiers')
+    expect(
+      within(tiers).getByText(/apply to the whole request when the prompt, including cached/),
+    ).toBeVisible()
+    const tier = within(tiers).getByRole('region', { name: 'Above 272k tokens' })
+    expect(metricValue(tier, 'Input cost')).toBe('$20.00')
+    expect(metricValue(tier, 'Output cost')).toBe('$75.00')
+    expect(metricValue(tier, 'Cache read')).toBe('$2.00')
+    expect(metricValue(tier, 'Cache write')).toBe('—')
+  })
+
+  it('shows only the base rates when the model has no tiers', () => {
+    renderDialog(model, { initialSection: 'overview' })
+
+    const dialog = screen.getByRole('dialog', { name: 'Model info' })
+    expect(metricValue(within(dialog).getByTestId('model-pricing-costs'), 'Input cost')).toBe(
+      '$10.00',
+    )
+    expect(within(dialog).queryByTestId('model-pricing-tiers')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText(/^Above /)).not.toBeInTheDocument()
+    expect(within(dialog).queryByText(/whole request/)).not.toBeInTheDocument()
   })
 })

@@ -5,8 +5,8 @@ use tokio::sync::Semaphore;
 use gateway_core::{
     AgentAnalysisDesiredVersions, AgentSessionAnalysisRepository, AuthenticatedApiKey,
     BatchJobRecord, BatchPricingStatus, BudgetAlertRepository, BudgetExceededStatus, BudgetRecord,
-    BudgetRepository, ChatCompletionsRequest, GatewayError, GatewayModel, IdentityRepository,
-    McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationQuery,
+    BudgetRepository, ChatCompletionsRequest, ContextPricingTier, GatewayError, GatewayModel,
+    IdentityRepository, McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationQuery,
     McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, PricingCatalogRepository,
     PricingResolution, PricingUnpricedReason, ProviderBatchResult, ProviderRepository,
     RequestLogDetail, RequestLogPage, RequestLogPurgeResult, RequestLogQuery, RequestLogRecord,
@@ -1751,6 +1751,9 @@ fn money_to_f64(value: Money4) -> Option<f64> {
     }
 }
 
+/// Catalog pricing for one request. The context tier its normalized prompt tokens select
+/// replaces the base rates for the whole request, a tier rate that is unset inheriting the
+/// base; the ledger records the rates actually billed and the tier threshold.
 fn apply_exact_pricing(
     record: &mut UsageLedgerRecord,
     pricing: &ResolvedModelPricing,
@@ -1763,17 +1766,40 @@ fn apply_exact_pricing(
     record.pricing_source_etag = pricing.provenance.etag.clone();
     record.pricing_source_fetched_at = Some(pricing.provenance.fetched_at);
     record.pricing_last_updated = Some(pricing.last_updated.clone());
-    record.input_cost_per_million_tokens = pricing.input_cost_per_million_tokens;
-    record.output_cost_per_million_tokens = pricing.output_cost_per_million_tokens;
-    record.cache_read_cost_per_million_tokens = pricing.cache_read_cost_per_million_tokens;
-    record.cache_write_cost_per_million_tokens = pricing.cache_write_cost_per_million_tokens;
 
-    apply_token_rates(
-        record,
-        pricing.input_cost_per_million_tokens,
-        pricing.output_cost_per_million_tokens,
-        cache_usage,
-    )
+    let tier = select_context_tier(&pricing.context_tiers, record.prompt_tokens);
+    let input_rate = tier
+        .and_then(|tier| tier.input)
+        .or(pricing.input_cost_per_million_tokens);
+    let output_rate = tier
+        .and_then(|tier| tier.output)
+        .or(pricing.output_cost_per_million_tokens);
+    record.input_cost_per_million_tokens = input_rate;
+    record.output_cost_per_million_tokens = output_rate;
+    record.cache_read_cost_per_million_tokens = tier
+        .and_then(|tier| tier.cache_read)
+        .or(pricing.cache_read_cost_per_million_tokens);
+    record.cache_write_cost_per_million_tokens = tier
+        .and_then(|tier| tier.cache_write)
+        .or(pricing.cache_write_cost_per_million_tokens);
+    record.image_output_cost_per_million_tokens = pricing.output_image_usd_per_million;
+    record.pricing_tier_above_input_tokens = tier.map(|tier| tier.above_input_tokens);
+
+    apply_token_rates(record, input_rate, output_rate, cache_usage)
+}
+
+/// The context tier billing a whole request: the one with the greatest threshold strictly
+/// below its normalized prompt tokens (cache included). A request of exactly a threshold,
+/// or with unknown prompt tokens, stays on the lower schedule.
+pub(crate) fn select_context_tier(
+    tiers: &[ContextPricingTier],
+    prompt_tokens: Option<i64>,
+) -> Option<&ContextPricingTier> {
+    let prompt_tokens = prompt_tokens?;
+    tiers
+        .iter()
+        .filter(|tier| tier.above_input_tokens < prompt_tokens)
+        .max_by_key(|tier| tier.above_input_tokens)
 }
 
 fn apply_configured_pricing(
@@ -3633,5 +3659,6 @@ mod tests {
         assert!(reason.contains(";pricing_unavailable:"));
     }
 
+    mod context_tier_pricing;
     mod reported_cost_and_image_usage;
 }

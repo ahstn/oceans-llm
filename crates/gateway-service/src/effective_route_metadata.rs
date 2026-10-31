@@ -1,6 +1,6 @@
 use gateway_client_config::ApiFormat;
 use gateway_core::{
-    AwsBedrockApiStyle, GatewayError, GitHubCopilotChatApi, ModelRoute, Money4,
+    AwsBedrockApiStyle, ContextPricingTier, GatewayError, GitHubCopilotChatApi, ModelRoute, Money4,
     PartialCapabilities, PricingCatalogRepository, PricingLimits, PricingModalities,
     PricingProvenance, ProviderCapabilities, ProviderConnection, effective_route_capabilities,
     github_copilot_route_capabilities, vertex_route_capabilities_for_upstream_model,
@@ -65,6 +65,9 @@ pub struct EffectiveRoutePricing {
     pub output_cost_per_million_tokens: Option<Money4>,
     pub cache_read_cost_per_million_tokens: Option<Money4>,
     pub cache_write_cost_per_million_tokens: Option<Money4>,
+    /// Catalog context tiers, ascending by threshold. Empty for a route
+    /// `pricing_override`, which replaces the whole catalog schedule.
+    pub context_tiers: Vec<ContextPricingTier>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,13 +119,19 @@ where
             output_cost_per_million_tokens: Some(pricing.output_cost_per_million_tokens),
             cache_read_cost_per_million_tokens: pricing.cache_read_cost_per_million_tokens,
             cache_write_cost_per_million_tokens: pricing.cache_write_cost_per_million_tokens,
+            context_tiers: Vec::new(),
         })
     } else if catalog_pricing_supported {
-        catalog_record.as_ref().map(|record| EffectiveRoutePricing {
-            input_cost_per_million_tokens: record.input_cost_per_million_tokens,
-            output_cost_per_million_tokens: record.output_cost_per_million_tokens,
-            cache_read_cost_per_million_tokens: record.cache_read_cost_per_million_tokens,
-            cache_write_cost_per_million_tokens: record.cache_write_cost_per_million_tokens,
+        catalog_record.as_ref().map(|record| {
+            let mut context_tiers = record.context_tiers.clone();
+            context_tiers.sort_by_key(|tier| tier.above_input_tokens);
+            EffectiveRoutePricing {
+                input_cost_per_million_tokens: record.input_cost_per_million_tokens,
+                output_cost_per_million_tokens: record.output_cost_per_million_tokens,
+                cache_read_cost_per_million_tokens: record.cache_read_cost_per_million_tokens,
+                cache_write_cost_per_million_tokens: record.cache_write_cost_per_million_tokens,
+                context_tiers,
+            }
         })
     } else {
         None

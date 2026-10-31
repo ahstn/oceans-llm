@@ -18,47 +18,45 @@ use uuid::Uuid;
 
 use crate::{
     GatewayService,
-    service::{CacheUsageNormalization, UsageSummary, usage_summary_from_value},
+    service::{
+        CacheUsageNormalization, UsageSummary, select_context_tier, usage_summary_from_value,
+    },
 };
 
 pub const MAX_BATCH_ITEMS: usize = 50_000;
 
 pub use gateway_core::BatchPricingPolicy;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct BatchPricer {
-    rates: Option<BatchRates>,
-    policy: BatchPricingPolicy,
+    snapshot: BatchPricingSnapshot,
 }
 
 impl BatchPricer {
     #[must_use]
     pub const fn from_snapshot(snapshot: BatchPricingSnapshot) -> Self {
-        Self {
-            rates: snapshot.rates,
-            policy: snapshot.policy,
-        }
+        Self { snapshot }
     }
 
     pub fn price_usage(
         &self,
         provider_usage: Option<&Value>,
     ) -> Result<Option<Money4>, GatewayError> {
-        let Some(rates) = self.rates else {
+        let Some(base) = self.snapshot.rates else {
             return Ok(None);
         };
         let usage = usage_summary_from_value(provider_usage)?;
         if !usage.has_usage() {
             return Ok(None);
         }
-        compute_batch_usage_cost(&usage, rates, self.policy)
+        compute_batch_usage_cost(&usage, self.item_rates(base, &usage), self.snapshot.policy)
     }
 
     pub fn price_usages<'a>(
         &self,
         provider_usages: impl IntoIterator<Item = Option<&'a Value>>,
     ) -> Result<Option<Money4>, GatewayError> {
-        let Some(rates) = self.rates else {
+        let Some(base) = self.snapshot.rates else {
             return Ok(None);
         };
         let mut total_numerator = 0_i128;
@@ -68,7 +66,9 @@ impl BatchPricer {
             if !usage.has_usage() {
                 return Ok(None);
             }
-            let Some(numerator) = batch_usage_cost_numerator(&usage, rates, self.policy)? else {
+            let rates = self.item_rates(base, &usage);
+            let Some(numerator) = batch_usage_cost_numerator(&usage, rates, self.snapshot.policy)?
+            else {
                 return Ok(None);
             };
             total_numerator = total_numerator
@@ -80,6 +80,15 @@ impl BatchPricer {
             return Ok(None);
         }
         money4_from_batch_numerator(total_numerator).map(Some)
+    }
+
+    /// The rates billing one item: `base`, or the context tier the item's own normalized
+    /// prompt tokens select.
+    fn item_rates(&self, base: BatchRates, usage: &UsageSummary) -> BatchRates {
+        match select_context_tier(&self.snapshot.context_tiers, usage.prompt_tokens) {
+            Some(tier) => base.with_context_tier(tier),
+            None => base,
+        }
     }
 }
 
@@ -120,24 +129,35 @@ where
         policy: BatchPricingPolicy,
         occurred_at: OffsetDateTime,
     ) -> Result<BatchPricingSnapshot, GatewayError> {
-        let rates = match self.resolve_route_pricing(route, occurred_at).await? {
-            PricingResolution::Exact { pricing } => Some(BatchRates {
-                input: pricing.input_cost_per_million_tokens,
-                output: pricing.output_cost_per_million_tokens,
-                cache_read: pricing.cache_read_cost_per_million_tokens,
-                cache_write: pricing.cache_write_cost_per_million_tokens,
-                image_output: None,
-            }),
-            PricingResolution::ConfiguredOverride { pricing } => Some(BatchRates {
-                input: Some(pricing.input_cost_per_million_tokens),
-                output: Some(pricing.output_cost_per_million_tokens),
-                cache_read: pricing.cache_read_cost_per_million_tokens,
-                cache_write: pricing.cache_write_cost_per_million_tokens,
-                image_output: pricing.image_output_cost_per_million_tokens,
-            }),
-            PricingResolution::Unpriced { .. } => None,
+        let (rates, context_tiers) = match self.resolve_route_pricing(route, occurred_at).await? {
+            PricingResolution::Exact { pricing } => {
+                let pricing = *pricing;
+                let rates = BatchRates {
+                    input: pricing.input_cost_per_million_tokens,
+                    output: pricing.output_cost_per_million_tokens,
+                    cache_read: pricing.cache_read_cost_per_million_tokens,
+                    cache_write: pricing.cache_write_cost_per_million_tokens,
+                    image_output: pricing.output_image_usd_per_million,
+                };
+                (Some(rates), pricing.context_tiers)
+            }
+            PricingResolution::ConfiguredOverride { pricing } => {
+                let rates = BatchRates {
+                    input: Some(pricing.input_cost_per_million_tokens),
+                    output: Some(pricing.output_cost_per_million_tokens),
+                    cache_read: pricing.cache_read_cost_per_million_tokens,
+                    cache_write: pricing.cache_write_cost_per_million_tokens,
+                    image_output: pricing.image_output_cost_per_million_tokens,
+                };
+                (Some(rates), Vec::new())
+            }
+            PricingResolution::Unpriced { .. } => (None, Vec::new()),
         };
-        Ok(BatchPricingSnapshot { rates, policy })
+        Ok(BatchPricingSnapshot {
+            rates,
+            context_tiers,
+            policy,
+        })
     }
 }
 
@@ -483,7 +503,7 @@ fn request_hash(input: &CreateBatchInput) -> Result<String, GatewayError> {
 
 #[cfg(test)]
 mod tests {
-    use gateway_core::Money4;
+    use gateway_core::{BatchPricingSnapshot, ContextPricingTier, Money4};
     use serde_json::json;
 
     use super::{BatchPricer, BatchPricingPolicy, BatchRates, MAX_BATCH_ITEMS};
@@ -495,7 +515,7 @@ mod tests {
             "completion_tokens": 0,
             "total_tokens": 50
         });
-        let pricer = BatchPricer {
+        let pricer = BatchPricer::from_snapshot(BatchPricingSnapshot {
             rates: Some(BatchRates {
                 input: Some(Money4::from_scaled(10_000)),
                 output: Some(Money4::ZERO),
@@ -503,8 +523,9 @@ mod tests {
                 cache_write: None,
                 image_output: None,
             }),
+            context_tiers: Vec::new(),
             policy: BatchPricingPolicy::HalfAllTokenRates,
-        };
+        });
 
         assert_eq!(
             pricer.price_usage(Some(&usage)).expect("item price"),
@@ -515,6 +536,66 @@ mod tests {
                 .price_usages((0..MAX_BATCH_ITEMS).map(|_| Some(&usage)))
                 .expect("batch price"),
             Some(Money4::from_scaled(12_500))
+        );
+    }
+
+    #[test]
+    fn batch_items_pick_their_own_context_tier_before_the_batch_discount() {
+        // $1 / $2 base, $3 input above 1,000 prompt tokens; output inherits the base.
+        let pricer = BatchPricer::from_snapshot(BatchPricingSnapshot {
+            rates: Some(BatchRates {
+                input: Some(Money4::from_scaled(10_000)),
+                output: Some(Money4::from_scaled(20_000)),
+                cache_read: None,
+                cache_write: None,
+                image_output: None,
+            }),
+            context_tiers: vec![ContextPricingTier {
+                above_input_tokens: 1_000,
+                input: Some(Money4::from_scaled(30_000)),
+                output: None,
+                cache_read: None,
+                cache_write: None,
+            }],
+            policy: BatchPricingPolicy::HalfAllTokenRates,
+        });
+        let at_threshold = json!({"prompt_tokens": 1_000, "completion_tokens": 100});
+        let above_threshold = json!({"prompt_tokens": 1_001, "completion_tokens": 100});
+
+        // (1,000 * $1 + 100 * $2) / 1M, halved: $0.0006.
+        assert_eq!(
+            pricer.price_usage(Some(&at_threshold)).expect("base item"),
+            Some(Money4::from_scaled(6))
+        );
+        // (1,001 * $3 + 100 * $2) / 1M, halved: $0.0016015 rounds to $0.0016.
+        assert_eq!(
+            pricer
+                .price_usage(Some(&above_threshold))
+                .expect("tier item"),
+            Some(Money4::from_scaled(16))
+        );
+        // ($0.0012 + $0.003203) halved is $0.0022015, rounded once: $0.0022.
+        assert_eq!(
+            pricer
+                .price_usages([Some(&at_threshold), Some(&above_threshold)])
+                .expect("batch price"),
+            Some(Money4::from_scaled(22))
+        );
+    }
+
+    #[test]
+    fn batch_snapshots_without_context_tiers_still_deserialize() {
+        let snapshot: BatchPricingSnapshot = serde_json::from_value(json!({
+            "rates": {"input": 10_000, "output": 20_000, "cache_read": null, "cache_write": null},
+            "policy": "half_all_token_rates"
+        }))
+        .expect("legacy snapshot");
+
+        assert!(snapshot.context_tiers.is_empty());
+        assert_eq!(
+            snapshot.rates.and_then(|rates| rates.image_output),
+            None,
+            "legacy snapshots also predate image rates"
         );
     }
 }

@@ -117,6 +117,8 @@ fn has_rates(pricing: &PricingCatalogCostDocument) -> bool {
         || pricing.cache_write.is_some()
         || pricing.input_audio.is_some()
         || pricing.output_audio.is_some()
+        || pricing.output_image.is_some()
+        || !pricing.tiers.is_empty()
         || !pricing.conditions.is_empty()
 }
 

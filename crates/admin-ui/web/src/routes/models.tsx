@@ -464,9 +464,15 @@ export function ModelsPage() {
                         <TableCell className="px-3 py-1 whitespace-normal">
                           <StackedMetric
                             topLabel="Input"
-                            topValue={formatCost(model.input_cost_per_million_tokens_usd_10000)}
+                            topValue={formatBaseCost(
+                              model,
+                              model.input_cost_per_million_tokens_usd_10000,
+                            )}
                             bottomLabel="Output"
-                            bottomValue={formatCost(model.output_cost_per_million_tokens_usd_10000)}
+                            bottomValue={formatBaseCost(
+                              model,
+                              model.output_cost_per_million_tokens_usd_10000,
+                            )}
                           />
                         </TableCell>
                         {visibleColumns.contextWindow ? (
@@ -672,9 +678,9 @@ function ModelCard({
             value={
               <StackedMetric
                 topLabel="Input"
-                topValue={formatCost(model.input_cost_per_million_tokens_usd_10000)}
+                topValue={formatBaseCost(model, model.input_cost_per_million_tokens_usd_10000)}
                 bottomLabel="Output"
-                bottomValue={formatCost(model.output_cost_per_million_tokens_usd_10000)}
+                bottomValue={formatBaseCost(model, model.output_cost_per_million_tokens_usd_10000)}
               />
             }
           />
@@ -1024,6 +1030,12 @@ function ModelNotes({ model }: { model: ModelView }) {
       ) : null}
     </div>
   )
+}
+
+/** Tiered models list their base rate; higher context tiers appear in the model info dialog. */
+function formatBaseCost(model: ModelView, value: number | null | undefined) {
+  const cost = formatCost(value)
+  return value != null && model.pricing_tiers.length > 0 ? `from ${cost}` : cost
 }
 
 function StackedMetric({

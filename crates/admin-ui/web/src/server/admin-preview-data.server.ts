@@ -1,5 +1,15 @@
 import type { ApiEnvelope, ModelPageView, ResponseMeta } from '@/types/api'
 
+const reasoningPricingTiers: ModelPageView['items'][number]['pricing_tiers'] = [
+  {
+    above_input_tokens: 272_000,
+    input_cost_per_million_tokens_usd_10000: 25_000,
+    output_cost_per_million_tokens_usd_10000: 150_000,
+    cache_read_cost_per_million_tokens_usd_10000: null,
+    cache_write_cost_per_million_tokens_usd_10000: null,
+  },
+]
+
 function envelope<T>(data: T): { data: T; meta: ResponseMeta } {
   return {
     data,
@@ -28,6 +38,7 @@ export async function listModels(): Promise<ApiEnvelope<ModelPageView>> {
         input_cost_per_million_tokens_usd_10000: 3_000,
         output_cost_per_million_tokens_usd_10000: 25_000,
         cache_read_cost_per_million_tokens_usd_10000: null,
+        pricing_tiers: [],
         context_window_tokens: 1_048_576,
         input_window_tokens: null,
         output_window_tokens: 65_536,
@@ -69,6 +80,7 @@ export async function listModels(): Promise<ApiEnvelope<ModelPageView>> {
         input_cost_per_million_tokens_usd_10000: 12_500,
         output_cost_per_million_tokens_usd_10000: 100_000,
         cache_read_cost_per_million_tokens_usd_10000: null,
+        pricing_tiers: reasoningPricingTiers,
         context_window_tokens: 400_000,
         input_window_tokens: 272_000,
         output_window_tokens: 128_000,
@@ -102,6 +114,7 @@ export async function listModels(): Promise<ApiEnvelope<ModelPageView>> {
         input_cost_per_million_tokens_usd_10000: 3_000,
         output_cost_per_million_tokens_usd_10000: 25_000,
         cache_read_cost_per_million_tokens_usd_10000: null,
+        pricing_tiers: [],
         context_window_tokens: 1_048_576,
         input_window_tokens: null,
         output_window_tokens: 65_536,

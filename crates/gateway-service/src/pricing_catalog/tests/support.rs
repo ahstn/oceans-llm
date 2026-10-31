@@ -41,7 +41,6 @@ pub(super) use super::super::{
 
 #[derive(Clone, Default)]
 pub(super) struct InMemoryRepo {
-    pub(super) legacy_cache: Arc<Mutex<Option<PricingCatalogCacheRecord>>>,
     pub(super) cache: Arc<Mutex<Option<PricingCatalogCacheRecord>>>,
     pub(super) pricing_rows: Arc<Mutex<Vec<ModelPricingRecord>>>,
     pub(super) cache_reads: Arc<AtomicUsize>,
@@ -56,12 +55,9 @@ pub(super) struct InMemoryRepo {
 impl PricingCatalogRepository for InMemoryRepo {
     async fn get_pricing_catalog_cache(
         &self,
-        catalog_key: &str,
+        _catalog_key: &str,
     ) -> Result<Option<PricingCatalogCacheRecord>, StoreError> {
         self.cache_reads.fetch_add(1, Ordering::Relaxed);
-        if catalog_key == super::super::PREVIOUS_PRICING_CATALOG_CACHE_KEY {
-            return Ok(self.legacy_cache.lock().expect("legacy cache lock").clone());
-        }
         Ok(self.cache.lock().expect("cache lock").clone())
     }
 
@@ -358,6 +354,8 @@ pub(super) fn fallback_snapshot() -> PricingCatalogSnapshot {
                                         cache_write: Some("3.7500".to_string()),
                                         input_audio: None,
                                         output_audio: None,
+                                        output_image: None,
+                                        tiers: Vec::new(),
                                     },
                                     limit: PricingCatalogLimitDocument {
                                         context: Some(1_000_000),
@@ -390,6 +388,8 @@ pub(super) fn fallback_snapshot() -> PricingCatalogSnapshot {
                                         cache_write: None,
                                         input_audio: None,
                                         output_audio: None,
+                                        output_image: None,
+                                        tiers: Vec::new(),
                                     },
                                     limit: PricingCatalogLimitDocument {
                                         context: Some(128_000),
@@ -425,6 +425,8 @@ pub(super) fn fallback_snapshot() -> PricingCatalogSnapshot {
                                     cache_write: None,
                                     input_audio: None,
                                     output_audio: None,
+                                    output_image: None,
+                                    tiers: Vec::new(),
                                 },
                                 limit: PricingCatalogLimitDocument {
                                     context: Some(400_000),
@@ -459,6 +461,8 @@ pub(super) fn fallback_snapshot() -> PricingCatalogSnapshot {
                                     cache_write: None,
                                     input_audio: None,
                                     output_audio: None,
+                                    output_image: None,
+                                    tiers: Vec::new(),
                                 },
                                 limit: PricingCatalogLimitDocument {
                                     context: Some(128_000),
@@ -494,6 +498,8 @@ pub(super) fn fallback_snapshot() -> PricingCatalogSnapshot {
                                         cache_write: Some("0.3830".to_string()),
                                         input_audio: None,
                                         output_audio: None,
+                                        output_image: None,
+                                        tiers: Vec::new(),
                                     },
                                     limit: PricingCatalogLimitDocument {
                                         context: Some(1_048_576),
@@ -528,6 +534,8 @@ pub(super) fn fallback_snapshot() -> PricingCatalogSnapshot {
                                         cache_write: None,
                                         input_audio: None,
                                         output_audio: None,
+                                        output_image: None,
+                                        tiers: Vec::new(),
                                     },
                                     limit: PricingCatalogLimitDocument {
                                         context: Some(2_048),
@@ -563,6 +571,8 @@ pub(super) fn fallback_snapshot() -> PricingCatalogSnapshot {
                                     cache_write: Some("3.7500".to_string()),
                                     input_audio: None,
                                     output_audio: None,
+                                    output_image: None,
+                                    tiers: Vec::new(),
                                 },
                                 limit: PricingCatalogLimitDocument {
                                     context: Some(200_000),
@@ -602,6 +612,8 @@ pub(super) fn fallback_snapshot() -> PricingCatalogSnapshot {
                                         cache_write: Some("12.5000".to_string()),
                                         input_audio: None,
                                         output_audio: None,
+                                        output_image: None,
+                                        tiers: Vec::new(),
                                     },
                                     limit: PricingCatalogLimitDocument {
                                         context: Some(1_000_000),
@@ -634,6 +646,8 @@ pub(super) fn fallback_snapshot() -> PricingCatalogSnapshot {
                                         cache_write: Some("3.7500".to_string()),
                                         input_audio: None,
                                         output_audio: None,
+                                        output_image: None,
+                                        tiers: Vec::new(),
                                     },
                                     limit: PricingCatalogLimitDocument {
                                         context: Some(1_000_000),

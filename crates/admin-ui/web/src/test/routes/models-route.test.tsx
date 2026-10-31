@@ -161,6 +161,7 @@ const modelPage: ModelPageView = {
       input_cost_per_million_tokens_usd_10000: 3_000,
       output_cost_per_million_tokens_usd_10000: 25_000,
       cache_read_cost_per_million_tokens_usd_10000: null,
+      pricing_tiers: [],
       context_window_tokens: 1_048_576,
       input_window_tokens: null,
       output_window_tokens: 65_536,
@@ -204,6 +205,7 @@ const modelPage: ModelPageView = {
       input_cost_per_million_tokens_usd_10000: 30_000,
       output_cost_per_million_tokens_usd_10000: 150_000,
       cache_read_cost_per_million_tokens_usd_10000: 3_000,
+      pricing_tiers: [],
       context_window_tokens: 200_000,
       input_window_tokens: null,
       output_window_tokens: 64_000,
@@ -304,6 +306,7 @@ const modelPage: ModelPageView = {
       input_cost_per_million_tokens_usd_10000: 3_000,
       output_cost_per_million_tokens_usd_10000: 25_000,
       cache_read_cost_per_million_tokens_usd_10000: null,
+      pricing_tiers: [],
       context_window_tokens: 1_048_576,
       input_window_tokens: null,
       output_window_tokens: 65_536,
@@ -492,6 +495,48 @@ describe('ModelsPage layouts', () => {
     expect(within(vertexCells[5] as HTMLElement).getByText('Input')).toBeInTheDocument()
     expect(within(vertexCells[5] as HTMLElement).getByText('Output')).toBeInTheDocument()
     expect(within(vertexCells[6] as HTMLElement).getByText('Unrestricted')).toBeInTheDocument()
+  })
+
+  it('marks list prices as base prices only for models with context tiers', () => {
+    const tieredPage: ModelPageView = {
+      ...modelPage,
+      items: modelPage.items.map((model) =>
+        model.id === 'claude-sonnet'
+          ? {
+              ...model,
+              pricing_tiers: [
+                {
+                  above_input_tokens: 200_000,
+                  input_cost_per_million_tokens_usd_10000: 60_000,
+                  output_cost_per_million_tokens_usd_10000: 225_000,
+                  cache_read_cost_per_million_tokens_usd_10000: 6_000,
+                  cache_write_cost_per_million_tokens_usd_10000: null,
+                },
+              ],
+            }
+          : model,
+      ),
+    }
+    routeMock.useLoaderData.mockReturnValue({ data: tieredPage })
+
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+
+    const table = screen.getByTestId('models-desktop-table')
+    const claudeCells = within(
+      within(table).getByText('claude-sonnet').closest('tr')!,
+    ).getAllByRole('cell')
+    expect(within(claudeCells[5] as HTMLElement).getByText('from $3.00')).toBeInTheDocument()
+    expect(within(claudeCells[5] as HTMLElement).getByText('from $15.00')).toBeInTheDocument()
+
+    const vertexCells = within(within(table).getByText('vertex-fast').closest('tr')!).getAllByRole(
+      'cell',
+    )
+    expect(within(vertexCells[5] as HTMLElement).getByText('$0.30')).toBeInTheDocument()
+    expect(within(vertexCells[5] as HTMLElement).queryByText(/^from /)).not.toBeInTheDocument()
   })
 })
 

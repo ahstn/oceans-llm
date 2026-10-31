@@ -144,9 +144,10 @@ pub use model_access::ModelAccess;
 pub use model_resolution::{
     ModelResolver, ResolvedGatewayRequest, ResolvedModelSelection, ResolvedProviderConnection,
 };
+pub use pricing_catalog::sources::{CatalogSourceId, fetch_vendored_source_snapshot};
 pub use pricing_catalog::{
     DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, DEFAULT_PRICING_CATALOG_SOURCE_URL,
-    PRICING_CATALOG_CACHE_KEY, PricingCatalog, PricingCatalogSnapshotFile, fetch_vendored_snapshot,
+    PRICING_CATALOG_CACHE_KEY, PricingCatalog, PricingCatalogSnapshotFile,
     is_supported_pricing_provider_id, snapshot_to_pretty_json, vendored_snapshot_is_unchanged,
 };
 pub use provider_credentials::{

@@ -24,6 +24,7 @@ import type { ModelView } from '@/types/api'
 
 export type ModelInfoSectionKey = 'overview' | 'routing' | 'benchmarks' | 'access'
 type ModelRouteView = NonNullable<ModelView['routes']>[number]
+type ModelPricingTierView = ModelView['pricing_tiers'][number]
 
 const SECTIONS = [
   {
@@ -410,6 +411,17 @@ function ModelInfoEconomics({ model }: { model: ModelView }) {
           value={formatCost(model.cache_write_cost_per_million_tokens_usd_10000)}
         />
       </dl>
+      {model.pricing_tiers.length > 0 ? (
+        <div className="flex min-w-0 flex-col gap-6 pt-5" data-testid="model-pricing-tiers">
+          <p className="text-muted-foreground text-xs leading-relaxed break-words">
+            Tier rates apply to the whole request when the prompt, including cached tokens, is
+            larger than the threshold.
+          </p>
+          {model.pricing_tiers.map((tier) => (
+            <ModelPricingTier key={tier.above_input_tokens} tier={tier} />
+          ))}
+        </div>
+      ) : null}
       <dl
         className="grid min-w-0 grid-cols-2 gap-x-6 gap-y-3 pt-5 sm:gap-x-16"
         data-testid="model-pricing-limits"
@@ -453,6 +465,36 @@ function pricingSourceLabel(model: ModelView) {
     default:
       return 'Pricing source unavailable.'
   }
+}
+
+function ModelPricingTier({ tier }: { tier: ModelPricingTierView }) {
+  const headingId = useId()
+
+  return (
+    <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-3">
+      <h5 id={headingId} className="text-sm font-medium">
+        Above {formatWindow(tier.above_input_tokens)} tokens
+      </h5>
+      <dl className="grid min-w-0 grid-cols-2 gap-x-6 gap-y-3 sm:gap-x-16">
+        <ModelPricingMetric
+          label="Input cost"
+          value={formatCost(tier.input_cost_per_million_tokens_usd_10000)}
+        />
+        <ModelPricingMetric
+          label="Output cost"
+          value={formatCost(tier.output_cost_per_million_tokens_usd_10000)}
+        />
+        <ModelPricingMetric
+          label="Cache read"
+          value={formatCost(tier.cache_read_cost_per_million_tokens_usd_10000)}
+        />
+        <ModelPricingMetric
+          label="Cache write"
+          value={formatCost(tier.cache_write_cost_per_million_tokens_usd_10000)}
+        />
+      </dl>
+    </section>
+  )
 }
 
 function ModelPricingMetric({

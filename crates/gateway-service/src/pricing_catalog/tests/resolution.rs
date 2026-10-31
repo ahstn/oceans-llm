@@ -210,6 +210,27 @@ fn anthropic_compat_can_route_to_opencode_pricing_provider() {
 }
 
 #[test]
+fn github_copilot_can_route_to_github_copilot_pricing_provider() {
+    let provider = ProviderConnection {
+        provider_key: "copilot".to_string(),
+        provider_type: "github_copilot".to_string(),
+        config: json!({"pricing_provider_id": "github-copilot"}),
+        secrets: None,
+    };
+
+    match pricing_target_for_route(&provider, &route("copilot", "gpt-5-mini")) {
+        PricingTarget::Exact {
+            pricing_provider_id,
+            model_id,
+        } => {
+            assert_eq!(pricing_provider_id, "github-copilot");
+            assert_eq!(model_id, "gpt-5-mini");
+        }
+        other => panic!("unexpected pricing target: {other:?}"),
+    }
+}
+
+#[test]
 fn cloud_run_openai_compat_without_pricing_provider_is_unpriced() {
     let target = pricing_target_for_route(
         &cloud_run_provider(None),

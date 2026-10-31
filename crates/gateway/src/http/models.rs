@@ -228,6 +228,7 @@ fn map_model_summary(model: AdminModelSummary, include_admin_details: bool) -> A
             .cache_read_cost_per_million_tokens_usd_10000,
         cache_write_cost_per_million_tokens_usd_10000: model
             .cache_write_cost_per_million_tokens_usd_10000,
+        pricing_tiers: model.pricing_tiers.into_iter().map(Into::into).collect(),
         pricing_source: model.pricing_source.map(map_metadata_source),
         pricing_varies_by_route: model.pricing_varies_by_route,
         context_window_tokens: model.context_window_tokens,
@@ -295,7 +296,8 @@ fn map_metadata_source(source: EffectiveMetadataSource) -> EffectiveMetadataSour
 #[cfg(test)]
 mod tests {
     use gateway_core::{
-        ModelAllowlistPolicy, ModelRoutingPolicy, RoutingStrategy, SessionAffinityPolicy,
+        ContextPricingTier, ModelAllowlistPolicy, ModelRoutingPolicy, Money4, RoutingStrategy,
+        SessionAffinityPolicy,
     };
     use gateway_service::{AdminModelStatus, ProviderIconKey};
     use serde_json::json;
@@ -353,6 +355,7 @@ mod tests {
             output_cost_per_million_tokens_usd_10000: None,
             cache_read_cost_per_million_tokens_usd_10000: None,
             cache_write_cost_per_million_tokens_usd_10000: None,
+            pricing_tiers: Vec::new(),
             pricing_source: None,
             pricing_varies_by_route: true,
             context_window_tokens: None,
@@ -577,6 +580,49 @@ mod tests {
             assert_eq!(value["aliases"], json!(["canonical", "other-alias"]));
             assert_eq!(value["alias_of"], "canonical");
         }
+    }
+
+    #[test]
+    fn pricing_tiers_serialize_as_scaled_rates_in_order() {
+        let mut model = model_summary();
+        model.pricing_tiers = vec![
+            ContextPricingTier {
+                above_input_tokens: 200_000,
+                input: Some(Money4::from_scaled(60_000)),
+                output: Some(Money4::from_scaled(225_000)),
+                cache_read: None,
+                cache_write: None,
+            },
+            ContextPricingTier {
+                above_input_tokens: 1_000_000,
+                input: Some(Money4::from_scaled(120_000)),
+                output: None,
+                cache_read: Some(Money4::from_scaled(12_000)),
+                cache_write: None,
+            },
+        ];
+
+        let value = serde_json::to_value(map_model_summary(model, false)).unwrap();
+
+        assert_eq!(
+            value["pricing_tiers"],
+            json!([
+                {
+                    "above_input_tokens": 200_000,
+                    "input_cost_per_million_tokens_usd_10000": 60_000,
+                    "output_cost_per_million_tokens_usd_10000": 225_000,
+                    "cache_read_cost_per_million_tokens_usd_10000": null,
+                    "cache_write_cost_per_million_tokens_usd_10000": null
+                },
+                {
+                    "above_input_tokens": 1_000_000,
+                    "input_cost_per_million_tokens_usd_10000": 120_000,
+                    "output_cost_per_million_tokens_usd_10000": null,
+                    "cache_read_cost_per_million_tokens_usd_10000": 12_000,
+                    "cache_write_cost_per_million_tokens_usd_10000": null
+                }
+            ])
+        );
     }
 
     #[test]

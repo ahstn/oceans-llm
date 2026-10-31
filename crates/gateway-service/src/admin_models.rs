@@ -10,8 +10,8 @@ use gateway_client_config::{
     render_default_configs_for_models,
 };
 use gateway_core::{
-    GatewayError, GatewayModel, ModelAllowlistPolicy, ModelRepository, ModelRoute,
-    ModelRoutingPolicy, PartialCapabilities, PricingCatalogRepository, PricingLimits,
+    ContextPricingTier, GatewayError, GatewayModel, ModelAllowlistPolicy, ModelRepository,
+    ModelRoute, ModelRoutingPolicy, PartialCapabilities, PricingCatalogRepository, PricingLimits,
     PricingModalities, ProviderCapabilities, ProviderConnection, ProviderRepository,
     ReasoningEffort,
 };
@@ -72,6 +72,8 @@ pub struct AdminModelSummary {
     pub output_cost_per_million_tokens_usd_10000: Option<i64>,
     pub cache_read_cost_per_million_tokens_usd_10000: Option<i64>,
     pub cache_write_cost_per_million_tokens_usd_10000: Option<i64>,
+    /// Catalog context tiers of the primary route, ascending; empty for an override price.
+    pub pricing_tiers: Vec<ContextPricingTier>,
     pub pricing_source: Option<EffectiveMetadataSource>,
     pub pricing_varies_by_route: bool,
     pub context_window_tokens: Option<i64>,
@@ -438,6 +440,9 @@ where
                     cache_write_cost_per_million_tokens_usd_10000: primary_pricing
                         .and_then(|pricing| pricing.cache_write_cost_per_million_tokens)
                         .map(|value| value.as_scaled_i64()),
+                    pricing_tiers: primary_pricing
+                        .map(|pricing| pricing.context_tiers.clone())
+                        .unwrap_or_default(),
                     pricing_source: primary_metadata
                         .and_then(|metadata| metadata.pricing_source.clone()),
                     pricing_varies_by_route: aggregate.pricing_varies_by_route,
@@ -758,12 +763,12 @@ mod tests {
 
     use async_trait::async_trait;
     use gateway_core::{
-        GatewayError, GatewayModel, GitHubCopilotChatApi, GitHubCopilotRouteCompatibility,
-        GitHubCopilotUpstreamSupports, ModelAllowlistPolicy, ModelPricingRecord,
-        ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4, PartialCapabilities,
-        PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
-        PricingProvenance, ProviderCapabilities, ProviderConnection, ProviderRepository,
-        ReasoningEffort, StoreError,
+        ContextPricingTier, GatewayError, GatewayModel, GitHubCopilotChatApi,
+        GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports, ModelAllowlistPolicy,
+        ModelPricingRecord, ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4,
+        PartialCapabilities, PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits,
+        PricingModalities, PricingProvenance, ProviderCapabilities, ProviderConnection,
+        ProviderRepository, ReasoningEffort, RoutePricingOverride, StoreError,
     };
     use serde_json::json;
     use time::OffsetDateTime;
@@ -815,6 +820,7 @@ mod tests {
             output_cost_per_million_tokens: Some(Money4::from_scaled(20_000)),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            context_tiers: Vec::new(),
         };
         let route_metadata = vec![
             (
@@ -847,6 +853,163 @@ mod tests {
         assert_eq!(aggregate.limits.input, Some(80_000));
         assert_eq!(aggregate.limits.output, Some(16_000));
         assert!(aggregate.pricing_varies_by_route);
+    }
+
+    fn context_tier(above_input_tokens: i64, input: i64, output: i64) -> ContextPricingTier {
+        ContextPricingTier {
+            above_input_tokens,
+            input: Some(Money4::from_scaled(input)),
+            output: Some(Money4::from_scaled(output)),
+            cache_read: None,
+            cache_write: None,
+        }
+    }
+
+    #[test]
+    fn pricing_varies_by_route_when_routes_differ_only_in_tiers() {
+        let base = EffectiveRoutePricing {
+            input_cost_per_million_tokens: Some(Money4::from_scaled(10_000)),
+            output_cost_per_million_tokens: Some(Money4::from_scaled(20_000)),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+            context_tiers: Vec::new(),
+        };
+        let tiered = EffectiveRoutePricing {
+            context_tiers: vec![context_tier(200_000, 20_000, 40_000)],
+            ..base.clone()
+        };
+        let limits = PricingLimits {
+            context: Some(128_000),
+            input: None,
+            output: None,
+        };
+        let route_metadata = vec![
+            (
+                Uuid::new_v4(),
+                effective_metadata(limits.clone(), Some(base)),
+            ),
+            (Uuid::new_v4(), effective_metadata(limits, Some(tiered))),
+        ];
+
+        assert!(aggregate_model_metadata(&route_metadata).pricing_varies_by_route);
+    }
+
+    /// One `openai` route priced from the catalog row for `upstream_model` unless
+    /// `pricing_override` is set. [`list_tiered_model`] assigns the model id.
+    fn catalog_route(
+        upstream_model: &str,
+        priority: i32,
+        pricing_override: Option<RoutePricingOverride>,
+    ) -> ModelRoute {
+        ModelRoute {
+            id: Uuid::new_v4(),
+            model_id: Uuid::nil(),
+            provider_key: "openai".to_string(),
+            upstream_model: upstream_model.to_string(),
+            priority,
+            weight: 1.0,
+            enabled: true,
+            context_window_tokens: None,
+            pricing_override,
+            extra_headers: Default::default(),
+            extra_body: Default::default(),
+            capabilities: ProviderCapabilities::all_enabled().into(),
+            compatibility: Default::default(),
+        }
+    }
+
+    async fn list_tiered_model(routes: Vec<ModelRoute>) -> super::AdminModelSummary {
+        let model = plain_model("tiered", None);
+        let model_id = model.id;
+        let mut tiered = pricing_record(
+            "openai",
+            "tiered-upstream",
+            "10.0000",
+            "50.0000",
+            (Some(1_000_000), None, Some(128_000)),
+            &["text"],
+        );
+        // Stored out of order: the summary still lists tiers ascending.
+        tiered.context_tiers = vec![
+            context_tier(500_000, 300_000, 900_000),
+            context_tier(272_000, 200_000, 750_000),
+        ];
+        let repo = Arc::new(CountingRepo {
+            models: vec![model],
+            routes_by_model: HashMap::from([(
+                model_id,
+                routes
+                    .into_iter()
+                    .map(|route| ModelRoute { model_id, ..route })
+                    .collect(),
+            )]),
+            providers_by_key: HashMap::from([(
+                "openai".to_string(),
+                ProviderConnection {
+                    provider_key: "openai".to_string(),
+                    provider_type: "openai_compat".to_string(),
+                    config: json!({"pricing_provider_id": "openai"}),
+                    secrets: None,
+                },
+            )]),
+            pricing_by_key: HashMap::from([(
+                ("openai".to_string(), "tiered-upstream".to_string()),
+                tiered,
+            )]),
+            ..Default::default()
+        });
+
+        AdminModelsService::new(repo)
+            .list_models()
+            .await
+            .expect("admin models")
+            .remove(0)
+    }
+
+    #[tokio::test]
+    async fn catalog_priced_primary_route_lists_tiers_ascending() {
+        let summary = list_tiered_model(vec![catalog_route("tiered-upstream", 0, None)]).await;
+
+        assert_eq!(
+            summary.input_cost_per_million_tokens_usd_10000,
+            Some(100_000)
+        );
+        assert_eq!(
+            summary.pricing_tiers,
+            vec![
+                context_tier(272_000, 200_000, 750_000),
+                context_tier(500_000, 300_000, 900_000),
+            ]
+        );
+        assert!(!summary.pricing_varies_by_route);
+    }
+
+    #[tokio::test]
+    async fn override_priced_primary_route_has_no_tiers() {
+        let pricing_override = RoutePricingOverride {
+            input_cost_per_million_tokens: Money4::from_scaled(100_000),
+            output_cost_per_million_tokens: Money4::from_scaled(500_000),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+            image_output_cost_per_million_tokens: None,
+        };
+        let summary = list_tiered_model(vec![
+            catalog_route("tiered-upstream", 0, Some(pricing_override)),
+            catalog_route("tiered-upstream", 1, None),
+        ])
+        .await;
+
+        assert_eq!(
+            summary.input_cost_per_million_tokens_usd_10000,
+            Some(100_000)
+        );
+        assert!(summary.pricing_tiers.is_empty());
+        assert_eq!(
+            summary.pricing_source.as_ref().map(|source| source.kind),
+            Some(crate::EffectiveMetadataSourceKind::ConfiguredOverride)
+        );
+        // Same base rates; only the catalog route's tiers differ.
+        assert!(summary.pricing_varies_by_route);
     }
 
     #[derive(Default)]

@@ -6,10 +6,10 @@ use std::{
 
 use anyhow::Context;
 use gateway_core::{
-    GatewayError, ModelPricingProvenanceUpdate, ModelPricingRecord, ModelPricingSyncChanges,
-    ModelRoute, Money4, PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits,
-    PricingModalities, PricingProvenance, PricingResolution, PricingUnpricedReason,
-    ProviderConnection, ResolvedModelPricing, StoreError,
+    ContextPricingTier, GatewayError, ModelPricingProvenanceUpdate, ModelPricingRecord,
+    ModelPricingSyncChanges, ModelRoute, Money4, PricingCatalogCacheRecord,
+    PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
+    PricingResolution, PricingUnpricedReason, ProviderConnection, ResolvedModelPricing, StoreError,
 };
 use reqwest::{Client, header::IF_NONE_MATCH};
 use serde::{Deserialize, Serialize};
@@ -25,8 +25,7 @@ use crate::{
 };
 
 pub const DEFAULT_PRICING_CATALOG_SOURCE_URL: &str = "https://models.dev/api.json";
-pub const PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v3";
-const PREVIOUS_PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v2";
+pub const PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v4";
 pub const DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 /// The raw models.dev `api.json` is around 6 MB; anything far larger is not the expected
 /// payload.
@@ -35,8 +34,31 @@ const REMOTE_SOURCE: &str = "models_dev_api";
 const VENDORED_SOURCE: &str = "vendored_models_dev";
 const VENDORED_FALLBACK_JSON: &str = include_str!("../data/pricing_catalog_fallback.json");
 const MAX_PRICING_SYNC_ATTEMPTS: usize = 3;
+/// models.dev cost condition holding tiered rates, `[{input, output, .., tier: {type, size}}]`.
+const MODELS_DEV_TIERS_CONDITION: &str = "tiers";
+/// models.dev tier type whose `size` is a prompt-token threshold.
+const MODELS_DEV_CONTEXT_TIER_TYPE: &str = "context";
+/// models.dev cost condition duplicating the first context tier.
+const MODELS_DEV_CONTEXT_OVER_200K_CONDITION: &str = "context_over_200k";
+/// LiteLLM's model price and context window table.
+const LITELLM_CATALOG_URL: &str =
+    "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
+/// The LiteLLM table is around 3 MB; anything far larger is not the expected payload.
+const MAX_LITELLM_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
+const VENDORED_LITELLM_SOURCE: &str = "vendored_litellm";
+/// OpenRouter's model list; `output_modalities=all` includes image-only models.
+const OPENROUTER_CATALOG_URL: &str = "https://openrouter.ai/api/v1/models?output_modalities=all";
+/// The OpenRouter model list is around 1 MB; anything far larger is not the expected payload.
+const MAX_OPENROUTER_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
+const VENDORED_OPENROUTER_SOURCE: &str = "vendored_openrouter";
 
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the runtime catalog refresh consumes the merge")
+)]
+pub(crate) mod merge;
 pub mod metadata;
+pub(crate) mod sources;
 mod target;
 
 #[cfg(test)]
@@ -363,15 +385,6 @@ where
         if let Some(snapshot) = self.load_stored_snapshot(&self.catalog_key).await? {
             return Ok(snapshot);
         }
-        // Read the old projection during an offline upgrade, but never reuse its
-        // ETag for v3 refreshes or write a v2 document under the v3 key.
-        if self.catalog_key == PRICING_CATALOG_CACHE_KEY
-            && let Some(snapshot) = self
-                .load_stored_snapshot(PREVIOUS_PRICING_CATALOG_CACHE_KEY)
-                .await?
-        {
-            return Ok(snapshot);
-        }
         Ok(self.fallback_snapshot.clone())
     }
 
@@ -653,8 +666,13 @@ pub(crate) fn build_model_pricing_record(
         cache_write_cost_per_million_tokens: parse_money(document.cost.cache_write.as_deref())?,
         input_audio_cost_per_million_tokens: parse_money(document.cost.input_audio.as_deref())?,
         output_audio_cost_per_million_tokens: parse_money(document.cost.output_audio.as_deref())?,
-        output_image_usd_per_million: None,
-        context_tiers: Vec::new(),
+        output_image_usd_per_million: parse_money(document.cost.output_image.as_deref())?,
+        context_tiers: document
+            .cost
+            .tiers
+            .iter()
+            .map(context_pricing_tier)
+            .collect::<Result<_, _>>()?,
         release_date: document.release_date.clone(),
         last_updated: document.last_updated.clone(),
         effective_start_at: metadata.fetched_at,
@@ -675,6 +693,18 @@ pub(crate) fn build_model_pricing_record(
         },
         created_at: metadata.fetched_at,
         updated_at: metadata.fetched_at,
+    })
+}
+
+fn context_pricing_tier(
+    tier: &PricingCatalogContextTier,
+) -> Result<ContextPricingTier, GatewayError> {
+    Ok(ContextPricingTier {
+        above_input_tokens: tier.above_input_tokens,
+        input: parse_money(tier.input.as_deref())?,
+        output: parse_money(tier.output.as_deref())?,
+        cache_read: parse_money(tier.cache_read.as_deref())?,
+        cache_write: parse_money(tier.cache_write.as_deref())?,
     })
 }
 
@@ -762,6 +792,8 @@ fn project_models_dev_snapshot(
             } else {
                 model.id.clone()
             };
+            let cost =
+                project_models_dev_cost_document(supported_provider_id, &model_id, &model.cost)?;
             projected_models.insert(
                 model_id.clone(),
                 PricingCatalogModelDocument {
@@ -770,15 +802,7 @@ fn project_models_dev_snapshot(
                     release_date: model.release_date.clone(),
                     last_updated: model.last_updated.clone(),
                     metadata: model.metadata.clone(),
-                    cost: PricingCatalogCostDocument {
-                        input: project_models_dev_cost(model.cost.input.as_ref())?,
-                        output: project_models_dev_cost(model.cost.output.as_ref())?,
-                        cache_read: project_models_dev_cost(model.cost.cache_read.as_ref())?,
-                        cache_write: project_models_dev_cost(model.cost.cache_write.as_ref())?,
-                        input_audio: project_models_dev_cost(model.cost.input_audio.as_ref())?,
-                        output_audio: project_models_dev_cost(model.cost.output_audio.as_ref())?,
-                        conditions: model.cost.conditions.clone(),
-                    },
+                    cost,
                     limit: PricingCatalogLimitDocument {
                         context: model.limit.context,
                         input: model.limit.input,
@@ -858,6 +882,93 @@ fn document_checksum(document_json: &str) -> String {
 
 fn project_models_dev_cost(value: Option<&Number>) -> Result<Option<String>, GatewayError> {
     value.map(normalize_models_dev_money).transpose()
+}
+
+/// models.dev has no image output rate, so `output_image` stays unset.
+fn project_models_dev_cost_document(
+    provider_id: &str,
+    model_id: &str,
+    cost: &ModelsDevCostDocument,
+) -> Result<PricingCatalogCostDocument, GatewayError> {
+    let mut conditions = cost.conditions.clone();
+    let tiers = take_models_dev_context_tiers(provider_id, model_id, &mut conditions)?;
+    Ok(PricingCatalogCostDocument {
+        conditions,
+        input: project_models_dev_cost(cost.input.as_ref())?,
+        output: project_models_dev_cost(cost.output.as_ref())?,
+        cache_read: project_models_dev_cost(cost.cache_read.as_ref())?,
+        cache_write: project_models_dev_cost(cost.cache_write.as_ref())?,
+        input_audio: project_models_dev_cost(cost.input_audio.as_ref())?,
+        output_audio: project_models_dev_cost(cost.output_audio.as_ref())?,
+        output_image: None,
+        tiers,
+    })
+}
+
+/// Moves the context entries of models.dev `conditions.tiers` into typed tiers, sorted by
+/// threshold with identical duplicates removed. Once typed tiers exist, the
+/// `context_over_200k` condition is dropped too: it duplicates the first tier, often at a
+/// different threshold. Tiers of another type stay in `conditions`.
+///
+/// Two different tiers at one threshold leave the model with no typed tiers and its
+/// conditions untouched, so it bills at the base rates.
+fn take_models_dev_context_tiers(
+    provider_id: &str,
+    model_id: &str,
+    conditions: &mut BTreeMap<String, serde_json::Value>,
+) -> Result<Vec<PricingCatalogContextTier>, GatewayError> {
+    let Some(serde_json::Value::Array(entries)) = conditions.get(MODELS_DEV_TIERS_CONDITION) else {
+        return Ok(Vec::new());
+    };
+    let mut tiers = Vec::new();
+    let mut other_entries = Vec::new();
+    for entry in entries {
+        match ModelsDevTierDocument::deserialize(entry) {
+            Ok(tier) if tier.tier.kind == MODELS_DEV_CONTEXT_TIER_TYPE && tier.tier.size >= 0 => {
+                tiers.push(project_models_dev_context_tier(&tier)?);
+            }
+            _ => other_entries.push(entry.clone()),
+        }
+    }
+    if tiers.is_empty() {
+        return Ok(tiers);
+    }
+    tiers.sort_by_key(|tier| tier.above_input_tokens);
+    tiers.dedup();
+    if tiers
+        .windows(2)
+        .any(|pair| pair[0].above_input_tokens == pair[1].above_input_tokens)
+    {
+        warn!(
+            provider_id,
+            model_id,
+            "models.dev lists different context tiers at one threshold; ignoring the model's tiers"
+        );
+        return Ok(Vec::new());
+    }
+
+    if other_entries.is_empty() {
+        conditions.remove(MODELS_DEV_TIERS_CONDITION);
+    } else {
+        conditions.insert(
+            MODELS_DEV_TIERS_CONDITION.to_string(),
+            serde_json::Value::Array(other_entries),
+        );
+    }
+    conditions.remove(MODELS_DEV_CONTEXT_OVER_200K_CONDITION);
+    Ok(tiers)
+}
+
+fn project_models_dev_context_tier(
+    tier: &ModelsDevTierDocument,
+) -> Result<PricingCatalogContextTier, GatewayError> {
+    Ok(PricingCatalogContextTier {
+        above_input_tokens: tier.tier.size,
+        input: project_models_dev_cost(tier.input.as_ref())?,
+        output: project_models_dev_cost(tier.output.as_ref())?,
+        cache_read: project_models_dev_cost(tier.cache_read.as_ref())?,
+        cache_write: project_models_dev_cost(tier.cache_write.as_ref())?,
+    })
 }
 
 fn normalize_models_dev_money(number: &Number) -> Result<String, GatewayError> {
@@ -943,6 +1054,7 @@ pub struct PricingCatalogModelDocument {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PricingCatalogCostDocument {
     /// Source-shaped conditional rates, in USD per million tokens; informational only.
+    /// A source's context tiers live in [`Self::tiers`], not here, once they are typed.
     #[serde(default)]
     pub conditions: BTreeMap<String, serde_json::Value>,
     pub input: Option<String>,
@@ -951,6 +1063,25 @@ pub struct PricingCatalogCostDocument {
     pub cache_write: Option<String>,
     pub input_audio: Option<String>,
     pub output_audio: Option<String>,
+    /// USD per million image output tokens.
+    #[serde(default)]
+    pub output_image: Option<String>,
+    /// Sorted ascending by `above_input_tokens`, thresholds unique.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tiers: Vec<PricingCatalogContextTier>,
+}
+
+/// Rates that replace the base schedule for a whole request above a context size.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PricingCatalogContextTier {
+    /// Tier applies when normalized prompt tokens (cache included) are strictly greater
+    /// than this.
+    pub above_input_tokens: i64,
+    /// USD per million tokens, 4 dp, like the base fields; `None` inherits the base rate.
+    pub input: Option<String>,
+    pub output: Option<String>,
+    pub cache_read: Option<String>,
+    pub cache_write: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -1002,6 +1133,23 @@ struct ModelsDevCostDocument {
     cache_write: Option<Number>,
     input_audio: Option<Number>,
     output_audio: Option<Number>,
+}
+
+/// One entry of models.dev `cost.tiers`.
+#[derive(Debug, Deserialize)]
+struct ModelsDevTierDocument {
+    input: Option<Number>,
+    output: Option<Number>,
+    cache_read: Option<Number>,
+    cache_write: Option<Number>,
+    tier: ModelsDevTierCondition,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelsDevTierCondition {
+    #[serde(rename = "type")]
+    kind: String,
+    size: i64,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
