@@ -190,6 +190,7 @@ fn ledger(api_key_id: Uuid, user_id: Uuid, team_id: Uuid, cost_10000: i64) -> Us
         cache_read_cost_per_million_tokens: None,
         cache_write_cost_per_million_tokens: None,
         image_output_cost_per_million_tokens: None,
+        pricing_tier_above_input_tokens: None,
         computed_cost_usd: Money4::from_scaled(cost_10000),
         occurred_at,
     }

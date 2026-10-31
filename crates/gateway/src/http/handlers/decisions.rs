@@ -638,7 +638,7 @@ mod tests {
             extra_body: Default::default(),
             context_window_tokens: None,
             pricing_override: None,
-            capabilities: gateway_core::ProviderCapabilities::all_enabled(),
+            capabilities: gateway_core::ProviderCapabilities::all_enabled().into(),
             compatibility: Default::default(),
         };
         if openai {

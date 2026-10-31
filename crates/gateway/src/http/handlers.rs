@@ -2433,8 +2433,9 @@ mod tests {
         ChatCompletionsRequest, CoreChatMessage, CoreChatRequest, CoreEmbeddingsRequest,
         CoreRequestRequirements, CoreResponsesRequest, GatewayError, GitHubCopilotChatApi,
         GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports, ModelRoute,
-        ProviderCapabilities, ProviderClient, ProviderError, ProviderRegistry,
+        PartialCapabilities, ProviderCapabilities, ProviderClient, ProviderError, ProviderRegistry,
         ProviderRequestContext, ProviderStream, RequestAttemptStatus, RequestTags,
+        effective_route_capabilities,
     };
     use gateway_service::{GatewayService, WeightedRoutePlanner};
     use gateway_store::{AnyStore, StoreConnectionOptions, run_migrations_with_options};
@@ -2903,9 +2904,22 @@ mod tests {
             pricing_override: None,
             extra_headers: Default::default(),
             extra_body: Default::default(),
-            capabilities,
+            capabilities: PartialCapabilities::from_capabilities(capabilities),
             compatibility: Default::default(),
         }
+    }
+
+    /// What routing reads for `route` when no request-specific restriction applies.
+    fn effective_capabilities(
+        provider: &StaticProvider,
+        route: &ModelRoute,
+    ) -> ProviderCapabilities {
+        effective_route_capabilities(
+            route,
+            provider.provider_type(),
+            PartialCapabilities::default(),
+            route_effective_provider_capabilities(provider, route),
+        )
     }
 
     fn authenticated_key(
@@ -2960,9 +2974,7 @@ mod tests {
             "google/gemini-embedding-001",
             ProviderCapabilities::all_enabled(),
         );
-        let embedding_capabilities =
-            route_effective_provider_capabilities(&provider, &embedding_route)
-                .intersect(embedding_route.capabilities);
+        let embedding_capabilities = effective_capabilities(&provider, &embedding_route);
         assert!(embedding_capabilities.embeddings);
         assert!(!embedding_capabilities.chat_completions);
         assert!(!embedding_capabilities.responses);
@@ -2973,8 +2985,7 @@ mod tests {
             "google/gemini-2.0-flash",
             ProviderCapabilities::all_enabled(),
         );
-        let chat_capabilities = route_effective_provider_capabilities(&provider, &chat_route)
-            .intersect(chat_route.capabilities);
+        let chat_capabilities = effective_capabilities(&provider, &chat_route);
         assert!(chat_capabilities.chat_completions);
         assert!(chat_capabilities.stream);
         assert!(!chat_capabilities.embeddings);
@@ -2984,9 +2995,7 @@ mod tests {
             "anthropic/claude-sonnet-4-6",
             ProviderCapabilities::all_enabled(),
         );
-        let anthropic_capabilities =
-            route_effective_provider_capabilities(&provider, &anthropic_route)
-                .intersect(anthropic_route.capabilities);
+        let anthropic_capabilities = effective_capabilities(&provider, &anthropic_route);
         assert!(anthropic_capabilities.chat_completions);
         assert!(!anthropic_capabilities.embeddings);
         assert!(anthropic_capabilities.tools);
@@ -3012,16 +3021,14 @@ mod tests {
                 ..Default::default()
             },
         });
-        let capabilities = route_effective_provider_capabilities(&provider, &claude_route)
-            .intersect(claude_route.capabilities);
+        let capabilities = effective_capabilities(&provider, &claude_route);
 
         assert!(!capabilities.json_schema);
         assert!(capabilities.chat_completions);
         assert!(capabilities.tools);
 
         let unknown_route = route("unknown", ProviderCapabilities::all_enabled());
-        let unknown_capabilities = route_effective_provider_capabilities(&provider, &unknown_route)
-            .intersect(unknown_route.capabilities);
+        let unknown_capabilities = effective_capabilities(&provider, &unknown_route);
         assert!(!unknown_capabilities.chat_completions);
         assert!(!unknown_capabilities.responses);
         assert!(!unknown_capabilities.embeddings);
@@ -3036,9 +3043,7 @@ mod tests {
                 ..Default::default()
             },
         });
-        let responses_capabilities =
-            route_effective_provider_capabilities(&provider, &responses_route)
-                .intersect(responses_route.capabilities);
+        let responses_capabilities = effective_capabilities(&provider, &responses_route);
         assert!(!responses_capabilities.chat_completions);
         assert!(responses_capabilities.responses);
 

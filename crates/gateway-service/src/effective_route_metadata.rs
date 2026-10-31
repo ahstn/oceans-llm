@@ -1,9 +1,9 @@
 use gateway_client_config::ApiFormat;
 use gateway_core::{
     AwsBedrockApiStyle, GatewayError, GitHubCopilotChatApi, ModelRoute, Money4,
-    PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
-    ProviderCapabilities, ProviderConnection, github_copilot_route_capabilities,
-    vertex_route_capabilities_for_upstream_model,
+    PartialCapabilities, PricingCatalogRepository, PricingLimits, PricingModalities,
+    PricingProvenance, ProviderCapabilities, ProviderConnection, effective_route_capabilities,
+    github_copilot_route_capabilities, vertex_route_capabilities_for_upstream_model,
 };
 use time::OffsetDateTime;
 
@@ -190,15 +190,22 @@ fn effective_limits(
     )
 }
 
+/// What `route` serves through its stored `provider`: the shared effective chain (explicit,
+/// inferred, catalog `hints`, defaults) capped by [`provider_capabilities`]. A route whose
+/// provider is not stored has no adapter ceiling.
 pub(crate) fn effective_provider_route_capabilities(
-    route_capabilities: Option<ProviderCapabilities>,
+    route: &ModelRoute,
     provider: Option<&ProviderConnection>,
-    route: Option<&ModelRoute>,
+    hints: PartialCapabilities,
 ) -> ProviderCapabilities {
-    provider
-        .map(|provider| provider_capabilities(provider, route))
-        .unwrap_or_default()
-        .intersect(route_capabilities.unwrap_or_default())
+    let (provider_type, adapter) =
+        provider.map_or(("", ProviderCapabilities::all_enabled()), |provider| {
+            (
+                provider.provider_type.as_str(),
+                provider_capabilities(provider, Some(route)),
+            )
+        });
+    effective_route_capabilities(route, provider_type, hints, adapter)
 }
 
 pub(crate) fn provider_capabilities(
@@ -391,7 +398,7 @@ mod tests {
     fn bedrock_native_format_follows_the_route_api_style() {
         use gateway_client_config::ApiFormat;
         use gateway_core::{
-            AwsBedrockApiStyle, AwsBedrockRouteCompatibility, ModelRoute, ProviderCapabilities,
+            AwsBedrockApiStyle, AwsBedrockRouteCompatibility, ModelRoute, PartialCapabilities,
             ProviderConnection,
         };
 
@@ -413,7 +420,7 @@ mod tests {
             pricing_override: None,
             extra_headers: Default::default(),
             extra_body: Default::default(),
-            capabilities: ProviderCapabilities::all_enabled(),
+            capabilities: PartialCapabilities::default(),
             compatibility: Default::default(),
         };
         assert_eq!(super::native_api_format(&provider, &route), None);

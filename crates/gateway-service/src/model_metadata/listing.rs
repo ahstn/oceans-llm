@@ -8,8 +8,8 @@ use gateway_client_config::{
     client_hints,
 };
 use gateway_core::{
-    GatewayError, GatewayModel, ModelRepository, ModelRoute, ProviderCapabilities,
-    ProviderConnection, ProviderRepository, ReasoningEffort,
+    GatewayError, GatewayModel, ModelRepository, ModelRoute, PartialCapabilities,
+    ProviderCapabilities, ProviderConnection, ProviderRepository, ReasoningEffort,
 };
 use serde::Serialize;
 use time::{Date, Month, OffsetDateTime, format_description::well_known::Rfc3339};
@@ -363,9 +363,9 @@ fn eligible_routes<'a>(
         .filter_map(|route| {
             let provider = loaded.providers.get(&route.provider_key)?;
             let capabilities = effective_provider_route_capabilities(
-                Some(route.capabilities),
+                route,
                 Some(provider),
-                Some(route),
+                PartialCapabilities::default(),
             );
             Some((route, provider, capabilities))
         })

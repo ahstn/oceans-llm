@@ -25,6 +25,36 @@ fn vendored_snapshot_json_ends_with_one_newline() {
 }
 
 #[test]
+fn vendored_sync_is_unchanged_only_for_the_same_projected_providers() {
+    let snapshot = fallback_snapshot();
+    let fetched = projected_snapshot(
+        snapshot.document.providers.clone(),
+        VENDORED_SOURCE,
+        Some("\"new-etag\"".to_string()),
+        test_time(),
+    )
+    .expect("project snapshot")
+    .snapshot;
+    let fetched = PricingCatalogSnapshotFile {
+        metadata: fetched.metadata,
+        providers: fetched.document.providers,
+    };
+    // The file on disk predates checksums and carries different metadata.
+    let mut existing = PricingCatalogSnapshotFile {
+        metadata: snapshot.metadata,
+        providers: snapshot.document.providers,
+    };
+    let existing_json = snapshot_to_pretty_json(&existing).expect("existing json");
+
+    assert!(vendored_snapshot_is_unchanged(&existing_json, &fetched));
+
+    existing.providers.remove("opencode");
+    let changed_json = snapshot_to_pretty_json(&existing).expect("changed json");
+
+    assert!(!vendored_snapshot_is_unchanged(&changed_json, &fetched));
+}
+
+#[test]
 fn catalog_generation_advances_when_refreshes_share_a_wall_clock_second() {
     let current = fallback_snapshot();
     let same_second = current.metadata.fetched_at;
@@ -207,6 +237,119 @@ async fn refresh_uses_conditional_etag_and_handles_304() {
         Some("\"catalog-etag\"")
     );
     assert_eq!(after, before);
+}
+
+#[tokio::test]
+async fn not_modified_is_not_rechecked_within_the_refresh_interval() {
+    let repo = Arc::new(InMemoryRepo {
+        cache: Arc::new(Mutex::new(Some(PricingCatalogCacheRecord {
+            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
+            source: REMOTE_SOURCE.to_string(),
+            etag: Some("\"catalog-etag\"".to_string()),
+            fetched_at: OffsetDateTime::from_unix_timestamp(1).expect("timestamp"),
+            snapshot_json: to_string_pretty(&fallback_snapshot().document).expect("json"),
+        }))),
+        ..Default::default()
+    });
+    let hits = Arc::new(AtomicUsize::new(0));
+    let app = Router::new()
+        .route(
+            "/api.json",
+            get(|State(hits): State<Arc<AtomicUsize>>| async move {
+                hits.fetch_add(1, Ordering::Relaxed);
+                StatusCode::NOT_MODIFIED
+            }),
+        )
+        .with_state(hits.clone());
+    let host = start_server(app).await;
+    let catalog = PricingCatalog::with_fallback_snapshot(
+        repo,
+        format!("{host}/api.json"),
+        PRICING_CATALOG_CACHE_KEY.to_string(),
+        Duration::from_secs(3600),
+        fallback_snapshot(),
+    );
+
+    catalog.refresh_if_stale().await.expect("first 304 refresh");
+    catalog.refresh_if_stale().await.expect("second refresh");
+
+    assert_eq!(hits.load(Ordering::Relaxed), 1);
+}
+
+#[tokio::test]
+async fn identical_projection_on_200_keeps_the_snapshot_and_pricing_generation() {
+    let body = json!({
+        "openai": {
+            "name": "OpenAI",
+            "models": {
+                "gpt-5": {
+                    "id": "gpt-5",
+                    "name": "GPT-5",
+                    "release_date": "2025-08-07",
+                    "last_updated": "2025-08-07",
+                    "cost": {"input": 1.25, "output": 10.0},
+                    "limit": {"context": 400000, "output": 128000},
+                    "modalities": {"input": ["text"], "output": ["text"]}
+                }
+            }
+        }
+    });
+    let stored = project_models_dev_snapshot(
+        body.to_string().as_bytes(),
+        REMOTE_SOURCE,
+        Some("\"old-etag\"".to_string()),
+        test_time(),
+    )
+    .expect("project stored snapshot")
+    .snapshot;
+    let repo = Arc::new(InMemoryRepo::default());
+    seed_catalog_snapshot(&repo, &stored).await;
+    let hits = Arc::new(AtomicUsize::new(0));
+    let app = Router::new()
+        .route(
+            "/api.json",
+            get(move |State(hits): State<Arc<AtomicUsize>>| {
+                let body = body.clone();
+                async move {
+                    hits.fetch_add(1, Ordering::Relaxed);
+                    (
+                        [(ETAG, HeaderValue::from_static("\"new-etag\""))],
+                        axum::Json(body),
+                    )
+                }
+            }),
+        )
+        .with_state(hits.clone());
+    let host = start_server(app).await;
+    let catalog = empty_catalog(repo.clone(), format!("{host}/api.json"));
+    catalog
+        .sync_latest_snapshot_with_retry()
+        .await
+        .expect("sync stored snapshot");
+    let cache_before = repo
+        .get_pricing_catalog_cache(PRICING_CATALOG_CACHE_KEY)
+        .await
+        .expect("cache before")
+        .expect("cache row");
+    let rows_before =
+        serde_json::to_value(repo.list_active_model_pricing().await.unwrap()).unwrap();
+
+    catalog
+        .refresh_now_and_sync()
+        .await
+        .expect("refresh unchanged catalog");
+
+    assert_eq!(hits.load(Ordering::Relaxed), 1);
+    let cache_after = repo
+        .get_pricing_catalog_cache(PRICING_CATALOG_CACHE_KEY)
+        .await
+        .expect("cache after")
+        .expect("cache row");
+    assert_eq!(cache_after, cache_before);
+    assert_eq!(
+        serde_json::to_value(repo.list_active_model_pricing().await.unwrap()).unwrap(),
+        rows_before
+    );
 }
 
 #[tokio::test]

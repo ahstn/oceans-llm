@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::credential_scopes::ApiKeyAccess;
 use crate::protocol::decisions::DecisionsWireFormat;
+use crate::route_capabilities::PartialCapabilities;
 use crate::routing::ModelRoutingPolicy;
 
 pub const SYSTEM_BOOTSTRAP_ADMIN_USER_ID: &str = "00000000-0000-0000-0000-000000000002";
@@ -1106,6 +1107,10 @@ pub struct UsageLedgerRecord {
     pub cache_write_cost_per_million_tokens: Option<Money4>,
     #[serde(default)]
     pub image_output_cost_per_million_tokens: Option<Money4>,
+    /// Context tier threshold that priced this event; `None` for the base
+    /// rate, route overrides, and provider-reported cost.
+    #[serde(default)]
+    pub pricing_tier_above_input_tokens: Option<i64>,
     pub computed_cost_usd: Money4,
     pub occurred_at: OffsetDateTime,
 }
@@ -2714,6 +2719,18 @@ pub struct PricingProvenance {
     pub fetched_at: OffsetDateTime,
 }
 
+/// Catalog rates that replace the base schedule for a whole request whose
+/// normalized prompt tokens (cache included) exceed `above_input_tokens`.
+/// A `None` rate inherits the base rate for that bucket.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ContextPricingTier {
+    pub above_input_tokens: i64,
+    pub input: Option<Money4>,
+    pub output: Option<Money4>,
+    pub cache_read: Option<Money4>,
+    pub cache_write: Option<Money4>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ResolvedModelPricing {
     pub model_pricing_id: Uuid,
@@ -2726,6 +2743,11 @@ pub struct ResolvedModelPricing {
     pub cache_write_cost_per_million_tokens: Option<Money4>,
     pub input_audio_cost_per_million_tokens: Option<Money4>,
     pub output_audio_cost_per_million_tokens: Option<Money4>,
+    #[serde(default)]
+    pub output_image_usd_per_million: Option<Money4>,
+    /// Sorted ascending by `above_input_tokens`, thresholds unique.
+    #[serde(default)]
+    pub context_tiers: Vec<ContextPricingTier>,
     pub release_date: String,
     pub last_updated: String,
     pub effective_start_at: OffsetDateTime,
@@ -2747,6 +2769,11 @@ pub struct ModelPricingRecord {
     pub cache_write_cost_per_million_tokens: Option<Money4>,
     pub input_audio_cost_per_million_tokens: Option<Money4>,
     pub output_audio_cost_per_million_tokens: Option<Money4>,
+    #[serde(default)]
+    pub output_image_usd_per_million: Option<Money4>,
+    /// Sorted ascending by `above_input_tokens`, thresholds unique.
+    #[serde(default)]
+    pub context_tiers: Vec<ContextPricingTier>,
     pub release_date: String,
     pub last_updated: String,
     pub effective_start_at: OffsetDateTime,
@@ -2867,8 +2894,10 @@ pub struct ModelRoute {
     pub extra_headers: Map<String, Value>,
     #[serde(default)]
     pub extra_body: Map<String, Value>,
-    #[serde(default = "ProviderCapabilities::all_enabled")]
-    pub capabilities: ProviderCapabilities,
+    /// Explicit route settings only. Use `effective_route_capabilities` to read what the
+    /// route serves.
+    #[serde(default)]
+    pub capabilities: PartialCapabilities,
     #[serde(default)]
     pub compatibility: RouteCompatibility,
 }
@@ -3490,8 +3519,9 @@ pub struct SeedModelRoute {
     pub extra_headers: Map<String, Value>,
     #[serde(default)]
     pub extra_body: Map<String, Value>,
-    #[serde(default = "ProviderCapabilities::all_enabled")]
-    pub capabilities: ProviderCapabilities,
+    /// Explicit route settings only; unset fields are inferred at read time.
+    #[serde(default)]
+    pub capabilities: PartialCapabilities,
     #[serde(default)]
     pub compatibility: RouteCompatibility,
 }

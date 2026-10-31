@@ -208,6 +208,7 @@ async fn changed_snapshot_rolls_active_window_forward() {
         source: REMOTE_SOURCE.to_string(),
         etag: Some("\"etag-2\"".to_string()),
         fetched_at: test_time() + Duration::from_secs(3600),
+        checksum: None,
     };
     changed
         .document
@@ -279,6 +280,7 @@ async fn unchanged_snapshot_refresh_updates_active_row_provenance() {
         source: REMOTE_SOURCE.to_string(),
         etag: Some("\"etag-refreshed\"".to_string()),
         fetched_at: test_time() + Duration::from_secs(3600),
+        checksum: None,
     };
     seed_catalog_snapshot(repo.as_ref(), &refreshed).await;
     catalog
@@ -334,6 +336,7 @@ async fn refreshed_snapshot_closes_removed_active_pricing_rows() {
         source: REMOTE_SOURCE.to_string(),
         etag: Some("\"etag-removed\"".to_string()),
         fetched_at: test_time() + Duration::from_secs(3600),
+        checksum: None,
     };
     removed
         .document

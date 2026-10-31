@@ -8,6 +8,7 @@ pub mod benchmark_catalog;
 pub mod budget_alerts;
 pub mod budget_guard;
 pub mod budget_scopes;
+mod catalog_fetch;
 mod client_session;
 pub mod effective_route_metadata;
 pub mod icon_identity;
@@ -146,7 +147,7 @@ pub use model_resolution::{
 pub use pricing_catalog::{
     DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, DEFAULT_PRICING_CATALOG_SOURCE_URL,
     PRICING_CATALOG_CACHE_KEY, PricingCatalog, PricingCatalogSnapshotFile, fetch_vendored_snapshot,
-    is_supported_pricing_provider_id, snapshot_to_pretty_json,
+    is_supported_pricing_provider_id, snapshot_to_pretty_json, vendored_snapshot_is_unchanged,
 };
 pub use provider_credentials::{
     PROVIDER_CREDENTIAL_KEY_ENV, PROVIDER_CREDENTIAL_KEY_ID, ProviderCredentialService,

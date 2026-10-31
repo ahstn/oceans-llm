@@ -520,6 +520,7 @@ async fn resolution_uses_persisted_pricing_row_for_occurrence_time() {
         source: REMOTE_SOURCE.to_string(),
         etag: Some("\"etag-3\"".to_string()),
         fetched_at: test_time() + Duration::from_secs(7200),
+        checksum: None,
     };
     changed
         .document

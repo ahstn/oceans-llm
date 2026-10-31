@@ -1062,6 +1062,7 @@ where
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
+            pricing_tier_above_input_tokens: None,
             computed_cost_usd: Money4::ZERO,
             occurred_at,
         };
@@ -1270,6 +1271,7 @@ where
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
+            pricing_tier_above_input_tokens: None,
             computed_cost_usd: cost_usd,
             occurred_at,
         };
@@ -2826,7 +2828,7 @@ mod tests {
             pricing_override: None,
             extra_headers: Map::new(),
             extra_body: Map::new(),
-            capabilities: ProviderCapabilities::all_enabled(),
+            capabilities: ProviderCapabilities::all_enabled().into(),
             compatibility: Default::default(),
         }
     }
@@ -2853,6 +2855,8 @@ mod tests {
             cache_write_cost_per_million_tokens: None,
             input_audio_cost_per_million_tokens: None,
             output_audio_cost_per_million_tokens: None,
+            output_image_usd_per_million: None,
+            context_tiers: Vec::new(),
             release_date: "2026-01-01".to_string(),
             last_updated: "2026-01-01".to_string(),
             effective_start_at: now,

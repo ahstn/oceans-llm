@@ -214,14 +214,22 @@ models:
     let seeded = config.seed_models().expect("seed models");
 
     let route = &seeded[0].routes[0];
-    assert!(route.capabilities.chat_completions);
-    assert!(!route.capabilities.stream);
-    assert!(route.capabilities.embeddings);
-    assert!(!route.capabilities.images, "images is opt-in");
-    assert!(!route.capabilities.tools);
-    assert!(!route.capabilities.vision);
-    assert!(route.capabilities.json_schema);
-    assert!(route.capabilities.developer_role);
+    assert_eq!(
+        route.capabilities,
+        gateway_core::PartialCapabilities {
+            stream: Some(false),
+            tools: Some(false),
+            vision: Some(false),
+            ..Default::default()
+        },
+        "only explicit settings are seeded"
+    );
+    let resolved = route.capabilities.resolve();
+    assert!(resolved.chat_completions);
+    assert!(resolved.embeddings);
+    assert!(!resolved.images, "images is opt-in");
+    assert!(resolved.json_schema);
+    assert!(resolved.developer_role);
 }
 
 #[test]
@@ -557,12 +565,12 @@ models:
         Some(OpenAiCompatDecisionsApi::OpenAi)
     );
     assert!(route.compatibility.selects_decisions_api());
-    assert!(route.capabilities.decisions);
+    assert_eq!(route.capabilities.decisions, Some(true));
     assert!(route.pricing_override.is_some());
 }
 
 #[test]
-fn rejects_openai_decisions_api_without_decisions_capability() {
+fn infers_decisions_capabilities_for_openai_decisions_api() {
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");
 
@@ -585,14 +593,66 @@ models:
 "#,
     );
 
-    let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
-    let error_text = format!("{error:#}");
-    assert!(
-        error_text.contains(
-            "uses compatibility.openai_compat.decisions_api but capabilities.decisions is not enabled"
-        ),
-        "unexpected error: {error_text}"
+    let config = GatewayConfig::from_path(&config_path).expect("omitted capabilities are inferred");
+    let models = config.seed_models().expect("seed models");
+    let route = &models[0].routes[0];
+    assert_eq!(
+        route.capabilities,
+        gateway_core::PartialCapabilities::default()
     );
+    assert_eq!(
+        gateway_core::infer_compatibility_capabilities(&route.compatibility, "openai_compat")
+            .resolve(),
+        gateway_core::ProviderCapabilities {
+            decisions: true,
+            ..gateway_core::ProviderCapabilities::none()
+        }
+    );
+}
+
+#[test]
+fn rejects_explicit_capabilities_that_contradict_openai_decisions_api() {
+    for (capability, expected) in [
+        (
+            "decisions: false",
+            "uses compatibility.openai_compat.decisions_api but disables capabilities.decisions",
+        ),
+        (
+            "chat_completions: true",
+            "enables capabilities.decisions and `chat_completions`",
+        ),
+    ] {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            &format!(
+                r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: luna
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-6-luna
+        capabilities:
+          {capability}
+        compatibility:
+          openai_compat:
+            decisions_api: openai
+"#
+            ),
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        assert!(
+            format!("{error:#}").contains(expected),
+            "unexpected error for {capability}: {error:#}"
+        );
+    }
 }
 
 #[test]
@@ -668,7 +728,10 @@ models:
         .iter()
         .map(|route| (route.provider_key.as_str(), route.capabilities.images))
         .collect::<Vec<_>>();
-    assert_eq!(images, [("openrouter", true), ("cloud-run", true)]);
+    assert_eq!(
+        images,
+        [("openrouter", Some(true)), ("cloud-run", Some(true))]
+    );
 }
 
 #[test]

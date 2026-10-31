@@ -1,5 +1,5 @@
 use super::*;
-use gateway_core::{Money4, ProviderCapabilities, RoutePricingOverride};
+use gateway_core::{Money4, PartialCapabilities, ProviderCapabilities, RoutePricingOverride};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -18,7 +18,12 @@ fn route() -> ModelRoute {
         pricing_override: None,
         extra_headers: Default::default(),
         extra_body: Default::default(),
-        capabilities: ProviderCapabilities::all_enabled(),
+        // Tools, vision, and structured output stay unset so the catalog decides them.
+        capabilities: PartialCapabilities {
+            images: Some(true),
+            decisions: Some(true),
+            ..PartialCapabilities::default()
+        },
         compatibility: Default::default(),
     }
 }
@@ -41,7 +46,7 @@ fn multiple_routes_keep_unknown_limits_and_intersect_capabilities() {
     let mut unknown_route = route();
     unknown_route.context_window_tokens = None;
     unknown_route.upstream_model = "unlisted".into();
-    unknown_route.capabilities.tools = false;
+    unknown_route.capabilities.tools = Some(false);
     let unknown = route_metadata(&unknown_route, Some(&provider()), &snapshot);
     let combined = summarize("public-model".into(), vec![known, unknown]);
     assert_eq!(combined.enabled_route_count, 2);
@@ -578,7 +583,7 @@ fn image_listing(capabilities: ProviderCapabilities) -> (GatewayModel, ListingRe
     // Absent from the models.dev OpenRouter catalog.
     image_route.upstream_model = "openai/gpt-image-2.5-flare".into();
     image_route.context_window_tokens = None;
-    image_route.capabilities = capabilities;
+    image_route.capabilities = capabilities.into();
     let repo = ListingRepo {
         models: vec![model.clone()],
         routes: vec![image_route],
@@ -658,7 +663,8 @@ async fn separate_chat_and_image_only_routes_report_text_and_image_output() {
     chat_route.capabilities = ProviderCapabilities {
         images: false,
         ..ProviderCapabilities::openai_compat_baseline()
-    };
+    }
+    .into();
     repo.routes.push(chat_route);
 
     let card = listing_card(model, repo).await;
@@ -673,13 +679,13 @@ async fn separate_chat_and_image_only_routes_report_text_and_image_output() {
 fn route_metadata_adds_image_output_only_for_image_capable_routes() {
     let snapshot = crate::pricing_catalog::load_vendored_fallback_snapshot();
     let mut chat = route();
-    chat.capabilities.images = false;
+    chat.capabilities.images = Some(false);
     let catalog = route_metadata(&chat, Some(&provider()), &snapshot)
         .modalities
         .expect("catalog modalities");
     assert!(!catalog.output.iter().any(|value| value == "image"));
 
-    chat.capabilities.images = true;
+    chat.capabilities.images = Some(true);
     let images = route_metadata(&chat, Some(&provider()), &snapshot)
         .modalities
         .expect("catalog modalities");

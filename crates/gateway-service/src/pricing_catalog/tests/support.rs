@@ -35,7 +35,8 @@ pub(super) use super::super::{
     PricingCatalogSnapshotMetadata, PricingTarget, REMOTE_SOURCE, VENDORED_SOURCE,
     build_model_pricing_record, catalog_model_id_fallback, load_vendored_fallback_snapshot,
     next_catalog_generation_at, normalize_bedrock_pricing_model_id, normalize_models_dev_money,
-    pricing_target_for_route, snapshot_is_already_synced, snapshot_to_pretty_json,
+    pricing_target_for_route, project_models_dev_snapshot, projected_snapshot,
+    snapshot_is_already_synced, snapshot_to_pretty_json, vendored_snapshot_is_unchanged,
 };
 
 #[derive(Clone, Default)]
@@ -321,7 +322,7 @@ pub(super) fn route(provider_key: &str, upstream_model: &str) -> ModelRoute {
         pricing_override: None,
         extra_headers: serde_json::Map::new(),
         extra_body: serde_json::Map::new(),
-        capabilities: ProviderCapabilities::all_enabled(),
+        capabilities: ProviderCapabilities::all_enabled().into(),
         compatibility: Default::default(),
     }
 }
@@ -332,6 +333,7 @@ pub(super) fn fallback_snapshot() -> PricingCatalogSnapshot {
             source: VENDORED_SOURCE.to_string(),
             etag: None,
             fetched_at: OffsetDateTime::from_unix_timestamp(1).expect("timestamp"),
+            checksum: None,
         },
         document: PricingCatalogDocument {
             providers: BTreeMap::from([

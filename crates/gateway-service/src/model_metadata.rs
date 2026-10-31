@@ -15,8 +15,9 @@ use crate::model_resolution::{
     alias_chain_reasoning_ceiling, execution_model_from_snapshot, load_missing_alias_targets,
 };
 use gateway_core::{
-    GatewayError, GatewayModel, ModelRepository, ModelRoute, ProviderCapabilities,
-    ProviderConnection, ProviderRepository, ReasoningEffort,
+    GatewayError, GatewayModel, ModelRepository, ModelRoute, PartialCapabilities,
+    ProviderCapabilities, ProviderConnection, ProviderRepository, ReasoningEffort,
+    infer_route_capabilities,
 };
 use serde::Serialize;
 use uuid::Uuid;
@@ -188,23 +189,32 @@ fn route_metadata(
         limits.output = limits.output.map(|value| value.min(context));
     }
     let transport = crate::effective_route_metadata::effective_provider_route_capabilities(
-        Some(route.capabilities),
+        route,
         provider,
-        Some(route),
+        PartialCapabilities::default(),
     );
+    // Explicit and inferred route settings: a declared `true` is final, so catalog flags only
+    // decide fields the route leaves open.
+    let declared = route.capabilities.or(infer_route_capabilities(
+        route,
+        provider.map_or("", |provider| provider.provider_type.as_str()),
+    ));
     let metadata = catalog.metadata.as_ref();
     let capabilities = ModelCapabilities {
         reasoning: metadata.and_then(|metadata| metadata.reasoning),
         tools: gated(
             transport.tools && provider.is_some(),
+            declared.tools,
             metadata.and_then(|metadata| metadata.tool_call),
         ),
         structured_output: gated(
             transport.json_schema && provider.is_some(),
+            declared.json_schema,
             metadata.and_then(|metadata| metadata.structured_output),
         ),
         vision: gated(
             transport.vision && provider.is_some(),
+            declared.vision,
             catalog.modalities.as_ref().and_then(|modalities| {
                 (!modalities.input.is_empty())
                     .then(|| modalities.input.iter().any(|value| value == "image"))
@@ -249,8 +259,16 @@ fn route_metadata(
     }
 }
 
-fn gated(transport: bool, catalog: Option<bool>) -> Option<bool> {
-    if transport { catalog } else { Some(false) }
+/// `Some(false)` when the route cannot serve the feature, `Some(true)` when the route declares
+/// it, and otherwise the catalog's answer.
+fn gated(transport: bool, declared: Option<bool>, catalog: Option<bool>) -> Option<bool> {
+    if !transport {
+        Some(false)
+    } else if declared == Some(true) {
+        Some(true)
+    } else {
+        catalog
+    }
 }
 
 /// A route opted into `/v1/images` outputs images even when the catalog (models.dev has no

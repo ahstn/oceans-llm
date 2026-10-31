@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    sync::Arc,
-    time::Duration,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 
 use anyhow::Context;
@@ -11,23 +11,26 @@ use gateway_core::{
     PricingModalities, PricingProvenance, PricingResolution, PricingUnpricedReason,
     ProviderConnection, ResolvedModelPricing, StoreError,
 };
-use reqwest::{
-    Client, StatusCode,
-    header::{ETAG, IF_NONE_MATCH},
-};
+use reqwest::{Client, header::IF_NONE_MATCH};
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
+use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
-use tracing::warn;
+use tracing::{debug, warn};
 use uuid::Uuid;
 
-use crate::admin_audit::AuditProgress;
+use crate::{
+    admin_audit::AuditProgress,
+    catalog_fetch::{CatalogFetch, FetchedBody, catalog_http_client, fetch_bounded},
+};
 
 pub const DEFAULT_PRICING_CATALOG_SOURCE_URL: &str = "https://models.dev/api.json";
 pub const PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v3";
 const PREVIOUS_PRICING_CATALOG_CACHE_KEY: &str = "models_dev_supported_v2";
-pub const DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL: Duration = Duration::from_secs(15 * 60);
-pub const DEFAULT_PRICING_CATALOG_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+pub const DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
+/// The raw models.dev `api.json` is around 6 MB; anything far larger is not the expected
+/// payload.
+const MAX_MODELS_DEV_RESPONSE_BYTES: usize = 32 * 1024 * 1024;
 const REMOTE_SOURCE: &str = "models_dev_api";
 const VENDORED_SOURCE: &str = "vendored_models_dev";
 const VENDORED_FALLBACK_JSON: &str = include_str!("../data/pricing_catalog_fallback.json");
@@ -60,6 +63,9 @@ pub struct PricingCatalog<R> {
     refresh_interval: Duration,
     fallback_snapshot: PricingCatalogSnapshot,
     metadata_snapshot: Arc<tokio::sync::Mutex<Option<Arc<PricingCatalogSnapshot>>>>,
+    /// When this process last completed a refresh request, including a 304 or an unchanged
+    /// 200 that left the cache row untouched. See [`Self::refresh_remote_snapshot`].
+    last_checked: Arc<Mutex<Option<Instant>>>,
 }
 
 impl<R> PricingCatalog<R>
@@ -85,12 +91,13 @@ where
     ) -> Self {
         Self {
             repo,
-            client: pricing_catalog_http_client(),
+            client: catalog_http_client(),
             source_url,
             catalog_key,
             refresh_interval,
             fallback_snapshot: load_vendored_fallback_snapshot(),
             metadata_snapshot: Default::default(),
+            last_checked: Default::default(),
         }
     }
 
@@ -104,12 +111,13 @@ where
     ) -> Self {
         Self {
             repo,
-            client: pricing_catalog_http_client(),
+            client: catalog_http_client(),
             source_url,
             catalog_key,
             refresh_interval,
             fallback_snapshot,
             metadata_snapshot: Default::default(),
+            last_checked: Default::default(),
         }
     }
 
@@ -118,6 +126,9 @@ where
         let cache_is_invalid = current
             .as_ref()
             .is_some_and(|cache| !cached_document_is_valid(cache));
+        if !cache_is_invalid && self.checked_within_refresh_interval() {
+            return Ok(());
+        }
         let current_fetched_at = current
             .as_ref()
             .filter(|cache| cached_document_is_valid(cache))
@@ -155,6 +166,14 @@ where
         self.sync_latest_snapshot_with_retry().await
     }
 
+    /// Fetch the source and cache a changed projection as the next snapshot generation.
+    ///
+    /// A 304, or a 200 whose projection matches the stored snapshot, leaves the cache row
+    /// untouched, ETag and `fetched_at` included. `fetched_at` is the snapshot generation
+    /// that pricing-row provenance is reconciled against, and the store's only cache write
+    /// is a CAS that must advance it, so recording the check there would re-stamp every
+    /// pricing row. The process-local `last_checked` instead keeps such a source from being
+    /// requested again before the refresh interval passes.
     async fn refresh_remote_snapshot(
         &self,
         current: Option<PricingCatalogCacheRecord>,
@@ -170,60 +189,69 @@ where
             request = request.header(IF_NONE_MATCH, etag);
         }
 
-        let response = request.send().await.map_err(|error| {
-            GatewayError::Internal(format!("pricing catalog refresh request failed: {error}"))
-        })?;
-        let result = match response.status() {
-            StatusCode::NOT_MODIFIED => Ok(()),
-            StatusCode::OK => {
-                let expected_fetched_at = current.as_ref().map(|cache| cache.fetched_at);
-                let fetched_at =
-                    next_catalog_generation_at(expected_fetched_at, OffsetDateTime::now_utc());
-                let etag = response
-                    .headers()
-                    .get(ETAG)
-                    .and_then(|value| value.to_str().ok())
-                    .map(str::to_string);
-                let body = response.text().await.map_err(|error| {
-                    GatewayError::Internal(format!(
-                        "pricing catalog refresh body read failed: {error}"
-                    ))
-                })?;
-                let snapshot = project_models_dev_snapshot(&body, REMOTE_SOURCE, etag, fetched_at)?;
-                let snapshot_json =
-                    serde_json::to_string_pretty(&snapshot.document).map_err(|error| {
-                        GatewayError::Internal(format!(
-                            "failed serializing pricing catalog snapshot: {error}"
-                        ))
-                    })?;
-                let stored = self
-                    .repo
-                    .compare_and_swap_pricing_catalog_cache(
-                        &PricingCatalogCacheRecord {
-                            catalog_key: self.catalog_key.clone(),
-                            source: snapshot.metadata.source.clone(),
-                            etag: snapshot.metadata.etag.clone(),
-                            fetched_at: snapshot.metadata.fetched_at,
-                            snapshot_json,
-                        },
-                        expected_fetched_at,
-                    )
-                    .await?;
-                if !stored {
-                    self.confirm_superseding_cache_write(expected_fetched_at)
-                        .await?;
-                }
-                Ok(())
-            }
-            status => Err(GatewayError::Internal(format!(
-                "pricing catalog refresh failed with HTTP {}",
-                status.as_u16()
-            ))),
-        };
-        if result.is_ok() {
-            *self.metadata_snapshot.lock().await = None;
+        let fetched = fetch_bounded(request, MAX_MODELS_DEV_RESPONSE_BYTES)
+            .await
+            .map_err(|error| {
+                GatewayError::Internal(format!("pricing catalog refresh failed: {error}"))
+            })?;
+        if let CatalogFetch::Fetched(body) = fetched {
+            self.store_fetched_snapshot(current, body).await?;
         }
-        result
+        *self.metadata_snapshot.lock().await = None;
+        *self.last_checked.lock().expect("lock poisoned") = Some(Instant::now());
+        Ok(())
+    }
+
+    async fn store_fetched_snapshot(
+        &self,
+        current: Option<PricingCatalogCacheRecord>,
+        body: FetchedBody,
+    ) -> Result<(), GatewayError> {
+        let expected_fetched_at = current.as_ref().map(|cache| cache.fetched_at);
+        let fetched_at = next_catalog_generation_at(expected_fetched_at, OffsetDateTime::now_utc());
+        let ProjectedSnapshot {
+            snapshot,
+            document_json,
+        } = project_models_dev_snapshot(&body.bytes, REMOTE_SOURCE, body.etag, fetched_at)?;
+        // The stored JSON is the canonical document its checksum covers, so equal bytes
+        // mean an equal checksum without hashing the stored row.
+        if current
+            .as_ref()
+            .is_some_and(|cache| cache.snapshot_json == document_json)
+        {
+            debug!(
+                catalog_key = %self.catalog_key,
+                checksum = ?snapshot.metadata.checksum,
+                "pricing catalog projection unchanged; keeping the stored snapshot generation"
+            );
+            return Ok(());
+        }
+
+        let stored = self
+            .repo
+            .compare_and_swap_pricing_catalog_cache(
+                &PricingCatalogCacheRecord {
+                    catalog_key: self.catalog_key.clone(),
+                    source: snapshot.metadata.source,
+                    etag: snapshot.metadata.etag,
+                    fetched_at,
+                    snapshot_json: document_json,
+                },
+                expected_fetched_at,
+            )
+            .await?;
+        if !stored {
+            self.confirm_superseding_cache_write(expected_fetched_at)
+                .await?;
+        }
+        Ok(())
+    }
+
+    fn checked_within_refresh_interval(&self) -> bool {
+        self.last_checked
+            .lock()
+            .expect("lock poisoned")
+            .is_some_and(|checked| checked.elapsed() < self.refresh_interval)
     }
 
     async fn confirm_superseding_cache_write(
@@ -358,6 +386,7 @@ where
         match serde_json::from_str::<PricingCatalogDocument>(&cache.snapshot_json) {
             Ok(document) => Ok(Some(PricingCatalogSnapshot {
                 metadata: PricingCatalogSnapshotMetadata {
+                    checksum: Some(document_checksum(&cache.snapshot_json)),
                     source: cache.source,
                     etag: cache.etag,
                     fetched_at: cache.fetched_at,
@@ -514,34 +543,46 @@ where
 pub async fn fetch_vendored_snapshot(
     source_url: &str,
 ) -> anyhow::Result<PricingCatalogSnapshotFile> {
-    let client = pricing_catalog_http_client();
-    let response = client
-        .get(source_url)
-        .send()
+    let request = catalog_http_client().get(source_url);
+    let fetched = fetch_bounded(request, MAX_MODELS_DEV_RESPONSE_BYTES)
         .await
         .with_context(|| format!("failed fetching pricing catalog from `{source_url}`"))?;
-    let status = response.status();
-    if status != StatusCode::OK {
-        anyhow::bail!("pricing catalog fetch returned HTTP {}", status.as_u16());
-    }
-
-    let etag = response
-        .headers()
-        .get(ETAG)
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_string);
-    let body = response
-        .text()
-        .await
-        .context("failed reading pricing catalog response body")?;
-    let snapshot =
-        project_models_dev_snapshot(&body, VENDORED_SOURCE, etag, OffsetDateTime::now_utc())
-            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+    // No `If-None-Match` is sent, so a 304 is a misbehaving server.
+    let CatalogFetch::Fetched(body) = fetched else {
+        anyhow::bail!("pricing catalog fetch returned HTTP 304 to an unconditional request");
+    };
+    let ProjectedSnapshot { snapshot, .. } = project_models_dev_snapshot(
+        &body.bytes,
+        VENDORED_SOURCE,
+        body.etag,
+        OffsetDateTime::now_utc(),
+    )
+    .map_err(|error| anyhow::anyhow!(error.to_string()))?;
 
     Ok(PricingCatalogSnapshotFile {
         metadata: snapshot.metadata,
         providers: snapshot.document.providers,
     })
+}
+
+/// Whether the vendored snapshot file `existing_json` holds the same projected providers
+/// document as `fetched`, so a sync can leave the file, metadata included, untouched. A
+/// file that does not parse never matches.
+#[must_use]
+pub fn vendored_snapshot_is_unchanged(
+    existing_json: &str,
+    fetched: &PricingCatalogSnapshotFile,
+) -> bool {
+    let Ok(existing) = serde_json::from_str::<PricingCatalogSnapshotFile>(existing_json) else {
+        return false;
+    };
+    // Re-serialize rather than trust the file's own checksum, which an older sync may
+    // not have written.
+    let Ok(existing_document_json) = canonical_document_json(&existing.providers) else {
+        return false;
+    };
+    fetched.metadata.checksum.as_deref()
+        == Some(document_checksum(&existing_document_json).as_str())
 }
 
 pub fn snapshot_to_pretty_json(snapshot: &PricingCatalogSnapshotFile) -> anyhow::Result<String> {
@@ -550,13 +591,6 @@ pub fn snapshot_to_pretty_json(snapshot: &PricingCatalogSnapshotFile) -> anyhow:
     // The repository's end-of-file-fixer hook rejects a commit of the file without it.
     json.push('\n');
     Ok(json)
-}
-
-fn pricing_catalog_http_client() -> Client {
-    Client::builder()
-        .timeout(DEFAULT_PRICING_CATALOG_REQUEST_TIMEOUT)
-        .build()
-        .expect("pricing catalog HTTP client configuration is valid")
 }
 
 fn cached_document_is_valid(cache: &PricingCatalogCacheRecord) -> bool {
@@ -590,6 +624,8 @@ fn resolved_model_pricing(record: &ModelPricingRecord) -> ResolvedModelPricing {
         cache_write_cost_per_million_tokens: record.cache_write_cost_per_million_tokens,
         input_audio_cost_per_million_tokens: record.input_audio_cost_per_million_tokens,
         output_audio_cost_per_million_tokens: record.output_audio_cost_per_million_tokens,
+        output_image_usd_per_million: record.output_image_usd_per_million,
+        context_tiers: record.context_tiers.clone(),
         release_date: record.release_date.clone(),
         last_updated: record.last_updated.clone(),
         effective_start_at: record.effective_start_at,
@@ -617,6 +653,8 @@ pub(crate) fn build_model_pricing_record(
         cache_write_cost_per_million_tokens: parse_money(document.cost.cache_write.as_deref())?,
         input_audio_cost_per_million_tokens: parse_money(document.cost.input_audio.as_deref())?,
         output_audio_cost_per_million_tokens: parse_money(document.cost.output_audio.as_deref())?,
+        output_image_usd_per_million: None,
+        context_tiers: Vec::new(),
         release_date: document.release_date.clone(),
         last_updated: document.last_updated.clone(),
         effective_start_at: metadata.fetched_at,
@@ -651,6 +689,8 @@ fn pricing_record_matches(existing: &ModelPricingRecord, desired: &ModelPricingR
             == desired.input_audio_cost_per_million_tokens
         && existing.output_audio_cost_per_million_tokens
             == desired.output_audio_cost_per_million_tokens
+        && existing.output_image_usd_per_million == desired.output_image_usd_per_million
+        && existing.context_tiers == desired.context_tiers
         && existing.release_date == desired.release_date
         && existing.last_updated == desired.last_updated
         && existing.limits == desired.limits
@@ -699,12 +739,12 @@ fn parse_money(value: Option<&str>) -> Result<Option<Money4>, GatewayError> {
 }
 
 fn project_models_dev_snapshot(
-    body: &str,
+    body: &[u8],
     source: &str,
     etag: Option<String>,
     fetched_at: OffsetDateTime,
-) -> Result<PricingCatalogSnapshot, GatewayError> {
-    let providers = serde_json::from_str::<BTreeMap<String, ModelsDevProviderDocument>>(body)
+) -> Result<ProjectedSnapshot, GatewayError> {
+    let providers = serde_json::from_slice::<BTreeMap<String, ModelsDevProviderDocument>>(body)
         .map_err(|error| {
             GatewayError::Internal(format!("failed parsing models.dev response: {error}"))
         })?;
@@ -761,16 +801,59 @@ fn project_models_dev_snapshot(
         );
     }
 
-    Ok(PricingCatalogSnapshot {
-        metadata: PricingCatalogSnapshotMetadata {
-            source: source.to_string(),
-            etag,
-            fetched_at,
+    projected_snapshot(projected_providers, source, etag, fetched_at)
+}
+
+/// A projected snapshot and the canonical document JSON its checksum covers, so a cache
+/// write stores those bytes without serializing the document again.
+struct ProjectedSnapshot {
+    snapshot: PricingCatalogSnapshot,
+    document_json: String,
+}
+
+/// Stamp a projected providers document with its metadata and checksum.
+fn projected_snapshot(
+    providers: BTreeMap<String, PricingCatalogProviderDocument>,
+    source: &str,
+    etag: Option<String>,
+    fetched_at: OffsetDateTime,
+) -> Result<ProjectedSnapshot, GatewayError> {
+    let document_json = canonical_document_json(&providers).map_err(|error| {
+        GatewayError::Internal(format!(
+            "failed serializing pricing catalog snapshot: {error}"
+        ))
+    })?;
+    Ok(ProjectedSnapshot {
+        snapshot: PricingCatalogSnapshot {
+            metadata: PricingCatalogSnapshotMetadata {
+                source: source.to_string(),
+                etag,
+                fetched_at,
+                checksum: Some(document_checksum(&document_json)),
+            },
+            document: PricingCatalogDocument { providers },
         },
-        document: PricingCatalogDocument {
-            providers: projected_providers,
-        },
+        document_json,
     })
+}
+
+/// The canonical JSON of a projected providers document: pretty-printed, exactly as
+/// [`PricingCatalogDocument`] serializes, and stored as the cache row's `snapshot_json`.
+fn canonical_document_json(
+    providers: &BTreeMap<String, PricingCatalogProviderDocument>,
+) -> serde_json::Result<String> {
+    /// Borrowing twin of [`PricingCatalogDocument`], so serializing needs no clone.
+    #[derive(Serialize)]
+    struct DocumentRef<'doc> {
+        providers: &'doc BTreeMap<String, PricingCatalogProviderDocument>,
+    }
+    serde_json::to_string_pretty(&DocumentRef { providers })
+}
+
+/// SHA-256, as lowercase hex, of [`canonical_document_json`] output.
+#[must_use]
+fn document_checksum(document_json: &str) -> String {
+    format!("{:x}", Sha256::digest(document_json.as_bytes()))
 }
 
 fn project_models_dev_cost(value: Option<&Number>) -> Result<Option<String>, GatewayError> {
@@ -827,6 +910,10 @@ pub struct PricingCatalogSnapshotMetadata {
     pub etag: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
     pub fetched_at: OffsetDateTime,
+    /// SHA-256 (lowercase hex) of the projected providers document's canonical JSON; the
+    /// metadata itself is not covered, so a refetch of unchanged content keeps it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checksum: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

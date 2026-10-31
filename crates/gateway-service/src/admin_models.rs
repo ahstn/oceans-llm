@@ -11,8 +11,9 @@ use gateway_client_config::{
 };
 use gateway_core::{
     GatewayError, GatewayModel, ModelAllowlistPolicy, ModelRepository, ModelRoute,
-    ModelRoutingPolicy, PricingCatalogRepository, PricingLimits, PricingModalities,
-    ProviderCapabilities, ProviderConnection, ProviderRepository, ReasoningEffort,
+    ModelRoutingPolicy, PartialCapabilities, PricingCatalogRepository, PricingLimits,
+    PricingModalities, ProviderCapabilities, ProviderConnection, ProviderRepository,
+    ReasoningEffort,
 };
 use time::OffsetDateTime;
 
@@ -322,7 +323,13 @@ where
             let provider_display = primary_route.map(|route| {
                 resolve_provider_display(route.provider_key.as_str(), primary_provider)
             });
-            let route_capabilities = primary_route.map(|route| route.capabilities);
+            let route_capabilities = primary_route.map(|route| {
+                effective_provider_route_capabilities(
+                    route,
+                    primary_provider,
+                    PartialCapabilities::default(),
+                )
+            });
             let primary_metadata = match primary_route {
                 Some(route) => Some(
                     resolve_effective_route_metadata(
@@ -369,8 +376,9 @@ where
                     .chain([execution_model.model_key.as_str(), model.model_key.as_str()]),
             );
             let client_config_input = primary_route
-                .filter(|route| route_is_eligible(&providers_by_key, route))
-                .and_then(|primary_route| {
+                .zip(route_capabilities)
+                .filter(|(route, _)| route_is_eligible(&providers_by_key, route))
+                .and_then(|(primary_route, route_capabilities)| {
                     build_client_config_input(ClientConfigContext {
                         model: &model,
                         execution_model: &execution_model,
@@ -450,8 +458,13 @@ where
                     supports_image_generation: route_capabilities.map(|caps| {
                         caps.images
                             || routes.iter().any(|route| {
-                                route.capabilities.images
-                                    && route_is_eligible(&providers_by_key, route)
+                                route_is_eligible(&providers_by_key, route)
+                                    && effective_provider_route_capabilities(
+                                        route,
+                                        providers_by_key.get(&route.provider_key),
+                                        PartialCapabilities::default(),
+                                    )
+                                    .images
                             })
                     }),
                     client_configurations,
@@ -479,7 +492,8 @@ struct ClientConfigContext<'a> {
     provider_display: Option<&'a crate::ProviderDisplayIdentity>,
     metadata: Option<&'a EffectiveRouteMetadata>,
     limits: &'a PricingLimits,
-    route_capabilities: Option<ProviderCapabilities>,
+    /// Effective capabilities of `primary_route` through `primary_provider`.
+    route_capabilities: ProviderCapabilities,
     gateway_base_url: &'a str,
 }
 
@@ -493,11 +507,7 @@ fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientC
         primary_provider,
         context.provider_display,
     );
-    let capabilities = effective_provider_route_capabilities(
-        context.route_capabilities,
-        context.primary_provider,
-        Some(primary_route),
-    );
+    let capabilities = context.route_capabilities;
     if !capabilities.chat_completions && !capabilities.responses {
         // OpenCode/Pi/Claude/Codex snippets target chat-shaped clients; a
         // decisions-only or image-only model cannot use them, so emit no
@@ -750,9 +760,10 @@ mod tests {
     use gateway_core::{
         GatewayError, GatewayModel, GitHubCopilotChatApi, GitHubCopilotRouteCompatibility,
         GitHubCopilotUpstreamSupports, ModelAllowlistPolicy, ModelPricingRecord,
-        ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4, PricingCatalogCacheRecord,
-        PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
-        ProviderCapabilities, ProviderConnection, ProviderRepository, ReasoningEffort, StoreError,
+        ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4, PartialCapabilities,
+        PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits, PricingModalities,
+        PricingProvenance, ProviderCapabilities, ProviderConnection, ProviderRepository,
+        ReasoningEffort, StoreError,
     };
     use serde_json::json;
     use time::OffsetDateTime;
@@ -1045,6 +1056,8 @@ mod tests {
             cache_write_cost_per_million_tokens: None,
             input_audio_cost_per_million_tokens: None,
             output_audio_cost_per_million_tokens: None,
+            output_image_usd_per_million: None,
+            context_tiers: Vec::new(),
             release_date: "2025-01-01".to_string(),
             last_updated: "2025-01-01".to_string(),
             effective_start_at: now,
@@ -1093,7 +1106,7 @@ mod tests {
             pricing_override: None,
             extra_headers: Default::default(),
             extra_body: Default::default(),
-            capabilities,
+            capabilities: capabilities.into(),
             compatibility: Default::default(),
         }
     }
@@ -1183,7 +1196,11 @@ mod tests {
                 provider_display: None,
                 metadata: None,
                 limits: &limits,
-                route_capabilities: Some(route.capabilities),
+                route_capabilities: effective_provider_route_capabilities(
+                    &route,
+                    Some(&provider),
+                    PartialCapabilities::default(),
+                ),
                 gateway_base_url: "http://127.0.0.1:3000",
             });
 
@@ -1223,9 +1240,9 @@ mod tests {
         assert!(!claude_capabilities.developer_role);
 
         let effective = effective_provider_route_capabilities(
-            Some(claude_route.capabilities),
+            &claude_route,
             Some(&provider),
-            Some(&claude_route),
+            PartialCapabilities::default(),
         );
         assert!(!effective.tools);
         assert!(effective.vision);
@@ -1249,9 +1266,9 @@ mod tests {
         );
 
         let capabilities = effective_provider_route_capabilities(
-            Some(route.capabilities),
+            &route,
             Some(&provider),
-            Some(&route),
+            PartialCapabilities::default(),
         );
 
         assert!(!capabilities.embeddings);
@@ -1510,8 +1527,9 @@ mod tests {
         assert_eq!(alias.supports_tool_calling, Some(true));
         assert_eq!(alias.supports_structured_output, Some(true));
         assert_eq!(alias.supports_attachments, Some(true));
-        assert_eq!(alias.supports_decisions, Some(true));
-        assert_eq!(alias.supports_image_generation, Some(true));
+        // Unset route flags resolve to the defaults, capped by the openai_compat adapter.
+        assert_eq!(alias.supports_decisions, Some(false));
+        assert_eq!(alias.supports_image_generation, Some(false));
         assert_eq!(
             alias
                 .allowlist
@@ -1635,7 +1653,7 @@ mod tests {
             pricing_override: None,
             extra_headers: Default::default(),
             extra_body: Default::default(),
-            capabilities: ProviderCapabilities::all_enabled(),
+            capabilities: ProviderCapabilities::all_enabled().into(),
             compatibility: Default::default(),
         };
         let provider = ProviderConnection {
@@ -1736,7 +1754,8 @@ mod tests {
                         extra_body: Default::default(),
                         capabilities: ProviderCapabilities::with_dimensions(
                             true, true, false, false, false, true, true,
-                        ),
+                        )
+                        .into(),
                         compatibility: Default::default(),
                     },
                 ],
@@ -1909,7 +1928,8 @@ mod tests {
                         .expect("object"),
                     capabilities: ProviderCapabilities::with_dimensions(
                         true, false, false, true, false, true, true,
-                    ),
+                    )
+                    .into(),
                     compatibility: Default::default(),
                 }],
             )]),
@@ -1991,7 +2011,7 @@ mod tests {
                         pricing_override: None,
                         extra_headers: Default::default(),
                         extra_body: Default::default(),
-                        capabilities,
+                        capabilities: capabilities.into(),
                         compatibility: Default::default(),
                     }],
                 )]),
@@ -2211,7 +2231,8 @@ mod tests {
                 chat_completions: false,
                 responses: true,
                 ..ProviderCapabilities::openai_compat_baseline()
-            },
+            }
+            .into(),
             compatibility: Default::default(),
         };
         let input = super::build_client_config_input(super::ClientConfigContext {
@@ -2221,7 +2242,11 @@ mod tests {
             primary_route: Some(&route),
             primary_provider: Some(&provider),
             provider_display: None,
-            route_capabilities: Some(route.capabilities),
+            route_capabilities: effective_provider_route_capabilities(
+                &route,
+                Some(&provider),
+                PartialCapabilities::default(),
+            ),
             metadata: None,
             limits: &PricingLimits {
                 context: None,
@@ -2259,7 +2284,7 @@ mod tests {
             pricing_override: None,
             extra_headers: Default::default(),
             extra_body: Default::default(),
-            capabilities: ProviderCapabilities::all_enabled(),
+            capabilities: ProviderCapabilities::all_enabled().into(),
             compatibility: Default::default(),
         };
         let mut google_route = anthropic_route.clone();
@@ -2322,7 +2347,7 @@ mod tests {
                     pricing_override: None,
                     extra_headers: Default::default(),
                     extra_body: Default::default(),
-                    capabilities: ProviderCapabilities::all_enabled(),
+                    capabilities: ProviderCapabilities::all_enabled().into(),
                     compatibility: Default::default(),
                 }],
             )]),

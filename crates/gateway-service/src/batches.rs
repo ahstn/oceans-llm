@@ -4,9 +4,10 @@ use gateway_core::{
     AuthenticatedApiKey, BatchEndpoint, BatchJobRecord, BatchPricingSnapshot, BatchPricingStatus,
     BatchRepository, BatchStatus, BatchTokenRates, BudgetAlertRepository, BudgetRepository,
     GatewayError, IdentityRepository, McpToolInvocationRepository, ModelRepository, ModelRoute,
-    Money4, NewBatchItem, NewBatchJob, PricingCatalogRepository, PricingResolution,
-    ProviderRegistry, ProviderRepository, ProviderRequestContext, RequestLogRepository,
-    RoutePlanner, StoreHealth, enforce_reasoning_effort_value,
+    Money4, NewBatchItem, NewBatchJob, PartialCapabilities, PricingCatalogRepository,
+    PricingResolution, ProviderCapabilities, ProviderRegistry, ProviderRepository,
+    ProviderRequestContext, RequestLogRepository, RoutePlanner, StoreHealth,
+    effective_route_capabilities, enforce_reasoning_effort_value,
     is_supported_vertex_google_chat_upstream_model,
 };
 use serde::{Deserialize, Serialize};
@@ -414,13 +415,20 @@ fn route_supports_batch(
     provider: &dyn gateway_core::ProviderClient,
     endpoint: BatchEndpoint,
 ) -> bool {
+    // `batch_capabilities` is the batch adapter ceiling, so the route chain needs no other cap.
     if !provider.batch_capabilities().supports(endpoint) {
         return false;
     }
+    let capabilities = effective_route_capabilities(
+        route,
+        provider.provider_type(),
+        PartialCapabilities::default(),
+        ProviderCapabilities::all_enabled(),
+    );
     let route_supports_endpoint = match endpoint {
-        BatchEndpoint::ChatCompletions => route.capabilities.chat_completions,
-        BatchEndpoint::Responses => route.capabilities.responses,
-        BatchEndpoint::Embeddings => route.capabilities.embeddings,
+        BatchEndpoint::ChatCompletions => capabilities.chat_completions,
+        BatchEndpoint::Responses => capabilities.responses,
+        BatchEndpoint::Embeddings => capabilities.embeddings,
     };
     route_supports_endpoint
         && (provider.provider_type() != "gcp_vertex"

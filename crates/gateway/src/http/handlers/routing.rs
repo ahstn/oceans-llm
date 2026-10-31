@@ -7,8 +7,9 @@ use std::{
 use axum::http::HeaderMap;
 
 use gateway_core::{
-    AuthenticatedApiKey, CoreRequestRequirements, GatewayError, ModelRoute, ProviderCapabilities,
-    ProviderClient, ProviderUserCredentialRepository, vertex_route_capabilities_for_upstream_model,
+    AuthenticatedApiKey, CoreRequestRequirements, GatewayError, ModelRoute, PartialCapabilities,
+    ProviderCapabilities, ProviderClient, ProviderUserCredentialRepository,
+    effective_route_capabilities, vertex_route_capabilities_for_upstream_model,
 };
 
 use gateway_service::{
@@ -206,9 +207,12 @@ fn eligible_routes(
             let Some(provider) = providers.get(&route.provider_key) else {
                 return false;
             };
-            let capabilities =
-                route_capabilities_for_request(provider.as_ref(), route, requirements)
-                    .intersect(route.capabilities);
+            let capabilities = effective_route_capabilities(
+                route,
+                provider.provider_type(),
+                PartialCapabilities::default(),
+                route_capabilities_for_request(provider.as_ref(), route, requirements),
+            );
             supports_requirements(capabilities, requirements)
         })
         .cloned()

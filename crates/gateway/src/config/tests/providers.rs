@@ -751,7 +751,7 @@ models:
     assert_eq!(seed_providers[0].provider_key, "typesafe");
     assert_eq!(seed_providers[0].provider_type, "typesafe");
     let seed_models = config.seed_models().expect("seed models");
-    assert!(seed_models[0].routes[0].capabilities.decisions);
+    assert_eq!(seed_models[0].routes[0].capabilities.decisions, Some(true));
 }
 
 #[test]
@@ -874,13 +874,10 @@ models:
 }
 
 #[test]
-fn rejects_typesafe_route_without_decisions_capability() {
+fn infers_typesafe_route_decisions_capability() {
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");
-
-    write_config(
-        &config_path,
-        r#"
+    let yaml = r#"
 providers:
   - id: typesafe
     type: typesafe
@@ -890,12 +887,26 @@ models:
     routes:
       - provider: typesafe
         upstream_model: jev-latest
-"#,
+"#;
+    write_config(&config_path, yaml);
+    let config = GatewayConfig::from_path(&config_path).expect("omitted capabilities are inferred");
+    let seed_models = config.seed_models().expect("seed models");
+    let route = &seed_models[0].routes[0];
+    assert_eq!(
+        gateway_core::infer_compatibility_capabilities(&route.compatibility, "typesafe").resolve(),
+        gateway_core::ProviderCapabilities {
+            decisions: true,
+            ..gateway_core::ProviderCapabilities::none()
+        }
     );
 
+    write_config(
+        &config_path,
+        &format!("{yaml}        capabilities:\n          decisions: false\n"),
+    );
     let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
     assert!(
-        format!("{error:#}").contains("must enable capabilities.decisions"),
+        format!("{error:#}").contains("cannot disable capabilities.decisions"),
         "unexpected error: {error:#}"
     );
 }

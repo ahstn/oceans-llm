@@ -6,8 +6,9 @@ use gateway_core::{
     OpenAiCompatDecisionsApi, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
     OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
     OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
-    OpenRouterProviderRouting, OpenRouterRouteCompatibility, ProviderCapabilities, ReasoningEffort,
-    RouteCompatibility, RoutePricingOverride, enforce_reasoning_effort_map,
+    OpenRouterProviderRouting, OpenRouterRouteCompatibility, PartialCapabilities,
+    ProviderCapabilities, ReasoningEffort, RouteCompatibility, RoutePricingOverride,
+    enforce_reasoning_effort_map, infer_compatibility_capabilities,
 };
 use gateway_providers::BedrockEndpointKind;
 use serde::{Deserialize, Deserializer, de};
@@ -109,12 +110,36 @@ impl ModelRouteConfig {
                 self.provider
             );
         }
+        let capabilities = self.resolved_capabilities(provider);
         if let Some(ProviderConfig::AwsBedrock(provider)) = provider {
-            validate_aws_bedrock_route_compatibility(model_id, self, provider)?;
+            validate_aws_bedrock_route_compatibility(model_id, self, provider, capabilities)?;
         }
-        validate_decisions_route_capability(model_id, self, provider)?;
-        validate_images_route_capability(model_id, self, provider)?;
+        validate_decisions_route_capability(model_id, self, provider, capabilities)?;
+        validate_images_route_capability(model_id, self, provider, capabilities)?;
         Ok(())
+    }
+
+    /// Explicit settings over compatibility inference over defaults. Validation checks this so
+    /// omitted fields take their inferred values and only explicit contradictions fail.
+    fn resolved_capabilities(&self, provider: Option<&ProviderConfig>) -> ProviderCapabilities {
+        let inferred = infer_compatibility_capabilities(
+            &self.compatibility.clone().into_compatibility(),
+            provider.map_or("", provider_type),
+        );
+        self.capabilities.into_partial().or(inferred).resolve()
+    }
+}
+
+/// The `ProviderConnection.provider_type` a provider config seeds.
+const fn provider_type(provider: &ProviderConfig) -> &'static str {
+    match provider {
+        ProviderConfig::OpenAiCompat(_) => "openai_compat",
+        ProviderConfig::GcpCloudRunOpenAiCompat(_) => "gcp_cloud_run_openai_compat",
+        ProviderConfig::AnthropicCompat(_) => "anthropic_compat",
+        ProviderConfig::GcpVertex(_) => "gcp_vertex",
+        ProviderConfig::AwsBedrock(_) => "aws_bedrock",
+        ProviderConfig::GitHubCopilot(_) => "github_copilot",
+        ProviderConfig::TypeSafe(_) => "typesafe",
     }
 }
 
@@ -203,34 +228,36 @@ fn parse_non_negative_rate(value: &str, label: &str) -> anyhow::Result<Money4> {
     Ok(rate)
 }
 
-#[derive(Debug, Clone, Deserialize)]
+/// Explicit route capability settings. Omitted fields stay unset and are filled from route
+/// compatibility, catalog hints, and finally the defaults in `PartialCapabilities::resolve`.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
 pub struct RouteCapabilitiesConfig {
-    #[serde(default = "default_enabled")]
-    pub chat_completions: bool,
-    #[serde(default = "default_enabled")]
-    pub responses: bool,
-    #[serde(default = "default_enabled")]
-    pub stream: bool,
-    #[serde(default = "default_enabled")]
-    pub embeddings: bool,
-    /// Images API generation. Off by default: enable it only on image-model routes.
     #[serde(default)]
-    pub images: bool,
+    pub chat_completions: Option<bool>,
     #[serde(default)]
-    pub decisions: bool,
-    #[serde(default = "default_enabled")]
-    pub tools: bool,
-    #[serde(default = "default_enabled")]
-    pub vision: bool,
-    #[serde(default = "default_enabled")]
-    pub json_schema: bool,
-    #[serde(default = "default_enabled")]
-    pub developer_role: bool,
+    pub responses: Option<bool>,
+    #[serde(default)]
+    pub stream: Option<bool>,
+    #[serde(default)]
+    pub embeddings: Option<bool>,
+    /// Images API generation. Off unless set: enable it only on image-model routes.
+    #[serde(default)]
+    pub images: Option<bool>,
+    #[serde(default)]
+    pub decisions: Option<bool>,
+    #[serde(default)]
+    pub tools: Option<bool>,
+    #[serde(default)]
+    pub vision: Option<bool>,
+    #[serde(default)]
+    pub json_schema: Option<bool>,
+    #[serde(default)]
+    pub developer_role: Option<bool>,
 }
 
 impl RouteCapabilitiesConfig {
-    pub(super) fn into_capabilities(self) -> ProviderCapabilities {
-        ProviderCapabilities {
+    pub(super) const fn into_partial(self) -> PartialCapabilities {
+        PartialCapabilities {
             chat_completions: self.chat_completions,
             responses: self.responses,
             stream: self.stream,
@@ -241,23 +268,6 @@ impl RouteCapabilitiesConfig {
             vision: self.vision,
             json_schema: self.json_schema,
             developer_role: self.developer_role,
-        }
-    }
-}
-
-impl Default for RouteCapabilitiesConfig {
-    fn default() -> Self {
-        Self {
-            chat_completions: true,
-            responses: true,
-            stream: true,
-            embeddings: true,
-            images: false,
-            decisions: false,
-            tools: true,
-            vision: true,
-            json_schema: true,
-            developer_role: true,
         }
     }
 }
@@ -393,6 +403,7 @@ fn validate_decisions_route_capability(
     model_id: &str,
     route: &ModelRouteConfig,
     provider: Option<&ProviderConfig>,
+    capabilities: ProviderCapabilities,
 ) -> anyhow::Result<()> {
     let openrouter_decisions = route
         .compatibility
@@ -419,26 +430,26 @@ fn validate_decisions_route_capability(
                 route.provider
             );
         }
-        if !route.capabilities.decisions {
+        if !capabilities.decisions {
             bail!(
-                "model `{model_id}` route for provider `{}` uses compatibility.openai_compat.decisions_api but capabilities.decisions is not enabled",
+                "model `{model_id}` route for provider `{}` uses compatibility.openai_compat.decisions_api but disables capabilities.decisions",
                 route.provider
             );
         }
     }
-    if openrouter_decisions && !route.capabilities.decisions {
+    if openrouter_decisions && !capabilities.decisions {
         bail!(
-            "model `{model_id}` route for provider `{}` uses compatibility.openrouter.api `decisions` but capabilities.decisions is not enabled",
+            "model `{model_id}` route for provider `{}` uses compatibility.openrouter.api `decisions` but disables capabilities.decisions",
             route.provider
         );
     }
-    if is_typesafe && !route.capabilities.decisions {
+    if is_typesafe && !capabilities.decisions {
         bail!(
-            "model `{model_id}` route for typesafe provider `{}` must enable capabilities.decisions",
+            "model `{model_id}` route for typesafe provider `{}` cannot disable capabilities.decisions",
             route.provider
         );
     }
-    if !route.capabilities.decisions {
+    if !capabilities.decisions {
         return Ok(());
     }
     if !is_typesafe && !openrouter_decisions && !openai_decisions {
@@ -448,15 +459,15 @@ fn validate_decisions_route_capability(
         );
     }
     for (capability, enabled) in [
-        ("chat_completions", route.capabilities.chat_completions),
-        ("responses", route.capabilities.responses),
-        ("embeddings", route.capabilities.embeddings),
-        ("images", route.capabilities.images),
-        ("stream", route.capabilities.stream),
-        ("tools", route.capabilities.tools),
-        ("vision", route.capabilities.vision),
-        ("json_schema", route.capabilities.json_schema),
-        ("developer_role", route.capabilities.developer_role),
+        ("chat_completions", capabilities.chat_completions),
+        ("responses", capabilities.responses),
+        ("embeddings", capabilities.embeddings),
+        ("images", capabilities.images),
+        ("stream", capabilities.stream),
+        ("tools", capabilities.tools),
+        ("vision", capabilities.vision),
+        ("json_schema", capabilities.json_schema),
+        ("developer_role", capabilities.developer_role),
     ] {
         if enabled {
             bail!(
@@ -474,8 +485,9 @@ fn validate_images_route_capability(
     model_id: &str,
     route: &ModelRouteConfig,
     provider: Option<&ProviderConfig>,
+    capabilities: ProviderCapabilities,
 ) -> anyhow::Result<()> {
-    if route.capabilities.images
+    if capabilities.images
         && provider.is_some_and(|provider| {
             !matches!(
                 provider,
@@ -638,6 +650,7 @@ fn validate_aws_bedrock_route_compatibility(
     model_id: &str,
     route: &ModelRouteConfig,
     provider: &AwsBedrockProviderConfig,
+    capabilities: ProviderCapabilities,
 ) -> anyhow::Result<()> {
     let Some(compatibility) = route.compatibility.aws_bedrock.as_ref() else {
         bail!(
@@ -696,7 +709,7 @@ fn validate_aws_bedrock_route_compatibility(
         );
     }
 
-    if route.capabilities.responses
+    if capabilities.responses
         && compatibility.api_style != AwsBedrockApiStyle::MantleOpenaiResponses
     {
         bail!(
@@ -706,7 +719,7 @@ fn validate_aws_bedrock_route_compatibility(
         );
     }
 
-    if route.capabilities.json_schema
+    if capabilities.json_schema
         && compatibility.api_style != AwsBedrockApiStyle::MantleOpenaiResponses
     {
         bail!(
@@ -717,7 +730,7 @@ fn validate_aws_bedrock_route_compatibility(
     }
 
     if compatibility.api_style == AwsBedrockApiStyle::MantleOpenaiResponses
-        && route.capabilities.chat_completions
+        && capabilities.chat_completions
     {
         bail!(
             "model `{model_id}` route for aws_bedrock provider `{}` api_style `mantle_openai_responses` cannot enable chat_completions capability",
@@ -725,8 +738,7 @@ fn validate_aws_bedrock_route_compatibility(
         );
     }
 
-    if compatibility.api_style == AwsBedrockApiStyle::RuntimeAnthropicInvoke
-        && route.capabilities.stream
+    if compatibility.api_style == AwsBedrockApiStyle::RuntimeAnthropicInvoke && capabilities.stream
     {
         bail!(
             "model `{model_id}` route for aws_bedrock provider `{}` api_style `runtime_anthropic_invoke` cannot enable stream capability",

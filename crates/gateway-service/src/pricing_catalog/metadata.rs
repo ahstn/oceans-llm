@@ -28,12 +28,13 @@ mod tests {
             "cost":{"input":0,"context_over_200k":{"input":3,"output":12}}
         }}}});
         let snapshot = project_models_dev_snapshot(
-            &body.to_string(),
+            body.to_string().as_bytes(),
             "test",
             None,
             OffsetDateTime::UNIX_EPOCH,
         )
-        .unwrap();
+        .unwrap()
+        .snapshot;
         let model = &snapshot.document.providers["openai"].models["example"];
         assert_eq!(model.metadata.tool_call, Some(false));
         assert_eq!(model.metadata.reasoning, None);
