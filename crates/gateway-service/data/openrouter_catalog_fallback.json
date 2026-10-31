@@ -2,8 +2,8 @@
   "metadata": {
     "source": "vendored_openrouter",
     "etag": null,
-    "fetched_at": "2026-10-31T22:21:19.773413Z",
-    "checksum": "0968f834539737a5aeb646e30fd1e3f052c78fd468908b70087ac8aaf01dc9d9"
+    "fetched_at": "2026-10-31T23:00:05.940543Z",
+    "checksum": "f72cb9e0da85989c274fca6dcee27dcfc099080ffb2fd4f593d258abe1dca6c2"
   },
   "providers": {
     "openrouter": {
@@ -26516,7 +26516,7 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0448",
+            "input": "0.0434",
             "output": "0.3000",
             "cache_read": "0.0350",
             "cache_write": null,

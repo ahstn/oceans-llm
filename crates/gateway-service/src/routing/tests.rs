@@ -189,6 +189,7 @@ impl TestRequest {
                 },
                 routes,
                 provider_connections,
+                capability_hints: Default::default(),
             },
             extra: BTreeMap::new(),
             headers: BTreeMap::new(),

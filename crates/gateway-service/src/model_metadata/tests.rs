@@ -1,4 +1,8 @@
 use super::*;
+use crate::pricing_catalog::{
+    PricingCatalogDocument, PricingCatalogModelDocument, PricingCatalogProviderDocument,
+    PricingCatalogSnapshotMetadata, merge::merge_catalogs, sources::Providers,
+};
 use gateway_core::{Money4, PartialCapabilities, ProviderCapabilities, RoutePricingOverride};
 use serde_json::json;
 use uuid::Uuid;
@@ -79,7 +83,7 @@ fn billing_modifiers_suppress_catalog_prices_but_preserve_explicit_overrides() {
 }
 
 #[test]
-fn supplement_requires_explicit_provider_identity_and_never_mutates_billing_snapshot() {
+fn catalog_lookup_requires_explicit_provider_identity_and_never_mutates_the_snapshot() {
     let snapshot = crate::pricing_catalog::load_vendored_fallback_snapshot();
     let before = serde_json::to_value(&snapshot.document).unwrap();
     let mut unknown_provider = provider();
@@ -105,10 +109,168 @@ fn vertex_anthropic_routes_use_default_catalog_entries() {
     assert_eq!(metadata.pricing_source, Some("catalog"));
     assert_eq!(metadata.pricing.unwrap().input.as_deref(), Some("10.0000"));
 
-    fable.upstream_model = "anthropic/claude-sonnet-4-5".into();
+    // Only the dated `claude-opus-4-1@20250805` id is catalogued, never `@default`.
+    fable.upstream_model = "anthropic/claude-opus-4-1".into();
     let dated_only = route_metadata(&fable, Some(&vertex_provider()), &snapshot);
     assert!(dated_only.catalog_metadata.is_none());
     assert!(dated_only.pricing.is_none());
+}
+
+fn catalog_model(id: &str) -> PricingCatalogModelDocument {
+    PricingCatalogModelDocument {
+        id: id.to_string(),
+        display_name: id.to_string(),
+        release_date: String::new(),
+        last_updated: String::new(),
+        metadata: Default::default(),
+        cost: PricingCatalogCostDocument::default(),
+        limit: PricingCatalogLimitDocument::default(),
+        modalities: PricingCatalogModalitiesDocument::default(),
+    }
+}
+
+fn openai_providers(models: Vec<PricingCatalogModelDocument>) -> Providers {
+    Providers::from([(
+        "openai".to_string(),
+        PricingCatalogProviderDocument {
+            display_name: "OpenAI".to_string(),
+            models: models
+                .into_iter()
+                .map(|model| (model.id.clone(), model))
+                .collect(),
+        },
+    )])
+}
+
+/// A snapshot merged from the given source layers, as the runtime builds it.
+fn merged_snapshot(models_dev: Providers, litellm: Providers) -> PricingCatalogSnapshot {
+    let merged = merge_catalogs(&models_dev, &Providers::new(), &litellm);
+    let sources = [
+        (CatalogSourceId::ModelsDev, "vendored_models_dev"),
+        (CatalogSourceId::OpenRouter, "vendored_openrouter"),
+        (CatalogSourceId::LiteLlm, "vendored_litellm"),
+    ]
+    .into_iter()
+    .map(|(source, origin)| {
+        let metadata = PricingCatalogSnapshotMetadata {
+            source: origin.to_string(),
+            etag: None,
+            fetched_at: time::OffsetDateTime::UNIX_EPOCH,
+            checksum: Some(format!("{source}-checksum")),
+        };
+        (source, metadata)
+    })
+    .collect();
+    PricingCatalogSnapshot {
+        document: PricingCatalogDocument {
+            providers: merged.providers,
+        },
+        sources,
+        reports: merged.reports,
+    }
+}
+
+#[tokio::test]
+async fn litellm_only_models_are_described_with_litellm_provenance() {
+    let mut litellm_only = catalog_model("house-litellm");
+    litellm_only.limit.input = Some(64_000);
+    litellm_only.metadata.tool_call = Some(true);
+    litellm_only.cost.input = Some("1.0000".to_string());
+    litellm_only.cost.output = Some("2.0000".to_string());
+    let snapshot = merged_snapshot(Providers::new(), openai_providers(vec![litellm_only]));
+    let model = GatewayModel {
+        id: Uuid::new_v4(),
+        model_key: "house".into(),
+        alias_target_model_key: None,
+        max_reasoning_effort: None,
+        routing: None,
+        description: None,
+        tags: vec![],
+        rank: 0,
+    };
+    let mut house_route = route();
+    house_route.model_id = model.id;
+    house_route.upstream_model = "house-litellm".into();
+    house_route.context_window_tokens = None;
+    let repo = ListingRepo {
+        models: vec![model.clone()],
+        routes: vec![house_route],
+        provider: provider(),
+    };
+
+    let response = list_metadata(&repo, vec![model], &snapshot).await.unwrap();
+    let response = serde_json::to_value(response).unwrap();
+
+    assert_eq!(response["schema_version"], json!(2));
+    assert_eq!(
+        response["sources"],
+        json!([
+            {"source": "models_dev", "origin": "vendored_models_dev", "etag": null,
+             "checksum": "models_dev-checksum", "fetched_at": "1970-01-01T00:00:00Z"},
+            {"source": "openrouter", "origin": "vendored_openrouter", "etag": null,
+             "checksum": "openrouter-checksum", "fetched_at": "1970-01-01T00:00:00Z"},
+            {"source": "litellm", "origin": "vendored_litellm", "etag": null,
+             "checksum": "litellm-checksum", "fetched_at": "1970-01-01T00:00:00Z"},
+        ])
+    );
+    let route = &response["data"][0]["routes"][0];
+    assert_eq!(route["limits"]["input"], json!(64_000));
+    assert_eq!(route["capabilities"]["tools"], json!(true));
+    assert_eq!(route["pricing"]["input"], json!("1.0000"));
+    assert_eq!(route["pricing_source"], json!("catalog"));
+    let provenance = &route["merge_report"]["provenance"];
+    assert_eq!(provenance["pricing"], json!("litellm"));
+    assert_eq!(provenance["limits"]["input"], json!("litellm"));
+    assert_eq!(provenance["metadata"]["tool_call"], json!("litellm"));
+    assert_eq!(route["merge_report"]["conflicts"], json!([]));
+}
+
+#[test]
+fn source_disagreements_are_reported_source_neutrally() {
+    let mut models_dev = catalog_model("house-shared");
+    models_dev.limit.context = Some(100_000);
+    let mut litellm = catalog_model("house-shared");
+    litellm.limit.context = Some(200_000);
+    litellm.limit.output = Some(8_000);
+    let snapshot = merged_snapshot(
+        openai_providers(vec![models_dev]),
+        openai_providers(vec![litellm]),
+    );
+    let mut route = route();
+    route.upstream_model = "house-shared".into();
+    route.context_window_tokens = None;
+
+    let metadata = route_metadata(&route, Some(&provider()), &snapshot);
+
+    assert_eq!(metadata.limits.context, Some(100_000));
+    assert_eq!(metadata.limits.output, Some(8_000));
+    let report = serde_json::to_value(&metadata.merge_report).unwrap();
+    assert_eq!(
+        report["provenance"]["limits"]["context"],
+        json!("models_dev")
+    );
+    assert_eq!(report["provenance"]["limits"]["output"], json!("litellm"));
+    assert_eq!(
+        report["conflicts"],
+        json!([{
+            "field": "limit.context",
+            "winner": {"source": "models_dev", "value": 100_000},
+            "others": [{"source": "litellm", "value": 200_000}],
+        }])
+    );
+}
+
+#[test]
+fn routes_missing_from_the_catalog_have_no_merge_report() {
+    let snapshot = crate::pricing_catalog::load_vendored_fallback_snapshot();
+    let mut route = route();
+    route.upstream_model = "house-tuned".into();
+    let metadata = route_metadata(&route, Some(&provider()), &snapshot);
+    assert!(metadata.catalog_metadata.is_none());
+    assert_eq!(
+        serde_json::to_value(&metadata).unwrap()["merge_report"],
+        json!(null)
+    );
 }
 
 struct BatchRepo {
@@ -268,10 +430,10 @@ fn broken_and_cyclic_aliases_have_no_execution_metadata() {
 }
 
 #[test]
-fn primary_only_empty_cost_is_unknown_but_zero_audio_and_conditions_are_prices() {
+fn empty_catalog_cost_is_unknown_but_zero_audio_and_conditions_are_prices() {
     let mut snapshot = crate::pricing_catalog::load_vendored_fallback_snapshot();
     let mut model = snapshot.document.providers["openai"].models["gpt-5"].clone();
-    model.id = "primary-only".into();
+    model.id = "house-empty-cost".into();
     model.cost = PricingCatalogCostDocument::default();
     snapshot
         .document
@@ -281,7 +443,7 @@ fn primary_only_empty_cost_is_unknown_but_zero_audio_and_conditions_are_prices()
         .models
         .insert(model.id.clone(), model);
     let mut route = route();
-    route.upstream_model = "primary-only".into();
+    route.upstream_model = "house-empty-cost".into();
     let empty = route_metadata(&route, Some(&provider()), &snapshot);
     let serialized = serde_json::to_value(&empty).unwrap();
     assert!(empty.catalog_metadata.is_some());
@@ -298,7 +460,7 @@ fn primary_only_empty_cost_is_unknown_but_zero_audio_and_conditions_are_prices()
             .get_mut("openai")
             .unwrap()
             .models
-            .get_mut("primary-only")
+            .get_mut("house-empty-cost")
             .unwrap()
             .cost = serde_json::from_value(cost.clone()).unwrap();
         let priced = route_metadata(&route, Some(&provider()), &snapshot);
@@ -580,8 +742,8 @@ fn image_listing(capabilities: ProviderCapabilities) -> (GatewayModel, ListingRe
     let mut image_route = route();
     image_route.model_id = model.id;
     image_route.provider_key = "openrouter".into();
-    // Absent from the models.dev OpenRouter catalog.
-    image_route.upstream_model = "openai/gpt-image-2.5-flare".into();
+    // Absent from every catalog source.
+    image_route.upstream_model = "house/image-model".into();
     image_route.context_window_tokens = None;
     image_route.capabilities = capabilities.into();
     let repo = ListingRepo {

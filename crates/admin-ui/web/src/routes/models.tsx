@@ -49,7 +49,7 @@ import {
   getModels,
   refreshModelPricing,
 } from '@/server/admin-data.functions'
-import type { ModelView } from '@/types/api'
+import type { ModelView, RefreshModelPricingCatalogResponse } from '@/types/api'
 import { ModelInfoDialog, type ModelInfoSectionKey } from '@/routes/-model-info-dialog'
 import { ModelListPagination, ModelSearch } from '@/routes/-model-list-controls'
 import { formatCost, formatWindow, providerTypeLabel } from '@/routes/-model-formatting'
@@ -64,6 +64,32 @@ const DEFAULT_PAGE_SIZE = 30
 
 const CLIENT_HARNESS_CONFIGURATION_URL =
   'https://oceans-llm.com/configuration/client-harness-configuration.html'
+
+type PricingSourceRefresh = RefreshModelPricingCatalogResponse['sources'][number]
+
+const PRICING_SOURCE_NAMES: Record<PricingSourceRefresh['source'], string> = {
+  models_dev: 'models.dev',
+  openrouter: 'OpenRouter',
+  litellm: 'LiteLLM',
+}
+
+/** One toast per refresh: success when every source refreshed, a warning naming failed sources otherwise. */
+function toastPricingRefresh(sources: PricingSourceRefresh[]) {
+  const failed = sources
+    .filter((source) => source.outcome === 'failed')
+    .map((source) => PRICING_SOURCE_NAMES[source.source])
+  const summary = sources
+    .filter((source) => source.outcome !== 'failed')
+    .map((source) => `${PRICING_SOURCE_NAMES[source.source]} ${source.outcome}`)
+    .join(', ')
+
+  if (failed.length === 0) {
+    toast.success(summary ? `Pricing refreshed: ${summary}` : 'Pricing refreshed')
+    return
+  }
+  const failure = `Pricing refresh failed for ${failed.join(', ')}`
+  toast.warning(summary ? `${failure}; ${summary}` : failure)
+}
 
 export const Route = createFileRoute('/models')({
   validateSearch: (search: Record<string, unknown>) => normalizeModelsSearch(search),
@@ -195,8 +221,8 @@ export function ModelsPage() {
   async function refreshPricing() {
     setIsRefreshingPricing(true)
     try {
-      await refreshModelPricing()
-      toast.success('Pricing refreshed')
+      const response = await refreshModelPricing()
+      toastPricingRefresh(response.data.sources)
     } catch {
       toast.error('Pricing refresh failed')
       setIsRefreshingPricing(false)

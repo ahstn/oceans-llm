@@ -342,6 +342,15 @@ where
         self.model_access.list_models_for_api_key(auth).await
     }
 
+    /// Capability hints from the current catalog snapshot, for admin model views.
+    pub async fn catalog_capability_hints(
+        &self,
+    ) -> Result<crate::CatalogCapabilityHints, GatewayError> {
+        Ok(crate::CatalogCapabilityHints::new(
+            self.pricing_catalog.metadata_snapshot().await?,
+        ))
+    }
+
     #[tracing::instrument(
         name = "gateway.request.resolve",
         skip_all,
@@ -367,8 +376,10 @@ where
             .await?;
         let planned_routes = self.planner.plan_routes(&routes)?;
 
+        let catalog = self.pricing_catalog.metadata_snapshot().await?;
         let mut viable_routes = Vec::new();
         let mut provider_connections = std::collections::HashMap::new();
+        let mut capability_hints = std::collections::HashMap::new();
         for route in planned_routes {
             if let Some(provider) = self.store.get_provider_by_key(&route.provider_key).await? {
                 provider_connections
@@ -376,6 +387,10 @@ where
                     .or_insert_with(|| {
                         ResolvedProviderConnection::from_provider_connection(&provider)
                     });
+                let hints = crate::capability_hints::hints_for_route(&catalog, &provider, &route);
+                if hints != gateway_core::PartialCapabilities::default() {
+                    capability_hints.insert(route.id, hints);
+                }
                 viable_routes.push(route);
             } else {
                 warn!(
@@ -398,6 +413,7 @@ where
             selection,
             routes: viable_routes,
             provider_connections,
+            capability_hints,
         })
     }
 
@@ -839,21 +855,18 @@ where
         self.warn_on_route_context_override_conflicts().await
     }
 
-    pub async fn refresh_pricing_catalog_now(&self) -> Result<(), GatewayError> {
-        self.refresh_pricing_catalog_now_tracked(&AuditProgress::default())
-            .await
-    }
-
-    /// Like [`Self::refresh_pricing_catalog_now`], marking `progress` once the
-    /// catalog cache is written.
+    /// Refresh every catalog source and reconcile pricing, marking `progress` once a
+    /// source's snapshot is cached. Returns one result per source.
     pub async fn refresh_pricing_catalog_now_tracked(
         &self,
         progress: &AuditProgress,
-    ) -> Result<(), GatewayError> {
-        self.pricing_catalog
+    ) -> Result<Vec<crate::PricingCatalogSourceRefresh>, GatewayError> {
+        let sources = self
+            .pricing_catalog
             .refresh_now_and_sync_tracked(progress)
             .await?;
-        self.warn_on_route_context_override_conflicts().await
+        self.warn_on_route_context_override_conflicts().await?;
+        Ok(sources)
     }
 
     pub async fn validate_route_context_overrides(&self) -> Result<(), GatewayError> {

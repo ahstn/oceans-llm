@@ -1,5 +1,15 @@
 use super::support::*;
 
+fn tier(above_input_tokens: i64, input: &str, output: &str) -> PricingCatalogContextTier {
+    PricingCatalogContextTier {
+        above_input_tokens,
+        input: Some(input.to_string()),
+        output: Some(output.to_string()),
+        cache_read: None,
+        cache_write: None,
+    }
+}
+
 #[tokio::test]
 async fn pricing_reconciliation_reloads_and_retries_after_a_store_conflict() {
     let repo = Arc::new(InMemoryRepo::default());
@@ -19,10 +29,8 @@ async fn pricing_reconciliation_reloads_and_retries_after_a_store_conflict() {
 #[tokio::test]
 async fn mixed_newer_active_rows_are_reported_as_a_sync_conflict() {
     let repo = Arc::new(InMemoryRepo::default());
-    let catalog = empty_catalog(repo.clone(), "http://127.0.0.1:9/api.json".to_string());
-    let snapshot = fallback_snapshot();
-    catalog
-        .sync_model_pricing_snapshot(&snapshot)
+    let snapshot = merged(fallback_snapshot());
+    reconcile_model_pricing(repo.as_ref(), &snapshot)
         .await
         .expect("seed pricing rows");
 
@@ -34,8 +42,7 @@ async fn mixed_newer_active_rows_are_reported_as_a_sync_conflict() {
         .provenance
         .fetched_at += time::Duration::seconds(1);
 
-    let error = catalog
-        .sync_model_pricing_snapshot(&snapshot)
+    let error = reconcile_model_pricing(repo.as_ref(), &snapshot)
         .await
         .expect_err("mixed catalog generations must not report convergence");
 
@@ -48,10 +55,8 @@ async fn mixed_newer_active_rows_are_reported_as_a_sync_conflict() {
 #[tokio::test]
 async fn mixed_current_and_older_active_rows_finish_reconciling() {
     let repo = Arc::new(InMemoryRepo::default());
-    let catalog = empty_catalog(repo.clone(), "http://127.0.0.1:9/api.json".to_string());
-    let snapshot = fallback_snapshot();
-    catalog
-        .sync_model_pricing_snapshot(&snapshot)
+    let snapshot = merged(fallback_snapshot());
+    reconcile_model_pricing(repo.as_ref(), &snapshot)
         .await
         .expect("seed pricing rows");
 
@@ -63,8 +68,7 @@ async fn mixed_current_and_older_active_rows_finish_reconciling() {
         .provenance
         .fetched_at -= time::Duration::seconds(1);
 
-    catalog
-        .sync_model_pricing_snapshot(&snapshot)
+    reconcile_model_pricing(repo.as_ref(), &snapshot)
         .await
         .expect("finish partially applied snapshot");
 
@@ -77,7 +81,7 @@ async fn mixed_current_and_older_active_rows_finish_reconciling() {
     assert!(
         active_rows
             .iter()
-            .all(|row| row.provenance.fetched_at == snapshot.metadata.fetched_at)
+            .all(|row| row.provenance.fetched_at == snapshot.generation_at())
     );
 }
 
@@ -126,7 +130,7 @@ async fn forced_refresh_syncs_pricing_rows() {
 
     let catalog = empty_catalog(repo.clone(), format!("{host}/api.json"));
     catalog
-        .refresh_now_and_sync()
+        .refresh_now_and_sync_tracked(&AuditProgress::default())
         .await
         .expect("forced refresh");
 
@@ -205,13 +209,12 @@ async fn changed_snapshot_rolls_active_window_forward() {
 
     let mut changed = fallback_snapshot();
     changed.metadata = PricingCatalogSnapshotMetadata {
-        source: REMOTE_SOURCE.to_string(),
+        source: MODELS_DEV_REMOTE_SOURCE.to_string(),
         etag: Some("\"etag-2\"".to_string()),
         fetched_at: test_time() + Duration::from_secs(3600),
         checksum: None,
     };
     changed
-        .document
         .providers
         .get_mut("openai")
         .expect("openai provider")
@@ -277,7 +280,7 @@ async fn unchanged_snapshot_refresh_updates_active_row_provenance() {
 
     let mut refreshed = fallback_snapshot();
     refreshed.metadata = PricingCatalogSnapshotMetadata {
-        source: REMOTE_SOURCE.to_string(),
+        source: MODELS_DEV_REMOTE_SOURCE.to_string(),
         etag: Some("\"etag-refreshed\"".to_string()),
         fetched_at: test_time() + Duration::from_secs(3600),
         checksum: None,
@@ -333,13 +336,12 @@ async fn refreshed_snapshot_closes_removed_active_pricing_rows() {
 
     let mut removed = fallback_snapshot();
     removed.metadata = PricingCatalogSnapshotMetadata {
-        source: REMOTE_SOURCE.to_string(),
+        source: MODELS_DEV_REMOTE_SOURCE.to_string(),
         etag: Some("\"etag-removed\"".to_string()),
         fetched_at: test_time() + Duration::from_secs(3600),
         checksum: None,
     };
     removed
-        .document
         .providers
         .get_mut("openai")
         .expect("openai provider")
@@ -376,4 +378,68 @@ async fn refreshed_snapshot_closes_removed_active_pricing_rows() {
         removed_row.effective_end_at,
         Some(removed.metadata.fetched_at)
     );
+}
+
+#[test]
+fn pricing_record_carries_context_tiers_and_image_rate() {
+    let snapshot = fallback_snapshot();
+    let mut document = snapshot.providers["openai"].models["gpt-5"].clone();
+    document.cost.output_image = Some("40.0000".to_string());
+    document.cost.tiers = vec![
+        PricingCatalogContextTier {
+            cache_read: Some("0.5000".to_string()),
+            ..tier(200_000, "2.5000", "15.0000")
+        },
+        tier(272_000, "5.0000", "22.5000"),
+    ];
+
+    let record = build_model_pricing_record(&snapshot.metadata, "openai", "gpt-5", &document)
+        .expect("pricing record");
+
+    assert_eq!(
+        record.output_image_usd_per_million,
+        Some(Money4::from_scaled(400_000))
+    );
+    assert_eq!(
+        record
+            .context_tiers
+            .iter()
+            .map(|tier| (tier.above_input_tokens, tier.input, tier.cache_read))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                200_000,
+                Some(Money4::from_scaled(25_000)),
+                Some(Money4::from_scaled(5_000))
+            ),
+            (272_000, Some(Money4::from_scaled(50_000)), None),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn models_no_source_attributes_data_to_are_not_priced() {
+    let repo = Arc::new(InMemoryRepo::default());
+    let mut snapshot = fallback_snapshot();
+    let gpt_5 = snapshot
+        .providers
+        .get_mut("openai")
+        .expect("openai provider")
+        .models
+        .get_mut("gpt-5")
+        .expect("gpt-5 model");
+    gpt_5.cost = PricingCatalogCostDocument::default();
+    gpt_5.limit = PricingCatalogLimitDocument::default();
+    gpt_5.modalities = PricingCatalogModalitiesDocument::default();
+
+    reconcile_model_pricing(repo.as_ref(), &merged(snapshot))
+        .await
+        .expect("reconcile snapshot");
+
+    let rows = repo.pricing_rows.lock().expect("pricing rows");
+    assert!(
+        rows.iter()
+            .all(|row| !(row.pricing_provider_id == "openai" && row.pricing_model_id == "gpt-5"))
+    );
+    assert!(rows.iter().any(|row| row.pricing_provider_id == "opencode"));
 }

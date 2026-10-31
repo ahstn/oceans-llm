@@ -2417,7 +2417,7 @@ fn extract_request_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
 #[cfg(test)]
 mod tests {
     use std::{
-        collections::BTreeMap,
+        collections::{BTreeMap, HashMap},
         sync::Arc,
         time::{Duration, Instant},
     };
@@ -3103,6 +3103,7 @@ mod tests {
         let (eligible_route_count, selected) = select_first_eligible_route(
             &providers,
             &routes,
+            &HashMap::new(),
             CoreRequestRequirements {
                 embeddings: true,
                 ..Default::default()
@@ -3152,13 +3153,77 @@ mod tests {
             extra: Default::default(),
         };
 
-        let (eligible_route_count, selected) =
-            select_first_eligible_route(&providers, &routes, request.requirements());
+        let (eligible_route_count, selected) = select_first_eligible_route(
+            &providers,
+            &routes,
+            &HashMap::new(),
+            request.requirements(),
+        );
 
         assert_eq!(eligible_route_count, 1);
         assert_eq!(
             selected.expect("vision-capable route").route.upstream_model,
             "document-capable"
+        );
+    }
+
+    #[test]
+    fn image_only_catalog_hints_drop_chat_unless_the_route_declares_it() {
+        let provider = Arc::new(StaticProvider {
+            provider_type: "openai_compat",
+            capabilities: ProviderCapabilities::all_enabled(),
+        });
+        let mut providers = ProviderRegistry::new();
+        providers.register(provider);
+        let mut hinted_only = route("image-model", ProviderCapabilities::all_enabled());
+        hinted_only.capabilities = PartialCapabilities::default();
+        let mut explicit_chat = route("image-model", ProviderCapabilities::all_enabled());
+        explicit_chat.capabilities = PartialCapabilities {
+            chat_completions: Some(true),
+            ..Default::default()
+        };
+        // What the catalog says for a model whose `api_endpoints` list only images.
+        let images_only = PartialCapabilities {
+            chat_completions: Some(false),
+            responses: Some(false),
+            embeddings: Some(false),
+            images: Some(true),
+            ..Default::default()
+        };
+        let hints = HashMap::from([
+            (hinted_only.id, images_only),
+            (explicit_chat.id, images_only),
+        ]);
+        let explicit_chat_id = explicit_chat.id;
+        let routes = vec![hinted_only, explicit_chat];
+
+        let (eligible_route_count, selected) = select_first_eligible_route(
+            &providers,
+            &routes,
+            &hints,
+            CoreRequestRequirements {
+                chat_completions: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(eligible_route_count, 1);
+        assert_eq!(
+            selected.expect("explicit chat route").route.id,
+            explicit_chat_id
+        );
+
+        let (eligible_route_count, _) = select_first_eligible_route(
+            &providers,
+            &routes,
+            &hints,
+            CoreRequestRequirements {
+                images: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            eligible_route_count, 2,
+            "hints turn on the unset images flag"
         );
     }
 

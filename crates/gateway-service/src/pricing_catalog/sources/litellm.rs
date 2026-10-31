@@ -1,7 +1,7 @@
 //! Projection of LiteLLM's `model_prices_and_context_window.json` onto gateway catalog
 //! identities, by exact key only.
 
-use std::collections::BTreeMap;
+use std::{borrow::Cow, collections::BTreeMap};
 
 use gateway_core::GatewayError;
 use serde::Deserialize;
@@ -16,7 +16,7 @@ use crate::pricing_catalog::{
     target::{
         AMAZON_BEDROCK_PRICING_PROVIDER_ID, GITHUB_COPILOT_PRICING_PROVIDER_ID,
         GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID, GOOGLE_VERTEX_PRICING_PROVIDER_ID,
-        OPENAI_PRICING_PROVIDER_ID,
+        OPENAI_PRICING_PROVIDER_ID, catalog_model_id_fallback,
     },
 };
 
@@ -97,17 +97,18 @@ pub(crate) fn project(raw: &[u8]) -> Result<Providers, GatewayError> {
         let Some((provider_id, model_id, rank)) = gateway_identity(key, &entry) else {
             continue;
         };
-        let document = model_document(model_id, entry, fields);
+        let document = model_document(&model_id, entry, fields);
         match rank {
             IdentityRank::Primary => {
-                provider_models(&mut providers, provider_id).insert(model_id.to_string(), document);
+                provider_models(&mut providers, provider_id)
+                    .insert(model_id.into_owned(), document);
             }
             IdentityRank::Fallback => fallbacks.push((provider_id, model_id, document)),
         }
     }
     for (provider_id, model_id, document) in fallbacks {
         provider_models(&mut providers, provider_id)
-            .entry(model_id.to_string())
+            .entry(model_id.into_owned())
             .or_insert(document);
     }
     Ok(providers)
@@ -139,10 +140,14 @@ fn provider_display_name(provider_id: &str) -> &'static str {
 }
 
 /// The gateway provider id and model id a LiteLLM key names, by exact key shape only.
+///
+/// Vertex Anthropic ids take the versioned form models.dev and catalog lookups use: a
+/// bare `vertex_ai/<model>` key becomes `<model>@default` and only fills that id when
+/// no explicit `vertex_ai/<model>@default` key exists.
 fn gateway_identity<'key>(
     key: &'key str,
     entry: &LiteLlmEntry,
-) -> Option<(&'static str, &'key str, IdentityRank)> {
+) -> Option<(&'static str, Cow<'key, str>, IdentityRank)> {
     let (provider_id, model_id, rank) = if let Some(model) = key.strip_prefix("github_copilot/") {
         (
             GITHUB_COPILOT_PRICING_PROVIDER_ID,
@@ -175,7 +180,14 @@ fn gateway_identity<'key>(
         };
         (provider_id, key, IdentityRank::Primary)
     };
-    (!model_id.is_empty()).then_some((provider_id, model_id, rank))
+    if model_id.is_empty() {
+        return None;
+    }
+    let identity = match catalog_model_id_fallback(provider_id, model_id) {
+        Some(versioned) => (provider_id, Cow::Owned(versioned), IdentityRank::Fallback),
+        None => (provider_id, Cow::Borrowed(model_id), rank),
+    };
+    Some(identity)
 }
 
 fn model_document(
@@ -410,6 +422,44 @@ mod tests {
                 .input,
             None
         );
+    }
+
+    #[test]
+    fn vertex_anthropic_default_key_wins_over_its_bare_twin() {
+        let providers = project_json(&json!({
+            "vertex_ai/claude-sonnet-4-6": {
+                "litellm_provider": "vertex_ai-anthropic_models", "input_cost_per_token": 9e-06
+            },
+            "vertex_ai/claude-sonnet-4-6@default": {
+                "litellm_provider": "vertex_ai-anthropic_models", "input_cost_per_token": 3e-06
+            },
+            "vertex_ai/claude-opus-4@20250514": {"litellm_provider": "vertex_ai-anthropic_models"},
+        }));
+
+        assert_eq!(
+            model_ids(&providers, "google-vertex-anthropic"),
+            ["claude-opus-4@20250514", "claude-sonnet-4-6@default"]
+        );
+        let model = &providers["google-vertex-anthropic"].models["claude-sonnet-4-6@default"];
+        assert_eq!(model.cost.input.as_deref(), Some("3.0000"));
+        assert_eq!(model.id, "claude-sonnet-4-6@default");
+    }
+
+    #[test]
+    fn vertex_anthropic_bare_key_alone_takes_the_default_id() {
+        let providers = project_json(&json!({
+            "vertex_ai/claude-haiku-4-5": {
+                "litellm_provider": "vertex_ai-anthropic_models", "input_cost_per_token": 1e-06
+            },
+        }));
+
+        assert_eq!(
+            model_ids(&providers, "google-vertex-anthropic"),
+            ["claude-haiku-4-5@default"]
+        );
+        let model = &providers["google-vertex-anthropic"].models["claude-haiku-4-5@default"];
+        assert_eq!(model.cost.input.as_deref(), Some("1.0000"));
+        assert_eq!(model.id, "claude-haiku-4-5@default");
     }
 
     #[test]

@@ -29,9 +29,8 @@ pub struct CatalogApiEndpoints {
 
 #[cfg(test)]
 mod tests {
-    use crate::pricing_catalog::project_models_dev_snapshot;
+    use crate::pricing_catalog::sources::models_dev;
     use serde_json::json;
-    use time::OffsetDateTime;
 
     #[test]
     fn projection_preserves_unknown_false_reasoning_options_and_conditional_rates() {
@@ -40,15 +39,8 @@ mod tests {
             "reasoning_options":[{"type":"effort","values":["low","high"]}],
             "cost":{"input":0,"context_over_200k":{"input":3,"output":12}}
         }}}});
-        let snapshot = project_models_dev_snapshot(
-            body.to_string().as_bytes(),
-            "test",
-            None,
-            OffsetDateTime::UNIX_EPOCH,
-        )
-        .unwrap()
-        .snapshot;
-        let model = &snapshot.document.providers["openai"].models["example"];
+        let providers = models_dev::project(body.to_string().as_bytes()).unwrap();
+        let model = &providers["openai"].models["example"];
         assert_eq!(model.metadata.tool_call, Some(false));
         assert_eq!(model.metadata.reasoning, None);
         assert_eq!(

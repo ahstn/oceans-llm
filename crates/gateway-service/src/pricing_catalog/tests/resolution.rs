@@ -297,12 +297,19 @@ fn vertex_anthropic_default_fallback_applies_only_to_unversioned_anthropic_ids()
 #[tokio::test]
 async fn vertex_anthropic_routes_fall_back_to_default_catalog_ids() {
     let repo = Arc::new(InMemoryRepo::default());
-    let catalog = PricingCatalog::with_fallback_snapshot(
+    // Only the checked-in models.dev snapshot, so the ids below are models.dev's.
+    let catalog = PricingCatalog::with_sources(
         repo.clone(),
-        "http://127.0.0.1:9/api.json".to_string(),
-        PRICING_CATALOG_CACHE_KEY.to_string(),
-        Duration::from_secs(0),
-        load_vendored_fallback_snapshot(),
+        Duration::ZERO,
+        CatalogSourceId::ALL.map(|source| {
+            let fallback = match source {
+                CatalogSourceId::ModelsDev => source.descriptor().vendored_snapshot(),
+                CatalogSourceId::OpenRouter | CatalogSourceId::LiteLlm => {
+                    empty_source_snapshot(source)
+                }
+            };
+            CatalogSource::new(source.descriptor(), UNREACHABLE_URL.to_string(), fallback)
+        }),
     );
     catalog
         .refresh_if_stale_and_sync()
@@ -357,16 +364,6 @@ async fn vertex_anthropic_routes_fall_back_to_default_catalog_ids() {
             reason: PricingUnpricedReason::ModelNotFound
         }
     ));
-}
-
-#[test]
-fn models_dev_money_normalization_rounds_extra_precision() {
-    let cost = Number::from_f64(0.00875).expect("number");
-
-    assert_eq!(
-        normalize_models_dev_money(&cost).expect("normalized cost"),
-        "0.0088"
-    );
 }
 
 #[tokio::test]
@@ -437,7 +434,7 @@ async fn vendored_snapshot_is_used_without_remote_cache() {
 
     match resolved {
         PricingResolution::Exact { pricing } => {
-            assert_eq!(pricing.provenance.source, VENDORED_SOURCE);
+            assert_eq!(pricing.provenance.source, MODELS_DEV_VENDORED_SOURCE);
         }
         other => panic!("unexpected vendored resolution: {other:?}"),
     }
@@ -538,13 +535,12 @@ async fn resolution_uses_persisted_pricing_row_for_occurrence_time() {
 
     let mut changed = fallback_snapshot();
     changed.metadata = PricingCatalogSnapshotMetadata {
-        source: REMOTE_SOURCE.to_string(),
+        source: MODELS_DEV_REMOTE_SOURCE.to_string(),
         etag: Some("\"etag-3\"".to_string()),
         fetched_at: test_time() + Duration::from_secs(7200),
         checksum: None,
     };
     changed
-        .document
         .providers
         .get_mut("openai")
         .expect("openai provider")

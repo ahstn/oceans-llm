@@ -8,8 +8,8 @@ use gateway_client_config::{
     client_hints,
 };
 use gateway_core::{
-    GatewayError, GatewayModel, ModelRepository, ModelRoute, PartialCapabilities,
-    ProviderCapabilities, ProviderConnection, ProviderRepository, ReasoningEffort,
+    GatewayError, GatewayModel, ModelRepository, ModelRoute, ProviderCapabilities,
+    ProviderConnection, ProviderRepository, ReasoningEffort,
 };
 use serde::Serialize;
 use time::{Date, Month, OffsetDateTime, format_description::well_known::Rfc3339};
@@ -19,6 +19,7 @@ use crate::{
     admin_models::{
         reasoning_level, route_is_eligible, route_thinking_policy, select_display_route,
     },
+    capability_hints::hints_for_route,
     effective_route_metadata::{effective_provider_route_capabilities, native_api_format},
     pricing_catalog::PricingCatalogSnapshot,
     resolve_provider_display,
@@ -243,7 +244,7 @@ impl<'a> ModelView<'a> {
         // priority tier and falls back to later tiers. Served APIs are therefore the union.
         // Features routing filters on need only the routes that pass the filter; others,
         // such as reasoning, need every chat-capable route to honour them.
-        let eligible = eligible_routes(loaded, routes);
+        let eligible = eligible_routes(loaded, routes, snapshot);
         let chat_routes = eligible
             .iter()
             .filter(|(_, _, caps)| caps.chat_completions || caps.responses)
@@ -356,6 +357,7 @@ fn chat_features(chat_routes: &[ChatRoute<'_, '_>]) -> ChatFeatures {
 fn eligible_routes<'a>(
     loaded: &'a LoadedRoutes,
     routes: &'a [ModelRoute],
+    snapshot: &PricingCatalogSnapshot,
 ) -> Vec<EligibleRoute<'a>> {
     routes
         .iter()
@@ -365,7 +367,7 @@ fn eligible_routes<'a>(
             let capabilities = effective_provider_route_capabilities(
                 route,
                 Some(provider),
-                PartialCapabilities::default(),
+                hints_for_route(snapshot, provider, route),
             );
             Some((route, provider, capabilities))
         })

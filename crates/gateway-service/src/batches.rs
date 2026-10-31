@@ -316,7 +316,14 @@ where
                 .get(&route.provider_key)
                 .map(|provider| (route, provider))
         })
-        .find(|(route, provider)| route_supports_batch(route, provider.as_ref(), input.endpoint))
+        .find(|(route, provider)| {
+            route_supports_batch(
+                route,
+                resolved.capability_hints_for(route),
+                provider.as_ref(),
+                input.endpoint,
+            )
+        })
         .ok_or_else(|| {
             GatewayError::InvalidRequest(format!(
                 "no configured route supports {:?} batch requests",
@@ -432,6 +439,7 @@ where
 
 fn route_supports_batch(
     route: &ModelRoute,
+    hints: PartialCapabilities,
     provider: &dyn gateway_core::ProviderClient,
     endpoint: BatchEndpoint,
 ) -> bool {
@@ -442,7 +450,7 @@ fn route_supports_batch(
     let capabilities = effective_route_capabilities(
         route,
         provider.provider_type(),
-        PartialCapabilities::default(),
+        hints,
         ProviderCapabilities::all_enabled(),
     );
     let route_supports_endpoint = match endpoint {

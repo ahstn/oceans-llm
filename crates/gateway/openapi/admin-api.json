@@ -15627,11 +15627,15 @@
           "data": {
             "type": "object",
             "required": [
-              "refreshed"
+              "sources"
             ],
             "properties": {
-              "refreshed": {
-                "type": "boolean"
+              "sources": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PricingCatalogSourceRefreshView"
+                },
+                "description": "One entry per catalog source, in the order models_dev, openrouter, litellm."
               }
             }
           },
@@ -18733,6 +18737,51 @@
           }
         }
       },
+      "PricingCatalogRefreshOutcomeView": {
+        "type": "string",
+        "enum": [
+          "updated",
+          "unchanged",
+          "failed"
+        ]
+      },
+      "PricingCatalogSourceRefreshView": {
+        "type": "object",
+        "required": [
+          "source",
+          "outcome"
+        ],
+        "properties": {
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Stable error code of a failed refresh; never upstream response text."
+          },
+          "fetched_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "RFC 3339 generation of the source snapshot now in use, cached or vendored."
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/PricingCatalogRefreshOutcomeView"
+          },
+          "source": {
+            "$ref": "#/components/schemas/PricingCatalogSourceView"
+          }
+        }
+      },
+      "PricingCatalogSourceView": {
+        "type": "string",
+        "enum": [
+          "models_dev",
+          "openrouter",
+          "litellm"
+        ]
+      },
       "ProviderIconKeyView": {
         "type": "string",
         "enum": [
@@ -19066,11 +19115,15 @@
       "RefreshModelPricingCatalogResponse": {
         "type": "object",
         "required": [
-          "refreshed"
+          "sources"
         ],
         "properties": {
-          "refreshed": {
-            "type": "boolean"
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PricingCatalogSourceRefreshView"
+            },
+            "description": "One entry per catalog source, in the order models_dev, openrouter, litellm."
           }
         }
       },

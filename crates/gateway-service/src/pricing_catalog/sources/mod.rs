@@ -1,5 +1,5 @@
-//! Catalog sources beside models.dev, each projected into the gateway's providers
-//! document shape keyed by gateway catalog provider ids.
+//! The catalog sources (models.dev, OpenRouter, LiteLLM), each projected into the
+//! gateway's providers document shape keyed by gateway catalog provider ids.
 
 use std::{collections::BTreeMap, fmt};
 
@@ -9,18 +9,93 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use super::{
-    DEFAULT_PRICING_CATALOG_SOURCE_URL, LITELLM_CATALOG_URL, MAX_LITELLM_RESPONSE_BYTES,
-    MAX_OPENROUTER_RESPONSE_BYTES, OPENROUTER_CATALOG_URL, PricingCatalogProviderDocument,
-    PricingCatalogSnapshotFile, ProjectedSnapshot, VENDORED_LITELLM_SOURCE,
-    VENDORED_OPENROUTER_SOURCE, fetch_vendored_snapshot, projected_snapshot,
+    PricingCatalogProviderDocument, PricingCatalogSnapshotFile, ProjectedSnapshot,
+    projected_snapshot,
 };
 use crate::catalog_fetch::{CatalogFetch, catalog_http_client, fetch_bounded};
 
 pub(crate) mod litellm;
+pub(crate) mod models_dev;
 pub(crate) mod openrouter;
 
 /// A projected providers document: gateway provider id to provider document.
 pub(crate) type Providers = BTreeMap<String, PricingCatalogProviderDocument>;
+
+/// How one catalog source is fetched, cached and projected.
+pub(crate) struct SourceDescriptor {
+    pub(crate) id: CatalogSourceId,
+    pub(crate) url: &'static str,
+    /// The source's `pricing_catalog_cache` row.
+    pub(crate) cache_key: &'static str,
+    /// Largest accepted response body, far above the expected payload.
+    pub(crate) max_bytes: usize,
+    /// Provenance `source` of a snapshot fetched at runtime.
+    pub(crate) remote_source: &'static str,
+    /// Provenance `source` of the checked-in snapshot.
+    pub(crate) vendored_source: &'static str,
+    /// The checked-in snapshot file, refreshed by the `sync_pricing_catalog` bin.
+    vendored_json: &'static str,
+    pub(crate) project: fn(&[u8]) -> Result<Providers, GatewayError>,
+}
+
+impl SourceDescriptor {
+    /// The checked-in snapshot. `fetched_at` is truncated to the whole second the stores
+    /// keep, so rows stamped from it compare equal once persisted.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the checked-in file does not deserialize, which the crate's tests
+    /// rule out.
+    pub(crate) fn vendored_snapshot(&self) -> PricingCatalogSnapshotFile {
+        let mut snapshot = serde_json::from_str::<PricingCatalogSnapshotFile>(self.vendored_json)
+            .unwrap_or_else(|error| {
+                panic!("vendored {} catalog should deserialize: {error}", self.id)
+            });
+        snapshot.metadata.fetched_at = snapshot
+            .metadata
+            .fetched_at
+            .replace_nanosecond(0)
+            .expect("zero nanoseconds is in range");
+        snapshot
+    }
+}
+
+static MODELS_DEV: SourceDescriptor = SourceDescriptor {
+    id: CatalogSourceId::ModelsDev,
+    url: "https://models.dev/api.json",
+    cache_key: "models_dev_supported_v4",
+    // The raw `api.json` is around 6 MB.
+    max_bytes: 32 * 1024 * 1024,
+    remote_source: "models_dev_api",
+    vendored_source: "vendored_models_dev",
+    vendored_json: include_str!("../../../data/pricing_catalog_fallback.json"),
+    project: models_dev::project,
+};
+
+static OPENROUTER: SourceDescriptor = SourceDescriptor {
+    id: CatalogSourceId::OpenRouter,
+    // `output_modalities=all` includes image-only models.
+    url: "https://openrouter.ai/api/v1/models?output_modalities=all",
+    cache_key: "openrouter_v1",
+    // The model list is around 1 MB.
+    max_bytes: 16 * 1024 * 1024,
+    remote_source: "openrouter_api",
+    vendored_source: "vendored_openrouter",
+    vendored_json: include_str!("../../../data/openrouter_catalog_fallback.json"),
+    project: openrouter::project,
+};
+
+static LITELLM: SourceDescriptor = SourceDescriptor {
+    id: CatalogSourceId::LiteLlm,
+    url: "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
+    cache_key: "litellm_v1",
+    // The model price table is around 3 MB.
+    max_bytes: 16 * 1024 * 1024,
+    remote_source: "litellm_github",
+    vendored_source: "vendored_litellm",
+    vendored_json: include_str!("../../../data/litellm_catalog_fallback.json"),
+    project: litellm::project,
+};
 
 /// A catalog source, in the stable spelling used by cache keys and provenance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -34,6 +109,9 @@ pub enum CatalogSourceId {
 }
 
 impl CatalogSourceId {
+    /// Every source, in the order refresh reports list them.
+    pub const ALL: [Self; 3] = [Self::ModelsDev, Self::OpenRouter, Self::LiteLlm];
+
     /// The serde name of the source.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
@@ -41,6 +119,14 @@ impl CatalogSourceId {
             Self::ModelsDev => "models_dev",
             Self::OpenRouter => "openrouter",
             Self::LiteLlm => "litellm",
+        }
+    }
+
+    pub(crate) fn descriptor(self) -> &'static SourceDescriptor {
+        match self {
+            Self::ModelsDev => &MODELS_DEV,
+            Self::OpenRouter => &OPENROUTER,
+            Self::LiteLlm => &LITELLM,
         }
     }
 }
@@ -61,43 +147,25 @@ impl fmt::Display for CatalogSourceId {
 pub async fn fetch_vendored_source_snapshot(
     source: CatalogSourceId,
 ) -> anyhow::Result<PricingCatalogSnapshotFile> {
-    type Project = fn(&[u8]) -> Result<Providers, GatewayError>;
-    let (url, max_bytes, vendored_source, project): (&str, usize, &str, Project) = match source {
-        CatalogSourceId::ModelsDev => {
-            return fetch_vendored_snapshot(DEFAULT_PRICING_CATALOG_SOURCE_URL).await;
-        }
-        CatalogSourceId::OpenRouter => (
-            OPENROUTER_CATALOG_URL,
-            MAX_OPENROUTER_RESPONSE_BYTES,
-            VENDORED_OPENROUTER_SOURCE,
-            openrouter::project,
-        ),
-        CatalogSourceId::LiteLlm => (
-            LITELLM_CATALOG_URL,
-            MAX_LITELLM_RESPONSE_BYTES,
-            VENDORED_LITELLM_SOURCE,
-            litellm::project,
-        ),
-    };
-    let fetched = fetch_bounded(catalog_http_client().get(url), max_bytes)
+    let descriptor = source.descriptor();
+    let url = descriptor.url;
+    let fetched = fetch_bounded(catalog_http_client().get(url), descriptor.max_bytes)
         .await
         .with_context(|| format!("failed fetching {source} catalog from `{url}`"))?;
     // No `If-None-Match` is sent, so a 304 is a misbehaving server.
     let CatalogFetch::Fetched(body) = fetched else {
         anyhow::bail!("{source} catalog fetch returned HTTP 304 to an unconditional request");
     };
-    let providers = project(&body.bytes).map_err(|error| anyhow::anyhow!(error.to_string()))?;
+    let providers =
+        (descriptor.project)(&body.bytes).map_err(|error| anyhow::anyhow!(error.to_string()))?;
     let ProjectedSnapshot { snapshot, .. } = projected_snapshot(
         providers,
-        vendored_source,
+        descriptor.vendored_source,
         body.etag,
         OffsetDateTime::now_utc(),
     )
     .map_err(|error| anyhow::anyhow!(error.to_string()))?;
-    Ok(PricingCatalogSnapshotFile {
-        metadata: snapshot.metadata,
-        providers: snapshot.document.providers,
-    })
+    Ok(snapshot)
 }
 
 /// Converts a per-token USD price float to USD per million tokens at 4 dp. The float is

@@ -8,6 +8,7 @@ pub mod benchmark_catalog;
 pub mod budget_alerts;
 pub mod budget_guard;
 pub mod budget_scopes;
+mod capability_hints;
 mod catalog_fetch;
 mod client_session;
 pub mod effective_route_metadata;
@@ -77,6 +78,7 @@ pub use budget_alerts::{
     BUDGET_ALERT_THRESHOLD_BPS, BudgetAlertEmail, BudgetAlertSendResult, BudgetAlertSender,
     BudgetAlertService, SinkBudgetAlertSender,
 };
+pub use capability_hints::CatalogCapabilityHints;
 pub use effective_route_metadata::{
     EffectiveMetadataSource, EffectiveMetadataSourceKind, EffectiveRouteMetadata,
     EffectiveRoutePricing, resolve_effective_route_metadata,
@@ -146,8 +148,8 @@ pub use model_resolution::{
 };
 pub use pricing_catalog::sources::{CatalogSourceId, fetch_vendored_source_snapshot};
 pub use pricing_catalog::{
-    DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, DEFAULT_PRICING_CATALOG_SOURCE_URL,
-    PRICING_CATALOG_CACHE_KEY, PricingCatalog, PricingCatalogSnapshotFile,
+    DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, PricingCatalog, PricingCatalogRefreshError,
+    PricingCatalogRefreshOutcome, PricingCatalogSnapshotFile, PricingCatalogSourceRefresh,
     is_supported_pricing_provider_id, snapshot_to_pretty_json, vendored_snapshot_is_unchanged,
 };
 pub use provider_credentials::{

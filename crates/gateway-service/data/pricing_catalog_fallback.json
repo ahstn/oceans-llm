@@ -1,9 +1,9 @@
 {
   "metadata": {
     "source": "vendored_models_dev",
-    "etag": "\"f897692c64aebd99bf09bfc69250135e\"",
-    "fetched_at": "2026-10-31T22:21:17.799017Z",
-    "checksum": "fc9d8efccc2f09ad411be1245d97d9cf7d7916c76b671ad64b90e42ecf734ebd"
+    "etag": "\"437ea2c1a8d1708c9f68846a32030ec8\"",
+    "fetched_at": "2026-10-31T23:00:05.064513Z",
+    "checksum": "0776b9a27a22778cc58562856b8984adddd6a79eea25670d7064aca6ddd5079b"
   },
   "providers": {
     "amazon-bedrock": {
@@ -41031,7 +41031,7 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0487",
+            "input": "0.0448",
             "output": "0.3000",
             "cache_read": "0.0350",
             "cache_write": null,

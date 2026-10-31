@@ -2,8 +2,8 @@
   "metadata": {
     "source": "vendored_litellm",
     "etag": "\"0118ac4b2109a6e2f71ddf8764424c0b2b46af5a25b8d9ed17836faadc9337ab\"",
-    "fetched_at": "2026-10-31T22:21:19.048244Z",
-    "checksum": "43057681b08a85cba7cfa52349d0d3220d9e84ae7511a785eba46b39c3ff410d"
+    "fetched_at": "2026-10-31T23:00:05.519258Z",
+    "checksum": "26d210823d6b30f0a4c3ad085fa788b508b92ac68fa9f131c52945267895c833"
   },
   "providers": {
     "amazon-bedrock": {
@@ -23937,45 +23937,6 @@
     "google-vertex-anthropic": {
       "display_name": "Vertex (Anthropic)",
       "models": {
-        "claude-3-5-haiku": {
-          "id": "claude-3-5-haiku",
-          "display_name": "claude-3-5-haiku",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": null,
-            "tool_call": true,
-            "structured_output": null,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "1.0000",
-            "output": "5.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": null,
-            "input": 200000,
-            "output": 8192
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "pdf"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "claude-3-5-haiku@20241022": {
           "id": "claude-3-5-haiku@20241022",
           "display_name": "claude-3-5-haiku@20241022",
@@ -24015,9 +23976,9 @@
             ]
           }
         },
-        "claude-3-5-sonnet": {
-          "id": "claude-3-5-sonnet",
-          "display_name": "claude-3-5-sonnet",
+        "claude-3-5-haiku@default": {
+          "id": "claude-3-5-haiku@default",
+          "display_name": "claude-3-5-haiku@default",
           "release_date": "",
           "last_updated": "",
           "metadata": {
@@ -24031,8 +23992,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "3.0000",
-            "output": "15.0000",
+            "input": "1.0000",
+            "output": "5.0000",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -24047,7 +24008,6 @@
           "modalities": {
             "input": [
               "text",
-              "image",
               "pdf"
             ],
             "output": [
@@ -24095,9 +24055,9 @@
             ]
           }
         },
-        "claude-3-haiku": {
-          "id": "claude-3-haiku",
-          "display_name": "claude-3-haiku",
+        "claude-3-5-sonnet@default": {
+          "id": "claude-3-5-sonnet@default",
+          "display_name": "claude-3-5-sonnet@default",
           "release_date": "",
           "last_updated": "",
           "metadata": {
@@ -24111,8 +24071,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2500",
-            "output": "1.2500",
+            "input": "3.0000",
+            "output": "15.0000",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -24122,12 +24082,13 @@
           "limit": {
             "context": null,
             "input": 200000,
-            "output": 4096
+            "output": 8192
           },
           "modalities": {
             "input": [
               "text",
-              "image"
+              "image",
+              "pdf"
             ],
             "output": [
               "text"
@@ -24173,9 +24134,9 @@
             ]
           }
         },
-        "claude-3-opus": {
-          "id": "claude-3-opus",
-          "display_name": "claude-3-opus",
+        "claude-3-haiku@default": {
+          "id": "claude-3-haiku@default",
+          "display_name": "claude-3-haiku@default",
           "release_date": "",
           "last_updated": "",
           "metadata": {
@@ -24189,8 +24150,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "15.0000",
-            "output": "75.0000",
+            "input": "0.2500",
+            "output": "1.2500",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -24251,9 +24212,9 @@
             ]
           }
         },
-        "claude-3-sonnet": {
-          "id": "claude-3-sonnet",
-          "display_name": "claude-3-sonnet",
+        "claude-3-opus@default": {
+          "id": "claude-3-opus@default",
+          "display_name": "claude-3-opus@default",
           "release_date": "",
           "last_updated": "",
           "metadata": {
@@ -24267,8 +24228,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "3.0000",
-            "output": "15.0000",
+            "input": "15.0000",
+            "output": "75.0000",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -24329,15 +24290,15 @@
             ]
           }
         },
-        "claude-fable-5": {
-          "id": "claude-fable-5",
-          "display_name": "claude-fable-5",
+        "claude-3-sonnet@default": {
+          "id": "claude-3-sonnet@default",
+          "display_name": "claude-3-sonnet@default",
           "release_date": "",
           "last_updated": "",
           "metadata": {
-            "reasoning": true,
+            "reasoning": null,
             "tool_call": true,
-            "structured_output": true,
+            "structured_output": null,
             "attachment": null,
             "temperature": null,
             "knowledge": null,
@@ -24345,64 +24306,23 @@
           },
           "cost": {
             "conditions": {},
-            "input": "10.0000",
-            "output": "50.0000",
-            "cache_read": "1.0000",
-            "cache_write": "12.5000",
+            "input": "3.0000",
+            "output": "15.0000",
+            "cache_read": null,
+            "cache_write": null,
             "input_audio": null,
             "output_audio": null,
             "output_image": null
           },
           "limit": {
             "context": null,
-            "input": 1000000,
-            "output": 128000
+            "input": 200000,
+            "output": 4096
           },
           "modalities": {
             "input": [
               "text",
-              "image",
-              "pdf"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "claude-fable-5-1": {
-          "id": "claude-fable-5-1",
-          "display_name": "claude-fable-5-1",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "10.0000",
-            "output": "50.0000",
-            "cache_read": "0.2500",
-            "cache_write": "12.5000",
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": null,
-            "input": 1000000,
-            "output": 128000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "pdf"
+              "image"
             ],
             "output": [
               "text"
@@ -24489,46 +24409,6 @@
             ]
           }
         },
-        "claude-haiku-4-5": {
-          "id": "claude-haiku-4-5",
-          "display_name": "claude-haiku-4-5",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "1.0000",
-            "output": "5.0000",
-            "cache_read": "0.1000",
-            "cache_write": "1.2500",
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": null,
-            "input": 200000,
-            "output": 64000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "pdf"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "claude-haiku-4-5@20251001": {
           "id": "claude-haiku-4-5@20251001",
           "display_name": "claude-haiku-4-5@20251001",
@@ -24569,9 +24449,9 @@
             ]
           }
         },
-        "claude-haiku-5-5": {
-          "id": "claude-haiku-5-5",
-          "display_name": "claude-haiku-5-5",
+        "claude-haiku-4-5@default": {
+          "id": "claude-haiku-4-5@default",
+          "display_name": "claude-haiku-4-5@default",
           "release_date": "",
           "last_updated": "",
           "metadata": {
@@ -24585,27 +24465,18 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1000",
-            "output": "0.5000",
-            "cache_read": "0.0100",
-            "cache_write": "0.1250",
+            "input": "1.0000",
+            "output": "5.0000",
+            "cache_read": "0.1000",
+            "cache_write": "1.2500",
             "input_audio": null,
             "output_audio": null,
-            "output_image": null,
-            "tiers": [
-              {
-                "above_input_tokens": 100000,
-                "input": "0.5000",
-                "output": "2.5000",
-                "cache_read": "0.0500",
-                "cache_write": "0.6250"
-              }
-            ]
+            "output_image": null
           },
           "limit": {
             "context": null,
-            "input": 1000000,
-            "output": 128000
+            "input": 200000,
+            "output": 64000
           },
           "modalities": {
             "input": [
@@ -24667,46 +24538,6 @@
             ]
           }
         },
-        "claude-opus-4-5": {
-          "id": "claude-opus-4-5",
-          "display_name": "claude-opus-4-5",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "5.0000",
-            "output": "25.0000",
-            "cache_read": "0.5000",
-            "cache_write": "6.2500",
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": null,
-            "input": 200000,
-            "output": 64000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "pdf"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "claude-opus-4-5@20251101": {
           "id": "claude-opus-4-5@20251101",
           "display_name": "claude-opus-4-5@20251101",
@@ -24747,9 +24578,9 @@
             ]
           }
         },
-        "claude-opus-4-6": {
-          "id": "claude-opus-4-6",
-          "display_name": "claude-opus-4-6",
+        "claude-opus-4-5@default": {
+          "id": "claude-opus-4-5@default",
+          "display_name": "claude-opus-4-5@default",
           "release_date": "",
           "last_updated": "",
           "metadata": {
@@ -24773,8 +24604,8 @@
           },
           "limit": {
             "context": null,
-            "input": 1000000,
-            "output": 128000
+            "input": 200000,
+            "output": 64000
           },
           "modalities": {
             "input": [
@@ -24790,46 +24621,6 @@
         "claude-opus-4-6@default": {
           "id": "claude-opus-4-6@default",
           "display_name": "claude-opus-4-6@default",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "5.0000",
-            "output": "25.0000",
-            "cache_read": "0.5000",
-            "cache_write": "6.2500",
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": null,
-            "input": 1000000,
-            "output": 128000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "pdf"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "claude-opus-4-7": {
-          "id": "claude-opus-4-7",
-          "display_name": "claude-opus-4-7",
           "release_date": "",
           "last_updated": "",
           "metadata": {
@@ -24907,46 +24698,6 @@
             ]
           }
         },
-        "claude-opus-4-8": {
-          "id": "claude-opus-4-8",
-          "display_name": "claude-opus-4-8",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "5.0000",
-            "output": "25.0000",
-            "cache_read": "0.5000",
-            "cache_write": "6.2500",
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": null,
-            "input": 1000000,
-            "output": 128000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "pdf"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "claude-opus-4-8@default": {
           "id": "claude-opus-4-8@default",
           "display_name": "claude-opus-4-8@default",
@@ -24967,86 +24718,6 @@
             "output": "25.0000",
             "cache_read": "0.5000",
             "cache_write": "6.2500",
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": null,
-            "input": 1000000,
-            "output": 128000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "pdf"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "claude-opus-5": {
-          "id": "claude-opus-5",
-          "display_name": "claude-opus-5",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "5.0000",
-            "output": "25.0000",
-            "cache_read": "0.5000",
-            "cache_write": "6.2500",
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": null,
-            "input": 1000000,
-            "output": 128000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "pdf"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "claude-opus-5-5": {
-          "id": "claude-opus-5-5",
-          "display_name": "claude-opus-5-5",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "4.0000",
-            "output": "20.0000",
-            "cache_read": "0.2000",
-            "cache_write": "5.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -25147,55 +24818,6 @@
             ]
           }
         },
-        "claude-sonnet-4-5": {
-          "id": "claude-sonnet-4-5",
-          "display_name": "claude-sonnet-4-5",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "3.0000",
-            "output": "15.0000",
-            "cache_read": "0.3000",
-            "cache_write": "3.7500",
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null,
-            "tiers": [
-              {
-                "above_input_tokens": 200000,
-                "input": "6.0000",
-                "output": "22.5000",
-                "cache_read": "0.6000",
-                "cache_write": "7.5000"
-              }
-            ]
-          },
-          "limit": {
-            "context": null,
-            "input": 200000,
-            "output": 64000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "pdf"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "claude-sonnet-4-5@20250929": {
           "id": "claude-sonnet-4-5@20250929",
           "display_name": "claude-sonnet-4-5@20250929",
@@ -25245,9 +24867,9 @@
             ]
           }
         },
-        "claude-sonnet-4-6": {
-          "id": "claude-sonnet-4-6",
-          "display_name": "claude-sonnet-4-6",
+        "claude-sonnet-4-5@default": {
+          "id": "claude-sonnet-4-5@default",
+          "display_name": "claude-sonnet-4-5@default",
           "release_date": "",
           "last_updated": "",
           "metadata": {
@@ -25267,11 +24889,20 @@
             "cache_write": "3.7500",
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "tiers": [
+              {
+                "above_input_tokens": 200000,
+                "input": "6.0000",
+                "output": "22.5000",
+                "cache_read": "0.6000",
+                "cache_write": "7.5000"
+              }
+            ]
           },
           "limit": {
             "context": null,
-            "input": 1000000,
+            "input": 200000,
             "output": 64000
           },
           "modalities": {
@@ -25313,86 +24944,6 @@
             "context": null,
             "input": 1000000,
             "output": 64000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "pdf"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "claude-sonnet-5": {
-          "id": "claude-sonnet-5",
-          "display_name": "claude-sonnet-5",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "2.0000",
-            "output": "10.0000",
-            "cache_read": "0.2000",
-            "cache_write": "2.5000",
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": null,
-            "input": 1000000,
-            "output": 128000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "pdf"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "claude-sonnet-5-5": {
-          "id": "claude-sonnet-5-5",
-          "display_name": "claude-sonnet-5-5",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "2.0000",
-            "output": "10.0000",
-            "cache_read": "0.1000",
-            "cache_write": "2.5000",
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": null,
-            "input": 1000000,
-            "output": 128000
           },
           "modalities": {
             "input": [

@@ -30,8 +30,9 @@ use crate::benchmark_catalog::{
     BenchmarkMatchKind, ModelBenchmarkScore, benchmark_scores_for, derive_benchmark_model_id,
 };
 use crate::{
-    EffectiveMetadataSource, EffectiveRouteMetadata, ModelIconKey, ProviderIconKey,
-    resolve_effective_route_metadata, resolve_model_icon_key, resolve_provider_display,
+    CatalogCapabilityHints, EffectiveMetadataSource, EffectiveRouteMetadata, ModelIconKey,
+    ProviderIconKey, resolve_effective_route_metadata, resolve_model_icon_key,
+    resolve_provider_display,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,6 +97,8 @@ pub struct AdminModelsService<R> {
     repo: Arc<R>,
     client_config_gateway_base_url: String,
     benchmark_model_ids: Arc<HashMap<String, String>>,
+    /// Catalog hints for unset route capability flags; `None` reads no catalog.
+    capability_hints: Option<CatalogCapabilityHints>,
 }
 
 impl<R> AdminModelsService<R>
@@ -108,6 +111,7 @@ where
             repo,
             client_config_gateway_base_url: DEFAULT_GATEWAY_BASE_URL.to_string(),
             benchmark_model_ids: Arc::default(),
+            capability_hints: None,
         }
     }
 
@@ -128,6 +132,27 @@ where
     ) -> Self {
         self.client_config_gateway_base_url = gateway_base_url.into();
         self
+    }
+
+    /// Fill unset route capability flags from this catalog view.
+    #[must_use]
+    pub fn with_capability_hints(mut self, capability_hints: CatalogCapabilityHints) -> Self {
+        self.capability_hints = Some(capability_hints);
+        self
+    }
+
+    fn route_capabilities(
+        &self,
+        route: &ModelRoute,
+        provider: Option<&ProviderConnection>,
+    ) -> ProviderCapabilities {
+        let hints = self
+            .capability_hints
+            .as_ref()
+            .map_or_else(PartialCapabilities::default, |hints| {
+                hints.for_route(provider, route)
+            });
+        effective_provider_route_capabilities(route, provider, hints)
     }
 
     pub async fn list_models(&self) -> Result<Vec<AdminModelSummary>, GatewayError> {
@@ -325,13 +350,8 @@ where
             let provider_display = primary_route.map(|route| {
                 resolve_provider_display(route.provider_key.as_str(), primary_provider)
             });
-            let route_capabilities = primary_route.map(|route| {
-                effective_provider_route_capabilities(
-                    route,
-                    primary_provider,
-                    PartialCapabilities::default(),
-                )
-            });
+            let route_capabilities =
+                primary_route.map(|route| self.route_capabilities(route, primary_provider));
             let primary_metadata = match primary_route {
                 Some(route) => Some(
                     resolve_effective_route_metadata(
@@ -464,12 +484,12 @@ where
                         caps.images
                             || routes.iter().any(|route| {
                                 route_is_eligible(&providers_by_key, route)
-                                    && effective_provider_route_capabilities(
-                                        route,
-                                        providers_by_key.get(&route.provider_key),
-                                        PartialCapabilities::default(),
-                                    )
-                                    .images
+                                    && self
+                                        .route_capabilities(
+                                            route,
+                                            providers_by_key.get(&route.provider_key),
+                                        )
+                                        .images
                             })
                     }),
                     client_configurations,
@@ -2032,6 +2052,73 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn catalog_hints_fill_unset_route_flags_with_false() {
+        use crate::pricing_catalog::{
+            PricingCatalogModalitiesDocument, PricingCatalogModelDocument,
+            load_vendored_fallback_snapshot, metadata::CatalogModelMetadata,
+        };
+
+        let mut snapshot = load_vendored_fallback_snapshot();
+        snapshot
+            .document
+            .providers
+            .get_mut("openai")
+            .expect("vendored catalog has openai")
+            .models
+            .insert(
+                "no-tools-upstream".to_string(),
+                PricingCatalogModelDocument {
+                    id: "no-tools-upstream".to_string(),
+                    display_name: "No tools".to_string(),
+                    release_date: String::new(),
+                    last_updated: String::new(),
+                    metadata: CatalogModelMetadata {
+                        tool_call: Some(false),
+                        ..Default::default()
+                    },
+                    cost: Default::default(),
+                    limit: Default::default(),
+                    modalities: PricingCatalogModalitiesDocument::default(),
+                },
+            );
+        let model = plain_model("hinted", None);
+        let model_id = model.id;
+        let route = ModelRoute {
+            model_id,
+            provider_key: "openai".to_string(),
+            capabilities: PartialCapabilities::default(),
+            ..model_route("no-tools-upstream", ProviderCapabilities::none())
+        };
+        let repo = Arc::new(CountingRepo {
+            models: vec![model],
+            routes_by_model: HashMap::from([(model_id, vec![route])]),
+            providers_by_key: HashMap::from([(
+                "openai".to_string(),
+                ProviderConnection {
+                    provider_key: "openai".to_string(),
+                    provider_type: "openai_compat".to_string(),
+                    config: json!({"pricing_provider_id": "openai"}),
+                    secrets: None,
+                },
+            )]),
+            ..Default::default()
+        });
+
+        let without_hints = AdminModelsService::new(repo.clone())
+            .list_models()
+            .await
+            .expect("admin models");
+        assert_eq!(without_hints[0].supports_tool_calling, Some(true));
+
+        let items = AdminModelsService::new(repo)
+            .with_capability_hints(crate::CatalogCapabilityHints::new(Arc::new(snapshot)))
+            .list_models()
+            .await
+            .expect("admin models");
+        assert_eq!(items[0].supports_tool_calling, Some(false));
+    }
+
+    #[tokio::test]
     async fn list_models_does_not_reconcile_pricing() {
         let model_id = Uuid::new_v4();
         let repo = Arc::new(CountingRepo {
@@ -2476,7 +2563,7 @@ mod tests {
         assert_eq!(fable_doc.limit.context, Some(1_000_000));
 
         let pricing_record = crate::pricing_catalog::build_model_pricing_record(
-            &snapshot.metadata,
+            &snapshot.sources[&crate::CatalogSourceId::ModelsDev],
             "opencode",
             "claude-fable-5-1",
             fable_doc,

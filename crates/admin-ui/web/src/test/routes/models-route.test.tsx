@@ -87,6 +87,7 @@ const invalidateMock = vi.hoisted(() => vi.fn())
 const getModelsMock = vi.hoisted(() => vi.fn())
 const getModelClientConfigsMock = vi.hoisted(() => vi.fn())
 const refreshModelPricingMock = vi.hoisted(() => vi.fn())
+const toastMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn() }))
 type MockLocation = {
   pathname: string
   search: Record<string, unknown>
@@ -142,6 +143,8 @@ vi.mock('@/server/admin-data.functions', () => ({
   refreshModelPricing: refreshModelPricingMock,
   getAuthSession: vi.fn(),
 }))
+
+vi.mock('sonner', () => ({ toast: toastMock }))
 
 const modelPage: ModelPageView = {
   items: [
@@ -356,6 +359,7 @@ beforeEach(() => {
   getModelsMock.mockReset()
   getModelClientConfigsMock.mockReset()
   refreshModelPricingMock.mockReset()
+  Object.values(toastMock).forEach((mock) => mock.mockReset())
   routeMock.useLocationSearch.mockReturnValue({ page: 1, page_size: 30 })
 })
 
@@ -1020,41 +1024,86 @@ describe('ModelsPage client configuration', () => {
 })
 
 describe('ModelsPage pricing refresh', () => {
-  it('refreshes pricing and reloads model data from the toolbar', async () => {
-    refreshModelPricingMock.mockResolvedValue({ data: { refreshed: true }, meta: {} })
+  type SourceOutcome = 'updated' | 'unchanged' | 'failed'
+
+  function refreshResponse(outcomes: [SourceOutcome, SourceOutcome, SourceOutcome]) {
+    const sources = (['models_dev', 'openrouter', 'litellm'] as const).map((source, index) => ({
+      source,
+      outcome: outcomes[index],
+      fetched_at: outcomes[index] === 'failed' ? null : '2026-10-31T12:00:00Z',
+      error: outcomes[index] === 'failed' ? 'fetch_failed' : null,
+    }))
+    return { data: { sources }, meta: {} }
+  }
+
+  function clickRefresh() {
+    render(
+      <TooltipProvider>
+        <ModelsPage />
+      </TooltipProvider>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh pricing' }))
+  }
+
+  it('refreshes pricing, reloads model data, and summarizes every updated source', async () => {
+    refreshModelPricingMock.mockResolvedValue(refreshResponse(['updated', 'updated', 'updated']))
     invalidateMock.mockResolvedValue(undefined)
     routeMock.useLoaderData.mockReturnValue({ data: modelPage })
 
-    render(
-      <TooltipProvider>
-        <ModelsPage />
-      </TooltipProvider>,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh pricing' }))
+    clickRefresh()
 
     expect(refreshModelPricingMock).toHaveBeenCalledTimes(1)
     await waitFor(() => expect(invalidateMock).toHaveBeenCalledTimes(1))
+    expect(toastMock.success).toHaveBeenCalledWith(
+      'Pricing refreshed: models.dev updated, OpenRouter updated, LiteLLM updated',
+    )
+    expect(toastMock.warning).not.toHaveBeenCalled()
+  })
+
+  it('names unchanged sources in the success toast', async () => {
+    refreshModelPricingMock.mockResolvedValue(refreshResponse(['updated', 'unchanged', 'updated']))
+    invalidateMock.mockResolvedValue(undefined)
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+
+    clickRefresh()
+
+    await waitFor(() => expect(invalidateMock).toHaveBeenCalledTimes(1))
+    expect(toastMock.success).toHaveBeenCalledWith(
+      'Pricing refreshed: models.dev updated, OpenRouter unchanged, LiteLLM updated',
+    )
+  })
+
+  it('warns about a failed source and still reloads model data', async () => {
+    refreshModelPricingMock.mockResolvedValue(refreshResponse(['unchanged', 'failed', 'updated']))
+    invalidateMock.mockResolvedValue(undefined)
+    routeMock.useLoaderData.mockReturnValue({ data: modelPage })
+
+    clickRefresh()
+
+    await waitFor(() => expect(invalidateMock).toHaveBeenCalledTimes(1))
+    expect(toastMock.warning).toHaveBeenCalledWith(
+      'Pricing refresh failed for OpenRouter; models.dev unchanged, LiteLLM updated',
+    )
+    expect(toastMock.success).not.toHaveBeenCalled()
   })
 
   it('keeps a successful pricing refresh when model data reload fails', async () => {
-    refreshModelPricingMock.mockResolvedValue({ data: { refreshed: true }, meta: {} })
+    refreshModelPricingMock.mockResolvedValue(
+      refreshResponse(['updated', 'unchanged', 'unchanged']),
+    )
     invalidateMock.mockRejectedValue(new Error('reload failed'))
     routeMock.useLoaderData.mockReturnValue({ data: modelPage })
 
-    render(
-      <TooltipProvider>
-        <ModelsPage />
-      </TooltipProvider>,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh pricing' }))
+    clickRefresh()
 
     expect(refreshModelPricingMock).toHaveBeenCalledTimes(1)
     await waitFor(() => expect(invalidateMock).toHaveBeenCalledTimes(1))
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Refresh pricing' })).toBeEnabled()
     })
+    expect(toastMock.error).toHaveBeenCalledWith(
+      'Pricing refreshed, but the model list did not reload',
+    )
   })
 })
 

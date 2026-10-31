@@ -11,39 +11,58 @@ fn minimal_catalog_body() -> Value {
     })
 }
 
+fn gpt_5_body(input_cost: f64) -> Value {
+    json!({
+        "openai": {
+            "name": "OpenAI",
+            "models": {
+                "gpt-5": {
+                    "id": "gpt-5",
+                    "name": "GPT-5",
+                    "release_date": "2025-08-07",
+                    "last_updated": "2025-08-07",
+                    "cost": {"input": input_cost, "output": 10.0},
+                    "limit": {"context": 400000, "output": 128000},
+                    "modalities": {"input": ["text"], "output": ["text"]}
+                }
+            }
+        }
+    })
+}
+
+fn epoch_second() -> OffsetDateTime {
+    OffsetDateTime::from_unix_timestamp(1).expect("timestamp")
+}
+
+fn models_dev_outcome(
+    outcomes: &[(CatalogSourceId, PricingCatalogRefreshOutcome)],
+) -> PricingCatalogRefreshOutcome {
+    outcomes
+        .iter()
+        .find(|(source, _)| *source == CatalogSourceId::ModelsDev)
+        .map(|(_, outcome)| *outcome)
+        .expect("models.dev was refreshed")
+}
+
 #[test]
 fn vendored_snapshot_json_ends_with_one_newline() {
-    let snapshot = fallback_snapshot();
-    let file = PricingCatalogSnapshotFile {
-        metadata: snapshot.metadata,
-        providers: snapshot.document.providers,
-    };
-
-    let json = snapshot_to_pretty_json(&file).expect("snapshot serializes");
+    let json = snapshot_to_pretty_json(&fallback_snapshot()).expect("snapshot serializes");
 
     assert!(json.ends_with("}\n"), "expected a single trailing newline");
 }
 
 #[test]
 fn vendored_sync_is_unchanged_only_for_the_same_projected_providers() {
-    let snapshot = fallback_snapshot();
+    // The file on disk predates checksums and carries different metadata.
+    let mut existing = fallback_snapshot();
     let fetched = projected_snapshot(
-        snapshot.document.providers.clone(),
-        VENDORED_SOURCE,
+        existing.providers.clone(),
+        MODELS_DEV_VENDORED_SOURCE,
         Some("\"new-etag\"".to_string()),
         test_time(),
     )
     .expect("project snapshot")
     .snapshot;
-    let fetched = PricingCatalogSnapshotFile {
-        metadata: fetched.metadata,
-        providers: fetched.document.providers,
-    };
-    // The file on disk predates checksums and carries different metadata.
-    let mut existing = PricingCatalogSnapshotFile {
-        metadata: snapshot.metadata,
-        providers: snapshot.document.providers,
-    };
     let existing_json = snapshot_to_pretty_json(&existing).expect("existing json");
 
     assert!(vendored_snapshot_is_unchanged(&existing_json, &fetched));
@@ -56,40 +75,20 @@ fn vendored_sync_is_unchanged_only_for_the_same_projected_providers() {
 
 #[test]
 fn catalog_generation_advances_when_refreshes_share_a_wall_clock_second() {
-    let current = fallback_snapshot();
-    let same_second = current.metadata.fetched_at;
+    let current = fallback_snapshot().metadata.fetched_at;
 
-    let next = next_catalog_generation_at(Some(current.metadata.fetched_at), same_second);
+    let next = next_catalog_generation_at(Some(current), current);
 
-    assert_eq!(
-        next,
-        current.metadata.fetched_at + time::Duration::seconds(1)
-    );
+    assert_eq!(next, current + time::Duration::seconds(1));
 }
 
 #[tokio::test]
 async fn concurrent_refreshes_with_different_documents_converge() {
-    let catalog_body = |input_cost: f64| {
-        json!({
-            "openai": {
-                "name": "OpenAI",
-                "models": {
-                    "gpt-5": {
-                        "id": "gpt-5",
-                        "name": "GPT-5",
-                        "release_date": "2025-01-01",
-                        "last_updated": "2026-07-10",
-                        "cost": {"input": input_cost, "output": 10.0},
-                        "limit": {"context": 128000, "output": 32000},
-                        "modalities": {"input": ["text"], "output": ["text"]}
-                    }
-                }
-            }
-        })
-        .to_string()
-    };
     let barrier = Arc::new(tokio::sync::Barrier::new(2));
-    let bodies = Arc::new(Mutex::new(vec![catalog_body(2.0), catalog_body(3.0)]));
+    let bodies = Arc::new(Mutex::new(vec![
+        gpt_5_body(2.0).to_string(),
+        gpt_5_body(3.0).to_string(),
+    ]));
     let app = Router::new()
         .route(
             "/api.json",
@@ -105,53 +104,47 @@ async fn concurrent_refreshes_with_different_documents_converge() {
     let host = start_server(app).await;
     let repo = Arc::new(InMemoryRepo::default());
     let catalog = empty_catalog(repo.clone(), format!("{host}/api.json"));
+    let (first_progress, second_progress) = (AuditProgress::default(), AuditProgress::default());
 
     let (first, second) = tokio::join!(
-        catalog.refresh_now_and_sync(),
-        catalog.refresh_now_and_sync()
+        catalog.refresh_now_and_sync_tracked(&first_progress),
+        catalog.refresh_now_and_sync_tracked(&second_progress)
     );
 
     first.expect("first refresh");
     second.expect("second refresh");
-    let latest = catalog
-        .load_snapshot_from_store_or_fallback()
+    let latest = catalog.reload_snapshot().await.expect("latest snapshot");
+    let applications = repo.sync_applications();
+    reconcile_model_pricing(repo.as_ref(), &latest)
         .await
-        .expect("latest snapshot");
-    let active = repo
-        .list_active_model_pricing()
-        .await
-        .expect("active pricing");
-    assert!(snapshot_is_already_synced(&active, &latest));
-    let latest_model = latest
-        .document
-        .providers
-        .get("openai")
-        .and_then(|provider| provider.models.get("gpt-5"))
-        .expect("latest GPT-5 pricing");
-    let expected = build_model_pricing_record(&latest.metadata, "openai", "gpt-5", latest_model)
-        .expect("build expected GPT-5 pricing");
-    let active_gpt_5 = active
-        .iter()
-        .find(|row| row.pricing_provider_id == "openai" && row.pricing_model_id == "gpt-5")
-        .expect("active GPT-5 pricing");
+        .expect("reconcile latest snapshot");
     assert_eq!(
-        active_gpt_5.input_cost_per_million_tokens,
+        repo.sync_applications(),
+        applications,
+        "the latest snapshot is already reconciled"
+    );
+    let expected = build_model_pricing_record(
+        &latest.sources[&CatalogSourceId::ModelsDev],
+        "openai",
+        "gpt-5",
+        latest.model("openai", "gpt-5").expect("latest GPT-5"),
+    )
+    .expect("build expected GPT-5 pricing");
+    assert_eq!(
+        repo.active_row("openai", "gpt-5")
+            .input_cost_per_million_tokens,
         expected.input_cost_per_million_tokens
     );
 }
 
 #[tokio::test]
 async fn concurrent_304_does_not_block_a_200_refresh() {
-    let repo = Arc::new(InMemoryRepo {
-        cache: Arc::new(Mutex::new(Some(PricingCatalogCacheRecord {
-            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-            source: REMOTE_SOURCE.to_string(),
-            etag: Some("\"old-etag\"".to_string()),
-            fetched_at: OffsetDateTime::from_unix_timestamp(1).expect("timestamp"),
-            snapshot_json: to_string_pretty(&fallback_snapshot().document).expect("json"),
-        }))),
-        ..Default::default()
-    });
+    let repo = Arc::new(InMemoryRepo::with_cache_rows([cache_row(
+        CatalogSourceId::ModelsDev,
+        Some("\"old-etag\""),
+        epoch_second(),
+        &fallback_snapshot().providers,
+    )]));
     let barrier = Arc::new(tokio::sync::Barrier::new(2));
     let app = Router::new().route(
         "/api.json",
@@ -174,33 +167,30 @@ async fn concurrent_304_does_not_block_a_200_refresh() {
     );
     let host = start_server(app).await;
     let catalog = empty_catalog(repo.clone(), format!("{host}/api.json"));
+    let progress = AuditProgress::default();
 
-    let (conditional, forced) =
-        tokio::join!(catalog.refresh_if_stale(), catalog.refresh_now_and_sync());
+    let (conditional, forced) = tokio::join!(
+        catalog.refresh_sources(RefreshMode::IfStale),
+        catalog.refresh_now_and_sync_tracked(&progress)
+    );
 
-    conditional.expect("conditional refresh");
+    assert_eq!(
+        models_dev_outcome(&conditional),
+        PricingCatalogRefreshOutcome::Unchanged
+    );
     forced.expect("forced refresh");
-    let cache = repo
-        .get_pricing_catalog_cache(PRICING_CATALOG_CACHE_KEY)
-        .await
-        .expect("load cache")
-        .expect("cache row");
+    let cache = repo.cache_row(MODELS_DEV_CACHE_KEY).expect("cache row");
     assert_eq!(cache.etag.as_deref(), Some("\"new-etag\""));
 }
 
 #[tokio::test]
 async fn refresh_uses_conditional_etag_and_handles_304() {
-    let repo = Arc::new(InMemoryRepo {
-        cache: Arc::new(Mutex::new(Some(PricingCatalogCacheRecord {
-            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-            source: REMOTE_SOURCE.to_string(),
-            etag: Some("\"catalog-etag\"".to_string()),
-            fetched_at: OffsetDateTime::from_unix_timestamp(1).expect("timestamp"),
-            snapshot_json: to_string_pretty(&fallback_snapshot().document).expect("json"),
-        }))),
-        pricing_rows: Arc::new(Mutex::new(Vec::new())),
-        ..Default::default()
-    });
+    let repo = Arc::new(InMemoryRepo::with_cache_rows([cache_row(
+        CatalogSourceId::ModelsDev,
+        Some("\"catalog-etag\""),
+        epoch_second(),
+        &fallback_snapshot().providers,
+    )]));
     let state = Arc::new(Mutex::new(None::<String>));
     let app = Router::new()
         .route(
@@ -217,40 +207,30 @@ async fn refresh_uses_conditional_etag_and_handles_304() {
         )
         .with_state(state.clone());
     let host = start_server(app).await;
-
     let catalog = empty_catalog(repo.clone(), format!("{host}/api.json"));
-    let before = repo
-        .get_pricing_catalog_cache(PRICING_CATALOG_CACHE_KEY)
-        .await
-        .expect("cache before")
-        .expect("cache row");
+    let before = repo.cache_row(MODELS_DEV_CACHE_KEY).expect("cache row");
 
-    catalog.refresh_if_stale().await.expect("304 refresh");
+    let outcomes = catalog.refresh_sources(RefreshMode::IfStale).await;
 
-    let after = repo
-        .get_pricing_catalog_cache(PRICING_CATALOG_CACHE_KEY)
-        .await
-        .expect("cache after")
-        .expect("cache row");
+    assert_eq!(
+        models_dev_outcome(&outcomes),
+        PricingCatalogRefreshOutcome::Unchanged
+    );
     assert_eq!(
         state.lock().expect("captured lock").as_deref(),
         Some("\"catalog-etag\"")
     );
-    assert_eq!(after, before);
+    assert_eq!(repo.cache_row(MODELS_DEV_CACHE_KEY), Some(before));
 }
 
 #[tokio::test]
 async fn not_modified_is_not_rechecked_within_the_refresh_interval() {
-    let repo = Arc::new(InMemoryRepo {
-        cache: Arc::new(Mutex::new(Some(PricingCatalogCacheRecord {
-            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-            source: REMOTE_SOURCE.to_string(),
-            etag: Some("\"catalog-etag\"".to_string()),
-            fetched_at: OffsetDateTime::from_unix_timestamp(1).expect("timestamp"),
-            snapshot_json: to_string_pretty(&fallback_snapshot().document).expect("json"),
-        }))),
-        ..Default::default()
-    });
+    let repo = Arc::new(InMemoryRepo::with_cache_rows([cache_row(
+        CatalogSourceId::ModelsDev,
+        Some("\"catalog-etag\""),
+        epoch_second(),
+        &fallback_snapshot().providers,
+    )]));
     let hits = Arc::new(AtomicUsize::new(0));
     let app = Router::new()
         .route(
@@ -262,46 +242,36 @@ async fn not_modified_is_not_rechecked_within_the_refresh_interval() {
         )
         .with_state(hits.clone());
     let host = start_server(app).await;
-    let catalog = PricingCatalog::with_fallback_snapshot(
+    let catalog = catalog_with(
         repo,
-        format!("{host}/api.json"),
-        PRICING_CATALOG_CACHE_KEY.to_string(),
         Duration::from_secs(3600),
-        fallback_snapshot(),
+        [
+            format!("{host}/api.json"),
+            UNREACHABLE_URL.to_string(),
+            UNREACHABLE_URL.to_string(),
+        ],
     );
 
-    catalog.refresh_if_stale().await.expect("first 304 refresh");
-    catalog.refresh_if_stale().await.expect("second refresh");
+    let first = catalog.refresh_sources(RefreshMode::IfStale).await;
+    let second = catalog.refresh_sources(RefreshMode::IfStale).await;
 
+    assert_eq!(
+        models_dev_outcome(&first),
+        PricingCatalogRefreshOutcome::Unchanged
+    );
+    assert!(
+        second
+            .iter()
+            .all(|(source, _)| *source != CatalogSourceId::ModelsDev),
+        "a checked source is skipped until the interval passes"
+    );
     assert_eq!(hits.load(Ordering::Relaxed), 1);
 }
 
 #[tokio::test]
 async fn identical_projection_on_200_keeps_the_snapshot_and_pricing_generation() {
-    let body = json!({
-        "openai": {
-            "name": "OpenAI",
-            "models": {
-                "gpt-5": {
-                    "id": "gpt-5",
-                    "name": "GPT-5",
-                    "release_date": "2025-08-07",
-                    "last_updated": "2025-08-07",
-                    "cost": {"input": 1.25, "output": 10.0},
-                    "limit": {"context": 400000, "output": 128000},
-                    "modalities": {"input": ["text"], "output": ["text"]}
-                }
-            }
-        }
-    });
-    let stored = project_models_dev_snapshot(
-        body.to_string().as_bytes(),
-        REMOTE_SOURCE,
-        Some("\"old-etag\"".to_string()),
-        test_time(),
-    )
-    .expect("project stored snapshot")
-    .snapshot;
+    let body = gpt_5_body(1.25);
+    let stored = project_models_dev(&body, Some("\"old-etag\""), test_time());
     let repo = Arc::new(InMemoryRepo::default());
     seed_catalog_snapshot(&repo, &stored).await;
     let hits = Arc::new(AtomicUsize::new(0));
@@ -326,26 +296,20 @@ async fn identical_projection_on_200_keeps_the_snapshot_and_pricing_generation()
         .sync_latest_snapshot_with_retry()
         .await
         .expect("sync stored snapshot");
-    let cache_before = repo
-        .get_pricing_catalog_cache(PRICING_CATALOG_CACHE_KEY)
-        .await
-        .expect("cache before")
-        .expect("cache row");
+    let cache_before = repo.cache_row(MODELS_DEV_CACHE_KEY).expect("cache row");
     let rows_before =
         serde_json::to_value(repo.list_active_model_pricing().await.unwrap()).unwrap();
 
-    catalog
-        .refresh_now_and_sync()
+    let sources = catalog
+        .refresh_now_and_sync_tracked(&AuditProgress::default())
         .await
         .expect("refresh unchanged catalog");
 
+    assert_eq!(sources[0].source, CatalogSourceId::ModelsDev);
+    assert_eq!(sources[0].outcome, PricingCatalogRefreshOutcome::Unchanged);
+    assert_eq!(sources[0].fetched_at, test_time());
     assert_eq!(hits.load(Ordering::Relaxed), 1);
-    let cache_after = repo
-        .get_pricing_catalog_cache(PRICING_CATALOG_CACHE_KEY)
-        .await
-        .expect("cache after")
-        .expect("cache row");
-    assert_eq!(cache_after, cache_before);
+    assert_eq!(repo.cache_row(MODELS_DEV_CACHE_KEY), Some(cache_before));
     assert_eq!(
         serde_json::to_value(repo.list_active_model_pricing().await.unwrap()).unwrap(),
         rows_before
@@ -355,33 +319,7 @@ async fn identical_projection_on_200_keeps_the_snapshot_and_pricing_generation()
 #[tokio::test]
 async fn refresh_replaces_cached_snapshot_on_200() {
     let repo = Arc::new(InMemoryRepo::default());
-    let body = json!({
-        "openai": {
-            "name": "OpenAI",
-            "models": {
-                "gpt-5": {
-                    "id": "gpt-5",
-                    "name": "GPT-5",
-                    "release_date": "2025-08-07",
-                    "last_updated": "2025-08-07",
-                    "cost": {
-                        "input": 1.25,
-                        "output": 10.0,
-                        "cache_read": 0.125
-                    },
-                    "limit": {
-                        "context": 400000,
-                        "input": 272000,
-                        "output": 128000
-                    },
-                    "modalities": {
-                        "input": ["text", "image"],
-                        "output": ["text"]
-                    }
-                }
-            }
-        }
-    });
+    let body = gpt_5_body(1.25);
     let app = Router::new().route(
         "/api.json",
         get(move || {
@@ -395,32 +333,30 @@ async fn refresh_replaces_cached_snapshot_on_200() {
         }),
     );
     let host = start_server(app).await;
-
     let catalog = empty_catalog(repo.clone(), format!("{host}/api.json"));
-    catalog.refresh_if_stale().await.expect("200 refresh");
 
-    let cache = repo
-        .get_pricing_catalog_cache(PRICING_CATALOG_CACHE_KEY)
-        .await
-        .expect("cache")
-        .expect("cache row");
+    let outcomes = catalog.refresh_sources(RefreshMode::IfStale).await;
+
+    assert_eq!(
+        models_dev_outcome(&outcomes),
+        PricingCatalogRefreshOutcome::Updated
+    );
+    let cache = repo.cache_row(MODELS_DEV_CACHE_KEY).expect("cache row");
+    assert_eq!(cache.source, MODELS_DEV_REMOTE_SOURCE);
     assert_eq!(cache.etag.as_deref(), Some("\"new-etag\""));
     assert!(cache.snapshot_json.contains("\"gpt-5\""));
 }
 
 #[tokio::test]
 async fn refresh_repairs_an_invalid_cached_snapshot() {
-    let corrupt_fetched_at = OffsetDateTime::from_unix_timestamp(1).expect("timestamp");
-    let repo = Arc::new(InMemoryRepo {
-        cache: Arc::new(Mutex::new(Some(PricingCatalogCacheRecord {
-            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-            source: REMOTE_SOURCE.to_string(),
-            etag: Some("\"corrupt-etag\"".to_string()),
-            fetched_at: corrupt_fetched_at,
-            snapshot_json: "not valid json".to_string(),
-        }))),
-        ..Default::default()
-    });
+    let corrupt_fetched_at = epoch_second();
+    let repo = Arc::new(InMemoryRepo::with_cache_rows([PricingCatalogCacheRecord {
+        catalog_key: MODELS_DEV_CACHE_KEY.to_string(),
+        source: MODELS_DEV_REMOTE_SOURCE.to_string(),
+        etag: Some("\"corrupt-etag\"".to_string()),
+        fetched_at: corrupt_fetched_at,
+        snapshot_json: "not valid json".to_string(),
+    }]));
     let body = minimal_catalog_body();
     let app = Router::new().route(
         "/api.json",
@@ -438,15 +374,14 @@ async fn refresh_repairs_an_invalid_cached_snapshot() {
     let host = start_server(app).await;
     let catalog = empty_catalog(repo.clone(), format!("{host}/api.json"));
 
-    catalog
-        .refresh_if_stale()
-        .await
-        .expect("repair corrupt cache row");
+    let outcomes = catalog.refresh_sources(RefreshMode::IfStale).await;
 
+    assert_eq!(
+        models_dev_outcome(&outcomes),
+        PricingCatalogRefreshOutcome::Updated
+    );
     let repaired = repo
-        .get_pricing_catalog_cache(PRICING_CATALOG_CACHE_KEY)
-        .await
-        .expect("load repaired cache")
+        .cache_row(MODELS_DEV_CACHE_KEY)
         .expect("repaired cache row");
     assert!(repaired.fetched_at > corrupt_fetched_at);
     serde_json::from_str::<PricingCatalogDocument>(&repaired.snapshot_json)
@@ -454,7 +389,7 @@ async fn refresh_repairs_an_invalid_cached_snapshot() {
 }
 
 #[tokio::test]
-async fn refresh_rejects_an_unexplained_cache_write_miss() {
+async fn an_unexplained_cache_write_miss_fails_only_that_source() {
     let repo = Arc::new(InMemoryRepo {
         cache_write_rejections_remaining: Arc::new(AtomicUsize::new(1)),
         ..Default::default()
@@ -464,125 +399,62 @@ async fn refresh_rejects_an_unexplained_cache_write_miss() {
         get(|| async { axum::Json(minimal_catalog_body()) }),
     );
     let host = start_server(app).await;
-    let catalog = empty_catalog(repo, format!("{host}/api.json"));
+    let catalog = empty_catalog(repo.clone(), format!("{host}/api.json"));
 
-    let result = catalog.refresh_now_and_sync().await;
-
-    assert!(matches!(
-        result,
-        Err(GatewayError::Store(StoreError::PricingSyncConflict))
-    ));
-}
-
-#[tokio::test]
-async fn forced_refresh_ignores_cached_etag() {
-    let repo = Arc::new(InMemoryRepo {
-        cache: Arc::new(Mutex::new(Some(PricingCatalogCacheRecord {
-            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-            source: REMOTE_SOURCE.to_string(),
-            etag: Some("\"cached-etag\"".to_string()),
-            fetched_at: OffsetDateTime::from_unix_timestamp(1).expect("timestamp"),
-            snapshot_json: to_string_pretty(&fallback_snapshot().document).expect("json"),
-        }))),
-        pricing_rows: Arc::new(Mutex::new(Vec::new())),
-        ..Default::default()
-    });
-    let state = Arc::new(Mutex::new(None::<String>));
-    let body = json!({
-        "openai": {
-            "name": "OpenAI",
-            "models": {
-                "gpt-5": {
-                    "id": "gpt-5",
-                    "name": "GPT-5",
-                    "release_date": "2025-08-07",
-                    "last_updated": "2025-08-07",
-                    "cost": {
-                        "input": 1.25,
-                        "output": 10.0
-                    },
-                    "limit": {},
-                    "modalities": {}
-                }
-            }
-        }
-    });
-    let app = Router::new()
-        .route(
-            "/api.json",
-            get(
-                move |headers: HeaderMap, State(captured): State<Arc<Mutex<Option<String>>>>| {
-                    let body = body.clone();
-                    async move {
-                        *captured.lock().expect("captured lock") = headers
-                            .get(IF_NONE_MATCH)
-                            .and_then(|value| value.to_str().ok())
-                            .map(str::to_string);
-                        (
-                            [(ETAG, HeaderValue::from_static("\"new-etag\""))],
-                            axum::Json(body),
-                        )
-                    }
-                },
-            ),
-        )
-        .with_state(state.clone());
-    let host = start_server(app).await;
-
-    let catalog = empty_catalog(repo, format!("{host}/api.json"));
-    catalog
-        .refresh_now_and_sync()
+    let sources = catalog
+        .refresh_now_and_sync_tracked(&AuditProgress::default())
         .await
-        .expect("forced refresh");
+        .expect("reconcile the snapshots in use");
 
-    assert_eq!(state.lock().expect("captured lock").as_deref(), None);
+    assert_eq!(
+        sources[0].outcome,
+        PricingCatalogRefreshOutcome::Failed(PricingCatalogRefreshError::StoreFailed)
+    );
+    assert_eq!(
+        sources[0].fetched_at,
+        fallback_snapshot().metadata.fetched_at
+    );
+    assert_eq!(repo.cache_row(MODELS_DEV_CACHE_KEY), None);
 }
 
 #[tokio::test]
 async fn remote_failure_falls_back_to_store_then_vendored_snapshot() {
-    let repo = Arc::new(InMemoryRepo {
-        cache: Arc::new(Mutex::new(Some(PricingCatalogCacheRecord {
-            catalog_key: PRICING_CATALOG_CACHE_KEY.to_string(),
-            source: REMOTE_SOURCE.to_string(),
-            etag: Some("\"cached\"".to_string()),
-            fetched_at: OffsetDateTime::from_unix_timestamp(1).expect("timestamp"),
-            snapshot_json: to_string_pretty(&PricingCatalogDocument {
-                providers: BTreeMap::from([(
-                    "openai".to_string(),
-                    PricingCatalogProviderDocument {
-                        display_name: "OpenAI".to_string(),
-                        models: BTreeMap::from([(
-                            "gpt-5".to_string(),
-                            PricingCatalogModelDocument {
-                                metadata: Default::default(),
-                                id: "gpt-5".to_string(),
-                                display_name: "GPT-5 Cached".to_string(),
-                                release_date: "2025-08-07".to_string(),
-                                last_updated: "2025-08-08".to_string(),
-                                cost: PricingCatalogCostDocument {
-                                    conditions: Default::default(),
-                                    input: Some("2.0000".to_string()),
-                                    output: Some("20.0000".to_string()),
-                                    cache_read: None,
-                                    cache_write: None,
-                                    input_audio: None,
-                                    output_audio: None,
-                                    output_image: None,
-                                    tiers: Vec::new(),
-                                },
-                                limit: PricingCatalogLimitDocument::default(),
-                                modalities: PricingCatalogModalitiesDocument::default(),
-                            },
-                        )]),
+    let cached_providers = BTreeMap::from([(
+        "openai".to_string(),
+        PricingCatalogProviderDocument {
+            display_name: "OpenAI".to_string(),
+            models: BTreeMap::from([(
+                "gpt-5".to_string(),
+                PricingCatalogModelDocument {
+                    metadata: Default::default(),
+                    id: "gpt-5".to_string(),
+                    display_name: "GPT-5 Cached".to_string(),
+                    release_date: "2025-08-07".to_string(),
+                    last_updated: "2025-08-08".to_string(),
+                    cost: PricingCatalogCostDocument {
+                        conditions: Default::default(),
+                        input: Some("2.0000".to_string()),
+                        output: Some("20.0000".to_string()),
+                        cache_read: None,
+                        cache_write: None,
+                        input_audio: None,
+                        output_audio: None,
+                        output_image: None,
+                        tiers: Vec::new(),
                     },
-                )]),
-            })
-            .expect("json"),
-        }))),
-        pricing_rows: Arc::new(Mutex::new(Vec::new())),
-        ..Default::default()
-    });
-    let failing_catalog = empty_catalog(repo.clone(), "http://127.0.0.1:9/api.json".to_string());
+                    limit: PricingCatalogLimitDocument::default(),
+                    modalities: PricingCatalogModalitiesDocument::default(),
+                },
+            )]),
+        },
+    )]);
+    let repo = Arc::new(InMemoryRepo::with_cache_rows([cache_row(
+        CatalogSourceId::ModelsDev,
+        Some("\"cached\""),
+        epoch_second(),
+        &cached_providers,
+    )]));
+    let failing_catalog = empty_catalog(repo.clone(), UNREACHABLE_URL.to_string());
     failing_catalog
         .refresh_if_stale_and_sync()
         .await
@@ -599,14 +471,14 @@ async fn remote_failure_falls_back_to_store_then_vendored_snapshot() {
     match cached {
         PricingResolution::Exact { pricing } => {
             assert_eq!(pricing.display_name, "GPT-5 Cached");
-            assert_eq!(pricing.provenance.source, REMOTE_SOURCE);
+            assert_eq!(pricing.provenance.source, MODELS_DEV_REMOTE_SOURCE);
         }
         other => panic!("unexpected cached resolution: {other:?}"),
     }
 
     let vendored_catalog = empty_catalog(
         Arc::new(InMemoryRepo::default()),
-        "http://127.0.0.1:9/api.json".to_string(),
+        UNREACHABLE_URL.to_string(),
     );
     vendored_catalog
         .refresh_if_stale_and_sync()
@@ -624,7 +496,7 @@ async fn remote_failure_falls_back_to_store_then_vendored_snapshot() {
     match vendored {
         PricingResolution::Exact { pricing } => {
             assert_eq!(pricing.display_name, "GPT-5");
-            assert_eq!(pricing.provenance.source, VENDORED_SOURCE);
+            assert_eq!(pricing.provenance.source, MODELS_DEV_VENDORED_SOURCE);
         }
         other => panic!("unexpected vendored resolution: {other:?}"),
     }
@@ -644,10 +516,16 @@ async fn metadata_reuses_parsed_snapshot_and_observes_refresh() {
     let second = catalog.metadata_snapshot().await.unwrap();
     assert!(Arc::ptr_eq(&first, &second));
     assert_eq!(repo.cache_reads.load(Ordering::Relaxed), reads);
-    catalog.refresh_now_and_sync().await.unwrap();
+    catalog
+        .refresh_now_and_sync_tracked(&AuditProgress::default())
+        .await
+        .unwrap();
     let refreshed = catalog.metadata_snapshot().await.unwrap();
     assert!(!Arc::ptr_eq(&first, &refreshed));
-    assert_eq!(refreshed.metadata.source, REMOTE_SOURCE);
+    assert_eq!(
+        refreshed.sources[&CatalogSourceId::ModelsDev].source,
+        MODELS_DEV_REMOTE_SOURCE
+    );
     let reads = repo.cache_reads.load(Ordering::Relaxed);
     catalog.metadata_snapshot().await.unwrap();
     assert_eq!(repo.cache_reads.load(Ordering::Relaxed), reads);

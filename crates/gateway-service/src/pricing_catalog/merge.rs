@@ -27,52 +27,54 @@ pub(crate) struct MergedCatalog {
     pub(crate) reports: BTreeMap<(String, String), MergedModelReport>,
 }
 
+/// Where one merged model's fields came from and where sources disagreed. Served by
+/// `/v1/model-metadata`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
-pub(crate) struct MergedModelReport {
-    pub(crate) provenance: MergedModelProvenance,
-    pub(crate) conflicts: Vec<FieldConflict>,
+pub struct MergedModelReport {
+    pub provenance: MergedModelProvenance,
+    pub conflicts: Vec<FieldConflict>,
 }
 
 /// The source that supplied each merged field; `None` when no source had a value.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-pub(crate) struct MergedModelProvenance {
-    pub(crate) pricing: Option<CatalogSourceId>,
-    pub(crate) limits: LimitProvenance,
-    pub(crate) metadata: MetadataProvenance,
-    pub(crate) modalities: Option<CatalogSourceId>,
+pub struct MergedModelProvenance {
+    pub pricing: Option<CatalogSourceId>,
+    pub limits: LimitProvenance,
+    pub metadata: MetadataProvenance,
+    pub modalities: Option<CatalogSourceId>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-pub(crate) struct LimitProvenance {
-    pub(crate) context: Option<CatalogSourceId>,
-    pub(crate) input: Option<CatalogSourceId>,
-    pub(crate) output: Option<CatalogSourceId>,
+pub struct LimitProvenance {
+    pub context: Option<CatalogSourceId>,
+    pub input: Option<CatalogSourceId>,
+    pub output: Option<CatalogSourceId>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
-pub(crate) struct MetadataProvenance {
-    pub(crate) reasoning: Option<CatalogSourceId>,
-    pub(crate) tool_call: Option<CatalogSourceId>,
-    pub(crate) structured_output: Option<CatalogSourceId>,
-    pub(crate) attachment: Option<CatalogSourceId>,
-    pub(crate) temperature: Option<CatalogSourceId>,
-    pub(crate) knowledge: Option<CatalogSourceId>,
-    pub(crate) reasoning_options: Option<CatalogSourceId>,
-    pub(crate) api_endpoints: Option<CatalogSourceId>,
+pub struct MetadataProvenance {
+    pub reasoning: Option<CatalogSourceId>,
+    pub tool_call: Option<CatalogSourceId>,
+    pub structured_output: Option<CatalogSourceId>,
+    pub attachment: Option<CatalogSourceId>,
+    pub temperature: Option<CatalogSourceId>,
+    pub knowledge: Option<CatalogSourceId>,
+    pub reasoning_options: Option<CatalogSourceId>,
+    pub api_endpoints: Option<CatalogSourceId>,
 }
 
 /// Two or more sources had different values for `field`; `winner` is the merged value.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct FieldConflict {
-    pub(crate) field: &'static str,
-    pub(crate) winner: SourceValue,
-    pub(crate) others: Vec<SourceValue>,
+pub struct FieldConflict {
+    pub field: &'static str,
+    pub winner: SourceValue,
+    pub others: Vec<SourceValue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct SourceValue {
-    pub(crate) source: CatalogSourceId,
-    pub(crate) value: Value,
+pub struct SourceValue {
+    pub source: CatalogSourceId,
+    pub value: Value,
 }
 
 /// One source's document for the model being merged, in precedence order.
@@ -96,7 +98,17 @@ struct PricingSchedule<'doc> {
 impl<'doc> PricingSchedule<'doc> {
     /// The schedule of `cost` when it has both an input and an output rate.
     fn complete(cost: &'doc PricingCatalogCostDocument) -> Option<Self> {
-        (cost.input.is_some() && cost.output.is_some()).then(|| Self {
+        (cost.input.is_some() && cost.output.is_some()).then(|| Self::of(cost))
+    }
+
+    /// The schedule of `cost` when it has an input or an output rate, such as an
+    /// embedding model's input-only schedule.
+    fn partial(cost: &'doc PricingCatalogCostDocument) -> Option<Self> {
+        (cost.input.is_some() || cost.output.is_some()).then(|| Self::of(cost))
+    }
+
+    fn of(cost: &'doc PricingCatalogCostDocument) -> Self {
+        Self {
             cost,
             input: cost.input.as_deref(),
             output: cost.output.as_deref(),
@@ -106,7 +118,7 @@ impl<'doc> PricingSchedule<'doc> {
             output_audio: cost.output_audio.as_deref(),
             output_image: cost.output_image.as_deref(),
             tiers: &cost.tiers,
-        })
+        }
     }
 }
 
@@ -194,12 +206,21 @@ fn merge_model(
     candidates: &[Candidate<'_>],
 ) -> (PricingCatalogModelDocument, MergedModelReport) {
     let mut conflicts = Vec::new();
+    // A partial schedule is used only when no source has a complete one.
     let pricing = first_with_value(
         "pricing",
         candidates,
         |model| PricingSchedule::complete(&model.cost),
         &mut conflicts,
-    );
+    )
+    .or_else(|| {
+        first_with_value(
+            "pricing",
+            candidates,
+            |model| PricingSchedule::partial(&model.cost),
+            &mut conflicts,
+        )
+    });
     let (limit, limits) = merge_limits(candidates, &mut conflicts);
     let (metadata, metadata_provenance) = merge_metadata(candidates, &mut conflicts);
     let modalities = first_with_value(
@@ -617,6 +638,43 @@ mod tests {
         assert_eq!(
             provenance.metadata.tool_call,
             Some(CatalogSourceId::ModelsDev)
+        );
+    }
+
+    #[test]
+    fn an_input_only_schedule_is_used_only_without_a_complete_one() {
+        let mut input_only = model("embedding");
+        input_only.cost.input = Some("0.1500".to_string());
+
+        let alone = merge_catalogs(
+            &providers("google-vertex", vec![input_only.clone()]),
+            &Providers::new(),
+            &Providers::new(),
+        );
+        let cost = &alone.providers["google-vertex"].models["embedding"].cost;
+        assert_eq!(cost.input.as_deref(), Some("0.1500"));
+        assert_eq!(
+            report(&alone, "google-vertex", "embedding")
+                .provenance
+                .pricing,
+            Some(CatalogSourceId::ModelsDev)
+        );
+
+        let with_complete = merge_catalogs(
+            &providers("google-vertex", vec![input_only]),
+            &Providers::new(),
+            &providers(
+                "google-vertex",
+                vec![priced("embedding", "0.2000", "0.0000")],
+            ),
+        );
+        let cost = &with_complete.providers["google-vertex"].models["embedding"].cost;
+        assert_eq!(cost.input.as_deref(), Some("0.2000"));
+        assert_eq!(
+            report(&with_complete, "google-vertex", "embedding")
+                .provenance
+                .pricing,
+            Some(CatalogSourceId::LiteLlm)
         );
     }
 }

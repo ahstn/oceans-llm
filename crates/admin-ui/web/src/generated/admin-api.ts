@@ -4066,7 +4066,8 @@ export interface components {
         };
         Envelope_RefreshModelPricingCatalogResponse: {
             data: {
-                refreshed: boolean;
+                /** @description One entry per catalog source, in the order models_dev, openrouter, litellm. */
+                sources: components["schemas"]["PricingCatalogSourceRefreshView"][];
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -4910,6 +4911,18 @@ export interface components {
             password: string;
         };
         /** @enum {string} */
+        PricingCatalogRefreshOutcomeView: "updated" | "unchanged" | "failed";
+        PricingCatalogSourceRefreshView: {
+            /** @description Stable error code of a failed refresh; never upstream response text. */
+            error?: string | null;
+            /** @description RFC 3339 generation of the source snapshot now in use, cached or vendored. */
+            fetched_at?: string | null;
+            outcome: components["schemas"]["PricingCatalogRefreshOutcomeView"];
+            source: components["schemas"]["PricingCatalogSourceView"];
+        };
+        /** @enum {string} */
+        PricingCatalogSourceView: "models_dev" | "openrouter" | "litellm";
+        /** @enum {string} */
         ProviderIconKeyView: "anthropic" | "aws" | "openai" | "openrouter" | "typesafe" | "vertexai";
         PublicOauthProviderView: {
             key: string;
@@ -5002,7 +5015,8 @@ export interface components {
             items: components["schemas"]["RecommendedMcpServerView"][];
         };
         RefreshModelPricingCatalogResponse: {
-            refreshed: boolean;
+            /** @description One entry per catalog source, in the order models_dev, openrouter, litellm. */
+            sources: components["schemas"]["PricingCatalogSourceRefreshView"][];
         };
         ReplaceMcpToolsetToolsRequest: {
             tool_ids: string[];

@@ -581,7 +581,34 @@ pub struct GenerateModelClientConfigsResponse {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct RefreshModelPricingCatalogResponse {
-    pub refreshed: bool,
+    /// One entry per catalog source, in the order models_dev, openrouter, litellm.
+    pub sources: Vec<PricingCatalogSourceRefreshView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PricingCatalogSourceRefreshView {
+    pub source: PricingCatalogSourceView,
+    pub outcome: PricingCatalogRefreshOutcomeView,
+    /// RFC 3339 generation of the source snapshot now in use, cached or vendored.
+    pub fetched_at: Option<String>,
+    /// Stable error code of a failed refresh; never upstream response text.
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PricingCatalogSourceView {
+    ModelsDev,
+    Openrouter,
+    Litellm,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PricingCatalogRefreshOutcomeView {
+    Updated,
+    Unchanged,
+    Failed,
 }
 
 #[derive(Debug, Deserialize, Default, IntoParams)]
