@@ -9,6 +9,7 @@ pub struct RequestRequirements {
     pub responses: bool,
     pub stream: bool,
     pub embeddings: bool,
+    pub images: bool,
     pub decisions: bool,
     pub tools: bool,
     pub vision: bool,
@@ -31,6 +32,9 @@ impl RequestRequirements {
         }
         if self.embeddings {
             names.push("embeddings");
+        }
+        if self.images {
+            names.push("images");
         }
         if self.decisions {
             names.push("decisions");
@@ -97,6 +101,7 @@ impl ChatRequest {
             responses: false,
             stream: self.stream,
             embeddings: false,
+            images: false,
             decisions: false,
             // Tool history needs a tool-capable route even when the caller omits `tools`,
             // because Chat Completions adapters replay it as `tool_calls` and `tool` messages.
@@ -203,6 +208,39 @@ impl EmbeddingsRequest {
             responses: false,
             stream: false,
             embeddings: true,
+            images: false,
+            decisions: false,
+            tools: false,
+            vision: false,
+            json_schema: false,
+            developer_role: false,
+        }
+    }
+}
+
+/// An Images API generation request (`POST /v1/images`). Only `model` and
+/// `prompt` are typed: the gateway routes on `model`, guardrails inspect
+/// `prompt`, and every other field (`input_references`, `resolution`,
+/// `aspect_ratio`, `quality`, `n`, ...) passes through unchanged.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ImagesRequest {
+    pub model: String,
+    pub prompt: String,
+    #[serde(default)]
+    pub stream: bool,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
+impl ImagesRequest {
+    #[must_use]
+    pub const fn requirements(&self) -> RequestRequirements {
+        RequestRequirements {
+            chat_completions: false,
+            responses: false,
+            stream: self.stream,
+            embeddings: false,
+            images: true,
             decisions: false,
             tools: false,
             vision: false,
@@ -240,6 +278,7 @@ impl ResponsesRequest {
             responses: true,
             stream: self.stream,
             embeddings: false,
+            images: false,
             decisions: false,
             tools: self
                 .tools

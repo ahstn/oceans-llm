@@ -18,6 +18,16 @@ Optional environment variable:
 
 The harness processes receive an Oceans API key, local gateway URL, and isolated HOME/XDG directories. They do not receive the OpenRouter key, gateway administrator credentials, or unrelated parent-process environment variables. Shell access and filesystem access outside each temporary workspace are denied.
 
+## OpenCode
+
+The suite runs the native OpenCode V2 CLI (`@opencode/cli`). It does not hand-write a provider config. It asks Oceans for the OpenCode config that the admin UI shows for the test model (`POST /api/v1/admin/models/client-configs`) and runs OpenCode with that config. The suite proves that the generated provider, package, `env` key variable, base URL, and model entry work in the real client. The adapter adds only harness settings: the `x-oceans-tags` request tag on each provider, the Oceans MCP server, a step limit, permissions, and the guardrail plugin.
+
+In managed mode, the gateway starts with `GATEWAY_CLIENT_CONFIG_BASE_URL` set to its local URL, so the generated config points at it. In external mode, the generated config uses the deployment's own client-config base URL.
+
+Each run starts a private `opencode serve` process with the isolated environment, in the same way as `--standalone`, instead of using a shared background service. The adapter waits until `opencode mcp list --server <url>` reports Oceans as connected, and then sends the prompt with `opencode run --server <url>`. V2 connects MCP servers in the background, so without this wait the first model request can have no Oceans tools. The Oceans MCP server sets `codemode: false`, so aggregate MCP calls show as direct tool calls in the event stream.
+
+The guardrail plugin is a V2 plugin. It checks each `shell` tool call with Oceans in `tool` `execute.before`, and it confines the command in `shell` `create.before`, after OpenCode checks permissions. It also rejects `session_move`. That tool has no permission check, and it would move the workspace boundary that the `external_directory` deny rule enforces.
+
 ## External gateway
 
 Set `GATEWAY_BASE_URL` to use an existing Oceans deployment instead of starting a local gateway. Remote URLs must use HTTPS; HTTP is accepted only for loopback hosts.
@@ -34,7 +44,7 @@ Optional external-mode variables:
 - `OCEANS_ALLOWLISTED_USER_API_KEY` and `OCEANS_ALLOWLISTED_TEST_MODEL`: human-user key and allowlisted Oceans model used by the Pi user-allowlist contract. Configure both or neither.
 - `OCEANS_CACHE_CANARY_MODEL`: enables the Responses prompt-cache canary for this Oceans model key. Use a cache-capable model on one pinned provider route. Request payload capture must use `redacted_payloads` with `prompt_cache_key` retained. The canary requires a positive first-request cache-write counter, a positive second-request cache-read counter, and the same provider, route, and upstream model for both requests.
 
-The external gateway must already expose the selected model and an aggregate MCP endpoint with callable Context7 tools. The administrator account must be able to read request logs so the suite can correlate each harness invocation with its Oceans request-log entry.
+The external gateway must already expose the selected model and an aggregate MCP endpoint with callable Context7 tools. The administrator account must be able to read request logs so the suite can correlate each harness invocation with its Oceans request-log entry. It must also be able to generate model client configs, because the OpenCode adapter runs the generated config.
 
 ## Commands
 

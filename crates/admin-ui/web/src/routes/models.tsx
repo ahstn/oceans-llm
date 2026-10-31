@@ -448,7 +448,7 @@ export function ModelsPage() {
                                 {model.upstream_model ?? 'Not currently routed'}
                               </span>
                             </div>
-                            <div className="tracking-label text-muted-foreground flex min-w-0 items-center gap-2 truncate text-xs">
+                            <div className="text-muted-foreground flex min-w-0 items-center gap-2 truncate text-xs">
                               <BrandIcon
                                 iconKey={model.provider_icon_key}
                                 size={14}
@@ -850,7 +850,7 @@ function ClientConfigDialog({
                     onActiveKeyChange(value)
                   }
                 }}
-                variant="outline"
+                variant="checked"
                 size="sm"
                 spacing={1}
                 className="max-w-full min-w-0 flex-wrap"
@@ -858,7 +858,11 @@ function ClientConfigDialog({
               >
                 {clientConfigurations.map((config) => (
                   <ToggleGroupItem key={config.key} value={config.key} aria-label={config.label}>
-                    <AgentHarnessLabel className="px-2" harnessKey={config.key}>
+                    <AgentHarnessLabel
+                      className="px-2"
+                      harnessKey={config.key}
+                      iconClassName="group-data-[state=on]/toggle:text-primary"
+                    >
                       {config.label}
                     </AgentHarnessLabel>
                   </ToggleGroupItem>

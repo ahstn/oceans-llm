@@ -306,3 +306,32 @@ mcp:
         "{error:#}"
     );
 }
+
+#[test]
+fn mcp_kubernetes_cluster_domain_defaults_to_cluster_local_and_must_be_a_domain() {
+    let config = load("mcp: {}\n").expect("valid config");
+    let clients = config.mcp.upstream_clients().expect("clients");
+    assert_eq!(clients.url_policy().cluster_domain(), "cluster.local");
+
+    let config = load(
+        r#"
+mcp:
+  kubernetes:
+    cluster_domain: Corp.Example.
+"#,
+    )
+    .expect("valid config");
+    let clients = config.mcp.upstream_clients().expect("clients");
+    assert_eq!(clients.url_policy().cluster_domain(), "corp.example");
+
+    for invalid in ["\"\"", "svc.cluster.local:53", "\"*.cluster.local\""] {
+        let error = load(&format!(
+            "mcp:\n  kubernetes:\n    cluster_domain: {invalid}\n"
+        ))
+        .expect_err("not a bare domain");
+        assert!(
+            format!("{error:#}").contains("mcp.kubernetes.cluster_domain"),
+            "{error:#}"
+        );
+    }
+}

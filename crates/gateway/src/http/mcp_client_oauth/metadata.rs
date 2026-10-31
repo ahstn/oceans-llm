@@ -80,9 +80,12 @@ pub async fn oauth_protected_resource_metadata_server(
     // same metadata, named by the key the caller already sent, so the route
     // never confirms that a hidden server exists. Whether the signed-in user
     // may reach it is decided at consent and on every request.
-    let resource_name = match McpGatewayService::new(state.store.clone())
-        .load_active_server(server_key)
-        .await
+    let resource_name = match McpGatewayService::new(
+        state.store.clone(),
+        state.mcp_http_clients.url_policy().clone(),
+    )
+    .load_active_server(server_key)
+    .await
     {
         Ok(server)
             if server.ownership.visibility == gateway_core::McpServerVisibility::Organisation =>

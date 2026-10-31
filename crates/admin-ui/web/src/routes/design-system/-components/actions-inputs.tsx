@@ -161,6 +161,18 @@ export function ActionsSection() {
               <ToggleGroupItem value="30d">30d</ToggleGroupItem>
             </ToggleGroup>
           </ShowcaseRow>
+          <ShowcaseRow label="ToggleGroup, checked (popovers and dialogs)">
+            <ToggleGroup
+              type="single"
+              variant="checked"
+              size="sm"
+              spacing={1}
+              defaultValue="claude"
+            >
+              <ToggleGroupItem value="opencode">OpenCode</ToggleGroupItem>
+              <ToggleGroupItem value="claude">Claude Code</ToggleGroupItem>
+            </ToggleGroup>
+          </ShowcaseRow>
           <ShowcaseRow label="ToggleGroup, small">
             <ToggleGroup type="single" size="sm" defaultValue="tokens">
               <ToggleGroupItem value="tokens">Tokens</ToggleGroupItem>

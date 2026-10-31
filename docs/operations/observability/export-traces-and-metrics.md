@@ -139,6 +139,8 @@ Gateway metric names include:
 - `gateway.decisions.request.duration`
 - `gateway.embeddings.requests`
 - `gateway.embeddings.request.duration`
+- `gateway.images.requests`
+- `gateway.images.request.duration`
 - `gateway.chat.tokens`
 - `gateway.chat.cost.usd`
 - `gateway.mcp.tool_invocations`

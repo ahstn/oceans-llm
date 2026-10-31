@@ -78,7 +78,8 @@ async fn model_metadata_requires_authentication_and_matches_visible_models() {
                 "context_length": null,
                 "max_input_tokens": null,
                 "max_tokens": null,
-                "architecture": {"input_modalities": null, "output_modalities": null},
+                // The fixture route enables every capability, `images` included.
+                "architecture": {"input_modalities": ["text"], "output_modalities": ["image", "text"]},
                 "capabilities": {
                     "batch": {"supported": false},
                     "citations": {"supported": false},
@@ -110,7 +111,7 @@ async fn model_metadata_requires_authentication_and_matches_visible_models() {
                     "api_formats": ["openai-chat-completions", "openai-responses", "anthropic-messages"],
                     "preferred_api_format": "openai-chat-completions",
                     "harnesses": {
-                        "opencode": {"npm": "@ai-sdk/openai-compatible"},
+                        "opencode": {"package": "@opencode/ai/providers/openai-compatible"},
                         "pi": {
                             "api": "openai-completions",
                             "compat": {

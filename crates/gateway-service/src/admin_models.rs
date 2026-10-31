@@ -84,6 +84,7 @@ pub struct AdminModelSummary {
     pub supports_attachments: Option<bool>,
     pub benchmark_scores: Vec<ModelBenchmarkScore>,
     pub supports_decisions: Option<bool>,
+    pub supports_image_generation: Option<bool>,
     pub client_configurations: Vec<ClientConfig>,
 }
 
@@ -445,6 +446,14 @@ where
                         .map(supports_attachments),
                     benchmark_scores: self.benchmark_scores(&by_key, &model, primary_route),
                     supports_decisions: route_capabilities.map(|caps| caps.decisions),
+                    // `/v1/images` can land on any eligible route, not only the display route.
+                    supports_image_generation: route_capabilities.map(|caps| {
+                        caps.images
+                            || routes.iter().any(|route| {
+                                route.capabilities.images
+                                    && route_is_eligible(&providers_by_key, route)
+                            })
+                    }),
                     client_configurations,
                 },
                 client_config_input,
@@ -491,8 +500,8 @@ fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientC
     );
     if !capabilities.chat_completions && !capabilities.responses {
         // OpenCode/Pi/Claude/Codex snippets target chat-shaped clients; a
-        // decisions-only model cannot use them, so emit no configs instead
-        // of misleading instructions.
+        // decisions-only or image-only model cannot use them, so emit no
+        // configs instead of misleading instructions.
         return None;
     }
     let pricing = context
@@ -535,10 +544,13 @@ fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientC
             chat_completions: capabilities.chat_completions,
             responses: capabilities.responses,
             tool_calling: capabilities.tools,
-            attachments: context
-                .metadata
-                .and_then(|metadata| metadata.modalities.as_ref())
-                .is_some_and(supports_attachments),
+            // Matches `/v1/models` hints: the gateway only routes file parts to vision
+            // routes, so PDF input needs both.
+            attachments: capabilities.vision
+                && context
+                    .metadata
+                    .and_then(|metadata| metadata.modalities.as_ref())
+                    .is_some_and(|modalities| modalities.input.iter().any(|value| value == "pdf")),
             vision: capabilities.vision,
         },
         thinking_policy,
@@ -1122,7 +1134,7 @@ mod tests {
     }
 
     #[test]
-    fn decisions_only_routes_suppress_chat_shaped_client_configs() {
+    fn decisions_and_image_only_routes_suppress_chat_shaped_client_configs() {
         let model = GatewayModel {
             id: Uuid::new_v4(),
             model_key: "jev".to_string(),
@@ -1133,20 +1145,6 @@ mod tests {
             tags: Vec::new(),
             rank: 1,
         };
-        let route = model_route(
-            "typesafe/jev-1.13",
-            ProviderCapabilities {
-                chat_completions: false,
-                responses: false,
-                stream: false,
-                embeddings: false,
-                decisions: true,
-                tools: false,
-                vision: false,
-                json_schema: false,
-                developer_role: false,
-            },
-        );
         let provider = ProviderConnection {
             provider_key: "openrouter".to_string(),
             provider_type: "openai_compat".to_string(),
@@ -1159,20 +1157,41 @@ mod tests {
             output: None,
         };
 
-        let input = super::build_client_config_input(super::ClientConfigContext {
-            model: &model,
-            execution_model: &model,
-            reasoning_ceiling: None,
-            primary_route: Some(&route),
-            primary_provider: Some(&provider),
-            provider_display: None,
-            metadata: None,
-            limits: &limits,
-            route_capabilities: Some(route.capabilities),
-            gateway_base_url: "http://127.0.0.1:3000",
-        });
+        for (upstream_model, capabilities) in [
+            (
+                "typesafe/jev-1.13",
+                ProviderCapabilities {
+                    decisions: true,
+                    ..ProviderCapabilities::none()
+                },
+            ),
+            (
+                "openai/gpt-image-2.5-flare",
+                ProviderCapabilities {
+                    images: true,
+                    ..ProviderCapabilities::none()
+                },
+            ),
+        ] {
+            let route = model_route(upstream_model, capabilities);
+            let input = super::build_client_config_input(super::ClientConfigContext {
+                model: &model,
+                execution_model: &model,
+                reasoning_ceiling: None,
+                primary_route: Some(&route),
+                primary_provider: Some(&provider),
+                provider_display: None,
+                metadata: None,
+                limits: &limits,
+                route_capabilities: Some(route.capabilities),
+                gateway_base_url: "http://127.0.0.1:3000",
+            });
 
-        assert!(input.is_none());
+            assert!(
+                input.is_none(),
+                "{upstream_model} must not get chat configs"
+            );
+        }
     }
     #[test]
     fn copilot_provider_uses_upstream_evidence_and_operator_policy() {
@@ -1492,6 +1511,7 @@ mod tests {
         assert_eq!(alias.supports_structured_output, Some(true));
         assert_eq!(alias.supports_attachments, Some(true));
         assert_eq!(alias.supports_decisions, Some(true));
+        assert_eq!(alias.supports_image_generation, Some(true));
         assert_eq!(
             alias
                 .allowlist
@@ -1776,6 +1796,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn image_generation_support_counts_non_display_routes() {
+        let model = plain_model("mixed", None);
+        let model_id = model.id;
+        let route = |upstream_model: &str, priority, capabilities| ModelRoute {
+            model_id,
+            provider_key: "openai".to_string(),
+            priority,
+            ..model_route(upstream_model, capabilities)
+        };
+        let repo = Arc::new(CountingRepo {
+            models: vec![model],
+            routes_by_model: HashMap::from([(
+                model_id,
+                vec![
+                    route(
+                        "chat-upstream",
+                        0,
+                        ProviderCapabilities {
+                            images: false,
+                            ..ProviderCapabilities::openai_compat_baseline()
+                        },
+                    ),
+                    route(
+                        "image-upstream",
+                        1,
+                        ProviderCapabilities {
+                            images: true,
+                            ..ProviderCapabilities::none()
+                        },
+                    ),
+                ],
+            )]),
+            providers_by_key: HashMap::from([(
+                "openai".to_string(),
+                ProviderConnection {
+                    provider_key: "openai".to_string(),
+                    provider_type: "openai_compat".to_string(),
+                    config: json!({}),
+                    secrets: None,
+                },
+            )]),
+            ..Default::default()
+        });
+
+        let items = AdminModelsService::new(repo)
+            .list_models()
+            .await
+            .expect("admin models");
+
+        assert_eq!(items[0].upstream_model.as_deref(), Some("chat-upstream"));
+        assert_eq!(items[0].supports_image_generation, Some(true));
+    }
+
+    #[tokio::test]
     async fn list_models_does_not_reconcile_pricing() {
         let model_id = Uuid::new_v4();
         let repo = Arc::new(CountingRepo {
@@ -1972,20 +2046,22 @@ mod tests {
                 .iter()
                 .any(|item| item.value == "~/.config/opencode/opencode.json")
         );
-        assert!(
-            items[0].client_configurations[0].blocks[0]
-                .content
-                .contains("\"cache_read\": 0.3")
-        );
-        assert!(
-            items[0].client_configurations[0].blocks[0]
-                .content
-                .contains("\"variants\"")
-        );
-        assert!(
-            items[0].client_configurations[0].blocks[0]
-                .content
-                .contains("\"tool_call\": true")
+        let opencode: serde_json::Value =
+            serde_json::from_str(&items[0].client_configurations[0].blocks[0].content)
+                .expect("opencode json");
+        let opencode_model = opencode["providers"]
+            .as_object()
+            .and_then(|providers| providers.values().next())
+            .and_then(|provider| provider["models"].as_object())
+            .and_then(|models| models.values().next())
+            .expect("opencode model");
+        assert_eq!(opencode_model["cost"]["cache"]["read"], 0.3);
+        assert!(opencode_model["variants"].is_array());
+        assert_eq!(opencode_model["capabilities"]["tools"], true);
+        // The catalog lists image but not PDF input, so OpenCode must not send PDFs.
+        assert_eq!(
+            opencode_model["capabilities"]["input"],
+            json!(["text", "image"])
         );
         assert_eq!(items[0].client_configurations[1].key, "pi");
         assert!(items[0].client_configurations[1].setup.iter().any(|item| {
@@ -2047,6 +2123,7 @@ mod tests {
                 responses: true,
                 stream: false,
                 embeddings: true,
+                images: false,
                 decisions: false,
                 tools: true,
                 vision: true,
@@ -2071,6 +2148,7 @@ mod tests {
                 responses: true,
                 stream: false,
                 embeddings: true,
+                images: false,
                 decisions: false,
                 tools: true,
                 vision: true,

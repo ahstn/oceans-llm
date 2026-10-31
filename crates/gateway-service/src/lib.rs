@@ -135,7 +135,8 @@ pub use mcp_tool_policy::{
 pub use mcp_upstream_auth::{
     API_KEY_TEMPLATE_PLACEHOLDER, MCP_SERVER_OAUTH_PROVIDER_KEY, McpOauthClientRegistration,
     McpOauthServerConfig, McpOauthTokenEndpointAuthMethod, McpServerOauthEndpoints,
-    gateway_mcp_upstream_query, mcp_oauth_server_config, supports_public_discovery,
+    McpServerUrlPolicy, gateway_mcp_upstream_query, mcp_oauth_server_config,
+    supports_public_discovery,
 };
 pub use mcp_upstream_http::McpUpstreamClients;
 pub use model_access::ModelAccess;

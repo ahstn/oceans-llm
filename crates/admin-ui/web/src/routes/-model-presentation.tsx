@@ -1,4 +1,5 @@
 import {
+  AiImageIcon,
   AttachmentIcon,
   CircleCheckIcon,
   CodeIcon,
@@ -117,6 +118,7 @@ export function CapabilityBadges({ model }: { model: ModelView }) {
     model.supports_structured_output ? { label: 'Structured Output', icon: CodeIcon } : null,
     model.supports_attachments ? { label: 'Attachments', icon: AttachmentIcon } : null,
     model.supports_decisions ? { label: 'Decisions', icon: Target02Icon } : null,
+    model.supports_image_generation ? { label: 'Image Generation', icon: AiImageIcon } : null,
   ].filter(
     (
       value,

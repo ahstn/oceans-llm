@@ -703,6 +703,9 @@ pub(super) fn decode_usage_ledger_record(
     let uncached_input_tokens: Option<i64> = row.get(31).map_err(to_query_error)?;
     let cache_read_tokens: Option<i64> = row.get(32).map_err(to_query_error)?;
     let cache_write_tokens: Option<i64> = row.get(33).map_err(to_query_error)?;
+    let image_output_tokens: Option<i64> = row.get(34).map_err(to_query_error)?;
+    let image_output_cost_per_million_tokens_10000: Option<i64> =
+        row.get(35).map_err(to_query_error)?;
 
     Ok(UsageLedgerRecord {
         usage_event_id: parse_uuid(&usage_event_id)?,
@@ -722,6 +725,7 @@ pub(super) fn decode_usage_ledger_record(
         cache_read_tokens,
         cache_write_tokens,
         completion_tokens: row.get(13).map_err(to_query_error)?,
+        image_output_tokens,
         total_tokens: row.get(14).map_err(to_query_error)?,
         provider_usage: serde_json::from_str(&provider_usage_json)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
@@ -744,6 +748,8 @@ pub(super) fn decode_usage_ledger_record(
         cache_read_cost_per_million_tokens: cache_read_cost_per_million_tokens_10000
             .map(Money4::from_scaled),
         cache_write_cost_per_million_tokens: cache_write_cost_per_million_tokens_10000
+            .map(Money4::from_scaled),
+        image_output_cost_per_million_tokens: image_output_cost_per_million_tokens_10000
             .map(Money4::from_scaled),
         computed_cost_usd: Money4::from_scaled(computed_cost_10000),
         occurred_at: unix_to_datetime(occurred_at)?,

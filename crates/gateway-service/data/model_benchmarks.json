@@ -5,7 +5,7 @@
     "benchmark_source_url": "https://artificialanalysis.ai",
     "retrieved_via": "openrouter",
     "source_url": "https://openrouter.ai/api/v1/models?sort=intelligence-high-to-low&limit=200",
-    "updated_at": "2026-10-26T09:06:51Z"
+    "updated_at": "2026-10-31T20:47:07Z"
   },
   "models": {
     "amazon/nova-2-lite-v1": {
@@ -32,11 +32,11 @@
       "name": "Anthropic: Claude Fable 5.1",
       "canonical_slug": "anthropic/claude-fable-5.1-20260831",
       "artificial_analysis": {
-        "intelligence_index": 53.4,
-        "coding_index": 81.6,
-        "agentic_index": 57.9
+        "intelligence_index": 49.7,
+        "coding_index": 80.7,
+        "agentic_index": 57.2
       },
-      "updated_at": "2026-09-24T00:59:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "anthropic/claude-haiku-4.5": {
       "name": "Anthropic: Claude Haiku 4.5",
@@ -52,11 +52,11 @@
       "name": "Anthropic: Claude Haiku 5.5",
       "canonical_slug": "anthropic/claude-haiku-5.5-20261007",
       "artificial_analysis": {
-        "intelligence_index": 43.4,
+        "intelligence_index": 36.2,
         "coding_index": null,
         "agentic_index": null
       },
-      "updated_at": "2026-10-18T12:23:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "anthropic/claude-opus-4.1": {
       "name": "Anthropic: Claude Opus 4.1",
@@ -122,11 +122,11 @@
       "name": "Anthropic: Claude Opus 5.5",
       "canonical_slug": "anthropic/claude-opus-5.5-20260921",
       "artificial_analysis": {
-        "intelligence_index": 57.6,
+        "intelligence_index": 58.4,
         "coding_index": null,
         "agentic_index": null
       },
-      "updated_at": "2026-09-24T00:59:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "anthropic/claude-sonnet-4": {
       "name": "Anthropic: Claude Sonnet 4",
@@ -172,11 +172,11 @@
       "name": "Anthropic: Claude Sonnet 5.5",
       "canonical_slug": "anthropic/claude-sonnet-5.5-20260928",
       "artificial_analysis": {
-        "intelligence_index": 56.0,
+        "intelligence_index": 54.2,
         "coding_index": null,
         "agentic_index": null
       },
-      "updated_at": "2026-10-18T12:23:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "arcee-ai/trinity-large-thinking": {
       "name": "Arcee AI: Trinity Large Thinking",
@@ -197,6 +197,16 @@
         "agentic_index": 1.0
       },
       "updated_at": "2026-09-24T00:59:11Z"
+    },
+    "cohere/command-a-plus": {
+      "name": "Cohere: Command A+",
+      "canonical_slug": "cohere/command-a-plus-05-2026",
+      "artificial_analysis": {
+        "intelligence_index": 6.2,
+        "coding_index": 27.8,
+        "agentic_index": 1.0
+      },
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "deepseek/deepseek-chat-v3-0324": {
       "name": "DeepSeek: DeepSeek V3 0324",
@@ -273,10 +283,10 @@
       "canonical_slug": "deepseek/deepseek-v4-flash-20260423",
       "artificial_analysis": {
         "intelligence_index": 24.4,
-        "coding_index": 52.0,
-        "agentic_index": 26.3
+        "coding_index": 56.2,
+        "agentic_index": 22.2
       },
-      "updated_at": "2026-10-18T12:23:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "deepseek/deepseek-v4-flash-0731": {
       "name": "DeepSeek: DeepSeek V4 Flash 0731",
@@ -312,11 +322,11 @@
       "name": "DeepSeek: DeepSeek V4 Pro 0813",
       "canonical_slug": "deepseek/deepseek-v4-pro-20260813",
       "artificial_analysis": {
-        "intelligence_index": 36.0,
+        "intelligence_index": 23.1,
         "coding_index": 68.8,
         "agentic_index": 41.3
       },
-      "updated_at": "2026-09-24T00:59:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "deepseek/deepseek-v4.1-flash": {
       "name": "DeepSeek: DeepSeek V4.1 Flash",
@@ -402,11 +412,11 @@
       "name": "Google: Gemini 3.5 Flash Lite",
       "canonical_slug": "google/gemini-3.5-flash-lite-20260721",
       "artificial_analysis": {
-        "intelligence_index": 22.2,
+        "intelligence_index": 11.7,
         "coding_index": 49.3,
         "agentic_index": 14.3
       },
-      "updated_at": "2026-09-24T00:59:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "google/gemini-3.6-flash": {
       "name": "Google: Gemini 3.6 Flash",
@@ -423,30 +433,30 @@
       "canonical_slug": "google/gemini-3.7-flash-20260813",
       "artificial_analysis": {
         "intelligence_index": 39.6,
-        "coding_index": 71.5,
+        "coding_index": 76.1,
         "agentic_index": 35.2
       },
-      "updated_at": "2026-10-18T12:23:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "google/gemini-3.8-flash": {
       "name": "Google: Gemini 3.8 Flash",
       "canonical_slug": "google/gemini-3.8-flash-20260902",
       "artificial_analysis": {
-        "intelligence_index": 40.9,
+        "intelligence_index": 30.5,
         "coding_index": 76.3,
         "agentic_index": 40.2
       },
-      "updated_at": "2026-09-24T00:59:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "google/gemini-4-argon": {
       "name": "Google: Gemini 4 Argon",
       "canonical_slug": "google/gemini-4-argon-20261013",
       "artificial_analysis": {
-        "intelligence_index": 52.6,
+        "intelligence_index": 50.4,
         "coding_index": null,
         "agentic_index": null
       },
-      "updated_at": "2026-10-18T12:23:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "google/gemma-3-12b-it": {
       "name": "Google: Gemma 3 12B",
@@ -467,6 +477,16 @@
         "agentic_index": 0.1
       },
       "updated_at": "2026-09-24T00:59:11Z"
+    },
+    "google/gemma-3-4b-it": {
+      "name": "Google: Gemma 3 4B",
+      "canonical_slug": "google/gemma-3-4b-it",
+      "artificial_analysis": {
+        "intelligence_index": null,
+        "coding_index": 2.7,
+        "agentic_index": null
+      },
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "google/gemma-4-26b-a4b-it": {
       "name": "Google: Gemma 4 26B A4B ",
@@ -497,6 +517,16 @@
         "agentic_index": 1.3
       },
       "updated_at": "2026-09-24T00:59:11Z"
+    },
+    "inception/mercury-2": {
+      "name": "Inception: Mercury 2",
+      "canonical_slug": "inception/mercury-2-20260304",
+      "artificial_analysis": {
+        "intelligence_index": null,
+        "coding_index": 31.1,
+        "agentic_index": 1.6
+      },
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "inception/mercury-2.5": {
       "name": "Inception: Mercury 2.5",
@@ -548,6 +578,16 @@
       },
       "updated_at": "2026-10-18T12:23:11Z"
     },
+    "liquid/lfm-2.5-2.6b": {
+      "name": "LiquidAI: LFM2.5-2.6B",
+      "canonical_slug": "liquid/lfm-2.5-2.6b-20260811",
+      "artificial_analysis": {
+        "intelligence_index": null,
+        "coding_index": 7.7,
+        "agentic_index": null
+      },
+      "updated_at": "2026-10-31T20:47:07Z"
+    },
     "meituan/longcat-2.0": {
       "name": "Meituan: LongCat 2.0",
       "canonical_slug": "meituan/longcat-2.0-20260720",
@@ -558,15 +598,55 @@
       },
       "updated_at": "2026-09-24T00:59:11Z"
     },
+    "meta-llama/llama-3.1-8b-instruct": {
+      "name": "Meta: Llama 3.1 8B Instruct",
+      "canonical_slug": "meta-llama/llama-3.1-8b-instruct",
+      "artificial_analysis": {
+        "intelligence_index": null,
+        "coding_index": 5.4,
+        "agentic_index": null
+      },
+      "updated_at": "2026-10-31T20:47:07Z"
+    },
+    "meta-llama/llama-3.3-70b-instruct": {
+      "name": "Meta: Llama 3.3 70B Instruct",
+      "canonical_slug": "meta-llama/llama-3.3-70b-instruct",
+      "artificial_analysis": {
+        "intelligence_index": null,
+        "coding_index": 11.9,
+        "agentic_index": null
+      },
+      "updated_at": "2026-10-31T20:47:07Z"
+    },
+    "meta-llama/llama-4-maverick": {
+      "name": "Meta: Llama 4 Maverick",
+      "canonical_slug": "meta-llama/llama-4-maverick-17b-128e-instruct",
+      "artificial_analysis": {
+        "intelligence_index": null,
+        "coding_index": 16.3,
+        "agentic_index": 0.6
+      },
+      "updated_at": "2026-10-31T20:47:07Z"
+    },
+    "meta-llama/llama-4-scout": {
+      "name": "Meta: Llama 4 Scout",
+      "canonical_slug": "meta-llama/llama-4-scout-17b-16e-instruct",
+      "artificial_analysis": {
+        "intelligence_index": null,
+        "coding_index": 8.2,
+        "agentic_index": 0.5
+      },
+      "updated_at": "2026-10-31T20:47:07Z"
+    },
     "meta/muse-glimmer-30b": {
       "name": "Meta: Muse Glimmer 30B",
       "canonical_slug": "meta/muse-glimmer-30b-20260810",
       "artificial_analysis": {
-        "intelligence_index": 17.5,
+        "intelligence_index": 6.3,
         "coding_index": 49.0,
         "agentic_index": 8.5
       },
-      "updated_at": "2026-10-18T12:23:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "meta/muse-spark-1.1": {
       "name": "Meta: Muse Spark 1.1",
@@ -592,11 +672,11 @@
       "name": "Meta: Muse Spark 1.3",
       "canonical_slug": "meta/muse-spark-1.3-20260902",
       "artificial_analysis": {
-        "intelligence_index": 48.1,
+        "intelligence_index": 36.4,
         "coding_index": 75.8,
         "agentic_index": 55.5
       },
-      "updated_at": "2026-10-18T12:23:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "minimax/minimax-m2": {
       "name": "MiniMax: MiniMax M2",
@@ -642,21 +722,21 @@
       "name": "MiniMax: MiniMax M3",
       "canonical_slug": "minimax/minimax-m3-20260531",
       "artificial_analysis": {
-        "intelligence_index": 29.2,
+        "intelligence_index": 18.7,
         "coding_index": 58.6,
         "agentic_index": 29.5
       },
-      "updated_at": "2026-09-24T00:59:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "minimax/minimax-m3.1-flash": {
       "name": "MiniMax: MiniMax M3.1 Flash",
       "canonical_slug": "minimax/minimax-m3.1-flash-20261019",
       "artificial_analysis": {
-        "intelligence_index": 42.7,
+        "intelligence_index": 28.9,
         "coding_index": null,
         "agentic_index": null
       },
-      "updated_at": "2026-10-26T09:06:51Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "mistralai/ministral-14b-2512": {
       "name": "Mistral: Ministral 3 14B 2512",
@@ -692,11 +772,11 @@
       "name": "Mistral: Mistral Large 4",
       "canonical_slug": "mistralai/mistral-large-4-0-20261006",
       "artificial_analysis": {
-        "intelligence_index": 38.4,
+        "intelligence_index": 26.0,
         "coding_index": null,
         "agentic_index": null
       },
-      "updated_at": "2026-10-18T12:23:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "mistralai/mistral-medium-3-5": {
       "name": "Mistral: Mistral Medium 3.5",
@@ -722,11 +802,11 @@
       "name": "Mistral: Mistral Small 4",
       "canonical_slug": "mistralai/mistral-small-2603",
       "artificial_analysis": {
-        "intelligence_index": 11.3,
+        "intelligence_index": 4.3,
         "coding_index": 26.6,
         "agentic_index": 0.8
       },
-      "updated_at": "2026-09-24T00:59:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "moonshotai/kimi-k2": {
       "name": "MoonshotAI: Kimi K2 0711",
@@ -792,21 +872,21 @@
       "name": "MoonshotAI: Kimi K3",
       "canonical_slug": "moonshotai/kimi-k3-20260715",
       "artificial_analysis": {
-        "intelligence_index": 43.6,
-        "coding_index": 76.2,
-        "agentic_index": 50.0
+        "intelligence_index": 17.4,
+        "coding_index": 72.0,
+        "agentic_index": 29.3
       },
-      "updated_at": "2026-09-24T00:59:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "moonshotai/kimi-k3.1-pro": {
       "name": "MoonshotAI: Kimi K3.1 Pro",
       "canonical_slug": "moonshotai/kimi-k3.1-pro-20261023",
       "artificial_analysis": {
-        "intelligence_index": 55.1,
+        "intelligence_index": 46.0,
         "coding_index": null,
         "agentic_index": null
       },
-      "updated_at": "2026-10-26T09:06:51Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "nvidia/nemotron-3-nano-30b-a3b": {
       "name": "NVIDIA: Nemotron 3 Nano 30B A3B",
@@ -832,31 +912,31 @@
       "name": "NVIDIA: Nemotron 3 Ultra",
       "canonical_slug": "nvidia/nemotron-3-ultra-550b-a55b-20260604",
       "artificial_analysis": {
-        "intelligence_index": 22.9,
+        "intelligence_index": 11.8,
         "coding_index": 49.3,
         "agentic_index": 20.1
       },
-      "updated_at": "2026-09-24T00:59:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "nvidia/nemotron-3.5-lightning": {
       "name": "NVIDIA: Nemotron 3.5 Lightning",
       "canonical_slug": "nvidia/nemotron-3.5-lightning-20260807",
       "artificial_analysis": {
-        "intelligence_index": 12.9,
+        "intelligence_index": 5.5,
         "coding_index": 26.8,
         "agentic_index": 3.5
       },
-      "updated_at": "2026-09-24T00:59:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "nvidia/nemotron-3.5-super-vl": {
       "name": "NVIDIA: Nemotron 3.5 Super VL",
       "canonical_slug": "nvidia/nemotron-3.5-super-vl-20261015",
       "artificial_analysis": {
-        "intelligence_index": 26.5,
+        "intelligence_index": 13.6,
         "coding_index": null,
         "agentic_index": null
       },
-      "updated_at": "2026-10-18T12:23:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "openai/gpt-4.1": {
       "name": "OpenAI: GPT-4.1",
@@ -1032,21 +1112,21 @@
       "name": "OpenAI: GPT-6 Astra",
       "canonical_slug": "openai/gpt-6-astra-20260903",
       "artificial_analysis": {
-        "intelligence_index": 52.7,
+        "intelligence_index": 56.9,
         "coding_index": 76.9,
         "agentic_index": 51.0
       },
-      "updated_at": "2026-09-24T00:59:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "openai/gpt-6-luna": {
       "name": "OpenAI: GPT-6 Luna",
       "canonical_slug": "openai/gpt-6-luna-20260922",
       "artificial_analysis": {
-        "intelligence_index": 38.1,
+        "intelligence_index": 27.8,
         "coding_index": null,
         "agentic_index": null
       },
-      "updated_at": "2026-10-18T12:23:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "openai/gpt-6-sol": {
       "name": "OpenAI: GPT-6 Sol",
@@ -1062,11 +1142,21 @@
       "name": "OpenAI: GPT-6.1 Sol",
       "canonical_slug": "openai/gpt-6.1-sol-20260929",
       "artificial_analysis": {
-        "intelligence_index": 51.8,
+        "intelligence_index": 54.5,
         "coding_index": null,
         "agentic_index": null
       },
-      "updated_at": "2026-10-18T12:23:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
+    },
+    "openai/gpt-6.1-terra": {
+      "name": "OpenAI: GPT-6.1 Terra",
+      "canonical_slug": "openai/gpt-6.1-terra-20261026",
+      "artificial_analysis": {
+        "intelligence_index": 51.0,
+        "coding_index": null,
+        "agentic_index": null
+      },
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "openai/gpt-oss-120b": {
       "name": "OpenAI: gpt-oss-120b",
@@ -1322,21 +1412,21 @@
       "name": "Qwen: Qwen3.8 27B",
       "canonical_slug": "qwen/qwen3.8-27b-20260814",
       "artificial_analysis": {
-        "intelligence_index": 33.7,
+        "intelligence_index": 20.1,
         "coding_index": 68.1,
         "agentic_index": 45.8
       },
-      "updated_at": "2026-09-24T00:59:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "qwen/qwen3.8-max-0902": {
       "name": "Qwen: Qwen3.8 Max (0902)",
       "canonical_slug": "qwen/qwen3.8-max-20260902",
       "artificial_analysis": {
-        "intelligence_index": 45.4,
+        "intelligence_index": 33.6,
         "coding_index": 76.2,
         "agentic_index": 56.0
       },
-      "updated_at": "2026-09-24T00:59:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "stepfun/step-3.5-flash": {
       "name": "StepFun: Step 3.5 Flash",
@@ -1362,11 +1452,11 @@
       "name": "StepFun: Step 5 Preview",
       "canonical_slug": "stepfun/step-5-preview-20261008",
       "artificial_analysis": {
-        "intelligence_index": 43.7,
+        "intelligence_index": 28.5,
         "coding_index": null,
         "agentic_index": null
       },
-      "updated_at": "2026-10-18T12:23:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "tencent/hy3-preview": {
       "name": "Tencent: Hy3 preview",
@@ -1382,21 +1472,21 @@
       "name": "Thinking Machines: Inkling",
       "canonical_slug": "thinkingmachines/inkling-20260715",
       "artificial_analysis": {
-        "intelligence_index": 25.0,
+        "intelligence_index": 12.5,
         "coding_index": 52.1,
         "agentic_index": 22.5
       },
-      "updated_at": "2026-09-24T00:59:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "thinkingmachines/inkling-small": {
       "name": "Thinking Machines: Inkling Small",
       "canonical_slug": "thinkingmachines/inkling-small-20260730",
       "artificial_analysis": {
-        "intelligence_index": 25.7,
+        "intelligence_index": 12.9,
         "coding_index": 52.9,
         "agentic_index": 23.5
       },
-      "updated_at": "2026-10-18T12:23:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "upstage/solar-mini4": {
       "name": "Upstage: Solar Mini 4",
@@ -1472,11 +1562,11 @@
       "name": "SpaceXAI: Grok 4.7",
       "canonical_slug": "x-ai/grok-4.7-20260916",
       "artificial_analysis": {
-        "intelligence_index": 46.4,
+        "intelligence_index": 35.0,
         "coding_index": null,
         "agentic_index": null
       },
-      "updated_at": "2026-09-24T00:59:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "x-ai/grok-build-0.1": {
       "name": "SpaceXAI: Grok Build 0.1",
@@ -1512,21 +1602,21 @@
       "name": "Xiaomi: MiMo-V2.6-Flash",
       "canonical_slug": "xiaomi/mimo-v2.6-flash-20260921",
       "artificial_analysis": {
-        "intelligence_index": 37.9,
+        "intelligence_index": 26.7,
         "coding_index": null,
         "agentic_index": null
       },
-      "updated_at": "2026-10-18T12:23:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "xiaomi/mimo-v2.6-pro": {
       "name": "Xiaomi: MiMo-V2.6-Pro",
       "canonical_slug": "xiaomi/mimo-v2.6-pro-20260921",
       "artificial_analysis": {
-        "intelligence_index": 46.3,
+        "intelligence_index": 29.9,
         "coding_index": null,
         "agentic_index": null
       },
-      "updated_at": "2026-09-24T00:59:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "z-ai/glm-4.5": {
       "name": "Z.ai: GLM 4.5",
@@ -1612,21 +1702,21 @@
       "name": "Z.ai: GLM 5.3",
       "canonical_slug": "z-ai/glm-5.3-20260816",
       "artificial_analysis": {
-        "intelligence_index": 44.8,
+        "intelligence_index": 31.7,
         "coding_index": 74.8,
         "agentic_index": 53.1
       },
-      "updated_at": "2026-09-24T00:59:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "z-ai/glm-5.3-flash": {
       "name": "Z.ai: GLM 5.3 Flash",
       "canonical_slug": "z-ai/glm-5.3-flash-20260826",
       "artificial_analysis": {
-        "intelligence_index": 41.8,
+        "intelligence_index": 27.8,
         "coding_index": 71.5,
         "agentic_index": 50.9
       },
-      "updated_at": "2026-09-24T00:59:11Z"
+      "updated_at": "2026-10-31T20:47:07Z"
     },
     "z-ai/glm-5v-turbo": {
       "name": "Z.ai: GLM 5V Turbo",

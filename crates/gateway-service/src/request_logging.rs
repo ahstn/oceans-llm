@@ -2,10 +2,10 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use gateway_core::{
     ApiKeyOwnerKind, AuthError, AuthenticatedApiKey, ChatCompletionsRequest, EmbeddingsRequest,
-    GatewayError, IdentityRepository, OpenAiErrorEnvelope, RequestAttemptRecord, RequestLogDetail,
-    RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery,
-    RequestLogRecord, RequestLogRepository, RequestLogRetentionWindow, RequestTags,
-    RequestToolCardinality, ResponsesRequest,
+    GatewayError, IdentityRepository, ImagesRequest, OpenAiErrorEnvelope, RequestAttemptRecord,
+    RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult,
+    RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestLogRetentionWindow,
+    RequestTags, RequestToolCardinality, ResponsesRequest,
 };
 
 use crate::{REQUEST_LOG_MODEL_ICON_KEY, REQUEST_LOG_PROVIDER_ICON_KEY, RequestLogIconMetadata};
@@ -240,6 +240,27 @@ where
     ) -> RequestLogContext {
         self.begin_operation_request(OperationRequestLogInput {
             operation: "embeddings",
+            request_id,
+            requested_model_key,
+            resolved_model_key,
+            request,
+            request_headers,
+            request_tags,
+        })
+    }
+
+    #[must_use]
+    pub fn begin_images_request(
+        &self,
+        request_id: &str,
+        requested_model_key: &str,
+        resolved_model_key: &str,
+        request: &ImagesRequest,
+        request_headers: &BTreeMap<String, String>,
+        request_tags: RequestTags,
+    ) -> RequestLogContext {
+        self.begin_operation_request(OperationRequestLogInput {
+            operation: "images",
             request_id,
             requested_model_key,
             resolved_model_key,

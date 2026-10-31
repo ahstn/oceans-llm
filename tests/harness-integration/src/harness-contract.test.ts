@@ -83,9 +83,10 @@ function defineHarnessContract(adapter: HarnessAdapter, gateway: GatewayRuntime)
         `Use the read tool to read source.txt. Then use the write tool, not a shell command, to write destination.txt containing exactly ${marker}-copied. You must use both tools.`,
       );
 
-      expect(result.toolCalls.map((toolCall) => toolCall.name)).toContain("read");
-      expect(result.toolCalls.map((toolCall) => toolCall.name)).toContain("write");
-      await expect(readFile(join(workspace, "destination.txt"), "utf8")).resolves.toBe(
+      const toolEvidence = JSON.stringify(result.toolCalls);
+      expect(result.toolCalls.map((toolCall) => toolCall.name), toolEvidence).toContain("read");
+      expect(result.toolCalls.map((toolCall) => toolCall.name), toolEvidence).toContain("write");
+      expect(await readFile(join(workspace, "destination.txt"), "utf8"), toolEvidence).toBe(
         `${marker}-copied`,
       );
     });

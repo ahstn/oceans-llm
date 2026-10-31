@@ -9,8 +9,8 @@ use gateway_core::{
 use crate::McpOauthRuntime;
 use crate::mcp_credentials::McpCredentialService;
 use crate::mcp_upstream_auth::{
-    gateway_mcp_upstream_headers, gateway_mcp_upstream_query, normalize_mcp_server_key,
-    validate_mcp_server_auth_destination,
+    McpServerUrlPolicy, gateway_mcp_upstream_headers, gateway_mcp_upstream_query,
+    normalize_mcp_server_key, validate_mcp_server_auth_destination,
 };
 use gateway_mcp::McpQueryCredential;
 
@@ -26,6 +26,7 @@ pub struct McpGatewayUpstream {
 pub struct McpGatewayService<R> {
     repo: Arc<R>,
     oauth_runtime: Option<Arc<McpOauthRuntime>>,
+    url_policy: McpServerUrlPolicy,
 }
 
 impl<R> McpGatewayService<R>
@@ -33,10 +34,11 @@ where
     R: McpRegistryRepository,
 {
     #[must_use]
-    pub fn new(repo: Arc<R>) -> Self {
+    pub fn new(repo: Arc<R>, url_policy: McpServerUrlPolicy) -> Self {
         Self {
             repo,
             oauth_runtime: None,
+            url_policy,
         }
     }
 
@@ -51,8 +53,8 @@ where
         server_key: &str,
     ) -> Result<McpGatewayUpstream, GatewayError> {
         let server = self.load_active_server(server_key).await?;
-        let headers = gateway_mcp_upstream_headers(&server)?;
-        let query_credential = gateway_mcp_upstream_query(&server)?;
+        let headers = gateway_mcp_upstream_headers(&server, &self.url_policy)?;
+        let query_credential = gateway_mcp_upstream_query(&server, &self.url_policy)?;
         Ok(McpGatewayUpstream {
             server,
             headers,
@@ -95,11 +97,14 @@ where
             &server.server_url,
             server.auth_mode,
             &server.auth_config,
+            &self.url_policy,
         )?;
         let headers = match server.auth_mode {
             ExternalMcpAuthMode::None
             | ExternalMcpAuthMode::GatewayStaticHeader
-            | ExternalMcpAuthMode::GatewayBearerToken => gateway_mcp_upstream_headers(&server)?,
+            | ExternalMcpAuthMode::GatewayBearerToken => {
+                gateway_mcp_upstream_headers(&server, &self.url_policy)?
+            }
             ExternalMcpAuthMode::UserPassthrough | ExternalMcpAuthMode::OauthObo => Some({
                 let mut credentials = McpCredentialService::new(self.repo.clone());
                 if let Some(runtime) = self.oauth_runtime.as_ref() {
@@ -108,7 +113,7 @@ where
                 credentials.resolve_for_auth(auth, &server).await?.headers
             }),
         };
-        let query_credential = gateway_mcp_upstream_query(&server)?;
+        let query_credential = gateway_mcp_upstream_query(&server, &self.url_policy)?;
         Ok(McpGatewayUpstream {
             server,
             headers,
@@ -154,7 +159,7 @@ mod tests {
                 ExternalMcpServerStatus::Active,
             ),
         });
-        let service = McpGatewayService::new(repo);
+        let service = McpGatewayService::new(repo, McpServerUrlPolicy::default());
 
         let upstream = service
             .prepare_upstream("github")
@@ -171,7 +176,7 @@ mod tests {
         let repo = Arc::new(SingleServerRepo {
             server: server_record(ExternalMcpAuthMode::None, ExternalMcpServerStatus::Disabled),
         });
-        let service = McpGatewayService::new(repo);
+        let service = McpGatewayService::new(repo, McpServerUrlPolicy::default());
 
         let error = service
             .prepare_upstream("github")

@@ -217,6 +217,7 @@ models:
     assert!(route.capabilities.chat_completions);
     assert!(!route.capabilities.stream);
     assert!(route.capabilities.embeddings);
+    assert!(!route.capabilities.images, "images is opt-in");
     assert!(!route.capabilities.tools);
     assert!(!route.capabilities.vision);
     assert!(route.capabilities.json_schema);
@@ -264,6 +265,85 @@ models:
         pricing.cache_write_cost_per_million_tokens,
         Some(Money4::from_scaled(5_000))
     );
+    assert_eq!(pricing.image_output_cost_per_million_tokens, None);
+}
+
+#[test]
+fn parses_route_image_output_pricing_override() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(
+        &config_path,
+        r#"
+providers:
+  - id: openrouter
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openrouter
+models:
+  - id: image-model
+    routes:
+      - provider: openrouter
+        upstream_model: google/gemini-3.1-flash-lite-image
+        pricing_override:
+          input_usd_per_million_tokens: "0.2500"
+          output_usd_per_million_tokens: "1.5000"
+          image_output_usd_per_million_tokens: "30"
+"#,
+    );
+
+    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+    let seeded = config.seed_models().expect("seed models");
+    let pricing = seeded[0].routes[0]
+        .pricing_override
+        .as_ref()
+        .expect("pricing override");
+
+    assert_eq!(
+        pricing.output_cost_per_million_tokens,
+        Money4::from_scaled(15_000)
+    );
+    assert_eq!(
+        pricing.image_output_cost_per_million_tokens,
+        Some(Money4::from_scaled(300_000))
+    );
+}
+
+#[test]
+fn rejects_negative_or_numeric_image_output_pricing_override() {
+    for (image_rate, expected_error) in [
+        (
+            r#""-30.0000""#,
+            "image_output_usd_per_million_tokens cannot be negative",
+        ),
+        ("30", "expected a quoted decimal string"),
+    ] {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            &format!(
+                r#"
+models:
+  - id: contracted
+    routes:
+      - provider: private
+        upstream_model: upstream
+        pricing_override:
+          input_usd_per_million_tokens: "0.2500"
+          output_usd_per_million_tokens: "1.5000"
+          image_output_usd_per_million_tokens: {image_rate}
+"#
+            ),
+        );
+
+        let error = GatewayConfig::from_path(&config_path)
+            .expect_err("invalid image output rate must be rejected");
+        assert!(
+            format!("{error:#}").contains(expected_error),
+            "unexpected error for `{image_rate}`: {error:#}"
+        );
+    }
 }
 
 #[test]
@@ -545,5 +625,115 @@ models:
     assert!(
         error_text.contains("decisions_api but requires an openai_compat provider"),
         "unexpected error: {error_text}"
+    );
+}
+
+#[test]
+fn parses_images_capability_on_openai_compatible_routes() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+
+    write_config(
+        &config_path,
+        r#"
+providers:
+  - id: openrouter
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openrouter
+  - id: cloud-run
+    type: gcp_cloud_run_openai_compat
+    base_url: https://service.example.com/v1
+    pricing_provider_id: google-vertex
+    auth:
+      mode: adc
+models:
+  - id: gpt-image
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-image-1
+        capabilities:
+          images: true
+      - provider: cloud-run
+        upstream_model: google/imagen
+        capabilities:
+          images: true
+"#,
+    );
+
+    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+    let models = config.seed_models().expect("seed models");
+    let images = models[0]
+        .routes
+        .iter()
+        .map(|route| (route.provider_key.as_str(), route.capabilities.images))
+        .collect::<Vec<_>>();
+    assert_eq!(images, [("openrouter", true), ("cloud-run", true)]);
+}
+
+#[test]
+fn rejects_images_capability_on_providers_without_the_images_api() {
+    for (provider, upstream_model) in [
+        (
+            "  - id: drawer\n    type: anthropic_compat\n    base_url: https://opencode.ai/zen\n    pricing_provider_id: opencode\n    auth:\n      kind: x_api_key\n      token: literal.test_opencode_key\n",
+            "claude-fable-5-1",
+        ),
+        (
+            "  - id: drawer\n    type: gcp_vertex\n    project_id: test-proj\n    auth:\n      mode: adc\n",
+            "google/imagen-4.0-generate-001",
+        ),
+    ] {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            &format!(
+                "providers:\n{provider}models:\n  - id: image\n    routes:\n      - provider: drawer\n        upstream_model: {upstream_model}\n        capabilities:\n          images: true\n"
+            ),
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        assert!(
+            format!("{error:#}").contains(
+                "model `image` route for provider `drawer` enables capabilities.images but image generation requires an openai_compat or gcp_cloud_run_openai_compat provider"
+            ),
+            "unexpected error for {upstream_model}: {error:#}"
+        );
+    }
+}
+
+#[test]
+fn rejects_images_capability_on_decisions_routes() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+
+    write_config(
+        &config_path,
+        &format!(
+            r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: luna
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-6-luna{OPENAI_DECISIONS_CAPABILITIES}
+          images: true
+        compatibility:
+          openai_compat:
+            decisions_api: openai
+"#
+        ),
+    );
+
+    let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    assert!(
+        format!("{error:#}").contains(
+            "enables capabilities.decisions and `images`; decisions routes must disable all other capabilities"
+        ),
+        "unexpected error: {error:#}"
     );
 }

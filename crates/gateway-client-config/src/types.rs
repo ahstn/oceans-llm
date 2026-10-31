@@ -108,6 +108,8 @@ pub struct ClientModelCapabilities {
     #[serde(default)]
     pub responses: bool,
     pub tool_calling: bool,
+    /// Accepts PDF file input. The gateway only routes file parts to vision routes, so
+    /// callers set this only when `vision` is also true.
     pub attachments: bool,
     pub vision: bool,
 }

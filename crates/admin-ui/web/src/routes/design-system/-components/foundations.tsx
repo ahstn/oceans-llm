@@ -179,7 +179,7 @@ const typeScale = [
   },
   {
     token: 'font-mono text-sm',
-    spec: '14px mono',
+    spec: '14px Geist Mono',
     use: 'Identifiers, keys, request IDs',
     sample: <p className="truncate font-mono text-sm">req_01JB7Q4M8Z2V</p>,
   },
