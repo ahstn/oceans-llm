@@ -69,6 +69,7 @@ New large-field paths cover chat `choices[].message.images[].image_url.url`, str
 ## Follow-ups
 
 - Add an image-output rate to the pricing catalog when a source publishes one, for example OpenRouter's public `/models` `image_output` field.
+  - Done in [ADR: Multi-Source Model Catalog and Tri-State Route Capabilities](2026-10-31-multi-source-model-catalog.md): OpenRouter and LiteLLM image output rates now price catalog-priced image tokens.
 - Support Images API streaming.
 - Support native OpenAI `/images/generations` and native Vertex or Bedrock image models.
 - Translate chat `images` into `/v1/messages` and Responses API outputs.

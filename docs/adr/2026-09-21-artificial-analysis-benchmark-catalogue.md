@@ -37,7 +37,7 @@ Each score has a numeric value, unit, metric key, label, benchmark version, sour
 
 ### 4. Refresh is separate from pricing
 
-Benchmark refresh uses its own `benchmark_catalog` service module and repository trait. It does not share pricing policy or the 15-minute pricing schedule.
+Benchmark refresh uses its own `benchmark_catalog` service module and repository trait. It does not share pricing policy or the pricing refresh schedule (now 6 hours).
 
 The gateway fetches all API pages, validates the complete response, projects only explicitly bound models, and replaces current scores in one transaction. A successful refresh removes missing or `null` scores. Any fetch or validation failure leaves the last successful set unchanged.
 

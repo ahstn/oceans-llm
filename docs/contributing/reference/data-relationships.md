@@ -59,7 +59,7 @@ This document is schema-oriented. It describes the persistent relationships that
 
 `model_routes` stores two distinct route execution metadata documents:
 
-- `capabilities_json` controls whether the route may execute a request
+- `capabilities_json` stores the explicit route capability flags; omitted flags are absent and are filled at runtime from compatibility inference, catalog hints, and defaults (`gateway_core::effective_route_capabilities`)
 - `compatibility_json` controls declared provider API compatibility transforms after route selection
 
 `capabilities_json` includes API-family gates such as `chat_completions`, `responses`, and `embeddings`.
@@ -184,10 +184,10 @@ Request-log purge treats `request_logs` as the parent retention boundary. Purgin
 
 - `pricing_catalog_cache`
   - Key columns: `catalog_key`, `source`, `etag`, `fetched_at`, `snapshot_json`
-  - Notes: runtime uses the cached snapshot together with the vendored fallback in the repo
+  - Notes: one row per catalog source (`models_dev_supported_v4`, `openrouter_v1`, `litellm_v1`), each with its own ETag, fetch time, and a content checksum inside `snapshot_json`. Runtime merges the three cached snapshots, using each source's vendored fallback in the repo when its row is missing
 - `model_pricing`
-  - Key columns: `model_pricing_id`, `pricing_provider_id`, `pricing_model_id`, `effective_start_at`, `effective_end_at`
-  - Notes: effective-dated pricing rows are the durable historical charging source
+  - Key columns: `model_pricing_id`, `pricing_provider_id`, `pricing_model_id`, `context_tiers_json`, `output_image_cost_per_million_tokens_10000`, `effective_start_at`, `effective_end_at`
+  - Notes: effective-dated pricing rows are the durable historical charging source. One reconciliation writes all rows of a merged catalog generation; each row's provenance is the source that supplied its pricing
 - `usage_cost_event_duplicates_archive`
   - Purpose: preserves duplicate-ledger rows during pricing/ledger migration cleanup and audit backfill flows
 
@@ -214,10 +214,12 @@ Model-level allowlist refs have no user/team foreign keys, so unknown emails and
 ## Budget and Pricing Notes
 
 - Pricing lookup comes from the internal pricing catalog layer, not from provider `/v1/models` responses
-- Supported pricing source ids in this slice are `openai`, `google-vertex`, and `google-vertex-anthropic`
-- `openai_compat` providers must declare `pricing_provider_id`
+- Supported pricing provider ids are `amazon-bedrock`, `github-copilot`, `google-vertex`, `google-vertex-anthropic`, `openai`, `openrouter`, and `opencode`
+- `openai_compat`, `anthropic_compat`, `gcp_cloud_run_openai_compat`, and `typesafe` providers must declare `pricing_provider_id`; `github_copilot` providers may declare it
 - `gcp_vertex` derives pricing source from the `upstream_model` publisher prefix
+- `aws_bedrock` routes use `amazon-bedrock` with the normalized upstream model id
 - Pricing is exact-only in this slice; unsupported billing modifiers, unsupported publisher/location combinations, and unknown model ids resolve as `unpriced`
+- Catalog context tiers bill the whole request when the normalized prompt tokens are strictly greater than the tier threshold; `usage_cost_events.pricing_tier_above_input_tokens` records the tier used
 - Chargeable requests write usage ledger rows and participate in budget enforcement
 - Unpriced requests are not charged and must not be budget-blocked
 - Supported budget cadence values are `daily|weekly|monthly`

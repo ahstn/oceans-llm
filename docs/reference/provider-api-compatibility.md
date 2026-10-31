@@ -9,7 +9,7 @@ This page describes the live compatibility contract between the gateway's public
 The gateway currently exposes:
 
 - `GET /v1/models`
-- `GET /v1/model-metadata` (Oceans discovery extension; schema version 1)
+- `GET /v1/model-metadata` (Oceans discovery extension; schema version 2)
 - `POST /v1/chat/completions`
 - `POST /v1/messages`
 - `POST /messages`
@@ -131,7 +131,7 @@ models:
             openai_base_path: /openai/v1
 ```
 
-`api_style` values are `runtime_converse`, `runtime_anthropic_invoke`, `runtime_openai_chat`, `mantle_openai_responses`, `mantle_openai_chat`, and `mantle_anthropic_messages`. OpenAI-shaped styles require `openai_base_path`. Only `mantle_openai_responses` routes can enable `responses` and `json_schema`; those routes must disable `chat_completions`.
+`api_style` values are `runtime_converse`, `runtime_anthropic_invoke`, `runtime_openai_chat`, `mantle_openai_responses`, `mantle_openai_chat`, and `mantle_anthropic_messages`. OpenAI-shaped styles require `openai_base_path`. Only `mantle_openai_responses` routes can enable `responses` and `json_schema`, and they cannot enable `chat_completions`. The gateway infers these route capabilities from `api_style`.
 
 Runtime Converse compatibility also accepts optional `supports_strict_tools`. When absent, transparent model IDs use model-family detection; set it explicitly for opaque application-inference-profile IDs or ARNs so Claude Opus 4.7/4.8 routes omit the unsupported `strict` field while supported models retain it.
 

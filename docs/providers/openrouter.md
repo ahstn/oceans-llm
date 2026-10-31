@@ -79,16 +79,6 @@ models:
         pricing_override:
           input_usd_per_million_tokens: "0.0420"
           output_usd_per_million_tokens: "0.0000"
-        capabilities:
-          chat_completions: false
-          responses: false
-          stream: false
-          embeddings: false
-          decisions: true
-          tools: false
-          vision: false
-          json_schema: false
-          developer_role: false
         compatibility:
           openrouter:
             api: decisions
@@ -96,7 +86,7 @@ models:
 
 `api: decisions` is required for an OpenRouter Decisions route. The `provider` policy is optional for this API. If present, Oceans includes it in the upstream request.
 
-The route must enable `decisions` and disable `chat_completions`, `responses`, `embeddings`, and `stream`. Jev does not produce chat text and does not support streaming.
+`api: decisions` turns `decisions` on and every other route capability off, so the route needs no `capabilities` block. Jev does not produce chat text and does not support streaming. An explicit `true` for another capability fails startup.
 
 See [TypeSafe](typesafe.md) for the public request shape and native TypeSafe provider configuration.
 
@@ -107,7 +97,7 @@ OpenRouter serves image models in two ways:
 - Image-only models, such as GPT Image, FLUX, Recraft, and Seedream, are served only on `POST https://openrouter.ai/api/v1/images`. Oceans exposes them at `POST /v1/images` and `POST /v1/images/generations`. OpenRouter rejects these models on Chat Completions with a 404.
 - Chat image models, such as the Gemini image models, use Chat Completions. Callers send `modalities: ["image","text"]`, and the response has `choices[].message.images[]` (`delta.images` when streaming). Use a normal chat route for them.
 
-Configure an image-only model as an Images-only route. With the other API families off, Oceans rejects a Chat Completions request to the model before it calls OpenRouter:
+Configure an image-only model as an Images-only route. With the other API families off, Oceans rejects a Chat Completions request to the model before it calls OpenRouter. The OpenRouter catalog marks image-only models, so the gateway can fill these flags from catalog hints. Set them explicitly, as below, so the route does not depend on the catalog:
 
 ```yaml
 models:

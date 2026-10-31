@@ -22,10 +22,12 @@ Create the provider without a token:
 providers:
   - id: github-copilot-user
     type: github_copilot
-    pricing_provider_id: openai
+    pricing_provider_id: github-copilot
     auth:
       mode: github_user
 ```
+
+`pricing_provider_id: github-copilot` prices Copilot routes from the models.dev and LiteLLM GitHub Copilot catalogs. These catalogs use Copilot model IDs, such as `claude-haiku-4.5`. Route capabilities come from `compatibility.github_copilot`, so a Copilot route needs no `capabilities` block. See [Configuration Reference](../configuration/configuration-reference.md#github-copilot-provider-and-route-evidence).
 
 Set a stable encryption key for encrypting user-provided Copilot tokens outside YAML:
 
