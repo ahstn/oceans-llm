@@ -417,7 +417,7 @@ checksum = "sha256:1901d539912c02afa10d1cc126943a8855a7eedebe830119463470db5e6c5
 url = "https://nodejs.org/dist/v26.12.1/node-v26.12.1-darwin-arm64.tar.gz"
 
 [[tools."npm:wrangler"]]
-version = "4.149.0"
+version = "4.156.0"
 backend = "npm:wrangler"
 
 [[tools.osv-scanner]]
@@ -453,19 +453,8 @@ url_api = "https://api.github.com/repos/google/osv-scanner/releases/assets/63225
 version = "18.4"
 backend = "vfox:mise-plugins/vfox-postgres"
 
-[tools.postgres."platforms.linux-x64"]
-url = "https://ftp.postgresql.org/pub/source/v18.4/postgresql-18.4.tar.gz"
-
-[tools.postgres."platforms.linux-x64-baseline"]
-url = "https://ftp.postgresql.org/pub/source/v18.4/postgresql-18.4.tar.gz"
-
-[tools.postgres."platforms.linux-x64-musl"]
-url = "https://ftp.postgresql.org/pub/source/v18.4/postgresql-18.4.tar.gz"
-
-[tools.postgres."platforms.linux-x64-musl-baseline"]
-url = "https://ftp.postgresql.org/pub/source/v18.4/postgresql-18.4.tar.gz"
-
 [tools.postgres."platforms.macos-arm64"]
+checksum = "sha256:450aa8f2da06c46f8221916e82ae06b04fb1040f8f00643dbf8b7d663caac0b9"
 url = "https://ftp.postgresql.org/pub/source/v18.4/postgresql-18.4.tar.gz"
 
 [[tools.prek]]
