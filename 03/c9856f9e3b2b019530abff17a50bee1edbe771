@@ -1,0 +1,170 @@
+crates/gateway-service/src/batches.rs
+  s_fbab1aca9ec8e7::t_24e30e1c372b2a 319-326,442,453
+crates/admin-ui/web/src/test/routes/models-route.test.tsx
+  s_5b57a6bde6f371::t_b7bd1f54fa48bd 1091-1093
+  s_662658183b1553::t_e39eb770e89277 90,147-148,362,1027-1037,1039,1046-1053,1057-1060,1063-1065,1068-1072,1074,1076-1090,1094-1097,1104-1106
+crates/gateway-service/src/routing/tests.rs
+  s_fbab1aca9ec8e7::t_cfbce6a754a896 192
+crates/gateway-service/src/model_metadata/listing.rs
+  s_de797db80ca41f::t_69e9afeffc3625 247,360,370
+  s_de797db80ca41f::t_eb028cf6e5610f 11-12,22
+crates/gateway-service/src/pricing_catalog/tests/support.rs
+  s_243b31b3ca5625::t_b91b8e4b5a1aea 26,38-42,44-55,59-60,70,74-111,116,119,146,387-389,391,396-400,733-742,744,748-780,783,785,787-792,796-840,842,849,853
+  s_5b57a6bde6f371::t_ae31a8246ec092 32,34-37,71-73,138-141,401-424,426-458,460-505,507-541,543-568,570-651,653-732
+  s_243b31b3ca5625::t_2e4902e585fe7d 874-896
+docs/reference/request-lifecycle-and-failure-modes.md
+  s_de797db80ca41f::t_dd370a257d9cf6 144,152
+crates/gateway-service/src/pricing_catalog/sources/models_dev.rs
+  s_5b57a6bde6f371::t_ae31a8246ec092 32-35
+  s_243b31b3ca5625::t_9d4a439f2088ab 1-31,36-379
+crates/gateway-service/src/pricing_catalog/sources/mod.rs
+  s_243b31b3ca5625::t_51935210de7fc8 1-2,12-13,18,24-99,112-114,124-131,150-152,159-160,163,168
+crates/gateway/src/http/models.rs
+  s_fbab1aca9ec8e7::t_b3b883add1a79d 49,139,233-238
+  s_5b57a6bde6f371::t_ae31a8246ec092 199,239-246
+  s_243b31b3ca5625::t_3ad90b05ab9757 11-12,22-23,166,172-173,182,186-198,200-214,216-229,247
+  s_243b31b3ca5625::t_b53c1d814240b5 1-2
+  s_243b31b3ca5625::t_88a06b86ec92b6 788-848
+  s_5b57a6bde6f371::t_6d6d678e0231b3 248
+crates/gateway-service/src/admin_models.rs
+  s_fbab1aca9ec8e7::t_c5ebda1e265d2a 33-35,100-101,114,137-157,353-354,487-492
+  s_243b31b3ca5625::t_d3ef5784a60bbc 2566
+  s_fbab1aca9ec8e7::t_b53873df9e8dc3 2055-2120
+  s_fbab1aca9ec8e7::t_3f937d50c07d3e 2054
+crates/gateway-service/data/litellm_catalog_fallback.json
+  s_5b57a6bde6f371::t_e9684583c88dd9 5-6,23940-23942,23979-23981,24018-24020,24058-24060,24098-24100,24137-24139,24176-24178,24215-24217,24254-24256,24293-24295,24412-24414,24452-24454,24581-24583,24607-24608,24821-24823,24870-24872
+crates/admin-ui/web/src/routes/models.tsx
+  s_662658183b1553::t_d54b3a0832457f 52,68-93,224-225
+crates/gateway-service/src/model_resolution.rs
+  s_fbab1aca9ec8e7::t_9301038491c3ae 132
+  s_fbab1aca9ec8e7::t_d43edeaeb29a68 7-8,11,134-146
+crates/gateway-service/data/openrouter_catalog_fallback.json
+  s_5b57a6bde6f371::t_e9684583c88dd9 5-6,26519
+crates/gateway-service/src/pricing_catalog/reconcile.rs
+  s_243b31b3ca5625::t_5bd57821d40855 151
+  s_5b57a6bde6f371::t_ae31a8246ec092 18
+  s_243b31b3ca5625::t_c4c358f5b62c26 1-17,19-150,152-257
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_de797db80ca41f::t_c32636aa3e5379 228
+crates/gateway-service/src/pricing_catalog/tests/reconciliation.rs
+  s_243b31b3ca5625::t_bf9701a6723866 3-12,32-33,45,58-59,71,84,133,212,283,339,382-445
+crates/gateway-service/src/pricing_catalog/tests/mod.rs
+  s_243b31b3ca5625::t_7f520fbf8884af 4
+crates/gateway-service/src/pricing_catalog/sources/litellm.rs
+  s_662658183b1553::t_bf42ece7eaebd9 103-104
+  s_662658183b1553::t_413824b9c45202 427-464
+  s_662658183b1553::t_83de9af7dafde4 4,19,100,111,143-146,150,183-190
+crates/gateway-service/src/model_metadata/tests.rs
+  s_5b57a6bde6f371::t_7f1bc419cc4ebc 264
+  s_5b57a6bde6f371::t_ae31a8246ec092 4,248-251
+  s_de797db80ca41f::t_5907af51c1a8fc 2-3,5,86,112-113,119-247,252-263,265-275,433,436,446,463,745-746
+crates/gateway-service/src/pricing_catalog/merge.rs
+  s_de797db80ca41f::t_ec7952c91692a8 30-31,33-35,40-44,48-51,55-63,68-71,75-77
+  s_5b57a6bde6f371::t_ae31a8246ec092 666-669
+  s_243b31b3ca5625::t_75064d0d677b46 101-111,121,209,215-223
+  s_243b31b3ca5625::t_0fc040d494405b 643-665,670-679
+crates/gateway-service/src/capability_hints.rs
+  s_5b57a6bde6f371::t_ae31a8246ec092 261-264
+  s_fbab1aca9ec8e7::t_16d84f4524d9fa 88-89,256
+  s_fbab1aca9ec8e7::t_c1bed49de96ad4 1-87,90-255,257-260,265-274
+crates/gateway-service/src/model_metadata/catalog.rs
+  s_de797db80ca41f::t_90a8274c0a08bd 1,4-5,16,19-20,23,25-27,31-37,41-54
+  s_de797db80ca41f::t_4aa5ea2518c6a7 55-56
+crates/gateway/src/http/handlers.rs
+  s_fbab1aca9ec8e7::t_763484ae55a24d 3156-3161,3193-3196,3210-3211,3213
+  s_5b57a6bde6f371::t_ae31a8246ec092 3224-3227
+  s_fbab1aca9ec8e7::t_d4b8aaddc57b9a 3197-3198,3212
+  s_fbab1aca9ec8e7::t_e44d88b63d93a7 2420,3106,3170-3192,3199-3209,3214-3223
+  s_5b57a6bde6f371::t_2bced1f87fbef7 3228-3229
+crates/gateway/src/http/handlers/model_metadata_tests.rs
+  s_de797db80ca41f::t_6b82cda41c6c3a 31-35,37-39,41-51
+crates/gateway-service/src/pricing_catalog/refresh.rs
+  s_5b57a6bde6f371::t_ae31a8246ec092 12,406-409
+  s_243b31b3ca5625::t_edc1bc42fb702f 1-11,13-405,410-465
+crates/gateway-service/src/pricing_catalog.rs
+  s_243b31b3ca5625::t_dce07e6320a0fd 1,5-6,8,12,14,21-22,26,28-33,43-46,52-54,63,66,70-71,76-77,81-82,84-89,93-103,105-110,112,114-122,159-163,165-167,176,183,187,191-193,198-204,206,208-210,295-296,298,304,315,322,330,334,345,347-353,356-365,368-373,376-379,381-390,393-398,406-409,412-423,426-427,432-435,439-440,447
+  s_243b31b3ca5625::t_286904ec1cbd43 27,346
+  s_5b57a6bde6f371::t_ae31a8246ec092 374-375,399-403,428-431
+crates/gateway/src/http/handlers/routing.rs
+  s_5b57a6bde6f371::t_ae31a8246ec092 221
+  s_fbab1aca9ec8e7::t_08c1c96d13cebb 3,51-56,190,193,205,209
+crates/gateway-service/src/pricing_catalog/tests/refresh.rs
+  s_243b31b3ca5625::t_7be9f1d03c8380 14-46,49,56-57,59-60,78,80,82,88-91,107,110-111,116-118,120,122-135,142-147,170,172-175,177-180,182,188-193,211,213,215-218,223,228-233,245,248-252,255-256,258-267,273-274,299,303-304,308-310,312,322,338-345,352-359,377,379-382,384,392,402,404-405,407,409-412,417,422-443,445-457,474,481,499,519-522,525-528
+  s_5b57a6bde6f371::t_ae31a8246ec092 413-416
+crates/gateway-service/src/lib.rs
+  s_fbab1aca9ec8e7::t_0de1ec956491a3 11
+  s_243b31b3ca5625::t_c679de66f7b3f7 151-152
+  s_fbab1aca9ec8e7::t_2003393ed88f99 81
+crates/gateway-service/src/pricing_catalog/tests/resolution.rs
+  s_243b31b3ca5625::t_4fe7cd36a76e3b 300-301,303-312,437,538
+crates/gateway-service/src/pricing_catalog/metadata.rs
+  s_243b31b3ca5625::t_1ad8a0e4043aac 32,42-43
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_5b57a6bde6f371::t_e9684583c88dd9 4069-4070,4914-4925,5018-5019
+crates/gateway-service/src/service.rs
+  s_fbab1aca9ec8e7::t_71c9d70146b2ba 391
+  s_243b31b3ca5625::t_225918e528b8ff 858-859,863-865,868-869
+  s_fbab1aca9ec8e7::t_82bf4ae3e587be 379,382,390,392-393,416
+  s_fbab1aca9ec8e7::t_ef346b6210cb3d 345-353
+crates/gateway-service/src/model_metadata.rs
+  s_de797db80ca41f::t_e832481294622b 227
+  s_de797db80ca41f::t_112fe73ab79411 5-11,24-25,28,37-39,43-45,49-60,81-83,120-131,223-225,306-308
+  s_5b57a6bde6f371::t_ae31a8246ec092 33-34
+crates/gateway/src/http/admin_contract.rs
+  s_243b31b3ca5625::t_5e8b8fb1e6ec8f 584-611
+crates/gateway-service/src/pricing_catalog/tests/sources.rs
+  s_243b31b3ca5625::t_10f8631eade9f0 1-109,112-139,145-309
+  s_5b57a6bde6f371::t_ae31a8246ec092 110-111,140-144
+crates/gateway-service/data/pricing_catalog_fallback.json
+  s_5b57a6bde6f371::t_b0ce2aa9d3b8da 4-6,41034
+crates/gateway/openapi/admin-api.json
+  s_5b57a6bde6f371::t_5b611cc79b4c69 15630,15633-15638,18740-18784,19118,19121-19126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "03c9856f9e3b2b019530abff17a50bee1edbe771",
+  "prompts": {},
+  "sessions": {
+    "s_243b31b3ca5625": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a19414-d4e4-71fd-9202-1ee515b642e0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_5b57a6bde6f371": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a193bb-6210-710c-9db8-d80f9ec87693",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_662658183b1553": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a19414-d4eb-74ed-9591-634e789125d7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_de797db80ca41f": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a19414-d4e7-7183-b5e0-49e6ddcc14ff",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_fbab1aca9ec8e7": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a19414-d4e9-732b-a208-28bec5f40eed",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
