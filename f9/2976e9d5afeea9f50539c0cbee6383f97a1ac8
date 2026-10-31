@@ -1,0 +1,347 @@
+.agents/skills/verify-oceans-admin/features/README.md
+  s_1121327246a626::t_b5ae2a46e6f750 70
+.agents/skills/verify-oceans-admin/features/image-generation.md
+  s_1121327246a626::t_e9af194b3c910b 1-52
+.agents/skills/verify-oceans-admin/features/live-llm-requests.md
+  s_1121327246a626::t_7a0fcb461c0b09 63-64
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_1121327246a626::t_b60da07e7d4699 183,373-386
+.agents/skills/verify-oceans-admin/features/skills.md
+  s_1121327246a626::t_73f2ada838c993 50
+.agents/skills/verify-oceans-admin/scripts/drive-skills.mjs
+  s_1121327246a626::t_ba46bee529cb26 225
+.github/actions/rust-cache/action.yml
+  s_1121327246a626::t_5cc958402f2bd5 18
+.github/workflows/ci.yml
+  s_1121327246a626::t_e86121536b2f3a 55
+.github/workflows/cli-ci.yml
+  s_1121327246a626::t_259eb2e47473ca 58,71
+.github/workflows/docs-ci.yml
+  s_1121327246a626::t_865cd6091751df 36
+.github/workflows/helm-ci.yml
+  s_1121327246a626::t_995175e840cb88 41
+.github/workflows/oceans-review-agent.yml
+  s_1121327246a626::t_62cc77cec3f42f 84
+.github/workflows/release-product.yml
+  s_1121327246a626::t_7ca62aba9675de 51,136
+.github/workflows/repo-lint.yml
+  s_1121327246a626::t_bb0e92303307ff 49
+.github/workflows/review-agent-ci.yml
+  s_1121327246a626::t_696756dfb4208c 36
+.github/workflows/review-agent-self-hosted-smoke.yml
+  s_1121327246a626::t_85c174058d6a3e 44
+.github/workflows/ui-ci.yml
+  s_1121327246a626::t_8fc39c2cba6761 36
+CHANGELOG.md
+  s_1121327246a626::t_79a8b03c8c0901 9-54
+Cargo.lock
+  s_1121327246a626::t_df65e7f3a7b3a2 7,9,16,57,248,311-312,321,323,345-346,375,400,426,433,435,446,475-476,498,500,509-510,519,521,526-529,532-533,536-537,543,545,576,578,589-590,599,601,607,616,618,633,638,640,646-647,661,663,692,697-698,700,703,712,714,728-729,733,1511,1717,1723,1739-1740,1758,1770,1780,1783,1790,1809,1830,1832,1845,1853,1876,1882,1908,1927,1935,2039,2158,2169-2170,2205-2207,2223-2224,2226-2227,2229,2240,2257-2259,2264,2670-2671,2673,2808,2881-2892,2918,2991,3004,3007,3053,3101,3112,3117,3121,3133-3134,3411,3433,3448-3449,3458,3460,3470,3488,3490,3687-3688,3690-3691,3698,3703,3705-3706,3727-3728,3730-3731,3739,3745,3747,3749,3868,3883,3885,3892,3903,3906,3925,3930-3931,3933-3934,3937,4039,4420,4426,4593,4711,4733,4812-4813,4815-4816,4820,4823,4836-4837,4846,4848,4862,4879-4880,4882,4896-4897,4900,5018,5020,5764,5766,5770,5773,5775
+Cargo.toml
+  s_1121327246a626::t_025eb09fbcee70 68-69,108
+DESIGN.md
+  s_1121327246a626::t_9da49c37febec8 65-68,206-207,226,297-301
+actions/review-agent/bun.lock
+  s_1121327246a626::t_584c5392d7e07e 13,715,901
+actions/review-agent/package.json
+  s_1121327246a626::t_0b15b2b4d36774 21
+crates/admin-ui/Cargo.toml
+  s_1121327246a626::t_ae9e46b1d2e9cf 5
+crates/admin-ui/web/bun.lock
+  s_1121327246a626::t_a838ba690c15ec 9-10,12,17-18,23,35,46,50,53-54,57,168,170,190,192-194,250,252,254,256,258,260,262,264,266,268,270,272,274,276,278,280,282,284,286,300,302,304,306,308,310,312,314,316,318,320,322,324,326,328,330,332,334,336,502,588,590,592,594,612,638,698,722,744,762,766,886,1048,1200,1202,1240,1328,1344,1524-1525,1538,1618,1620,1622,1630-1633
+crates/admin-ui/web/e2e/gateway-contract.e2e.ts
+  s_1121327246a626::t_f7e607c1392ccf 116-118
+crates/admin-ui/web/package.json
+  s_1121327246a626::t_f79e3186d27c13 26-27,29,34-35,40,52,63,67,70-71,74
+crates/admin-ui/web/src/components/icons/agent-harness-icon.tsx
+  s_1121327246a626::t_2ca770a9f8e940 84,90,95
+crates/admin-ui/web/src/components/ui/toggle.tsx
+  s_1121327246a626::t_2b20905134122b 14-17
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_1121327246a626::t_c66243f196a754 2328
+crates/admin-ui/web/src/routes/-model-presentation.tsx
+  s_1121327246a626::t_d9335e49f3b426 2,121
+crates/admin-ui/web/src/routes/design-system/-components/actions-inputs.tsx
+  s_1121327246a626::t_827e3ba70643ff 164-175
+crates/admin-ui/web/src/routes/design-system/-components/foundations.tsx
+  s_1121327246a626::t_f00d396305acf1 182
+crates/admin-ui/web/src/routes/models.tsx
+  s_1121327246a626::t_1a7b99721b9cd1 451,853,861-865
+crates/admin-ui/web/src/styles/globals.css
+  s_1121327246a626::t_19e0fd9dc8e7d6 44-78,169,243
+crates/admin-ui/web/src/test/routes/models-route.test.tsx
+  s_1121327246a626::t_def5177cb6ba34 185,217,317,812-845
+crates/agent-session-analysis/Cargo.toml
+  s_1121327246a626::t_f0b8c34b29845a 5
+crates/gateway-client-config/Cargo.toml
+  s_1121327246a626::t_9bbdba9e1b1a1b 5
+crates/gateway-client-config/src/api_style.rs
+  s_1121327246a626::t_aa9b2c8f71f462 56-58
+crates/gateway-client-config/src/cost.rs
+  s_1121327246a626::t_40e8b151e3fca0 16-24
+crates/gateway-client-config/src/hints.rs
+  s_1121327246a626::t_df3ac59766c227 41,79-80
+crates/gateway-client-config/src/templates/opencode.rs
+  s_1121327246a626::t_477f7c3659874b 43-45,48,55,126,129-134,138-140,144-150,162,169-174,176-191,194-195,197-198,202-211,213-214,218-229
+crates/gateway-client-config/src/tests.rs
+  s_1121327246a626::t_90703bc61678e9 74-78,153,169-170,212-213,238,379,388-401,412,416-421,423,432-438,440-445,447,451-453,591-597,802-808,812-813,816,821,836-837,840,843-853,882-883,886,890-891,894,898,903,1341-1357,1389-1392,1410-1414,1426-1427,1454-1457
+crates/gateway-client-config/src/types.rs
+  s_1121327246a626::t_ce8139123df9d5 111-112
+crates/gateway-client-ip/Cargo.toml
+  s_1121327246a626::t_65be264a479995 5
+crates/gateway-core/Cargo.toml
+  s_1121327246a626::t_de8ff7e36d496a 5
+crates/gateway-core/src/batch.rs
+  s_1121327246a626::t_99a088c99a539e 201-204
+crates/gateway-core/src/domain.rs
+  s_1121327246a626::t_e36286478d959e 1087-1089,1107-1108,2691-2694,2959-2962,2983,3020,3041,3057,3073,3121,3167
+crates/gateway-core/src/lib.rs
+  s_1121327246a626::t_9c65139777b04d 159-160
+crates/gateway-core/src/protocol/core.rs
+  s_1121327246a626::t_3ec80ac17e6cdd 12,36-38,104,211-243,281
+crates/gateway-core/src/protocol/decisions/mod.rs
+  s_1121327246a626::t_1ee847c2b453da 105
+crates/gateway-core/src/traits.rs
+  s_1121327246a626::t_31d8b2faedecc5 61,2053-2066
+crates/gateway-guardrails/Cargo.toml
+  s_1121327246a626::t_9701347d5c9463 5
+crates/gateway-mcp/Cargo.toml
+  s_1121327246a626::t_d0709164ad39f5 5
+crates/gateway-providers/Cargo.toml
+  s_1121327246a626::t_b19dcd0476c11f 5
+crates/gateway-providers/src/anthropic_compat.rs
+  s_1121327246a626::t_d615fabdcb2952 176
+crates/gateway-providers/src/bedrock/mod.rs
+  s_1121327246a626::t_b249ed3dcd7fc4 756
+crates/gateway-providers/src/openai_compat.rs
+  s_1121327246a626::t_aff5bbefd00631 6,245-254,335-353,462,465-471,781-791,856-861,1352-1396,2024-2106
+crates/gateway-providers/src/typesafe.rs
+  s_1121327246a626::t_e2214bc3a21094 113
+crates/gateway-service/Cargo.toml
+  s_1121327246a626::t_83693cc3e7385c 5
+crates/gateway-service/data/model_benchmarks.json
+  s_1121327246a626::t_a753667696e337 8,35-37,39,55,59,125,129,175,179,201-210,286-287,289,325,329,415,419,436,439,445,449,455,459,481-490,521-530,581-590,601-640,645,649,675,679,725,729,735,739,775,779,805,809,875-877,879,885,889,915,919,925,929,935,939,1115,1119,1125,1129,1145,1149-1159,1415,1419,1425,1429,1455,1459,1475,1479,1485,1489,1565,1569,1605,1609,1615,1619,1705,1709,1715,1719
+crates/gateway-service/data/pricing_catalog_fallback.json
+  s_1121327246a626::t_cd945181355f64 4-5,4173-4241,6921-6990,9446-9514,15589-15658,24653,24762-24764,24772,24896-24898,24906,24990-24992,25000,25037-25039,25047,25084-25086,25132-25134,26309,26311-26313,26315,26565-26567,26575,26607-26609,26693-26695,26703,26900,27173,27175,27699,28092,28284,28403-28404,28413,28531-28533,28883-28885,29636-29637,29684-29686,30020,30061,30163,30165,30608,33035-33173,33706-33756,34050-34054,34058-34059,34064-34069,34075-34077,34089-34090,34097-34101,34111,34117-34119,34127,34518,35001-35003,35011,35334-35335,35344,35378-35379,35726,35763-35765,36900-36902,36992-36994,38043-38045,38053,38087-38089,38097,38425-38427,38468,38509-38511,38719-38721,38811-38813,38821,39211-39213,39259,39261,39306-39308,39316,39473-39475,39783-39786,39790-39793,39801-39804,39953-39955
+crates/gateway-service/src/admin_models.rs
+  s_1121327246a626::t_6de7cd8c93dd9e 87,449-456,503-504,547-553,1137,1160-1188,1190-1194,1514,1798-1851,2049-2064,2126,2151
+crates/gateway-service/src/agent_analysis/report_builder.rs
+  s_1121327246a626::t_261cec57d17586 369-387,411
+crates/gateway-service/src/batches.rs
+  s_1121327246a626::t_a0a3d3369c922e 128,135,174-186,496
+crates/gateway-service/src/budget_guard.rs
+  s_1121327246a626::t_647c43a3b1f251 571,587
+crates/gateway-service/src/effective_route_metadata.rs
+  s_1121327246a626::t_78433884bc7fa0 221,239,251
+crates/gateway-service/src/lib.rs
+  s_1121327246a626::t_3ee946d43b30fe 138-139
+crates/gateway-service/src/mcp_gateway.rs
+  s_1121327246a626::t_2c2ff2c27da39e 12-13,29,37,41,56-57,100,105-107,116,162,179
+crates/gateway-service/src/mcp_registry.rs
+  s_1121327246a626::t_d1c32d0159aebf 27-29,185,206,213,215,218-219,230-235,311,352-357,584-607,1116,1143
+crates/gateway-service/src/mcp_upstream_auth.rs
+  s_1121327246a626::t_a9c360bd2ae881 4,10-12,428,437-441,443,446-452,456-509,514,516,561,567,599,608,886,899,920-921,925-977,1005,1031,1040,1050,1055-1060,1122,1130,1166,1170,1189
+crates/gateway-service/src/mcp_upstream_http.rs
+  s_1121327246a626::t_5b26147f46cb26 26,35,42,60,64-69,139,186-189
+crates/gateway-service/src/model_metadata.rs
+  s_1121327246a626::t_2c90450127d4ac 18-19,244,256-278
+crates/gateway-service/src/model_metadata/listing.rs
+  s_1121327246a626::t_6b087736640b24 79,383,426,433,593-603,607-614,616
+crates/gateway-service/src/model_metadata/litellm.rs
+  s_1121327246a626::t_4b2b7c5c5d2f37 58-59,65-66,142-144,146-147
+crates/gateway-service/src/model_metadata/tests.rs
+  s_1121327246a626::t_4aca3de6f94c75 69,500-501,564-691
+crates/gateway-service/src/model_metadata/tests/model_group_info.rs
+  s_1121327246a626::t_4d87f91c3b741c 102,131,268-285
+crates/gateway-service/src/redaction.rs
+  s_1121327246a626::t_5063a0dc7e08df 137-175
+crates/gateway-service/src/redaction/large_fields.rs
+  s_1121327246a626::t_6c5191e0a8db78 125-202,224-225,261-269,272,275-277
+crates/gateway-service/src/redaction/tests.rs
+  s_1121327246a626::t_673aa166ed61bc 3,10,12,451-495,592-826
+crates/gateway-service/src/request_logging.rs
+  s_1121327246a626::t_18da06fa8cdc63 5-8,246-266
+crates/gateway-service/src/routing.rs
+  s_1121327246a626::t_cd01059be77e4c 20,38
+crates/gateway-service/src/service.rs
+  s_1121327246a626::t_08826e94c53c35 40-43,464-483,1048,1064,1068-1069,1109-1172,1251,1272,1352-1353,1381-1386,1421-1422,1484,1492,1498-1530,1787,1817,1852,1862-1863,1873-1914,2016,2031-2061,2075,2275,2951,3177,3288,3325,3376,3515,3559,3631-3632
+crates/gateway-service/src/service/reported_usage_cost.rs
+  s_1121327246a626::t_6a26472687f6b6 1-255
+crates/gateway-service/src/service/tests/reported_cost_and_image_usage.rs
+  s_1121327246a626::t_e9a56c70c46bcc 1-235
+crates/gateway-skills/Cargo.toml
+  s_1121327246a626::t_e070bfeacb2dbd 5
+crates/gateway-store/Cargo.toml
+  s_1121327246a626::t_c4750302d49bac 5
+crates/gateway-store/migrations/V75__usage_image_output_tokens.sql
+  s_1121327246a626::t_593f7b26c58edb 1-2
+crates/gateway-store/migrations/postgres/V75__usage_image_output_tokens.sql
+  s_1121327246a626::t_b9169588aec883 1-12
+crates/gateway-store/src/lib.rs
+  s_1121327246a626::t_8c54f9992e9dc3 781,801,6726,6938-6945,7565-7569,7843-7847,11383,11482,11692,11708,11730,11746
+crates/gateway-store/src/libsql_store/batches.rs
+  s_1121327246a626::t_6d662d357faca7 651
+crates/gateway-store/src/libsql_store/budgets.rs
+  s_1121327246a626::t_65471ba7374095 376-377,420-421,461-462,1550-1551,1555,1603-1607
+crates/gateway-store/src/libsql_store/support.rs
+  s_1121327246a626::t_5252ebdbe719cc 706-708,728,752-753
+crates/gateway-store/src/migration_registry.rs
+  s_1121327246a626::t_29b076f826e023 470-476
+crates/gateway-store/src/postgres_store/budgets.rs
+  s_1121327246a626::t_c555cf1322c219 418-419,456-457,491-492,1526-1527,1531,1590-1595
+crates/gateway-store/src/postgres_store/support.rs
+  s_1121327246a626::t_b8642633226024 663-665,685,709-710
+crates/gateway/Cargo.toml
+  s_1121327246a626::t_f0ff8235a96b8f 5
+crates/gateway/openapi/admin-api.json
+  s_1121327246a626::t_40a1469306c87f 8806-8811
+crates/gateway/src/config/mcp.rs
+  s_1121327246a626::t_e28edbfa24b6b1 4,20-73
+crates/gateway/src/config/mod.rs
+  s_1121327246a626::t_152e557eb9ea88 164
+crates/gateway/src/config/routes.rs
+  s_1121327246a626::t_ed2e5633147ed8 116,132-133,168-182,187-196,216-218,238,255,454,471-493
+crates/gateway/src/config/tests/mcp_client_oauth.rs
+  s_1121327246a626::t_e92e3d997495d8 309-337
+crates/gateway/src/config/tests/routes.rs
+  s_1121327246a626::t_20e852bdecf433 220,268-346,630-739
+crates/gateway/src/http/admin_contract.rs
+  s_1121327246a626::t_3a98a8d1ca5420 437
+crates/gateway/src/http/anthropic_stream.rs
+  s_1121327246a626::t_1d346f8623924b 248-250,263-267,740-763
+crates/gateway/src/http/budget_status_tests.rs
+  s_1121327246a626::t_9bae7137160c6a 10-12,72-79,121-125
+crates/gateway/src/http/handlers.rs
+  s_1121327246a626::t_6df0c83263bbb7 9-11,15,31
+crates/gateway/src/http/handlers/embeddings.rs
+  s_1121327246a626::t_98c0580c9ccbf9 1-3,5,7,17,20-23,25-27,29-34,38-40,42-58,60-69,71-73,75-77
+crates/gateway/src/http/handlers/images.rs
+  s_1121327246a626::t_368eba09911e83 1-85
+crates/gateway/src/http/handlers/images_tests.rs
+  s_1121327246a626::t_1bb193a46f30a2 1-436
+crates/gateway/src/http/handlers/inference_tests.rs
+  s_1121327246a626::t_746e367e9dc0ea 7-9,15-16,29,111-125,230-237,380,415-416,421,434,444-456,461
+crates/gateway/src/http/handlers/json_operation.rs
+  s_1121327246a626::t_07934e853dc644 1-372
+crates/gateway/src/http/handlers/model_metadata_tests.rs
+  s_1121327246a626::t_dbdafca7db7336 81-82,114
+crates/gateway/src/http/handlers/route_tests.rs
+  s_1121327246a626::t_8e8961f1094735 16-17,115-126,470,495-508
+crates/gateway/src/http/handlers/routing.rs
+  s_1121327246a626::t_9f1b5292ee856e 269
+crates/gateway/src/http/mcp_client_oauth/metadata.rs
+  s_1121327246a626::t_016b03c5955f6f 83-88
+crates/gateway/src/http/mcp_gateway.rs
+  s_1121327246a626::t_c5657bcbdffb9e 162-166
+crates/gateway/src/http/mcp_gateway/governance.rs
+  s_1121327246a626::t_4c4250474f4803 148-154
+crates/gateway/src/http/mcp_gateway/methods.rs
+  s_1121327246a626::t_dc8e6e644cef8e 202-206
+crates/gateway/src/http/mcp_gateway/tests.rs
+  s_1121327246a626::t_b424c671e21648 998,1287-1291,1317,1380-1381
+crates/gateway/src/http/mcp_registry.rs
+  s_1121327246a626::t_d7c3102710e5d7 14,30-34,115,189,240,295,389,500,550,621,683,845
+crates/gateway/src/http/mcp_registry/ownership_tests.rs
+  s_1121327246a626::t_84781eea45220f 1821-1824
+crates/gateway/src/http/mod.rs
+  s_1121327246a626::t_ed7147b7f47294 105-106,111-113
+crates/gateway/src/http/models.rs
+  s_1121327246a626::t_019a85973a8de0 257,369
+crates/gateway/src/http/observability/request_logs.rs
+  s_1121327246a626::t_11310ca2c11429 725,741
+crates/gateway/src/http/rate_limit_tests.rs
+  s_1121327246a626::t_01e8853a9ed5af 346,535,581-595
+crates/gateway/src/http/request_body/tests.rs
+  s_1121327246a626::t_58315b45f90053 167
+crates/gateway/src/http/spend_budget_increases/handler_tests.rs
+  s_1121327246a626::t_1e0c8ccd97ad50 176,192
+crates/gateway/src/local_demo_seed/history.rs
+  s_1121327246a626::t_e64e08b9199f9c 304,329
+crates/gateway/src/local_demo_seed/mod.rs
+  s_1121327246a626::t_86e054a2606b58 430,483
+crates/gateway/src/main.rs
+  s_1121327246a626::t_fe2af7f0200f78 301
+crates/gateway/src/observability.rs
+  s_1121327246a626::t_e180c8c751a6c8 33-34,92-95,97,129,141,162-169,208-216,340-346,363-387,561-566,571-590
+crates/oceans-cli/Cargo.toml
+  s_1121327246a626::t_1bad3cf62c6057 5
+docs/.vitepress/theme/custom.css
+  s_1121327246a626::t_bbcefdb85a440f 39
+docs/.vitepress/theme/index.ts
+  s_1121327246a626::t_9294dbb90e61be 3
+docs/access/identity-and-access.md
+  s_1121327246a626::t_15d5394d5774cb 183
+docs/adr/2026-10-26-image-generation-models.md
+  s_1121327246a626::t_820209edac07fb 1-74
+docs/configuration/client-harness-configuration.md
+  s_1121327246a626::t_8f8ef47b49863f 32-34,46-53,58
+docs/configuration/configuration-reference.md
+  s_1121327246a626::t_66fe0a4200f7b1 125-127,641-650,1210,1290,1294-1295
+docs/configuration/mcp-servers.md
+  s_1121327246a626::t_7173fca658e235 476-485
+docs/configuration/model-routing-and-api-behavior.md
+  s_1121327246a626::t_ad6360bae47c29 18-19,28,30,268,297,309-322,382,397,412-413,432,598-605
+docs/configuration/pricing-catalog-and-accounting.md
+  s_1121327246a626::t_8dfe8920b4ff05 9,45,47-55,74-78,80-89,91,200-201,203
+docs/configuration/rate-limits.md
+  s_1121327246a626::t_b3a950500bca4a 13
+docs/operations/observability-and-request-logs.md
+  s_1121327246a626::t_802dc7398c562f 98-112,310-317
+docs/operations/observability/export-traces-and-metrics.md
+  s_1121327246a626::t_a7f975be24eea6 142-143
+docs/package-lock.json
+  s_1121327246a626::t_1aeb92acdbfb4b 10,775-784
+docs/package.json
+  s_1121327246a626::t_3fd6b7daa0e116 11
+docs/providers/openrouter.md
+  s_1121327246a626::t_78dbc7fd7afc48 5,9,64-65,102-130
+docs/public/r/oceans-theme.json
+  s_1121327246a626::t_3a173f5cc35343 10,221
+docs/public/r/registry.json
+  s_1121327246a626::t_a1efce0deabf8f 11,16
+docs/reference/provider-api-compatibility.md
+  s_1121327246a626::t_b4dfeae0c1c066 20-21,26,28,37,48-55
+gateway.yaml
+  s_1121327246a626::t_96c0e497edd6e2 433-460
+mise.lock
+  s_1121327246a626::t_94ed70f41f9480 125,129-131,135-137,141-143,147-149,153-155,159,163-165,169-171,175-177,181-183,187-189,193,197-199,203-205,209-211,215-217,221-223,256,260-263,266-269,272-275,278-281,284-286,318,322-323,326-327,330-331,334-335,338-339,400,404-405,408-409,412-413,416-417,420-421,424,457,461-462,465,469-471,475-477,481-483,487-489,493-495,535,539-541,545-547,551-553,557-559,563-565
+mise.toml
+  s_1121327246a626::t_35d7f2bbdf633e 46-47,52,59
+registry.json
+  s_1121327246a626::t_a49b2d853aa82a 11,16
+scripts/build-shadcn-theme.mjs
+  s_1121327246a626::t_be6645dd62c9f7 76,123
+tests/harness-integration/README.md
+  s_1121327246a626::t_2f7fd74658ac02 21-30,47
+tests/harness-integration/package-lock.json
+  s_1121327246a626::t_eee775c6600d18 12,2446-2635
+tests/harness-integration/package.json
+  s_1121327246a626::t_9b9c9b04def23a 12
+tests/harness-integration/src/adapters/opencode.test.ts
+  s_1121327246a626::t_f811e713d6f134 1-33
+tests/harness-integration/src/adapters/opencode.ts
+  s_1121327246a626::t_0ab988622debe2 1-3,6,9-12,19-52,58,66-71,80-88,90-92,98-107,111-115,117-122,124,130-133,135-153,155,164-226,265-297,299-310,313-320
+tests/harness-integration/src/gateway-client.ts
+  s_1121327246a626::t_c8d34f1461a785 38-62,91-104,154-166
+tests/harness-integration/src/global-setup.ts
+  s_1121327246a626::t_7f58fed0963930 10-15,79-85,128,177,183-184
+tests/harness-integration/src/guardrails-hook.test.ts
+  s_1121327246a626::t_dc9fd866b77258 55,69,103-104,130,134,136,147,161-175,184-187,206-209,214-241
+tests/harness-integration/src/harness-contract.test.ts
+  s_1121327246a626::t_9997777235449e 86-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f92976e9d5afeea9f50539c0cbee6383f97a1ac8",
+  "prompts": {},
+  "sessions": {
+    "s_1121327246a626": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4b4ef4b8-4d5e-43e9-9d26-60bb85493277",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
