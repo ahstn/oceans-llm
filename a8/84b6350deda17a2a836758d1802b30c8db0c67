@@ -1,0 +1,19 @@
+.gitattributes
+  s_d29d193e8cbf9b::t_ad3e9a975b96a6 7-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a884b6350deda17a2a836758d1802b30c8db0c67",
+  "prompts": {},
+  "sessions": {
+    "s_d29d193e8cbf9b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a198e9-2947-7840-9a6a-e7121e01c0ef",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
