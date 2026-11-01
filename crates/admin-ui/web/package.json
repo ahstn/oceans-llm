@@ -12,12 +12,14 @@
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
-    "typecheck": "tsc --noEmit -p .",
+    "typecheck": "tsrs --noEmit -p .",
+    "typecheck:ts7": "bunx --package typescript@7.0.2 tsc --noEmit -p .",
+    "typecheck:any": "bun scripts/typecheck.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "playwright:install": "playwright install chromium",
     "test:e2e": "node ./e2e/run-playwright.mjs",
-    "doctor": "npx react-doctor@latest"
+    "doctor": "bunx react-doctor@latest"
   },
   "dependencies": {
     "@fontsource-variable/geist": "5.3.0",
@@ -71,7 +73,8 @@
     "playwright": "1.64.1",
     "postcss": "8.5.32",
     "tailwindcss": "4.3.3",
-    "typescript": "5.9.3",
+    "tsrs": "0.18.0-ts7.1.0-dev.20260929",
+    "typescript": "6.0.3",
     "vite": "8.3.5",
     "vite-tsconfig-paths": "6.1.1",
     "vitest": "5.0.5"
