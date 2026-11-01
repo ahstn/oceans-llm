@@ -4,6 +4,8 @@
 CHANGELOG.md merge=union
 
 # Generated artifacts
+Cargo.lock text eol=lf linguist-generated=true
+bun.lock text eol=lf linguist-generated=true
 crates/gateway/openapi/admin-api.json linguist-generated=true
 crates/gateway-service/data/model_metadata_supplement.json linguist-generated=true
 crates/gateway-service/data/pricing_catalog_fallback.json linguist-generated=true
