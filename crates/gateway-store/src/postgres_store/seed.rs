@@ -250,6 +250,24 @@ impl PostgresStore {
         for model in models {
             model_ids.insert(model.model_key.clone(), model_uuid(&model.model_key));
         }
+        // Which ids the configured routes may take already exist, in one query, so a route can
+        // keep a legacy id it still has (see `configured_route_uuid`). Only those ids are looked
+        // up.
+        let route_id_rows: Vec<String> =
+            sqlx::query_scalar("SELECT id FROM model_routes WHERE id = ANY($1)")
+                .bind(
+                    configured_route_candidate_ids(models)
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>(),
+                )
+                .fetch_all(&self.pool)
+                .await
+                .map_err(to_query_error)?;
+        let existing_route_ids = route_id_rows
+            .iter()
+            .map(|id| parse_uuid(id))
+            .collect::<Result<std::collections::HashSet<_>, _>>()?;
 
         // Insert model rows first with a null alias target so config order does not
         // matter for self-referential alias foreign keys.
@@ -343,16 +361,95 @@ impl PostgresStore {
                     .map_err(to_query_error)?;
                 }
             }
+        }
+
+        // Every model's delete has run, so the routes left for configured models are exactly the
+        // batch-referenced survivors. Loading them now, in one query, means the snapshot cannot
+        // miss a batch created while seeding ran. A renamed route reuses its surviving row instead
+        // of inserting a second row that the (model, provider, upstream, priority) unique key
+        // rejects. Only survivors in a configured route group are loaded, so batch history for
+        // providers and upstream models no longer configured is never read.
+        let (mut group_model_ids, mut group_providers, mut group_upstreams) =
+            (Vec::new(), Vec::new(), Vec::new());
+        for (model_id, provider, upstream) in configured_route_groups(models) {
+            group_model_ids.push(model_id.to_string());
+            group_providers.push(provider);
+            group_upstreams.push(upstream);
+        }
+        let survivor_rows: Vec<(String, String, String, String, i32)> = sqlx::query_as(
+            "SELECT id, model_id, provider_key, upstream_model, priority FROM model_routes WHERE (model_id, provider_key, upstream_model) IN (SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[]))",
+        )
+        .bind(&group_model_ids)
+        .bind(&group_providers)
+        .bind(&group_upstreams)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        let mut survivors_by_model =
+            std::collections::HashMap::<String, crate::seed::RouteSurvivors>::new();
+        for (id, model_id, provider_key, upstream_model, priority) in survivor_rows {
+            survivors_by_model.entry(model_id).or_default().insert(
+                parse_uuid(&id)?,
+                provider_key,
+                upstream_model,
+                i64::from(priority),
+            );
+        }
+
+        for model in models {
+            let model_id = *model_ids
+                .get(&model.model_key)
+                .expect("model ids populated before route upserts");
+            // Each survivor is used at most once, so two configured routes sharing the unique key
+            // still fail instead of overwriting each other.
+            let mut survivors = survivors_by_model
+                .remove(&model_id.to_string())
+                .unwrap_or_default();
+
+            // Claim a row for every configured route first, then move rows that would block
+            // another route's upsert out of the way, so reordered or swapped priorities apply.
+            let targets = model
+                .routes
+                .iter()
+                .enumerate()
+                .map(|(route_index, route)| {
+                    let own_id = configured_route_uuid(
+                        &model.model_key,
+                        route,
+                        route_index,
+                        &existing_route_ids,
+                    );
+                    (
+                        own_id,
+                        (
+                            route.provider_key.clone(),
+                            route.upstream_model.clone(),
+                            i64::from(route.priority),
+                        ),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let claimed = survivors
+                .claim_all(&targets, &existing_route_ids)
+                .into_iter()
+                .zip(targets.into_iter().map(|(_, key)| key))
+                .collect::<Vec<_>>();
+            for (route_id, parked) in survivors.parking_plan(&claimed) {
+                let parked = i32::try_from(parked).map_err(|_| {
+                    StoreError::Conflict(format!(
+                        "cannot move route `{route_id}` aside: priorities are too close to the minimum"
+                    ))
+                })?;
+                sqlx::query("UPDATE model_routes SET priority = $1 WHERE id = $2")
+                    .bind(parked)
+                    .bind(route_id.to_string())
+                    .execute(&self.pool)
+                    .await
+                    .map_err(to_query_error)?;
+            }
 
             for (route_index, route) in model.routes.iter().enumerate() {
-                let route_id = route_uuid(
-                    &model.model_key,
-                    route.route_key.as_deref(),
-                    &route.provider_key,
-                    &route.upstream_model,
-                    route.priority,
-                    route_index,
-                );
+                let route_id = claimed[route_index].0;
                 let extra_headers_json = serialize_json(&route.extra_headers)?;
                 let extra_body_json = serialize_json(&route.extra_body)?;
                 let capabilities_json = serialize_json(&route.capabilities)?;

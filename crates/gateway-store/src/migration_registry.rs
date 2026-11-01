@@ -474,6 +474,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V75__usage_image_output_tokens.sql"),
         postgres_sql: include_str!("../migrations/postgres/V75__usage_image_output_tokens.sql"),
     },
+    MigrationManifest {
+        version: 76,
+        name: "batch_jobs_route_index",
+        checksum: "V76__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V76__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V76__batch_jobs_route_index.sql"),
+    },
 ];
 
 #[cfg(test)]
