@@ -62,9 +62,11 @@ data: {"type":"error","error":{"code":"upstream_failed"}}
     assert_eq!(
         usage_summary_from_value(collector.usage()),
         UsageSummary {
-            prompt_tokens: Some(30),
+            // Anthropic reports 30 uncached + 20 cache reads + 10 cache writes.
+            // Logs and billing use the same inclusive prompt total, retaining raw usage above.
+            prompt_tokens: Some(60),
             completion_tokens: Some(7),
-            total_tokens: Some(37),
+            total_tokens: Some(67),
         }
     );
 }

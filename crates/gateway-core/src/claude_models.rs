@@ -34,12 +34,84 @@ pub fn is_adaptive_only_claude(model: &str) -> bool {
 
 /// Expects a model already passed through `normalize_claude_model`.
 fn is_normalized_adaptive_only_claude(model: &str) -> bool {
-    is_opus_4_7_or_later(model)
+    is_rolling_claude_alias(model)
+        || is_opus_4_7_or_later(model)
         || contains_exact_claude_model_marker(model, "claude-fable-5")
         || contains_exact_claude_model_marker(model, "claude-opus-5")
         || contains_exact_claude_model_marker(model, "claude-sonnet-5")
         || contains_exact_claude_model_marker(model, "claude-haiku-5")
         || contains_exact_claude_model_marker(model, "claude-mythos-5")
+}
+
+/// Rolling identities describe a family, not a fixed generation. Chat compatibility
+/// aliases can request adaptive thinking, while native controls are validated upstream.
+#[must_use]
+pub fn is_rolling_claude_alias(model: &str) -> bool {
+    matches!(
+        model.to_ascii_lowercase().rsplit('/').next(),
+        Some("claude-opus-latest" | "claude-sonnet-latest" | "claude-haiku-latest")
+    )
+}
+
+#[must_use]
+pub fn is_openrouter_claude_model(model: &str) -> bool {
+    model
+        .strip_prefix("~anthropic/")
+        .or_else(|| model.strip_prefix("anthropic/"))
+        .is_some_and(|model| model.starts_with("claude-"))
+}
+
+/// `None` means the model's native thinking contract is unknown. Never infer legacy
+/// restrictions from a rolling alias, private deployment name, or a new model family.
+#[must_use]
+pub fn known_claude_thinking_policy(model: &str) -> Option<ClaudeThinkingPolicy> {
+    if is_rolling_claude_alias(model) {
+        return None;
+    }
+    let model = normalize_claude_model(model);
+    [
+        "claude-opus-5-5",
+        "claude-opus-5",
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-opus-4-6",
+        "claude-opus-4-5",
+        "claude-opus-4-1",
+        "claude-opus-4",
+        "claude-sonnet-5-5",
+        "claude-sonnet-5",
+        "claude-sonnet-4-6",
+        "claude-sonnet-4-5",
+        "claude-sonnet-4",
+        "claude-haiku-5-5",
+        "claude-haiku-4-5",
+        "claude-fable-5-1",
+        "claude-fable-5",
+        "claude-mythos-5-1",
+        "claude-mythos-5",
+        "claude-mythos-preview",
+        "claude-3-7-sonnet",
+        "claude-3-5-sonnet",
+        "claude-3-5-haiku",
+        "claude-3-opus",
+        "claude-3-sonnet",
+        "claude-3-haiku",
+    ]
+    .iter()
+    .any(|marker| model.split(marker).skip(1).any(documented_model_suffix))
+    .then(|| claude_thinking_policy(&model))
+}
+
+fn documented_model_suffix(rest: &str) -> bool {
+    if rest.is_empty() || rest.starts_with(['/', ':', '@', ',', ')', ']', ' ', '\t']) {
+        return true;
+    }
+    // Provider deployment versions and dated snapshots retain the documented profile.
+    // A new short numeric minor version or an arbitrary alias does not.
+    rest.starts_with("-v")
+        || rest
+            .strip_prefix('-')
+            .is_some_and(|suffix| suffix.chars().take_while(char::is_ascii_digit).count() >= 6)
 }
 
 /// Lowercases `model` and rewrites dotted versions such as `claude-haiku-5.5` (the OpenRouter
@@ -154,6 +226,39 @@ mod tests {
         ClaudeThinkingOff, ClaudeThinkingPolicy::*, claude_rejects_forced_tool_choice,
         claude_thinking_off, claude_thinking_policy,
     };
+
+    #[test]
+    fn rolling_and_unrecognized_models_defer_native_policy_to_upstream() {
+        for model in [
+            "~anthropic/claude-opus-latest",
+            "anthropic/claude-sonnet-latest",
+            "claude-haiku-latest",
+            "private-deployment",
+            "claude-opus-9-1",
+            "claude-sonnet-4-9",
+            "claude-opus-5-9",
+            "claude-opus-5-custom",
+        ] {
+            assert_eq!(super::known_claude_thinking_policy(model), None, "{model}");
+        }
+        for model in [
+            "claude-opus-5-5",
+            "anthropic/claude-opus-5.5",
+            "claude-sonnet-4-6",
+            "us.anthropic.claude-opus-5-5-v1:0",
+            "claude-haiku-4-5-20251001",
+        ] {
+            assert_eq!(
+                super::known_claude_thinking_policy(model),
+                Some(claude_thinking_policy(model)),
+                "{model}"
+            );
+        }
+        assert_eq!(
+            claude_thinking_policy("~anthropic/claude-opus-latest"),
+            AdaptiveOnly
+        );
+    }
 
     #[test]
     fn classifies_direct_and_transport_qualified_models() {

@@ -6,7 +6,9 @@ This page shows how to set up OpenRouter routes, including image generation mode
 
 ## Current Runtime Boundary
 
-Configure OpenRouter with the generic `openai_compat` provider type. Chat Completions, Responses, embeddings, and the Images API use OpenAI-compatible paths. Decisions routes use OpenRouter's separate alpha path. Put the selected API and provider policy in route data under `compatibility.openrouter`. Do not hide that policy in `extra_body.provider`.
+Configure OpenRouter with the generic `openai_compat` provider type. Claude routes whose upstream ID starts with `anthropic/claude-` or `~anthropic/claude-` automatically use OpenRouter's `/api/v1/messages` endpoint. This includes rolling identities such as `~anthropic/claude-opus-latest`. Callers can use either `/v1/messages` or `/v1/chat/completions`; Oceans translates Chat Completions clients at the API boundary while native Messages responses retain their protocol.
+
+Other chat models, Responses, embeddings, and the Images API use OpenAI-compatible paths. Decisions routes use OpenRouter's separate alpha path. Put the selected API and provider policy in route data under `compatibility.openrouter`. Do not hide that policy in `extra_body.provider`.
 
 Use generic `openai_compat` without `compatibility.openrouter` for other OpenAI-compatible endpoints. Use `compatibility.openrouter` only for routes that call `https://openrouter.ai/api/v1`. These routes can use OpenRouter's upstream routing controls.
 
@@ -61,7 +63,7 @@ Policy fields:
 
 Provider slugs must match OpenRouter's provider names. Oceans checks the data shape and conflicts. It does not maintain an OpenRouter provider catalog.
 
-Oceans sends the policy as the upstream `provider` object on Chat Completions, Responses, and Images requests. The route policy replaces any `provider` object that the caller sends.
+Oceans sends the policy as the upstream `provider` object on Messages, Chat Completions, Responses, and Images requests. The route policy replaces any `provider` object that the caller sends. Native Claude requests retain their thinking blocks, signatures, cache controls and extension fields. Rolling aliases use upstream model-specific validation, so adaptive thinking and native effort do not require a pinned model ID or a local policy override.
 
 ## Decisions API
 

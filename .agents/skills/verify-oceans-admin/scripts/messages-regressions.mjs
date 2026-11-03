@@ -7,6 +7,13 @@ import { fileURLToPath } from 'node:url'
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..')
 
 export const requiredChecks = [
+  ['native-transport-fidelity', 'native_messages_preserve_bodies_headers_and_sse_across_transports'],
+  ['rolling-alias-parity', 'rolling_native_controls_match_explicit_models_and_unknown_fields_reach_upstream'],
+  ['native-gateway-accounting', 'native_messages_handlers_preserve_protocol_and_account_for_cached_usage'],
+  ['native-gateway-guardrails', 'native_messages_generated_tools_still_pass_through_guardrails'],
+  ['native-model-discovery', 'openrouter_claude_routes_advertise_native_messages'],
+  ['rolling-client-config', 'rolling_claude_aliases_generate_adaptive_effort_clients'],
+  ['native-chat-cost', 'native_openrouter_costs_survive_chat_completions_translation'],
   ['native-display-and-efforts', 'native_opus_5_5_preserves_adaptive_display_and_all_efforts'],
   ['omitted-controls', 'native_opus_5_5_leaves_omitted_thinking_and_effort_to_upstream_defaults'],
   ['field-specific-errors', 'native_opus_5_5_reports_invalid_display_separately_from_manual_budgets'],

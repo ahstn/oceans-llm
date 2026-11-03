@@ -4,8 +4,11 @@ mod beta_transport_tests;
 mod controls;
 pub mod count_tokens;
 pub mod error;
+pub(crate) mod native;
 #[cfg(test)]
 mod native_metadata_tests;
+#[cfg(test)]
+mod native_transport_tests;
 pub mod request;
 #[cfg(test)]
 mod request_tests;

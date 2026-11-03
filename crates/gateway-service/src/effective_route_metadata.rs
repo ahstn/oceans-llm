@@ -276,13 +276,28 @@ pub(crate) fn provider_capabilities(
 }
 
 /// The client-facing format a route's upstream speaks natively, when the provider type
-/// makes it knowable. Generic OpenAI-compatible providers and Bedrock Converse front many
-/// model families, so they return `None` and callers fall back to model-name matching.
+/// makes it knowable. OpenRouter Claude is known to use Messages; other generic OpenAI
+/// providers and Bedrock Converse return `None` and fall back to model-name matching.
 pub(crate) fn native_api_format(
     provider: &ProviderConnection,
     route: &ModelRoute,
 ) -> Option<ApiFormat> {
     match provider.provider_type.as_str() {
+        "openai_compat" | "gcp_cloud_run_openai_compat"
+            if gateway_core::claude_models::is_openrouter_claude_model(&route.upstream_model)
+                && (route.compatibility.openrouter.is_some()
+                    || provider
+                        .config
+                        .get("base_url")
+                        .and_then(serde_json::Value::as_str)
+                        .and_then(|url| url::Url::parse(url).ok())
+                        .is_some_and(|url| {
+                            url.host_str() == Some("openrouter.ai")
+                                && url.path().trim_end_matches('/') == "/api/v1"
+                        })) =>
+        {
+            Some(ApiFormat::AnthropicMessages)
+        }
         "anthropic_compat" => Some(ApiFormat::AnthropicMessages),
         "gcp_vertex" if route.upstream_model.starts_with("anthropic/") => {
             Some(ApiFormat::AnthropicMessages)
@@ -317,6 +332,52 @@ mod tests {
     use super::{EffectiveMetadataSource, EffectiveMetadataSourceKind, effective_limits};
     use gateway_core::{PricingLimits, PricingProvenance};
     use time::OffsetDateTime;
+
+    #[test]
+    fn openrouter_claude_routes_advertise_native_messages() {
+        let mut provider = gateway_core::ProviderConnection {
+            provider_key: "openrouter".into(),
+            provider_type: "openai_compat".into(),
+            config: serde_json::json!({"base_url":"https://openrouter.ai/api/v1"}),
+            secrets: None,
+        };
+        let mut route = gateway_core::ModelRoute {
+            id: uuid::Uuid::new_v4(),
+            model_id: uuid::Uuid::new_v4(),
+            provider_key: "openrouter".into(),
+            upstream_model: "~anthropic/claude-opus-latest".into(),
+            priority: 0,
+            weight: 1.0,
+            enabled: true,
+            context_window_tokens: None,
+            pricing_override: None,
+            extra_headers: Default::default(),
+            extra_body: Default::default(),
+            capabilities: Default::default(),
+            compatibility: Default::default(),
+        };
+        for model in ["~anthropic/claude-opus-latest", "anthropic/claude-opus-5.5"] {
+            route.upstream_model = model.into();
+            assert_eq!(
+                super::native_api_format(&provider, &route),
+                Some(gateway_client_config::ApiFormat::AnthropicMessages)
+            );
+            assert_eq!(
+                gateway_client_config::infer_thinking_policy([model]),
+                Some(gateway_client_config::ThinkingPolicy::AnthropicSafeEffort)
+            );
+        }
+        provider.config = serde_json::json!({"base_url":"https://example.test/v1"});
+        assert_eq!(super::native_api_format(&provider, &route), None);
+        route.compatibility.openrouter =
+            Some(serde_json::from_value(serde_json::json!({})).unwrap());
+        assert_eq!(
+            super::native_api_format(&provider, &route),
+            Some(gateway_client_config::ApiFormat::AnthropicMessages)
+        );
+        route.upstream_model = "openai/gpt-4o-mini".into();
+        assert_eq!(super::native_api_format(&provider, &route), None);
+    }
 
     fn catalog_source() -> EffectiveMetadataSource {
         EffectiveMetadataSource::catalog(&PricingProvenance {

@@ -135,6 +135,20 @@ async fn exclusive_cache_counters_select_the_tier_from_the_normalized_prompt() {
 }
 
 #[tokio::test]
+async fn native_messages_cache_counters_select_and_bill_the_same_context_tier() {
+    let event = recorded_catalog_usage(
+        &catalog_route(),
+        tiered_pricing_record(),
+        json!({"input_tokens": 300, "output_tokens": 100, "cache_read_input_tokens": 900}),
+    )
+    .await;
+    assert_eq!(event.prompt_tokens, Some(1_200));
+    assert_eq!(event.cache_read_tokens, Some(900));
+    assert_eq!(event.pricing_tier_above_input_tokens, Some(1_000));
+    assert_eq!(event.computed_cost_usd, Money4::from_scaled(16));
+}
+
+#[tokio::test]
 async fn prompt_at_the_threshold_bills_base_rates() {
     let event = recorded_catalog_usage(
         &catalog_route(),

@@ -16,6 +16,12 @@ use serde_json::{Map, Value, json};
 pub(crate) fn normalize_anthropic_messages_for_openai(
     body: &mut Map<String, Value>,
 ) -> Result<(), ProviderError> {
+    if let Some(system) = body.remove("system") {
+        let messages = body.entry("messages").or_insert_with(|| json!([]));
+        if let Some(messages) = messages.as_array_mut() {
+            messages.insert(0, json!({"role": "system", "content": system}));
+        }
+    }
     if let Some(tools) = body.get_mut("tools").and_then(Value::as_array_mut) {
         for tool in tools {
             normalize_tool(tool);

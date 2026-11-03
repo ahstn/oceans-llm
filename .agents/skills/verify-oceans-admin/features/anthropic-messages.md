@@ -12,6 +12,8 @@ Clients use `POST /v1/messages` (or `/messages`) with Anthropic messages, tools,
 - `messages-continuation` covers tools, signed or hidden thinking blocks, beta headers, cache boundaries and per-message effort.
 - `messages-auto-mode` preserves opaque safeguards/verdicts; it does not certify a complete Claude Code session.
 - `messages-observability` correlates the response request ID with the native operation, provider attempt, usage and scoped-key cleanup.
+- `messages-native-fidelity` preserves native request bodies, content order, server-tool/future blocks, stop reasons, complete usage, extension headers and unknown SSE events across native transports.
+- `messages-rolling-aliases` sends adaptive/effort controls unchanged for rolling or unknown native model identities; known explicit models retain local validation.
 
 ## How to get to it (user POV)
 
@@ -50,6 +52,8 @@ Preconditions:
    | Beta transport | Repeated caller beta headers merge with configured/body opt-ins without duplicates; direct Anthropic, Vertex and Mantle use a header, Runtime uses `anthropic_beta`; Messages and token counting preserve opt-ins without forwarding caller credentials; oversized beta lists and names fail locally before dispatch, while allowed unknown names retain their order |
    | Streaming | Assistant role appears first and once, metadata does not precede it, usage is retained, tool/content blocks close in order and `message_stop` terminates the response; pending metadata survives DONE/EOF even without a finish reason |
    | Gateway behavior | Authentication/model grants, response/error shape, accounting, exhausted-budget rejection before provider dispatch and request logging |
+   | Native transport fidelity | Direct Anthropic, Vertex, Bedrock and OpenRouter native methods preserve entire response objects and SSE frames; gateway model identity, cached accounting, generated-tool guardrails and extension/retry headers remain correct |
+   | Rolling alias parity | The exact `~anthropic/claude-opus-latest` accepts the same valid native adaptive/effort requests as an explicit Opus ID, including omitted and null controls; unknown native identities defer new fields and model-specific rules to the upstream |
 
 3. **Choose one live scenario and record its scope.** Use this decision table; never label the OpenRouter result a native-validator or Vertex proof.
 
@@ -58,6 +62,8 @@ Preconditions:
    | Public Messages/streaming or omitted-effort behavior | `claude-haiku-5.5` → OpenRouter, omit both `thinking` and `output_config`, `max_tokens: 1024`; add `stream: true` for streaming work |
    | Native shared thinking/display validator | Existing `claude-opus-4-7` → `vertex-claude` when Vertex credentials work; adaptive + summarized display + `output_config.effort: low`, `max_tokens: 1024` |
    | Bedrock Messages adapter | Existing `claude-sonnet-4.6` → native Bedrock Runtime; use an allowed owner such as Ben/Diego and `stream: false`; this route does not support streaming |
+
+   For an OpenRouter rolling-alias regression, the offline transport gate captures the exact `~anthropic/claude-opus-latest` request and compares valid adaptive/effort controls with an explicit Opus ID. Reuse one existing native Claude route for the public live proof unless the repository configuration already includes the alias. The verifier fingerprints `gateway.yaml` and refuses unrecorded alternate configurations. Never relabel an existing model as a different upstream model for a proof.
 
    Confirm the current provider/upstream model and capability from the production model catalog before calling. A configured route is not a credential check. No seeded Opus 5.5 route exists: the local HTTP fixtures cover its wire contract. Do not change shared configuration to pretend another model is Opus 5.5. If the required native credential or model access is unavailable, record that native-live check as blocked; a successful translated smoke can still be reported separately.
 
@@ -96,8 +102,8 @@ Preconditions:
 - Auto mode is a tool-permission workflow, not an effort enum. Omitted effort is valid; neither `auto` nor `none` is a native effort value. Omission does not mean thinking is disabled.
 - Native Messages defaults belong to the upstream model. Do not inject `high` into Messages to make a test deterministic; Chat Completions has a separate translation contract and must retain its documented defaults.
 - `display: omitted` is not a workaround for a validator rejecting the display key itself. It still sends the key. Beta `updates` and binding fields need upstream beta validation.
-- OpenRouter translates Messages to Chat Completions. Its canary proves the public surface, while the offline gate tests native Anthropic/Vertex/Bedrock mapping. Neither establishes a complete Claude Code auto-mode session.
-- Unknown SSE events and arbitrary mid-conversation system messages have documented forwarding limitations. Keep those gaps visible; do not assert universal protocol transparency.
+- OpenRouter Claude routes now use native Messages. Record the configured upstream model and transport; non-Claude OpenAI-compatible routes still translate. A native OpenRouter result does not establish Vertex/Bedrock access or a complete Claude Code session.
+- Native SSE events and in-sequence system messages pass through. The gateway rewrites the public model identity and applies configured guardrails; upstream model and cloud-platform restrictions remain authoritative.
 - Malformed JSON currently receives a plain-text HTTP 400 from the shared framework extractor. Authentication errors use the Anthropic JSON envelope. Record this known product gap with `--optional malformed-json-envelope=fail` until parsing errors are normalized, then require it to pass.
 - The public Messages handler currently uses a Chat Completions request-log context. A matching request ID, payload protocol or SSE response proves the caller used Messages; the operation label alone does not. Keep the native-operation-label gap visible until it is fixed.
 - Tool loops and token counting have separate recipes in [live LLM requests](./live-llm-requests.md). Count requests do not create Request Logs rows. Keep signed assistant blocks unchanged in a continuation.

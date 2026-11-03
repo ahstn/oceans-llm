@@ -1961,11 +1961,44 @@ pub trait RoutePlanner: Send + Sync {
 
 pub type ProviderStream = Pin<Box<dyn Stream<Item = Result<Bytes, ProviderError>> + Send>>;
 
+pub struct NativeMessagesResponse<T> {
+    pub body: T,
+    pub headers: std::collections::BTreeMap<String, String>,
+}
+
 #[async_trait]
 pub trait ProviderClient: Send + Sync {
     fn provider_key(&self) -> &str;
     fn provider_type(&self) -> &str;
     fn capabilities(&self) -> ProviderCapabilities;
+    /// Whether this route can carry Anthropic Messages without translating the response.
+    fn supports_native_messages(&self, _context: &ProviderRequestContext) -> bool {
+        false
+    }
+
+    /// A native Message, including content order, usage and provider extensions.
+    async fn messages(
+        &self,
+        _request: &ChatRequest,
+        _context: &ProviderRequestContext,
+    ) -> Result<NativeMessagesResponse<Value>, ProviderError> {
+        Err(ProviderError::NotImplemented(format!(
+            "{} does not support native Messages",
+            self.provider_type()
+        )))
+    }
+
+    /// Anthropic SSE bytes. Unknown events and content blocks must survive this boundary.
+    async fn messages_stream(
+        &self,
+        _request: &ChatRequest,
+        _context: &ProviderRequestContext,
+    ) -> Result<NativeMessagesResponse<ProviderStream>, ProviderError> {
+        Err(ProviderError::NotImplemented(format!(
+            "{} does not support native Messages streaming",
+            self.provider_type()
+        )))
+    }
     fn batch_capabilities(&self) -> BatchCapabilities {
         BatchCapabilities::NONE
     }

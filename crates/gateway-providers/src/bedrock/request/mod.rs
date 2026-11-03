@@ -5,6 +5,7 @@ use crate::anthropic::{
 
 mod content;
 mod inference;
+mod native;
 mod thinking;
 mod tools;
 
@@ -21,6 +22,10 @@ pub(super) fn map_chat_request_to_converse(
     let mut body = Map::new();
     let mut system = Vec::new();
     let mut messages = Vec::new();
+
+    if let Some(instructions) = request.extra.get("system") {
+        system.push(json!({"text": message_content_as_text(instructions)?}));
+    }
 
     for message in &request.messages {
         match message.role.as_str() {
@@ -72,6 +77,7 @@ pub(super) fn map_chat_request_to_converse(
     passthrough.remove("model");
     passthrough.remove("messages");
     passthrough.remove("stream");
+    passthrough.remove("system");
 
     let inference_config = extract_inference_config(&mut passthrough)?;
     if !inference_config.is_empty() {
@@ -404,6 +410,10 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
             "aws_bedrock Anthropic Claude Messages streaming is gated until native InvokeModelWithResponseStream mapping lands"
                 .to_string(),
         ));
+    }
+
+    if context.chat_protocol == gateway_core::ChatRequestProtocol::AnthropicMessages {
+        return native::map_native_anthropic_messages(request, context, target, betas);
     }
 
     let mut body = Map::new();

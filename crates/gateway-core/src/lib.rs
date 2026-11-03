@@ -223,8 +223,8 @@ pub use traits::{
     BudgetAlertRepository, BudgetRepository, GuardrailDecisionRepository, IdentityRepository,
     McpAccessRepository, McpAggregateSessionRepository, McpRegistryRepository,
     McpTokenOverheadRepository, McpToolInvocationRepository, McpUpstreamCredentialRepository,
-    ModelRepository, PricingCatalogRepository, ProviderClient, ProviderRegistry,
-    ProviderRepository, ProviderStream, ProviderUserCredentialRepository,
+    ModelRepository, NativeMessagesResponse, PricingCatalogRepository, ProviderClient,
+    ProviderRegistry, ProviderRepository, ProviderStream, ProviderUserCredentialRepository,
     ProviderUserTokenResolver, RateLimitRepository, RequestAttemptRepository, RequestLogRepository,
     ReviewAgentRepository, RoutePlanner, StoreHealth,
 };

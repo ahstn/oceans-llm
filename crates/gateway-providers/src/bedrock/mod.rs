@@ -489,6 +489,9 @@ impl BedrockProvider {
             request = request.header(name, value);
         }
 
+        if api_style == AwsBedrockApiStyle::MantleAnthropicMessages {
+            request = crate::anthropic::native::request_headers(request, context);
+        }
         for (name, value) in &context.extra_headers {
             if anthropic && name.eq_ignore_ascii_case("anthropic-beta") {
                 continue;
@@ -739,6 +742,46 @@ fn count_tokens_model_id(upstream_model: &str) -> &str {
 
 #[async_trait]
 impl ProviderClient for BedrockProvider {
+    fn supports_native_messages(&self, context: &ProviderRequestContext) -> bool {
+        matches!(
+            self.api_style(context),
+            Ok(AwsBedrockApiStyle::RuntimeAnthropicInvoke
+                | AwsBedrockApiStyle::MantleAnthropicMessages)
+        )
+    }
+
+    async fn messages(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<gateway_core::NativeMessagesResponse<Value>, ProviderError> {
+        let request = self.build_chat_request(request, context).await?;
+        let response = crate::anthropic::native::execute_request(
+            &self.client,
+            request,
+            "aws_bedrock",
+            &self.config.provider_key,
+        )
+        .await?;
+        crate::anthropic::native::json_response(response).await
+    }
+
+    async fn messages_stream(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<gateway_core::NativeMessagesResponse<ProviderStream>, ProviderError> {
+        let request = self.build_chat_stream_request(request, context).await?;
+        let response = crate::anthropic::native::execute_request(
+            &self.client,
+            request,
+            "aws_bedrock",
+            &self.config.provider_key,
+        )
+        .await?;
+        Ok(crate::anthropic::native::stream_response(response))
+    }
+
     fn provider_key(&self) -> &str {
         &self.config.provider_key
     }

@@ -17,6 +17,7 @@ mod json_operation;
 mod model_group_info_tests;
 #[cfg(test)]
 mod model_metadata_tests;
+mod native_messages;
 #[cfg(test)]
 mod route_tests;
 mod routing;
@@ -368,6 +369,18 @@ async fn v1_messages_inner(
     );
     context.chat_protocol = gateway_core::ChatRequestProtocol::AnthropicMessages;
     context.expected_provider_credential_id = expected_provider_credential_id;
+    let native_messages = provider.supports_native_messages(&context);
+    if !native_messages && let Some(system) = core_request.extra.remove("system") {
+        core_request.messages.insert(
+            0,
+            gateway_core::CoreChatMessage {
+                role: "system".to_string(),
+                content: system,
+                name: None,
+                extra: Default::default(),
+            },
+        );
+    }
 
     if core_request.stream {
         return anthropic_messages_stream_response(
@@ -400,13 +413,26 @@ async fn v1_messages_inner(
         false,
     );
     let attempt_started_at = gateway_service::offset_now();
-    let mut openai_value = match trace_provider_operation(
-        provider_execution_span,
-        provider.chat_completions(&core_request, &context),
-    )
+    let upstream_headers;
+    let mut provider_value = match trace_provider_operation(provider_execution_span, async {
+        if native_messages {
+            provider.messages(&core_request, &context).await
+        } else {
+            provider
+                .chat_completions(&core_request, &context)
+                .await
+                .map(|body| gateway_core::NativeMessagesResponse {
+                    body,
+                    headers: Default::default(),
+                })
+        }
+    })
     .await
     {
-        Ok(value) => normalize_response_model(value, &resolved.selection.requested_model.model_key),
+        Ok(response) => {
+            upstream_headers = response.headers;
+            normalize_response_model(response.body, &resolved.selection.requested_model.model_key)
+        }
         Err(error) => {
             // Usage the provider reported before failing still counts, as on
             // the decisions and embeddings paths.
@@ -470,11 +496,11 @@ async fn v1_messages_inner(
             labels: labels.clone(),
             operation: "anthropic_messages",
         },
-        usage_value_from_response(&openai_value),
+        usage_value_from_response(&provider_value),
     )
     .await;
     let completion = async {
-        guard_model_response(&state, &guard_context, &mut openai_value).await?;
+        guard_model_response(&state, &guard_context, &mut provider_value).await?;
         if let Some(receipt) = &receipt {
             receipt.complete(state.store.as_ref(), None).await?;
         }
@@ -496,12 +522,8 @@ async fn v1_messages_inner(
         .await;
         return Err(AppError(error));
     }
-    let value = anthropic_message_from_openai_chat(
-        &openai_value,
-        &resolved.selection.requested_model.model_key,
-    );
     let attempt = success_attempt(&request_log_context, &route, false, attempt_started_at);
-    let tool_cardinality = tool_cardinality_with_invoked(&request_log_context, &openai_value);
+    let tool_cardinality = tool_cardinality_with_invoked(&request_log_context, &provider_value);
     best_effort_log_non_stream_success(
         &state.service,
         &auth,
@@ -510,7 +532,7 @@ async fn v1_messages_inner(
         icon_metadata,
         latency_ms_since(request_started_at),
         tool_cardinality.invoked_tool_count.unwrap_or(0),
-        &openai_value,
+        &provider_value,
         vec![attempt],
     )
     .await;
@@ -520,7 +542,16 @@ async fn v1_messages_inner(
         outcome: "success",
         latency_seconds: latency_seconds_since(request_started_at),
     });
+    let value = if native_messages {
+        provider_value
+    } else {
+        anthropic_message_from_openai_chat(
+            &provider_value,
+            &resolved.selection.requested_model.model_key,
+        )
+    };
     let mut response = Json(value).into_response();
+    native_messages::apply_headers(&mut response, &upstream_headers);
     if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
         response
             .headers_mut()
@@ -530,6 +561,9 @@ async fn v1_messages_inner(
 }
 
 fn anthropic_error_response(error: GatewayError) -> Response {
+    if let Some(response) = native_messages::upstream_error_response(&error) {
+        return response;
+    }
     let status =
         StatusCode::from_u16(error.http_status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let mut response = Json(json!({
@@ -919,10 +953,19 @@ async fn guarded_provider_error_attempt(
     error: ProviderError,
     requirements: CoreRequestRequirements,
 ) -> (GatewayError, RequestAttemptRecord) {
+    let native_headers = match &error {
+        ProviderError::NativeMessagesHttp { headers, .. } => Some(headers.clone()),
+        _ => None,
+    };
     let error = match error {
         ProviderError::UpstreamHttp {
             status: http_status,
             body,
+        }
+        | ProviderError::NativeMessagesHttp {
+            status: http_status,
+            body,
+            ..
         } if guard_context.enabled => {
             let mut payload = json!({ "text": body });
             if let Err(error) = guard_model_response(state, guard_context, &mut payload).await {
@@ -942,13 +985,22 @@ async fn guarded_provider_error_attempt(
                 );
                 return (error, attempt);
             }
-            ProviderError::UpstreamHttp {
-                status: http_status,
-                body: payload
-                    .get("text")
-                    .and_then(Value::as_str)
-                    .unwrap_or("upstream request failed")
-                    .to_string(),
+            let body = payload
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or("upstream request failed")
+                .to_string();
+            if let Some(headers) = native_headers {
+                ProviderError::NativeMessagesHttp {
+                    status: http_status,
+                    body,
+                    headers,
+                }
+            } else {
+                ProviderError::UpstreamHttp {
+                    status: http_status,
+                    body,
+                }
             }
         }
         error => error,
@@ -1450,6 +1502,7 @@ async fn anthropic_messages_stream_response(
     guard_context: &InferenceGuardContext,
     routing_receipt: Option<&RoutingReceipt>,
 ) -> Result<Response, AppError> {
+    let native_messages = provider.supports_native_messages(context);
     let stream_started_at = Instant::now();
     let mut stream_trace = StreamTrace::new(
         "chat",
@@ -1468,13 +1521,26 @@ async fn anthropic_messages_stream_response(
         true,
     );
     let attempt_started_at = gateway_service::offset_now();
-    let stream = match trace_provider_operation(
-        provider_execution_span,
-        provider.chat_completions_stream(core_request, context),
-    )
+    let upstream_headers;
+    let stream = match trace_provider_operation(provider_execution_span, async {
+        if native_messages {
+            provider.messages_stream(core_request, context).await
+        } else {
+            provider
+                .chat_completions_stream(core_request, context)
+                .await
+                .map(|body| gateway_core::NativeMessagesResponse {
+                    body,
+                    headers: Default::default(),
+                })
+        }
+    })
     .await
     {
-        Ok(stream) => stream,
+        Ok(response) => {
+            upstream_headers = response.headers;
+            response.body
+        }
         Err(error) => {
             stream_trace.finish("stream_start_error", Some("stream_start_error"));
             let (gateway_error, attempt) = guarded_provider_error_attempt(
@@ -1523,10 +1589,17 @@ async fn anthropic_messages_stream_response(
         stream,
     )
     .await?;
-    let stream = anthropic_messages_stream_from_openai(
-        stream,
-        resolved.selection.requested_model.model_key.clone(),
-    );
+    let stream = if native_messages {
+        native_messages::stream_with_model(
+            stream,
+            resolved.selection.requested_model.model_key.clone(),
+        )
+    } else {
+        anthropic_messages_stream_from_openai(
+            stream,
+            resolved.selection.requested_model.model_key.clone(),
+        )
+    };
 
     let body_stream = wrap_stream_with_request_logging(LoggingBodyStreamState {
         upstream: stream,
@@ -1550,7 +1623,7 @@ async fn anthropic_messages_stream_response(
         stream_trace,
     });
 
-    Response::builder()
+    let mut response = Response::builder()
         .status(axum::http::StatusCode::OK)
         .header(CONTENT_TYPE, "text/event-stream; charset=utf-8")
         .header(CACHE_CONTROL, "no-cache")
@@ -1559,7 +1632,12 @@ async fn anthropic_messages_stream_response(
             AppError(GatewayError::Internal(format!(
                 "failed to build anthropic messages streaming response: {error}"
             )))
-        })
+        })?;
+    native_messages::apply_headers(&mut response, &upstream_headers);
+    if let Ok(request_id) = HeaderValue::from_str(request_id) {
+        response.headers_mut().insert("x-request-id", request_id);
+    }
+    Ok(response)
 }
 
 fn wrap_stream_with_request_logging(

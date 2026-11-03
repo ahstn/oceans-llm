@@ -1581,7 +1581,12 @@ fn normalize_cache_tokens(
     usage: &serde_json::Map<String, Value>,
     prompt_tokens: Option<i64>,
 ) -> CacheUsageNormalization {
-    let provider_usage = usage.get("provider_usage").and_then(Value::as_object);
+    // Native Messages usage counts uncached input separately from cache reads/writes.
+    // Its complete usage object reaches accounting without a Chat Completions wrapper.
+    let provider_usage = usage
+        .get("provider_usage")
+        .and_then(Value::as_object)
+        .or_else(|| usage.contains_key("input_tokens").then_some(usage));
     let details = usage
         .get("input_tokens_details")
         .or_else(|| usage.get("prompt_tokens_details"))

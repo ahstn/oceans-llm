@@ -24,7 +24,7 @@ function main(args) {
   save({ verdict: 'fail', checks: [{ id: 'runner-completed', status: 'fail' }] })
   const result = spawnSync(process.env.MISE_BIN || 'mise', [
     'exec', '--', 'cargo', 'test', '-p', 'gateway-core', '-p', 'gateway-providers',
-    '-p', 'gateway', '--lib', '--', '--color', 'never',
+    '-p', 'gateway', '-p', 'gateway-service', '-p', 'gateway-client-config', '--lib', '--', '--color', 'never',
   ], { cwd: repoRoot, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
   const assessment = assessResults(result.stdout || '', result.status)
   if (source.sourceHash !== regressionFingerprint().sourceHash) {
@@ -35,7 +35,7 @@ function main(args) {
   console.log(`${assessment.verdict.toUpperCase()} Messages regressions: ${assessment.passedTests} tests; ${outputFile}`)
   if (assessment.verdict !== 'pass') {
     console.error(assessment.checks.filter((check) => check.status !== 'pass').map((check) => check.id).join(', '))
-    console.error('Re-run mise exec -- cargo test -p gateway-core -p gateway-providers -p gateway --lib for diagnostics.')
+    console.error('Re-run mise exec -- cargo test -p gateway-core -p gateway-providers -p gateway -p gateway-service -p gateway-client-config --lib for diagnostics.')
     process.exitCode = 1
   }
 }

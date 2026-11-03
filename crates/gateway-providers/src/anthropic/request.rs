@@ -57,7 +57,12 @@ pub fn map_anthropic_request(
     body.remove("messages");
     body.remove("stream");
 
-    let (messages, instructions) = map_chat_messages(&request.messages)?;
+    let native = context.chat_protocol == gateway_core::ChatRequestProtocol::AnthropicMessages;
+    let (messages, instructions) = if native {
+        (map_native_messages(&request.messages), Vec::new())
+    } else {
+        map_chat_messages(&request.messages)?
+    };
 
     if messages.is_empty() {
         return Err(AnthropicAdapterError::EmptyMessages.into());
@@ -89,7 +94,7 @@ pub fn map_anthropic_request(
     }
 
     merge_object_overrides(&mut body, &context.extra_body);
-    if !has_context_beta {
+    if !native && !has_context_beta {
         body.remove("context_management");
     }
 
@@ -122,9 +127,25 @@ pub fn map_anthropic_request(
             apply_messages_thinking(&mut body, &context.upstream_model)?;
         }
     }
-    validate_anthropic_sampling_fields(&mut body, &context.upstream_model)?;
+    if !native || super::thinking::known_claude_thinking_policy(&context.upstream_model).is_some() {
+        validate_anthropic_sampling_fields(&mut body, &context.upstream_model)?;
+    }
 
     Ok(Value::Object(body))
+}
+
+/// Native history is opaque: content blocks, message-level fields and system turns retain
+/// their positions. Gateway guardrails have already inspected the same core representation.
+pub(crate) fn map_native_messages(messages: &[CoreChatMessage]) -> Vec<Value> {
+    messages
+        .iter()
+        .map(|message| {
+            let mut object: Map<String, Value> = message.extra.clone().into_iter().collect();
+            object.insert("role".to_string(), json!(message.role));
+            object.insert("content".to_string(), message.content.clone());
+            Value::Object(object)
+        })
+        .collect()
 }
 
 fn map_chat_messages(

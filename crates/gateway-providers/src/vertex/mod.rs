@@ -157,6 +157,9 @@ impl VertexProvider {
             }
             request = request.header(name, value);
         }
+        if context.upstream_model.starts_with("anthropic/") {
+            request = crate::anthropic::native::request_headers(request, context);
+        }
         for (name, value) in &context.extra_headers {
             if context.upstream_model.starts_with("anthropic/")
                 && name.eq_ignore_ascii_case("anthropic-beta")
@@ -235,6 +238,61 @@ fn parse_upstream_model(
 
 #[async_trait]
 impl ProviderClient for VertexProvider {
+    fn supports_native_messages(&self, context: &ProviderRequestContext) -> bool {
+        parse_upstream_model(&context.upstream_model)
+            .is_ok_and(|(family, _, _)| matches!(family, PublisherFamily::Anthropic))
+    }
+
+    async fn messages(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<gateway_core::NativeMessagesResponse<Value>, ProviderError> {
+        let (_, publisher, model_id) = parse_upstream_model(&context.upstream_model)?;
+        let body =
+            map_vertex_anthropic_request(request, context, false, &self.config.default_headers)?;
+        let request = self
+            .build_request(
+                &self.model_endpoint(publisher, model_id, "rawPredict"),
+                &body,
+                context,
+            )
+            .await?;
+        let response = crate::anthropic::native::execute_request(
+            &self.client,
+            request,
+            PROVIDER_NAMESPACE,
+            &self.config.provider_key,
+        )
+        .await?;
+        crate::anthropic::native::json_response(response).await
+    }
+
+    async fn messages_stream(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<gateway_core::NativeMessagesResponse<ProviderStream>, ProviderError> {
+        let (_, publisher, model_id) = parse_upstream_model(&context.upstream_model)?;
+        let body =
+            map_vertex_anthropic_request(request, context, true, &self.config.default_headers)?;
+        let request = self
+            .build_request(
+                &self.model_endpoint(publisher, model_id, "streamRawPredict"),
+                &body,
+                context,
+            )
+            .await?;
+        let response = crate::anthropic::native::execute_request(
+            &self.client,
+            request,
+            PROVIDER_NAMESPACE,
+            &self.config.provider_key,
+        )
+        .await?;
+        Ok(crate::anthropic::native::stream_response(response))
+    }
+
     fn provider_key(&self) -> &str {
         &self.config.provider_key
     }

@@ -216,6 +216,13 @@ pub fn map_anthropic_stream_usage(value: &Value, usage_source: &str) -> Option<V
 
 fn map_anthropic_usage_object(usage: &Map<String, Value>, usage_source: &str) -> Option<Value> {
     let mut mapped = Map::new();
+    // OpenRouter bills native Messages too. Keep its authoritative cost at the shared
+    // accounting boundary when translating a native response for Chat Completions clients.
+    for field in ["cost", "is_byok", "cost_details"] {
+        if let Some(value) = usage.get(field) {
+            mapped.insert(field.to_string(), value.clone());
+        }
+    }
     if let Some(input) = usage.get("input_tokens") {
         mapped.insert("prompt_tokens".to_string(), input.clone());
     }
