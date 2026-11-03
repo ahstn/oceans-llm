@@ -196,15 +196,14 @@ fn model_document(
     fields: &Map<String, Value>,
 ) -> PricingCatalogModelDocument {
     let api_endpoints = api_endpoints(entry.supported_endpoints.as_deref(), entry.mode.as_deref());
-    let input_support = [
-        (entry.supports_vision, "image"),
+    let other_input_support = [
         (entry.supports_pdf_input, "pdf"),
         (entry.supports_audio_input, "audio"),
     ];
     let modalities = PricingCatalogModalitiesDocument {
-        input: entry
-            .supported_modalities
-            .unwrap_or_else(|| derived_input_modalities(input_support)),
+        input: entry.supported_modalities.unwrap_or_else(|| {
+            derived_input_modalities(entry.supports_vision, other_input_support)
+        }),
         output: entry
             .supported_output_modalities
             .unwrap_or_else(|| mode_output_modalities(entry.mode.as_deref())),
@@ -338,12 +337,16 @@ fn api_endpoints(supported: Option<&[String]>, mode: Option<&str>) -> Option<Cat
     }
 }
 
-/// Text plus each modality whose `supports_*` flag is `true`.
-fn derived_input_modalities(support: [(Option<bool>, &str); 3]) -> Vec<String> {
-    let supported = support
-        .into_iter()
-        .filter(|&(flag, _)| flag == Some(true))
-        .map(|(_, modality)| modality);
+/// Text plus each modality whose `supports_*` flag is `true`. Empty (unknown) when the
+/// vision flag is unset: a known list without `image` means "no vision", and the list
+/// cannot say that image support is unknown.
+fn derived_input_modalities(vision: Option<bool>, other: [(Option<bool>, &str); 2]) -> Vec<String> {
+    let Some(vision) = vision else {
+        return Vec::new();
+    };
+    let supported = std::iter::once((vision, "image"))
+        .chain(other.map(|(flag, modality)| (flag == Some(true), modality)))
+        .filter_map(|(supported, modality)| supported.then_some(modality));
     std::iter::once("text")
         .chain(supported)
         .map(str::to_string)
@@ -579,5 +582,49 @@ mod tests {
                 ..CatalogApiEndpoints::default()
             })
         );
+    }
+
+    #[test]
+    fn input_modalities_and_vision_hint_are_unknown_without_a_vision_flag() {
+        let providers = project_json(&json!({
+            "gpt-4o": {"litellm_provider": "openai", "mode": "chat"},
+            "gpt-4o-mini": {
+                "litellm_provider": "openai", "mode": "chat", "supports_pdf_input": true,
+            },
+            "gpt-4.1": {
+                "litellm_provider": "openai", "mode": "chat", "supports_vision": false,
+                "supports_audio_input": true,
+            },
+            "gpt-4.1-mini": {
+                "litellm_provider": "openai", "mode": "chat", "supports_vision": true,
+            },
+            "gpt-4.1-nano": {
+                "litellm_provider": "openai", "mode": "chat",
+                "supported_modalities": ["text", "audio"], "supports_vision": true,
+            },
+        }));
+        let models = &providers["openai"].models;
+        let input_and_vision_hint = |model_id: &str| {
+            let model = &models[model_id];
+            let vision = crate::capability_hints::hints_for_model(Some(model)).vision;
+            (model.modalities.input.clone(), vision)
+        };
+
+        assert_eq!(input_and_vision_hint("gpt-4o"), (vec![], None));
+        assert_eq!(input_and_vision_hint("gpt-4o-mini"), (vec![], None));
+        assert_eq!(
+            input_and_vision_hint("gpt-4.1"),
+            (vec!["text".to_string(), "audio".to_string()], Some(false))
+        );
+        assert_eq!(
+            input_and_vision_hint("gpt-4.1-mini"),
+            (vec!["text".to_string(), "image".to_string()], Some(true))
+        );
+        // Explicit modalities win over the flags.
+        assert_eq!(
+            input_and_vision_hint("gpt-4.1-nano"),
+            (vec!["text".to_string(), "audio".to_string()], Some(false))
+        );
+        assert_eq!(models["gpt-4o"].modalities.output, ["text"]);
     }
 }

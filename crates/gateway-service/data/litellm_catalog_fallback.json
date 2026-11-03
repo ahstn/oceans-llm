@@ -1,9 +1,9 @@
 {
   "metadata": {
     "source": "vendored_litellm",
-    "etag": "\"0118ac4b2109a6e2f71ddf8764424c0b2b46af5a25b8d9ed17836faadc9337ab\"",
-    "fetched_at": "2026-10-31T23:00:05.519258Z",
-    "checksum": "26d210823d6b30f0a4c3ad085fa788b508b92ac68fa9f131c52945267895c833"
+    "etag": "\"03203793fa4929b34820af4c870ecd07c250383fcf23750fe9077dcbbff143e5\"",
+    "fetched_at": "2026-11-03T22:41:03.063564Z",
+    "checksum": "3b99fcbfbc10941f944c71484563be247f2f095489679a377db1d1eb86764d9c"
   },
   "providers": {
     "amazon-bedrock": {
@@ -39,9 +39,7 @@
             "output": 8191
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -77,9 +75,7 @@
             "output": 8191
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -115,9 +111,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -153,9 +147,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -191,9 +183,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -229,10 +219,7 @@
             "output": 64000
           },
           "modalities": {
-            "input": [
-              "text",
-              "audio"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -312,10 +299,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text",
-              "audio"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -389,10 +373,7 @@
             "output": 64000
           },
           "modalities": {
-            "input": [
-              "text",
-              "audio"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -432,9 +413,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -510,9 +489,7 @@
             "output": 10000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -628,9 +605,7 @@
             "output": 32000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -670,9 +645,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -712,9 +685,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -754,9 +725,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -796,9 +765,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -838,9 +805,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -882,9 +847,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -926,9 +889,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -964,9 +925,7 @@
             "output": 8000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -1002,9 +961,7 @@
             "output": 4000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -1040,9 +997,7 @@
             "output": 32000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -1078,10 +1033,7 @@
             "output": 8192
           },
           "modalities": {
-            "input": [
-              "text",
-              "pdf"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -1565,9 +1517,7 @@
             "output": 8191
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -2220,9 +2170,7 @@
             "output": 8191
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -2258,9 +2206,7 @@
             "output": 8191
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -2416,9 +2362,7 @@
             "output": 10000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -3577,9 +3521,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -3615,9 +3557,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -3659,9 +3599,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -3701,9 +3639,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -3743,9 +3679,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -3779,9 +3713,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -3815,9 +3747,7 @@
             "output": 8192
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -3853,9 +3783,7 @@
             "output": 8000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -3897,9 +3825,7 @@
             "output": 8000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -3931,7 +3857,7 @@
           },
           "limit": {
             "context": null,
-            "input": 164000,
+            "input": 156000,
             "output": 8000
           },
           "modalities": {
@@ -4093,9 +4019,7 @@
             "output": 10000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -4171,10 +4095,7 @@
             "output": 8192
           },
           "modalities": {
-            "input": [
-              "text",
-              "pdf"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -5114,9 +5035,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -5152,9 +5071,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -5190,9 +5107,7 @@
             "output": 16384
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -5234,9 +5149,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -5276,9 +5189,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -5312,9 +5223,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -6063,9 +5972,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -6678,9 +6585,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -6716,9 +6621,7 @@
             "output": 98304
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -7631,9 +7534,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -7669,9 +7570,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -7707,9 +7606,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -7745,9 +7642,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -7783,9 +7678,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -7860,9 +7753,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -7898,9 +7789,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -7975,9 +7864,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -8013,9 +7900,7 @@
             "output": 8192
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -8051,9 +7936,7 @@
             "output": 8192
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -8477,9 +8360,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -8515,9 +8396,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -8553,9 +8432,7 @@
             "output": 8191
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -8630,9 +8507,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -8668,9 +8543,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -8706,9 +8579,7 @@
             "output": 16384
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -8744,10 +8615,7 @@
             "output": 8192
           },
           "modalities": {
-            "input": [
-              "text",
-              "audio"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -8783,10 +8651,7 @@
             "output": 8192
           },
           "modalities": {
-            "input": [
-              "text",
-              "audio"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -8866,9 +8731,7 @@
             "output": 16000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -10020,9 +9883,7 @@
             "output": 8000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -10058,9 +9919,7 @@
             "output": 8192
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -10102,9 +9961,7 @@
             "output": 8000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -10140,9 +9997,7 @@
             "output": 8192
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -10184,9 +10039,7 @@
             "output": 16000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -10222,9 +10075,7 @@
             "output": 16384
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -10266,9 +10117,7 @@
             "output": 16000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -10304,9 +10153,7 @@
             "output": 16384
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -10424,9 +10271,7 @@
             "output": 8000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -10552,9 +10397,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -10596,9 +10439,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -10634,9 +10475,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -10672,9 +10511,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -10710,9 +10547,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -10748,9 +10583,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -10786,9 +10619,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -10830,9 +10661,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -10874,9 +10703,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -10912,9 +10739,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -10950,9 +10775,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -10988,9 +10811,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -11026,9 +10847,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -11064,9 +10883,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -11102,9 +10919,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -11146,9 +10961,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -11190,9 +11003,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -11228,9 +11039,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -11266,9 +11075,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -11310,9 +11117,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -11352,9 +11157,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -11388,9 +11191,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -11426,9 +11227,7 @@
             "output": 98304
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -12947,9 +12746,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -13025,9 +12822,7 @@
             "output": 10000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -13103,10 +12898,7 @@
             "output": 8192
           },
           "modalities": {
-            "input": [
-              "text",
-              "pdf"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -14133,9 +13925,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -14169,9 +13959,7 @@
             "output": 8192
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -14245,9 +14033,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -14283,9 +14069,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -14321,9 +14105,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -14398,9 +14180,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -14436,9 +14216,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -14513,9 +14291,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -14631,9 +14407,7 @@
             "output": 16384
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -15248,9 +15022,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -15286,9 +15058,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -15324,9 +15094,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -15362,9 +15130,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -15400,9 +15166,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -15438,9 +15202,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -15476,9 +15238,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -15514,9 +15274,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -15552,9 +15310,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -15590,9 +15346,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -15628,9 +15382,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -15666,9 +15418,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -15704,9 +15454,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -15748,9 +15496,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -15790,9 +15536,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -15826,9 +15570,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -15864,9 +15606,7 @@
             "output": 98304
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -15902,10 +15642,7 @@
             "output": 8192
           },
           "modalities": {
-            "input": [
-              "text",
-              "pdf"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -15941,10 +15678,7 @@
             "output": 8192
           },
           "modalities": {
-            "input": [
-              "text",
-              "pdf"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -16147,10 +15881,7 @@
             "output": 8192
           },
           "modalities": {
-            "input": [
-              "text",
-              "pdf"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -16186,10 +15917,7 @@
             "output": 8192
           },
           "modalities": {
-            "input": [
-              "text",
-              "pdf"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -17073,9 +16801,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -17111,9 +16837,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -17149,9 +16873,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -17187,9 +16909,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -17225,9 +16945,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -17341,9 +17059,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -17457,9 +17173,7 @@
             "output": 16384
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -17534,9 +17248,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -17572,9 +17284,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -18582,9 +18292,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -18624,9 +18332,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -18666,9 +18372,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         }
@@ -18713,9 +18417,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "audio"
             ]
@@ -18757,9 +18459,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -18801,9 +18501,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -18839,9 +18537,7 @@
             "output": 128000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -18877,9 +18573,7 @@
             "output": 128000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -18915,9 +18609,7 @@
             "output": 128000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -18953,9 +18645,7 @@
             "output": 128000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -18991,9 +18681,7 @@
             "output": 128000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -19029,9 +18717,7 @@
             "output": 32768
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -19067,9 +18753,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -19105,9 +18789,7 @@
             "output": 8192
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -19143,9 +18825,7 @@
             "output": 32768
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -19181,9 +18861,7 @@
             "output": 32768
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -19258,9 +18936,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -19296,9 +18972,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -19382,9 +19056,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -19418,9 +19090,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "audio"
             ]
@@ -19456,9 +19126,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "audio"
             ]
@@ -19494,9 +19162,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "audio"
             ]
@@ -19594,9 +19260,7 @@
             "output": 32768
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -19647,9 +19311,7 @@
             "output": 32768
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -19747,9 +19409,7 @@
             "output": 32768
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -19791,9 +19451,7 @@
             "output": 32768
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -19970,9 +19628,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "audio"
             ]
@@ -20259,9 +19915,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -20297,9 +19951,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -20618,9 +20270,7 @@
             "output": 16384
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "audio"
             ]
@@ -20662,9 +20312,7 @@
             "output": 16384
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "audio"
             ]
@@ -20848,9 +20496,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -20890,9 +20536,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -20973,9 +20617,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -21013,7 +20655,7 @@
           },
           "limit": {
             "context": null,
-            "input": 57920,
+            "input": 131072,
             "output": 57920
           },
           "modalities": {
@@ -21105,9 +20747,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -21182,9 +20822,7 @@
             "output": 256000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -21220,9 +20858,7 @@
             "output": 256000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -21258,9 +20894,7 @@
             "output": 256000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -21296,9 +20930,7 @@
             "output": 256000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -21334,9 +20966,7 @@
             "output": 256000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -21859,9 +21489,7 @@
             "output": 32000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -21897,9 +21525,7 @@
             "output": 32000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -21935,9 +21561,7 @@
             "output": 32000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -21973,9 +21597,7 @@
             "output": 196608
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22011,9 +21633,7 @@
             "output": 8191
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22049,9 +21669,7 @@
             "output": 8191
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22087,9 +21705,7 @@
             "output": 8191
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22125,9 +21741,7 @@
             "output": 8191
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22163,9 +21777,7 @@
             "output": 8191
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22201,9 +21813,7 @@
             "output": 8191
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22239,9 +21849,7 @@
             "output": 128000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22277,9 +21885,7 @@
             "output": 128000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22321,9 +21927,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22398,9 +22002,7 @@
             "output": 8191
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22436,9 +22038,7 @@
             "output": 128000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22474,9 +22074,7 @@
             "output": 128000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22512,9 +22110,7 @@
             "output": 8191
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22550,9 +22146,7 @@
             "output": 8191
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22588,9 +22182,7 @@
             "output": 256000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22626,9 +22218,7 @@
             "output": 32768
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22664,9 +22254,7 @@
             "output": 32768
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22702,9 +22290,7 @@
             "output": 16384
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22740,9 +22326,7 @@
             "output": 32768
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22778,9 +22362,7 @@
             "output": 262144
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22816,9 +22398,7 @@
             "output": 262144
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -22854,9 +22434,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -22890,9 +22468,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -22926,9 +22502,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -22962,9 +22536,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -22998,9 +22570,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -23034,9 +22604,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -23070,9 +22638,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -23106,9 +22672,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -23142,9 +22706,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -23848,9 +23410,7 @@
             "output": 128000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -23886,9 +23446,7 @@
             "output": 128000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -23924,9 +23482,7 @@
             "output": 64000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -23967,10 +23523,7 @@
             "output": 8192
           },
           "modalities": {
-            "input": [
-              "text",
-              "pdf"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -24006,10 +23559,7 @@
             "output": 8192
           },
           "modalities": {
-            "input": [
-              "text",
-              "pdf"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -25122,9 +24672,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -25358,9 +24906,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -25396,9 +24942,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -25434,9 +24978,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -25472,9 +25014,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -25510,9 +25050,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -25548,9 +25086,7 @@
             "output": 32768
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -25586,9 +25122,7 @@
             "output": 32768
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -25624,9 +25158,7 @@
             "output": 32768
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -25702,10 +25234,7 @@
             "output": 16384
           },
           "modalities": {
-            "input": [
-              "text",
-              "pdf"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -25741,10 +25270,7 @@
             "output": 16384
           },
           "modalities": {
-            "input": [
-              "text",
-              "pdf"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -25780,9 +25306,7 @@
             "output": 100000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -25818,9 +25342,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -25856,9 +25378,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -25894,9 +25414,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -25932,9 +25450,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -25970,9 +25486,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -26008,9 +25522,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -26046,9 +25558,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -26594,10 +26104,7 @@
             "output": 16384
           },
           "modalities": {
-            "input": [
-              "text",
-              "audio"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -26633,10 +26140,7 @@
             "output": 16384
           },
           "modalities": {
-            "input": [
-              "text",
-              "audio"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -26752,10 +26256,7 @@
             "output": 16384
           },
           "modalities": {
-            "input": [
-              "text",
-              "audio"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -26791,10 +26292,7 @@
             "output": 4096
           },
           "modalities": {
-            "input": [
-              "text",
-              "audio"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -26914,9 +26412,7 @@
             "output": 2000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -26958,9 +26454,7 @@
             "output": 2000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -27002,9 +26496,7 @@
             "output": 2000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -27261,9 +26753,7 @@
             "output": 2000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -27305,9 +26795,7 @@
             "output": 2000
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -29056,9 +28544,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -29094,9 +28580,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -30264,9 +29748,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -30308,9 +29790,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "image"
             ]
@@ -30916,7 +30396,7 @@
           "release_date": "",
           "last_updated": "",
           "metadata": {
-            "reasoning": null,
+            "reasoning": true,
             "tool_call": true,
             "structured_output": null,
             "attachment": null,
@@ -30963,7 +30443,7 @@
           "release_date": "",
           "last_updated": "",
           "metadata": {
-            "reasoning": null,
+            "reasoning": true,
             "tool_call": true,
             "structured_output": null,
             "attachment": null,
@@ -31258,9 +30738,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -31296,9 +30774,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]
@@ -32065,9 +31541,7 @@
             "output": 0
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -32101,9 +31575,7 @@
             "output": 0
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -32260,9 +31732,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -32302,9 +31772,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -32344,9 +31812,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -32386,9 +31852,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": []
           }
         },
@@ -32428,9 +31892,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "audio"
             ]
@@ -32472,9 +31934,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "audio"
             ]
@@ -32516,9 +31976,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "audio"
             ]
@@ -32560,9 +32018,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "audio"
             ]
@@ -32604,9 +32060,7 @@
             "output": null
           },
           "modalities": {
-            "input": [
-              "text"
-            ],
+            "input": [],
             "output": [
               "text"
             ]

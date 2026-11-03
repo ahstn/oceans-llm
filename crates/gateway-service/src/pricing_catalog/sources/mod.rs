@@ -88,7 +88,7 @@ static OPENROUTER: SourceDescriptor = SourceDescriptor {
 static LITELLM: SourceDescriptor = SourceDescriptor {
     id: CatalogSourceId::LiteLlm,
     url: "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
-    cache_key: "litellm_v1",
+    cache_key: "litellm_v2",
     // The model price table is around 3 MB.
     max_bytes: 16 * 1024 * 1024,
     remote_source: "litellm_github",
