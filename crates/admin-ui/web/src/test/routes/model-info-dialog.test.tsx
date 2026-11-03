@@ -351,6 +351,37 @@ describe('ModelInfoDialog pricing tiers', () => {
     expect(metricValue(tier, 'Cache write')).toBe('—')
   })
 
+  it('shows the base rate for each rate that a tier leaves unset, as billing does', () => {
+    renderDialog(
+      {
+        ...model,
+        input_cost_per_million_tokens_usd_10000: 100_000,
+        output_cost_per_million_tokens_usd_10000: 500_000,
+        cache_read_cost_per_million_tokens_usd_10000: null,
+        cache_write_cost_per_million_tokens_usd_10000: 30_000,
+        pricing_tiers: [
+          {
+            above_input_tokens: 200_000,
+            input_cost_per_million_tokens_usd_10000: null,
+            output_cost_per_million_tokens_usd_10000: 0,
+            cache_read_cost_per_million_tokens_usd_10000: null,
+            cache_write_cost_per_million_tokens_usd_10000: null,
+          },
+        ],
+      },
+      { initialSection: 'overview' },
+    )
+
+    const tiers = within(screen.getByRole('dialog', { name: 'Model info' })).getByTestId(
+      'model-pricing-tiers',
+    )
+    const tier = within(tiers).getByRole('region', { name: 'Above 200k tokens' })
+    expect(metricValue(tier, 'Input cost')).toBe('$10.00')
+    expect(metricValue(tier, 'Output cost')).toBe('$0.00')
+    expect(metricValue(tier, 'Cache read')).toBe('—')
+    expect(metricValue(tier, 'Cache write')).toBe('$3.00')
+  })
+
   it('shows only the base rates when the model has no tiers', () => {
     renderDialog(model, { initialSection: 'overview' })
 

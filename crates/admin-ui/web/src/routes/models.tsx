@@ -75,13 +75,17 @@ const PRICING_SOURCE_NAMES: Record<PricingSourceRefresh['source'], string> = {
 
 /** One toast per refresh: success when every source refreshed, a warning naming failed sources otherwise. */
 function toastPricingRefresh(sources: PricingSourceRefresh[]) {
-  const failed = sources
-    .filter((source) => source.outcome === 'failed')
-    .map((source) => PRICING_SOURCE_NAMES[source.source])
-  const summary = sources
-    .filter((source) => source.outcome !== 'failed')
-    .map((source) => `${PRICING_SOURCE_NAMES[source.source]} ${source.outcome}`)
-    .join(', ')
+  const failed: string[] = []
+  const refreshed: string[] = []
+  for (const source of sources) {
+    const name = PRICING_SOURCE_NAMES[source.source]
+    if (source.outcome === 'failed') {
+      failed.push(name)
+    } else {
+      refreshed.push(`${name} ${source.outcome}`)
+    }
+  }
+  const summary = refreshed.join(', ')
 
   if (failed.length === 0) {
     toast.success(summary ? `Pricing refreshed: ${summary}` : 'Pricing refreshed')

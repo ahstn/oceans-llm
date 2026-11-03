@@ -418,7 +418,7 @@ function ModelInfoEconomics({ model }: { model: ModelView }) {
             larger than the threshold.
           </p>
           {model.pricing_tiers.map((tier) => (
-            <ModelPricingTier key={tier.above_input_tokens} tier={tier} />
+            <ModelPricingTier key={tier.above_input_tokens} tier={tier} base={model} />
           ))}
         </div>
       ) : null}
@@ -467,7 +467,14 @@ function pricingSourceLabel(model: ModelView) {
   }
 }
 
-function ModelPricingTier({ tier }: { tier: ModelPricingTierView }) {
+/** Billing uses the base rate for any rate that the tier leaves unset, so show that rate too. */
+function ModelPricingTier({
+  tier,
+  base,
+}: {
+  tier: ModelPricingTierView
+  base: Omit<ModelPricingTierView, 'above_input_tokens'>
+}) {
   const headingId = useId()
 
   return (
@@ -478,19 +485,31 @@ function ModelPricingTier({ tier }: { tier: ModelPricingTierView }) {
       <dl className="grid min-w-0 grid-cols-2 gap-x-6 gap-y-3 sm:gap-x-16">
         <ModelPricingMetric
           label="Input cost"
-          value={formatCost(tier.input_cost_per_million_tokens_usd_10000)}
+          value={formatCost(
+            tier.input_cost_per_million_tokens_usd_10000 ??
+              base.input_cost_per_million_tokens_usd_10000,
+          )}
         />
         <ModelPricingMetric
           label="Output cost"
-          value={formatCost(tier.output_cost_per_million_tokens_usd_10000)}
+          value={formatCost(
+            tier.output_cost_per_million_tokens_usd_10000 ??
+              base.output_cost_per_million_tokens_usd_10000,
+          )}
         />
         <ModelPricingMetric
           label="Cache read"
-          value={formatCost(tier.cache_read_cost_per_million_tokens_usd_10000)}
+          value={formatCost(
+            tier.cache_read_cost_per_million_tokens_usd_10000 ??
+              base.cache_read_cost_per_million_tokens_usd_10000,
+          )}
         />
         <ModelPricingMetric
           label="Cache write"
-          value={formatCost(tier.cache_write_cost_per_million_tokens_usd_10000)}
+          value={formatCost(
+            tier.cache_write_cost_per_million_tokens_usd_10000 ??
+              base.cache_write_cost_per_million_tokens_usd_10000,
+          )}
         />
       </dl>
     </section>
