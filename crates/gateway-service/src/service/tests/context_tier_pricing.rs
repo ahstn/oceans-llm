@@ -217,3 +217,85 @@ async fn image_output_tokens_are_charged_at_the_catalog_image_rate() {
     // 1,000 input at $1 ($0.001) + 200 text at $2 ($0.0004) + 1,000 image at $30 ($0.03).
     assert_eq!(event.computed_cost_usd, Money4::from_scaled(314));
 }
+
+/// A catalog schedule with $5 input and $40 image output per million but no text output
+/// rate, as LiteLLM lists image-only models.
+fn image_only_pricing_record() -> ModelPricingRecord {
+    let mut record = pricing_record(None);
+    record.input_cost_per_million_tokens = Some(Money4::from_scaled(50_000));
+    record.output_cost_per_million_tokens = None;
+    record.output_image_usd_per_million = Some(Money4::from_scaled(400_000));
+    record
+}
+
+#[tokio::test]
+async fn image_only_completion_is_priced_without_a_text_output_rate() {
+    let event = recorded_catalog_usage(
+        &catalog_route(),
+        image_only_pricing_record(),
+        json!({
+            "prompt_tokens": 1_000,
+            "completion_tokens": 1_000,
+            "completion_tokens_details": {"image_tokens": 1_000}
+        }),
+    )
+    .await;
+
+    assert_eq!(event.pricing_status, UsagePricingStatus::Priced);
+    assert_eq!(event.unpriced_reason, None);
+    // 1,000 input at $5 ($0.005) + 1,000 image at $40 ($0.04).
+    assert_eq!(event.computed_cost_usd, Money4::from_scaled(450));
+}
+
+#[tokio::test]
+async fn text_completion_tokens_without_a_text_output_rate_stay_unpriced() {
+    for provider_usage in [
+        json!({
+            "prompt_tokens": 1_000,
+            "completion_tokens": 1_200,
+            "completion_tokens_details": {"image_tokens": 1_000}
+        }),
+        json!({"prompt_tokens": 1_000, "completion_tokens": 1_000}),
+    ] {
+        let event = recorded_catalog_usage(
+            &catalog_route(),
+            image_only_pricing_record(),
+            provider_usage,
+        )
+        .await;
+
+        assert_eq!(event.pricing_status, UsagePricingStatus::Unpriced);
+        assert_eq!(
+            event.unpriced_reason.as_deref(),
+            Some("missing_output_rate")
+        );
+        assert_eq!(event.computed_cost_usd, Money4::ZERO);
+    }
+}
+
+#[tokio::test]
+async fn image_only_completion_with_invalid_cache_counters_uses_legacy_estimate() {
+    let event = recorded_catalog_usage(
+        &catalog_route(),
+        image_only_pricing_record(),
+        json!({
+            "input_tokens": 1_000,
+            "output_tokens": 1_000,
+            "input_tokens_details": {"cached_tokens": 900, "cache_write_tokens": 200},
+            "output_tokens_details": {"image_tokens": 1_000}
+        }),
+    )
+    .await;
+
+    assert_eq!(event.pricing_status, UsagePricingStatus::LegacyEstimated);
+    assert!(
+        event
+            .unpriced_reason
+            .as_deref()
+            .is_some_and(|reason| reason.starts_with("invalid_cache_token_usage:")),
+        "{:?}",
+        event.unpriced_reason
+    );
+    // 1,000 input at $5 ($0.005) + 1,000 image at $40 ($0.04).
+    assert_eq!(event.computed_cost_usd, Money4::from_scaled(450));
+}

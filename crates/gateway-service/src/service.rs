@@ -1850,7 +1850,7 @@ fn apply_token_rates(
             record.pricing_status = UsagePricingStatus::Unpriced;
             return Ok(());
         }
-        if record.completion_tokens.unwrap_or_default() > 0 && output_rate.is_none() {
+        if text_output_tokens(record) > 0 && output_rate.is_none() {
             record.pricing_status = UsagePricingStatus::Unpriced;
             return Ok(());
         }
@@ -1866,7 +1866,7 @@ fn apply_token_rates(
         record.unpriced_reason = Some("missing_input_rate".to_string());
         return Ok(());
     }
-    if record.completion_tokens.unwrap_or_default() > 0 && output_rate.is_none() {
+    if text_output_tokens(record) > 0 && output_rate.is_none() {
         record.pricing_status = UsagePricingStatus::Unpriced;
         record.unpriced_reason = Some("missing_output_rate".to_string());
         return Ok(());
@@ -1947,6 +1947,11 @@ fn output_token_buckets(record: &UsageLedgerRecord) -> (Option<i64>, Option<i64>
         (Some(completion), Some(image), Some(_)) => (Some(completion - image), Some(image)),
         (completion, _, _) => (completion, None),
     }
+}
+
+/// Completion tokens that bill at the text output rate.
+fn text_output_tokens(record: &UsageLedgerRecord) -> i64 {
+    output_token_buckets(record).0.unwrap_or_default()
 }
 
 /// Adds each priced component's subtotal, each rounded half up to Money4.
