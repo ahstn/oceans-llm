@@ -426,6 +426,11 @@ models:
       - provider: openrouter
         upstream_model: openai/gpt-image-2.5-flare
         capabilities:
+          images: true
+          chat_completions: false
+          responses: false
+          embeddings: false
+          tools: false
           stream: false
           vision: false
           json_schema: false
