@@ -210,34 +210,8 @@ impl PricingCatalogRepository for LibsqlStore {
         effective_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
         let tx = self.begin_transaction().await?;
-
-        let mut rows = tx
-            .query(
-                r#"
-                SELECT model_pricing_id, pricing_provider_id, pricing_model_id,
-                       provenance_fetched_at
-                FROM model_pricing
-                WHERE effective_end_at IS NULL
-                "#,
-                (),
-            )
-            .await
-            .map_err(to_query_error)?;
-        let mut active_rows = Vec::new();
-        while let Some(row) = rows.next().await.map_err(to_query_error)? {
-            active_rows.push(crate::pricing_sync::ActiveModelPricing {
-                model_pricing_id: crate::shared::parse_uuid(
-                    &row.get::<String>(0).map_err(to_query_error)?,
-                )?,
-                pricing_provider_id: row.get(1).map_err(to_query_error)?,
-                pricing_model_id: row.get(2).map_err(to_query_error)?,
-                provenance_fetched_at: crate::shared::unix_to_datetime(
-                    row.get(3).map_err(to_query_error)?,
-                )?,
-            });
-        }
-        drop(rows);
-        crate::pricing_sync::validate_model_pricing_sync(changes, effective_at, active_rows)?;
+        let state = load_model_pricing_sync_state(&tx, effective_at).await?;
+        crate::pricing_sync::validate_model_pricing_sync(changes, effective_at, state)?;
 
         for model_pricing_id in &changes.close_model_pricing_ids {
             tx.execute(
@@ -432,4 +406,76 @@ impl LibsqlStore {
 
         decode_model_pricing_record(&row).map(Some)
     }
+}
+
+/// The active rows, catalog cache revisions and rows starting at `effective_at` that a
+/// pricing sync is validated against.
+async fn load_model_pricing_sync_state(
+    tx: &libsql::Transaction,
+    effective_at: OffsetDateTime,
+) -> Result<crate::pricing_sync::ModelPricingSyncState, StoreError> {
+    let mut rows = tx
+        .query(
+            r#"
+            SELECT model_pricing_id, pricing_provider_id, pricing_model_id, updated_at
+            FROM model_pricing
+            WHERE effective_end_at IS NULL
+            "#,
+            (),
+        )
+        .await
+        .map_err(to_query_error)?;
+    let mut active_rows = Vec::new();
+    while let Some(row) = rows.next().await.map_err(to_query_error)? {
+        active_rows.push(crate::pricing_sync::ActiveModelPricing {
+            model_pricing_id: crate::shared::parse_uuid(
+                &row.get::<String>(0).map_err(to_query_error)?,
+            )?,
+            pricing_provider_id: row.get(1).map_err(to_query_error)?,
+            pricing_model_id: row.get(2).map_err(to_query_error)?,
+            updated_at: crate::shared::unix_to_datetime(row.get(3).map_err(to_query_error)?)?,
+        });
+    }
+    drop(rows);
+
+    let mut rows = tx
+        .query(
+            "SELECT catalog_key, fetched_at FROM pricing_catalog_cache",
+            (),
+        )
+        .await
+        .map_err(to_query_error)?;
+    let mut catalog_cache_fetched_at = std::collections::HashMap::new();
+    while let Some(row) = rows.next().await.map_err(to_query_error)? {
+        catalog_cache_fetched_at.insert(
+            row.get::<String>(0).map_err(to_query_error)?,
+            crate::shared::unix_to_datetime(row.get(1).map_err(to_query_error)?)?,
+        );
+    }
+    drop(rows);
+
+    let mut rows = tx
+        .query(
+            r#"
+            SELECT pricing_provider_id, pricing_model_id
+            FROM model_pricing
+            WHERE effective_start_at = ?1
+            "#,
+            [effective_at.unix_timestamp()],
+        )
+        .await
+        .map_err(to_query_error)?;
+    let mut targets_starting_at_effective_at = std::collections::HashSet::new();
+    while let Some(row) = rows.next().await.map_err(to_query_error)? {
+        targets_starting_at_effective_at.insert((
+            row.get::<String>(0).map_err(to_query_error)?,
+            row.get::<String>(1).map_err(to_query_error)?,
+        ));
+    }
+
+    Ok(crate::pricing_sync::ModelPricingSyncState {
+        active_rows,
+        catalog_cache_fetched_at,
+        targets_starting_at_effective_at,
+    })
 }

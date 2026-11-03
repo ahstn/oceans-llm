@@ -2797,6 +2797,10 @@ pub struct ModelPricingSyncChanges {
     pub close_model_pricing_ids: Vec<Uuid>,
     pub update_provenance: Vec<ModelPricingProvenanceUpdate>,
     pub insert_model_pricing: Vec<ModelPricingRecord>,
+    /// The `fetched_at` of each `pricing_catalog_cache` row the changes were computed
+    /// from, keyed by `catalog_key`. The store applies the changes only while each row is
+    /// absent (the source used its vendored snapshot) or still has this `fetched_at`.
+    pub catalog_cache_fetched_at: BTreeMap<String, OffsetDateTime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

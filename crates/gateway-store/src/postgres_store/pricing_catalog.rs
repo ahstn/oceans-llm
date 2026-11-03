@@ -207,34 +207,8 @@ impl PricingCatalogRepository for PostgresStore {
         .execute(&mut *tx)
         .await
         .map_err(to_query_error)?;
-
-        let active_rows = sqlx::query(
-            r#"
-            SELECT model_pricing_id, pricing_provider_id, pricing_model_id,
-                   provenance_fetched_at
-            FROM model_pricing
-            WHERE effective_end_at IS NULL
-            FOR UPDATE
-            "#,
-        )
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(to_query_error)?
-        .into_iter()
-        .map(|row| {
-            Ok(crate::pricing_sync::ActiveModelPricing {
-                model_pricing_id: crate::shared::parse_uuid(
-                    &row.try_get::<String, _>(0).map_err(to_query_error)?,
-                )?,
-                pricing_provider_id: row.try_get(1).map_err(to_query_error)?,
-                pricing_model_id: row.try_get(2).map_err(to_query_error)?,
-                provenance_fetched_at: crate::shared::unix_to_datetime(
-                    row.try_get(3).map_err(to_query_error)?,
-                )?,
-            })
-        })
-        .collect::<Result<Vec<_>, StoreError>>()?;
-        crate::pricing_sync::validate_model_pricing_sync(changes, effective_at, active_rows)?;
+        let state = load_model_pricing_sync_state(&mut tx, effective_at).await?;
+        crate::pricing_sync::validate_model_pricing_sync(changes, effective_at, state)?;
 
         for model_pricing_id in &changes.close_model_pricing_ids {
             sqlx::query(
@@ -433,4 +407,75 @@ impl PostgresStore {
 
         row.as_ref().map(decode_model_pricing_record).transpose()
     }
+}
+
+/// The active rows, catalog cache revisions and rows starting at `effective_at` that a
+/// pricing sync is validated against.
+async fn load_model_pricing_sync_state(
+    tx: &mut sqlx::PgConnection,
+    effective_at: OffsetDateTime,
+) -> Result<crate::pricing_sync::ModelPricingSyncState, StoreError> {
+    let active_rows = sqlx::query(
+        r#"
+        SELECT model_pricing_id, pricing_provider_id, pricing_model_id, updated_at
+        FROM model_pricing
+        WHERE effective_end_at IS NULL
+        FOR UPDATE
+        "#,
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(to_query_error)?
+    .into_iter()
+    .map(|row| {
+        Ok(crate::pricing_sync::ActiveModelPricing {
+            model_pricing_id: crate::shared::parse_uuid(
+                &row.try_get::<String, _>(0).map_err(to_query_error)?,
+            )?,
+            pricing_provider_id: row.try_get(1).map_err(to_query_error)?,
+            pricing_model_id: row.try_get(2).map_err(to_query_error)?,
+            updated_at: crate::shared::unix_to_datetime(row.try_get(3).map_err(to_query_error)?)?,
+        })
+    })
+    .collect::<Result<Vec<_>, StoreError>>()?;
+
+    let catalog_cache_fetched_at =
+        sqlx::query("SELECT catalog_key, fetched_at FROM pricing_catalog_cache")
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(to_query_error)?
+            .into_iter()
+            .map(|row| {
+                Ok((
+                    row.try_get::<String, _>(0).map_err(to_query_error)?,
+                    crate::shared::unix_to_datetime(row.try_get(1).map_err(to_query_error)?)?,
+                ))
+            })
+            .collect::<Result<_, StoreError>>()?;
+
+    let targets_starting_at_effective_at = sqlx::query(
+        r#"
+        SELECT pricing_provider_id, pricing_model_id
+        FROM model_pricing
+        WHERE effective_start_at = $1
+        "#,
+    )
+    .bind(effective_at.unix_timestamp())
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(to_query_error)?
+    .into_iter()
+    .map(|row| {
+        Ok((
+            row.try_get::<String, _>(0).map_err(to_query_error)?,
+            row.try_get::<String, _>(1).map_err(to_query_error)?,
+        ))
+    })
+    .collect::<Result<_, StoreError>>()?;
+
+    Ok(crate::pricing_sync::ModelPricingSyncState {
+        active_rows,
+        catalog_cache_fetched_at,
+        targets_starting_at_effective_at,
+    })
 }

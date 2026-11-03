@@ -410,7 +410,7 @@ impl PricingCatalogSnapshot {
     }
 
     /// The newest source `fetched_at`: pricing rows reconciled from this snapshot take
-    /// effect then.
+    /// effect then, or one second after the newest active row's last sync when that is later.
     ///
     /// # Panics
     ///

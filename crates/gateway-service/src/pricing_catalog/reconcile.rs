@@ -1,21 +1,25 @@
 //! Reconciles the merged catalog snapshot into `model_pricing` as one generation.
 //!
-//! Rows take effect at the snapshot's generation (its newest source `fetched_at`); each
-//! row's provenance is the snapshot of the source that supplied its pricing.
+//! Rows take effect at the snapshot's generation (its newest source `fetched_at`), or
+//! after every active row's last sync when that is later; each row's provenance is the
+//! snapshot of the source that supplied its pricing. Two combinations of source snapshots
+//! can share a generation, so the store accepts a sync only while the catalog cache rows
+//! still hold the snapshot's sources.
 
 use std::collections::BTreeMap;
 
 use gateway_core::{
     ContextPricingTier, GatewayError, ModelPricingProvenanceUpdate, ModelPricingRecord,
     ModelPricingSyncChanges, Money4, PricingCatalogRepository, PricingLimits, PricingModalities,
-    PricingProvenance, StoreError,
+    PricingProvenance,
 };
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 use super::{
-    PricingCatalogContextTier, PricingCatalogModelDocument, PricingCatalogSnapshot,
-    PricingCatalogSnapshotMetadata, merge::MergedModelReport, sources::CatalogSourceId,
+    PricingCatalogContextTier, PricingCatalogDocument, PricingCatalogModelDocument,
+    PricingCatalogSnapshot, PricingCatalogSnapshotMetadata, merge::MergedModelReport,
+    sources::CatalogSourceId,
 };
 
 type PricingTargetKey = (String, String);
@@ -24,8 +28,9 @@ type PricingTargetKey = (String, String);
 ///
 /// # Errors
 ///
-/// Returns [`StoreError::PricingSyncConflict`] when active rows belong to a newer
-/// generation or this generation was applied differently, so the caller reloads.
+/// Returns [`gateway_core::StoreError::PricingSyncConflict`] when a catalog cache row no
+/// longer holds the snapshot's source or another sync changed the active rows, so the
+/// caller reloads.
 pub(super) async fn reconcile_model_pricing<R>(
     repo: &R,
     snapshot: &PricingCatalogSnapshot,
@@ -33,15 +38,9 @@ pub(super) async fn reconcile_model_pricing<R>(
 where
     R: PricingCatalogRepository + Send + Sync + ?Sized,
 {
-    let generation = snapshot.generation_at();
-    let desired_rows = desired_pricing_rows(snapshot, generation)?;
     let active_rows = repo.list_active_model_pricing().await?;
-    if active_rows
-        .iter()
-        .any(|row| row.provenance.fetched_at > generation)
-    {
-        return Err(StoreError::PricingSyncConflict.into());
-    }
+    let effective_at = sync_effective_at(snapshot.generation_at(), &active_rows);
+    let desired_rows = desired_pricing_rows(snapshot, effective_at)?;
 
     let mut active_by_target = active_rows
         .into_iter()
@@ -58,15 +57,6 @@ where
     let mut changes = ModelPricingSyncChanges::default();
     for (key, desired) in desired_rows {
         match active_by_target.remove(&key) {
-            // Already applied in this generation: a row of this generation cannot be
-            // replaced, so any difference is a concurrent reconciliation.
-            Some(existing) if existing.provenance.fetched_at == generation => {
-                if existing.provenance != desired.provenance
-                    || !pricing_record_matches(&existing, &desired)
-                {
-                    return Err(StoreError::PricingSyncConflict.into());
-                }
-            }
             Some(existing) if pricing_record_matches(&existing, &desired) => {
                 if existing.provenance != desired.provenance {
                     changes
@@ -74,7 +64,7 @@ where
                         .push(ModelPricingProvenanceUpdate {
                             model_pricing_id: existing.model_pricing_id,
                             provenance: desired.provenance,
-                            updated_at: generation,
+                            updated_at: effective_at,
                         });
                 }
             }
@@ -89,9 +79,6 @@ where
     }
     // Rows the snapshot no longer lists.
     for existing in active_by_target.into_values() {
-        if existing.provenance.fetched_at == generation {
-            return Err(StoreError::PricingSyncConflict.into());
-        }
         changes
             .close_model_pricing_ids
             .push(existing.model_pricing_id);
@@ -103,14 +90,61 @@ where
     {
         return Ok(());
     }
-    repo.apply_model_pricing_sync(&changes, generation).await?;
+    changes.catalog_cache_fetched_at = catalog_cache_revisions(repo, snapshot).await?;
+    repo.apply_model_pricing_sync(&changes, effective_at)
+        .await?;
     Ok(())
+}
+
+/// When a sync takes effect: the snapshot's `generation`, or one second after the newest
+/// active row's last sync when that is not earlier. A newer combination of source
+/// snapshots can share the generation of the one applied and still has to replace its
+/// rows.
+fn sync_effective_at(
+    generation: OffsetDateTime,
+    active_rows: &[ModelPricingRecord],
+) -> OffsetDateTime {
+    active_rows
+        .iter()
+        .map(|row| row.updated_at)
+        .max()
+        .filter(|newest| *newest >= generation)
+        .map_or(generation, |newest| newest + Duration::seconds(1))
+}
+
+/// The catalog cache revision each source of `snapshot` stands for, keyed by
+/// `catalog_key`: the row's `fetched_at` when the snapshot was loaded from it or the row
+/// does not parse (so the source fell back to its vendored snapshot), else the snapshot's
+/// own `fetched_at`, which the store rejects while a newer row exists.
+async fn catalog_cache_revisions<R>(
+    repo: &R,
+    snapshot: &PricingCatalogSnapshot,
+) -> Result<BTreeMap<String, OffsetDateTime>, GatewayError>
+where
+    R: PricingCatalogRepository + Send + Sync + ?Sized,
+{
+    let mut revisions = BTreeMap::new();
+    for (source, metadata) in &snapshot.sources {
+        let catalog_key = source.descriptor().cache_key;
+        let fetched_at = match repo.get_pricing_catalog_cache(catalog_key).await? {
+            Some(row)
+                if row.fetched_at == metadata.fetched_at
+                    || serde_json::from_str::<PricingCatalogDocument>(&row.snapshot_json)
+                        .is_err() =>
+            {
+                row.fetched_at
+            }
+            _ => metadata.fetched_at,
+        };
+        revisions.insert(catalog_key.to_string(), fetched_at);
+    }
+    Ok(revisions)
 }
 
 /// One row per merged model that some source attributes data to, keyed by target.
 fn desired_pricing_rows(
     snapshot: &PricingCatalogSnapshot,
-    generation: OffsetDateTime,
+    effective_at: OffsetDateTime,
 ) -> Result<BTreeMap<PricingTargetKey, ModelPricingRecord>, GatewayError> {
     let mut rows = BTreeMap::new();
     for (provider_id, provider) in &snapshot.document.providers {
@@ -123,7 +157,7 @@ fn desired_pricing_rows(
             };
             let record = pricing_record_at(
                 &snapshot.sources[&source],
-                generation,
+                effective_at,
                 provider_id,
                 model_id,
                 document,
@@ -164,10 +198,10 @@ pub(crate) fn build_model_pricing_record(
     )
 }
 
-/// A pricing row stamped with `provenance`, effective at `generation`.
+/// A pricing row stamped with `provenance`, effective at `effective_at`.
 fn pricing_record_at(
     provenance: &PricingCatalogSnapshotMetadata,
-    generation: OffsetDateTime,
+    effective_at: OffsetDateTime,
     pricing_provider_id: &str,
     pricing_model_id: &str,
     document: &PricingCatalogModelDocument,
@@ -192,7 +226,7 @@ fn pricing_record_at(
             .collect::<Result<_, _>>()?,
         release_date: document.release_date.clone(),
         last_updated: document.last_updated.clone(),
-        effective_start_at: generation,
+        effective_start_at: effective_at,
         effective_end_at: None,
         limits: PricingLimits {
             context: document.limit.context,
@@ -208,8 +242,8 @@ fn pricing_record_at(
             etag: provenance.etag.clone(),
             fetched_at: provenance.fetched_at,
         },
-        created_at: generation,
-        updated_at: generation,
+        created_at: effective_at,
+        updated_at: effective_at,
     })
 }
 

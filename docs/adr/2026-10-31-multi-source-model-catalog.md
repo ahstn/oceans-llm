@@ -33,7 +33,7 @@ The gateway reads three sources. Each source has its own cache row in `pricing_c
 | --- | --- | --- | --- | --- | --- |
 | models.dev | `https://models.dev/api.json` | `models_dev_supported_v4` | 32 MiB | ETag | `pricing_catalog_fallback.json` |
 | OpenRouter | `https://openrouter.ai/api/v1/models?output_modalities=all` | `openrouter_v1` | 16 MiB | Content checksum | `openrouter_catalog_fallback.json` |
-| LiteLLM | `https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json` | `litellm_v1` | 16 MiB | ETag | `litellm_catalog_fallback.json` |
+| LiteLLM | `https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json` | `litellm_v2` | 16 MiB | ETag | `litellm_catalog_fallback.json` |
 
 The vendored files are in `crates/gateway-service/data/`. `mise run //crates/gateway:sync-pricing-catalog` refreshes all three, and the release task runs it.
 
@@ -42,6 +42,7 @@ Each source projects into the same document: gateway catalog provider ID, then m
 - models.dev keeps its existing projection and now also projects `github-copilot`.
 - OpenRouter projects only the `openrouter` provider, as `openrouter/<id>`. The `output_modalities=all` query includes image-only models. A `"-1"` price means a variable price, so that pricing schedule is skipped.
 - LiteLLM uses exact key rules: bare `openai` keys without regions, `github_copilot/<model>`, Bedrock bare keys and `bedrock_mantle/<model>`, and `vertex_ai/<model>` split into Google and Anthropic publishers. It has no `openrouter` entries.
+- LiteLLM input modalities come from `supported_modalities`. Without that field, they come from the `supports_vision`, `supports_pdf_input`, and `supports_audio_input` flags. When `supports_vision` is not set, the input modalities are unknown, because a list without `image` means that the model has no vision support.
 
 ### 2. Per-field precedence
 
@@ -64,6 +65,7 @@ Billing uses the same merged view as metadata and discovery.
 - **No-change detection.** models.dev and LiteLLM use `If-None-Match`. OpenRouter sends no ETag, so the gateway compares a checksum of the projected document. An unchanged source writes nothing.
 - **Failure isolation.** A source that fails keeps its cached snapshot, or its vendored snapshot when no cache row exists. The other sources still refresh.
 - **One reconciliation.** After any source changes, the gateway rebuilds the merged snapshot and reconciles it into `model_pricing` once, as one generation. Each row records the snapshot of the source that won its pricing: source name, ETag or checksum, and fetch time. Rows that did not change are not rewritten.
+- **Concurrent replicas.** New rows take effect at the generation time, which is the newest source `fetched_at`. When an active row was synced at or after that time, they take effect one second after that sync instead. The store accepts a sync only while every catalog cache row still holds the snapshot that the sync used. Thus a replica with an old source combination gets `PricingSyncConflict`, reloads, and tries again. It cannot overwrite a newer combination, and it cannot write a second row with the same start time.
 - **Manual refresh.** **Refresh pricing** on the Models page forces all three sources. `POST /api/v1/admin/models/pricing-catalog/refresh` returns one entry per source (`models_dev`, `openrouter`, `litellm`) with `outcome` (`updated`, `unchanged`, or `failed`), the `fetched_at` of the snapshot in use, and a stable `error` code. The response has no upstream error text.
 
 ### 4. Context tier billing

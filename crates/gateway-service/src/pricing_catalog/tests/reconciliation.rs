@@ -27,29 +27,140 @@ async fn pricing_reconciliation_reloads_and_retries_after_a_store_conflict() {
 }
 
 #[tokio::test]
-async fn mixed_newer_active_rows_are_reported_as_a_sync_conflict() {
+async fn snapshot_replaced_in_the_cache_is_a_sync_conflict() {
     let repo = Arc::new(InMemoryRepo::default());
-    let snapshot = merged(fallback_snapshot());
-    reconcile_model_pricing(repo.as_ref(), &snapshot)
-        .await
-        .expect("seed pricing rows");
+    let stale = models_dev_at(test_time(), "2025-01-01");
+    seed_catalog_snapshot(repo.as_ref(), &stale).await;
+    seed_catalog_snapshot(
+        repo.as_ref(),
+        &models_dev_at(test_time() + time::Duration::minutes(1), "2025-02-02"),
+    )
+    .await;
 
-    repo.pricing_rows
-        .lock()
-        .expect("pricing rows")
-        .first_mut()
-        .expect("active pricing row")
-        .provenance
-        .fetched_at += time::Duration::seconds(1);
-
-    let error = reconcile_model_pricing(repo.as_ref(), &snapshot)
+    let error = reconcile_model_pricing(repo.as_ref(), &merged(stale))
         .await
-        .expect_err("mixed catalog generations must not report convergence");
+        .expect_err("a snapshot the cache replaced must not be applied");
 
     assert!(matches!(
         error,
         GatewayError::Store(StoreError::PricingSyncConflict)
     ));
+    assert!(repo.pricing_rows.lock().expect("pricing rows").is_empty());
+}
+
+#[tokio::test]
+async fn newer_source_combination_of_the_same_generation_replaces_the_applied_one() {
+    let repo = Arc::new(InMemoryRepo::default());
+    let generation = test_time();
+    let mut openrouter = empty_source_snapshot(CatalogSourceId::OpenRouter);
+    openrouter.metadata.fetched_at = generation;
+    seed_source_snapshot(repo.as_ref(), CatalogSourceId::OpenRouter, &openrouter).await;
+    // models.dev prices GPT-5 in both combinations, from snapshots older than the
+    // OpenRouter one, so both combinations share its generation.
+    let older = models_dev_at(generation - time::Duration::minutes(2), "2025-01-01");
+    let newer = models_dev_at(generation - time::Duration::minutes(1), "2025-02-02");
+    let stale = merged_with_openrouter(older.clone(), openrouter.clone());
+    let latest = merged_with_openrouter(newer.clone(), openrouter);
+    assert_eq!(stale.generation_at(), latest.generation_at());
+
+    seed_catalog_snapshot(repo.as_ref(), &older).await;
+    reconcile_model_pricing(repo.as_ref(), &stale)
+        .await
+        .expect("apply the first combination");
+    seed_catalog_snapshot(repo.as_ref(), &newer).await;
+    reconcile_model_pricing(repo.as_ref(), &latest)
+        .await
+        .expect("the latest combination replaces rows of its own generation");
+    let error = reconcile_model_pricing(repo.as_ref(), &stale)
+        .await
+        .expect_err("the replaced combination must not be applied again");
+    assert!(matches!(
+        error,
+        GatewayError::Store(StoreError::PricingSyncConflict)
+    ));
+    let applications = repo.sync_applications();
+    reconcile_model_pricing(repo.as_ref(), &latest)
+        .await
+        .expect("the latest combination stays reconciled");
+    assert_eq!(repo.sync_applications(), applications);
+
+    let active = repo.active_row("openai", "gpt-5");
+    assert_eq!(active.last_updated, "2025-02-02");
+    assert_eq!(active.provenance.fetched_at, newer.metadata.fetched_at);
+    assert_eq!(
+        active.effective_start_at,
+        generation + time::Duration::seconds(1)
+    );
+    let rows = repo.pricing_rows.lock().expect("pricing rows");
+    let gpt_5_rows = rows
+        .iter()
+        .filter(|row| row.pricing_provider_id == "openai" && row.pricing_model_id == "gpt-5")
+        .collect::<Vec<_>>();
+    assert_eq!(gpt_5_rows.len(), 2);
+    assert!(gpt_5_rows.iter().any(|row| {
+        row.effective_start_at == generation
+            && row.effective_end_at == Some(active.effective_start_at)
+    }));
+}
+
+#[tokio::test]
+async fn unparseable_cache_row_does_not_block_its_vendored_fallback() {
+    let repo = Arc::new(InMemoryRepo::with_cache_rows([PricingCatalogCacheRecord {
+        catalog_key: OPENROUTER_CACHE_KEY.to_string(),
+        source: "openrouter_api".to_string(),
+        etag: None,
+        fetched_at: test_time(),
+        snapshot_json: "not a catalog document".to_string(),
+    }]));
+    // Every source is unreachable, so the unparseable row stays and OpenRouter keeps its
+    // vendored snapshot.
+    let catalog = empty_catalog(repo.clone(), UNREACHABLE_URL.to_string());
+
+    catalog
+        .refresh_if_stale_and_sync()
+        .await
+        .expect("reconcile the vendored fallback");
+
+    assert!(!repo.pricing_rows.lock().expect("pricing rows").is_empty());
+}
+
+/// A remote models.dev snapshot of the fallback providers, fetched at `fetched_at`, whose
+/// GPT-5 was last updated on `gpt_5_last_updated`.
+fn models_dev_at(
+    fetched_at: OffsetDateTime,
+    gpt_5_last_updated: &str,
+) -> PricingCatalogSnapshotFile {
+    let mut snapshot = fallback_snapshot();
+    snapshot.metadata = PricingCatalogSnapshotMetadata {
+        source: MODELS_DEV_REMOTE_SOURCE.to_string(),
+        etag: None,
+        fetched_at,
+        checksum: None,
+    };
+    snapshot
+        .providers
+        .get_mut("openai")
+        .expect("openai provider")
+        .models
+        .get_mut("gpt-5")
+        .expect("gpt-5 model")
+        .last_updated = gpt_5_last_updated.to_string();
+    snapshot
+}
+
+/// The merged snapshot of `models_dev` and `openrouter` beside the empty LiteLLM one.
+fn merged_with_openrouter(
+    models_dev: PricingCatalogSnapshotFile,
+    openrouter: PricingCatalogSnapshotFile,
+) -> PricingCatalogSnapshot {
+    PricingCatalogSnapshot::from_sources(BTreeMap::from([
+        (CatalogSourceId::ModelsDev, models_dev),
+        (CatalogSourceId::OpenRouter, openrouter),
+        (
+            CatalogSourceId::LiteLlm,
+            empty_source_snapshot(CatalogSourceId::LiteLlm),
+        ),
+    ]))
 }
 
 #[tokio::test]

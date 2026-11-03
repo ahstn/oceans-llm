@@ -866,15 +866,15 @@ pub(crate) mod tests {
         S: PricingCatalogRepository,
     {
         let model_id = format!("gpt-tiered-{}", Uuid::new_v4().simple());
-        // Pricing syncs must not predate any active row, and the Postgres database is shared
-        // with other tests, so start after the newest active row.
+        // A pricing sync must follow every active row's last sync, and the Postgres database
+        // is shared with other tests, so start after the newest active row.
         let base_at = OffsetDateTime::from_unix_timestamp(1_700_000_000).expect("timestamp");
         let first_at = store
             .list_active_model_pricing()
             .await
             .expect("list active pricing")
             .into_iter()
-            .map(|record| record.provenance.fetched_at)
+            .map(|record| record.updated_at)
             .fold(base_at, OffsetDateTime::max)
             + Duration::hours(1);
         let first = tiered_model_pricing_record(&model_id, first_at);
@@ -898,8 +898,8 @@ pub(crate) mod tests {
             .apply_model_pricing_sync(
                 &gateway_core::ModelPricingSyncChanges {
                     close_model_pricing_ids: vec![first.model_pricing_id],
-                    update_provenance: Vec::new(),
                     insert_model_pricing: vec![second.clone()],
+                    ..Default::default()
                 },
                 second_at,
             )

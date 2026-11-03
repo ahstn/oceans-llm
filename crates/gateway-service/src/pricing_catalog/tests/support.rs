@@ -48,7 +48,7 @@ pub(super) const MODELS_DEV_CACHE_KEY: &str = "models_dev_supported_v4";
 pub(super) const MODELS_DEV_REMOTE_SOURCE: &str = "models_dev_api";
 pub(super) const MODELS_DEV_VENDORED_SOURCE: &str = "vendored_models_dev";
 pub(super) const OPENROUTER_CACHE_KEY: &str = "openrouter_v1";
-pub(super) const LITELLM_CACHE_KEY: &str = "litellm_v1";
+pub(super) const LITELLM_CACHE_KEY: &str = "litellm_v2";
 /// A URL that refuses connections, so a refresh of it fails at once.
 pub(super) const UNREACHABLE_URL: &str = "http://127.0.0.1:9/api.json";
 /// The paths [`source_urls`] serves each source from, in [`CatalogSourceId::ALL`] order.
@@ -204,10 +204,25 @@ impl PricingCatalogRepository for InMemoryRepo {
             return Err(StoreError::PricingSyncConflict);
         }
 
+        // An absent cache row means the source used its vendored snapshot.
+        let cache = self.cache.lock().expect("cache lock");
+        if changes
+            .catalog_cache_fetched_at
+            .iter()
+            .any(|(catalog_key, fetched_at)| {
+                cache
+                    .get(catalog_key)
+                    .is_some_and(|row| row.fetched_at != *fetched_at)
+            })
+        {
+            return Err(StoreError::PricingSyncConflict);
+        }
+        drop(cache);
+
         let mut rows = self.pricing_rows.lock().expect("pricing rows lock");
         if rows
             .iter()
-            .any(|row| row.effective_end_at.is_none() && effective_at < row.provenance.fetched_at)
+            .any(|row| row.effective_end_at.is_none() && row.updated_at >= effective_at)
         {
             return Err(StoreError::PricingSyncConflict);
         }
@@ -222,22 +237,20 @@ impl PricingCatalogRepository for InMemoryRepo {
                 .iter()
                 .map(|update| update.model_pricing_id),
         ) {
-            let Some(active) = rows
+            if !rows
                 .iter()
-                .find(|row| row.model_pricing_id == expected_id && row.effective_end_at.is_none())
-            else {
-                return Err(StoreError::PricingSyncConflict);
-            };
-            if effective_at <= active.provenance.fetched_at {
+                .any(|row| row.model_pricing_id == expected_id && row.effective_end_at.is_none())
+            {
                 return Err(StoreError::PricingSyncConflict);
             }
         }
         for inserted in &changes.insert_model_pricing {
             if rows.iter().any(|row| {
-                row.effective_end_at.is_none()
-                    && row.pricing_provider_id == inserted.pricing_provider_id
+                row.pricing_provider_id == inserted.pricing_provider_id
                     && row.pricing_model_id == inserted.pricing_model_id
-                    && !closing.contains(&row.model_pricing_id)
+                    && (row.effective_start_at == effective_at
+                        || (row.effective_end_at.is_none()
+                            && !closing.contains(&row.model_pricing_id)))
             }) {
                 return Err(StoreError::PricingSyncConflict);
             }
