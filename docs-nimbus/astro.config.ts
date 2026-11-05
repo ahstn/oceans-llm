@@ -10,14 +10,11 @@ const nimbusConfig = defineNimbusConfig({
   // canonical URLs, absolute OG image URLs, robots.txt, sitemap, and the
   // links in /llms.txt — leaving the placeholder breaks all of them.
   site: "https://example.com",
-  // CHANGE_ME: your project's name — used for <title>, the home H1, and OG.
-  title: "Nimbus",
-  // CHANGE_ME: a one-line description of your docs — used for meta + OG.
-  description: "Nimbus, authoring tool for docs",
+  title: "Oceans LLM",
+  description: "Route, govern, and observe your organisation's AI traffic.",
   locale: "en",
-  // CHANGE_ME: your repository — shown as the GitHub link in the header.
-  github: "https://github.com/cloudflare/nimbus",
-  socialImageAlt: "Nimbus documentation preview",
+  github: "https://github.com/ahstn/oceans-llm",
+  socialImageAlt: "Oceans LLM documentation preview",
   // The home page leads the sidebar; every other page joins it automatically.
   sidebar: {
     items: ["index", { autogenerate: { collection: "docs" } }],

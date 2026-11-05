@@ -1,0 +1,58 @@
+---
+title: Topology and operations
+description: How the gateway and admin UI fit together, and the database, migrations, telemetry, and images every deployment shares.
+sidebar:
+  order: 2
+---
+
+Every Oceans deployment has the same shape, whichever [setup](/setup/) you use. This page covers that shape and the parts every deployment has to plan for. For step-by-step upgrades and recovery, use the [admin runbooks](https://docs.oceans-llm.com/operations/operator-runbooks).
+
+## One origin for everything
+
+The gateway is the only thing callers and admins talk to:
+
+- It serves the data plane at `/v1/*` and the admin APIs at `/api/v1/*`.
+- It proxies `/admin*` to the admin UI's server, at the address in `ADMIN_UI_UPSTREAM`.
+- The admin UI's server calls back into the gateway's APIs, at `ADMIN_GATEWAY_ORIGIN`.
+
+So the admin UI and the API share one origin. That's a product rule, not a local convenience: sessions, cookies, and same-origin checks on write requests all depend on it. Expose the gateway, and keep the admin UI reachable only from the gateway. The Helm chart, for example, renders an ingress for the gateway service and never for the admin UI.
+
+## Database and migrations
+
+Use PostgreSQL for production and anything that looks like it. The libsql file database is for local development.
+
+The gateway applies migrations at startup by default, or when you run `gateway migrate --apply`. Helm installs run them in a Job instead; see [Kubernetes and Helm](/setup/kubernetes-and-helm/#startup-jobs).
+
+Every migration command checks the database's recorded history against the migrations this version knows about before it does anything. Some databases can't be upgraded in place and must be recreated:
+
+- Databases that still carry the history from before the current baseline, migrations `V1` to `V16`.
+- Databases with application tables but no migration history.
+- Databases where a recorded migration's name or checksum doesn't match this version's.
+
+In each case, the command stops with a `database reset required` error rather than guessing.
+
+## Telemetry
+
+Oceans exports traces and metrics over OTLP. Set these under `server` in the gateway config:
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `otel_endpoint` | Unset | Where to send traces. |
+| `otel_metrics_endpoint` | Unset | Where to send metrics. |
+| `otel_trace_sample_ratio` | `1.0` | The share of traces to keep, from `0.0` to `1.0`. |
+| `otel_export_interval_secs` | `30` | How often to export metrics, in seconds. |
+
+Neither the compose stack nor the Helm chart includes a collector. Point these settings at the collector or agent you already run. [Export traces and metrics](https://docs.oceans-llm.com/operations/observability/export-traces-and-metrics) has the full setup and a way to check it.
+
+## Images and the Helm chart
+
+Each release publishes two images to GHCR, tagged with the release version:
+
+| Image | Platforms |
+| --- | --- |
+| `ghcr.io/ahstn/oceans-llm-gateway` | `linux/amd64` |
+| `ghcr.io/ahstn/oceans-llm-admin-ui` | `linux/amd64`, `linux/arm64` |
+
+The gateway image is amd64 only, so arm64 nodes can't run it yet.
+
+After both images build, the release also publishes the Helm chart to `oci://ghcr.io/ahstn/charts/oceans-llm`. Install it with an explicit `--version`; [Kubernetes and Helm](/setup/kubernetes-and-helm/#the-chart) explains how chart and image versions line up.

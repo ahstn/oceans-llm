@@ -1,0 +1,264 @@
+---
+title: Agent Skills
+description: Share Agent Skills through the gateway, and install a pinned version with the Oceans CLI.
+sidebar:
+  order: 6
+---
+
+Oceans keeps an authenticated registry of [Agent Skills](https://agentskills.io/specification). Users upload a skill once, and anyone signed in to the gateway can read its instructions, browse its files, and install a pinned version with the Oceans CLI.
+
+The gateway keeps skill metadata in its database and each version's ZIP archive in an S3 bucket. AWS S3 and RustFS use the same storage settings.
+
+## Who can do what
+
+Every authenticated user and API-key caller can read every skill and every version. There are no team grants, key grants, or private skills.
+
+To publish, a user claims a namespace. Each user gets one, and it can't change after it's claimed. A skill's address is the namespace plus the skill name, such as `alice/code-review`, so `bob/code-review` can exist beside it. Ownership follows the user's ID, so changing a display name doesn't move a skill.
+
+Namespaces and skill names use 1 to 64 lowercase ASCII letters, digits, or hyphens. They can't start or end with a hyphen, or contain two hyphens in a row.
+
+| Caller | Read skills | Claim a namespace | Create skills | Add versions or change the default |
+| --- | --- | --- | --- | --- |
+| Signed-in user | Yes | Their own | In their namespace | Their own skills |
+| User-owned API key | Yes | The owner's | In the owner's namespace | The owner's skills |
+| Service-account API key | Yes | No | No | No |
+
+Admin roles don't override ownership. An upload is readable by everyone as soon as it succeeds: there's no review or publish step.
+
+## Turn on storage
+
+Skills are off by default. Create a private bucket first, then add a `skills` section to the gateway config.
+
+### AWS S3
+
+```yaml title="gateway.yaml"
+skills:
+  enabled: true
+  storage:
+    bucket: oceans-skills
+    region: eu-west-2
+    prefix: skills/
+  limits:
+    max_archive_bytes: 10485760
+    max_expanded_bytes: 26214400
+    max_files: 1000
+```
+
+Leave `endpoint` unset and the AWS SDK picks the regional endpoint. Without explicit credentials, the SDK uses its default credential chain, so an AWS profile or the workload's own identity both work. AWS endpoint environment variables and profile overrides don't replace `skills.storage.endpoint`.
+
+The gateway identity needs `s3:PutObject`, `s3:GetObject`, and `s3:DeleteObject` on the configured prefix. It never creates buckets or lists them, so keep bucket creation and access provisioning with a separate setup identity.
+
+### RustFS or another S3-compatible service
+
+Set the endpoint and path-style addressing, and pass credentials as secret references:
+
+```yaml title="gateway.yaml"
+skills:
+  enabled: true
+  storage:
+    bucket: oceans-skills
+    region: us-east-1
+    endpoint: env.OCEANS_SKILLS_S3_ENDPOINT
+    prefix: skills/
+    force_path_style: true
+    access_key_id: env.RUSTFS_ACCESS_KEY
+    secret_access_key: env.RUSTFS_SECRET_KEY
+```
+
+The endpoint is an origin only, such as `http://127.0.0.1:9000`. Paths, query strings, fragments, and embedded credentials are rejected. Use HTTPS for remote storage. For a loopback or trusted internal HTTP endpoint, also set `allow_http: true`.
+
+Set `access_key_id` and `secret_access_key` together. `session_token` is optional and only works alongside both. All three accept `env.*`, `file.*`, and `literal.*` references, but keep real secrets in the deployment environment rather than checked-in YAML. The Helm chart rejects `literal.*` references unless you opt in.
+
+### Settings
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `enabled` | `false` | Turn on once the bucket and credentials are ready. |
+| `storage.bucket` | Unset | Required when skills are on. |
+| `storage.region` | `us-east-1` | Match the bucket or service. |
+| `storage.endpoint` | Unset | Set for RustFS or another S3-compatible service. |
+| `storage.prefix` | `skills/` | A relative prefix with no `.` or `..` segments, at most 983 UTF-8 bytes without trailing slashes. This leaves room for archive names within S3's 1,024-byte key limit. |
+| `storage.force_path_style` | `false` | Set `true` for RustFS. |
+| `storage.allow_http` | `false` | Required for an HTTP endpoint. |
+| `storage.access_key_id`, `storage.secret_access_key`, `storage.session_token` | Unset | Explicit credentials. Without them, the SDK's default chain applies. |
+| `limits.max_archive_bytes` | `10485760` (10 MiB) | Applies to both the uploaded ZIP and the stored, normalised ZIP. |
+| `limits.max_expanded_bytes` | `26214400` (25 MiB) | Total size of the extracted files. |
+| `limits.max_files` | `1000` | Counts files and directory entries. |
+
+Every limit must be greater than zero. These are Oceans limits, separate from the Agent Skills specification's advice on instruction length.
+
+Limits apply to new uploads only. Lowering one doesn't touch stored versions: downloads and installs check each version against its own recorded sizes and file count, and every download still verifies the archive's size and SHA-256 digest.
+
+A few limits are fixed:
+
+- `SKILL.md` is at most 256 KiB, frontmatter included, and its frontmatter at most 64 KiB.
+- Text previews stop at 256 KiB per file. Older versions over a text limit still download as archives.
+- Multi-disk and ZIP64 archives are rejected.
+
+### Run RustFS with mise
+
+For a local object store, the optional `rustfs` mise environment runs RustFS as a daemon beside Postgres:
+
+```sh
+mise -E rustfs run rustfs:setup
+mise -E rustfs run rustfs:status
+```
+
+Setup creates local credentials, starts RustFS on a loopback port, and creates the `oceans-skills` bucket. Keep the `rustfs` environment active when you run the gateway, so it gets the matching endpoint and credentials.
+
+On a self-hosted machine, select the `selfhost`, `rustfs`, and `selfhost-rustfs` environments together. [Self-hosting with mise](/setup/self-hosting/#optional-skills-storage-with-rustfs) covers the fixed port, the durable data path, and backups.
+
+### Run RustFS with Helm
+
+The Oceans chart can install the official RustFS chart as an optional dependency. You supply a CSI StorageClass and capacity through the RustFS values; Oceans doesn't install or manage a CSI driver. The dependency doesn't create the bucket or an application identity either, so create both before turning uploads on.
+
+The [chart README](https://github.com/ahstn/oceans-llm/blob/main/deploy/helm/oceans-llm/README.md) has the dependency settings. There are complete example values for [external S3](https://github.com/ahstn/oceans-llm/blob/main/deploy/helm/oceans-llm/examples/skills-s3-values.yaml), [distributed RustFS](https://github.com/ahstn/oceans-llm/blob/main/deploy/helm/oceans-llm/examples/skills-rustfs-values.yaml), and [standalone RustFS for development](https://github.com/ahstn/oceans-llm/blob/main/deploy/helm/oceans-llm/examples/skills-rustfs-standalone-values.yaml). External S3, or a RustFS release you manage yourself, uses the same gateway config without the dependency.
+
+### Import the bundled skills
+
+The repository keeps reviewed copies of community skills in `bundled-skills/`, outside any agent's auto-load directory. The first is Matt Pocock's `grill-me`, with its MIT licence and a source link pinned to the reviewed commit.
+
+To import them into a running gateway, turn on storage, create a user-owned API key in the admin UI, and pass it as `OCEANS_API_KEY` through your private environment:
+
+```sh
+export OCEANS_URL=http://127.0.0.1:8080
+export OCEANS_SKILLS_NAMESPACE=my-skills
+mise run skills:import-bundled
+```
+
+If the key's owner already has a namespace, set `OCEANS_SKILLS_NAMESPACE` to it exactly; otherwise the task claims it. Service-account keys can't import. On a self-hosted machine with RustFS, run `mise -E selfhost,rustfs,selfhost-rustfs run skills:import-bundled`.
+
+The import only runs when you run it. Starting or upgrading the gateway never imports skills. It uses the normal upload path: an unchanged bundle is skipped, and a changed one adds a version without moving the default. The duplicate check is safe for reruns one at a time, not for concurrent jobs.
+
+## Prepare a skill
+
+A skill is a directory with a `SKILL.md` at its root, plus any scripts, references, and assets it needs:
+
+```text
+code-review/
+├── SKILL.md
+├── scripts/
+├── references/
+└── assets/
+```
+
+```markdown title="code-review/SKILL.md"
+---
+name: code-review
+description: Review code for correctness and maintainability. Use when reviewing a change before merge.
+metadata:
+  author: example-org
+  version: "1.0"
+  github: https://github.com/example-org/skills/tree/main/code-review
+---
+
+Read the change and its tests. Report defects with a clear reproduction path.
+```
+
+- `name` is required and matches the directory name.
+- `description` is required: say what the skill does and when to use it, in at most 1,024 characters.
+- `license`, `compatibility` (at most 500 characters), `metadata`, and `allowed-tools` are optional.
+
+`metadata.author`, `metadata.version`, and `metadata.github` record where a skill came from. The author is whoever wrote it, who may not be the Oceans user who owns it. The version is free text from the source, separate from Oceans' own version numbers, so don't invent one if the source doesn't have one. For a curated copy, link to a GitHub URL pinned to a commit.
+
+Upload a ZIP with `SKILL.md` at its root, or inside one directory named after the skill. Oceans checks the layout and stores a normalised ZIP with that directory, so the stored SHA-256 digest can differ from your file's.
+
+Uploads with unsafe or duplicate paths, links, invalid frontmatter, a non-UTF-8 `SKILL.md`, or anything over the limits are rejected. The gateway never runs uploaded scripts, but an agent might, so review a skill's instructions and scripts before you install it.
+
+## Use the admin UI
+
+Open **Skills** at `/admin/skills` to browse the catalog. Claim your namespace before your first upload, then upload a ZIP to create a skill.
+
+A skill's page shows its instructions, files, and versions, with the namespace beside the name so same-named skills stay distinct. `SKILL.md` renders without raw HTML or remote images, and other text files show as plain text.
+
+When a version's manifest has an author or upstream version, the page shows them, and a valid HTTPS GitHub URL becomes a source link. Treat this as a claim from the uploaded manifest: it doesn't prove the named author published or endorsed the copy.
+
+Only the owner can add a version or change the default.
+
+## Use the Oceans CLI
+
+Install the `oceans` binary from the repository root:
+
+```sh
+mise exec -- cargo install --locked --path crates/oceans-cli
+```
+
+Point it at the gateway with `OCEANS_URL` (or `--url`) and pass an API key in `OCEANS_API_KEY`. Without a URL, the CLI uses `http://127.0.0.1:8080`. There's no separate login. Reading works with any key, but claiming a namespace and uploading need a user-owned key. Add `--json` to any command for structured output.
+
+The gateway URL must use HTTPS. Plain HTTP is allowed only for a loopback IP such as `127.0.0.1` or `[::1]`, and those requests skip proxy settings. Use the IP, not `localhost`.
+
+```sh
+export OCEANS_URL=https://oceans.example.com
+oceans skills namespace alice
+oceans skills upload ./code-review
+oceans skills list
+oceans skills show alice/code-review
+oceans skills versions alice/code-review
+```
+
+- `namespace` with no handle shows your current namespace.
+- `upload` takes a directory or a ZIP. If the skill already exists in your namespace, it adds a version. Add `--skip-unchanged` to skip the upload when the normalised archive matches the latest version. Concurrent uploads can still add identical versions.
+- `list --namespace alice` shows one namespace, and `show alice/code-review --version 2` shows a version other than the default.
+
+To publish from a private Git repository, clone it with your own credentials and upload the skill directory. The gateway doesn't fetch from Git.
+
+### Versions and the default
+
+Every upload adds an immutable, numbered version. Version 1 becomes the default when the skill is created. Later uploads raise `latest_version` but leave `default_version` alone until you move it:
+
+```sh
+oceans skills set-default alice/code-review 2
+```
+
+### Download and install
+
+```sh
+oceans skills download alice/code-review --version 2 --output code-review-v2.zip
+oceans skills install alice/code-review --version 2
+```
+
+Without `--version`, both use the current default. Downloads verify the digest and won't overwrite an existing file, and installs validate the bundle before writing anything.
+
+Skills install to `.agents/skills/<name>` by default; use `--directory` for another agent's skill directory. The CLI writes `.oceans-skill-lock.json` into the installed directory with the namespace, skill ID, version, and digest, but never the API key. If you later upload that directory, the CLI leaves the lock file out.
+
+An install won't replace an existing directory unless you pass `--replace`, which overwrites that skill's directory, local edits included, and leaves its neighbours alone. Because the directory name has to match the skill name, two owners' `code-review` skills need separate install directories.
+
+## HTTP API
+
+The UI and the CLI both use `/api/v1/skills`. Callers send `Authorization: Bearer <key>` or `x-oceans-api-key`, but not both. Browser sessions use the session cookie, and their write requests must come from the same origin.
+
+| Method and path | Purpose |
+| --- | --- |
+| `GET /api/v1/skills` | List skills. Accepts `q`, `namespace`, `limit` (1 to 100, default 100), and `offset` (default 0). |
+| `GET /api/v1/skills/limits` | Read the archive size, expanded size, and file count limits. |
+| `POST /api/v1/skills` | Create a skill in the caller's namespace from a ZIP body. |
+| `GET /api/v1/skills/namespace` | Read the caller's namespace, or `null`. |
+| `POST /api/v1/skills/namespace` | Claim a namespace with `{"handle":"alice"}`. |
+| `GET /api/v1/skills/by-name/{namespace}/{name}` | Look up a skill and its versions by name. |
+| `GET /api/v1/skills/{id}` | Read a skill and its versions by UUID. |
+| `GET /api/v1/skills/{id}/versions` | List versions. |
+| `POST /api/v1/skills/{id}/versions` | Add a ZIP version to a skill you own. |
+| `GET /api/v1/skills/{id}/versions/{version}` | Read a version's manifest, file list, and `SKILL.md`. |
+| `GET /api/v1/skills/{id}/versions/{version}/archive` | Download the normalised ZIP. |
+| `GET /api/v1/skills/{id}/versions/{version}/files?path=references/guide.md` | Read one UTF-8 text file. |
+| `PUT /api/v1/skills/{id}/default-version` | Change the default with `{"version":2}`. |
+
+`q` searches skill names, namespaces, and the default version's description, before pagination. It matches a literal substring, ignoring case for ASCII letters only: `CAFé` matches `Café`, but `CAFÉ` doesn't. Surrounding whitespace is trimmed, and a blank `q` matches everything. You can combine `q` with `namespace`.
+
+Uploads send the ZIP as the raw body with `Content-Type: application/zip`, not as multipart form data. The response's `uploaded_version` is the version this request created, even if another upload finishes at the same moment. Archive downloads carry the digest in `x-skill-sha256` and aren't cached by shared caches. Binary files are in the archive but can't be previewed through the files endpoint.
+
+## Back up and recover
+
+Back up the database and the bucket together. The database holds owners, namespaces, version metadata, and object keys; the bucket holds the archives. Restoring only one side leaves versions without archives, or archives without versions.
+
+An upload writes the object before it records the version. If recording fails with a known conflict, the gateway deletes the unused object. If the outcome is uncertain, it keeps the object and logs its key, because the metadata might have committed. Nothing cleans up orphaned objects automatically.
+
+If a download fails its digest check, restore that object from backup and find out what changed it. Never replace a version's bytes with different content.
+
+Changing the bucket or prefix doesn't move existing archives. Copy the objects across, with a matching database backup, before you change either. Keep the bucket private: callers always download through the gateway.
+
+## What skills don't do
+
+Oceans distributes skill bundles. It doesn't register them with a model provider or attach them to inference requests. Installing and running a skill is up to the agent.
+
+There's no server-side Git import, public discovery index, or Claude Code marketplace. The bundle format stays compatible with the Agent Skills directory specification.
