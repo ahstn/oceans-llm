@@ -1,0 +1,21 @@
+gateway.yaml
+  s_583c88036df9d8::t_4407d20f8c0751 331,524-526
+docs/configuration/configuration-reference.md
+  s_583c88036df9d8::t_5411800c8f0ff0 266-268,354,689-698,1065,1179,1184,1343,1345,1351-1353,1441,1458,1460,1462-1464,1466,1498
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e519aa869de1485ace1c347c2d8d824229ff5236",
+  "prompts": {},
+  "sessions": {
+    "s_583c88036df9d8": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1aac9-1166-77b3-9da2-1112c2a986fe",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
