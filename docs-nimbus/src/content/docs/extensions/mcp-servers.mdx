@@ -2,7 +2,7 @@
 title: MCP servers
 description: Register upstream MCP servers, set their auth, and expose their tools through the Oceans gateway.
 sidebar:
-  order: 8
+  order: 1
 ---
 
 Oceans registers external Streamable HTTP MCP servers and exposes their tools to clients through one gateway. Admins register servers and discover their tools. Clients connect to Oceans with an Oceans API key, never with upstream credentials.
@@ -79,7 +79,7 @@ An unpublish saved together with other settings is one write. If the unpublish i
 
 ### What team owners and admins can do
 
-Team owners and admins reach the MCP area when the `team_admins` permission group includes the `mcp` page. By default it inherits that page from the `users` group. See [Auth and access settings](/configuration/access-settings/) for permission groups.
+Team owners and admins reach the MCP area when the `team_admins` permission group includes the `mcp` page. By default it inherits that page from the `users` group. See [Auth and access settings](/access/access-settings/) for permission groups.
 
 Other signed-in users also get the `mcp` page by default. They see, read-only, only the servers they can connect to: servers where a grant to them, their team, or one of their API keys reaches an active tool. Each server shows its owner, its URL's origin, and the tools they can call. All writes, and the grant, credential and toolset routes, stay admin-only.
 
@@ -469,4 +469,4 @@ On `/mcp`, `search_tools`, `describe_tool` and `call_tool` resolve only active t
 
 On `/mcp/<server_key>`, `tools/list` is filtered to granted, active tools for that server. `tools/call` for a tool that isn't granted is rejected before it reaches the upstream. Disabled servers, inactive tools, disabled toolsets, revoked grants, inactive memberships, and missing or expired credentials never count as callable access. [MCP tool access](https://docs.oceans-llm.com/mcp/mcp-tool-access) owns the grant rules.
 
-Granted tool calls on both endpoints also count against `mcp_tool_call` limits. A call over a limit gets HTTP `429` with JSON-RPC error `-32029` and never reaches the upstream. See [Rate limits](/configuration/rate-limits/).
+Granted tool calls on both endpoints also count against `mcp_tool_call` limits. A call over a limit gets HTTP `429` with JSON-RPC error `-32029` and never reaches the upstream. See [Rate limits](/access/rate-limits/).

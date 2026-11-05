@@ -12,6 +12,7 @@
 import type { HTMLAttributes } from "astro/types";
 import SidebarGroupHeader from "./SidebarGroupHeader.astro";
 import SidebarLink from "./SidebarLink.astro";
+import { sidebarIcon } from "@/lib/sidebar-icons";
 import type { SidebarItem, SidebarBadge } from "@cloudflare/nimbus-docs/types";
 
 interface Props extends HTMLAttributes<"details"> {
@@ -72,6 +73,7 @@ const isOpen = Boolean(hasActive || collapsed === false || collapsed === undefin
           label="Overview"
           href={indexHref}
           isCurrent={indexIsCurrent}
+          icon={indexIsExternal ? undefined : sidebarIcon(indexHref)}
           target={indexIsExternal ? "_blank" : undefined}
           rel={indexIsExternal ? "noopener" : undefined}
         />
@@ -93,7 +95,7 @@ const isOpen = Boolean(hasActive || collapsed === false || collapsed === undefin
         ) : item.type === "external" ? (
           <SidebarLink label={item.label} href={item.href} badge={item.badge} target="_blank" rel="noopener" />
         ) : (
-          <SidebarLink label={item.label} href={item.href} isCurrent={item.isCurrent} badge={item.badge} />
+          <SidebarLink label={item.label} href={item.href} isCurrent={item.isCurrent} badge={item.badge} icon={sidebarIcon(item.href)} />
         )}
       </li>
     ))}

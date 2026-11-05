@@ -185,7 +185,7 @@ models:
 - `cache_read_usd_per_million_tokens`, `cache_write_usd_per_million_tokens`, and `image_output_usd_per_million_tokens` are optional. Omitted rates stay absent. They don't fall back to catalog rates.
 - Every rate is a quoted decimal string with at most four fractional digits. Zero is valid. Unquoted numbers, negative, malformed, and overflowing values fail config loading. Unknown fields are rejected.
 
-`image_output_usd_per_million_tokens` prices the image tokens a provider reports in `completion_tokens_details.image_tokens` or `output_tokens_details.image_tokens`. Other completion tokens use the output rate. A cost the provider reports in usage, such as OpenRouter's `usage.cost`, takes precedence over the whole override. See [Pricing catalog and accounting](/configuration/pricing-and-accounting/).
+`image_output_usd_per_million_tokens` prices the image tokens a provider reports in `completion_tokens_details.image_tokens` or `output_tokens_details.image_tokens`. Other completion tokens use the output rate. A cost the provider reports in usage, such as OpenRouter's `usage.cost`, takes precedence over the whole override. See [Pricing catalog and accounting](/access/pricing-and-accounting/).
 
 ### Route capabilities
 

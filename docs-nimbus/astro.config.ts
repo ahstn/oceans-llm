@@ -15,9 +15,18 @@ const nimbusConfig = defineNimbusConfig({
   locale: "en",
   github: "https://github.com/ahstn/oceans-llm",
   socialImageAlt: "Oceans LLM documentation preview",
-  // The home page leads the sidebar; every other page joins it automatically.
+  // Top-level order and group labels. Pages join their folder's group
+  // automatically; each page's sidebar icon comes from src/lib/sidebar-icons.ts.
   sidebar: {
-    items: ["index", { autogenerate: { collection: "docs" } }],
+    items: [
+      "index",
+      "features",
+      { label: "Setup", autogenerate: { directory: "setup" } },
+      { label: "Configuration", autogenerate: { directory: "configuration" } },
+      { label: "Access and spend", autogenerate: { directory: "access" } },
+      { label: "Agent extensions", autogenerate: { directory: "extensions" } },
+      { label: "Reference", autogenerate: { directory: "reference" } },
+    ],
   },
   // The API reference, served where its route file is (src/pages/api/ → /api).
   // See https://nimbus-docs.com/api-reference/

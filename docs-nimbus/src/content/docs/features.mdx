@@ -19,6 +19,8 @@ Oceans puts one governed gateway in front of your organisation's AI traffic. It 
 - **Client setup snippets.** The admin UI generates config for Claude Code, Codex, OpenCode, and Pi from the live model catalog, so users don't type model data by hand. In production, set the public gateway URL the snippets use. See [Client harness configuration](/configuration/client-harnesses/).
 - **Tags for attribution.** Callers attach a bounded set of request tags, and admins add tags to identities, so usage maps back to cost centres, workloads, applications, or environments. See [Tagging](https://docs.oceans-llm.com/operations/tagging).
 
+![Models page listing gateway models with their provider routes and Intelligence Index scores](/images/screenshot-models-2.png)
+
 ## Spend
 
 - **Budgets for users and service accounts.** Set daily, weekly, or monthly limits, with alerts, and turn on a hard limit to block requests once a budget is spent.
@@ -27,13 +29,17 @@ Oceans puts one governed gateway in front of your organisation's AI traffic. It 
 
 A hard limit blocks new requests once recorded spend reaches the cap. It doesn't reserve the cost of requests already running, so concurrent requests can take spend past it. Service-account keys need an active budget to work at all, even for MCP-only use. See [Budgets](https://docs.oceans-llm.com/access/budgets).
 
+![Spend Controls page with spend against budgets, owners over budget or near their limit, and per-user usage bars](/images/spend-controls-budgets.png)
+
 ## Usage accounting and observability
 
-- **A usage ledger, not estimates.** Each request's usage is priced from an effective-dated catalog, with the price source recorded. Rows are `priced`, `unpriced`, `usage_missing`, or `legacy_estimated`, a fallback for malformed cache counters. Only `priced` and `legacy_estimated` rows count toward spend and budgets. See [Pricing catalog and accounting](/configuration/pricing-and-accounting/).
+- **A usage ledger, not estimates.** Each request's usage is priced from an effective-dated catalog, with the price source recorded. Rows are `priced`, `unpriced`, `usage_missing`, or `legacy_estimated`, a fallback for malformed cache counters. Only `priced` and `legacy_estimated` rows count toward spend and budgets. See [Pricing catalog and accounting](/access/pricing-and-accounting/).
 - **FOCUS CSV export.** Export usage as best-effort FOCUS-compatible CSV, so FinOps tools can read it without a custom pipeline.
 - **Request logs.** Inspect each request's owner, model resolution, provider attempts, latency, token usage, tags, payload policy, and truncation state. See [Request logs](https://docs.oceans-llm.com/operations/observability/request-logs).
 - **Agent harness tracking.** See which coding agents send traffic, such as Claude Code, Codex, OpenCode, Pi, Gemini CLI, Copilot CLI, and GitHub Copilot. Oceans reads this from the caller's `User-Agent`, which the caller reports about itself; anything it doesn't recognise shows as `Unknown`. See [Agent harness usage](https://docs.oceans-llm.com/operations/agent-harness-usage).
 - **OTLP traces and metrics.** Export to the observability stack you already run. See [Export traces and metrics](https://docs.oceans-llm.com/operations/observability/export-traces-and-metrics).
+
+![Request logs page listing each request's model, route, caller, status, cost, latency, and tokens](/images/request-logs-page.png)
 
 ## Deployment
 
@@ -47,7 +53,7 @@ Session messages such as `initialize` and `ping` need only a valid credential. O
 
 ### Endpoints and discovery
 
-- **A central registry.** Register Streamable HTTP MCP servers once. Oceans discovers each server's tools and stores their names, titles, descriptions, schemas, and annotations. Refresh discovery after you add or edit a server. See [MCP servers](/configuration/mcp-servers/).
+- **A central registry.** Register Streamable HTTP MCP servers once. Oceans discovers each server's tools and stores their names, titles, descriptions, schemas, and annotations. Refresh discovery after you add or edit a server. See [MCP servers](/extensions/mcp-servers/).
 - **One `/mcp` endpoint.** A single connection covers every server a client can use. Instead of loading every tool definition up front, clients call `search_tools`, `describe_tool`, and `call_tool` over a catalog of their granted tools, which keeps tool lists and context windows small. Request logs show a best-effort estimate of the context the granted tool definitions would take.
 - **A direct per-server proxy.** `/mcp/{server_key}` passes one server's own tools through, for clients that want them. The gateway classifies every JSON-RPC method before it reaches the server: tools are filtered and checked one by one, resources, prompts, and completions need a grant on the server, and unknown methods are denied.
 
@@ -56,13 +62,13 @@ Session messages such as `initialize` and `ping` need only a valid credential. O
 - **Per-tool grants and toolsets.** Grant single tools or toolsets to an API key, user, service account, or team. Users inherit their team's grants. Toolsets split a large server into smaller sets, so clients aren't flooded with tools they don't need. Tools from team-only servers can't go into toolsets. See [MCP tool access](https://docs.oceans-llm.com/mcp/mcp-tool-access).
 - **Tag rules and annotation overrides.** Platform admins can grant or deny tools by what they do, such as every read-only tool on a server for one team, or no destructive tools for a service account. Exclude rules always win. Annotations are claims made by the upstream server, so an include rule on a hint like read-only matches only once a platform admin vouches for it, by overriding the hint or approving the tool's version. Admins can add their own tags too, such as `finance` or `pii:low`. New tools have no admin tags until an admin assigns them.
 - **Scoped API keys.** Limit a key to MCP, to the aggregate or per-server routes, and to a list of servers. A leaked MCP client key can't call models. See [Scoped API keys](https://docs.oceans-llm.com/mcp/mcp-client-setup#scoped-api-keys).
-- **Team-owned servers.** Team owners and admins can register their team's servers and grant their tools inside the team, without waiting for a platform admin. Every server has an owner and a contact. Other teams can't see a team server until it's published to the organisation, though platform admins always can. See [Ownership and visibility](/configuration/mcp-servers/#ownership-and-visibility).
+- **Team-owned servers.** Team owners and admins can register their team's servers and grant their tools inside the team, without waiting for a platform admin. Every server has an owner and a contact. Other teams can't see a team server until it's published to the organisation, though platform admins always can. See [Ownership and visibility](/extensions/mcp-servers/#ownership-and-visibility).
 
 ### Identity and credentials
 
 - **OAuth sign-in for MCP clients.** Clients that follow the MCP authorization spec connect with just the MCP URL, with no API key to paste. Users sign in as usual, approve the client on a consent page, and the client gets short-lived tokens tied to that user. Signing out or deactivating the user ends that access. It's off by default, and needs config and a public issuer URL. See [OAuth sign-in](https://docs.oceans-llm.com/mcp/mcp-client-setup#oauth-sign-in).
 - **Separate upstream credentials.** Oceans API keys never reach MCP servers. Upstream credentials belong to the gateway, a user, a service account, or a team. Secrets that people enter, and OAuth tokens, are stored encrypted. Gateway-wide credentials come from environment references.
-- **Per-user OAuth to MCP servers.** Users connect their own accounts to servers that follow the MCP authorization spec, so tool calls run as them rather than as a shared account. Oceans registers a client automatically where the server supports it; otherwise an admin configures an OAuth app. Team-owned servers can reach only public addresses until a platform admin vouches for their destinations. See [OAuth for any MCP server](/configuration/mcp-servers/#oauth-for-any-mcp-server).
+- **Per-user OAuth to MCP servers.** Users connect their own accounts to servers that follow the MCP authorization spec, so tool calls run as them rather than as a shared account. Oceans registers a client automatically where the server supports it; otherwise an admin configures an OAuth app. Team-owned servers can reach only public addresses until a platform admin vouches for their destinations. See [OAuth for any MCP server](/extensions/mcp-servers/#oauth-for-any-mcp-server).
 - **Connect from the error.** When a call fails because a user hasn't connected an OAuth server, or the connection has expired, the error links straight to connecting it. This needs the server's OAuth provider and the gateway's public URL configured. Otherwise, and for service-account callers, the error says to contact an admin. See [Connecting from an error](https://docs.oceans-llm.com/mcp/mcp-client-setup#connecting-from-an-error).
 
 ### Safety and change control
@@ -73,6 +79,6 @@ Session messages such as `initialize` and `ping` need only a valid credential. O
 
 ### Traffic and audit
 
-- **Rate limits and quotas.** Cap tool calls per minute, hour, day, or month, globally or per key, user, or team, and per server. Model traffic uses the same policy system with its own policies. Responses carry `X-RateLimit-*` headers when a policy matched, and rate-limited calls also get `Retry-After`. See [Rate limits](/configuration/rate-limits/).
+- **Rate limits and quotas.** Cap tool calls per minute, hour, day, or month, globally or per key, user, or team, and per server. Model traffic uses the same policy system with its own policies. Responses carry `X-RateLimit-*` headers when a policy matched, and rate-limited calls also get `Retry-After`. See [Rate limits](/access/rate-limits/).
 - **MCP invocation logs.** Governed calls are logged with their method and target, owner, server, policy result, latency, and status. Tool calls also record the tool, and its version when the gateway served the stored definition. Arguments and results are kept, redacted and truncated, when the payload policy captures them. Some failures return before they're logged, and results passed through the direct proxy aren't logged. See [MCP invocations](https://docs.oceans-llm.com/mcp/mcp-invocations).
 - **Admin audit log.** Changes to servers, toolsets, grants, tag rules, annotation overrides, tool approvals, credentials, and rate limits record who made them, what changed, and where the request came from. See [Admin audit log](https://docs.oceans-llm.com/access/admin-audit-log).

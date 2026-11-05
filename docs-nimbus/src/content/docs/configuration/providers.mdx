@@ -43,7 +43,7 @@ Only `gcp_cloud_run_openai_compat` rejects unknown provider fields. For every ot
 
 Every provider HTTP client also has a fixed 10-second connection timeout. There is no separate idle-read timeout. For long reasoning runs, set `timeouts.total_ms` higher, for example `600000`. Upstream and proxy deadlines still apply.
 
-`pricing_provider_id` names the pricing catalog family used to price the provider's routes. Where a type has this field, the value must be one of `openai`, `openrouter`, `opencode`, `github-copilot`, `google-vertex`, `google-vertex-anthropic`, or `amazon-bedrock`. See [Pricing catalog and accounting](/configuration/pricing-and-accounting/) for how pricing is resolved.
+`pricing_provider_id` names the pricing catalog family used to price the provider's routes. Where a type has this field, the value must be one of `openai`, `openrouter`, `opencode`, `github-copilot`, `google-vertex`, `google-vertex-anthropic`, or `amazon-bedrock`. See [Pricing catalog and accounting](/access/pricing-and-accounting/) for how pricing is resolved.
 
 Secret fields such as `auth.token` take a value source such as `env.NAME` or `literal.value`. See [Configuration reference](/configuration/) for value sources.
 

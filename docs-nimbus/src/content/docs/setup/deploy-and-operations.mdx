@@ -44,6 +44,8 @@ Oceans exports traces and metrics over OTLP. Set these under `server` in the gat
 
 Neither the compose stack nor the Helm chart includes a collector. Point these settings at the collector or agent you already run. [Export traces and metrics](https://docs.oceans-llm.com/operations/observability/export-traces-and-metrics) has the full setup and a way to check it.
 
+![An exported request trace as a span waterfall, from authentication through the provider stream to request-log persistence](/images/exported-trace-waterfall.png)
+
 ## Images and the Helm chart
 
 Each release publishes two images to GHCR, tagged with the release version:

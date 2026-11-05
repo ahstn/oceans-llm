@@ -2,7 +2,7 @@
 title: Client harness configuration
 description: Generate OpenCode, Pi, Claude Code and Codex config snippets from the live model catalog.
 sidebar:
-  order: 9
+  order: 4
 ---
 
 Oceans generates config snippets for local agent harnesses from the live model catalog. Users copy a snippet into their harness and point it at the gateway. They don't write model data by hand.
@@ -16,7 +16,9 @@ Oceans generates config snippets for local agent harnesses from the live model c
 A user opens `/admin/models`.
 </Step>
 <Step title="Choose models">
-The user ticks one or more models in the table, then clicks **Generate config**. To get a snippet for one model, the user clicks the row's **Client config** button instead.
+The user ticks one or more models in the table, then clicks **Generate config**. To get a snippet for one model, the user clicks the row's **Config** button instead.
+
+![Models page with two models ticked, the "2 selected for client config" count, and the Generate config button](/images/screenshot-models.png)
 </Step>
 <Step title="Copy the config">
 The **Client config** dialog shows one tab per harness. Each tab lists the config file path, the API key variable and a link to the harness docs, then the code block to copy.
@@ -42,7 +44,7 @@ Snippets use the gateway model ids shown in the Models table. A snippet doesn't 
 
 The gateway sets the base URL in snippets from `GATEWAY_CLIENT_CONFIG_BASE_URL`. If the variable is unset, snippets use `http://127.0.0.1:3000`. In Helm, set `gateway.clientConfigGatewayBaseUrl`. The chart passes it to the gateway as `GATEWAY_CLIENT_CONFIG_BASE_URL`. The chart default is empty, so the local default applies.
 
-Set it to the public gateway URL that users can reach, for example `https://api.oceans-llm.com`. A trailing `/` or `/v1` is removed, so `https://api.oceans-llm.com` and `https://api.oceans-llm.com/v1` give the same snippets. The gateway won't start if the value is empty, has leading or trailing whitespace, isn't an absolute `http` or `https` URL, or has no host ([source](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway/src/main.rs)). The same value sets the endpoint in [MCP servers](/configuration/mcp-servers/) connection snippets.
+Set it to the public gateway URL that users can reach, for example `https://api.oceans-llm.com`. A trailing `/` or `/v1` is removed, so `https://api.oceans-llm.com` and `https://api.oceans-llm.com/v1` give the same snippets. The gateway won't start if the value is empty, has leading or trailing whitespace, isn't an absolute `http` or `https` URL, or has no host ([source](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway/src/main.rs)). The same value sets the endpoint in [MCP servers](/extensions/mcp-servers/) connection snippets.
 
 Each harness then adds `/v1` or not, based on the API style it uses. For a gateway at `https://api.oceans-llm.com`:
 
@@ -77,7 +79,7 @@ Snippets for OpenCode and Pi carry model data from the Models API:
 - **Context window** is the model's input window, or its context window if no input window is known, capped at 200,000 tokens. The output limit is the model's output window, or `0` if unknown.
 - **Input media** is `text`, plus `image` for vision routes.
 
-See [Pricing catalog and accounting](/configuration/pricing-and-accounting/) for how effective pricing is resolved.
+See [Pricing catalog and accounting](/access/pricing-and-accounting/) for how effective pricing is resolved.
 
 ## OpenCode
 
@@ -166,4 +168,4 @@ The snippets don't include a guardrail hook. Oceans' own Pi and OpenCode harness
 
 ## Access and budgets
 
-A snippet doesn't grant access. The gateway accepts a request only when the API key is active, the caller has access to the model, and every hard budget still has room. Budgets apply the same way whatever harness sends the request. Admins set them in `/admin/spend-controls`. See [budgets](https://docs.oceans-llm.com/access/budgets) for the budget types and setup, and [Budget settings](/configuration/budget-settings/) for the YAML fields.
+A snippet doesn't grant access. The gateway accepts a request only when the API key is active, the caller has access to the model, and every hard budget still has room. Budgets apply the same way whatever harness sends the request. Admins set them in `/admin/spend-controls`. See [budgets](https://docs.oceans-llm.com/access/budgets) for the budget types and setup, and [Budget settings](/access/budget-settings/) for the YAML fields.

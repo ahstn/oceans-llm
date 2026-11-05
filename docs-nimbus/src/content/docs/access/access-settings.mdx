@@ -2,7 +2,7 @@
 title: Auth and access settings
 description: YAML fields for the bootstrap admin, OIDC and OAuth sign-in, admin page permissions, and declarative teams, users, and service accounts.
 sidebar:
-  order: 4
+  order: 1
 ---
 
 This page lists the YAML fields that control who can sign in and what they can do in the admin UI: `auth`, `permissions`, and the declarative `teams`, `users` and `service_accounts` lists. For how sign-in and access work at runtime, see [Identity and access](https://docs.oceans-llm.com/access/identity-and-access) and [OIDC and SSO](https://docs.oceans-llm.com/access/oidc-and-sso-status). For what happens at first startup, see [Start up and first access](/setup/first-access/).
@@ -124,7 +124,7 @@ For GitHub app setup and callback URLs, see [GitHub OAuth SSO setup for admins](
 
 JIT settings apply fixed defaults. They do not map claims or groups from the identity provider. Existing password users are not linked to SSO identities by email.
 
-MCP OAuth (`mcp.oauth`, `mcp.client_oauth`) is a different feature. See [MCP servers](/configuration/mcp-servers/).
+MCP OAuth (`mcp.oauth`, `mcp.client_oauth`) is a different feature. See [MCP servers](/extensions/mcp-servers/).
 
 ## `permissions`
 
@@ -195,7 +195,7 @@ If a group, `pages` or `actions` is absent, the default direct grants above appl
 
 Users can't receive `reveal_api_key` because a personal key secret is shown only when the key is created. Some pages also depend on other settings or scope:
 
-- Users see `mcp` read-only, limited to the servers they can connect to. Team admins manage only their team's servers. See [MCP servers](/configuration/mcp-servers/).
+- Users see `mcp` read-only, limited to the servers they can connect to. Team admins manage only their team's servers. See [MCP servers](/extensions/mcp-servers/).
 - Team admins see `spend_controls` for their own team only.
 - Team admins see `agent_sessions` only when `agent_analysis.team_admin_enabled` is `true`. See [`agent_analysis`](/configuration/#agent_analysis).
 
@@ -266,8 +266,12 @@ Teams have no `budget` field in config. The id `system-legacy` has no special me
 | `oauth_provider_key` | unset | Required for `oauth` users, rejected for others. Must match an `auth.oauth.providers` key. |
 | `membership.team` | unset | Must be a team in `teams`. |
 | `membership.role` | `member` | `admin` or `member`. `owner` is rejected. |
-| `budget` | unset | Per-user budget. Same shape as [budget settings](/configuration/budget-settings/#budget-fields). |
+| `budget` | unset | Per-user budget. Same shape as [budget settings](/access/budget-settings/#budget-fields). |
 | `tags` | unset | Identity tags. |
+
+A seeded user's role, team, auth method and request logging setting show on the user's **Overview** tab in **Identity > Users**.
+
+![User dialog Overview tab with global role, team, team role, auth method, request logging, and status](/images/edit-user.png)
 
 ### `service_accounts`
 
@@ -278,7 +282,7 @@ Service accounts are gateway workload identities owned by a team. They are not c
 | `id` | required | Stable key. Unique and not empty. |
 | `name` | the `id` | Not empty if set. |
 | `team` | required | Must be a team in `teams`. Can't change after the first seed. |
-| `budget` | required | Active service-account budget. Same shape as [budget settings](/configuration/budget-settings/#budget-fields). |
+| `budget` | required | Active service-account budget. Same shape as [budget settings](/access/budget-settings/#budget-fields). |
 | `keys` | `[]` | Managed gateway API keys. |
 | `tags` | unset | Identity tags. |
 
@@ -302,7 +306,7 @@ The gateway encrypts managed key material before it stores it, so platform admin
 
 - Teams are matched by `id`, service accounts by `id`, managed keys by `keys[*].id`, and users by normalised email.
 - New seeded users start as `invited`.
-- For listed users, the gateway reconciles membership and any explicit `budget`. Omitting `budget` doesn't remove a budget: the user inherits [`budgets.users`](/configuration/budget-settings/) defaults or keeps the budget set in the admin UI.
+- For listed users, the gateway reconciles membership and any explicit `budget`. Omitting `budget` doesn't remove a budget: the user inherits [`budgets.users`](/access/budget-settings/) defaults or keeps the budget set in the admin UI.
 - A seeded user's `auth_mode` and SSO provider can change only while the user is still `invited`.
 - The gateway won't demote or deactivate the last active platform admin, and won't create, move or remove `owner` memberships.
 - At seed time, an OIDC or OAuth user's provider must be enabled.

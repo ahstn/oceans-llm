@@ -50,6 +50,8 @@ Service accounts are the non-human callers of the gateway.
 
 Every API key belongs to a user or a service account. Keys owned directly by a team, and the old `system-legacy` seeded keys, aren't supported.
 
+![API keys page listing each key's owner, granted models, scopes, last use, and status](/images/screenshot-api-keys.png)
+
 ## Who can sign in, and who can call
 
 | Identity | Sign in to `/admin` | Call `/v1/*` | Notes |
@@ -60,6 +62,10 @@ Every API key belongs to a user or a service account. Keys owned directly by a t
 | Service account | No | Yes, with one of its keys | Owned by a team. |
 
 Users seeded by config start as `invited`. Password users need an invite link, which an admin creates in the admin UI. SSO users can sign in from the shared login page instead; see [SSO users seeded by config](#sso-users-seeded-by-config).
+
+When a user finishes onboarding, the admin UI shows an **Account ready** page with a link to the control plane.
+
+![Account ready page after onboarding, with the Open control plane button](/images/auth-flow/account-ready.png)
 
 ## First access, by setup
 
@@ -85,6 +91,8 @@ To sign in:
     Use `admin@local` with the password `admin`. There's no forced password change locally.
   </Step>
 </Steps>
+
+![Oceans sign-in page with the email and password fields and the bootstrap admin hint](/images/auth-flow/login.png)
 
 ### Production-shaped local run
 

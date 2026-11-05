@@ -203,7 +203,7 @@ mise daemons tui
 
 ## Optional skills storage with RustFS
 
-[Agent Skills](/setup/skills/) keep their archives in an S3 bucket. An external S3 service needs nothing more on the machine. For local storage, the optional RustFS environments run RustFS as another daemon, the same way as PostgreSQL. They pin RustFS 1.0.1 and AWS CLI 2.27.49, which have Linux x86-64 and ARM64 builds.
+[Agent Skills](/extensions/skills/) keep their archives in an S3 bucket. An external S3 service needs nothing more on the machine. For local storage, the optional RustFS environments run RustFS as another daemon, the same way as PostgreSQL. They pin RustFS 1.0.1 and AWS CLI 2.27.49, which have Linux x86-64 and ARM64 builds.
 
 Complete the setup above first. Then select all three environments, in this order:
 
@@ -215,7 +215,7 @@ Run `mise run rustfs:setup` before the next deploy. It creates random credential
 
 The `selfhost-rustfs` environment gives RustFS a fixed port, `9000`, a start at boot, and a data directory outside the checkout at `$HOME/.local/share/oceans-llm/rustfs/data`. A one-off bucket check runs once RustFS is ready, and the gateway waits for both it and PostgreSQL. RustFS listens on `127.0.0.1` only, and its web console is off.
 
-Then add the `skills` section to your gateway config, using the [RustFS example](/setup/skills/#rustfs-or-another-s3-compatible-service). Its endpoint and credential variables come from the RustFS environment.
+Then add the `skills` section to your gateway config, using the [RustFS example](/extensions/skills/#rustfs-or-another-s3-compatible-service). Its endpoint and credential variables come from the RustFS environment.
 
 To move the data, set `OCEANS_RUSTFS_DATA_DIR` in `mise.selfhost-rustfs.local.toml`. Stop RustFS first, copy the data with its permissions, and keep the original until a test download works. If other applications share this RustFS, give the gateway its own identity scoped to its bucket, and keep the root credentials for administration.
 

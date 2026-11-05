@@ -198,7 +198,7 @@ Each flag can be `true`, `false` or unset. Leave a flag unset to let the gateway
 
 1. Route config: a flag set in the route's `capabilities`.
 2. Compatibility: facts guaranteed by the route's `compatibility` settings and provider type.
-3. Catalog hints: facts from the [pricing catalog](/configuration/pricing-and-accounting/) entry for the upstream model.
+3. Catalog hints: facts from the [pricing catalog](/access/pricing-and-accounting/) entry for the upstream model.
 4. Defaults: `images` and `decisions` are `false`. All other flags are `true`.
 
 The provider adapter then caps the result. A route can turn off a feature the provider supports, but can't turn on one it doesn't support. Enabling a flag never makes an unsupported upstream feature work.
@@ -408,7 +408,7 @@ The gateway sends the prompt-defining fields (`messages`, `system`, `tools`, `to
 
 The gateway never estimates a count. Counts aren't billed or logged as requests: no usage-ledger row, no budget check, no request log, no request metrics. They appear in traces as the `count_tokens` provider operation and as an `anthropic count_tokens request completed` log event.
 
-Each API key can have at most 8 counts in flight on each gateway instance ([`count_tokens.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway/src/http/handlers/count_tokens.rs)). A further concurrent count gets `429 rate_limit_error` before route selection. To cap volume across replicas, add a `count_tokens` limit in [Rate limits](/configuration/rate-limits/).
+Each API key can have at most 8 counts in flight on each gateway instance ([`count_tokens.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway/src/http/handlers/count_tokens.rs)). A further concurrent count gets `429 rate_limit_error` before route selection. To cap volume across replicas, add a `count_tokens` limit in [Rate limits](/access/rate-limits/).
 
 A count doesn't refresh session affinity. With `round_robin`, a count still advances the rotation, so the next Messages request can land on a different route.
 

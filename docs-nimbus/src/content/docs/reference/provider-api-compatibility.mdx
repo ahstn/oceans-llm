@@ -492,7 +492,7 @@ This is per request and stateless. It doesn't mean an ID belongs to a stored ups
 
 Compatibility profiles can make usage appear in a standard place more often. They don't change how the gateway prices or charges it.
 
-The gateway reads prompt, completion and total tokens from each response. Where the provider reports them, it also records uncached input, cache-read, cache-write and image-output tokens. Other provider counters, such as reasoning tokens, stay in the stored provider usage and aren't priced separately. See [Pricing catalog and accounting](/configuration/pricing-and-accounting/) for how these are priced.
+The gateway reads prompt, completion and total tokens from each response. Where the provider reports them, it also records uncached input, cache-read, cache-write and image-output tokens. Other provider counters, such as reasoning tokens, stay in the stored provider usage and aren't priced separately. See [Pricing catalog and accounting](/access/pricing-and-accounting/) for how these are priced.
 
 - Responses usage comes from `usage.input_tokens`, `usage.output_tokens` and `usage.total_tokens`. Streaming Responses read it from the completed event's `response.usage`.
 - Vertex text embeddings read real token counts: `predictions[].embeddings.statistics.token_count` on `:predict` models, and `usageMetadata.promptTokenCount` on `gemini-embedding-2`. The gateway never infers tokens from characters or bytes.

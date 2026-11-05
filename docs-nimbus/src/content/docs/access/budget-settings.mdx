@@ -2,10 +2,14 @@
 title: Budget settings
 description: YAML fields for inherited user budgets, the budget rejection status code, and budget alert email delivery.
 sidebar:
-  order: 5
+  order: 2
 ---
 
 This page lists the YAML fields for `budgets` and `budget_alerts`, with their defaults and validation rules. For how budgets are scoped, inherited and enforced, see [Budgets](https://docs.oceans-llm.com/access/budgets).
+
+Budgets from the config file show in **Spend Controls** at `/admin/spend-controls`. Each row names its source: **Config (user)** for `users[*].budget`, **Config default** for `budgets.users.default`, **Config model default** for `budgets.users.model_defaults`, and **Config (service account)** for `service_accounts[*].budget`. Budgets set in the admin UI show **Manual**.
+
+![Spend Controls Users tab with budget amounts, Monthly, Hard, and Config (user) badges, usage bars, and status](/images/spend-controls-budgets.png)
 
 ## Budget fields
 

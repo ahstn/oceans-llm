@@ -2,7 +2,7 @@
 title: Configuration reference
 description: How the gateway YAML file is loaded and validated, and the fields for server, database, request logging, and agent analysis.
 sidebar:
-  order: 3
+  order: 0
   group:
     label: Configuration
   label: Overview
@@ -36,16 +36,16 @@ Every section is optional. The gateway rejects unknown top-level keys, so a miss
 | --- | --- | --- |
 | `server` | Listener, log format, OpenTelemetry export, trusted proxies | [`server`](#server) |
 | `database` | libSQL or PostgreSQL connection | [`database`](#database) |
-| `auth` | Bootstrap admin, OIDC and OAuth sign-in providers | [Auth and access settings](/configuration/access-settings/) |
-| `permissions` | Admin UI pages and actions per group | [Auth and access settings](/configuration/access-settings/) |
-| `teams`, `users`, `service_accounts` | Declarative identities seeded at startup | [Auth and access settings](/configuration/access-settings/) |
-| `budgets` | Inherited user budgets and the budget rejection status | [Budget settings](/configuration/budget-settings/) |
-| `budget_alerts` | Budget alert email delivery | [Budget settings](/configuration/budget-settings/) |
-| `rate_limits` | Platform rate-limit policies and failure mode | [Rate limits](/configuration/rate-limits/) |
+| `auth` | Bootstrap admin, OIDC and OAuth sign-in providers | [Auth and access settings](/access/access-settings/) |
+| `permissions` | Admin UI pages and actions per group | [Auth and access settings](/access/access-settings/) |
+| `teams`, `users`, `service_accounts` | Declarative identities seeded at startup | [Auth and access settings](/access/access-settings/) |
+| `budgets` | Inherited user budgets and the budget rejection status | [Budget settings](/access/budget-settings/) |
+| `budget_alerts` | Budget alert email delivery | [Budget settings](/access/budget-settings/) |
+| `rate_limits` | Platform rate-limit policies and failure mode | [Rate limits](/access/rate-limits/) |
 | `providers` | Upstream provider connections and credentials | [Providers](/configuration/providers/) |
 | `models` | Gateway models, aliases, and routes | [Models and routes](/configuration/models-and-routes/) |
-| `mcp` | MCP OAuth, client OAuth sign-in, registry ownership | [MCP servers](/configuration/mcp-servers/) |
-| `skills` | Agent Skills storage (disabled by default) | [Agent Skills](/setup/skills/) |
+| `mcp` | MCP OAuth, client OAuth sign-in, registry ownership | [MCP servers](/extensions/mcp-servers/) |
+| `skills` | Agent Skills storage (disabled by default) | [Agent Skills](/extensions/skills/) |
 | `guardrails` | Request and tool-call guardrail packs | [Gateway guardrails](https://docs.oceans-llm.com/operations/gateway-guardrails) |
 | `request_logging` | Request-log payload capture and purge | [`request_logging`](#request_logging) |
 | `agent_analysis` | Agent session analysis collection and access | [`agent_analysis`](#agent_analysis) |
@@ -184,7 +184,7 @@ If a section is absent, the gateway uses these defaults:
 
 Change the bootstrap admin password before you expose a gateway. [Start up and first access](/setup/first-access/) explains what the bootstrap admin does at startup.
 
-Route defaults (`priority`, `weight`, `enabled`, capability flags) are on [Models and routes](/configuration/models-and-routes/). Permission and budget defaults are on [Auth and access settings](/configuration/access-settings/) and [Budget settings](/configuration/budget-settings/).
+Route defaults (`priority`, `weight`, `enabled`, capability flags) are on [Models and routes](/configuration/models-and-routes/). Permission and budget defaults are on [Auth and access settings](/access/access-settings/) and [Budget settings](/access/budget-settings/).
 
 ## `server`
 
@@ -198,7 +198,7 @@ Route defaults (`priority`, `weight`, `enabled`, capability flags) are on [Model
 | `otel_export_interval_secs` | `30` | Metrics export interval. |
 | `trusted_proxies` | `[]` | IP addresses or CIDR ranges. |
 
-The gateway trusts the `X-Forwarded-For` header only when the connection comes from an address in `trusted_proxies`. It uses the resolved client IP for rate limits and admin audit entries. With an empty list, the socket peer is the client. See [Rate limits](/configuration/rate-limits/) for how client IPs affect limits.
+The gateway trusts the `X-Forwarded-For` header only when the connection comes from an address in `trusted_proxies`. It uses the resolved client IP for rate limits and admin audit entries. With an empty list, the socket peer is the client. See [Rate limits](/access/rate-limits/) for how client IPs affect limits.
 
 For OTLP settings in a deployment, see [Topology and operations](/setup/deploy-and-operations/). For collector and Datadog setup, see [Export traces and metrics](https://docs.oceans-llm.com/operations/observability/export-traces-and-metrics).
 
@@ -307,13 +307,13 @@ These environment variables override the YAML when set: `AGENT_ANALYSIS_ENABLED`
 
 After a change to metrics, context or cache profiles, an admin queues retained sessions for analysis again with `gateway recompute-agent-analysis` (`mise run //gateway:recompute-agent-analysis` locally). It processes 100 sessions per run by default, up to 1000 with `--limit`.
 
-For what the analysis shows and who can see it, see [Agent session analysis](https://docs.oceans-llm.com/operations/agent-session-analysis). Team admins also need the `agent_sessions` page in [`permissions`](/configuration/access-settings/).
+For what the analysis shows and who can see it, see [Agent session analysis](https://docs.oceans-llm.com/operations/agent-session-analysis). Team admins also need the `agent_sessions` page in [`permissions`](/access/access-settings/).
 
 ## Benchmark catalog
 
 The admin Models page shows the Artificial Analysis Intelligence, Coding and Agentic indices for each model. The scores come from a snapshot in the repository, [`crates/gateway-service/data/model_benchmarks.json`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-service/data/model_benchmarks.json). The gateway makes no benchmark network calls at runtime and needs no API key.
 
-![Admin Models page with benchmark scores](/images/screenshot-models.png)
+![Admin Models page with an Intelligence Index column beside each model's provider and upstream model](/images/screenshot-models-2.png)
 
 By default, the gateway matches scores from the primary route's `upstream_model`. It normalises provider-specific forms such as `us.anthropic.claude-sonnet-4-6-v1:0` or `claude-sonnet-4-6@20260101` to OpenRouter IDs such as `anthropic/claude-sonnet-4.6`, and uses only exact matches. Set `benchmark_model_id` on a model to choose the OpenRouter ID yourself:
 
@@ -336,7 +336,7 @@ The gateway validates the whole file before it starts. A failure stops startup (
 
 - YAML syntax and field types, including enum values.
 - Unknown keys at the top level and in `auth`, `permissions`, `budgets`, `agent_analysis`, `models` entries, `teams`, `users` (including `membership`) and `service_accounts`.
-- `server`, `database`, `request_logging`, `budget_alerts` and `agent_analysis` rules on this page and on [Budget settings](/configuration/budget-settings/).
+- `server`, `database`, `request_logging`, `budget_alerts` and `agent_analysis` rules on this page and on [Budget settings](/access/budget-settings/).
 - Guardrails, permissions, OIDC and OAuth providers, and MCP settings.
 - Provider fields, model and alias references, and route wiring.
 - Budget defaults, rate-limit policies, teams, service accounts and users.

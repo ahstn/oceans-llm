@@ -8,6 +8,7 @@ import { cn } from "@/lib/cn";
 import type { HTMLAttributes } from "astro/types";
 import SidebarGroup from "./SidebarGroup.astro";
 import SidebarLink from "./SidebarLink.astro";
+import { sidebarIcon } from "@/lib/sidebar-icons";
 import type { SidebarItem } from "@cloudflare/nimbus-docs/types";
 import { sidebarHash } from "@cloudflare/nimbus-docs/runtime";
 
@@ -50,7 +51,7 @@ const hash = sidebarHash(items);
         </li>
       ) : (
         <li>
-          <SidebarLink label={item.label} href={item.href} isCurrent={item.isCurrent} badge={item.badge} />
+          <SidebarLink label={item.label} href={item.href} isCurrent={item.isCurrent} badge={item.badge} icon={sidebarIcon(item.href)} />
         </li>
       ),
     )}
