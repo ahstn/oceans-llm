@@ -24,7 +24,7 @@ Supported route API styles:
 
 For OpenAI specific guidance, see [OpenAI GPT-5.5 on Bedrock Mantle](aws-bedrock-openai-gpt-55.md).
 
-Only `mantle_openai_responses` routes can enable `responses` and `json_schema`. Those routes must set `capabilities.chat_completions: false`. Runtime, Mantle Chat Completions, and Mantle Anthropic Messages routes must turn off `responses` and `json_schema`. This prevents requests from selecting the wrong wire API.
+Only `mantle_openai_responses` routes can enable `responses` and `json_schema`, and they cannot enable `chat_completions`. Runtime, Mantle Chat Completions, and Mantle Anthropic Messages routes cannot enable `responses` or `json_schema`. The gateway infers these flags from `api_style`, so you do not need to set them. An explicit flag that conflicts with the `api_style` fails startup. This prevents requests from selecting the wrong wire API. See [Configuration Reference](../configuration/configuration-reference.md#route-config) for the inferred flags of each style.
 
 ## Authentication
 

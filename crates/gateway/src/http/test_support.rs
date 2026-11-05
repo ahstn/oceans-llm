@@ -100,7 +100,7 @@ pub async fn seed_stream_cancellation_test(store: &AnyStore) {
                     pricing_override: None,
                     extra_headers: Default::default(),
                     extra_body: Default::default(),
-                    capabilities: ProviderCapabilities::all_enabled(),
+                    capabilities: ProviderCapabilities::all_enabled().into(),
                     compatibility: RouteCompatibility::default(),
                 }],
                 allowlist: None,

@@ -14,6 +14,7 @@ pub mod mcp_tool_review;
 pub mod protocol;
 pub mod rate_limits;
 pub mod reasoning_policy;
+pub mod route_capabilities;
 pub mod routing;
 pub mod skills;
 pub mod streaming;
@@ -70,10 +71,10 @@ pub use domain::{
     BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus, BudgetAlertDispatchTask,
     BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord,
     BudgetCadence, BudgetWindow, CacheUsageAggregateRecord, ChatRequestProtocol,
-    ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus,
-    ExternalMcpServerRecord, ExternalMcpServerStatus, ExternalMcpServerUpdate,
-    ExternalMcpToolRecord, ExternalMcpTransport, FocusExportAggregateRecord,
-    FocusExportDiagnosticsRecord, GatewayModel, GitHubCopilotChatApi,
+    ContextPricingTier, ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord,
+    ExternalMcpDiscoveryStatus, ExternalMcpServerRecord, ExternalMcpServerStatus,
+    ExternalMcpServerUpdate, ExternalMcpToolRecord, ExternalMcpTransport,
+    FocusExportAggregateRecord, FocusExportDiagnosticsRecord, GatewayModel, GitHubCopilotChatApi,
     GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports, GlobalRole,
     GuardrailDecisionEventRecord, GuardrailDecisionPage, GuardrailDecisionQuery,
     HarnessUsageBucketRecord, HarnessUsageDailyRecord, HarnessUsageLeaderRecord,
@@ -201,6 +202,10 @@ pub use rate_limits::{
 pub use reasoning_policy::{
     enforce_chat_reasoning_effort, enforce_reasoning_effort_map, enforce_reasoning_effort_value,
     enforce_responses_reasoning_effort,
+};
+pub use route_capabilities::{
+    PartialCapabilities, effective_route_capabilities, infer_compatibility_capabilities,
+    infer_route_capabilities,
 };
 pub use routing::{
     ModelRoutingPolicy, ResponseRouteOrigin, RouteBindingReceipt, RouteSelection,

@@ -1851,6 +1851,12 @@ pub trait PricingCatalogRepository: Send + Sync {
         effective_end_at: OffsetDateTime,
         updated_at: OffsetDateTime,
     ) -> Result<(), StoreError>;
+    /// Close, re-stamp and insert rows as one sync at `effective_at`, in one transaction.
+    ///
+    /// Returns [`StoreError::PricingSyncConflict`] when the changes are not based on the
+    /// current catalog cache rows and active rows, when `effective_at` is not later than
+    /// every active row's `updated_at`, or when an inserted target already has a row that
+    /// starts at `effective_at`.
     async fn apply_model_pricing_sync(
         &self,
         changes: &ModelPricingSyncChanges,

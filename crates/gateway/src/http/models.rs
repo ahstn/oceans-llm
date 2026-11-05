@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use axum::{
     Json,
     extract::{Query, State},
@@ -6,7 +8,8 @@ use axum::{
 use gateway_core::GlobalRole;
 use gateway_service::{
     AdminModelRouteSummary, AdminModelSummary, AdminModelsService, AuditEvent, AuditProgress,
-    EffectiveMetadataSource, EffectiveMetadataSourceKind, admin_audit::actions,
+    CatalogSourceId, EffectiveMetadataSource, EffectiveMetadataSourceKind,
+    PricingCatalogRefreshOutcome, PricingCatalogSourceRefresh, admin_audit::actions,
 };
 
 use crate::http::{
@@ -16,7 +19,8 @@ use crate::http::{
         AdminModelListQuery, AdminModelPageView, AdminModelRouteView, AdminModelView,
         EffectiveMetadataSourceKindView, EffectiveMetadataSourceView, Envelope,
         GenerateModelClientConfigsRequest, GenerateModelClientConfigsResponse,
-        RefreshModelPricingCatalogResponse, envelope, format_timestamp,
+        PricingCatalogRefreshOutcomeView, PricingCatalogSourceRefreshView,
+        PricingCatalogSourceView, RefreshModelPricingCatalogResponse, envelope, format_timestamp,
     },
     audit::AuditRequestMeta,
     error::AppError,
@@ -42,7 +46,7 @@ pub async fn list_models(
     let actor = require_active_session(&state, &headers).await?;
     let include_admin_details = actor.global_role == GlobalRole::PlatformAdmin;
 
-    let service = admin_models_service(&state);
+    let service = admin_models_service(&state).await?;
     let models = service.list_models().await?;
 
     Ok(Json(envelope(model_page(
@@ -132,7 +136,7 @@ pub async fn generate_model_client_configs(
 ) -> Result<Json<Envelope<GenerateModelClientConfigsResponse>>, AppError> {
     require_active_session(&state, &headers).await?;
 
-    let service = admin_models_service(&state);
+    let service = admin_models_service(&state).await?;
     let client_configurations = service
         .render_client_configurations(&request.model_keys)
         .await?
@@ -159,14 +163,14 @@ pub async fn refresh_model_pricing_catalog(
     let actor = require_platform_admin(&state, &headers).await?;
 
     let progress = AuditProgress::default();
-    state
+    let sources = state
         .audit()
         .audited_steps(
             &meta.user_context(&actor),
             &progress,
             state.service.refresh_pricing_catalog_now_tracked(&progress),
-            |()| AuditEvent::new(actions::PRICING_CATALOG_REFRESHED),
-            // The fetched catalog was cached, but syncing model pricing failed.
+            |sources| source_refresh_audit(sources),
+            // A fetched source was cached, but syncing model pricing failed.
             |_, error| {
                 AuditEvent::new(actions::PRICING_CATALOG_REFRESHED)
                     .meta("error", error.error_code())
@@ -175,19 +179,71 @@ pub async fn refresh_model_pricing_catalog(
         .await?;
 
     Ok(Json(envelope(RefreshModelPricingCatalogResponse {
-        refreshed: true,
+        sources: sources.into_iter().map(map_source_refresh).collect(),
     })))
 }
 
-fn admin_models_service(state: &AppState) -> AdminModelsService<gateway_store::AnyStore> {
-    let service = AdminModelsService::new(state.store.clone())
-        .with_benchmark_model_ids(state.benchmark_model_ids.clone());
-    match state.client_config_gateway_base_url.as_ref().as_deref() {
-        Some(gateway_base_url) => {
-            service.with_client_config_gateway_base_url(gateway_base_url.to_string())
-        }
-        None => service,
+/// The refresh entry, with each source's outcome code and each failed source's error
+/// code.
+fn source_refresh_audit(sources: &[PricingCatalogSourceRefresh]) -> AuditEvent {
+    let outcomes: BTreeMap<&str, &str> = sources
+        .iter()
+        .map(|refresh| (refresh.source.as_str(), refresh.outcome.code()))
+        .collect();
+    let errors: BTreeMap<&str, &str> = sources
+        .iter()
+        .filter_map(|refresh| match refresh.outcome {
+            PricingCatalogRefreshOutcome::Failed(error) => {
+                Some((refresh.source.as_str(), error.code()))
+            }
+            PricingCatalogRefreshOutcome::Updated | PricingCatalogRefreshOutcome::Unchanged => None,
+        })
+        .collect();
+    let event = AuditEvent::new(actions::PRICING_CATALOG_REFRESHED).meta("sources", outcomes);
+    if errors.is_empty() {
+        event
+    } else {
+        event.meta("source_errors", errors)
     }
+}
+
+fn map_source_refresh(refresh: PricingCatalogSourceRefresh) -> PricingCatalogSourceRefreshView {
+    let (outcome, error) = match refresh.outcome {
+        PricingCatalogRefreshOutcome::Updated => (PricingCatalogRefreshOutcomeView::Updated, None),
+        PricingCatalogRefreshOutcome::Unchanged => {
+            (PricingCatalogRefreshOutcomeView::Unchanged, None)
+        }
+        PricingCatalogRefreshOutcome::Failed(error) => (
+            PricingCatalogRefreshOutcomeView::Failed,
+            Some(error.code().to_string()),
+        ),
+    };
+    PricingCatalogSourceRefreshView {
+        source: match refresh.source {
+            CatalogSourceId::ModelsDev => PricingCatalogSourceView::ModelsDev,
+            CatalogSourceId::OpenRouter => PricingCatalogSourceView::Openrouter,
+            CatalogSourceId::LiteLlm => PricingCatalogSourceView::Litellm,
+        },
+        outcome,
+        fetched_at: Some(format_timestamp(refresh.fetched_at)),
+        error,
+    }
+}
+
+async fn admin_models_service(
+    state: &AppState,
+) -> Result<AdminModelsService<gateway_store::AnyStore>, gateway_core::GatewayError> {
+    let service = AdminModelsService::new(state.store.clone())
+        .with_benchmark_model_ids(state.benchmark_model_ids.clone())
+        .with_capability_hints(state.service.catalog_capability_hints().await?);
+    Ok(
+        match state.client_config_gateway_base_url.as_ref().as_deref() {
+            Some(gateway_base_url) => {
+                service.with_client_config_gateway_base_url(gateway_base_url.to_string())
+            }
+            None => service,
+        },
+    )
 }
 
 fn map_model_summary(model: AdminModelSummary, include_admin_details: bool) -> AdminModelView {
@@ -228,6 +284,7 @@ fn map_model_summary(model: AdminModelSummary, include_admin_details: bool) -> A
             .cache_read_cost_per_million_tokens_usd_10000,
         cache_write_cost_per_million_tokens_usd_10000: model
             .cache_write_cost_per_million_tokens_usd_10000,
+        pricing_tiers: model.pricing_tiers.into_iter().map(Into::into).collect(),
         pricing_source: model.pricing_source.map(map_metadata_source),
         pricing_varies_by_route: model.pricing_varies_by_route,
         context_window_tokens: model.context_window_tokens,
@@ -295,7 +352,8 @@ fn map_metadata_source(source: EffectiveMetadataSource) -> EffectiveMetadataSour
 #[cfg(test)]
 mod tests {
     use gateway_core::{
-        ModelAllowlistPolicy, ModelRoutingPolicy, RoutingStrategy, SessionAffinityPolicy,
+        ContextPricingTier, ModelAllowlistPolicy, ModelRoutingPolicy, Money4, RoutingStrategy,
+        SessionAffinityPolicy,
     };
     use gateway_service::{AdminModelStatus, ProviderIconKey};
     use serde_json::json;
@@ -353,6 +411,7 @@ mod tests {
             output_cost_per_million_tokens_usd_10000: None,
             cache_read_cost_per_million_tokens_usd_10000: None,
             cache_write_cost_per_million_tokens_usd_10000: None,
+            pricing_tiers: Vec::new(),
             pricing_source: None,
             pricing_varies_by_route: true,
             context_window_tokens: None,
@@ -580,6 +639,49 @@ mod tests {
     }
 
     #[test]
+    fn pricing_tiers_serialize_as_scaled_rates_in_order() {
+        let mut model = model_summary();
+        model.pricing_tiers = vec![
+            ContextPricingTier {
+                above_input_tokens: 200_000,
+                input: Some(Money4::from_scaled(60_000)),
+                output: Some(Money4::from_scaled(225_000)),
+                cache_read: None,
+                cache_write: None,
+            },
+            ContextPricingTier {
+                above_input_tokens: 1_000_000,
+                input: Some(Money4::from_scaled(120_000)),
+                output: None,
+                cache_read: Some(Money4::from_scaled(12_000)),
+                cache_write: None,
+            },
+        ];
+
+        let value = serde_json::to_value(map_model_summary(model, false)).unwrap();
+
+        assert_eq!(
+            value["pricing_tiers"],
+            json!([
+                {
+                    "above_input_tokens": 200_000,
+                    "input_cost_per_million_tokens_usd_10000": 60_000,
+                    "output_cost_per_million_tokens_usd_10000": 225_000,
+                    "cache_read_cost_per_million_tokens_usd_10000": null,
+                    "cache_write_cost_per_million_tokens_usd_10000": null
+                },
+                {
+                    "above_input_tokens": 1_000_000,
+                    "input_cost_per_million_tokens_usd_10000": 120_000,
+                    "output_cost_per_million_tokens_usd_10000": null,
+                    "cache_read_cost_per_million_tokens_usd_10000": 12_000,
+                    "cache_write_cost_per_million_tokens_usd_10000": null
+                }
+            ])
+        );
+    }
+
+    #[test]
     fn platform_admin_receives_configured_routing_and_all_routes() {
         let value = serde_json::to_value(map_model_summary(model_summary(), true)).unwrap();
 
@@ -682,5 +784,66 @@ mod tests {
                 })
             );
         }
+    }
+
+    #[test]
+    fn pricing_catalog_refresh_reports_each_source_in_order() {
+        let fetched_at = time::OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
+        let sources = vec![
+            PricingCatalogSourceRefresh {
+                source: CatalogSourceId::ModelsDev,
+                outcome: PricingCatalogRefreshOutcome::Updated,
+                fetched_at,
+            },
+            PricingCatalogSourceRefresh {
+                source: CatalogSourceId::OpenRouter,
+                outcome: PricingCatalogRefreshOutcome::Failed(
+                    gateway_service::PricingCatalogRefreshError::UnexpectedStatus,
+                ),
+                fetched_at,
+            },
+            PricingCatalogSourceRefresh {
+                source: CatalogSourceId::LiteLlm,
+                outcome: PricingCatalogRefreshOutcome::Unchanged,
+                fetched_at,
+            },
+        ];
+
+        let audit = source_refresh_audit(&sources);
+        let response = RefreshModelPricingCatalogResponse {
+            sources: sources.into_iter().map(map_source_refresh).collect(),
+        };
+
+        assert_eq!(
+            serde_json::to_value(response).unwrap(),
+            json!({"sources": [
+                {
+                    "source": "models_dev",
+                    "outcome": "updated",
+                    "fetched_at": "2023-11-14T22:13:20Z",
+                    "error": null
+                },
+                {
+                    "source": "openrouter",
+                    "outcome": "failed",
+                    "fetched_at": "2023-11-14T22:13:20Z",
+                    "error": "unexpected_status"
+                },
+                {
+                    "source": "litellm",
+                    "outcome": "unchanged",
+                    "fetched_at": "2023-11-14T22:13:20Z",
+                    "error": null
+                }
+            ]})
+        );
+        assert_eq!(
+            audit.metadata()["sources"],
+            json!({"models_dev": "updated", "openrouter": "failed", "litellm": "unchanged"})
+        );
+        assert_eq!(
+            audit.metadata()["source_errors"],
+            json!({"openrouter": "unexpected_status"})
+        );
     }
 }

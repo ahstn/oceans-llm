@@ -2,6 +2,8 @@
 
 Status: Accepted
 
+> **Superseded by** [ADR: Multi-Source Model Catalog and Tri-State Route Capabilities](2026-10-31-multi-source-model-catalog.md) (2026-10-31). LiteLLM is now a runtime catalog source. The static supplement, its scripts, and `deprecated_date` are removed, and `/v1/model-metadata` uses `schema_version: 2` with per-source provenance.
+
 ## Decision
 
 Expose authenticated discovery through `GET /v1/model-metadata`, with an explicit response schema version. Keep `/v1/models` compatible with its existing contract. Reuse model access checks, explicit catalog identities, cached catalog refresh, and adapter capability rules.

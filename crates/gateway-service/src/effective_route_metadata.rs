@@ -1,9 +1,9 @@
 use gateway_client_config::ApiFormat;
 use gateway_core::{
-    AwsBedrockApiStyle, GatewayError, GitHubCopilotChatApi, ModelRoute, Money4,
-    PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
-    ProviderCapabilities, ProviderConnection, github_copilot_route_capabilities,
-    vertex_route_capabilities_for_upstream_model,
+    AwsBedrockApiStyle, ContextPricingTier, GatewayError, GitHubCopilotChatApi, ModelRoute, Money4,
+    PartialCapabilities, PricingCatalogRepository, PricingLimits, PricingModalities,
+    PricingProvenance, ProviderCapabilities, ProviderConnection, effective_route_capabilities,
+    github_copilot_route_capabilities, vertex_route_capabilities_for_upstream_model,
 };
 use time::OffsetDateTime;
 
@@ -65,6 +65,9 @@ pub struct EffectiveRoutePricing {
     pub output_cost_per_million_tokens: Option<Money4>,
     pub cache_read_cost_per_million_tokens: Option<Money4>,
     pub cache_write_cost_per_million_tokens: Option<Money4>,
+    /// Catalog context tiers, ascending by threshold. Empty for a route
+    /// `pricing_override`, which replaces the whole catalog schedule.
+    pub context_tiers: Vec<ContextPricingTier>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,13 +119,19 @@ where
             output_cost_per_million_tokens: Some(pricing.output_cost_per_million_tokens),
             cache_read_cost_per_million_tokens: pricing.cache_read_cost_per_million_tokens,
             cache_write_cost_per_million_tokens: pricing.cache_write_cost_per_million_tokens,
+            context_tiers: Vec::new(),
         })
     } else if catalog_pricing_supported {
-        catalog_record.as_ref().map(|record| EffectiveRoutePricing {
-            input_cost_per_million_tokens: record.input_cost_per_million_tokens,
-            output_cost_per_million_tokens: record.output_cost_per_million_tokens,
-            cache_read_cost_per_million_tokens: record.cache_read_cost_per_million_tokens,
-            cache_write_cost_per_million_tokens: record.cache_write_cost_per_million_tokens,
+        catalog_record.as_ref().map(|record| {
+            let mut context_tiers = record.context_tiers.clone();
+            context_tiers.sort_by_key(|tier| tier.above_input_tokens);
+            EffectiveRoutePricing {
+                input_cost_per_million_tokens: record.input_cost_per_million_tokens,
+                output_cost_per_million_tokens: record.output_cost_per_million_tokens,
+                cache_read_cost_per_million_tokens: record.cache_read_cost_per_million_tokens,
+                cache_write_cost_per_million_tokens: record.cache_write_cost_per_million_tokens,
+                context_tiers,
+            }
         })
     } else {
         None
@@ -190,15 +199,22 @@ fn effective_limits(
     )
 }
 
+/// What `route` serves through its stored `provider`: the shared effective chain (explicit,
+/// inferred, catalog `hints`, defaults) capped by [`provider_capabilities`]. A route whose
+/// provider is not stored has no adapter ceiling.
 pub(crate) fn effective_provider_route_capabilities(
-    route_capabilities: Option<ProviderCapabilities>,
+    route: &ModelRoute,
     provider: Option<&ProviderConnection>,
-    route: Option<&ModelRoute>,
+    hints: PartialCapabilities,
 ) -> ProviderCapabilities {
-    provider
-        .map(|provider| provider_capabilities(provider, route))
-        .unwrap_or_default()
-        .intersect(route_capabilities.unwrap_or_default())
+    let (provider_type, adapter) =
+        provider.map_or(("", ProviderCapabilities::all_enabled()), |provider| {
+            (
+                provider.provider_type.as_str(),
+                provider_capabilities(provider, Some(route)),
+            )
+        });
+    effective_route_capabilities(route, provider_type, hints, adapter)
 }
 
 pub(crate) fn provider_capabilities(
@@ -391,7 +407,7 @@ mod tests {
     fn bedrock_native_format_follows_the_route_api_style() {
         use gateway_client_config::ApiFormat;
         use gateway_core::{
-            AwsBedrockApiStyle, AwsBedrockRouteCompatibility, ModelRoute, ProviderCapabilities,
+            AwsBedrockApiStyle, AwsBedrockRouteCompatibility, ModelRoute, PartialCapabilities,
             ProviderConnection,
         };
 
@@ -413,7 +429,7 @@ mod tests {
             pricing_override: None,
             extra_headers: Default::default(),
             extra_body: Default::default(),
-            capabilities: ProviderCapabilities::all_enabled(),
+            capabilities: PartialCapabilities::default(),
             compatibility: Default::default(),
         };
         assert_eq!(super::native_api_format(&provider, &route), None);

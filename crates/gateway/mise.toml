@@ -66,7 +66,7 @@ usage = 'flag "--limit <count>" env="LIMIT" default="100" help="Sessions per run
 run = 'cargo run -p gateway --bin gateway -- recompute-agent-analysis --limit "$usage_limit"'
 
 [tasks.sync-pricing-catalog]
-description = "Refresh the vendored pricing catalog fallback snapshot"
+description = "Refresh the vendored models.dev, LiteLLM, and OpenRouter catalog fallback snapshots"
 run = "cargo run -p gateway --bin sync_pricing_catalog"
 
 [tasks.sync-model-benchmarks]

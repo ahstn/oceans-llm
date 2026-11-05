@@ -28,22 +28,27 @@ async fn model_metadata_requires_authentication_and_matches_visible_models() {
         .map_err(|error| error.0)
         .unwrap()
         .0;
-    assert_eq!(metadata.schema_version, 1);
-    let provenance = serde_json::to_value(&metadata.supplement).unwrap();
-    let provenance = provenance.as_object().unwrap();
-    let provenance_fields = [
-        "source",
-        "provider_id",
-        "generated_at",
-        "models_dev_sha256",
-        "litellm_sha256",
-    ];
-    assert_eq!(provenance.len(), provenance_fields.len());
-    assert!(
-        provenance_fields
+    assert_eq!(metadata.schema_version, 2);
+    let sources = serde_json::to_value(&metadata.sources).unwrap();
+    let sources = sources.as_array().unwrap();
+    assert_eq!(
+        sources
             .iter()
-            .all(|field| provenance.contains_key(*field))
+            .map(|source| source["source"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["models_dev", "openrouter", "litellm"]
     );
+    let provenance_fields = ["source", "origin", "etag", "checksum", "fetched_at"];
+    for source in sources {
+        let source = source.as_object().unwrap();
+        assert_eq!(source.len(), provenance_fields.len(), "{source:?}");
+        assert!(
+            provenance_fields
+                .iter()
+                .all(|field| source.contains_key(*field)),
+            "{source:?}"
+        );
+    }
     assert_eq!(
         metadata
             .data

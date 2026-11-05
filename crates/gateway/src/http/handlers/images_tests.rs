@@ -409,7 +409,7 @@ async fn model_not_granted_to_the_key_is_forbidden() {
                     pricing_override: None,
                     extra_headers: Default::default(),
                     extra_body: Default::default(),
-                    capabilities: ProviderCapabilities::all_enabled(),
+                    capabilities: ProviderCapabilities::all_enabled().into(),
                     compatibility: RouteCompatibility::default(),
                 }],
                 allowlist: None,

@@ -1,5 +1,5 @@
 use gateway_core::{
-    ModelRoutingPolicy, ProviderCapabilities, SeedModel, SeedModelRoute, SeedProvider,
+    ModelRoutingPolicy, PartialCapabilities, SeedModel, SeedModelRoute, SeedProvider,
 };
 use serde_json::{Map, json};
 use serial_test::serial;
@@ -75,7 +75,7 @@ async fn exercise_route_identity<S: GatewayStore + Sync>(store: &S) {
                 pricing_override: None,
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
-                capabilities: ProviderCapabilities::all_enabled(),
+                capabilities: PartialCapabilities::default(),
                 compatibility: Default::default(),
             })
             .collect(),
