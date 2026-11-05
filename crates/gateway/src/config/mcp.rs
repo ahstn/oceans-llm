@@ -1,7 +1,7 @@
 use anyhow::{Context, bail};
 use gateway_service::{
     MCP_SERVER_OAUTH_PROVIDER_KEY, McpOauthProvider, McpOauthProviderType, McpOauthRuntime,
-    McpOauthTokenEndpointAuthMethod, McpOrganisationPublishing,
+    McpOauthTokenEndpointAuthMethod, McpOrganisationPublishing, McpServerUrlPolicy,
 };
 use serde::Deserialize;
 
@@ -17,6 +17,60 @@ pub struct McpConfig {
     pub client_oauth: super::McpClientOauthConfig,
     #[serde(default)]
     pub registry: McpRegistryConfig,
+    #[serde(default)]
+    pub kubernetes: McpKubernetesConfig,
+}
+
+impl McpConfig {
+    pub(super) fn validate(&self) -> anyhow::Result<()> {
+        self.oauth.validate()?;
+        self.kubernetes.url_policy()?;
+        Ok(())
+    }
+
+    /// Clients for upstream MCP traffic. A team-owned server on a host listed
+    /// in `mcp.oauth.private_network_hosts` may reach private-network addresses
+    /// too, and a Service in the cluster domain may receive an API key over
+    /// plain http.
+    pub fn upstream_clients(&self) -> anyhow::Result<gateway_service::McpUpstreamClients> {
+        let hosts = gateway_service::outbound_fetch::normalize_domains(
+            self.oauth.private_network_hosts.clone(),
+        )
+        .context("mcp.oauth.private_network_hosts")?;
+        Ok(gateway_service::McpUpstreamClients::new(
+            &hosts,
+            self.kubernetes.url_policy()?,
+        ))
+    }
+}
+
+/// MCP servers deployed in the same Kubernetes cluster as the gateway.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct McpKubernetesConfig {
+    /// The cluster's DNS domain. A server at
+    /// `http://<service>.<namespace>.svc.<cluster_domain>` may receive a
+    /// gateway-managed API key over plain http.
+    #[serde(default = "default_cluster_domain")]
+    pub cluster_domain: String,
+}
+
+impl Default for McpKubernetesConfig {
+    fn default() -> Self {
+        Self {
+            cluster_domain: default_cluster_domain(),
+        }
+    }
+}
+
+impl McpKubernetesConfig {
+    fn url_policy(&self) -> anyhow::Result<McpServerUrlPolicy> {
+        McpServerUrlPolicy::new(&self.cluster_domain).context("mcp.kubernetes.cluster_domain")
+    }
+}
+
+fn default_cluster_domain() -> String {
+    McpServerUrlPolicy::DEFAULT_CLUSTER_DOMAIN.to_string()
 }
 
 /// Delegated server ownership. See
@@ -98,14 +152,6 @@ impl McpOauthConfig {
         };
         let value = resolve_path_reference(value)?;
         normalize_https_origin(value.trim(), "mcp.oauth.public_base_url").map(Some)
-    }
-
-    /// Clients for upstream MCP traffic. A team-owned server on a host listed
-    /// in `private_network_hosts` may reach private-network addresses too.
-    pub fn upstream_clients(&self) -> anyhow::Result<gateway_service::McpUpstreamClients> {
-        let hosts =
-            gateway_service::outbound_fetch::normalize_domains(self.private_network_hosts.clone())?;
-        Ok(gateway_service::McpUpstreamClients::new(&hosts))
     }
 
     pub fn runtime(&self) -> anyhow::Result<McpOauthRuntime> {

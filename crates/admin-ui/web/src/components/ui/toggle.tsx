@@ -11,6 +11,10 @@ const toggleVariants = cva(
       variant: {
         default: 'bg-transparent',
         outline: 'border border-input bg-transparent hover:bg-muted',
+        // For popovers and dialogs, where bg-muted is darker than the surface: a neutral wash on
+        // hover and a lilac checked state, as DESIGN.md allows for checked controls.
+        checked:
+          'border border-input bg-transparent text-muted-foreground data-[state=off]:hover:border-foreground/20 data-[state=off]:hover:bg-foreground/6 aria-pressed:border-primary/55 aria-pressed:bg-primary/12 aria-pressed:text-foreground data-[state=on]:border-primary/55 data-[state=on]:bg-primary/12 data-[state=on]:text-foreground',
       },
       size: {
         default:

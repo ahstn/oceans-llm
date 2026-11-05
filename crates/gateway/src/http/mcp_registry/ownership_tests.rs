@@ -1818,8 +1818,10 @@ async fn team_only_access_ends_when_the_member_leaves_the_team() {
 async fn team_admins_cannot_claim_private_network_hosts() {
     let mut context = TestContext::new().await;
     // The platform vouches for this domain reaching private networks.
-    context.state.mcp_http_clients =
-        gateway_service::McpUpstreamClients::new(&["corp.internal".to_string()]);
+    context.state.mcp_http_clients = gateway_service::McpUpstreamClients::new(
+        &["corp.internal".to_string()],
+        gateway_service::McpServerUrlPolicy::default(),
+    );
     let admin = context.team_admin(context.team_a).await;
 
     let mut body = create_body("internal");

@@ -7,7 +7,12 @@ import { fileURLToPath } from "node:url";
 import type { TestProject } from "vitest/node";
 import { z } from "zod";
 
-import { assertSuccessful, fetchWithTimeout, readEnvelope } from "./gateway-client.js";
+import {
+  assertSuccessful,
+  fetchWithTimeout,
+  parseCredentialUrl,
+  readEnvelope,
+} from "./gateway-client.js";
 import { delay, runCommand } from "./process.js";
 import type { GatewayRuntime } from "./types.js";
 
@@ -71,7 +76,13 @@ export default async function setup(context: TestProject): Promise<() => Promise
     const upstreamModel = process.env.OPENROUTER_TEST_MODEL ?? DEFAULT_OPENROUTER_MODEL;
     await writeFile(configPath, gatewayConfig(port, databasePath, upstreamModel), "utf8");
 
-    const runningGateway = startGateway(gatewayBinary, configPath, runtimeDir, openRouterApiKey);
+    const runningGateway = startGateway(
+      gatewayBinary,
+      configPath,
+      runtimeDir,
+      openRouterApiKey,
+      baseUrl,
+    );
     managed = runningGateway;
     const runtime: GatewayRuntime = {
       adminEmail: MANAGED_ADMIN_EMAIL,
@@ -114,11 +125,7 @@ function externalRuntime(baseUrl: string): GatewayRuntime {
 }
 
 export function normalizeExternalBaseUrl(value: string): string {
-  const url = new URL(value);
-  const isLoopback = ["127.0.0.1", "[::1]", "::1", "localhost"].includes(url.hostname);
-  if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopback)) {
-    throw new Error("GATEWAY_BASE_URL must use HTTPS unless it targets a loopback host");
-  }
+  const url = parseCredentialUrl(value, "GATEWAY_BASE_URL");
   if (url.search || url.hash) {
     throw new Error("GATEWAY_BASE_URL must not include a query string or fragment");
   }
@@ -167,11 +174,14 @@ function startGateway(
   configPath: string,
   runtimeDir: string,
   openRouterApiKey: string,
+  baseUrl: string,
 ): ManagedGateway {
   const gatewayProcess = spawn(gatewayBinary, [], {
     cwd: ROOT_DIR,
     env: {
       ...process.env,
+      // Generated client configs (the OpenCode harness config) must point at this gateway.
+      GATEWAY_CLIENT_CONFIG_BASE_URL: baseUrl,
       GATEWAY_CONFIG: configPath,
       GATEWAY_IDENTITY_TOKEN_SECRET: "harness-integration-identity-secret",
       HARNESS_OCEANS_API_KEY: MANAGED_API_KEY,

@@ -29,8 +29,9 @@ For a gateway hosted at `https://api.oceans-llm.com`, generated client configs u
 | --- | --- | --- |
 | Claude Code | Anthropic Messages | `https://api.oceans-llm.com` |
 | Codex | Responses API | `https://api.oceans-llm.com/v1` |
-| OpenCode | `@ai-sdk/anthropic` | `https://api.oceans-llm.com` |
-| OpenCode | `@ai-sdk/openai-compatible` | `https://api.oceans-llm.com/v1` |
+| OpenCode | `@opencode/ai/providers/anthropic-compatible` | `https://api.oceans-llm.com` |
+| OpenCode | `@opencode/ai/providers/openai-compatible` | `https://api.oceans-llm.com/v1` |
+| OpenCode | `@opencode/ai/providers/openai-compatible/responses` | `https://api.oceans-llm.com/v1` |
 | Pi | `anthropic-messages` | `https://api.oceans-llm.com` |
 | Pi | `openai-completions` | `https://api.oceans-llm.com/v1` |
 
@@ -42,11 +43,19 @@ Decisions-only models do not receive generated OpenCode, Pi, Claude Code, or Cod
 
 The OpenCode tab emits `opencode.json` content for the user-level OpenCode configuration at `~/.config/opencode/opencode.json`. The dialog shows the configuration path, gateway API key environment variable, and [OpenCode configuration docs] before the copied JSON block.
 
+The snippet uses the native OpenCode 2 config shape: `providers`, `package`, `settings.baseURL`, and `env`. OpenCode 1 cannot read it. OpenCode reads the key from the `env` variable in the environment of the OpenCode server process.
+
+Each model states its `capabilities`, so OpenCode does not apply its defaults for unknown models (tools, image input, and generated effort variants):
+
+- `tools` comes from the route's tool-calling support.
+- `input` is `text`, plus `image` for vision models, plus `pdf` for vision models whose catalog input includes PDF. OpenCode sends only images and PDFs as file media, and the gateway accepts file parts only on vision routes.
+- `reasoning.supported` is `false` for models without a thinking policy. Reasoning models get explicit effort `variants`. Anthropic Messages variants set `effort` with adaptive thinking. OpenAI-compatible variants set `reasoningEffort`. The Anthropic `max` variant sends effort `xhigh`. Variants above the gateway reasoning ceiling are left out.
+
 ## Pi
 
 The Pi tab emits `models.json` content for Pi custom provider/model configuration. Pi settings are separate configuration: use `~/.pi/agent/settings.json` for global settings and `.pi/settings.json` for project overrides. The dialog shows those paths together with the generated provider configuration path and links to the [Pi settings docs].
 
-Generated model data uses effective route pricing and conservative logical-model context limits from the Models API. Pi receives `cost.cacheRead` and `cost.cacheWrite` when those rates exist. A missing rate falls back to zero only when the effective route pricing omits it. OpenCode receives its supported input, output, and cache-read fields. If selectable routes have different prices, the Models API marks `pricing_varies_by_route`. Generated snippets use the primary display route's effective rates.
+Generated model data uses effective route pricing and conservative logical-model context limits from the Models API. Pi receives `cost.cacheRead` and `cost.cacheWrite` when those rates exist. A missing rate falls back to zero only when the effective route pricing omits it. OpenCode receives `cost.input`, `cost.output`, and `cost.cache.read` and `cost.cache.write` when those rates exist. If selectable routes have different prices, the Models API marks `pricing_varies_by_route`. Generated snippets use the primary display route's effective rates.
 
 ### Shell guardrail hook
 

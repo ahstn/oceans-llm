@@ -23,6 +23,7 @@ use std::net::IpAddr;
 use gateway_core::{ExternalMcpServerRecord, GatewayError};
 use url::{Host, Url};
 
+use crate::mcp_upstream_auth::McpServerUrlPolicy;
 use crate::outbound_fetch::{OutboundAddressScope, guarded_client_builder, host_matches_domains};
 
 #[derive(Debug, Clone)]
@@ -31,13 +32,14 @@ pub struct McpUpstreamClients {
     /// One client per [`OutboundAddressScope`], in its order.
     team: Arc<[reqwest::Client; 3]>,
     private_network_hosts: Arc<[String]>,
+    url_policy: McpServerUrlPolicy,
 }
 
 impl McpUpstreamClients {
     /// `private_network_hosts` must be normalized, as
     /// [`crate::outbound_fetch::normalize_domains`] returns them.
     #[must_use]
-    pub fn new(private_network_hosts: &[String]) -> Self {
+    pub fn new(private_network_hosts: &[String], url_policy: McpServerUrlPolicy) -> Self {
         // Timeouts are per request, from each server's own setting.
         let team = |scope| {
             guarded_client_builder(scope)
@@ -55,7 +57,14 @@ impl McpUpstreamClients {
                 team(OutboundAddressScope::Loopback),
             ]),
             private_network_hosts: private_network_hosts.into(),
+            url_policy,
         }
+    }
+
+    /// Which server URLs may receive a gateway-managed credential.
+    #[must_use]
+    pub fn url_policy(&self) -> &McpServerUrlPolicy {
+        &self.url_policy
     }
 
     /// The addresses `server`'s traffic may reach, or `None` for a
@@ -127,7 +136,7 @@ fn literal_address(server_url: &str) -> Option<IpAddr> {
 
 impl Default for McpUpstreamClients {
     fn default() -> Self {
-        Self::new(&[])
+        Self::new(&[], McpServerUrlPolicy::default())
     }
 }
 
@@ -174,7 +183,10 @@ mod tests {
 
     #[test]
     fn only_team_owned_servers_are_scoped() {
-        let clients = McpUpstreamClients::new(&["corp.internal".to_string()]);
+        let clients = McpUpstreamClients::new(
+            &["corp.internal".to_string()],
+            McpServerUrlPolicy::default(),
+        );
         let team = Some(Uuid::new_v4());
         let scope = |url, owner| clients.scope_for(&server(url, owner));
 

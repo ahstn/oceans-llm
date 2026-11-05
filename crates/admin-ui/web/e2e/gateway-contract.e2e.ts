@@ -113,7 +113,9 @@ test('gateway exposes the seeded model and forwards chat completions to the stub
         api_formats: ['openai-chat-completions', 'openai-responses', 'anthropic-messages'],
         preferred_api_format: 'openai-chat-completions',
         harnesses: expect.objectContaining({
-          opencode: expect.objectContaining({ npm: '@ai-sdk/openai-compatible' }),
+          opencode: expect.objectContaining({
+            package: '@opencode/ai/providers/openai-compatible',
+          }),
           pi: expect.objectContaining({ api: 'openai-completions' }),
           codex: { wire_api: 'responses' },
         }),

@@ -14,6 +14,7 @@ pub mod mcp_tool_review;
 pub mod protocol;
 pub mod rate_limits;
 pub mod reasoning_policy;
+pub mod route_capabilities;
 pub mod routing;
 pub mod skills;
 pub mod streaming;
@@ -70,10 +71,10 @@ pub use domain::{
     BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus, BudgetAlertDispatchTask,
     BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord,
     BudgetCadence, BudgetWindow, CacheUsageAggregateRecord, ChatRequestProtocol,
-    ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus,
-    ExternalMcpServerRecord, ExternalMcpServerStatus, ExternalMcpServerUpdate,
-    ExternalMcpToolRecord, ExternalMcpTransport, FocusExportAggregateRecord,
-    FocusExportDiagnosticsRecord, GatewayModel, GitHubCopilotChatApi,
+    ContextPricingTier, ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord,
+    ExternalMcpDiscoveryStatus, ExternalMcpServerRecord, ExternalMcpServerStatus,
+    ExternalMcpServerUpdate, ExternalMcpToolRecord, ExternalMcpTransport,
+    FocusExportAggregateRecord, FocusExportDiagnosticsRecord, GatewayModel, GitHubCopilotChatApi,
     GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports, GlobalRole,
     GuardrailDecisionEventRecord, GuardrailDecisionPage, GuardrailDecisionQuery,
     HarnessUsageBucketRecord, HarnessUsageDailyRecord, HarnessUsageLeaderRecord,
@@ -126,7 +127,7 @@ pub use domain::{
     UserRecord, UserSessionRecord, UserStatus, VERTEX_TEXT_EMBEDDING_MODEL_IDS, budget_window_utc,
     github_copilot_route_capabilities, is_supported_vertex_google_chat_upstream_model,
     is_supported_vertex_text_embedding_model_id, is_supported_vertex_text_embedding_upstream_model,
-    route_capability_defaults, route_provider_capabilities, validate_entity_tags, validate_tag_key,
+    route_capability_ceiling, route_provider_capabilities, validate_entity_tags, validate_tag_key,
     validate_tag_value, vertex_route_capabilities_for_upstream_model,
     vertex_text_embedding_capabilities,
 };
@@ -202,6 +203,10 @@ pub use rate_limits::{
 pub use reasoning_policy::{
     enforce_chat_reasoning_effort, enforce_reasoning_effort_map, enforce_reasoning_effort_value,
     enforce_responses_reasoning_effort,
+};
+pub use route_capabilities::{
+    PartialCapabilities, effective_route_capabilities, infer_compatibility_capabilities,
+    infer_route_capabilities,
 };
 pub use routing::{
     ModelRoutingPolicy, ResponseRouteOrigin, RouteBindingReceipt, RouteSelection,

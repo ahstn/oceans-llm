@@ -265,14 +265,22 @@ models:
     let seeded = config.seed_models().expect("seed models");
 
     let route = &seeded[0].routes[0];
-    assert!(route.capabilities.chat_completions);
-    assert!(!route.capabilities.stream);
-    assert!(route.capabilities.embeddings);
-    assert!(!route.capabilities.images, "images is opt-in");
-    assert!(!route.capabilities.tools);
-    assert!(!route.capabilities.vision);
-    assert!(route.capabilities.json_schema);
-    assert!(route.capabilities.developer_role);
+    assert_eq!(
+        route.capabilities,
+        gateway_core::PartialCapabilities {
+            stream: Some(false),
+            tools: Some(false),
+            vision: Some(false),
+            ..Default::default()
+        },
+        "only explicit settings are seeded"
+    );
+    let resolved = route.capabilities.resolve();
+    assert!(resolved.chat_completions);
+    assert!(resolved.embeddings);
+    assert!(!resolved.images, "images is opt-in");
+    assert!(resolved.json_schema);
+    assert!(resolved.developer_role);
 }
 
 #[test]
@@ -608,47 +616,94 @@ models:
         Some(OpenAiCompatDecisionsApi::OpenAi)
     );
     assert!(route.compatibility.selects_decisions_api());
-    assert!(route.capabilities.decisions);
+    assert_eq!(route.capabilities.decisions, Some(true));
     assert!(route.pricing_override.is_some());
 }
 
 #[test]
-fn openai_decisions_api_derives_decisions_only_capabilities() {
+fn infers_decisions_capabilities_for_openai_decisions_api() {
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");
-    let yaml = r#"
-providers:
-  openai-prod:
-    type: openai_compat
-    base_url: https://api.openai.com/v1
-models:
-  luna:
-    route:
-      provider: openai-prod
-      upstream_model: gpt-6-luna
-      compatibility:
-        openai_compat:
-          decisions_api: openai
-"#;
-
-    write_config(&config_path, yaml);
-    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
-    let capabilities = config.seed_models().expect("seed models")[0].routes[0].capabilities;
-    assert!(capabilities.decisions);
-    assert!(!capabilities.chat_completions && !capabilities.responses && !capabilities.stream);
 
     write_config(
         &config_path,
-        &format!("{yaml}      capabilities:\n        decisions: false\n"),
+        r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: luna
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-6-luna
+        compatibility:
+          openai_compat:
+            decisions_api: openai
+"#,
     );
-    let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
-    let error_text = format!("{error:#}");
-    assert!(
-        error_text.contains(
-            "uses compatibility.openai_compat.decisions_api but capabilities.decisions is not enabled"
+
+    let config = GatewayConfig::from_path(&config_path).expect("omitted capabilities are inferred");
+    let models = config.seed_models().expect("seed models");
+    let route = &models[0].routes[0];
+    assert_eq!(
+        route.capabilities,
+        gateway_core::PartialCapabilities::default()
+    );
+    assert_eq!(
+        gateway_core::infer_compatibility_capabilities(&route.compatibility, "openai_compat")
+            .resolve(),
+        gateway_core::ProviderCapabilities {
+            decisions: true,
+            ..gateway_core::ProviderCapabilities::none()
+        }
+    );
+}
+
+#[test]
+fn rejects_explicit_capabilities_that_contradict_openai_decisions_api() {
+    for (capability, expected) in [
+        (
+            "decisions: false",
+            "uses compatibility.openai_compat.decisions_api but disables capabilities.decisions",
         ),
-        "unexpected error: {error_text}"
-    );
+        (
+            "chat_completions: true",
+            "enables capabilities.decisions and `chat_completions`",
+        ),
+    ] {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            &format!(
+                r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: luna
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-6-luna
+        capabilities:
+          {capability}
+        compatibility:
+          openai_compat:
+            decisions_api: openai
+"#
+            ),
+        );
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        assert!(
+            format!("{error:#}").contains(expected),
+            "unexpected error for {capability}: {error:#}"
+        );
+    }
 }
 
 #[test]
@@ -682,47 +737,6 @@ models:
         error_text.contains("decisions_api but requires an openai_compat provider"),
         "unexpected error: {error_text}"
     );
-}
-
-#[test]
-fn route_capability_defaults_start_from_the_provider_baseline() {
-    let tmp = tempdir().expect("tempdir");
-    let config_path = tmp.path().join("gateway.yaml");
-    write_config(
-        &config_path,
-        r#"
-providers:
-  zen:
-    type: anthropic_compat
-    base_url: https://opencode.ai/zen
-  vertex:
-    type: gcp_vertex
-    project_id: project
-    auth: { mode: adc }
-models:
-  zen-model:
-    route: { provider: zen, upstream_model: claude-sonnet }
-  vertex-claude:
-    route: { provider: vertex, upstream_model: anthropic/claude-sonnet-4-6 }
-  vertex-embedding:
-    route: { provider: vertex, upstream_model: google/gemini-embedding-001 }
-"#,
-    );
-
-    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
-    let seeds = config.seed_models().expect("seed models");
-    let capabilities = |index: usize| seeds[index].routes[0].capabilities;
-    assert_eq!(
-        capabilities(0),
-        gateway_core::ProviderCapabilities::anthropic_compat_baseline()
-    );
-    assert_eq!(
-        capabilities(1),
-        gateway_core::vertex_route_capabilities_for_upstream_model(Some(
-            "anthropic/claude-sonnet-4-6"
-        ))
-    );
-    assert!(capabilities(2).embeddings && !capabilities(2).chat_completions);
 }
 
 #[test]
@@ -802,9 +816,13 @@ models:
         .iter()
         .map(|route| (route.provider_key.as_str(), route.capabilities.images))
         .collect::<Vec<_>>();
-    assert_eq!(images, [("openrouter", true), ("cloud-run", true)]);
-    // The profile can serve images, but a route must still enable them.
-    assert!(!models[1].routes[0].capabilities.images);
+    assert_eq!(
+        images,
+        [("openrouter", Some(true)), ("cloud-run", Some(true))]
+    );
+    // The profile can serve images, but an unset flag resolves to off.
+    assert_eq!(models[1].routes[0].capabilities.images, None);
+    assert!(!models[1].routes[0].capabilities.resolve().images);
 }
 
 #[test]

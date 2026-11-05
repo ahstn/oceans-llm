@@ -995,7 +995,7 @@ mod proxy_policy {
 
         // Discovery sees the declared metadata as a contract change: the tool is
         // withheld, even with its explicit grant, until an admin approves it.
-        gateway_service::McpRegistryService::new(state.store.clone())
+        gateway_service::McpRegistryService::new(state.store.clone(), &state.mcp_http_clients)
             .refresh_discovery(server.mcp_server_id)
             .await
             .expect("discovery");
@@ -1284,10 +1284,11 @@ mod proxy_policy {
             .expect("server lookup")
             .expect("server");
 
-        let result = gateway_service::McpRegistryService::new(state.store.clone())
-            .refresh_discovery(server.mcp_server_id)
-            .await
-            .expect("discovery result");
+        let result =
+            gateway_service::McpRegistryService::new(state.store.clone(), &state.mcp_http_clients)
+                .refresh_discovery(server.mcp_server_id)
+                .await
+                .expect("discovery result");
 
         assert_eq!(
             result.status,
@@ -1313,7 +1314,7 @@ mod proxy_policy {
             .expect("server lookup")
             .expect("server");
 
-        gateway_service::McpRegistryService::new(state.store.clone())
+        gateway_service::McpRegistryService::new(state.store.clone(), &state.mcp_http_clients)
             .refresh_discovery(server.mcp_server_id)
             .await
             .expect("discovery");
@@ -1376,12 +1377,8 @@ mod proxy_policy {
             "jsonrpc": "2.0", "id": 9, "method": "tools/call",
             "params": {"name": "search", "arguments": {}},
         });
-        let registry = gateway_service::McpRegistryService::with_client(
-            state.store.clone(),
-            Arc::new(gateway_service::HttpMcpDiscoveryClient::new(
-                state.mcp_http_clients.clone(),
-            )),
-        );
+        let registry =
+            gateway_service::McpRegistryService::new(state.store.clone(), &state.mcp_http_clients);
         let refresh = || registry.refresh_discovery(server.mcp_server_id);
 
         // A platform admin's server may point anywhere.

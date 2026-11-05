@@ -39,20 +39,20 @@ impl OpenCodeConfigTemplate {
         for (style, inputs) in &groups {
             let provider_id = provider_id_for_style(inputs[0], *style, has_multiple_styles);
             let provider = json!({
-                "npm": opencode_provider_package_for_style(*style),
                 "name": provider_name_for_style(inputs[0], *style, has_multiple_styles),
-                "options": {
+                "env": [inputs[0].api_key_env_var],
+                "package": opencode_provider_package_for_style(*style),
+                "settings": {
                     "baseURL": opencode_base_url(inputs[0], *style),
-                    "apiKey": format!("{{env:{}}}", inputs[0].api_key_env_var),
                 },
-                "models": Value::Object(opencode_models(inputs)),
+                "models": Value::Object(opencode_models(inputs, *style)),
             });
             providers.insert(provider_id, provider);
         }
 
         let config = json!({
             "$schema": "https://opencode.ai/config.json",
-            "provider": Value::Object(providers),
+            "providers": Value::Object(providers),
             "model": format!("{}/{}", default_provider_id, first.model_id),
         });
 
@@ -123,23 +123,31 @@ fn grouped_models(
     groups
 }
 
-fn opencode_models(inputs: &[&ClientConfigInput]) -> Map<String, Value> {
+fn opencode_models(inputs: &[&ClientConfigInput], style: ApiFormat) -> Map<String, Value> {
     inputs
         .iter()
-        .map(|input| (input.model_id.clone(), Value::Object(opencode_model(input))))
+        .map(|input| {
+            (
+                input.model_id.clone(),
+                Value::Object(opencode_model(input, style)),
+            )
+        })
         .collect()
 }
 
-fn opencode_model(input: &ClientConfigInput) -> Map<String, Value> {
+fn opencode_model(input: &ClientConfigInput, style: ApiFormat) -> Map<String, Value> {
+    // Always state reasoning support: without it OpenCode generates its own effort variants
+    // for unknown models, including levels the gateway rejects.
     let mut model = Map::from_iter([
         ("name".to_string(), json!(input.display_name)),
         (
-            "reasoning".to_string(),
-            json!(input.thinking_policy.is_some()),
-        ),
-        (
-            "tool_call".to_string(),
-            json!(input.capabilities.tool_calling),
+            "capabilities".to_string(),
+            json!({
+                "tools": input.capabilities.tool_calling,
+                "input": opencode_input_media(input),
+                "output": ["text"],
+                "reasoning": {"supported": input.thinking_policy.is_some()},
+            }),
         ),
         (
             "limit".to_string(),
@@ -151,70 +159,74 @@ fn opencode_model(input: &ClientConfigInput) -> Map<String, Value> {
         ("cost".to_string(), opencode_cost(input)),
     ]);
 
-    if input.capabilities.attachments || input.capabilities.vision {
-        model.insert("attachment".to_string(), json!(true));
-    }
-    if let Some(variants) = opencode_variants(input) {
+    if let Some(variants) = opencode_variants(input, style) {
         model.insert("variants".to_string(), variants);
     }
 
     model
 }
 
-/// Effort variants for the model's thinking policy, minus any above the gateway ceiling.
-pub(crate) fn opencode_variants(input: &ClientConfigInput) -> Option<Value> {
-    let Value::Object(mut variants) = policy_variants(input.thinking_policy?)? else {
-        return None;
-    };
-    if let Some(ceiling) = input.max_reasoning_effort {
-        variants.retain(|_, variant| {
-            variant
-                .get("reasoningEffort")
-                .and_then(Value::as_str)
-                .and_then(ReasoningLevel::parse)
-                .is_none_or(|level| level <= ceiling)
-        });
+/// OpenCode matches attached and tool-read files against modality names; only `image` and
+/// `pdf` enable file media, so other file types are not representable.
+fn opencode_input_media(input: &ClientConfigInput) -> Vec<&'static str> {
+    let mut media = input.input_modalities();
+    if input.capabilities.attachments {
+        media.push("pdf");
     }
-    (!variants.is_empty()).then_some(Value::Object(variants))
+    media
 }
 
-fn policy_variants(policy: ThinkingPolicy) -> Option<Value> {
+/// Effort variants for the model's thinking policy, minus any above the gateway ceiling,
+/// spelled in the settings the style's OpenCode package reads.
+pub(crate) fn opencode_variants(input: &ClientConfigInput, style: ApiFormat) -> Option<Value> {
+    let variants: Vec<Value> = policy_efforts(input.thinking_policy?)
+        .iter()
+        .filter(|(_, effort)| {
+            input.max_reasoning_effort.is_none_or(|ceiling| {
+                ReasoningLevel::parse(effort).is_none_or(|level| level <= ceiling)
+            })
+        })
+        .map(|(id, effort)| json!({"id": id, "settings": effort_settings(style, effort)}))
+        .collect();
+    (!variants.is_empty()).then_some(Value::Array(variants))
+}
+
+/// `(variant id, effort level)` pairs offered for a thinking policy.
+fn policy_efforts(policy: ThinkingPolicy) -> Vec<(&'static str, &'static str)> {
     match policy {
-        ThinkingPolicy::AnthropicSafeEffort => Some(json!({
-            "high": {
-                "reasoningEffort": "high",
-            },
-            "max": {
-                "reasoningEffort": "xhigh",
-            },
-        })),
-        ThinkingPolicy::AnthropicManualBudget => None,
+        ThinkingPolicy::AnthropicSafeEffort => vec![("high", "high"), ("max", "xhigh")],
+        ThinkingPolicy::AnthropicManualBudget => Vec::new(),
         ThinkingPolicy::GeminiLevel {
             supports_minimal,
             supports_medium,
-        } => Some(reasoning_effort_variants(
-            [
-                ("minimal", supports_minimal),
-                ("low", true),
-                ("medium", supports_medium),
-                ("high", true),
-            ]
+        } => [
+            ("minimal", supports_minimal),
+            ("low", true),
+            ("medium", supports_medium),
+            ("high", true),
+        ]
+        .into_iter()
+        .filter_map(|(level, supported)| supported.then_some((level, level)))
+        .collect(),
+        ThinkingPolicy::GeminiBudget => ["minimal", "low", "medium", "high"]
             .into_iter()
-            .filter_map(|(level, supported)| supported.then_some(level)),
-        )),
-        ThinkingPolicy::GeminiBudget => Some(reasoning_effort_variants([
-            "minimal", "low", "medium", "high",
-        ])),
+            .map(|level| (level, level))
+            .collect(),
     }
 }
 
-fn reasoning_effort_variants<'a>(levels: impl IntoIterator<Item = &'a str>) -> Value {
-    Value::Object(
-        levels
-            .into_iter()
-            .map(|level| (level.to_string(), json!({"reasoningEffort": level})))
-            .collect(),
-    )
+/// OpenCode's Anthropic packages read `effort` (sent as `output_config.effort`) with adaptive
+/// thinking; the OpenAI-compatible packages read `reasoningEffort`.
+fn effort_settings(style: ApiFormat, effort: &str) -> Value {
+    match style {
+        ApiFormat::AnthropicMessages => json!({
+            "thinking": {"type": "adaptive", "display": "summarized"},
+            "effort": effort,
+        }),
+        ApiFormat::OpenAiChatCompletions | ApiFormat::OpenAiResponses => {
+            json!({"reasoningEffort": effort})
+        }
+    }
 }
 
 fn provider_id_for_style(

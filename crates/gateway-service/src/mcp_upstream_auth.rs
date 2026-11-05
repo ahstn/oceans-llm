@@ -1,12 +1,15 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     net::IpAddr,
+    sync::Arc,
 };
 
 use gateway_core::{ExternalMcpAuthMode, ExternalMcpServerRecord, GatewayError};
 use gateway_mcp::McpQueryCredential;
 use serde_json::{Map, Value};
-use url::Url;
+use url::{Host, Url};
+
+use crate::outbound_fetch::{InvalidDomainName, normalize_domains};
 
 const DISCOVERY_SECRET_ENV_PREFIX: &str = "OCEANS_MCP_DISCOVERY_";
 /// The placeholder a static header `value_template` must contain once.
@@ -422,6 +425,7 @@ pub fn supports_public_discovery(server: &ExternalMcpServerRecord) -> bool {
 pub fn validate_gateway_managed_server_url(
     value: &str,
     auth_mode: ExternalMcpAuthMode,
+    policy: &McpServerUrlPolicy,
 ) -> Result<(), GatewayError> {
     let sends_gateway_credentials =
         auth_mode.supports_gateway_discovery() || auth_mode == ExternalMcpAuthMode::OauthObo;
@@ -430,20 +434,86 @@ pub fn validate_gateway_managed_server_url(
     }
     let url = Url::parse(value)
         .map_err(|error| GatewayError::InvalidRequest(format!("server_url is invalid: {error}")))?;
-    if url.scheme() != "https" && !is_loopback_http_url(&url) {
+    if url.scheme() == "https" || is_loopback_http_url(&url) {
+        return Ok(());
+    }
+    // An OAuth token never travels over plain http, even inside the cluster.
+    if auth_mode == ExternalMcpAuthMode::OauthObo {
         return Err(GatewayError::InvalidRequest(
-            "MCP credentials require an https server_url unless the host is loopback".to_string(),
+            "MCP OAuth requires an https server_url unless the host is loopback".to_string(),
         ));
     }
+    if !policy.is_cluster_service_http_url(&url) {
+        return Err(GatewayError::InvalidRequest(format!(
+            "MCP credentials require an https server_url unless the host is loopback or a \
+             Kubernetes Service under `svc.{}`",
+            policy.cluster_domain()
+        )));
+    }
     Ok(())
+}
+
+/// Where a gateway-managed API key may travel over plain http, besides a
+/// loopback host: a Kubernetes Service in the gateway's own cluster, named
+/// `<service>.<namespace>.svc.<cluster domain>`. Such a name resolves only
+/// through the cluster's DNS, so the request stays inside the cluster.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpServerUrlPolicy {
+    cluster_domain: Arc<str>,
+}
+
+impl McpServerUrlPolicy {
+    /// The Kubernetes default, used unless `mcp.kubernetes.cluster_domain`
+    /// names another.
+    pub const DEFAULT_CLUSTER_DOMAIN: &str = "cluster.local";
+
+    /// `cluster_domain` is a bare domain, such as `cluster.local`. It is
+    /// normalized to lowercase without a trailing dot.
+    pub fn new(cluster_domain: &str) -> Result<Self, InvalidDomainName> {
+        let cluster_domain = normalize_domains(vec![cluster_domain.to_string()])?.remove(0);
+        Ok(Self {
+            cluster_domain: cluster_domain.into(),
+        })
+    }
+
+    #[must_use]
+    pub fn cluster_domain(&self) -> &str {
+        &self.cluster_domain
+    }
+
+    /// Whether `url` is plain http to `<service>.<namespace>.svc.<cluster domain>`.
+    fn is_cluster_service_http_url(&self, url: &Url) -> bool {
+        let Some(Host::Domain(host)) = url.host() else {
+            return false;
+        };
+        if url.scheme() != "http" {
+            return false;
+        }
+        let host = host.trim_end_matches('.').to_ascii_lowercase();
+        host.strip_suffix(&*self.cluster_domain)
+            .and_then(|rest| rest.strip_suffix(".svc."))
+            .and_then(|rest| rest.split_once('.'))
+            .is_some_and(|(service, namespace)| {
+                !service.is_empty() && !namespace.is_empty() && !namespace.contains('.')
+            })
+    }
+}
+
+impl Default for McpServerUrlPolicy {
+    fn default() -> Self {
+        Self {
+            cluster_domain: Self::DEFAULT_CLUSTER_DOMAIN.into(),
+        }
+    }
 }
 
 pub fn validate_mcp_server_auth_destination(
     server_url: &str,
     auth_mode: ExternalMcpAuthMode,
     auth_config: &Map<String, Value>,
+    policy: &McpServerUrlPolicy,
 ) -> Result<(), GatewayError> {
-    validate_gateway_managed_server_url(server_url, auth_mode)?;
+    validate_gateway_managed_server_url(server_url, auth_mode, policy)?;
     if auth_mode == ExternalMcpAuthMode::GatewayStaticHeader
         && let StaticCredentialPlacement::Query(name) = static_credential_placement(auth_config)?
     {
@@ -488,11 +558,13 @@ pub(crate) fn is_loopback_http_url(url: &Url) -> bool {
 
 pub fn gateway_mcp_upstream_headers(
     server: &ExternalMcpServerRecord,
+    policy: &McpServerUrlPolicy,
 ) -> Result<Option<BTreeMap<String, String>>, GatewayError> {
     validate_mcp_server_auth_destination(
         &server.server_url,
         server.auth_mode,
         &server.auth_config,
+        policy,
     )?;
     match server.auth_mode {
         ExternalMcpAuthMode::None => Ok(None),
@@ -524,6 +596,7 @@ pub fn gateway_mcp_upstream_headers(
 /// server's static credential uses `query_param`.
 pub fn gateway_mcp_upstream_query(
     server: &ExternalMcpServerRecord,
+    policy: &McpServerUrlPolicy,
 ) -> Result<Option<McpQueryCredential>, GatewayError> {
     if server.auth_mode != ExternalMcpAuthMode::GatewayStaticHeader {
         return Ok(None);
@@ -532,6 +605,7 @@ pub fn gateway_mcp_upstream_query(
         &server.server_url,
         server.auth_mode,
         &server.auth_config,
+        policy,
     )?;
     match static_credential_placement(&server.auth_config)? {
         StaticCredentialPlacement::Query(name) => {
@@ -809,7 +883,7 @@ mod tests {
             "upstream-secret",
         );
         let server = server_record(ExternalMcpAuthMode::GatewayStaticHeader, config.clone());
-        let headers = gateway_mcp_upstream_headers(&server)
+        let headers = gateway_mcp_upstream_headers(&server, &McpServerUrlPolicy::default())
             .expect("headers")
             .expect("some headers");
         assert_eq!(
@@ -822,7 +896,7 @@ mod tests {
         config.clear();
         let server = server_record(ExternalMcpAuthMode::None, config);
         assert!(
-            gateway_mcp_upstream_headers(&server)
+            gateway_mcp_upstream_headers(&server, &McpServerUrlPolicy::default())
                 .expect("headers")
                 .is_none()
         );
@@ -843,8 +917,62 @@ mod tests {
         );
         server.server_url = "http://example.test/mcp".to_string();
 
-        let error = gateway_mcp_upstream_headers(&server).expect_err("http must fail");
+        let error = gateway_mcp_upstream_headers(&server, &McpServerUrlPolicy::default())
+            .expect_err("http must fail");
         assert_eq!(error.error_code(), "invalid_request");
+    }
+
+    #[test]
+    fn api_keys_may_use_plain_http_only_to_services_in_the_cluster_domain() {
+        let default = McpServerUrlPolicy::default();
+        let custom = McpServerUrlPolicy::new("Corp.Cluster.").expect("valid domain");
+        assert_eq!(custom.cluster_domain(), "corp.cluster");
+        let accepts = |url: &str, mode, policy: &McpServerUrlPolicy| {
+            validate_gateway_managed_server_url(url, mode, policy).is_ok()
+        };
+
+        for mode in [
+            ExternalMcpAuthMode::GatewayStaticHeader,
+            ExternalMcpAuthMode::GatewayBearerToken,
+        ] {
+            for url in [
+                "http://tools.mcp.svc.cluster.local/mcp",
+                "http://tools.mcp.svc.cluster.local:8080/mcp",
+                "http://Tools.MCP.svc.Cluster.Local./mcp",
+            ] {
+                assert!(accepts(url, mode, &default), "{url}");
+                assert!(
+                    !accepts(url, mode, &custom),
+                    "{url} outside the custom domain"
+                );
+            }
+            assert!(accepts(
+                "http://tools.mcp.svc.corp.cluster/mcp",
+                mode,
+                &custom
+            ));
+            for url in [
+                // Not `<service>.<namespace>.svc.<cluster domain>`.
+                "http://svc.cluster.local/mcp",
+                "http://mcp.svc.cluster.local/mcp",
+                "http://a.b.c.svc.cluster.local/mcp",
+                "http://tools.mcp.pod.cluster.local/mcp",
+                "http://tools.mcp.svc.evilcluster.local/mcp",
+                "http://tools.mcp.svc.cluster.local.example.com/mcp",
+                "http://10.0.0.12/mcp",
+            ] {
+                assert!(!accepts(url, mode, &default), "{url}");
+            }
+        }
+
+        // An OAuth token never goes over plain http, even inside the cluster.
+        assert!(!accepts(
+            "http://tools.mcp.svc.cluster.local/mcp",
+            ExternalMcpAuthMode::OauthObo,
+            &default,
+        ));
+        assert!(McpServerUrlPolicy::new("https://cluster.local").is_err());
+        assert!(McpServerUrlPolicy::new("*.cluster.local").is_err());
     }
 
     #[test]
@@ -874,6 +1002,7 @@ mod tests {
             &server.server_url,
             server.auth_mode,
             &server.auth_config,
+            &McpServerUrlPolicy::default(),
         )
         .expect("matching OAuth resource origin");
         assert!(supports_public_discovery(&server));
@@ -899,6 +1028,7 @@ mod tests {
                 &off_resource_server.server_url,
                 off_resource_server.auth_mode,
                 &off_resource_server.auth_config,
+                &McpServerUrlPolicy::default(),
             )
             .is_err()
         );
@@ -907,6 +1037,7 @@ mod tests {
             &off_resource_server.server_url,
             off_resource_server.auth_mode,
             &off_resource_server.auth_config,
+            &McpServerUrlPolicy::default(),
         )
         .expect("same-origin OAuth destination");
 
@@ -916,12 +1047,17 @@ mod tests {
             validate_gateway_managed_server_url(
                 &insecure_server.server_url,
                 insecure_server.auth_mode,
+                &McpServerUrlPolicy::default(),
             )
             .is_err()
         );
         insecure_server.server_url = "http://127.0.0.1:8080/mcp".to_string();
-        validate_gateway_managed_server_url(&insecure_server.server_url, insecure_server.auth_mode)
-            .expect("loopback OAuth development endpoint");
+        validate_gateway_managed_server_url(
+            &insecure_server.server_url,
+            insecure_server.auth_mode,
+            &McpServerUrlPolicy::default(),
+        )
+        .expect("loopback OAuth development endpoint");
     }
 
     #[test]
@@ -983,7 +1119,7 @@ mod tests {
         validate_mcp_auth_config(ExternalMcpAuthMode::GatewayStaticHeader, &config)
             .expect("valid template");
         let server = server_record(ExternalMcpAuthMode::GatewayStaticHeader, config.clone());
-        let headers = gateway_mcp_upstream_headers(&server)
+        let headers = gateway_mcp_upstream_headers(&server, &McpServerUrlPolicy::default())
             .expect("headers")
             .expect("some headers");
         assert_eq!(
@@ -991,7 +1127,7 @@ mod tests {
             Some(&"Token abc123".to_string())
         );
         assert!(
-            gateway_mcp_upstream_query(&server)
+            gateway_mcp_upstream_query(&server, &McpServerUrlPolicy::default())
                 .expect("query")
                 .is_none()
         );
@@ -1027,11 +1163,11 @@ mod tests {
         let server = server_record(ExternalMcpAuthMode::GatewayStaticHeader, config.clone());
 
         assert!(
-            gateway_mcp_upstream_headers(&server)
+            gateway_mcp_upstream_headers(&server, &McpServerUrlPolicy::default())
                 .expect("headers")
                 .is_none()
         );
-        let credential = gateway_mcp_upstream_query(&server)
+        let credential = gateway_mcp_upstream_query(&server, &McpServerUrlPolicy::default())
             .expect("query")
             .expect("query credential");
         assert_eq!(credential.name(), "api_key");
@@ -1050,6 +1186,7 @@ mod tests {
                 "https://example.test/mcp?api_key=inline",
                 ExternalMcpAuthMode::GatewayStaticHeader,
                 &config,
+                &McpServerUrlPolicy::default(),
             )
             .is_err()
         );

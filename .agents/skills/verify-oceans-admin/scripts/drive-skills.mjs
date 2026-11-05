@@ -222,7 +222,7 @@ async function verifyBundledSkills(page) {
   );
   await expect(page.getByText("Contents", { exact: true }).locator("..")).toHaveText("Contents2 files");
   await expect(page.getByText("Uploaded", { exact: true }).locator("..")).toHaveText(
-    /^Uploaded\d{2}\/\d{2}\/\d{2} \d{2}:\d{2}$/,
+    /^Uploaded\d{1,2} [A-Z][a-z]{2} \d{4}, \d{2}:\d{2} UTC$/,
   );
   await expect(page.getByText("SHA-256", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Upstream version", { exact: true })).toHaveCount(0);

@@ -49,7 +49,7 @@ import {
   getModels,
   refreshModelPricing,
 } from '@/server/admin-data.functions'
-import type { ModelView } from '@/types/api'
+import type { ModelView, RefreshModelPricingCatalogResponse } from '@/types/api'
 import { ModelInfoDialog, type ModelInfoSectionKey } from '@/routes/-model-info-dialog'
 import { ModelListPagination, ModelSearch } from '@/routes/-model-list-controls'
 import { formatCost, formatWindow, providerTypeLabel } from '@/routes/-model-formatting'
@@ -64,6 +64,36 @@ const DEFAULT_PAGE_SIZE = 30
 
 const CLIENT_HARNESS_CONFIGURATION_URL =
   'https://oceans-llm.com/configuration/client-harness-configuration.html'
+
+type PricingSourceRefresh = RefreshModelPricingCatalogResponse['sources'][number]
+
+const PRICING_SOURCE_NAMES: Record<PricingSourceRefresh['source'], string> = {
+  models_dev: 'models.dev',
+  openrouter: 'OpenRouter',
+  litellm: 'LiteLLM',
+}
+
+/** One toast per refresh: success when every source refreshed, a warning naming failed sources otherwise. */
+function toastPricingRefresh(sources: PricingSourceRefresh[]) {
+  const failed: string[] = []
+  const refreshed: string[] = []
+  for (const source of sources) {
+    const name = PRICING_SOURCE_NAMES[source.source]
+    if (source.outcome === 'failed') {
+      failed.push(name)
+    } else {
+      refreshed.push(`${name} ${source.outcome}`)
+    }
+  }
+  const summary = refreshed.join(', ')
+
+  if (failed.length === 0) {
+    toast.success(summary ? `Pricing refreshed: ${summary}` : 'Pricing refreshed')
+    return
+  }
+  const failure = `Pricing refresh failed for ${failed.join(', ')}`
+  toast.warning(summary ? `${failure}; ${summary}` : failure)
+}
 
 export const Route = createFileRoute('/models')({
   validateSearch: (search: Record<string, unknown>) => normalizeModelsSearch(search),
@@ -195,8 +225,8 @@ export function ModelsPage() {
   async function refreshPricing() {
     setIsRefreshingPricing(true)
     try {
-      await refreshModelPricing()
-      toast.success('Pricing refreshed')
+      const response = await refreshModelPricing()
+      toastPricingRefresh(response.data.sources)
     } catch {
       toast.error('Pricing refresh failed')
       setIsRefreshingPricing(false)
@@ -448,7 +478,7 @@ export function ModelsPage() {
                                 {model.upstream_model ?? 'Not currently routed'}
                               </span>
                             </div>
-                            <div className="tracking-label text-muted-foreground flex min-w-0 items-center gap-2 truncate text-xs">
+                            <div className="text-muted-foreground flex min-w-0 items-center gap-2 truncate text-xs">
                               <BrandIcon
                                 iconKey={model.provider_icon_key}
                                 size={14}
@@ -464,9 +494,15 @@ export function ModelsPage() {
                         <TableCell className="px-3 py-1 whitespace-normal">
                           <StackedMetric
                             topLabel="Input"
-                            topValue={formatCost(model.input_cost_per_million_tokens_usd_10000)}
+                            topValue={formatBaseCost(
+                              model,
+                              model.input_cost_per_million_tokens_usd_10000,
+                            )}
                             bottomLabel="Output"
-                            bottomValue={formatCost(model.output_cost_per_million_tokens_usd_10000)}
+                            bottomValue={formatBaseCost(
+                              model,
+                              model.output_cost_per_million_tokens_usd_10000,
+                            )}
                           />
                         </TableCell>
                         {visibleColumns.contextWindow ? (
@@ -672,9 +708,9 @@ function ModelCard({
             value={
               <StackedMetric
                 topLabel="Input"
-                topValue={formatCost(model.input_cost_per_million_tokens_usd_10000)}
+                topValue={formatBaseCost(model, model.input_cost_per_million_tokens_usd_10000)}
                 bottomLabel="Output"
-                bottomValue={formatCost(model.output_cost_per_million_tokens_usd_10000)}
+                bottomValue={formatBaseCost(model, model.output_cost_per_million_tokens_usd_10000)}
               />
             }
           />
@@ -850,7 +886,7 @@ function ClientConfigDialog({
                     onActiveKeyChange(value)
                   }
                 }}
-                variant="outline"
+                variant="checked"
                 size="sm"
                 spacing={1}
                 className="max-w-full min-w-0 flex-wrap"
@@ -858,7 +894,11 @@ function ClientConfigDialog({
               >
                 {clientConfigurations.map((config) => (
                   <ToggleGroupItem key={config.key} value={config.key} aria-label={config.label}>
-                    <AgentHarnessLabel className="px-2" harnessKey={config.key}>
+                    <AgentHarnessLabel
+                      className="px-2"
+                      harnessKey={config.key}
+                      iconClassName="group-data-[state=on]/toggle:text-primary"
+                    >
                       {config.label}
                     </AgentHarnessLabel>
                   </ToggleGroupItem>
@@ -1020,6 +1060,12 @@ function ModelNotes({ model }: { model: ModelView }) {
       ) : null}
     </div>
   )
+}
+
+/** Tiered models list their base rate; higher context tiers appear in the model info dialog. */
+function formatBaseCost(model: ModelView, value: number | null | undefined) {
+  const cost = formatCost(value)
+  return value != null && model.pricing_tiers.length > 0 ? `from ${cost}` : cost
 }
 
 function StackedMetric({

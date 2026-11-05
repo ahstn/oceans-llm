@@ -1,4 +1,5 @@
 use super::*;
+use gateway_core::{PartialCapabilities, ProviderCapabilities, infer_compatibility_capabilities};
 
 #[test]
 fn accepts_bedrock_bearer_auth_and_seeds_config() {
@@ -589,63 +590,63 @@ fn managed_bedrock_credentials_accept_file_references() {
 }
 
 #[test]
-fn bedrock_api_styles_derive_compatible_capabilities() {
+fn bedrock_api_styles_infer_omitted_capabilities() {
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");
-    // (api_style, endpoint_kind, chat_completions, responses, stream, json_schema, forbidden flag)
-    for (api_style, endpoint_kind, chat, responses, stream, json_schema, forbidden) in [
+    let not_served = ProviderCapabilities {
+        embeddings: false,
+        images: false,
+        decisions: false,
+        ..ProviderCapabilities::all_enabled()
+    };
+    let chat = |stream| ProviderCapabilities {
+        chat_completions: true,
+        responses: false,
+        stream,
+        json_schema: false,
+        ..not_served
+    };
+    let responses = ProviderCapabilities {
+        chat_completions: false,
+        responses: true,
+        stream: true,
+        ..not_served
+    };
+    for (api_style, endpoint_kind, expected, conflict) in [
         (
             "runtime_converse",
             "bedrock_runtime",
-            true,
-            false,
-            true,
-            false,
+            chat(true),
             "responses: true",
         ),
         (
             "runtime_anthropic_invoke",
             "bedrock_runtime",
-            true,
-            false,
-            false,
-            false,
+            chat(false),
             "stream: true",
         ),
         (
             "runtime_openai_chat",
             "bedrock_runtime",
-            true,
-            false,
-            true,
-            false,
+            chat(true),
             "json_schema: true",
         ),
         (
             "mantle_openai_chat",
             "bedrock_mantle",
-            true,
-            false,
-            true,
-            false,
+            chat(true),
             "responses: true",
         ),
         (
             "mantle_anthropic_messages",
             "bedrock_mantle",
-            true,
-            false,
-            true,
-            false,
-            "responses: true",
+            chat(true),
+            "json_schema: true",
         ),
         (
             "mantle_openai_responses",
             "bedrock_mantle",
-            false,
-            true,
-            true,
-            true,
+            responses,
             "chat_completions: true",
         ),
     ] {
@@ -654,28 +655,29 @@ fn bedrock_api_styles_derive_compatible_capabilities() {
         );
         write_config(&config_path, &yaml);
         let config = GatewayConfig::from_path(&config_path)
-            .unwrap_or_else(|error| panic!("derived capabilities for {api_style}: {error:#}"));
-        let capabilities = config.seed_models().expect("seed models")[0].routes[0].capabilities;
+            .unwrap_or_else(|error| panic!("omitted capabilities for {api_style}: {error:#}"));
+        let models = config.seed_models().expect("seed models");
+        let route = &models[0].routes[0];
         assert_eq!(
-            (
-                capabilities.chat_completions,
-                capabilities.responses,
-                capabilities.stream,
-                capabilities.json_schema
-            ),
-            (chat, responses, stream, json_schema),
+            route.capabilities,
+            PartialCapabilities::default(),
+            "{api_style}"
+        );
+        assert_eq!(
+            infer_compatibility_capabilities(&route.compatibility, "aws_bedrock").resolve(),
+            expected,
             "{api_style}"
         );
 
         write_config(
             &config_path,
-            &format!("{yaml}        capabilities: {{ {forbidden} }}\n"),
+            &format!("{yaml}        capabilities: {{ {conflict} }}\n"),
         );
         let error = GatewayConfig::from_path(&config_path)
-            .expect_err("an explicit flag the api_style cannot serve must fail");
+            .expect_err("explicit values that contradict the api_style must fail");
         assert!(
             format!("{error:#}").contains("cannot enable"),
-            "{api_style}: {error:#}"
+            "{api_style} {conflict}: {error:#}"
         );
     }
 }
@@ -690,6 +692,15 @@ fn bedrock_capability_defaults_apply_only_to_bedrock_providers() {
     );
 
     let config = GatewayConfig::from_path(&config_path).expect("config should parse");
-    let capabilities = config.seed_models().expect("seed models")[0].routes[0].capabilities;
-    assert!(capabilities.responses && capabilities.json_schema);
+    let models = config.seed_models().expect("seed models");
+    let route = &models[0].routes[0];
+    // The aws_bedrock block infers nothing on an openai_compat provider.
+    let resolved = route
+        .capabilities
+        .or(infer_compatibility_capabilities(
+            &route.compatibility,
+            "openai_compat",
+        ))
+        .resolve();
+    assert!(resolved.responses && resolved.json_schema);
 }

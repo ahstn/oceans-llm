@@ -159,8 +159,11 @@ async fn dispatch_mcp_request(
     body: Bytes,
     started_at: Instant,
 ) -> Response<Body> {
-    let gateway = McpGatewayService::new(state.store.clone())
-        .with_oauth_runtime(state.mcp_oauth_runtime.clone());
+    let gateway = McpGatewayService::new(
+        state.store.clone(),
+        state.mcp_http_clients.url_policy().clone(),
+    )
+    .with_oauth_runtime(state.mcp_oauth_runtime.clone());
     let server = match gateway.load_active_server(server_key).await {
         Ok(server) => server,
         Err(error) => return mcp_error_response(error),

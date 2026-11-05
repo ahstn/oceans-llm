@@ -11,7 +11,7 @@ mod ownership_tests;
 #[cfg(test)]
 mod tests;
 
-use std::{sync::Arc, time::Instant};
+use std::time::Instant;
 
 use axum::{
     Json,
@@ -27,11 +27,11 @@ use gateway_core::{
     McpToolProjection, NewMcpToolsetRecord, UpdateMcpToolsetRecord, UpsertMcpToolGrantRecord,
 };
 use gateway_service::{
-    AuditAction, AuditEvent, AuditProgress, CreateExternalMcpServerInput, HttpMcpDiscoveryClient,
-    McpAdminScope, McpCredentialService, McpOwnership, McpRegistryService,
-    RedactedMcpCredentialBinding, RequestedMcpServerOwnership, UpdateExternalMcpServerInput,
-    UpsertMcpCredentialBindingInput, admin_audit::actions, authorize_destination,
-    authorize_team_auth_config, parse_mcp_server_visibility, refuse_private_network_host,
+    AuditAction, AuditEvent, AuditProgress, CreateExternalMcpServerInput, McpAdminScope,
+    McpCredentialService, McpOwnership, McpRegistryService, RedactedMcpCredentialBinding,
+    RequestedMcpServerOwnership, UpdateExternalMcpServerInput, UpsertMcpCredentialBindingInput,
+    admin_audit::actions, authorize_destination, authorize_team_auth_config,
+    parse_mcp_server_visibility, refuse_private_network_host,
 };
 use gateway_store::AnyStore;
 use time::OffsetDateTime;
@@ -112,7 +112,7 @@ pub async fn list_recommended_mcp_servers(
     headers: HeaderMap,
 ) -> Result<Json<Envelope<RecommendedMcpServersPayload>>, AppError> {
     require_mcp_admin_scope(&state, &headers).await?;
-    let service = McpRegistryService::new(state.store.clone());
+    let service = McpRegistryService::new(state.store.clone(), &state.mcp_http_clients);
     let items = service
         .recommended_servers()?
         .into_iter()
@@ -186,7 +186,7 @@ async fn list_admin_servers(
     AppError,
 > {
     let owner = query.owner.as_deref().map(parse_owner_filter).transpose()?;
-    let service = McpRegistryService::new(state.store.clone());
+    let service = McpRegistryService::new(state.store.clone(), &state.mcp_http_clients);
     // The owner filter runs in the store query; visibility is still the caller's.
     let servers = match (owner, scope.managed_team_id()) {
         (Some(owner), _) => {
@@ -237,7 +237,7 @@ pub async fn create_mcp_server(
     // A catalog entry supplies its own public URL, so only a typed one is
     // checked. Catalog values count as inherited, like a platform admin's.
     let catalog = match request.recommended_catalog_key.as_deref() {
-        Some(key) => McpRegistryService::new(state.store.clone())
+        Some(key) => McpRegistryService::new(state.store.clone(), &state.mcp_http_clients)
             .recommended_servers()?
             .into_iter()
             .find(|entry| entry.catalog_key == key),
@@ -292,7 +292,7 @@ pub async fn create_mcp_server(
             &actor.email,
         )
         .await?;
-    let service = McpRegistryService::new(state.store.clone());
+    let service = McpRegistryService::new(state.store.clone(), &state.mcp_http_clients);
     let server = service
         .create_server(CreateExternalMcpServerInput {
             recommended_catalog_key: request.recommended_catalog_key,
@@ -386,7 +386,7 @@ pub async fn update_mcp_server(
             .authorize_visibility_change(&scope, &existing, visibility)
             .await?;
     }
-    let service = McpRegistryService::new(state.store.clone());
+    let service = McpRegistryService::new(state.store.clone(), &state.mcp_http_clients);
     // A narrowing to `team` is saved with the settings, in one write: the store
     // refuses it while access would be stranded, counted with the server row
     // locked, so a racing grant is either counted or refused by its own guard.
@@ -497,7 +497,7 @@ pub async fn disable_mcp_server(
     let existing = ownership(&state).managed_server(&scope, server_id).await?;
     let expected_owner = existing.ownership.owner_team_id;
     let before = server_audit_summary(&map_server(existing));
-    let service = McpRegistryService::new(state.store.clone());
+    let service = McpRegistryService::new(state.store.clone(), &state.mcp_http_clients);
     let (record, disabled) = service
         .disable_server_for_owner(server_id, expected_owner)
         .await?;
@@ -547,7 +547,7 @@ pub async fn enable_mcp_server(
     let server_id = parse_uuid(&server_id, "server_id")?;
     let existing = ownership(&state).managed_server(&scope, server_id).await?;
     let expected_owner = existing.ownership.owner_team_id;
-    let service = McpRegistryService::new(state.store.clone());
+    let service = McpRegistryService::new(state.store.clone(), &state.mcp_http_clients);
     let (record, enabled) = service
         .enable_server_for_owner(server_id, expected_owner)
         .await?;
@@ -618,7 +618,7 @@ pub async fn transfer_mcp_server_ownership(
             },
         )
         .await?;
-    let service = McpRegistryService::new(state.store.clone());
+    let service = McpRegistryService::new(state.store.clone(), &state.mcp_http_clients);
     // Written only while the server still has the ownership read above, so two
     // concurrent transfers cannot overwrite each other or audit a stale `before`.
     let update = service
@@ -680,7 +680,7 @@ pub async fn list_mcp_server_tools(
             format!("external MCP server `{server_id}` not found"),
         )))
     };
-    let service = McpRegistryService::new(state.store.clone());
+    let service = McpRegistryService::new(state.store.clone(), &state.mcp_http_clients);
     let tools = match viewer {
         McpViewer::Admin(scope) => {
             ownership(&state).visible_server(&scope, server_id).await?;
@@ -842,10 +842,7 @@ pub async fn refresh_mcp_server_discovery(
     {
         authorize_destination(&scope, &server.server_url).await?;
     }
-    let service = McpRegistryService::with_client(
-        state.store.clone(),
-        Arc::new(HttpMcpDiscoveryClient::new(state.mcp_http_clients.clone())),
-    );
+    let service = McpRegistryService::new(state.store.clone(), &state.mcp_http_clients);
     let started_at = Instant::now();
     let progress = AuditProgress::default();
     let result = service

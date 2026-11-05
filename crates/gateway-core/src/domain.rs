@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::credential_scopes::ApiKeyAccess;
 use crate::protocol::decisions::DecisionsWireFormat;
+use crate::route_capabilities::PartialCapabilities;
 use crate::routing::ModelRoutingPolicy;
 
 pub const SYSTEM_BOOTSTRAP_ADMIN_USER_ID: &str = "00000000-0000-0000-0000-000000000002";
@@ -1106,6 +1107,10 @@ pub struct UsageLedgerRecord {
     pub cache_write_cost_per_million_tokens: Option<Money4>,
     #[serde(default)]
     pub image_output_cost_per_million_tokens: Option<Money4>,
+    /// Context tier threshold that priced this event; `None` for the base
+    /// rate, route overrides, and provider-reported cost.
+    #[serde(default)]
+    pub pricing_tier_above_input_tokens: Option<i64>,
     pub computed_cost_usd: Money4,
     pub occurred_at: OffsetDateTime,
 }
@@ -2714,6 +2719,18 @@ pub struct PricingProvenance {
     pub fetched_at: OffsetDateTime,
 }
 
+/// Catalog rates that replace the base schedule for a whole request whose
+/// normalized prompt tokens (cache included) exceed `above_input_tokens`.
+/// A `None` rate inherits the base rate for that bucket.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ContextPricingTier {
+    pub above_input_tokens: i64,
+    pub input: Option<Money4>,
+    pub output: Option<Money4>,
+    pub cache_read: Option<Money4>,
+    pub cache_write: Option<Money4>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ResolvedModelPricing {
     pub model_pricing_id: Uuid,
@@ -2726,6 +2743,11 @@ pub struct ResolvedModelPricing {
     pub cache_write_cost_per_million_tokens: Option<Money4>,
     pub input_audio_cost_per_million_tokens: Option<Money4>,
     pub output_audio_cost_per_million_tokens: Option<Money4>,
+    #[serde(default)]
+    pub output_image_usd_per_million: Option<Money4>,
+    /// Sorted ascending by `above_input_tokens`, thresholds unique.
+    #[serde(default)]
+    pub context_tiers: Vec<ContextPricingTier>,
     pub release_date: String,
     pub last_updated: String,
     pub effective_start_at: OffsetDateTime,
@@ -2747,6 +2769,11 @@ pub struct ModelPricingRecord {
     pub cache_write_cost_per_million_tokens: Option<Money4>,
     pub input_audio_cost_per_million_tokens: Option<Money4>,
     pub output_audio_cost_per_million_tokens: Option<Money4>,
+    #[serde(default)]
+    pub output_image_usd_per_million: Option<Money4>,
+    /// Sorted ascending by `above_input_tokens`, thresholds unique.
+    #[serde(default)]
+    pub context_tiers: Vec<ContextPricingTier>,
     pub release_date: String,
     pub last_updated: String,
     pub effective_start_at: OffsetDateTime,
@@ -2770,6 +2797,10 @@ pub struct ModelPricingSyncChanges {
     pub close_model_pricing_ids: Vec<Uuid>,
     pub update_provenance: Vec<ModelPricingProvenanceUpdate>,
     pub insert_model_pricing: Vec<ModelPricingRecord>,
+    /// The `fetched_at` of each `pricing_catalog_cache` row the changes were computed
+    /// from, keyed by `catalog_key`. The store applies the changes only while each row is
+    /// absent (the source used its vendored snapshot) or still has this `fetched_at`.
+    pub catalog_cache_fetched_at: BTreeMap<String, OffsetDateTime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -2867,8 +2898,10 @@ pub struct ModelRoute {
     pub extra_headers: Map<String, Value>,
     #[serde(default)]
     pub extra_body: Map<String, Value>,
-    #[serde(default = "ProviderCapabilities::all_enabled")]
-    pub capabilities: ProviderCapabilities,
+    /// Explicit route settings only. Use `effective_route_capabilities` to read what the
+    /// route serves.
+    #[serde(default)]
+    pub capabilities: PartialCapabilities,
     #[serde(default)]
     pub compatibility: RouteCompatibility,
 }
@@ -3227,12 +3260,13 @@ pub fn route_provider_capabilities(
     )
 }
 
-/// Default capabilities for a configured route that sets no `capabilities` flags: the
-/// provider-type baseline narrowed by the route's upstream model and compatibility profile.
-/// Config seeding uses this, and request routing applies the same per-provider narrowing through
-/// [`route_provider_capabilities`], so both read one policy.
+/// The most a configured route can serve: the provider-type baseline narrowed by the route's
+/// upstream model and compatibility profile. Config validation rejects an explicit `true` above
+/// it, and request routing caps routes at the same narrowing through
+/// [`route_provider_capabilities`], so both read one policy. Unset flags are resolved separately,
+/// by [`crate::effective_route_capabilities`].
 #[must_use]
-pub fn route_capability_defaults(
+pub fn route_capability_ceiling(
     provider_type: &str,
     upstream_model: &str,
     compatibility: &RouteCompatibility,
@@ -3627,8 +3661,9 @@ pub struct SeedModelRoute {
     pub extra_headers: Map<String, Value>,
     #[serde(default)]
     pub extra_body: Map<String, Value>,
-    #[serde(default = "ProviderCapabilities::all_enabled")]
-    pub capabilities: ProviderCapabilities,
+    /// Explicit route settings only; unset fields are inferred at read time.
+    #[serde(default)]
+    pub capabilities: PartialCapabilities,
     #[serde(default)]
     pub compatibility: RouteCompatibility,
 }
@@ -4152,7 +4187,7 @@ mod tests {
     fn runtime_and_seeded_bedrock_capabilities_apply_the_same_api_style_policy() {
         use super::{
             AwsBedrockApiStyle, AwsBedrockRouteCompatibility, ModelRoute, ProviderCapabilities,
-            RouteCompatibility, route_capability_defaults, route_provider_capabilities,
+            RouteCompatibility, route_capability_ceiling, route_provider_capabilities,
         };
 
         for api_style in [
@@ -4171,7 +4206,7 @@ mod tests {
                 }),
                 ..Default::default()
             };
-            let seeded = route_capability_defaults("aws_bedrock", "model", &compatibility);
+            let seeded = route_capability_ceiling("aws_bedrock", "model", &compatibility);
             // A route stored with every flag enabled, as an admin-created or older row may be.
             let route = ModelRoute {
                 id: uuid::Uuid::nil(),
@@ -4185,7 +4220,7 @@ mod tests {
                 pricing_override: None,
                 extra_headers: serde_json::Map::new(),
                 extra_body: serde_json::Map::new(),
-                capabilities: ProviderCapabilities::all_enabled(),
+                capabilities: crate::PartialCapabilities::default(),
                 compatibility,
             };
             let runtime = route_provider_capabilities(
@@ -4196,7 +4231,7 @@ mod tests {
             assert_eq!(runtime, seeded, "{api_style:?}");
         }
 
-        let invoke = route_capability_defaults(
+        let invoke = route_capability_ceiling(
             "aws_bedrock",
             "model",
             &RouteCompatibility {
@@ -4214,7 +4249,7 @@ mod tests {
     #[test]
     fn runtime_and_seeded_decisions_profiles_are_decisions_only() {
         use super::{
-            ModelRoute, ProviderCapabilities, RouteCompatibility, route_capability_defaults,
+            ModelRoute, ProviderCapabilities, RouteCompatibility, route_capability_ceiling,
             route_provider_capabilities,
         };
 
@@ -4228,7 +4263,7 @@ mod tests {
             "openrouter": { "api": "decisions" }
         }));
         for compatibility in [openai_decisions, openrouter_decisions] {
-            let seeded = route_capability_defaults("openai_compat", "model", &compatibility);
+            let seeded = route_capability_ceiling("openai_compat", "model", &compatibility);
             let route = ModelRoute {
                 id: uuid::Uuid::nil(),
                 model_id: uuid::Uuid::nil(),
@@ -4241,7 +4276,7 @@ mod tests {
                 pricing_override: None,
                 extra_headers: serde_json::Map::new(),
                 extra_body: serde_json::Map::new(),
-                capabilities: ProviderCapabilities::all_enabled(),
+                capabilities: crate::PartialCapabilities::default(),
                 compatibility,
             };
             let runtime = route_provider_capabilities(
@@ -4253,7 +4288,7 @@ mod tests {
             assert_eq!(runtime, seeded);
         }
         assert_eq!(
-            route_capability_defaults("typesafe", "jev", &RouteCompatibility::default()),
+            route_capability_ceiling("typesafe", "jev", &RouteCompatibility::default()),
             ProviderCapabilities::decisions_only()
         );
     }

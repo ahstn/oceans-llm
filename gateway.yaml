@@ -328,7 +328,7 @@ providers:
 
   github-copilot-user:
     type: github_copilot
-    pricing_provider_id: openai
+    pricing_provider_id: github-copilot
     auth:
       mode: github_user
     display:
@@ -521,8 +521,10 @@ models:
     route:
       provider: bedrock-mantle-us-east-1
       upstream_model: openai.gpt-oss-120b
+      pricing_override:
+        input_usd_per_million_tokens: "0.1500"
+        output_usd_per_million_tokens: "0.6000"
       capabilities:
-        vision: false
         json_schema: false
       compatibility:
         aws_bedrock:

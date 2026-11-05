@@ -6,9 +6,9 @@ use gateway_core::{
     OpenAiCompatDecisionsApi, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
     OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
     OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
-    OpenRouterProviderRouting, OpenRouterRouteCompatibility, ProviderCapabilities, ReasoningEffort,
-    RouteCompatibility, RoutePricingOverride, enforce_reasoning_effort_map,
-    route_capability_defaults,
+    OpenRouterProviderRouting, OpenRouterRouteCompatibility, PartialCapabilities,
+    ProviderCapabilities, ReasoningEffort, RouteCompatibility, RoutePricingOverride,
+    enforce_reasoning_effort_map, infer_compatibility_capabilities, route_capability_ceiling,
 };
 use gateway_providers::BedrockEndpointKind;
 use serde::{Deserialize, Deserializer, de};
@@ -57,30 +57,17 @@ pub struct ModelRouteConfig {
 }
 
 impl ModelRouteConfig {
-    /// Capabilities that the route's provider and compatibility profile already determine.
-    /// Explicit `capabilities` flags override these, and validation still rejects flags a
-    /// profile cannot serve. `images` here means the profile can serve image generation; a route
-    /// still enables it explicitly (see [`RouteCapabilitiesConfig::resolve`]). The policy lives in [`route_capability_defaults`] so seeded route
-    /// flags and request routing cannot drift apart.
-    pub(super) fn capability_defaults(
-        &self,
-        provider: Option<&ProviderConfig>,
-    ) -> ProviderCapabilities {
-        // An unknown provider fails validation; use the generic default until then.
+    /// What the route's provider and compatibility profile can serve: the adapter ceiling that
+    /// request routing caps every route at. It lives in [`route_capability_ceiling`] so config
+    /// validation and routing read one policy.
+    fn capability_ceiling(&self, provider: Option<&ProviderConfig>) -> ProviderCapabilities {
+        // An unknown provider fails validation; use the generic ceiling until then.
         let provider_type = provider.map_or("openai_compat", ProviderConfig::provider_type);
-        route_capability_defaults(
+        route_capability_ceiling(
             provider_type,
             &self.upstream_model,
             &self.compatibility.clone().into_compatibility(),
         )
-    }
-
-    pub(super) fn effective_capabilities(
-        &self,
-        provider: Option<&ProviderConfig>,
-    ) -> ProviderCapabilities {
-        self.capabilities
-            .resolve(self.capability_defaults(provider))
     }
 
     pub(super) fn validate(
@@ -134,45 +121,45 @@ impl ModelRouteConfig {
                 self.provider
             );
         }
-        let capabilities = self.effective_capabilities(provider);
+        let capabilities = self.resolved_capabilities(provider);
         if let Some(ProviderConfig::AwsBedrock(provider)) = provider {
             validate_aws_bedrock_route_compatibility(model_id, self, provider, capabilities)?;
         }
         validate_decisions_route_capability(model_id, self, provider, capabilities)?;
-        validate_images_route_capability(model_id, self, provider)?;
+        validate_images_route_capability(model_id, self, provider, capabilities)?;
         if provider.is_some() {
-            self.validate_capabilities_within_profile(model_id, provider)?;
+            self.validate_capabilities_within_ceiling(model_id, provider)?;
         }
         Ok(())
     }
 
     /// Rejects an explicit `true` for a capability the provider and compatibility profile
-    /// cannot serve. Request routing limits every route to its profile, so such a flag would
+    /// cannot serve. Request routing caps every route at this ceiling, so such a flag would
     /// pass validation but never take effect. `decisions` has its own, more specific checks.
-    fn validate_capabilities_within_profile(
+    fn validate_capabilities_within_ceiling(
         &self,
         model_id: &str,
         provider: Option<&ProviderConfig>,
     ) -> anyhow::Result<()> {
-        let defaults = self.capability_defaults(provider);
+        let ceiling = self.capability_ceiling(provider);
         let explicit = &self.capabilities;
         for (name, flag, supported) in [
             (
                 "chat_completions",
                 explicit.chat_completions,
-                defaults.chat_completions,
+                ceiling.chat_completions,
             ),
-            ("responses", explicit.responses, defaults.responses),
-            ("stream", explicit.stream, defaults.stream),
-            ("embeddings", explicit.embeddings, defaults.embeddings),
-            ("images", explicit.images, defaults.images),
-            ("tools", explicit.tools, defaults.tools),
-            ("vision", explicit.vision, defaults.vision),
-            ("json_schema", explicit.json_schema, defaults.json_schema),
+            ("responses", explicit.responses, ceiling.responses),
+            ("stream", explicit.stream, ceiling.stream),
+            ("embeddings", explicit.embeddings, ceiling.embeddings),
+            ("images", explicit.images, ceiling.images),
+            ("tools", explicit.tools, ceiling.tools),
+            ("vision", explicit.vision, ceiling.vision),
+            ("json_schema", explicit.json_schema, ceiling.json_schema),
             (
                 "developer_role",
                 explicit.developer_role,
-                defaults.developer_role,
+                ceiling.developer_role,
             ),
         ] {
             if flag == Some(true) && !supported {
@@ -183,6 +170,16 @@ impl ModelRouteConfig {
             }
         }
         Ok(())
+    }
+
+    /// Explicit settings over compatibility inference over defaults. Validation checks this so
+    /// omitted fields take their inferred values and only explicit contradictions fail.
+    fn resolved_capabilities(&self, provider: Option<&ProviderConfig>) -> ProviderCapabilities {
+        let inferred = infer_compatibility_capabilities(
+            &self.compatibility.clone().into_compatibility(),
+            provider.map_or("", ProviderConfig::provider_type),
+        );
+        self.capabilities.into_partial().or(inferred).resolve()
     }
 }
 
@@ -271,9 +268,9 @@ fn parse_non_negative_rate(value: &str, label: &str) -> anyhow::Result<Money4> {
     Ok(rate)
 }
 
-/// Explicit route capability flags. An omitted flag takes the value implied by the route's
-/// provider and compatibility profile (see [`ModelRouteConfig::capability_defaults`]).
-#[derive(Debug, Clone, Default, Deserialize)]
+/// Explicit route capability settings. Omitted fields stay unset and are filled from route
+/// compatibility, catalog hints, and finally the defaults in `PartialCapabilities::resolve`.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RouteCapabilitiesConfig {
     #[serde(default)]
@@ -300,20 +297,18 @@ pub struct RouteCapabilitiesConfig {
 }
 
 impl RouteCapabilitiesConfig {
-    fn resolve(&self, defaults: ProviderCapabilities) -> ProviderCapabilities {
-        ProviderCapabilities {
-            chat_completions: self.chat_completions.unwrap_or(defaults.chat_completions),
-            responses: self.responses.unwrap_or(defaults.responses),
-            stream: self.stream.unwrap_or(defaults.stream),
-            embeddings: self.embeddings.unwrap_or(defaults.embeddings),
-            // Image generation is opt-in even where the profile can serve it: only image models
-            // serve the Images API, so the profile default would wrongly enable it.
-            images: self.images.unwrap_or(false),
-            decisions: self.decisions.unwrap_or(defaults.decisions),
-            tools: self.tools.unwrap_or(defaults.tools),
-            vision: self.vision.unwrap_or(defaults.vision),
-            json_schema: self.json_schema.unwrap_or(defaults.json_schema),
-            developer_role: self.developer_role.unwrap_or(defaults.developer_role),
+    pub(super) const fn into_partial(self) -> PartialCapabilities {
+        PartialCapabilities {
+            chat_completions: self.chat_completions,
+            responses: self.responses,
+            stream: self.stream,
+            embeddings: self.embeddings,
+            images: self.images,
+            decisions: self.decisions,
+            tools: self.tools,
+            vision: self.vision,
+            json_schema: self.json_schema,
+            developer_role: self.developer_role,
         }
     }
 }
@@ -504,20 +499,20 @@ fn validate_decisions_route_capability(
         }
         if !capabilities.decisions {
             bail!(
-                "model `{model_id}` route for provider `{}` uses compatibility.openai_compat.decisions_api but capabilities.decisions is not enabled",
+                "model `{model_id}` route for provider `{}` uses compatibility.openai_compat.decisions_api but disables capabilities.decisions",
                 route.provider
             );
         }
     }
     if openrouter_decisions && !capabilities.decisions {
         bail!(
-            "model `{model_id}` route for provider `{}` uses compatibility.openrouter.api `decisions` but capabilities.decisions is not enabled",
+            "model `{model_id}` route for provider `{}` uses compatibility.openrouter.api `decisions` but disables capabilities.decisions",
             route.provider
         );
     }
     if is_typesafe && !capabilities.decisions {
         bail!(
-            "model `{model_id}` route for typesafe provider `{}` must enable capabilities.decisions",
+            "model `{model_id}` route for typesafe provider `{}` cannot disable capabilities.decisions",
             route.provider
         );
     }
@@ -557,8 +552,9 @@ fn validate_images_route_capability(
     model_id: &str,
     route: &ModelRouteConfig,
     provider: Option<&ProviderConfig>,
+    capabilities: ProviderCapabilities,
 ) -> anyhow::Result<()> {
-    if route.capabilities.images == Some(true)
+    if capabilities.images
         && provider.is_some_and(|provider| {
             !matches!(
                 provider,

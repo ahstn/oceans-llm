@@ -145,10 +145,13 @@ impl<'a> GovernedCall<'a> {
             }
             None => None,
         };
-        match McpGatewayService::new(self.state.store.clone())
-            .with_oauth_runtime(self.state.mcp_oauth_runtime.clone())
-            .prepare_upstream_for_auth(self.auth, self.server.clone())
-            .await
+        match McpGatewayService::new(
+            self.state.store.clone(),
+            self.state.mcp_http_clients.url_policy().clone(),
+        )
+        .with_oauth_runtime(self.state.mcp_oauth_runtime.clone())
+        .prepare_upstream_for_auth(self.auth, self.server.clone())
+        .await
         {
             Ok(upstream) => Ok(Admitted {
                 arguments,

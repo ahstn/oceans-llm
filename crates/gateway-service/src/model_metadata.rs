@@ -2,7 +2,13 @@
 mod catalog;
 pub(crate) mod listing;
 pub(crate) mod litellm;
-pub use catalog::{FieldConflict, MergeReport, SupplementProvenance};
+pub use crate::pricing_catalog::{
+    merge::{
+        FieldConflict, LimitProvenance, MergedModelProvenance, MergedModelReport,
+        MetadataProvenance, SourceValue,
+    },
+    sources::CatalogSourceId,
+};
 pub use listing::{
     CapabilitySupport, ContextManagementCapability, EffortCapability, ModelArchitecture,
     ModelCapabilities as AnthropicModelCapabilities, ModelCard, ModelsListResponse,
@@ -16,23 +22,40 @@ use crate::model_resolution::{
 };
 use gateway_core::{
     GatewayError, GatewayModel, ModelRepository, ModelRoute, ProviderCapabilities,
-    ProviderConnection, ProviderRepository, ReasoningEffort,
+    ProviderConnection, ProviderRepository, ReasoningEffort, infer_route_capabilities,
 };
 use serde::Serialize;
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::pricing_catalog::{
     PricingCatalogCostDocument, PricingCatalogLimitDocument, PricingCatalogModalitiesDocument,
-    PricingCatalogSnapshot, PricingCatalogSnapshotMetadata, catalog_metadata_target_for_route,
-    catalog_pricing_supported_for_route, metadata::CatalogModelMetadata,
+    PricingCatalogSnapshot, catalog_metadata_target_for_route, catalog_pricing_supported_for_route,
+    metadata::CatalogModelMetadata,
 };
+
+/// The `/v1/model-metadata` response shape version; bump it on breaking shape changes.
+const MODEL_METADATA_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Serialize)]
 pub struct ModelMetadataResponse {
     pub schema_version: u32,
-    pub catalog: PricingCatalogSnapshotMetadata,
-    pub supplement: SupplementProvenance,
+    /// The snapshot each catalog source contributed to the merged catalog, in precedence
+    /// order.
+    pub sources: Vec<CatalogSourceProvenance>,
     pub data: Vec<ModelMetadata>,
+}
+
+/// Provenance of the snapshot one catalog source contributed.
+#[derive(Debug, Serialize)]
+pub struct CatalogSourceProvenance {
+    pub source: CatalogSourceId,
+    /// Where the snapshot came from, such as `models_dev` or `vendored_litellm`.
+    pub origin: String,
+    pub etag: Option<String>,
+    pub checksum: Option<String>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub fetched_at: OffsetDateTime,
 }
 
 #[derive(Debug, Serialize)]
@@ -55,8 +78,9 @@ pub struct ModelCapabilities {
 
 #[derive(Debug, Serialize)]
 pub struct RouteMetadata {
-    pub merge_report: MergeReport,
-    pub deprecated_date: Option<String>,
+    /// Which catalog source supplied each field and where sources disagreed. Null when the
+    /// route has no catalog entry.
+    pub merge_report: Option<MergedModelReport>,
     pub limits: PricingCatalogLimitDocument,
     pub capabilities: ModelCapabilities,
     pub catalog_metadata: Option<CatalogModelMetadata>,
@@ -93,9 +117,18 @@ where
         })
         .collect();
     Ok(ModelMetadataResponse {
-        schema_version: 1,
-        catalog: snapshot.metadata.clone(),
-        supplement: catalog::snapshot().provenance.clone(),
+        schema_version: MODEL_METADATA_SCHEMA_VERSION,
+        sources: snapshot
+            .sources
+            .iter()
+            .map(|(&source, metadata)| CatalogSourceProvenance {
+                source,
+                origin: metadata.source.clone(),
+                etag: metadata.etag.clone(),
+                checksum: metadata.checksum.clone(),
+                fetched_at: metadata.fetched_at,
+            })
+            .collect(),
         data,
     })
 }
@@ -187,24 +220,34 @@ fn route_metadata(
         limits.input = limits.input.map(|value| value.min(context));
         limits.output = limits.output.map(|value| value.min(context));
     }
+    let hints = provider
+        .map(|provider| crate::capability_hints::hints_for_route(snapshot, provider, route))
+        .unwrap_or_default();
     let transport = crate::effective_route_metadata::effective_provider_route_capabilities(
-        Some(route.capabilities),
-        provider,
-        Some(route),
+        route, provider, hints,
     );
+    // Explicit and inferred route settings: a declared `true` is final, so catalog flags only
+    // decide fields the route leaves open.
+    let declared = route.capabilities.or(infer_route_capabilities(
+        route,
+        provider.map_or("", |provider| provider.provider_type.as_str()),
+    ));
     let metadata = catalog.metadata.as_ref();
     let capabilities = ModelCapabilities {
         reasoning: metadata.and_then(|metadata| metadata.reasoning),
         tools: gated(
             transport.tools && provider.is_some(),
+            declared.tools,
             metadata.and_then(|metadata| metadata.tool_call),
         ),
         structured_output: gated(
             transport.json_schema && provider.is_some(),
+            declared.json_schema,
             metadata.and_then(|metadata| metadata.structured_output),
         ),
         vision: gated(
             transport.vision && provider.is_some(),
+            declared.vision,
             catalog.modalities.as_ref().and_then(|modalities| {
                 (!modalities.input.is_empty())
                     .then(|| modalities.input.iter().any(|value| value == "image"))
@@ -240,7 +283,6 @@ fn route_metadata(
         capabilities,
         catalog_metadata: catalog.metadata,
         merge_report: catalog.merge_report,
-        deprecated_date: catalog.deprecated_date,
         modalities: with_image_generation(catalog.modalities, transport),
         pricing,
         pricing_source,
@@ -249,13 +291,21 @@ fn route_metadata(
     }
 }
 
-fn gated(transport: bool, catalog: Option<bool>) -> Option<bool> {
-    if transport { catalog } else { Some(false) }
+/// `Some(false)` when the route cannot serve the feature, `Some(true)` when the route declares
+/// it, and otherwise the catalog's answer.
+fn gated(transport: bool, declared: Option<bool>, catalog: Option<bool>) -> Option<bool> {
+    if !transport {
+        Some(false)
+    } else if declared == Some(true) {
+        Some(true)
+    } else {
+        catalog
+    }
 }
 
-/// A route opted into `/v1/images` outputs images even when the catalog (models.dev has no
-/// image-only models such as `openai/gpt-image-*`) lacks modality data. The images prompt is
-/// text, and only a chat-capable transport also answers with text.
+/// A route opted into `/v1/images` outputs images even when the catalog lacks modality data
+/// for its model. The images prompt is text, and only a chat-capable transport also answers
+/// with text.
 fn with_image_generation(
     modalities: Option<PricingCatalogModalitiesDocument>,
     transport: ProviderCapabilities,

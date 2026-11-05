@@ -6,6 +6,52 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.48.0](https://github.com/ahstn/oceans-llm/compare/v0.47.0...v0.48.0) - 2026-10-31
+
+### :rocket: New features
+- *(client-config)* Generate native OpenCode V2 config by @ahstn in [#588](https://github.com/ahstn/oceans-llm/pull/588)
+
+### Changed
+- *(deps)* Bump rustls from 0.23.45 to 0.23.46 by @dependabot[bot] in [#589](https://github.com/ahstn/oceans-llm/pull/589)
+- *(deps)* Bump zip from 9.1.2 to 9.1.3 by @dependabot[bot] in [#597](https://github.com/ahstn/oceans-llm/pull/597)
+- *(deps)* Bump the aws-sdk group across 1 directory with 3 updates by @dependabot[bot] in [#596](https://github.com/ahstn/oceans-llm/pull/596)
+- *(deps)* Bump the tanstack group across 1 directory with 3 updates by @dependabot[bot] in [#590](https://github.com/ahstn/oceans-llm/pull/590)
+- *(deps)* Bump @lobehub/icons-static-svg from 1.98.0 to 1.101.0 in /crates/admin-ui/web in the ui-components-and-assets group across 1 directory by @dependabot[bot] in [#592](https://github.com/ahstn/oceans-llm/pull/592)
+- *(deps-dev)* Bump the styling group across 1 directory with 2 updates by @dependabot[bot] in [#593](https://github.com/ahstn/oceans-llm/pull/593)
+- *(deps-dev)* Bump the code-quality group across 1 directory with 2 updates by @dependabot[bot] in [#594](https://github.com/ahstn/oceans-llm/pull/594)
+- *(deps)* Bump pi-subagents from 0.81.0 to 0.82.1 in /actions/review-agent in the pi group by @dependabot[bot] in [#591](https://github.com/ahstn/oceans-llm/pull/591)
+- *(deps)* Bump jdx/mise-action from 5.1.2 to 5.2.2 by @dependabot[bot] in [#598](https://github.com/ahstn/oceans-llm/pull/598)
+- *(deps)* Bump Swatinem/rust-cache from 2.9.2 to 2.9.3 by @dependabot[bot] in [#599](https://github.com/ahstn/oceans-llm/pull/599)
+- *(deps)* Bump Swatinem/rust-cache from 2.9.2 to 2.9.3 in /.github/actions/rust-cache by @dependabot[bot] in [#600](https://github.com/ahstn/oceans-llm/pull/600)
+
+## [0.47.0](https://github.com/ahstn/oceans-llm/compare/v0.46.0...v0.47.0) - 2026-10-27
+
+### :rocket: New features
+- *(mcp)* Allow API keys over http to in-cluster Kubernetes services by @ahstn in [#586](https://github.com/ahstn/oceans-llm/pull/586)
+
+### :bug: Bug fixes
+- *(deps)* Resolve critical OSV advisories and Cargo highs by @ahstn in [#587](https://github.com/ahstn/oceans-llm/pull/587)
+
+## [0.46.0](https://github.com/ahstn/oceans-llm/compare/v0.45.0...v0.46.0) - 2026-10-27
+
+### :rocket: New features
+- *(admin-ui)* Adopt Geist Mono and a lilac checked toggle for Client config by @ahstn in [#585](https://github.com/ahstn/oceans-llm/pull/585)
+
+## [0.45.0](https://github.com/ahstn/oceans-llm/compare/v0.44.0...v0.45.0) - 2026-10-27
+
+### :rocket: New features
+- *(gateway)* Add image generation API and image-aware pricing by @ahstn in [#577](https://github.com/ahstn/oceans-llm/pull/577)
+
+### Changed
+- *(deps)* Bump uuid from 1.28.0 to 1.29.0 in the utilities group by @dependabot[bot] in [#584](https://github.com/ahstn/oceans-llm/pull/584)
+- *(deps)* Bump the aws-sdk group with 2 updates by @dependabot[bot] in [#583](https://github.com/ahstn/oceans-llm/pull/583)
+- *(deps)* Bump @vitest/mocker and vitest in /tests/harness-integration by @dependabot[bot] in [#570](https://github.com/ahstn/oceans-llm/pull/570)
+- *(deps)* Bump @lobehub/icons-static-svg from 1.95.1 to 1.98.0 in /crates/admin-ui/web in the ui-components-and-assets group across 1 directory by @dependabot[bot] in [#578](https://github.com/ahstn/oceans-llm/pull/578)
+- *(deps)* Bump the tanstack group across 1 directory with 3 updates by @dependabot[bot] in [#579](https://github.com/ahstn/oceans-llm/pull/579)
+- *(deps-dev)* Bump oxlint-tsgolint from 7.0.2004 to 7.0.2005 in /crates/admin-ui/web in the code-quality group across 1 directory by @dependabot[bot] in [#580](https://github.com/ahstn/oceans-llm/pull/580)
+- *(deps)* Bump the pi group in /actions/review-agent with 6 updates by @dependabot[bot] in [#581](https://github.com/ahstn/oceans-llm/pull/581)
+- *(deps-dev)* Bump the review-agent-tooling group in /actions/review-agent with 3 updates by @dependabot[bot] in [#582](https://github.com/ahstn/oceans-llm/pull/582)
+
 ## [0.44.0](https://github.com/ahstn/oceans-llm/compare/v0.43.2...v0.44.0) - 2026-10-26
 
 ### :rocket: New features

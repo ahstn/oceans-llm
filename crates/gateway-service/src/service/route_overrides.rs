@@ -116,6 +116,8 @@ fn pricing_override_matches_catalog(
         // The catalog has no image rate, so it bills image tokens at the output rate. An override
         // with its own image rate bills them differently.
         && configured.image_output_cost_per_million_tokens.is_none()
+        // An override replaces the catalog's whole schedule, so it drops any context tiers.
+        && catalog.context_tiers.is_empty()
 }
 
 impl<S, P> GatewayService<S, P>
@@ -326,6 +328,7 @@ mod tests {
             output_cost_per_million_tokens: Some(money("0.6000")),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            context_tiers: Vec::new(),
         };
         assert!(pricing_override_matches_catalog(&configured, &catalog));
 
@@ -354,5 +357,17 @@ mod tests {
             &with_image_rate,
             &catalog
         ));
+
+        // The override drops the catalog's context tiers, so long prompts would bill differently.
+        catalog
+            .context_tiers
+            .push(gateway_core::ContextPricingTier {
+                above_input_tokens: 200_000,
+                input: Some(money("0.30")),
+                output: Some(money("1.20")),
+                cache_read: None,
+                cache_write: None,
+            });
+        assert!(!pricing_override_matches_catalog(&configured, &catalog));
     }
 }

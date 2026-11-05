@@ -59,24 +59,19 @@ The following are now validated:
 | `pricing_provider_id` (`openai_compat`, `anthropic_compat`) | `base_url` host: `api.openai.com` is `openai`, `openrouter.ai` is `openrouter`, `opencode.ai` is `opencode`. Required for any other host. |
 | `auth.kind` (`openai_compat`, `typesafe`) | Optional, defaults to `bearer`, and is validated when set. |
 | Route `id` | The provider key, when that provider appears once in the model and the key is a valid route id. |
-| Route `capabilities` | The provider type and compatibility profile (decision 4). |
+| Route `capabilities` | No longer inferred at load. Omitted flags stay unset and resolve at request time (see decision 4). |
 | Bedrock `openai_base_path` | `/openai/v1` for `runtime_openai_chat`, `/v1` for the Mantle OpenAI styles, per AWS's documented base URLs. Mantle models served under `/openai/v1`, such as GPT-5.5, still set it. |
 | Provider icon | `aws_bedrock` type maps to the `aws` icon. |
 
 Inference runs while each file is parsed, so every parsed config carries the inferred values, including configs that tests build without the loader. Each value depends only on its own entry: a provider's base URL, or the other routes of the same model, which one file defines. Inference never consults the pricing catalog, which refreshes at runtime, so validation stays deterministic and offline.
 
-### 4. Route capabilities default from the profile
+### 4. Route capability ceiling
 
-Each `capabilities` flag is optional. An omitted flag takes the value implied by the route:
+> **Superseded in part** by [Multi-Source Model Catalog and Tri-State Route Capabilities](2026-10-31-multi-source-model-catalog.md). That ADR leaves omitted flags unset and resolves them at request time from compatibility inference, catalog hints, and defaults. This section originally resolved them from the provider profile at config load, which would have hidden catalog hints. What remains from this section is the ceiling below.
 
-- **Decisions transports** (`typesafe`, `openai_compat` with `decisions_api: openai`, and OpenRouter `api: decisions`): `decisions` only.
-- **Copilot routes:** `github_copilot_route_capabilities` from the route's compatibility block.
-- **Bedrock routes:** the `api_style` rules.
-- **Any other route:** everything except `decisions` and `images`. Image generation stays opt-in per route, even where the profile can serve it, because only image models serve the Images API.
+The most each route can serve lives once in `gateway-core`: `ProviderCapabilities::for_provider_type` for the provider-type baseline, narrowed by `route_capability_ceiling` and `route_provider_capabilities` for the route's upstream model and compatibility profile (Vertex models, Copilot evidence, Decisions profiles, and Bedrock `api_style`). Provider clients, request routing, and model metadata cap routes at it.
 
-An explicit flag replaces the derived value. Validation still rejects flags a profile cannot serve. At request time route flags are still intersected with provider capability.
-
-The per-provider-type baselines and the route narrowing above now live once in `gateway-core`: `ProviderCapabilities::for_provider_type`, `route_capability_defaults`, and `route_provider_capabilities`. Config defaults, provider clients, and model metadata all use them.
+Config validation rejects an explicit `true` above the ceiling, such as `responses: true` on an `anthropic_compat` route, because the cap would silently drop it.
 
 ### 5. Config directory
 
@@ -134,7 +129,7 @@ Positive:
 - Typos and duplicate ids fail at load time, naming the files involved.
 - A typical model entry is a key, a provider, and an upstream model.
 - Route identities no longer change when routes are reordered, once a route has its keyed id.
-- The request path and model metadata agree on provider capability.
+- The request path and model metadata agree on the capability ceiling.
 
 Trade-offs:
 

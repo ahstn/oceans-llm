@@ -52,7 +52,7 @@ describe("shell guardrail hooks", () => {
     expectGuardrailRequest(fetchMock, "rm -rf /tmp/pi-guardrail");
   });
 
-  test("OpenCode rejects a denied command in tool.execute.before", async () => {
+  test("OpenCode rejects a denied command in tool execute.before", async () => {
     const hook = await loadOpenCodeHook();
     const fetchMock = vi.fn().mockResolvedValue(
       Response.json({
@@ -66,7 +66,7 @@ describe("shell guardrail hooks", () => {
     globalThis.fetch = fetchMock;
 
     await expect(
-      hook({ tool: "bash" }, { args: { command: "rm -rf /tmp/opencode-guardrail" } }),
+      hook("rm -rf /tmp/opencode-guardrail"),
     ).rejects.toThrow("filesystem.recursive_force_remove");
     expectGuardrailRequest(fetchMock, "rm -rf /tmp/opencode-guardrail");
   });
@@ -100,8 +100,8 @@ describe("shell guardrail hooks", () => {
       piHook({ toolName: "bash", input: { command: "rm -rf ./generated" } }),
     ).resolves.toBeUndefined();
     await expect(
-      openCodeHook({ tool: "bash" }, { args: { command: "rm -rf ./generated" } }),
-    ).resolves.toBeUndefined();
+      openCodeHook("rm -rf ./generated"),
+    ).resolves.toContain("rm -rf ./generated");
     expect(console.error).toHaveBeenCalledWith(
       "oceans_guardrail_decision_id=decision-pi-audit",
     );
@@ -125,16 +125,15 @@ describe("shell guardrail hooks", () => {
       toolName: "bash",
       input: { command: "cat ././../../etc/passwd" },
     };
-    const openCodeOutput = { args: { command: 'cat "$PWD/../../etc/passwd"' } };
 
     await expect(piHook(piEvent)).resolves.toBeUndefined();
-    await expect(openCodeHook({ tool: "bash" }, openCodeOutput)).resolves.toBeUndefined();
+    const openCodeCommand = await openCodeHook('cat "$PWD/../../etc/passwd"');
 
     const sandboxExecutable = process.platform === "darwin" ? "sandbox-exec" : "bwrap";
     expect(piEvent.input.command).toContain(sandboxExecutable);
-    expect(openCodeOutput.args.command).toContain(sandboxExecutable);
+    expect(openCodeCommand).toContain(sandboxExecutable);
     expect(piEvent.input.command).toContain("/tmp/guardrail-workspace");
-    expect(openCodeOutput.args.command).toContain("/tmp/guardrail-workspace");
+    expect(openCodeCommand).toContain("/tmp/guardrail-workspace");
   });
 
   test("both hooks fail closed when policy evaluation is unavailable", async () => {
@@ -145,9 +144,7 @@ describe("shell guardrail hooks", () => {
     await expect(
       piHook({ toolName: "bash", input: { command: "printf safe" } }),
     ).resolves.toMatchObject({ block: true, reason: expect.stringContaining("network unavailable") });
-    await expect(
-      openCodeHook({ tool: "bash" }, { args: { command: "printf safe" } }),
-    ).rejects.toThrow("network unavailable");
+    await expect(openCodeHook("printf safe")).rejects.toThrow("network unavailable");
   });
 
   test("both hooks fail closed on malformed successful responses", async () => {
@@ -161,9 +158,21 @@ describe("shell guardrail hooks", () => {
       block: true,
       reason: expect.stringContaining("invalid response"),
     });
-    await expect(
-      openCodeHook({ tool: "bash" }, { args: { command: "printf safe" } }),
-    ).rejects.toThrow("invalid response");
+    await expect(openCodeHook("printf safe")).rejects.toThrow("invalid response");
+  });
+
+  test("OpenCode rejects moving the session out of the workspace", async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock;
+    const { beforeTool } = await loadOpenCodeHooks();
+
+    // Code Mode reports namespaced names, so cover both spellings.
+    for (const tool of ["session_move", "opencode_session_move"]) {
+      await expect(beforeTool({ tool, input: { directory: "/" } })).rejects.toThrow(
+        "moving the session",
+      );
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
@@ -172,10 +181,10 @@ type PiHook = (event: {
   input: { command: string };
 }) => Promise<{ block: boolean; reason: string } | undefined>;
 
-type OpenCodeHook = (
-  input: { tool: string },
-  output: { args: { command: string } },
-) => Promise<void>;
+/** Runs a shell command through both OpenCode hooks and returns the command that would spawn. */
+type OpenCodeHook = (command: string) => Promise<string>;
+type OpenCodeToolEvent = { tool: string; input: Record<string, unknown> };
+type OpenCodeShellEvent = { command: string };
 
 async function loadPiHook(): Promise<PiHook> {
   const module = (await loadSource(
@@ -194,15 +203,43 @@ async function loadPiHook(): Promise<PiHook> {
   return hook;
 }
 
-async function loadOpenCodeHook(): Promise<OpenCodeHook> {
+async function loadOpenCodeHooks(): Promise<{
+  beforeTool: (event: OpenCodeToolEvent) => Promise<void>;
+  beforeShell: (event: OpenCodeShellEvent) => void;
+}> {
   const module = (await loadSource(
     guardrailPluginSource("/tmp/guardrail-workspace"),
     "opencode",
   )) as {
-    OceansGuardrails: () => Promise<Record<"tool.execute.before", OpenCodeHook>>;
+    default: { setup: (ctx: unknown) => Promise<void> };
   };
-  const hooks = await module.OceansGuardrails();
-  return hooks["tool.execute.before"];
+  let toolHook: ((event: OpenCodeToolEvent) => Promise<void>) | undefined;
+  let shellHook: ((event: OpenCodeShellEvent) => void) | undefined;
+  await module.default.setup({
+    tool: {
+      hook: async (name: string, callback: typeof toolHook) => {
+        if (name === "execute.before") toolHook = callback;
+      },
+    },
+    shell: {
+      hook: async (name: string, callback: typeof shellHook) => {
+        if (name === "create.before") shellHook = callback;
+      },
+    },
+  });
+  if (!toolHook || !shellHook) throw new Error("OpenCode guardrail hooks were not registered");
+  return { beforeTool: toolHook, beforeShell: shellHook };
+}
+
+async function loadOpenCodeHook(): Promise<OpenCodeHook> {
+  const { beforeTool, beforeShell } = await loadOpenCodeHooks();
+  return async (command) => {
+    const toolEvent = { tool: "shell", input: { command } as Record<string, unknown> };
+    await beforeTool(toolEvent);
+    const shellEvent = { command: String(toolEvent.input.command) };
+    beforeShell(shellEvent);
+    return shellEvent.command;
+  };
 }
 
 async function loadSource(source: string, name: string): Promise<Record<string, unknown>> {

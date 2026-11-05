@@ -53,9 +53,9 @@ pub fn client_api_style(input: &ClientConfigInput) -> ApiFormat {
 
 pub(crate) const fn opencode_provider_package_for_style(style: ApiFormat) -> &'static str {
     match style {
-        ApiFormat::OpenAiChatCompletions => "@ai-sdk/openai-compatible",
-        ApiFormat::OpenAiResponses => "@ai-sdk/openai",
-        ApiFormat::AnthropicMessages => "@ai-sdk/anthropic",
+        ApiFormat::OpenAiChatCompletions => "@opencode/ai/providers/openai-compatible",
+        ApiFormat::OpenAiResponses => "@opencode/ai/providers/openai-compatible/responses",
+        ApiFormat::AnthropicMessages => "@opencode/ai/providers/anthropic-compatible",
     }
 }
 
