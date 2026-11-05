@@ -133,12 +133,24 @@ pub enum VertexAdapterError {
     UnsupportedResponseFormat(String),
     #[error("`response_format.json_schema.schema` must be an object")]
     MissingResponseSchema,
+    #[error(
+        "`strict: true` is not supported for google vertex chat; strict schema enforcement is not guaranteed"
+    )]
+    UnsupportedStrictControl,
+    #[error(
+        "google vertex replay metadata does not match the public assistant text, reasoning, or tool calls"
+    )]
+    ReplayProjectionMismatch,
     #[error("`response_format` conflicts with caller-supplied `generationConfig.responseMimeType`")]
     ConflictingResponseFormat,
     #[error("`{0}` is not supported for google vertex chat")]
     UnsupportedRequestField(&'static str),
     #[error("google vertex returned a malformed function call: {0}")]
     MalformedFunctionCall(String),
+    #[error("google vertex returned an unsuccessful or unknown finish reason: {0}")]
+    UnsuccessfulFinishReason(String),
+    #[error("google vertex returned an incomplete response: {0}")]
+    IncompleteResponse(&'static str),
     #[error("google vertex stream reported an error: {0}")]
     StreamError(String),
     #[error("upstream google vertex stream ended without a candidate `finishReason`")]
@@ -149,6 +161,8 @@ impl From<VertexAdapterError> for ProviderError {
     fn from(error: VertexAdapterError) -> Self {
         match error {
             VertexAdapterError::MalformedFunctionCall(_)
+            | VertexAdapterError::UnsuccessfulFinishReason(_)
+            | VertexAdapterError::IncompleteResponse(_)
             | VertexAdapterError::StreamError(_)
             | VertexAdapterError::StreamPrematureEof => Self::Transport(error.to_string()),
             other => Self::InvalidRequest(other.to_string()),

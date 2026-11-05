@@ -13,6 +13,7 @@ pub(super) struct CandidateParts {
     /// Signature Gemini 3 attaches to a non-function part; replayed on the next turn.
     pub thought_signature: Option<Value>,
     pub tool_calls: Vec<Value>,
+    pub native_parts: Vec<Value>,
 }
 
 impl CandidateParts {
@@ -25,6 +26,7 @@ impl CandidateParts {
         else {
             return parts;
         };
+        parts.native_parts = items.clone();
         for part in items {
             let signature = part.get("thoughtSignature");
             if let Some(function_call) = part.get("functionCall") {
@@ -74,13 +76,20 @@ fn tool_call_from_function_call(function_call: &Value, signature: Option<&Value>
     Value::Object(call)
 }
 
-pub(super) fn thought_signature_metadata(signature: Value) -> Value {
-    json!({ "gcp_vertex": { THOUGHT_SIGNATURE_FIELD: signature } })
-}
-
-/// Vertex reports these as candidate `finishReason`s; anything not listed maps to `stop`.
-pub(super) fn map_google_finish_reason(reason: &str) -> &'static str {
-    match reason {
+/// Missing terminal state is permitted only while streaming. Failure and unknown reasons are
+/// upstream errors, never successful stops (even if the candidate also includes function calls).
+pub(super) fn candidate_finish_reason(
+    candidate: &Value,
+) -> Result<Option<&'static str>, VertexAdapterError> {
+    let Some(reason) = candidate.get("finishReason").and_then(Value::as_str) else {
+        return Ok(None);
+    };
+    let message = candidate
+        .get("finishMessage")
+        .and_then(Value::as_str)
+        .unwrap_or(reason);
+    let mapped = match reason {
+        "STOP" => "stop",
         "MAX_TOKENS" => "length",
         "SAFETY"
         | "RECITATION"
@@ -88,25 +97,73 @@ pub(super) fn map_google_finish_reason(reason: &str) -> &'static str {
         | "BLOCKLIST"
         | "PROHIBITED_CONTENT"
         | "SPII"
+        | "MODEL_ARMOR"
         | "IMAGE_SAFETY"
         | "IMAGE_PROHIBITED_CONTENT" => "content_filter",
-        _ => "stop",
-    }
+        "MALFORMED_FUNCTION_CALL" => {
+            return Err(VertexAdapterError::MalformedFunctionCall(
+                message.to_string(),
+            ));
+        }
+        _ => {
+            return Err(VertexAdapterError::UnsuccessfulFinishReason(format!(
+                "{reason}: {message}"
+            )));
+        }
+    };
+    Ok(Some(mapped))
 }
 
-/// `MALFORMED_FUNCTION_CALL` means the model emitted an unparseable call; Vertex drops it and
-/// the turn has no usable content, so it surfaces as a retryable upstream failure.
-pub(super) fn check_malformed_function_call(candidate: &Value) -> Result<(), VertexAdapterError> {
-    if candidate.get("finishReason").and_then(Value::as_str) == Some("MALFORMED_FUNCTION_CALL") {
-        let message = candidate
-            .get("finishMessage")
-            .and_then(Value::as_str)
-            .unwrap_or("finishReason MALFORMED_FUNCTION_CALL");
-        return Err(VertexAdapterError::MalformedFunctionCall(
-            message.to_string(),
-        ));
+/// Native parts are opaque replay data; call IDs bind ID-less parts to the public tool calls.
+pub(super) fn native_parts_metadata(
+    parts: Vec<Value>,
+    tool_call_ids: Vec<Value>,
+    signature: Option<Value>,
+) -> Value {
+    let mut metadata = json!({ "gcp_vertex": {} });
+    if !parts.is_empty() {
+        metadata["gcp_vertex"]["native_content"] = json!({
+            "source": "google_generate_content",
+            "parts": parts,
+            "tool_call_ids": tool_call_ids
+        });
     }
-    Ok(())
+    if let Some(signature) = signature {
+        metadata["gcp_vertex"][THOUGHT_SIGNATURE_FIELD] = signature;
+    }
+    metadata
+}
+
+/// Gemini's chosen candidate is not necessarily the first (or even present) in topCandidates.
+pub(super) fn map_google_logprobs(candidate: &Value) -> Option<Value> {
+    let result = candidate.get("logprobsResult")?;
+    let chosen = result.get("chosenCandidates")?.as_array()?;
+    let top = result.get("topCandidates").and_then(Value::as_array);
+    let token = |candidate: &Value| {
+        Some(json!({
+            "token": candidate.get("token")?.as_str()?,
+            "logprob": candidate.get("logProbability")?.as_f64()?,
+            "bytes": Value::Null
+        }))
+    };
+    let content: Option<Vec<_>> = chosen
+        .iter()
+        .enumerate()
+        .map(|(index, chosen)| {
+            let mut chosen = token(chosen)?;
+            let alternatives: Option<Vec<_>> = top
+                .and_then(|top| top.get(index))
+                .and_then(|entry| entry.get("candidates"))
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(token)
+                .collect();
+            chosen["top_logprobs"] = json!(alternatives?);
+            Some(chosen)
+        })
+        .collect();
+    Some(json!({ "content": content? }))
 }
 
 /// `promptFeedback.blockReason` is set when the prompt itself was refused; no candidates follow.
@@ -115,6 +172,7 @@ pub(super) fn prompt_block_reason(value: &Value) -> Option<&str> {
         .get("promptFeedback")?
         .get("blockReason")
         .and_then(Value::as_str)
+        .filter(|reason| !reason.is_empty() && *reason != "BLOCK_REASON_UNSPECIFIED")
 }
 
 /// In-band error objects arrive with HTTP 200 on streams (for example `RESOURCE_EXHAUSTED`).
@@ -158,17 +216,26 @@ pub(super) fn normalize_google_response(
         .flatten()
         .enumerate()
     {
-        check_malformed_function_call(candidate)?;
+        let mapped = candidate_finish_reason(candidate)?.ok_or(
+            VertexAdapterError::IncompleteResponse("missing candidate finishReason"),
+        )?;
         let parts = CandidateParts::from_candidate(candidate);
-        let finish_reason = if parts.tool_calls.is_empty() {
-            candidate
-                .get("finishReason")
-                .and_then(Value::as_str)
-                .map_or("stop", map_google_finish_reason)
-        } else {
+        let finish_reason = if mapped == "stop" && !parts.tool_calls.is_empty() {
             "tool_calls"
+        } else {
+            mapped
         };
 
+        let mut metadata = native_parts_metadata(
+            parts.native_parts,
+            parts
+                .tool_calls
+                .iter()
+                .map(|call| call["id"].clone())
+                .collect(),
+            parts.thought_signature.clone(),
+        );
+        metadata["gcp_vertex"]["finish_reason"] = candidate["finishReason"].clone();
         let mut message = Map::new();
         message.insert("role".to_string(), Value::String("assistant".to_string()));
         let content = if parts.text.is_empty() && !parts.tool_calls.is_empty() {
@@ -184,33 +251,37 @@ pub(super) fn normalize_google_response(
             );
         }
         if let Some(signature) = parts.thought_signature {
-            message.insert(THOUGHT_SIGNATURE_FIELD.to_string(), signature.clone());
-            message.insert(
-                "provider_metadata".to_string(),
-                thought_signature_metadata(signature),
-            );
+            message.insert(THOUGHT_SIGNATURE_FIELD.to_string(), signature);
         }
+        message.insert("provider_metadata".to_string(), metadata);
         if !parts.tool_calls.is_empty() {
             message.insert("tool_calls".to_string(), Value::Array(parts.tool_calls));
         }
 
-        choices.push(json!({
+        let mut choice = json!({
             "index": candidate.get("index").and_then(Value::as_i64).unwrap_or(index as i64),
             "message": Value::Object(message),
             "finish_reason": finish_reason
-        }));
+        });
+        if let Some(logprobs) = map_google_logprobs(candidate) {
+            choice["logprobs"] = logprobs;
+        }
+        choices.push(choice);
     }
 
     if choices.is_empty() {
-        let finish_reason = if prompt_block_reason(value).is_some() {
-            "content_filter"
-        } else {
-            "stop"
+        let Some(block_reason) = prompt_block_reason(value) else {
+            return Err(VertexAdapterError::IncompleteResponse(
+                "no candidates or promptFeedback.blockReason",
+            ));
         };
         choices.push(json!({
             "index": 0,
-            "message": { "role": "assistant", "content": Value::Null },
-            "finish_reason": finish_reason
+            "message": {
+                "role": "assistant", "content": Value::Null,
+                "provider_metadata": { "gcp_vertex": { "prompt_block_reason": block_reason } }
+            },
+            "finish_reason": "content_filter"
         }));
     }
 

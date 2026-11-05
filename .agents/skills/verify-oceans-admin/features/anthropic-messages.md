@@ -14,6 +14,8 @@ Clients use `POST /v1/messages` (or `/messages`) with Anthropic messages, tools,
 - `messages-observability` correlates the response request ID with the native operation, provider attempt, usage and scoped-key cleanup.
 - `messages-native-fidelity` preserves native request bodies, content order, server-tool/future blocks, stop reasons, complete usage, extension headers and unknown SSE events across native transports.
 - `messages-rolling-aliases` sends adaptive/effort controls unchanged for rolling or unknown native model identities; known explicit models retain local validation.
+- `messages-chat-replay` checks ordered Chat continuation state, public-projection validation and replay invalidation after output guardrail transforms.
+- `messages-provider-terminals` checks Gemini and Bedrock terminal truth, late usage after errors, and independently checksummed EventStream frames.
 
 ## How to get to it (user POV)
 
@@ -30,7 +32,7 @@ Preconditions:
 - Run only the isolated stack owned by this run; `control-oceans-admin doctor` must pass before browser work and after any failed drive.
 - The [live LLM policy](./live-llm-requests.md) authorizes one bounded canary for request-path verification when credentials are available. Do not run the effort matrix against paid providers. Tool loops and additional native scenarios have their own explicit call budgets.
 
-1. **Run the offline gate from the final source.** This runs the core, provider and gateway Rust library suites, including separate API thinking contracts, native request matrices, local provider HTTP captures, tool/metadata roundtrips, handler accounting and stream reconstruction. It fails if any named critical regression disappears or is ignored, even when Cargo exits successfully:
+1. **Run the offline gate from the final source.** This runs the core, provider, service, client-config and gateway Rust library suites, including separate API thinking contracts, native request matrices, local provider HTTP captures, tool/metadata roundtrips, ledger accounting and stream reconstruction. It fails if any named critical regression disappears or is ignored, even when Cargo exits successfully:
 
    ```bash
    mise exec -- node .agents/skills/verify-oceans-admin/scripts/check-messages.mjs \
@@ -53,11 +55,18 @@ Preconditions:
    | Streaming | Assistant role appears first and once, metadata does not precede it, usage is retained, tool/content blocks close in order and `message_stop` terminates the response; pending metadata survives DONE/EOF even without a finish reason |
    | Gateway behavior | Authentication/model grants, response/error shape, accounting, exhausted-budget rejection before provider dispatch and request logging |
    | Native transport fidelity | Direct Anthropic, Vertex, Bedrock and OpenRouter native methods preserve entire response objects and SSE frames; gateway model identity, cached accounting, generated-tool guardrails and extension/retry headers remain correct |
+   | Native body integrity | Successful JSON rejects malformed UTF-8 and incomplete HTTP bodies; body-read deadlines remain timeouts; model rewriting preserves every non-model byte in multiline LF/CRLF/CR frames and fragmented Unicode |
+   | Ordered Chat replay | Gemini parts, Anthropic blocks and Converse blocks retain signed/redacted order and opaque extensions; foreign transport sources use the public projection; edits to text, reasoning, tools or explicit text-block controls cannot be hidden by metadata |
+   | Replay guardrails | A transformed text/tool projection cannot expose original content through replay metadata or later stream snapshots; usage remains available |
+   | Provider terminal truth | A Gemini call without a terminal fails; limits/filters win over calls; failures retain late usage; valid incomplete tool JSON on length/filter terminals omits replay instead of fabricating input |
+   | Provider controls and results | Gemini strict tools/schemas fail explicitly, returned log probabilities remain available, and same-name ID-less parallel results follow call IDs; Converse groups results and preserves requested response fields |
+   | EventStream conformance | Independent IEEE prelude/message checksums, legal typed headers, bounded frames and dense stable tool ordinals; valid usage before corrupt frames survives coalesced and split HTTP chunks |
    | Native guardrail framing | Plain-string `system` participates in denial, transforms and prompt context; CR, LF, CRLF, mixed and fragmented SSE enforce tool/text checks while preserving untouched bytes and metadata |
    | Native stream completion | EOF before `message_stop` fails the response body and records a stream error while accounting for observed usage; a complete native stream remains successful |
    | OpenRouter Chat compatibility | HTTP(S) image URLs become native URL sources without relaxing other transports; route token aliases override caller limits before defaults and emit only `max_tokens`; streamed totals include cache reads/writes across usage events |
    | Structured output | OpenRouter Chat JSON schemas become native `output_config.format` without dropping other output options; matching formats are accepted, conflicting formats fail, native Messages output controls remain unchanged |
    | Mixed cache TTLs | Valid native, wrapped Anthropic and Bedrock counters retain all prompt/cache/total buckets; JSON and streaming token limits charge them; unsupported TTL pricing stays unpriced unless a provider-reported cost is present |
+   | Chat cache aliases | Root read/write and DeepSeek hit/miss aliases fill only missing canonical fields; explicit zero, invalid canonical values, reported cost and non-Chat counter semantics retain precedence |
    | Rolling alias parity | The exact `~anthropic/claude-opus-latest` accepts the same valid native adaptive/effort requests as an explicit Opus ID, including omitted and null controls; unknown native identities defer new fields and model-specific rules to the upstream |
 
 3. **Choose one live scenario and record its scope.** Use this decision table; never label the OpenRouter result a native-validator or Vertex proof.

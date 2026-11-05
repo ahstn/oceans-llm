@@ -838,7 +838,7 @@ impl ProviderClient for BedrockProvider {
             ProviderError::Transport(format!("invalid JSON from aws_bedrock chat: {error}"))
         })?;
         match api_style {
-            AwsBedrockApiStyle::RuntimeConverse => Ok(normalize_converse_response(&value, context)),
+            AwsBedrockApiStyle::RuntimeConverse => normalize_converse_response(&value, context),
             AwsBedrockApiStyle::RuntimeAnthropicInvoke
             | AwsBedrockApiStyle::MantleAnthropicMessages => Ok(
                 normalize_anthropic_messages_response(&value, context, "aws_bedrock"),

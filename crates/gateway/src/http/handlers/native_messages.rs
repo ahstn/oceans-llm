@@ -47,31 +47,61 @@ fn frame_end(bytes: &[u8], from: usize) -> Option<usize> {
 }
 
 fn rewrite_message_start(frame: &[u8], model: &str) -> Option<Vec<u8>> {
+    #[derive(serde::Deserialize)]
+    struct MessageStart<'a> {
+        #[serde(borrow, rename = "type")]
+        kind: std::borrow::Cow<'a, str>,
+        #[serde(borrow)]
+        message: Message<'a>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Message<'a> {
+        #[serde(borrow)]
+        model: &'a serde_json::value::RawValue,
+    }
+
     let text = std::str::from_utf8(frame).ok()?;
     let mut parser = gateway_core::SseEventParser::default();
     let event = parser.push_bytes(frame).ok()?.into_iter().next()?;
-    let mut payload: Value = serde_json::from_str(&event.data).ok()?;
-    if payload["type"] != "message_start" {
+    let payload: MessageStart<'_> = serde_json::from_str(&event.data).ok()?;
+    if payload.kind != "message_start" {
         return None;
     }
-    payload
-        .get_mut("message")?
-        .as_object_mut()?
-        .insert("model".into(), json!(model));
-    let text = text.replace("\r\n", "\n").replace('\r', "\n");
-    let mut result = String::new();
+    let token = payload.message.model.get();
+    let start = token.as_ptr() as usize - event.data.as_ptr() as usize;
+    let replacement = serde_json::to_vec(model).ok()?;
+    let token_range = start..start + token.len();
+    let mut result = Vec::with_capacity(frame.len() + replacement.len());
+    let mut data_offset = 0;
+    let mut copied = 0;
     let mut written = false;
-    for line in text.split_inclusive('\n') {
-        if line.starts_with("data:") {
+
+    // Map the parser's joined data back to the original bytes. Only JSON token
+    // bytes are removed; data prefixes and line endings remain even when a
+    // value spans several data lines. Match SseEventParser's whitespace handling.
+    for line in text.split_inclusive(['\r', '\n']) {
+        let Some(data) = line.trim_end_matches(['\r', '\n']).strip_prefix("data:") else {
+            continue;
+        };
+        let data = data.trim_start();
+        let end = data_offset + data.len();
+        let overlap_start = token_range.start.max(data_offset);
+        let overlap_end = token_range.end.min(end);
+        if overlap_start < overlap_end {
+            let frame_offset = data.as_ptr() as usize - text.as_ptr() as usize;
+            let start = frame_offset + overlap_start - data_offset;
+            result.extend_from_slice(&frame[copied..start]);
             if !written {
-                result.push_str(&format!("data: {payload}\n"));
+                result.extend_from_slice(&replacement);
                 written = true;
             }
-        } else {
-            result.push_str(line);
+            copied = frame_offset + overlap_end - data_offset;
         }
+        data_offset = end + 1;
     }
-    Some(result.into_bytes())
+    result.extend_from_slice(&frame[copied..]);
+    Some(result)
 }
 
 pub(super) fn apply_headers(response: &mut Response, headers: &BTreeMap<String, String>) {
@@ -109,103 +139,126 @@ mod tests {
     use axum::body::{Bytes, to_bytes};
 
     #[tokio::test]
-    async fn native_model_rewrite_preserves_unknown_events_and_fragmented_frames() {
+    async fn native_model_rewrite_preserves_framing_and_all_other_json_bytes() {
+        fn start_frame(model: &str, newlines: &[&str], multiline: bool) -> String {
+            let payload = format!(
+                r#"{{
+  "type" : "message_start",
+  "model": "upstream",
+  "message": {{
+    "id": "msg-opaque",
+    "metadata": {{"model":"upstream","text":"\"model\":\"upstream\""}},
+    "mo\u0064el" : {model},
+    "content": [],
+    "usage": {{"input_tokens":17,"cache_read_input_tokens":43}},
+    "safeguard_results": {{"verdict":"allow","opaque":"世界"}},
+    "future": {{"nested":["extension",{{"preserved":true}}]}}
+  }},
+  "future": {{"message":{{"model":"upstream"}}}}
+}}"#
+            );
+            let payload = if multiline {
+                payload
+            } else {
+                payload.replace('\n', " ")
+            };
+            let mut frame = String::new();
+            for (index, line) in [
+                "id: original",
+                "retry: 250",
+                ": start comment",
+                "unknown-field: opaque",
+                "event: message_start",
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                frame.push_str(line);
+                frame.push_str(newlines[index % newlines.len()]);
+            }
+            let lines: Vec<_> = payload.lines().collect();
+            for (index, line) in lines.iter().enumerate() {
+                frame.push_str(if index % 2 == 0 { "data: " } else { "data:" });
+                frame.push_str(line);
+                if index + 1 == lines.len() {
+                    frame.push_str(newlines[0]);
+                } else {
+                    frame.push_str(newlines[index % newlines.len()]);
+                    frame.push_str(": interleaved comment");
+                    frame.push_str(newlines[(index + 1) % newlines.len()]);
+                }
+            }
+            frame.push_str(newlines[0]);
+            frame
+        }
+
         let suffix = concat!(
             "id: opaque\nretry: 250\nevent: future_event\ndata: {\"type\":\"future_event\",\"text\":\"世界\"}\n\n",
             "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"pause_turn\"}}\n\n",
             "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
         );
-        for newline in ["\n", "\r\n", "\r"] {
-            let start = format!(
-                "id: original{newline}event: message_start{newline}data: {{\"type\":\"message_start\",\"message\":{{\"model\":\"upstream\",\"future\":true}}}}{newline}{newline}"
-            );
-            let input = format!(": keepalive\n\n{start}{suffix}");
-            for chunk_size in [1, 3, input.len()] {
-                let chunks: Vec<_> = input
-                    .as_bytes()
-                    .chunks(chunk_size)
-                    .map(|c| Ok(Bytes::copy_from_slice(c)))
-                    .collect();
-                let result = stream_with_model(
-                    Box::pin(futures_util::stream::iter(chunks)),
-                    "gateway-alias".into(),
-                )
-                .collect::<Vec<_>>()
-                .await;
-                let result: Vec<_> = result
-                    .into_iter()
-                    .flat_map(|c| c.unwrap().to_vec())
-                    .collect();
-                let text = String::from_utf8(result).unwrap();
-                assert!(text.starts_with(": keepalive\n\n"));
-                assert!(text.contains("id: original\n"));
-                assert!(
-                    text.ends_with(suffix),
-                    "unknown frames must be byte-for-byte unchanged"
-                );
-                let mut parser = gateway_core::SseEventParser::default();
-                let events = parser.push_bytes(text.as_bytes()).unwrap();
-                let payload: Value = serde_json::from_str(&events[1].data).unwrap();
-                assert_eq!(
-                    payload["message"],
-                    json!({"model":"gateway-alias","future":true})
-                );
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn native_model_rewrite_retains_complete_multiline_message_start() {
-        let original = json!({
-            "type": "message_start",
-            "message": {
-                "id": "msg-opaque",
-                "model": "upstream",
-                "content": [],
-                "usage": {"input_tokens": 17, "cache_read_input_tokens": 43},
-                "safeguard_results": {"verdict": "allow", "opaque": "世界"},
-                "future": {"nested": ["extension", {"preserved": true}]}
-            }
-        });
-        let mut expected = original.clone();
-        expected["message"]["model"] = json!("gateway-alias");
-        for newline in ["\n", "\r\n", "\r"] {
-            let data = serde_json::to_string_pretty(&original)
-                .unwrap()
-                .lines()
-                .map(|line| format!("data: {line}{newline}"))
-                .collect::<String>();
-            let input = format!(
-                "event: message_start{newline}{data}{newline}event: message_stop{newline}data: {{\"type\":\"message_stop\"}}{newline}{newline}"
-            );
-            for chunk_size in [1, 7, input.len()] {
-                let chunks: Vec<_> = input
-                    .as_bytes()
-                    .chunks(chunk_size)
-                    .map(|chunk| Ok(Bytes::copy_from_slice(chunk)))
-                    .collect();
-                let output = stream_with_model(
-                    Box::pin(futures_util::stream::iter(chunks)),
-                    "gateway-alias".into(),
-                )
-                .collect::<Vec<_>>()
-                .await;
-                let output: Vec<_> = output
-                    .into_iter()
-                    .flat_map(|chunk| chunk.unwrap().to_vec())
-                    .collect();
-                let events = gateway_core::SseEventParser::default()
-                    .push_bytes(&output)
-                    .unwrap();
-                assert_eq!(events.len(), 2);
-                assert_eq!(
-                    serde_json::from_str::<Value>(&events[0].data).unwrap(),
-                    expected
-                );
-                assert_eq!(
-                    serde_json::from_str::<Value>(&events[1].data).unwrap(),
-                    json!({"type": "message_stop"})
-                );
+        let model = "gateway-\"alias\"\\東京\n🌊";
+        let replacement = serde_json::to_string(model).unwrap();
+        let newline_styles: &[&[&str]] = &[&["\n"], &["\r\n"], &["\r"], &["\r\n", "\n", "\r"]];
+        for newlines in newline_styles {
+            for multiline in [false, true] {
+                for token in [r#""upstream""#, r#""up\u0073tream \"quoted\" \\ 東京 🌊""#] {
+                    let input = format!(
+                        ": keepalive\n\n{}{suffix}",
+                        start_frame(token, newlines, multiline)
+                    );
+                    let expected = format!(
+                        ": keepalive\n\n{}{suffix}",
+                        start_frame(&replacement, newlines, multiline)
+                    );
+                    let original_events = gateway_core::SseEventParser::default()
+                        .push_bytes(input.as_bytes())
+                        .unwrap();
+                    assert_eq!(original_events.len(), 5);
+                    for chunk_size in [1, 3, 7, input.len()] {
+                        let chunks: Vec<_> = input
+                            .as_bytes()
+                            .chunks(chunk_size)
+                            .map(|chunk| Ok(Bytes::copy_from_slice(chunk)))
+                            .collect();
+                        let output = stream_with_model(
+                            Box::pin(futures_util::stream::iter(chunks)),
+                            model.into(),
+                        )
+                        .collect::<Vec<_>>()
+                        .await;
+                        let output: Vec<_> = output
+                            .into_iter()
+                            .flat_map(|chunk| chunk.unwrap().to_vec())
+                            .collect();
+                        assert_eq!(
+                            output,
+                            expected.as_bytes(),
+                            "only the complete model token may change"
+                        );
+                        let events = gateway_core::SseEventParser::default()
+                            .push_bytes(&output)
+                            .unwrap();
+                        assert_eq!(events.len(), original_events.len());
+                        for (index, (event, original)) in
+                            events.iter().zip(&original_events).enumerate()
+                        {
+                            assert_eq!(event.event, original.event);
+                            if original.data.is_empty() {
+                                assert_eq!(event.data, original.data);
+                                continue;
+                            }
+                            let mut expected: Value = serde_json::from_str(&original.data).unwrap();
+                            if index == 1 {
+                                expected["message"]["model"] = json!(model);
+                            }
+                            assert_eq!(
+                                serde_json::from_str::<Value>(&event.data).unwrap(),
+                                expected
+                            );
+                        }
+                    }
+                }
             }
         }
     }

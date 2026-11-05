@@ -11,6 +11,8 @@ pub(super) struct BedrockEvent {
 #[derive(Debug, Default)]
 pub(super) struct BedrockEventStreamDecoder {
     buffer: Vec<u8>,
+    pending_error: Option<ProviderError>,
+    failed: bool,
 }
 
 impl BedrockEventStreamDecoder {
@@ -19,64 +21,103 @@ impl BedrockEventStreamDecoder {
     const MAX_FRAME_LEN: usize = 16 * 1024 * 1024;
 
     pub(super) fn push_bytes(&mut self, chunk: &[u8]) -> Result<Vec<BedrockEvent>, ProviderError> {
+        if self.failed {
+            return Err(self.take_error().unwrap_or_else(|| {
+                ProviderError::Transport(
+                    "aws_bedrock EventStream decoder already failed".to_string(),
+                )
+            }));
+        }
         self.buffer.extend_from_slice(chunk);
         let mut events = Vec::new();
 
         loop {
-            if self.buffer.len() < Self::PRELUDE_LEN {
-                break;
+            match self.decode_frame() {
+                Ok(Some(event)) => events.push(event),
+                Ok(None) => break,
+                Err(error) => {
+                    self.failed = true;
+                    if events.is_empty() {
+                        return Err(error);
+                    }
+                    self.pending_error = Some(error);
+                    break;
+                }
             }
-
-            let total_len = u32::from_be_bytes(self.buffer[0..4].try_into().unwrap()) as usize;
-            let headers_len = u32::from_be_bytes(self.buffer[4..8].try_into().unwrap()) as usize;
-
-            if total_len < Self::PRELUDE_LEN + Self::MESSAGE_CRC_LEN {
-                return Err(ProviderError::Transport(format!(
-                    "invalid aws_bedrock EventStream frame length `{total_len}`"
-                )));
-            }
-            if total_len > Self::MAX_FRAME_LEN {
-                return Err(ProviderError::Transport(format!(
-                    "aws_bedrock EventStream frame length `{total_len}` exceeds limit"
-                )));
-            }
-            let payload_start = Self::PRELUDE_LEN.checked_add(headers_len).ok_or_else(|| {
-                ProviderError::Transport(
-                    "aws_bedrock EventStream headers length overflow".to_string(),
-                )
-            })?;
-            let payload_end = total_len
-                .checked_sub(Self::MESSAGE_CRC_LEN)
-                .ok_or_else(|| {
-                    ProviderError::Transport(
-                        "aws_bedrock EventStream payload length underflow".to_string(),
-                    )
-                })?;
-            if payload_start > payload_end {
-                return Err(ProviderError::Transport(format!(
-                    "aws_bedrock EventStream headers length `{headers_len}` exceeds frame payload"
-                )));
-            }
-            if self.buffer.len() < total_len {
-                break;
-            }
-
-            let frame = self.buffer.drain(..total_len).collect::<Vec<_>>();
-            let headers = parse_eventstream_headers(&frame[Self::PRELUDE_LEN..payload_start])?;
-            let payload = Bytes::copy_from_slice(&frame[payload_start..payload_end]);
-            events.push(BedrockEvent {
-                message_type: headers.get(":message-type").cloned(),
-                event_type: headers.get(":event-type").cloned(),
-                exception_type: headers.get(":exception-type").cloned(),
-                payload,
-            });
         }
-
         Ok(events)
     }
 
-    pub(super) fn finish(&self) -> Result<(), ProviderError> {
-        if self.buffer.is_empty() {
+    fn decode_frame(&mut self) -> Result<Option<BedrockEvent>, ProviderError> {
+        if self.buffer.len() < Self::PRELUDE_LEN {
+            return Ok(None);
+        }
+        let total_len = u32::from_be_bytes(self.buffer[0..4].try_into().unwrap()) as usize;
+        let headers_len = u32::from_be_bytes(self.buffer[4..8].try_into().unwrap()) as usize;
+        if total_len < Self::PRELUDE_LEN + Self::MESSAGE_CRC_LEN {
+            return Err(ProviderError::Transport(format!(
+                "invalid aws_bedrock EventStream frame length `{total_len}`"
+            )));
+        }
+        if total_len > Self::MAX_FRAME_LEN {
+            return Err(ProviderError::Transport(format!(
+                "aws_bedrock EventStream frame length `{total_len}` exceeds limit"
+            )));
+        }
+        let payload_start = Self::PRELUDE_LEN.checked_add(headers_len).ok_or_else(|| {
+            ProviderError::Transport("aws_bedrock EventStream headers length overflow".to_string())
+        })?;
+        let payload_end = total_len
+            .checked_sub(Self::MESSAGE_CRC_LEN)
+            .ok_or_else(|| {
+                ProviderError::Transport(
+                    "aws_bedrock EventStream payload length underflow".to_string(),
+                )
+            })?;
+        if payload_start > payload_end {
+            return Err(ProviderError::Transport(format!(
+                "aws_bedrock EventStream headers length `{headers_len}` exceeds frame payload"
+            )));
+        }
+        let prelude_crc = u32::from_be_bytes(self.buffer[8..12].try_into().unwrap());
+        if crc32fast::hash(&self.buffer[..8]) != prelude_crc {
+            return Err(ProviderError::Transport(
+                "aws_bedrock EventStream prelude checksum mismatch".to_string(),
+            ));
+        }
+        if self.buffer.len() < total_len {
+            return Ok(None);
+        }
+        let message_crc =
+            u32::from_be_bytes(self.buffer[payload_end..total_len].try_into().unwrap());
+        if crc32fast::hash(&self.buffer[..payload_end]) != message_crc {
+            return Err(ProviderError::Transport(
+                "aws_bedrock EventStream message checksum mismatch".to_string(),
+            ));
+        }
+        let frame = self.buffer.drain(..total_len).collect::<Vec<_>>();
+        let headers = parse_eventstream_headers(&frame[Self::PRELUDE_LEN..payload_start])?;
+        let payload = Bytes::copy_from_slice(&frame[payload_start..payload_end]);
+        Ok(Some(BedrockEvent {
+            message_type: headers.get(":message-type").cloned(),
+            event_type: headers.get(":event-type").cloned(),
+            exception_type: headers.get(":exception-type").cloned(),
+            payload,
+        }))
+    }
+
+    pub(super) fn take_error(&mut self) -> Option<ProviderError> {
+        self.pending_error.take()
+    }
+
+    pub(super) fn finish(&mut self) -> Result<(), ProviderError> {
+        if let Some(error) = self.take_error() {
+            Err(error)
+        } else if self.failed {
+            Err(ProviderError::Transport(
+                "aws_bedrock EventStream decoder already failed".to_string(),
+            ))
+        } else if self.buffer.is_empty() {
             Ok(())
         } else {
             Err(ProviderError::Transport(format!(
@@ -136,6 +177,31 @@ pub(super) fn parse_eventstream_headers(
             }
             0 => "true".to_string(),
             1 => "false".to_string(),
+            2..=6 | 8 | 9 => {
+                let value_len = match value_type {
+                    2 => 1,
+                    3 => 2,
+                    4 => 4,
+                    5 | 8 => 8,
+                    9 => 16,
+                    6 => {
+                        if cursor.remaining() < 2 {
+                            return Err(ProviderError::Transport(
+                                "malformed aws_bedrock EventStream byte header length".to_string(),
+                            ));
+                        }
+                        cursor.get_u16() as usize
+                    }
+                    _ => unreachable!(),
+                };
+                if cursor.remaining() < value_len {
+                    return Err(ProviderError::Transport(
+                        "malformed aws_bedrock EventStream typed header value".to_string(),
+                    ));
+                }
+                cursor.advance(value_len);
+                continue;
+            }
             other => {
                 return Err(ProviderError::Transport(format!(
                     "unsupported aws_bedrock EventStream header value type `{other}`"
@@ -163,6 +229,10 @@ pub(super) struct BedrockConverseStreamNormalizer {
     role_sent: bool,
     saw_payload: bool,
     saw_terminal: bool,
+    tool_block_indexes: BTreeMap<u64, usize>,
+    native_blocks: BTreeMap<u64, Value>,
+    tool_inputs: BTreeMap<u64, String>,
+    generation_failure: Option<(String, String)>,
 }
 
 impl BedrockConverseStreamNormalizer {
@@ -175,6 +245,10 @@ impl BedrockConverseStreamNormalizer {
             role_sent: false,
             saw_payload: false,
             saw_terminal: false,
+            tool_block_indexes: BTreeMap::new(),
+            native_blocks: BTreeMap::new(),
+            tool_inputs: BTreeMap::new(),
+            generation_failure: None,
         }
     }
 
@@ -205,6 +279,9 @@ impl BedrockConverseStreamNormalizer {
         })?;
 
         self.saw_payload = true;
+        if self.generation_failure.is_some() && event_type != "metadata" {
+            return Ok(Vec::new());
+        }
         let mut actions = Vec::new();
         match event_type {
             "messageStart" => {
@@ -227,15 +304,33 @@ impl BedrockConverseStreamNormalizer {
                 }
             }
             "contentBlockStart" => {
+                let block_index = payload
+                    .get("contentBlockIndex")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
+                if let Some(start) = payload.get("start").and_then(Value::as_object)
+                    && !start.is_empty()
+                {
+                    self.native_blocks
+                        .insert(block_index, Value::Object(start.clone()));
+                }
                 if let Some(tool_use) = payload
                     .get("start")
                     .and_then(|start| start.get("toolUse"))
                     .and_then(Value::as_object)
                 {
-                    let index = payload
+                    let block_index = payload
                         .get("contentBlockIndex")
                         .and_then(Value::as_u64)
                         .unwrap_or(0);
+                    let next_index = self.tool_block_indexes.len();
+                    let index = *self
+                        .tool_block_indexes
+                        .entry(block_index)
+                        .or_insert(next_index);
+                    self.native_blocks
+                        .insert(block_index, json!({"toolUse": tool_use}));
+                    self.tool_inputs.insert(block_index, String::new());
                     let id = tool_use
                         .get("toolUseId")
                         .and_then(Value::as_str)
@@ -266,6 +361,7 @@ impl BedrockConverseStreamNormalizer {
                         "aws_bedrock contentBlockDelta event is missing `delta`".to_string(),
                     )
                 })?;
+                self.record_delta(&payload, delta)?;
                 if let Some(text) = delta.get("text").and_then(Value::as_str) {
                     actions.push(BedrockStreamAction::Chunk(self.delta_chunk(
                         json!({
@@ -274,10 +370,15 @@ impl BedrockConverseStreamNormalizer {
                         Value::Null,
                     )));
                 } else if let Some(tool_use) = delta.get("toolUse").and_then(Value::as_object) {
-                    let index = payload
+                    let block_index = payload
                         .get("contentBlockIndex")
                         .and_then(Value::as_u64)
                         .unwrap_or(0);
+                    let index = self.tool_block_indexes.get(&block_index).copied().ok_or_else(|| {
+                        ProviderError::Transport(format!(
+                            "aws_bedrock tool delta references unstarted content block `{block_index}`"
+                        ))
+                    })?;
                     let input = tool_use
                         .get("input")
                         .and_then(Value::as_str)
@@ -309,14 +410,74 @@ impl BedrockConverseStreamNormalizer {
             }
             "contentBlockStop" => {}
             "messageStop" => {
+                let stop_reason = payload.get("stopReason").and_then(Value::as_str);
+                let malformed = matches!(
+                    stop_reason,
+                    Some("malformed_tool_use" | "malformed_model_output")
+                );
+                if malformed {
+                    self.generation_failure = stop_reason.map(|reason| {
+                        (
+                            reason.to_string(),
+                            format!("aws_bedrock generation failed: {reason}"),
+                        )
+                    });
+                }
                 let finish_reason = payload
                     .get("stopReason")
                     .and_then(Value::as_str)
                     .map(map_stop_reason)
                     .unwrap_or("stop");
-                actions.push(BedrockStreamAction::Chunk(
-                    self.delta_chunk(json!({}), Value::String(finish_reason.to_string())),
-                ));
+                let mut delta = json!({
+                    "provider_metadata": {"aws_bedrock": {
+                        "stop_reason": payload.get("stopReason").cloned().unwrap_or(Value::Null)
+                    }}
+                });
+                if let Some(fields) = payload.get("additionalModelResponseFields") {
+                    delta["provider_metadata"]["aws_bedrock"]["additionalModelResponseFields"] =
+                        fields.clone();
+                }
+                let mut replayable = !malformed;
+                if replayable {
+                    for (index, input) in &self.tool_inputs {
+                        match serde_json::from_str::<Value>(input) {
+                            Ok(input) => {
+                                self.native_blocks.get_mut(index).expect("started tool")["toolUse"]
+                                    ["input"] = input;
+                            }
+                            Err(error) => {
+                                replayable = false;
+                                if !matches!(finish_reason, "length" | "content_filter") {
+                                    self.generation_failure = Some((
+                                        "bedrock_conversestream_replay_error".to_string(),
+                                        format!("invalid aws_bedrock streamed tool input: {error}"),
+                                    ));
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+                if replayable {
+                    delta["provider_metadata"]["aws_bedrock"]["native_content"] = json!({
+                        "source": "bedrock_converse",
+                        "blocks": self.native_blocks.values().collect::<Vec<_>>(),
+                    });
+                }
+                delta["provider_metadata"]["aws_bedrock"]["reasoning"] = json!({
+                    "source": "bedrock_converse_stream",
+                    "blocks": self.native_blocks.values()
+                        .filter_map(|block| block.get("reasoningContent"))
+                        .filter_map(normalize_bedrock_reasoning_content).collect::<Vec<_>>(),
+                });
+                actions.push(BedrockStreamAction::Chunk(self.delta_chunk(
+                    delta,
+                    if self.generation_failure.is_some() {
+                        Value::Null
+                    } else {
+                        Value::String(finish_reason.to_string())
+                    },
+                )));
                 self.saw_terminal = true;
             }
             "metadata" => {
@@ -332,6 +493,83 @@ impl BedrockConverseStreamNormalizer {
         }
 
         Ok(actions)
+    }
+
+    fn record_delta(&mut self, payload: &Value, delta: &Value) -> Result<(), ProviderError> {
+        let index = payload
+            .get("contentBlockIndex")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        if let Some(input) = delta
+            .get("toolUse")
+            .and_then(|tool| tool.get("input"))
+            .and_then(Value::as_str)
+        {
+            self.tool_inputs
+                .get_mut(&index)
+                .ok_or_else(|| {
+                    ProviderError::Transport(format!(
+                        "aws_bedrock tool delta references unstarted content block `{index}`"
+                    ))
+                })?
+                .push_str(input);
+        } else if let Some(text) = delta.get("text").and_then(Value::as_str) {
+            let block = self
+                .native_blocks
+                .entry(index)
+                .or_insert_with(|| json!({"text": ""}));
+            append_native_string(&mut block["text"], text)?;
+        } else if let Some(reasoning) = delta.get("reasoningContent").and_then(Value::as_object) {
+            let block = self
+                .native_blocks
+                .entry(index)
+                .or_insert_with(|| json!({"reasoningContent": {}}));
+            for (key, value) in reasoning {
+                match key.as_str() {
+                    "text" | "signature" => {
+                        append_native_string(
+                            &mut block["reasoningContent"]["reasoningText"][key],
+                            value.as_str().ok_or_else(|| {
+                                ProviderError::Transport(
+                                    "aws_bedrock reasoning delta must be a string".to_string(),
+                                )
+                            })?,
+                        )?;
+                    }
+                    "redactedContent" | "data" => {
+                        let previous = block["reasoningContent"]["redactedContent"]
+                            .as_str()
+                            .unwrap_or_default();
+                        let mut bytes = BASE64_STANDARD.decode(previous).map_err(|error| {
+                            ProviderError::Transport(format!(
+                                "invalid Bedrock redacted reasoning: {error}"
+                            ))
+                        })?;
+                        bytes.extend(
+                            BASE64_STANDARD
+                                .decode(value.as_str().unwrap_or_default())
+                                .map_err(|error| {
+                                    ProviderError::Transport(format!(
+                                        "invalid Bedrock redacted reasoning: {error}"
+                                    ))
+                                })?,
+                        );
+                        block["reasoningContent"]["redactedContent"] =
+                            json!(BASE64_STANDARD.encode(bytes));
+                    }
+                    _ => {
+                        block["reasoningContent"][key] = value.clone();
+                    }
+                }
+            }
+        } else if let Some(object) = delta.as_object() {
+            let block = self.native_blocks.entry(index).or_insert_with(|| json!({}));
+            block
+                .as_object_mut()
+                .expect("native content block")
+                .extend(object.clone());
+        }
+        Ok(())
     }
 
     pub(super) fn delta_chunk(&self, delta: Value, finish_reason: Value) -> Value {
@@ -360,6 +598,19 @@ impl BedrockConverseStreamNormalizer {
             "usage": usage
         })
     }
+}
+
+fn append_native_string(value: &mut Value, part: &str) -> Result<(), ProviderError> {
+    if value.is_null() {
+        *value = Value::String(String::new());
+    }
+    let Value::String(text) = value else {
+        return Err(ProviderError::Transport(
+            "aws_bedrock native string delta does not match its content block".to_string(),
+        ));
+    };
+    text.push_str(part);
+    Ok(())
 }
 
 pub(super) fn bedrock_event_payload_message(payload: &[u8]) -> Option<String> {
@@ -444,6 +695,14 @@ where
                 }
             }
 
+            if !stream_failed && let Some(error) = decoder.take_error() {
+                yield Ok(openai_sse_error_chunk(
+                    "bedrock_eventstream_parse_error",
+                    &error.to_string(),
+                ));
+                stream_failed = true;
+            }
+
             if stream_failed {
                 break;
             }
@@ -470,6 +729,11 @@ where
                 "bedrock_eventstream_missing_terminal_event",
                 "upstream Bedrock ConverseStream ended without messageStop",
             ));
+            stream_failed = true;
+        }
+
+        if !stream_failed && let Some((code, message)) = normalizer.generation_failure {
+            yield Ok(openai_sse_error_chunk(&code, &message));
             stream_failed = true;
         }
 

@@ -351,7 +351,12 @@ impl ProviderClient for VertexProvider {
                 let body = map_google_request(request, context, model_id, false)?;
                 let endpoint = self.model_endpoint(publisher, model_id, "generateContent");
                 let value = self.post_json(&endpoint, &body, context).await?;
-                Ok(normalize_google_response(&value, context)?)
+                normalize_google_response(&value, context).map_err(|error| {
+                    ProviderError::PartialUsage {
+                        source: Box::new(error.into()),
+                        provider_usage: google_response::map_google_usage(&value),
+                    }
+                })
             }
             PublisherFamily::Anthropic => {
                 let body = map_vertex_anthropic_request(

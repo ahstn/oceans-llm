@@ -115,6 +115,257 @@ async fn inclusive_cache_counters_crossing_the_threshold_bill_the_whole_request_
     assert_eq!(event.computed_cost_usd, Money4::from_scaled(16));
 }
 
+fn cache_alias_pricing_record() -> ModelPricingRecord {
+    let mut record = tiered_pricing_record();
+    record.cache_write_cost_per_million_tokens = Some(Money4::from_scaled(12_500));
+    record
+}
+
+#[tokio::test]
+async fn root_chat_cache_aliases_bill_reads_and_writes_without_billing_misses_as_writes() {
+    for (aliases, read, write, cost) in [
+        (json!({"prompt_cache_hit_tokens": 90_000}), 90_000, 0, 1_590),
+        (
+            json!({"prompt_cache_hit_tokens": 90_000, "prompt_cache_miss_tokens": 30_000}),
+            90_000,
+            0,
+            1_590,
+        ),
+        (json!({"cached_tokens": 90_000}), 90_000, 0, 1_590),
+        (json!({"prompt_cache_hit_tokens": 0}), 0, 0, 4_200),
+        (
+            json!({"cached_tokens": 90_000, "cache_write_tokens": 20_000}),
+            90_000,
+            20_000,
+            1_240,
+        ),
+        (json!({"cache_write_tokens": 20_000}), 0, 20_000, 3_850),
+        (
+            json!({"cached_tokens": 0, "prompt_cache_hit_tokens": 90_000,
+                "prompt_cache_miss_tokens": -1}),
+            0,
+            0,
+            4_200,
+        ),
+    ] {
+        let mut usage = json!({"prompt_tokens": 120_000, "completion_tokens": 10_000});
+        usage
+            .as_object_mut()
+            .unwrap()
+            .extend(aliases.as_object().unwrap().clone());
+        let event = recorded_catalog_usage(
+            &catalog_route(),
+            cache_alias_pricing_record(),
+            usage.clone(),
+        )
+        .await;
+
+        assert_eq!(event.pricing_status, UsagePricingStatus::Priced, "{usage}");
+        assert_eq!(event.prompt_tokens, Some(120_000));
+        assert_eq!(event.total_tokens, Some(130_000));
+        assert_eq!(event.uncached_input_tokens, Some(120_000 - read - write));
+        assert_eq!(event.cache_read_tokens, Some(read));
+        assert_eq!(event.cache_write_tokens, Some(write));
+        assert_eq!(event.pricing_tier_above_input_tokens, Some(1_000));
+        assert_eq!(
+            event.computed_cost_usd,
+            Money4::from_scaled(cost),
+            "{usage}"
+        );
+        assert_eq!(event.provider_usage, usage);
+    }
+}
+
+#[tokio::test]
+async fn canonical_cache_fields_win_per_field_including_zero_and_partial_details() {
+    for details_key in ["prompt_tokens_details", "input_tokens_details"] {
+        for (details, aliases, read, write, cost) in [
+            (
+                json!({"cached_tokens": 60_000, "cache_write_tokens": 10_000}),
+                json!({"cached_tokens": 90_000, "cache_write_tokens": 20_000}),
+                60_000,
+                10_000,
+                2_285,
+            ),
+            (
+                json!({"cached_tokens": 0, "cache_write_tokens": 0}),
+                json!({"cached_tokens": "invalid", "cache_write_tokens": -1,
+                    "prompt_cache_hit_tokens": 90_000, "prompt_cache_miss_tokens": 1}),
+                0,
+                0,
+                4_200,
+            ),
+            (
+                json!({"cached_tokens": 60_000}),
+                json!({"cached_tokens": 90_000, "cache_write_tokens": 20_000}),
+                60_000,
+                20_000,
+                2_110,
+            ),
+            (
+                json!({"cache_write_tokens": 0}),
+                json!({"cached_tokens": 90_000, "cache_write_tokens": 20_000}),
+                90_000,
+                0,
+                1_590,
+            ),
+            (
+                json!({}),
+                json!({"prompt_cache_hit_tokens": 90_000, "prompt_cache_miss_tokens": 30_000}),
+                90_000,
+                0,
+                1_590,
+            ),
+            (
+                json!({"cache_write_tokens": 10_000}),
+                json!({"prompt_cache_hit_tokens": 90_000}),
+                90_000,
+                10_000,
+                1_415,
+            ),
+        ] {
+            let mut usage = json!({"prompt_tokens": 120_000, "completion_tokens": 10_000});
+            usage[details_key] = details;
+            usage
+                .as_object_mut()
+                .unwrap()
+                .extend(aliases.as_object().unwrap().clone());
+            let event = recorded_catalog_usage(
+                &catalog_route(),
+                cache_alias_pricing_record(),
+                usage.clone(),
+            )
+            .await;
+
+            assert_eq!(event.pricing_status, UsagePricingStatus::Priced, "{usage}");
+            assert_eq!(event.uncached_input_tokens, Some(120_000 - read - write));
+            assert_eq!(event.cache_read_tokens, Some(read));
+            assert_eq!(event.cache_write_tokens, Some(write));
+            assert_eq!(
+                event.computed_cost_usd,
+                Money4::from_scaled(cost),
+                "{usage}"
+            );
+            assert_eq!(event.provider_usage, usage);
+        }
+    }
+}
+
+#[tokio::test]
+async fn invalid_cache_aliases_and_canonical_fields_keep_ledger_diagnostics_and_legacy_estimates() {
+    for fields in [
+        json!({"prompt_cache_hit_tokens": -1}),
+        json!({"prompt_cache_hit_tokens": "90000"}),
+        json!({"prompt_cache_hit_tokens": 90_000.5}),
+        json!({"prompt_cache_hit_tokens": 120_001}),
+        json!({"prompt_cache_hit_tokens": 90_000, "prompt_cache_miss_tokens": 29_999}),
+        json!({"prompt_cache_hit_tokens": 90_000, "prompt_cache_miss_tokens": 30_001}),
+        json!({"prompt_cache_hit_tokens": 90_000, "prompt_cache_miss_tokens": -1}),
+        json!({"prompt_cache_hit_tokens": 90_000, "prompt_cache_miss_tokens": null}),
+        json!({"prompt_cache_hit_tokens": i64::MAX, "prompt_cache_miss_tokens": 1}),
+        json!({"cached_tokens": 100_000, "cache_write_tokens": 20_001}),
+        json!({"cached_tokens": i64::MAX, "cache_write_tokens": 1}),
+        json!({"cache_write_tokens": -1}),
+        json!({"prompt_tokens_details": null, "cached_tokens": 90_000}),
+        json!({"prompt_tokens_details": {"cached_tokens": null}, "cached_tokens": 90_000}),
+        json!({"prompt_tokens_details": {"cached_tokens": -1}, "cached_tokens": 90_000}),
+        json!({"prompt_tokens_details": {"cache_write_tokens": "20000"},
+            "cached_tokens": 90_000, "cache_write_tokens": 20_000}),
+    ] {
+        let mut usage = json!({"prompt_tokens": 120_000, "completion_tokens": 10_000});
+        usage
+            .as_object_mut()
+            .unwrap()
+            .extend(fields.as_object().unwrap().clone());
+        let event = recorded_catalog_usage(
+            &catalog_route(),
+            cache_alias_pricing_record(),
+            usage.clone(),
+        )
+        .await;
+
+        assert_eq!(
+            event.pricing_status,
+            UsagePricingStatus::LegacyEstimated,
+            "{usage}"
+        );
+        assert!(
+            event
+                .unpriced_reason
+                .as_deref()
+                .is_some_and(|reason| { reason.starts_with("invalid_cache_token_usage:") }),
+            "{usage}: {:?}",
+            event.unpriced_reason
+        );
+        assert_eq!(event.prompt_tokens, Some(120_000));
+        assert_eq!(event.uncached_input_tokens, None);
+        assert_eq!(event.cache_read_tokens, None);
+        assert_eq!(event.cache_write_tokens, None);
+        assert_eq!(event.computed_cost_usd, Money4::from_scaled(4_200));
+        assert_eq!(event.provider_usage, usage);
+    }
+}
+
+#[tokio::test]
+async fn provider_reported_cost_wins_over_valid_or_invalid_root_cache_aliases() {
+    for (hit, expected_read) in [(90_000, Some(90_000)), (120_001, None)] {
+        let usage = json!({
+            "prompt_tokens": 120_000, "completion_tokens": 10_000,
+            "prompt_cache_hit_tokens": hit, "cost": 0.0123
+        });
+        let event = recorded_catalog_usage(
+            &catalog_route(),
+            cache_alias_pricing_record(),
+            usage.clone(),
+        )
+        .await;
+
+        assert_eq!(event.pricing_status, UsagePricingStatus::Priced);
+        assert_eq!(event.pricing_source.as_deref(), Some("provider_reported"));
+        assert_eq!(event.computed_cost_usd, Money4::from_scaled(123));
+        assert_eq!(event.cache_read_tokens, expected_read);
+        assert_eq!(event.provider_usage, usage);
+    }
+}
+
+#[tokio::test]
+async fn chat_root_aliases_do_not_reinterpret_responses_or_native_exclusive_inputs() {
+    for (usage, expected_read, cost) in [
+        (
+            json!({"input_tokens": 120_000, "output_tokens": 10_000,
+                "prompt_cache_hit_tokens": 90_000}),
+            None,
+            4_200,
+        ),
+        (
+            json!({"input_tokens": 30_000, "output_tokens": 10_000,
+                "cache_read_input_tokens": 90_000, "prompt_cache_hit_tokens": 1}),
+            Some(90_000),
+            1_590,
+        ),
+        (
+            json!({"prompt_tokens": 30_000, "completion_tokens": 10_000,
+                "prompt_cache_hit_tokens": 1,
+                "provider_usage": {"input_tokens": 30_000, "cache_read_input_tokens": 90_000}}),
+            Some(90_000),
+            1_590,
+        ),
+    ] {
+        let event = recorded_catalog_usage(
+            &catalog_route(),
+            cache_alias_pricing_record(),
+            usage.clone(),
+        )
+        .await;
+
+        assert_eq!(event.pricing_status, UsagePricingStatus::Priced);
+        assert_eq!(event.prompt_tokens, Some(120_000));
+        assert_eq!(event.cache_read_tokens, expected_read);
+        assert_eq!(event.computed_cost_usd, Money4::from_scaled(cost));
+        assert_eq!(event.provider_usage, usage);
+    }
+}
+
 #[tokio::test]
 async fn exclusive_cache_counters_select_the_tier_from_the_normalized_prompt() {
     // Anthropic-shaped usage: 300 uncached input tokens plus 900 cache reads.

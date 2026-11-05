@@ -307,12 +307,12 @@ fn normalizes_replayed_bedrock_tool_ids_consistently() {
 
     let body =
         map_chat_request_to_converse(&request, &context("amazon.nova-pro-v1:0")).expect("mapped");
-    for (call_index, result_index) in [(1, 2), (2, 3)] {
+    for (call_index, result_index) in [(1, 0), (2, 1)] {
         let normalized_call_id = body["messages"][1]["content"][call_index]["toolUse"]["toolUseId"]
             .as_str()
             .expect("normalized tool id");
         let normalized_result_id =
-            body["messages"][result_index]["content"][0]["toolResult"]["toolUseId"]
+            body["messages"][2]["content"][result_index]["toolResult"]["toolUseId"]
                 .as_str()
                 .expect("normalized result id");
         assert_eq!(normalized_call_id, normalized_result_id);
@@ -324,7 +324,7 @@ fn normalizes_replayed_bedrock_tool_ids_consistently() {
         json!(native_id)
     );
     assert_eq!(
-        body["messages"][4]["content"][0]["toolResult"]["toolUseId"],
+        body["messages"][2]["content"][2]["toolResult"]["toolUseId"],
         json!(native_id)
     );
 }

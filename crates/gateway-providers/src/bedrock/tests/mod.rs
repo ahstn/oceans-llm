@@ -23,6 +23,7 @@ mod count_tokens;
 mod endpoint;
 mod eventstream;
 mod provider_requests;
+mod replay;
 mod request_content;
 mod request_thinking;
 mod request_tools;
@@ -179,14 +180,30 @@ fn eventstream_frame(headers: &[(&str, &str)], payload: &[u8]) -> Vec<u8> {
         encoded_headers.extend_from_slice(value.as_bytes());
     }
 
+    eventstream_frame_with_headers(&encoded_headers, payload)
+}
+
+// Independent bitwise IEEE CRC32 fixture encoder, not the production checksum implementation.
+fn fixture_crc32(bytes: &[u8]) -> u32 {
+    let mut crc = !0_u32;
+    for byte in bytes {
+        crc ^= u32::from(*byte);
+        for _ in 0..8 {
+            crc = (crc >> 1) ^ (0xedb8_8320 & 0_u32.wrapping_sub(crc & 1));
+        }
+    }
+    !crc
+}
+
+fn eventstream_frame_with_headers(encoded_headers: &[u8], payload: &[u8]) -> Vec<u8> {
     let total_len = 12 + encoded_headers.len() + payload.len() + 4;
     let mut frame = Vec::with_capacity(total_len);
     frame.extend_from_slice(&(total_len as u32).to_be_bytes());
     frame.extend_from_slice(&(encoded_headers.len() as u32).to_be_bytes());
-    frame.extend_from_slice(&0_u32.to_be_bytes());
-    frame.extend_from_slice(&encoded_headers);
+    frame.extend_from_slice(&fixture_crc32(&frame).to_be_bytes());
+    frame.extend_from_slice(encoded_headers);
     frame.extend_from_slice(payload);
-    frame.extend_from_slice(&0_u32.to_be_bytes());
+    frame.extend_from_slice(&fixture_crc32(&frame).to_be_bytes());
     frame
 }
 

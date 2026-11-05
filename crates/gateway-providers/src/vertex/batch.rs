@@ -787,7 +787,12 @@ fn parse_bigquery_results(
                 provider_usage: normalized
                     .as_ref()
                     .and_then(|response| response.get("usage"))
-                    .cloned(),
+                    .cloned()
+                    .or_else(|| {
+                        response
+                            .as_ref()
+                            .and_then(super::google_response::map_google_usage)
+                    }),
                 response_body: normalized,
                 error,
                 provider_request_id: None,
@@ -1044,7 +1049,7 @@ mod tests {
             &json!({"rows": [
                 {"f": [
                     {"v": "bad"},
-                    {"v": "{\"candidates\":[{\"finishReason\":\"MALFORMED_FUNCTION_CALL\",\"finishMessage\":\"unparseable\"}]}"},
+                    {"v": "{\"candidates\":[{\"finishReason\":\"MALFORMED_FUNCTION_CALL\",\"finishMessage\":\"unparseable\"}],\"usageMetadata\":{\"promptTokenCount\":4,\"candidatesTokenCount\":1,\"thoughtsTokenCount\":2,\"totalTokenCount\":7}}"},
                     {"v": null}
                 ]},
                 {"f": [
@@ -1060,6 +1065,14 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].custom_id, "bad");
         assert!(results[0].response_body.is_none());
+        let usage = results[0]
+            .provider_usage
+            .as_ref()
+            .expect("failed row preserves billable usage");
+        assert_eq!(usage["prompt_tokens"], 4);
+        assert_eq!(usage["completion_tokens"], 3);
+        assert_eq!(usage["completion_tokens_details"]["reasoning_tokens"], 2);
+        assert_eq!(usage["total_tokens"], 7);
         let error = results[0].error.as_ref().expect("row error");
         assert!(
             error["message"]

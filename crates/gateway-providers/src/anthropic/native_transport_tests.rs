@@ -21,7 +21,7 @@ type Capture = Arc<Mutex<Option<(String, HeaderMap, Value)>>>;
 fn native_response() -> Value {
     json!({"id":"msg_native", "type":"message", "role":"assistant", "model":"upstream-model",
         "content":[
-            {"type":"text","text":"Checking", "citations":[{"type":"future_citation","opaque":true}]},
+            {"type":"text","text":"Checking 世界 𐐀", "citations":[{"type":"future_citation","opaque":true}]},
             {"type":"thinking","thinking":"","signature":"signed"},
             {"type":"server_tool_use","id":"srvtoolu_exact","name":"web_search","input":{"query":"synthetic"}},
             {"type":"future_block","opaque":[1,2,3]}
@@ -281,7 +281,7 @@ fn rolling_native_controls_match_explicit_models_and_unknown_fields_reach_upstre
 
 #[tokio::test]
 async fn native_provider_failures_preserve_error_body_and_retry_headers() {
-    let body = r#"{"type":"error","error":{"type":"rate_limit_error","message":"synthetic limit","future_error":true}}"#;
+    let body = r#"{"type":"error","error":{"type":"rate_limit_error","message":"synthetic limit 世界 𐐀","future_error":true}}"#;
     let router = Router::new().route(
         "/{*path}",
         post(move || async move {
@@ -327,5 +327,118 @@ async fn native_provider_failures_preserve_error_body_and_retry_headers() {
             error => panic!("unexpected error: {error}"),
         }
     }
+    server.abort();
+}
+
+#[tokio::test]
+async fn native_json_rejects_invalid_utf8_instead_of_replacing_it() {
+    let router = Router::new().route(
+        "/{*path}",
+        post(|| async {
+            Response::builder()
+                .header("content-type", "application/json")
+                .body(Body::from(&b"{\"future_response\":\"\xff\"}"[..]))
+                .unwrap()
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let provider = provider("direct", &base);
+    let request = anthropic_messages_request_to_core(&native_request(false));
+    let error = provider
+        .messages(&request, &context("direct"))
+        .await
+        .err()
+        .unwrap();
+    assert!(matches!(error, gateway_core::ProviderError::Transport(_)));
+    server.abort();
+}
+
+#[tokio::test]
+async fn native_json_rejects_truncated_http_body_even_after_complete_json() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut received = Vec::new();
+        let mut buffer = [0; 1024];
+        while !received.windows(4).any(|window| window == b"\r\n\r\n") {
+            let count = socket.read(&mut buffer).await.unwrap();
+            assert_ne!(count, 0);
+            received.extend_from_slice(&buffer[..count]);
+        }
+        let header_end = received
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+            .unwrap()
+            + 4;
+        let body_length = std::str::from_utf8(&received[..header_end])
+            .unwrap()
+            .lines()
+            .filter_map(|line| line.split_once(':'))
+            .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+            .unwrap()
+            .1
+            .trim()
+            .parse::<usize>()
+            .unwrap();
+        while received.len() < header_end + body_length {
+            let count = socket.read(&mut buffer).await.unwrap();
+            assert_ne!(count, 0);
+            received.extend_from_slice(&buffer[..count]);
+        }
+        let body = native_response().to_string();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len() + 10
+        );
+        socket.write_all(response.as_bytes()).await.unwrap();
+        socket.shutdown().await.unwrap();
+    });
+    let provider = provider("direct", &base);
+    let request = anthropic_messages_request_to_core(&native_request(false));
+    let error = provider
+        .messages(&request, &context("direct"))
+        .await
+        .err()
+        .unwrap();
+    assert!(matches!(error, gateway_core::ProviderError::Transport(_)));
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn native_json_body_deadline_remains_a_timeout_after_complete_json() {
+    let router = Router::new().route(
+        "/{*path}",
+        post(|| async {
+            let chunks = futures_util::stream::once(async {
+                Ok::<_, std::io::Error>(bytes::Bytes::from(native_response().to_string()))
+            })
+            .chain(futures_util::stream::pending());
+            Response::builder()
+                .header("content-type", "application/json")
+                .body(Body::from_stream(chunks))
+                .unwrap()
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let mut config = crate::AnthropicCompatConfig::new("direct".into(), base);
+    config.request_timeout_ms = 500;
+    let provider = crate::AnthropicCompatProvider::new(config).unwrap();
+    let request = anthropic_messages_request_to_core(&native_request(false));
+    let error = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        provider.messages(&request, &context("direct")),
+    )
+    .await
+    .unwrap()
+    .err()
+    .unwrap();
+    assert!(matches!(error, gateway_core::ProviderError::Timeout));
     server.abort();
 }

@@ -70,7 +70,7 @@ pub async fn guard_prompt(
     // Redact before any other evaluator, so managed services never see the secrets either.
     let redactions = redact_prompt_secrets(&policy, request);
     record_guardrail_decisions_in_background(state, vec![(request_id.to_string(), redactions)]);
-    let associated_prompt = inspect_text_fields(
+    let (associated_prompt, _) = inspect_text_fields(
         state,
         &route_key,
         request_id,
@@ -147,8 +147,8 @@ pub async fn guard_model_response(
     context: &InferenceGuardContext,
     response: &mut Value,
 ) -> Result<(), GatewayError> {
-    inspect_generated_tool_calls(state, context, response).await?;
-    inspect_text_fields(
+    let tools_transformed = inspect_generated_tool_calls(state, context, response).await?;
+    let (_, text_transformed) = inspect_text_fields(
         state,
         &context.route_key,
         &context.request_id,
@@ -158,7 +158,44 @@ pub async fn guard_model_response(
         MODEL_RESPONSE_TEXT_FIELDS,
     )
     .await?;
+    if tools_transformed || text_transformed {
+        invalidate_native_replay(response);
+    }
     Ok(())
+}
+
+/// Native replay state can duplicate text or arguments outside the guardrail selectors.
+/// A changed projection cannot safely retain its original signatures or opaque snapshots.
+fn invalidate_native_replay(response: &mut Value) -> bool {
+    let Some(choices) = response.get_mut("choices").and_then(Value::as_array_mut) else {
+        return false;
+    };
+    let mut removed = false;
+    for choice in choices {
+        for field in ["message", "delta"] {
+            let Some(message) = choice.get_mut(field).and_then(Value::as_object_mut) else {
+                continue;
+            };
+            removed |= message.remove("thought_signature").is_some();
+            let Some(metadata) = message
+                .get_mut("provider_metadata")
+                .and_then(Value::as_object_mut)
+            else {
+                continue;
+            };
+            for namespace in metadata.values_mut().filter_map(Value::as_object_mut) {
+                for field in [
+                    "native_content",
+                    "native_event",
+                    "reasoning",
+                    "thought_signature",
+                ] {
+                    removed |= namespace.remove(field).is_some();
+                }
+            }
+        }
+    }
+    removed
 }
 
 pub struct GuardStreamError {
@@ -426,6 +463,16 @@ async fn guard_sse_payload(
         let snapshot_text = stream_text_at_locations(&blocks, locations);
         if let Some(transformed) = guard_stream_text(state, context, &snapshot_text).await? {
             replace_stream_text(&mut blocks, locations, &transformed, true);
+        }
+    }
+
+    // A later complete snapshot can contain data transformed in an earlier delta.
+    // Guarding buffers the whole stream, so invalidate replay state across every frame.
+    if blocks.iter().any(|block| block.transformed) {
+        for block in &mut blocks {
+            if let Some(value) = &mut block.value {
+                block.transformed |= invalidate_native_replay(value);
+            }
         }
     }
 
@@ -1028,7 +1075,7 @@ async fn inspect_text_fields(
     value: &mut Value,
     associated_prompt: Option<&str>,
     field_names: &[&str],
-) -> Result<Option<String>, GatewayError> {
+) -> Result<(Option<String>, bool), GatewayError> {
     debug_assert!(matches!(
         phase,
         GuardPhase::Prompt | GuardPhase::ModelResponse
@@ -1041,7 +1088,7 @@ async fn inspect_text_fields(
         .map(str::to_string)
         .collect::<Vec<_>>();
     if inspected.is_empty() {
-        return Ok(None);
+        return Ok((None, false));
     }
 
     let mut input = EvaluationInput::new(
@@ -1079,15 +1126,19 @@ async fn inspect_text_fields(
     } else {
         &inspected
     };
-    Ok(Some(final_segments.join("\n")))
+    Ok((
+        Some(final_segments.join("\n")),
+        final_segments != &inspected,
+    ))
 }
 
 async fn inspect_generated_tool_calls(
     state: &AppState,
     context: &InferenceGuardContext,
     response: &mut Value,
-) -> Result<(), GatewayError> {
+) -> Result<bool, GatewayError> {
     let mut pointers = Vec::new();
+    let mut transformed = false;
     collect_tool_call_pointers(response, "", &mut pointers);
     for pointer in pointers {
         let Some((name, arguments)) = response
@@ -1114,15 +1165,16 @@ async fn inspect_generated_tool_calls(
             .decisions
             .iter()
             .any(|decision| decision.transformed)
-            && let Some(arguments) = transformed_tool_arguments(&evaluation.output, &arguments)
+            && let Some(replacement) = transformed_tool_arguments(&evaluation.output, &arguments)
             && let Some(object) = response
                 .pointer_mut(&pointer)
                 .and_then(Value::as_object_mut)
         {
-            replace_tool_call_arguments(object, arguments);
+            transformed |= replacement != arguments;
+            replace_tool_call_arguments(object, replacement);
         }
     }
-    Ok(())
+    Ok(transformed)
 }
 
 async fn evaluate(

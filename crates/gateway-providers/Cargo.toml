@@ -15,6 +15,7 @@ aws-sigv4 = { version = "1.4", features = ["sign-http", "http1"] }
 aws-smithy-runtime-api = "1.12"
 base64.workspace = true
 bytes.workspace = true
+crc32fast = "1"
 futures-util.workspace = true
 gateway-core.workspace = true
 jsonwebtoken = { version = "11", features = ["aws_lc_rs"] }

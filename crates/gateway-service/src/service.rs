@@ -1592,6 +1592,16 @@ fn normalize_cache_tokens(
         .get("provider_usage")
         .and_then(Value::as_object)
         .or_else(|| usage.contains_key("input_tokens").then_some(usage));
+    // Chat-compatible root aliases use inclusive prompt_tokens. Do not apply them
+    // to native exclusive input counters or change the Responses usage contract.
+    let root_aliases = usage
+        .contains_key("prompt_tokens")
+        .then_some(usage)
+        .filter(|fields| {
+            fields.contains_key("cached_tokens")
+                || fields.contains_key("cache_write_tokens")
+                || fields.contains_key("prompt_cache_hit_tokens")
+        });
     let details = usage
         .get("input_tokens_details")
         .or_else(|| usage.get("prompt_tokens_details"))
@@ -1603,14 +1613,14 @@ fn normalize_cache_tokens(
                 "cache token details must be an object".to_string(),
             );
         };
-        return normalize_inclusive_cache_tokens(details, prompt_tokens);
+        return normalize_inclusive_cache_tokens(details, prompt_tokens, root_aliases);
     }
 
     if let Some(provider_usage) = provider_usage {
         if provider_usage.contains_key("cached_tokens")
             || provider_usage.contains_key("cache_write_tokens")
         {
-            return normalize_inclusive_cache_tokens(provider_usage, prompt_tokens);
+            return normalize_inclusive_cache_tokens(provider_usage, prompt_tokens, None);
         }
         if provider_usage.contains_key("cacheReadInputTokens")
             || provider_usage.contains_key("cacheWriteInputTokens")
@@ -1636,18 +1646,41 @@ fn normalize_cache_tokens(
         }
     }
 
+    if let Some(root_aliases) = root_aliases {
+        return normalize_inclusive_cache_tokens(root_aliases, prompt_tokens, Some(root_aliases));
+    }
+
     CacheUsageNormalization::Unavailable
 }
 
 fn normalize_inclusive_cache_tokens(
     fields: &serde_json::Map<String, Value>,
     prompt_tokens: Option<i64>,
+    root_aliases: Option<&serde_json::Map<String, Value>>,
 ) -> CacheUsageNormalization {
-    let cache_read_tokens = match cache_token_field(fields, "cached_tokens") {
+    // Presence, not truthiness or successful parsing, decides precedence. A
+    // canonical zero wins; an invalid canonical count must not fall back.
+    let (read_fields, read_field) = if fields.contains_key("cached_tokens") {
+        (fields, "cached_tokens")
+    } else if let Some(aliases) = root_aliases {
+        if aliases.contains_key("cached_tokens") {
+            (aliases, "cached_tokens")
+        } else {
+            (aliases, "prompt_cache_hit_tokens")
+        }
+    } else {
+        (fields, "cached_tokens")
+    };
+    let write_fields = if fields.contains_key("cache_write_tokens") {
+        fields
+    } else {
+        root_aliases.unwrap_or(fields)
+    };
+    let cache_read_tokens = match cache_token_field(read_fields, read_field) {
         Ok(tokens) => tokens,
         Err(reason) => return CacheUsageNormalization::Invalid(reason),
     };
-    let cache_write_tokens = match cache_token_field(fields, "cache_write_tokens") {
+    let cache_write_tokens = match cache_token_field(write_fields, "cache_write_tokens") {
         Ok(tokens) => tokens,
         Err(reason) => return CacheUsageNormalization::Invalid(reason),
     };
@@ -1660,6 +1693,20 @@ fn normalize_inclusive_cache_tokens(
         return CacheUsageNormalization::Invalid(
             "input token count cannot be negative".to_string(),
         );
+    }
+    if read_field == "prompt_cache_hit_tokens"
+        && read_fields.contains_key(read_field)
+        && read_fields.contains_key("prompt_cache_miss_tokens")
+    {
+        let miss_tokens = match cache_token_field(read_fields, "prompt_cache_miss_tokens") {
+            Ok(tokens) => tokens,
+            Err(reason) => return CacheUsageNormalization::Invalid(reason),
+        };
+        if cache_read_tokens.checked_add(miss_tokens) != Some(prompt_tokens) {
+            return CacheUsageNormalization::Invalid(
+                "cache hits and misses must sum to total input tokens".to_string(),
+            );
+        }
     }
     let Some(cached_input_tokens) = cache_read_tokens.checked_add(cache_write_tokens) else {
         return CacheUsageNormalization::Invalid("cache token total overflow".to_string());

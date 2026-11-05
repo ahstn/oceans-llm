@@ -24,6 +24,8 @@ Preconditions:
 - The default `gateway.yaml` defines no `rate_limits.policies`, so the page starts empty. A reused `gateway.db` may hold policies from earlier runs; delete any `verify-*` policy first.
 - `rate-limits-enforce` sends one short paid request. Follow [Live LLM requests](./live-llm-requests.md): `OPENROUTER_API_KEY` must resolve through fnox for the launched stack, and you create a temporary key limited to `deepseek-v4.1-flash` through [API keys](./api-keys.md). Without the credential, record `rate-limits-enforce` as `blocked`. The rejection itself never reaches the provider.
 
+When a public Messages canary is already planned, reuse it rather than make another paid request: apply the key-scoped policy to its exact model grant before that request, then repeat the same Messages request once to prove the free `429`. Record the Messages endpoint/model and its enforcement headers. The key isolation, API parity, edit/delete and cleanup checks below still apply.
+
 - **Open.** Choose `Rate Limits`. The `Rate Limits` heading and the `Policies` card are visible, with `No rate limits` on a fresh seed.
 - **Create.** Choose `New rate limit`. Fill `Name` with a unique `verify-<run id>`, leave `Traffic` as `Inference requests`, choose `API key` in `Counted per`, choose the temporary key in `Applies to`, set `Limit` to `1`, keep `Per minute (sliding)`, and choose `Create rate limit`. The row shows `1 requests / minute`, `Inference requests`, `API key: <key name>`, and `Enforced`.
 - **API parity.** With the same session, `GET /api/v1/admin/rate-limits` returns the policy with `source: admin`, `scope_kind: api_key`, the key id in `scope_id`, and `limit: 1`.

@@ -9,6 +9,9 @@ pub(crate) mod native;
 mod native_metadata_tests;
 #[cfg(test)]
 mod native_transport_tests;
+pub(crate) mod replay;
+#[cfg(test)]
+mod replay_tests;
 pub mod request;
 #[cfg(test)]
 mod request_tests;

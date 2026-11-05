@@ -6,6 +6,7 @@ use crate::anthropic::{
 mod content;
 mod inference;
 mod native;
+mod replay;
 mod thinking;
 mod tools;
 
@@ -42,16 +43,29 @@ pub(super) fn map_chat_request_to_converse(
                 let mut content =
                     map_bedrock_message_content_blocks(&message.content, "assistant")?;
                 content.extend(map_assistant_tool_uses(message)?);
+                if let Some(native) = replay::converse_content(message, &content)? {
+                    content = native;
+                }
                 messages.push(json!({
                     "role": "assistant",
                     "content": content
                 }));
             }
             "tool" => {
-                messages.push(json!({
-                    "role": "user",
-                    "content": [map_tool_result(message)?]
-                }));
+                let result = map_tool_result(message)?;
+                if let Some(last) = messages.last_mut()
+                    && last["role"] == "user"
+                    && last["content"].as_array().is_some_and(|blocks| {
+                        blocks.iter().all(|block| block.get("toolResult").is_some())
+                    })
+                {
+                    last["content"]
+                        .as_array_mut()
+                        .expect("tool result content")
+                        .push(result);
+                } else {
+                    messages.push(json!({"role": "user", "content": [result]}));
+                }
             }
             other => {
                 return Err(ProviderError::InvalidRequest(format!(
@@ -446,6 +460,11 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
                     if !is_duplicate {
                         content.push(tool_use);
                     }
+                }
+                if let Some(native) =
+                    crate::anthropic::request::replay_anthropic_content(message, "aws_bedrock")?
+                {
+                    content = native;
                 }
                 messages.push(json!({
                     "role": "assistant",

@@ -33,11 +33,11 @@ pub(crate) async fn json_response(
 ) -> Result<NativeMessagesResponse<Value>, ProviderError> {
     let headers = response_headers(&response);
     let body = response
-        .text()
+        .bytes()
         .await
         .map_err(crate::http::map_reqwest_error)?;
-    let body =
-        serde_json::from_str(&body).map_err(|error| ProviderError::Transport(error.to_string()))?;
+    let body = serde_json::from_slice(&body)
+        .map_err(|error| ProviderError::Transport(error.to_string()))?;
     Ok(NativeMessagesResponse { body, headers })
 }
 

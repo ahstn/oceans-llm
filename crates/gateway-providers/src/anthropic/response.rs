@@ -80,7 +80,7 @@ pub fn normalize_anthropic_response(
     Value::Object(completion)
 }
 
-/// Keep opaque classifier verdicts through the common chat representation.
+/// Keep native continuation state and opaque blocks through the common chat representation.
 pub(crate) fn preserve_anthropic_message_metadata(
     message: &mut Map<String, Value>,
     source: &Value,
@@ -88,6 +88,11 @@ pub(crate) fn preserve_anthropic_message_metadata(
     event: &str,
 ) {
     let mut fields = Map::new();
+    for field in ["stop_reason", "stop_sequence"] {
+        if let Some(value) = source.get(field) {
+            fields.insert(field.to_string(), value.clone());
+        }
+    }
     if let Some(results) = source.get("safeguard_results") {
         fields.insert("safeguard_results".to_string(), results.clone());
     }
@@ -98,13 +103,28 @@ pub(crate) fn preserve_anthropic_message_metadata(
     {
         fields.insert("delta".to_string(), json!({"safeguard_results": results}));
     }
-    if fields.is_empty() {
+    // A message_start body is not a completed continuation snapshot.
+    let blocks = (event != "message_start")
+        .then(|| source.get("content").and_then(Value::as_array))
+        .flatten();
+    if fields.is_empty() && blocks.is_none() {
         return;
     }
     let metadata = message
         .entry("provider_metadata")
         .or_insert_with(|| json!({}));
-    metadata[provider_namespace][event] = Value::Object(fields);
+    if !fields.is_empty() {
+        let field = if event == "message_start" {
+            "message"
+        } else {
+            event
+        };
+        metadata[provider_namespace][field] = Value::Object(fields);
+    }
+    if let Some(blocks) = blocks {
+        metadata[provider_namespace]["native_content"] =
+            json!({"source": "anthropic_messages", "blocks": blocks});
+    }
 }
 
 pub fn extract_anthropic_thinking_blocks(blocks: &[Value]) -> Vec<Value> {
@@ -171,7 +191,7 @@ pub fn extract_anthropic_tool_calls(blocks: &[Value]) -> Vec<Value> {
 pub fn map_anthropic_finish_reason(reason: &str) -> &'static str {
     match reason {
         "end_turn" | "stop_sequence" => "stop",
-        "max_tokens" => "length",
+        "max_tokens" | "model_context_window_exceeded" => "length",
         "tool_use" => "tool_calls",
         "refusal" => "content_filter",
         _ => "stop",

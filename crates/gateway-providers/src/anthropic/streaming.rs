@@ -6,10 +6,10 @@ use futures_util::StreamExt;
 use gateway_core::{ProviderStream, SseEventParser};
 use serde_json::{Map, Value, json};
 
+use super::replay::AnthropicReplayStream;
 use super::response::{
     anthropic_usage_total, map_anthropic_finish_reason, map_anthropic_stream_usage,
-    normalize_anthropic_thinking_delta, normalize_anthropic_thinking_start,
-    preserve_anthropic_message_metadata, provider_reasoning_metadata,
+    preserve_anthropic_message_metadata,
 };
 use crate::streaming::{done_sse_chunk, openai_sse_error_chunk};
 
@@ -31,7 +31,11 @@ where
         let mut saw_message_stop = false;
         let mut stream_failed = false;
         let mut tool_block_indexes = BTreeMap::<i64, i64>::new();
+        let mut tool_initial_arguments = BTreeMap::<i64, String>::new();
         let mut latest_usage = None;
+        let mut replay = AnthropicReplayStream::default();
+        let mut replay_error = None;
+        let mut incomplete_terminal = false;
         futures_util::pin_mut!(upstream);
 
         'stream_loop: while let Some(chunk) = upstream.next().await {
@@ -58,7 +62,7 @@ where
                     continue;
                 }
 
-                let payload: Value = match serde_json::from_str(&event.data) {
+                let mut payload: Value = match serde_json::from_str(&event.data) {
                     Ok(val) => val,
                     Err(error) => {
                         yield Ok(openai_sse_error_chunk(
@@ -69,13 +73,69 @@ where
                         break 'stream_loop;
                     }
                 };
+                if payload.get("type").is_none()
+                    && let Some(kind) = event.event.as_deref()
+                    && let Some(object) = payload.as_object_mut()
+                {
+                    object.insert("type".into(), json!(kind));
+                }
                 let kind = payload
                     .get("type")
                     .and_then(Value::as_str)
                     .or(event.event.as_deref())
                     .unwrap_or_default();
 
+                if replay_error.is_none()
+                    && let Err(error) = replay.observe(&payload)
+                {
+                    replay_error = Some(error);
+                }
+                // A malformed generated block can still be billable. Drain final usage before
+                // reporting failure, but never publish a successful finish or partial replay.
+                if replay_error.is_some() {
+                    let mut state = Map::new();
+                    let mut finish_reason = None;
+                    if kind == "message_delta" {
+                        preserve_anthropic_message_metadata(
+                            &mut state, &payload["delta"], provider_namespace, "message",
+                        );
+                        let terminal = payload["delta"]["stop_reason"].as_str()
+                            .map(map_anthropic_finish_reason);
+                        if matches!(terminal, Some("length" | "content_filter"))
+                            && replay_error.is_some_and(AnthropicReplayStream::is_incomplete_error)
+                        {
+                            incomplete_terminal = true;
+                            finish_reason = terminal;
+                            finish_emitted = true;
+                        }
+                    }
+                    let usage = map_anthropic_stream_usage(&payload, usage_source)
+                        .map(|usage| merge_openai_stream_usage(&mut latest_usage, &usage));
+                    if !state.is_empty() || finish_reason.is_some() {
+                        let mut chunk = openai_delta_chunk(
+                            &stream_id, created, &model, Value::Object(state), finish_reason,
+                        );
+                        if let Some(usage) = usage {
+                            chunk["usage"] = usage;
+                        }
+                        yield Ok(openai_sse_chunk(&chunk));
+                    } else if let Some(usage) = usage {
+                        yield Ok(openai_sse_chunk(&openai_usage_chunk(
+                            &stream_id, created, &model, usage,
+                        )));
+                    }
+                    if kind == "message_stop" {
+                        saw_message_stop = true;
+                        break 'stream_loop;
+                    }
+                    continue;
+                }
                 let mut metadata_delta = Map::new();
+                if matches!(kind, "content_block_start" | "content_block_delta" | "content_block_stop") {
+                    metadata_delta.insert("provider_metadata".into(), json!({
+                        provider_namespace: {"native_event": payload}
+                    }));
+                }
                 if kind == "message_delta" {
                     preserve_anthropic_message_metadata(
                         &mut metadata_delta,
@@ -104,7 +164,7 @@ where
                             delta["choices"][0]["delta"].as_object_mut().expect("delta object"),
                             &payload["message"],
                             provider_namespace,
-                            "message",
+                            "message_start",
                         );
                         if let Some(usage) = map_anthropic_stream_usage(&payload, usage_source) {
                             let usage = merge_openai_stream_usage(&mut latest_usage, &usage);
@@ -144,6 +204,9 @@ where
                                     .and_then(Value::as_str),
                             )
                         {
+                            if let Some(index) = block_index {
+                                tool_initial_arguments.remove(&index);
+                            }
                             let mut outbound_delta = Map::new();
                             if !role_emitted {
                                 outbound_delta.insert(
@@ -167,33 +230,6 @@ where
                             );
                             yield Ok(openai_sse_chunk(&chunk));
                             role_emitted = true;
-                        } else if let Some(delta) = delta
-                            && let Some(block) = normalize_anthropic_thinking_delta(delta)
-                        {
-                            let mut outbound_delta = Map::new();
-                            if !role_emitted {
-                                outbound_delta.insert(
-                                    "role".to_string(),
-                                    Value::String("assistant".to_string()),
-                                );
-                            }
-                            outbound_delta.insert(
-                                "provider_metadata".to_string(),
-                                provider_reasoning_metadata(
-                                    provider_namespace,
-                                    "anthropic_messages_stream",
-                                    vec![block],
-                                ),
-                            );
-                            let chunk = openai_delta_chunk(
-                                &stream_id,
-                                created,
-                                &model,
-                                Value::Object(outbound_delta),
-                                None,
-                            );
-                            yield Ok(openai_sse_chunk(&chunk));
-                            role_emitted = true;
                         }
                     }
                     "content_block_start" => {
@@ -205,6 +241,8 @@ where
                             let block_index = payload.get("index").and_then(Value::as_i64).unwrap_or(0);
                             let tool_call_index = i64::try_from(tool_block_indexes.len()).unwrap_or(i64::MAX);
                             tool_block_indexes.insert(block_index, tool_call_index);
+                            tool_initial_arguments.insert(block_index, content_block.get("input")
+                                .cloned().unwrap_or_else(|| json!({})).to_string());
                             let mut outbound_delta = Map::new();
                             if !role_emitted {
                                 outbound_delta.insert(
@@ -239,35 +277,28 @@ where
                             );
                             yield Ok(openai_sse_chunk(&chunk));
                             role_emitted = true;
-                        } else if let Some(block) = payload
-                            .get("content_block")
-                            .and_then(Value::as_object)
-                            .and_then(normalize_anthropic_thinking_start)
+                        } else if let Some(text) = payload.get("content_block")
+                            .filter(|block| block["type"] == "text")
+                            .and_then(|block| block.get("text")).and_then(Value::as_str)
+                            .filter(|text| !text.is_empty())
                         {
-                            let mut outbound_delta = Map::new();
-                            if !role_emitted {
-                                outbound_delta.insert(
-                                    "role".to_string(),
-                                    Value::String("assistant".to_string()),
-                                );
-                            }
-                            outbound_delta.insert(
-                                "provider_metadata".to_string(),
-                                provider_reasoning_metadata(
-                                    provider_namespace,
-                                    "anthropic_messages_stream",
-                                    vec![block],
-                                ),
-                            );
-                            let chunk = openai_delta_chunk(
-                                &stream_id,
-                                created,
-                                &model,
-                                Value::Object(outbound_delta),
-                                None,
-                            );
-                            yield Ok(openai_sse_chunk(&chunk));
+                            yield Ok(openai_sse_chunk(&openai_chunk(
+                                &stream_id, created, &model,
+                                (!role_emitted).then_some("assistant"), Some(text), None,
+                            )));
                             role_emitted = true;
+                        }
+                    }
+                    "content_block_stop" => {
+                        if let Some(index) = payload.get("index").and_then(Value::as_i64)
+                            && let Some(arguments) = tool_initial_arguments.remove(&index)
+                            && let Some(tool_index) = tool_block_indexes.get(&index)
+                        {
+                            yield Ok(openai_sse_chunk(&openai_delta_chunk(
+                                &stream_id, created, &model,
+                                json!({"tool_calls": [{"index": tool_index,
+                                    "function": {"arguments": arguments}}]}), None,
+                            )));
                         }
                     }
                     "message_delta" => {
@@ -287,6 +318,12 @@ where
                                 None,
                                 Some(map_anthropic_finish_reason(reason)),
                             );
+                            preserve_anthropic_message_metadata(
+                                finish["choices"][0]["delta"].as_object_mut().expect("delta object"),
+                                &replay.message(),
+                                provider_namespace,
+                                "message",
+                            );
                             if let Some(usage) = usage {
                                 finish["usage"] = usage;
                             }
@@ -304,13 +341,19 @@ where
                     "message_stop" => {
                         saw_message_stop = true;
                         if !finish_emitted {
-                            let finish = openai_chunk(
+                            let mut finish = openai_chunk(
                                 &stream_id,
                                 created,
                                 &model,
                                 None,
                                 None,
                                 Some("stop"),
+                            );
+                            preserve_anthropic_message_metadata(
+                                finish["choices"][0]["delta"].as_object_mut().expect("delta object"),
+                                &replay.message(),
+                                provider_namespace,
+                                "message",
                             );
                             yield Ok(openai_sse_chunk(&finish));
                             finish_emitted = true;
@@ -337,6 +380,11 @@ where
                 "anthropic_sse_finalization_error",
                 &error.to_string(),
             ));
+            stream_failed = true;
+        }
+
+        if !stream_failed && !incomplete_terminal && let Some(error) = replay_error {
+            yield Ok(openai_sse_error_chunk("anthropic_replay_error", error));
             stream_failed = true;
         }
 

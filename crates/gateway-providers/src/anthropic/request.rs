@@ -249,6 +249,26 @@ fn map_anthropic_message_content(
     is_assistant: bool,
     allow_remote_images: bool,
 ) -> Result<Value, ProviderError> {
+    if is_assistant {
+        let mut replay = None;
+        for namespace in [
+            "gcp_vertex",
+            "aws_bedrock",
+            "github_copilot",
+            "anthropic_compat",
+            "anthropic",
+        ] {
+            if let Some(blocks) = replay_anthropic_content(message, namespace)? {
+                if replay.as_ref().is_some_and(|previous| previous != &blocks) {
+                    return Err(AnthropicAdapterError::InvalidReplayProjection.into());
+                }
+                replay = Some(blocks);
+            }
+        }
+        if let Some(blocks) = replay {
+            return Ok(Value::Array(blocks));
+        }
+    }
     let mut content = match map_anthropic_content(&message.content, allow_remote_images)? {
         Value::String(text) if text.is_empty() => Vec::new(),
         Value::String(text) => vec![json!({"type": "text", "text": text})],
@@ -312,6 +332,122 @@ fn map_anthropic_message_content(
     } else {
         Ok(Value::Array(content))
     }
+}
+
+/// Replay is untrusted input: visible text and executable tool calls must agree with Chat.
+pub(crate) fn replay_anthropic_content(
+    message: &CoreChatMessage,
+    provider_namespace: &str,
+) -> Result<Option<Vec<Value>>, ProviderError> {
+    let Some(native) = message
+        .extra
+        .get("provider_metadata")
+        .and_then(|metadata| metadata.get(provider_namespace))
+        .and_then(|metadata| metadata.get("native_content"))
+    else {
+        return Ok(None);
+    };
+    // These namespaces also carry other native APIs. Their history remains a public Chat
+    // projection on an Anthropic route; never interpret foreign parts as Messages blocks.
+    if (provider_namespace == "gcp_vertex"
+        && matches!(
+            native.get("source").and_then(Value::as_str),
+            None | Some("google_generate_content")
+        )
+        && native.get("parts").is_some()
+        && native.get("blocks").is_none())
+        || (provider_namespace == "aws_bedrock"
+            && native.get("source").and_then(Value::as_str) == Some("bedrock_converse"))
+    {
+        return Ok(None);
+    }
+    let invalid = || ProviderError::from(AnthropicAdapterError::InvalidReplayProjection);
+    if message.role != "assistant"
+        || native.get("source").and_then(Value::as_str) != Some("anthropic_messages")
+    {
+        return Err(invalid());
+    }
+    let blocks = native
+        .get("blocks")
+        .and_then(Value::as_array)
+        .ok_or_else(invalid)?;
+    if blocks
+        .iter()
+        .any(|block| block.get("type").and_then(Value::as_str).is_none())
+    {
+        return Err(invalid());
+    }
+    let text = super::replay::project_text(blocks).ok_or_else(invalid)?;
+    let visible_text = match &message.content {
+        Value::Null => String::new(),
+        Value::String(text) => text.clone(),
+        Value::Array(items) => {
+            // Typed native content is already public. Never replace different non-text blocks.
+            if items.iter().any(|item| {
+                !matches!(
+                    item.get("type").and_then(Value::as_str),
+                    Some("text" | "input_text")
+                )
+            }) && items != blocks
+            {
+                return Err(invalid());
+            }
+            if items.iter().any(|item| {
+                item.as_object().is_some_and(|object| {
+                    object
+                        .keys()
+                        .any(|key| !matches!(key.as_str(), "type" | "text"))
+                })
+            }) && items != blocks
+            {
+                let native_text: Vec<_> = blocks
+                    .iter()
+                    .filter(|block| block.get("type").and_then(Value::as_str) == Some("text"))
+                    .collect();
+                if !items.iter().eq(native_text) {
+                    return Err(invalid());
+                }
+            }
+            super::replay::project_text(items).ok_or_else(invalid)?
+        }
+        _ => return Err(invalid()),
+    };
+    if text != visible_text {
+        return Err(invalid());
+    }
+    let tools = map_openai_assistant_tool_uses(message)?;
+    let native_tools: Vec<_> = blocks
+        .iter()
+        .filter(|block| block.get("type").and_then(Value::as_str) == Some("tool_use"))
+        .collect();
+    if tools.len() != native_tools.len()
+        || tools.iter().zip(native_tools).any(|(tool, block)| {
+            ["id", "name", "input"]
+                .iter()
+                .any(|field| tool.get(*field) != block.get(*field))
+        })
+    {
+        return Err(invalid());
+    }
+    let thinking = blocks
+        .iter()
+        .filter(|block| block.get("type").and_then(Value::as_str) == Some("thinking"))
+        .map(|block| {
+            block
+                .get("thinking")
+                .and_then(Value::as_str)
+                .ok_or_else(invalid)
+        })
+        .collect::<Result<Vec<_>, _>>()?
+        .join("");
+    for field in ["reasoning_content", "reasoning"] {
+        if let Some(reasoning) = message.extra.get(field)
+            && reasoning.as_str() != Some(thinking.as_str())
+        {
+            return Err(invalid());
+        }
+    }
+    Ok(Some(blocks.clone()))
 }
 
 fn map_anthropic_content(

@@ -3,7 +3,17 @@ use super::*;
 pub(super) fn normalize_converse_response(
     value: &Value,
     context: &ProviderRequestContext,
-) -> Value {
+) -> Result<Value, ProviderError> {
+    if let Some(reason @ ("malformed_tool_use" | "malformed_model_output")) =
+        value.get("stopReason").and_then(Value::as_str)
+    {
+        return Err(ProviderError::PartialUsage {
+            source: Box::new(ProviderError::Transport(format!(
+                "aws_bedrock generation failed: {reason}"
+            ))),
+            provider_usage: map_usage(value),
+        });
+    }
     let id = value
         .get("responseId")
         .and_then(Value::as_str)
@@ -42,6 +52,18 @@ pub(super) fn normalize_converse_response(
             bedrock_reasoning_metadata("bedrock_converse", reasoning_blocks),
         );
     }
+    let metadata = message
+        .entry("provider_metadata")
+        .or_insert_with(|| json!({}));
+    metadata["aws_bedrock"]["native_content"] = json!({
+        "source": "bedrock_converse",
+        "blocks": blocks,
+    });
+    metadata["aws_bedrock"]["stop_reason"] =
+        value.get("stopReason").cloned().unwrap_or(Value::Null);
+    if let Some(fields) = value.get("additionalModelResponseFields") {
+        metadata["aws_bedrock"]["additionalModelResponseFields"] = fields.clone();
+    }
 
     let mut completion = Map::new();
     completion.insert("id".to_string(), Value::String(id));
@@ -71,7 +93,7 @@ pub(super) fn normalize_converse_response(
         completion.insert("usage".to_string(), usage);
     }
 
-    Value::Object(completion)
+    Ok(Value::Object(completion))
 }
 
 pub(crate) fn normalize_anthropic_messages_response(
@@ -175,7 +197,12 @@ where
         let mut id = format!("chatcmpl-{}", Uuid::new_v4().simple());
         let mut sent_role = false;
         let mut tool_block_indexes = BTreeMap::<u64, u32>::new();
+        let mut initial_tool_inputs = BTreeMap::<u64, Value>::new();
         let mut latest_usage = None;
+        let mut replay = crate::anthropic::replay::AnthropicReplayStream::default();
+        let mut native_content_sent = false;
+        let mut replay_error = None;
+        let mut replay_error_has_expected_terminal = false;
         futures_util::pin_mut!(upstream);
 
         while let Some(chunk) = upstream.next().await {
@@ -227,6 +254,51 @@ where
                     .or_else(|| value.get("type").and_then(Value::as_str))
                     .unwrap_or_default();
 
+                if replay_error.is_none()
+                    && let Err(message) = replay.observe(&value)
+                {
+                    replay_error = Some(message);
+                }
+                if let Some(message) = replay_error {
+                    let finish_reason = value.get("delta")
+                        .and_then(|delta| delta.get("stop_reason"))
+                        .and_then(Value::as_str).map(map_stop_reason);
+                    let accepted_finish = finish_reason.filter(|reason| {
+                        matches!(*reason, "length" | "content_filter")
+                            && crate::anthropic::replay::AnthropicReplayStream::is_incomplete_error(message)
+                    });
+                    if finish_reason.is_some() {
+                        replay_error_has_expected_terminal = accepted_finish.is_some();
+                    }
+                    let usage = map_anthropic_stream_usage(&value)
+                        .map(|usage| merge_openai_stream_usage(&mut latest_usage, &usage));
+                    if usage.is_some() || accepted_finish.is_some() {
+                        let mut chunk = anthropic_stream_chunk(
+                            &id, created, &context, json!({}), accepted_finish, usage,
+                        );
+                        if accepted_finish.is_none() {
+                            chunk["choices"] = json!([]);
+                        }
+                        yield Ok(render_sse_event_chunk(None, &chunk.to_string()));
+                    }
+                    continue;
+                }
+                if matches!(event_type, "content_block_start" | "content_block_delta" | "content_block_stop") {
+                    let mut namespace = Map::new();
+                    namespace.insert(provider_namespace.to_string(), json!({"native_event": value}));
+                    yield Ok(render_sse_event_chunk(None, &anthropic_stream_chunk(
+                        &id, created, &context, json!({"provider_metadata": namespace}), None, None,
+                    ).to_string()));
+                }
+                if event_type == "message_stop" && !native_content_sent {
+                    let mut delta = Map::new();
+                    preserve_anthropic_replay_metadata(&mut delta, &replay.message(), provider_namespace);
+                    yield Ok(render_sse_event_chunk(None, &anthropic_stream_chunk(
+                        &id, created, &context, Value::Object(delta), None, None,
+                    ).to_string()));
+                    native_content_sent = true;
+                }
+
                 if event_type == "error" {
                     let error = value.get("error").unwrap_or(&value);
                     let code = error
@@ -256,7 +328,7 @@ where
                         let mut delta = Map::new();
                         delta.insert("role".to_string(), json!("assistant"));
                         crate::anthropic::response::preserve_anthropic_message_metadata(
-                            &mut delta, &value["message"], provider_namespace, "message",
+                            &mut delta, &value["message"], provider_namespace, "message_start",
                         );
                         yield Ok(render_sse_event_chunk(None, &serde_json::to_string(&anthropic_stream_chunk(
                             &id,
@@ -278,24 +350,13 @@ where
                         continue;
                     };
 
-                    let thinking_blocks = extract_anthropic_thinking_blocks(std::slice::from_ref(
-                        &Value::Object(content_block.clone()),
-                    ));
-                    if !thinking_blocks.is_empty() {
-                        let metadata = provider_reasoning_metadata(
-                            provider_namespace,
-                            "anthropic_messages_stream",
-                            thinking_blocks,
-                        );
-                        yield Ok(render_sse_event_chunk(None, &serde_json::to_string(&anthropic_stream_chunk(
-                            &id,
-                            created,
-                            &context,
-                            json!({"provider_metadata": metadata}),
-                            None,
-                            None,
-                        )).unwrap_or_else(|_| "{}".to_string())));
-                        continue;
+                    if content_block.get("type").and_then(Value::as_str) == Some("text")
+                        && let Some(text) = content_block.get("text").and_then(Value::as_str)
+                        && !text.is_empty()
+                    {
+                        yield Ok(render_sse_event_chunk(None, &anthropic_stream_chunk(
+                            &id, created, &context, json!({"content":text}), None, None,
+                        ).to_string()));
                     }
 
                     if content_block.get("type").and_then(Value::as_str) != Some("tool_use") {
@@ -320,6 +381,9 @@ where
                         .unwrap_or(0);
                     let index = u32::try_from(tool_block_indexes.len()).unwrap_or(u32::MAX);
                     tool_block_indexes.insert(block_index, index);
+                    initial_tool_inputs.insert(
+                        block_index, content_block.get("input").cloned().unwrap_or_else(|| json!({})),
+                    );
                     let tool_id = content_block
                         .get("id")
                         .and_then(Value::as_str)
@@ -374,22 +438,11 @@ where
                                 None,
                             )).unwrap_or_else(|_| "{}".to_string())));
                         }
-                        Some("thinking_delta") | Some("signature_delta") => {
-                            let metadata = provider_reasoning_metadata(
-                                provider_namespace,
-                                "anthropic_messages_stream",
-                                vec![Value::Object(delta.clone())],
-                            );
-                            yield Ok(render_sse_event_chunk(None, &serde_json::to_string(&anthropic_stream_chunk(
-                                &id,
-                                created,
-                                &context,
-                                json!({"provider_metadata": metadata}),
-                                None,
-                                None,
-                            )).unwrap_or_else(|_| "{}".to_string())));
-                        }
+                        Some("thinking_delta") | Some("signature_delta") => {}
                         Some("input_json_delta") => {
+                            if let Some(block_index) = value.get("index").and_then(Value::as_u64) {
+                                initial_tool_inputs.remove(&block_index);
+                            }
                             let partial_json = delta
                                 .get("partial_json")
                                 .and_then(Value::as_str)
@@ -418,6 +471,17 @@ where
                     continue;
                 }
 
+                if event_type == "content_block_stop"
+                    && let Some(block_index) = value.get("index").and_then(Value::as_u64)
+                    && let Some(input) = initial_tool_inputs.remove(&block_index)
+                    && let Some(index) = tool_block_indexes.get(&block_index)
+                {
+                    yield Ok(render_sse_event_chunk(None, &anthropic_stream_chunk(
+                        &id, created, &context,
+                        json!({"tool_calls":[{"index":index,"function":{"arguments":input.to_string()}}]}),
+                        None, None,
+                    ).to_string()));
+                }
                 if event_type == "message_delta" {
                     let finish_reason = value
                         .get("delta")
@@ -430,6 +494,10 @@ where
                     crate::anthropic::response::preserve_anthropic_message_metadata(
                         &mut delta, &value, provider_namespace, "message_delta",
                     );
+                    if finish_reason.is_some() && !native_content_sent {
+                        preserve_anthropic_replay_metadata(&mut delta, &replay.message(), provider_namespace);
+                        native_content_sent = true;
+                    }
                     if finish_reason.is_some() || usage.is_some() || !delta.is_empty() {
                         yield Ok(render_sse_event_chunk(None, &serde_json::to_string(&anthropic_stream_chunk(
                             &id,
@@ -464,10 +532,42 @@ where
             stream_failed = true;
         }
 
+        if !stream_failed && !replay_error_has_expected_terminal
+            && let Some(message) = replay_error
+        {
+            yield Ok(openai_sse_error_chunk("anthropic_messages_replay_error", message));
+            stream_failed = true;
+        }
+
         if !stream_failed {
             yield Ok(done_sse_chunk());
         }
     })
+}
+
+fn preserve_anthropic_replay_metadata(
+    delta: &mut Map<String, Value>,
+    message: &Value,
+    provider_namespace: &str,
+) {
+    let thinking = message
+        .get("content")
+        .and_then(Value::as_array)
+        .map(|blocks| extract_anthropic_thinking_blocks(blocks))
+        .unwrap_or_default();
+    if !thinking.is_empty() {
+        let metadata = delta
+            .entry("provider_metadata")
+            .or_insert_with(|| json!({}));
+        metadata[provider_namespace]["reasoning"] =
+            json!({"source":"anthropic_messages","blocks":thinking});
+    }
+    crate::anthropic::response::preserve_anthropic_message_metadata(
+        delta,
+        message,
+        provider_namespace,
+        "message",
+    );
 }
 
 pub(super) fn anthropic_stream_chunk(
@@ -689,7 +789,6 @@ pub(super) fn map_stop_reason(reason: &str) -> &'static str {
         "max_tokens" | "model_context_window_exceeded" => "length",
         "tool_use" => "tool_calls",
         "guardrail_intervened" | "content_filtered" | "refusal" => "content_filter",
-        "malformed_model_output" | "malformed_tool_use" => "stop",
         _ => "stop",
     }
 }

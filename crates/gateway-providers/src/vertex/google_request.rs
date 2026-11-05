@@ -11,7 +11,7 @@ use super::{
     google_tools::{
         FunctionIdPolicy, convert_openai_tools_for_google, map_google_anthropic_tool_result_part,
         map_google_anthropic_tool_use_part, map_google_assistant_parts,
-        map_google_tool_result_part, record_google_tool_names,
+        map_google_tool_result_part, record_google_tool_names, reject_google_strict_tools,
     },
 };
 use crate::media::{infer_media_type_from_path, is_valid_media_type};
@@ -28,6 +28,7 @@ pub(super) fn map_google_request(
         _ => FunctionIdPolicy::Omit,
     };
 
+    reject_google_strict_tools(request.extra.get("tools"))?;
     let mut body = Map::new();
     map_google_contents(request, function_ids, &mut body)?;
 
@@ -162,18 +163,27 @@ fn map_google_contents(
     let mut system_lines = Vec::new();
     let mut known_tool_names = BTreeMap::new();
     let mut pending_tool_parts = Vec::new();
+    let mut tool_call_order = Vec::new();
 
     for message in &request.messages {
         if message.role == "tool" {
             let part = map_google_tool_result_part(message, &known_tool_names, function_ids)?;
-            pending_tool_parts.push(part);
+            pending_tool_parts.push((
+                message.extra["tool_call_id"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+                part,
+            ));
             continue;
         }
 
         if !pending_tool_parts.is_empty() {
             contents.push(json!({
                 "role": "user",
-                "parts": std::mem::take(&mut pending_tool_parts)
+                "parts": ordered_tool_results(
+                    std::mem::take(&mut pending_tool_parts), &tool_call_order, function_ids
+                )
             }));
         }
 
@@ -193,6 +203,14 @@ fn map_google_contents(
             "assistant" => {
                 let parts = map_google_assistant_parts(message, function_ids)?;
                 record_google_tool_names(message, &mut known_tool_names);
+                tool_call_order = message
+                    .extra
+                    .get("tool_calls")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|call| call.get("id").and_then(Value::as_str).map(str::to_string))
+                    .collect();
                 contents.push(json!({ "role": "model", "parts": parts }));
             }
             other => {
@@ -202,7 +220,10 @@ fn map_google_contents(
     }
 
     if !pending_tool_parts.is_empty() {
-        contents.push(json!({ "role": "user", "parts": pending_tool_parts }));
+        contents.push(json!({
+            "role": "user",
+            "parts": ordered_tool_results(pending_tool_parts, &tool_call_order, function_ids)
+        }));
     }
     if contents.is_empty() {
         return Err(VertexAdapterError::EmptyMessages.into());
@@ -216,6 +237,24 @@ fn map_google_contents(
         );
     }
     Ok(())
+}
+
+/// Older Gemini models correlate parallel results by position, not ID or function name.
+/// Only a complete contiguous group can be safely reordered; incomplete history stays untouched.
+fn ordered_tool_results(
+    mut parts: Vec<(String, Value)>,
+    call_order: &[String],
+    function_ids: FunctionIdPolicy,
+) -> Vec<Value> {
+    if function_ids == FunctionIdPolicy::Omit
+        && parts.len() == call_order.len()
+        && call_order
+            .iter()
+            .all(|id| parts.iter().filter(|(result, _)| result == id).count() == 1)
+    {
+        parts.sort_by_key(|(id, _)| call_order.iter().position(|call| call == id));
+    }
+    parts.into_iter().map(|(_, part)| part).collect()
 }
 
 #[derive(Default)]
@@ -299,6 +338,13 @@ fn apply_response_format(
     let format = response_format
         .as_object()
         .ok_or(VertexAdapterError::InvalidResponseFormat)?;
+    if format
+        .get("json_schema")
+        .and_then(|schema| schema.get("strict"))
+        == Some(&Value::Bool(true))
+    {
+        return Err(VertexAdapterError::UnsupportedStrictControl);
+    }
     let kind = format.get("type").and_then(Value::as_str).unwrap_or("text");
     if kind == "text" {
         return Ok(());

@@ -360,3 +360,105 @@ async fn fragmented_native_streams_still_enforce_both_guardrail_phases() {
         }
     }
 }
+
+#[tokio::test]
+async fn response_transforms_invalidate_ordered_replay_metadata() {
+    for (namespace, native_content) in [
+        (
+            "gcp_vertex",
+            json!({
+                "parts": [{"functionCall": {"name": "bash", "args": {"command": "private command"}}}],
+                "tool_call_ids": ["call-1"]
+            }),
+        ),
+        (
+            "aws_bedrock",
+            json!({
+                "source": "bedrock_converse",
+                "blocks": [{"toolUse": {"toolUseId": "call-1", "name": "bash", "input": {"command": "private command"}}}]
+            }),
+        ),
+    ] {
+        let (_directory, state) =
+            managed_state(GuardPhase::GeneratedToolCall, [transform("masked command")]).await;
+        let mut response = json!({
+            "choices": [{"message": {
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "id": "call-1", "type": "function",
+                    "function": {"name": "bash", "arguments": "{\"command\":\"private command\"}"}
+                }],
+                "provider_metadata": {
+                    namespace: {
+                        "native_content": native_content,
+                        "additionalModelResponseFields": {"stop_sequence": "END"}
+                    }
+                }
+            }}]
+        });
+
+        guard_model_response(&state, &stream_guard_context(1 << 20), &mut response)
+            .await
+            .expect("response tool transformation");
+
+        let message = &response["choices"][0]["message"];
+        let arguments: Value = serde_json::from_str(
+            message["tool_calls"][0]["function"]["arguments"]
+                .as_str()
+                .expect("serialized arguments"),
+        )
+        .expect("arguments");
+        assert_eq!(arguments["command"], "masked command");
+        assert!(
+            message["provider_metadata"][namespace]
+                .get("native_content")
+                .is_none()
+        );
+        assert_eq!(
+            message["provider_metadata"][namespace]["additionalModelResponseFields"]["stop_sequence"],
+            "END"
+        );
+        assert!(!response.to_string().contains("private command"));
+    }
+}
+
+#[tokio::test]
+async fn stream_transforms_invalidate_later_replay_snapshots_without_losing_usage() {
+    let (_directory, state) =
+        managed_state(GuardPhase::GeneratedToolCall, [transform("masked command")]).await;
+    let events = [
+        json!({"choices":[{"delta":{"tool_calls":[{
+            "index":0,"id":"call-1","type":"function",
+            "function":{"name":"bash","arguments":"{\"command\":\"private "}
+        }]}}]}),
+        json!({"choices":[{"delta":{"tool_calls":[{
+            "index":0,"function":{"arguments":"command\"}"}
+        }]}}]}),
+        json!({"choices":[{"delta":{"provider_metadata":{"gcp_vertex":{
+            "native_content":{
+                "parts":[{"functionCall":{"name":"bash","args":{"command":"private command"}}}],
+                "tool_call_ids":["call-1"]
+            }
+        }}},"finish_reason":"tool_calls"}],
+        "usage":{"prompt_tokens":10,"completion_tokens":3,"total_tokens":13}}),
+    ];
+    let source = format!(
+        "{}data: [DONE]\n\n",
+        events
+            .iter()
+            .map(|event| format!("data: {event}\n\n"))
+            .collect::<String>()
+    );
+
+    let guarded = guard_sse_payload(&state, &stream_guard_context(1 << 20), source.as_bytes())
+        .await
+        .expect("stream tool transformation");
+    let rendered = String::from_utf8(guarded).expect("UTF-8");
+
+    assert!(rendered.contains("masked command"));
+    assert!(!rendered.contains("private command"));
+    assert!(!rendered.contains("native_content"));
+    assert!(rendered.contains("\"total_tokens\":13"));
+    assert!(rendered.ends_with("data: [DONE]\n\n"));
+}

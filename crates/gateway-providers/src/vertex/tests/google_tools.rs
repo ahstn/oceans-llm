@@ -49,7 +49,6 @@ fn lookup_openai_tool() -> Value {
         "function": {
             "name": "lookup",
             "description": "Look up weather",
-            "strict": true,
             "parameters": {
                 "type": "object",
                 "properties": {"city": {"type": "string"}},
@@ -100,7 +99,6 @@ fn maps_openai_tools_tool_calls_and_tool_results_to_google_payload() {
         })
     );
     assert!(declaration.get("parameters").is_none());
-    assert!(declaration.get("strict").is_none());
     assert_eq!(
         body["toolConfig"]["functionCallingConfig"],
         json!({ "mode": "ANY", "allowedFunctionNames": ["lookup"] })
@@ -715,4 +713,255 @@ fn malformed_google_function_calls_are_rejected() {
         ProviderError::from(error),
         ProviderError::Transport(_)
     ));
+}
+
+#[test]
+fn idless_parallel_results_follow_call_ids_even_when_function_names_match() {
+    let request = chat_request(vec![
+        user("compare cities"),
+        assistant_tool_calls(json!([
+            { "id": "london", "type": "function", "function": { "name": "lookup", "arguments": "{\"city\":\"London\"}" } },
+            { "id": "paris", "type": "function", "function": { "name": "lookup", "arguments": "{\"city\":\"Paris\"}" } }
+        ])),
+        tool_result("paris", "{\"city\":\"Paris\",\"temperature\":21}"),
+        tool_result("london", "{\"city\":\"London\",\"temperature\":16}"),
+        user("summarize"),
+    ]);
+    let body = google_body(&request, &context("google/gemini-2.5-flash"), false).expect("mapped");
+    let results = &body["contents"][2]["parts"];
+    assert_eq!(results[0]["functionResponse"]["response"]["city"], "London");
+    assert_eq!(results[1]["functionResponse"]["response"]["city"], "Paris");
+    assert!(results[0]["functionResponse"].get("id").is_none());
+    assert_eq!(body["contents"][3]["parts"][0]["text"], "summarize");
+}
+
+#[test]
+fn idless_incomplete_result_groups_are_not_fabricated_or_moved_across_turns() {
+    let request = chat_request(vec![
+        user("compare"),
+        assistant_tool_calls(json!([
+            lookup_tool_call("first"),
+            lookup_tool_call("second")
+        ])),
+        tool_result("second", "{\"result\":\"second\"}"),
+        user("pause"),
+        tool_result("first", "{\"result\":\"first\"}"),
+    ]);
+    let body = google_body(&request, &context("google/gemini-2.5-flash"), false).expect("mapped");
+    assert_eq!(body["contents"][2]["parts"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        body["contents"][2]["parts"][0]["functionResponse"]["response"]["result"],
+        "second"
+    );
+    assert_eq!(body["contents"][3]["parts"][0]["text"], "pause");
+    assert_eq!(
+        body["contents"][4]["parts"][0]["functionResponse"]["response"]["result"],
+        "first"
+    );
+}
+
+fn ordered_signed_response() -> Value {
+    json!({ "candidates": [{
+        "content": { "parts": [
+            { "text": "consider", "thought": true, "thoughtSignature": "sig-thought" },
+            { "text": "before", "thoughtSignature": "sig-before" },
+            { "functionCall": { "name": "lookup", "args": { "city": "London" } }, "thoughtSignature": "sig-call" },
+            { "futureServerPart": { "opaque": [1, 2] }, "thoughtSignature": "sig-future" },
+            { "text": "after", "thoughtSignature": "sig-after" }
+        ] },
+        "finishReason": "STOP"
+    }] })
+}
+
+#[test]
+fn json_replay_preserves_ordered_signed_parts_and_opaque_future_parts() {
+    let response = ordered_signed_response();
+    let normalized =
+        normalize_google_response(&response, &context("google/gemini-2.5-flash")).unwrap();
+    let message: CoreChatMessage =
+        serde_json::from_value(normalized["choices"][0]["message"].clone()).unwrap();
+    let id = message.extra["tool_calls"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let request = chat_request(vec![user("look up"), message, tool_result(&id, "{}")]);
+    let body = google_body(&request, &context("google/gemini-2.5-flash"), false).expect("replayed");
+    assert_eq!(
+        body["contents"][1]["parts"],
+        response["candidates"][0]["content"]["parts"]
+    );
+    assert_eq!(
+        body["contents"][2]["parts"][0]["functionResponse"]["name"],
+        "lookup"
+    );
+}
+
+#[test]
+fn native_replay_keeps_existing_model_function_id_policy_for_generated_chat_ids() {
+    let response = json!({ "candidates": [{
+        "content": { "parts": [{
+            "functionCall": { "name": "lookup", "args": {} }, "thoughtSignature": "sig-call"
+        }] },
+        "finishReason": "STOP"
+    }] });
+    let normalized =
+        normalize_google_response(&response, &context("google/gemini-3.7-flash")).unwrap();
+    let message: CoreChatMessage =
+        serde_json::from_value(normalized["choices"][0]["message"].clone()).unwrap();
+    let id = message.extra["tool_calls"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let request = chat_request(vec![message, tool_result(&id, "{}")]);
+    let body = google_body(&request, &context("google/gemini-3.7-flash"), false).expect("replayed");
+    assert_eq!(body["contents"][0]["parts"][0]["functionCall"]["id"], id);
+    assert_eq!(
+        body["contents"][1]["parts"][0]["functionResponse"]["id"],
+        id
+    );
+    assert_eq!(
+        body["contents"][0]["parts"][0]["thoughtSignature"],
+        "sig-call"
+    );
+}
+
+#[test]
+fn replay_metadata_cannot_override_edited_public_text_reasoning_or_calls() {
+    let normalized = normalize_google_response(
+        &ordered_signed_response(),
+        &context("google/gemini-2.5-flash"),
+    )
+    .unwrap();
+    let original = normalized["choices"][0]["message"].clone();
+    let mut edits = Vec::new();
+    let mut edited = original.clone();
+    edited["content"] = json!("different prompt");
+    edits.push(edited);
+    let mut edited = original.clone();
+    edited["reasoning_content"] = json!("different reasoning");
+    edits.push(edited);
+    let mut edited = original.clone();
+    edited["tool_calls"][0]["id"] = json!("different-id");
+    edits.push(edited);
+    let mut edited = original.clone();
+    edited["tool_calls"][0]["function"]["name"] = json!("delete_everything");
+    edits.push(edited);
+    let mut edited = original.clone();
+    edited["tool_calls"][0]["function"]["arguments"] = json!("{\"city\":\"Paris\"}");
+    edits.push(edited);
+    let mut edited = original.clone();
+    edited["provider_metadata"]["gcp_vertex"]["native_content"]["parts"][1]["text"] =
+        json!("smuggled prompt");
+    edits.push(edited);
+    for edited in edits {
+        let message: CoreChatMessage = serde_json::from_value(edited).unwrap();
+        let request = chat_request(vec![user("look up"), message]);
+        let error = google_body(&request, &context("google/gemini-2.5-flash"), false)
+            .expect_err("stale or forged metadata must not win over Chat");
+        invalid_request_containing(error, "replay metadata");
+    }
+}
+
+#[test]
+fn replay_native_function_ids_cannot_be_rebound_by_forged_metadata() {
+    let response = json!({ "candidates": [{
+        "content": { "parts": [{
+            "functionCall": { "id": "provider-id", "name": "lookup", "args": {} },
+            "thoughtSignature": "signed"
+        }] },
+        "finishReason": "STOP"
+    }] });
+    let normalized =
+        normalize_google_response(&response, &context("google/gemini-3.7-flash")).unwrap();
+    let mut message = normalized["choices"][0]["message"].clone();
+    message["tool_calls"][0]["id"] = json!("forged-id");
+    message["provider_metadata"]["gcp_vertex"]["native_content"]["tool_call_ids"][0] =
+        json!("forged-id");
+    let request = chat_request(vec![serde_json::from_value(message).unwrap()]);
+    let error = google_body(&request, &context("google/gemini-3.7-flash"), false)
+        .expect_err("the ID on the native call must also match the public ID");
+    invalid_request_containing(error, "replay metadata");
+}
+
+#[test]
+fn google_replay_ignores_foreign_vertex_anthropic_native_content() {
+    let mut extra = BTreeMap::new();
+    extra.insert(
+        "provider_metadata".into(),
+        json!({ "gcp_vertex": {
+        "native_content": { "source": "anthropic_messages", "blocks": [
+            { "type": "text", "text": "earlier answer" }
+        ] }
+    } }),
+    );
+    let request = chat_request(vec![
+        user("hello"),
+        assistant(json!("earlier answer"), extra),
+        user("continue"),
+    ]);
+    let body = google_body(&request, &context("google/gemini-2.5-flash"), false)
+        .expect("foreign provider history uses its public Chat projection");
+    assert_eq!(
+        body["contents"][1]["parts"],
+        json!([{ "text": "earlier answer" }])
+    );
+}
+
+#[test]
+fn strict_function_control_is_rejected_before_tool_choice_can_discard_it() {
+    for choice in [
+        json!("auto"),
+        json!("required"),
+        json!("none"),
+        json!({ "type": "function", "function": { "name": "lookup" } }),
+    ] {
+        let mut request = chat_request(vec![user("lookup")]);
+        let mut tools = lookup_openai_tool();
+        tools[0]["function"]["strict"] = json!(true);
+        request.extra.insert("tools".to_string(), tools);
+        request.extra.insert("tool_choice".to_string(), choice);
+        let mut ctx = context("google/gemini-3.7-flash");
+        ctx.extra_body.insert(
+            "toolConfig".to_string(),
+            json!({ "functionCallingConfig": { "mode": "AUTO" } }),
+        );
+        let error = google_body(&request, &ctx, false).expect_err("strict is not guaranteed");
+        invalid_request_containing(error, "`strict: true` is not supported");
+    }
+}
+
+#[test]
+fn route_tool_overrides_cannot_silently_erase_requested_strict_semantics() {
+    let mut request = chat_request(vec![user("lookup")]);
+    let mut tools = lookup_openai_tool();
+    tools[0]["function"]["strict"] = json!(true);
+    request.extra.insert("tools".into(), tools);
+    let mut ctx = context("google/gemini-2.5-flash");
+    ctx.extra_body.insert("tools".into(), json!([]));
+    let error = google_body(&request, &ctx, false).expect_err("strict cannot silently disappear");
+    invalid_request_containing(error, "`strict: true` is not supported");
+}
+
+#[test]
+fn non_strict_function_schema_preserves_const_and_auto_control() {
+    let mut request = chat_request(vec![user("lookup")]);
+    request.extra.insert(
+        "tools".to_string(),
+        json!([{
+            "type": "function",
+            "function": { "name": "lookup", "strict": false, "parameters": {
+                "type": "object", "properties": { "city": { "const": "London" } }
+            } }
+        }]),
+    );
+    request
+        .extra
+        .insert("tool_choice".to_string(), json!("auto"));
+    let body = google_body(&request, &context("google/gemini-2.5-flash"), false)
+        .expect("non-strict mapping");
+    assert_eq!(
+        body["tools"][0]["functionDeclarations"][0]["parametersJsonSchema"]["properties"]["city"],
+        json!({ "const": "London" })
+    );
+    assert_eq!(body["toolConfig"]["functionCallingConfig"]["mode"], "AUTO");
 }

@@ -43,3 +43,11 @@ Upstream validation means a new alias or model option can work without an Oceans
 Cloud providers retain their own endpoints: Vertex uses `rawPredict` and `streamRawPredict`, Bedrock Runtime uses InvokeModel, and Bedrock Mantle uses `/anthropic/v1/messages`. Bedrock Runtime Anthropic streaming remains unsupported. OpenRouter token counting and complete Claude Code workflow compatibility are separate integration contracts.
 
 The verification gate requires native request/response/SSE captures across transports, rolling-alias parity, cached-usage accounting and native generated-tool guardrails. A bounded live request verifies the public native route and its Request Logs entry. The earlier [Anthropic-compatible provider decision](2026-09-03-anthropic-compatible-provider-and-opencode-zen.md) still governs Chat Completions translation.
+
+## Amendment: opaque Chat continuation state (2026-11-05)
+
+Chat clients also need complete native state for signed tool continuations. A reasoning-only projection cannot recover the original order of thinking, tools and provider extensions. Each native family therefore owns its replay envelope and validates it against the public Chat projection before restoration. A source discriminator prevents Vertex Google and Vertex Claude metadata from being confused. This is not a general transcript-repair layer.
+
+Output transforms invalidate replay state rather than expose an unmodified copy of redacted text or arguments. Truncated length/filter output can complete without a replay snapshot; malformed generation output fails while retaining observed usage. Native Messages and Responses remain separate transports. The [compatibility reference](../reference/provider-api-compatibility.md#native-chat-replay) defines the wire fields and limits.
+
+The [pinned harness comparison](../internal/2026-11-05-provider-harness-comparison.md) records the accepted corrections, rejected claims and proof scope. Local provider fixtures prove wire behavior; they do not certify cloud credentials, model availability or a full agent session.

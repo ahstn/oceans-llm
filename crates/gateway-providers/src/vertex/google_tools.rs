@@ -94,6 +94,17 @@ pub(super) fn map_google_assistant_parts(
     message: &CoreChatMessage,
     function_ids: FunctionIdPolicy,
 ) -> Result<Vec<Value>, VertexAdapterError> {
+    if let Some(metadata) = message
+        .extra
+        .get("provider_metadata")
+        .and_then(|metadata| metadata.get("gcp_vertex"))
+        .and_then(|metadata| metadata.get("native_content"))
+        .filter(|metadata| {
+            metadata.get("source").and_then(Value::as_str) == Some("google_generate_content")
+        })
+    {
+        return validated_native_parts(message, metadata, function_ids);
+    }
     let mut parts = match &message.content {
         Value::Null => Vec::new(),
         Value::String(text) if text.is_empty() => Vec::new(),
@@ -143,6 +154,106 @@ pub(super) fn map_google_assistant_parts(
 
     if parts.is_empty() {
         parts.push(json!({ "text": "" }));
+    }
+    Ok(parts)
+}
+
+/// Metadata is caller-controlled. Never restore a hidden prompt or call that differs from Chat.
+fn validated_native_parts(
+    message: &CoreChatMessage,
+    metadata: &Value,
+    function_ids: FunctionIdPolicy,
+) -> Result<Vec<Value>, VertexAdapterError> {
+    let mismatch = || VertexAdapterError::ReplayProjectionMismatch;
+    let parts = metadata
+        .get("parts")
+        .and_then(Value::as_array)
+        .ok_or_else(mismatch)?;
+    let ids = metadata
+        .get("tool_call_ids")
+        .and_then(Value::as_array)
+        .ok_or_else(mismatch)?;
+    let public_parts = if message.content.is_null() {
+        Vec::new()
+    } else {
+        map_google_parts(&message.content, None, function_ids)?
+    };
+    let mut public_text = String::new();
+    for part in public_parts {
+        public_text.push_str(
+            part.get("text")
+                .and_then(Value::as_str)
+                .ok_or_else(mismatch)?,
+        );
+    }
+    let public_calls = match message.extra.get("tool_calls") {
+        None => &[][..],
+        Some(calls) => calls.as_array().ok_or_else(mismatch)?.as_slice(),
+    };
+    let public_reasoning = match message.extra.get("reasoning_content") {
+        None | Some(Value::Null) => "",
+        Some(reasoning) => reasoning.as_str().ok_or_else(mismatch)?,
+    };
+    let mut text = String::new();
+    let mut reasoning = String::new();
+    let mut call_index = 0;
+    for part in parts {
+        if !part.is_object() {
+            return Err(mismatch());
+        }
+        if let Some(call) = part.get("functionCall") {
+            let public = public_calls.get(call_index).ok_or_else(mismatch)?;
+            let id = ids
+                .get(call_index)
+                .and_then(Value::as_str)
+                .ok_or_else(mismatch)?;
+            let function = public
+                .get("function")
+                .and_then(Value::as_object)
+                .ok_or_else(mismatch)?;
+            if public.get("type").and_then(Value::as_str) != Some("function")
+                || public.get("id").and_then(Value::as_str) != Some(id)
+                || call
+                    .get("id")
+                    .is_some_and(|native| native.as_str() != Some(id))
+                || call.get("name").and_then(Value::as_str).is_none()
+                || call.get("name") != function.get("name")
+                || call.get("args").cloned().unwrap_or_else(|| json!({}))
+                    != parse_openai_tool_arguments(function)?
+            {
+                return Err(mismatch());
+            }
+            call_index += 1;
+        } else if let Some(part_text) = part.get("text") {
+            let part_text = part_text.as_str().ok_or_else(mismatch)?;
+            if part.get("thought").and_then(Value::as_bool) == Some(true) {
+                reasoning.push_str(part_text);
+            } else {
+                text.push_str(part_text);
+            }
+        }
+    }
+    if text != public_text
+        || reasoning != public_reasoning
+        || call_index != public_calls.len()
+        || call_index != ids.len()
+    {
+        return Err(mismatch());
+    }
+    let mut parts = parts.clone();
+    let mut call_index = 0;
+    for part in &mut parts {
+        if let Some(call) = part.get_mut("functionCall").and_then(Value::as_object_mut) {
+            match function_ids {
+                FunctionIdPolicy::Include => {
+                    call.insert("id".to_string(), ids[call_index].clone());
+                }
+                FunctionIdPolicy::Omit => {
+                    call.remove("id");
+                }
+            }
+            call_index += 1;
+        }
     }
     Ok(parts)
 }
@@ -236,9 +347,22 @@ fn map_google_function_response_part(
     Ok(json!({ "functionResponse": function_response }))
 }
 
+pub(super) fn reject_google_strict_tools(tools: Option<&Value>) -> Result<(), VertexAdapterError> {
+    if tools.and_then(Value::as_array).is_some_and(|tools| {
+        tools.iter().any(|tool| {
+            tool.get("function").unwrap_or(tool).get("strict") == Some(&Value::Bool(true))
+        })
+    }) {
+        return Err(VertexAdapterError::UnsupportedStrictControl);
+    }
+    Ok(())
+}
+
 pub(super) fn convert_openai_tools_for_google(
     body: &mut Map<String, Value>,
 ) -> Result<(), VertexAdapterError> {
+    // Validate before `tool_choice: none` can discard declarations or overwrite native controls.
+    reject_google_strict_tools(body.get("tools"))?;
     let has_tools = body
         .get("tools")
         .and_then(Value::as_array)

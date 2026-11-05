@@ -232,6 +232,54 @@ async fn vertex_provider_google_non_stream_executes_real_http_mapping() {
 }
 
 #[tokio::test]
+async fn vertex_provider_google_rejected_generation_preserves_billable_usage() {
+    for candidate in [
+        json!({ "content": { "parts": [{ "text": "unfinished" }] } }),
+        json!({ "finishReason": "UNEXPECTED_TOOL_CALL" }),
+        json!({ "finishReason": "FUTURE_FAILURE" }),
+    ] {
+        let raw = json!({
+            "candidates": [candidate],
+            "usageMetadata": {
+                "promptTokenCount": 4, "candidatesTokenCount": 2,
+                "thoughtsTokenCount": 3, "totalTokenCount": 9
+            }
+        });
+        let app = Router::new()
+            .route(
+                "/v1/{*path}",
+                post(|State(raw): State<Value>| async move { Json(raw) }),
+            )
+            .with_state(raw);
+        let host = start_router(app).await;
+        let provider = vertex_provider_for_test(format!("http://{host}"));
+        let request = chat_request(vec![CoreChatMessage {
+            role: "user".into(),
+            content: json!("answer"),
+            name: None,
+            extra: BTreeMap::new(),
+        }]);
+        let error = provider
+            .chat_completions(&request, &context("google/gemini-2.5-flash"))
+            .await
+            .expect_err("incomplete/failed generation must not appear successful");
+        let ProviderError::PartialUsage {
+            source,
+            provider_usage,
+        } = error
+        else {
+            panic!("generation failure must retain upstream usage");
+        };
+        assert!(matches!(*source, ProviderError::Transport(_)));
+        let usage = provider_usage.expect("billable upstream usage");
+        assert_eq!(usage["prompt_tokens"], 4);
+        assert_eq!(usage["completion_tokens"], 5);
+        assert_eq!(usage["completion_tokens_details"]["reasoning_tokens"], 3);
+        assert_eq!(usage["total_tokens"], 9);
+    }
+}
+
+#[tokio::test]
 async fn vertex_provider_google_stream_requests_sse_and_maps_thought_and_text_deltas() {
     type CapturedRequest = Arc<Mutex<Option<(String, Value)>>>;
     let captured: CapturedRequest = Arc::new(Mutex::new(None));
@@ -450,10 +498,14 @@ async fn vertex_provider_anthropic_stream_handles_fragmented_crlf_events() {
                         let chunks = vec![
                             "event: message_start\r\n",
                             "data: {\"type\":\"message_start\"}\r\n",
-                            "\r\nevent: content_block_delta\r\n",
-                            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hel\"}}\r\n\r\n",
+                            "\r\nevent: content_block_start\r\n",
+                            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\r\n\r\n",
                             "event: content_block_delta\r\n",
-                            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}}\r\n\r\n",
+                            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hel\"}}\r\n\r\n",
+                            "event: content_block_delta\r\n",
+                            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}}\r\n\r\n",
+                            "event: content_block_stop\r\n",
+                            "data: {\"type\":\"content_block_stop\",\"index\":0}\r\n\r\n",
                             "event: message_delta\r\n",
                             "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\r\n\r\n",
                             "event: message_stop\r\n",
@@ -499,18 +551,27 @@ async fn vertex_provider_anthropic_stream_handles_fragmented_crlf_events() {
         .map(|item| String::from_utf8(item.expect("chunk").to_vec()).expect("utf8"))
         .collect::<String>();
 
-    assert!(rendered.contains("\"content\":\"hel\""));
-    assert!(rendered.contains("\"content\":\"lo\""));
-    assert_eq!(rendered.matches("\"role\":\"assistant\"").count(), 1);
-    assert!(rendered.contains("\"finish_reason\":\"stop\""));
-    assert!(rendered.contains("data: [DONE]"));
-
-    let request_payload = captured.lock().await.clone().expect("captured request");
+    let mut parser = gateway_core::SseEventParser::default();
+    let events = parser.push_bytes(rendered.as_bytes()).expect("valid SSE");
+    parser.finish().expect("complete SSE framing");
+    let values = events
+        .iter()
+        .filter(|event| event.data != "[DONE]")
+        .map(|event| serde_json::from_str::<Value>(&event.data).expect("JSON event"))
+        .collect::<Vec<_>>();
+    let text = values
+        .iter()
+        .filter_map(|value| value["choices"][0]["delta"]["content"].as_str())
+        .collect::<String>();
+    assert_eq!(text, "hello");
+    let terminal = values
+        .iter()
+        .find(|value| value["choices"][0]["finish_reason"] == "stop")
+        .expect("successful terminal");
     assert_eq!(
-        request_payload["anthropic_version"],
-        Value::String("vertex-2023-10-16".to_string())
+        terminal["choices"][0]["delta"]["provider_metadata"]["gcp_vertex"]["native_content"]["blocks"],
+        json!([{"type":"text","text":"hello"}])
     );
-    assert!(request_payload.get("model").is_none());
-    assert_eq!(request_payload["stream"], Value::Bool(true));
-    assert!(request_payload.get("anthropic_beta").is_none());
+    assert!(values.iter().all(|value| value.get("error").is_none()));
+    assert_eq!(events.last().expect("terminal event").data, "[DONE]");
 }
