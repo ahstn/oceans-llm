@@ -23,7 +23,8 @@ Claude Code hooks                     → oceans hook claude  (session, repo and
 
 - **`oceans hook notes`** is registered with `git-ai config --add git_ai_hooks.post_notes_updated "oceans hook notes"`. git-ai runs it after every note write with a JSON array of `{commit_sha, repo_url, repo_name, branch, is_default_branch, note_content}` on stdin.
 - **`oceans hook claude`** is a Claude Code hook. At session start and end it sends the session id, repo URL, branch, HEAD and harness version. It sends no prompt text.
-- Both post to a new authenticated ingestion endpoint under `/api/v1`, using the caller's existing Oceans API key. The endpoint is Oceans' own contract, not a Git AI-compatible one.
+- Both post to a new authenticated ingestion endpoint under `/api/v1` with an Oceans API key owned by the same user, team or service account whose keys send the matching gateway traffic. The endpoint is Oceans' own contract, not a Git AI-compatible one.
+- A new `attribution:write` API key scope grants only the ingestion endpoint. A full-access key also works.
 - The gateway parses notes against the v3 spec and stores totals per commit and per session. It stores no file paths and no line ranges.
 
 ## Implementation
@@ -32,7 +33,12 @@ Claude Code hooks                     → oceans hook claude  (session, repo and
 - **Configuration:** the CLI reads `OCEANS_URL` and `OCEANS_API_KEY` from the environment today. The notes hook runs under git-ai's background service and the Claude hook under Claude Code, neither of which reliably has the user's shell environment. Putting the key in git-ai's hook command would store it in `~/.git-ai/config.json`, which other tools read. The CLI therefore gains a config file, described in [CLI configuration and key resolution](#cli-configuration-and-key-resolution). git-ai reads its own config once per process, so installing the hook also means running `git-ai bg restart`.
 - **Repo identity:** git-ai passes the default remote's URL unchanged, which can include credentials (`https://token@host/...`). The CLI strips userinfo and normalises the URL to `host/org/repo` before it leaves the machine, and the gateway rejects URLs that still have userinfo.
 - **Parser:** the parser is a dependency-light module, roughly 200–400 lines, that accepts all three attestation key formats (legacy hex, `s_…::t_…`, `h_…`). It counts attested lines per session and per known human, and keeps `agent_id` and `human_author`. Unattested added lines stay unknown, not human.
-- **Join:** a session joins an Oceans agent session on `(harness, normalized_session_id)` within the caller's ownership scope. Oceans stores the `x-claude-code-session-id` value verbatim, so a main-session id in a note matches it without any transformation. Lines written by a Claude Code subagent carry the subagent's transcript name (`agent-<hex>`) instead. These join on the request's `execution_id`, which Oceans takes from `x-claude-code-agent-id`, once the header's format is confirmed. Until then they count as AI lines without a matching session. A match is correlation evidence, not identity, as in the [passive agent session analysis ADR](2026-07-21-passive-agent-session-analysis.md). Gateway data supplies the model and cost when the note says `unknown`.
+- **Join:** passive ingestion never stores a raw external id. It stores `hash_lineage_candidate(ownership_scope_key, harness_key, value)` ([`session_resolution.rs`](../../crates/gateway-service/src/agent_analysis/session_resolution.rs)) as `normalized_session_id`, and hashes `execution_id` and `parent_execution_id` the same way. Attribution ingestion applies that same function:
+  - The ownership scope comes from the ingesting key, so the join only works when that key resolves to the same scope as the keys that sent the gateway traffic.
+  - The harness key comes from the note's `agent_id.tool` (`claude` → `claude_code`). Tools without an Oceans harness adapter are stored without a join.
+  - The value is `agent_id.id`, and the hash is compared with `normalized_session_id`.
+  - Attribution tables store only the hash, never the raw id, which keeps the ADR's rule that external values are scope-bound correlation evidence.
+- **Subagent lines:** lines written by a Claude Code subagent carry the subagent's transcript name (`agent-<hex>`) instead of a session id. They join on the request's hashed `execution_id`, which comes from `x-claude-code-agent-id`, once the header's raw format is confirmed. Until then they count as AI lines without a matching session. A match is correlation evidence, not identity, as in the [passive agent session analysis ADR](2026-07-21-passive-agent-session-analysis.md). Gateway data supplies the model and cost when the note says `unknown`.
 - **Idempotency:** rewrites (rebase, amend, cherry-pick) produce new notes for new SHAs. Ingestion is keyed on `(repository, commit_sha)` and the latest note for a commit replaces the earlier one.
 - **Storage:** paired LibSQL and PostgreSQL schemas, following existing store conventions.
 
@@ -54,7 +60,7 @@ api_key: "!fnox get OCEANS_INGEST_KEY"   # or "env:OCEANS_INGEST_KEY", or a lite
 - **YAML quoting:** an unquoted scalar starting with `!` is a YAML tag, so the command form must be quoted. A tagged value is rejected with an error that shows the quoted form.
 - **Resolve in the sender, not the hook:** `oceans hook notes` and `oceans hook claude` only queue their payloads and never resolve the key. The background sender resolves it with a 10 s timeout and keeps the result in memory for that run only. If resolution fails, the queue is kept and retried. A command's output is never logged; errors report only its exit status.
 - **File permissions:** `oceans` refuses to run a `!` command, or to read a literal key, from a config file that other users can write to, because the file effectively becomes code that runs on every commit.
-- **`oceans login`:** this command writes the file with owner-only permissions. It can create an ingest-only [scoped API key](2026-10-17-scoped-api-keys.md) for the hooks, so a leaked file or command output can only submit attribution data.
+- **`oceans login`:** this command writes the file with owner-only permissions. It can create a key with only the `attribution:write` scope for the hooks, so a leaked file or command output can only submit attribution data. That scope doesn't exist yet. The [scoped API keys ADR](2026-10-17-scoped-api-keys.md) catalogue currently has `inference`, `mcp:aggregate` and `mcp:proxy`, and new key routes need full access by default. The ingestion route therefore ships together with the new scope, its enforcement through `authenticate_for_scope`, and route-coverage tests. Until then the hooks need a full-access key.
 
 ## Hook verification
 
@@ -83,14 +89,14 @@ Checked on 2026-11-01 with Claude Code 2.1.309. No Oceans gateway records Claude
 
 - **Notes and Claude Code:** this repository's notes contain 89 distinct Claude session ids. 66 are the names of local Claude Code transcripts. 20 are subagent ids (`agent-<hex>`), the name of a transcript under the parent session's `subagents/` folder. git-ai uses that name when the hook payload has no `session_id`. The remaining 3 have no local transcript.
 - **Claude Code and the gateway header:** a `claude -p` run sent through a loopback proxy carried `x-claude-code-session-id: e72a8b10-c0ba-4895-8a5b-16cccdd0cca7`. That was also the hook's `session_id` and the transcript's name.
-- **Gateway normalisation:** `client_session.rs` keeps the header value unchanged and only rejects empty, oversized or non-identifier values, so a UUID is stored as sent.
+- **Gateway normalisation:** `client_session.rs` passes the header value through and only rejects empty, oversized or non-identifier values. Ingestion then hashes it with the ownership scope and harness before storing it. A note id therefore matches only after the same hash, as described under Join.
 - **Not verified:** the values a subagent's requests send in `x-claude-code-agent-id` and `x-claude-code-parent-agent-id`. The run that would have spawned a subagent was refused by the API before any tokens were used. Subagent transcripts record `agentId` as bare hex, without the `agent-` prefix git-ai adds.
 
 ## Why
 
 - **Git AI already handles the hard part:** git-ai is about 175k lines of Rust, most of it moving attribution through rebase, squash, cherry-pick, stash and amend. Its documented `post_notes_updated` hook gives us the result of that work without depending on its internals.
 - **No paid dependency:** the hook and the notes format work with free, local Git AI. The Analytics API and self-hosted platform both need a Git AI for Teams licence.
-- **Joins with data Oceans already holds:** the hook runs on the machine that also sends gateway traffic, under the same Oceans API key. Ownership scope and the session-id join line up without mapping identities across systems.
+- **Joins with data Oceans already holds:** the hook runs on the machine that also sends gateway traffic, with a key from the same owner. The ownership scope and the scope-bound session hash then line up without mapping identities across systems.
 - **Stable format:** the v3 spec promises not to change the note structure or key prefixes without a major version bump.
 
 ## Trade-offs
@@ -130,6 +136,7 @@ Rejected for ingestion. On this repository, `git ai stats HEAD~200..HEAD` hadn't
 ## Follow-ups
 
 - Capture `x-claude-code-agent-id` and `x-claude-code-parent-agent-id` from a Claude Code run that spawns a subagent, and confirm how they relate to git-ai's `agent-<hex>` ids. In this repository, 20 of 89 Claude session ids in notes are subagent ids.
+- Add `attribution:write` to the scope catalogue in the [scoped API keys ADR](2026-10-17-scoped-api-keys.md) when the ingestion route lands.
 - Check whether Codex session ids in notes match the gateway's Codex `session-id` values.
 - Confirm the join on a deployment where a gateway records Claude Code traffic for the same commits.
 - Server-side clone backfill as an optional source for history and for machines without the hook. Admin-entered clone URLs need allowlisted SCM hosts and the SSRF rules in [SSRF-safe outbound fetch](2026-10-17-ssrf-safe-outbound-fetch.md).
