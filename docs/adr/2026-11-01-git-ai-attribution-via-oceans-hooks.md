@@ -23,7 +23,7 @@ Claude Code hooks                     → oceans hook claude  (session, repo and
 
 - **`oceans hook notes`** is registered with `git-ai config --add git_ai_hooks.post_notes_updated "oceans hook notes"`. git-ai runs it after every note write with a JSON array of `{commit_sha, repo_url, repo_name, branch, is_default_branch, note_content}` on stdin.
 - **`oceans hook claude`** is a Claude Code hook. At session start and end it sends the session id, repo URL, branch, HEAD and harness version. It sends no prompt text.
-- Both post to a new authenticated ingestion endpoint under `/api/v1` with an Oceans API key owned by the same user, team or service account whose keys send the matching gateway traffic. The endpoint is Oceans' own contract, not a Git AI-compatible one.
+- Both post to a new authenticated ingestion endpoint under `/api/v1` with an Oceans API key owned by the same user or service account whose keys send the matching gateway traffic. API keys have only these two owner kinds, and `usage_ownership_scope_key` ([`budget_scopes.rs`](../../crates/gateway-service/src/budget_scopes.rs)) maps them to `user:{id}` and `service_account:{id}`. There is no team ownership scope. The endpoint is Oceans' own contract, not a Git AI-compatible one.
 - A new `attribution:write` API key scope grants only the ingestion endpoint. A full-access key also works.
 - The gateway parses notes against the v3 spec and stores totals per commit and per session. It stores no file paths and no line ranges.
 
@@ -45,6 +45,12 @@ Claude Code hooks                     → oceans hook claude  (session, repo and
   - **Ordering:** the sender delivers queued batches oldest first and stops at the first failure, so a retry never overtakes a later batch.
   - **Same installation:** the gateway replaces a stored note only when the incoming note has a higher sequence. An equal or lower sequence is a duplicate or a stale retry and is acknowledged without being applied.
   - **Different installations:** the later `observed_at` wins. This is best-effort, because clocks on different machines can drift. It only matters when two machines under the same owner both write a note for the same commit.
+- **Owner binding:** the session hash and the replacement key both come from the delivering key's ownership scope. A queued note must therefore be delivered under the owner it was queued for:
+  - **Learning the scope:** the sender looks up the configured key's ownership scope once from the gateway, through a new authenticated `GET /api/v1/me/ownership`. It caches the result locally, keyed by the gateway URL and a hash of the configured `api_key` value.
+  - **Stamping:** `oceans hook notes` stamps each queued entry with that cached scope and the config hash. This reads only a local file, so the hook still never resolves the key or uses the network. Before the first lookup, an entry carries only the config hash.
+  - **Before delivery:** the sender resolves the current key and its scope. An entry whose stamped scope differs from that scope, or that has no stamped scope and a different config hash, is moved to a quarantine folder and not sent.
+  - **Server check:** each batch also sends `expected_ownership_scope`. The gateway rejects the batch with `409` if that value doesn't match the authenticating key's scope, so a client bug can't store notes under the wrong owner.
+  - **Changing keys and cleanup:** changing the configured key to another owner quarantines that owner's remaining entries instead of moving them across. `oceans hook queue` lists quarantined entries. `oceans hook queue --discard` deletes them, and `--resend` delivers them again once the original owner's key is configured. Quarantined entries are deleted after 30 days.
 - **Storage:** paired LibSQL and PostgreSQL schemas, following existing store conventions.
 
 ## CLI configuration and key resolution
