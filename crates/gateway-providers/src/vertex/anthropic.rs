@@ -29,6 +29,7 @@ pub(super) fn map_vertex_anthropic_request(
         anthropic_version_body: Some(VERTEX_ANTHROPIC_VERSION),
         default_max_tokens: Some(4096),
         default_headers: Some(default_headers),
+        allow_remote_images: false,
     };
     let mut body = map_anthropic_request(request, context, stream, &options)?;
     if let Some(object) = body.as_object_mut() {

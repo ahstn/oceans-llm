@@ -333,6 +333,7 @@ impl InferenceExecution<'_> {
             attempt_started_at,
             finished: false,
             saw_terminal_event: false,
+            requires_message_stop: false,
             collector: state.service.new_stream_response_collector(),
             stream_trace,
         });

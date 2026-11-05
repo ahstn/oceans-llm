@@ -149,6 +149,41 @@ async fn native_messages_cache_counters_select_and_bill_the_same_context_tier() 
 }
 
 #[tokio::test]
+async fn mixed_ttl_usage_retains_ledger_counts_and_provider_reported_cost_precedence() {
+    let usage = json!({
+        "input_tokens": 100, "output_tokens": 20,
+        "cache_read_input_tokens": 900, "cache_creation_input_tokens": 200,
+        "cache_creation": {"ephemeral_5m_input_tokens": 80, "ephemeral_1h_input_tokens": 120}
+    });
+    for reported_cost in [None, Some(0.0123)] {
+        let mut usage = usage.clone();
+        if let Some(cost) = reported_cost {
+            usage["cost"] = json!(cost);
+        }
+        let event =
+            recorded_catalog_usage(&catalog_route(), tiered_pricing_record(), usage.clone()).await;
+        assert_eq!(event.prompt_tokens, Some(1_200));
+        assert_eq!(event.total_tokens, Some(1_220));
+        assert_eq!(event.uncached_input_tokens, Some(100));
+        assert_eq!(event.cache_read_tokens, Some(900));
+        assert_eq!(event.cache_write_tokens, Some(200));
+        assert_eq!(event.provider_usage, usage);
+        if reported_cost.is_some() {
+            assert_eq!(event.pricing_status, UsagePricingStatus::Priced);
+            assert_eq!(event.computed_cost_usd, Money4::from_scaled(123));
+            assert_eq!(event.pricing_source.as_deref(), Some("provider_reported"));
+        } else {
+            assert_eq!(event.pricing_status, UsagePricingStatus::Unpriced);
+            assert_eq!(event.computed_cost_usd, Money4::ZERO);
+            assert_eq!(
+                event.unpriced_reason.as_deref(),
+                Some("unsupported_cache_token_usage:mixed_ttl_cache_write_classes")
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn prompt_at_the_threshold_bills_base_rates() {
     let event = recorded_catalog_usage(
         &catalog_route(),

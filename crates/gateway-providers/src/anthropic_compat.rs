@@ -246,6 +246,7 @@ impl ProviderClient for AnthropicCompatProvider {
             anthropic_version_body: None,
             default_max_tokens: Some(4096),
             default_headers: Some(&self.config.default_headers),
+            allow_remote_images: false,
         };
         let body = map_anthropic_request(request, context, false, &options)?;
         let req = self.build_request(body, context)?;
@@ -291,6 +292,7 @@ impl ProviderClient for AnthropicCompatProvider {
             anthropic_version_body: None,
             default_max_tokens: Some(4096),
             default_headers: Some(&self.config.default_headers),
+            allow_remote_images: false,
         };
         let body = map_anthropic_request(request, context, true, &options)?;
         let req = self.build_request(body, context)?;
@@ -336,6 +338,7 @@ impl ProviderClient for AnthropicCompatProvider {
             anthropic_version_body: None,
             default_max_tokens: Some(4096),
             default_headers: Some(&self.config.default_headers),
+            allow_remote_images: false,
         };
         let body = map_anthropic_request(request, context, false, &options)?;
         // Keep legacy body beta inputs until build_request_to promotes them to the header.

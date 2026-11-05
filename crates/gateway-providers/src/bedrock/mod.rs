@@ -507,12 +507,16 @@ impl BedrockProvider {
 
         request = request.header("x-request-id", &context.request_id);
 
+        let mut request = request.build().map_err(map_reqwest_error)?;
         for (name, value) in extra_headers {
-            request = request.header(name, value);
+            // Platform-pinned headers replace every caller/default value, not append.
+            request.headers_mut().insert(
+                reqwest::header::HeaderName::from_static(name),
+                reqwest::header::HeaderValue::from_static(value),
+            );
         }
 
-        self.apply_auth(request.build().map_err(map_reqwest_error)?, api_style)
-            .await
+        self.apply_auth(request, api_style).await
     }
 
     #[tracing::instrument(name = "gateway.provider.credentials", skip_all)]

@@ -16,6 +16,8 @@ pub struct AnthropicRequestOptions<'a> {
     pub anthropic_version_body: Option<&'a str>,
     pub default_max_tokens: Option<i64>,
     pub default_headers: Option<&'a BTreeMap<String, String>>,
+    /// OpenRouter accepts URL sources; Vertex and Bedrock still require base64 data.
+    pub allow_remote_images: bool,
 }
 
 impl Default for AnthropicRequestOptions<'_> {
@@ -25,6 +27,7 @@ impl Default for AnthropicRequestOptions<'_> {
             anthropic_version_body: None,
             default_max_tokens: Some(4096),
             default_headers: None,
+            allow_remote_images: false,
         }
     }
 }
@@ -61,30 +64,14 @@ pub fn map_anthropic_request(
     let (messages, instructions) = if native {
         (map_native_messages(&request.messages), Vec::new())
     } else {
-        map_chat_messages(&request.messages)?
+        map_chat_messages(&request.messages, options.allow_remote_images)?
     };
 
     if messages.is_empty() {
         return Err(AnthropicAdapterError::EmptyMessages.into());
     }
 
-    let max_completion_tokens = body.remove("max_completion_tokens");
-    let max_tokens = body.get("max_tokens").cloned();
-    match (max_completion_tokens, max_tokens) {
-        (Some(completion), Some(tokens)) => {
-            if completion != tokens {
-                return Err(AnthropicAdapterError::ConflictingMaxTokens.into());
-            }
-        }
-        (Some(completion), None) => {
-            body.insert("max_tokens".to_string(), completion);
-        }
-        (None, Some(_)) => {}
-        (None, None) => {
-            let max_tokens = options.default_max_tokens.unwrap_or(4096);
-            body.insert("max_tokens".to_string(), Value::Number(max_tokens.into()));
-        }
-    }
+    let request_max_tokens = take_max_tokens(&mut body)?;
 
     if !instructions.is_empty()
         && !body.contains_key("system")
@@ -94,6 +81,11 @@ pub fn map_anthropic_request(
     }
 
     merge_object_overrides(&mut body, &context.extra_body);
+    // Resolve aliases within each precedence layer so caller aliases cannot defeat route caps.
+    let max_tokens = take_max_tokens(&mut body)?
+        .or(request_max_tokens)
+        .unwrap_or_else(|| json!(options.default_max_tokens.unwrap_or(4096)));
+    body.insert("max_tokens".to_string(), max_tokens);
     if !native && !has_context_beta {
         body.remove("context_management");
     }
@@ -134,6 +126,19 @@ pub fn map_anthropic_request(
     Ok(Value::Object(body))
 }
 
+fn take_max_tokens(body: &mut Map<String, Value>) -> Result<Option<Value>, AnthropicAdapterError> {
+    match (
+        body.remove("max_tokens"),
+        body.remove("max_completion_tokens"),
+    ) {
+        (Some(tokens), Some(completion)) if tokens != completion => {
+            Err(AnthropicAdapterError::ConflictingMaxTokens)
+        }
+        (Some(tokens), _) | (_, Some(tokens)) => Ok(Some(tokens)),
+        (None, None) => Ok(None),
+    }
+}
+
 /// Native history is opaque: content blocks, message-level fields and system turns retain
 /// their positions. Gateway guardrails have already inspected the same core representation.
 pub(crate) fn map_native_messages(messages: &[CoreChatMessage]) -> Vec<Value> {
@@ -150,6 +155,7 @@ pub(crate) fn map_native_messages(messages: &[CoreChatMessage]) -> Vec<Value> {
 
 fn map_chat_messages(
     messages: &[CoreChatMessage],
+    allow_remote_images: bool,
 ) -> Result<(Vec<Value>, Vec<Value>), ProviderError> {
     let mut mapped_messages = Vec::with_capacity(messages.len());
     let mut instructions = Vec::new();
@@ -163,14 +169,14 @@ fn map_chat_messages(
                 append_system_blocks(&mut instructions, &message.content)?;
             }
             "user" => {
-                let content = map_anthropic_message_content(message, false)?;
+                let content = map_anthropic_message_content(message, false, allow_remote_images)?;
                 mapped_messages.push(json!({
                     "role": "user",
                     "content": content
                 }));
             }
             "assistant" => {
-                let content = map_anthropic_message_content(message, true)?;
+                let content = map_anthropic_message_content(message, true, allow_remote_images)?;
                 mapped_messages.push(json!({
                     "role": "assistant",
                     "content": content
@@ -241,8 +247,9 @@ pub(crate) fn append_system_blocks(
 fn map_anthropic_message_content(
     message: &CoreChatMessage,
     is_assistant: bool,
+    allow_remote_images: bool,
 ) -> Result<Value, ProviderError> {
-    let mut content = match map_anthropic_content(&message.content)? {
+    let mut content = match map_anthropic_content(&message.content, allow_remote_images)? {
         Value::String(text) if text.is_empty() => Vec::new(),
         Value::String(text) => vec![json!({"type": "text", "text": text})],
         Value::Array(items) => items,
@@ -307,7 +314,10 @@ fn map_anthropic_message_content(
     }
 }
 
-fn map_anthropic_content(content: &Value) -> Result<Value, AnthropicAdapterError> {
+fn map_anthropic_content(
+    content: &Value,
+    allow_remote_images: bool,
+) -> Result<Value, AnthropicAdapterError> {
     match content {
         Value::Null => Ok(Value::String(String::new())),
         Value::String(val) => Ok(Value::String(val.clone())),
@@ -334,7 +344,8 @@ fn map_anthropic_content(content: &Value) -> Result<Value, AnthropicAdapterError
                         }
                     }
                     "image" | "image_url" | "input_image" => {
-                        let image_block = map_anthropic_image_content_block(object)?;
+                        let image_block =
+                            map_anthropic_image_content_block(object, allow_remote_images)?;
                         mapped.push(image_block);
                     }
                     _ => mapped.push(Value::Object(object.clone())),
@@ -348,6 +359,7 @@ fn map_anthropic_content(content: &Value) -> Result<Value, AnthropicAdapterError
 
 fn map_anthropic_image_content_block(
     object: &Map<String, Value>,
+    allow_remote_images: bool,
 ) -> Result<Value, AnthropicAdapterError> {
     if object.get("type").and_then(Value::as_str) == Some("image")
         && let Some(source) = object.get("source").and_then(Value::as_object)
@@ -378,9 +390,9 @@ fn map_anthropic_image_content_block(
                 .get("url")
                 .and_then(Value::as_str)
                 .ok_or(AnthropicAdapterError::MissingImageUrlString)?;
-            map_anthropic_data_url_image(url, image_object)
+            map_anthropic_url_image(url, image_object, allow_remote_images)
         }
-        Value::String(url) => map_anthropic_data_url_image(url, object),
+        Value::String(url) => map_anthropic_url_image(url, object, allow_remote_images),
         _ => Err(AnthropicAdapterError::InvalidImageUrl),
     }
 }
@@ -406,11 +418,18 @@ fn validate_anthropic_base64_image_source(
     Ok(())
 }
 
-fn map_anthropic_data_url_image(
+fn map_anthropic_url_image(
     url: &str,
     metadata: &Map<String, Value>,
+    allow_remote_images: bool,
 ) -> Result<Value, AnthropicAdapterError> {
     if url.starts_with("http://") || url.starts_with("https://") {
+        if allow_remote_images {
+            return Ok(json!({
+                "type": "image",
+                "source": {"type": "url", "url": url}
+            }));
+        }
         return Err(AnthropicAdapterError::RemoteImageUrlNotSupported);
     }
     let Some((media_type, data)) = url

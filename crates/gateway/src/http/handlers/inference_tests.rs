@@ -148,6 +148,7 @@ struct RecordingProvider {
     calls: Mutex<Vec<(Endpoint, bool)>>,
     chat_protocols: Mutex<Vec<gateway_core::ChatRequestProtocol>>,
     native_messages: bool,
+    truncate_native_stream: bool,
 }
 
 #[async_trait]
@@ -191,7 +192,12 @@ impl ProviderClient for RecordingProvider {
             json!({"type":"message_delta","delta":{"stop_reason":"pause_turn"},"usage":{"output_tokens":1}}),
             json!({"type":"message_stop"}),
         ];
-        let bytes = frames.into_iter().map(|frame| {
+        let frame_count = if self.truncate_native_stream {
+            3
+        } else {
+            frames.len()
+        };
+        let bytes = frames.into_iter().take(frame_count).map(|frame| {
             Ok(axum::body::Bytes::from(format!(
                 "event: {}\ndata: {frame}\n\n",
                 frame["type"].as_str().unwrap()
@@ -368,6 +374,40 @@ async fn native_messages_handlers_preserve_protocol_and_account_for_cached_usage
         assert_eq!(ledger.completion_tokens, Some(1));
         assert_eq!(ledger.total_tokens, Some(11));
     }
+}
+
+#[tokio::test]
+async fn native_messages_truncated_stream_fails_and_accounts_for_observed_usage() {
+    let (_directory, mut state) = app_state().await;
+    seed_stream_cancellation_test(&state.store).await;
+    state.providers.register(Arc::new(RecordingProvider {
+        native_messages: true,
+        truncate_native_stream: true,
+        ..Default::default()
+    }));
+    let response = Endpoint::Messages
+        .call(state.clone(), true)
+        .await
+        .unwrap_or_else(|error| panic!("native Messages failed: {}", error.0));
+    let error = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("message_stop"));
+    let detail = request_detail(&state).await;
+    assert_eq!(detail.attempts[0].status, RequestAttemptStatus::StreamError);
+    assert_eq!(
+        detail.attempts[0].error_code.as_deref(),
+        Some("upstream_transport")
+    );
+    let scope = format!("service_account:{}", detail.log.service_account_id.unwrap());
+    let ledger = state
+        .store
+        .get_usage_ledger_by_request_and_scope("inference-test", &scope)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(ledger.prompt_tokens, Some(10));
+    assert_eq!(ledger.cache_read_tokens, Some(8));
 }
 
 #[tokio::test]

@@ -81,7 +81,14 @@ pub fn apply_messages_thinking(
     let Some(policy) = known_claude_thinking_policy(upstream_model) else {
         // Native fields belong to the upstream's schema. Only explicit gateway aliases
         // need translation; omission and future thinking/effort options remain untouched.
-        if let Some(effort) = effort.filter(|_| has_reasoning_effort) {
+        if let Some(budget) = budget_tokens {
+            ensure_anthropic_manual_thinking(body, budget, upstream_model)?;
+        }
+        // Unknown manual deployments may not support output effort. Preserve native
+        // output_config, but do not invent it from an alias in manual mode.
+        if let Some(effort) =
+            effort.filter(|_| has_reasoning_effort && caller_thinking_type(body) != Some("enabled"))
+        {
             if !matches!(
                 caller_thinking_type(body),
                 Some("disabled" | "between_tools")
@@ -89,9 +96,6 @@ pub fn apply_messages_thinking(
                 ensure_anthropic_adaptive_thinking(body, upstream_model)?;
             }
             restore_anthropic_output_effort(body, effort);
-        }
-        if let Some(budget) = budget_tokens {
-            ensure_anthropic_manual_thinking(body, budget, upstream_model)?;
         }
         return Ok(());
     };

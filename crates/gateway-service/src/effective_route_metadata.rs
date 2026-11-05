@@ -284,17 +284,14 @@ pub(crate) fn native_api_format(
 ) -> Option<ApiFormat> {
     match provider.provider_type.as_str() {
         "openai_compat" | "gcp_cloud_run_openai_compat"
-            if gateway_core::claude_models::is_openrouter_claude_model(&route.upstream_model)
-                && (route.compatibility.openrouter.is_some()
-                    || provider
-                        .config
-                        .get("base_url")
-                        .and_then(serde_json::Value::as_str)
-                        .and_then(|url| url::Url::parse(url).ok())
-                        .is_some_and(|url| {
-                            url.host_str() == Some("openrouter.ai")
-                                && url.path().trim_end_matches('/') == "/api/v1"
-                        })) =>
+            if gateway_core::claude_models::openrouter_uses_native_messages(
+                &route.upstream_model,
+                route.compatibility.openrouter.is_some(),
+                provider
+                    .config
+                    .get("base_url")
+                    .and_then(serde_json::Value::as_str),
+            ) =>
         {
             Some(ApiFormat::AnthropicMessages)
         }
@@ -358,17 +355,34 @@ mod tests {
         };
         for model in ["~anthropic/claude-opus-latest", "anthropic/claude-opus-5.5"] {
             route.upstream_model = model.into();
-            assert_eq!(
-                super::native_api_format(&provider, &route),
-                Some(gateway_client_config::ApiFormat::AnthropicMessages)
-            );
+            for provider_type in ["openai_compat", "gcp_cloud_run_openai_compat"] {
+                provider.provider_type = provider_type.into();
+                for base_url in [
+                    "https://openrouter.ai/api/v1",
+                    "https://openrouter.ai/api/v1/",
+                    "https://openrouter.ai/api/v1///",
+                ] {
+                    provider.config = serde_json::json!({"base_url":base_url});
+                    assert_eq!(
+                        super::native_api_format(&provider, &route),
+                        Some(gateway_client_config::ApiFormat::AnthropicMessages)
+                    );
+                }
+            }
             assert_eq!(
                 gateway_client_config::infer_thinking_policy([model]),
                 Some(gateway_client_config::ThinkingPolicy::AnthropicSafeEffort)
             );
         }
-        provider.config = serde_json::json!({"base_url":"https://example.test/v1"});
-        assert_eq!(super::native_api_format(&provider, &route), None);
+        for config in [
+            serde_json::json!({"base_url":"https://example.test/v1"}),
+            serde_json::json!({"base_url":"https://openrouter.ai/api"}),
+            serde_json::json!({"base_url":"not a URL"}),
+            serde_json::json!({}),
+        ] {
+            provider.config = config;
+            assert_eq!(super::native_api_format(&provider, &route), None);
+        }
         route.compatibility.openrouter =
             Some(serde_json::from_value(serde_json::json!({})).unwrap());
         assert_eq!(

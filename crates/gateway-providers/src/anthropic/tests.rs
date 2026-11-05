@@ -1144,6 +1144,7 @@ fn anthropic_compat_default_headers_preserve_context_management_beta() {
         anthropic_version_body: None,
         default_max_tokens: Some(4096),
         default_headers: Some(&default_headers),
+        allow_remote_images: false,
     };
 
     let body = map_anthropic_request(&request, &context, false, &options).expect("map request");

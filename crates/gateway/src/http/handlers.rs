@@ -1150,6 +1150,7 @@ struct LoggingBodyStreamState {
     attempt_started_at: OffsetDateTime,
     finished: bool,
     saw_terminal_event: bool,
+    requires_message_stop: bool,
     collector: gateway_service::StreamResponseCollector,
     stream_trace: StreamTrace,
 }
@@ -1619,6 +1620,7 @@ async fn anthropic_messages_stream_response(
         attempt_started_at,
         finished: false,
         saw_terminal_event: false,
+        requires_message_stop: native_messages,
         collector: state.service.new_stream_response_collector(),
         stream_trace,
     });
@@ -1763,6 +1765,21 @@ async fn finalize_stream(
     state.finished = true;
     state.collector.finish();
     let mut failure = state.collector.failure().cloned();
+    let completion_error = (state.requires_message_stop
+        && !state.saw_terminal_event
+        && failure.is_none()
+        && origin_error.is_none())
+    .then(|| {
+        GatewayError::Provider(ProviderError::Transport(
+            "upstream Anthropic stream ended prematurely before message_stop event".to_string(),
+        ))
+    });
+    if let Some(error) = &completion_error {
+        failure = Some(gateway_service::StreamFailureSummary {
+            status_code: error.http_status_code().into(),
+            error_code: error.error_code().to_string(),
+        });
+    }
     // Failed streams can still report billable usage, but must not refresh affinity.
     if failure.is_none() || state.collector.usage().is_some() {
         account_stream_usage(state).await;
@@ -1857,7 +1874,7 @@ async fn finalize_stream(
         state.request_log_context.operation,
         &tool_cardinality,
     );
-    match routing_error {
+    match routing_error.or(completion_error) {
         Some(error) => Err(error),
         None => Ok(()),
     }
@@ -2726,6 +2743,7 @@ mod tests {
                 attempt_started_at: gateway_service::offset_now(),
                 finished: false,
                 saw_terminal_event: false,
+                requires_message_stop: false,
                 collector: self.service.new_stream_response_collector(),
                 stream_trace: StreamTrace::new(
                     "chat",

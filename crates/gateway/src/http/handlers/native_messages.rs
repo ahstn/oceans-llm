@@ -155,6 +155,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn native_model_rewrite_retains_complete_multiline_message_start() {
+        let original = json!({
+            "type": "message_start",
+            "message": {
+                "id": "msg-opaque",
+                "model": "upstream",
+                "content": [],
+                "usage": {"input_tokens": 17, "cache_read_input_tokens": 43},
+                "safeguard_results": {"verdict": "allow", "opaque": "世界"},
+                "future": {"nested": ["extension", {"preserved": true}]}
+            }
+        });
+        let mut expected = original.clone();
+        expected["message"]["model"] = json!("gateway-alias");
+        for newline in ["\n", "\r\n", "\r"] {
+            let data = serde_json::to_string_pretty(&original)
+                .unwrap()
+                .lines()
+                .map(|line| format!("data: {line}{newline}"))
+                .collect::<String>();
+            let input = format!(
+                "event: message_start{newline}{data}{newline}event: message_stop{newline}data: {{\"type\":\"message_stop\"}}{newline}{newline}"
+            );
+            for chunk_size in [1, 7, input.len()] {
+                let chunks: Vec<_> = input
+                    .as_bytes()
+                    .chunks(chunk_size)
+                    .map(|chunk| Ok(Bytes::copy_from_slice(chunk)))
+                    .collect();
+                let output = stream_with_model(
+                    Box::pin(futures_util::stream::iter(chunks)),
+                    "gateway-alias".into(),
+                )
+                .collect::<Vec<_>>()
+                .await;
+                let output: Vec<_> = output
+                    .into_iter()
+                    .flat_map(|chunk| chunk.unwrap().to_vec())
+                    .collect();
+                let events = gateway_core::SseEventParser::default()
+                    .push_bytes(&output)
+                    .unwrap();
+                assert_eq!(events.len(), 2);
+                assert_eq!(
+                    serde_json::from_str::<Value>(&events[0].data).unwrap(),
+                    expected
+                );
+                assert_eq!(
+                    serde_json::from_str::<Value>(&events[1].data).unwrap(),
+                    json!({"type": "message_stop"})
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn native_http_errors_preserve_upstream_words_extensions_and_retry_headers() {
         let body = r#"{"type":"error","error":{"type":"invalid_request_error","message":"thinking: capability_rejected: synthetic","future_error":true}}"#;
         let response = super::super::anthropic_error_response(GatewayError::Provider(

@@ -26,6 +26,7 @@ const PROMPT_TEXT_FIELDS: &[&str] = &[
     "name",
     "prompt",
     "summary",
+    "system",
     "text",
     "title",
 ];
@@ -270,38 +271,20 @@ async fn guard_sse_payload(
             )));
         }
     };
-    let separator = if source.contains("\r\n") {
-        "\r\n"
-    } else {
-        "\n"
-    };
-    let event_separator = format!("{separator}{separator}");
     let mut blocks = Vec::new();
     let mut tool_fragments = BTreeMap::<String, ToolCallFragments>::new();
     let mut text_locations = Vec::<(String, usize, String)>::new();
     let mut snapshot_text_locations = Vec::<(String, usize, String)>::new();
 
-    for block in source.split(&event_separator) {
+    for raw in sse_frames(source) {
         let event_index = blocks.len();
-        let mut lines = Vec::new();
-        let mut data = Vec::new();
-        let mut raw_data = Vec::new();
-        let mut data_index = None;
-        for line in block.split(separator) {
-            let Some(payload) = line.strip_prefix("data:") else {
-                lines.push(StreamLine::Other(line.to_string()));
-                continue;
-            };
-            raw_data.push(line.to_string());
-            data_index.get_or_insert(lines.len());
-            data.push(payload.strip_prefix(' ').unwrap_or(payload));
-        }
-        if let Some(data_index) = data_index {
-            let payload = data.join("\n");
-            let stream_line = if payload.trim().is_empty() {
-                StreamLine::Other(raw_data.join(separator))
-            } else if payload == "[DONE]" {
-                StreamLine::Done
+        let payload = sse_lines(raw)
+            .filter_map(|(line, _)| sse_data(line))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let value =
+            if payload.trim().is_empty() || payload == "[DONE]" {
+                None
             } else {
                 let value = match parse_guarded_sse_json(&payload) {
                     Ok(value) => value,
@@ -344,11 +327,13 @@ async fn guard_sse_payload(
                     }));
                 }
                 collect_stream_tool_fragments(&value, "", event_index, &mut tool_fragments);
-                StreamLine::Json(value)
+                Some(value)
             };
-            lines.insert(data_index, stream_line);
-        }
-        blocks.push(lines);
+        blocks.push(StreamBlock {
+            raw,
+            value,
+            transformed: false,
+        });
     }
 
     let owners = call_id_owners(&tool_fragments);
@@ -444,25 +429,11 @@ async fn guard_sse_payload(
         }
     }
 
-    let rendered = blocks
-        .into_iter()
-        .map(|lines| {
-            lines
-                .into_iter()
-                .map(|line| match line {
-                    StreamLine::Json(value) => format!(
-                        "data: {}",
-                        serde_json::to_string(&value).expect("JSON stream event serialization")
-                    ),
-                    StreamLine::Done => "data: [DONE]".to_string(),
-                    StreamLine::Other(line) => line,
-                })
-                .collect::<Vec<_>>()
-                .join(separator)
-        })
-        .collect::<Vec<_>>()
-        .join(&event_separator);
-    Ok(rendered.into_bytes())
+    let mut rendered = Vec::with_capacity(payload.len());
+    for block in blocks {
+        block.write_to(&mut rendered);
+    }
+    Ok(rendered)
 }
 
 /// Replacements already decided for one tool call, keyed by tool name, shell-command shape,
@@ -536,14 +507,15 @@ async fn evaluate_stream_tool_arguments(
     Ok(replacement)
 }
 
-fn stream_text_at_locations(blocks: &[Vec<StreamLine>], locations: &[(usize, String)]) -> String {
+fn stream_text_at_locations(blocks: &[StreamBlock<'_>], locations: &[(usize, String)]) -> String {
     locations
         .iter()
         .filter_map(|(event_index, pointer)| {
-            blocks[*event_index].iter().find_map(|line| match line {
-                StreamLine::Json(value) => value.pointer(pointer).and_then(Value::as_str),
-                _ => None,
-            })
+            blocks[*event_index]
+                .value
+                .as_ref()?
+                .pointer(pointer)
+                .and_then(Value::as_str)
         })
         .collect()
 }
@@ -629,31 +601,30 @@ fn stream_text_kind(value: &Value, segments: &[&str]) -> &'static str {
 }
 
 fn replace_stream_text(
-    blocks: &mut [Vec<StreamLine>],
+    blocks: &mut [StreamBlock<'_>],
     locations: &[(usize, String)],
     replacement: &str,
     clear_after_first: bool,
 ) {
     let mut first = true;
     for (event_index, pointer) in locations {
-        for line in &mut blocks[*event_index] {
-            if let StreamLine::Json(value) = line
-                && let Some(slot) = value.pointer_mut(pointer)
-            {
-                *slot = Value::String(if first || !clear_after_first {
-                    replacement.to_string()
-                } else {
-                    String::new()
-                });
-                first = false;
-                break;
-            }
+        let block = &mut blocks[*event_index];
+        if let Some(value) = &mut block.value
+            && let Some(slot) = value.pointer_mut(pointer)
+        {
+            *slot = Value::String(if first || !clear_after_first {
+                replacement.to_string()
+            } else {
+                String::new()
+            });
+            block.transformed = true;
+            first = false;
         }
     }
 }
 
 fn replace_stream_arguments(
-    blocks: &mut [Vec<StreamLine>],
+    blocks: &mut [StreamBlock<'_>],
     locations: &[(usize, String)],
     replacement: &str,
     shell_command: bool,
@@ -661,27 +632,102 @@ fn replace_stream_arguments(
 ) {
     let mut first = true;
     for (event_index, pointer) in locations {
-        for line in &mut blocks[*event_index] {
-            if let StreamLine::Json(value) = line
-                && let Some(slot) = value.pointer_mut(pointer)
-            {
-                let value = if first || !clear_after_first {
-                    replacement
+        let block = &mut blocks[*event_index];
+        if let Some(value) = &mut block.value
+            && let Some(slot) = value.pointer_mut(pointer)
+        {
+            let value = if first || !clear_after_first {
+                replacement
+            } else {
+                ""
+            };
+            replace_stream_argument(slot, value, shell_command);
+            block.transformed = true;
+            first = false;
+        }
+    }
+}
+
+/// Keep the original frame, including its line endings and metadata, unless a
+/// guardrail transforms its data. The shared SSE parser only retains event/data.
+struct StreamBlock<'a> {
+    raw: &'a str,
+    value: Option<Value>,
+    transformed: bool,
+}
+
+impl StreamBlock<'_> {
+    fn write_to(self, output: &mut Vec<u8>) {
+        if !self.transformed {
+            output.extend_from_slice(self.raw.as_bytes());
+            return;
+        }
+        let mut written = false;
+        for (line, ending) in sse_lines(self.raw) {
+            if sse_data(line).is_some() {
+                if !written {
+                    output.extend_from_slice(b"data: ");
+                    serde_json::to_writer(&mut *output, self.value.as_ref().expect("JSON event"))
+                        .expect("JSON stream event serialization");
+                    written = true;
                 } else {
-                    ""
-                };
-                replace_stream_argument(slot, value, shell_command);
-                first = false;
-                break;
+                    // Retain each data line's ending: removing one can turn an
+                    // adjacent CR and LF into a single CRLF and merge events.
+                    output.extend_from_slice(b"data:");
+                }
+                output.extend_from_slice(ending.as_bytes());
+            } else {
+                output.extend_from_slice(line.as_bytes());
+                output.extend_from_slice(ending.as_bytes());
             }
         }
     }
 }
 
-enum StreamLine {
-    Json(Value),
-    Done,
-    Other(String),
+/// SSE permits CR, LF, and CRLF, even within a single event. Since the guard
+/// buffers the stream first, a CRLF or UTF-8 sequence split across chunks is intact.
+fn sse_lines(mut source: &str) -> impl Iterator<Item = (&str, &str)> {
+    std::iter::from_fn(move || {
+        if source.is_empty() {
+            return None;
+        }
+        let end = source.find(['\r', '\n']).unwrap_or(source.len());
+        let ending_len = if source[end..].starts_with("\r\n") {
+            2
+        } else {
+            usize::from(end < source.len())
+        };
+        let (line, rest) = source.split_at(end);
+        let (ending, rest) = rest.split_at(ending_len);
+        source = rest;
+        Some((line, ending))
+    })
+}
+
+fn sse_frames(mut source: &str) -> impl Iterator<Item = &str> {
+    std::iter::from_fn(move || {
+        if source.is_empty() {
+            return None;
+        }
+        let mut end = 0;
+        for (line, ending) in sse_lines(source) {
+            end += line.len() + ending.len();
+            if line.is_empty() {
+                break;
+            }
+        }
+        let (frame, rest) = source.split_at(end);
+        source = rest;
+        Some(frame)
+    })
+}
+
+fn sse_data(line: &str) -> Option<&str> {
+    if line == "data" {
+        return Some("");
+    }
+    line.strip_prefix("data:")
+        .map(|data| data.strip_prefix(' ').unwrap_or(data))
 }
 
 /// The tool calls in one guarded stream, keyed by call identity. `name`, `arguments`, and
@@ -1383,6 +1429,10 @@ fn escape_pointer(value: &str) -> String {
 }
 
 #[cfg(test)]
+#[path = "inference_guardrails_regression_tests.rs"]
+mod regression_tests;
+
+#[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
@@ -1893,7 +1943,7 @@ mod tests {
         assert_eq!(String::from_utf8(guarded).expect("UTF-8"), stream);
     }
 
-    fn stream_guard_context(stream_buffer_bytes: usize) -> super::InferenceGuardContext {
+    pub(super) fn stream_guard_context(stream_buffer_bytes: usize) -> super::InferenceGuardContext {
         super::InferenceGuardContext {
             route_key: "openai/gpt".into(),
             request_id: "request-1".into(),
@@ -1903,7 +1953,9 @@ mod tests {
         }
     }
 
-    async fn stream_state(mode: gateway_guardrails::PolicyMode) -> (tempfile::TempDir, AppState) {
+    pub(super) async fn stream_state(
+        mode: gateway_guardrails::PolicyMode,
+    ) -> (tempfile::TempDir, AppState) {
         let (directory, mut state) = built_in_guardrail_state().await;
         let policy = &mut Arc::make_mut(&mut state.guardrail_config).default;
         policy.enabled = true;
@@ -2507,19 +2559,26 @@ mod tests {
     #[test]
     fn preserves_responses_delta_and_terminal_snapshot_semantics() {
         let mut blocks = vec![
-            vec![StreamLine::Json(json!({
+            json!({
                 "type": "response.output_item.added",
                 "item": {"arguments": ""}
-            }))],
-            vec![StreamLine::Json(json!({
+            }),
+            json!({
                 "type": "response.function_call_arguments.delta",
                 "delta": "{\"command\":\"old\"}"
-            }))],
-            vec![StreamLine::Json(json!({
+            }),
+            json!({
                 "type": "response.output_item.done",
                 "item": {"arguments": "{\"command\":\"old\"}"}
-            }))],
-        ];
+            }),
+        ]
+        .into_iter()
+        .map(|value| StreamBlock {
+            raw: "",
+            value: Some(value),
+            transformed: false,
+        })
+        .collect::<Vec<_>>();
         replace_stream_arguments(
             &mut blocks,
             &[(1, "/delta".into())],
@@ -2535,10 +2594,7 @@ mod tests {
             false,
         );
 
-        let json_at = |index: usize| match &blocks[index][0] {
-            StreamLine::Json(value) => value,
-            _ => panic!("expected JSON"),
-        };
+        let json_at = |index: usize| blocks[index].value.as_ref().expect("JSON");
         assert_eq!(json_at(0)["item"]["arguments"], "");
         assert_eq!(json_at(1)["delta"], "{\"command\":\"[masked]\"}");
         assert_eq!(
@@ -2550,15 +2606,22 @@ mod tests {
     #[test]
     fn rewrites_responses_text_deltas_and_completion_snapshot() {
         let mut blocks = vec![
-            vec![StreamLine::Json(json!({
+            json!({
                 "type": "response.output_text.delta",
                 "delta": "private"
-            }))],
-            vec![StreamLine::Json(json!({
+            }),
+            json!({
                 "type": "response.completed",
                 "response": {"output": [{"content": [{"text": "private"}]}]}
-            }))],
-        ];
+            }),
+        ]
+        .into_iter()
+        .map(|value| StreamBlock {
+            raw: "",
+            value: Some(value),
+            transformed: false,
+        })
+        .collect::<Vec<_>>();
         replace_stream_text(&mut blocks, &[(0, "/delta".into())], "[masked]", true);
         replace_stream_text(
             &mut blocks,
@@ -2567,10 +2630,7 @@ mod tests {
             true,
         );
 
-        let json_at = |index: usize| match &blocks[index][0] {
-            StreamLine::Json(value) => value,
-            _ => panic!("expected JSON"),
-        };
+        let json_at = |index: usize| blocks[index].value.as_ref().expect("JSON");
         assert_eq!(json_at(0)["delta"], "[masked]");
         assert_eq!(
             json_at(1)["response"]["output"][0]["content"][0]["text"],

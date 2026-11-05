@@ -42,6 +42,118 @@ fn chat(extra: Value) -> CoreChatRequest {
     request
 }
 
+#[test]
+fn chat_remote_images_remain_restricted_by_default() {
+    for url in [
+        "https://example.test/image.png",
+        "http://example.test/image.png",
+    ] {
+        let mut request = chat(json!({}));
+        request.messages[0].content = json!([
+            {"type": "image_url", "image_url": {"url": url}}
+        ]);
+        let error = map_anthropic_request(
+            &request,
+            &context(),
+            false,
+            &AnthropicRequestOptions::default(),
+        )
+        .expect_err("remote URLs require explicit platform support");
+        assert!(
+            error
+                .to_string()
+                .contains("remote image URLs are not supported")
+        );
+    }
+}
+
+#[test]
+fn route_token_aliases_override_caller_limits_without_unsupported_fields() {
+    for protocol in [
+        gateway_core::ChatRequestProtocol::ChatCompletions,
+        gateway_core::ChatRequestProtocol::AnthropicMessages,
+    ] {
+        for route_limits in [
+            json!({"max_tokens": 128}),
+            json!({"max_completion_tokens": 128}),
+            json!({"max_tokens": 128, "max_completion_tokens": 128}),
+        ] {
+            let mut context = context();
+            context.chat_protocol = protocol;
+            context.extra_body = route_limits.as_object().unwrap().clone();
+            for caller_limits in [
+                json!({}),
+                json!({"max_tokens": 8192}),
+                json!({"max_completion_tokens": 8192}),
+                json!({"max_tokens": 8192, "max_completion_tokens": 8192}),
+            ] {
+                let body = map_anthropic_request(
+                    &chat(caller_limits.clone()),
+                    &context,
+                    false,
+                    &AnthropicRequestOptions::default(),
+                )
+                .unwrap();
+                assert_eq!(body["max_tokens"], 128, "{route_limits}, {caller_limits}");
+                assert!(body.get("max_completion_tokens").is_none());
+            }
+        }
+    }
+}
+
+#[test]
+fn token_aliases_keep_defaults_and_same_precedence_conflicts() {
+    for (caller_limits, expected) in [
+        (json!({}), 4096),
+        (json!({"max_tokens": 128}), 128),
+        (json!({"max_completion_tokens": 128}), 128),
+        (
+            json!({"max_tokens": 128, "max_completion_tokens": 128}),
+            128,
+        ),
+    ] {
+        let body = map_anthropic_request(
+            &chat(caller_limits),
+            &context(),
+            false,
+            &AnthropicRequestOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(body["max_tokens"], expected);
+        assert!(body.get("max_completion_tokens").is_none());
+    }
+
+    for (caller_limits, route_limits) in [
+        (
+            json!({"max_tokens": 256, "max_completion_tokens": 128}),
+            json!({}),
+        ),
+        (
+            json!({"max_tokens": 256, "max_completion_tokens": 128}),
+            json!({"max_tokens": 64}),
+        ),
+        (
+            json!({}),
+            json!({"max_tokens": 256, "max_completion_tokens": 128}),
+        ),
+        (
+            json!({"max_tokens": 8192}),
+            json!({"max_tokens": 256, "max_completion_tokens": 128}),
+        ),
+    ] {
+        let mut context = context();
+        context.extra_body = route_limits.as_object().unwrap().clone();
+        let error = map_anthropic_request(
+            &chat(caller_limits),
+            &context,
+            false,
+            &AnthropicRequestOptions::default(),
+        )
+        .expect_err("conflicting aliases at the same precedence must be rejected");
+        assert!(error.to_string().contains("conflicts with `max_tokens`"));
+    }
+}
+
 fn native_messages_request(extra: Value) -> CoreChatRequest {
     let mut payload = json!({
         "model": "claude", "max_tokens": 128000,

@@ -330,6 +330,7 @@
       "paths": [
         "crates/admin-ui/web/src/routes/observability/request-logs.tsx",
         "crates/gateway/src/http/observability.rs",
+        "crates/gateway/src/http/handlers/native_messages.rs",
         "crates/gateway/src/http/request_tags.rs",
         "crates/gateway/src/request_log_purge.rs",
         "crates/gateway-service/src/request_logging.rs",
@@ -365,6 +366,7 @@
         "crates/gateway-store/src/any_store_provider_user_credentials.rs",
         "crates/gateway/src/http/handlers/routing.rs",
         "crates/gateway/src/http/handlers/count_tokens.rs",
+        "crates/gateway/src/http/handlers/native_messages.rs",
         "crates/gateway-service/src/{routing,client_session,capability_hints}.rs",
         "crates/gateway-store/src/{routing,any_store_routing}.rs",
         "crates/gateway-store/src/libsql_store/routing.rs",
@@ -401,6 +403,7 @@
         "crates/gateway-core/src/{claude_models,domain,error,lib,reasoning_policy,traits}.rs",
         "crates/gateway-client-config/src/thinking.rs",
         "crates/gateway-service/src/effective_route_metadata.rs",
+        "crates/gateway-service/src/{request_logging,service}.rs",
         "crates/gateway-providers/src/anthropic/**",
         "crates/gateway-providers/src/anthropic_compat.rs",
         "crates/gateway-providers/src/vertex/{anthropic,mod}.rs",

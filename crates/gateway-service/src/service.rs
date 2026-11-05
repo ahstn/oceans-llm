@@ -1549,21 +1549,26 @@ pub(crate) enum CacheUsageNormalization {
     Unavailable,
     Valid(CacheTokenSummary),
     Invalid(String),
-    Unsupported(String),
+    Unsupported {
+        tokens: CacheTokenSummary,
+        reason: String,
+    },
 }
 
 impl CacheUsageNormalization {
     fn tokens(&self) -> Option<&CacheTokenSummary> {
         match self {
-            Self::Valid(tokens) => Some(tokens),
-            Self::Unavailable | Self::Invalid(_) | Self::Unsupported(_) => None,
+            Self::Valid(tokens) | Self::Unsupported { tokens, .. } => Some(tokens),
+            Self::Unavailable | Self::Invalid(_) => None,
         }
     }
 
     fn reason(&self) -> Option<String> {
         match self {
             Self::Invalid(reason) => Some(format!("invalid_cache_token_usage:{reason}")),
-            Self::Unsupported(reason) => Some(format!("unsupported_cache_token_usage:{reason}")),
+            Self::Unsupported { reason, .. } => {
+                Some(format!("unsupported_cache_token_usage:{reason}"))
+            }
             Self::Unavailable | Self::Valid(_) => None,
         }
     }
@@ -1610,31 +1615,23 @@ fn normalize_cache_tokens(
         if provider_usage.contains_key("cacheReadInputTokens")
             || provider_usage.contains_key("cacheWriteInputTokens")
         {
-            if has_mixed_bedrock_ttl_cache_writes(provider_usage) {
-                return CacheUsageNormalization::Unsupported(
-                    "mixed_ttl_cache_write_classes".to_string(),
-                );
-            }
             return normalize_exclusive_cache_tokens(
                 provider_usage,
                 prompt_tokens,
                 "cacheReadInputTokens",
                 "cacheWriteInputTokens",
+                has_mixed_bedrock_ttl_cache_writes(provider_usage),
             );
         }
         if provider_usage.contains_key("cache_read_input_tokens")
             || provider_usage.contains_key("cache_creation_input_tokens")
         {
-            if has_mixed_ttl_cache_writes(provider_usage) {
-                return CacheUsageNormalization::Unsupported(
-                    "mixed_ttl_cache_write_classes".to_string(),
-                );
-            }
             return normalize_exclusive_cache_tokens(
                 provider_usage,
                 prompt_tokens,
                 "cache_read_input_tokens",
                 "cache_creation_input_tokens",
+                has_mixed_ttl_cache_writes(provider_usage),
             );
         }
     }
@@ -1685,6 +1682,7 @@ fn normalize_exclusive_cache_tokens(
     uncached_input_tokens: Option<i64>,
     read_field: &str,
     write_field: &str,
+    mixed_ttl_cache_writes: bool,
 ) -> CacheUsageNormalization {
     let Some(uncached_input_tokens) = uncached_input_tokens else {
         return CacheUsageNormalization::Invalid(
@@ -1710,12 +1708,21 @@ fn normalize_exclusive_cache_tokens(
     else {
         return CacheUsageNormalization::Invalid("cache token total overflow".to_string());
     };
-    CacheUsageNormalization::Valid(CacheTokenSummary {
+    let tokens = CacheTokenSummary {
         total_input_tokens,
         uncached_input_tokens,
         cache_read_tokens,
         cache_write_tokens,
-    })
+    };
+    if mixed_ttl_cache_writes {
+        // A missing price dimension must not discard valid token counts.
+        CacheUsageNormalization::Unsupported {
+            tokens,
+            reason: "mixed_ttl_cache_write_classes".to_string(),
+        }
+    } else {
+        CacheUsageNormalization::Valid(tokens)
+    }
 }
 
 fn has_mixed_ttl_cache_writes(fields: &serde_json::Map<String, Value>) -> bool {
@@ -1846,7 +1853,7 @@ fn apply_token_rates(
     output_rate: Option<Money4>,
     cache_usage: &CacheUsageNormalization,
 ) -> Result<(), GatewayError> {
-    if matches!(cache_usage, CacheUsageNormalization::Unsupported(_)) {
+    if matches!(cache_usage, CacheUsageNormalization::Unsupported { .. }) {
         record.pricing_status = UsagePricingStatus::Unpriced;
         return Ok(());
     }
@@ -3530,28 +3537,65 @@ mod tests {
     }
 
     #[test]
-    fn mixed_anthropic_ttl_write_classes_remain_unavailable() {
-        let summary = usage_summary_from_value(Some(&json!({
-            "prompt_tokens": 100,
-            "completion_tokens": 20,
-            "provider_usage": {
-                "input_tokens": 100,
-                "cache_read_input_tokens": 900,
-                "cache_creation_input_tokens": 200,
-                "cache_creation": {
-                    "ephemeral_5m_input_tokens": 80,
-                    "ephemeral_1h_input_tokens": 120
-                }
+    fn mixed_ttl_cache_usage_keeps_valid_counts_when_pricing_is_unsupported() {
+        let native = json!({
+            "input_tokens": 100,
+            "output_tokens": 20,
+            "cache_read_input_tokens": 900,
+            "cache_creation_input_tokens": 200,
+            "cache_creation": {
+                "ephemeral_5m_input_tokens": 80,
+                "ephemeral_1h_input_tokens": 120
             }
-        })))
-        .expect("mixed TTL usage should remain recorded");
+        });
+        for usage in [
+            native.clone(),
+            json!({
+                "prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120,
+                "provider_usage": native
+            }),
+            json!({
+                "prompt_tokens": 100, "completion_tokens": 20,
+                "provider_usage": {
+                    "inputTokens": 100, "cacheReadInputTokens": 900, "cacheWriteInputTokens": 200,
+                    "cacheDetails": [
+                        {"ttl": "5m", "inputTokens": 80},
+                        {"ttl": "1h", "inputTokens": 120}
+                    ]
+                }
+            }),
+        ] {
+            let summary = usage_summary_from_value(Some(&usage)).unwrap();
+            assert_eq!(summary.prompt_tokens, Some(1_200));
+            assert_eq!(summary.total_tokens, Some(1_220));
+            assert_eq!(summary.uncached_input_tokens, Some(100));
+            assert_eq!(summary.cache_read_tokens, Some(900));
+            assert_eq!(summary.cache_write_tokens, Some(200));
+            assert_eq!(
+                summary.cache_usage.reason().as_deref(),
+                Some("unsupported_cache_token_usage:mixed_ttl_cache_write_classes")
+            );
+        }
+    }
 
-        assert_eq!(summary.uncached_input_tokens, None);
-        assert!(matches!(
-            summary.cache_usage,
-            CacheUsageNormalization::Unsupported(ref reason)
-                if reason == "mixed_ttl_cache_write_classes"
-        ));
+    #[test]
+    fn mixed_ttl_metadata_does_not_hide_invalid_or_overflowing_cache_counters() {
+        for (input, read, write) in [(100, -1, 200), (i64::MAX, 1, 0)] {
+            let summary = usage_summary_from_value(Some(&json!({
+                "input_tokens": input, "output_tokens": 0,
+                "cache_read_input_tokens": read, "cache_creation_input_tokens": write,
+                "cache_creation": {"ephemeral_5m_input_tokens": 80, "ephemeral_1h_input_tokens": 120}
+            })))
+            .unwrap();
+            assert_eq!(summary.prompt_tokens, Some(input));
+            assert_eq!(summary.uncached_input_tokens, None);
+            assert_eq!(summary.cache_read_tokens, None);
+            assert_eq!(summary.cache_write_tokens, None);
+            assert!(matches!(
+                summary.cache_usage,
+                CacheUsageNormalization::Invalid(_)
+            ));
+        }
     }
 
     #[tokio::test]

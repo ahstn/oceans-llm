@@ -446,15 +446,11 @@ fn openai_usage_with_known_fields(usage: Value, latest: Option<&Value>) -> Value
     if let Some(completion_tokens) = completion_tokens {
         object.insert("completion_tokens".to_string(), json!(completion_tokens));
     }
-    let total_tokens = if object
-        .get("usage_source")
-        .and_then(Value::as_str)
-        .is_some_and(|src| src.contains("anthropic"))
-    {
-        object
-            .get("provider_usage")
-            .and_then(Value::as_object)
-            .and_then(anthropic_usage_total)
+    let native_usage = object.get("provider_usage").and_then(Value::as_object);
+    let total_tokens = if native_usage.is_some_and(|usage| {
+        usage.contains_key("input_tokens") || usage.contains_key("output_tokens")
+    }) {
+        native_usage.and_then(anthropic_usage_total)
     } else {
         prompt_tokens
             .zip(completion_tokens)
@@ -487,5 +483,56 @@ fn merge_usage_maps(current: &mut Map<String, Value>, incoming: &Map<String, Val
                 current.insert(key.clone(), incoming_value.clone());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn openrouter_stream_totals_include_cached_tokens_across_usage_events() {
+        let events = [
+            json!({"type":"message_start","message":{"usage":{
+                "input_tokens":3,"output_tokens":0,
+                "cache_read_input_tokens":100,"cache_creation_input_tokens":7
+            }}}),
+            json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},
+                "usage":{"output_tokens":2}}),
+            json!({"type":"message_stop"}),
+        ];
+        let upstream = futures_util::stream::iter(events.map(|event| {
+            Ok(Bytes::from(format!(
+                "event: {}\ndata: {event}\n\n",
+                event["type"].as_str().unwrap()
+            )))
+        }));
+        let chunks = normalize_anthropic_stream(
+            upstream,
+            "review-stream".into(),
+            0,
+            "claude".into(),
+            "anthropic_compat",
+            "openrouter",
+        )
+        .collect::<Vec<_>>()
+        .await;
+        let mut parser = SseEventParser::default();
+        let mut final_usage = None;
+        for chunk in chunks {
+            for event in parser.push_bytes(&chunk.unwrap()).unwrap() {
+                if let Ok(value) = serde_json::from_str::<Value>(&event.data)
+                    && let Some(usage) = value.get("usage")
+                {
+                    final_usage = Some(usage.clone());
+                }
+            }
+        }
+        let usage = final_usage.unwrap();
+        assert_eq!(usage["total_tokens"], 112);
+        assert_eq!(usage["provider_usage"]["input_tokens"], 3);
+        assert_eq!(usage["provider_usage"]["cache_read_input_tokens"], 100);
+        assert_eq!(usage["provider_usage"]["cache_creation_input_tokens"], 7);
+        assert_eq!(usage["completion_tokens"], 2);
     }
 }
