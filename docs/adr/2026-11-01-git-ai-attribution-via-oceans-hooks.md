@@ -39,7 +39,12 @@ Claude Code hooks                     → oceans hook claude  (session, repo and
   - The value is `agent_id.id`, and the hash is compared with `normalized_session_id`.
   - Attribution tables store only the hash, never the raw id, which keeps the ADR's rule that external values are scope-bound correlation evidence.
 - **Subagent lines:** lines written by a Claude Code subagent carry the subagent's transcript name (`agent-<hex>`) instead of a session id. They join on the request's hashed `execution_id`, which comes from `x-claude-code-agent-id`, once the header's raw format is confirmed. Until then they count as AI lines without a matching session. A match is correlation evidence, not identity, as in the [passive agent session analysis ADR](2026-07-21-passive-agent-session-analysis.md). Gateway data supplies the model and cost when the note says `unknown`.
-- **Idempotency:** rewrites (rebase, amend, cherry-pick) produce new notes for new SHAs. Ingestion is keyed on `(repository, commit_sha)` and the latest note for a commit replaces the earlier one.
+- **Replacement key:** rewrites (rebase, amend, cherry-pick) produce new notes for new SHAs. git-ai can also write a note again for an existing SHA, for example in its untraced-commit fixup or CI rewrites, so a commit can receive more than one note. Ingestion is keyed on `(ownership_scope_key, repository, commit_sha)`. The ownership scope comes from the ingesting key, so two owners reporting the same repository and commit keep separate totals and never overwrite each other.
+- **Freshness:** git-ai's hook payload carries no revision, so the CLI adds one:
+  - **Stamping:** when `oceans hook notes` queues a batch, it stamps each entry with a per-installation id, a sequence number that only increases on that installation, and an `observed_at` time.
+  - **Ordering:** the sender delivers queued batches oldest first and stops at the first failure, so a retry never overtakes a later batch.
+  - **Same installation:** the gateway replaces a stored note only when the incoming note has a higher sequence. An equal or lower sequence is a duplicate or a stale retry and is acknowledged without being applied.
+  - **Different installations:** the later `observed_at` wins. This is best-effort, because clocks on different machines can drift. It only matters when two machines under the same owner both write a note for the same commit.
 - **Storage:** paired LibSQL and PostgreSQL schemas, following existing store conventions.
 
 ## CLI configuration and key resolution
