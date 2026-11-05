@@ -31,7 +31,7 @@ All public traffic goes through the gateway service, which proxies `/admin*` to 
 
 Write the gateway config as a map under `gateway.config` in your values. The chart renders it to a `ConfigMap` and mounts it at `gateway.configMountPath`, which defaults to `/app/gateway.yaml`. There's no way to pass raw YAML instead, so keep each environment's config in its values file.
 
-Set `gateway.clientConfigGatewayBaseUrl` to the public base URL that callers use for the API, including `/v1`. The admin UI puts it in the client setup snippets it generates, through `GATEWAY_CLIENT_CONFIG_BASE_URL`.
+Set `gateway.clientConfigGatewayBaseUrl` to the public base URL that callers use for the API. The gateway strips a trailing `/` or `/v1`, so either form works. The admin UI puts it in the client setup snippets it generates, through `GATEWAY_CLIENT_CONFIG_BASE_URL`. See [Client harness configuration](/configuration/client-harnesses/).
 
 ```yaml title="values.yaml"
 gateway:

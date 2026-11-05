@@ -1,0 +1,293 @@
+---
+title: Providers
+description: Field reference for every providers entry type, its upstream auth modes, and the routing account scope.
+sidebar:
+  order: 3
+---
+
+Each `providers[*]` entry tells the gateway how to reach and authenticate to one upstream. The `type` field selects the adapter. Models reference a provider by its `id` in `models[*].routes[*].provider` (see [Models and routes](/configuration/models-and-routes/)).
+
+Provider auth is separate from gateway API keys. Provider auth is how the gateway authenticates to the upstream. Gateway API keys are how callers authenticate to the gateway.
+
+For how each adapter translates requests and which API families it serves, see [Provider API compatibility](/reference/provider-api-compatibility/).
+
+## Provider types
+
+The gateway accepts these `type` values. Any other value fails config loading.
+
+| `type` | Use it for |
+| --- | --- |
+| `openai_compat` | OpenAI, OpenRouter, and any other OpenAI-compatible HTTP API |
+| `anthropic_compat` | Upstreams that expose native Anthropic Messages at `/v1/messages` |
+| `gcp_cloud_run_openai_compat` | OpenAI-compatible servers (for example vLLM) on Google Cloud Run |
+| `gcp_vertex` | Google Vertex AI, including Anthropic models on Vertex |
+| `aws_bedrock` | Amazon Bedrock Runtime and Bedrock Mantle |
+| `github_copilot` | The GitHub Copilot API |
+| `typesafe` | Native TypeSafe System One Decisions |
+
+## Shared fields
+
+Most provider types accept these fields. The per-type sections below list the exceptions.
+
+<Aside type="caution" title="Unknown provider fields are ignored">
+Only `gcp_cloud_run_openai_compat` rejects unknown provider fields. For every other provider type, a misspelled top-level key is silently ignored. Auth blocks with a `mode` field (Cloud Run, Bedrock, GitHub Copilot) do reject unknown auth fields.
+</Aside>
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `id` | required | Unique across `providers`. It can't be empty. |
+| `default_headers` | `{}` | Headers sent with every upstream request. |
+| `timeouts.total_ms` | `300000` | Total deadline per upstream request, including consumption of a streaming body. |
+| `display.label` | none | Admin UI label. It can't be empty when set. |
+| `display.icon_key` | none | Admin UI icon. One of `openai`, `openrouter`, `anthropic`, `aws`, `typesafe`, `vertexai` (case-insensitive). |
+
+Every provider HTTP client also has a fixed 10-second connection timeout. There is no separate idle-read timeout. For long reasoning runs, set `timeouts.total_ms` higher, for example `600000`. Upstream and proxy deadlines still apply.
+
+`pricing_provider_id` names the pricing catalog family used to price the provider's routes. Where a type has this field, the value must be one of `openai`, `openrouter`, `opencode`, `github-copilot`, `google-vertex`, `google-vertex-anthropic`, or `amazon-bedrock`. See [Pricing catalog and accounting](/configuration/pricing-and-accounting/) for how pricing is resolved.
+
+Secret fields such as `auth.token` take a value source such as `env.NAME` or `literal.value`. See [Configuration reference](/configuration/) for value sources.
+
+## Provider auth modes
+
+| Provider type | Auth setting | Secret material |
+| --- | --- | --- |
+| `openai_compat` | `auth.kind`, `auth.token` | Token sent as `Authorization: Bearer` |
+| `typesafe` | `auth.kind: bearer`, `auth.token` | TypeSafe API key sent as `Authorization: Bearer` |
+| `anthropic_compat` | `auth.kind: x_api_key` (default) | API key sent in the `x-api-key` header |
+| `anthropic_compat` | `auth.kind: bearer` | Token sent as `Authorization: Bearer` |
+| `gcp_cloud_run_openai_compat` | `auth.mode: adc` | Google ADC or metadata-server identity that can mint Cloud Run ID tokens |
+| `gcp_cloud_run_openai_compat` | `auth.mode: service_account` | Service-account JSON at `auth.credentials_path` |
+| `gcp_cloud_run_openai_compat` | `auth.mode: bearer` | Pre-minted Cloud Run ID token in `auth.token`, for constrained debugging only |
+| `gcp_vertex` | `auth.mode: adc` | ADC in the runtime environment |
+| `gcp_vertex` | `auth.mode: service_account` | Service-account JSON at `auth.credentials_path` |
+| `gcp_vertex` | `auth.mode: bearer` | Static access token in `auth.token` |
+| `aws_bedrock` | `auth.mode: default_chain` (default) | AWS default credential chain, signed with SigV4 |
+| `aws_bedrock` | `auth.mode: static_credentials` | `access_key_id`, `secret_access_key`, optional `session_token`, signed with SigV4 |
+| `aws_bedrock` | `auth.mode: bearer` | Bedrock bearer token, often `env.AWS_BEARER_TOKEN_BEDROCK` |
+| `github_copilot` | `auth.mode: github_user` | Per-user token stored encrypted in the admin UI |
+| `github_copilot` | `auth.mode: github_app` | GitHub App ID, private key, installation ID, and repository ID |
+| `github_copilot` | `auth.mode: bearer` | Shared static token in `auth.token`, for constrained testing only |
+
+## Routing account scope
+
+`providers[*].routing_account_scope` exists on `aws_bedrock`, `gcp_vertex`, and `gcp_cloud_run_openai_compat`. It labels the account or principal behind credentials that can change outside YAML.
+
+The field is required when a model with a `routing` block has a route on one of these providers using an ambient or file-based credential:
+
+| Provider type | Auth modes that need a scope |
+| --- | --- |
+| `aws_bedrock` | `default_chain` |
+| `gcp_vertex` | `adc`, `service_account` |
+| `gcp_cloud_run_openai_compat` | `adc`, `service_account` |
+
+Without it, config loading fails with `requires routing_account_scope for ambient or service-account-file credentials`. Models without `routing` don't need it. For bearer and static credentials the field is optional. When set, it's validated and included in the routing fingerprint either way.
+
+Use a stable reference such as an AWS role ARN or a Google service-account email. The value must be 1 to 256 bytes, with no control characters and no leading or trailing whitespace. It isn't a secret, and it doesn't select or verify the identity.
+
+```yaml
+providers:
+  - id: bedrock-runtime
+    type: aws_bedrock
+    region: us-east-1
+    endpoint_kind: bedrock_runtime
+    routing_account_scope: arn:aws:iam::123456789012:role/oceans-gateway
+    auth:
+      mode: default_chain
+```
+
+When the underlying account or principal changes, an admin changes the label and restarts the gateway. This invalidates session bindings and response origins tied to the old identity. A token refresh for the same principal needs no change. The gateway trusts the label: it can't detect a wrong label or an identity change that nobody reports. For how session affinity uses this, see [Model routing and APIs](/configuration/model-routing/).
+
+## `openai_compat`
+
+Use `openai_compat` for OpenAI, OpenRouter, and other OpenAI-compatible APIs.
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `base_url` | required | HTTP or HTTPS URL with a host. |
+| `pricing_provider_id` | required | A supported pricing family. It can't be empty. |
+| `auth.kind` | required when `auth` is set | Free-form label. The gateway always sends `auth.token` as a bearer token. |
+| `auth.token` | none | Secret reference. Omit `auth` for upstreams that need no token. |
+| `batch.dialect` | none | `openai` or `openrouter`. Enables durable provider batches. |
+| `batch.base_url` | none | HTTP or HTTPS URL with a host. Required when `batch.dialect` is `openrouter`. |
+
+It also takes the [shared fields](#shared-fields).
+
+For OpenRouter, set `base_url: https://openrouter.ai/api/v1`. When the host is `openrouter.ai`, the path must be `/api/v1`, or config loading fails. Add route-level `compatibility.openrouter` only when a route needs OpenRouter provider-selection policy. See [Models and routes](/configuration/models-and-routes/) and [OpenRouter](https://docs.oceans-llm.com/providers/openrouter).
+
+For the batch design, see the [durable provider batch ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-08-17-durable-provider-batch-processing.md).
+
+## `typesafe`
+
+Use `typesafe` for native System One requests. The adapter calls `/v1/systemone` and serves Decisions only.
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `base_url` | `https://api.typesafe.ai` | Path must be empty, `/`, or `/v1`. No query or fragment. HTTPS, except plain HTTP to `localhost` or a loopback IP. |
+| `pricing_provider_id` | required | A supported pricing family. Use a route `pricing_override` when the upstream model has no exact catalog entry. |
+| `auth.kind` | required when `auth` is set | Must be `bearer`. |
+| `auth.token` | none | Secret reference such as `env.TYPESAFE_API_KEY`. |
+
+It also takes the [shared fields](#shared-fields). See [TypeSafe](https://docs.oceans-llm.com/providers/typesafe) for a full provider and route example.
+
+## `anthropic_compat`
+
+Use `anthropic_compat` for upstreams that expose native Anthropic Messages. The adapter appends `/v1/messages` to `base_url`.
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `base_url` | required | HTTP or HTTPS origin or base, without `/v1/messages`. No query or fragment. |
+| `pricing_provider_id` | required | A supported pricing family, for example `opencode`. |
+| `auth.kind` | `x_api_key` | `x_api_key` sends the `x-api-key` header. `bearer` sends `Authorization: Bearer`. |
+| `auth.token` | none | Secret reference such as `env.OPENCODE_API_KEY`. |
+
+It also takes the [shared fields](#shared-fields). Use `default_headers` for headers such as `anthropic-version`.
+
+```yaml title="gateway.yaml"
+providers:
+  - id: opencode-zen
+    type: anthropic_compat
+    base_url: https://opencode.ai/zen
+    pricing_provider_id: opencode
+    auth:
+      kind: x_api_key
+      token: env.OPENCODE_API_KEY
+    default_headers:
+      anthropic-version: "2023-06-01"
+    display:
+      label: OpenCode Zen
+      icon_key: anthropic
+```
+
+See [OpenCode Zen](https://docs.oceans-llm.com/providers/opencode-zen) for a route example.
+
+## `gcp_cloud_run_openai_compat`
+
+Use `gcp_cloud_run_openai_compat` for OpenAI-compatible servers on Cloud Run that need Google ID tokens. Unknown provider and auth fields are rejected.
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `base_url` | required | Absolute HTTPS URL with a host, with no leading or trailing whitespace. |
+| `audience` | HTTPS origin of `base_url` | ID token audience. It can't be empty when set. |
+| `pricing_provider_id` | required | A supported pricing family. |
+| `auth.mode` | required | `adc`, `service_account`, or `bearer`. |
+| `auth.credentials_path` | required for `service_account` | Path to the service-account JSON. It can't be empty. |
+| `auth.token` | required for `bearer` | Pre-minted ID token. It can't be empty. |
+| `auth_header` | `authorization` | `authorization` or `x_serverless_authorization`. |
+| `routing_account_scope` | none | See [Routing account scope](#routing-account-scope). |
+
+It also takes the [shared fields](#shared-fields).
+
+```yaml title="gateway.yaml"
+providers:
+  - id: gemma-cloud-run
+    type: gcp_cloud_run_openai_compat
+    base_url: https://gemma-service-abc-uc.a.run.app/v1
+    pricing_provider_id: google-vertex
+    auth:
+      mode: adc
+```
+
+See [Google Cloud Run OpenAI-compatible models](https://docs.oceans-llm.com/providers/gcp-cloud-run-openai-compat) for more examples.
+
+## `gcp_vertex`
+
+Use `gcp_vertex` for Google Vertex AI.
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `project_id` | required | It can't be empty. |
+| `location` | `global` | It can't be empty. |
+| `api_host` | Derived from `location` | `aiplatform.googleapis.com` for `global`, `aiplatform.<location>.rep.googleapis.com` for `us` and `eu`, otherwise `<region>-aiplatform.googleapis.com`. It can't be empty when set. |
+| `auth.mode` | required | `adc`, `service_account` (with `credentials_path`), or `bearer` (with `token`). |
+| `routing_account_scope` | none | See [Routing account scope](#routing-account-scope). |
+| `batch.dataset` | required when `batch` is set | BigQuery dataset for durable batches. It can't be empty. |
+| `batch.bigquery_project_id` | none | It can't be empty when set. |
+
+It also takes the [shared fields](#shared-fields). There is no `pricing_provider_id` field. The gateway infers pricing from the route's publisher prefix: `google/...` uses Google Vertex pricing and `anthropic/...` uses Anthropic-on-Vertex pricing. Anthropic-on-Vertex pricing is supported only for `location: global`.
+
+Every Vertex route must set `upstream_model` as `<publisher>/<model_id>`. For embedding and capability rules, see [Models and routes](/configuration/models-and-routes/) and [Google Vertex AI](https://docs.oceans-llm.com/providers/gcp-vertex).
+
+## `aws_bedrock`
+
+Use `aws_bedrock` for Amazon Bedrock.
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `region` | required | It can't be empty. |
+| `endpoint_kind` | required | `bedrock_runtime` or `bedrock_mantle`. |
+| `endpoint_url` | Derived | `https://bedrock-runtime.<region>.amazonaws.com` for Runtime, `https://bedrock-mantle.<region>.api.aws` for Mantle. HTTP or HTTPS with a host when set. |
+| `auth.mode` | `default_chain` | `default_chain`, `static_credentials`, or `bearer`. Unknown auth fields are rejected. |
+| `routing_account_scope` | none | See [Routing account scope](#routing-account-scope). |
+
+It also takes the [shared fields](#shared-fields). There is no `pricing_provider_id` field.
+
+`default_chain` and `static_credentials` use IAM SigV4 signing. Runtime providers sign with service `bedrock`. Mantle providers sign with service `bedrock-mantle`. For `static_credentials`, `access_key_id` and `secret_access_key` are required and `session_token` is optional. None of them can resolve to an empty value.
+
+```yaml title="gateway.yaml"
+providers:
+  - id: bedrock-api-key
+    type: aws_bedrock
+    region: us-east-1
+    endpoint_kind: bedrock_runtime
+    auth:
+      mode: bearer
+      token: env.AWS_BEARER_TOKEN_BEDROCK
+```
+
+Every Bedrock route must set `compatibility.aws_bedrock.api_style`, and the style must match `endpoint_kind`. See [Models and routes](/configuration/models-and-routes/#aws-bedrock-route-compatibility) and [AWS Bedrock](https://docs.oceans-llm.com/providers/aws-bedrock).
+
+## `github_copilot`
+
+Use `github_copilot` for the GitHub Copilot API.
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `base_url` | `https://api.githubcopilot.com` | HTTP or HTTPS URL with a host. |
+| `github_api_url` | `https://api.github.com` | GitHub API used to mint App installation tokens. |
+| `pricing_provider_id` | none | Optional. Set `github-copilot` to price routes from the Copilot catalog, which uses Copilot model IDs such as `claude-haiku-4.5`. |
+| `editor_version` | `vscode/1.126.0` | It can't be empty. |
+| `integration_id` | `vscode-chat` | It can't be empty. |
+| `auth.mode` | required | `github_user`, `github_app`, or `bearer`. Unknown auth fields are rejected. |
+
+It also takes the [shared fields](#shared-fields).
+
+### GitHub App authentication
+
+`auth.mode: github_app` needs four fields:
+
+| Field | Notes |
+| --- | --- |
+| `app_id` | GitHub App ID. It can't be `0`. |
+| `private_key` | Mounted file path, or an `env.*` or `literal.*` value that resolves to a PEM or a file path. The gateway reads and parses the key at startup. |
+| `installation_id` | It can't be `0`. |
+| `repository_id` | Numeric ID of the one repository placed in each installation-token request. It can't be `0`. If absent, parsing fails with `missing field repository_id`. |
+
+Before enabling an App provider, an admin runs the [installation-token canary](https://docs.oceans-llm.com/providers/github-copilot#run-the-installation-token-canary).
+
+### GitHub user authentication
+
+Use `auth.mode: github_user` when Copilot usage must use each Oceans user's own GitHub identity and entitlement. Don't put a token in YAML. A platform admin stores a managed user's token in **Identity > Users > Provider Configuration**, or the user stores it with the Oceans CLI. The gateway encrypts the token and picks it from the user who owns the calling API key.
+
+`OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY` must be set before startup when any `github_user` provider exists. It's a base64-encoded 32-byte key. Keep the same value on every replica. If it changes, stored provider credentials can't be decrypted.
+
+User-token mode has no fallback credential. A request fails before it reaches Copilot when the key is owned by a service account, has no owner, or belongs to a user with no stored token. The gateway never takes a token from a request header or uses one user's token for another user's key. See [GitHub Copilot](https://docs.oceans-llm.com/providers/github-copilot#github-user-authentication) for the setup flow.
+
+```yaml title="gateway.yaml"
+providers:
+  - id: copilot-user
+    type: github_copilot
+    auth:
+      mode: github_user
+
+  - id: copilot-org
+    type: github_copilot
+    pricing_provider_id: github-copilot
+    auth:
+      mode: github_app
+      app_id: 123456
+      private_key: /run/secrets/copilot-app-private-key.pem
+      installation_id: 23456789
+      repository_id: 345678901
+```
+
+Copilot routes declare upstream evidence in `compatibility.github_copilot`. See [Models and routes](/configuration/models-and-routes/#github-copilot-route-compatibility).

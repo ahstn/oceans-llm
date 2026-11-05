@@ -1,0 +1,106 @@
+---
+title: Budget settings
+description: YAML fields for inherited user budgets, the budget rejection status code, and budget alert email delivery.
+sidebar:
+  order: 5
+---
+
+This page lists the YAML fields for `budgets` and `budget_alerts`, with their defaults and validation rules. For how budgets are scoped, inherited and enforced, see [Budgets](https://docs.oceans-llm.com/access/budgets).
+
+## Budget fields
+
+Every budget in the config file uses the same shape. This applies to `budgets.users.default`, `budgets.users.model_defaults[].budget`, `users[*].budget` and `service_accounts[*].budget`.
+
+```yaml
+cadence: daily
+amount_usd: "70.0000"
+hard_limit: true
+timezone: UTC
+```
+
+| Field | Default | Rule |
+| --- | --- | --- |
+| `cadence` | required | `daily`, `weekly` or `monthly`. |
+| `amount_usd` | required | Decimal string, greater than zero. |
+| `hard_limit` | `true` | When `true`, the gateway rejects requests once the budget is spent. |
+| `timezone` | `UTC` | Must not be empty. |
+
+Quote `amount_usd` as a string, such as `"70.0000"`. Unknown fields fail startup.
+
+## `budgets`
+
+`budgets.users` sets inherited budgets for human users. It does not apply to service accounts. `budgets.exceeded_status_code` sets the HTTP status for every hard-budget rejection, including service-account budgets.
+
+```yaml
+budgets:
+  exceeded_status_code: 422
+  users:
+    default:
+      cadence: daily
+      amount_usd: "70.0000"
+      hard_limit: true
+      timezone: UTC
+    model_defaults:
+      - model: fable-5
+        budget:
+          cadence: daily
+          amount_usd: "40.0000"
+          hard_limit: true
+          timezone: UTC
+```
+
+| Field | Default | Rule |
+| --- | --- | --- |
+| `exceeded_status_code` | `422` | `402`, `422` or `429`. Any other value fails startup. |
+| `users.default` | unset | A budget for every human user. |
+| `users.model_defaults` | `[]` | Per-model budgets for every human user. |
+| `users.model_defaults[].model` | required | A gateway model id from `models[*].id`. |
+| `users.model_defaults[].budget` | required | The per-user budget for that model. |
+
+The rejection body always has `type: budget_error` and `code: budget_exceeded`. Use `429` only for clients that back off on budget errors: the OpenAI and Anthropic Python SDKs retry `429`. The [budget exceeded status code ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-14-budget-exceeded-status-code.md) explains why the default is `422`.
+
+Startup fails if a `model_defaults` entry names a model that isn't configured, or if two entries name the same model. The gateway trims model ids before it compares them. Unknown fields in `budgets` fail startup.
+
+Inherited defaults apply to config-seeded users, the bootstrap admin, users created in the admin UI, and JIT OIDC and OAuth users. A `users[*].budget` block overrides `budgets.users.default` for that user. Omitting it means inherit, not "no budget". The precedence rules and what admin edits do to inherited budgets are on [Budgets](https://docs.oceans-llm.com/access/budgets).
+
+## `budget_alerts`
+
+`budget_alerts.email` configures the background worker that sends threshold alert emails. Budget enforcement and budget updates create the alerts.
+
+```yaml
+budget_alerts:
+  email:
+    from_email: alerts@example.com
+    from_name: "Oceans LLM"
+    poll_interval_secs: 30
+    batch_size: 25
+    transport:
+      kind: smtp
+      host: smtp.example.com
+      port: 587
+      username: env.SMTP_USERNAME
+      password: env.SMTP_PASSWORD
+      starttls: true
+```
+
+| Field | Default | Rule |
+| --- | --- | --- |
+| `from_email` | `alerts@local` | Must not be empty. |
+| `from_name` | unset | Optional display name. |
+| `poll_interval_secs` | `30` | Greater than `0`. |
+| `batch_size` | `25` | Greater than `0`. |
+| `transport.kind` | `sink` | `sink` or `smtp`. |
+
+With `sink`, the gateway records alert delivery rows but sends no email. With `smtp`, it sends through an SMTP server with these fields:
+
+| SMTP field | Default | Rule |
+| --- | --- | --- |
+| `host` | required | Must not be empty. |
+| `port` | `587` | |
+| `username` | unset | `env.` reference or plain value. Set with `password`. |
+| `password` | unset | Secret field: `env.`, `file.` or `literal.`. Set with `username`. |
+| `starttls` | `true` | |
+
+Set `username` and `password` together, or leave both out. Startup fails if only one is set, or if a referenced environment variable is missing.
+
+The gateway does not reject unknown keys in `budget_alerts`, so check field names carefully.

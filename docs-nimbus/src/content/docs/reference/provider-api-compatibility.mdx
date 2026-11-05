@@ -1,0 +1,509 @@
+---
+title: Provider API compatibility
+description: How each provider type serves the gateway's public APIs, and how the gateway translates requests, streams and usage.
+sidebar:
+  order: 1
+---
+
+This page describes how the gateway's public API maps onto each provider's upstream API. It covers which API families each provider type can serve, the translation rules per provider, stream handling and the usage the gateway reads back. Route and provider fields are defined in [Models and routes](/configuration/models-and-routes/) and [Providers](/configuration/providers/). How a request picks a route is in [Model routing and APIs](/configuration/model-routing/).
+
+The design reasons are in the ADRs on [route-level provider API compatibility profiles](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-04-23-route-level-provider-api-compatibility-profiles.md) and the [OpenAI Responses API family boundary](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-04-23-openai-responses-api-family-boundary.md).
+
+## Public surface
+
+The gateway serves these inference and discovery endpoints ([`crates/gateway/src/http/mod.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway/src/http/mod.rs)):
+
+| Endpoint | Unversioned alias | Purpose |
+| --- | --- | --- |
+| `GET /v1/models` | `GET /models` | List models the caller can use. |
+| `GET /v1/model-metadata` | none | Oceans discovery extension (schema version 2). |
+| `GET /model_group/info` | none | Model group info for clients that expect it. |
+| `POST /v1/chat/completions` | `POST /chat/completions` | OpenAI Chat Completions. |
+| `POST /v1/responses` | `POST /responses` | OpenAI Responses. |
+| `POST /v1/messages` | `POST /messages` | Anthropic Messages. |
+| `POST /v1/messages/count_tokens` | `POST /messages/count_tokens` | Anthropic token counting. |
+| `POST /v1/embeddings` | `POST /embeddings` | OpenAI Embeddings. |
+| `POST /v1/images`, `POST /v1/images/generations` | `POST /images`, `POST /images/generations` | OpenAI Images generation. |
+| `POST /v1/decisions` | `POST /decisions` | Decisions, in System One or OpenAI format. |
+| `POST /v1/systemone` | none | Decisions, System One format only. |
+| `POST /api/v1/batches` | none | Create a durable batch. `GET` on the same path lists batches. |
+
+Aliases share the handler and body limit of the `/v1` endpoint. The inference body limit is 64 MiB.
+
+Responses, Images and Decisions are their own API families. The gateway doesn't translate them through Chat Completions.
+
+## API families
+
+| API family | Served by | Notes |
+| --- | --- | --- |
+| Chat Completions | `openai_compat`, `gcp_cloud_run_openai_compat`, `anthropic_compat`, `gcp_vertex`, `aws_bedrock`, `github_copilot` | Non-OpenAI upstreams get a translated request. `openai_compat` routes can declare request-shape quirks. |
+| Responses | `openai_compat`, `gcp_cloud_run_openai_compat`, `aws_bedrock` (`mantle_openai_responses`), `github_copilot` | A separate request path that keeps Responses event-stream semantics. |
+| Embeddings | `openai_compat`, `gcp_cloud_run_openai_compat`, `gcp_vertex` (listed Google models), `github_copilot` | Vertex uses its own mapper with local validation. |
+| Images | `openai_compat`, `gcp_cloud_run_openai_compat` | Non-streaming. See [Model routing and APIs](/configuration/model-routing/). |
+| Decisions | `typesafe`, `openai_compat` Decisions routes | See [Decisions API](#decisions-api). |
+| Anthropic Messages | Every chat-capable provider type | Native Anthropic upstreams get the Messages body. OpenAI-shaped upstreams get a Chat Completions translation. |
+| Batches | Providers with a batch adapter | The batch `endpoint` selects Chat Completions, Responses or Embeddings. Item bodies use the same effort policy as synchronous requests and are validated before the gateway stores them. |
+
+The gateway has no direct Google Generative AI (API-key) provider. Google models run through `gcp_vertex` ([issue #90](https://github.com/ahstn/oceans-llm/issues/90)). Image and file inputs are partial and depend on the provider ([issue #93](https://github.com/ahstn/oceans-llm/issues/93)).
+
+## Provider type endpoint matrix
+
+This matrix shows what the gateway can execute today. It doesn't reflect what an upstream claims to support.
+
+| Provider type | Chat Completions | Responses | Embeddings |
+| --- | --- | --- | --- |
+| `openai_compat` | Yes | Yes | Yes |
+| `gcp_cloud_run_openai_compat` | Yes | If the service exposes it | If the service exposes it |
+| `anthropic_compat` | Yes, through Messages translation | No | No |
+| `gcp_vertex` | Google and Anthropic models | No | Listed Google models |
+| `aws_bedrock` | Every `api_style` but one | `mantle_openai_responses` only | No |
+| `github_copilot` | With `chat_api` set | With `supports_responses` | With `supports_embeddings` |
+| `typesafe` | No | No | No |
+
+Notes on the matrix:
+
+- `openai_compat` route profiles can rewrite request-shape quirks for Chat Completions.
+- `gcp_cloud_run_openai_compat` authenticates with a Cloud Run ID token.
+- Bedrock serves Chat Completions on every `api_style` except `mantle_openai_responses`.
+- The GitHub Copilot settings live under `compatibility.github_copilot` on the route.
+- Images: `openai_compat` serves them when the route sets `capabilities.images: true`, and `gcp_cloud_run_openai_compat` when the service exposes `/images`. No other provider type serves images.
+- Decisions: `typesafe` serves only Decisions, through `/v1/systemone`. `openai_compat` serves them on Decisions routes only. Route validation rejects Decisions on `gcp_cloud_run_openai_compat`, and no other provider type serves them.
+
+Route validation rejects `capabilities.images: true` on any provider type other than `openai_compat` and `gcp_cloud_run_openai_compat`. [Providers](/configuration/providers/) lists the GitHub Copilot route fields.
+
+## Effective capabilities
+
+A route's effective capabilities are what the gateway lets it attempt. The gateway works them out in this order ([`crates/gateway-core/src/route_capabilities.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-core/src/route_capabilities.rs)):
+
+1. Capabilities set explicitly on the route.
+2. Capabilities inferred from the route's `compatibility` block. For example, Bedrock `api_style` fixes `chat_completions`, `responses` and `stream`, and Decisions routes enable `decisions` only.
+3. Hints from the model catalog.
+4. Defaults. `images` and `decisions` default to `false`. Every other capability defaults to `true`.
+
+The gateway then intersects the result with what the provider adapter can execute.
+
+Because most defaults are `true`, set unsupported API families to `false` on routes to partial providers. Then the request fails at route selection, not inside the adapter. For example, a Vertex Google chat route should set `responses: false` and `embeddings: false`. For Cloud Run routes, set capabilities to match the endpoints the deployed service exposes. A vLLM deployment might enable only some of them.
+
+### Hosted Responses tools
+
+`capabilities.tools` is a coarse gate. It says a route can attempt requests that carry tools. It doesn't mean the route supports every OpenAI-hosted Responses tool. Function, custom, namespace, tool-search and MCP tools can work on a route that lacks an OpenAI-hosted tool such as `image_generation`.
+
+On `aws_bedrock` routes with `api_style: mantle_openai_responses`, Bedrock serves a subset of Responses and doesn't support `image_generation`. The gateway removes an `image_generation` tool that the request only offers. If the request requires it (through `tool_choice`, an allowed-tools list, or a tool with a forced `action`), the gateway returns 400 before it calls Bedrock.
+
+## Native Messages thinking controls
+
+These rules apply to native Anthropic Messages requests on `anthropic_compat`, Vertex Claude and Bedrock Anthropic routes.
+
+Native `output_config.effort` is independent of `thinking`. The gateway keeps `low`, `medium`, `high`, `xhigh` and `max`, subject to the model's effort ceiling and to what the upstream model supports. If the caller omits effort, the gateway omits it. If the caller sends `effort: null`, the gateway sends null. The gateway doesn't add a thinking mode or a default effort to native requests. Anthropic's own default effort varies by model; see [Anthropic effort](https://platform.claude.com/docs/en/build-with-claude/effort).
+
+The gateway picks the native Messages or Chat Completions thinking rules from trusted endpoint metadata. Request fields can't switch between them. Chat Completions keeps its own model-specific defaults, described in [Model routing and APIs](/configuration/model-routing/).
+
+For thinking:
+
+- Adaptive and manual thinking keep `display: "summarized"`, `display: "omitted"` and `display: null`. The beta `display: "updates"` and other thinking extension fields go upstream for Anthropic to validate.
+- An invalid display value returns a display error. `thinking.budget_tokens` on adaptive or `between_tools` thinking returns a budget error.
+- Models that take manual budgets still accept `thinking.type: "enabled"` with a budget.
+- Turning thinking off follows the model-specific rules in [Model routing and APIs](/configuration/model-routing/). For example, Sonnet 5.5 maps `disabled` to `between_tools`, and always-on models such as Opus 5.5 reject it. A thinking-off request sends only the resolved `type`. Effort stays and is checked against the model's limits.
+
+OpenAI-shaped `reasoning_effort` and `reasoning.effort` use the model-aware mappings in [Claude thinking by model](#claude-thinking-by-model). These aliases can turn thinking on; native effort alone doesn't. Conflicting explicit controls are errors. On Vertex and Bedrock, Opus 4.5 native effort gets the `effort-2025-11-24` beta even when thinking is omitted or disabled.
+
+System messages that change effort keep their position and `output_config`, including empty content. Native `safeguards` requests and opaque `safeguard_results` responses pass through, including verdicts in the stream's message-start and message-delta events. These support [Claude Code auto mode](https://code.claude.com/docs/en/llm-gateway-protocol). Auto mode isn't an effort value: `"auto"` and `"none"` aren't native Anthropic efforts.
+
+<Aside type="caution" title="Claude Code compatibility is partial">
+Mid-conversation system messages without effort controls are still hoisted into the top-level system prompt. Unknown SSE event types aren't passed through.
+</Aside>
+
+### Beta headers
+
+The gateway merges beta names from the request body, the caller's `anthropic-beta` header, route headers and provider default headers. It removes duplicates and keeps first-seen order. For direct Anthropic, Vertex Claude and Bedrock Anthropic transports, the gateway applies these limits ([`crates/gateway-providers/src/anthropic/beta.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-providers/src/anthropic/beta.rs)):
+
+| Limit | Value |
+| --- | --- |
+| Distinct beta names after merging | 1,024 |
+| Bytes per name (UTF-8) | 256 |
+| Entries in a body array, including duplicates | 1,024 |
+| Bytes in a comma-separated body string | 256 KiB |
+| Combined bytes of all beta header values | 256 KiB |
+
+A request over a limit gets a local invalid-request error before dispatch. The upstream still checks which betas exist and can set smaller limits.
+
+The merged list goes out as one `anthropic-beta` header for direct Anthropic, Vertex and Bedrock Mantle. For Bedrock `InvokeModel` (including the request inside `CountTokens`), it goes out as an `anthropic_beta` body array. Other caller headers and gateway credentials aren't forwarded.
+
+## Messages token counting
+
+`POST /v1/messages/count_tokens` selects a route the same way as `POST /v1/messages`. It sends only the prompt-defining fields to the provider's own count API. The gateway never estimates tokens itself.
+
+| Provider type | Token counting |
+| --- | --- |
+| `anthropic_compat` | Upstream `messages/count_tokens`. |
+| `gcp_vertex` | `anthropic/*` routes use `count-tokens:rawPredict`. The model goes in the body without its `@version` suffix. Google publisher routes return 501. |
+| `aws_bedrock` | `runtime_anthropic_invoke` (the base64 `InvokeModel` body) and `runtime_converse` (the Converse prompt fields) use `/model/<model-id>/count-tokens`. Other styles return 501. |
+| `openai_compat`, `gcp_cloud_run_openai_compat`, `github_copilot`, `typesafe` | Not implemented. Returns 501. |
+
+For Bedrock, the role needs `bedrock:CountTokens` on the foundation model ([AWS Bedrock](https://docs.oceans-llm.com/providers/aws-bedrock)). `CountTokens` accepts foundation model IDs only, so the gateway counts a cross-Region inference profile (such as `us.anthropic.claude-sonnet-4-6` or its ARN) against the foundation model (`anthropic.claude-sonnet-4-6`). Application inference profile ARNs pass through unchanged. Bedrock supports `CountTokens` for some models and Regions only. When Bedrock rejects a count, the gateway returns that upstream error.
+
+An unsupported route returns HTTP 501 with an Anthropic error envelope, `error.type: "not_implemented_error"`, and a message that names the provider key, provider type and upstream model.
+
+Counting writes no request log, usage-ledger row or budget charge, and an exhausted budget doesn't block it. The prompt guard and rate limits still apply. Each API key can have at most 8 counts in flight; more get a 429. See [Model routing and APIs](/configuration/model-routing/) for the routing and logging trade-offs.
+
+## Route compatibility metadata
+
+Compatibility is route metadata, not provider metadata. One provider endpoint can serve several upstream model families, and two routes to the same provider can need different transforms. So the transforms travel with the selected route. The gateway stores them in `model_routes.compatibility_json`, seeded from the route's `compatibility` block.
+
+A route's `compatibility` block can hold one or more of these profiles ([`crates/gateway-core/src/domain.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-core/src/domain.rs)):
+
+| Profile | Used with | Purpose |
+| --- | --- | --- |
+| `openai_compat` | `openai_compat` routes | Request-shape quirks and the OpenAI Decisions format. See [OpenAI-compatible profile fields](#openai-compatible-profile-fields). |
+| `openrouter` | `openai_compat` routes to OpenRouter | Provider-selection policy and the alpha Decisions route. See [OpenRouter routing policy](#openrouter-routing-policy). |
+| `aws_bedrock` | `aws_bedrock` routes (required) | API style and options. See [AWS Bedrock](#aws-bedrock). |
+| `github_copilot` | `github_copilot` routes | Chat API, Responses and embeddings support. See [Providers](/configuration/providers/). |
+
+```yaml title="gateway.yaml"
+models:
+  - id: fast
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-4o-mini
+        compatibility:
+          openai_compat:
+            supports_store: false
+            max_tokens_field: max_tokens
+            developer_role: system
+            reasoning_effort: omit
+            supports_stream_usage: true
+            empty_tools: omit
+```
+
+## OpenAI-compatible profile fields
+
+These transforms apply to Chat Completions requests unless a field says otherwise. Responses requests use the same route selection, but don't get Chat Completions shims such as `stream_options.include_usage`.
+
+| Field | Default | Values and effect |
+| --- | --- | --- |
+| `supports_store` | `true` | `false` removes `store` from outbound Chat Completions requests. |
+| `max_tokens_field` | `max_completion_tokens` | `max_tokens` renames `max_completion_tokens` to `max_tokens`. |
+| `developer_role` | `developer` | `system` rewrites `developer` messages to `system`. |
+| `reasoning_effort` | `passthrough` | `omit` removes `reasoning_effort`. `reasoning_object` rewrites `reasoning_effort: "high"` to `reasoning: { "effort": "high" }`. |
+| `supports_stream_usage` | `false` | `true` adds `stream_options.include_usage: true` to streaming Chat Completions requests. |
+| `empty_tools` | `preserve` | See below. |
+| `decisions_api` | unset | `openai` makes the route an OpenAI-format Decisions route. See [Decisions API](#decisions-api). |
+
+`empty_tools` applies to both Chat Completions and Responses:
+
+- `preserve` sends an empty `tools` array as is.
+- `omit` removes an empty `tools` array. It also removes neutral `tool_choice` values (`auto`, `none` or `null`) and `parallel_tool_calls`. A `required` or named `tool_choice` is rejected locally.
+- `preserve_with_tool_history` removes an empty array unless the request has function-tool history. This suits LiteLLM and Anthropic proxies. A kept array keeps its `tool_choice`.
+
+## Anthropic Messages on OpenAI-compatible routes
+
+`POST /v1/messages` requests keep their Anthropic content blocks until the provider adapter. The adapter rewrites them into Chat Completions shapes before calling `/chat/completions` when the route is one of these ([`crates/gateway-providers/src/openai_compat/anthropic_messages.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-providers/src/openai_compat/anthropic_messages.rs)):
+
+- `openai_compat` or `gcp_cloud_run_openai_compat`.
+- `github_copilot` with `chat_api: chat_completions`.
+- `aws_bedrock` with `runtime_openai_chat` or `mantle_openai_chat`.
+
+The rewrite works like this:
+
+- **Tools.** Tool definitions with `input_schema` become `function` tools. `tool_choice` `auto`, `any`, `none` and `tool` become `auto`, `required`, `none` and a named function choice. `disable_parallel_tool_use: true` sets `parallel_tool_calls: false` unless the caller already set it. A `tool` choice without a `name` gets a local 400.
+- **Assistant tool calls.** `tool_use` blocks become `tool_calls` entries with the block `id`, the tool name, and `input` as a JSON string. Text blocks join into a string `content`. A turn with only tool calls sends `content: null`. A turn with only thinking blocks sends `content: ""`.
+- **Tool results.** Each user `tool_result` block becomes a `tool` message with its `tool_call_id`, placed before the rest of that user turn. String content passes through. Block-array content becomes its text blocks joined with newlines. `is_error: true` adds an `Error: ` prefix, because Chat Completions has no error flag on tool messages.
+- **Images.** `image` blocks with `base64` or `url` sources become `image_url` parts. Images inside a `tool_result` move to the trailing user message, because `tool` messages can't carry images. Other sources, such as Files API `file` references, get a local 400. Assistant `image` blocks also get a 400, because Chat Completions accepts images only from users.
+- **Thinking.** `thinking` and `redacted_thinking` blocks in assistant history are dropped. Chat Completions can't send them back to the model, and their signatures are valid only for Anthropic upstreams. Use an `anthropic_compat` route when thinking continuity across tool turns matters.
+- **Other fields.** `stop_sequences` becomes `stop` unless the caller already set `stop`. `top_k`, `thinking` and `metadata` pass through, because several OpenAI-compatible upstreams accept them as extensions.
+
+Route selection sees the request before the rewrite. Anthropic `image` blocks, including those inside a `tool_result`, need the `vision` capability. Tool history (`tool_use`, `tool_result`, `tool_calls` or `tool` messages) needs the `tools` capability, even when `tools` is empty or missing. Both default to `true`, so only routes that opt out are filtered.
+
+OpenAI-shaped messages pass through unchanged, so Chat Completions callers on the same route aren't affected. Chat Completions batch items on these providers use the same rewrite.
+
+## Decisions API
+
+`POST /v1/decisions` accepts two request formats and detects the format from the body:
+
+| Format | Detected by | Questions | Answers |
+| --- | --- | --- | --- |
+| System One | `state` | Map of named `noul`, `choice` and `score` questions | Map keyed by question name |
+| OpenAI Decisions | `input` | Ordered list of `predicate`, `choice` and `score` questions | Ordered list, including `refusal` answers |
+
+A body with both `input` and `state`, or with neither, gets a 400 that names the problem. `POST /v1/systemone` accepts the System One format only.
+
+The gateway translates both formats into one core request. Each route gets the format it speaks, and the caller gets the response in its own format. When caller and route use the same format, the gateway returns the upstream body unchanged except for the public model name. Before dispatch, the gateway replaces the public model with the route's upstream model and applies route `extra_body`. After the response, it checks that each question got an answer of the matching type.
+
+| Route | Upstream format | Upstream path |
+| --- | --- | --- |
+| `typesafe` provider | System One | `/v1/systemone` |
+| `openai_compat` with `decisions_api: openai` | OpenAI | `<base_url>/decisions` |
+| `openai_compat` to OpenRouter with `openrouter.api: decisions` | System One | `/api/alpha/decisions` |
+
+`decisions_api` sits under `compatibility.openai_compat`, and `api` under `compatibility.openrouter`. Example upstream models are `jev-latest` on `typesafe`, `gpt-6-luna` on OpenAI, and `typesafe/jev-1.13` on OpenRouter.
+
+Route validation enforces these rules ([`crates/gateway/src/config/routes.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway/src/config/routes.rs)):
+
+- `decisions_api` needs an `openai_compat` provider and can't be combined with a `compatibility.openrouter` block.
+- `compatibility.openrouter` needs a provider `base_url` that points at OpenRouter.
+- A `typesafe` route can't disable `capabilities.decisions`.
+- Only `typesafe` routes and the two Decisions route types can enable `capabilities.decisions`.
+- A Decisions route must disable every other capability.
+
+Some inputs can't be sent in every format. When a model has routes in both formats, the gateway picks only from routes that can carry the request. When none can, it returns 400 before calling an upstream:
+
+- `safety_identifier` goes to OpenAI-format routes only.
+- System One routes don't accept image inputs.
+- OpenAI-format routes need at least two options for each `choice` question.
+- OpenAI-format routes accept at most 200 questions and 128 images.
+
+When the gateway sends System One questions to an OpenAI route, it orders them by key and adds `noul` criteria to the predicate instructions. OpenAI questions without a `name`, or with a repeated `name`, get the internal key `question_<index>`. Answers keep the caller's original `name`, including `null`. If an answer for an OpenAI caller has no reported confidence, the gateway uses the probability of the selected option or the nearest score level.
+
+OpenRouter provider policy is optional on the alpha route. When set, the gateway sends it as the upstream `provider` object. `typesafe` and OpenAI-format routes don't get it.
+
+## Cloud Run OpenAI-compatible auth
+
+`gcp_cloud_run_openai_compat` is the OpenAI-compatible adapter with Cloud Run auth around it. The request and response bodies are OpenAI-compatible.
+
+| Setting | Behaviour |
+| --- | --- |
+| `auth.mode: adc` | Mints Cloud Run ID tokens from the metadata server on Google Cloud, or from a service-account ADC file with a signed JWT that includes `target_audience`. |
+| `auth.mode: service_account` | Reads the service-account JSON file at `credentials_path` and exchanges a signed JWT for a Google ID token for the service. |
+| `auth.mode: bearer` | Sends a static `token` and never refreshes it. Use it for short debugging only. |
+| `audience` | Defaults to the origin of `base_url` (path and query removed). Set it for Cloud Run custom audiences. It can't be empty. |
+| `auth_header` | `authorization` (default) or `x_serverless_authorization`. Use the second when Cloud Run should consume the ID token and leave the application's `Authorization` header alone. |
+
+vLLM and Gemma fields such as `chat_template_kwargs.enable_thinking` and `skip_special_tokens` belong in route `extra_body`. See [Providers](/configuration/providers/) for the full field list.
+
+## Google Vertex Claude
+
+A `gcp_vertex` route uses Vertex-hosted Claude when its `upstream_model` starts with `anthropic/`. The part after the slash goes into the Vertex endpoint path:
+
+- Non-streaming requests use `rawPredict`. Streaming requests use `streamRawPredict`.
+- The body has no `model` field, and includes `anthropic_version: "vertex-2023-10-16"`.
+- The body uses the Anthropic Messages shape, so the gateway applies the same Claude request rules as `anthropic_compat` routes. See [Claude thinking by model](#claude-thinking-by-model).
+
+Chat Completions responses never put Claude `thinking` or `redacted_thinking` blocks into `choices[*].message.content`. Streamed `thinking_delta` and `signature_delta` events never become `delta.content`. The gateway keeps them under `choices[*].message.provider_metadata.gcp_vertex.reasoning` and `choices[*].delta.provider_metadata.gcp_vertex.reasoning`.
+
+Function tools, tool-result turns and streamed tool-use deltas work on Vertex Claude. Images work when they are base64: an Anthropic `image` block with a base64 source, or an OpenAI `image_url` with a `data:` URL. Supported types are `image/jpeg`, `image/png`, `image/webp` and `image/gif`. Remote `http` and `https` image URLs are rejected locally. Other content blocks, such as `document`, pass through for Vertex to validate.
+
+Vertex Google routes are separate. `google/*` models use `generateContent` and `streamGenerateContent`. Anthropic fields such as `thinking`, `output_config` and `anthropic_version` don't apply to them.
+
+## Google Vertex text embeddings
+
+`POST /v1/embeddings` can use native Vertex text embeddings for these Google publisher models ([`crates/gateway-core/src/domain.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-core/src/domain.rs)):
+
+- `google/gemini-embedding-001`
+- `google/gemini-embedding-2`
+- `google/text-embedding-005`
+- `google/text-multilingual-embedding-002`
+
+`google/gemini-embedding-2` uses Vertex `:embedContent`. The others use Vertex `:predict`. Make these routes embedding-only unless you've tested another API family for the same model. The gateway infers these capabilities for listed models, but setting them makes the route clear:
+
+```yaml title="gateway.yaml"
+capabilities:
+  chat_completions: false
+  responses: false
+  embeddings: true
+  stream: false
+  tools: false
+  vision: false
+  json_schema: false
+```
+
+| Request field | Vertex mapping or outcome |
+| --- | --- |
+| `input: "text"` | One embedding, returned as `data[0]`. |
+| `input: ["a", "b"]` | One embedding per string, with indexes in request order. |
+| Token arrays, nested arrays, non-strings, empty arrays, empty strings, multimodal or base64 input | Rejected locally with `invalid_request`. |
+| `dimensions` | `parameters.outputDimensionality` on `:predict`, `embedContentConfig.outputDimensionality` on `gemini-embedding-2`. Must be positive and within the model's maximum. |
+| `output_dimensionality`, `outputDimensionality` | Aliases for `dimensions`. Conflicting values are rejected. |
+| `encoding_format` | Omitted or `float` is accepted. `base64` is rejected. |
+| `task_type`, `input_type` | `instances[].task_type` on `:predict`. `input_type` is an alias; conflicts are rejected. Rejected on `gemini-embedding-2`, which expects task instructions in the input text. |
+| `title` | `:predict` only, and only with `task_type: RETRIEVAL_DOCUMENT`. Rejected on `gemini-embedding-2`. |
+| `auto_truncate`, `autoTruncate` | `parameters.autoTruncate` on `:predict`. Conflicts are rejected. Rejected on `gemini-embedding-2`. |
+
+The response uses the OpenAI embeddings list shape: `object: "list"`, ordered `data[]` with `object: "embedding"`, `index` and a float vector, plus `model`. `usage` appears when Vertex returns real token counts. Vertex Claude routes and Google chat models don't serve embeddings.
+
+## AWS Bedrock
+
+An `aws_bedrock` route must set `compatibility.aws_bedrock.api_style`. The style must match the provider's `endpoint_kind`:
+
+| `api_style` | Endpoint kind | Upstream API | Streaming |
+| --- | --- | --- | --- |
+| `runtime_converse` | Runtime | Converse and ConverseStream | Yes |
+| `runtime_anthropic_invoke` | Runtime | `InvokeModel` with the Anthropic Messages body | No |
+| `runtime_openai_chat` | Runtime | OpenAI Chat Completions | Yes |
+| `mantle_openai_responses` | Mantle | OpenAI Responses | Yes |
+| `mantle_openai_chat` | Mantle | OpenAI Chat Completions | Yes |
+| `mantle_anthropic_messages` | Mantle | Anthropic Messages | Yes |
+
+Route validation also enforces these rules:
+
+- The OpenAI-shaped styles (`runtime_openai_chat`, `mantle_openai_chat`, `mantle_openai_responses`) need `openai_base_path`. The other styles can't set it.
+- Only `mantle_openai_responses` can enable `responses` and `json_schema`, and it can't enable `chat_completions`.
+- Bedrock routes never serve embeddings, images or Decisions.
+
+`runtime_converse` also accepts optional `supports_strict_tools`. Without it, the gateway detects the model family from the model ID. Set it for opaque application inference profile IDs or ARNs, so Claude Opus 4.7 and 4.8 routes omit the `strict` tool field they reject.
+
+```yaml title="gateway.yaml"
+models:
+  - id: gpt-55-bedrock
+    routes:
+      - provider: bedrock-mantle-openai
+        upstream_model: openai.gpt-5.5
+        extra_headers:
+          OpenAI-Project: proj_123
+        compatibility:
+          aws_bedrock:
+            api_style: mantle_openai_responses
+            openai_base_path: /openai/v1
+```
+
+### Signing and auth
+
+With `auth.mode: default_chain` or `static_credentials`, the gateway signs requests with SigV4. Runtime providers sign for service `bedrock`, and Mantle providers for `bedrock-mantle`. The gateway doesn't sign `x-request-id`, because intermediaries can replace it. With `auth.mode: bearer`, the gateway sends the token as `Authorization: Bearer`, or as `x-api-key` on `mantle_anthropic_messages`. Set `upstream_model` to the model identity the endpoint and API style accept. See [Providers](/configuration/providers/) for the auth fields.
+
+### Runtime Anthropic InvokeModel
+
+`runtime_anthropic_invoke` sends non-streaming Chat Completions to `/model/<model-id>/invoke` with Anthropic's Messages body. The body includes:
+
+- `anthropic_version: bedrock-2023-05-31`.
+- `system` and `developer` text combined into Anthropic `system`.
+- `messages` with `text`, `image`, `tool_use` and `tool_result` blocks.
+- `max_tokens` from `max_tokens` or `max_completion_tokens`. Bedrock requires it, so the gateway rejects requests without it.
+- `temperature`, `top_p`, `top_k` and `stop_sequences`, subject to the sampling rules in [Claude thinking by model](#claude-thinking-by-model).
+- Function tools as Anthropic custom tools with `input_schema`.
+- `tool_choice` mapped from `auto`, `required` and named function choices. See [Forced tool choice](#forced-tool-choice).
+
+The gateway rejects OpenAI-only controls such as penalties, `n`, `seed`, `parallel_tool_calls` and `response_format`. `json_schema` is off for this style. `context_management`, `container` and `metadata` are copied through. Route `extra_body` is applied last, as an admin-controlled override.
+
+This style has no streaming path: the gateway rejects streaming requests on it locally. Use `runtime_converse` for ConverseStream, or `mantle_anthropic_messages` for Mantle Messages SSE.
+
+### Converse
+
+For Converse and ConverseStream, the gateway writes Claude thinking controls to `additionalModelRequestFields`:
+
+- Adaptive models get `thinking.type: "adaptive"` and a sibling `output_config.effort`, because Bedrock rejects effort inside `thinking`. A caller's `thinking.effort` moves to `output_config.effort`.
+- Manual-budget models get `type: "enabled"` and `budget_tokens` inside `thinking`.
+- Other `additionalModelRequestFields` keys are kept. Conflicting `thinking` values are rejected locally.
+
+Tool results accept text, JSON, base64 images and Bedrock document formats (`pdf`, `csv`, `doc`, `docx`, `xls`, `xlsx`, `html`, `md` and `txt`). Ordinary user content uses the same conversion. Document names lose their extension and are cleaned to Bedrock's allowed characters. Images must be base64: Bedrock rejects remote image URLs.
+
+Requests can include `requestMetadata`, `performanceConfig`, `guardrailConfig` and `additionalModelResponseFieldPaths` (or their snake_case aliases). The gateway checks AWS limits, enum values, guardrail shapes and RFC 6901 response paths before dispatch. `streamProcessingMode` is accepted for ConverseStream only. Route `extra_body` is merged afterwards.
+
+### Reasoning in responses
+
+Chat Completions content stays answer text and tool calls only. Claude `thinking` and `redacted_thinking` blocks, and Converse `reasoningContent` text, signatures and redacted data, never go into `message.content` or `delta.content`. The gateway keeps them under `choices[*].message.provider_metadata.aws_bedrock.reasoning`, and under `choices[*].delta.provider_metadata.aws_bedrock.reasoning` for ConverseStream. The public Messages endpoint keeps the same split when it runs through chat-backed execution.
+
+Some models default thinking display to `omitted`. Then a stream can open an empty thinking block, send only a signature delta, and then start normal text.
+
+## Claude thinking by model
+
+These rules apply to `reasoning_effort` and `reasoning.effort` on Claude routes (`anthropic_compat`, Vertex Claude and Bedrock Anthropic styles). The gateway classifies the model from `upstream_model` ([`crates/gateway-core/src/claude_models.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-core/src/claude_models.rs)).
+
+| Models | Behaviour |
+| --- | --- |
+| Opus 4.7 and later, and every Claude 5 family (Fable, Mythos, Opus, Sonnet, Haiku) | Adaptive only. Effort maps to `thinking: { "type": "adaptive" }` plus `output_config.effort`. Manual `thinking.type: "enabled"` and `budget_tokens` are rejected. Non-default `temperature`, `top_p` and `top_k` are rejected; default `temperature: 1` and `top_p: 1` are omitted. |
+| Opus 4.6, Sonnet 4.6 | Effort maps to adaptive thinking plus `output_config.effort`. Caller manual budgets pass through, because Anthropic still accepts them. |
+| Mythos Preview | Effort maps to adaptive thinking plus `output_config.effort`. `thinking.type: "disabled"` is rejected. |
+| Opus 4.5 | Adaptive thinking is rejected. See the note below. |
+| Sonnet 4.5, Haiku 4.5 and older | Adaptive thinking and `output_config.effort` are rejected. These models need a manual budget from `reasoning.budget_tokens`, `reasoning_budget_tokens`, `thinking_budget_tokens`, or `thinking.type: "enabled"` with `budget_tokens`. The gateway then sends manual `thinking.type: "enabled"`. |
+
+Opus 4.5 differs by transport. On Vertex and `anthropic_compat`, effort maps to `output_config.effort` only when the request also has a manual budget. On Bedrock, effort maps to `output_config.effort` with the `effort-2025-11-24` beta, and the gateway adds manual thinking only if a budget is supplied.
+
+For turning thinking off (`disabled` or `between_tools`), see [Model routing and APIs](/configuration/model-routing/).
+
+If `reasoning_effort` disagrees with `reasoning.effort`, `output_config.effort`, caller `thinking` or a manual budget, the request fails locally. Effort ceilings apply before provider mapping. Every explicit effort field must satisfy the ceiling, even when two fields agree, and transforms don't clamp or bypass it. See [Models and routes](/configuration/models-and-routes/) for ceilings.
+
+### Forced tool choice
+
+Some Claude models return 400 for a forced `tool_choice` on Messages, token counting and batches. The gateway rejects these requests with a local 400 on `anthropic_compat`, Vertex Claude and Bedrock (Converse and Runtime Anthropic) routes:
+
+| Forced `tool_choice` | Models |
+| --- | --- |
+| Rejected | Fable 5.1, Mythos 5.1, Opus 5.5, Sonnet 5.5 |
+| Accepted | Fable 5, Opus 5, Sonnet 5, Haiku 5.5 and earlier Claude models |
+
+Forced choices are OpenAI `required` and named function choices, and Anthropic `{"type": "any"}` and `{"type": "tool"}`. `auto`, `none` and an omitted `tool_choice` are always accepted. The gateway matches the model from `upstream_model`, so Bedrock application inference profile IDs and ARNs that hide the model name pass through to the upstream unchanged.
+
+### Thinking replay
+
+On `anthropic_compat` and Vertex Claude routes, the gateway keeps `thinking` and `redacted_thinking` blocks (with their signatures) in assistant history. If a Chat Completions caller sends back an assistant message with the `provider_metadata` reasoning the gateway returned, and no thinking blocks of its own, the gateway puts those blocks back at the start of the assistant turn. This keeps tool-use continuations valid. The Bedrock request mappers don't read `provider_metadata` reasoning back, so Chat Completions callers on Bedrock routes lose thinking continuity across tool turns.
+
+## OpenRouter routing policy
+
+OpenRouter uses `type: openai_compat` for transport. Its provider-selection policy is a separate route-level block:
+
+```yaml title="gateway.yaml"
+compatibility:
+  openrouter:
+    provider:
+      zdr: true
+      only: [openai, anthropic]
+      ignore: [deepinfra]
+      order: [openai, anthropic]
+      preferred_max_latency:
+        p90: 2.5
+      max_price:
+        prompt: 1.0
+        completion: 2.0
+```
+
+The gateway sends the block as `provider` in the upstream request body:
+
+- `zdr` limits routing to zero-data-retention endpoints.
+- `preferred_max_latency` is a preference. It takes a number, or `p50`, `p75`, `p90` and `p99` cutoffs in seconds.
+- `max_price` is a hard ceiling with `prompt`, `completion`, `request` and `image` dimensions.
+
+OpenRouter validates provider slugs. The gateway checks the shape, empty values, duplicate slugs, slugs in both `only` and `ignore`, and a conflicting `extra_body.provider` (you can't set both). The provider's `base_url` must point at OpenRouter.
+
+This policy is OpenRouter behaviour. It doesn't add multi-route fallback inside Oceans.
+
+## Stream normalisation
+
+The Chat Completions stream adapter keeps the SSE transcript OpenAI-shaped and smooths over common provider differences:
+
+- It adds one final `data: [DONE]` only after an upstream `[DONE]` or a chunk with a non-empty string `finish_reason`.
+- It copies `choices[*].usage` to top-level `usage` when top-level usage is missing, and keeps final usage-only chunks.
+- It maps `delta.reasoning_content` and `delta.reasoning_text` to `delta.reasoning` when no `delta.reasoning` exists.
+- On a malformed stream, a top-level error, or EOF before a terminal chunk, it sends a structured SSE error chunk and no `[DONE]`.
+
+It doesn't normalise tool-call streaming across providers ([issue #91](https://github.com/ahstn/oceans-llm/issues/91)).
+
+The Responses stream adapter is separate. It keeps `event: response.*` names and JSON payloads. It treats `response.completed` and `response.incomplete` as successful ends. It reports `response.failed`, top-level errors, conflicting status or type fields, Chat Completions payloads on a Responses stream, and early EOF, without adding `[DONE]`. It adds one final `data: [DONE]` only after a valid completed or incomplete event.
+
+Bedrock ConverseStream doesn't use SSE, so a separate adapter decodes AWS EventStream frames and turns them into Chat Completions SSE chunks:
+
+- `messageStart` sends the assistant role.
+- `contentBlockDelta` sends text, function-argument deltas, or reasoning metadata deltas.
+- `messageStop` sends the finish reason.
+- `metadata.usage` sends an OpenAI-shaped usage chunk.
+- Exception frames and malformed or incomplete frames send structured SSE error chunks with no `[DONE]`.
+
+The frame parser checks frame lengths (up to 16 MiB), header bounds, header encodings, JSON payloads and clean finalisation. It reads the prelude and message CRC fields but doesn't verify the checksums.
+
+## Replay identifiers
+
+The gateway keeps provider-native IDs that already suit the target API:
+
+- Invalid or too-long Bedrock tool-use and tool-result IDs become the same deterministic `tool_<SHA-256>` value on both sides of the pair, at most 64 characters.
+- Responses replay keeps valid native `fc_`, `rs_` and `msg_` item IDs. It hashes foreign or invalid item IDs into the matching prefix, at most 64 characters. Matching `function_call` and `function_call_output` `call_id` values get the same deterministic `call_` value.
+- Missing optional Responses item IDs stay missing.
+
+This is per request and stateless. It doesn't mean an ID belongs to a stored upstream response.
+
+## Accounting boundary
+
+Compatibility profiles can make usage appear in a standard place more often. They don't change how the gateway prices or charges it.
+
+The gateway reads prompt, completion and total tokens from each response. Where the provider reports them, it also records uncached input, cache-read, cache-write and image-output tokens. Other provider counters, such as reasoning tokens, stay in the stored provider usage and aren't priced separately. See [Pricing catalog and accounting](/configuration/pricing-and-accounting/) for how these are priced.
+
+- Responses usage comes from `usage.input_tokens`, `usage.output_tokens` and `usage.total_tokens`. Streaming Responses read it from the completed event's `response.usage`.
+- Vertex text embeddings read real token counts: `predictions[].embeddings.statistics.token_count` on `:predict` models, and `usageMetadata.promptTokenCount` on `gemini-embedding-2`. The gateway never infers tokens from characters or bytes.
+
+A successful request with no usable token counts is marked `usage_missing`. One whose model has no exact pricing entry is marked `unpriced`. Neither consumes budget.
+
+## Open work
+
+- Provider compatibility umbrella: [issue #53](https://github.com/ahstn/oceans-llm/issues/53).
+- Direct Google Generative AI provider: [issue #90](https://github.com/ahstn/oceans-llm/issues/90).
+- Cross-provider tool-call stream normalisation: [issue #91](https://github.com/ahstn/oceans-llm/issues/91).
+- Cache, reasoning and modality token accounting: [issue #92](https://github.com/ahstn/oceans-llm/issues/92).
+- Image and file inputs across provider families: [issue #93](https://github.com/ahstn/oceans-llm/issues/93).
+- Route readiness diagnostics: [issue #98](https://github.com/ahstn/oceans-llm/issues/98).
