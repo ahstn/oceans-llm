@@ -327,7 +327,6 @@ pub fn render_config(sources: &ConfigSources, show_sources: bool) -> anyhow::Res
         let mut document = parse_yaml_mapping(path, text)?;
         take_collections(&mut document, &mut collections)?;
     }
-    ensure_render_matches_load(&collections, &loaded.sources)?;
     for collection in FRAGMENT_COLLECTIONS {
         if let Some(entries) = collections.remove(collection) {
             merged.insert(
@@ -338,6 +337,7 @@ pub fn render_config(sources: &ConfigSources, show_sources: bool) -> anyhow::Res
     }
 
     let mut merged = Value::Mapping(merged);
+    ensure_render_matches_load(&merged, &loaded.config)?;
     redact_secrets(&mut merged, RedactScope::Plain);
     let mut rendered = serde_yaml::to_string(&merged)?;
     if show_sources {
@@ -491,32 +491,16 @@ fn take_collections(
     Ok(())
 }
 
-/// Render rebuilds the keyed collections from raw YAML, while the load deserializes them into
-/// typed entries. Both use [`keyed_entries`] and the same documents, but a change to either path
-/// could still make them disagree, so render fails rather than print a config that was not loaded.
-fn ensure_render_matches_load(
-    collections: &BTreeMap<&'static str, Mapping>,
-    sources: &[ConfigEntitySource],
-) -> anyhow::Result<()> {
-    for collection in FRAGMENT_COLLECTIONS {
-        let rendered: Vec<&str> = collections
-            .get(collection)
-            .into_iter()
-            .flat_map(Mapping::keys)
-            .filter_map(Value::as_str)
-            .map(str::trim)
-            .collect();
-        let loaded: Vec<&str> = sources
-            .iter()
-            .filter(|source| source.collection == collection)
-            .map(|source| source.id.as_str())
-            .collect();
-        if rendered != loaded {
-            bail!(
-                "rendered {collection} {rendered:?} differ from the loaded {collection} {loaded:?}; \
-                 this is a gateway bug"
-            );
-        }
+/// Render rebuilds the merged config from raw YAML, while the load deserializes typed entries
+/// file by file. Parsing the rendered value must give back exactly the loaded config, field by
+/// field, so render fails rather than print a config that was not loaded. Every inferred value is
+/// filled during parsing, so both sides carry it. Config types keep ordered maps, so their `Debug`
+/// output compares deterministically.
+fn ensure_render_matches_load(merged: &Value, loaded: &GatewayConfig) -> anyhow::Result<()> {
+    let rendered: GatewayConfig = serde_yaml::from_value(merged.clone())
+        .context("rendered config does not parse back; this is a gateway bug")?;
+    if format!("{rendered:?}") != format!("{loaded:?}") {
+        bail!("rendered config differs from the loaded config; this is a gateway bug");
     }
     Ok(())
 }
@@ -539,31 +523,19 @@ fn parse_yaml_mapping(path: &Path, raw: &str) -> anyhow::Result<Mapping> {
 mod tests {
     use super::*;
 
-    fn source(collection: &'static str, id: &str) -> ConfigEntitySource {
-        ConfigEntitySource {
-            collection,
-            id: id.to_string(),
-            path: PathBuf::from("gateway.yaml"),
-        }
-    }
-
     #[test]
-    fn render_fails_when_its_collections_differ_from_the_load() {
-        let mut collections = BTreeMap::new();
-        let mut models = Mapping::new();
-        models.insert(
-            Value::String("fast".to_string()),
-            Value::Mapping(Mapping::new()),
-        );
-        collections.insert("models", models);
+    fn render_fails_when_its_merge_differs_from_the_load() {
+        let yaml = "providers:\n  openai:\n    type: openai_compat\n    base_url: https://api.openai.com/v1\nmodels:\n  fast:\n    route: { provider: openai, upstream_model: gpt-5-mini }\n";
+        let loaded: GatewayConfig = serde_yaml::from_str(yaml).expect("config parses");
+        let merged: Value = serde_yaml::from_str(yaml).expect("yaml parses");
+        ensure_render_matches_load(&merged, &loaded).expect("same config");
 
-        let matching = [source("models", "fast")];
-        ensure_render_matches_load(&collections, &matching).expect("same ids");
-
-        let dropped = [source("models", "fast"), source("models", "smart")];
-        let error = ensure_render_matches_load(&collections, &dropped)
-            .expect_err("render dropped a loaded model")
+        // A field-level difference, not only a missing id, is caught.
+        let drifted: Value =
+            serde_yaml::from_str(&yaml.replace("gpt-5-mini", "gpt-5")).expect("yaml parses");
+        let error = ensure_render_matches_load(&drifted, &loaded)
+            .expect_err("render changed a route field")
             .to_string();
-        assert!(error.contains("smart"), "{error}");
+        assert!(error.contains("differs from the loaded config"), "{error}");
     }
 }
