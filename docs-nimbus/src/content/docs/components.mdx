@@ -1,0 +1,167 @@
+---
+title: Components
+description: The components every page can use, and the MDX that renders each one.
+sidebar:
+  order: 4
+---
+
+Every `.mdx` file can use these components without an import. Each one is a file in `src/components/ui/`, so you can change how it looks or works.
+
+## Aside
+
+Set a note, tip, caution, or warning apart from the text around it.
+
+<Aside type="note">
+  Pages are validated at build time.
+</Aside>
+
+<Aside type="caution" title="Before you deploy">
+  Set `site` in `astro.config.ts` to your production URL.
+</Aside>
+
+```mdx
+<Aside type="note">
+  Pages are validated at build time.
+</Aside>
+
+<Aside type="caution" title="Before you deploy">
+  Set `site` in `astro.config.ts` to your production URL.
+</Aside>
+```
+
+| Prop | Value |
+|---|---|
+| `type` | `note` (default), `tip`, `caution`, or `danger` |
+| `title` | Text above the content. Defaults to the type's name. |
+| `icon` | Any `ph:` icon name, in place of the type's icon. |
+
+For a title with formatting, pass it as a slot: `<Fragment slot="title">Uses <code>env</code></Fragment>`.
+
+## Steps
+
+Number a procedure. Each step has a title and its own content.
+
+<Steps>
+  <Step title="Create the page">
+    Add `src/content/docs/deploy.mdx` with a `title`.
+  </Step>
+  <Step title="Preview it">
+    Run `npm run dev` and open the page.
+  </Step>
+</Steps>
+
+```mdx
+<Steps>
+  <Step title="Create the page">
+    Add `src/content/docs/deploy.mdx` with a `title`.
+  </Step>
+  <Step title="Preview it">
+    Run `npm run dev` and open the page.
+  </Step>
+</Steps>
+```
+
+| Prop | Value |
+|---|---|
+| `start` on `Steps` | The first step's number. Defaults to 1. |
+| `title` on `Step` | The step's heading. Also accepts a `title` slot. |
+
+## Tabs
+
+Show the same content in several variants. Give tabs a `syncKey`, and the reader's choice carries over to every set of tabs with the same key.
+
+<Tabs syncKey="os">
+  <TabItem label="macOS">
+    Press <kbd>⌘</kbd> <kbd>K</kbd> to search.
+  </TabItem>
+  <TabItem label="Windows">
+    Press <kbd>Ctrl</kbd> <kbd>K</kbd> to search.
+  </TabItem>
+</Tabs>
+
+```mdx
+<Tabs syncKey="os">
+  <TabItem label="macOS">
+    Press <kbd>⌘</kbd> <kbd>K</kbd> to search.
+  </TabItem>
+  <TabItem label="Windows">
+    Press <kbd>Ctrl</kbd> <kbd>K</kbd> to search.
+  </TabItem>
+</Tabs>
+```
+
+| Prop | Value |
+|---|---|
+| `syncKey` on `Tabs` | Tabs with the same key switch together, and remember the choice. |
+| `label` on `TabItem` | The tab's name. Required. |
+
+## Package managers
+
+Write an install command once and show it for npm, pnpm, Yarn, and Bun.
+
+<PackageManagers pkg="your-package" />
+
+```mdx
+<PackageManagers pkg="your-package" />
+```
+
+Add `dev` for a dev dependency, or `type="run" args="build"` for a script.
+
+## Cards
+
+Link readers to the next places to go, in a grid that stacks on small screens.
+
+<CardGrid>
+  <Card title="Write a page" icon="ph:pencil-simple">
+    Create an `.mdx` file in `src/content/docs/`.
+  </Card>
+  <Card title="Change the theme" icon="ph:palette">
+    Edit the colour and type tokens in `src/styles/globals.css`.
+  </Card>
+</CardGrid>
+
+```mdx
+<CardGrid>
+  <Card title="Write a page" icon="ph:pencil-simple">
+    Create an `.mdx` file in `src/content/docs/`.
+  </Card>
+  <Card title="Change the theme" icon="ph:palette">
+    Edit the colour and type tokens in `src/styles/globals.css`.
+  </Card>
+</CardGrid>
+```
+
+| Prop | Value |
+|---|---|
+| `title` on `Card` | The card's heading. Also accepts a `title` slot. |
+| `icon` on `Card` | Any `ph:` icon name. Also accepts an `icon` slot. |
+
+Icons come from [Phosphor](https://phosphoricons.com): use any name with the `ph:` prefix.
+
+## Partials
+
+Write a passage once and include it on any page. Partials live in `src/content/partials/`.
+
+<Render file="example" />
+
+```mdx
+<Render file="example" />
+```
+
+## Restyle any part
+
+Every part of every component has a `data-slot` attribute, so you can restyle one piece from `src/styles/globals.css` without editing the component.
+
+```css title="src/styles/globals.css"
+[data-slot="card-title"] {
+  letter-spacing: -0.01em;
+}
+```
+
+Corners come from two tokens in the same file: `--nb-radius` for cards, callouts, code blocks and buttons, and `--nb-radius-sm` for the small marks inside them. Change them to re-round the whole site.
+
+## Add more
+
+Accordions, file trees, link cards, embeds, and more install from the registry when you need them. Each one lands as a file in `src/components/ui/`, like the components above.
+
+<PackageManagers type="dlx" pkg="@cloudflare/nimbus-docs" args="add accordion" />
