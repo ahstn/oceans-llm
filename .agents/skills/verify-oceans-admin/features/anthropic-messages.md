@@ -15,6 +15,7 @@ Clients use `POST /v1/messages` (or `/messages`) with Anthropic messages, tools,
 - `messages-native-fidelity` preserves native request bodies, content order, server-tool/future blocks, stop reasons, complete usage, extension headers and unknown SSE events across native transports.
 - `messages-rolling-aliases` sends adaptive/effort controls unchanged for rolling or unknown native model identities; known explicit models retain local validation.
 - `messages-chat-replay` checks ordered Chat continuation state, public-projection validation and replay invalidation after output guardrail transforms.
+- `messages-compaction` checks complete compaction snapshots, nullable summaries and encrypted checkpoints, following Chat text and continuation through both Anthropic stream adapters.
 - `messages-provider-terminals` checks Gemini and Bedrock terminal truth, late usage after errors, and independently checksummed EventStream frames.
 
 ## How to get to it (user POV)
@@ -51,6 +52,7 @@ Preconditions:
    | Thinking modes | Manual `enabled` budgets remain valid on older and unknown models, including combined budget/effort aliases; unknown manual models do not receive invented native effort; explicit native effort and model-specific disabled/between-tools restrictions remain intact |
    | Negative controls | Invalid display identifies display; real adaptive budgets identify budget; conflicting budget/effort aliases fail; invalid effort values are not silently converted |
    | Native continuity | Empty signed thinking, signatures, tool-use IDs/results, cache boundaries, beta extensions, in-sequence system effort messages and safeguard results survive mapping |
+   | Chat compaction | Complete summary deltas replace snapshots rather than append; null summaries and present/absent/null encrypted checkpoints remain distinct; following text and ordered continuation survive both Chat adapters; malformed values or block boundaries fail without replay or success while retaining late usage |
    | Beta transport | Repeated caller beta headers merge with configured/body opt-ins without duplicates; direct Anthropic, Vertex and Mantle use a header, Runtime uses `anthropic_beta`; Messages and token counting preserve opt-ins without forwarding caller credentials; oversized beta lists and names fail locally before dispatch, while allowed unknown names retain their order |
    | Streaming | Assistant role appears first and once, metadata does not precede it, usage is retained, tool/content blocks close in order and `message_stop` terminates the response; pending metadata survives DONE/EOF even without a finish reason |
    | Gateway behavior | Authentication/model grants, response/error shape, accounting, exhausted-budget rejection before provider dispatch and request logging |

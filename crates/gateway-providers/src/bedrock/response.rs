@@ -258,6 +258,8 @@ where
                     && let Err(message) = replay.observe(&value)
                 {
                     replay_error = Some(message);
+                    replay = crate::anthropic::replay::AnthropicReplayStream::default();
+                    initial_tool_inputs.clear();
                 }
                 if let Some(message) = replay_error {
                     let finish_reason = value.get("delta")
@@ -292,7 +294,7 @@ where
                 }
                 if event_type == "message_stop" && !native_content_sent {
                     let mut delta = Map::new();
-                    preserve_anthropic_replay_metadata(&mut delta, &replay.message(), provider_namespace);
+                    preserve_anthropic_replay_metadata(&mut delta, replay.take_message(), provider_namespace);
                     yield Ok(render_sse_event_chunk(None, &anthropic_stream_chunk(
                         &id, created, &context, Value::Object(delta), None, None,
                     ).to_string()));
@@ -495,7 +497,7 @@ where
                         &mut delta, &value, provider_namespace, "message_delta",
                     );
                     if finish_reason.is_some() && !native_content_sent {
-                        preserve_anthropic_replay_metadata(&mut delta, &replay.message(), provider_namespace);
+                        preserve_anthropic_replay_metadata(&mut delta, replay.take_message(), provider_namespace);
                         native_content_sent = true;
                     }
                     if finish_reason.is_some() || usage.is_some() || !delta.is_empty() {
@@ -547,7 +549,7 @@ where
 
 fn preserve_anthropic_replay_metadata(
     delta: &mut Map<String, Value>,
-    message: &Value,
+    message: Value,
     provider_namespace: &str,
 ) {
     let thinking = message
@@ -559,14 +561,14 @@ fn preserve_anthropic_replay_metadata(
         let metadata = delta
             .entry("provider_metadata")
             .or_insert_with(|| json!({}));
-        metadata[provider_namespace]["reasoning"] =
-            json!({"source":"anthropic_messages","blocks":thinking});
+        let mut reasoning = json!({"source":"anthropic_messages"});
+        reasoning["blocks"] = Value::Array(thinking);
+        metadata[provider_namespace]["reasoning"] = reasoning;
     }
-    crate::anthropic::response::preserve_anthropic_message_metadata(
+    crate::anthropic::response::attach_owned_anthropic_terminal_replay(
         delta,
         message,
         provider_namespace,
-        "message",
     );
 }
 
@@ -586,10 +588,11 @@ pub(super) fn anthropic_stream_chunk(
         "provider_model": context.upstream_model,
         "choices": [{
             "index": 0,
-            "delta": delta,
+            "delta": null,
             "finish_reason": finish_reason
         }]
     });
+    chunk["choices"][0]["delta"] = delta;
     if let Some(usage) = usage
         && let Some(object) = chunk.as_object_mut()
     {

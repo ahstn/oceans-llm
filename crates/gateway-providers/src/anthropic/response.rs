@@ -80,6 +80,8 @@ pub fn normalize_anthropic_response(
     Value::Object(completion)
 }
 
+const ANTHROPIC_MESSAGE_FIELDS: [&str; 3] = ["stop_reason", "stop_sequence", "safeguard_results"];
+
 /// Keep native continuation state and opaque blocks through the common chat representation.
 pub(crate) fn preserve_anthropic_message_metadata(
     message: &mut Map<String, Value>,
@@ -88,13 +90,10 @@ pub(crate) fn preserve_anthropic_message_metadata(
     event: &str,
 ) {
     let mut fields = Map::new();
-    for field in ["stop_reason", "stop_sequence"] {
+    for field in ANTHROPIC_MESSAGE_FIELDS {
         if let Some(value) = source.get(field) {
             fields.insert(field.to_string(), value.clone());
         }
-    }
-    if let Some(results) = source.get("safeguard_results") {
-        fields.insert("safeguard_results".to_string(), results.clone());
     }
     if event == "message_delta"
         && let Some(results) = source
@@ -124,6 +123,37 @@ pub(crate) fn preserve_anthropic_message_metadata(
     if let Some(blocks) = blocks {
         metadata[provider_namespace]["native_content"] =
             json!({"source": "anthropic_messages", "blocks": blocks});
+    }
+}
+
+/// Move the completed replay snapshot into terminal metadata. The inline continuation
+/// contract requires retaining one complete block sequence, not another full copy.
+pub(crate) fn attach_owned_anthropic_terminal_replay(
+    message: &mut Map<String, Value>,
+    source: Value,
+    provider_namespace: &str,
+) {
+    let Value::Object(mut source) = source else {
+        return;
+    };
+    let blocks = source.remove("content").filter(Value::is_array);
+    let fields: Map<String, Value> = ANTHROPIC_MESSAGE_FIELDS
+        .into_iter()
+        .filter_map(|field| source.remove_entry(field))
+        .collect();
+    if fields.is_empty() && blocks.is_none() {
+        return;
+    }
+    let metadata = message
+        .entry("provider_metadata")
+        .or_insert_with(|| json!({}));
+    if !fields.is_empty() {
+        metadata[provider_namespace]["message"] = Value::Object(fields);
+    }
+    if let Some(blocks) = blocks {
+        let mut native_content = json!({"source": "anthropic_messages"});
+        native_content["blocks"] = blocks;
+        metadata[provider_namespace]["native_content"] = native_content;
     }
 }
 

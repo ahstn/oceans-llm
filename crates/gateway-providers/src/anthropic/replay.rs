@@ -115,6 +115,26 @@ impl AnthropicReplayStream {
                             .ok_or("native citations are not an array")?
                             .push(citation.clone());
                     }
+                    Some("compaction_delta") => {
+                        if block.get("type").and_then(Value::as_str) != Some("compaction") {
+                            return Err("native compaction delta does not match block");
+                        }
+                        let content = delta
+                            .get("content")
+                            .filter(|value| value.is_null() || value.is_string())
+                            .ok_or("native compaction delta has invalid content")?;
+                        let encrypted = delta.get("encrypted_content");
+                        if encrypted.is_some_and(|value| !value.is_null() && !value.is_string()) {
+                            return Err("native compaction delta has invalid encrypted content");
+                        }
+                        let object = block
+                            .as_object_mut()
+                            .ok_or("native block is not an object")?;
+                        object.insert("content".into(), content.clone());
+                        if let Some(encrypted) = encrypted {
+                            object.insert("encrypted_content".into(), encrypted.clone());
+                        }
+                    }
                     _ => {
                         return Err(
                             "unsupported native content delta cannot be replayed faithfully",
@@ -158,11 +178,11 @@ impl AnthropicReplayStream {
         Ok(())
     }
 
-    pub(crate) fn message(&self) -> Value {
-        let mut message = self.message.clone();
+    pub(crate) fn take_message(&mut self) -> Value {
+        let mut message = std::mem::take(&mut self.message);
         message.insert(
             "content".into(),
-            Value::Array(self.blocks.values().cloned().collect()),
+            Value::Array(std::mem::take(&mut self.blocks).into_values().collect()),
         );
         Value::Object(message)
     }

@@ -438,11 +438,12 @@ impl BedrockConverseStreamNormalizer {
                         fields.clone();
                 }
                 let mut replayable = !malformed;
+                let tool_inputs = std::mem::take(&mut self.tool_inputs);
                 if replayable {
-                    for (index, input) in &self.tool_inputs {
-                        match serde_json::from_str::<Value>(input) {
+                    for (index, input) in tool_inputs {
+                        match serde_json::from_str::<Value>(&input) {
                             Ok(input) => {
-                                self.native_blocks.get_mut(index).expect("started tool")["toolUse"]
+                                self.native_blocks.get_mut(&index).expect("started tool")["toolUse"]
                                     ["input"] = input;
                             }
                             Err(error) => {
@@ -458,18 +459,21 @@ impl BedrockConverseStreamNormalizer {
                         }
                     }
                 }
+                let native_blocks = std::mem::take(&mut self.native_blocks);
+                let reasoning = native_blocks
+                    .values()
+                    .filter_map(|block| block.get("reasoningContent"))
+                    .filter_map(normalize_bedrock_reasoning_content)
+                    .collect::<Vec<_>>();
+                let mut reasoning_metadata = json!({"source": "bedrock_converse_stream"});
+                reasoning_metadata["blocks"] = Value::Array(reasoning);
+                delta["provider_metadata"]["aws_bedrock"]["reasoning"] = reasoning_metadata;
                 if replayable {
-                    delta["provider_metadata"]["aws_bedrock"]["native_content"] = json!({
-                        "source": "bedrock_converse",
-                        "blocks": self.native_blocks.values().collect::<Vec<_>>(),
-                    });
+                    // Ordered inline continuation requires one complete replay sequence.
+                    let mut native_content = json!({"source": "bedrock_converse"});
+                    native_content["blocks"] = Value::Array(native_blocks.into_values().collect());
+                    delta["provider_metadata"]["aws_bedrock"]["native_content"] = native_content;
                 }
-                delta["provider_metadata"]["aws_bedrock"]["reasoning"] = json!({
-                    "source": "bedrock_converse_stream",
-                    "blocks": self.native_blocks.values()
-                        .filter_map(|block| block.get("reasoningContent"))
-                        .filter_map(normalize_bedrock_reasoning_content).collect::<Vec<_>>(),
-                });
                 actions.push(BedrockStreamAction::Chunk(self.delta_chunk(
                     delta,
                     if self.generation_failure.is_some() {
@@ -573,7 +577,7 @@ impl BedrockConverseStreamNormalizer {
     }
 
     pub(super) fn delta_chunk(&self, delta: Value, finish_reason: Value) -> Value {
-        json!({
+        let mut chunk = json!({
             "id": self.id,
             "object": "chat.completion.chunk",
             "created": self.created,
@@ -581,10 +585,12 @@ impl BedrockConverseStreamNormalizer {
             "provider_model": self.provider_model,
             "choices": [{
                 "index": 0,
-                "delta": delta,
+                "delta": null,
                 "finish_reason": finish_reason
             }]
-        })
+        });
+        chunk["choices"][0]["delta"] = delta;
+        chunk
     }
 
     pub(super) fn usage_chunk(&self, usage: Value) -> Value {

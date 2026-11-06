@@ -491,6 +491,10 @@ The mapper validates the public text, reasoning where present, and ordered tool 
 
 This retains signed thinking order, redacted content, server tools, citations and future blocks without inventing their schema. Anthropic context-window exhaustion maps to `length`; native stop reasons, including `pause_turn`, remain in message metadata. The gateway does not implement a client's pause/resume or hosted-tool loop.
 
+Anthropic compaction deltas carry a complete summary, not text fragments. Both Chat stream adapters replace the compaction snapshot, preserve null summaries, and distinguish absent encrypted checkpoints from explicit null. Text after compaction remains visible, and the compaction block stays in continuation metadata. Malformed compaction values or block boundaries fail the stream without a successful terminal while retaining observed usage.
+
+Inline Chat continuation requires one complete ordered replay sequence, so replay memory remains proportional to response size. Terminal assembly transfers ownership of blocks instead of cloning the full sequence, releases parsed tool-input buffers, and discards failed replay state. Required legacy reasoning fields and serialized SSE output still use memory; this is not a constant-memory or spooled protocol.
+
 Output guardrail transformations invalidate opaque replay snapshots, indexed native events and signature-bearing reasoning state across the response or buffered stream. This prevents original text or tool arguments from leaking through metadata or a later complete snapshot. Native Messages itself remains a separate opaque transport. Successful native JSON must be valid UTF-8; incomplete bodies and body-read timeouts remain upstream failures.
 
 ## Accounting Boundary

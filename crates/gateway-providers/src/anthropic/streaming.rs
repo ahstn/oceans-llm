@@ -8,8 +8,8 @@ use serde_json::{Map, Value, json};
 
 use super::replay::AnthropicReplayStream;
 use super::response::{
-    anthropic_usage_total, map_anthropic_finish_reason, map_anthropic_stream_usage,
-    preserve_anthropic_message_metadata,
+    anthropic_usage_total, attach_owned_anthropic_terminal_replay, map_anthropic_finish_reason,
+    map_anthropic_stream_usage, preserve_anthropic_message_metadata,
 };
 use crate::streaming::{done_sse_chunk, openai_sse_error_chunk};
 
@@ -89,6 +89,8 @@ where
                     && let Err(error) = replay.observe(&payload)
                 {
                     replay_error = Some(error);
+                    replay = AnthropicReplayStream::default();
+                    tool_initial_arguments.clear();
                 }
                 // A malformed generated block can still be billable. Drain final usage before
                 // reporting failure, but never publish a successful finish or partial replay.
@@ -318,11 +320,10 @@ where
                                 None,
                                 Some(map_anthropic_finish_reason(reason)),
                             );
-                            preserve_anthropic_message_metadata(
+                            attach_owned_anthropic_terminal_replay(
                                 finish["choices"][0]["delta"].as_object_mut().expect("delta object"),
-                                &replay.message(),
+                                replay.take_message(),
                                 provider_namespace,
-                                "message",
                             );
                             if let Some(usage) = usage {
                                 finish["usage"] = usage;
@@ -349,11 +350,10 @@ where
                                 None,
                                 Some("stop"),
                             );
-                            preserve_anthropic_message_metadata(
+                            attach_owned_anthropic_terminal_replay(
                                 finish["choices"][0]["delta"].as_object_mut().expect("delta object"),
-                                &replay.message(),
+                                replay.take_message(),
                                 provider_namespace,
-                                "message",
                             );
                             yield Ok(openai_sse_chunk(&finish));
                             finish_emitted = true;

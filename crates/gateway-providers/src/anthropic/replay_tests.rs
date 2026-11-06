@@ -457,6 +457,259 @@ fn foreign_native_history_uses_public_chat_projection_without_replaying_foreign_
     ));
 }
 
+async fn compaction_chat_chunks(events: Vec<Value>, bedrock: bool) -> (Vec<Value>, bool) {
+    let upstream = futures_util::stream::iter(
+        events
+            .into_iter()
+            .map(|event| Ok(Bytes::from(format!("data: {event}\n\n")))),
+    );
+    let mut stream = if bedrock {
+        crate::bedrock::normalize_anthropic_messages_stream(upstream, context(), "aws_bedrock")
+    } else {
+        normalize_anthropic_stream(
+            upstream,
+            "test".into(),
+            0,
+            "claude".into(),
+            "anthropic_compat",
+            "anthropic",
+        )
+    };
+    let mut parser = SseEventParser::default();
+    let mut chunks = Vec::new();
+    let mut done = false;
+    while let Some(chunk) = stream.next().await {
+        for event in parser.push_bytes(&chunk.unwrap()).unwrap() {
+            if event.data == "[DONE]" {
+                done = true;
+            } else {
+                chunks.push(serde_json::from_str(&event.data).unwrap());
+            }
+        }
+    }
+    (chunks, done)
+}
+
+fn compaction_events(start: Value, deltas: Vec<Value>) -> Vec<Value> {
+    let mut events = vec![
+        json!({"type":"message_start","message":{"role":"assistant","content":[],
+            "usage":{"input_tokens":10,"output_tokens":0}}}),
+        json!({"type":"content_block_start","index":0,"content_block":start}),
+    ];
+    events.extend(
+        deltas
+            .into_iter()
+            .map(|delta| json!({"type":"content_block_delta","index":0,"delta":delta})),
+    );
+    events.extend([
+        json!({"type":"content_block_stop","index":0}),
+        json!({"type":"content_block_start","index":1,
+            "content_block":{"type":"text","text":"Visible "}}),
+        json!({"type":"content_block_delta","index":1,
+            "delta":{"type":"text_delta","text":"after compaction"}}),
+        json!({"type":"content_block_stop","index":1}),
+        json!({"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},
+            "usage":{"output_tokens":7}}),
+        json!({"type":"message_delta","delta":{},"usage":{"output_tokens":9}}),
+        json!({"type":"message_stop"}),
+    ]);
+    events
+}
+
+async fn assert_compaction_chat_replay(start: Value, deltas: Vec<Value>, expected: Value) {
+    for bedrock in [false, true] {
+        let namespace = if bedrock {
+            "aws_bedrock"
+        } else {
+            "anthropic_compat"
+        };
+        let (chunks, done) =
+            compaction_chat_chunks(compaction_events(start.clone(), deltas.clone()), bedrock).await;
+        let mut text = String::new();
+        let mut metadata = Map::new();
+        let mut usage = Value::Null;
+        let mut finish = None;
+        let mut error = None;
+        for chunk in chunks {
+            if let Some(value) = chunk.get("error") {
+                error = Some(value.clone());
+            }
+            if let Some(value) = chunk.get("usage") {
+                usage = value.clone();
+            }
+            let delta = &chunk["choices"][0]["delta"];
+            if let Some(part) = delta["content"].as_str() {
+                text.push_str(part);
+            }
+            if let Some(native) = delta["provider_metadata"][namespace].as_object() {
+                metadata.extend(native.clone());
+            }
+            if let Some(reason) = chunk["choices"][0]["finish_reason"].as_str() {
+                finish = Some(reason.to_string());
+            }
+        }
+        assert_eq!(text, "Visible after compaction", "{namespace}: {error:?}");
+        assert_eq!(error, None, "{namespace}");
+        assert!(done, "{namespace}");
+        assert_eq!(finish.as_deref(), Some("stop"), "{namespace}");
+        assert_eq!(usage["completion_tokens"], 9, "{namespace}");
+        let expected_blocks = json!([
+            expected,
+            {"type":"text","text":"Visible after compaction"}
+        ]);
+        assert_eq!(
+            metadata["native_content"]["blocks"], expected_blocks,
+            "{namespace}"
+        );
+        let message = json!({"role":"assistant","content":text,
+            "provider_metadata":{namespace:metadata}});
+        assert_eq!(
+            replay(&message).unwrap()["messages"][0]["content"],
+            expected_blocks,
+            "{namespace}"
+        );
+    }
+}
+
+// The documented wire sequence is start -> ONE delta containing the complete summary -> stop.
+// https://platform.claude.com/docs/en/build-with-claude/compaction-threshold#streaming
+#[tokio::test]
+async fn compaction_delta_preserves_following_text_and_continuation_in_both_chat_normalizers() {
+    assert_compaction_chat_replay(
+        json!({"type":"compaction","content":null,"encrypted_content":null,"future":{"keep":true}}),
+        vec![
+            json!({"type":"compaction_delta","content":"Complete conversation summary.",
+            "encrypted_content":"opaque-checkpoint"}),
+        ],
+        json!({"type":"compaction","content":"Complete conversation summary.",
+            "encrypted_content":"opaque-checkpoint","future":{"keep":true}}),
+    )
+    .await;
+}
+
+// Defensive repeated snapshots must replace, not concatenate; they are not text fragments.
+// Explicit null means failed compaction, whereas a missing beta-gated checkpoint key is absent.
+// https://github.com/anthropics/anthropic-sdk-typescript/blob/832402e8036a2815c9bc13cdce2373b79b0e96cb/src/lib/BetaMessageStream.ts#L806-L815
+#[tokio::test]
+async fn compaction_delta_replaces_snapshots_and_distinguishes_null_from_absent_checkpoints() {
+    for (deltas, expected) in [
+        (
+            vec![
+                json!({"type":"compaction_delta","content":"Superseded summary.",
+                    "encrypted_content":"superseded-checkpoint"}),
+                json!({"type":"compaction_delta","content":"Final complete summary.",
+                    "encrypted_content":"final-checkpoint"}),
+            ],
+            json!({"type":"compaction","content":"Final complete summary.",
+                "encrypted_content":"final-checkpoint"}),
+        ),
+        (
+            vec![
+                json!({"type":"compaction_delta","content":"Superseded summary.",
+                    "encrypted_content":"superseded-checkpoint"}),
+                json!({"type":"compaction_delta","content":null,"encrypted_content":null}),
+            ],
+            json!({"type":"compaction","content":null,"encrypted_content":null}),
+        ),
+        (
+            vec![json!({"type":"compaction_delta","content":"Complete summary."})],
+            json!({"type":"compaction","content":"Complete summary.",
+                "encrypted_content":"start-checkpoint"}),
+        ),
+        (
+            vec![json!({"type":"compaction_delta","content":null,
+                "encrypted_content":"opaque-checkpoint"})],
+            json!({"type":"compaction","content":null,"encrypted_content":"opaque-checkpoint"}),
+        ),
+    ] {
+        assert_compaction_chat_replay(
+            json!({"type":"compaction","content":null,"encrypted_content":"start-checkpoint"}),
+            deltas,
+            expected,
+        )
+        .await;
+    }
+}
+
+#[tokio::test]
+async fn compaction_delta_rejects_malformed_values_and_mismatched_boundaries_without_replay() {
+    let start = json!({"type":"content_block_start","index":0,
+        "content_block":{"type":"compaction","content":null,"encrypted_content":null}});
+    let delta = json!({"type":"content_block_delta","index":0,
+        "delta":{"type":"compaction_delta","content":"Complete summary.","encrypted_content":"opaque"}});
+    let stop = json!({"type":"content_block_stop","index":0});
+    let mut cases = vec![
+        vec![delta.clone()],
+        vec![start.clone(), stop.clone(), delta.clone()],
+        vec![start.clone(), delta.clone()],
+        vec![
+            json!({"type":"content_block_start","index":0,
+                "content_block":{"type":"text","text":""}}),
+            delta.clone(),
+            stop.clone(),
+        ],
+    ];
+    for malformed in [
+        json!({"type":"compaction_delta","encrypted_content":"opaque"}),
+        json!({"type":"compaction_delta","content":42}),
+        json!({"type":"compaction_delta","content":"Summary","encrypted_content":{"opaque":true}}),
+    ] {
+        cases.push(vec![
+            start.clone(),
+            json!({"type":"content_block_delta","index":0,"delta":malformed}),
+            stop.clone(),
+        ]);
+    }
+    for (case, mut events) in cases.into_iter().enumerate() {
+        events.extend([
+            json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},
+                "usage":{"output_tokens":7}}),
+            json!({"type":"message_delta","delta":{},"usage":{"output_tokens":9}}),
+            json!({"type":"message_stop"}),
+        ]);
+        for bedrock in [false, true] {
+            let namespace = if bedrock {
+                "aws_bedrock"
+            } else {
+                "anthropic_compat"
+            };
+            let (chunks, done) = compaction_chat_chunks(events.clone(), bedrock).await;
+            assert!(!done, "{namespace}: case {case}");
+            let mut error = None;
+            let mut usage = Value::Null;
+            for chunk in chunks {
+                if let Some(value) = chunk.get("usage") {
+                    usage = value.clone();
+                }
+                if let Some(value) = chunk.get("error") {
+                    assert_eq!(usage["completion_tokens"], 9, "{namespace}: case {case}");
+                    error = Some(value.clone());
+                }
+                assert!(
+                    chunk["choices"][0]["delta"]["provider_metadata"][namespace]
+                        .get("native_content")
+                        .is_none(),
+                    "{namespace}: case {case}: {chunk}"
+                );
+                assert!(
+                    chunk["choices"][0]["finish_reason"].is_null(),
+                    "{namespace}: case {case}: {chunk}"
+                );
+            }
+            let expected_code = if bedrock {
+                "anthropic_messages_replay_error"
+            } else {
+                "anthropic_replay_error"
+            };
+            assert_eq!(
+                error.expect("malformed compaction cannot become successful replay")["code"],
+                expected_code,
+                "{namespace}: case {case}"
+            );
+        }
+    }
+}
+
 #[test]
 fn replay_rejects_explicit_public_text_block_fields_that_would_be_discarded() {
     let native = json!({"content":[{"type":"text","text":"Answer","citations":[{"url":"original"}]}],

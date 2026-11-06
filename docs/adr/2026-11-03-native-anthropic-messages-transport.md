@@ -48,6 +48,10 @@ The verification gate requires native request/response/SSE captures across trans
 
 Chat clients also need complete native state for signed tool continuations. A reasoning-only projection cannot recover the original order of thinking, tools and provider extensions. Each native family therefore owns its replay envelope and validates it against the public Chat projection before restoration. A source discriminator prevents Vertex Google and Vertex Claude metadata from being confused. This is not a general transcript-repair layer.
 
+Compaction deltas replace the completed summary and preserve nullable content and encrypted checkpoints according to the primary Anthropic contract. Both Chat stream adapters retain the block and later visible text for continuation. Invalid compaction values remain upstream failures rather than silently discarded replay.
+
+Inline replay retains one ordered response-sized sequence. Terminal assembly moves that sequence into metadata rather than cloning it, releases parsed tool-input buffers, and discards failed snapshots. Disabling replay or truncating it would break continuation; a bounded or spooled wire contract is a separate design decision. Legacy reasoning fields and SSE serialization still require their own representation.
+
 Output transforms invalidate replay state rather than expose an unmodified copy of redacted text or arguments. Truncated length/filter output can complete without a replay snapshot; malformed generation output fails while retaining observed usage. Native Messages and Responses remain separate transports. The [compatibility reference](../reference/provider-api-compatibility.md#native-chat-replay) defines the wire fields and limits.
 
 The [pinned harness comparison](../internal/2026-11-05-provider-harness-comparison.md) records the accepted corrections, rejected claims and proof scope. Local provider fixtures prove wire behavior; they do not certify cloud credentials, model availability or a full agent session.
