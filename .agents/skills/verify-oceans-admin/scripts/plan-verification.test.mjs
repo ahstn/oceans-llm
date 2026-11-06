@@ -77,6 +77,8 @@ test('Messages production boundaries select the dedicated compatibility recipe',
     'crates/gateway-providers/src/bedrock/response.rs',
     'crates/gateway-providers/src/copilot/mod.rs',
     'crates/gateway-providers/src/openai_compat/anthropic_messages.rs',
+    'crates/gateway-service/src/request_logging.rs',
+    'crates/gateway-service/src/service.rs',
     '.agents/skills/verify-oceans-admin/scripts/check-messages.mjs',
   ]) {
     const feature = planFor([file], routing).proofs.find((proof) => proof.id === 'anthropic-messages')
@@ -88,7 +90,11 @@ test('Messages production boundaries select the dedicated compatibility recipe',
 })
 
 test('Messages routing preserves separate live/log coverage and skips unrelated paths', () => {
-  for (const file of ['crates/gateway-core/src/protocol/anthropic.rs', 'crates/gateway-core/src/domain.rs']) {
+  for (const file of [
+    'crates/gateway-core/src/protocol/anthropic.rs',
+    'crates/gateway-core/src/domain.rs',
+    'crates/gateway/src/http/handlers/native_messages.rs',
+  ]) {
     const shared = planFor([file], routing)
     for (const id of ['anthropic-messages', 'live-llm-requests', 'request-logs']) {
       assert.ok(shared.proofs.some((proof) => proof.id === id), `${file}: ${id}`)

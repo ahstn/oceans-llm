@@ -3,21 +3,18 @@ pub use crate::agent_analysis::{
     AgentSessionTraceRepository,
 };
 
-use std::{collections::HashMap, pin::Pin, sync::Arc};
+use std::collections::HashMap;
 
 use async_trait::async_trait;
-use bytes::Bytes;
-use futures_core::Stream;
 use serde_json::Value;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
     batch::{
-        BatchAccessScope, BatchCapabilities, BatchItemPage, BatchItemQuery, BatchItemRecord,
-        BatchJobRecord, BatchPage, BatchPollUpdate, BatchQuery, BatchStatus, NewBatchJob,
-        ProviderBatchRequest, ProviderBatchRequestItem, ProviderBatchResult, ProviderBatchState,
-        ProviderBatchSubmission,
+        BatchAccessScope, BatchItemPage, BatchItemQuery, BatchItemRecord, BatchJobRecord,
+        BatchPage, BatchPollUpdate, BatchQuery, BatchStatus, NewBatchJob, ProviderBatchRequestItem,
+        ProviderBatchState,
     },
     budgets::{
         BudgetIncreaseBasis, BudgetIncreaseRecord, BudgetRecord, BudgetScope, BudgetScopeKind,
@@ -40,15 +37,14 @@ use crate::{
         ModelAllowlistPolicy, ModelPricingRecord, ModelPricingSyncChanges, ModelRoute, Money4,
         NewApiKeyRecord, NewExternalMcpServerRecord, NewMcpAggregateSessionRecord,
         NewMcpToolsetRecord, NewReviewAgentRepositoryRecord, NewReviewAgentRunRecord,
-        PricingCatalogCacheRecord, ProviderCapabilities, ProviderConnection,
-        ProviderRequestContext, ProviderUserCredentialRecord, ProviderUserCredentialStatusRecord,
-        RefreshMcpOauthCredentialBindingRecord, RequestAttemptRecord, RequestLogDetail,
-        RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery,
-        RequestLogRecord, RequestMcpTokenOverheadRecord, ReviewAgentProvider,
-        ReviewAgentPullRequestRecord, ReviewAgentRepositoryRecord, ReviewAgentRepositoryStatus,
-        ReviewAgentRunRecord, ServiceAccountRecord, SpendDailyAggregateRecord,
-        SpendModelAggregateRecord, SpendModelTokenDailyRecord, SpendOwnerAggregateRecord,
-        SpendOwnerTokenDailyRecord, TeamMembershipRecord, TeamRecord,
+        PricingCatalogCacheRecord, ProviderConnection, ProviderUserCredentialRecord,
+        ProviderUserCredentialStatusRecord, RefreshMcpOauthCredentialBindingRecord,
+        RequestAttemptRecord, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
+        RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestMcpTokenOverheadRecord,
+        ReviewAgentProvider, ReviewAgentPullRequestRecord, ReviewAgentRepositoryRecord,
+        ReviewAgentRepositoryStatus, ReviewAgentRunRecord, ServiceAccountRecord,
+        SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendModelTokenDailyRecord,
+        SpendOwnerAggregateRecord, SpendOwnerTokenDailyRecord, TeamMembershipRecord, TeamRecord,
         TransferExternalMcpServerOwnershipRecord, UpdateExternalMcpServerRecord,
         UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord, UpdateReviewAgentRunRecord,
         UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
@@ -56,11 +52,7 @@ use crate::{
         UpsertReviewAgentPullRequestRecord, UsageLeaderboardBucketRecord,
         UsageLeaderboardUserRecord, UsageLedgerRecord, UserRecord,
     },
-    error::{ProviderError, RouteError, StoreError},
-    protocol::{
-        core::{ChatRequest, EmbeddingsRequest, ImagesRequest, ResponsesRequest},
-        decisions::{DecisionsRequest, ProviderDecisionsResponse},
-    },
+    error::{RouteError, StoreError},
     rate_limits::{
         RateLimitConsumeResult, RateLimitCounterCharge, RateLimitCounterIncrement,
         RateLimitPolicyRecord,
@@ -1797,16 +1789,6 @@ pub trait ProviderUserCredentialRepository: Send + Sync {
 }
 
 #[async_trait]
-pub trait ProviderUserTokenResolver: Send + Sync {
-    async fn resolve_provider_user_token(
-        &self,
-        provider_key: &str,
-        user_id: Uuid,
-        expected_credential_id: Option<Uuid>,
-    ) -> Result<String, ProviderError>;
-}
-
-#[async_trait]
 pub trait McpTokenOverheadRepository: Send + Sync {
     /// The unexpired estimates among `cache_keys`, in one query.
     async fn get_mcp_tool_token_estimates(
@@ -1957,198 +1939,4 @@ pub trait StoreHealth: Send + Sync {
 
 pub trait RoutePlanner: Send + Sync {
     fn plan_routes(&self, routes: &[ModelRoute]) -> Result<Vec<ModelRoute>, RouteError>;
-}
-
-pub type ProviderStream = Pin<Box<dyn Stream<Item = Result<Bytes, ProviderError>> + Send>>;
-
-#[async_trait]
-pub trait ProviderClient: Send + Sync {
-    fn provider_key(&self) -> &str;
-    fn provider_type(&self) -> &str;
-    fn capabilities(&self) -> ProviderCapabilities;
-    fn batch_capabilities(&self) -> BatchCapabilities {
-        BatchCapabilities::NONE
-    }
-
-    async fn submit_batch(&self, _request: &ProviderBatchRequest) -> ProviderBatchSubmission {
-        ProviderBatchSubmission::NotSubmitted(ProviderError::NotImplemented(format!(
-            "{} does not support batch submission",
-            self.provider_type()
-        )))
-    }
-
-    async fn inspect_batch(
-        &self,
-        _provider_batch_id: &str,
-        _context: &ProviderRequestContext,
-    ) -> Result<ProviderBatchState, ProviderError> {
-        Err(ProviderError::NotImplemented(format!(
-            "{} does not support batch inspection",
-            self.provider_type()
-        )))
-    }
-
-    async fn cancel_batch(
-        &self,
-        _provider_batch_id: &str,
-        _context: &ProviderRequestContext,
-    ) -> Result<ProviderBatchState, ProviderError> {
-        Err(ProviderError::NotImplemented(format!(
-            "{} does not support batch cancellation",
-            self.provider_type()
-        )))
-    }
-
-    async fn batch_results(
-        &self,
-        _state: &ProviderBatchState,
-        _context: &ProviderRequestContext,
-    ) -> Result<Vec<ProviderBatchResult>, ProviderError> {
-        Err(ProviderError::NotImplemented(format!(
-            "{} does not support batch result retrieval",
-            self.provider_type()
-        )))
-    }
-
-    async fn chat_completions(
-        &self,
-        request: &ChatRequest,
-        context: &ProviderRequestContext,
-    ) -> Result<Value, ProviderError>;
-
-    async fn chat_completions_stream(
-        &self,
-        request: &ChatRequest,
-        context: &ProviderRequestContext,
-    ) -> Result<ProviderStream, ProviderError>;
-
-    async fn embeddings(
-        &self,
-        request: &EmbeddingsRequest,
-        context: &ProviderRequestContext,
-    ) -> Result<Value, ProviderError>;
-
-    async fn responses(
-        &self,
-        request: &ResponsesRequest,
-        context: &ProviderRequestContext,
-    ) -> Result<Value, ProviderError>;
-
-    async fn responses_stream(
-        &self,
-        request: &ResponsesRequest,
-        context: &ProviderRequestContext,
-    ) -> Result<ProviderStream, ProviderError>;
-
-    /// Count the input tokens of a Messages-shaped request without generating output.
-    ///
-    /// Returns `{"input_tokens": N}`. Providers without an upstream token-count API
-    /// keep this default, so callers get a typed error instead of an estimate.
-    async fn count_tokens(
-        &self,
-        request: &ChatRequest,
-        context: &ProviderRequestContext,
-    ) -> Result<Value, ProviderError> {
-        let _ = (request, context);
-        Err(ProviderError::NotImplemented(format!(
-            "{} does not support token counting",
-            self.provider_type()
-        )))
-    }
-
-    /// Generate images through an Images API upstream. Returns the upstream
-    /// `{created, data: [{b64_json, media_type}], usage}` body as JSON.
-    async fn images(
-        &self,
-        request: &ImagesRequest,
-        context: &ProviderRequestContext,
-    ) -> Result<Value, ProviderError> {
-        let _ = (request, context);
-        Err(ProviderError::NotImplemented(format!(
-            "{} does not support image generation",
-            self.provider_type()
-        )))
-    }
-
-    async fn decisions(
-        &self,
-        request: &DecisionsRequest,
-        context: &ProviderRequestContext,
-    ) -> Result<ProviderDecisionsResponse, ProviderError> {
-        let _ = (request, context);
-        Err(ProviderError::NotImplemented(format!(
-            "{} does not support decisions",
-            self.provider_type()
-        )))
-    }
-}
-
-#[derive(Default, Clone)]
-pub struct ProviderRegistry {
-    providers: HashMap<String, RegisteredProvider>,
-}
-
-#[derive(Clone)]
-struct RegisteredProvider {
-    client: Arc<dyn ProviderClient>,
-    routing_identity: Option<String>,
-}
-
-impl ProviderRegistry {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            providers: HashMap::new(),
-        }
-    }
-
-    pub fn register(&mut self, provider: Arc<dyn ProviderClient>) {
-        self.providers.insert(
-            provider.provider_key().to_string(),
-            RegisteredProvider {
-                client: provider,
-                routing_identity: None,
-            },
-        );
-    }
-
-    /// Registers the initialized adapter with an opaque account and endpoint identity.
-    /// The caller must hash sensitive credential material before registration.
-    pub fn register_with_routing_identity(
-        &mut self,
-        provider: Arc<dyn ProviderClient>,
-        routing_identity: String,
-    ) {
-        self.providers.insert(
-            provider.provider_key().to_string(),
-            RegisteredProvider {
-                client: provider,
-                routing_identity: Some(routing_identity),
-            },
-        );
-    }
-
-    #[must_use]
-    pub fn routing_identity(&self, provider_key: &str) -> Option<&str> {
-        self.providers
-            .get(provider_key)
-            .and_then(|provider| provider.routing_identity.as_deref())
-    }
-
-    #[must_use]
-    pub fn get(&self, provider_key: &str) -> Option<Arc<dyn ProviderClient>> {
-        self.providers
-            .get(provider_key)
-            .map(|provider| provider.client.clone())
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.providers.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.providers.is_empty()
-    }
 }

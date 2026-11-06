@@ -70,7 +70,6 @@ fn thought_parts_become_reasoning_content_and_never_leak_into_content() {
 
     assert_eq!(message["reasoning_content"], "Let me think harder.");
     assert_eq!(message["content"], "The answer is 4.");
-    assert!(message.get("provider_metadata").is_none());
 }
 
 #[test]
@@ -106,7 +105,6 @@ fn empty_text_part_thought_signature_is_ignored() {
     let message = &normalize(&response)["choices"][0]["message"];
 
     assert!(message.get("thought_signature").is_none());
-    assert!(message.get("provider_metadata").is_none());
 }
 
 #[test]
@@ -129,7 +127,6 @@ fn function_call_thought_signature_rides_on_the_tool_call() {
     assert_eq!(normalized["choices"][0]["finish_reason"], "tool_calls");
     assert_eq!(message["content"], Value::Null);
     assert!(message.get("thought_signature").is_none());
-    assert!(message.get("provider_metadata").is_none());
     let tool_calls = message["tool_calls"].as_array().expect("tool_calls");
     assert_eq!(tool_calls.len(), 1);
     assert_eq!(tool_calls[0]["id"], "fc-1");
@@ -149,7 +146,8 @@ fn function_call_without_id_gets_a_generated_call_id() {
             "content": {
                 "role": "model",
                 "parts": [{ "functionCall": { "name": "weather" } }]
-            }
+            },
+            "finishReason": "STOP"
         }]
     });
     let tool_call = &normalize(&response)["choices"][0]["message"]["tool_calls"][0];
@@ -163,7 +161,7 @@ fn function_call_without_id_gets_a_generated_call_id() {
 #[test]
 fn usage_adds_thought_tokens_to_completion_tokens_and_reports_details() {
     let response = json!({
-        "candidates": [{ "content": { "role": "model", "parts": [{ "text": "ok" }] } }],
+        "candidates": [{ "content": { "role": "model", "parts": [{ "text": "ok" }] }, "finishReason": "STOP" }],
         "usageMetadata": {
             "promptTokenCount": 100,
             "cachedContentTokenCount": 40,
@@ -221,7 +219,7 @@ fn google_usage_preserves_malformed_optional_fields_for_normalization() {
 #[test]
 fn response_without_usage_metadata_omits_usage() {
     let response = json!({
-        "candidates": [{ "content": { "role": "model", "parts": [{ "text": "ok" }] } }]
+        "candidates": [{ "content": { "role": "model", "parts": [{ "text": "ok" }] }, "finishReason": "STOP" }]
     });
 
     assert!(normalize(&response).get("usage").is_none());
@@ -238,8 +236,7 @@ fn maps_finish_reasons_to_openai_vocabulary() {
         ("BLOCKLIST", "content_filter"),
         ("PROHIBITED_CONTENT", "content_filter"),
         ("SPII", "content_filter"),
-        ("OTHER", "stop"),
-        ("FINISH_REASON_UNSPECIFIED", "stop"),
+        ("MODEL_ARMOR", "content_filter"),
     ];
     for (upstream, expected) in cases {
         let response = json!({
@@ -254,33 +251,6 @@ fn maps_finish_reasons_to_openai_vocabulary() {
             "finishReason {upstream}"
         );
     }
-}
-
-#[test]
-fn tool_calls_take_precedence_over_upstream_finish_reason() {
-    let response = json!({
-        "candidates": [{
-            "content": {
-                "role": "model",
-                "parts": [{ "functionCall": { "name": "weather", "args": {} } }]
-            },
-            "finishReason": "MAX_TOKENS"
-        }]
-    });
-
-    assert_eq!(
-        normalize(&response)["choices"][0]["finish_reason"],
-        "tool_calls"
-    );
-}
-
-#[test]
-fn missing_finish_reason_defaults_to_stop() {
-    let response = json!({
-        "candidates": [{ "content": { "role": "model", "parts": [{ "text": "x" }] } }]
-    });
-
-    assert_eq!(normalize(&response)["choices"][0]["finish_reason"], "stop");
 }
 
 #[test]
@@ -317,14 +287,6 @@ fn blocked_prompt_without_candidates_yields_content_filter_choice() {
 }
 
 #[test]
-fn empty_candidates_without_block_reason_yield_stop_choice() {
-    let normalized = normalize(&json!({ "candidates": [] }));
-
-    assert_eq!(normalized["choices"][0]["finish_reason"], "stop");
-    assert_eq!(normalized["choices"][0]["message"]["content"], Value::Null);
-}
-
-#[test]
 fn inline_error_object_maps_to_transport_error() {
     let response = json!({
         "error": { "code": 429, "status": "RESOURCE_EXHAUSTED", "message": "quota exceeded" }
@@ -345,8 +307,8 @@ fn inline_error_object_maps_to_transport_error() {
 fn candidate_index_is_taken_from_upstream_when_present() {
     let response = json!({
         "candidates": [
-            { "index": 1, "content": { "role": "model", "parts": [{ "text": "b" }] } },
-            { "index": 0, "content": { "role": "model", "parts": [{ "text": "a" }] } }
+            { "index": 1, "content": { "role": "model", "parts": [{ "text": "b" }] }, "finishReason": "STOP" },
+            { "index": 0, "content": { "role": "model", "parts": [{ "text": "a" }] }, "finishReason": "STOP" }
         ]
     });
     let normalized = normalize(&response);
@@ -355,4 +317,113 @@ fn candidate_index_is_taken_from_upstream_when_present() {
     assert_eq!(normalized["choices"][0]["message"]["content"], "b");
     assert_eq!(normalized["choices"][1]["index"], 0);
     assert_eq!(normalized["choices"][1]["message"]["content"], "a");
+}
+
+#[test]
+fn incomplete_google_envelopes_are_upstream_failures() {
+    for response in [
+        json!({}),
+        json!({ "candidates": [] }),
+        json!({ "usageMetadata": { "promptTokenCount": 5 } }),
+        json!({ "candidates": [{ "content": { "parts": [{ "text": "partial" }] } }] }),
+        json!({ "candidates": [{ "finishReason": null }] }),
+        json!({ "candidates": [{ "finishReason": 42 }] }),
+        json!({ "promptFeedback": { "blockReason": "BLOCK_REASON_UNSPECIFIED" } }),
+    ] {
+        let error = normalize_google_response(&response, &context("google/gemini-2.5-flash"))
+            .expect_err("incomplete output is not a successful completion");
+        assert!(
+            matches!(error, VertexAdapterError::IncompleteResponse(_)),
+            "{response}"
+        );
+        assert!(matches!(
+            ProviderError::from(error),
+            ProviderError::Transport(_)
+        ));
+    }
+}
+
+#[test]
+fn truncation_and_filter_terminals_are_not_overwritten_by_tool_calls() {
+    for (reason, expected) in [
+        ("MAX_TOKENS", "length"),
+        ("SAFETY", "content_filter"),
+        ("MODEL_ARMOR", "content_filter"),
+        ("IMAGE_SAFETY", "content_filter"),
+    ] {
+        let response = json!({ "candidates": [{
+            "content": { "parts": [{ "functionCall": { "name": "lookup", "args": {} } }] },
+            "finishReason": reason
+        }] });
+        let normalized = normalize(&response);
+        assert_eq!(
+            normalized["choices"][0]["finish_reason"], expected,
+            "{reason}"
+        );
+        assert_eq!(
+            normalized["choices"][0]["message"]["provider_metadata"]["gcp_vertex"]["finish_reason"],
+            reason
+        );
+        assert_eq!(
+            normalized["choices"][0]["message"]["tool_calls"][0]["function"]["name"],
+            "lookup"
+        );
+    }
+}
+
+#[test]
+fn explicit_failure_and_unknown_finish_reasons_never_become_successful_calls() {
+    for reason in [
+        "UNEXPECTED_TOOL_CALL",
+        "OTHER",
+        "FINISH_REASON_UNSPECIFIED",
+        "FUTURE_FAILURE",
+        "NO_IMAGE",
+    ] {
+        let response = json!({ "candidates": [{
+            "content": { "parts": [{ "functionCall": { "name": "lookup", "args": {} } }] },
+            "finishReason": reason
+        }] });
+        let error = normalize_google_response(&response, &context("google/gemini-2.5-flash"))
+            .expect_err("provider failure must not turn into tool_calls");
+        assert!(matches!(
+            error,
+            VertexAdapterError::UnsuccessfulFinishReason(_)
+        ));
+        assert!(error.to_string().contains(reason));
+        assert!(matches!(
+            ProviderError::from(error),
+            ProviderError::Transport(_)
+        ));
+    }
+}
+
+#[test]
+fn returned_logprobs_keep_chosen_tokens_separate_from_top_candidates() {
+    let response = json!({ "candidates": [{
+        "content": { "parts": [{ "text": "cat!" }] },
+        "finishReason": "STOP",
+        "logprobsResult": {
+            "chosenCandidates": [
+                { "token": "cat", "tokenId": 10, "logProbability": -1.5 },
+                { "token": "!", "tokenId": 12, "logProbability": -0.25 }
+            ],
+            "topCandidates": [
+                { "candidates": [
+                    { "token": "dog", "tokenId": 11, "logProbability": -0.5 },
+                    { "token": "cat", "tokenId": 10, "logProbability": -1.5 }
+                ] },
+                { "candidates": [] }
+            ]
+        }
+    }] });
+    let normalized = normalize(&response);
+    let content = &normalized["choices"][0]["logprobs"]["content"];
+    assert_eq!(content[0]["token"], "cat");
+    assert_eq!(content[0]["logprob"], -1.5);
+    assert_eq!(content[0]["top_logprobs"][0]["token"], "dog");
+    assert_eq!(content[0]["top_logprobs"][0]["logprob"], -0.5);
+    assert_eq!(content[1]["token"], "!");
+    assert_eq!(content[1]["logprob"], -0.25);
+    assert_eq!(content[1]["top_logprobs"], json!([]));
 }

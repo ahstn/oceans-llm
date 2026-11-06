@@ -43,6 +43,7 @@ pub mod routing;
 pub mod secret_storage;
 pub mod service;
 pub mod skills;
+mod usage;
 
 pub use admin_api_keys::{
     AdminApiKeyMcpServerOption, AdminApiKeyModelOption, AdminApiKeyService,

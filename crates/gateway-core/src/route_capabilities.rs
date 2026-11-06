@@ -1,4 +1,4 @@
-//! Tri-state route capabilities: explicit config, compatibility inference, catalog hints,
+//! Route compatibility and tri-state capabilities: explicit config, inference, catalog hints,
 //! defaults, then the adapter ceiling.
 
 use serde::{Deserialize, Serialize};
@@ -138,6 +138,27 @@ pub fn infer_compatibility_capabilities(
         "typesafe" => decisions_only(),
         _ => PartialCapabilities::default(),
     }
+}
+
+/// Native protocol selection shared by provider dispatch and route discovery.
+#[must_use]
+pub fn openrouter_uses_native_messages(
+    upstream_model: &str,
+    has_openrouter_compat: bool,
+    base_url: Option<&str>,
+) -> bool {
+    let claude = upstream_model
+        .strip_prefix("~anthropic/")
+        .or_else(|| upstream_model.strip_prefix("anthropic/"))
+        .is_some_and(|model| model.starts_with("claude-"));
+    claude
+        && (has_openrouter_compat
+            || base_url
+                .and_then(|base_url| url::Url::parse(base_url).ok())
+                .is_some_and(|url| {
+                    url.host_str() == Some("openrouter.ai")
+                        && url.path().trim_end_matches('/') == "/api/v1"
+                }))
 }
 
 /// The capabilities a route actually serves: explicit config, then compatibility inference,

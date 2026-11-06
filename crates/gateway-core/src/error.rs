@@ -1,9 +1,9 @@
-use serde_json::Value;
 use thiserror::Error;
 
 use crate::{
     budgets::{BudgetExceededStatus, BudgetScopeKind},
     domain::{BudgetCadence, Money4},
+    provider::ProviderError,
 };
 
 #[derive(Debug, Error)]
@@ -80,43 +80,6 @@ pub enum RouteError {
     NoRoutesAvailable(String),
     #[error("routing policy could not evaluate routes: {0}")]
     Policy(String),
-}
-
-#[derive(Debug, Error)]
-pub enum ProviderError {
-    #[error("invalid request for provider: {0}")]
-    InvalidRequest(String),
-    #[error("upstream provider timed out")]
-    Timeout,
-    #[error("upstream provider transport failure: {0}")]
-    Transport(String),
-    #[error("upstream provider returned {status}: {body}")]
-    UpstreamHttp { status: u16, body: String },
-    #[error("provider call failed after billable upstream usage: {source}")]
-    PartialUsage {
-        source: Box<ProviderError>,
-        provider_usage: Option<Value>,
-    },
-    #[error("provider is not implemented: {0}")]
-    NotImplemented(String),
-}
-
-impl ProviderError {
-    #[must_use]
-    pub fn is_retryable(&self) -> bool {
-        match self {
-            Self::PartialUsage { source, .. } => source.is_retryable(),
-            _ => matches!(
-                self,
-                Self::Timeout
-                    | Self::Transport(_)
-                    | Self::UpstreamHttp {
-                        status: 408 | 429 | 500..=599,
-                        ..
-                    }
-            ),
-        }
-    }
 }
 
 #[derive(Debug, Error)]
@@ -222,13 +185,17 @@ impl GatewayError {
             | Self::McpCredentialExpired { .. } => 403,
             Self::Provider(ProviderError::PartialUsage { source, .. }) => match source.as_ref() {
                 ProviderError::InvalidRequest(_) => 400,
-                ProviderError::UpstreamHttp { status, .. } => *status,
+                ProviderError::UpstreamHttp { status, .. }
+                | ProviderError::NativeMessagesHttp { status, .. } => *status,
                 ProviderError::Timeout => 504,
                 ProviderError::Transport(_) | ProviderError::PartialUsage { .. } => 502,
                 ProviderError::NotImplemented(_) => 501,
             },
             Self::Provider(ProviderError::InvalidRequest(_)) => 400,
-            Self::Provider(ProviderError::UpstreamHttp { status, .. }) => *status,
+            Self::Provider(
+                ProviderError::UpstreamHttp { status, .. }
+                | ProviderError::NativeMessagesHttp { status, .. },
+            ) => *status,
             Self::Provider(ProviderError::Timeout) => 504,
             Self::Provider(ProviderError::Transport(_)) => 502,
             Self::Route(RouteError::NoRoutesAvailable(_)) => 503,
@@ -317,13 +284,17 @@ impl GatewayError {
                 ProviderError::Transport(_) | ProviderError::PartialUsage { .. } => {
                     "upstream_transport"
                 }
-                ProviderError::UpstreamHttp { .. } => "upstream_http_error",
+                ProviderError::UpstreamHttp { .. } | ProviderError::NativeMessagesHttp { .. } => {
+                    "upstream_http_error"
+                }
                 ProviderError::NotImplemented(_) => "provider_not_implemented",
                 ProviderError::InvalidRequest(_) => "invalid_request",
             },
             Self::Provider(ProviderError::Timeout) => "upstream_timeout",
             Self::Provider(ProviderError::Transport(_)) => "upstream_transport",
-            Self::Provider(ProviderError::UpstreamHttp { .. }) => "upstream_http_error",
+            Self::Provider(
+                ProviderError::UpstreamHttp { .. } | ProviderError::NativeMessagesHttp { .. },
+            ) => "upstream_http_error",
             Self::Provider(ProviderError::NotImplemented(_)) => "provider_not_implemented",
             Self::Provider(ProviderError::InvalidRequest(_)) => "invalid_request",
             Self::InvalidRequest(_) | Self::DuplicateUsageRecord { .. } => "invalid_request",

@@ -867,6 +867,20 @@ fn non_anthropic_models_use_openai_compatible_client_surfaces() {
 }
 
 #[test]
+fn rolling_claude_aliases_generate_adaptive_effort_clients() {
+    for model in [
+        "~anthropic/claude-opus-latest",
+        "~anthropic/claude-sonnet-latest",
+        "~anthropic/claude-haiku-latest",
+    ] {
+        assert_eq!(
+            infer_thinking_policy([model]),
+            Some(ThinkingPolicy::AnthropicSafeEffort)
+        );
+    }
+}
+
+#[test]
 fn opencode_and_pi_group_mixed_api_styles_into_separate_providers() {
     let rendered = render_default_configs_for_models(ClientConfigInputSet::new(vec![
         input(Some(ThinkingPolicy::AnthropicSafeEffort)),

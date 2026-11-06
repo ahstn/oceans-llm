@@ -65,7 +65,7 @@ async fn capture(
         .unwrap()
 }
 
-fn context(kind: &str) -> ProviderRequestContext {
+pub(super) fn context(kind: &str) -> ProviderRequestContext {
     let upstream_model = match kind {
         "vertex" => "anthropic/claude-opus-5-5",
         "runtime" | "mantle" => "anthropic.claude-opus-5-5",
@@ -108,7 +108,7 @@ fn context(kind: &str) -> ProviderRequestContext {
     }
 }
 
-fn provider(kind: &str, base_url: &str) -> Box<dyn ProviderClient> {
+pub(super) fn provider(kind: &str, base_url: &str) -> Box<dyn ProviderClient> {
     let default_headers = BTreeMap::from([(
         "anthropic-beta".into(),
         "context-management-2025-06-27".into(),

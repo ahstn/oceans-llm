@@ -12,6 +12,12 @@ Clients use `POST /v1/messages` (or `/messages`) with Anthropic messages, tools,
 - `messages-continuation` covers tools, signed or hidden thinking blocks, beta headers, cache boundaries and per-message effort.
 - `messages-auto-mode` preserves opaque safeguards/verdicts; it does not certify a complete Claude Code session.
 - `messages-observability` correlates the response request ID with the native operation, provider attempt, usage and scoped-key cleanup.
+- `messages-native-fidelity` preserves native request bodies, content order, server-tool/future blocks, stop reasons, complete usage, extension headers and unknown SSE events across native transports.
+- `messages-rolling-aliases` sends adaptive/effort controls unchanged for rolling or unknown native model identities; known explicit models retain local validation.
+- `messages-chat-replay` checks ordered Chat continuation state, public-projection validation and replay invalidation after output guardrail transforms.
+- `messages-compaction` checks complete compaction snapshots, nullable summaries and encrypted checkpoints, following Chat text and continuation through both Anthropic stream adapters.
+- `messages-tool-strict` checks explicit tool constraints in both Chat/native translation directions without adding defaults or changing schemas.
+- `messages-provider-terminals` checks Gemini and Bedrock terminal truth, late usage after errors, and independently checksummed EventStream frames.
 
 ## How to get to it (user POV)
 
@@ -28,7 +34,7 @@ Preconditions:
 - Run only the isolated stack owned by this run; `control-oceans-admin doctor` must pass before browser work and after any failed drive.
 - The [live LLM policy](./live-llm-requests.md) authorizes one bounded canary for request-path verification when credentials are available. Do not run the effort matrix against paid providers. Tool loops and additional native scenarios have their own explicit call budgets.
 
-1. **Run the offline gate from the final source.** This runs the core, provider and gateway Rust library suites, including separate API thinking contracts, native request matrices, local provider HTTP captures, tool/metadata roundtrips, handler accounting and stream reconstruction. It fails if any named critical regression disappears or is ignored, even when Cargo exits successfully:
+1. **Run the offline gate from the final source.** This runs the core, provider, service, client-config and gateway Rust library suites, including separate API thinking contracts, native request matrices, local provider HTTP captures, tool/metadata roundtrips, ledger accounting and stream reconstruction. It fails if any named critical regression disappears or is ignored, even when Cargo exits successfully:
 
    ```bash
    mise exec -- node .agents/skills/verify-oceans-admin/scripts/check-messages.mjs \
@@ -44,12 +50,32 @@ Preconditions:
    | Adaptive controls | Shared Anthropic: both stream modes, all five efforts and `summarized`/`omitted`/null display; Vertex HTTP: all five efforts with `summarized`/`omitted`; Bedrock Runtime/Mantle: representative high/xhigh display parity in both mapping modes |
    | Default preservation | Neither thinking nor effort, adaptive thinking without effort, empty output config and `effort: null` stay unchanged; native effort alone does not enable thinking |
    | API separation | The HTTP handler selects a trusted protocol that request JSON cannot override; native Messages preserves omission while Anthropic-compatible/Vertex Chat Completions retains adaptive/high defaults and Bedrock Chat retains effort-triggered thinking |
-   | Thinking modes | Manual `enabled` budgets remain valid on older models; current model-specific disabled/between-tools restrictions remain intact; OpenAI aliases retain their separate translation |
+   | Thinking modes | Manual `enabled` budgets remain valid on older and unknown models, including combined budget/effort aliases; unknown manual models do not receive invented native effort; explicit native effort and model-specific disabled/between-tools restrictions remain intact |
    | Negative controls | Invalid display identifies display; real adaptive budgets identify budget; conflicting budget/effort aliases fail; invalid effort values are not silently converted |
    | Native continuity | Empty signed thinking, signatures, tool-use IDs/results, cache boundaries, beta extensions, in-sequence system effort messages and safeguard results survive mapping |
+   | Chat compaction | Complete summary deltas replace snapshots rather than append; null summaries and present/absent/null encrypted checkpoints remain distinct; following text and ordered continuation survive both Chat adapters; malformed values or block boundaries fail without replay or success while retaining late usage |
    | Beta transport | Repeated caller beta headers merge with configured/body opt-ins without duplicates; direct Anthropic, Vertex and Mantle use a header, Runtime uses `anthropic_beta`; Messages and token counting preserve opt-ins without forwarding caller credentials; oversized beta lists and names fail locally before dispatch, while allowed unknown names retain their order |
    | Streaming | Assistant role appears first and once, metadata does not precede it, usage is retained, tool/content blocks close in order and `message_stop` terminates the response; pending metadata survives DONE/EOF even without a finish reason |
-   | Gateway behavior | Authentication/model grants, response/error shape, accounting, exhausted-budget rejection before provider dispatch and request logging |
+   | Gateway behavior | Authentication/model grants, response/error shape, accounting, exhausted-budget rejection before provider dispatch and request logging; Messages selection with no eligible provider and stream-start failures each record one request metric without charging usage |
+   | Native transport fidelity | Direct Anthropic, Vertex, Bedrock and OpenRouter native methods preserve entire response objects and SSE frames; gateway model identity, cached accounting, generated-tool guardrails and extension/retry headers remain correct |
+   | Native body integrity | Successful JSON rejects malformed UTF-8 and incomplete HTTP bodies; body-read deadlines remain timeouts; model rewriting preserves every non-model byte in multiline LF/CRLF/CR frames, mixed field/blank-line endings, fragmented Unicode, large coalesced preambles and unfinished trailing frames |
+   | Ordered Chat replay | Gemini parts, Anthropic blocks and Converse blocks retain signed/redacted order and opaque extensions; foreign transport sources use the public projection; edits to text, reasoning, tools or explicit text-block controls cannot be hidden by metadata |
+   | Replay guardrails | Equivalent replay copies do not duplicate public transform input or absorb its replacement; conflicting or unprojected native text and tools remain subject to denial; interrupted reasoning fragments are inspected together without duplicating terminal snapshots; transformations invalidate replay metadata without losing usage |
+   | Provider terminal truth | A Gemini call without a terminal fails; limits/filters win over calls; failures retain late usage; both Anthropic compatibility adapters require actual `message_stop` before success, including recoverable incomplete tool replay, and preserve later native errors |
+   | Provider controls and results | Gemini strict tools/schemas fail explicitly, returned log probabilities remain available, and same-name ID-less parallel results follow unique call IDs; ambiguous or incomplete groups keep their order, with indexed validation instead of quadratic scans; Converse groups results and preserves requested response fields |
+   | Converse replay integrity | Malformed known tool/reasoning containers produce one structured error without replay, success or content reopening; terminal diagnostics and late usage survive; unknown members retain identity and continuation state; independently padded redacted fragments retain initial data, aliases and interleaved block order |
+   | EventStream conformance | Independent IEEE prelude/message checksums, legal typed headers, bounded frames and dense stable tool ordinals; valid usage before corrupt frames survives coalesced and split HTTP chunks |
+   | Native guardrail framing | Plain-string `system` participates in denial, transforms and prompt context; CR, LF, CRLF, mixed and fragmented SSE enforce tool/text checks while preserving untouched bytes and metadata; visible text across native blocks is inspected as one answer, with original transform locations and separate reasoning |
+   | Complete native tool input | Complete `tool_use.input` in a start frame is inspected and transformed as an object, independently of any later JSON deltas; empty opening objects keep normal delta reconstruction |
+   | Image cache boundaries | Outer Chat image `cache_control`, including TTL, survives remote URL, data URI and base64-source mapping; remote URLs still require opt-in |
+   | Native stream completion | EOF before `message_stop` fails the response body and records a stream error while accounting for observed usage; a complete native stream remains successful |
+   | OpenRouter Chat compatibility | HTTP(S) image URLs become native URL sources without relaxing other transports; route token aliases override caller limits before defaults and emit only `max_tokens`; streamed totals include cache reads/writes across usage events |
+   | Compatibility usage totals | Mantle and Copilot merge native usage snapshots, include cache reads/writes and preserve unknown usage fields; overflow uses an explicit null total that stays unknown through the collector, logs and billing summary, while raw counters and existing accounting errors remain intact; missing totals still use normal derivation |
+   | Structured output | OpenRouter Chat JSON schemas become native `output_config.format` without dropping other output options; matching formats are accepted, conflicting formats fail, native Messages output controls remain unchanged |
+   | Tool strict controls | Chat `function.strict` booleans become native tool-level `strict`; Chat null and omission stay unset; translated native `strict` becomes `function.strict` for generic Chat upstreams; schemas remain unchanged and native requests stay opaque |
+   | Mixed cache TTLs | Valid native, wrapped Anthropic and Bedrock counters retain all prompt/cache/total buckets; JSON and streaming token limits charge them; unsupported TTL pricing stays unpriced unless a provider-reported cost is present |
+   | Chat cache aliases | Root read/write and DeepSeek hit/miss aliases fill only missing canonical fields; explicit zero, invalid canonical values, reported cost and non-Chat counter semantics retain precedence |
+   | Rolling alias parity | The exact `~anthropic/claude-opus-latest` accepts the same valid native adaptive/effort requests as an explicit Opus ID, including omitted and null controls; unknown native identities defer new fields and model-specific rules to the upstream; embedded private-name markers do not establish a known policy, while documented provider-qualified IDs retain theirs |
 
 3. **Choose one live scenario and record its scope.** Use this decision table; never label the OpenRouter result a native-validator or Vertex proof.
 
@@ -58,6 +84,8 @@ Preconditions:
    | Public Messages/streaming or omitted-effort behavior | `claude-haiku-5.5` → OpenRouter, omit both `thinking` and `output_config`, `max_tokens: 1024`; add `stream: true` for streaming work |
    | Native shared thinking/display validator | Existing `claude-opus-4-7` → `vertex-claude` when Vertex credentials work; adaptive + summarized display + `output_config.effort: low`, `max_tokens: 1024` |
    | Bedrock Messages adapter | Existing `claude-sonnet-4.6` → native Bedrock Runtime; use an allowed owner such as Ben/Diego and `stream: false`; this route does not support streaming |
+
+   For an OpenRouter rolling-alias regression, the offline transport gate captures the exact `~anthropic/claude-opus-latest` request and compares valid adaptive/effort controls with an explicit Opus ID. Reuse one existing native Claude route for the public live proof unless the repository configuration already includes the alias. The verifier fingerprints `gateway.yaml` and refuses unrecorded alternate configurations. Never relabel an existing model as a different upstream model for a proof.
 
    Confirm the current provider/upstream model and capability from the production model catalog before calling. A configured route is not a credential check. No seeded Opus 5.5 route exists: the local HTTP fixtures cover its wire contract. Do not change shared configuration to pretend another model is Opus 5.5. If the required native credential or model access is unavailable, record that native-live check as blocked; a successful translated smoke can still be reported separately.
 
@@ -96,8 +124,8 @@ Preconditions:
 - Auto mode is a tool-permission workflow, not an effort enum. Omitted effort is valid; neither `auto` nor `none` is a native effort value. Omission does not mean thinking is disabled.
 - Native Messages defaults belong to the upstream model. Do not inject `high` into Messages to make a test deterministic; Chat Completions has a separate translation contract and must retain its documented defaults.
 - `display: omitted` is not a workaround for a validator rejecting the display key itself. It still sends the key. Beta `updates` and binding fields need upstream beta validation.
-- OpenRouter translates Messages to Chat Completions. Its canary proves the public surface, while the offline gate tests native Anthropic/Vertex/Bedrock mapping. Neither establishes a complete Claude Code auto-mode session.
-- Unknown SSE events and arbitrary mid-conversation system messages have documented forwarding limitations. Keep those gaps visible; do not assert universal protocol transparency.
+- OpenRouter Claude routes now use native Messages. Record the configured upstream model and transport; non-Claude OpenAI-compatible routes still translate. A native OpenRouter result does not establish Vertex/Bedrock access or a complete Claude Code session.
+- Native SSE events and in-sequence system messages pass through. The gateway rewrites the public model identity and applies configured guardrails; upstream model and cloud-platform restrictions remain authoritative.
 - Malformed JSON currently receives a plain-text HTTP 400 from the shared framework extractor. Authentication errors use the Anthropic JSON envelope. Record this known product gap with `--optional malformed-json-envelope=fail` until parsing errors are normalized, then require it to pass.
 - The public Messages handler currently uses a Chat Completions request-log context. A matching request ID, payload protocol or SSE response proves the caller used Messages; the operation label alone does not. Keep the native-operation-label gap visible until it is fixed.
 - Tool loops and token counting have separate recipes in [live LLM requests](./live-llm-requests.md). Count requests do not create Request Logs rows. Keep signed assistant blocks unchanged in a continuation.
