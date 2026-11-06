@@ -12,7 +12,7 @@ Native Messages controls on rolling aliases, private deployments and unrecognize
 
 Native requests keep top-level `system` separate from system turns inside `messages`. Message fields, content blocks, signatures and their order survive the core request representation. Cloud adapters apply the platform's endpoint, authentication, version and beta mapping. Platform-pinned headers replace forwarded values before authentication or signing; Mantle sends one pinned `anthropic-version`. Route overrides, model access, effort ceilings, budgets, guardrails and request logging still apply.
 
-Prompt guardrails inspect plain-string `system` values without moving them into `messages`. Stream guardrails accept CR, LF, CRLF and mixed line endings. They retain original frame bytes and metadata unless a transform changes the event's data.
+Prompt guardrails inspect plain-string `system` values without moving them into `messages`. Stream guardrails accept CR, LF, CRLF and mixed line endings. They inspect nonempty complete start-frame tool inputs independently from later JSON deltas, and transformed start inputs remain JSON objects. Empty opening objects keep their normal delta behavior. Original frame bytes and metadata survive unless a transform changes the event's data.
 
 Native JSON and SSE no longer pass through a Chat Completions response projection. Oceans changes the public model identity to the requested gateway model, and retains native stop reasons, content, usage, extensions and unknown events. The stream changes only the initial model identity; subsequent frames pass through unchanged when guardrails do not transform them. No terminal event is synthesized for an interrupted native stream.
 
@@ -22,7 +22,7 @@ Native provider results carry response headers. Anthropic and OpenRouter extensi
 
 Accounting accepts native cache-exclusive token counts directly. Cache reads and writes contribute to the normalized prompt used for context-tier selection and billing. Translated Chat Completions streams include those counters in `total_tokens`, independent of the provider label. Native Messages callers still receive the upstream's original usage object. OpenRouter-reported costs remain authoritative for both public Messages and Chat Completions requests.
 
-OpenRouter Chat Completions translation retains HTTP(S) image URLs as native URL sources; other Anthropic transports keep their existing image restrictions. Token-limit aliases are resolved within each precedence layer before the default is added. A route limit overrides the caller limit, and the native body contains only `max_tokens`.
+OpenRouter Chat Completions translation retains HTTP(S) image URLs as native URL sources; other Anthropic transports keep their existing image restrictions. Image translation preserves outer cache controls and TTLs across remote URL, data URL and base64 forms. Token-limit aliases are resolved within each precedence layer before the default is added. A route limit overrides the caller limit, and the native body contains only `max_tokens`.
 
 OpenRouter Chat Completions JSON schemas become native `output_config.format`; native Messages output options remain opaque. One core predicate selects OpenRouter native routes for both provider dispatch and advertised metadata, so these boundaries cannot drift.
 

@@ -177,6 +177,150 @@ fn native_stream(events: &[Value], endings: (&str, &str, &str)) -> String {
         .collect()
 }
 
+fn native_complete_tool_events(input: Value) -> [Value; 5] {
+    [
+        json!({
+            "type": "message_start",
+            "message": {
+                "id": "msg-1", "type": "message", "role": "assistant",
+                "model": "claude", "content": [], "stop_reason": null,
+                "stop_sequence": null, "usage": {"input_tokens": 10, "output_tokens": 0},
+            },
+        }),
+        json!({
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "tool_use", "id": "tool-1", "name": "bash", "input": input},
+        }),
+        json!({"type": "content_block_stop", "index": 0}),
+        json!({
+            "type": "message_delta",
+            "delta": {"stop_reason": "tool_use", "stop_sequence": null},
+            "usage": {"output_tokens": 3},
+        }),
+        json!({"type": "message_stop"}),
+    ]
+}
+
+#[tokio::test]
+async fn native_boundary_denies_complete_tool_start_input_without_json_deltas() {
+    let (_directory, mut state) = stream_state(PolicyMode::Deny).await;
+    Arc::make_mut(&mut state.guardrail_config).default.packs =
+        vec![gateway_guardrails::PackId::new("core.filesystem").expect("pack")];
+    let events = native_complete_tool_events(json!({"command": "rm -rf /tmp/work"}));
+    let source = native_stream(&events, ("\n", "\n", "\n"));
+    let upstream: ProviderStream = Box::pin(stream::iter(
+        source
+            .bytes()
+            .map(|byte| Ok(Bytes::from(vec![byte])))
+            .collect::<Vec<_>>(),
+    ));
+
+    let Err(failure) = guard_stream(&state, &stream_guard_context(1 << 20), upstream).await else {
+        panic!("complete native tool input bypassed generated-tool-call guardrails");
+    };
+    let GatewayError::GuardrailDenied { reason_code, .. } = failure.error else {
+        panic!(
+            "expected destructive command denial, got {:?}",
+            failure.error
+        );
+    };
+    assert_eq!(reason_code, "filesystem.recursive_force_remove");
+}
+
+#[tokio::test]
+async fn native_boundary_transforms_complete_tool_start_input_as_object_preserving_terminal_frames()
+{
+    let (_directory, state) =
+        managed_state(GuardPhase::GeneratedToolCall, [transform("masked command")]).await;
+    let events = native_complete_tool_events(json!({
+        "command": "private command",
+        "description": "retain this argument",
+    }));
+    let endings = ("\r\n", "\r\n", "\r\n");
+    let source = native_stream(&events, endings);
+    let upstream: ProviderStream = Box::pin(stream::iter(
+        source
+            .bytes()
+            .map(|byte| Ok(Bytes::from(vec![byte])))
+            .collect::<Vec<_>>(),
+    ));
+
+    let mut guarded = guard_stream(&state, &stream_guard_context(1 << 20), upstream)
+        .await
+        .unwrap_or_else(|failure| panic!("tool transformation failed: {:?}", failure.error));
+    let mut rendered = Vec::new();
+    while let Some(chunk) = guarded.next().await {
+        rendered.extend_from_slice(&chunk.expect("guarded stream chunk"));
+    }
+    let mut expected = events;
+    expected[1]["content_block"]["input"]["command"] = json!("masked command");
+
+    assert_eq!(
+        String::from_utf8(rendered).expect("UTF-8"),
+        native_stream(&expected, endings),
+        "rewrite the native input object while retaining tool identity, other arguments, usage, and terminal frames"
+    );
+}
+
+#[tokio::test]
+async fn native_boundary_denies_conflicting_initial_or_delta_tool_input_independently() {
+    for (initial, delta) in [
+        ("rm -rf /tmp/work", "echo safe"),
+        ("echo safe", "rm -rf /tmp/work"),
+    ] {
+        let (_directory, mut state) = stream_state(PolicyMode::Deny).await;
+        Arc::make_mut(&mut state.guardrail_config).default.packs =
+            vec![gateway_guardrails::PackId::new("core.filesystem").expect("pack")];
+        let mut events = native_tool_events();
+        events[0]["content_block"]["input"] = json!({"command": initial});
+        events[1]["delta"]["partial_json"] = json!(json!({"command": delta}).to_string());
+        events[2]["delta"]["partial_json"] = json!("");
+        let source = native_stream(&events, ("\n", "\n", "\n"));
+
+        let error = guard_sse_payload(&state, &stream_guard_context(1 << 20), source.as_bytes())
+            .await
+            .expect_err("each executable input must be inspected without concatenating copies");
+
+        let GatewayError::GuardrailDenied { reason_code, .. } = error else {
+            panic!("expected destructive command denial, got {error:?}");
+        };
+        assert_eq!(reason_code, "filesystem.recursive_force_remove");
+    }
+}
+
+#[tokio::test]
+async fn native_boundary_transforms_conflicting_initial_and_delta_tool_inputs_independently() {
+    let (_directory, state) = managed_state(
+        GuardPhase::GeneratedToolCall,
+        [transform("masked delta"), transform("masked initial")],
+    )
+    .await;
+    let mut events = native_tool_events();
+    events[0]["content_block"]["input"] = json!({
+        "command": "private initial",
+        "description": "initial argument",
+    });
+    let delta = json!({"command": "private delta", "description": "delta argument"});
+    events[1]["delta"]["partial_json"] = json!(delta.to_string());
+    events[2]["delta"]["partial_json"] = json!("");
+    let endings = ("\r\n", "\n", "\r");
+    let source = native_stream(&events, endings);
+
+    let guarded = guard_sse_payload(&state, &stream_guard_context(1 << 20), source.as_bytes())
+        .await
+        .expect("both executable inputs are transformed independently");
+    events[0]["content_block"]["input"]["command"] = json!("masked initial");
+    events[1]["delta"]["partial_json"] =
+        json!(json!({"command": "masked delta", "description": "delta argument"}).to_string());
+
+    assert_eq!(
+        String::from_utf8(guarded).expect("UTF-8"),
+        native_stream(&events, endings),
+        "retain the object input, delta encoding, independent arguments, and framing"
+    );
+}
+
 #[tokio::test]
 async fn denies_generated_tools_for_every_sse_line_ending() {
     for endings in ENDINGS {

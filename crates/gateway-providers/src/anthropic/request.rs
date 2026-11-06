@@ -509,28 +509,31 @@ fn map_anthropic_image_content_block(
         .or_else(|| object.get("source"))
         .ok_or(AnthropicAdapterError::MissingImageSource)?;
 
-    match image_url {
+    let mut image_block = match image_url {
         Value::Object(image_object) => {
             if image_object.get("type").and_then(Value::as_str) == Some("base64") {
                 validate_anthropic_base64_image_source(image_object)?;
-                return Ok(json!({ "type": "image", "source": image_object }));
-            }
-            if let Some(source) = image_object.get("source").and_then(Value::as_object)
+                json!({ "type": "image", "source": image_object })
+            } else if let Some(source) = image_object.get("source").and_then(Value::as_object)
                 && source.get("type").and_then(Value::as_str) == Some("base64")
             {
                 validate_anthropic_base64_image_source(source)?;
-                return Ok(json!({ "type": "image", "source": source }));
+                json!({ "type": "image", "source": source })
+            } else {
+                let url = image_object
+                    .get("url")
+                    .and_then(Value::as_str)
+                    .ok_or(AnthropicAdapterError::MissingImageUrlString)?;
+                map_anthropic_url_image(url, image_object, allow_remote_images)?
             }
-
-            let url = image_object
-                .get("url")
-                .and_then(Value::as_str)
-                .ok_or(AnthropicAdapterError::MissingImageUrlString)?;
-            map_anthropic_url_image(url, image_object, allow_remote_images)
         }
-        Value::String(url) => map_anthropic_url_image(url, object, allow_remote_images),
-        _ => Err(AnthropicAdapterError::InvalidImageUrl),
+        Value::String(url) => map_anthropic_url_image(url, object, allow_remote_images)?,
+        _ => return Err(AnthropicAdapterError::InvalidImageUrl),
+    };
+    if let Some(cache_control) = object.get("cache_control") {
+        image_block["cache_control"] = cache_control.clone();
     }
+    Ok(image_block)
 }
 
 fn validate_anthropic_base64_image_source(

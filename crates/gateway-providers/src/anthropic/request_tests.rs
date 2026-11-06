@@ -68,6 +68,130 @@ fn chat_remote_images_remain_restricted_by_default() {
 }
 
 #[test]
+fn native_boundary_remote_image_outer_cache_policy_survives_openrouter_mapping() {
+    let url = "https://example.test/image.png";
+    for image_url in [json!(url), json!({"url": url})] {
+        for ttl in ["1h", "5m"] {
+            let cache_control = json!({"type": "ephemeral", "ttl": ttl});
+            let mut request = chat(json!({}));
+            request.messages[0].content = json!([{
+                "type": "image_url",
+                "image_url": image_url,
+                "cache_control": cache_control
+            }]);
+            for stream in [false, true] {
+                let error = map_anthropic_request(
+                    &request,
+                    &context(),
+                    stream,
+                    &AnthropicRequestOptions::default(),
+                )
+                .expect_err("cache policy must not bypass the remote-image opt-in");
+                assert!(
+                    error
+                        .to_string()
+                        .contains("remote image URLs are not supported")
+                );
+
+                let body = map_anthropic_request(
+                    &request,
+                    &context(),
+                    stream,
+                    &AnthropicRequestOptions {
+                        allow_remote_images: true,
+                        ..Default::default()
+                    },
+                )
+                .expect("OpenRouter-enabled URL images should map");
+                let image = &body["messages"][0]["content"][0];
+                assert_eq!(image["type"], "image");
+                assert_eq!(image["source"], json!({"type": "url", "url": url}));
+                assert_eq!(
+                    image["cache_control"], cache_control,
+                    "outer policy lost for {image_url}, stream={stream}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn native_boundary_data_image_outer_cache_policy_survives_mapping() {
+    let data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    let url = format!("data:image/png;base64,{data}");
+    for image_url in [json!(url), json!({"url": url})] {
+        for ttl in ["1h", "5m"] {
+            let cache_control = json!({"type": "ephemeral", "ttl": ttl});
+            let mut request = chat(json!({}));
+            request.messages[0].content = json!([{
+                "type": "image_url",
+                "image_url": image_url,
+                "cache_control": cache_control
+            }]);
+            for stream in [false, true] {
+                let body = map_anthropic_request(
+                    &request,
+                    &context(),
+                    stream,
+                    &AnthropicRequestOptions::default(),
+                )
+                .expect("data images should map without remote-image opt-in");
+                let image = &body["messages"][0]["content"][0];
+                assert_eq!(image["type"], "image");
+                assert_eq!(
+                    image["source"],
+                    json!({"type": "base64", "media_type": "image/png", "data": data})
+                );
+                assert_eq!(
+                    image["cache_control"], cache_control,
+                    "outer policy lost for {image_url}, stream={stream}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn native_boundary_base64_image_outer_cache_policy_survives_mapping() {
+    let source = json!({
+        "type": "base64",
+        "media_type": "image/png",
+        "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    });
+    for ttl in ["1h", "5m"] {
+        let cache_control = json!({"type": "ephemeral", "ttl": ttl});
+        for block in [
+            json!({"type": "image", "source": source, "cache_control": cache_control}),
+            json!({"type": "image_url", "image_url": source, "cache_control": cache_control}),
+            json!({
+                "type": "image_url",
+                "image_url": {"source": source},
+                "cache_control": cache_control
+            }),
+        ] {
+            let mut request = chat(json!({}));
+            request.messages[0].content = json!([block]);
+            for stream in [false, true] {
+                let body = map_anthropic_request(
+                    &request,
+                    &context(),
+                    stream,
+                    &AnthropicRequestOptions::default(),
+                )
+                .expect("native and wrapped base64 sources should map");
+                let image = &body["messages"][0]["content"][0];
+                assert_eq!(image["type"], "image");
+                assert_eq!(image["source"], source);
+                assert_eq!(
+                    image["cache_control"], cache_control,
+                    "outer policy lost for {block}, stream={stream}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn route_token_aliases_override_caller_limits_without_unsupported_fields() {
     for protocol in [
         gateway_core::ChatRequestProtocol::ChatCompletions,

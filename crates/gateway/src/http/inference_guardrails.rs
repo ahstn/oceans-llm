@@ -778,9 +778,9 @@ fn sse_data(line: &str) -> Option<&str> {
 }
 
 /// The tool calls in one guarded stream, keyed by call identity. `name`, `arguments`, and
-/// `shell_command_locations` describe the streamed deltas. Each terminal snapshot keeps the
-/// name and argument encoding from its own event, so a snapshot can never change how the
-/// deltas, or another snapshot, are evaluated and rewritten.
+/// `shell_command_locations` describe the streamed deltas. Each complete snapshot, including
+/// native initial input, keeps the name and argument encoding from its own event, so a snapshot
+/// can never change how the deltas, or another snapshot, are evaluated and rewritten.
 #[derive(Default)]
 struct ToolCallFragments {
     name: String,
@@ -898,6 +898,21 @@ fn collect_stream_tool_fragments(
                     let fragments = output.entry(key.clone()).or_default();
                     if let Some(name) = block.get("name").and_then(Value::as_str) {
                         fragments.name.push_str(name);
+                    }
+                    if let Some(input) = block.get("input")
+                        && !input.as_object().is_some_and(Map::is_empty)
+                    {
+                        // Empty objects open calls populated by deltas. A complete initial
+                        // input is independently executable, not a prefix of later deltas.
+                        fragments.terminal_arguments.push(TerminalArguments {
+                            name: block
+                                .get("name")
+                                .and_then(Value::as_str)
+                                .map(str::to_string),
+                            arguments: serialized_arguments(input),
+                            location: (event_index, format!("{pointer}/content_block/input")),
+                            shell_command: false,
+                        });
                     }
                 }
                 if let Some(delta) = object.get("delta").and_then(Value::as_object)
@@ -1425,6 +1440,9 @@ fn replace_stream_argument(slot: &mut Value, replacement: &str, shell_command: b
                 .map(|line| Value::String(line.to_string()))
                 .collect(),
         );
+    } else if !shell_command && slot.is_object() {
+        *slot =
+            serde_json::from_str(replacement).expect("transformed tool arguments are valid JSON");
     } else {
         *slot = Value::String(replacement.to_string());
     }

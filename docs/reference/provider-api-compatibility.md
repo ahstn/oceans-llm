@@ -60,7 +60,11 @@ Route capability flags are still useful when a provider implementation does not 
 
 Native Messages routes preserve content order, signed and redacted thinking, server-tool blocks, stop reasons such as `pause_turn`, complete usage objects, and unknown body fields and SSE events. Top-level `system` and system turns inside `messages` stay distinct. Oceans rewrites the response model identity to the requested gateway model; configured guardrail transformations and route overrides still apply. Budget enforcement, usage accounting and request logging use the native response without rebuilding it from Chat Completions.
 
+Stream guardrails inspect nonempty complete `tool_use.input` objects in native start frames independently from later JSON deltas. A complete input cannot bypass inspection by omitting deltas or sending a different delta payload. Transformed start-frame inputs remain JSON objects; empty opening objects keep their normal delta behavior.
+
 OpenRouter Claude routes automatically use `/api/v1/messages` for both native Messages and Chat Completions callers. Anthropic-compatible providers use `/v1/messages`; Vertex and Bedrock keep their platform-specific native endpoints. Generic OpenAI-compatible routes continue to translate Messages through Chat Completions.
+
+Chat image translation retains the outer `cache_control` object, including its TTL, for data URLs, base64 sources and supported remote URL forms. Remote HTTP(S) images remain limited to the existing OpenRouter opt-in; other transport restrictions do not change.
 
 Rolling aliases such as `~anthropic/claude-opus-latest`, private deployment names and unrecognized model versions pass native controls to the upstream for model-specific validation. Oceans does not classify an unknown native identity as a manual-thinking model. Known explicit versions retain the local rules below. Model access, configured effort ceilings and budgets remain gateway policy for every identity.
 
