@@ -410,6 +410,46 @@ fn native_opus_5_5_leaves_omitted_thinking_and_effort_to_upstream_defaults() {
 }
 
 #[test]
+fn native_private_model_names_preserve_caller_controls() {
+    for model in [
+        "private-claude-opus-5-5",
+        "anthropic/private-claude-opus-5.5",
+        "private-claude-sonnet-4-6",
+        "deployment/claude-sonnet-4-6-custom",
+    ] {
+        let mut context = messages_context();
+        context.upstream_model = model.into();
+        for controls in [
+            json!({
+                "thinking": {"type": "enabled", "budget_tokens": 4096},
+                "output_config": {"effort": "deployment-effort"}
+            }),
+            json!({
+                "thinking": {"type": "disabled"},
+                "output_config": {"effort": "high"}
+            }),
+            json!({
+                "thinking": {"type": "adaptive", "display": "deployment-display"},
+                "output_config": {"effort": "deployment-effort"}
+            }),
+        ] {
+            let request = native_messages_request(controls.clone());
+            for stream in [false, true] {
+                let body = map_anthropic_request(
+                    &request,
+                    &context,
+                    stream,
+                    &AnthropicRequestOptions::default(),
+                )
+                .unwrap_or_else(|error| panic!("{model}: {error}"));
+                assert_eq!(body["thinking"], controls["thinking"], "{model}");
+                assert_eq!(body["output_config"], controls["output_config"], "{model}");
+            }
+        }
+    }
+}
+
+#[test]
 fn native_effort_preserves_independent_thinking_modes() {
     for (model, thinking) in [
         ("claude-opus-5", json!({"type": "disabled"})),

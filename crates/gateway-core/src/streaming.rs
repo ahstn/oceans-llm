@@ -132,6 +132,9 @@ fn find_sse_delimiter(input: &[u8], from: usize) -> Option<(usize, usize)> {
         if suffix.starts_with(b"\n\n") || suffix.starts_with(b"\r\r") {
             return Some((index, 2));
         }
+        if suffix.starts_with(b"\n\r") {
+            return Some((index, if suffix.get(2) == Some(&b'\n') { 3 } else { 2 }));
+        }
     }
     None
 }
@@ -142,7 +145,9 @@ mod tests {
 
     #[test]
     fn sse_events_survive_every_chunk_boundary_and_single_byte_chunks() {
-        for delimiter in ["\n\n", "\r\r", "\r\n\r\n"] {
+        for delimiter in [
+            "\n\n", "\r\r", "\r\n\r\n", "\n\r", "\n\r\n", "\r\n\n", "\r\n\r", "\r\r\n",
+        ] {
             let input = format!("event: update\ndata: 🙂 café{delimiter}data: next{delimiter}");
             for split in 0..=input.len() {
                 let mut parser = SseEventParser::default();

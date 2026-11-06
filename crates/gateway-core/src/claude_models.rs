@@ -90,7 +90,14 @@ pub fn known_claude_thinking_policy(model: &str) -> Option<ClaudeThinkingPolicy>
         "claude-3-haiku",
     ]
     .iter()
-    .any(|marker| model.split(marker).skip(1).any(documented_model_suffix))
+    .any(|marker| {
+        model.match_indices(marker).any(|(index, marker)| {
+            let prefix = &model[..index];
+            // Provider-qualified IDs separate the Claude name with a slash or dot.
+            (prefix.is_empty() || prefix.ends_with(['/', '.']))
+                && documented_model_suffix(&model[index + marker.len()..])
+        })
+    })
     .then(|| claude_thinking_policy(&model))
 }
 
@@ -250,6 +257,59 @@ mod tests {
             claude_thinking_policy("~anthropic/claude-opus-latest"),
             AdaptiveOnly
         );
+    }
+
+    #[test]
+    fn private_model_prefixes_do_not_establish_native_policy() {
+        for model in [
+            "private-claude-opus-5-5",
+            "private-claude-sonnet-4-6",
+            "private_claude-opus-5-5",
+            "notclaude-opus-5-5",
+            "anthropic/private-claude-opus-5.5",
+            "us.anthropic.private-claude-opus-5-5-v1:0",
+            "private-claude-opus-5-5/private-claude-sonnet-4-6",
+            "deployment/claude-sonnet-4-6-custom",
+        ] {
+            assert_eq!(super::known_claude_thinking_policy(model), None, "{model}");
+        }
+    }
+
+    #[test]
+    fn documented_provider_names_retain_native_policy() {
+        for (model, expected) in [
+            ("claude-opus-5-5", AdaptiveOnly),
+            ("ANTHROPIC/CLAUDE-OPUS-5.5", AdaptiveOnly),
+            ("~anthropic/claude-opus-5.5", AdaptiveOnly),
+            ("anthropic/claude-sonnet-4.6", AdaptivePreferred),
+            ("anthropic.claude-opus-5-5-v1:0", AdaptiveOnly),
+            ("us.anthropic.claude-opus-5-5-v1:0", AdaptiveOnly),
+            ("eu.anthropic.claude-sonnet-4-6", AdaptivePreferred),
+            ("global.anthropic.claude-opus-4-7", AdaptiveOnly),
+            (
+                "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-opus-5-5-v1:0",
+                AdaptiveOnly,
+            ),
+            (
+                "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-4-6",
+                AdaptivePreferred,
+            ),
+            (
+                "arn:aws:bedrock:us-east-1:123456789012:inference-profile/eu.anthropic.claude-3-5-sonnet-20240620-v1:0",
+                ManualOnly,
+            ),
+            ("anthropic/claude-sonnet-4-5@20250929", ManualOnly),
+            (
+                "projects/proj-123/locations/global/publishers/anthropic/models/claude-opus-5-5",
+                AdaptiveOnly,
+            ),
+        ] {
+            assert_eq!(
+                super::known_claude_thinking_policy(model),
+                Some(expected),
+                "{model}"
+            );
+        }
     }
 
     #[test]

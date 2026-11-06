@@ -7,6 +7,15 @@ import { fileURLToPath } from 'node:url'
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..')
 
 export const requiredChecks = [
+  ['native-cross-block-denial', 'native_cross_block_text_denies_phrase_before_releasing_fragmented_stream'],
+  ['native-cross-block-transform', 'native_cross_block_text_transforms_phrase_preserving_reasoning_and_terminal_frames'],
+  ['native-cross-block-fidelity', 'native_cross_block_text_allowed_stream_is_byte_preserved'],
+  ['native-cross-block-reasoning', 'native_cross_block_text_does_not_join_reasoning_into_visible_answer'],
+  ['private-model-policy', 'private_model_prefixes_do_not_establish_native_policy'],
+  ['documented-model-policy', 'documented_provider_names_retain_native_policy'],
+  ['private-model-controls', 'native_private_model_names_preserve_caller_controls'],
+  ['sse-mixed-delimiter-chunks', 'sse_events_survive_every_chunk_boundary_and_single_byte_chunks'],
+  ['native-mixed-blank-lines', 'native_model_rewrite_preserves_mixed_blank_line_delimiters'],
   ['gemini-terminal-observation', 'google_stream_call_then_eof_is_not_success_and_preserves_usage_and_replay_parts'],
   ['gemini-terminal-precedence', 'google_stream_terminal_truncation_or_filter_wins_over_calls_in_either_order'],
   ['gemini-generation-failure-usage', 'google_stream_failed_generation_consumes_late_usage_without_reopening_content'],

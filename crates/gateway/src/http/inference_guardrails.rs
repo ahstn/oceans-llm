@@ -678,6 +678,20 @@ fn stream_text_group(value: &Value, pointer: &str) -> String {
     if let Some(item_id) = value.get("item_id").and_then(Value::as_str) {
         return format!("item:{item_id}:{kind}");
     }
+    // Native text blocks form one visible answer; keep their original locations
+    // so a transformed answer can replace the first fragment and clear the rest.
+    let native_text = match (value.get("type").and_then(Value::as_str), pointer) {
+        (Some("content_block_start"), "/content_block/text") => {
+            value.pointer("/content_block/type").and_then(Value::as_str) == Some("text")
+        }
+        (Some("content_block_delta"), "/delta/text") => {
+            value.pointer("/delta/type").and_then(Value::as_str) == Some("text_delta")
+        }
+        _ => false,
+    };
+    if native_text {
+        return "message:content".to_string();
+    }
     if let Some(content_block_index) = value.get("index").and_then(Value::as_u64) {
         return format!("content-block:{content_block_index}:{kind}");
     }

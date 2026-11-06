@@ -263,6 +263,26 @@ Runtime run `20261106T211701Z-pr611-review-stream-fixes` used gateway `0.48.0`. 
 
 The immediate repeat returned a free native `429` with `rate_limited` and `Retry-After: 7`, without a request-log row. Policy edit, pause and deletion matched the API. The inference-only, single-model key was revoked and then rejected with `401`; both browser sessions were signed out. The queued demo batch was kept, and actual `getBatches` POST polling was observed 5,057 ms apart. The owned browser and stack were closed. Evidence remains under `/tmp/oceans-admin-verification/20261106T211701Z-pr611-review-stream-fixes/evidence`, including `messages-regressions.json`, `provider-review-wire-smoke.json`, `gateway-review-tcp-smoke.json`, `review-native-observations.json` and sanitized admin proof artifacts. Known optional gaps remain listed below and in the report.
 
+### Native text and model-boundary review (2026-11-06)
+
+Three later comments were assessed against source rather than accepted as instructions:
+
+| Finding | Assessment and correction |
+|---|---|
+| [Native text split across blocks](https://github.com/ahstn/oceans-llm/pull/611#discussion_r4498148552) | Valid. Phrase-sensitive denial and transformation both failed before the fix. Typed native text starts and deltas now share message-scope inspection, while their original locations support replacement. Reasoning remains separate; unchanged frames retain their bytes. |
+| [Private model-name matching](https://github.com/ahstn/oceans-llm/pull/611#discussion_r4498171617) | Partly valid. `private-claude-opus-5-5` was misclassified and its manual controls were rejected. Classification now requires a token-prefix boundary as well as the existing documented suffix. The cited `-custom` example was already rejected, and the cited generic marker helper checks only suffixes; that helper was not changed. Documented OpenRouter, Bedrock and Vertex names retain their policies. |
+| [No-route usage assertion](https://github.com/ahstn/oceans-llm/pull/611#discussion_r4498172714) | Valid test gap, not a reproduced charge. The existing gate-selected no-compatible-route test now checks that the authenticated owner's request ledger is absent for Chat, Responses and Messages, in both stream modes. All six cases passed. |
+
+Before production changes, two native cross-block regressions, private-name classification and native caller-control preservation failed. The corrected four native stream cases, all nine model-classification cases and the provider control case passed.
+
+The real TCP proof then exposed a related framing gap: legal LF-plus-CR blank-line separators passed the guard but prevented the public model rewrite. The shared SSE parser also missed those separators. Both mixed-delimiter consumer regressions failed before a narrow correction to the two existing scanners. All transport splits now retain the expected events and bytes. No new public helper or module boundary was added. Nine additional named regressions are required by the Messages gate.
+
+The final disposable TCP proof passed all 17 cases through the production router and actual Anthropic-compatible and ModelArmor HTTP clients. It covered denial, replacement and unchanged output across blocks, start text and deltas, LF and mixed endings, reasoning and terminal usage, rejected-request ledger absence in both stream modes, and private-model control preservation. Keys were revoked, both listeners were stopped and awaited, and no cloud call was made. The sanitized artifact is `cross-block-public-wire.json` in the existing run's evidence directory.
+
+Final checks passed 2,213 Messages-gate tests, all 128 gate checks, all 37 verifier-helper tests and `mise run lint`. An independent reviewer found no remaining defect in the text grouping, model boundaries or no-charge assertions. The real wire proof and all-split parser checks also passed after the mixed-delimiter correction.
+
+The existing fingerprinted run renewed Models, backend gateway, native Messages, live requests and Request Logs. Four unaffected planned proofs retained their current source fingerprints; they were not relabelled as fresh checks. All nine planned feature IDs passed `evidence --require-current` after teardown. This pass made two bounded paid calls: the backend driver's forced-tool Chat canary and native Messages request `e01ff100-f001-43b2-ad4e-7b2546ba770b`. The native stream completed with `end_turn`, `message_stop`, 14 input tokens, 4 output tokens and reported cost `$0.0000034`. Fresh masked screenshots and safe ARIA/API fields matched its route, usage and successful terminal attempt. The single-model inference key was revoked and then rejected with `401`; the browser session, owned browser and stack were closed. All owned disposable fixture sources, databases and binaries were removed. Known optional gaps remain explicit in the report.
+
 ### Remaining verification limits and known gaps
 
 - Live Vertex and Bedrock cloud calls were not exercised. Their local transport and replay checks do not prove cloud credentials, regions, signing or model-version behavior.

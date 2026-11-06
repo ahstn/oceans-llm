@@ -26,7 +26,7 @@ OpenRouter Chat Completions translation retains HTTP(S) image URLs as native URL
 
 OpenRouter Chat Completions JSON schemas become native `output_config.format`; native Messages output options remain opaque. One predicate in core's existing `route_capabilities` module selects OpenRouter native routes for both provider dispatch and advertised metadata, so these boundaries cannot drift. It belongs with shared compatibility inference, not model-thinking policy. Moving it into the provider implementation would require the service layer to depend on provider SDKs or duplicate the policy.
 
-Unknown native models retain explicit manual thinking and budget aliases. OpenAI effort aliases do not add native effort to manual thinking; caller-supplied native effort remains unchanged. Conflicting controls still fail locally.
+Unknown native models retain explicit manual thinking and budget aliases. A known policy requires a model-token prefix boundary and a documented suffix; a marker embedded in a private name does not establish a policy. Provider-qualified IDs, dated snapshots and deployment versions retain their known profiles. OpenAI effort aliases do not add native effort to manual thinking; caller-supplied native effort remains unchanged. Conflicting controls still fail locally.
 
 Valid mixed-TTL cache counts survive even when the current pricing schema cannot price the TTL classes. They still count toward token rate limits and ledger totals. The existing unpriced policy remains in place unless the provider supplies a valid cost; separate TTL rates and migrations are outside this transport change.
 
@@ -76,6 +76,10 @@ Replay failures use a private typed error instead of matching English text. Goog
 Both Anthropic Chat adapters put each raw content event in its matching visible delta when one exists. Opaque-only events still get a frame. This removes duplicate per-token frames without dropping boundaries or replay state. Native Messages passthrough is unchanged.
 
 Chat stream guardrails separate public text from replay copies. Equivalent copies in a guarded payload do not duplicate transform input or absorb the public replacement. Conflicting and unprojected native text and tools still receive independent checks. Incremental reasoning is reconstructed separately from terminal snapshots, including interrupted streams. Output transforms continue to invalidate replay state.
+
+Native Messages text blocks form one visible answer for response inspection, even when thinking blocks occur between them. The guard retains each original text location so a replacement changes the visible answer without changing block identities, reasoning, usage or terminal events. Chat choices and Responses output items retain their existing grouping.
+
+Native model rewriting and the shared SSE parser accept mixed field and blank-line endings, including LF followed by CR. Chunk boundaries do not turn valid mixed separators into an incomplete event or prevent the gateway model rewrite.
 
 The shared compatibility adapter requires an actual `message_stop` before successful completion, even when incomplete replay is allowed by a length or filter stop. Native errors remain errors after replay failure, and observed late usage survives. Cache-inclusive totals use the shared checked Anthropic calculation. Overflow emits an explicit null total to clear earlier numeric observations in the existing stream collector. Logs and billing summaries preserve that explicit unknown instead of deriving a partial total; missing totals still use normal derivation. Raw counters, checked-add errors and the existing invalid-cache pricing policy remain unchanged.
 

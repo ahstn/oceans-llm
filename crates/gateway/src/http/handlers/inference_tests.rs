@@ -617,11 +617,26 @@ async fn inference_endpoints_count_no_compatible_route_failures() {
         for stream in [false, true] {
             let (_directory, state) = app_state().await;
             seed_stream_cancellation_test(&state.store).await;
+            let auth = state
+                .service
+                .authenticate(Some("Bearer gwk_streamtest.cancel-secret"))
+                .await
+                .unwrap();
+            let scope = format!("service_account:{}", auth.owner_service_account_id.unwrap());
             let error = endpoint.call(state.clone(), stream).await.unwrap_err();
             assert!(matches!(
                 error.0,
                 gateway_core::GatewayError::InvalidRequest(_)
             ));
+            assert!(
+                state
+                    .store
+                    .get_usage_ledger_by_request_and_scope("inference-test", &scope)
+                    .await
+                    .unwrap()
+                    .is_none(),
+                "{endpoint:?}, stream={stream}: rejected request charged usage"
+            );
             let snapshot = state.metrics.test_snapshot();
             assert_eq!(snapshot.requests, 1, "{endpoint:?}, stream={stream}");
             assert_eq!(

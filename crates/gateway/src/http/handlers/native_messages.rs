@@ -49,6 +49,8 @@ fn frame_end(bytes: &[u8], from: usize) -> Option<usize> {
             Some(index + 4)
         } else if tail.starts_with(b"\n\n") || tail.starts_with(b"\r\r") {
             Some(index + 2)
+        } else if tail.starts_with(b"\n\r") {
+            Some(index + if tail.get(2) == Some(&b'\n') { 3 } else { 2 })
         } else {
             None
         }
@@ -268,6 +270,34 @@ mod tests {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn native_model_rewrite_preserves_mixed_blank_line_delimiters() {
+        for delimiter in ["\n\r", "\n\r\n", "\r\n\n", "\r\n\r", "\r\r\n"] {
+            let input = format!(
+                "event: message_start\r\ndata: {{\"type\":\"message_start\",\"message\":{{\"model\":\"upstream\",\"content\":[],\"future\":\"世界\"}}}}{delimiter}event: message_stop\r\ndata: {{\"type\":\"message_stop\"}}{delimiter}"
+            );
+            let expected = input.replace("\"upstream\"", "\"gateway\"");
+            for chunk_size in [1, 2, 3, input.len()] {
+                let chunks: Vec<_> = input
+                    .as_bytes()
+                    .chunks(chunk_size)
+                    .map(|chunk| Ok(Bytes::copy_from_slice(chunk)))
+                    .collect();
+                let output = stream_with_model(
+                    Box::pin(futures_util::stream::iter(chunks)),
+                    "gateway".into(),
+                )
+                .collect::<Vec<_>>()
+                .await;
+                let output: Vec<_> = output
+                    .into_iter()
+                    .flat_map(|chunk| chunk.unwrap().to_vec())
+                    .collect();
+                assert_eq!(output, expected.as_bytes(), "{delimiter:?}, {chunk_size}");
             }
         }
     }

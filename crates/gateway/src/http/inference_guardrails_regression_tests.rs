@@ -626,6 +626,148 @@ fn native_stream(events: &[Value], endings: (&str, &str, &str)) -> String {
         .collect()
 }
 
+fn native_cross_block_text_events(split_deltas: bool) -> Vec<Value> {
+    let mut events = vec![
+        json!({
+            "type": "message_start",
+            "message": {
+                "id": "msg-1", "type": "message", "role": "assistant",
+                "model": "claude", "content": [], "stop_reason": null,
+                "stop_sequence": null, "usage": {"input_tokens": 10, "output_tokens": 0},
+            },
+        }),
+        json!({
+            "type": "content_block_start", "index": 0,
+            "content_block": {"type": "text", "text": if split_deltas { "pri" } else { "private " }},
+        }),
+    ];
+    if split_deltas {
+        events.push(json!({
+            "type": "content_block_delta", "index": 0,
+            "delta": {"type": "text_delta", "text": "vate "},
+        }));
+    }
+    events.extend([
+        json!({"type": "content_block_stop", "index": 0}),
+        json!({
+            "type": "content_block_start", "index": 1,
+            "content_block": {"type": "thinking", "thinking": "internal notes"},
+        }),
+        json!({"type": "content_block_stop", "index": 1}),
+        json!({
+            "type": "content_block_start", "index": 2,
+            "content_block": {"type": "text", "text": if split_deltas { "ans" } else { "answer" }},
+        }),
+    ]);
+    if split_deltas {
+        events.push(json!({
+            "type": "content_block_delta", "index": 2,
+            "delta": {"type": "text_delta", "text": "wer"},
+        }));
+    }
+    events.extend([
+        json!({"type": "content_block_stop", "index": 2}),
+        json!({
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn", "stop_sequence": null},
+            "usage": {"output_tokens": 3},
+        }),
+        json!({"type": "message_stop"}),
+    ]);
+    events
+}
+
+#[tokio::test]
+async fn native_cross_block_text_denies_phrase_before_releasing_fragmented_stream() {
+    for split_deltas in [false, true] {
+        let (_directory, state, _inputs) = phrase_response_state(deny()).await;
+        let source = native_stream(
+            &native_cross_block_text_events(split_deltas),
+            ("\r\n", "\n", "\r"),
+        );
+        let upstream: ProviderStream = Box::pin(stream::iter(
+            source
+                .bytes()
+                .map(|byte| Ok(Bytes::from(vec![byte])))
+                .collect::<Vec<_>>(),
+        ));
+
+        let Err(failure) = guard_stream(&state, &stream_guard_context(1 << 20), upstream).await
+        else {
+            panic!("a denied phrase across native text blocks reached the consumer");
+        };
+
+        assert_denied(failure.error);
+    }
+}
+
+#[tokio::test]
+async fn native_cross_block_text_transforms_phrase_preserving_reasoning_and_terminal_frames() {
+    for split_deltas in [false, true] {
+        for endings in ENDINGS {
+            let (_directory, state, _inputs) =
+                phrase_response_state(transform("masked answer")).await;
+            let mut events = native_cross_block_text_events(split_deltas);
+            let source = native_stream(&events, endings);
+
+            let guarded =
+                guard_sse_payload(&state, &stream_guard_context(1 << 20), source.as_bytes())
+                    .await
+                    .expect("cross-block phrase transformation");
+            events[1]["content_block"]["text"] = json!("masked answer");
+            events[5 + usize::from(split_deltas)]["content_block"]["text"] = json!("");
+            if split_deltas {
+                events[2]["delta"]["text"] = json!("");
+                events[7]["delta"]["text"] = json!("");
+            }
+
+            assert_eq!(
+                String::from_utf8(guarded).expect("UTF-8"),
+                native_stream(&events, endings),
+                "transform the whole visible answer once without changing reasoning, block identities, usage, or framing"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn native_cross_block_text_allowed_stream_is_byte_preserved() {
+    for split_deltas in [false, true] {
+        for endings in ENDINGS {
+            let (_directory, state, _inputs) = phrase_response_state(ManagedOutcome::Allow {
+                reason_code: ReasonCode::new("regression.allowed").expect("reason"),
+                metadata: Default::default(),
+            })
+            .await;
+            let source = native_stream(&native_cross_block_text_events(split_deltas), endings);
+
+            let guarded =
+                guard_sse_payload(&state, &stream_guard_context(1 << 20), source.as_bytes())
+                    .await
+                    .expect("allowed cross-block answer");
+
+            assert_eq!(guarded, source.as_bytes());
+        }
+    }
+}
+
+#[tokio::test]
+async fn native_cross_block_text_does_not_join_reasoning_into_visible_answer() {
+    for outcome in [deny(), transform("masked answer")] {
+        let (_directory, state, _inputs) = phrase_response_state(outcome).await;
+        let mut events = native_cross_block_text_events(false);
+        events[3]["content_block"]["thinking"] = json!("answer");
+        events[5]["content_block"]["text"] = json!("safe");
+        let source = native_stream(&events, ("\r\n", "\n", "\r"));
+
+        let guarded = guard_sse_payload(&state, &stream_guard_context(1 << 20), source.as_bytes())
+            .await
+            .expect("private visible text and answer reasoning are not one phrase");
+
+        assert_eq!(guarded, source.as_bytes());
+    }
+}
+
 fn native_complete_tool_events(input: Value) -> [Value; 5] {
     [
         json!({

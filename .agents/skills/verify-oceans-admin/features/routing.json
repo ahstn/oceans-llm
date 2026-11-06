@@ -404,7 +404,7 @@
         "crates/gateway/src/http/request_body/**",
         "crates/gateway/src/http/handlers/{auth,inference,messages,count_tokens,native_messages}.rs",
         "crates/gateway-core/src/protocol/{anthropic,translate}.rs",
-        "crates/gateway-core/src/{claude_models,domain,error,lib,provider,reasoning_policy,route_capabilities,traits}.rs",
+        "crates/gateway-core/src/{claude_models,domain,error,lib,provider,reasoning_policy,route_capabilities,streaming,traits}.rs",
         "crates/gateway-client-config/src/thinking.rs",
         "crates/gateway-service/src/effective_route_metadata.rs",
         "crates/gateway-service/src/{request_logging,service,usage}.rs",
