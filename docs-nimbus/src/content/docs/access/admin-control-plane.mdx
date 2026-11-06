@@ -1,0 +1,161 @@
+---
+title: Admin control plane
+description: The pages in the admin UI, who can open each one, and what admins and users can do there.
+sidebar:
+  order: 4
+---
+
+The admin control plane is the browser UI at `/admin`. Admins use it to manage API keys, identities, spend, rate limits and MCP access. Users use it to see their own keys, spend and logs. Each person sees only the pages that their permission group allows.
+
+## How it is served
+
+The gateway serves the control plane at `/admin`, on the same origin as the API. It handles sign-in and the admin APIs, and it proxies page requests to the admin UI server. The admin UI then calls back into the gateway on the same origin. See [Topology and operations](/setup/deploy-and-operations/#one-origin-for-everything).
+
+## Sign in and sessions
+
+- A person signs in at `/admin/login` with a password or an SSO provider. See [OIDC and SSO](/access/sso/).
+- If the account must change its password, the UI sends it to `/admin/change-password` before any other page. The bootstrap admin can be set up this way. See [Start up and first access](/setup/first-access/#the-bootstrap-admin).
+- After sign-in, the UI opens the page named in the `redirect` parameter, if the person can open it. If not, it opens their profile at `/admin/profile`. A person with no pages who isn't a platform admin lands on `/admin/no-access` instead.
+- The session is kept in the `ogw_session` cookie for up to 30 days. When the session is missing or has expired, the UI sends the person back to `/admin/login` and keeps the requested page in `redirect`.
+- The account menu at the bottom of the sidebar has **Change password** and **Sign out**.
+
+Scripts can use the same session. `GET /api/v1/auth/session` returns the current session, or `null`. `POST /api/v1/auth/logout` revokes the current session and clears the cookie.
+
+## Who sees which page
+
+The gateway puts each signed-in person in one permission group: `platform_admins`, `team_admins` (team owners and team admins) or `users`. The `permissions` config sets each group's pages and API-key actions, and the session carries the resolved sets. The sidebar shows only the pages in the set, and the UI blocks direct links to other pages.
+
+Page grants only control the UI. They don't limit the admin APIs, which apply their own role and scope checks. [Auth and access settings](/access/access-settings/#permissions) has the syntax, the defaults and what each grant enforces. [Identity and access](/access/identity-and-access/) explains how the groups map to data scope.
+
+Some pages don't follow page grants:
+
+- **Profile**, **Agent Skills** and **Agent Plugins** are open to every signed-in person. So is **Workspace connections** at `/admin/account/connections`, which isn't in the sidebar.
+- **Guardrail Settings**, **Guardrails** and **Audit Log** need the `platform_admin` role. The two guardrail pages also need the `mcp_invocations` page.
+- **Rate Limits** needs the `platform_admin` role and the `rate_limits` page.
+- **Batch Requests** follows the `request_logs` page grant.
+
+![Admin UI sidebar for a platform admin, showing the Control Plane, Agent Extensions, Budget & Spending and Observability sections, with the Leaderboard page open](/images/screenshot-leaderboard.png)
+
+The tables below list each sidebar section in order. "Default access" is the effective access when `permissions` isn't set.
+
+### Control Plane
+
+| Page | Path | Default access | What it's for |
+| --- | --- | --- | --- |
+| **Profile** | `/admin/profile` | Everyone | The signed-in person's budget, personal API keys, activity and usage trends. |
+| **API Keys** | `/admin/api-keys` | All groups | Create, manage, reveal and revoke keys within the person's scope. See [API keys](#api-keys). |
+| **Models** | `/admin/models` | All groups | The model catalog, benchmark scores and client config snippets. Platform admins also see each model's allowlist, read-only. See [Client harness configuration](/configuration/client-harnesses/) and [Model allowlists](/configuration/models-and-routes/#model-allowlists). |
+| **Review Agent** | `/admin/review-agent` | Platform admins | Set up automated code review for repositories and see recent results. |
+| **Guardrail Settings** | `/admin/guardrails` | Platform admins | Draft guardrail settings as YAML. The page doesn't save anything: an admin copies the YAML into `gateway.yaml`. See [Gateway guardrails](/operations/gateway-guardrails/). |
+| **Rate Limits** | `/admin/rate-limits` | Platform admins | Manage request, token and MCP tool-call policies. Policies from `gateway.yaml` are read-only here. See [Rate limits](/spend/rate-limits/). |
+
+### Agent Extensions
+
+| Page | Path | Default access | What it's for |
+| --- | --- | --- | --- |
+| **MCP Servers** | `/admin/mcp` | All groups | Users see the servers they can connect to. Team owners and admins manage their team's servers and see the **Access** tab. Platform admins manage every server and also see **Tool Sets**. See [MCP servers](/extensions/mcp-servers/) and [MCP tool access](/extensions/mcp-tool-access/). |
+| **Agent Skills** | `/admin/skills` | Everyone | Browse and upload skills. See [Agent Skills](/extensions/skills/). |
+| **Agent Plugins** | `/admin/agent-plugins` | Everyone | A placeholder. The page says "Agent plugins are coming soon." |
+
+### Budget & Spending
+
+| Page | Path | Default access | What it's for |
+| --- | --- | --- | --- |
+| **Usage Costs** | `/admin/observability/usage-costs` | All groups | Spend over `7d` or `30d`, by model and owner. Users see their own spend. Platform admins can filter by owner kind. **Export FOCUS CSV** exports the rows the person can see. |
+| **Spend Controls** | `/admin/spend-controls` | Team admins, platform admins | Budgets and alerts on the **Users**, **Service accounts** and **Model budgets** tabs. Platform admins set budgets. Team owners and admins see their own team and can raise a budget for a limited time. See [Budgets](/spend/budgets/). |
+| **Leaderboard** | `/admin/observability/leaderboard` | All groups | The users with the highest spend over `7d` or `31d`, with their most used model and harness and their average tool counts. Every viewer sees the same global data. |
+
+### Observability
+
+| Page | Path | Default access | What it's for |
+| --- | --- | --- | --- |
+| **Agent Harnesses** | `/admin/observability/agent-harnesses` | All groups | Request counts per agent harness over `7d` or `31d`, global. The harness comes from the caller's `User-Agent`, so it's self-reported. See [Agent harness usage](/observability/agent-harness-usage/). |
+| **Agent Sessions** | `/admin/observability/agent-sessions` | Team admins, platform admins | Grouped agent sessions and their diagnostics. `agent_analysis` settings also decide who can open it. See [Agent session analysis](/observability/agent-session-analysis/). |
+| **Request Logs** | `/admin/observability/request-logs` | All groups | Model request summaries and sanitised payload detail. Users see their own requests. See [Request logs](/observability/request-logs/). |
+| **Batch Requests** | `/admin/batches` | All groups | Long-running batch jobs and their results. Unfinished jobs can be cancelled. |
+| **MCP Invocations** | `/admin/observability/mcp-invocations` | All groups | Governed MCP calls, with filters such as request ID, server, user, status and time. Users see their own calls. See [MCP invocations](/extensions/mcp-invocations/). |
+| **Guardrails** | `/admin/observability/guardrails` | Platform admins | Guardrail decisions, stored in a privacy-safe form. **Configure** opens Guardrail Settings. |
+| **Audit Log** | `/admin/observability/audit-log` | Platform admins | Who changed keys, identities, budgets, sessions and MCP access. See [Admin audit log](/access/admin-audit-log/). |
+
+### Identity
+
+| Page | Path | Default access | What it's for |
+| --- | --- | --- | --- |
+| **Teams** | `/admin/identity/teams` | All groups | Platform admins create and edit teams and manage members. Others see a read-only directory. |
+| **Users** | `/admin/identity/users` | All groups | Platform admins create and manage users. Others see a read-only directory. |
+| **Service Accounts** | `/admin/identity/service-accounts` | All groups | A read-only list of service accounts, their teams and their keys. Users see only the active accounts of their own team, without key details. |
+
+## API keys
+
+![API keys page listing keys with their owner, granted models, scopes, status and a Manage button](/images/screenshot-api-keys.png)
+
+The **API Keys** page lists the keys in the person's scope, with each key's owner, granted models, scopes and status. By default, a user manages only their own keys. A team owner or admin also manages the service-account keys of their team, and a platform admin manages every key. The `create_api_key`, `update_api_key`, `revoke_api_key` and `reveal_api_key` actions can narrow this. See [Pages and actions](/access/access-settings/#pages-and-actions).
+
+### Create a key
+
+<Steps>
+<Step title="Open the dialog">
+The admin or user selects **Create API key**.
+</Step>
+<Step title="Choose the owner">
+The owner is a user or a service account. There are no team-owned keys: team automation uses a key on a team-owned [service account](/access/service-accounts/). A service account needs an active budget before it can get a key.
+</Step>
+<Step title="Choose the models">
+**All models** covers every model the owner may use, now and later. It's for user-owned keys only. **Selected models** grants an explicit list from the current model catalog, and is the only choice for service-account keys.
+</Step>
+<Step title="Choose the scopes">
+**Full access** allows every key route. **Limited** allows only the scopes that are ticked: **Inference**, **MCP aggregate** and **MCP proxy**. A key that can use MCP can be limited to **Selected servers** instead of **All granted servers**. The owner still needs grants on each server.
+</Step>
+<Step title="Copy the key">
+The new key appears once, under **Copy the new key now**. The person copies it with **Copy API key** before they dismiss the alert.
+</Step>
+</Steps>
+
+The gateway never stores a user-owned key's raw secret, so a lost personal key can't be recovered: create a new one. For service-account keys, the gateway stores the secret encrypted with `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY`. A team owner or admin for that team, or a platform admin, can show it again with **Reveal API key**, and the [audit log](/access/admin-audit-log/) records each reveal. A key without stored secret material can't be revealed.
+
+### Change or revoke a key
+
+The person selects **Manage** on an active key. In the **Manage API key** dialog they can replace the model access, the scopes and the MCP server list, then select **Save access**. Model access and scopes are saved as two requests, so if the second fails, the first change has still been applied.
+
+**Revoke key** revokes the key. The gateway rejects every later request with that key with `401 api_key_revoked`. Requests that were already authenticated aren't stopped.
+
+To rotate a service-account key, create a replacement key, update the caller's secret, then revoke the old key.
+
+### API key limits
+
+- A key can't be renamed or moved to another owner.
+- A revoked key is read-only and can't be restored.
+- Explicit model grants must name models in the current catalog.
+- A service-account key fails at runtime with `403 service_account_budget_required` when its account has no active budget.
+
+## Users and teams
+
+Only platform admins change users and teams. The gateway checks this twice: a guard on every `POST`, `PUT`, `PATCH` and `DELETE` request under `/api/v1/admin/identity/users` and `/api/v1/admin/identity/teams`, and the same check again in each handler. Team owners and team admins can't change memberships or tags.
+
+On the **Users** page, a platform admin can:
+
+- Add a user with **Add user**, as a password user or an SSO user, and hand off the onboarding URL. Password invites expire after 7 days. A user can also be pre-provisioned against an enabled OIDC or OAuth provider.
+- Open a user with **Manage** to change the global role, team and team role, and tags.
+- **Deactivate**, **Reactivate** or **Reset onboarding** a user, on the **Auth & onboarding** tab.
+- Store a user's GitHub Copilot token on the **Provider Configuration** tab. See [GitHub Copilot](/providers/github-copilot/).
+
+On the **Teams** page, a platform admin can:
+
+- Create a team with **Add team**, and change it, including its team admins, with **Edit team**.
+- Add members with **Add members**: existing users who have no team, or new users with **Invite member**.
+- **Transfer** a member to another team as `Member` or `Admin`, or **Remove** them.
+
+A transfer changes membership only. It doesn't move past request logs, spend, budgets or API-key ownership.
+
+### Identity limits
+
+- Owner memberships can't be created, removed or transferred in these workflows.
+- A user's auth mode can change only while the user is still invited.
+- **Reset onboarding** works only for invited or disabled users.
+- An admin can't deactivate their own account or remove their own platform admin role.
+- The bootstrap admin is managed outside the normal user lifecycle.
+- Oceans doesn't map OIDC groups or claims to roles. A provider's JIT settings can give new users a fixed role and team. See [OIDC and SSO](/access/sso/).
+
+### Service accounts
+
+The **Service Accounts** page is read-only for everyone. Service accounts come from the `service_accounts` config section or the admin API at `/api/v1/admin/identity/service-accounts`. Platform admins can manage service accounts in every team. Team owners and admins can manage those in their own team. Deleting a service account disables it. See [Service accounts](/access/service-accounts/).

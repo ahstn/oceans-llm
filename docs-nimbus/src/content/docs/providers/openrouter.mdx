@@ -1,0 +1,170 @@
+---
+title: OpenRouter
+description: Connect Oceans to OpenRouter for chat, image generation, Decisions and batches, and set OpenRouter's own provider routing policy per route.
+sidebar:
+  order: 1
+---
+
+OpenRouter uses the generic `openai_compat` provider type. Chat Completions, Responses, embeddings and the Images API use OpenRouter's OpenAI-compatible paths. Decisions routes use OpenRouter's separate alpha path. Two things are specific to OpenRouter: a route-level `compatibility.openrouter` block for OpenRouter's upstream provider routing, and the cost OpenRouter reports in each response.
+
+For every provider field, see [Providers](/configuration/providers/#openai_compat). For every route field, see [Models and routes](/configuration/models-and-routes/).
+
+## Add the provider
+
+An admin adds one `openai_compat` provider that points at `https://openrouter.ai/api/v1`:
+
+```yaml title="gateway.yaml"
+providers:
+  - id: openrouter
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openrouter
+    auth:
+      kind: bearer
+      token: env.OPENROUTER_API_KEY
+    display:
+      label: OpenRouter
+      icon_key: openrouter
+```
+
+When the host is `openrouter.ai`, the path must be `/api/v1` (a trailing slash is fine). Any other path fails config loading. Use `pricing_provider_id: openrouter` so the gateway prices routes from the OpenRouter catalog.
+
+A plain route needs only the provider and the OpenRouter model slug:
+
+```yaml title="gateway.yaml"
+models:
+  - id: deepseek-v4.1-flash
+    routes:
+      - provider: openrouter
+        upstream_model: deepseek/deepseek-v4.1-flash
+```
+
+## Set OpenRouter provider routing
+
+OpenRouter can send one model to several upstream providers. This is an OpenRouter feature, not Oceans route fallback. Oceans still selects one gateway route first, and OpenRouter then picks an upstream inside that route. See [No failover](/configuration/model-routing/#no-failover) for how Oceans selects routes.
+
+Put the policy in the route's `compatibility.openrouter.provider` block:
+
+```yaml title="gateway.yaml"
+models:
+  - id: openrouter-fast-zdr
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-4o-mini
+        compatibility:
+          openrouter:
+            provider:
+              zdr: true
+              only: [openai, anthropic]
+              ignore: [deepinfra]
+              order: [openai, anthropic]
+              preferred_max_latency:
+                p90: 2.5
+              max_price:
+                prompt: 1.0
+                completion: 2.0
+```
+
+What each field asks OpenRouter to do:
+
+- `zdr`: use only endpoints with Zero Data Retention.
+- `only`: use only these provider slugs.
+- `ignore`: skip these provider slugs.
+- `order`: try these provider slugs in this order.
+- `preferred_max_latency`: a preference, not a hard limit. Use a number of seconds, or `p50`, `p75`, `p90` and `p99` cutoffs in seconds.
+- `max_price`: a hard price ceiling. The dimensions are `prompt`, `completion`, `request` and `image`.
+
+Provider slugs must match OpenRouter's provider names. Oceans doesn't keep a list of them, so OpenRouter validates the slugs. Oceans checks the shape: no empty or duplicate slugs, and no slug in both `only` and `ignore`. The full validation rules are in [OpenRouter profile](/configuration/models-and-routes/#openrouter-profile).
+
+Oceans sends the block as the upstream `provider` object on Chat Completions, Responses and Images requests. It replaces any `provider` object the caller sends.
+
+Keep these rules in mind:
+
+- `compatibility.openrouter` works only when the provider `base_url` uses HTTPS on `openrouter.ai`. Use plain `openai_compat` routes for other OpenAI-compatible endpoints.
+- A route can't set both `compatibility.openrouter` and `extra_body.provider`. Put all provider policy in `compatibility.openrouter`.
+- Unless the route sets `api: decisions`, the `provider` block must set at least one field.
+
+If prompt cache reuse depends on which upstream OpenRouter picks, keep this policy stable. Oceans session affinity only pins the gateway route. See [Session affinity](/configuration/model-routing/#session-affinity).
+
+## Generate images
+
+OpenRouter serves image models in two ways.
+
+Image-only models, such as GPT Image, FLUX, Recraft and Seedream, work only on OpenRouter's Images API. Oceans serves them at `POST /v1/images` and `POST /v1/images/generations`. Configure them as Images-only routes:
+
+```yaml title="gateway.yaml"
+models:
+  - id: gpt-image-2.5-flare
+    description: GPT Image through the OpenRouter Images API
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-image-2.5-flare
+        capabilities:
+          images: true
+          chat_completions: false
+          responses: false
+          embeddings: false
+          stream: false
+          tools: false
+          vision: false
+          json_schema: false
+          developer_role: false
+```
+
+With the other API families off, the gateway rejects a Chat Completions request to this model before it calls OpenRouter. The OpenRouter catalog marks image-only models, so the gateway can fill these flags from catalog hints. Set them explicitly anyway. Then the route doesn't change when the catalog changes, and it works for models the catalog doesn't list. See [Decisions and image routes](/configuration/model-routing/#decisions-and-image-routes).
+
+Chat image models, such as the Gemini image models, use Chat Completions. Use a normal chat route for them. The caller sends `modalities: ["image","text"]`, and OpenRouter returns the images in `choices[].message.images[]` (`delta.images` when streaming).
+
+The Models page shows an **Image Generation** badge on models with an image route. For the request and response shape, see [Images](/configuration/model-routing/#images).
+
+## Decisions API
+
+Oceans serves TypeSafe System One models at `POST /v1/decisions` and `POST /v1/systemone`. An OpenRouter Decisions route sends the request in System One format to `POST https://openrouter.ai/api/alpha/decisions`.
+
+Configure TypeSafe Jev as a Decisions-only route:
+
+```yaml title="gateway.yaml"
+models:
+  - id: jev
+    description: TypeSafe Jev through OpenRouter
+    routes:
+      - provider: openrouter
+        upstream_model: typesafe/jev-1.13
+        compatibility:
+          openrouter:
+            api: decisions
+```
+
+`api: decisions` is required for an OpenRouter Decisions route. It turns `decisions` on and every other capability off, so the route needs no `capabilities` block. An explicit `decisions: false`, or `true` for any other capability, fails startup. Jev doesn't produce chat text and doesn't stream.
+
+The `provider` policy is optional on a Decisions route. When it's set, Oceans adds it to the upstream request.
+
+The vendored OpenRouter catalog lists `typesafe/jev-1.13` at $0.042 input and $0 output per million tokens, so the route is priced without an override. The checked-in `gateway.yaml` still sets these rates as a `pricing_override`. See [Decisions usage](/spend/pricing-and-accounting/#decisions-usage).
+
+For the request shape and the native TypeSafe provider, see [TypeSafe](/providers/typesafe/). For format translation between System One and OpenAI Decisions, see [Decisions API](/reference/provider-api-compatibility/#decisions-api).
+
+## Run batches
+
+An OpenRouter provider can run durable batches for Chat Completions and Responses items. Set `batch.dialect: open_router` and a `batch.base_url`. The gateway sends batch requests to `<batch.base_url>/batches`:
+
+```yaml title="gateway.yaml"
+providers:
+  - id: openrouter
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openrouter
+    auth:
+      kind: bearer
+      token: env.OPENROUTER_API_KEY
+    batch:
+      dialect: open_router
+      base_url: https://openrouter.ai/api/beta
+```
+
+Without `batch.base_url`, config loading fails with `OpenRouter batch mode requires batch.base_url`. Oceans can't cancel an OpenRouter batch, because OpenRouter doesn't document a cancel endpoint. For the design, see the [durable provider batch ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-08-17-durable-provider-batch-processing.md).
+
+## Cost accounting
+
+OpenRouter reports the request cost in `usage.cost`. When a response's usage has `cost`, Oceans records that amount as the request cost, with `pricing_source: provider_reported`. This applies to text and image responses alike. The reported cost wins over route `pricing_override` values and catalog rates, so an override applies only to responses without a reported cost.
+
+With a bring-your-own-key (BYOK) provider key, OpenRouter reports `cost` as its own fee and the upstream provider bill in `usage.cost_details.upstream_inference_cost`. Oceans records the sum. If a BYOK response has no `upstream_inference_cost`, Oceans ignores the reported cost and prices the request from token rates. See [Provider-reported cost](/spend/pricing-and-accounting/#provider-reported-cost).

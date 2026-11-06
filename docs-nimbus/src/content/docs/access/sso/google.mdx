@@ -1,0 +1,180 @@
+---
+title: Google OAuth and OIDC setup
+description: Set up a Google Auth Platform OAuth 2.0 client so users can sign in to Oceans with their Google accounts.
+sidebar:
+  order: 1
+---
+
+Oceans can use a Google Auth Platform OAuth 2.0 client for browser sign-in. Google works through the generic OIDC provider with the issuer `https://accounts.google.com`, so you don't need a separate provider type. Google describes the flow in [OpenID Connect](https://developers.google.com/identity/openid-connect/openid-connect).
+
+For how sign-in, matching and JIT work, see [OIDC and SSO](/access/sso/). The provider fields are on [Auth and access settings](/access/access-settings/).
+
+## Before you start
+
+You need:
+
+- A Google Cloud project where you can configure Google Auth Platform.
+- A public HTTPS URL for Oceans, for example `https://oceans.example.com`.
+- A secret manager or deployment secret to hold the Google client secret.
+- A decision on who may sign in, and whether Oceans creates users through JIT.
+
+The callback URL for a deployment is:
+
+```text
+https://<your-oceans-host>/api/v1/auth/oidc/callback
+```
+
+Google needs an exact redirect URI match. Don't use a wildcard, change the path, or add a trailing slash.
+
+## Choose the Google audience
+
+Choose the audience before you create the client. Google explains the options in [Manage App Audience](https://support.google.com/cloud/answer/15549945).
+
+- **Internal** limits sign-in to accounts in one Google Workspace or Cloud Identity organisation. It's available only when the Google Cloud project belongs to that organisation. Use it when Oceans is for one organisation.
+- **External** allows Google accounts outside your organisation. Keep Oceans JIT off unless you want any Google account that Google lets through to be able to create an Oceans user.
+
+<Aside type="caution" title="External is not an Oceans access policy">
+With the default `scopes` (`openid`, `email` and `profile`), Google doesn't make users join the test-user list of an External app in Testing. Any Google account can reach Oceans. Use invited users with `jit.enabled: false`, or accept the broader JIT behaviour on purpose.
+</Aside>
+
+Oceans checks Google's `sub`, `email` and `email_verified` claims. It doesn't check Google's `hd` (hosted domain) claim, and OIDC providers have no `allowed_email_domains` setting. When only one organisation may sign in, use an Internal audience.
+
+## Configure Google Auth Platform
+
+An admin with access to the Google Cloud project opens [Google Auth Platform](https://console.cloud.google.com/auth/overview) and selects the project that will own the client. If the project hasn't set up Google Auth Platform yet, the admin chooses **Get started**.
+
+![Google Auth Platform page with the message "Google auth platform not configured yet" and a Get started button](/images/google-oauth/google-auth-platform-get-started.jpg)
+
+<Steps>
+  <Step title="App Information">
+    Enter the name users see, for example `Oceans LLM`, and pick a monitored user support email.
+  </Step>
+  <Step title="Audience">
+    Choose **Internal** or **External**, using the guidance above.
+  </Step>
+  <Step title="Contact Information">
+    Add an email address that Google can use for project notices.
+  </Step>
+  <Step title="Finish">
+    Review the settings and choose **Create**.
+  </Step>
+</Steps>
+
+![Google Auth Platform setup form with numbered steps App Information, Audience and Contact Information, showing the App name and User support email fields](/images/google-oauth/google-auth-platform-branding.jpg)
+
+In **Branding**, under **Authorized domains**, add the top private domain of the Oceans host, for example `example.com` for `oceans.example.com`. Google needs every domain that a redirect URI uses. If Google asks for domain verification, a project owner or editor verifies the domain in Google Search Console.
+
+In **Data Access**, keep the identity data to `openid`, `email` and `profile`. Oceans doesn't need Drive, Gmail, Calendar or other Google API scopes for sign-in.
+
+## Create the OAuth 2.0 client
+
+The admin opens the [Clients](https://console.cloud.google.com/auth/clients) page of Google Auth Platform and does these steps:
+
+1. Choose **Create client**.
+2. Select **Web application** as the application type.
+3. Enter a name admins can recognise, for example `Oceans LLM production`.
+4. Leave **Authorized JavaScript origins** empty. The gateway exchanges the code on the server, not in browser JavaScript.
+5. Under **Authorized redirect URIs**, add the exact callback URL: `https://<your-oceans-host>/api/v1/auth/oidc/callback`.
+6. Choose **Create**.
+7. Copy the client ID. Store the client secret in your secret manager. Don't put it in `gateway.yaml` or commit it.
+
+Each deployment with a different public URL has a different callback URL. Use a separate client for each one, so that a change to one deployment can't break another.
+
+## Store the credentials
+
+Give the gateway the client secret and the public URL as deployment secrets or environment variables:
+
+```text
+GOOGLE_OIDC_CLIENT_SECRET=<google client secret>
+GATEWAY_PUBLIC_BASE_URL=https://<your-oceans-host>
+```
+
+`GATEWAY_PUBLIC_BASE_URL` must be the same origin as the redirect URI you gave Google. The gateway resolves the secret at each sign-in, so the variable must stay set on the gateway process.
+
+Put the client ID straight into the config. Google client IDs are public. OIDC `client_id` is used as written: the gateway doesn't resolve `env.` references in it, so `env.GOOGLE_CLIENT_ID` would be sent to Google as that literal text.
+
+## Configure Oceans
+
+Add Google under `auth.oidc.providers`:
+
+```yaml title="gateway.yaml"
+auth:
+  oidc:
+    public_base_url: env.GATEWAY_PUBLIC_BASE_URL
+    providers:
+      - key: google
+        label: Google
+        issuer_url: https://accounts.google.com
+        client_id: <google client id>
+        client_secret: env.GOOGLE_OIDC_CLIENT_SECRET
+        scopes:
+          - openid
+          - email
+          - profile
+        enabled: true
+        jit:
+          enabled: false
+          global_role: user
+          request_logging_enabled: true
+```
+
+The login page shows a Google icon on the button when the provider `key` contains `google`.
+
+Keep `jit.enabled: false` for invite-only access. Admins then set up each user in one of two ways:
+
+- Declare the user in config with `auth_mode: oidc` and `oidc_provider_key: google`. See [Auth and access settings](/access/access-settings/).
+- Add the user on the **Users** page (under **Identity**) with **Add user**, pick **SSO (OIDC)** as the **Auth method**, and pick `google` as the **OIDC provider**.
+
+The verified Google email must match the Oceans user's email, compared in lowercase. Seed the provider and users for your deployment as described in [SSO users seeded by config](/setup/first-access/#sso-users-seeded-by-config). Then users sign in as described in [Start SSO sign-in](/access/sso/#start-sso-sign-in).
+
+If you turn on JIT:
+
+- With an Internal audience, everyone in the Google organisation can become an Oceans user.
+- With an External audience, any Google account can become an Oceans user.
+- `global_role` and any team membership apply to every user that JIT creates.
+- Oceans still refuses a Google sign-in whose email belongs to an existing password user.
+
+Don't set `jit.global_role: platform_admin` unless everyone the Google audience allows should be a platform admin.
+
+## Check sign-in
+
+After you seed the config:
+
+1. Open `https://<your-oceans-host>/api/v1/auth/oidc/providers`. The response lists the `google` provider with its label.
+2. Sign in with an eligible account from `/admin/login`.
+3. Confirm the admin UI opens the user's profile page, `/admin/profile`. The pages in the sidebar depend on the user's role and permissions. See [Identity and access](/access/identity-and-access/).
+
+## Troubleshooting
+
+### Google reports `redirect_uri_mismatch`
+
+Compare the redirect URI in Google with the callback that Oceans builds from `auth.oidc.public_base_url`. The scheme, host, port, path, case and trailing slash must all match.
+
+### The Google button doesn't show
+
+Check that the provider has `enabled: true`, that config seeding has run since you added it, and that the provider is listed at `/api/v1/auth/oidc/providers`. If the gateway can't resolve the client secret of an enabled provider, it fails at startup.
+
+### Google sign-in works but Oceans refuses the user
+
+The login page shows **SSO sign in failed** with a message. Look up the cause in [Sign-in errors](/access/sso/#sign-in-errors). For Google, the usual causes are:
+
+- JIT is off and no invited user exists with this email and the `google` provider (`unmatched_identity`).
+- A password user, or a user for another provider, already has this email (`identity_conflict`).
+- The Oceans user is disabled (`denied`).
+
+### Sign-in returns to the login page with no error
+
+Open `/api/v1/auth/session` in the same browser. If it returns the signed-in user, the session works; check the user's pages in [Identity and access](/access/identity-and-access/). If it returns no user, the browser didn't keep the cookie. The gateway sets the cookie on the callback's host, so `public_base_url` must be the same origin that users open `/admin` on. Check the gateway logs for callback errors.
+
+### Someone outside the organisation can authorise the app
+
+A user outside the organisation can still see the Google button and reach Google's page. With an **Internal** audience, Google should refuse them with an `org_internal` error. If such a user gets back to Oceans, check that the audience is **Internal** and that the project belongs to the right Google Workspace or Cloud Identity organisation. Oceans doesn't check the `hd` claim itself.
+
+## Security notes
+
+- Prefer an Internal audience when only one organisation should sign in.
+- Keep JIT off unless the Google audience and the JIT role are meant to be that broad.
+- Keep the scopes to `openid`, `email` and `profile`.
+- Keep the client secret in a secret manager, and rotate it if it leaks.
+- Use HTTPS in production. Google allows HTTP redirect URIs only for `localhost`.
+- The Google audience and the Oceans user and JIT rules are separate controls. Review both before you turn on sign-in.

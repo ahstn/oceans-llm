@@ -10,8 +10,8 @@ Oceans registers external Streamable HTTP MCP servers and exposes their tools to
 ![Oceans MCP: one gateway connects MCP servers to Engineer and Project Manager personas, with tool checkboxes, and six client harnesses](/images/oceans-mcp-personas.webp)
 
 - **MCP servers** provide tools from services such as GitHub, Datadog, Kubernetes, Notion, Atlassian and Snowflake.
-- **Personas** are tool selections for company roles, such as Engineer or Project Manager. Build them with toolsets and grants, as described in [MCP tool access](https://docs.oceans-llm.com/mcp/mcp-tool-access). The checked boxes in the diagram are examples. Effective access depends on the active grants for the client's API key and its owner.
-- **Client harnesses** are the applications that call the tools, such as Claude Code, Codex, OpenCode, GitHub Copilot, Pi and Hermes. [MCP client setup](https://docs.oceans-llm.com/mcp/mcp-client-setup) covers endpoints and authentication for each one.
+- **Personas** are tool selections for company roles, such as Engineer or Project Manager. Build them with toolsets and grants, as described in [MCP tool access](/extensions/mcp-tool-access/). The checked boxes in the diagram are examples. Effective access depends on the active grants for the client's API key and its owner.
+- **Client harnesses** are the applications that call the tools, such as Claude Code, Codex, OpenCode, GitHub Copilot, Pi and Hermes. [MCP client setup](/extensions/mcp-client-setup/) covers endpoints and authentication for each one.
 
 ## Gateway endpoints
 
@@ -26,7 +26,7 @@ The gateway serves two MCP routes:
 
 `/mcp/<server_key>` is the direct proxy. The gateway authenticates the caller's Oceans API key, finds the active server, adds any gateway-managed upstream credential, and forwards the Streamable HTTP request to the server URL.
 
-Discovered tools are not callable by default. An admin must grant a tool or toolset before clients see it in `tools/list` or can call it with `tools/call`. See [MCP tool access](https://docs.oceans-llm.com/mcp/mcp-tool-access).
+Discovered tools are not callable by default. An admin must grant a tool or toolset before clients see it in `tools/list` or can call it with `tools/call`. See [MCP tool access](/extensions/mcp-tool-access/).
 
 ## Add a server
 
@@ -117,7 +117,7 @@ PUT /api/v1/admin/mcp/servers/<server_id>/owner
 { "owner_team_id": null }
 ```
 
-`owner_team_id` is required: a team ID, or `null` to move the server to the platform and publish it to the organisation. The request can also set `owner_contact` and `visibility`. Each change is recorded as `mcp_server.ownership_transferred` in the [admin audit log](https://docs.oceans-llm.com/access/admin-audit-log).
+`owner_team_id` is required: a team ID, or `null` to move the server to the platform and publish it to the organisation. The request can also set `owner_contact` and `visibility`. Each change is recorded as `mcp_server.ownership_transferred` in the [admin audit log](/access/admin-audit-log/).
 
 ## View discovered tools
 
@@ -461,12 +461,12 @@ There is no separate ping health check and no discovery-run history in the admin
 
 A tool's schema hash covers its input schema, title, annotations and output schema. A change to any of them bumps the schema version, and `call_tool` then rejects a stale caller-supplied `schema_hash`. A tool with none of the three optional members keeps the hash of its input schema alone. Invalid optional members, such as a non-object `outputSchema`, are dropped rather than failing discovery. See the [tool metadata and schema hash ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-13-mcp-tool-metadata-and-schema-hash.md).
 
-Every new hash is stored as a tool version. With **Require approval for tool changes** on, new and changed tools wait for an admin before they're served. See [tool versions and approval](https://docs.oceans-llm.com/mcp/mcp-tool-access#tool-versions-and-approval).
+Every new hash is stored as a tool version. With **Require approval for tool changes** on, new and changed tools wait for an admin before they're served. See [tool versions and approval](/extensions/mcp-tool-access/#tool-versions-and-approval).
 
 ## Access
 
 On `/mcp`, `search_tools`, `describe_tool` and `call_tool` resolve only active tools granted to the API key, its owner user or service account, or its team.
 
-On `/mcp/<server_key>`, `tools/list` is filtered to granted, active tools for that server. `tools/call` for a tool that isn't granted is rejected before it reaches the upstream. Disabled servers, inactive tools, disabled toolsets, revoked grants, inactive memberships, and missing or expired credentials never count as callable access. [MCP tool access](https://docs.oceans-llm.com/mcp/mcp-tool-access) owns the grant rules.
+On `/mcp/<server_key>`, `tools/list` is filtered to granted, active tools for that server. `tools/call` for a tool that isn't granted is rejected before it reaches the upstream. Disabled servers, inactive tools, disabled toolsets, revoked grants, inactive memberships, and missing or expired credentials never count as callable access. [MCP tool access](/extensions/mcp-tool-access/) owns the grant rules.
 
-Granted tool calls on both endpoints also count against `mcp_tool_call` limits. A call over a limit gets HTTP `429` with JSON-RPC error `-32029` and never reaches the upstream. See [Rate limits](/access/rate-limits/).
+Granted tool calls on both endpoints also count against `mcp_tool_call` limits. A call over a limit gets HTTP `429` with JSON-RPC error `-32029` and never reaches the upstream. See [Rate limits](/spend/rate-limits/).

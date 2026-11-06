@@ -126,7 +126,7 @@ The chart doesn't install an OpenTelemetry Collector or a vendor agent. Instead,
 - `observability.volumeMounts`
 - `observability.sidecars`
 
-Configure the gateway's own export with `otel_endpoint`, `otel_metrics_endpoint`, and `otel_trace_sample_ratio` under `gateway.config.server`, and use `observability.env` for anything a sidecar or agent needs. Sampling follows the parent trace's decision and never applies to metrics. [Export traces and metrics](https://docs.oceans-llm.com/operations/observability/export-traces-and-metrics) has the full setup and a way to check it.
+Configure the gateway's own export with `otel_endpoint`, `otel_metrics_endpoint`, and `otel_trace_sample_ratio` under `gateway.config.server`, and use `observability.env` for anything a sidecar or agent needs. Sampling follows the parent trace's decision and never applies to metrics. [Export traces and metrics](/observability/export-traces-and-metrics/) has the full setup and a way to check it.
 
 ## Skill storage
 

@@ -5,7 +5,7 @@ sidebar:
   order: 3
 ---
 
-Rate limits cap how much traffic a key, user, team, or the whole gateway can send. They apply to inference requests, Anthropic token counts, and MCP tool calls. They are separate from [budgets](https://docs.oceans-llm.com/access/budgets): budgets cap spend, and rate limits cap volume.
+Rate limits cap how much traffic a key, user, team, or the whole gateway can send. They apply to inference requests, Anthropic token counts, and MCP tool calls. They are separate from [budgets](/spend/budgets/): budgets cap spend, and rate limits cap volume.
 
 The design and its trade-offs are in the [ADR on gateway rate limits and request quotas](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-15-gateway-rate-limits-and-quotas.md).
 
@@ -119,7 +119,7 @@ When the counter store fails in `open` mode, the gateway admits the request with
 
 - The gateway checks a request once, before any provider attempt. Provider retries and fallbacks inside the gateway are not counted again.
 - A client retry is a new request, so it's counted again. The OpenAI and Anthropic Python SDKs retry `429` with backoff by default and read `Retry-After`.
-- Budget rejections use `422` by default, so `429` from this gateway normally means "slow down". If `budgets.exceeded_status_code` is set to `429`, a `429` can also be a budget rejection. Check `error.code`: it's `rate_limited` for a rate limit and `budget_exceeded` for a budget. See [hard and soft limits](https://docs.oceans-llm.com/access/budgets#hard-and-soft-limits).
+- Budget rejections use `422` by default, so `429` from this gateway normally means "slow down". If `budgets.exceeded_status_code` is set to `429`, a `429` can also be a budget rejection. Check `error.code`: it's `rate_limited` for a rate limit and `budget_exceeded` for a budget. See [hard and soft limits](/spend/budgets/#hard-and-soft-budgets).
 - Each key can have at most 8 token counts in flight on each gateway instance. The gateway checks that cap before rate limits, and it also returns `429`.
 
 ## Storage and replicas
@@ -232,12 +232,12 @@ Admin policies can target one key, user, team, or MCP server, and admins can pau
 
 An admin change applies straight away on the replica that handled it, and on every other replica within `policy_refresh_seconds`. Changing a policy's operation, model or MCP server filter, period, or metric starts its counters from zero. Changing the limit or the name keeps them.
 
-Policy changes are recorded in the [admin audit log](https://docs.oceans-llm.com/access/admin-audit-log).
+Policy changes are recorded in the [admin audit log](/access/admin-audit-log/).
 
 ## Observability
 
 - The metric `gateway.rate_limit.decisions` counts checks by `rate_limit.operation` and `rate_limit.outcome` (`admitted`, `rejected`, or `store_error`). Requests that no policy matches are not counted.
-- A rejected MCP call appears in [MCP invocations](https://docs.oceans-llm.com/mcp/mcp-invocations) with status `policy_denied`, policy result `denied`, and error code `rate_limited`. Its metadata names the policy, scope kind, metric, period, limit, and retry delay.
+- A rejected MCP call appears in [MCP invocations](/extensions/mcp-invocations/) with status `policy_denied`, policy result `denied`, and error code `rate_limited`. Its metadata names the policy, scope kind, metric, period, limit, and retry delay.
 - A rejected inference request writes no request-log row, so a client hammering the limit can't flood the request log. The gateway logs a `request rejected by rate limit` event with the operation, policy name, and client IP.
 
 ## Client IP and trusted proxies
@@ -251,7 +251,7 @@ server:
     - fd00::/8
 ```
 
-The gateway reads `X-Forwarded-For` only when the peer is a trusted proxy. It walks the header from the right, skips trusted hops, and takes the first untrusted address, so a caller can't choose its own IP by sending the header. [Admin audit entries](https://docs.oceans-llm.com/access/admin-audit-log#request-ip) use the same resolution. Rate limits don't key on IP. For the rest of the `server` section, see the [configuration reference](/configuration/).
+The gateway reads `X-Forwarded-For` only when the peer is a trusted proxy. It walks the header from the right, skips trusted hops, and takes the first untrusted address, so a caller can't choose its own IP by sending the header. [Admin audit entries](/access/admin-audit-log/#request-ip) use the same resolution. Rate limits don't key on IP. For the rest of the `server` section, see the [configuration reference](/configuration/).
 
 ## Limits
 

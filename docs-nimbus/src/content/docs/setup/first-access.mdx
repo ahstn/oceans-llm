@@ -37,7 +37,7 @@ The gateway creates it only when `auth.bootstrap_admin.enabled` is `true` and th
   Seeding runs before bootstrap. If the config's `users` list includes someone with `global_role: platform_admin`, they exist by the time bootstrap checks, so `admin@local` is never created. That user starts as `invited`, and only an admin can create their invite link.
 </Aside>
 
-Once you're signed in, see [identity and access](https://docs.oceans-llm.com/access/identity-and-access) for how users, teams, and roles work from there.
+Once you're signed in, see [identity and access](/access/identity-and-access/) for how users, teams, and roles work from there.
 
 ## Service accounts and API keys
 
@@ -108,7 +108,7 @@ There's no demo data and no seeded service account.
     The gateway asks for a new password at first sign-in.
   </Step>
   <Step title="Create API access">
-    Create a service account and a key in the admin UI.
+    Create a key for yourself on the **API Keys** page. The admin UI can't create service accounts: declare them in `service_accounts` in the config (see [Auth and access settings](/access/access-settings/)), or create them with the admin API. See [Service accounts](/access/service-accounts/).
   </Step>
 </Steps>
 
@@ -210,7 +210,7 @@ OIDC and OAuth providers, and the users who sign in with them, can be declared i
   </Step>
 </Steps>
 
-[OIDC and SSO](https://docs.oceans-llm.com/access/oidc-and-sso-status#start-sso-sign-in) lists the direct provider URLs and their parameters.
+[OIDC and SSO](/access/sso/#start-sso-sign-in) lists the direct provider URLs and their parameters.
 
 ## Troubleshooting: `/admin` loads without styles
 

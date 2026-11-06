@@ -39,14 +39,14 @@ Every section is optional. The gateway rejects unknown top-level keys, so a miss
 | `auth` | Bootstrap admin, OIDC and OAuth sign-in providers | [Auth and access settings](/access/access-settings/) |
 | `permissions` | Admin UI pages and actions per group | [Auth and access settings](/access/access-settings/) |
 | `teams`, `users`, `service_accounts` | Declarative identities seeded at startup | [Auth and access settings](/access/access-settings/) |
-| `budgets` | Inherited user budgets and the budget rejection status | [Budget settings](/access/budget-settings/) |
-| `budget_alerts` | Budget alert email delivery | [Budget settings](/access/budget-settings/) |
-| `rate_limits` | Platform rate-limit policies and failure mode | [Rate limits](/access/rate-limits/) |
+| `budgets` | Inherited user budgets and the budget rejection status | [Budget settings](/spend/budget-settings/) |
+| `budget_alerts` | Budget alert email delivery | [Budget settings](/spend/budget-settings/) |
+| `rate_limits` | Platform rate-limit policies and failure mode | [Rate limits](/spend/rate-limits/) |
 | `providers` | Upstream provider connections and credentials | [Providers](/configuration/providers/) |
 | `models` | Gateway models, aliases, and routes | [Models and routes](/configuration/models-and-routes/) |
-| `mcp` | MCP OAuth, client OAuth sign-in, registry ownership | [MCP servers](/extensions/mcp-servers/) |
+| `mcp` | MCP OAuth and registry ownership; `mcp.client_oauth` for MCP client sign-in | [MCP servers](/extensions/mcp-servers/); [MCP client setup](/extensions/mcp-client-setup/#turn-on-oauth-sign-in) |
 | `skills` | Agent Skills storage (disabled by default) | [Agent Skills](/extensions/skills/) |
-| `guardrails` | Request and tool-call guardrail packs | [Gateway guardrails](https://docs.oceans-llm.com/operations/gateway-guardrails) |
+| `guardrails` | Request and tool-call guardrail packs | [Gateway guardrails](/operations/gateway-guardrails/) |
 | `request_logging` | Request-log payload capture and purge | [`request_logging`](#request_logging) |
 | `agent_analysis` | Agent session analysis collection and access | [`agent_analysis`](#agent_analysis) |
 
@@ -135,7 +135,7 @@ budgets:
 providers:
   - id: vertex
     type: gcp_vertex
-    project_id: env.GCP_PROJECT_ID
+    project_id: your-gcp-project
     location: global
     auth:
       mode: service_account
@@ -184,7 +184,7 @@ If a section is absent, the gateway uses these defaults:
 
 Change the bootstrap admin password before you expose a gateway. [Start up and first access](/setup/first-access/) explains what the bootstrap admin does at startup.
 
-Route defaults (`priority`, `weight`, `enabled`, capability flags) are on [Models and routes](/configuration/models-and-routes/). Permission and budget defaults are on [Auth and access settings](/access/access-settings/) and [Budget settings](/access/budget-settings/).
+Route defaults (`priority`, `weight`, `enabled`, capability flags) are on [Models and routes](/configuration/models-and-routes/). Permission and budget defaults are on [Auth and access settings](/access/access-settings/) and [Budget settings](/spend/budget-settings/).
 
 ## `server`
 
@@ -198,9 +198,9 @@ Route defaults (`priority`, `weight`, `enabled`, capability flags) are on [Model
 | `otel_export_interval_secs` | `30` | Metrics export interval. |
 | `trusted_proxies` | `[]` | IP addresses or CIDR ranges. |
 
-The gateway trusts the `X-Forwarded-For` header only when the connection comes from an address in `trusted_proxies`. It uses the resolved client IP for rate limits and admin audit entries. With an empty list, the socket peer is the client. See [Rate limits](/access/rate-limits/) for how client IPs affect limits.
+The gateway trusts the `X-Forwarded-For` header only when the connection comes from an address in `trusted_proxies`. It uses the resolved client IP for rate limits and admin audit entries. With an empty list, the socket peer is the client. See [Rate limits](/spend/rate-limits/) for how client IPs affect limits.
 
-For OTLP settings in a deployment, see [Topology and operations](/setup/deploy-and-operations/). For collector and Datadog setup, see [Export traces and metrics](https://docs.oceans-llm.com/operations/observability/export-traces-and-metrics).
+For OTLP settings in a deployment, see [Topology and operations](/setup/deploy-and-operations/). For collector and Datadog setup, see [Export traces and metrics](/observability/export-traces-and-metrics/).
 
 ## `database`
 
@@ -235,7 +235,7 @@ request_logging:
 
 | Field | Default | Notes |
 | --- | --- | --- |
-| `capture_mode` | `redacted_payloads` | `disabled` stores no chat-completion request logs. `summary_only` stores summary rows with `has_payload=false` and no payload. `redacted_payloads` stores summaries and sanitised payloads. |
+| `capture_mode` | `redacted_payloads` | `disabled` stores no request logs for any API. `summary_only` stores summary rows with `has_payload=false` and no payload. `redacted_payloads` stores summaries and sanitised payloads. |
 | `request_max_bytes` | `131072` | Budget for the stored request payload, in uncompressed serialised JSON bytes. `1` through `262144`. |
 | `response_max_bytes` | `65536` | Budget for the stored response payload. Must be greater than `0`. |
 | `stream_max_events` | `128` | Maximum stored stream events. Must be greater than `0`. Usage and error parsing still sees later events. |
@@ -253,7 +253,7 @@ A redaction path is a list of object keys separated by dots, anchored at the pay
 
 Weekday numbers follow the Rust `cron` crate: `1` is Sunday and `7` is Saturday. The Unix value `0` for Sunday is not accepted. Use names (`SUN`, `MON`, and so on) to avoid confusion.
 
-Redaction behaviour, the manual `gateway purge-request-logs` command, and the admin request-log views are on [Observability and request logs](https://docs.oceans-llm.com/operations/observability-and-request-logs).
+Redaction behaviour, the manual `gateway purge-request-logs` command, and the admin request-log views are on [Observability and request logs](/observability/).
 
 ## `agent_analysis`
 
@@ -307,7 +307,7 @@ These environment variables override the YAML when set: `AGENT_ANALYSIS_ENABLED`
 
 After a change to metrics, context or cache profiles, an admin queues retained sessions for analysis again with `gateway recompute-agent-analysis` (`mise run //gateway:recompute-agent-analysis` locally). It processes 100 sessions per run by default, up to 1000 with `--limit`.
 
-For what the analysis shows and who can see it, see [Agent session analysis](https://docs.oceans-llm.com/operations/agent-session-analysis). Team admins also need the `agent_sessions` page in [`permissions`](/access/access-settings/).
+For what the analysis shows and who can see it, see [Agent session analysis](/observability/agent-session-analysis/). Team admins also need the `agent_sessions` page in [`permissions`](/access/access-settings/).
 
 ## Benchmark catalog
 
@@ -336,7 +336,7 @@ The gateway validates the whole file before it starts. A failure stops startup (
 
 - YAML syntax and field types, including enum values.
 - Unknown keys at the top level and in `auth`, `permissions`, `budgets`, `agent_analysis`, `models` entries, `teams`, `users` (including `membership`) and `service_accounts`.
-- `server`, `database`, `request_logging`, `budget_alerts` and `agent_analysis` rules on this page and on [Budget settings](/access/budget-settings/).
+- `server`, `database`, `request_logging`, `budget_alerts` and `agent_analysis` rules on this page and on [Budget settings](/spend/budget-settings/).
 - Guardrails, permissions, OIDC and OAuth providers, and MCP settings.
 - Provider fields, model and alias references, and route wiring.
 - Budget defaults, rate-limit policies, teams, service accounts and users.

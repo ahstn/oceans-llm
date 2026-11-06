@@ -18,13 +18,19 @@ const nimbusConfig = defineNimbusConfig({
   // Top-level order and group labels. Pages join their folder's group
   // automatically; each page's sidebar icon comes from src/lib/sidebar-icons.ts.
   sidebar: {
+    // Only the group that holds the current page opens, so the rail stays short.
+    defaultCollapsed: true,
     items: [
       "index",
       "features",
       { label: "Setup", autogenerate: { directory: "setup" } },
       { label: "Configuration", autogenerate: { directory: "configuration" } },
-      { label: "Access and spend", autogenerate: { directory: "access" } },
+      { label: "Providers", autogenerate: { directory: "providers" } },
+      { label: "Identity and access", autogenerate: { directory: "access" } },
+      { label: "Spend and limits", autogenerate: { directory: "spend" } },
       { label: "Agent extensions", autogenerate: { directory: "extensions" } },
+      { label: "Observability", autogenerate: { directory: "observability" } },
+      { label: "Operations", autogenerate: { directory: "operations" } },
       { label: "Reference", autogenerate: { directory: "reference" } },
     ],
   },

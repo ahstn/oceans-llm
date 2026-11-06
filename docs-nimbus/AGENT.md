@@ -100,7 +100,7 @@ sidebar: {
 
 The header's section tabs come from the same list: each top-level item that autogenerates from another collection (`{ label: "API", autogenerate: { collection: "api", prefix: "/reference" } }`) becomes a tab, and the tabs show once there are two. With one, an API reference served away from `/` makes the tabs: Docs and API reference. Folders of `src/content/docs/` and external links stay in the sidebar. For any other header link, edit `src/components/Header.astro`.
 
-This site lists every top-level group in `astro.config.ts`, so a new folder doesn't show until you add it there. A folder's `index.mdx` is a normal entry in its group: give it `sidebar.order: 0` to keep it first.
+This site lists every top-level group in `astro.config.ts`, so a new folder doesn't show until you add it there. A folder's `index.mdx` is a normal entry in its group: give it `sidebar.order: 0` to keep it first. `sidebar.defaultCollapsed` is `true`, so only the group that holds the current page opens on load.
 
 Page icons in the sidebar come from `src/lib/sidebar-icons.ts`, keyed by page path. The content schema has no per-page icon field. When you add or move a page, add its path there with a Phosphor (`ph:`) icon name; a page that isn't listed shows no icon.
 

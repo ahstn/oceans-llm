@@ -23,7 +23,7 @@ Oceans sets `legacy_estimated` in two cases:
 - The cache counters in the usage are malformed. Oceans charges aggregate input and output tokens at the standard rates and records an `invalid_cache_token_usage` reason.
 - A batch job is only partly priced. The reason is `batch_partially_priced`.
 
-This is deliberate. Approximate charges would make budget enforcement and audits misleading, so Oceans records the gap instead. For budget setup, alerts and precedence, see [Budgets](https://docs.oceans-llm.com/access/budgets).
+This is deliberate. Approximate charges would make budget enforcement and audits misleading, so Oceans records the gap instead. For budget setup, alerts and precedence, see [Budgets](/spend/budgets/).
 
 ## How Oceans picks a price
 

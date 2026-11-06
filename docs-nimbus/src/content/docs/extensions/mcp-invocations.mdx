@@ -1,0 +1,146 @@
+---
+title: MCP invocations
+description: Audit each MCP call that passes through the gateway, with its owner, target, outcome and payload state.
+sidebar:
+  order: 4
+---
+
+MCP invocation records are the audit trail for individual MCP calls. Each record is one governed call to an MCP server: who made it, which server and target it named, whether access policy allowed it, and how it ended. Use them to find which tool ran, why a call was denied, how long it took, and whether a payload was cut short.
+
+## What the gateway records
+
+The gateway writes a record for:
+
+- aggregate `call_tool` on `/mcp`
+- direct `tools/call` and `tools/list` on `/mcp/<server_key>`
+- direct `resources/list`, `resources/templates/list`, `resources/read`, `resources/subscribe`, `resources/unsubscribe`, `prompts/list`, `prompts/get` and `completion/complete`
+- direct methods the gateway denies, and malformed JSON-RPC requests
+
+It doesn't write a record for:
+
+- aggregate `search_tools` and `describe_tool`, which are discovery operations
+- `initialize`, `ping` and the other forwarded lifecycle methods
+- the `GET` event stream
+
+[MCP tool access](/extensions/mcp-tool-access/#other-methods-on-the-direct-endpoint) describes how the gateway handles each method.
+
+Writing a record is best effort. If the write fails, the gateway still answers the call. Some aggregate `call_tool` failures also return before a record exists: a malformed input, an address the caller can't use, and a `tool_schema_changed` mismatch.
+
+## View invocations
+
+Admins open **MCP Invocations** in the **Observability** section of the admin UI, at `/admin/observability/mcp-invocations`. The page needs the `mcp_invocations` page permission (see [Auth and access settings](/access/access-settings/)). Platform admins see every record. Other users see only records for their own user.
+
+An admin sets filters, then selects **Apply Filters**. **Clear** resets them. Every filter is an exact match.
+
+| Filter | What it matches |
+| --- | --- |
+| **Request ID** | The record's `request_id` (see [Record fields](#record-fields)). |
+| **Server** | The server key. |
+| **Target** | The tool name, resource URI or prompt name. For a method with no named target, the method name. |
+| **Method** | The JSON-RPC method, such as `tools/call` or `resources/read`. |
+| **API Key**, **User**, **Team** | The owner IDs. |
+| **Status** | One [status](#statuses-and-error-codes). |
+| **Policy** | One policy result: `allowed`, `denied` or `not_evaluated`. |
+| **From**, **To** | The time range, as RFC 3339 timestamps. Both ends are included. |
+
+There's no filter for error code. To tell denials apart, read the error code under each row's status.
+
+The table has these columns: **Request**, **Owner Context**, **Server**, **Method**, **Target**, **Status** (with the error code under it), **Policy**, **Latency**, **Payload** and **Inspect**. **Inspect** opens the detail view. It shows the record's IDs, owner, target and **Tool version**, the payload state, and the stored **Arguments** and **Result**.
+
+## Statuses and error codes
+
+The policy result says whether the access check ran and what it decided:
+
+| Policy result | Meaning |
+| --- | --- |
+| `allowed` | The call passed the access checks. |
+| `denied` | A grant, rate limit or guardrail stopped the call. |
+| `not_evaluated` | The gateway couldn't evaluate policy, for example for a malformed request. |
+
+The status says how the call ended. It's one of `success`, `unauthorized`, `policy_denied`, `upstream_error`, `gateway_error`, `timeout` or `invalid_request`.
+
+Common error codes:
+
+| Error code | Status | Cause |
+| --- | --- | --- |
+| `mcp_tool_not_granted` | `policy_denied` | The caller can't use the tool. |
+| `mcp_server_not_granted` | `policy_denied` | A resource, prompt or completion call, and the caller can use no tool on the server. |
+| `mcp_method_not_allowed` | `policy_denied` | The method isn't one the gateway proxies. |
+| `rate_limited` | `policy_denied` | A [rate limit](/spend/rate-limits/) rejected the call. |
+| `guardrail_policy_denied` | `policy_denied` | A [guardrail](/operations/gateway-guardrails/) blocked the arguments or the result. |
+| `invalid_json_rpc` | `invalid_request` | The request wasn't valid JSON-RPC. Its method shows as `invalid`. |
+| `http_<status>` | `upstream_error` | The upstream server returned a non-success HTTP status. |
+| `timeout` | `timeout` | The upstream call timed out. |
+
+Grant, rate-limit and argument-guardrail denials are recorded before the gateway contacts the upstream server. A result-guardrail denial comes after the upstream call.
+
+A rate-limited call's `metadata.rate_limit` holds `policy`, `scope_kind`, `metric`, `period`, `limit` and `retry_after_seconds`.
+
+<Aside type="note" title="Direct success means HTTP success">
+On the direct endpoint, the gateway marks a call `success` when the upstream returns a success HTTP status. It doesn't read the JSON-RPC body, so an upstream JSON-RPC error inside a `200` response still shows as `success`.
+</Aside>
+
+## Record fields
+
+Each record has:
+
+- **`request_id`**: the JSON-RPC `id` of the MCP request. When the request has no `id`, the gateway generates one. Clients can reuse IDs, so a `request_id` isn't unique.
+- **Owner context**: the owner kind, and the API key, user and team IDs when known. For an OAuth client, `metadata` also holds `auth_method`, `oauth_client_id` and `oauth_grant_id`.
+- **Target identity**: `server_id` and `tool_id`, plus the server and tool display keys and names. `server_id` and `tool_id` can be `null`, so admins can still audit calls to unknown, denied or inactive tools. A call that runs a registered tool fills both.
+- **Outcome**: `status`, `error_code`, `latency_ms` and `policy_result`.
+- **Payload state**: `has_payload`, and the argument and result redaction and truncation flags.
+- **`occurred_at`**: when the call happened.
+- **`tool_schema_version`**: for `tools/call`, the tool version the gateway served, shown as **Tool version**. See [Tool version](#tool-version).
+
+### Tool version
+
+`tool_schema_version` is set when the gateway served its own stored definition of the tool:
+
+- on aggregate `call_tool`
+- on direct calls to a server that requires approval
+- on direct calls to a tool whose change still waits for review
+
+A direct call on a server without approval passes the live upstream definition through, so it records no version: the upstream may have changed since the last discovery. A denied call records no version either. The version is the one the gateway served at call time. It doesn't prove which version the client last listed. See [Tool versions and approval](/extensions/mcp-tool-access/#tool-versions-and-approval).
+
+## Payloads
+
+MCP invocations use the same payload policy as request logs, set by `request_logging.payloads` in `gateway.yaml`. See [Observability and request logs](/observability/) for the fields.
+
+- Only `capture_mode: redacted_payloads` (the default) stores arguments and results. With `disabled` or `summary_only`, `has_payload` is `false`.
+- The gateway redacts the payload, then truncates it before it stores it. `request_max_bytes` bounds the arguments and `response_max_bytes` bounds the result. A payload over the limit is stored as a `truncated` preview, and its truncation flag is set.
+- Aggregate `call_tool` stores the result. Direct `tools/call` stores the arguments only, so its **Result** is empty.
+
+<Aside type="caution" title="Redaction isn't a full secret filter">
+Redaction removes values at known keys and paths, and any secrets the optional guardrail secret scanner finds. A secret in free text, under a key it doesn't know, can still be stored. Don't treat stored payloads as secret-free.
+</Aside>
+
+The two redaction flags are set whenever a payload is stored. They don't tell you that a redaction actually happened.
+
+## Relation to request logs
+
+[Request logs](/observability/request-logs/) record model API requests. For a key with an MCP scope, a request log also shows how many MCP tools the key could reach, and the token-overhead estimate for their definitions. MCP invocation records cover the MCP calls themselves.
+
+The two aren't linked today. A record's `request_id` is the MCP JSON-RPC ID, not a request-log ID. The record has an optional `request_log_id` field, but the MCP endpoints don't set it.
+
+For user, team and API-key ownership, see [Identity and access](/access/identity-and-access/). For request failure classes, see [Request lifecycle and failure modes](/reference/request-lifecycle/).
+
+## Admin API
+
+| Method | Path |
+| --- | --- |
+| `GET` | `/api/v1/admin/observability/mcp-invocations` |
+| `GET` | `/api/v1/admin/observability/mcp-invocations/<mcp_tool_invocation_id>` |
+
+Both endpoints need an admin UI session. Users who aren't platform admins get only their own records: the list is limited to their `user_id`, and another user's detail returns `403`.
+
+The list takes these query parameters:
+
+| Parameter | Notes |
+| --- | --- |
+| `request_id`, `server_display_key`, `server_display_name`, `tool_display_key`, `tool_display_name`, `mcp_method` | Exact match. |
+| `api_key_id`, `user_id`, `team_id` | UUIDs. |
+| `status`, `policy_result` | One value each. |
+| `occurred_at_start`, `occurred_at_end` | RFC 3339 timestamps, both included. |
+| `page`, `page_size` | `page` defaults to 1. `page_size` defaults to 100, from 1 to 500. |
+
+The response has `items`, `page`, `page_size` and `total`. An invalid UUID, status, policy result or timestamp returns `400`. An unknown invocation returns `404`.

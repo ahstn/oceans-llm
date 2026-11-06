@@ -79,7 +79,7 @@ Snippets for OpenCode and Pi carry model data from the Models API:
 - **Context window** is the model's input window, or its context window if no input window is known, capped at 200,000 tokens. The output limit is the model's output window, or `0` if unknown.
 - **Input media** is `text`, plus `image` for vision routes.
 
-See [Pricing catalog and accounting](/access/pricing-and-accounting/) for how effective pricing is resolved.
+See [Pricing catalog and accounting](/spend/pricing-and-accounting/) for how effective pricing is resolved.
 
 ## OpenCode
 
@@ -164,8 +164,8 @@ Responses-compatible Bedrock routes may support only some OpenAI-hosted tools. F
 
 ## Shell guardrail hooks
 
-The snippets don't include a guardrail hook. Oceans' own Pi and OpenCode harness adapters install a pre-tool hook that calls `POST /api/v1/guardrails/evaluate` before each shell command. A deny or a failed evaluation stops the command. See [agent harness usage](https://docs.oceans-llm.com/operations/agent-harness-usage) and [gateway guardrails](https://docs.oceans-llm.com/operations/gateway-guardrails).
+The snippets don't include a guardrail hook. Oceans' own Pi and OpenCode harness adapters install a pre-tool hook that calls `POST /api/v1/guardrails/evaluate` before each shell command. A deny or a failed evaluation stops the command. See [agent harness usage](/observability/agent-harness-usage/) and [gateway guardrails](/operations/gateway-guardrails/).
 
 ## Access and budgets
 
-A snippet doesn't grant access. The gateway accepts a request only when the API key is active, the caller has access to the model, and every hard budget still has room. Budgets apply the same way whatever harness sends the request. Admins set them in `/admin/spend-controls`. See [budgets](https://docs.oceans-llm.com/access/budgets) for the budget types and setup, and [Budget settings](/access/budget-settings/) for the YAML fields.
+A snippet doesn't grant access. The gateway accepts a request only when the API key is active, the caller has access to the model, and every hard budget still has room. Budgets apply the same way whatever harness sends the request. Admins set them in `/admin/spend-controls`. See [budgets](/spend/budgets/) for the budget types and setup, and [Budget settings](/spend/budget-settings/) for the YAML fields.

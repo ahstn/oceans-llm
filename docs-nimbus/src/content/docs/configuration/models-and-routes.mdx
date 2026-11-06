@@ -185,7 +185,7 @@ models:
 - `cache_read_usd_per_million_tokens`, `cache_write_usd_per_million_tokens`, and `image_output_usd_per_million_tokens` are optional. Omitted rates stay absent. They don't fall back to catalog rates.
 - Every rate is a quoted decimal string with at most four fractional digits. Zero is valid. Unquoted numbers, negative, malformed, and overflowing values fail config loading. Unknown fields are rejected.
 
-`image_output_usd_per_million_tokens` prices the image tokens a provider reports in `completion_tokens_details.image_tokens` or `output_tokens_details.image_tokens`. Other completion tokens use the output rate. A cost the provider reports in usage, such as OpenRouter's `usage.cost`, takes precedence over the whole override. See [Pricing catalog and accounting](/access/pricing-and-accounting/).
+`image_output_usd_per_million_tokens` prices the image tokens a provider reports in `completion_tokens_details.image_tokens` or `output_tokens_details.image_tokens`. Other completion tokens use the output rate. A cost the provider reports in usage, such as OpenRouter's `usage.cost`, takes precedence over the whole override. See [Pricing catalog and accounting](/spend/pricing-and-accounting/).
 
 ### Route capabilities
 
@@ -281,7 +281,7 @@ When `supports_strict_tools` is unset, `runtime_converse` routes infer it from t
 
 ### GitHub Copilot route compatibility
 
-Copilot route support is fail-closed. Copy each value from a current `/models` response for the exact `upstream_model`. The [installation-token canary](https://docs.oceans-llm.com/providers/github-copilot#run-the-installation-token-canary) produces the projection you need.
+Copilot route support is fail-closed. Copy each value from a current `/models` response for the exact `upstream_model`. The [installation-token canary](/providers/github-copilot/#run-the-installation-token-canary) produces the projection you need.
 
 | Field | Default | Notes |
 | --- | --- | --- |

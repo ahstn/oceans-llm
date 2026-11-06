@@ -1,0 +1,119 @@
+---
+title: OpenCode Zen
+description: Connect Oceans to OpenCode Zen with the anthropic_compat provider, and point Pi at the Oceans Claude Fable 5.1 model.
+sidebar:
+  order: 3
+---
+
+OpenCode Zen exposes native Anthropic Messages at `https://opencode.ai/zen/v1/messages`. Oceans reaches it with the `anthropic_compat` provider type. This page sets up Zen with its `claude-fable-5-1` model, then connects Pi to that model through Oceans.
+
+For every `anthropic_compat` field, see [Providers](/configuration/providers/#anthropic_compat).
+
+## Add the provider and model
+
+An admin adds the provider and a model that routes to it:
+
+```yaml title="gateway.yaml"
+providers:
+  - id: opencode-zen
+    type: anthropic_compat
+    base_url: https://opencode.ai/zen
+    pricing_provider_id: opencode
+    auth:
+      kind: x_api_key
+      token: env.OPENCODE_API_KEY
+    default_headers:
+      anthropic-version: "2023-06-01"
+    display:
+      label: OpenCode Zen
+      icon_key: anthropic
+
+models:
+  - id: claude-fable-5-1
+    description: Claude Fable 5.1 through OpenCode Zen
+    max_reasoning_effort: max
+    routes:
+      - provider: opencode-zen
+        upstream_model: claude-fable-5-1
+```
+
+The key settings:
+
+- `base_url`: `https://opencode.ai/zen`, without `/v1/messages`. The adapter appends `/v1/messages`. A base that already ends in `/v1` also works.
+- `auth`: `kind: x_api_key` sends `OPENCODE_API_KEY` in the `x-api-key` header. This is the default `kind`.
+- `pricing_provider_id`: `opencode`. The vendored `opencode` catalog lists `claude-fable-5-1` at $10 input, $50 output, $0.25 cache read and $12.50 cache write per million tokens, with a 1,000,000-token context and 128,000 output tokens. The route needs no `pricing_override` unless your rates differ.
+- `default_headers`: the adapter sends `anthropic-version: 2023-06-01` when no `anthropic-version` header is set, so this entry only makes the value explicit.
+- `max_reasoning_effort`: an optional ceiling for reasoning effort on this model. See [Reasoning effort ceilings](/configuration/models-and-routes/#reasoning-effort-ceilings).
+
+### Capabilities
+
+The `anthropic_compat` adapter supports Chat Completions, streaming, tools and vision. It doesn't support Responses, embeddings, JSON schema output, images or Decisions. The adapter caps the route's capabilities to this set, so the route needs no `capabilities` block. Native `POST /v1/messages` requests also work on this route.
+
+## Claude Fable 5.1 behaviour
+
+The gateway classifies the model from `upstream_model`. For `claude-fable-5-1` it applies these rules ([`claude_models.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-core/src/claude_models.rs)):
+
+- **Thinking**: adaptive thinking is always on. A request that turns thinking off, or sends a manual `budget_tokens`, gets a local error.
+- **Effort**: `low`, `medium`, `high`, `xhigh` and `max`, up to the model's `max_reasoning_effort`. On Chat Completions, a request with no effort gets adaptive thinking at `high`. On native Messages, the gateway doesn't add an effort: Anthropic's own default applies.
+- **Tools**: tool use works with `tool_choice` set to `auto` or `none`, or omitted. Forced tool choice (`required`, a named function, or Anthropic `{"type": "any"}` and `{"type": "tool"}`) gets a local `400`, because the upstream rejects it for this model. See [Forced tool choice](/reference/provider-api-compatibility/#forced-tool-choice).
+- **Output limit**: a Chat Completions request without `max_tokens` or `max_completion_tokens` gets `max_tokens: 4096`. Set a higher value when you need longer output.
+
+For the full rules across Claude models, see [Claude thinking by model](/reference/provider-api-compatibility/#claude-thinking-by-model).
+
+## Connect Pi
+
+Pi connects to Oceans, not directly to Zen. Keep the two credentials apart:
+
+- `OPENCODE_API_KEY` stays on the gateway. It authenticates Oceans to Zen.
+- `OCEANS_LLM_API_KEY` stays on the client. It authenticates Pi to Oceans.
+
+A user generates the Pi config from the **Models** page, on the **Pi** tab of the client config dialog. See [Client harness configuration](/configuration/client-harnesses/#pi). For this model the snippet for `~/.pi/agent/models.json` looks like this:
+
+```json title="~/.pi/agent/models.json"
+{
+  "providers": {
+    "oceans-llm": {
+      "baseUrl": "https://llm.example.com",
+      "api": "anthropic-messages",
+      "apiKey": "$OCEANS_LLM_API_KEY",
+      "compat": {
+        "forceAdaptiveThinking": true
+      },
+      "models": [
+        {
+          "id": "claude-fable-5-1",
+          "name": "Claude Fable 5.1",
+          "reasoning": true,
+          "input": ["text", "image"],
+          "contextWindow": 200000,
+          "maxTokens": 128000,
+          "cost": {
+            "input": 10.0,
+            "output": 50.0,
+            "cacheRead": 0.25,
+            "cacheWrite": 12.5
+          },
+          "thinkingLevelMap": {
+            "off": null,
+            "minimal": null,
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+`contextWindow` is `200000` because every generated client config caps the context window at 200,000 tokens, even though the model accepts 1,000,000. Edit the value in the client config if you want a larger window. The generator sets `off` and `minimal` to `null` for Claude models with effort levels, so Pi hides those two levels. Levels above `max_reasoning_effort` are clamped to the ceiling.
+
+Set the key and start Pi:
+
+```sh
+export OCEANS_LLM_API_KEY='<Oceans gateway API key>'
+pi --provider oceans-llm --model claude-fable-5-1
+```

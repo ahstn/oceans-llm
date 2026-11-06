@@ -5,9 +5,9 @@ sidebar:
   order: 2
 ---
 
-This page lists the YAML fields for `budgets` and `budget_alerts`, with their defaults and validation rules. For how budgets are scoped, inherited and enforced, see [Budgets](https://docs.oceans-llm.com/access/budgets).
+This page lists the YAML fields for `budgets` and `budget_alerts`, with their defaults and validation rules. For how budgets are scoped, inherited and enforced, see [Budgets](/spend/budgets/).
 
-Budgets from the config file show in **Spend Controls** at `/admin/spend-controls`. Each row names its source: **Config (user)** for `users[*].budget`, **Config default** for `budgets.users.default`, **Config model default** for `budgets.users.model_defaults`, and **Config (service account)** for `service_accounts[*].budget`. Budgets set in the admin UI show **Manual**.
+Budgets from the config file show in **Spend Controls** at `/admin/spend-controls`, with a badge that names their source: **Config (user)** for `users[*].budget`, **Config default** for `budgets.users.default`, **Config model default** for `budgets.users.model_defaults`, and **Config (service account)** for `service_accounts[*].budget`. Budgets set in the admin UI have no source badge.
 
 ![Spend Controls Users tab with budget amounts, Monthly, Hard, and Config (user) badges, usage bars, and status](/images/spend-controls-budgets.png)
 
@@ -65,7 +65,7 @@ The rejection body always has `type: budget_error` and `code: budget_exceeded`. 
 
 Startup fails if a `model_defaults` entry names a model that isn't configured, or if two entries name the same model. The gateway trims model ids before it compares them. Unknown fields in `budgets` fail startup.
 
-Inherited defaults apply to config-seeded users, the bootstrap admin, users created in the admin UI, and JIT OIDC and OAuth users. A `users[*].budget` block overrides `budgets.users.default` for that user. Omitting it means inherit, not "no budget". The precedence rules and what admin edits do to inherited budgets are on [Budgets](https://docs.oceans-llm.com/access/budgets).
+Inherited defaults apply to config-seeded users, the bootstrap admin, users created in the admin UI, and JIT OIDC and OAuth users. A `users[*].budget` block overrides `budgets.users.default` for that user. Omitting it means inherit, not "no budget". The precedence rules and what admin edits do to inherited budgets are on [Budgets](/spend/budgets/).
 
 ## `budget_alerts`
 

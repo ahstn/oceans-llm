@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-Every Oceans deployment has the same shape, whichever [setup](/setup/) you use. This page covers that shape and the parts every deployment has to plan for. For step-by-step upgrades and recovery, use the [admin runbooks](https://docs.oceans-llm.com/operations/operator-runbooks).
+Every Oceans deployment has the same shape, whichever [setup](/setup/) you use. This page covers that shape and the parts every deployment has to plan for. For step-by-step upgrades and recovery, use the [admin runbooks](/operations/admin-runbooks/).
 
 ## One origin for everything
 
@@ -42,7 +42,7 @@ Oceans exports traces and metrics over OTLP. Set these under `server` in the gat
 | `otel_trace_sample_ratio` | `1.0` | The share of traces to keep, from `0.0` to `1.0`. |
 | `otel_export_interval_secs` | `30` | How often to export metrics, in seconds. |
 
-Neither the compose stack nor the Helm chart includes a collector. Point these settings at the collector or agent you already run. [Export traces and metrics](https://docs.oceans-llm.com/operations/observability/export-traces-and-metrics) has the full setup and a way to check it.
+Neither the compose stack nor the Helm chart includes a collector. Point these settings at the collector or agent you already run. [Export traces and metrics](/observability/export-traces-and-metrics/) has the full setup and a way to check it.
 
 ![An exported request trace as a span waterfall, from authentication through the provider stream to request-log persistence](/images/exported-trace-waterfall.png)
 

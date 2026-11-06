@@ -16,14 +16,14 @@ The gateway runs these steps in order for `/v1/chat/completions`, `/v1/responses
 1. **Request id.** Middleware takes the `x-request-id` header, or generates a UUID when it's absent. The gateway echoes the id on the response and uses it for request logs and the ledger.
 2. **Body limit.** Inference bodies over 64 MiB fail with `413 request_body_too_large`.
 3. **Authentication.** The gateway checks the API key and that it carries the inference scope. A service-account key also needs an active service-account budget. See [Authentication failures](#authentication-failures).
-4. **Model access.** The gateway resolves the requested model and checks it against the key's grants, the owner's allowlist and any model-level allowlist. A `tag:` selector picks the lowest-`rank` model that the key can use and that has every listed tag. Access is checked on the requested model only. An alias then resolves to its execution model, and the target's own allowlist is not applied. Model-level allowlists never admit service-account keys. The policy is in [Identity and access](https://docs.oceans-llm.com/access/identity-and-access).
+4. **Model access.** The gateway resolves the requested model and checks it against the key's grants, the owner's allowlist and any model-level allowlist. A `tag:` selector picks the lowest-`rank` model that the key can use and that has every listed tag. Access is checked on the requested model only. An alias then resolves to its execution model, and the target's own allowlist is not applied. Model-level allowlists never admit service-account keys. The policy is in [Identity and access](/access/identity-and-access/).
 5. **Route planning.** The gateway loads the execution model's routes, drops disabled routes, routes with a weight of `0` or less, and routes whose provider doesn't exist. It orders the rest by `priority` (lower first), with `weight` used for a random order inside one priority. If nothing survives, the request fails with `no_routes_available`.
-6. **Rate limits.** The gateway checks the matching [rate limits](/access/rate-limits/) for the key, user, team and model. A rejection returns `429 rate_limited` before guardrails, budgets or any provider call.
+6. **Rate limits.** The gateway checks the matching [rate limits](/spend/rate-limits/) for the key, user, team and model. A rejection returns `429 rate_limited` before guardrails, budgets or any provider call.
 7. **Reasoning effort.** The gateway takes the strictest `max_reasoning_effort` across the alias chain and checks every explicit effort field in the request. Omitted fields and `null` pass. Values above the ceiling, unknown values and malformed values fail with `400 invalid_request`.
 8. **Request tags.** The gateway reads request tag headers. Invalid tags fail with `400 invalid_request`.
 9. **Route selection.** The gateway removes routes that can't serve the request's API family and features (for example, `/v1/responses` needs `responses`, and a request with tools needs `tools`). Models with a routing policy can also apply session affinity and per-user provider credentials. The first remaining route is used. If no route fits, the request fails with `400 invalid_request` and the message lists the required capabilities. [Model routing and APIs](/configuration/model-routing/) owns this behaviour.
-10. **Guardrails.** Prompt guardrails run on the selected route. A block returns `403 guardrail_policy_denied`. Redaction rules can rewrite the prompt before it goes upstream. See [Gateway guardrails](https://docs.oceans-llm.com/operations/gateway-guardrails).
-11. **Budget gate.** The gateway checks hard budget limits for the request's owner and model. A rejection returns `422 budget_exceeded` by default. No provider call happens. See [Budgets](https://docs.oceans-llm.com/access/budgets).
+10. **Guardrails.** Prompt guardrails run on the selected route. A block returns `403 guardrail_policy_denied`. Redaction rules can rewrite the prompt before it goes upstream. See [Gateway guardrails](/operations/gateway-guardrails/).
+11. **Budget gate.** The gateway checks hard budget limits for the request's owner and model. A rejection returns `422 budget_exceeded` by default. No provider call happens. See [Budgets](/spend/budgets/).
 12. **Provider execution.** The provider adapter applies the route's compatibility transforms and calls the upstream. There's one attempt. The gateway doesn't retry or fall back to another route ([issue #118](https://github.com/ahstn/oceans-llm/issues/118)). Upstream failures map to the errors in [Provider failures](#provider-failures).
 13. **Usage accounting.** After the provider returns, the gateway normalises usage, prices it, applies it to budget windows and writes one ledger row. It also charges token-based rate limits. This happens before the response guardrail runs, so a response that a guardrail blocks is still charged.
 14. **Response guardrails.** Response guardrails run on the provider output. A block returns an error to the caller after the charge in step 13.
@@ -50,7 +50,7 @@ A streamed response starts with `200` and `text/event-stream`. After that, the s
 | The upstream transport fails mid-stream | Row with a `stream_error` attempt | Row only if the stream had reported usage |
 | The client disconnects | Row recorded in the background | No row. Reported tokens still count against token rate limits |
 
-The stream logger parses SSE across UTF-8 and frame boundaries. It keeps the latest usage snapshot it sees. Chat Completions streams usually report usage at the top level of a chunk. Responses streams report it on the completed event as `response.usage`. Bedrock streams are converted to OpenAI-compatible SSE before this step (see [AWS Bedrock](https://docs.oceans-llm.com/providers/aws-bedrock)). Payload policy can cap the stored stream events without affecting usage or error parsing.
+The stream logger parses SSE across UTF-8 and frame boundaries. It keeps the latest usage snapshot it sees. Chat Completions streams usually report usage at the top level of a chunk. Responses streams report it on the completed event as `response.usage`. Bedrock streams are converted to OpenAI-compatible SSE before this step (see [AWS Bedrock](/providers/aws-bedrock/)). Payload policy can cap the stored stream events without affecting usage or error parsing.
 
 ## Failure modes
 
@@ -72,7 +72,7 @@ Every error body carries `type` and `code`. `/v1/messages` uses the Anthropic er
 | Provider error | upstream status, `502` or `504` | `upstream_error` / see below | Row with one attempt | Only if usage was reported |
 | Response guardrail block | `403` | `policy_error` / `guardrail_policy_denied` | Row with one attempt | Yes (already charged) |
 
-A summary row or attempt row is only written when request logging applies to the caller. Service-account keys are always logged. A user's key is logged only when that user has request logging turned on. Payload storage follows the [payload policy](https://docs.oceans-llm.com/operations/observability-and-request-logs#payload-policy).
+A summary row or attempt row is only written when request logging applies to the caller. Service-account keys are always logged. A user's key is logged only when that user has request logging turned on. Payload storage follows the [payload policy](/observability/request-logs/#payload-policy).
 
 ### Authentication failures
 
@@ -80,11 +80,11 @@ Missing or invalid credentials return `401` with codes such as `missing_authoriz
 
 ### Rate limits
 
-`429 rate_limited` means a matching policy was exhausted. `Retry-After` gives the seconds until the request would fit. `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset` describe the tightest matching policy, and they're also set on admitted responses. Inference rejections write no request log row, and the `gateway.rate_limit.decisions` metric counts them. MCP requests get a JSON-RPC error with code `-32029` and are recorded as MCP invocations with error code `rate_limited`. [Rate limits](/access/rate-limits/) owns the policy.
+`429 rate_limited` means a matching policy was exhausted. `Retry-After` gives the seconds until the request would fit. `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset` describe the tightest matching policy, and they're also set on admitted responses. Inference rejections write no request log row, and the `gateway.rate_limit.decisions` metric counts them. MCP requests get a JSON-RPC error with code `-32029` and are recorded as MCP invocations with error code `rate_limited`. [Rate limits](/spend/rate-limits/) owns the policy.
 
 ### Budget exceeded
 
-The default status is `422`. Admins can set `budgets.exceeded_status_code` to `402`, `422` or `429` (see [Budget settings](/access/budget-settings/)). The body has `type: budget_error` and `code: budget_exceeded` in both envelopes, so a client can tell it apart from a validation `422`. The message names the budget cadence and scope kind (`user`, `service account` or `user+model`), the spend and the limit. It says that a retry won't succeed until the window resets or an admin raises the limit. It doesn't include budget ids or other principals' data.
+The default status is `422`. Admins can set `budgets.exceeded_status_code` to `402`, `422` or `429` (see [Budget settings](/spend/budget-settings/)). The body has `type: budget_error` and `code: budget_exceeded` in both envelopes, so a client can tell it apart from a validation `422`. The message names the budget cadence and scope kind (`user`, `service account` or `user+model`), the spend and the limit. It says that a retry won't succeed until the window resets or an admin raises the limit. It doesn't include budget ids or other principals' data.
 
 The default is `422` because the OpenAI and Anthropic Python SDKs retry `429` but not `422` ([ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-14-budget-exceeded-status-code.md)). Check your clients before you choose `429`.
 
@@ -111,7 +111,7 @@ Each ledger row in `usage_cost_events` has a `pricing_status`. A provider-report
 | `unpriced` | Usage exists but no exact rate matched | No (cost is zero) |
 | `usage_missing` | The provider reported no usable usage | No (cost is zero) |
 
-`unpriced` and `usage_missing` rows stay visible in reports. Common `unpriced` causes are an unsupported `pricing_provider_id`, an unsupported Vertex publisher or location, unsupported billing modifiers, and missing rates. [Pricing catalog and accounting](/access/pricing-and-accounting/) owns the rules.
+`unpriced` and `usage_missing` rows stay visible in reports. Common `unpriced` causes are an unsupported `pricing_provider_id`, an unsupported Vertex publisher or location, unsupported billing modifiers, and missing rates. [Pricing catalog and accounting](/spend/pricing-and-accounting/) owns the rules.
 
 If the ledger write itself fails, the gateway logs a warning and the caller still gets the successful response.
 
@@ -155,7 +155,7 @@ Request logs and ledger rows are separate records for separate jobs.
 - `request_logs` holds the outcome the caller saw.
 - `request_log_payloads` holds sanitised request and response bodies, when payload policy stores them.
 - `request_log_attempts` holds the provider attempt metadata.
-- MCP invocation records hold per-tool status, policy result, latency and sanitised metadata. See [MCP invocations](https://docs.oceans-llm.com/mcp/mcp-invocations).
+- MCP invocation records hold per-tool status, policy result, latency and sanitised metadata. See [MCP invocations](/extensions/mcp-invocations/).
 - `usage_cost_events` holds spend for budgets and reports.
 
-Because they're separate, a request can have a log row and an `unpriced` ledger row, or a log row and no ledger row (a cancelled stream), or a ledger row and no log row (a user with request logging turned off). Payload policy, redaction and retention are owned by [Observability and request logs](https://docs.oceans-llm.com/operations/observability-and-request-logs).
+Because they're separate, a request can have a log row and an `unpriced` ledger row, or a log row and no ledger row (a cancelled stream), or a ledger row and no log row (a user with request logging turned off). Payload policy, redaction and retention are owned by [Observability and request logs](/observability/).
