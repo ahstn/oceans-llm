@@ -238,6 +238,31 @@ The immediate repeat returned a free native `429` with `rate_limited` and no req
 
 Current artifacts are under `/tmp/oceans-admin-verification/20261106T193928Z-pr611-structural-refactor/evidence`, including `bedrock-structural-smoke.json`, `vertex-structural-smoke.json`, `structural-native-observations.json`, `structural-request-log-api-safe.json`, `structural-budget-observations.json` and `structural-manual-cleanup.json`. The two known Messages gaps and missing optional auth seeds remain visible in the proof report.
 
+### Review-comment closeout (2026-11-06)
+
+Six new unresolved comments were checked against source and executable regressions before their advice was accepted:
+
+| Finding | Assessment and correction |
+|---|---|
+| [Replay text owns the public replacement](https://github.com/ahstn/oceans-llm/pull/611#discussion_r4497390725) | Valid. Metadata-first streams lost the transformed answer; public-first streams duplicated transform input. Public text and replay copies now have separate ownership. Matching copies avoid duplicate inspection, while conflicting or unprojected text and tools retain their checks. |
+| [Compatibility EOF can report success](https://github.com/ahstn/oceans-llm/pull/611#discussion_r4497426490) | Valid. Mantle and Copilot now require actual `message_stop`, including recoverable incomplete replay. Native errors after replay failure remain errors, with observed late usage retained. |
+| [Compatibility totals exclude cached input](https://github.com/ahstn/oceans-llm/pull/611#discussion_r4497426499) | Valid. Merged native counters use the shared checked total. Overflow preserves counters and explicitly invalidates the numeric total with null instead of panicking or retaining an older value. |
+| [Messages failure metrics are skipped](https://github.com/ahstn/oceans-llm/pull/611#discussion_r4497426509) | Valid. Selection with no eligible provider, and stream-start failures, record one shared request metric. Existing tool-cardinality exclusions and no-charge behavior remain unchanged. Earlier model-resolution failures stay outside this lifecycle, matching Chat. |
+| [Converse redacted prefixes are rebuilt](https://github.com/ahstn/oceans-llm/pull/611#discussion_r4497430305) | Valid by source. Decoded fragments now append to per-block byte buffers and encode at terminal assembly. The continuation regression also exposed and corrected a dropped initial `data` alias prefix. |
+| [Native preambles repeatedly move the tail](https://github.com/ahstn/oceans-llm/pull/611#discussion_r4497430310) | Valid by source. Offset scanning releases complete prefixes per input chunk; it no longer drains and shifts the remaining buffer per frame. Coalesced and fragmented preambles retain their bytes. |
+
+The initial baseline had eleven failing consumer regressions; denial, invalid-fragment and byte-preservation controls also ran. Two independent reviewers then found gaps in the first fixes. Three further failing regressions showed that interrupted Bedrock reasoning must reconstruct fragments separately from terminal snapshots. The corrected reasoning, public-text, denial, metrics and framing checks passed all fourteen targeted HTTP regressions.
+
+The second review found that omitting an overflowing total alone leaves an earlier total in the production collector. The revised producer regression failed before explicit null invalidation. Real-collector controls confirmed that the existing merge clears null and uncached overflow still fails. Further consumer checks exposed a cache-overflow fallback that reported a partial total of two. Logs and billing summaries now preserve an explicit unknown instead; missing totals retain normal derivation, and invalid-cache pricing keeps its existing policy. No generic collector merge policy was changed.
+
+The maintained Messages gate now requires the new public/replay ownership, interrupted reasoning, terminal, cache, overflow, collector, redacted continuation, metrics and preamble regressions. Local transport fixtures do not certify live cloud credentials or measured performance.
+
+Final verification passed 2,205 Messages-gate tests and all 119 gate checks, all 37 verifier-helper tests, and `mise run lint`. Both independent reviewers reported no remaining findings. Disposable real-client transport proofs passed 22 provider cases across 28 HTTP requests and 14 public-gateway TCP cases. These exercised SSE, checksummed Bedrock EventStream, the production usage collector, managed guardrails, incomplete streams, redacted continuation and request metrics. Their source files, manifests and lockfiles were removed after execution.
+
+Runtime run `20261106T211701Z-pr611-review-stream-fixes` used gateway `0.48.0`. All nine planned feature proofs passed `evidence --require-current`; the observability driver also proved Agent Harnesses. Two bounded paid requests were made: the backend driver's forced-tool Chat canary and one native OpenRouter Messages stream, shared by Messages, live requests and Request Logs. Native request `8207fdb2-b488-4aa4-b740-5bc4cd0b7ccf` ended with `end_turn` and `message_stop`, 13 input tokens, 4 output tokens and provider-reported cost `$0.0000033`. Fresh masked screenshots, safe ARIA and production API fields matched its route, usage and one successful terminal provider attempt.
+
+The immediate repeat returned a free native `429` with `rate_limited` and `Retry-After: 7`, without a request-log row. Policy edit, pause and deletion matched the API. The inference-only, single-model key was revoked and then rejected with `401`; both browser sessions were signed out. The queued demo batch was kept, and actual `getBatches` POST polling was observed 5,057 ms apart. The owned browser and stack were closed. Evidence remains under `/tmp/oceans-admin-verification/20261106T211701Z-pr611-review-stream-fixes/evidence`, including `messages-regressions.json`, `provider-review-wire-smoke.json`, `gateway-review-tcp-smoke.json`, `review-native-observations.json` and sanitized admin proof artifacts. Known optional gaps remain listed below and in the report.
+
 ### Remaining verification limits and known gaps
 
 - Live Vertex and Bedrock cloud calls were not exercised. Their local transport and replay checks do not prove cloud credentials, regions, signing or model-version behavior.

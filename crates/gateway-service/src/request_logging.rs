@@ -739,6 +739,7 @@ pub fn usage_summary_from_value(value: Option<&Value>) -> UsageSummary {
         .and_then(Value::as_i64);
     let total_tokens = match usage.get("total_tokens").and_then(Value::as_i64) {
         some @ Some(_) => some,
+        None if usage.get("total_tokens").is_some_and(Value::is_null) => None,
         None => match (prompt_tokens, completion_tokens) {
             (Some(prompt), Some(completion)) => prompt.checked_add(completion),
             _ => None,

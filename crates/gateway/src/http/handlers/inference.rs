@@ -53,9 +53,6 @@ impl<'a> InferenceRequest<'a> {
             Some(selection) => selection,
             None => {
                 let error = no_compatible_route_error(requirements);
-                if matches!(self.endpoint, RoutingEndpoint::Messages) {
-                    return Err(AppError(error));
-                }
                 let labels = ChatMetricLabels {
                     requested_model: &self.resolved.selection.requested_model.model_key,
                     resolved_model: &self.resolved.selection.execution_model.model_key,
@@ -68,11 +65,13 @@ impl<'a> InferenceRequest<'a> {
                     outcome: error.error_type(),
                     latency_seconds: latency_seconds_since(self.request_started_at),
                 });
-                self.state.metrics.record_tool_cardinality(
-                    &labels,
-                    self.request_log_context.operation,
-                    &self.request_log_context.tool_cardinality,
-                );
+                if !matches!(self.endpoint, RoutingEndpoint::Messages) {
+                    self.state.metrics.record_tool_cardinality(
+                        &labels,
+                        self.request_log_context.operation,
+                        &self.request_log_context.tool_cardinality,
+                    );
+                }
                 return Err(AppError(error));
             }
         };
@@ -285,15 +284,15 @@ impl InferenceExecution<'_> {
             },
         )
         .await;
-        if matches!(self.request.endpoint, RoutingEndpoint::Messages) {
-            return;
-        }
         state.metrics.record_chat_request(&ChatRequestMetric {
             labels: labels.clone(),
             status_code: i64::from(gateway_error.http_status_code()),
             outcome: gateway_error.error_type(),
             latency_seconds: latency_seconds_since(request_started_at),
         });
+        if matches!(self.request.endpoint, RoutingEndpoint::Messages) {
+            return;
+        }
         state.metrics.record_tool_cardinality(
             &ChatMetricLabels {
                 stream: tool_metric_stream,

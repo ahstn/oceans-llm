@@ -9,7 +9,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use super::replay::AnthropicReplayStream;
-use super::response::extract_anthropic_thinking_blocks;
+use super::response::{anthropic_usage_total, extract_anthropic_thinking_blocks};
 use crate::streaming::{done_sse_chunk, openai_sse_error_chunk, render_sse_event_chunk};
 
 pub(crate) fn normalize_anthropic_messages_stream<S>(
@@ -24,6 +24,7 @@ where
         let created = OffsetDateTime::now_utc().unix_timestamp();
         let mut parser = SseEventParser::default();
         let mut saw_payload_event = false;
+        let mut saw_message_stop = false;
         let mut stream_failed = false;
         let mut id = format!("chatcmpl-{}", Uuid::new_v4().simple());
         let mut sent_role = false;
@@ -84,6 +85,24 @@ where
                     .as_deref()
                     .or_else(|| value.get("type").and_then(Value::as_str))
                     .unwrap_or_default();
+
+                if event_type == "message_stop" {
+                    saw_message_stop = true;
+                }
+                if event_type == "error" {
+                    let error = value.get("error").unwrap_or(&value);
+                    let code = error
+                        .get("type")
+                        .and_then(Value::as_str)
+                        .unwrap_or("anthropic_messages_stream_error");
+                    let message = error
+                        .get("message")
+                        .and_then(Value::as_str)
+                        .unwrap_or("upstream Anthropic Messages stream failed");
+                    yield Ok(openai_sse_error_chunk(code, message));
+                    stream_failed = true;
+                    break;
+                }
 
                 if replay_error.is_none()
                     && let Err(message) = replay.observe(&value)
@@ -211,21 +230,6 @@ where
                     native_content_sent = true;
                 }
 
-                if event_type == "error" {
-                    let error = value.get("error").unwrap_or(&value);
-                    let code = error
-                        .get("type")
-                        .and_then(Value::as_str)
-                        .unwrap_or("anthropic_messages_stream_error");
-                    let message = error
-                        .get("message")
-                        .and_then(Value::as_str)
-                        .unwrap_or("upstream Anthropic Messages stream failed");
-                    yield Ok(openai_sse_error_chunk(code, message));
-                    stream_failed = true;
-                    break;
-                }
-
                 if event_type == "message_start" {
                     if let Some(message_id) = value
                         .get("message")
@@ -309,6 +313,14 @@ where
             && let Some(message) = replay_error
         {
             yield Ok(openai_sse_error_chunk("anthropic_messages_replay_error", message.as_str()));
+            stream_failed = true;
+        }
+
+        if !stream_failed && !saw_message_stop {
+            yield Ok(openai_sse_error_chunk(
+                "anthropic_messages_stream_truncated",
+                "upstream Anthropic Messages stream ended prematurely before message_stop event",
+            ));
             stream_failed = true;
         }
 
@@ -446,11 +458,15 @@ fn merge_openai_stream_usage(latest: &mut Option<Value>, usage: &Value) -> Value
             Value::Number(completion.into()),
         );
     }
-    if let (Some(prompt), Some(completion)) = (prompt, completion) {
-        merged.insert(
-            "total_tokens".to_string(),
-            Value::Number((prompt + completion).into()),
-        );
+    if prompt.is_some()
+        && completion.is_some()
+        && let Some(provider_usage) = merged.get("provider_usage").and_then(Value::as_object)
+    {
+        // Explicit unknown clears an earlier valid total in consumers merging usage snapshots.
+        let total = anthropic_usage_total(provider_usage)
+            .map(|total| Value::Number(total.into()))
+            .unwrap_or(Value::Null);
+        merged.insert("total_tokens".to_string(), total);
     }
     let merged = Value::Object(merged);
     *latest = Some(merged.clone());

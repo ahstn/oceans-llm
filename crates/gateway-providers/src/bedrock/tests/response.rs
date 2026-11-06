@@ -227,13 +227,13 @@ async fn normalizes_mantle_anthropic_messages_sse() {
     assert!(transcript.contains(r#""finish_reason":"stop""#));
     assert!(transcript.contains(r#""prompt_tokens":3"#));
     assert!(transcript.contains(r#""completion_tokens":1"#));
-    assert!(transcript.contains(r#""total_tokens":4"#));
     let final_usage = transcript
         .lines()
         .filter_map(|line| line.strip_prefix("data: "))
         .filter_map(|data| serde_json::from_str::<Value>(data).ok())
         .find(|chunk| chunk["choices"][0]["finish_reason"] == "stop")
         .expect("final usage chunk");
+    assert_eq!(final_usage["usage"]["total_tokens"], 7);
     assert_eq!(
         final_usage["usage"]["provider_usage"],
         json!({

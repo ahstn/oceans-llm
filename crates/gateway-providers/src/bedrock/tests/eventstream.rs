@@ -410,6 +410,123 @@ async fn sparse_interleaved_tool_blocks_keep_dense_stable_chat_ordinals() {
 }
 
 #[tokio::test]
+async fn invalid_redacted_reasoning_drains_late_usage_without_success() {
+    for (initial, prefix, fragment, expected_message) in [
+        (
+            json!("YQ=="),
+            Some("Yg=="),
+            json!("%%%"),
+            "invalid Bedrock redacted reasoning",
+        ),
+        (
+            json!("YQ=="),
+            None,
+            json!("%%%"),
+            "invalid Bedrock redacted reasoning",
+        ),
+        (
+            json!("%%%"),
+            None,
+            json!("Yg=="),
+            "invalid Bedrock redacted reasoning",
+        ),
+        (
+            json!("YQ=="),
+            None,
+            json!("Y"),
+            "invalid Bedrock redacted reasoning",
+        ),
+        (
+            json!("YQ=="),
+            None,
+            json!(7),
+            "native string delta must be a string",
+        ),
+    ] {
+        for key in ["redactedContent", "data"] {
+            let mut frames = vec![converse_event(
+                "contentBlockStart",
+                json!({"contentBlockIndex":3,"start":{"reasoningContent":{
+                    "redactedContent":initial
+                }}}),
+            )];
+            if let Some(prefix) = prefix {
+                frames.push(converse_event(
+                    "contentBlockDelta",
+                    json!({"contentBlockIndex":3,"delta":{"reasoningContent":{(key):prefix}}}),
+                ));
+            }
+            frames.extend([
+                converse_event(
+                    "contentBlockDelta",
+                    json!({"contentBlockIndex":3,"delta":{"reasoningContent":{(key):fragment}}}),
+                ),
+                converse_event(
+                    "contentBlockDelta",
+                    json!({"contentBlockIndex":9,"delta":{"text":"AFTER_FAILURE_MUST_NOT_APPEAR"}}),
+                ),
+                converse_event("messageStop", json!({"stopReason":"end_turn"})),
+                converse_event(
+                    "metadata",
+                    json!({"usage":{"inputTokens":8,"outputTokens":3}}),
+                ),
+            ]);
+            let combined = frames.concat();
+            for chunks in [frames, vec![combined]] {
+                let transcript = collect_bedrock_stream(chunks).await;
+                let events = stream_events(&transcript);
+                let usage_index = events
+                    .iter()
+                    .position(|event| event.get("usage").is_some())
+                    .unwrap();
+                let error_index = events
+                    .iter()
+                    .position(|event| event.get("error").is_some())
+                    .unwrap();
+                assert!(usage_index < error_index);
+                assert_eq!(events[usage_index]["usage"]["total_tokens"], 11);
+                assert_eq!(
+                    events[error_index]["error"]["code"],
+                    "bedrock_conversestream_replay_error"
+                );
+                assert!(
+                    events[error_index]["error"]["message"]
+                        .as_str()
+                        .unwrap()
+                        .contains(expected_message),
+                    "{transcript}"
+                );
+                let terminal = events
+                    .iter()
+                    .find(|event| {
+                        event["choices"][0]["delta"]["provider_metadata"]["aws_bedrock"]
+                            .get("stop_reason")
+                            .is_some()
+                    })
+                    .unwrap();
+                assert_eq!(
+                    terminal["choices"][0]["delta"]["provider_metadata"]["aws_bedrock"]["reasoning"]
+                        ["blocks"][0]["data"],
+                    if prefix.is_some() {
+                        json!("YWI=")
+                    } else {
+                        initial.clone()
+                    }
+                );
+                assert!(events.iter().all(|event| {
+                    event["choices"][0]["finish_reason"].is_null()
+                        && event["choices"][0]["delta"]["provider_metadata"]["aws_bedrock"]
+                            .get("native_content")
+                            .is_none()
+                }));
+                assert!(!transcript.contains("AFTER_FAILURE_MUST_NOT_APPEAR"));
+                assert!(!transcript.contains("[DONE]"));
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn malformed_generation_emits_later_usage_then_error_without_success() {
     for reason in ["malformed_tool_use", "malformed_model_output"] {
         let transcript = collect_bedrock_stream(vec![

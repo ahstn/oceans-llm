@@ -850,3 +850,229 @@ fn native_messages_ignore_chat_replay_metadata_and_preserve_content_and_controls
         json!({"type":"enabled","budget_tokens":512})
     );
 }
+
+async fn compatibility_chat_chunks(
+    events: Vec<Value>,
+    namespace: &'static str,
+) -> (Vec<Value>, bool) {
+    let upstream = futures_util::stream::iter(
+        events
+            .into_iter()
+            .map(|event| Ok(Bytes::from(format!("data: {event}\n\n")))),
+    );
+    let mut stream = super::normalize_anthropic_messages_stream(upstream, context(), namespace);
+    let mut parser = SseEventParser::default();
+    let mut chunks = Vec::new();
+    let mut done = false;
+    while let Some(chunk) = stream.next().await {
+        for event in parser.push_bytes(&chunk.unwrap()).unwrap() {
+            if event.data == "[DONE]" {
+                done = true;
+            } else {
+                chunks.push(serde_json::from_str(&event.data).unwrap());
+            }
+        }
+    }
+    parser.finish().unwrap();
+    (chunks, done)
+}
+
+#[tokio::test]
+async fn compatibility_chat_requires_message_stop_after_content_and_finish() {
+    for namespace in ["aws_bedrock", "github_copilot"] {
+        for stop_reason in [None, Some("end_turn")] {
+            let mut events = vec![
+                json!({"type":"message_start","message":{"usage":{"input_tokens":3,"output_tokens":0}}}),
+                json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
+                json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Partial"}}),
+            ];
+            if let Some(stop_reason) = stop_reason {
+                events.extend([
+                    json!({"type":"content_block_stop","index":0}),
+                    json!({"type":"message_delta","delta":{"stop_reason":stop_reason},"usage":{"output_tokens":1}}),
+                    json!({"type":"message_delta","delta":{},"usage":{"output_tokens":4}}),
+                ]);
+            }
+            let (chunks, done) = compatibility_chat_chunks(events, namespace).await;
+            assert!(!done, "{namespace}: {stop_reason:?}");
+            assert_eq!(
+                chunks.last().unwrap()["error"]["code"],
+                "anthropic_messages_stream_truncated",
+                "{namespace}: {stop_reason:?}"
+            );
+            let text = chunks
+                .iter()
+                .filter_map(|chunk| chunk["choices"][0]["delta"]["content"].as_str())
+                .collect::<String>();
+            assert_eq!(text, "Partial");
+            if stop_reason.is_some() {
+                assert_eq!(
+                    chunks
+                        .iter()
+                        .filter_map(|chunk| chunk.get("usage"))
+                        .next_back()
+                        .unwrap()["completion_tokens"],
+                    4
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn compatibility_chat_incomplete_replay_requires_native_terminal_and_keeps_errors() {
+    for namespace in ["aws_bedrock", "github_copilot"] {
+        for (reason, finish) in [("max_tokens", "length"), ("refusal", "content_filter")] {
+            for terminal in ["eof", "message_stop", "error"] {
+                let mut events = vec![
+                    json!({"type":"message_start","message":{"usage":{"input_tokens":3,"output_tokens":0}}}),
+                    json!({"type":"content_block_start","index":0,"content_block":{
+                        "type":"tool_use","id":"partial","name":"lookup","input":{}}}),
+                    json!({"type":"content_block_delta","index":0,"delta":{
+                        "type":"input_json_delta","partial_json":"{\"q\":"}}),
+                    json!({"type":"content_block_stop","index":0}),
+                    json!({"type":"message_delta","delta":{"stop_reason":reason},"usage":{"output_tokens":1}}),
+                    json!({"type":"message_delta","delta":{},"usage":{"output_tokens":4,"future_usage":{"opaque":true}}}),
+                ];
+                match terminal {
+                    "message_stop" => events.push(json!({"type":"message_stop"})),
+                    "error" => {
+                        events.push(json!({"type":"error","error":{
+                        "type":"overloaded_error","message":"upstream failed after partial tool"}}))
+                    }
+                    _ => {}
+                }
+                let (chunks, done) = compatibility_chat_chunks(events, namespace).await;
+                assert_eq!(
+                    done,
+                    terminal == "message_stop",
+                    "{namespace}: {reason}: {terminal}"
+                );
+                let usage = chunks
+                    .iter()
+                    .filter_map(|chunk| chunk.get("usage"))
+                    .next_back()
+                    .unwrap();
+                assert_eq!(usage["completion_tokens"], 4);
+                assert_eq!(
+                    usage["provider_usage"]["future_usage"],
+                    json!({"opaque":true})
+                );
+                assert!(
+                    chunks
+                        .iter()
+                        .any(|chunk| chunk["choices"][0]["finish_reason"] == finish)
+                );
+                assert!(chunks.iter().all(|chunk| {
+                    chunk["choices"][0]["delta"]["provider_metadata"][namespace]
+                        .get("native_content")
+                        .is_none()
+                }));
+                if terminal == "message_stop" {
+                    assert!(chunks.iter().all(|chunk| chunk.get("error").is_none()));
+                } else {
+                    let expected = if terminal == "error" {
+                        "overloaded_error"
+                    } else {
+                        "anthropic_messages_stream_truncated"
+                    };
+                    assert_eq!(chunks.last().unwrap()["error"]["code"], expected);
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn compatibility_chat_cache_totals_merge_usage_snapshots_and_preserve_native_fields() {
+    for namespace in ["aws_bedrock", "github_copilot"] {
+        let events = vec![
+            json!({"type":"message_start","message":{"id":"native-id",
+                "usage":{"input_tokens":3,"output_tokens":0,"cache_read_input_tokens":2,
+                    "cache_creation_input_tokens":1,"future_usage":{"tier":"start"}}}}),
+            json!({"type":"content_block_start","index":0,
+                "content_block":{"type":"text","text":"Answer","future_block":{"opaque":true}}}),
+            json!({"type":"content_block_stop","index":0}),
+            json!({"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":"native-stop"},
+                "usage":{"output_tokens":1}}),
+            json!({"type":"message_delta","delta":{},"usage":{"output_tokens":4,
+                "cache_read_input_tokens":5,"cache_creation_input_tokens":2,"future_usage":{"tier":"late"}}}),
+            json!({"type":"message_stop"}),
+        ];
+        let (chunks, done) = compatibility_chat_chunks(events, namespace).await;
+        assert!(done, "{namespace}");
+        assert!(chunks.iter().all(|chunk| chunk.get("error").is_none()));
+        let usages = chunks
+            .iter()
+            .filter_map(|chunk| chunk.get("usage"))
+            .collect::<Vec<_>>();
+        assert_eq!(usages.len(), 3);
+        assert_eq!(usages[0]["total_tokens"], 6);
+        assert_eq!(usages[1]["total_tokens"], 7);
+        assert_eq!(usages[2]["total_tokens"], 14);
+        assert_eq!(
+            usages[0]["provider_usage"]["future_usage"],
+            json!({"tier":"start"})
+        );
+        assert_eq!(usages[1]["provider_usage"]["cache_read_input_tokens"], 2);
+        assert_eq!(
+            usages[2]["provider_usage"],
+            json!({
+                "input_tokens":3,"output_tokens":4,"cache_read_input_tokens":5,
+                "cache_creation_input_tokens":2,"future_usage":{"tier":"late"}
+            })
+        );
+        let metadata = chunks
+            .iter()
+            .find_map(|chunk| {
+                let metadata = &chunk["choices"][0]["delta"]["provider_metadata"][namespace];
+                metadata.get("native_content").map(|_| metadata)
+            })
+            .unwrap();
+        assert_eq!(metadata["message"]["stop_reason"], "end_turn");
+        assert_eq!(metadata["message"]["stop_sequence"], "native-stop");
+        assert_eq!(
+            metadata["native_content"]["blocks"][0]["future_block"],
+            json!({"opaque":true})
+        );
+    }
+}
+
+#[tokio::test]
+async fn compatibility_chat_usage_overflow_clears_prior_total_without_losing_usage() {
+    for namespace in ["aws_bedrock", "github_copilot"] {
+        for initial in [
+            json!({"input_tokens":i64::MAX,"output_tokens":0}),
+            json!({"input_tokens":1,"output_tokens":0,"cache_read_input_tokens":i64::MAX}),
+            json!({"input_tokens":1,"output_tokens":0,"cache_creation_input_tokens":i64::MAX}),
+        ] {
+            let (chunks, done) = compatibility_chat_chunks(vec![
+                json!({"type":"message_start","message":{"usage":initial}}),
+                json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}),
+                json!({"type":"message_stop"}),
+            ], namespace).await;
+            assert!(done, "{namespace}");
+            assert!(chunks.iter().all(|chunk| chunk.get("error").is_none()));
+            if initial["input_tokens"] == i64::MAX {
+                assert_eq!(
+                    chunks.iter().find_map(|chunk| chunk.get("usage")).unwrap()["total_tokens"],
+                    i64::MAX
+                );
+            }
+            let usage = chunks
+                .iter()
+                .filter_map(|chunk| chunk.get("usage"))
+                .next_back()
+                .unwrap();
+            assert_eq!(
+                usage.get("total_tokens"),
+                Some(&Value::Null),
+                "{namespace}: {usage}"
+            );
+            let mut expected = initial.clone();
+            expected["output_tokens"] = json!(1);
+            assert_eq!(usage["provider_usage"], expected);
+            assert_eq!(usage["completion_tokens"], 1);
+        }
+    }
+}

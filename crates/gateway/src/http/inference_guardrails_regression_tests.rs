@@ -67,6 +67,455 @@ fn assert_denied(error: GatewayError) {
     assert_eq!(reason_code, "regression.denied");
 }
 
+struct RecordingManagedEvaluator {
+    inner: StubManagedEvaluator,
+    inputs: Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+#[async_trait::async_trait]
+impl ManagedEvaluator for RecordingManagedEvaluator {
+    fn id(&self) -> &str {
+        self.inner.id()
+    }
+
+    fn service(&self) -> ManagedService {
+        self.inner.service()
+    }
+
+    async fn evaluate(
+        &self,
+        input: &EvaluationInput,
+    ) -> Result<ManagedOutcome, gateway_guardrails::EvaluationError> {
+        self.inputs.lock().expect("recorded inputs").push(
+            input
+                .payload
+                .text_content()
+                .expect("text input")
+                .to_string(),
+        );
+        self.inner.evaluate(input).await
+    }
+}
+
+async fn recorded_response_state(
+    outcomes: impl IntoIterator<Item = ManagedOutcome>,
+) -> (
+    tempfile::TempDir,
+    AppState,
+    Arc<std::sync::Mutex<Vec<String>>>,
+) {
+    let (directory, mut state) = managed_state(GuardPhase::ModelResponse, []).await;
+    let inputs = Arc::new(std::sync::Mutex::new(Vec::new()));
+    state.guardrail_engine = Arc::new(GuardrailEngine::new(
+        Vec::new(),
+        BTreeMap::from([(
+            "regression".into(),
+            Arc::new(RecordingManagedEvaluator {
+                inner: StubManagedEvaluator::new(
+                    "regression",
+                    ManagedService::GoogleModelArmor,
+                    outcomes.into_iter().map(Ok),
+                ),
+                inputs: inputs.clone(),
+            }) as Arc<dyn ManagedEvaluator>,
+        )]),
+    ));
+    (directory, state, inputs)
+}
+
+fn chat_replay_events(metadata_first: bool) -> Vec<Value> {
+    let mut events = Vec::new();
+    if metadata_first {
+        events.push(
+            json!({"choices":[{"delta":{"provider_metadata":{"anthropic":{
+                "native_event":{"type":"content_block_start","index":0,
+                    "content_block":{"type":"text","text":""}}
+            }}}}]}),
+        );
+    }
+    for text in ["private ", "answer"] {
+        events.push(json!({"choices":[{"delta":{
+            "content":text,
+            "provider_metadata":{"anthropic":{"native_event":{
+                "type":"content_block_delta","index":0,
+                "delta":{"type":"text_delta","text":text}
+            }}}
+        }}]}));
+    }
+    events.push(
+        json!({"choices":[{"delta":{"provider_metadata":{"anthropic":{
+            "native_content":{"content":[{"type":"text","text":"private answer"}]}
+        }}}}]}),
+    );
+    events.push(
+        json!({"choices":[{"delta":{"provider_metadata":{"anthropic":{
+        "native_content":{"content":[{"type":"text","text":"private answer"}]},
+        "stop_sequence":"END"
+    }}},"finish_reason":"stop"}],
+        "usage":{"prompt_tokens":10,"completion_tokens":3,"total_tokens":13}}),
+    );
+    events
+}
+
+fn chat_replay_stream(events: &[Value]) -> String {
+    format!(
+        ": heartbeat\r\n\r\n{}data: [DONE]\n\n",
+        events
+            .iter()
+            .map(|event| format!("data: {event}\n\n"))
+            .collect::<String>()
+    )
+}
+
+async fn assert_chat_replay_transform(metadata_first: bool) {
+    let (_directory, state, inputs) = recorded_response_state([transform("masked answer")]).await;
+    let source = chat_replay_stream(&chat_replay_events(metadata_first));
+
+    let guarded = guard_sse_payload(&state, &stream_guard_context(1 << 20), source.as_bytes())
+        .await
+        .expect("public text transformation");
+    let rendered = String::from_utf8(guarded).expect("UTF-8");
+    let frames = sse_frames(&rendered)
+        .filter_map(|frame| {
+            let data = sse_lines(frame)
+                .filter_map(|(line, _)| sse_data(line))
+                .collect::<Vec<_>>()
+                .join("\n");
+            serde_json::from_str::<Value>(&data).ok()
+        })
+        .collect::<Vec<_>>();
+    let public_text = frames
+        .iter()
+        .filter_map(|frame| frame["choices"][0]["delta"]["content"].as_str())
+        .collect::<String>();
+
+    assert_eq!(public_text, "masked answer");
+    assert_eq!(*inputs.lock().expect("inputs"), ["private answer"]);
+    assert!(!rendered.contains("private"));
+    assert!(!rendered.contains("native_event"));
+    assert!(!rendered.contains("native_content"));
+    assert_eq!(
+        frames.last().expect("terminal")["usage"]["total_tokens"],
+        13
+    );
+    assert_eq!(
+        frames.last().expect("terminal")["choices"][0]["delta"]["provider_metadata"]["anthropic"]["stop_sequence"],
+        "END"
+    );
+    assert!(rendered.ends_with("data: [DONE]\n\n"));
+}
+
+#[tokio::test]
+async fn chat_replay_metadata_first_preserves_transformed_public_answer() {
+    assert_chat_replay_transform(true).await;
+}
+
+#[tokio::test]
+async fn chat_replay_public_first_does_not_duplicate_transform_input() {
+    assert_chat_replay_transform(false).await;
+}
+
+#[tokio::test]
+async fn chat_replay_unchanged_stream_is_byte_preserved_and_inspected_once() {
+    let (_directory, state, inputs) = recorded_response_state([]).await;
+    let source = chat_replay_stream(&chat_replay_events(true));
+
+    let guarded = guard_sse_payload(&state, &stream_guard_context(1 << 20), source.as_bytes())
+        .await
+        .expect("unchanged stream");
+
+    assert_eq!(guarded, source.as_bytes());
+    assert_eq!(*inputs.lock().expect("inputs"), ["private answer"]);
+}
+
+#[tokio::test]
+async fn chat_replay_unprojected_text_remains_subject_to_denial() {
+    for field in ["native_event", "native_content", "custom"] {
+        let (_directory, state) = managed_state(GuardPhase::ModelResponse, [deny()]).await;
+        let events = [
+            json!({"choices":[{"delta":{"provider_metadata":{"anthropic":{
+            field: {"text":"unprojected forbidden answer"}
+        }}}}]} ),
+        ];
+        let source = chat_replay_stream(&events);
+
+        let error = guard_sse_payload(&state, &stream_guard_context(1 << 20), source.as_bytes())
+            .await
+            .expect_err("unprojected provider text must still be inspected");
+
+        assert_denied(error);
+    }
+}
+
+#[tokio::test]
+async fn chat_replay_conflicting_text_is_inspected_independently() {
+    for field in ["native_event", "native_content"] {
+        let (_directory, state, inputs) = recorded_response_state([
+            ManagedOutcome::Allow {
+                reason_code: ReasonCode::new("regression.allowed").expect("reason"),
+                metadata: Default::default(),
+            },
+            deny(),
+        ])
+        .await;
+        let events = [json!({"choices":[{"delta":{
+            "content":"public answer",
+            "provider_metadata":{"anthropic":{
+                field: {"text":"unprojected forbidden answer"}
+            }}
+        }}]})];
+        let source = chat_replay_stream(&events);
+
+        let error = guard_sse_payload(&state, &stream_guard_context(1 << 20), source.as_bytes())
+            .await
+            .expect_err("a replay copy that differs from public text must be inspected");
+
+        assert_denied(error);
+        assert_eq!(
+            *inputs.lock().expect("inputs"),
+            ["public answer", "unprojected forbidden answer"]
+        );
+    }
+}
+
+#[tokio::test]
+async fn chat_replay_unprojected_native_tools_remain_subject_to_denial() {
+    let (_directory, mut state) = stream_state(PolicyMode::Deny).await;
+    Arc::make_mut(&mut state.guardrail_config).default.packs =
+        vec![gateway_guardrails::PackId::new("core.filesystem").expect("pack")];
+    let events = [
+        json!({"choices":[{"delta":{"provider_metadata":{"anthropic":{
+        "native_event": {
+            "type":"content_block_start","index":0,
+            "content_block":{"type":"tool_use","id":"tool-1","name":"bash",
+                "input":{"command":"rm -rf /tmp/work"}}
+        }
+    }}}}]} ),
+    ];
+    let source = chat_replay_stream(&events);
+
+    let error = guard_sse_payload(&state, &stream_guard_context(1 << 20), source.as_bytes())
+        .await
+        .expect_err("native executable input must still be inspected");
+
+    let GatewayError::GuardrailDenied { reason_code, .. } = error else {
+        panic!("expected destructive command denial, got {error:?}");
+    };
+    assert_eq!(reason_code, "filesystem.recursive_force_remove");
+}
+
+#[tokio::test]
+async fn chat_replay_fix_preserves_independent_responses_snapshot_inspection() {
+    let (_directory, state, inputs) = recorded_response_state([
+        ManagedOutcome::Allow {
+            reason_code: ReasonCode::new("regression.allowed").expect("reason"),
+            metadata: Default::default(),
+        },
+        deny(),
+    ])
+    .await;
+    let events = [
+        json!({"type":"response.output_text.delta","output_index":0,"delta":"public answer"}),
+        json!({"type":"response.completed","response":{"output":[{
+            "content":[{"type":"output_text","text":"forbidden snapshot"}]
+        }]}}),
+    ];
+    let source = chat_replay_stream(&events);
+
+    let error = guard_sse_payload(&state, &stream_guard_context(1 << 20), source.as_bytes())
+        .await
+        .expect_err("Responses terminal text remains independently inspected");
+
+    assert_denied(error);
+    assert_eq!(
+        *inputs.lock().expect("inputs"),
+        ["public answer", "forbidden snapshot"]
+    );
+}
+
+struct PhraseManagedEvaluator {
+    outcome: ManagedOutcome,
+    inputs: Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+#[async_trait::async_trait]
+impl ManagedEvaluator for PhraseManagedEvaluator {
+    fn id(&self) -> &str {
+        "regression"
+    }
+
+    fn service(&self) -> ManagedService {
+        ManagedService::GoogleModelArmor
+    }
+
+    async fn evaluate(
+        &self,
+        input: &EvaluationInput,
+    ) -> Result<ManagedOutcome, gateway_guardrails::EvaluationError> {
+        let text = input.payload.text_content().expect("text input");
+        self.inputs.lock().expect("inputs").push(text.to_string());
+        Ok(if text.contains("private answer") {
+            self.outcome.clone()
+        } else {
+            ManagedOutcome::Allow {
+                reason_code: ReasonCode::new("regression.allowed").expect("reason"),
+                metadata: Default::default(),
+            }
+        })
+    }
+}
+
+async fn phrase_response_state(
+    outcome: ManagedOutcome,
+) -> (
+    tempfile::TempDir,
+    AppState,
+    Arc<std::sync::Mutex<Vec<String>>>,
+) {
+    let (directory, mut state) = managed_state(GuardPhase::ModelResponse, []).await;
+    let inputs = Arc::new(std::sync::Mutex::new(Vec::new()));
+    state.guardrail_engine = Arc::new(GuardrailEngine::new(
+        Vec::new(),
+        BTreeMap::from([(
+            "regression".into(),
+            Arc::new(PhraseManagedEvaluator {
+                outcome,
+                inputs: inputs.clone(),
+            }) as Arc<dyn ManagedEvaluator>,
+        )]),
+    ));
+    (directory, state, inputs)
+}
+
+fn bedrock_reasoning_delta(text: &str) -> Value {
+    json!({"choices":[{"delta":{"provider_metadata":{"aws_bedrock":{
+        "reasoning":{"source":"bedrock_converse_stream",
+            "blocks":[{"type":"reasoning_text","text":text}]}
+    }}},"finish_reason":null}]})
+}
+
+fn interrupted_reasoning_stream(with_error: bool) -> String {
+    let mut source = ["private ", "answer"]
+        .map(|text| format!("data: {}\n\n", bedrock_reasoning_delta(text)))
+        .concat();
+    if with_error {
+        source.push_str(
+            "data: {\"error\":{\"code\":\"upstream_failed\",\"message\":\"interrupted\"}}\n\n",
+        );
+    }
+    source
+}
+
+#[tokio::test]
+async fn chat_replay_bedrock_reasoning_interruptions_reconstruct_cross_fragment_denial() {
+    for with_error in [false, true] {
+        let (_directory, state, inputs) = phrase_response_state(deny()).await;
+        let source = interrupted_reasoning_stream(with_error);
+
+        let error = guard_sse_payload(&state, &stream_guard_context(1 << 20), source.as_bytes())
+            .await
+            .expect_err("a phrase split across interrupted reasoning deltas must be denied");
+
+        assert_denied(error);
+        assert!(
+            inputs
+                .lock()
+                .expect("inputs")
+                .iter()
+                .any(|text| text == "private answer"),
+            "the evaluator must receive the reconstructed phrase"
+        );
+    }
+}
+
+#[tokio::test]
+async fn chat_replay_bedrock_reasoning_interruptions_transform_cross_fragment_phrase() {
+    for with_error in [false, true] {
+        let (_directory, state, inputs) =
+            phrase_response_state(transform("masked reasoning")).await;
+        let source = interrupted_reasoning_stream(with_error);
+
+        let guarded = guard_sse_payload(&state, &stream_guard_context(1 << 20), source.as_bytes())
+            .await
+            .expect("interrupted reasoning is inspected");
+        let rendered = String::from_utf8(guarded).expect("UTF-8");
+
+        assert!(!rendered.contains("private"));
+        assert!(!rendered.contains("\"text\":\"answer\""));
+        assert!(
+            inputs
+                .lock()
+                .expect("inputs")
+                .iter()
+                .any(|text| text == "private answer")
+        );
+        assert_eq!(rendered.contains("upstream_failed"), with_error);
+        assert!(!rendered.contains("[DONE]"));
+    }
+}
+
+#[tokio::test]
+async fn chat_replay_bedrock_reasoning_terminal_copies_do_not_duplicate_transform_input() {
+    for finish_reason in [json!("stop"), Value::Null] {
+        let (_directory, state, inputs) =
+            phrase_response_state(transform("masked reasoning")).await;
+        let terminal = json!({"choices":[{"delta":{"provider_metadata":{"aws_bedrock":{
+            "stop_reason":"end_turn",
+            "reasoning":{"source":"bedrock_converse_stream",
+                "blocks":[{"type":"reasoning_text","text":"private answer"}]},
+            "native_content":{"source":"bedrock_converse","blocks":[
+                {"reasoningContent":{"reasoningText":{"text":"private answer","signature":"opaque"}}},
+                {"text":"public answer"}
+            ]}
+        }}},"finish_reason":finish_reason}],
+            "usage":{"prompt_tokens":10,"completion_tokens":3,"total_tokens":13}});
+        let public = json!({"choices":[{"delta":{"content":"public answer"}}]});
+        let source = format!(
+            "data: {public}\n\n{}data: {terminal}\n\n",
+            interrupted_reasoning_stream(false)
+        );
+
+        let guarded = guard_sse_payload(&state, &stream_guard_context(1 << 20), source.as_bytes())
+            .await
+            .expect("complete reasoning copies are inspected once");
+        let rendered = String::from_utf8(guarded).expect("UTF-8");
+
+        assert_eq!(
+            *inputs.lock().expect("inputs"),
+            ["public answer", "private answer"]
+        );
+        assert!(!rendered.contains("private"));
+        assert!(!rendered.contains("opaque"));
+        assert!(rendered.contains("\"content\":\"public answer\""));
+        assert!(rendered.contains("\"total_tokens\":13"));
+    }
+}
+
+#[tokio::test]
+async fn chat_replay_bedrock_reasoning_unchanged_interruptions_are_byte_preserved() {
+    for with_error in [false, true] {
+        let (_directory, state, inputs) = phrase_response_state(ManagedOutcome::Allow {
+            reason_code: ReasonCode::new("regression.allowed").expect("reason"),
+            metadata: Default::default(),
+        })
+        .await;
+        let source = interrupted_reasoning_stream(with_error);
+
+        let guarded = guard_sse_payload(&state, &stream_guard_context(1 << 20), source.as_bytes())
+            .await
+            .expect("allowed reasoning stream");
+
+        assert_eq!(guarded, source.as_bytes());
+        assert!(
+            inputs
+                .lock()
+                .expect("inputs")
+                .iter()
+                .any(|text| text == "private answer")
+        );
+    }
+}
+
 #[tokio::test]
 async fn denies_plain_system_prompt_without_other_text_fields() {
     let (_directory, state) = managed_state(GuardPhase::Prompt, [deny()]).await;

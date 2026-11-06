@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, btree_map::Entry};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use gateway_core::ProviderError;
@@ -8,6 +8,7 @@ use serde_json::{Map, Value, json};
 pub(super) struct ConverseReplayStream {
     native_blocks: BTreeMap<u64, Value>,
     tool_inputs: BTreeMap<u64, String>,
+    redacted_bytes: BTreeMap<u64, Vec<u8>>,
 }
 
 impl ConverseReplayStream {
@@ -24,6 +25,7 @@ impl ConverseReplayStream {
         {
             self.native_blocks
                 .insert(block_index, Value::Object(start.clone()));
+            self.redacted_bytes.remove(&block_index);
         }
         Ok(())
     }
@@ -92,32 +94,26 @@ impl ConverseReplayStream {
                                     }
                                 }
                             }
-                            "redactedContent" | "data" => {
-                                let previous = reasoning
-                                    .get("redactedContent")
-                                    .map(native_delta_string)
-                                    .transpose()?
-                                    .unwrap_or_default();
-                                let mut bytes =
-                                    BASE64_STANDARD.decode(previous).map_err(|error| {
-                                        ProviderError::Transport(format!(
-                                            "invalid Bedrock redacted reasoning: {error}"
-                                        ))
-                                    })?;
-                                bytes.extend(
-                                    BASE64_STANDARD
-                                        .decode(native_delta_string(value)?)
-                                        .map_err(|error| {
-                                            ProviderError::Transport(format!(
-                                                "invalid Bedrock redacted reasoning: {error}"
-                                            ))
-                                        })?,
-                                );
-                                reasoning.insert(
-                                    "redactedContent".to_string(),
-                                    json!(BASE64_STANDARD.encode(bytes)),
-                                );
-                            }
+                            "redactedContent" | "data" => match self.redacted_bytes.entry(index) {
+                                Entry::Occupied(mut entry) => {
+                                    append_redacted_bytes(
+                                        entry.get_mut(),
+                                        native_delta_string(value)?,
+                                    )?;
+                                }
+                                Entry::Vacant(entry) => {
+                                    let previous = reasoning
+                                        .get("redactedContent")
+                                        .or_else(|| reasoning.get("data"))
+                                        .map(native_delta_string)
+                                        .transpose()?
+                                        .unwrap_or_default();
+                                    let mut bytes = Vec::new();
+                                    append_redacted_bytes(&mut bytes, previous)?;
+                                    append_redacted_bytes(&mut bytes, native_delta_string(value)?)?;
+                                    entry.insert(bytes);
+                                }
+                            },
                             _ => {
                                 reasoning.insert(key.clone(), value.clone());
                             }
@@ -170,7 +166,19 @@ impl ConverseReplayStream {
                 }
             }
         }
-        let native_blocks = std::mem::take(&mut self.native_blocks);
+        let mut native_blocks = std::mem::take(&mut self.native_blocks);
+        for (index, bytes) in std::mem::take(&mut self.redacted_bytes) {
+            if let Some(reasoning) = native_blocks
+                .get_mut(&index)
+                .and_then(|block| block.get_mut("reasoningContent"))
+                .and_then(Value::as_object_mut)
+            {
+                reasoning.insert(
+                    "redactedContent".to_string(),
+                    json!(BASE64_STANDARD.encode(bytes)),
+                );
+            }
+        }
         let reasoning = native_blocks
             .values()
             .filter_map(|block| block.get("reasoningContent"))
@@ -187,6 +195,15 @@ impl ConverseReplayStream {
         }
         replay_error
     }
+}
+
+fn append_redacted_bytes(bytes: &mut Vec<u8>, part: &str) -> Result<(), ProviderError> {
+    let previous_len = bytes.len();
+    BASE64_STANDARD.decode_vec(part, bytes).map_err(|error| {
+        // decode_vec can resize and partially write before rejecting a fragment.
+        bytes.truncate(previous_len);
+        ProviderError::Transport(format!("invalid Bedrock redacted reasoning: {error}"))
+    })
 }
 
 fn malformed_native_container(name: &str) -> ProviderError {

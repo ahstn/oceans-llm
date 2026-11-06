@@ -13,20 +13,29 @@ pub(super) fn stream_with_model(mut upstream: ProviderStream, model: String) -> 
             let chunk = match chunk { Ok(chunk) => chunk, Err(error) => { yield Err(error); return; } };
             if model_written { yield Ok(chunk); continue; }
             pending.extend_from_slice(&chunk);
+            let mut consumed = 0;
             loop {
                 let Some(end) = frame_end(&pending, scanned) else {
-                    scanned = pending.len().saturating_sub(3);
+                    scanned = pending.len().saturating_sub(3).max(consumed);
                     break;
                 };
-                let frame: Vec<_> = pending.drain(..end).collect();
-                scanned = 0;
-                if let Some(frame) = rewrite_message_start(&frame, &model) {
+                if let Some(frame) = rewrite_message_start(&pending[consumed..end], &model) {
                     model_written = true;
+                    let buffered = axum::body::Bytes::from(std::mem::take(&mut pending));
+                    if consumed != 0 { yield Ok(buffered.slice(..consumed)); }
                     yield Ok(axum::body::Bytes::from(frame));
-                    if !pending.is_empty() { yield Ok(axum::body::Bytes::from(std::mem::take(&mut pending))); }
+                    if end < buffered.len() { yield Ok(buffered.slice(end..)); }
                     break;
                 }
-                yield Ok(axum::body::Bytes::from(frame));
+                consumed = end;
+                scanned = end;
+            }
+            // Release complete prefixes once per input chunk, without shifting the tail per frame.
+            if !model_written && consumed != 0 {
+                let buffered = axum::body::Bytes::from(std::mem::take(&mut pending));
+                pending.extend_from_slice(&buffered[consumed..]);
+                scanned = scanned.saturating_sub(consumed);
+                yield Ok(buffered.slice(..consumed));
             }
         }
         if !pending.is_empty() { yield Ok(axum::body::Bytes::from(pending)); }
@@ -261,6 +270,52 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[tokio::test]
+    async fn native_model_rewrite_preserves_large_coalesced_and_fragmented_preambles() {
+        let mut preamble = String::new();
+        for index in 0..2048 {
+            preamble.push_str(&format!(": keepalive {index}\r\n\r\n"));
+            preamble.push_str("event: future\ndata: {\"type\":\"future\",\"opaque\":\"世界\"}\n\n");
+        }
+        let start = "event: message_start\rdata: {\"type\":\"message_start\",\"message\":{\"model\":\"upstream\",\"content\":[]}}\r\r";
+        let suffix = "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
+        let input = format!("{preamble}{start}{suffix}");
+        let expected = format!(
+            "{preamble}{}{suffix}",
+            start.replace("\"upstream\"", "\"gateway\"")
+        );
+        for chunk_size in [7, 4093, input.len()] {
+            let chunks = input
+                .as_bytes()
+                .chunks(chunk_size)
+                .map(|chunk| Ok(Bytes::copy_from_slice(chunk)))
+                .collect::<Vec<_>>();
+            let output = stream_with_model(
+                Box::pin(futures_util::stream::iter(chunks)),
+                "gateway".into(),
+            )
+            .collect::<Vec<_>>()
+            .await;
+            let output = output
+                .into_iter()
+                .flat_map(|chunk| chunk.unwrap().to_vec())
+                .collect::<Vec<_>>();
+            assert_eq!(output, expected.as_bytes());
+        }
+
+        let unfinished = format!("{preamble}event: message_start\ndata: {{\"type\":");
+        let stream =
+            futures_util::stream::iter([Ok(Bytes::copy_from_slice(unfinished.as_bytes()))]);
+        let output = stream_with_model(Box::pin(stream), "gateway".into())
+            .collect::<Vec<_>>()
+            .await;
+        let output = output
+            .into_iter()
+            .flat_map(|chunk| chunk.unwrap().to_vec())
+            .collect::<Vec<_>>();
+        assert_eq!(output, unfinished.as_bytes());
     }
 
     #[tokio::test]

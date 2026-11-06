@@ -27,6 +27,135 @@ fn collector_reassembles_split_frames_and_keeps_latest_usage() {
 }
 
 #[test]
+fn collector_explicit_null_total_clears_stale_total_and_preserves_overflow_evidence() {
+    let mut collector = StreamResponseCollector::default();
+    let start = json!({"usage":{
+        "prompt_tokens":i64::MAX,"completion_tokens":0,"total_tokens":i64::MAX,
+        "provider_usage":{"input_tokens":i64::MAX,"output_tokens":0}
+    }});
+    let late = json!({"usage":{
+        "completion_tokens":1,"total_tokens":null,"provider_usage":{"output_tokens":1}
+    }});
+    collector.observe_chunk(format!("data: {start}\n\n").as_bytes());
+    assert_eq!(collector.usage().unwrap()["total_tokens"], i64::MAX);
+    collector.observe_chunk(format!("data: {late}\n\n").as_bytes());
+    collector.finish();
+
+    let usage = collector.usage().unwrap();
+    assert_eq!(usage.get("total_tokens"), Some(&serde_json::Value::Null));
+    assert_eq!(
+        usage["provider_usage"],
+        json!({"input_tokens":i64::MAX,"output_tokens":1})
+    );
+    let summary = usage_summary_from_value(Some(usage));
+    assert_eq!(summary.prompt_tokens, Some(i64::MAX));
+    assert_eq!(summary.completion_tokens, Some(1));
+    assert_eq!(summary.total_tokens, None);
+    assert!(
+        crate::usage::usage_summary_from_value(Some(usage)).is_err(),
+        "billing must reject overflow, not accept a stale explicit total"
+    );
+}
+
+#[test]
+fn collector_preserves_totals_for_unchanged_metadata_and_explicit_totals() {
+    let mut collector = StreamResponseCollector::default();
+    collector.observe_chunk(
+        b"data: {\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":1,\"total_tokens\":8,\"provider_usage\":{\"input_tokens\":3,\"output_tokens\":1,\"cache_read_input_tokens\":2,\"cache_creation_input_tokens\":2}}}\n\n",
+    );
+    for incoming in [
+        json!({"usage_source":"late","provider_usage":{"future_usage":{"opaque":true}}}),
+        json!({"prompt_tokens":3,"completion_tokens":1,"provider_usage":{
+            "input_tokens":3,"output_tokens":1,"cache_read_input_tokens":2,
+            "cache_creation_input_tokens":2}}),
+    ] {
+        let event = json!({"usage":incoming});
+        collector.observe_chunk(format!("data: {event}\n\n").as_bytes());
+        assert_eq!(collector.usage().unwrap()["total_tokens"], 8);
+    }
+    collector.observe_chunk(
+        b"data: {\"usage\":{\"completion_tokens\":2,\"total_tokens\":99,\"provider_usage\":{\"output_tokens\":2}}}\n\n",
+    );
+    collector.finish();
+    assert_eq!(collector.usage().unwrap()["total_tokens"], 99);
+    assert_eq!(
+        usage_summary_from_value(collector.usage()).total_tokens,
+        Some(99)
+    );
+}
+
+#[test]
+fn collector_cache_overflow_keeps_explicit_total_unknown_in_log_and_billing_summaries() {
+    for cache_counter in ["cache_read_input_tokens", "cache_creation_input_tokens"] {
+        let mut collector = StreamResponseCollector::default();
+        let start = json!({"usage":{
+            "prompt_tokens":1,"completion_tokens":1,"total_tokens":2,
+            "provider_usage":{"input_tokens":1,"output_tokens":1,cache_counter:0}
+        }});
+        let late = json!({"usage":{
+            "total_tokens":null,"provider_usage":{cache_counter:i64::MAX}
+        }});
+        collector.observe_chunk(format!("data: {start}\n\n").as_bytes());
+        collector.observe_chunk(format!("data: {late}\n\n").as_bytes());
+        collector.finish();
+
+        let usage = collector.usage().unwrap();
+        assert_eq!(usage.get("total_tokens"), Some(&serde_json::Value::Null));
+        assert_eq!(
+            usage["provider_usage"],
+            json!({"input_tokens":1,"output_tokens":1,cache_counter:i64::MAX})
+        );
+        let log_summary = usage_summary_from_value(Some(usage));
+        assert_eq!(log_summary.prompt_tokens, Some(1));
+        assert_eq!(log_summary.completion_tokens, Some(1));
+        assert_eq!(log_summary.total_tokens, None);
+        let billing_summary = crate::usage::usage_summary_from_value(Some(usage)).unwrap();
+        assert_eq!(billing_summary.total_tokens, None);
+        assert!(matches!(
+            &billing_summary.cache_usage,
+            crate::usage::CacheUsageNormalization::Invalid(_)
+        ));
+        assert_eq!(
+            billing_summary.cache_usage.reason().as_deref(),
+            Some("invalid_cache_token_usage:cache token total overflow")
+        );
+    }
+}
+
+#[test]
+fn collector_summaries_distinguish_explicit_unknown_from_missing_total() {
+    for (initial, expected) in [
+        (json!({"prompt_tokens":3,"completion_tokens":2}), 5),
+        (
+            json!({"input_tokens":3,"output_tokens":2,"cache_read_input_tokens":1}),
+            6,
+        ),
+    ] {
+        for unknown in [false, true] {
+            let mut usage = initial.clone();
+            if unknown {
+                usage["total_tokens"] = serde_json::Value::Null;
+            }
+            let event = json!({"usage":usage});
+            let mut collector = StreamResponseCollector::default();
+            collector.observe_chunk(format!("data: {event}\n\n").as_bytes());
+            collector.finish();
+            let expected = (!unknown).then_some(expected);
+            assert_eq!(
+                usage_summary_from_value(collector.usage()).total_tokens,
+                expected
+            );
+            assert_eq!(
+                crate::usage::usage_summary_from_value(collector.usage())
+                    .unwrap()
+                    .total_tokens,
+                expected
+            );
+        }
+    }
+}
+
+#[test]
 fn collector_merges_anthropic_usage_observed_before_stream_failure() {
     let mut collector = StreamResponseCollector::default();
     collector.observe_chunk(

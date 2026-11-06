@@ -312,6 +312,7 @@ async fn guard_sse_payload(
     let mut tool_fragments = BTreeMap::<String, ToolCallFragments>::new();
     let mut text_locations = Vec::<(String, usize, String)>::new();
     let mut snapshot_text_locations = Vec::<(String, usize, String)>::new();
+    let mut replay_locations_by_group = BTreeMap::<(String, String), Vec<(usize, String)>>::new();
 
     for raw in sse_frames(source) {
         let event_index = blocks.len();
@@ -319,53 +320,58 @@ async fn guard_sse_payload(
             .filter_map(|(line, _)| sse_data(line))
             .collect::<Vec<_>>()
             .join("\n");
-        let value =
-            if payload.trim().is_empty() || payload == "[DONE]" {
-                None
-            } else {
-                let value = match parse_guarded_sse_json(&payload) {
-                    Ok(value) => value,
-                    Err(_)
-                        if release_uninspected_stream(
-                            state,
-                            context,
-                            UninspectedContent::Unparseable,
-                            &[source.as_bytes()],
-                        ) =>
-                    {
-                        return Ok(source.as_bytes().to_vec());
-                    }
-                    Err(error) => return Err(error),
-                };
-                let mut pointers = Vec::new();
-                collect_string_pointers(&value, "", MODEL_RESPONSE_TEXT_FIELDS, &mut pointers);
-                if let Some(error) = value.get("error") {
-                    collect_all_string_pointers(error, "/error", &mut pointers);
+        let value = if payload.trim().is_empty() || payload == "[DONE]" {
+            None
+        } else {
+            let value = match parse_guarded_sse_json(&payload) {
+                Ok(value) => value,
+                Err(_)
+                    if release_uninspected_stream(
+                        state,
+                        context,
+                        UninspectedContent::Unparseable,
+                        &[source.as_bytes()],
+                    ) =>
+                {
+                    return Ok(source.as_bytes().to_vec());
                 }
-                let event_type = value.get("type").and_then(Value::as_str);
-                if event_type.is_some_and(|kind| {
-                    kind == "response.completed"
-                        || kind == "response.done"
-                        || kind == "response.output_text.done"
-                }) {
-                    snapshot_text_locations.extend(pointers.into_iter().map(|pointer| {
-                        (stream_text_group(&value, &pointer), event_index, pointer)
-                    }));
-                } else {
-                    if event_type.is_some_and(|kind| {
-                        kind.ends_with("output_text.delta")
-                            || kind.ends_with("reasoning_text.delta")
-                    }) && value.get("delta").is_some_and(Value::is_string)
-                    {
-                        pointers.push("/delta".to_string());
-                    }
-                    text_locations.extend(pointers.into_iter().map(|pointer| {
-                        (stream_text_group(&value, &pointer), event_index, pointer)
-                    }));
-                }
-                collect_stream_tool_fragments(&value, "", event_index, &mut tool_fragments);
-                Some(value)
+                Err(error) => return Err(error),
             };
+            let mut pointers = Vec::new();
+            collect_string_pointers(&value, "", MODEL_RESPONSE_TEXT_FIELDS, &mut pointers);
+            if let Some(error) = value.get("error") {
+                collect_all_string_pointers(error, "/error", &mut pointers);
+            }
+            let event_type = value.get("type").and_then(Value::as_str);
+            let snapshot = event_type.is_some_and(|kind| {
+                kind == "response.completed"
+                    || kind == "response.done"
+                    || kind == "response.output_text.done"
+            });
+            if !snapshot
+                && event_type.is_some_and(|kind| {
+                    kind.ends_with("output_text.delta") || kind.ends_with("reasoning_text.delta")
+                })
+                && value.get("delta").is_some_and(Value::is_string)
+            {
+                pointers.push("/delta".to_string());
+            }
+            for pointer in pointers {
+                let group = stream_text_group(&value, &pointer);
+                if let Some(owner) = stream_replay_text_owner(&value, &pointer, event_index) {
+                    replay_locations_by_group
+                        .entry((group, owner))
+                        .or_default()
+                        .push((event_index, pointer));
+                } else if snapshot {
+                    snapshot_text_locations.push((group, event_index, pointer));
+                } else {
+                    text_locations.push((group, event_index, pointer));
+                }
+            }
+            collect_stream_tool_fragments(&value, "", event_index, &mut tool_fragments);
+            Some(value)
+        };
         blocks.push(StreamBlock {
             raw,
             value,
@@ -438,6 +444,7 @@ async fn guard_sse_payload(
             .or_default()
             .push((event_index, pointer));
     }
+    let mut inspected_text_by_group = BTreeMap::<String, Vec<String>>::new();
     for (group, locations) in text_locations_by_group {
         let combined_text = stream_text_at_locations(&blocks, &locations);
         if combined_text.is_empty() {
@@ -447,23 +454,39 @@ async fn guard_sse_payload(
         if let Some(transformed) = &replacement {
             replace_stream_text(&mut blocks, &locations, transformed, true);
         }
-        let Some(snapshot_locations) = snapshot_locations_by_group.remove(&group) else {
-            continue;
-        };
-        let snapshot_text = stream_text_at_locations(&blocks, &snapshot_locations);
-        if snapshot_text == combined_text {
-            if let Some(transformed) = &replacement {
-                replace_stream_text(&mut blocks, &snapshot_locations, transformed, true);
+        if let Some(snapshot_locations) = snapshot_locations_by_group.remove(&group) {
+            let snapshot_text = stream_text_at_locations(&blocks, &snapshot_locations);
+            if snapshot_text == combined_text {
+                if let Some(transformed) = &replacement {
+                    replace_stream_text(&mut blocks, &snapshot_locations, transformed, true);
+                }
+            } else if let Some(transformed) =
+                guard_stream_text(state, context, &snapshot_text).await?
+            {
+                replace_stream_text(&mut blocks, &snapshot_locations, &transformed, true);
             }
-        } else if let Some(transformed) = guard_stream_text(state, context, &snapshot_text).await? {
-            replace_stream_text(&mut blocks, &snapshot_locations, &transformed, true);
         }
+        inspected_text_by_group.insert(group, vec![combined_text]);
     }
     for locations in snapshot_locations_by_group.values() {
         let snapshot_text = stream_text_at_locations(&blocks, locations);
         if let Some(transformed) = guard_stream_text(state, context, &snapshot_text).await? {
             replace_stream_text(&mut blocks, locations, &transformed, true);
         }
+    }
+    for ((group, _), locations) in replay_locations_by_group {
+        let replay_text = stream_text_at_locations(&blocks, &locations);
+        // Public deltas own the visible answer. Replay events and complete snapshots
+        // are copies, not incremental output; inspect differing or unprojected text
+        // independently rather than silently trusting the metadata.
+        let inspected = inspected_text_by_group.entry(group).or_default();
+        if inspected.contains(&replay_text) {
+            continue;
+        }
+        if let Some(transformed) = guard_stream_text(state, context, &replay_text).await? {
+            replace_stream_text(&mut blocks, &locations, &transformed, true);
+        }
+        inspected.push(replay_text);
     }
 
     // A later complete snapshot can contain data transformed in an earlier delta.
@@ -600,6 +623,39 @@ fn parse_guarded_sse_json(payload: &str) -> Result<Value, GatewayError> {
     })
 }
 
+fn stream_replay_text_owner(value: &Value, pointer: &str, event_index: usize) -> Option<String> {
+    let mut segments = pointer.strip_prefix("/choices/")?.split('/');
+    let choice_index = segments.next()?.parse::<usize>().ok()?;
+    let message_field = segments.next()?;
+    if !matches!(message_field, "message" | "delta") || segments.next()? != "provider_metadata" {
+        return None;
+    }
+    let namespace = segments.next()?;
+    let field = segments.next()?;
+    if namespace == "aws_bedrock" && field == "reasoning" {
+        let choice = value.get("choices")?.get(choice_index)?;
+        let metadata = choice
+            .get(message_field)?
+            .get("provider_metadata")?
+            .get(namespace)?;
+        // Converse emits reasoning fragments before messageStop. Its terminal
+        // snapshot always has stop_reason, even when a failure leaves finish_reason null.
+        if metadata.get("reasoning")?.get("source")?.as_str() == Some("bedrock_converse_stream")
+            && metadata.get("stop_reason").is_none()
+            && choice.get("finish_reason").is_none_or(Value::is_null)
+        {
+            return Some(format!("{namespace}:{field}"));
+        }
+    }
+    match field {
+        "native_event" => Some(format!("{namespace}:{field}")),
+        "native_content" | "reasoning" | "thought_signature" => {
+            Some(format!("{namespace}:{field}:{event_index}"))
+        }
+        _ => None,
+    }
+}
+
 fn stream_text_group(value: &Value, pointer: &str) -> String {
     let segments = pointer
         .split('/')
@@ -637,7 +693,10 @@ fn stream_text_kind(value: &Value, segments: &[&str]) -> &'static str {
     if matches!(
         field,
         "thinking" | "reasoning" | "reasoning_content" | "reasoning_text"
-    ) || event_type.contains("reasoning")
+    ) || segments
+        .iter()
+        .any(|segment| matches!(*segment, "reasoning" | "reasoningContent" | "reasoningText"))
+        || event_type.contains("reasoning")
     {
         "reasoning"
     } else if field == "refusal" {

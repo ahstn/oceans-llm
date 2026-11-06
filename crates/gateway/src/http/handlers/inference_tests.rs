@@ -573,11 +573,16 @@ async fn inference_endpoints_normalize_models_and_account_for_success() {
 
 #[tokio::test]
 async fn inference_endpoints_log_stream_start_failure_without_charging() {
-    for endpoint in [Endpoint::Chat, Endpoint::Responses] {
+    for endpoint in [Endpoint::Chat, Endpoint::Responses, Endpoint::Messages] {
         let (_directory, state, provider) = setup().await;
         let error = endpoint.call(state.clone(), true).await.unwrap_err();
         assert_eq!(error.0.error_code(), "upstream_transport");
-        assert_eq!(*provider.calls.lock().unwrap(), [(endpoint, true)]);
+        let upstream_endpoint = if endpoint == Endpoint::Messages {
+            Endpoint::Chat
+        } else {
+            endpoint
+        };
+        assert_eq!(*provider.calls.lock().unwrap(), [(upstream_endpoint, true)]);
         let detail = request_detail(&state).await;
         assert_eq!(detail.log.error_code.as_deref(), Some("upstream_transport"));
         assert_eq!(detail.attempts.len(), 1);
@@ -595,6 +600,35 @@ async fn inference_endpoints_log_stream_start_failure_without_charging() {
                 .is_none()
         );
         assert_eq!(state.metrics.test_snapshot().requests, 1);
+        assert_eq!(
+            state
+                .metrics
+                .test_snapshot()
+                .request_outcomes
+                .get(error.0.error_type()),
+            Some(&1)
+        );
+    }
+}
+
+#[tokio::test]
+async fn inference_endpoints_count_no_compatible_route_failures() {
+    for endpoint in [Endpoint::Chat, Endpoint::Responses, Endpoint::Messages] {
+        for stream in [false, true] {
+            let (_directory, state) = app_state().await;
+            seed_stream_cancellation_test(&state.store).await;
+            let error = endpoint.call(state.clone(), stream).await.unwrap_err();
+            assert!(matches!(
+                error.0,
+                gateway_core::GatewayError::InvalidRequest(_)
+            ));
+            let snapshot = state.metrics.test_snapshot();
+            assert_eq!(snapshot.requests, 1, "{endpoint:?}, stream={stream}");
+            assert_eq!(
+                snapshot.request_outcomes.get(error.0.error_type()),
+                Some(&1)
+            );
+        }
     }
 }
 

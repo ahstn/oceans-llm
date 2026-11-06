@@ -1,5 +1,7 @@
 use super::*;
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+
 fn assistant_projection(response: &Value) -> CoreChatMessage {
     let projection = &response["choices"][0]["message"];
     let mut assistant = message("assistant", "");
@@ -382,6 +384,139 @@ async fn converse_stream_consumer_replays_signed_redacted_order_and_detects_edit
     assert!(
         map_chat_request_to_converse(&request_with_assistant(assistant), &context("nova")).is_err()
     );
+}
+
+#[tokio::test]
+async fn converse_stream_replays_many_independently_encoded_redacted_fragments() {
+    for (initial_key, alias) in [
+        ("redactedContent", None),
+        ("data", None),
+        ("redactedContent", Some("%%%")),
+    ] {
+        let mut first = vec![0xff, 0x01];
+        let mut second = vec![0x80];
+        let initial = BASE64_STANDARD.encode(&first);
+        let mut initial_reasoning = json!({
+            (initial_key):initial,"futureReasoning":{"keep":[null,true]}
+        });
+        if let Some(alias) = alias {
+            initial_reasoning["data"] = json!(alias);
+        }
+        let mut events = vec![
+            (
+                "contentBlockStart",
+                json!({"contentBlockIndex":7,"start":{
+                    "reasoningContent":initial_reasoning,"futureRoot":[1,2]
+                }}),
+            ),
+            (
+                "contentBlockStart",
+                json!({"contentBlockIndex":2,"start":{"reasoningContent":{
+                    "redactedContent":BASE64_STANDARD.encode(&second)
+                }}}),
+            ),
+            (
+                "contentBlockStart",
+                json!({"contentBlockIndex":4,"start":{"futureServerBlock":{"opaque":true}}}),
+            ),
+            (
+                "contentBlockStart",
+                json!({"contentBlockIndex":5,"start":{"reasoningContent":{"data":"b3BhcXVl"}}}),
+            ),
+            (
+                "contentBlockDelta",
+                json!({"contentBlockIndex":0,"delta":{"text":"before"}}),
+            ),
+        ];
+        for index in 0..513 {
+            // Independent encoding exercises both padding lengths and complete triples.
+            let fragment = (0..index % 5 + 1)
+                .map(|offset| (index + offset) as u8)
+                .collect::<Vec<_>>();
+            let other = [(index + 128) as u8];
+            first.extend_from_slice(&fragment);
+            second.extend_from_slice(&other);
+            let key = if index % 2 == 0 {
+                "data"
+            } else {
+                "redactedContent"
+            };
+            events.push((
+                "contentBlockDelta",
+                json!({"contentBlockIndex":7,"delta":{"reasoningContent":{
+                    (key):BASE64_STANDARD.encode(&fragment)
+                }}}),
+            ));
+            events.push((
+                "contentBlockDelta",
+                json!({"contentBlockIndex":2,"delta":{"reasoningContent":{
+                    "redactedContent":BASE64_STANDARD.encode(other)
+                }}}),
+            ));
+        }
+        events.push((
+            "contentBlockDelta",
+            json!({"contentBlockIndex":9,"delta":{"text":"after"}}),
+        ));
+        events.push(("messageStop", json!({"stopReason":"end_turn"})));
+        events.push((
+            "metadata",
+            json!({"usage":{"inputTokens":8,"outputTokens":3}}),
+        ));
+        let frames = events
+            .iter()
+            .map(|(kind, payload)| {
+                eventstream_frame(
+                    &[(":message-type", "event"), (":event-type", kind)],
+                    payload.to_string().as_bytes(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let combined = frames.concat();
+        for chunks in [frames, vec![combined]] {
+            let transcript = collect_bedrock_stream(chunks).await;
+            let assistant = assistant_from_stream(&transcript);
+            assert_eq!(assistant.content, "beforeafter");
+            let reasoning =
+                &assistant.extra["provider_metadata"]["aws_bedrock"]["reasoning"]["blocks"];
+            assert_eq!(reasoning[0]["data"], BASE64_STANDARD.encode(&second));
+            assert_eq!(reasoning[1]["data"], "b3BhcXVl");
+            assert_eq!(
+                reasoning[2]["data"],
+                BASE64_STANDARD.encode(&first),
+                "{initial_key}"
+            );
+            let body =
+                map_chat_request_to_converse(&request_with_assistant(assistant), &context("nova"))
+                    .unwrap();
+            let mut expected_first = json!({
+                "reasoningContent":{
+                    "redactedContent":BASE64_STANDARD.encode(&first),
+                    "futureReasoning":{"keep":[null,true]}
+                },
+                "futureRoot":[1,2]
+            });
+            if initial_key == "data" {
+                expected_first["reasoningContent"]["data"] = json!(initial);
+            } else if let Some(alias) = alias {
+                expected_first["reasoningContent"]["data"] = json!(alias);
+            }
+            assert_eq!(
+                body["messages"][1]["content"],
+                json!([
+                    {"text":"before"},
+                    {"reasoningContent":{"redactedContent":BASE64_STANDARD.encode(&second)}},
+                    {"futureServerBlock":{"opaque":true}},
+                    {"reasoningContent":{"data":"b3BhcXVl"}},
+                    expected_first,
+                    {"text":"after"}
+                ]),
+                "{initial_key}"
+            );
+            assert!(transcript.contains(r#""total_tokens":11"#));
+            assert!(transcript.ends_with("data: [DONE]\n\n"));
+        }
+    }
 }
 
 #[tokio::test]

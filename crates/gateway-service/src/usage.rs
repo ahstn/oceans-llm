@@ -64,6 +64,12 @@ pub(crate) fn usage_summary_from_value(
     } else {
         total_tokens
     };
+    // Preserve an explicit unknown after validating the counters and their checked totals.
+    let total_tokens = if usage.get("total_tokens").is_some_and(Value::is_null) {
+        None
+    } else {
+        total_tokens
+    };
     let (uncached_input_tokens, cache_read_tokens, cache_write_tokens) =
         cache_usage.tokens().map_or((None, None, None), |tokens| {
             (
