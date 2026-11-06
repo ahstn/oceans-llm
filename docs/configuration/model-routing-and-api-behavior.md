@@ -322,7 +322,7 @@ Catalog hints fill these flags when the catalog states them:
 
 A hint only fills a flag that config and compatibility leave unset. A hint can set such a flag to `false`. A hint never changes a flag that you set. Hints follow the catalog, so a catalog refresh can change a hinted flag. Set the flag explicitly when a route must not change.
 
-Startup validation checks route config, then compatibility, then defaults. It does not use hints. It rejects a flag you set that contradicts compatibility, such as `stream: true` on a `runtime_anthropic_invoke` route, or `chat_completions: true` on a Decisions route.
+Startup validation checks route config, then compatibility, then defaults. It does not use hints. It rejects a flag you set that contradicts compatibility, such as `stream: true` on a `runtime_anthropic_invoke` route, or `chat_completions: true` on a Decisions route. It also rejects `true` for a flag the provider type cannot serve at all, such as `responses: true` on an `anthropic_compat` route, because the adapter cap would silently drop it.
 
 Route selection, batches, the admin Models page, `GET /v1/models`, and `GET /v1/model-metadata` all use the same effective flags.
 

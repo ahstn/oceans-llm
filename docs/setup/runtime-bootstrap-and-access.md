@@ -26,6 +26,8 @@ Those actions are controlled by:
 - `GATEWAY_SEED_CONFIG`
 - `GATEWAY_BOOTSTRAP_ADMIN`
 
+Every command reads the main config from `--config` or `GATEWAY_CONFIG`, plus any fragments under `--config-dir` or `GATEWAY_CONFIG_DIR`. A path set explicitly must exist. Only the implicit `./gateway.yaml` default may be absent, in which case the gateway starts with built-in defaults and no providers or models. See [Config Files and Fragments](../configuration/configuration-reference.md#config-files-and-fragments).
+
 The same behavior is also exposed through explicit commands:
 
 - `gateway migrate`
@@ -103,7 +105,7 @@ What exists after boot:
 - database: external PostgreSQL by default, optional CloudNativePG `Cluster`
 - migrations: Helm hook Job enabled by default
 - bootstrap admin: disabled until `bootstrapAdminJob.enabled=true`
-- seeded config: disabled until `seedConfigJob.enabled=true`
+- seeded config: disabled until `seedConfigJob.enabled=true`, so providers and models in `gateway.config` or fragment ConfigMaps are not applied until then
 
 What exists after boot depends on the enabled Jobs:
 
@@ -204,7 +206,7 @@ The gateway proxies `/admin/*` to the admin UI runtime. The admin UI runtime mus
 
 These behaviors are easy to blur together:
 
-- `seed-config` creates config-backed runtime objects
+- `seed-config` creates and updates config-backed runtime objects; it does not remove providers or models that were deleted from config, and their routes stay enabled
 - `bootstrap-admin` creates control-plane access
 - `serve` can do both, but only when the related switches are on
 - service-account credentials create non-human data-plane access

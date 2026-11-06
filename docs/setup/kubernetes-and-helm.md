@@ -42,6 +42,39 @@ All public HTTP traffic enters through the gateway service. The admin UI service
 
 The chart intentionally has no raw YAML fallback value. Keep deploy-specific config in values files and let the chart render the gateway config.
 
+Write `gateway.config.providers` and `gateway.config.models` as maps keyed by id. Helm deep-merges maps across `-f` values files but replaces lists, so map entries let each values file own a set of providers and models:
+
+```bash
+helm upgrade oceans oci://ghcr.io/ahstn/charts/oceans-llm \
+  -f values.yaml -f models/openai.yaml -f models/multi-provider.yaml
+```
+
+An overlay removes an entry with `<id>: null`. The chart defaults both keys to `{}`; list-form values still work but Helm logs a "cannot overwrite table with non table" notice.
+
+### Config Fragments From Your Own ConfigMaps
+
+For a GitOps repository with one file per provider account, create the ConfigMaps yourself, for example with Kustomize `configMapGenerator`, and list them in `gateway.configDir.configMaps`:
+
+```yaml
+gateway:
+  configDir:
+    mountPath: /app/conf.d
+    configMaps:
+      - oceans-models-openai
+      - oceans-models-shared
+```
+
+Each ConfigMap mounts at `<mountPath>/<name>/`, and the chart sets `GATEWAY_CONFIG_DIR` on the gateway pods and every hook Job. Key names only need to be unique within one ConfigMap. The gateway reads every YAML file below the directory and rejects an id defined twice. See [Config Files and Fragments](../configuration/configuration-reference.md#config-files-and-fragments) for the merge rules.
+
+Limits to plan for:
+
+- The ConfigMaps must exist before install, because the migration hook and the gateway init container load the config.
+- The chart cannot checksum ConfigMaps it does not render, so a fragment change neither restarts pods nor reseeds. Applying a change takes two steps:
+  - Reseed: pods do not seed, so enable `seedConfigJob.enabled` and run `helm upgrade`. Under Argo CD the seed Job runs as a `PostSync` hook whenever the release's Application syncs. That happens automatically only when the fragment ConfigMaps belong to the same Application; otherwise sync it manually.
+  - Restart the gateway pods with `kubectl rollout restart deployment/<fullname>-gateway`, for example `deployment/oceans-llm-gateway` for a release named `oceans-llm`. Pods build provider clients at startup, so until they restart they keep the old endpoints and credentials and do not know about new providers. When Kustomize renders this chart with name hashes enabled, a changed ConfigMap gets a new name and the rollout happens on its own.
+- Kustomize `configMapGenerator` appends a content hash to generated names by default, which the names in `gateway.configDir.configMaps` will not match. Set `options.disableNameSuffixHash: true` on each generator, unless Kustomize also renders this chart and rewrites the references.
+- ConfigMap keys allow only letters, digits, `-`, `_`, and `.`, and each ConfigMap is limited to 1 MiB.
+
 Set `gateway.clientConfigGatewayBaseUrl` to the public gateway API base URL that admins should copy into generated client snippets. This value is rendered as `GATEWAY_CLIENT_CONFIG_BASE_URL` on the gateway pod. Use the externally reachable OpenAI-compatible base URL, including `/v1`, for example:
 
 ```yaml
@@ -93,6 +126,8 @@ Gateway pods run with startup mutation switches disabled:
 - `GATEWAY_RUN_MIGRATIONS=false`
 - `GATEWAY_BOOTSTRAP_ADMIN=false`
 - `GATEWAY_SEED_CONFIG=false`
+
+Providers, models, teams, users, and service accounts in `gateway.config` reach the database only through the seed-config Job. With `seedConfigJob.enabled=false`, the default, a new install has no models until an admin creates them.
 
 Migrations run as a Helm hook Job by default on install and upgrade. The default hook phase is post-install and post-upgrade so the Job can use the chart-rendered ConfigMap and Secret resources. Bootstrap-admin and seed-config are disabled by default and, when enabled, also run as Helm Jobs. They do not run inside replicated gateway pods.
 
@@ -150,6 +185,7 @@ Use [Export Traces and Metrics](../operations/observability/export-traces-and-me
 Checked-in examples cover:
 
 - external PostgreSQL
+- providers and models from external fragment ConfigMaps
 - inline Secret mode
 - ExternalSecret mode
 - ingress with TLS and HPA behavior

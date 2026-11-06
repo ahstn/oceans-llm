@@ -139,6 +139,57 @@ providers:
 }
 
 #[test]
+fn infers_pricing_provider_id_from_well_known_hosts() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+
+    write_config(
+        &config_path,
+        r#"
+providers:
+  openai-prod:
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+  openrouter:
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+  opencode-zen:
+    type: anthropic_compat
+    base_url: https://opencode.ai/zen
+  explicit:
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openrouter
+"#,
+    );
+
+    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+    let pricing_ids = config
+        .seed_providers()
+        .expect("seed providers")
+        .into_iter()
+        .map(|provider| {
+            (
+                provider.provider_key,
+                provider.config["pricing_provider_id"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        pricing_ids,
+        [
+            ("openai-prod".to_string(), "openai".to_string()),
+            ("openrouter".to_string(), "openrouter".to_string()),
+            ("opencode-zen".to_string(), "opencode".to_string()),
+            ("explicit".to_string(), "openrouter".to_string()),
+        ]
+    );
+}
+
+#[test]
 fn rejects_openai_compat_without_pricing_provider_id() {
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");
@@ -147,9 +198,9 @@ fn rejects_openai_compat_without_pricing_provider_id() {
         &config_path,
         r#"
 providers:
-  - id: openai-prod
+  - id: self-hosted
     type: openai_compat
-    base_url: https://api.openai.com/v1
+    base_url: https://llm.example.com/v1
 "#,
     );
 
@@ -689,6 +740,39 @@ models:
 }
 
 #[test]
+fn rejects_capability_flags_the_provider_profile_cannot_serve() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    for (route_yaml, flag) in [
+        (
+            "provider: zen\n      upstream_model: claude-sonnet\n      capabilities: { responses: true }",
+            "responses",
+        ),
+        (
+            "provider: vertex\n      upstream_model: meta/llama-4\n      capabilities: { tools: true }",
+            "tools",
+        ),
+        (
+            "provider: copilot\n      upstream_model: gpt-5\n      capabilities: { vision: true }\n      compatibility:\n        github_copilot: { chat_api: chat_completions }",
+            "vision",
+        ),
+    ] {
+        write_config(
+            &config_path,
+            &format!(
+                "providers:\n  zen:\n    type: anthropic_compat\n    base_url: https://opencode.ai/zen\n  vertex:\n    type: gcp_vertex\n    project_id: project\n    auth: {{ mode: adc }}\n  copilot:\n    type: github_copilot\n    auth: {{ mode: github_user }}\nmodels:\n  model:\n    route:\n      {route_yaml}\n"
+            ),
+        );
+        let error = GatewayConfig::from_path(&config_path).expect_err("unservable flag");
+        assert!(
+            format!("{error:#}")
+                .contains(&format!("enables capabilities.{flag}, which its provider")),
+            "{flag}: {error:#}"
+        );
+    }
+}
+
+#[test]
 fn parses_images_capability_on_openai_compatible_routes() {
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");
@@ -718,6 +802,10 @@ models:
         upstream_model: google/imagen
         capabilities:
           images: true
+  - id: gpt-chat
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-5
 "#,
     );
 
@@ -732,6 +820,9 @@ models:
         images,
         [("openrouter", Some(true)), ("cloud-run", Some(true))]
     );
+    // The profile can serve images, but an unset flag resolves to off.
+    assert_eq!(models[1].routes[0].capabilities.images, None);
+    assert!(!models[1].routes[0].capabilities.resolve().images);
 }
 
 #[test]

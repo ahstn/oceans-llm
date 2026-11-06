@@ -7,13 +7,14 @@ use gateway_core::RequestLogRetentionWindow;
     about = "Oceans LLM gateway runtime and maintenance CLI"
 )]
 pub struct Cli {
-    #[arg(
-        long,
-        global = true,
-        env = "GATEWAY_CONFIG",
-        default_value = "./gateway.yaml"
-    )]
-    pub config: String,
+    /// Main config file. Defaults to `./gateway.yaml`, which may be absent; a path given here
+    /// or in `GATEWAY_CONFIG` must exist.
+    #[arg(long, global = true, env = "GATEWAY_CONFIG")]
+    pub config: Option<String>,
+
+    /// Directory of config fragments that add `providers` and `models`. Read recursively.
+    #[arg(long, global = true, env = "GATEWAY_CONFIG_DIR")]
+    pub config_dir: Option<String>,
 
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -35,6 +36,26 @@ pub enum Command {
 #[derive(Debug, Clone, Copy, Subcommand)]
 pub enum ConfigCommand {
     Validate,
+    /// Print the merged config as loaded, before inferred defaults are applied. Credentials are
+    /// redacted; identity data such as user emails is not.
+    Render {
+        /// Append a comment block naming the file that defined each provider and model.
+        #[arg(long, action = ArgAction::SetTrue)]
+        show_sources: bool,
+    },
+}
+
+const DEFAULT_CONFIG_PATH: &str = "./gateway.yaml";
+
+impl Cli {
+    #[must_use]
+    pub fn config_sources(&self) -> crate::config::ConfigSources {
+        crate::config::ConfigSources {
+            path: self.config.as_deref().unwrap_or(DEFAULT_CONFIG_PATH).into(),
+            path_is_explicit: self.config.is_some(),
+            dir: self.config_dir.as_deref().map(Into::into),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Args)]

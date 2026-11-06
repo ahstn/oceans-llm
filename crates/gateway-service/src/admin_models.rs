@@ -808,6 +808,7 @@ mod tests {
             display_name: None,
             pricing,
             pricing_source: Some(EffectiveMetadataSource::configured_override()),
+            catalog_pricing: None,
             catalog_limits: PricingLimits {
                 context: None,
                 input: None,

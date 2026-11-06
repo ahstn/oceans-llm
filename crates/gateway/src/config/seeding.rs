@@ -49,7 +49,7 @@ impl GatewayConfig {
 
                     let secrets = provider.auth.as_ref().map(|auth| {
                         json!({
-                            "kind": auth.kind,
+                            "kind": auth.kind.as_deref().unwrap_or("bearer"),
                             "token": auth.token,
                         })
                     });
@@ -107,7 +107,7 @@ impl GatewayConfig {
 
                     let secrets = provider.auth.as_ref().map(|auth| {
                         json!({
-                            "kind": auth.kind,
+                            "kind": auth.kind.as_deref().unwrap_or("bearer"),
                             "token": auth.token,
                         })
                     });

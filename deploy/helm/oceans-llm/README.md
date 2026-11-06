@@ -118,6 +118,13 @@ Bootstrap-admin and seed-config Jobs are opt-in through:
 - `bootstrapAdminJob.enabled`
 - `seedConfigJob.enabled`
 
+Providers and models in `gateway.config` reach the database only through the
+seed-config Job, so enable it when the release declares them.
+
+`gateway.configDir.configMaps` mounts ConfigMaps you create as config
+fragments that add `providers` and `models`. See
+[Kubernetes and Helm](../../../docs/setup/kubernetes-and-helm.md#config-fragments-from-your-own-configmaps).
+
 Gateway pods validate the gateway configuration once, then wait for
 `gateway migrate --check` when migrations run in a post-install or post-upgrade
 hook phase. Invalid configuration stops the init container before migration
@@ -144,6 +151,7 @@ mise run //helm:template
 Example values live in [examples](examples):
 
 - external PostgreSQL
+- providers and models from external fragment ConfigMaps
 - inline secrets
 - ExternalSecret
 - ingress with TLS and HPA behavior

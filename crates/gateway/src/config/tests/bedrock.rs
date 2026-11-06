@@ -432,34 +432,41 @@ models:
 }
 
 #[test]
-fn rejects_openai_shaped_bedrock_route_without_base_path() {
+fn defaults_openai_shaped_bedrock_base_path_per_endpoint() {
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");
 
-    write_config(
-        &config_path,
-        r#"
-providers:
-  - id: bedrock-mantle
-    type: aws_bedrock
-    region: us-east-2
-    endpoint_kind: bedrock_mantle
-models:
-  - id: gpt-55
-    routes:
-      - provider: bedrock-mantle
-        upstream_model: openai.gpt-5.5
-        compatibility:
-          aws_bedrock:
-            api_style: mantle_openai_responses
-"#,
-    );
-    let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
-    let error_text = format!("{error:#}");
-    assert!(
-        error_text.contains("compatibility.aws_bedrock.openai_base_path"),
-        "unexpected error: {error_text}"
-    );
+    for (endpoint_kind, api_style, base_path, expected) in [
+        ("bedrock_runtime", "runtime_openai_chat", "", "/openai/v1"),
+        ("bedrock_mantle", "mantle_openai_chat", "", "/v1"),
+        ("bedrock_mantle", "mantle_openai_responses", "", "/v1"),
+        (
+            "bedrock_mantle",
+            "mantle_openai_responses",
+            "\n          openai_base_path: /openai/v1",
+            "/openai/v1",
+        ),
+    ] {
+        write_config(
+            &config_path,
+            &format!(
+                "providers:\n  bedrock:\n    type: aws_bedrock\n    region: us-east-2\n    endpoint_kind: {endpoint_kind}\nmodels:\n  model:\n    route:\n      provider: bedrock\n      upstream_model: openai.gpt-oss-120b\n      compatibility:\n        aws_bedrock:\n          api_style: {api_style}{base_path}\n"
+            ),
+        );
+        let config = GatewayConfig::from_path(&config_path)
+            .unwrap_or_else(|error| panic!("{api_style}: {error:#}"));
+        let seeds = config.seed_models().expect("seed models");
+        let compatibility = seeds[0].routes[0]
+            .compatibility
+            .aws_bedrock
+            .as_ref()
+            .expect("bedrock compatibility");
+        assert_eq!(
+            compatibility.openai_base_path.as_deref(),
+            Some(expected),
+            "{api_style}"
+        );
+    }
 }
 
 #[test]
@@ -643,13 +650,8 @@ fn bedrock_api_styles_infer_omitted_capabilities() {
             "chat_completions: true",
         ),
     ] {
-        let base_path = if api_style.contains("openai") {
-            "\n            openai_base_path: /openai/v1"
-        } else {
-            ""
-        };
         let yaml = format!(
-            "providers:\n  - id: bedrock\n    type: aws_bedrock\n    region: us-east-1\n    endpoint_kind: {endpoint_kind}\nmodels:\n  - id: model\n    routes:\n      - provider: bedrock\n        upstream_model: upstream\n        compatibility:\n          aws_bedrock:\n            api_style: {api_style}{base_path}\n"
+            "providers:\n  - id: bedrock\n    type: aws_bedrock\n    region: us-east-1\n    endpoint_kind: {endpoint_kind}\nmodels:\n  - id: model\n    routes:\n      - provider: bedrock\n        upstream_model: upstream\n        compatibility:\n          aws_bedrock:\n            api_style: {api_style}\n"
         );
         write_config(&config_path, &yaml);
         let config = GatewayConfig::from_path(&config_path)
@@ -678,4 +680,27 @@ fn bedrock_api_styles_infer_omitted_capabilities() {
             "{api_style} {conflict}: {error:#}"
         );
     }
+}
+
+#[test]
+fn bedrock_capability_defaults_apply_only_to_bedrock_providers() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(
+        &config_path,
+        "providers:\n  openai:\n    type: openai_compat\n    base_url: https://api.openai.com/v1\nmodels:\n  model:\n    route:\n      provider: openai\n      upstream_model: gpt-5\n      compatibility:\n        aws_bedrock:\n          api_style: runtime_converse\n",
+    );
+
+    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+    let models = config.seed_models().expect("seed models");
+    let route = &models[0].routes[0];
+    // The aws_bedrock block infers nothing on an openai_compat provider.
+    let resolved = route
+        .capabilities
+        .or(infer_compatibility_capabilities(
+            &route.compatibility,
+            "openai_compat",
+        ))
+        .resolve();
+    assert!(resolved.responses && resolved.json_schema);
 }

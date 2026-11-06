@@ -166,16 +166,14 @@ users:
       timezone: UTC
 
 providers:
-  - id: openai-prod
+  openai-prod:
     type: openai_compat
     base_url: https://api.openai.com/v1
-    pricing_provider_id: openai
     auth:
-      kind: bearer
       token: env.OPENAI_API_KEY
 
 models:
-  - id: openai-fast-v2
+  openai-fast-v2:
     description: GPT-6 Astra via OpenAI; use Responses for tools
     routes:
       - provider: openai-prod
@@ -183,6 +181,6 @@ models:
         # Optional route context and pricing overrides are documented in
         # docs/configuration/configuration-reference.md.
 
-  - id: openai-fast
+  openai-fast:
     description: Stable alias for openai-fast-v2
     alias_of: openai-fast-v2
