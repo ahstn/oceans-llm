@@ -8,7 +8,7 @@ Native Messages controls on rolling aliases, private deployments and unrecognize
 
 ## Implementation
 
-`ProviderClient` exposes native JSON and streaming methods, together with a route-dependent capability check. Direct Anthropic, Vertex Claude, Bedrock Runtime Anthropic Invoke, Bedrock Mantle Anthropic Messages, OpenRouter Claude, and Copilot routes configured with `chat_api: anthropic_messages` implement that boundary. Other routes keep the existing translation path.
+`ProviderClient` exposes native JSON and streaming methods, together with a route-dependent capability check. Direct Anthropic, Vertex Claude, Bedrock Runtime Anthropic Invoke, Bedrock Mantle Anthropic Messages, OpenRouter Claude, and Copilot routes configured with `chat_api: anthropic_messages` implement that boundary. Other routes keep the existing translation path. Native methods follow the trait's existing optional-operation convention for batch, token counting, images and Decisions. A separate capability trait would add another registry or accessor convention while still needing route-dependent checks.
 
 Native requests keep top-level `system` separate from system turns inside `messages`. Message fields, content blocks, signatures and their order survive the core request representation. Cloud adapters apply the platform's endpoint, authentication, version and beta mapping. Platform-pinned headers replace forwarded values before authentication or signing; Mantle sends one pinned `anthropic-version`. Route overrides, model access, effort ceilings, budgets, guardrails and request logging still apply.
 
@@ -24,7 +24,7 @@ Accounting accepts native cache-exclusive token counts directly. Cache reads and
 
 OpenRouter Chat Completions translation retains HTTP(S) image URLs as native URL sources; other Anthropic transports keep their existing image restrictions. Image translation preserves outer cache controls and TTLs across remote URL, data URL and base64 forms. Token-limit aliases are resolved within each precedence layer before the default is added. A route limit overrides the caller limit, and the native body contains only `max_tokens`.
 
-OpenRouter Chat Completions JSON schemas become native `output_config.format`; native Messages output options remain opaque. One core predicate selects OpenRouter native routes for both provider dispatch and advertised metadata, so these boundaries cannot drift.
+OpenRouter Chat Completions JSON schemas become native `output_config.format`; native Messages output options remain opaque. One predicate in core's existing `route_capabilities` module selects OpenRouter native routes for both provider dispatch and advertised metadata, so these boundaries cannot drift. It belongs with shared compatibility inference, not model-thinking policy. Moving it into the provider implementation would require the service layer to depend on provider SDKs or duplicate the policy.
 
 Unknown native models retain explicit manual thinking and budget aliases. OpenAI effort aliases do not add native effort to manual thinking; caller-supplied native effort remains unchanged. Conflicting controls still fail locally.
 

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use gateway_core::{
     CoreChatRequest, CoreContentPartType, ProviderError, ProviderRequestContext, ReasoningEffort,
@@ -240,19 +240,32 @@ fn map_google_contents(
 }
 
 /// Older Gemini models correlate parallel results by position, not ID or function name.
-/// Only a complete contiguous group can be safely reordered; incomplete history stays untouched.
+/// Only a complete, unambiguous group can be safely reordered; other history stays untouched.
 fn ordered_tool_results(
     mut parts: Vec<(String, Value)>,
     call_order: &[String],
     function_ids: FunctionIdPolicy,
 ) -> Vec<Value> {
-    if function_ids == FunctionIdPolicy::Omit
-        && parts.len() == call_order.len()
-        && call_order
-            .iter()
-            .all(|id| parts.iter().filter(|(result, _)| result == id).count() == 1)
+    if function_ids == FunctionIdPolicy::Omit && parts.len() >= 2 && parts.len() == call_order.len()
     {
-        parts.sort_by_key(|(id, _)| call_order.iter().position(|call| call == id));
+        let mut ranks = HashMap::with_capacity(call_order.len());
+        let unique_calls = call_order
+            .iter()
+            .enumerate()
+            .all(|(rank, id)| ranks.insert(id.as_str(), (rank, false)).is_none());
+        let bijection = unique_calls
+            && parts
+                .iter()
+                .all(|(id, _)| match ranks.get_mut(id.as_str()) {
+                    Some((_, seen)) if !*seen => {
+                        *seen = true;
+                        true
+                    }
+                    _ => false,
+                });
+        if bijection {
+            parts.sort_unstable_by_key(|(id, _)| ranks[id.as_str()].0);
+        }
     }
     parts.into_iter().map(|(_, part)| part).collect()
 }

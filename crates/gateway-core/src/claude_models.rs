@@ -53,26 +53,6 @@ pub fn is_rolling_claude_alias(model: &str) -> bool {
     )
 }
 
-#[must_use]
-pub fn openrouter_uses_native_messages(
-    upstream_model: &str,
-    has_openrouter_compat: bool,
-    base_url: Option<&str>,
-) -> bool {
-    let claude = upstream_model
-        .strip_prefix("~anthropic/")
-        .or_else(|| upstream_model.strip_prefix("anthropic/"))
-        .is_some_and(|model| model.starts_with("claude-"));
-    claude
-        && (has_openrouter_compat
-            || base_url
-                .and_then(|base_url| url::Url::parse(base_url).ok())
-                .is_some_and(|url| {
-                    url.host_str() == Some("openrouter.ai")
-                        && url.path().trim_end_matches('/') == "/api/v1"
-                }))
-}
-
 /// `None` means the model's native thinking contract is unknown. Never infer legacy
 /// restrictions from a rolling alias, private deployment name, or a new model family.
 #[must_use]

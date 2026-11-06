@@ -279,7 +279,7 @@ impl BedrockConverseStreamNormalizer {
         })?;
 
         self.saw_payload = true;
-        if self.generation_failure.is_some() && event_type != "metadata" {
+        if self.generation_failure.is_some() && !matches!(event_type, "messageStop" | "metadata") {
             return Ok(Vec::new());
         }
         let mut actions = Vec::new();
@@ -308,6 +308,12 @@ impl BedrockConverseStreamNormalizer {
                     .get("contentBlockIndex")
                     .and_then(Value::as_u64)
                     .unwrap_or(0);
+                if let Some(start) = payload.get("start")
+                    && let Err(error) = validate_native_containers(start)
+                {
+                    self.fail_replay(error.to_string());
+                    return Ok(actions);
+                }
                 if let Some(start) = payload.get("start").and_then(Value::as_object)
                     && !start.is_empty()
                 {
@@ -328,8 +334,6 @@ impl BedrockConverseStreamNormalizer {
                         .tool_block_indexes
                         .entry(block_index)
                         .or_insert(next_index);
-                    self.native_blocks
-                        .insert(block_index, json!({"toolUse": tool_use}));
                     self.tool_inputs.insert(block_index, String::new());
                     let id = tool_use
                         .get("toolUseId")
@@ -361,7 +365,10 @@ impl BedrockConverseStreamNormalizer {
                         "aws_bedrock contentBlockDelta event is missing `delta`".to_string(),
                     )
                 })?;
-                self.record_delta(&payload, delta)?;
+                if let Err(error) = self.record_delta(&payload, delta) {
+                    self.fail_replay(error.to_string());
+                    return Ok(actions);
+                }
                 if let Some(text) = delta.get("text").and_then(Value::as_str) {
                     actions.push(BedrockStreamAction::Chunk(self.delta_chunk(
                         json!({
@@ -415,7 +422,7 @@ impl BedrockConverseStreamNormalizer {
                     stop_reason,
                     Some("malformed_tool_use" | "malformed_model_output")
                 );
-                if malformed {
+                if malformed && self.generation_failure.is_none() {
                     self.generation_failure = stop_reason.map(|reason| {
                         (
                             reason.to_string(),
@@ -437,21 +444,32 @@ impl BedrockConverseStreamNormalizer {
                     delta["provider_metadata"]["aws_bedrock"]["additionalModelResponseFields"] =
                         fields.clone();
                 }
-                let mut replayable = !malformed;
+                let mut replayable = self.generation_failure.is_none();
                 let tool_inputs = std::mem::take(&mut self.tool_inputs);
                 if replayable {
                     for (index, input) in tool_inputs {
                         match serde_json::from_str::<Value>(&input) {
                             Ok(input) => {
-                                self.native_blocks.get_mut(&index).expect("started tool")["toolUse"]
-                                    ["input"] = input;
+                                let tool = self
+                                    .native_blocks
+                                    .get_mut(&index)
+                                    .and_then(|block| block.get_mut("toolUse"))
+                                    .and_then(Value::as_object_mut);
+                                if let Some(tool) = tool {
+                                    tool.insert("input".to_string(), input);
+                                } else {
+                                    replayable = false;
+                                    self.fail_replay(format!(
+                                        "aws_bedrock streamed tool content block `{index}` must contain a toolUse object"
+                                    ));
+                                    break;
+                                }
                             }
                             Err(error) => {
                                 replayable = false;
                                 if !matches!(finish_reason, "length" | "content_filter") {
-                                    self.generation_failure = Some((
-                                        "bedrock_conversestream_replay_error".to_string(),
-                                        format!("invalid aws_bedrock streamed tool input: {error}"),
+                                    self.fail_replay(format!(
+                                        "invalid aws_bedrock streamed tool input: {error}"
                                     ));
                                 }
                                 break;
@@ -500,80 +518,104 @@ impl BedrockConverseStreamNormalizer {
     }
 
     fn record_delta(&mut self, payload: &Value, delta: &Value) -> Result<(), ProviderError> {
+        validate_native_containers(delta)?;
         let index = payload
             .get("contentBlockIndex")
             .and_then(Value::as_u64)
             .unwrap_or(0);
-        if let Some(input) = delta
-            .get("toolUse")
-            .and_then(|tool| tool.get("input"))
-            .and_then(Value::as_str)
-        {
-            self.tool_inputs
-                .get_mut(&index)
-                .ok_or_else(|| {
-                    ProviderError::Transport(format!(
-                        "aws_bedrock tool delta references unstarted content block `{index}`"
-                    ))
-                })?
-                .push_str(input);
-        } else if let Some(text) = delta.get("text").and_then(Value::as_str) {
-            let block = self
-                .native_blocks
-                .entry(index)
-                .or_insert_with(|| json!({"text": ""}));
-            append_native_string(&mut block["text"], text)?;
-        } else if let Some(reasoning) = delta.get("reasoningContent").and_then(Value::as_object) {
-            let block = self
-                .native_blocks
-                .entry(index)
-                .or_insert_with(|| json!({"reasoningContent": {}}));
-            for (key, value) in reasoning {
-                match key.as_str() {
-                    "text" | "signature" => {
-                        append_native_string(
-                            &mut block["reasoningContent"]["reasoningText"][key],
-                            value.as_str().ok_or_else(|| {
-                                ProviderError::Transport(
-                                    "aws_bedrock reasoning delta must be a string".to_string(),
-                                )
-                            })?,
-                        )?;
-                    }
-                    "redactedContent" | "data" => {
-                        let previous = block["reasoningContent"]["redactedContent"]
-                            .as_str()
-                            .unwrap_or_default();
-                        let mut bytes = BASE64_STANDARD.decode(previous).map_err(|error| {
-                            ProviderError::Transport(format!(
-                                "invalid Bedrock redacted reasoning: {error}"
-                            ))
-                        })?;
-                        bytes.extend(
-                            BASE64_STANDARD
-                                .decode(value.as_str().unwrap_or_default())
-                                .map_err(|error| {
+        let block = self
+            .native_blocks
+            .entry(index)
+            .or_insert_with(|| Value::Object(Map::new()))
+            .as_object_mut()
+            .ok_or_else(|| malformed_native_container("content block"))?;
+        for (key, value) in delta.as_object().into_iter().flatten() {
+            match key.as_str() {
+                "text" => {
+                    append_native_string_field(block, key, native_delta_string(value)?)?;
+                }
+                "toolUse" => {
+                    let tool = native_object_field(block, key)?;
+                    for (key, value) in value.as_object().into_iter().flatten() {
+                        if key == "input" {
+                            self.tool_inputs
+                                .get_mut(&index)
+                                .ok_or_else(|| {
                                     ProviderError::Transport(format!(
-                                        "invalid Bedrock redacted reasoning: {error}"
+                                        "aws_bedrock tool delta references unstarted content block `{index}`"
                                     ))
-                                })?,
-                        );
-                        block["reasoningContent"]["redactedContent"] =
-                            json!(BASE64_STANDARD.encode(bytes));
-                    }
-                    _ => {
-                        block["reasoningContent"][key] = value.clone();
+                                })?
+                                .push_str(native_delta_string(value)?);
+                        } else {
+                            tool.insert(key.clone(), value.clone());
+                        }
                     }
                 }
+                "reasoningContent" => {
+                    let reasoning = native_object_field(block, key)?;
+                    for (key, value) in value.as_object().into_iter().flatten() {
+                        match key.as_str() {
+                            "text" | "signature" => {
+                                let text = native_object_field(reasoning, "reasoningText")?;
+                                append_native_string_field(text, key, native_delta_string(value)?)?;
+                            }
+                            "reasoningText" => {
+                                let text = native_object_field(reasoning, key)?;
+                                for (key, value) in value.as_object().into_iter().flatten() {
+                                    if matches!(key.as_str(), "text" | "signature") {
+                                        append_native_string_field(
+                                            text,
+                                            key,
+                                            native_delta_string(value)?,
+                                        )?;
+                                    } else {
+                                        text.insert(key.clone(), value.clone());
+                                    }
+                                }
+                            }
+                            "redactedContent" | "data" => {
+                                let previous = reasoning
+                                    .get("redactedContent")
+                                    .map(native_delta_string)
+                                    .transpose()?
+                                    .unwrap_or_default();
+                                let mut bytes =
+                                    BASE64_STANDARD.decode(previous).map_err(|error| {
+                                        ProviderError::Transport(format!(
+                                            "invalid Bedrock redacted reasoning: {error}"
+                                        ))
+                                    })?;
+                                bytes.extend(
+                                    BASE64_STANDARD
+                                        .decode(native_delta_string(value)?)
+                                        .map_err(|error| {
+                                            ProviderError::Transport(format!(
+                                                "invalid Bedrock redacted reasoning: {error}"
+                                            ))
+                                        })?,
+                                );
+                                reasoning.insert(
+                                    "redactedContent".to_string(),
+                                    json!(BASE64_STANDARD.encode(bytes)),
+                                );
+                            }
+                            _ => {
+                                reasoning.insert(key.clone(), value.clone());
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    block.insert(key.clone(), value.clone());
+                }
             }
-        } else if let Some(object) = delta.as_object() {
-            let block = self.native_blocks.entry(index).or_insert_with(|| json!({}));
-            block
-                .as_object_mut()
-                .expect("native content block")
-                .extend(object.clone());
         }
         Ok(())
+    }
+
+    fn fail_replay(&mut self, message: String) {
+        self.generation_failure
+            .get_or_insert_with(|| ("bedrock_conversestream_replay_error".to_string(), message));
     }
 
     pub(super) fn delta_chunk(&self, delta: Value, finish_reason: Value) -> Value {
@@ -606,16 +648,68 @@ impl BedrockConverseStreamNormalizer {
     }
 }
 
-fn append_native_string(value: &mut Value, part: &str) -> Result<(), ProviderError> {
-    if value.is_null() {
-        *value = Value::String(String::new());
+fn malformed_native_container(name: &str) -> ProviderError {
+    ProviderError::Transport(format!("aws_bedrock native `{name}` must be an object"))
+}
+
+fn validate_native_containers(value: &Value) -> Result<(), ProviderError> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| malformed_native_container("content block"))?;
+    if let Some(tool) = object.get("toolUse")
+        && !tool.is_object()
+    {
+        return Err(malformed_native_container("toolUse"));
     }
-    let Value::String(text) = value else {
-        return Err(ProviderError::Transport(
-            "aws_bedrock native string delta does not match its content block".to_string(),
-        ));
-    };
-    text.push_str(part);
+    if let Some(reasoning) = object.get("reasoningContent") {
+        let reasoning = reasoning
+            .as_object()
+            .ok_or_else(|| malformed_native_container("reasoningContent"))?;
+        if let Some(text) = reasoning.get("reasoningText")
+            && !text.is_object()
+        {
+            return Err(malformed_native_container("reasoningText"));
+        }
+    }
+    Ok(())
+}
+
+fn native_object_field<'a>(
+    object: &'a mut Map<String, Value>,
+    key: &str,
+) -> Result<&'a mut Map<String, Value>, ProviderError> {
+    if !object.contains_key(key) {
+        object.insert(key.to_string(), Value::Object(Map::new()));
+    }
+    object
+        .get_mut(key)
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| malformed_native_container(key))
+}
+
+fn native_delta_string(value: &Value) -> Result<&str, ProviderError> {
+    value.as_str().ok_or_else(|| {
+        ProviderError::Transport("aws_bedrock native string delta must be a string".to_string())
+    })
+}
+
+fn append_native_string_field(
+    object: &mut Map<String, Value>,
+    key: &str,
+    part: &str,
+) -> Result<(), ProviderError> {
+    match object.get_mut(key) {
+        Some(Value::String(text)) => text.push_str(part),
+        Some(value @ Value::Null) => *value = Value::String(part.to_string()),
+        Some(_) => {
+            return Err(ProviderError::Transport(
+                "aws_bedrock native string delta does not match its content block".to_string(),
+            ));
+        }
+        None => {
+            object.insert(key.to_string(), Value::String(part.to_string()));
+        }
+    }
     Ok(())
 }
 
@@ -730,7 +824,10 @@ where
             stream_failed = true;
         }
 
-        if !stream_failed && !normalizer.saw_terminal {
+        if !stream_failed
+            && !normalizer.saw_terminal
+            && normalizer.generation_failure.is_none()
+        {
             yield Ok(openai_sse_error_chunk(
                 "bedrock_eventstream_missing_terminal_event",
                 "upstream Bedrock ConverseStream ended without messageStop",

@@ -736,6 +736,26 @@ fn idless_parallel_results_follow_call_ids_even_when_function_names_match() {
 }
 
 #[test]
+fn idless_duplicate_calls_preserve_result_order_with_an_earlier_turn_id() {
+    let request = chat_request(vec![
+        user("go"),
+        assistant_tool_calls(json!([lookup_tool_call("b")])),
+        tool_result("b", "{\"result\":\"old-b-result\"}"),
+        assistant_tool_calls(json!([lookup_tool_call("a"), lookup_tool_call("a")])),
+        tool_result("a", "{\"result\":\"a-result\"}"),
+        tool_result("b", "{\"result\":\"b-result\"}"),
+    ]);
+    let body = google_body(&request, &context("google/gemini-2.5-flash"), false).expect("mapped");
+    assert_eq!(
+        body["contents"][4]["parts"],
+        json!([
+            { "functionResponse": { "name": "lookup", "response": { "result": "a-result" } } },
+            { "functionResponse": { "name": "lookup", "response": { "result": "b-result" } } }
+        ])
+    );
+}
+
+#[test]
 fn idless_incomplete_result_groups_are_not_fabricated_or_moved_across_turns() {
     let request = chat_request(vec![
         user("compare"),

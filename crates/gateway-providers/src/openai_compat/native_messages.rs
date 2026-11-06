@@ -5,7 +5,7 @@ use crate::anthropic::{AnthropicRequestOptions, map_anthropic_request};
 
 impl OpenAiCompatProvider {
     pub(super) fn uses_native_messages(&self, context: &ProviderRequestContext) -> bool {
-        gateway_core::claude_models::openrouter_uses_native_messages(
+        gateway_core::route_capabilities::openrouter_uses_native_messages(
             &context.upstream_model,
             context.compatibility.openrouter.is_some(),
             Some(&self.config.base_url),

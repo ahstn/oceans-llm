@@ -607,6 +607,49 @@ fn chat_system_and_developer_strings_become_ordered_blocks() {
 }
 
 #[test]
+fn chat_function_strict_preserves_booleans_and_leaves_null_or_omission_unset() {
+    let schema = json!({
+        "type": "object", "properties": {"city": {"type": "string"}},
+        "required": ["city"], "additionalProperties": false
+    });
+    for strict in [
+        Some(json!(true)),
+        Some(json!(false)),
+        Some(Value::Null),
+        None,
+    ] {
+        let mut function = json!({
+            "name": "lookup", "description": "Look up a city", "parameters": schema
+        });
+        let mut expected = json!({
+            "name": "lookup", "description": "Look up a city", "input_schema": schema,
+            "cache_control": {"type": "ephemeral"}, "future_tool_option": {"preserve": true}
+        });
+        if let Some(strict) = &strict {
+            function["strict"] = strict.clone();
+            if !strict.is_null() {
+                expected["strict"] = strict.clone();
+            }
+        }
+        let request = chat(json!({"tools": [{
+            "type": "function", "function": function,
+            "cache_control": {"type": "ephemeral"}, "future_tool_option": {"preserve": true}
+        }]}));
+        for stream in [false, true] {
+            let body = map_anthropic_request(
+                &request,
+                &context(),
+                stream,
+                &AnthropicRequestOptions::default(),
+            )
+            .unwrap();
+            assert_eq!(body["tools"], json!([expected]), "strict={strict:?}");
+            assert_eq!(body["stream"], stream);
+        }
+    }
+}
+
+#[test]
 fn maps_chat_controls_after_route_overrides() {
     let request = chat(
         json!({"stop": "old", "parallel_tool_calls": true, "store": false,

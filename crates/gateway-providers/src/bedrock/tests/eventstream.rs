@@ -15,6 +15,121 @@ fn converse_event(kind: &str, payload: Value) -> Vec<u8> {
     )
 }
 
+async fn assert_malformed_container_drains_usage(prefix: Vec<Vec<u8>>) {
+    for stop_reason in [Some("end_turn"), Some("malformed_tool_use"), None] {
+        let mut frames = prefix.clone();
+        frames.push(converse_event(
+            "contentBlockDelta",
+            json!({"contentBlockIndex":9,"delta":{"text":"AFTER_FAILURE_MUST_NOT_APPEAR"}}),
+        ));
+        if let Some(reason) = stop_reason {
+            frames.push(converse_event(
+                "messageStop",
+                json!({
+                    "stopReason":reason,
+                    "additionalModelResponseFields":{"diagnostic":"kept"}
+                }),
+            ));
+        }
+        frames.push(converse_event(
+            "metadata",
+            json!({"usage":{"inputTokens":8,"outputTokens":3},"metrics":{"latencyMs":10}}),
+        ));
+        let combined = frames.concat();
+        for chunks in [frames, vec![combined]] {
+            let transcript = collect_bedrock_stream(chunks).await;
+            let events = stream_events(&transcript);
+            let usage_index = events
+                .iter()
+                .position(|event| event.get("usage").is_some())
+                .unwrap();
+            let errors = events
+                .iter()
+                .enumerate()
+                .filter(|(_, event)| event.get("error").is_some())
+                .collect::<Vec<_>>();
+            assert_eq!(errors.len(), 1, "{transcript}");
+            let (error_index, error) = errors[0];
+            assert!(usage_index < error_index, "{transcript}");
+            assert_eq!(events[usage_index]["usage"]["total_tokens"], 11);
+            assert_eq!(
+                error["error"]["code"],
+                "bedrock_conversestream_replay_error"
+            );
+            assert!(
+                error["error"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("must be an object")
+            );
+            if stop_reason.is_some() {
+                assert!(events.iter().any(|event| {
+                    event["choices"][0]["delta"]["provider_metadata"]["aws_bedrock"]
+                        ["additionalModelResponseFields"]
+                        == json!({"diagnostic":"kept"})
+                }));
+            }
+            assert!(events.iter().all(|event| {
+                event["choices"][0]["finish_reason"].is_null()
+                    && event["choices"][0]["delta"]["provider_metadata"]["aws_bedrock"]
+                        .get("native_content")
+                        .is_none()
+            }));
+            assert!(!transcript.contains("AFTER_FAILURE_MUST_NOT_APPEAR"));
+            assert!(!transcript.contains("[DONE]"));
+        }
+    }
+}
+
+#[tokio::test]
+async fn malformed_tool_container_drains_usage_before_error() {
+    assert_malformed_container_drains_usage(vec![
+        converse_event(
+            "contentBlockStart",
+            json!({"contentBlockIndex":3,"start":{"toolUse":{"toolUseId":"a","name":"lookup"}}}),
+        ),
+        converse_event(
+            "contentBlockDelta",
+            json!({"contentBlockIndex":3,"delta":{"toolUse":{"input":"{}"}}}),
+        ),
+        converse_event(
+            "contentBlockDelta",
+            json!({"contentBlockIndex":3,"delta":{"toolUse":7}}),
+        ),
+    ])
+    .await;
+}
+
+#[tokio::test]
+async fn malformed_reasoning_container_drains_usage_before_error() {
+    assert_malformed_container_drains_usage(vec![
+        converse_event(
+            "contentBlockDelta",
+            json!({"contentBlockIndex":3,"delta":{"reasoningContent":7}}),
+        ),
+        converse_event(
+            "contentBlockDelta",
+            json!({"contentBlockIndex":3,"delta":{"reasoningContent":{"text":"later"}}}),
+        ),
+    ])
+    .await;
+}
+
+#[tokio::test]
+async fn malformed_nested_reasoning_container_drains_usage_before_error() {
+    assert_malformed_container_drains_usage(vec![
+        converse_event(
+            "contentBlockDelta",
+            json!({"contentBlockIndex":3,"delta":{"reasoningContent":{"reasoningText":7}}}),
+        ),
+        converse_event(
+            "contentBlockDelta",
+            json!({"contentBlockIndex":3,"delta":{"reasoningContent":{"signature":"later"}}}),
+        ),
+    ])
+    .await;
+}
+
 #[tokio::test]
 async fn eventstream_valid_usage_prefix_survives_later_crc_failure_independent_of_chunking() {
     for prelude_error in [false, true] {

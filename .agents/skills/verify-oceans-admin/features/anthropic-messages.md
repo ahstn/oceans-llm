@@ -16,6 +16,7 @@ Clients use `POST /v1/messages` (or `/messages`) with Anthropic messages, tools,
 - `messages-rolling-aliases` sends adaptive/effort controls unchanged for rolling or unknown native model identities; known explicit models retain local validation.
 - `messages-chat-replay` checks ordered Chat continuation state, public-projection validation and replay invalidation after output guardrail transforms.
 - `messages-compaction` checks complete compaction snapshots, nullable summaries and encrypted checkpoints, following Chat text and continuation through both Anthropic stream adapters.
+- `messages-tool-strict` checks explicit tool constraints in both Chat/native translation directions without adding defaults or changing schemas.
 - `messages-provider-terminals` checks Gemini and Bedrock terminal truth, late usage after errors, and independently checksummed EventStream frames.
 
 ## How to get to it (user POV)
@@ -61,7 +62,8 @@ Preconditions:
    | Ordered Chat replay | Gemini parts, Anthropic blocks and Converse blocks retain signed/redacted order and opaque extensions; foreign transport sources use the public projection; edits to text, reasoning, tools or explicit text-block controls cannot be hidden by metadata |
    | Replay guardrails | A transformed text/tool projection cannot expose original content through replay metadata or later stream snapshots; usage remains available |
    | Provider terminal truth | A Gemini call without a terminal fails; limits/filters win over calls; failures retain late usage; valid incomplete tool JSON on length/filter terminals omits replay instead of fabricating input |
-   | Provider controls and results | Gemini strict tools/schemas fail explicitly, returned log probabilities remain available, and same-name ID-less parallel results follow call IDs; Converse groups results and preserves requested response fields |
+   | Provider controls and results | Gemini strict tools/schemas fail explicitly, returned log probabilities remain available, and same-name ID-less parallel results follow unique call IDs; ambiguous or incomplete groups keep their order, with indexed validation instead of quadratic scans; Converse groups results and preserves requested response fields |
+   | Converse replay integrity | Malformed known tool/reasoning containers produce one structured error without replay, success or content reopening; terminal diagnostics and late usage survive; unknown root and nested members retain tool identity, input and continuation state |
    | EventStream conformance | Independent IEEE prelude/message checksums, legal typed headers, bounded frames and dense stable tool ordinals; valid usage before corrupt frames survives coalesced and split HTTP chunks |
    | Native guardrail framing | Plain-string `system` participates in denial, transforms and prompt context; CR, LF, CRLF, mixed and fragmented SSE enforce tool/text checks while preserving untouched bytes and metadata |
    | Complete native tool input | Complete `tool_use.input` in a start frame is inspected and transformed as an object, independently of any later JSON deltas; empty opening objects keep normal delta reconstruction |
@@ -69,6 +71,7 @@ Preconditions:
    | Native stream completion | EOF before `message_stop` fails the response body and records a stream error while accounting for observed usage; a complete native stream remains successful |
    | OpenRouter Chat compatibility | HTTP(S) image URLs become native URL sources without relaxing other transports; route token aliases override caller limits before defaults and emit only `max_tokens`; streamed totals include cache reads/writes across usage events |
    | Structured output | OpenRouter Chat JSON schemas become native `output_config.format` without dropping other output options; matching formats are accepted, conflicting formats fail, native Messages output controls remain unchanged |
+   | Tool strict controls | Chat `function.strict` booleans become native tool-level `strict`; Chat null and omission stay unset; translated native `strict` becomes `function.strict` for generic Chat upstreams; schemas remain unchanged and native requests stay opaque |
    | Mixed cache TTLs | Valid native, wrapped Anthropic and Bedrock counters retain all prompt/cache/total buckets; JSON and streaming token limits charge them; unsupported TTL pricing stays unpriced unless a provider-reported cost is present |
    | Chat cache aliases | Root read/write and DeepSeek hit/miss aliases fill only missing canonical fields; explicit zero, invalid canonical values, reported cost and non-Chat counter semantics retain precedence |
    | Rolling alias parity | The exact `~anthropic/claude-opus-latest` accepts the same valid native adaptive/effort requests as an explicit Opus ID, including omitted and null controls; unknown native identities defer new fields and model-specific rules to the upstream |

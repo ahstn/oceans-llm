@@ -284,7 +284,7 @@ pub(crate) fn native_api_format(
 ) -> Option<ApiFormat> {
     match provider.provider_type.as_str() {
         "openai_compat" | "gcp_cloud_run_openai_compat"
-            if gateway_core::claude_models::openrouter_uses_native_messages(
+            if gateway_core::route_capabilities::openrouter_uses_native_messages(
                 &route.upstream_model,
                 route.compatibility.openrouter.is_some(),
                 provider

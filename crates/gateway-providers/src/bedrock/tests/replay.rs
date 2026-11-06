@@ -385,6 +385,105 @@ async fn converse_stream_consumer_replays_signed_redacted_order_and_detects_edit
 }
 
 #[tokio::test]
+async fn converse_stream_replays_opaque_members_without_losing_tool_identity_or_input() {
+    let events = [
+        (
+            "contentBlockStart",
+            json!({"contentBlockIndex":0,"start":{
+                "toolUse":{"toolUseId":"call-a","name":"lookup","futureStart":[1,null]},
+                "futureRoot":{"keep":true}
+            }}),
+        ),
+        (
+            "contentBlockDelta",
+            json!({"contentBlockIndex":0,"delta":{"toolUse":{"input":"{\"city\":"}}}),
+        ),
+        (
+            "contentBlockDelta",
+            json!({"contentBlockIndex":0,"delta":{
+                "toolUse":{"futureTool":{"opaque":[true,null,7]}},
+                "futureDelta":"kept"
+            }}),
+        ),
+        (
+            "contentBlockDelta",
+            json!({"contentBlockIndex":0,"delta":{"toolUse":{"input":"\"London\"}"}}}),
+        ),
+        (
+            "contentBlockDelta",
+            json!({"contentBlockIndex":1,"delta":{"reasoningContent":{
+                "futureReasoning":{"opaque":[1,null]},
+                "futureScalar":false
+            },"futureRoot":[null,"kept"]}}),
+        ),
+        (
+            "contentBlockDelta",
+            json!({"contentBlockIndex":2,"delta":{"reasoningContent":{
+                "reasoningText":{"futureText":[null,{"keep":true}]}
+            }}}),
+        ),
+        (
+            "contentBlockDelta",
+            json!({"contentBlockIndex":2,"delta":{"reasoningContent":{"text":"reason","signature":"signed"}}}),
+        ),
+        ("messageStop", json!({"stopReason":"tool_use"})),
+        (
+            "metadata",
+            json!({"usage":{"inputTokens":8,"outputTokens":3}}),
+        ),
+    ];
+    let frames = events
+        .iter()
+        .map(|(kind, payload)| {
+            eventstream_frame(
+                &[(":message-type", "event"), (":event-type", kind)],
+                payload.to_string().as_bytes(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let combined = frames.concat();
+    for chunks in [frames, vec![combined]] {
+        let transcript = collect_bedrock_stream(chunks).await;
+        let assistant = assistant_from_stream(&transcript);
+        assert_eq!(assistant.extra["tool_calls"][0]["id"], "call-a");
+        assert_eq!(
+            assistant.extra["tool_calls"][0]["function"]["arguments"],
+            r#"{"city":"London"}"#
+        );
+        let body =
+            map_chat_request_to_converse(&request_with_assistant(assistant), &context("nova"))
+                .unwrap();
+        assert_eq!(
+            body["messages"][1]["content"],
+            json!([
+                {
+                    "toolUse":{
+                        "toolUseId":"call-a","name":"lookup","input":{"city":"London"},
+                        "futureStart":[1,null],"futureTool":{"opaque":[true,null,7]}
+                    },
+                    "futureRoot":{"keep":true},"futureDelta":"kept"
+                },
+                {
+                    "reasoningContent":{
+                        "futureReasoning":{"opaque":[1,null]},"futureScalar":false
+                    },
+                    "futureRoot":[null,"kept"]
+                },
+                {
+                    "reasoningContent":{
+                        "reasoningText":{
+                            "futureText":[null,{"keep":true}],"text":"reason","signature":"signed"
+                        }
+                    }
+                }
+            ])
+        );
+        assert!(transcript.contains(r#""total_tokens":11"#));
+        assert!(transcript.ends_with("data: [DONE]\n\n"));
+    }
+}
+
+#[tokio::test]
 async fn independent_anthropic_stream_consumer_replays_order_signatures_and_empty_input() {
     let blocks = json!([
         {"type":"thinking","thinking":"reason","signature":"signed"},

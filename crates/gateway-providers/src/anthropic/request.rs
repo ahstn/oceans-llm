@@ -740,21 +740,22 @@ fn convert_openai_function_tools(value: &mut Value) -> Result<(), AnthropicAdapt
         let function = object
             .remove("function")
             .ok_or(AnthropicAdapterError::MissingToolFunction)?;
-        let function = function
-            .as_object()
-            .ok_or(AnthropicAdapterError::InvalidToolFunction)?;
+        let Value::Object(mut function) = function else {
+            return Err(AnthropicAdapterError::InvalidToolFunction);
+        };
         let name = function
-            .get("name")
-            .cloned()
+            .remove("name")
             .ok_or(AnthropicAdapterError::MissingFunctionName)?;
         let input_schema = function
-            .get("parameters")
-            .cloned()
+            .remove("parameters")
             .unwrap_or_else(|| json!({"type": "object", "properties": {}}));
         object.remove("type");
         object.insert("name".to_string(), name);
-        if let Some(desc) = function.get("description").cloned() {
+        if let Some(desc) = function.remove("description") {
             object.insert("description".to_string(), desc);
+        }
+        if let Some(strict) = function.remove("strict").filter(|value| !value.is_null()) {
+            object.insert("strict".to_string(), strict);
         }
         object.insert("input_schema".to_string(), input_schema);
     }
