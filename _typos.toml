@@ -11,6 +11,8 @@ extend-exclude = [
   "*.lock",
   # Generated from upstream provider catalogs; product names are not ours to fix.
   "crates/gateway-service/data/pricing_catalog_fallback.json",
+  "crates/gateway-service/data/litellm_catalog_fallback.json",
+  "crates/gateway-service/data/openrouter_catalog_fallback.json",
 ]
 
 [default]

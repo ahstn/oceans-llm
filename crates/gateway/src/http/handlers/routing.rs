@@ -1,14 +1,15 @@
 //! Provider eligibility and route selection for inference requests.
 use std::{
-    collections::{BTreeMap, btree_map::Entry},
+    collections::{BTreeMap, HashMap, btree_map::Entry},
     sync::Arc,
 };
 
 use axum::http::HeaderMap;
 
 use gateway_core::{
-    AuthenticatedApiKey, CoreRequestRequirements, GatewayError, ModelRoute, ProviderCapabilities,
-    ProviderClient, ProviderUserCredentialRepository, vertex_route_capabilities_for_upstream_model,
+    AuthenticatedApiKey, CoreRequestRequirements, GatewayError, ModelRoute, PartialCapabilities,
+    ProviderCapabilities, ProviderClient, ProviderUserCredentialRepository,
+    effective_route_capabilities, vertex_route_capabilities_for_upstream_model,
 };
 
 use gateway_service::{
@@ -47,7 +48,12 @@ pub(super) async fn select_provider_route(
     {
         validate_session_headers(headers)?;
     }
-    let mut eligible = eligible_routes(&state.providers, &resolved.routes, requirements);
+    let mut eligible = eligible_routes(
+        &state.providers,
+        &resolved.routes,
+        &resolved.capability_hints,
+        requirements,
+    );
     let provider_identities = if policy.is_some() {
         let mut identities = BTreeMap::new();
         // Shared policies can reference a local legacy provider whose account is unscoped.
@@ -181,9 +187,10 @@ fn validate_session_headers(headers: &HeaderMap) -> Result<(), GatewayError> {
 pub(super) fn select_first_eligible_route(
     providers: &gateway_core::ProviderRegistry,
     routes: &[gateway_core::ModelRoute],
+    capability_hints: &HashMap<uuid::Uuid, PartialCapabilities>,
     requirements: CoreRequestRequirements,
 ) -> (usize, Option<SelectedProviderRoute>) {
-    let eligible = eligible_routes(providers, routes, requirements);
+    let eligible = eligible_routes(providers, routes, capability_hints, requirements);
     let selected = eligible.first().map(|route| SelectedProviderRoute {
         route: route.clone(),
         provider: providers
@@ -195,9 +202,11 @@ pub(super) fn select_first_eligible_route(
     (eligible.len(), selected)
 }
 
+/// `capability_hints` are the catalog hints by route id from request resolution.
 fn eligible_routes(
     providers: &gateway_core::ProviderRegistry,
     routes: &[gateway_core::ModelRoute],
+    capability_hints: &HashMap<uuid::Uuid, PartialCapabilities>,
     requirements: CoreRequestRequirements,
 ) -> Vec<gateway_core::ModelRoute> {
     routes
@@ -206,9 +215,12 @@ fn eligible_routes(
             let Some(provider) = providers.get(&route.provider_key) else {
                 return false;
             };
-            let capabilities =
-                route_capabilities_for_request(provider.as_ref(), route, requirements)
-                    .intersect(route.capabilities);
+            let capabilities = effective_route_capabilities(
+                route,
+                provider.provider_type(),
+                capability_hints.get(&route.id).copied().unwrap_or_default(),
+                route_capabilities_for_request(provider.as_ref(), route, requirements),
+            );
             supports_requirements(capabilities, requirements)
         })
         .cloned()

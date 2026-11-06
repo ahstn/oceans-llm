@@ -42,7 +42,7 @@ Preconditions:
 
 ## Gotchas
 
-- OpenRouter serves GPT Image only on `POST /api/v1/images`. A Chat Completions call to `gpt-image-2.5-flare` gets no compatible route in the gateway, because its route enables only `capabilities.images`.
+- OpenRouter serves GPT Image only on `POST /api/v1/images`. A Chat Completions call to `gpt-image-2.5-flare` gets no compatible route in the gateway, because its route serves only Images. `gateway.yaml` sets every flag of this route explicitly, so a catalog refresh cannot change them. The model's `Capabilities` in Models shows the effective result.
 - The Images API is non-streaming in the gateway. A body with `stream: true` returns 400.
 - With a BYOK provider key, OpenRouter reports `cost: 0` and puts the provider bill in `cost_details.upstream_inference_cost`. The gateway records the sum, so the `Cost` tile is not zero.
 - Image responses run to 1–2.5 MB. Do not print raw response bodies; they hold the image and encrypted reasoning.

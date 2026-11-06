@@ -14,6 +14,8 @@ fi
 # The release task's dependencies rewrite these before this script runs.
 refreshed=(
   crates/gateway-service/data/pricing_catalog_fallback.json
+  crates/gateway-service/data/litellm_catalog_fallback.json
+  crates/gateway-service/data/openrouter_catalog_fallback.json
   crates/gateway-service/data/model_benchmarks.json
 )
 if [[ -n "$(git status --porcelain --untracked-files=no -- . "${refreshed[@]/#/:(exclude)}")" ]]; then

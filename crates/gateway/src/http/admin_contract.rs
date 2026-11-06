@@ -1,7 +1,7 @@
 use std::{fs, path::Path};
 
 use anyhow::Context;
-use gateway_core::{ModelRoutingPolicy, RoutingStrategy};
+use gateway_core::{ContextPricingTier, ModelRoutingPolicy, RoutingStrategy};
 use gateway_service::{
     AdminModelStatus as ServiceAdminModelStatus, BenchmarkMatchKind, BenchmarkMetric,
     ModelIconKey as ServiceModelIconKey, ProviderIconKey as ServiceProviderIconKey,
@@ -421,6 +421,9 @@ pub struct AdminModelView {
     pub output_cost_per_million_tokens_usd_10000: Option<i64>,
     pub cache_read_cost_per_million_tokens_usd_10000: Option<i64>,
     pub cache_write_cost_per_million_tokens_usd_10000: Option<i64>,
+    /// Catalog context tiers for the same primary route as the base prices, ascending by
+    /// threshold. Empty when the price comes from a route pricing override.
+    pub pricing_tiers: Vec<AdminPricingTierView>,
     pub pricing_source: Option<EffectiveMetadataSourceView>,
     pub pricing_varies_by_route: bool,
     pub context_window_tokens: Option<i64>,
@@ -436,6 +439,35 @@ pub struct AdminModelView {
     pub supports_decisions: Option<bool>,
     pub supports_image_generation: Option<bool>,
     pub client_configurations: Vec<AdminModelClientConfigView>,
+}
+
+/// Rates that replace the base prices for a whole request whose prompt tokens (cache
+/// included) exceed `above_input_tokens`. A null rate inherits the base rate.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminPricingTierView {
+    pub above_input_tokens: i64,
+    pub input_cost_per_million_tokens_usd_10000: Option<i64>,
+    pub output_cost_per_million_tokens_usd_10000: Option<i64>,
+    pub cache_read_cost_per_million_tokens_usd_10000: Option<i64>,
+    pub cache_write_cost_per_million_tokens_usd_10000: Option<i64>,
+}
+
+impl From<ContextPricingTier> for AdminPricingTierView {
+    fn from(tier: ContextPricingTier) -> Self {
+        Self {
+            above_input_tokens: tier.above_input_tokens,
+            input_cost_per_million_tokens_usd_10000: tier.input.map(|value| value.as_scaled_i64()),
+            output_cost_per_million_tokens_usd_10000: tier
+                .output
+                .map(|value| value.as_scaled_i64()),
+            cache_read_cost_per_million_tokens_usd_10000: tier
+                .cache_read
+                .map(|value| value.as_scaled_i64()),
+            cache_write_cost_per_million_tokens_usd_10000: tier
+                .cache_write
+                .map(|value| value.as_scaled_i64()),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -549,7 +581,34 @@ pub struct GenerateModelClientConfigsResponse {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct RefreshModelPricingCatalogResponse {
-    pub refreshed: bool,
+    /// One entry per catalog source, in the order models_dev, openrouter, litellm.
+    pub sources: Vec<PricingCatalogSourceRefreshView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PricingCatalogSourceRefreshView {
+    pub source: PricingCatalogSourceView,
+    pub outcome: PricingCatalogRefreshOutcomeView,
+    /// RFC 3339 generation of the source snapshot now in use, cached or vendored.
+    pub fetched_at: Option<String>,
+    /// Stable error code of a failed refresh; never upstream response text.
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PricingCatalogSourceView {
+    ModelsDev,
+    Openrouter,
+    Litellm,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PricingCatalogRefreshOutcomeView {
+    Updated,
+    Unchanged,
+    Failed,
 }
 
 #[derive(Debug, Deserialize, Default, IntoParams)]

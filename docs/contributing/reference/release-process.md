@@ -67,8 +67,8 @@ mise run release
 
 The command completes these steps:
 
-1. Refresh the vendored pricing catalog and the Artificial Analysis intelligence, coding, and agentic indexes. These run as `mise` dependencies of the release task.
-2. Check that `main` matches `origin/main` and has no tracked changes other than those two snapshots.
+1. Refresh the vendored models.dev, OpenRouter, and LiteLLM catalog snapshots and the Artificial Analysis intelligence, coding, and agentic indexes. These run as `mise` dependencies of the release task.
+2. Check that `main` matches `origin/main` and has no tracked changes other than those snapshots.
 3. Ask git-cliff to calculate the next version from the merged pull requests.
 4. Update workspace Cargo versions.
 5. Add the new section to the top of `CHANGELOG.md`.

@@ -12,13 +12,25 @@ pub struct CatalogModelMetadata {
     pub knowledge: Option<String>,
     #[serde(default)]
     pub reasoning_options: Vec<Value>,
+    /// The gateway API surfaces a source says the model serves; `None` when the source
+    /// does not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_endpoints: Option<CatalogApiEndpoints>,
+}
+
+/// API surfaces a catalog source lists for a model.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CatalogApiEndpoints {
+    pub chat_completions: bool,
+    pub responses: bool,
+    pub embeddings: bool,
+    pub images: bool,
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::pricing_catalog::project_models_dev_snapshot;
+    use crate::pricing_catalog::sources::models_dev;
     use serde_json::json;
-    use time::OffsetDateTime;
 
     #[test]
     fn projection_preserves_unknown_false_reasoning_options_and_conditional_rates() {
@@ -27,14 +39,8 @@ mod tests {
             "reasoning_options":[{"type":"effort","values":["low","high"]}],
             "cost":{"input":0,"context_over_200k":{"input":3,"output":12}}
         }}}});
-        let snapshot = project_models_dev_snapshot(
-            &body.to_string(),
-            "test",
-            None,
-            OffsetDateTime::UNIX_EPOCH,
-        )
-        .unwrap();
-        let model = &snapshot.document.providers["openai"].models["example"];
+        let providers = models_dev::project(body.to_string().as_bytes()).unwrap();
+        let model = &providers["openai"].models["example"];
         assert_eq!(model.metadata.tool_call, Some(false));
         assert_eq!(model.metadata.reasoning, None);
         assert_eq!(
@@ -43,5 +49,6 @@ mod tests {
         );
         assert_eq!(model.cost.input.as_deref(), Some("0.0000"));
         assert_eq!(model.cost.conditions["context_over_200k"]["input"], 3);
+        assert_eq!(model.metadata.api_endpoints, None);
     }
 }

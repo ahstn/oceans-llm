@@ -284,7 +284,7 @@ models:
         gateway_core::OpenRouterRouteApi::Decisions
     );
     assert!(compatibility.provider.is_empty());
-    assert!(models[0].routes[0].capabilities.decisions);
+    assert_eq!(models[0].routes[0].capabilities.decisions, Some(true));
 }
 
 #[test]
@@ -340,13 +340,10 @@ models:
 }
 
 #[test]
-fn rejects_decisions_api_without_decisions_capability() {
+fn infers_decisions_capabilities_for_openrouter_decisions_api() {
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");
-
-    write_config(
-        &config_path,
-        r#"
+    let yaml = r#"
 providers:
   - id: openrouter
     type: openai_compat
@@ -357,25 +354,37 @@ models:
     routes:
       - provider: openrouter
         upstream_model: typesafe/jev-1.13
-        capabilities:
-          chat_completions: false
-          responses: false
-          stream: false
-          embeddings: false
-          tools: false
-          vision: false
-          json_schema: false
-          developer_role: false
         compatibility:
           openrouter:
             api: decisions
-"#,
+"#;
+    write_config(&config_path, yaml);
+    let config = GatewayConfig::from_path(&config_path).expect("omitted capabilities are inferred");
+    let models = config.seed_models().expect("seed models");
+    let route = &models[0].routes[0];
+    assert_eq!(
+        route.capabilities,
+        gateway_core::PartialCapabilities::default()
+    );
+    assert_eq!(
+        gateway_core::infer_compatibility_capabilities(&route.compatibility, "openai_compat")
+            .resolve(),
+        gateway_core::ProviderCapabilities {
+            decisions: true,
+            ..gateway_core::ProviderCapabilities::none()
+        }
     );
 
+    write_config(
+        &config_path,
+        &format!("{yaml}        capabilities:\n          decisions: false\n"),
+    );
     let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
     let error_text = format!("{error:#}");
     assert!(
-        error_text.contains("compatibility.openrouter.api `decisions`"),
+        error_text.contains(
+            "uses compatibility.openrouter.api `decisions` but disables capabilities.decisions"
+        ),
         "unexpected error: {error_text}"
     );
 }

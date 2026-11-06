@@ -368,7 +368,7 @@ impl GatewayConfig {
                                     .map(|(key, value)| (key.clone(), Value::String(value.clone())))
                                     .collect::<Map<String, Value>>(),
                                 extra_body: route.extra_body.clone(),
-                                capabilities: route.capabilities.clone().into_capabilities(),
+                                capabilities: route.capabilities.into_partial(),
                                 compatibility: route.compatibility.clone().into_compatibility(),
                             })
                         })

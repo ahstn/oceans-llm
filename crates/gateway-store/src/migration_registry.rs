@@ -474,6 +474,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V75__usage_image_output_tokens.sql"),
         postgres_sql: include_str!("../migrations/postgres/V75__usage_image_output_tokens.sql"),
     },
+    MigrationManifest {
+        version: 76,
+        name: "pricing_context_tiers",
+        checksum: "V76__pricing_context_tiers.sql",
+        libsql_sql: include_str!("../migrations/V76__pricing_context_tiers.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V76__pricing_context_tiers.sql"),
+    },
 ];
 
 #[cfg(test)]

@@ -144,7 +144,7 @@ async fn model_group_info_claims_openai_only_when_every_chat_route_serves_respon
 
     // omp would send `["openai"]` models over `/v1/responses`, which this route cannot serve.
     let mut chat_only = route();
-    chat_only.capabilities.responses = false;
+    chat_only.capabilities.responses = Some(false);
     let behind_chat = group_info(model("gpt"), vec![chat_only.clone()], provider()).await;
     assert_eq!(behind_chat["providers"], json!(["openai_compat"]));
 
@@ -155,7 +155,7 @@ async fn model_group_info_claims_openai_only_when_every_chat_route_serves_respon
     // omp sends every other vendor over chat completions, which no route here serves.
     let mut responses_only = route();
     responses_only.upstream_model = "claude-sonnet-4-5".into();
-    responses_only.capabilities.chat_completions = false;
+    responses_only.capabilities.chat_completions = Some(false);
     let claude_responses = group_info(model("claude"), vec![responses_only], provider()).await;
     assert_eq!(claude_responses["providers"], json!(["openai"]));
 
@@ -212,10 +212,10 @@ async fn model_group_info_counts_only_routes_that_routing_keeps_for_a_feature() 
     // Routing sends a request with tools, images, a JSON schema, or `stream` only to routes
     // whose transport serves it, so a route without that transport does not remove it.
     let mut plain = route();
-    plain.capabilities.tools = false;
-    plain.capabilities.vision = false;
-    plain.capabilities.json_schema = false;
-    plain.capabilities.stream = false;
+    plain.capabilities.tools = Some(false);
+    plain.capabilities.vision = Some(false);
+    plain.capabilities.json_schema = Some(false);
+    plain.capabilities.stream = Some(false);
     let subset = group_info(model("gpt"), vec![route(), plain.clone()], provider()).await;
     assert_eq!(subset["supports_function_calling"], json!(true));
     assert_eq!(subset["supports_vision"], json!(true));
@@ -256,8 +256,8 @@ async fn model_group_info_counts_only_routes_that_routing_keeps_for_a_feature() 
 async fn model_group_info_marks_embeddings_only_models() {
     let mut embeddings = route();
     embeddings.upstream_model = "text-embedding-3-large".into();
-    embeddings.capabilities.chat_completions = false;
-    embeddings.capabilities.responses = false;
+    embeddings.capabilities.chat_completions = Some(false);
+    embeddings.capabilities.responses = Some(false);
     let card = group_info(model("embed"), vec![embeddings], provider()).await;
 
     assert_eq!(card["mode"], json!("embedding"));
@@ -272,13 +272,14 @@ async fn model_group_info_marks_image_only_models() {
     images.capabilities = ProviderCapabilities {
         images: true,
         ..ProviderCapabilities::none()
-    };
+    }
+    .into();
     let card = group_info(model("flare"), vec![images.clone()], provider()).await;
     assert_eq!(card["mode"], json!("image_generation"));
 
     // A chat route on the same model keeps it a chat model.
     let mut chat = route();
-    chat.capabilities.images = false;
+    chat.capabilities.images = Some(false);
     let mixed = group_info(model("flare"), vec![images, chat], provider()).await;
     assert_eq!(mixed["mode"], json!("chat"));
 }
