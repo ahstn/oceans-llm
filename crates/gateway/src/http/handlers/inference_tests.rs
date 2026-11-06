@@ -12,8 +12,8 @@ use serde_json::{Value, json};
 use tower_http::request_id::RequestId;
 
 use super::{
-    AppError, v1_chat_completions, v1_decisions, v1_embeddings, v1_images, v1_messages_inner,
-    v1_responses,
+    AppError, messages::v1_messages_inner, v1_chat_completions, v1_decisions, v1_embeddings,
+    v1_images, v1_responses,
 };
 use crate::http::{
     state::AppState,

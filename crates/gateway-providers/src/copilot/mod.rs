@@ -10,9 +10,10 @@ use gateway_core::{
 };
 use serde_json::Value;
 
+use crate::anthropic::normalize_anthropic_messages_stream;
 use crate::bedrock::{
     AnthropicMessagesTarget, map_chat_request_to_anthropic_messages, merge_object_overrides,
-    normalize_anthropic_messages_response, normalize_anthropic_messages_stream,
+    normalize_anthropic_messages_response,
 };
 use crate::http::{
     TracedResponse, execute_request as execute_http_request, join_base_url, map_reqwest_error,

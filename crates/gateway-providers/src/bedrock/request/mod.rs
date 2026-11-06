@@ -1,3 +1,4 @@
+use super::converse_replay::converse_content;
 use super::*;
 use crate::anthropic::{
     AnthropicAdapterError, claude_rejects_forced_tool_choice, validate_anthropic_tool_choice,
@@ -6,7 +7,6 @@ use crate::anthropic::{
 mod content;
 mod inference;
 mod native;
-mod replay;
 mod thinking;
 mod tools;
 
@@ -43,7 +43,7 @@ pub(super) fn map_chat_request_to_converse(
                 let mut content =
                     map_bedrock_message_content_blocks(&message.content, "assistant")?;
                 content.extend(map_assistant_tool_uses(message)?);
-                if let Some(native) = replay::converse_content(message, &content)? {
+                if let Some(native) = converse_content(message, &content)? {
                     content = native;
                 }
                 messages.push(json!({

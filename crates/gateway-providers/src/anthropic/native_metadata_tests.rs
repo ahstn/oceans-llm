@@ -6,10 +6,13 @@ use gateway_core::{
 };
 use serde_json::{Value, json};
 
-use super::{AnthropicRequestOptions, map_anthropic_request, normalize_anthropic_response};
+use super::{
+    AnthropicRequestOptions, map_anthropic_request, normalize_anthropic_messages_stream,
+    normalize_anthropic_response,
+};
 use crate::bedrock::{
     AnthropicMessagesTarget, map_chat_request_to_anthropic_messages,
-    normalize_anthropic_messages_response, normalize_anthropic_messages_stream,
+    normalize_anthropic_messages_response,
 };
 
 fn context() -> ProviderRequestContext {

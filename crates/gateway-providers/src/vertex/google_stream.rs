@@ -6,11 +6,11 @@ use serde_json::{Map, Value, json};
 
 use super::{
     error::VertexAdapterError,
+    google_replay::{CandidateParts, THOUGHT_SIGNATURE_FIELD, native_parts_metadata},
     google_response::{
-        CandidateParts, candidate_finish_reason, inline_error, map_google_logprobs,
-        map_google_usage, native_parts_metadata, prompt_block_reason,
+        candidate_finish_reason, inline_error, map_google_logprobs, map_google_usage,
+        prompt_block_reason,
     },
-    google_tools::THOUGHT_SIGNATURE_FIELD,
 };
 use crate::{
     anthropic::streaming::{
@@ -59,18 +59,18 @@ impl GoogleStreamState {
     }
 
     /// Converts one streamed `GenerateContentResponse` into zero or more chunks.
-    pub(super) fn on_response(&mut self, object: &Value) -> Result<Vec<Value>, VertexAdapterError> {
+    pub(super) fn on_response(&mut self, object: &Value) -> Vec<Value> {
         if let Some(usage) = map_google_usage(object) {
             merge_openai_stream_usage(&mut self.latest_usage, &usage);
         }
         // A failed generation can be followed by a usage-only frame. Keep consuming accounting
         // information, but never emit subsequent content or reinterpret the failure as success.
         if self.terminal_error.is_some() {
-            return Ok(Vec::new());
+            return Vec::new();
         }
         if let Some(error) = inline_error(object) {
             self.terminal_error = Some(error);
-            return Ok(Vec::new());
+            return Vec::new();
         }
 
         let Some(candidate) = object
@@ -82,7 +82,7 @@ impl GoogleStreamState {
                 self.finish_reason = Some("content_filter");
                 self.prompt_block_reason = Some(reason.to_string());
             }
-            return Ok(Vec::new());
+            return Vec::new();
         };
         let terminal = match candidate_finish_reason(candidate) {
             Ok(terminal) => terminal,
@@ -92,7 +92,7 @@ impl GoogleStreamState {
                     .and_then(Value::as_str)
                     .map(str::to_string);
                 self.terminal_error = Some(error);
-                return Ok(Vec::new());
+                return Vec::new();
             }
         };
 
@@ -128,7 +128,7 @@ impl GoogleStreamState {
                     .map(str::to_string);
             }
         }
-        Ok(chunks)
+        chunks
     }
 
     /// Terminal chunk carrying the resolved finish reason and the latest usage snapshot.
@@ -261,16 +261,8 @@ where
                         return;
                     }
                 };
-                match state.on_response(&object) {
-                    Ok(chunks) => {
-                        for chunk in chunks {
-                            yield Ok(openai_sse_chunk(&chunk));
-                        }
-                    }
-                    Err(error) => {
-                        yield Ok(state.error_chunk("google_stream_error", &error.to_string()));
-                        return;
-                    }
+                for chunk in state.on_response(&object) {
+                    yield Ok(openai_sse_chunk(&chunk));
                 }
             }
         }

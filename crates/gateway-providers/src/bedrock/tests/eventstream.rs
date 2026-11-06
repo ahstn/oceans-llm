@@ -191,14 +191,11 @@ async fn eventstream_valid_usage_prefix_survives_later_crc_failure_independent_o
                 assert!(!transcript.contains("[DONE]"));
             }
             let mut decoder = BedrockEventStreamDecoder::default();
-            assert_eq!(
-                decoder
-                    .push_bytes(&[usage.clone(), corrupt].concat())
-                    .unwrap()
-                    .len(),
-                1
-            );
-            assert!(decoder.take_error().is_some());
+            let batch = decoder
+                .push_bytes(&[usage.clone(), corrupt].concat())
+                .unwrap();
+            assert_eq!(batch.events.len(), 1);
+            assert!(batch.error.is_some());
             assert!(
                 decoder.push_bytes(&usage).is_err(),
                 "failed decoder accepted more bytes"
@@ -274,6 +271,7 @@ fn validates_independent_ieee_checksums_and_rejects_each_corruption() {
         BedrockEventStreamDecoder::default()
             .push_bytes(&frame)
             .unwrap()
+            .events
             .len(),
         1
     );
@@ -325,7 +323,8 @@ fn accepts_all_legal_typed_headers_and_rejects_truncated_values() {
     headers.extend_from_slice(b"messageStop");
     let events = BedrockEventStreamDecoder::default()
         .push_bytes(&eventstream_frame_with_headers(&headers, b"{}"))
-        .unwrap();
+        .unwrap()
+        .events;
     assert_eq!(events[0].event_type.as_deref(), Some("messageStop"));
     for (kind, mut bytes) in values.into_iter().filter(|(kind, _)| *kind >= 2) {
         bytes.pop();
@@ -477,8 +476,14 @@ fn decodes_fragmented_eventstream_frames() {
     );
     let mut decoder = BedrockEventStreamDecoder::default();
 
-    assert!(decoder.push_bytes(&frame[..7]).expect("first").is_empty());
-    let events = decoder.push_bytes(&frame[7..]).expect("second");
+    assert!(
+        decoder
+            .push_bytes(&frame[..7])
+            .expect("first")
+            .events
+            .is_empty()
+    );
+    let events = decoder.push_bytes(&frame[7..]).expect("second").events;
 
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].message_type.as_deref(), Some("event"));

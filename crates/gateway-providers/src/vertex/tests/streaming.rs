@@ -423,19 +423,16 @@ async fn google_stream_stops_after_non_json_frame() {
 fn google_stream_state_emits_nothing_for_usage_only_frames_and_folds_them_into_finish() {
     let mut state = GoogleStreamState::new("chatcmpl-test".to_string(), 1, "fast".to_string());
 
-    let chunks = state
-        .on_response(&json!({
-            "usageMetadata": { "promptTokenCount": 4, "candidatesTokenCount": 1, "totalTokenCount": 5 }
-        }))
-        .expect("usage frame");
+    let chunks = state.on_response(&json!({
+        "usageMetadata": { "promptTokenCount": 4, "candidatesTokenCount": 1, "totalTokenCount": 5 }
+    }));
     assert!(chunks.is_empty());
 
     let chunks = state
         .on_response(&json!({
             "candidates": [{ "content": { "role": "model", "parts": [{ "text": "hi" }] }, "finishReason": "MAX_TOKENS" }],
             "usageMetadata": { "promptTokenCount": 4, "candidatesTokenCount": 2, "totalTokenCount": 6 }
-        }))
-        .expect("text frame");
+        }));
     assert_eq!(chunks.len(), 1);
     assert_eq!(chunks[0]["choices"][0]["delta"]["role"], "assistant");
     assert_eq!(chunks[0]["choices"][0]["delta"]["content"], "hi");
@@ -453,16 +450,12 @@ fn google_stream_state_emits_nothing_for_usage_only_frames_and_folds_them_into_f
 fn google_stream_state_successful_stop_with_calls_finishes_as_tool_calls() {
     let mut state = GoogleStreamState::new("chatcmpl-test".to_string(), 1, "fast".to_string());
 
-    state
-        .on_response(
-            &json!({ "candidates": [{ "content": { "role": "model", "parts": [
+    state.on_response(
+        &json!({ "candidates": [{ "content": { "role": "model", "parts": [
             { "functionCall": { "name": "weather", "args": {} } }
         ] } }] }),
-        )
-        .expect("tool call frame");
-    state
-        .on_response(&finish_object("STOP"))
-        .expect("finish frame");
+    );
+    state.on_response(&finish_object("STOP"));
 
     assert_eq!(
         state.finish().expect("finish reason seen")["choices"][0]["finish_reason"],
@@ -484,9 +477,7 @@ fn google_stream_state_without_finish_reason_is_a_premature_eof() {
 
     // Complete text frames but the connection closed before the `finishReason` frame.
     let mut state = GoogleStreamState::new("chatcmpl-test".to_string(), 1, "fast".to_string());
-    state
-        .on_response(&text_object("partial"))
-        .expect("text frame");
+    state.on_response(&text_object("partial"));
     assert!(matches!(
         state.finish(),
         Err(VertexAdapterError::StreamPrematureEof)

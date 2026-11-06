@@ -464,7 +464,7 @@ async fn compaction_chat_chunks(events: Vec<Value>, bedrock: bool) -> (Vec<Value
             .map(|event| Ok(Bytes::from(format!("data: {event}\n\n")))),
     );
     let mut stream = if bedrock {
-        crate::bedrock::normalize_anthropic_messages_stream(upstream, context(), "aws_bedrock")
+        super::normalize_anthropic_messages_stream(upstream, context(), "aws_bedrock")
     } else {
         normalize_anthropic_stream(
             upstream,

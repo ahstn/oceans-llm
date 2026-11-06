@@ -18,9 +18,8 @@ use uuid::Uuid;
 
 use crate::{
     GatewayService,
-    service::{
-        CacheUsageNormalization, UsageSummary, select_context_tier, usage_summary_from_value,
-    },
+    service::select_context_tier,
+    usage::{CacheUsageNormalization, UsageSummary, usage_summary_from_value},
 };
 
 pub const MAX_BATCH_ITEMS: usize = 50_000;

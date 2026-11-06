@@ -55,3 +55,22 @@ Inline replay retains one ordered response-sized sequence. Terminal assembly mov
 Output transforms invalidate replay state rather than expose an unmodified copy of redacted text or arguments. Truncated length/filter output can complete without a replay snapshot; malformed generation output fails while retaining observed usage. Native Messages and Responses remain separate transports. The [compatibility reference](../reference/provider-api-compatibility.md#native-chat-replay) defines the wire fields and limits.
 
 The [pinned harness comparison](../internal/2026-11-05-provider-harness-comparison.md) records the accepted corrections, rejected claims and proof scope. Local provider fixtures prove wire behavior; they do not certify cloud credentials, model availability or a full agent session.
+
+## Amendment: provider ownership (2026-11-06)
+
+Keep the current Cargo boundaries. Provider SDKs stay out of the service crate, and the gateway still composes the implementations. The new owners are modules, not new crates:
+
+| Owner | Responsibility |
+|---|---|
+| `gateway-core::provider` | Provider client, stream, native result, request context, capabilities, registry, token resolver and error contracts. Existing crate-root imports stay stable. Repository traits and stored records keep their owners. |
+| `anthropic::streaming` and `anthropic::compat_stream` | Two distinct Chat stream adapters. Bedrock and Copilot use the second adapter through the Anthropic boundary. IDs, terminal rules, usage and error codes remain distinct. |
+| `bedrock::eventstream` | Binary frame decoding. Each decoded batch carries its valid prefix and trailing error together. |
+| `bedrock::converse_stream` and `bedrock::converse_replay` | Converse event handling and SSE output; ordered replay assembly, projection and request admission. Signing, versions, beta rules and request overrides stay platform-specific. |
+| Vertex Google modules | `google_content` owns content mapping; `google_conversation` owns turns and result order; `google_replay` owns native projection and validation; `google_tools` owns tool declarations and controls. |
+| `vertex::anthropic` | Anthropic publisher body and header preparation. Shared Vertex transport uses the parsed publisher family and keeps auth, endpoints and HTTP execution. |
+| `gateway-service::usage` | Pure usage and cache interpretation shared by accounting, logging and batches. Pricing, ledger writes and other side effects stay outside it. |
+| HTTP `handlers::messages` and `handlers::inference` | Messages dispatch and the shared inference lifecycle. Output format remains explicit; native headers, guard order, receipt rules, metrics and stop-event checks keep their existing contracts. |
+
+Replay failures use a private typed error instead of matching English text. Google stream ingestion returns chunks directly; it still retains generation errors until late usage has been read.
+
+Both Anthropic Chat adapters put each raw content event in its matching visible delta when one exists. Opaque-only events still get a frame. This removes duplicate per-token frames without dropping boundaries or replay state. Native Messages passthrough is unchanged.

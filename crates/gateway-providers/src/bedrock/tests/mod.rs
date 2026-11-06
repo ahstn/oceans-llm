@@ -10,14 +10,15 @@ use gateway_core::{
 use serde_json::{Map, Value, json};
 use serial_test::serial;
 
+use super::eventstream::BedrockEventStreamDecoder;
 use super::{
-    AnthropicMessagesTarget, BedrockAuthConfig, BedrockEndpointKind, BedrockEventStreamDecoder,
-    BedrockProvider, BedrockProviderConfig,
+    AnthropicMessagesTarget, BedrockAuthConfig, BedrockEndpointKind, BedrockProvider,
+    BedrockProviderConfig,
     map_chat_request_to_anthropic_messages as map_chat_request_to_anthropic_messages_target,
     map_chat_request_to_converse, normalize_anthropic_messages_response,
-    normalize_anthropic_messages_stream, normalize_bedrock_converse_stream,
-    normalize_converse_response,
+    normalize_bedrock_converse_stream, normalize_converse_response,
 };
+use crate::anthropic::normalize_anthropic_messages_stream;
 
 mod count_tokens;
 mod endpoint;

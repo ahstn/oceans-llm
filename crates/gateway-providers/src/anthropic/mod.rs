@@ -1,6 +1,7 @@
 pub(crate) mod beta;
 #[cfg(test)]
 mod beta_transport_tests;
+mod compat_stream;
 mod controls;
 pub mod count_tokens;
 pub mod error;
@@ -9,7 +10,7 @@ pub(crate) mod native;
 mod native_metadata_tests;
 #[cfg(test)]
 mod native_transport_tests;
-pub(crate) mod replay;
+mod replay;
 #[cfg(test)]
 mod replay_tests;
 pub mod request;
@@ -21,6 +22,7 @@ pub mod streaming;
 mod tests;
 pub mod thinking;
 
+pub(crate) use compat_stream::normalize_anthropic_messages_stream;
 pub use count_tokens::{
     COUNT_TOKENS_FIELDS, normalize_count_tokens_response, retain_count_tokens_fields,
 };

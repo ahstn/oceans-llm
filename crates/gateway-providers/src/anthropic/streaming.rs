@@ -6,7 +6,7 @@ use futures_util::StreamExt;
 use gateway_core::{ProviderStream, SseEventParser};
 use serde_json::{Map, Value, json};
 
-use super::replay::AnthropicReplayStream;
+use super::replay::{AnthropicReplayStream, ReplayError};
 use super::response::{
     anthropic_usage_total, attach_owned_anthropic_terminal_replay, map_anthropic_finish_reason,
     map_anthropic_stream_usage, preserve_anthropic_message_metadata,
@@ -104,7 +104,7 @@ where
                         let terminal = payload["delta"]["stop_reason"].as_str()
                             .map(map_anthropic_finish_reason);
                         if matches!(terminal, Some("length" | "content_filter"))
-                            && replay_error.is_some_and(AnthropicReplayStream::is_incomplete_error)
+                            && replay_error.is_some_and(ReplayError::is_incomplete)
                         {
                             incomplete_terminal = true;
                             finish_reason = terminal;
@@ -133,11 +133,6 @@ where
                     continue;
                 }
                 let mut metadata_delta = Map::new();
-                if matches!(kind, "content_block_start" | "content_block_delta" | "content_block_stop") {
-                    metadata_delta.insert("provider_metadata".into(), json!({
-                        provider_namespace: {"native_event": payload}
-                    }));
-                }
                 if kind == "message_delta" {
                     preserve_anthropic_message_metadata(
                         &mut metadata_delta,
@@ -152,6 +147,7 @@ where
                     )));
                 }
 
+                let mut content_chunk = None;
                 match kind {
                     "message_start" if !role_emitted => {
                         let mut delta = openai_chunk(
@@ -195,7 +191,7 @@ where
                                 Some(text),
                                 None,
                             );
-                            yield Ok(openai_sse_chunk(&chunk));
+                            content_chunk = Some(chunk);
                             role_emitted = true;
                         } else if delta_type == Some("input_json_delta")
                             && let (Some(_block_index), Some(tool_call_index), Some(partial_json)) = (
@@ -230,7 +226,7 @@ where
                                 Value::Object(outbound_delta),
                                 None,
                             );
-                            yield Ok(openai_sse_chunk(&chunk));
+                            content_chunk = Some(chunk);
                             role_emitted = true;
                         }
                     }
@@ -277,17 +273,17 @@ where
                                 Value::Object(outbound_delta),
                                 None,
                             );
-                            yield Ok(openai_sse_chunk(&chunk));
+                            content_chunk = Some(chunk);
                             role_emitted = true;
                         } else if let Some(text) = payload.get("content_block")
                             .filter(|block| block["type"] == "text")
                             .and_then(|block| block.get("text")).and_then(Value::as_str)
                             .filter(|text| !text.is_empty())
                         {
-                            yield Ok(openai_sse_chunk(&openai_chunk(
+                            content_chunk = Some(openai_chunk(
                                 &stream_id, created, &model,
                                 (!role_emitted).then_some("assistant"), Some(text), None,
-                            )));
+                            ));
                             role_emitted = true;
                         }
                     }
@@ -296,11 +292,11 @@ where
                             && let Some(arguments) = tool_initial_arguments.remove(&index)
                             && let Some(tool_index) = tool_block_indexes.get(&index)
                         {
-                            yield Ok(openai_sse_chunk(&openai_delta_chunk(
+                            content_chunk = Some(openai_delta_chunk(
                                 &stream_id, created, &model,
                                 json!({"tool_calls": [{"index": tool_index,
                                     "function": {"arguments": arguments}}]}), None,
-                            )));
+                            ));
                         }
                     }
                     "message_delta" => {
@@ -372,6 +368,13 @@ where
                     }
                     _ => {}
                 }
+                if matches!(kind, "content_block_start" | "content_block_delta" | "content_block_stop") {
+                    let mut chunk = content_chunk.unwrap_or_else(|| openai_delta_chunk(
+                        &stream_id, created, &model, json!({}), None,
+                    ));
+                    chunk["choices"][0]["delta"]["provider_metadata"][provider_namespace]["native_event"] = payload;
+                    yield Ok(openai_sse_chunk(&chunk));
+                }
             }
         }
 
@@ -384,7 +387,7 @@ where
         }
 
         if !stream_failed && !incomplete_terminal && let Some(error) = replay_error {
-            yield Ok(openai_sse_error_chunk("anthropic_replay_error", error));
+            yield Ok(openai_sse_error_chunk("anthropic_replay_error", error.as_str()));
             stream_failed = true;
         }
 

@@ -3,78 +3,10 @@ use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use super::{error::VertexAdapterError, google_tools::THOUGHT_SIGNATURE_FIELD};
-
-/// One candidate's parts folded into the OpenAI message shape.
-#[derive(Debug, Default)]
-pub(super) struct CandidateParts {
-    pub text: String,
-    pub reasoning: String,
-    /// Signature Gemini 3 attaches to a non-function part; replayed on the next turn.
-    pub thought_signature: Option<Value>,
-    pub tool_calls: Vec<Value>,
-    pub native_parts: Vec<Value>,
-}
-
-impl CandidateParts {
-    pub(super) fn from_candidate(candidate: &Value) -> Self {
-        let mut parts = Self::default();
-        let Some(items) = candidate
-            .get("content")
-            .and_then(|content| content.get("parts"))
-            .and_then(Value::as_array)
-        else {
-            return parts;
-        };
-        parts.native_parts = items.clone();
-        for part in items {
-            let signature = part.get("thoughtSignature");
-            if let Some(function_call) = part.get("functionCall") {
-                parts
-                    .tool_calls
-                    .push(tool_call_from_function_call(function_call, signature));
-                continue;
-            }
-            if let Some(text) = part.get("text").and_then(Value::as_str) {
-                if part.get("thought").and_then(Value::as_bool) == Some(true) {
-                    parts.reasoning.push_str(text);
-                } else {
-                    parts.text.push_str(text);
-                }
-            }
-            if let Some(signature) = signature.filter(|s| s.as_str().is_some_and(|s| !s.is_empty()))
-            {
-                parts.thought_signature = Some(signature.clone());
-            }
-        }
-        parts
-    }
-}
-
-fn tool_call_from_function_call(function_call: &Value, signature: Option<&Value>) -> Value {
-    let name = function_call
-        .get("name")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let arguments = function_call
-        .get("args")
-        .map_or_else(|| "{}".to_string(), Value::to_string);
-    let id = function_call.get("id").and_then(Value::as_str).map_or_else(
-        || format!("call_{}", Uuid::new_v4().simple()),
-        str::to_string,
-    );
-    let mut call = Map::new();
-    call.insert("id".to_string(), Value::String(id));
-    call.insert("type".to_string(), Value::String("function".to_string()));
-    call.insert(
-        "function".to_string(),
-        json!({ "name": name, "arguments": arguments }),
-    );
-    if let Some(signature) = signature {
-        call.insert(THOUGHT_SIGNATURE_FIELD.to_string(), signature.clone());
-    }
-    Value::Object(call)
-}
+use super::{
+    error::VertexAdapterError,
+    google_replay::{CandidateParts, THOUGHT_SIGNATURE_FIELD, native_parts_metadata},
+};
 
 /// Missing terminal state is permitted only while streaming. Failure and unknown reasons are
 /// upstream errors, never successful stops (even if the candidate also includes function calls).
@@ -112,26 +44,6 @@ pub(super) fn candidate_finish_reason(
         }
     };
     Ok(Some(mapped))
-}
-
-/// Native parts are opaque replay data; call IDs bind ID-less parts to the public tool calls.
-pub(super) fn native_parts_metadata(
-    parts: Vec<Value>,
-    tool_call_ids: Vec<Value>,
-    signature: Option<Value>,
-) -> Value {
-    let mut metadata = json!({ "gcp_vertex": {} });
-    if !parts.is_empty() {
-        metadata["gcp_vertex"]["native_content"] = json!({
-            "source": "google_generate_content",
-            "parts": parts,
-            "tool_call_ids": tool_call_ids
-        });
-    }
-    if let Some(signature) = signature {
-        metadata["gcp_vertex"][THOUGHT_SIGNATURE_FIELD] = signature;
-    }
-    metadata
 }
 
 /// Gemini's chosen candidate is not necessarily the first (or even present) in topCandidates.

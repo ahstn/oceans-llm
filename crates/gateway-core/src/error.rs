@@ -1,9 +1,9 @@
-use serde_json::Value;
 use thiserror::Error;
 
 use crate::{
     budgets::{BudgetExceededStatus, BudgetScopeKind},
     domain::{BudgetCadence, Money4},
+    provider::ProviderError,
 };
 
 #[derive(Debug, Error)]
@@ -80,56 +80,6 @@ pub enum RouteError {
     NoRoutesAvailable(String),
     #[error("routing policy could not evaluate routes: {0}")]
     Policy(String),
-}
-
-#[derive(Debug, Error)]
-pub enum ProviderError {
-    #[error("invalid request for provider: {0}")]
-    InvalidRequest(String),
-    #[error("upstream provider timed out")]
-    Timeout,
-    #[error("upstream provider transport failure: {0}")]
-    Transport(String),
-    #[error("upstream provider returned {status}: {body}")]
-    UpstreamHttp { status: u16, body: String },
-    #[error("upstream provider returned {status}: {body}")]
-    NativeMessagesHttp {
-        status: u16,
-        body: String,
-        headers: std::collections::BTreeMap<String, String>,
-    },
-    #[error("provider call failed after billable upstream usage: {source}")]
-    PartialUsage {
-        source: Box<ProviderError>,
-        provider_usage: Option<Value>,
-    },
-    #[error("provider is not implemented: {0}")]
-    NotImplemented(String),
-}
-
-impl ProviderError {
-    #[must_use]
-    pub fn is_retryable(&self) -> bool {
-        match self {
-            Self::PartialUsage { source, .. } => source.is_retryable(),
-            Self::NativeMessagesHttp {
-                status, headers, ..
-            } => match headers.get("x-should-retry").map(String::as_str) {
-                Some("true") => true,
-                Some("false") => false,
-                _ => matches!(status, 408 | 429 | 500..=599),
-            },
-            _ => matches!(
-                self,
-                Self::Timeout
-                    | Self::Transport(_)
-                    | Self::UpstreamHttp {
-                        status: 408 | 429 | 500..=599,
-                        ..
-                    }
-            ),
-        }
-    }
 }
 
 #[derive(Debug, Error)]

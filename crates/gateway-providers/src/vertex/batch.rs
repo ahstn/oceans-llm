@@ -8,7 +8,10 @@ use gateway_core::{
 use serde_json::{Value, json};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
-use super::{VertexProvider, map_google_request, normalize_google_response, parse_upstream_model};
+use super::{
+    PublisherFamily, VertexProvider, map_google_request, normalize_google_response,
+    parse_upstream_model,
+};
 use crate::http::map_reqwest_error;
 
 impl VertexProvider {
@@ -516,8 +519,15 @@ impl VertexProvider {
         context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
         let token = self.access_token_source.token().await?;
-        let mut builder = self
-            .apply_request_headers(self.client.request(method, url).bearer_auth(token), context);
+        let family = match context.upstream_model.split_once('/') {
+            Some(("anthropic", _)) => PublisherFamily::Anthropic,
+            _ => PublisherFamily::Google,
+        };
+        let mut builder = self.apply_request_headers(
+            self.client.request(method, url).bearer_auth(token),
+            context,
+            family,
+        );
         if let Some(body) = body {
             builder = builder.json(&body);
         }

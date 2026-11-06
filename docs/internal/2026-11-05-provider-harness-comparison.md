@@ -185,7 +185,7 @@ The [separate native capability trait proposal](https://github.com/ahstn/oceans-
 | Native JSON and strict public gateway smoke | Seven cases passed through the real TCP listener, password onboarding, scoped-key and policy APIs: denied top-level native tool input, safe native JSON, native strict/extension fidelity, and four Chat strict-control states. The inference-only key was revoked and then rejected with 401; both fixture servers were stopped and awaited. |
 | Final Bedrock provider HTTP smoke | 18 malformed-container cases and two opaque continuation cases passed with independently checksummed EventStream frames, split/coalesced server bodies, late usage, stop diagnostics, missing terminals, and no false success. No live AWS call was made. |
 | Final Gemini provider HTTP/SSE smoke | Three JSON captures and one stream capture preserved the order of 2,048 results. A separate ambiguous-history capture changed from incorrect order before the fix to preserved input order after it. No live Vertex call was made. |
-| Current admin proofs | All nine planned feature IDs passed `evidence --require-current` before and after stack teardown. The observability driver also proved Agent Harnesses. Browser checks covered Models, Leaderboard, password sign-in, Request Logs, live requests, native Messages, backend gateway, batches and rate limits. |
+| Container/order admin proofs | All nine planned feature IDs passed `evidence --require-current` before and after stack teardown. The observability driver also proved Agent Harnesses. Browser checks covered Models, Leaderboard, password sign-in, Request Logs, live requests, native Messages, backend gateway, batches and rate limits. |
 
 Runtime run: `20261105T225834Z-pr611-provider-corrections`, gateway `0.48.0`. Evidence remains at `/tmp/oceans-admin-verification/20261105T225834Z-pr611-provider-corrections/evidence`. The source-fingerprinted report records optional failures and missing integration prerequisites separately from required checks.
 
@@ -207,6 +207,37 @@ Final artifacts include `gemini-order-before.json`, `gemini-order-after.json`, `
 
 The run ignored the gitignored `mise.local.toml` through `MISE_IGNORED_CONFIG_PATHS` to avoid duplicate task-secret environment sources. No local secret configuration was edited. Proof artifacts omit keys, cookies, prompts and responses; request-log and batch payloads were excluded or redacted.
 
+### Structural ownership closeout (2026-11-06)
+
+The approved structure-only pass keeps the existing crate graph and crate-root provider facade. Provider-port contracts now have one owner in `gateway-core::provider`; persistence stays in its existing modules. Pure usage interpretation lives in the service usage leaf, separate from pricing and persistence. Public Messages dispatch now shares the inference lifecycle without changing native headers, error shape, terminal guards, request identity or accounting. The [ownership ADR](../adr/2026-11-03-native-anthropic-messages-transport.md#amendment-provider-ownership-2026-11-06) records the module boundaries and trade-offs.
+
+The shared Anthropic compatibility stream coordinator belongs to Anthropic, not Bedrock. Bedrock binary decoding, Converse stream delivery and ordered replay have separate owners. Vertex content, conversation and replay mapping no longer form a request/tools dependency cycle. Replay failures use a private typed error; Google stream response mapping returns its events directly. No new crate, fallback shim or broad test/comment cleanup was added.
+
+Four independent reviewers checked the ownership slices. One stale private test import was corrected. The final Messages gate passed 2,182 tests and all 95 required checks. Final-tree public-client HTTP/SSE/EventStream smokes passed 52 Bedrock cases and the Vertex replay, ID-binding, terminal, late-usage and 2,048-result ordering cases. The fixture sources, manifests and lockfiles were removed after execution; no cloud Vertex or Bedrock proof is implied.
+
+Two further PR comments were valid. The [Converse timing comment](https://github.com/ahstn/oceans-llm/pull/611#discussion_r4488165748) corrected the docs: `messageStop` emits finish state and any usable replay snapshot, later metadata can still carry usage, and EOF appends `[DONE]` only after final checks. The [extra-frame comment](https://github.com/ahstn/oceans-llm/pull/611#discussion_r4488179560) was reproduced through real Anthropic-compatible and Bedrock Mantle Chat clients. Each visible content delta now carries its matching raw native event in the same frame. Opaque-only events remain separate; native Messages passthrough is unchanged.
+
+Both Chat adapters produced the same counts on the 64-text-delta HTTP fixture:
+
+| Observed stream item | Before | After |
+|---|---:|---:|
+| JSON SSE frames | 132 | 68 |
+| Combined text/native-event frames | 0 | 64 |
+| Visible text deltas | 64 | 64 |
+| Raw native events | 66 | 66 |
+
+This proves lower frame volume with preserved visible output and raw event order, not a CPU, latency or memory benchmark. One existing assertion expected an exact serialized object ending after `delta.content`; it now reads the JSON value so the added metadata does not break a content check.
+
+The final stream-slice review found no merge-related defect after the frame fix. The verifier helper suites run in this pass passed all 27 tests, and `mise run lint` passed. No full workspace test or PostgreSQL integration run is claimed.
+
+Runtime run `20261106T193928Z-pr611-structural-refactor` used gateway `0.48.0`. All nine planned feature proofs passed `evidence --require-current` before and after owned-stack teardown; the observability driver also proved Agent Harnesses. Fresh Playwright screenshots and safe ARIA/API fields cover the native request log, alongside Models, rate limits, batches and password-session flows. Payloads were masked or omitted.
+
+This pass made two bounded live calls: the backend driver's forced-tool Chat request `934ab27f-d881-4fe9-8cd3-e361b93fcfdc` and native Messages request `9a923c8f-f6ab-436b-93b7-41c7fc1272dd`. The native stream ended with `end_turn` and `message_stop`, 13 input tokens, 4 output tokens and reported cost `$0.0000033`. Its route, stream flag, usage and one successful terminal attempt matched the UI and API. The same canary proves Messages, live requests and Request Logs; no extra call was made for each feature.
+
+The immediate repeat returned a free native `429` with `rate_limited` and no request-log row. The key-scoped policy was edited, paused and deleted through the UI, with API parity. Free hard-budget probes on Chat, Responses and Messages each returned `422` with `budget_exceeded`, null tokens/cost and zero provider attempts. Both manual keys were revoked and then returned `401`; the backend driver also completed its key cleanup. The queued demo batch was kept, not cancelled. Actual `getBatches` POST polling was observed 5,005 ms apart without an intervening action. Browser sessions ended and all owned browsers, fixtures and stack processes were closed.
+
+Current artifacts are under `/tmp/oceans-admin-verification/20261106T193928Z-pr611-structural-refactor/evidence`, including `bedrock-structural-smoke.json`, `vertex-structural-smoke.json`, `structural-native-observations.json`, `structural-request-log-api-safe.json`, `structural-budget-observations.json` and `structural-manual-cleanup.json`. The two known Messages gaps and missing optional auth seeds remain visible in the proof report.
+
 ### Remaining verification limits and known gaps
 
 - Live Vertex and Bedrock cloud calls were not exercised. Their local transport and replay checks do not prove cloud credentials, regions, signing or model-version behavior.
@@ -216,4 +247,3 @@ The run ignored the gitignored `mise.local.toml` through `MISE_IGNORED_CONFIG_PA
 - Forced password rotation and the no-console-access state require seed conditions absent from this run.
 - Mixed-TTL cache pricing keeps the existing policy. The related reviewer accepted the aggregate-counter fix and withdrew the request for a broader pricing-schema expansion.
 - Inline Chat replay remains proportional to response size. Required legacy reasoning fields and SSE serialization still need memory; bounded/spooled replay would require a separate wire-contract design.
-- Manual native-path screenshot renewal was blocked by the managed-browser capture engine. Current manual ARIA/API parity is separate from earlier screenshots; the final maintained Models driver did produce fresh screenshots.

@@ -1,6 +1,5 @@
 use std::{collections::BTreeMap, sync::Arc, time::SystemTime};
 
-use async_stream::stream;
 use async_trait::async_trait;
 use aws_config::{Region, default_provider::credentials::DefaultCredentialsChain};
 use aws_credential_types::Credentials;
@@ -10,29 +9,25 @@ use aws_sigv4::{
 };
 use aws_smithy_runtime_api::client::identity::Identity;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use bytes::{Buf, Bytes};
-use futures_util::StreamExt;
 use gateway_core::{
     AwsBedrockApiStyle, AwsBedrockRouteCompatibility, CoreChatRequest, CoreEmbeddingsRequest,
     CoreResponsesRequest, ProviderCapabilities, ProviderClient, ProviderError,
-    ProviderRequestContext, ProviderStream, SseEventParser, core_chat_request_to_openai,
+    ProviderRequestContext, ProviderStream, core_chat_request_to_openai,
     core_responses_request_to_openai,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-use time::OffsetDateTime;
 use tokio::sync::OnceCell;
 use url::Url;
-use uuid::Uuid;
 
-use crate::anthropic::{normalize_count_tokens_response, retain_count_tokens_fields};
+use crate::anthropic::{
+    normalize_anthropic_messages_stream, normalize_count_tokens_response,
+    retain_count_tokens_fields,
+};
 use crate::http::{
     TracedResponse, execute_json_request, execute_request, join_base_url, map_reqwest_error,
 };
-use crate::streaming::{
-    done_sse_chunk, normalize_openai_compat_responses_stream, normalize_openai_compat_stream,
-    openai_sse_error_chunk, render_sse_event_chunk,
-};
+use crate::streaming::{normalize_openai_compat_responses_stream, normalize_openai_compat_stream};
 
 #[derive(Debug, Clone)]
 pub enum BedrockAuthConfig {
@@ -965,20 +960,20 @@ fn encode_bedrock_model_id(model_id: &str) -> String {
     }
 }
 
+mod converse_replay;
+mod converse_stream;
 mod credentials;
 mod eventstream;
 mod request;
 mod response;
 
-use eventstream::*;
+use converse_stream::normalize_bedrock_converse_stream;
 use request::*;
 pub(crate) use request::{
     AnthropicMessagesTarget, map_chat_request_to_anthropic_messages, merge_object_overrides,
 };
+pub(crate) use response::normalize_anthropic_messages_response;
 use response::*;
-pub(crate) use response::{
-    normalize_anthropic_messages_response, normalize_anthropic_messages_stream,
-};
 
 #[cfg(test)]
 mod tests;
