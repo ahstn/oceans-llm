@@ -64,10 +64,9 @@ const resolveSectionHref = (href: string): string =>
   <div class="mx-auto flex items-center justify-between gap-3 h-14 px-4 lg:px-6">
     <div class="flex items-center gap-3 min-w-0">
       <slot name="brand">
-        {/* The mark alone; the site title stays as the link's accessible name. */}
-        <a href={homeHref} class="flex shrink-0 items-center text-foreground transition-opacity hover:opacity-70">
-          <Logo class="h-5 w-8 shrink-0" />
-          <span class="sr-only">{config.title}</span>
+        {/* The mark and wordmark; the wordmark is the link's accessible name. */}
+        <a href={homeHref} class="flex shrink-0 items-center text-foreground no-underline transition-opacity hover:opacity-70">
+          <Logo class="shrink-0" />
         </a>
       </slot>
 

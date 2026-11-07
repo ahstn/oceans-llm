@@ -1,119 +1,126 @@
 ---
 title: OpenCode Zen
-description: Connect Oceans to OpenCode Zen with the anthropic_compat provider, and point Pi at the Oceans Claude Fable 5.1 model.
+description: Connect Oceans to OpenCode Zen for GPT, Claude, Gemini and open-weight models, with one provider for the OpenAI APIs and one for Anthropic Messages.
 sidebar:
   order: 3
 ---
 
-OpenCode Zen exposes native Anthropic Messages at `https://opencode.ai/zen/v1/messages`. Oceans reaches it with the `anthropic_compat` provider type. This page sets up Zen with its `claude-fable-5-1` model, then connects Pi to that model through Oceans.
+OpenCode Zen is OpenCode's pay-as-you-go model gateway. OpenCode now documents it as [OpenCode Console](https://opencode.ai/docs/console/models/). It serves GPT, Claude, Gemini, Grok, GLM, Kimi, Qwen, DeepSeek, MiniMax and other models with one API key.
 
-For every `anthropic_compat` field, see [Providers](/configuration/providers/#anthropic_compat).
+Zen serves four model APIs. Each model has a native API, and Zen translates requests on the other APIs, so every paid text model works on every API ([Base URLs](https://opencode.ai/docs/console/harnesses/#base-urls)). Oceans calls Zen with two provider types:
 
-## Add the provider and model
+| Zen API | Oceans provider type | `base_url` |
+| --- | --- | --- |
+| OpenAI Responses and Chat Completions | `openai_compat` | `https://opencode.ai/inference/openai/v1` |
+| Anthropic Messages | `anthropic_compat` | `https://opencode.ai/inference/anthropic` |
+| Gemini | None | Use one of the providers above. Zen translates the request. |
 
-An admin adds the provider and a model that routes to it:
+Zen's System One endpoint for Jev models isn't available through Oceans. The `typesafe` provider type accepts only a `base_url` path of empty, `/` or `/v1`, so it can't reach `/inference/systemone`.
+
+For every field, see [Providers](/configuration/providers/), in the [`openai_compat`](/configuration/providers/#openai_compat) and [`anthropic_compat`](/configuration/providers/#anthropic_compat) sections.
+
+## Choose a provider for each model
+
+Route each model to the provider that speaks its native API. The [Zen model list](https://opencode.ai/docs/console/models/#endpoints) shows the native endpoint for each model.
+
+- **`openai_compat`**: GPT, Grok and Muse models (native Responses), and GLM, Kimi, DeepSeek, MiniMax, Mistral and Qwen Max models (native Chat Completions). Use it for Gemini models too.
+- **`anthropic_compat`**: Claude models, and the Qwen Flash and Plus models that list Anthropic Messages as their endpoint.
+
+A route on the other provider also works, because Zen translates the request. A native route avoids that extra translation step.
+
+## Add the providers and models
+
+An admin adds both providers and the models that route to them. Both providers use the same Zen API key:
 
 ```yaml title="gateway.yaml"
 providers:
-  - id: opencode-zen
+  - id: opencode-zen-openai
+    type: openai_compat
+    base_url: https://opencode.ai/inference/openai/v1
+    pricing_provider_id: opencode
+    auth:
+      kind: bearer
+      token: env.OPENCODE_API_KEY
+    display:
+      label: OpenCode Zen (OpenAI)
+      icon_key: openai
+
+  - id: opencode-zen-anthropic
     type: anthropic_compat
-    base_url: https://opencode.ai/zen
+    base_url: https://opencode.ai/inference/anthropic
     pricing_provider_id: opencode
     auth:
       kind: x_api_key
       token: env.OPENCODE_API_KEY
-    default_headers:
-      anthropic-version: "2023-06-01"
     display:
-      label: OpenCode Zen
+      label: OpenCode Zen (Anthropic)
       icon_key: anthropic
 
 models:
-  - id: claude-fable-5-1
-    description: Claude Fable 5.1 through OpenCode Zen
-    max_reasoning_effort: max
+  - id: gpt-5.4
+    description: GPT 5.4 through OpenCode Zen
     routes:
-      - provider: opencode-zen
-        upstream_model: claude-fable-5-1
+      - provider: opencode-zen-openai
+        upstream_model: gpt-5.4
+        capabilities:
+          embeddings: false
+
+  - id: glm-5.1
+    description: GLM 5.1 through OpenCode Zen
+    routes:
+      - provider: opencode-zen-openai
+        upstream_model: glm-5.1
+        capabilities:
+          embeddings: false
+
+  - id: gemini-3.1-pro
+    description: Gemini 3.1 Pro through OpenCode Zen
+    routes:
+      - provider: opencode-zen-openai
+        upstream_model: gemini-3.1-pro
+        capabilities:
+          embeddings: false
+
+  - id: claude-sonnet-4-6
+    description: Claude Sonnet 4.6 through OpenCode Zen
+    routes:
+      - provider: opencode-zen-anthropic
+        upstream_model: claude-sonnet-4-6
 ```
 
 The key settings:
 
-- `base_url`: `https://opencode.ai/zen`, without `/v1/messages`. The adapter appends `/v1/messages`. A base that already ends in `/v1` also works.
-- `auth`: `kind: x_api_key` sends `OPENCODE_API_KEY` in the `x-api-key` header. This is the default `kind`.
-- `pricing_provider_id`: `opencode`. The vendored `opencode` catalog lists `claude-fable-5-1` at $10 input, $50 output, $0.25 cache read and $12.50 cache write per million tokens, with a 1,000,000-token context and 128,000 output tokens. The route needs no `pricing_override` unless your rates differ.
-- `default_headers`: the adapter sends `anthropic-version: 2023-06-01` when no `anthropic-version` header is set, so this entry only makes the value explicit.
-- `max_reasoning_effort`: an optional ceiling for reasoning effort on this model. See [Reasoning effort ceilings](/configuration/models-and-routes/#reasoning-effort-ceilings).
+- `base_url`: on `openai_compat`, the gateway appends `chat/completions` or `responses`, so the base ends in `/openai/v1`. On `anthropic_compat`, the gateway appends `/v1/messages`, so the base stops at `/anthropic`. A base that already ends in `/v1` also works.
+- `auth`: `openai_compat` always sends the token as `Authorization: Bearer`. On `anthropic_compat`, `kind: x_api_key` sends the `x-api-key` header. Zen accepts both.
+- `upstream_model`: the Zen model ID, such as `gpt-5.4` or `claude-sonnet-4-6`. Don't add the `opencode/` prefix that OpenCode's own config uses.
+- `pricing_provider_id`: `opencode`. The vendored `opencode` catalog lists Zen's models by their Zen IDs, so a route needs no `pricing_override` unless your rates differ. See [Pricing catalog and accounting](/spend/pricing-and-accounting/).
+- `capabilities.embeddings: false`: Zen doesn't list an embeddings API. This flag stops the gateway from sending `POST /v1/embeddings` requests to the route.
 
-### Capabilities
+Configs that use the earlier base, `https://opencode.ai/zen`, still reach Zen.
 
-The `anthropic_compat` adapter supports Chat Completions, streaming, tools and vision. It doesn't support Responses, embeddings, JSON schema output, images or Decisions. The adapter caps the route's capabilities to this set, so the route needs no `capabilities` block. Native `POST /v1/messages` requests also work on this route.
+## What each route serves
 
-## Claude Fable 5.1 behaviour
+| Caller API | `openai_compat` route | `anthropic_compat` route |
+| --- | --- | --- |
+| `POST /v1/chat/completions` | Sent to Zen Chat Completions | Translated to Anthropic Messages |
+| `POST /v1/responses` | Sent to Zen Responses | Not supported |
+| `POST /v1/messages` | Translated to Chat Completions | Sent to Zen Messages |
+| `POST /v1/messages/count_tokens` | Not implemented, returns `501` | Sent to the upstream `messages/count_tokens` |
 
-The gateway classifies the model from `upstream_model`. For `claude-fable-5-1` it applies these rules ([`claude_models.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-core/src/claude_models.rs)):
+The gateway caps an `anthropic_compat` route to Chat Completions, streaming, tools and vision, so the route needs no `capabilities` block. For the full matrix, see [Provider API compatibility](/reference/provider-api-compatibility/).
 
-- **Thinking**: adaptive thinking is always on. A request that turns thinking off, or sends a manual `budget_tokens`, gets a local error.
-- **Effort**: `low`, `medium`, `high`, `xhigh` and `max`, up to the model's `max_reasoning_effort`. On Chat Completions, a request with no effort gets adaptive thinking at `high`. On native Messages, the gateway doesn't add an effort: Anthropic's own default applies.
-- **Tools**: tool use works with `tool_choice` set to `auto` or `none`, or omitted. Forced tool choice (`required`, a named function, or Anthropic `{"type": "any"}` and `{"type": "tool"}`) gets a local `400`, because the upstream rejects it for this model. See [Forced tool choice](/reference/provider-api-compatibility/#forced-tool-choice).
-- **Output limit**: a Chat Completions request without `max_tokens` or `max_completion_tokens` gets `max_tokens: 4096`. Set a higher value when you need longer output.
+On Claude routes, the gateway applies its Claude rules for thinking, effort and tool choice from `upstream_model`. See [Claude thinking by model](/reference/provider-api-compatibility/#claude-thinking-by-model). To cap reasoning effort on a model, set `max_reasoning_effort`. See [Reasoning effort ceilings](/configuration/models-and-routes/#reasoning-effort-ceilings).
 
-For the full rules across Claude models, see [Claude thinking by model](/reference/provider-api-compatibility/#claude-thinking-by-model).
+## Limits
 
-## Connect Pi
+- Zen's free-tier chat models work only inside OpenCode. Other clients, Oceans included, get HTTP `403` for those models. Route paid models only.
+- Zen bills each request to the workspace that owns the API key. Oceans records its own spend from the catalog rates, so the two totals can differ when Zen changes its prices before the catalog refreshes.
 
-Pi connects to Oceans, not directly to Zen. Keep the two credentials apart:
+## Connect clients
+
+Clients connect to Oceans, not directly to Zen. Keep the two credentials apart:
 
 - `OPENCODE_API_KEY` stays on the gateway. It authenticates Oceans to Zen.
-- `OCEANS_LLM_API_KEY` stays on the client. It authenticates Pi to Oceans.
+- Each user's Oceans API key stays on the client. It authenticates the client to Oceans.
 
-A user generates the Pi config from the **Models** page, on the **Pi** tab of the client config dialog. See [Client harness configuration](/configuration/client-harnesses/#pi). For this model the snippet for `~/.pi/agent/models.json` looks like this:
-
-```json title="~/.pi/agent/models.json"
-{
-  "providers": {
-    "oceans-llm": {
-      "baseUrl": "https://llm.example.com",
-      "api": "anthropic-messages",
-      "apiKey": "$OCEANS_LLM_API_KEY",
-      "compat": {
-        "forceAdaptiveThinking": true
-      },
-      "models": [
-        {
-          "id": "claude-fable-5-1",
-          "name": "Claude Fable 5.1",
-          "reasoning": true,
-          "input": ["text", "image"],
-          "contextWindow": 200000,
-          "maxTokens": 128000,
-          "cost": {
-            "input": 10.0,
-            "output": 50.0,
-            "cacheRead": 0.25,
-            "cacheWrite": 12.5
-          },
-          "thinkingLevelMap": {
-            "off": null,
-            "minimal": null,
-            "low": "low",
-            "medium": "medium",
-            "high": "high",
-            "xhigh": "xhigh",
-            "max": "max"
-          }
-        }
-      ]
-    }
-  }
-}
-```
-
-`contextWindow` is `200000` because every generated client config caps the context window at 200,000 tokens, even though the model accepts 1,000,000. Edit the value in the client config if you want a larger window. The generator sets `off` and `minimal` to `null` for Claude models with effort levels, so Pi hides those two levels. Levels above `max_reasoning_effort` are clamped to the ceiling.
-
-Set the key and start Pi:
-
-```sh
-export OCEANS_LLM_API_KEY='<Oceans gateway API key>'
-pi --provider oceans-llm --model claude-fable-5-1
-```
+A user generates a client config from the **Models** page. See [Client harness configuration](/configuration/client-harnesses/).

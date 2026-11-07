@@ -144,9 +144,9 @@ It also takes the [shared fields](#shared-fields). Use `default_headers` for hea
 
 ```yaml title="gateway.yaml"
 providers:
-  - id: opencode-zen
+  - id: opencode-zen-anthropic
     type: anthropic_compat
-    base_url: https://opencode.ai/zen
+    base_url: https://opencode.ai/inference/anthropic
     pricing_provider_id: opencode
     auth:
       kind: x_api_key
@@ -154,11 +154,11 @@ providers:
     default_headers:
       anthropic-version: "2023-06-01"
     display:
-      label: OpenCode Zen
+      label: OpenCode Zen (Anthropic)
       icon_key: anthropic
 ```
 
-See [OpenCode Zen](/providers/opencode-zen/) for a route example.
+See [OpenCode Zen](/providers/opencode-zen/) for route examples, including the `openai_compat` provider for Zen's OpenAI APIs.
 
 ## `gcp_cloud_run_openai_compat`
 

@@ -12,7 +12,7 @@ nimbus.json                  # records the last reviewed Nimbus package version
 src/
 ├── api/openapi.json         # the OpenAPI spec the API reference is generated from
 ├── components.ts            # MDX globals — components every .mdx can use without an import
-├── components/              # AgentDirective, Header, Logo (drawn from logo.ts), Render + ui/<slug>/
+├── components/              # AgentDirective, Header, Logo (Oceans mark + wordmark), Render + ui/<slug>/
 ├── content/
 │   ├── docs/*.mdx
 │   └── partials/*.mdx       # referenced via <Render file="..." />
@@ -72,7 +72,8 @@ Rules:
 | Feature recipe | `npx @cloudflare/nimbus-docs add <feature-slug> --print`. Prints the recipe for you to follow; it changes no files itself. |
 | Check it builds | `npx @cloudflare/nimbus-docs check` — build-free preflight (env + structure + authoring + types). `--json` for an agent loop, `--fix` to repair what's safe. |
 | Custom page route | Add a file under `src/pages/`. |
-| Custom OG style | Edit `src/pages/og/_card.ts`. The card draws the logo from `src/components/logo.ts`, the same drawing as the header. |
+| Custom OG style | Edit `src/pages/og/_card.ts`. The card draws the Oceans mark from `src/pages/og/_oceans-mark.png` beside the site name, like the header. |
+| Change the logo or favicon | The header mark is `public/brand/oceans-mark.png` (96 px) and the favicon is `public/favicon.png` (64 px). Both are downscaled from `docs/public/images/oceans-logo-rounded-square.png`, for example with `sips -Z 96 <source> --out <target>`. Nimbus picks the first of `favicon.svg`, `favicon.ico` and `favicon.png` in `public/`. |
 | Check for updates | `npx @cloudflare/nimbus-docs outdated` — starter files behind their tag + registry components behind. |
 | Upgrade Nimbus | Update the package, then run `npx @cloudflare/nimbus-docs migrate --dry-run --diff`. Review every change and required manual step before applying. |
 | Upgrade a starter file | `npx @cloudflare/nimbus-docs diff <file>` to review, `diff --apply <file>` to pull a clean upstream change. |

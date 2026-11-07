@@ -1,10 +1,15 @@
 ---
-/* The site's logo, inline so it takes the text colour in light and dark. The
-   drawing lives in logo.ts, which the social cards read too. */
-import { logo } from "./logo";
+/* The site's brand: the Oceans mark (public/brand/oceans-mark.png, a 96 px copy
+   of docs/public/images/oceans-logo-rounded-square.png) and the site title as
+   a wordmark. The social cards draw the same pair in src/pages/og/_card.ts. */
+import { config } from "virtual:nimbus/config";
+import { withBase } from "@cloudflare/nimbus-docs/runtime";
 
 interface Props { class?: string }
-// Callers give it a whole-pixel box and the drawing centres inside.
-const { class: cls = "h-5 w-8" } = Astro.props;
+const { class: cls } = Astro.props;
+const mark = withBase("/brand/oceans-mark.png", import.meta.env.BASE_URL);
 ---
-<svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${logo.width} ${logo.height}`} class={cls} aria-hidden="true">{logo.paths.map((d) => <path d={d} fill="currentColor" />)}</svg>
+<span class:list={["flex items-center gap-2", cls]}>
+  <img src={mark} alt="" width="24" height="24" class="size-6 shrink-0" />
+  <span class="text-sm font-semibold tracking-tight whitespace-nowrap">{config.title}</span>
+</span>

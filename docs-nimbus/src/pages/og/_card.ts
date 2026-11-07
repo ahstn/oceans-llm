@@ -1,6 +1,6 @@
 /**
  * The site's social cards, 1200 × 630 PNGs rendered at build time: the logo
- * over a hairline, then the page's section and title. `og/[...slug].ts`
+ * and site name over a hairline, then the page's section and title. `og/[...slug].ts`
  * draws one per page and `og.png.ts` the site's own, with its description as
  * the title. This file is the cards' look; edit it freely.
  *
@@ -8,12 +8,12 @@
  * to its lines by measuring it, and renders the PNG. To use another script,
  * such as Chinese or Japanese, add a font that covers it to `fonts`.
  *
- * The leading underscore keeps Astro from routing this file or `_fonts/`.
+ * The leading underscore keeps Astro from routing this file, `_fonts/`, or
+ * `_oceans-mark.png` (the 128 px Oceans mark, read here as a data URI).
  */
+import { readFileSync } from "node:fs";
 import { createCardRenderer, type CardNode, type CardTypography } from "@cloudflare/nimbus-docs/og";
 import { root } from "astro:config/server";
-
-import { logo } from "@/components/logo";
 
 // The site's default dark theme (src/styles/globals.css, from DESIGN.md), in
 // opaque colours for Satori.
@@ -50,21 +50,20 @@ const el = (type: string, style: Style, children?: CardNode | (CardNode | undefi
   props: { style, children },
 });
 
-const Logo = (height: number): CardNode => ({
-  type: "svg",
-  props: {
-    width: Math.round((height * logo.width) / logo.height),
-    height,
-    viewBox: `0 0 ${logo.width} ${logo.height}`,
-    children: logo.paths.map((d) => ({ type: "path", props: { d, fill: FOREGROUND } })),
-  },
-});
+const MARK = `data:image/png;base64,${readFileSync(new URL("src/pages/og/_oceans-mark.png", root)).toString("base64")}`;
+
+// The Oceans mark beside the site name, as in the header.
+const Logo = (height: number): CardNode =>
+  el("div", { display: "flex", alignItems: "center", gap: Math.round(height * 0.4) }, [
+    { type: "img", props: { src: MARK, width: height, height } },
+    el("div", { fontFamily: "Geist", fontWeight: 500, fontSize: Math.round(height * 0.6), letterSpacing: "-0.01em", color: FOREGROUND }, "Oceans LLM"),
+  ]);
 
 async function card({ section, title, sizes }: { section?: string; title: string; sizes: number[] }): Promise<CardNode> {
   const heading = await renderer.fit(title, { width: COLUMN, sizes, lines: 3, style: TITLE });
   const label = section ? await renderer.fit(section, { width: COLUMN, sizes: [26], lines: 1, style: SECTION }) : undefined;
   return el("div", { width: WIDTH, height: HEIGHT, display: "flex", position: "relative", background: BACKGROUND }, [
-    el("div", { position: "absolute", left: LEFT, top: 72, display: "flex" }, Logo(32)),
+    el("div", { position: "absolute", left: LEFT, top: 64, display: "flex" }, Logo(48)),
     el("div", { position: "absolute", left: LEFT, right: LEFT, top: 148, height: 0, borderTop: `1.5px solid ${BORDER}` }),
     // Hung from the hairline rather than set on the bottom margin: X crops
     // the card to 2:1 and covers its foot with the link's domain.
