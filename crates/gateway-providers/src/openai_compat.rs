@@ -21,6 +21,7 @@ use crate::token::{AdcIdTokenSource, CachedAccessTokenSource, ServiceAccountIdTo
 mod anthropic_messages;
 mod batch;
 mod decisions;
+mod native_messages;
 
 pub(crate) use anthropic_messages::normalize_anthropic_messages_for_openai;
 
@@ -278,6 +279,9 @@ impl OpenAiCompatProvider {
         context: &ProviderRequestContext,
         bearer_token: Option<&str>,
     ) -> Result<reqwest::Request, ProviderError> {
+        if self.uses_native_messages(context) {
+            return self.build_native_messages_request(request, context, false, bearer_token);
+        }
         let wire_request = core_chat_request_to_openai(request);
         let mut body = serde_json::to_value(wire_request)
             .map_err(|error| ProviderError::Transport(error.to_string()))?;
@@ -298,6 +302,9 @@ impl OpenAiCompatProvider {
         context: &ProviderRequestContext,
         bearer_token: Option<&str>,
     ) -> Result<reqwest::Request, ProviderError> {
+        if self.uses_native_messages(context) {
+            return self.build_native_messages_request(request, context, true, bearer_token);
+        }
         let wire_request = core_chat_request_to_openai(request);
         let mut body = serde_json::to_value(wire_request)
             .map_err(|error| ProviderError::Transport(error.to_string()))?;
@@ -696,6 +703,46 @@ fn ensure_stream_usage_requested(object: &mut Map<String, Value>) {
 
 #[async_trait]
 impl ProviderClient for OpenAiCompatProvider {
+    fn supports_native_messages(&self, context: &ProviderRequestContext) -> bool {
+        self.uses_native_messages(context)
+    }
+
+    async fn messages(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<gateway_core::NativeMessagesResponse<Value>, ProviderError> {
+        let token = self.auth_token().await?;
+        let request =
+            self.build_native_messages_request(request, context, false, token.as_deref())?;
+        let response = crate::anthropic::native::execute_request(
+            &self.client,
+            request,
+            &self.config.provider_type,
+            &self.config.provider_key,
+        )
+        .await?;
+        crate::anthropic::native::json_response(response).await
+    }
+
+    async fn messages_stream(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<gateway_core::NativeMessagesResponse<ProviderStream>, ProviderError> {
+        let token = self.auth_token().await?;
+        let request =
+            self.build_native_messages_request(request, context, true, token.as_deref())?;
+        let response = crate::anthropic::native::execute_request(
+            &self.client,
+            request,
+            &self.config.provider_type,
+            &self.config.provider_key,
+        )
+        .await?;
+        Ok(crate::anthropic::native::stream_response(response))
+    }
+
     fn provider_key(&self) -> &str {
         &self.config.provider_key
     }
@@ -751,7 +798,17 @@ impl ProviderClient for OpenAiCompatProvider {
         let request = self
             .build_authenticated_chat_request(request, context)
             .await?;
-        self.execute_json_request(request).await
+        let value = self.execute_json_request(request).await?;
+        if self.uses_native_messages(context) {
+            Ok(crate::anthropic::normalize_anthropic_response(
+                &value,
+                context,
+                "anthropic_compat",
+                "openrouter",
+            ))
+        } else {
+            Ok(value)
+        }
     }
 
     async fn chat_completions_stream(
@@ -764,7 +821,18 @@ impl ProviderClient for OpenAiCompatProvider {
             .await?;
         let response = self.execute_stream_request(request).await?;
 
-        Ok(normalize_openai_compat_stream(response.bytes_stream()))
+        if self.uses_native_messages(context) {
+            Ok(crate::anthropic::normalize_anthropic_stream(
+                response.bytes_stream(),
+                format!("chatcmpl-{}", uuid::Uuid::new_v4().simple()),
+                time::OffsetDateTime::now_utc().unix_timestamp(),
+                context.model_key.clone(),
+                "anthropic_compat",
+                "openrouter",
+            ))
+        } else {
+            Ok(normalize_openai_compat_stream(response.bytes_stream()))
+        }
     }
 
     async fn embeddings(

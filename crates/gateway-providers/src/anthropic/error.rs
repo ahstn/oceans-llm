@@ -15,6 +15,10 @@ pub enum AnthropicAdapterError {
     MissingContentText,
     #[error("message content must be a string or typed content array")]
     InvalidMessageContent,
+    #[error(
+        "Anthropic native_content replay metadata is invalid or does not match public message content, reasoning, or tool_calls"
+    )]
+    InvalidReplayProjection,
     #[error("Anthropic system content must contain text blocks")]
     InvalidSystemContentType,
     #[error("`stop` must be a string, an array of strings, or null")]

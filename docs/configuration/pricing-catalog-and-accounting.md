@@ -219,7 +219,7 @@ Oceans normalizes cache usage when a supported response supplies enough evidence
 
 OpenAI Responses `input_tokens_details` and equivalent root provider counters use inclusive input totals. Bedrock Converse and Anthropic counters use exclusive uncached-input totals, so Oceans adds cache-read and cache-write tokens when it derives the logical prompt total. Missing cache evidence remains `NULL`; reports show the aggregate as unavailable if any included row lacks all three normalized buckets.
 
-Cache-aware pricing requires the standard input and output rates and each positive cache bucket's route rate. Malformed counters use aggregate input/output pricing as a `legacy_estimated` safety fallback and retain an `invalid_cache_token_usage` reason. Unsupported mixed TTL write classes remain unpriced because one cache-write rate cannot price them without loss.
+Cache-aware pricing requires the standard input and output rates and each positive cache bucket's route rate. Malformed counters use aggregate input/output pricing as a `legacy_estimated` safety fallback and retain an `invalid_cache_token_usage` reason. Valid mixed-TTL usage still contributes all uncached, cache-read and cache-write tokens to prompt totals, rate limits and ledger buckets. Its pricing remains unsupported because one cache-write rate cannot price distinct TTL classes without loss.
 
 The catalog and provider responses can contain more billing signals than Oceans charges today.
 
@@ -236,7 +236,7 @@ The catalog and provider responses can contain more billing signals than Oceans 
 | reasoning tokens or traces | not charged separately yet |
 | image input, audio, and file modality counters | not charged separately yet |
 
-AWS Bedrock Anthropic Claude responses preserve the raw Anthropic usage object under `usage.provider_usage`, including cache counters such as `cache_read_input_tokens` and `cache_creation_input_tokens` when Bedrock returns them. Oceans normalizes these totals when one write-price class is sufficient. Mixed 5-minute and 1-hour cache writes remain unpriced until the ledger and pricing catalog represent each class separately. Bedrock Claude thinking and Converse reasoning blocks are preserved as provider metadata on Chat Completions messages or stream deltas, but they are not priced as separate ledger dimensions.
+AWS Bedrock Anthropic Claude responses preserve the raw Anthropic usage object under `usage.provider_usage`, including cache counters such as `cache_read_input_tokens` and `cache_creation_input_tokens` when Bedrock returns them. Native Messages usage supplies the same counters at the root. Oceans normalizes valid aggregate counts in either shape, including mixed TTLs; Bedrock Converse `cacheDetails` follows the same rule. Mixed 5-minute and 1-hour cache writes remain unpriced unless the provider reports a valid request cost. A single TTL retains the existing generic cache-write rate; Oceans does not infer a separate 1-hour rate. Bedrock Claude thinking and Converse reasoning blocks are preserved as provider metadata on Chat Completions messages or stream deltas, but they are not priced as separate ledger dimensions.
 
 TTL-specific cache-write accounting, hidden thinking costs, and reasoning-specific counters remain future work tracked in [issue #92](https://github.com/ahstn/oceans-llm/issues/92) and [issue #266](https://github.com/ahstn/oceans-llm/issues/266).
 

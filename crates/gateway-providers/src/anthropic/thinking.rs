@@ -5,7 +5,7 @@ use super::error::AnthropicAdapterError;
 pub use gateway_core::claude_models::{
     ClaudeThinkingOff, ClaudeThinkingPolicy, claude_rejects_forced_tool_choice,
     claude_thinking_off, claude_thinking_policy, contains_exact_claude_model_marker,
-    is_adaptive_only_claude,
+    is_adaptive_only_claude, known_claude_thinking_policy,
 };
 
 const ADAPTIVE_EFFORT_LEVELS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
@@ -78,7 +78,27 @@ pub fn apply_messages_thinking(
     let has_reasoning_effort = reasoning_effort.is_some();
     let effort = merge_optional_efforts(reasoning_effort, native_effort, upstream_model)?;
     let budget_tokens = extract_anthropic_reasoning_budget_tokens(body)?;
-    let policy = claude_thinking_policy(upstream_model);
+    let Some(policy) = known_claude_thinking_policy(upstream_model) else {
+        // Native fields belong to the upstream's schema. Only explicit gateway aliases
+        // need translation; omission and future thinking/effort options remain untouched.
+        if let Some(budget) = budget_tokens {
+            ensure_anthropic_manual_thinking(body, budget, upstream_model)?;
+        }
+        // Unknown manual deployments may not support output effort. Preserve native
+        // output_config, but do not invent it from an alias in manual mode.
+        if let Some(effort) =
+            effort.filter(|_| has_reasoning_effort && caller_thinking_type(body) != Some("enabled"))
+        {
+            if !matches!(
+                caller_thinking_type(body),
+                Some("disabled" | "between_tools")
+            ) {
+                ensure_anthropic_adaptive_thinking(body, upstream_model)?;
+            }
+            restore_anthropic_output_effort(body, effort);
+        }
+        return Ok(());
+    };
 
     validate_caller_thinking_for_policy(body, policy, upstream_model)?;
 

@@ -6,10 +6,13 @@ use gateway_core::{
 };
 use serde_json::{Value, json};
 
-use super::{AnthropicRequestOptions, map_anthropic_request, normalize_anthropic_response};
+use super::{
+    AnthropicRequestOptions, map_anthropic_request, normalize_anthropic_messages_stream,
+    normalize_anthropic_response,
+};
 use crate::bedrock::{
     AnthropicMessagesTarget, map_chat_request_to_anthropic_messages,
-    normalize_anthropic_messages_response, normalize_anthropic_messages_stream,
+    normalize_anthropic_messages_response,
 };
 
 fn context() -> ProviderRequestContext {
@@ -25,6 +28,168 @@ fn context() -> ProviderRequestContext {
         extra_body: Default::default(),
         request_headers: Default::default(),
         compatibility: Default::default(),
+    }
+}
+
+#[test]
+fn unknown_native_models_preserve_manual_thinking_with_reasoning_aliases() {
+    for model in ["private-deployment", "claude-future-99"] {
+        for controls in [
+            json!({
+                "reasoning_effort": "high",
+                "thinking": {"type": "enabled", "budget_tokens": 4096}
+            }),
+            json!({"reasoning": {"effort": "high", "budget_tokens": 4096}}),
+            json!({
+                "reasoning": {"effort": "high", "budget_tokens": 4096},
+                "thinking": {"type": "enabled", "budget_tokens": 4096}
+            }),
+            json!({
+                "reasoning_effort": "high",
+                "thinking": {"type": "enabled", "budget_tokens": 4096},
+                "output_config": {"effort": "high", "extension": true}
+            }),
+            json!({
+                "reasoning": {"effort": "high", "budget_tokens": 4096},
+                "output_config": {"effort": "high", "extension": true}
+            }),
+        ] {
+            let mut body = json!({
+                "model": "claude", "max_tokens": 8192,
+                "messages": [{"role": "user", "content": "hello"}]
+            });
+            body.as_object_mut()
+                .unwrap()
+                .extend(controls.as_object().unwrap().clone());
+            let native: AnthropicMessagesRequest = serde_json::from_value(body).unwrap();
+            let request = anthropic_messages_request_to_core(&native);
+            let context = ProviderRequestContext {
+                upstream_model: model.into(),
+                ..context()
+            };
+            let mapped = map_anthropic_request(
+                &request,
+                &context,
+                false,
+                &AnthropicRequestOptions::default(),
+            )
+            .unwrap();
+            assert_eq!(
+                mapped["thinking"],
+                json!({"type": "enabled", "budget_tokens": 4096}),
+                "{model}: {controls}"
+            );
+            assert_eq!(
+                mapped.get("output_config"),
+                controls.get("output_config"),
+                "{model}: {controls}"
+            );
+            assert_eq!(mapped["max_tokens"], 8192);
+            for alias in ["reasoning", "reasoning_effort", "reasoning_budget_tokens"] {
+                assert!(mapped.get(alias).is_none(), "{model}: {alias}");
+            }
+        }
+    }
+}
+
+#[test]
+fn unknown_native_thinking_aliases_preserve_omissions_and_reject_conflicts() {
+    use super::error::AnthropicAdapterError;
+    use super::thinking::apply_messages_thinking;
+
+    for model in ["private-deployment", "claude-future-99"] {
+        for (input, expected) in [
+            (json!({}), json!({})),
+            (
+                json!({"thinking": {"type": "enabled", "budget_tokens": 4096}}),
+                json!({"thinking": {"type": "enabled", "budget_tokens": 4096}}),
+            ),
+            (
+                json!({"output_config": {"effort": "future"}}),
+                json!({"output_config": {"effort": "future"}}),
+            ),
+            (
+                json!({"reasoning_effort": "high"}),
+                json!({"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}}),
+            ),
+            (
+                json!({"reasoning": {"budget_tokens": 4096}}),
+                json!({"thinking": {"type": "enabled", "budget_tokens": 4096}}),
+            ),
+        ] {
+            let mut body = input.as_object().unwrap().clone();
+            apply_messages_thinking(&mut body, model).unwrap();
+            assert_eq!(Value::Object(body), expected, "{model}: {input}");
+        }
+        for mode in ["adaptive", "disabled", "between_tools"] {
+            let mut body = json!({
+                "thinking": {"type": mode},
+                "reasoning": {"effort": "high", "budget_tokens": 4096}
+            })
+            .as_object()
+            .unwrap()
+            .clone();
+            assert!(matches!(
+                apply_messages_thinking(&mut body, model),
+                Err(AnthropicAdapterError::ConflictingCallerThinking { .. })
+            ));
+        }
+        let mut body = json!({
+            "thinking": {"type": "enabled", "budget_tokens": 2048},
+            "reasoning": {"effort": "high", "budget_tokens": 4096}
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        assert!(matches!(
+            apply_messages_thinking(&mut body, model),
+            Err(AnthropicAdapterError::ConflictingManualBudget { .. })
+        ));
+        let mut body = json!({
+            "thinking": {"type": "enabled", "budget_tokens": 4096},
+            "output_config": {"effort": "low"},
+            "reasoning_effort": "high"
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        assert!(matches!(
+            apply_messages_thinking(&mut body, model),
+            Err(AnthropicAdapterError::ConflictingEffort { .. })
+        ));
+        let mut body = json!({
+            "reasoning": {"effort": "high", "budget_tokens": 4096},
+            "reasoning_budget_tokens": 2048
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        assert!(matches!(
+            apply_messages_thinking(&mut body, model),
+            Err(AnthropicAdapterError::ConflictingReasoningBudgetTokens)
+        ));
+        let mut body = json!({
+            "reasoning": {"effort": "high", "budget_tokens": 4096},
+            "thinking_budget_tokens": 2048
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        assert!(matches!(
+            apply_messages_thinking(&mut body, model),
+            Err(AnthropicAdapterError::ConflictingThinkingBudgetTokens)
+        ));
+        let mut body = json!({
+            "thinking": {"type": "enabled"},
+            "reasoning": {"effort": "high", "budget_tokens": 4096}
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        assert!(matches!(
+            apply_messages_thinking(&mut body, model),
+            Err(AnthropicAdapterError::MissingBudgetTokens { .. })
+        ));
     }
 }
 

@@ -1,3 +1,4 @@
+use super::converse_replay::converse_content;
 use super::*;
 use crate::anthropic::{
     AnthropicAdapterError, claude_rejects_forced_tool_choice, validate_anthropic_tool_choice,
@@ -5,6 +6,7 @@ use crate::anthropic::{
 
 mod content;
 mod inference;
+mod native;
 mod thinking;
 mod tools;
 
@@ -22,6 +24,10 @@ pub(super) fn map_chat_request_to_converse(
     let mut system = Vec::new();
     let mut messages = Vec::new();
 
+    if let Some(instructions) = request.extra.get("system") {
+        system.push(json!({"text": message_content_as_text(instructions)?}));
+    }
+
     for message in &request.messages {
         match message.role.as_str() {
             "system" | "developer" => {
@@ -37,16 +43,29 @@ pub(super) fn map_chat_request_to_converse(
                 let mut content =
                     map_bedrock_message_content_blocks(&message.content, "assistant")?;
                 content.extend(map_assistant_tool_uses(message)?);
+                if let Some(native) = converse_content(message, &content)? {
+                    content = native;
+                }
                 messages.push(json!({
                     "role": "assistant",
                     "content": content
                 }));
             }
             "tool" => {
-                messages.push(json!({
-                    "role": "user",
-                    "content": [map_tool_result(message)?]
-                }));
+                let result = map_tool_result(message)?;
+                if let Some(last) = messages.last_mut()
+                    && last["role"] == "user"
+                    && last["content"].as_array().is_some_and(|blocks| {
+                        blocks.iter().all(|block| block.get("toolResult").is_some())
+                    })
+                {
+                    last["content"]
+                        .as_array_mut()
+                        .expect("tool result content")
+                        .push(result);
+                } else {
+                    messages.push(json!({"role": "user", "content": [result]}));
+                }
             }
             other => {
                 return Err(ProviderError::InvalidRequest(format!(
@@ -72,6 +91,7 @@ pub(super) fn map_chat_request_to_converse(
     passthrough.remove("model");
     passthrough.remove("messages");
     passthrough.remove("stream");
+    passthrough.remove("system");
 
     let inference_config = extract_inference_config(&mut passthrough)?;
     if !inference_config.is_empty() {
@@ -406,6 +426,10 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
         ));
     }
 
+    if context.chat_protocol == gateway_core::ChatRequestProtocol::AnthropicMessages {
+        return native::map_native_anthropic_messages(request, context, target, betas);
+    }
+
     let mut body = Map::new();
 
     let mut system = Vec::new();
@@ -436,6 +460,11 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
                     if !is_duplicate {
                         content.push(tool_use);
                     }
+                }
+                if let Some(native) =
+                    crate::anthropic::request::replay_anthropic_content(message, "aws_bedrock")?
+                {
+                    content = native;
                 }
                 messages.push(json!({
                     "role": "assistant",

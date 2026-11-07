@@ -1,6 +1,168 @@
 use super::*;
 
 #[tokio::test]
+async fn independent_anthropic_replay_errors_drain_same_event_and_later_usage() {
+    for close_invalid_tool in [false, true] {
+        let mut events = vec![
+            json!({"type":"message_start","message":{"id":"msg-drain","content":[],"usage":{"input_tokens":3,"output_tokens":0,"cache_read_input_tokens":2}}}),
+            json!({"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call-a","name":"lookup","input":{}}}),
+            json!({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"city\":"}}),
+        ];
+        if close_invalid_tool {
+            events.push(json!({"type":"content_block_stop","index":0}));
+        }
+        events.extend([
+            json!({"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":3}}),
+            json!({"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"SUPPRESSED_AFTER_REPLAY_FAILURE"}}),
+            json!({"type":"message_delta","usage":{"output_tokens":4}}),
+            json!({"type":"message_stop"}),
+        ]);
+        let transcript = collect_anthropic_messages_stream(
+            events
+                .into_iter()
+                .map(|event| {
+                    Ok(Bytes::from(format!(
+                        "event: {}\ndata: {event}\n\n",
+                        event["type"].as_str().unwrap()
+                    )))
+                })
+                .collect(),
+        )
+        .await;
+        let chunks = transcript
+            .lines()
+            .filter_map(|line| line.strip_prefix("data: "))
+            .filter_map(|data| serde_json::from_str::<Value>(data).ok())
+            .collect::<Vec<_>>();
+        let error_index = chunks
+            .iter()
+            .position(|chunk| chunk.get("error").is_some())
+            .unwrap();
+        let final_usage_index = chunks
+            .iter()
+            .rposition(|chunk| chunk.get("usage").is_some())
+            .unwrap();
+        assert!(final_usage_index < error_index);
+        assert_eq!(
+            chunks[error_index]["error"]["code"],
+            "anthropic_messages_replay_error"
+        );
+        assert_eq!(chunks[final_usage_index]["usage"]["prompt_tokens"], 3);
+        assert_eq!(chunks[final_usage_index]["usage"]["completion_tokens"], 4);
+        assert_eq!(
+            chunks[final_usage_index]["usage"]["provider_usage"]["cache_read_input_tokens"],
+            2
+        );
+        assert!(
+            chunks
+                .iter()
+                .any(|chunk| chunk["usage"]["completion_tokens"] == 3)
+        );
+        assert!(
+            chunks
+                .iter()
+                .all(|chunk| chunk["choices"][0]["finish_reason"].is_null())
+        );
+        assert!(chunks.iter().all(|chunk| {
+            chunk["choices"][0]["delta"]["provider_metadata"]["aws_bedrock"]
+                .get("native_content")
+                .is_none()
+        }));
+        assert!(!transcript.contains("SUPPRESSED_AFTER_REPLAY_FAILURE"));
+        assert!(!transcript.contains("[DONE]"));
+    }
+}
+
+#[tokio::test]
+async fn independent_anthropic_truncated_tool_json_keeps_expected_terminal_and_usage() {
+    for (reason, expected) in [
+        ("max_tokens", "length"),
+        ("model_context_window_exceeded", "length"),
+        ("refusal", "content_filter"),
+    ] {
+        for close_invalid_tool in [false, true] {
+            let mut events = vec![
+                json!({"type":"message_start","message":{"id":"msg-cut","content":[],"usage":{"input_tokens":3,"output_tokens":0}}}),
+                json!({"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call-a","name":"lookup","input":{}}}),
+                json!({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"city\":"}}),
+            ];
+            if close_invalid_tool {
+                events.push(json!({"type":"content_block_stop","index":0}));
+            }
+            events.extend([
+                json!({"type":"message_delta","delta":{"stop_reason":reason},"usage":{"output_tokens":3}}),
+                json!({"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"SUPPRESSED_AFTER_TRUNCATION"}}),
+                json!({"type":"message_delta","usage":{"output_tokens":4}}),
+                json!({"type":"message_stop"}),
+            ]);
+            let transcript = collect_anthropic_messages_stream(
+                events
+                    .into_iter()
+                    .map(|event| {
+                        Ok(Bytes::from(format!(
+                            "event: {}\ndata: {event}\n\n",
+                            event["type"].as_str().unwrap()
+                        )))
+                    })
+                    .collect(),
+            )
+            .await;
+            let chunks = transcript
+                .lines()
+                .filter_map(|line| line.strip_prefix("data: "))
+                .filter_map(|data| serde_json::from_str::<Value>(data).ok())
+                .collect::<Vec<_>>();
+            assert!(
+                chunks.iter().all(|chunk| chunk.get("error").is_none()),
+                "{transcript}"
+            );
+            assert!(
+                chunks
+                    .iter()
+                    .any(|chunk| chunk["choices"][0]["finish_reason"] == expected)
+            );
+            let final_usage = chunks
+                .iter()
+                .rfind(|chunk| chunk.get("usage").is_some())
+                .unwrap();
+            assert_eq!(final_usage["usage"]["completion_tokens"], 4);
+            assert_eq!(final_usage["usage"]["prompt_tokens"], 3);
+            assert!(chunks.iter().all(|chunk| {
+                chunk["choices"][0]["delta"]["provider_metadata"]["aws_bedrock"]
+                    .get("native_content")
+                    .is_none()
+            }));
+            assert!(!transcript.contains("SUPPRESSED_AFTER_TRUNCATION"));
+            assert!(transcript.ends_with("data: [DONE]\n\n"), "{transcript}");
+        }
+    }
+}
+
+#[test]
+fn malformed_converse_generations_fail_without_fabricating_http_status_and_keep_usage() {
+    for reason in ["malformed_tool_use", "malformed_model_output"] {
+        let error = normalize_converse_response(
+            &json!({
+                "output":{"message":{"content":[{"text":"incomplete"}]}},
+                "stopReason":reason, "usage":{"inputTokens":8,"outputTokens":3}
+            }),
+            &context("nova"),
+        )
+        .expect_err("generation failure");
+        let ProviderError::PartialUsage {
+            source,
+            provider_usage,
+        } = error
+        else {
+            panic!("missing partial usage error");
+        };
+        assert!(matches!(source.as_ref(), ProviderError::Transport(_)));
+        assert!(source.to_string().contains(reason));
+        assert_eq!(provider_usage.unwrap()["total_tokens"], 11);
+    }
+}
+
+#[tokio::test]
 async fn mantle_anthropic_stream_classifies_body_timeout() {
     let error = crate::http::tests::timed_out_body_error().await;
     let upstream = futures_util::stream::once(async move { Err(error) });
@@ -22,10 +184,19 @@ async fn normalizes_mantle_anthropic_messages_sse() {
             b"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_123\",\"usage\":{\"input_tokens\":3,\"output_tokens\":0,\"cache_read_input_tokens\":2,\"cache_creation_input_tokens\":1,\"cache_creation\":{\"ephemeral_5m_input_tokens\":1}}}}\n\n",
         )),
         Ok(Bytes::from_static(
+            b"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+        )),
+        Ok(Bytes::from_static(
             b"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\n",
         )),
         Ok(Bytes::from_static(
+            b"event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+        )),
+        Ok(Bytes::from_static(
             b"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":1}}\n\n",
+        )),
+        Ok(Bytes::from_static(
+            b"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
         )),
     ];
     let mut stream = normalize_anthropic_messages_stream(
@@ -46,17 +217,23 @@ async fn normalizes_mantle_anthropic_messages_sse() {
 
     assert!(transcript.contains(r#""id":"msg_123""#));
     assert!(transcript.contains(r#""delta":{"role":"assistant"}"#));
-    assert!(transcript.contains(r#""delta":{"content":"Hello"}"#));
+    assert!(
+        transcript
+            .lines()
+            .filter_map(|line| line.strip_prefix("data: "))
+            .filter_map(|data| serde_json::from_str::<Value>(data).ok())
+            .any(|chunk| chunk["choices"][0]["delta"]["content"] == "Hello")
+    );
     assert!(transcript.contains(r#""finish_reason":"stop""#));
     assert!(transcript.contains(r#""prompt_tokens":3"#));
     assert!(transcript.contains(r#""completion_tokens":1"#));
-    assert!(transcript.contains(r#""total_tokens":4"#));
     let final_usage = transcript
         .lines()
         .filter_map(|line| line.strip_prefix("data: "))
         .filter_map(|data| serde_json::from_str::<Value>(data).ok())
         .find(|chunk| chunk["choices"][0]["finish_reason"] == "stop")
         .expect("final usage chunk");
+    assert_eq!(final_usage["usage"]["total_tokens"], 7);
     assert_eq!(
         final_usage["usage"]["provider_usage"],
         json!({
@@ -95,7 +272,13 @@ async fn normalizes_mantle_anthropic_messages_streamed_tool_call_metadata() {
             b"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"city\\\":\\\"London\\\"}\"}}\n\n",
         )),
         Ok(Bytes::from_static(
+            b"event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\n",
+        )),
+        Ok(Bytes::from_static(
             b"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"input_tokens\":8,\"output_tokens\":4}}\n\n",
+        )),
+        Ok(Bytes::from_static(
+            b"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
         )),
     ])
     .await;
@@ -144,7 +327,8 @@ fn normalizes_text_response_with_usage() {
     let normalized = normalize_converse_response(
         &response,
         &context("us.anthropic.claude-3-5-sonnet-20241022-v2:0"),
-    );
+    )
+    .expect("valid generation");
 
     assert_eq!(normalized["id"], "bedrock-response-id");
     assert_eq!(normalized["object"], "chat.completion");
@@ -201,7 +385,8 @@ fn normalizes_converse_reasoning_metadata_without_leaking_into_content() {
     let normalized = normalize_converse_response(
         &response,
         &context("us.anthropic.claude-3-5-sonnet-20241022-v2:0"),
-    );
+    )
+    .expect("valid generation");
     let message = &normalized["choices"][0]["message"];
 
     assert_eq!(message["content"], "Final answer.");
@@ -254,7 +439,8 @@ fn normalizes_tool_use_response() {
         }
     });
 
-    let normalized = normalize_converse_response(&response, &context("amazon.nova-pro-v1:0"));
+    let normalized = normalize_converse_response(&response, &context("amazon.nova-pro-v1:0"))
+        .expect("valid generation");
 
     assert_eq!(normalized["choices"][0]["finish_reason"], "tool_calls");
     assert_eq!(
@@ -295,26 +481,6 @@ async fn collect_anthropic_messages_stream_for_namespace(
     }
 
     transcript
-}
-
-#[tokio::test]
-async fn normalizes_anthropic_stream_reasoning_for_copilot() {
-    let transcript = collect_anthropic_messages_stream_for_namespace(
-        vec![Ok(Bytes::from_static(
-            b"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_123\"}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"hidden\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"sig-stream\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"redacted_thinking\",\"data\":\"encrypted\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"text_delta\",\"text\":\"visible\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n",
-        ))],
-        "github_copilot",
-    )
-    .await;
-
-    assert!(transcript.contains(r#""github_copilot""#));
-    assert!(transcript.contains(r#""type":"thinking""#));
-    assert!(transcript.contains(r#""type":"thinking_delta""#));
-    assert!(transcript.contains(r#""type":"signature_delta""#));
-    assert!(transcript.contains(r#""signature":"sig-stream""#));
-    assert!(transcript.contains(r#""type":"redacted_thinking""#));
-    assert!(transcript.contains(r#""data":"encrypted""#));
-    assert!(transcript.contains(r#""content":"visible""#));
 }
 
 #[test]

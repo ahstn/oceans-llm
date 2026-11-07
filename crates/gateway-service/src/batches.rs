@@ -18,9 +18,8 @@ use uuid::Uuid;
 
 use crate::{
     GatewayService,
-    service::{
-        CacheUsageNormalization, UsageSummary, select_context_tier, usage_summary_from_value,
-    },
+    service::select_context_tier,
+    usage::{CacheUsageNormalization, UsageSummary, usage_summary_from_value},
 };
 
 pub const MAX_BATCH_ITEMS: usize = 50_000;
@@ -190,7 +189,7 @@ fn batch_usage_cost_numerator(
         CacheUsageNormalization::Unavailable | CacheUsageNormalization::Invalid(_) => {
             components.push((usage.prompt_tokens, rates.input, true));
         }
-        CacheUsageNormalization::Unsupported(_) => return Ok(None),
+        CacheUsageNormalization::Unsupported { .. } => return Ok(None),
     }
     // Image tokens are part of the completion tokens; with an image rate they
     // are charged at it and the rest at the output rate, as in usage pricing.

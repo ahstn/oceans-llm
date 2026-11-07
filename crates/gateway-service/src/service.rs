@@ -35,6 +35,7 @@ use crate::{
     budget_scopes::usage_ownership_scope_key,
     effective_route_metadata::{EffectiveRouteMetadata, resolve_effective_route_metadata},
     mcp_invocation_logging::{McpInvocationLogInput, McpInvocationLogging},
+    usage::{CacheUsageNormalization, UsageSummary, usage_summary_from_value},
 };
 
 mod route_overrides;
@@ -1360,336 +1361,6 @@ fn add_optional(left: Option<i64>, right: Option<i64>) -> Result<Option<i64>, Ga
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub(crate) struct UsageSummary {
-    pub(crate) prompt_tokens: Option<i64>,
-    pub(crate) uncached_input_tokens: Option<i64>,
-    pub(crate) cache_read_tokens: Option<i64>,
-    pub(crate) cache_write_tokens: Option<i64>,
-    pub(crate) completion_tokens: Option<i64>,
-    /// Image tokens within `completion_tokens`; never more than them.
-    pub(crate) image_output_tokens: Option<i64>,
-    pub(crate) total_tokens: Option<i64>,
-    pub(crate) cache_usage: CacheUsageNormalization,
-}
-
-impl UsageSummary {
-    pub(crate) fn has_usage(&self) -> bool {
-        self.prompt_tokens.is_some()
-            || self.completion_tokens.is_some()
-            || self.total_tokens.is_some()
-    }
-}
-
-pub(crate) fn usage_summary_from_value(
-    value: Option<&Value>,
-) -> Result<UsageSummary, GatewayError> {
-    let Some(usage) = value.and_then(Value::as_object) else {
-        return Ok(UsageSummary::default());
-    };
-
-    let raw_prompt_tokens = usage
-        .get("prompt_tokens")
-        .or_else(|| usage.get("input_tokens"))
-        .and_then(Value::as_i64);
-    let completion_tokens = usage
-        .get("completion_tokens")
-        .or_else(|| usage.get("output_tokens"))
-        .and_then(Value::as_i64);
-    let total_tokens = match usage.get("total_tokens").and_then(Value::as_i64) {
-        some @ Some(_) => some,
-        None => match (raw_prompt_tokens, completion_tokens) {
-            (Some(prompt), Some(completion)) => prompt
-                .checked_add(completion)
-                .ok_or_else(|| GatewayError::Internal("token total overflow".to_string()))
-                .map(Some)?,
-            _ => None,
-        },
-    };
-
-    let cache_usage = normalize_cache_tokens(usage, raw_prompt_tokens);
-    let prompt_tokens = cache_usage
-        .tokens()
-        .map_or(raw_prompt_tokens, |tokens| Some(tokens.total_input_tokens));
-    let total_tokens = if prompt_tokens != raw_prompt_tokens {
-        match (prompt_tokens, completion_tokens) {
-            (Some(prompt), Some(completion)) => prompt
-                .checked_add(completion)
-                .ok_or_else(|| GatewayError::Internal("token total overflow".to_string()))
-                .map(Some)?,
-            _ => total_tokens,
-        }
-    } else {
-        total_tokens
-    };
-    let (uncached_input_tokens, cache_read_tokens, cache_write_tokens) =
-        cache_usage.tokens().map_or((None, None, None), |tokens| {
-            (
-                Some(tokens.uncached_input_tokens),
-                Some(tokens.cache_read_tokens),
-                Some(tokens.cache_write_tokens),
-            )
-        });
-    let image_output_tokens = image_output_tokens_within_completion(usage, completion_tokens);
-
-    Ok(UsageSummary {
-        prompt_tokens,
-        uncached_input_tokens,
-        cache_read_tokens,
-        cache_write_tokens,
-        completion_tokens,
-        image_output_tokens,
-        total_tokens,
-        cache_usage,
-    })
-}
-
-/// Image tokens within the completion tokens, from Chat Completions
-/// `completion_tokens_details` or Responses `output_tokens_details`.
-///
-/// A count that is not an integer from zero to the completion tokens is
-/// dropped with a warning rather than failing or unpricing the request. Image
-/// tokens are a subset of completion tokens, so dropping the split loses no
-/// tokens: every completion token then bills at the output rate, as it did
-/// before image rates existed.
-fn image_output_tokens_within_completion(
-    usage: &serde_json::Map<String, Value>,
-    completion_tokens: Option<i64>,
-) -> Option<i64> {
-    let image_tokens = ["completion_tokens_details", "output_tokens_details"]
-        .into_iter()
-        .find_map(|details| {
-            usage
-                .get(details)?
-                .get("image_tokens")
-                .filter(|tokens| !tokens.is_null())
-        })?;
-    let valid = image_tokens.as_i64().filter(|tokens| {
-        *tokens >= 0 && completion_tokens.is_some_and(|completion| *tokens <= completion)
-    });
-    if valid.is_none() {
-        warn!(
-            image_tokens = %image_tokens,
-            completion_tokens = ?completion_tokens,
-            "ignoring image token count outside the completion tokens; image output bills at the output rate"
-        );
-    }
-    valid
-}
-
-#[derive(Debug, Clone, Default)]
-pub(crate) enum CacheUsageNormalization {
-    #[default]
-    Unavailable,
-    Valid(CacheTokenSummary),
-    Invalid(String),
-    Unsupported(String),
-}
-
-impl CacheUsageNormalization {
-    fn tokens(&self) -> Option<&CacheTokenSummary> {
-        match self {
-            Self::Valid(tokens) => Some(tokens),
-            Self::Unavailable | Self::Invalid(_) | Self::Unsupported(_) => None,
-        }
-    }
-
-    fn reason(&self) -> Option<String> {
-        match self {
-            Self::Invalid(reason) => Some(format!("invalid_cache_token_usage:{reason}")),
-            Self::Unsupported(reason) => Some(format!("unsupported_cache_token_usage:{reason}")),
-            Self::Unavailable | Self::Valid(_) => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct CacheTokenSummary {
-    total_input_tokens: i64,
-    uncached_input_tokens: i64,
-    cache_read_tokens: i64,
-    cache_write_tokens: i64,
-}
-
-fn normalize_cache_tokens(
-    usage: &serde_json::Map<String, Value>,
-    prompt_tokens: Option<i64>,
-) -> CacheUsageNormalization {
-    let provider_usage = usage.get("provider_usage").and_then(Value::as_object);
-    let details = usage
-        .get("input_tokens_details")
-        .or_else(|| usage.get("prompt_tokens_details"))
-        .or_else(|| provider_usage.and_then(|raw| raw.get("input_tokens_details")))
-        .or_else(|| provider_usage.and_then(|raw| raw.get("prompt_tokens_details")));
-    if let Some(details) = details {
-        let Some(details) = details.as_object() else {
-            return CacheUsageNormalization::Invalid(
-                "cache token details must be an object".to_string(),
-            );
-        };
-        return normalize_inclusive_cache_tokens(details, prompt_tokens);
-    }
-
-    if let Some(provider_usage) = provider_usage {
-        if provider_usage.contains_key("cached_tokens")
-            || provider_usage.contains_key("cache_write_tokens")
-        {
-            return normalize_inclusive_cache_tokens(provider_usage, prompt_tokens);
-        }
-        if provider_usage.contains_key("cacheReadInputTokens")
-            || provider_usage.contains_key("cacheWriteInputTokens")
-        {
-            if has_mixed_bedrock_ttl_cache_writes(provider_usage) {
-                return CacheUsageNormalization::Unsupported(
-                    "mixed_ttl_cache_write_classes".to_string(),
-                );
-            }
-            return normalize_exclusive_cache_tokens(
-                provider_usage,
-                prompt_tokens,
-                "cacheReadInputTokens",
-                "cacheWriteInputTokens",
-            );
-        }
-        if provider_usage.contains_key("cache_read_input_tokens")
-            || provider_usage.contains_key("cache_creation_input_tokens")
-        {
-            if has_mixed_ttl_cache_writes(provider_usage) {
-                return CacheUsageNormalization::Unsupported(
-                    "mixed_ttl_cache_write_classes".to_string(),
-                );
-            }
-            return normalize_exclusive_cache_tokens(
-                provider_usage,
-                prompt_tokens,
-                "cache_read_input_tokens",
-                "cache_creation_input_tokens",
-            );
-        }
-    }
-
-    CacheUsageNormalization::Unavailable
-}
-
-fn normalize_inclusive_cache_tokens(
-    fields: &serde_json::Map<String, Value>,
-    prompt_tokens: Option<i64>,
-) -> CacheUsageNormalization {
-    let cache_read_tokens = match cache_token_field(fields, "cached_tokens") {
-        Ok(tokens) => tokens,
-        Err(reason) => return CacheUsageNormalization::Invalid(reason),
-    };
-    let cache_write_tokens = match cache_token_field(fields, "cache_write_tokens") {
-        Ok(tokens) => tokens,
-        Err(reason) => return CacheUsageNormalization::Invalid(reason),
-    };
-    let Some(prompt_tokens) = prompt_tokens else {
-        return CacheUsageNormalization::Invalid(
-            "cache token details require total input tokens".to_string(),
-        );
-    };
-    if prompt_tokens < 0 {
-        return CacheUsageNormalization::Invalid(
-            "input token count cannot be negative".to_string(),
-        );
-    }
-    let Some(cached_input_tokens) = cache_read_tokens.checked_add(cache_write_tokens) else {
-        return CacheUsageNormalization::Invalid("cache token total overflow".to_string());
-    };
-    if cached_input_tokens > prompt_tokens {
-        return CacheUsageNormalization::Invalid(
-            "cache token buckets exceed total input tokens".to_string(),
-        );
-    }
-    CacheUsageNormalization::Valid(CacheTokenSummary {
-        total_input_tokens: prompt_tokens,
-        uncached_input_tokens: prompt_tokens - cached_input_tokens,
-        cache_read_tokens,
-        cache_write_tokens,
-    })
-}
-
-fn normalize_exclusive_cache_tokens(
-    fields: &serde_json::Map<String, Value>,
-    uncached_input_tokens: Option<i64>,
-    read_field: &str,
-    write_field: &str,
-) -> CacheUsageNormalization {
-    let Some(uncached_input_tokens) = uncached_input_tokens else {
-        return CacheUsageNormalization::Invalid(
-            "provider cache counters require uncached input tokens".to_string(),
-        );
-    };
-    if uncached_input_tokens < 0 {
-        return CacheUsageNormalization::Invalid(
-            "input token count cannot be negative".to_string(),
-        );
-    }
-    let cache_read_tokens = match cache_token_field(fields, read_field) {
-        Ok(tokens) => tokens,
-        Err(reason) => return CacheUsageNormalization::Invalid(reason),
-    };
-    let cache_write_tokens = match cache_token_field(fields, write_field) {
-        Ok(tokens) => tokens,
-        Err(reason) => return CacheUsageNormalization::Invalid(reason),
-    };
-    let Some(total_input_tokens) = uncached_input_tokens
-        .checked_add(cache_read_tokens)
-        .and_then(|total| total.checked_add(cache_write_tokens))
-    else {
-        return CacheUsageNormalization::Invalid("cache token total overflow".to_string());
-    };
-    CacheUsageNormalization::Valid(CacheTokenSummary {
-        total_input_tokens,
-        uncached_input_tokens,
-        cache_read_tokens,
-        cache_write_tokens,
-    })
-}
-
-fn has_mixed_ttl_cache_writes(fields: &serde_json::Map<String, Value>) -> bool {
-    let Some(classes) = fields.get("cache_creation").and_then(Value::as_object) else {
-        return false;
-    };
-    classes
-        .values()
-        .filter_map(Value::as_i64)
-        .filter(|tokens| *tokens > 0)
-        .count()
-        > 1
-}
-
-fn has_mixed_bedrock_ttl_cache_writes(fields: &serde_json::Map<String, Value>) -> bool {
-    let Some(details) = fields.get("cacheDetails").and_then(Value::as_array) else {
-        return false;
-    };
-    let mut positive_ttls = Vec::new();
-    for detail in details.iter().filter_map(Value::as_object) {
-        let tokens = detail.get("inputTokens").and_then(Value::as_i64);
-        let ttl = detail.get("ttl").and_then(Value::as_str);
-        if tokens.is_some_and(|tokens| tokens > 0)
-            && let Some(ttl) = ttl
-            && !positive_ttls.contains(&ttl)
-        {
-            positive_ttls.push(ttl);
-        }
-    }
-    positive_ttls.len() > 1
-}
-
-fn cache_token_field(details: &serde_json::Map<String, Value>, field: &str) -> Result<i64, String> {
-    let Some(value) = details.get(field) else {
-        return Ok(0);
-    };
-    let Some(tokens) = value.as_i64() else {
-        return Err(format!("cache token field `{field}` must be an integer"));
-    };
-    if tokens < 0 {
-        return Err(format!("cache token field `{field}` cannot be negative"));
-    }
-    Ok(tokens)
-}
-
 fn money_to_f64(value: Money4) -> Option<f64> {
     if value == Money4::ZERO {
         None
@@ -1775,7 +1446,7 @@ fn apply_token_rates(
     output_rate: Option<Money4>,
     cache_usage: &CacheUsageNormalization,
 ) -> Result<(), GatewayError> {
-    if matches!(cache_usage, CacheUsageNormalization::Unsupported(_)) {
+    if matches!(cache_usage, CacheUsageNormalization::Unsupported { .. }) {
         record.pricing_status = UsagePricingStatus::Unpriced;
         return Ok(());
     }
@@ -1973,12 +1644,12 @@ mod tests {
     use time::OffsetDateTime;
     use uuid::Uuid;
 
-    use crate::batches::{BatchPricingPolicy, BatchRates, compute_batch_usage_cost};
-
-    use super::{
-        BatchUsageInput, CacheUsageNormalization, GatewayService, aggregate_batch_usage,
-        usage_summary_from_value,
+    use crate::{
+        batches::{BatchPricingPolicy, BatchRates, compute_batch_usage_cost},
+        usage::{CacheUsageNormalization, usage_summary_from_value},
     };
+
+    use super::{BatchUsageInput, GatewayService, aggregate_batch_usage};
 
     #[test]
     fn batch_pricing_halves_openai_cache_reads_but_not_vertex_cache_reads() {
@@ -3590,28 +3261,65 @@ mod tests {
     }
 
     #[test]
-    fn mixed_anthropic_ttl_write_classes_remain_unavailable() {
-        let summary = usage_summary_from_value(Some(&json!({
-            "prompt_tokens": 100,
-            "completion_tokens": 20,
-            "provider_usage": {
-                "input_tokens": 100,
-                "cache_read_input_tokens": 900,
-                "cache_creation_input_tokens": 200,
-                "cache_creation": {
-                    "ephemeral_5m_input_tokens": 80,
-                    "ephemeral_1h_input_tokens": 120
-                }
+    fn mixed_ttl_cache_usage_keeps_valid_counts_when_pricing_is_unsupported() {
+        let native = json!({
+            "input_tokens": 100,
+            "output_tokens": 20,
+            "cache_read_input_tokens": 900,
+            "cache_creation_input_tokens": 200,
+            "cache_creation": {
+                "ephemeral_5m_input_tokens": 80,
+                "ephemeral_1h_input_tokens": 120
             }
-        })))
-        .expect("mixed TTL usage should remain recorded");
+        });
+        for usage in [
+            native.clone(),
+            json!({
+                "prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120,
+                "provider_usage": native
+            }),
+            json!({
+                "prompt_tokens": 100, "completion_tokens": 20,
+                "provider_usage": {
+                    "inputTokens": 100, "cacheReadInputTokens": 900, "cacheWriteInputTokens": 200,
+                    "cacheDetails": [
+                        {"ttl": "5m", "inputTokens": 80},
+                        {"ttl": "1h", "inputTokens": 120}
+                    ]
+                }
+            }),
+        ] {
+            let summary = usage_summary_from_value(Some(&usage)).unwrap();
+            assert_eq!(summary.prompt_tokens, Some(1_200));
+            assert_eq!(summary.total_tokens, Some(1_220));
+            assert_eq!(summary.uncached_input_tokens, Some(100));
+            assert_eq!(summary.cache_read_tokens, Some(900));
+            assert_eq!(summary.cache_write_tokens, Some(200));
+            assert_eq!(
+                summary.cache_usage.reason().as_deref(),
+                Some("unsupported_cache_token_usage:mixed_ttl_cache_write_classes")
+            );
+        }
+    }
 
-        assert_eq!(summary.uncached_input_tokens, None);
-        assert!(matches!(
-            summary.cache_usage,
-            CacheUsageNormalization::Unsupported(ref reason)
-                if reason == "mixed_ttl_cache_write_classes"
-        ));
+    #[test]
+    fn mixed_ttl_metadata_does_not_hide_invalid_or_overflowing_cache_counters() {
+        for (input, read, write) in [(100, -1, 200), (i64::MAX, 1, 0)] {
+            let summary = usage_summary_from_value(Some(&json!({
+                "input_tokens": input, "output_tokens": 0,
+                "cache_read_input_tokens": read, "cache_creation_input_tokens": write,
+                "cache_creation": {"ephemeral_5m_input_tokens": 80, "ephemeral_1h_input_tokens": 120}
+            })))
+            .unwrap();
+            assert_eq!(summary.prompt_tokens, Some(input));
+            assert_eq!(summary.uncached_input_tokens, None);
+            assert_eq!(summary.cache_read_tokens, None);
+            assert_eq!(summary.cache_write_tokens, None);
+            assert!(matches!(
+                summary.cache_usage,
+                CacheUsageNormalization::Invalid(_)
+            ));
+        }
     }
 
     #[tokio::test]

@@ -423,19 +423,16 @@ async fn google_stream_stops_after_non_json_frame() {
 fn google_stream_state_emits_nothing_for_usage_only_frames_and_folds_them_into_finish() {
     let mut state = GoogleStreamState::new("chatcmpl-test".to_string(), 1, "fast".to_string());
 
-    let chunks = state
-        .on_response(&json!({
-            "usageMetadata": { "promptTokenCount": 4, "candidatesTokenCount": 1, "totalTokenCount": 5 }
-        }))
-        .expect("usage frame");
+    let chunks = state.on_response(&json!({
+        "usageMetadata": { "promptTokenCount": 4, "candidatesTokenCount": 1, "totalTokenCount": 5 }
+    }));
     assert!(chunks.is_empty());
 
     let chunks = state
         .on_response(&json!({
             "candidates": [{ "content": { "role": "model", "parts": [{ "text": "hi" }] }, "finishReason": "MAX_TOKENS" }],
             "usageMetadata": { "promptTokenCount": 4, "candidatesTokenCount": 2, "totalTokenCount": 6 }
-        }))
-        .expect("text frame");
+        }));
     assert_eq!(chunks.len(), 1);
     assert_eq!(chunks[0]["choices"][0]["delta"]["role"], "assistant");
     assert_eq!(chunks[0]["choices"][0]["delta"]["content"], "hi");
@@ -450,19 +447,15 @@ fn google_stream_state_emits_nothing_for_usage_only_frames_and_folds_them_into_f
 }
 
 #[test]
-fn google_stream_state_tool_calls_override_later_finish_reason() {
+fn google_stream_state_successful_stop_with_calls_finishes_as_tool_calls() {
     let mut state = GoogleStreamState::new("chatcmpl-test".to_string(), 1, "fast".to_string());
 
-    state
-        .on_response(
-            &json!({ "candidates": [{ "content": { "role": "model", "parts": [
+    state.on_response(
+        &json!({ "candidates": [{ "content": { "role": "model", "parts": [
             { "functionCall": { "name": "weather", "args": {} } }
         ] } }] }),
-        )
-        .expect("tool call frame");
-    state
-        .on_response(&finish_object("STOP"))
-        .expect("finish frame");
+    );
+    state.on_response(&finish_object("STOP"));
 
     assert_eq!(
         state.finish().expect("finish reason seen")["choices"][0]["finish_reason"],
@@ -484,9 +477,7 @@ fn google_stream_state_without_finish_reason_is_a_premature_eof() {
 
     // Complete text frames but the connection closed before the `finishReason` frame.
     let mut state = GoogleStreamState::new("chatcmpl-test".to_string(), 1, "fast".to_string());
-    state
-        .on_response(&text_object("partial"))
-        .expect("text frame");
+    state.on_response(&text_object("partial"));
     assert!(matches!(
         state.finish(),
         Err(VertexAdapterError::StreamPrematureEof)
@@ -508,4 +499,240 @@ async fn google_stream_closed_before_finish_reason_is_an_error_not_a_clean_stop(
     assert_eq!(error["error"]["code"], "google_stream_premature_eof");
     assert!(finish_events(&events).is_empty());
     assert!(!rendered.contains("[DONE]"));
+}
+
+#[tokio::test]
+async fn google_stream_call_then_eof_is_not_success_and_preserves_usage_and_replay_parts() {
+    let native = json!({ "functionCall": { "name": "lookup", "args": { "city": "London" } }, "thoughtSignature": "sig-call" });
+    let rendered = render_google_objects(&[json!({
+        "candidates": [{ "content": { "parts": [native.clone()] } }],
+        "usageMetadata": { "promptTokenCount": 4, "candidatesTokenCount": 2, "thoughtsTokenCount": 3, "totalTokenCount": 9 }
+    })]).await;
+    let events = openai_stream_events(&rendered);
+    let error = events
+        .iter()
+        .find(|event| event.get("error").is_some())
+        .expect("EOF error");
+    assert_eq!(error["error"]["code"], "google_stream_premature_eof");
+    assert_eq!(error["usage"]["completion_tokens"], 5);
+    assert_eq!(error["usage"]["total_tokens"], 9);
+    assert_eq!(
+        error["usage"]["completion_tokens_details"]["reasoning_tokens"],
+        3
+    );
+    let metadata = deltas(&events)
+        .into_iter()
+        .find_map(|delta| delta.get("provider_metadata"))
+        .expect("replay metadata before error");
+    assert_eq!(
+        metadata["gcp_vertex"]["native_content"]["parts"],
+        json!([native])
+    );
+    assert_eq!(
+        metadata["gcp_vertex"]["native_content"]["tool_call_ids"][0],
+        events[0]["choices"][0]["delta"]["tool_calls"][0]["id"]
+    );
+    assert!(finish_events(&events).is_empty());
+    assert!(!rendered.contains("[DONE]"));
+}
+
+#[tokio::test]
+async fn google_stream_terminal_truncation_or_filter_wins_over_calls_in_either_order() {
+    let call = json!({ "candidates": [{ "content": { "parts": [
+        { "functionCall": { "name": "lookup", "args": {} } }
+    ] } }] });
+    for (reason, expected) in [
+        ("MAX_TOKENS", "length"),
+        ("SAFETY", "content_filter"),
+        ("MODEL_ARMOR", "content_filter"),
+    ] {
+        for objects in [
+            vec![call.clone(), finish_object(reason)],
+            vec![finish_object(reason), call.clone(), finish_object("STOP")],
+        ] {
+            let rendered = render_google_objects(&objects).await;
+            let events = openai_stream_events(&rendered);
+            let finish = finish_events(&events);
+            assert_eq!(finish.len(), 1, "{rendered}");
+            assert_eq!(
+                finish[0]["choices"][0]["finish_reason"], expected,
+                "{reason}"
+            );
+            assert_eq!(
+                finish[0]["choices"][0]["delta"]["provider_metadata"]["gcp_vertex"]["finish_reason"],
+                reason
+            );
+            assert!(rendered.ends_with("data: [DONE]\n\n"));
+        }
+    }
+}
+
+#[tokio::test]
+async fn google_stream_unsuccessful_finish_keeps_current_frame_usage_without_done() {
+    for reason in [
+        "UNEXPECTED_TOOL_CALL",
+        "OTHER",
+        "FINISH_REASON_UNSPECIFIED",
+        "FUTURE_FAILURE",
+    ] {
+        let rendered = render_google_objects(&[
+            json!({ "candidates": [{ "content": { "parts": [
+                { "functionCall": { "name": "lookup", "args": {} } }
+            ] } }] }),
+            json!({
+                "candidates": [{ "finishReason": reason }],
+                "usageMetadata": { "promptTokenCount": 4, "candidatesTokenCount": 2, "totalTokenCount": 6 }
+            }),
+        ]).await;
+        let events = openai_stream_events(&rendered);
+        let error = events
+            .iter()
+            .find(|event| event.get("error").is_some())
+            .expect("provider failure");
+        assert_eq!(error["error"]["code"], "google_stream_error");
+        assert!(error["error"]["message"].as_str().unwrap().contains(reason));
+        assert_eq!(error["usage"]["total_tokens"], 6);
+        assert!(finish_events(&events).is_empty());
+        assert!(!rendered.contains("[DONE]"));
+    }
+}
+
+#[tokio::test]
+async fn google_stream_failed_generation_consumes_late_usage_without_reopening_content() {
+    for failure in [
+        finish_object("UNEXPECTED_TOOL_CALL"),
+        finish_object("MALFORMED_FUNCTION_CALL"),
+        json!({ "error": { "code": 500, "status": "INTERNAL", "message": "generation failed" } }),
+    ] {
+        let rendered = render_google_objects(&[
+            text_object("partial"),
+            failure,
+            text_object("never delivered"),
+            json!({ "usageMetadata": {
+                "promptTokenCount": 4, "candidatesTokenCount": 2,
+                "thoughtsTokenCount": 3, "totalTokenCount": 9
+            } }),
+        ])
+        .await;
+        let events = openai_stream_events(&rendered);
+        let error = events
+            .iter()
+            .find(|event| event.get("error").is_some())
+            .expect("deferred failure");
+        assert_eq!(error["error"]["code"], "google_stream_error");
+        assert_eq!(error["usage"]["completion_tokens"], 5);
+        assert_eq!(error["usage"]["total_tokens"], 9);
+        assert_eq!(concat_delta_field(&events, "content"), "partial");
+        assert!(finish_events(&events).is_empty());
+        assert!(!rendered.contains("never delivered"));
+        assert!(!rendered.contains("[DONE]"));
+    }
+}
+
+#[tokio::test]
+async fn google_stream_inline_error_conserves_usage_from_error_envelope() {
+    let rendered = render_google_objects(&[json!({
+        "error": { "code": 500, "status": "INTERNAL", "message": "generation failed" },
+        "usageMetadata": { "promptTokenCount": 7, "thoughtsTokenCount": 2, "totalTokenCount": 9 }
+    })])
+    .await;
+    let events = openai_stream_events(&rendered);
+    assert_eq!(events[0]["usage"]["prompt_tokens"], 7);
+    assert_eq!(events[0]["usage"]["completion_tokens"], 2);
+    assert_eq!(events[0]["usage"]["total_tokens"], 9);
+    assert!(events[0].get("error").is_some());
+    assert!(!rendered.contains("[DONE]"));
+}
+
+#[tokio::test]
+async fn google_stream_returned_logprobs_are_choice_fields_not_delta_fields() {
+    let rendered = render_google_objects(&[json!({ "candidates": [{
+        "content": { "parts": [{ "text": "cat" }] },
+        "finishReason": "STOP",
+        "logprobsResult": {
+            "chosenCandidates": [{ "token": "cat", "logProbability": -1.5 }],
+            "topCandidates": [{ "candidates": [{ "token": "dog", "logProbability": -0.5 }] }]
+        }
+    }] })])
+    .await;
+    let events = openai_stream_events(&rendered);
+    let choice = events
+        .iter()
+        .map(|event| &event["choices"][0])
+        .find(|choice| choice.get("logprobs").is_some())
+        .expect("returned logprobs");
+    assert_eq!(choice["logprobs"]["content"][0]["token"], "cat");
+    assert_eq!(choice["logprobs"]["content"][0]["logprob"], -1.5);
+    assert_eq!(
+        choice["logprobs"]["content"][0]["top_logprobs"][0]["token"],
+        "dog"
+    );
+    assert_eq!(
+        choice["logprobs"]["content"][0]["top_logprobs"][0]["logprob"],
+        -0.5
+    );
+    assert!(choice["delta"].get("logprobs").is_none());
+    assert_eq!(concat_delta_field(&events, "content"), "cat");
+}
+
+#[tokio::test]
+async fn google_stream_extension_aware_replay_restores_order_and_rejects_edits() {
+    let first_parts = json!([
+        { "text": "think", "thought": true, "thoughtSignature": "sig-thought" },
+        { "text": "before", "thoughtSignature": "sig-before" },
+        { "functionCall": { "name": "lookup", "args": { "city": "London" } }, "thoughtSignature": "sig-call" }
+    ]);
+    let last_parts = json!([
+        { "futureServerPart": { "data": "opaque" }, "thoughtSignature": "sig-opaque" },
+        { "text": "after", "thoughtSignature": "sig-after" }
+    ]);
+    let rendered = render_google_objects(&[
+        json!({ "candidates": [{ "content": { "parts": first_parts } }] }),
+        json!({ "candidates": [{ "content": { "parts": last_parts }, "finishReason": "STOP" }] }),
+    ])
+    .await;
+    let events = openai_stream_events(&rendered);
+    let mut calls = Vec::new();
+    for delta in deltas(&events) {
+        for call in delta["tool_calls"].as_array().into_iter().flatten() {
+            let mut call = call.clone();
+            call.as_object_mut().unwrap().remove("index");
+            calls.push(call);
+        }
+    }
+    let metadata = deltas(&events)
+        .into_iter()
+        .find_map(|delta| delta.get("provider_metadata"))
+        .unwrap();
+    let message = json!({
+        "role": "assistant", "content": concat_delta_field(&events, "content"),
+        "reasoning_content": concat_delta_field(&events, "reasoning_content"),
+        "tool_calls": calls, "provider_metadata": metadata
+    });
+    let request = chat_request(vec![
+        CoreChatMessage {
+            role: "user".into(),
+            content: json!("lookup"),
+            name: None,
+            extra: BTreeMap::new(),
+        },
+        serde_json::from_value(message.clone()).unwrap(),
+    ]);
+    let body = google_body(&request, &context("google/gemini-2.5-flash"), false)
+        .expect("stream metadata replays");
+    let expected_parts: Vec<_> = first_parts
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(last_parts.as_array().unwrap())
+        .cloned()
+        .collect();
+    assert_eq!(body["contents"][1]["parts"], json!(expected_parts));
+    let mut edited = message;
+    edited["tool_calls"][0]["function"]["arguments"] = json!("{\"city\":\"Paris\"}");
+    let request = chat_request(vec![serde_json::from_value(edited).unwrap()]);
+    assert!(matches!(
+        google_body(&request, &context("google/gemini-2.5-flash"), false),
+        Err(ProviderError::InvalidRequest(_))
+    ));
 }

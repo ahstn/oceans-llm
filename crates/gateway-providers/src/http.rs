@@ -88,6 +88,23 @@ impl TracedResponse {
         result
     }
 
+    pub(crate) async fn bytes(self) -> Result<Bytes, reqwest::Error> {
+        let Self {
+            response,
+            span,
+            started_at,
+        } = self;
+        let result = response.bytes().instrument(span.clone()).await;
+        span.record(
+            "gateway.upstream.elapsed_ms",
+            started_at.elapsed().as_millis() as u64,
+        );
+        if let Err(error) = &result {
+            record_reqwest_error(&span, error);
+        }
+        result
+    }
+
     pub fn bytes_stream(self) -> TracedResponseStream {
         let Self {
             response,

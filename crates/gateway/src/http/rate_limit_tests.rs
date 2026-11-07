@@ -9,7 +9,7 @@ use std::sync::{
 use async_trait::async_trait;
 use axum::{
     Router,
-    body::{Body, to_bytes},
+    body::{Body, Bytes, to_bytes},
     http::HeaderMap,
 };
 use gateway_core::{
@@ -32,6 +32,7 @@ const API_KEY: &str = "gwk_streamtest.cancel-secret";
 #[derive(Default)]
 struct CountingProvider {
     calls: AtomicUsize,
+    native_messages: std::sync::atomic::AtomicBool,
     /// When set, chat fails after reporting usage, as a cut-off upstream does.
     fail_with_partial_usage: std::sync::atomic::AtomicBool,
 }
@@ -52,6 +53,49 @@ impl ProviderClient for CountingProvider {
 
     fn batch_capabilities(&self) -> BatchCapabilities {
         BatchCapabilities::NONE
+    }
+
+    fn supports_native_messages(&self, _context: &ProviderRequestContext) -> bool {
+        self.native_messages.load(Ordering::SeqCst)
+    }
+
+    async fn messages(
+        &self,
+        _request: &CoreChatRequest,
+        _context: &ProviderRequestContext,
+    ) -> Result<gateway_core::NativeMessagesResponse<Value>, ProviderError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Ok(gateway_core::NativeMessagesResponse {
+            body: json!({
+                "id": "msg-rate-limit", "type": "message", "role": "assistant",
+                "model": "fast-upstream", "content": [{"type": "text", "text": "ok"}],
+                "stop_reason": "end_turn", "usage": mixed_ttl_usage()
+            }),
+            headers: Default::default(),
+        })
+    }
+
+    async fn messages_stream(
+        &self,
+        _request: &CoreChatRequest,
+        _context: &ProviderRequestContext,
+    ) -> Result<gateway_core::NativeMessagesResponse<ProviderStream>, ProviderError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let mut usage = mixed_ttl_usage();
+        usage["output_tokens"] = json!(0);
+        let events = [
+            json!({"type": "message_start", "message": {"model": "fast-upstream", "usage": usage}}),
+            json!({"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 20}}),
+            json!({"type": "message_stop"}),
+        ];
+        let chunks: Vec<_> = events
+            .into_iter()
+            .map(|event| Ok(Bytes::from(format!("data: {event}\n\n"))))
+            .collect();
+        Ok(gateway_core::NativeMessagesResponse {
+            body: Box::pin(futures_util::stream::iter(chunks)),
+            headers: Default::default(),
+        })
     }
 
     async fn chat_completions(
@@ -119,6 +163,14 @@ impl ProviderClient for CountingProvider {
     ) -> Result<ProviderStream, ProviderError> {
         Err(ProviderError::NotImplemented("responses".to_string()))
     }
+}
+
+fn mixed_ttl_usage() -> Value {
+    json!({
+        "input_tokens": 100, "output_tokens": 20,
+        "cache_read_input_tokens": 900, "cache_creation_input_tokens": 200,
+        "cache_creation": {"ephemeral_5m_input_tokens": 80, "ephemeral_1h_input_tokens": 120}
+    })
 }
 
 fn policy(
@@ -462,6 +514,35 @@ async fn headers_report_the_tightest_policy_and_any_rejection_wins() {
             .unwrap()
             .contains("Team rate limit exceeded")
     );
+}
+
+#[tokio::test]
+async fn native_mixed_ttl_tokens_exhaust_limits_for_json_and_streaming() {
+    for stream in [false, true] {
+        let harness = harness(vec![policy(
+            "native tokens",
+            RateLimitOperation::Inference,
+            RateLimitScopeKind::Global,
+            RateLimitMetric::Tokens,
+            RateLimitPeriod::Hour,
+            1_000,
+        )])
+        .await;
+        harness
+            .provider
+            .native_messages
+            .store(true, Ordering::SeqCst);
+        let body = json!({
+            "model": "fast", "max_tokens": 32, "stream": stream,
+            "messages": [{"role": "user", "content": "hello"}]
+        });
+        let first = harness.post("/v1/messages", body.clone()).await;
+        assert_eq!(first.status, StatusCode::OK);
+        let second = harness.post("/v1/messages", body).await;
+        assert_eq!(second.status, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(second.body["error"]["code"], "rate_limited");
+        assert_eq!(harness.provider.calls.load(Ordering::SeqCst), 1);
+    }
 }
 
 #[tokio::test]
