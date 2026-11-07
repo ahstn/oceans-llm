@@ -20,7 +20,7 @@ const sidebarIcons: Record<string, string> = {
   "/providers/typesafe": "ph:list-checks",
   "/providers/opencode-zen": "ph:code-block",
   "/providers/aws-bedrock": "ph:cloud",
-  "/providers/aws-bedrock-openai": "ph:open-ai-logo",
+  "/providers/aws-bedrock/openai": "ph:open-ai-logo",
   "/providers/github-copilot": "ph:github-logo",
   "/providers/gcp-vertex": "ph:google-logo",
   "/providers/gcp-cloud-run": "ph:cloud-arrow-up",

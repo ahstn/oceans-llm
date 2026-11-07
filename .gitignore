@@ -20,7 +20,7 @@ docs/.vitepress/cache/
 docs/.vitepress/dist/
 
 # Vale
-styles/
+/styles/
 
 # Local development db
 gateway.db*

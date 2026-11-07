@@ -100,9 +100,9 @@ sidebar: {
 
 The header's section tabs come from the same list: each top-level item that autogenerates from another collection (`{ label: "API", autogenerate: { collection: "api", prefix: "/reference" } }`) becomes a tab, and the tabs show once there are two. With one, an API reference served away from `/` makes the tabs: Docs and API reference. Folders of `src/content/docs/` and external links stay in the sidebar. For any other header link, edit `src/components/Header.astro`.
 
-This site lists every top-level group in `astro.config.ts`, so a new folder doesn't show until you add it there. A folder's `index.mdx` is a normal entry in its group: give it `sidebar.order: 0` to keep it first. `sidebar.defaultCollapsed` is `true`, so only the group that holds the current page opens on load.
+This site lists every top-level group in `astro.config.ts`, so a new folder doesn't show until you add it there. A folder's `index.mdx` is a normal entry in its group: give it `sidebar.order: 0` to keep it first. Top-level groups set `collapsed: false`, so they open on load. `sidebar.defaultCollapsed` is `true`, so nested groups (a subfolder such as `access/sso/` or `providers/aws-bedrock/`) stay closed unless they hold the current page. A nested group takes its label and position from its `index.mdx`: `sidebar.group.label` and `sidebar.order`.
 
-Page icons in the sidebar come from `src/lib/sidebar-icons.ts`, keyed by page path. The content schema has no per-page icon field. When you add or move a page, add its path there with a Phosphor (`ph:`) icon name; a page that isn't listed shows no icon.
+Page icons in the sidebar come from `src/lib/sidebar-icons.ts`, keyed by page path. The content schema has no per-page icon field. When you add or move a page, add its path there with a Phosphor (`ph:`) icon name; a page that isn't listed shows no icon. Group icons come from Nimbus itself: `icon` on each top-level item in `astro.config.ts`, and `sidebar.group.icon` in a nested group's `index.mdx`. Every row has an icon, so give a new group one that differs from its Overview page's icon.
 
 Everything else: <https://nimbus-docs.com/navigation/sidebar/>.
 

@@ -72,7 +72,7 @@ const resolveSectionHref = (href: string): string =>
       </slot>
 
       {showSections && (
-        <nav aria-label="Sections" class="hidden md:flex items-center gap-1 ms-4 ps-4 border-s border-border h-6 min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <nav aria-label="Sections" class="hidden md:flex items-center gap-1 ms-4 ps-4 border-s border-border min-w-0">
           {sections.map((section) => (
             <a
               href={resolveSectionHref(section.href)}

@@ -75,7 +75,7 @@ const displayTitle = title ?? d.label;
 
   .aside-card-body :global(p) { margin: 0; }
   .aside-card-body :global(p + p) { margin-top: 0.5rem; }
-  .aside-card-body :global(a) { color: var(--nb-foreground); font-weight: 500; text-decoration: underline; text-decoration-color: var(--nb-border-strong); text-underline-offset: 4px; }
+  .aside-card-body :global(a) { color: var(--nb-foreground); font-weight: 500; text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--nb-brand) 55%, transparent); text-underline-offset: 4px; }
 
   /* Inline code only — exclude code inside Expressive Code pre blocks */
   .aside-card-body :global(code:not(:where(pre *))) {

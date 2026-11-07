@@ -6,6 +6,7 @@ sidebar:
   order: 3
   group:
     label: SSO
+    icon: ph:door-open
 ---
 
 Users can sign in to the admin UI with any OpenID Connect (OIDC) provider, such as Authentik, Okta or Google, or with GitHub OAuth. Every method ends the same way as password sign-in: the gateway sets the `ogw_session` cookie and the user opens `/admin`. The pages a user sees depend on their role and the `permissions` config, not on how they signed in. See [Identity and access](/access/identity-and-access/) for roles and the user lifecycle.

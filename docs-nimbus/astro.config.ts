@@ -18,20 +18,22 @@ const nimbusConfig = defineNimbusConfig({
   // Top-level order and group labels. Pages join their folder's group
   // automatically; each page's sidebar icon comes from src/lib/sidebar-icons.ts.
   sidebar: {
-    // Only the group that holds the current page opens, so the rail stays short.
+    // Top-level groups open by default (`collapsed: false`). Nested groups, such
+    // as SSO and AWS Bedrock, stay closed unless they hold the current page:
+    // `defaultCollapsed` only stamps groups with no explicit value.
     defaultCollapsed: true,
     items: [
       "index",
       "features",
-      { label: "Setup", autogenerate: { directory: "setup" } },
-      { label: "Configuration", autogenerate: { directory: "configuration" } },
-      { label: "Providers", autogenerate: { directory: "providers" } },
-      { label: "Identity and access", autogenerate: { directory: "access" } },
-      { label: "Spend and limits", autogenerate: { directory: "spend" } },
-      { label: "Agent extensions", autogenerate: { directory: "extensions" } },
-      { label: "Observability", autogenerate: { directory: "observability" } },
-      { label: "Operations", autogenerate: { directory: "operations" } },
-      { label: "Reference", autogenerate: { directory: "reference" } },
+      { label: "Setup", icon: "ph:wrench", collapsed: false, autogenerate: { directory: "setup" } },
+      { label: "Configuration", icon: "ph:gear-six", collapsed: false, autogenerate: { directory: "configuration" } },
+      { label: "Providers", icon: "ph:cpu", collapsed: false, autogenerate: { directory: "providers" } },
+      { label: "Identity and access", icon: "ph:fingerprint", collapsed: false, autogenerate: { directory: "access" } },
+      { label: "Spend and limits", icon: "ph:coins", collapsed: false, autogenerate: { directory: "spend" } },
+      { label: "Agent extensions", icon: "ph:puzzle-piece", collapsed: false, autogenerate: { directory: "extensions" } },
+      { label: "Observability", icon: "ph:binoculars", collapsed: false, autogenerate: { directory: "observability" } },
+      { label: "Operations", icon: "ph:toolbox", collapsed: false, autogenerate: { directory: "operations" } },
+      { label: "Reference", icon: "ph:books", collapsed: false, autogenerate: { directory: "reference" } },
     ],
   },
   // The API reference, served where its route file is (src/pages/api/ → /api).
