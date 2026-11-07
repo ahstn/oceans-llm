@@ -1,0 +1,127 @@
+---
+title: TypeSafe
+description: Serve TypeSafe System One models such as Jev through the Decisions API, natively or through OpenRouter.
+sidebar:
+  order: 2
+---
+
+TypeSafe System One models, such as Jev, answer typed questions about one input. They don't generate chat text, so don't send them to Chat Completions or Responses. Oceans serves them through `POST /v1/decisions` and `POST /v1/systemone`.
+
+A System One request sends one `state` value and a map of named `questions`. The response has one structured answer for each question. `/v1/decisions` also accepts the OpenAI Decisions format and translates it for System One routes. `/v1/systemone` accepts System One only. See [Decisions API](/reference/provider-api-compatibility/#decisions-api) for the translation rules.
+
+You can reach TypeSafe in two ways:
+
+| Route | Provider type | Upstream path |
+| --- | --- | --- |
+| Native TypeSafe | `typesafe` | `<base_url>/v1/systemone` |
+| Through OpenRouter | `openai_compat` with `compatibility.openrouter.api: decisions` | `https://openrouter.ai/api/alpha/decisions` |
+
+For the OpenRouter route, see [Decisions API on OpenRouter](/providers/openrouter/#decisions-api).
+
+## Add the native provider
+
+An admin adds a `typesafe` provider and a route to it:
+
+```yaml title="gateway.yaml"
+providers:
+  - id: typesafe
+    type: typesafe
+    base_url: https://api.typesafe.ai
+    pricing_provider_id: openrouter
+    auth:
+      kind: bearer
+      token: env.TYPESAFE_API_KEY
+    display:
+      label: TypeSafe
+      icon_key: typesafe
+
+models:
+  - id: jev-native
+    description: TypeSafe Jev through the native System One API
+    routes:
+      - provider: typesafe
+        upstream_model: jev-latest
+        pricing_override:
+          input_usd_per_million_tokens: "0.0420"
+          output_usd_per_million_tokens: "0.0000"
+```
+
+The provider settings work like this:
+
+- `base_url` defaults to `https://api.typesafe.ai`. Its path must be empty, `/` or `/v1`. The adapter appends `/v1/systemone`, or only `/systemone` when the base already ends in `/v1`. It must use HTTPS, except plain HTTP to `localhost` or a loopback IP for local development. Query strings and fragments aren't allowed.
+- `auth.kind` must be `bearer`. The gateway sends `auth.token` as `Authorization: Bearer`.
+- `pricing_provider_id` is required and must name a supported catalog family.
+
+All `typesafe` fields are listed in [Providers](/configuration/providers/#typesafe).
+
+A `typesafe` route serves only Decisions. The gateway turns `decisions` on and every other capability off, so the route needs no `capabilities` block. An explicit `decisions: false`, or `true` for any other capability, fails startup.
+
+### Pricing
+
+The native alias `jev-latest` has no exact catalog entry, so the example sets a route `pricing_override`. The vendored OpenRouter catalog lists `typesafe/jev-1.13` with a 262,144-token context and rates of $0.042 input and $0 output per million tokens. The override above uses the same rates. Set the rates you're billed for. See [Decisions usage](/spend/pricing-and-accounting/#decisions-usage).
+
+## Send a request
+
+The caller sends the gateway model ID, not the upstream model ID:
+
+```http
+POST /v1/decisions
+Authorization: Bearer <OCEANS_API_KEY>
+Content-Type: application/json
+```
+
+```json
+{
+  "model": "jev-native",
+  "state": "Help! My payouts have been failing for 3 days.",
+  "questions": {
+    "is_urgent": {
+      "type": "noul",
+      "instructions": "Does this convey urgency?"
+    },
+    "department": {
+      "type": "choice",
+      "instructions": "Which team should handle this?",
+      "criteria": {
+        "billing": "Payments, invoicing, and refunds",
+        "technical": "Bugs, outages, and integrations"
+      }
+    },
+    "frustration": {
+      "type": "score",
+      "instructions": "How frustrated is the customer?",
+      "criteria": ["Calm", "Frustrated", "Very angry"]
+    }
+  }
+}
+```
+
+### Question types
+
+| `type` | Asks | `criteria` | Answer |
+| --- | --- | --- | --- |
+| `noul` | A yes or no question | Optional descriptions of `true` and `false` | A probability from 0 to 1 |
+| `choice` | Pick one named option | Map of 1 to 255 options, each with an optional description | The chosen option, with probabilities |
+| `score` | Rate on an ordered scale | List of 2 to 10 ordered levels | A probability-weighted score |
+
+`instructions` and the criteria values can be JSON strings, objects or arrays.
+
+### Validation
+
+The gateway returns `400` before the upstream call when:
+
+- `model` is empty, or `questions` is empty.
+- A `choice` question has no options or more than 255 options.
+- A `score` question has fewer than 2 or more than 10 levels.
+- The request has `safety_identifier`, or an OpenAI-format request has image inputs, and the model has no OpenAI-format route. System One routes can't carry either.
+
+After the upstream call, the gateway checks that every question got an answer of the matching type, with probabilities in range. It rejects a response that fails this check. Other request fields pass through to the upstream, and a route `extra_body` value overrides a caller field with the same name.
+
+## How the gateway handles Decisions
+
+- Decisions requests use the normal authentication, model access, route selection, budget, request log, provider attempt and usage accounting paths.
+- Decisions don't stream.
+- Decisions routes skip prompt and model-response guardrails, because the guardrail evaluators work on chat-shaped text and tool calls. Secrets are still redacted. See [Decisions](/configuration/model-routing/#decisions).
+- The upstream `input_tokens` and `output_tokens` map to the gateway's prompt and completion token fields. When the upstream reports no total, the gateway adds the two.
+- The Models page shows a **Decisions** badge on Decisions models and doesn't offer chat-shaped client configuration for a Decisions-only model.
+- Request Logs show the operation as **Decisions**.

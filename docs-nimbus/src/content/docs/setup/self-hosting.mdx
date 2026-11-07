@@ -1,0 +1,256 @@
+---
+title: Self-hosting with mise
+description: Run Oceans on one Linux machine with mise daemons, reachable only over Tailscale, and update it by hand.
+sidebar:
+  order: 4
+---
+
+This guide runs Oceans on one Linux machine. mise builds a tagged release from source, runs the gateway, the admin UI, and PostgreSQL as daemons, and Tailscale makes it reachable from your tailnet only. No CI system touches the machine: you update it by running one command on it.
+
+The examples use a machine called `hogwarts`. Any name works. The [ADR on self-hosting with mise daemons](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-01-self-hosting-with-mise-daemons.md) explains why it works this way.
+
+## How it fits together
+
+```text
+tailnet client
+  | HTTPS
+  v
+tailscaled (serve :443)
+  |
+  v
+gateway 127.0.0.1:8080 --/admin*--> admin-ui 127.0.0.1:3001
+  |
+  v
+db (PostgreSQL 18) 127.0.0.1:5432
+```
+
+- `mise.selfhost.toml` declares the `gateway` and `admin-ui` daemons, and redeclares `db` with a fixed port and a start at boot. It loads only in the `selfhost` config environment, so developer machines and CI never see it.
+- Pitchfork supervises the daemons, and mise generates its config.
+- Every listener binds to `127.0.0.1`. `tailscale serve` is the only way in.
+- The gateway and admin UI are built on the machine from the checked-out tag. Nothing is pulled from a container registry, although the admin UI build still installs its packages.
+
+## Set up the machine
+
+### Check the prerequisites
+
+- Linux with `systemd`, `curl`, `git`, and mise 2026.10.4 or later.
+- Build dependencies. mise compiles PostgreSQL from source on Linux, and the gateway needs a C toolchain. On Debian or Ubuntu:
+
+  ```sh
+  sudo apt install build-essential pkg-config bison flex libreadline-dev uuid-dev libicu-dev zlib1g-dev libssl-dev
+  ```
+
+  Without `bison`, `flex`, `libreadline-dev`, or `uuid-dev`, `mise install` stops with `Failed to configure PostgreSQL`.
+- Tailscale, running and logged in, with MagicDNS and HTTPS certificates turned on in the Tailscale admin console.
+- A normal user account. The PostgreSQL preset refuses to run as root.
+
+### Clone the repository and select the environment
+
+```sh
+git clone https://github.com/ahstn/oceans-llm.git ~/oceans-llm
+cd ~/oceans-llm
+printf 'env = ["selfhost"]\n' > .miserc.local.toml
+mise trust
+mise install
+```
+
+`.miserc.local.toml` selects the `selfhost` environment for this checkout, and git ignores it. Plain `mise` commands, `ssh hogwarts 'cd ~/oceans-llm && mise run deploy'`, and the daemon supervisor all pick it up without a shell profile. `MISE_ENV` and `-E` still override it. Run `mise config` to check that `mise.selfhost.toml` is loaded.
+
+### Create the secrets file
+
+Secrets live in `mise.selfhost.local.toml`, which git ignores. mise loads it after `mise.selfhost.toml`, which marks each value below as required, so a missing one stops mise before any daemon starts.
+
+```sh
+umask 077
+cat > mise.selfhost.local.toml <<EOF
+[env]
+OCEANS_API_KEY_SECRET_ENCRYPTION_KEY = "$(openssl rand -base64 32)"
+GATEWAY_IDENTITY_TOKEN_SECRET = "$(openssl rand -base64 32)"
+GATEWAY_BOOTSTRAP_ADMIN_PASSWORD = "$(openssl rand -base64 18)"
+GATEWAY_API_KEY = "gwk_hogwarts.$(openssl rand -hex 24)"
+GATEWAY_PUBLIC_BASE_URL = "https://hogwarts.<tailnet>.ts.net"
+OPENROUTER_API_KEY = "<key>"
+EOF
+```
+
+Replace `<tailnet>` with your tailnet's name, and `<key>` with an [OpenRouter API key](https://openrouter.ai/settings/keys).
+
+`GATEWAY_IDENTITY_TOKEN_SECRET` isn't required by mise, but set it anyway. It signs sessions and invite links, and without it the gateway uses a built-in development secret that anyone can read in the source.
+
+Back up this file somewhere safe. If you lose `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY`, the stored API keys can't be decrypted.
+
+mise masks the key, password, and provider values in task output, but that doesn't encrypt the file, and `mise env` still prints them in full. If a plain file isn't enough, mise has other options:
+
+| Option | Notes |
+| --- | --- |
+| `[env] _.file = "/path/secrets.env"` | A dotenv, JSON, YAML, or TOML file, or a list of them. Supports `redact = true`. Use it for a file outside the checkout. |
+| [sops](https://mise.jdx.dev/environments/secrets/sops.html) (experimental) | Commit an encrypted file and load it with `_.file`. Needs a decryption identity on the machine. |
+| [age values](https://mise.jdx.dev/environments/secrets/age.html) (experimental) | Encrypted values inside a mise config file. Needs an age or SSH identity. |
+| [fnox](https://mise.jdx.dev/environments/secrets/) | mise's recommended secret manager. Run `fnox exec -- mise run deploy`. |
+
+### Write your gateway config
+
+`deploy/selfhost/gateway.yaml` is a starting point. It has one OpenRouter provider and three models, `gpt-sol-latest`, `claude-sonnet-latest`, and `deepseek-flash-latest`, which map to OpenRouter's `~provider/model-latest` aliases. Keep the quotes around values that start with `~`: a bare `~` is null in YAML.
+
+It also sets a few defaults to review before real traffic:
+
+- The `default` service account's key is `GATEWAY_API_KEY`. It has a $100 monthly hard budget and can call only the three listed models, so a model you add also needs adding to its `allowed_models`.
+- Guardrails run in `audit` mode: they record matches but don't block anything.
+- Request logging keeps redacted request and response payloads.
+
+Don't edit the file in place. It's tracked by git, so `deploy` refuses to run while it has local changes, and checks out the release's copy anyway. Copy it outside the checkout and point the gateway at your copy in `mise.selfhost.local.toml`:
+
+```sh
+mkdir -p ~/.config/oceans-llm
+cp deploy/selfhost/gateway.yaml ~/.config/oceans-llm/gateway.yaml
+printf 'GATEWAY_CONFIG = "%s"\n' "$HOME/.config/oceans-llm/gateway.yaml" >> mise.selfhost.local.toml
+```
+
+If your config refers to a new secret with `env.*`, add its value to `mise.selfhost.local.toml` too.
+
+### Let your user manage Tailscale
+
+```sh
+sudo tailscale set --operator="$USER"
+```
+
+`deploy` publishes the gateway with `tailscale serve`, and a non-root user can only do that as an operator. Without this, the last step of the first deploy fails.
+
+### Deploy for the first time
+
+```sh
+mise run deploy
+```
+
+This builds the admin UI and the release gateway, starts PostgreSQL, and starts the gateway and admin UI. The gateway applies migrations, seeds the config, and creates the bootstrap admin as it starts. The first Rust build is slow.
+
+The last step publishes the gateway on your tailnet by running `mise run selfhost-expose`. That runs `tailscale serve --bg --https=443 --yes http://127.0.0.1:8080`, and it's safe to run again on its own. Tailscale keeps the serve config across reboots, so nothing needs to supervise it. The first run may print a `login.tailscale.com` link: open it to turn on Serve and HTTPS for the machine, then run the task again.
+
+Then sign in at `https://hogwarts.<tailnet>.ts.net/admin` as `admin@local` with `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD`. The gateway asks for a new password straight away.
+
+<Aside type="caution" title="Keep it on the tailnet">
+  Don't run `tailscale funnel`: it makes the gateway public. Use Tailscale ACLs to limit who can reach `hogwarts:443`.
+</Aside>
+
+You could bind the gateway to the machine's Tailscale IP instead of using Serve, but you'd lose two things. The gateway marks its session cookie `Secure` only when the request arrived over HTTPS, which it learns from `x-forwarded-proto` or `x-forwarded-origin`, and the port would be open on that interface.
+
+### Start at boot
+
+```sh
+pitchfork boot enable
+sudo loginctl enable-linger "$USER"
+pitchfork boot status
+```
+
+`boot enable` registers a user `systemd` service, and `enable-linger` lets it start at boot without anyone logging in. The daemons set `boot_start = true`, so the supervisor starts them in dependency order.
+
+You can also stop CLI commands from starting a second, unmanaged supervisor:
+
+```toml title="~/.config/pitchfork/config.toml"
+[settings.supervisor]
+auto_start = false
+```
+
+## Update
+
+Updates are manual. On `hogwarts`, directly or over `ssh hogwarts` or `tailscale ssh hogwarts`:
+
+```sh
+cd ~/oceans-llm
+mise run deploy              # the latest v* tag on origin
+mise run deploy v0.35.0      # a specific tag or commit
+```
+
+`deploy` does this:
+
+1. Refuses to run if tracked files have local changes.
+2. Fetches tags, and checks out the ref in detached mode. A branch name resolves to the fetched `origin` branch.
+3. Starts a fresh `mise` process, so the checked-out version's config and tasks apply.
+4. Builds the admin UI and the release gateway, and dumps the database to `.local/backups/`, starting `db` first if it's stopped. These run side by side, and a failed build can stop the dump.
+5. Runs `gateway config validate`.
+6. Restarts `gateway` and `admin-ui`.
+7. Checks `/readyz` and `/admin/login` on the loopback address.
+8. Publishes the gateway on the tailnet.
+
+The gateway is down while it restarts. PostgreSQL keeps running.
+
+Each backup is a custom-format `pg_dump` with mode `600`. The backup step also deletes dumps older than 30 days, so old dumps are only cleaned up when a deploy runs.
+
+## Roll back
+
+```sh
+mise run deploy v0.34.0
+```
+
+The target version must contain `mise.selfhost.toml`. Migrations don't run backwards, so if the older version can't read the newer schema, stop the app daemons and restore a dump taken before the upgrade:
+
+```sh
+mise daemons stop gateway admin-ui
+mise exec -- pg_restore --clean --if-exists -d "$POSTGRES_URL" .local/backups/oceans-<timestamp>.dump
+mise run deploy v0.34.0
+```
+
+Run `pg_restore` through `mise exec`, so it gets the selfhost `POSTGRES_URL` and mise's PostgreSQL tools. Replace `<timestamp>` with the dump you want.
+
+## Day-to-day commands
+
+```sh
+mise daemons ls
+mise daemons logs gateway
+mise daemons restart gateway
+mise daemons tui
+```
+
+## Optional skills storage with RustFS
+
+[Agent Skills](/extensions/skills/) keep their archives in an S3 bucket. An external S3 service needs nothing more on the machine. For local storage, the optional RustFS environments run RustFS as another daemon, the same way as PostgreSQL. They pin RustFS 1.0.1 and AWS CLI 2.27.49, which have Linux x86-64 and ARM64 builds.
+
+Complete the setup above first. Then select all three environments, in this order:
+
+```toml title=".miserc.local.toml"
+env = ["selfhost", "rustfs", "selfhost-rustfs"]
+```
+
+Run `mise run rustfs:setup` before the next deploy. It creates random credentials in `.local/rustfs/credentials.env` with mode `600`, starts RustFS, waits for it to be ready, and creates the `oceans-skills` bucket if it's missing. Running it again keeps the existing credentials and bucket.
+
+The `selfhost-rustfs` environment gives RustFS a fixed port, `9000`, a start at boot, and a data directory outside the checkout at `$HOME/.local/share/oceans-llm/rustfs/data`. A one-off bucket check runs once RustFS is ready, and the gateway waits for both it and PostgreSQL. RustFS listens on `127.0.0.1` only, and its web console is off.
+
+Then add the `skills` section to your gateway config, using the [RustFS example](/extensions/skills/#rustfs-or-another-s3-compatible-service). Its endpoint and credential variables come from the RustFS environment.
+
+To move the data, set `OCEANS_RUSTFS_DATA_DIR` in `mise.selfhost-rustfs.local.toml`. Stop RustFS first, copy the data with its permissions, and keep the original until a test download works. If other applications share this RustFS, give the gateway its own identity scoped to its bucket, and keep the root credentials for administration.
+
+Don't run `mise env` or `rustfs server --help` where others can see the output: both can print the credentials. If the credentials file is missing but the data directory has data in it, setup stops rather than create new credentials. Restore the file from your backup.
+
+## Back up and restore
+
+`deploy` backs up PostgreSQL only. That's enough until you use Agent Skills, whose archives live in the bucket.
+
+With RustFS, back up everything from the same moment:
+
+<Steps>
+  <Step title="Stop the stack">
+    Stop the gateway and admin UI, so no upload or delete can change the metadata, then stop RustFS.
+  </Step>
+  <Step title="Capture one backup set">
+    Take a PostgreSQL dump, and copy the whole RustFS data directory and `.local/rustfs/credentials.env`.
+  </Step>
+  <Step title="Store it off the machine">
+    Protect the set, and copy it somewhere other than this disk.
+  </Step>
+  <Step title="Start the stack">
+    Start RustFS, then the gateway and admin UI.
+  </Step>
+</Steps>
+
+Don't copy RustFS's data files while it's running, and don't treat that as a substitute for a tested backup.
+
+To restore, restore the database and the objects from the same backup set. Start the stack, download an existing skill version, and compare its SHA-256 digest with the stored one before you let anyone back in. With external S3, use your provider's backup or replication, and keep the database and objects in step the same way.
+
+## Security notes
+
+- There's no inbound path from CI. The machine only pulls from `origin` when you run `deploy`.
+- Deploying a tag pins the version, but `deploy` doesn't check signatures. If you sign your tags, add `git verify-tag "$ref"` to the task.
+- `mise.selfhost.local.toml` holds plain secrets. Keep it at mode `600`, and out of any backup that leaves the machine unencrypted.
+- PostgreSQL uses the mise preset's `trust` authentication on `127.0.0.1`, so any local user on the machine can connect. That's fine for a single-user machine. If it isn't single-user, use a custom daemon with a password.
+- Backups stay on the same disk. Copy `.local/backups/` elsewhere if you need to recover from losing the machine.
+- mise daemons are experimental upstream. Pin mise's version on the machine, and test upgrades before you rely on them.

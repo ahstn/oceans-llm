@@ -1,0 +1,240 @@
+---
+title: Identity and access
+description: How users, teams, service accounts and API keys work together, and what each identity can see and do.
+sidebar:
+  order: 1
+---
+
+Oceans has two kinds of principal: users (people) and service accounts (software). Both call the gateway with API keys. Teams group users and own service accounts. This page explains how these identities work, how access is decided, and what each person can see in the admin UI. For the YAML fields, see [Auth and access settings](/access/access-settings/).
+
+## Identities and credentials
+
+| Identity | What it is | Signs in to `/admin` | Calls the gateway |
+| --- | --- | --- | --- |
+| User | A person. Has a status, a global role, and at most one team. | Yes | With a user-owned API key |
+| Service account | A non-human caller, owned by exactly one team. | No | With a service-account API key |
+| Team | A group of users. Owns service accounts. | No | No |
+| API key | A credential that belongs to one user or one service account. | No | Yes |
+
+A key belongs to a user or a service account, never to a team directly. Pick the owner by who should pay for the traffic:
+
+- Use a service-account key for shared automation and services. Spend goes to the service account. See [Service accounts](/access/service-accounts/).
+- Use a user-owned key only for traffic that should spend against that one person.
+- To manage a key in config, declare its service account, budget and key in `service_accounts`. See [Auth and access settings](/access/access-settings/#service_accounts).
+
+Provider credentials, such as a Google Cloud service-account file, are not part of this model. They live in provider config. See [Providers](/configuration/providers/).
+
+A user can exist without a team, and a user can belong to only one team. The database enforces the one-team rule.
+
+## Users
+
+### User status
+
+Every user has one of three statuses:
+
+| Status | Meaning |
+| --- | --- |
+| `invited` | The account exists, but the user hasn't finished sign-in setup. |
+| `active` | The user can sign in and their keys work. |
+| `disabled` | An admin deactivated the user. |
+
+Only platform admins can create and change users. An admin opens **Users** in the **Identity** section of the sidebar, then selects **Manage** on a user. The **Manage user** dialog has the tabs **Overview**, **Configuration**, **Auth & onboarding**, **Provider Configuration** and **Usage**.
+
+![Manage user dialog on the Overview tab, showing global role, team, team role, auth method, request logging and status](/images/edit-user.png)
+
+### Lifecycle actions
+
+The lifecycle actions are on the **Auth & onboarding** tab:
+
+- **Deactivate** sets the user to `disabled`. It signs the user out of every browser session, revokes their MCP client OAuth grants, and cancels open password invites.
+- **Reactivate** returns a disabled user to `active` if their sign-in proof still exists (a password, or a linked SSO identity for their current auth method). If it doesn't, the user goes back to `invited`.
+- **Reset onboarding** works only for `invited` and `disabled` users. It removes the user's password or SSO link and sets them to `invited`. For a password user, it also creates a new invite URL.
+
+The gateway blocks some changes:
+
+- The auth method can change only while the user is `invited`. After activation it is read-only. To change it, deactivate the user and reset onboarding.
+- An admin can't deactivate or demote themselves.
+- The gateway won't deactivate or demote the last active platform admin. The bootstrap admin doesn't count towards this. The request fails with `409`.
+- The bootstrap admin doesn't appear in the user lists and can't be changed through them.
+
+<Aside type="caution" title="Deactivation doesn't revoke API keys">
+A disabled user's API keys stay `active`. The gateway refuses model requests made with them, currently with a `500 api_key_owner_invalid` error. The MCP routes don't check the owner's status, so the keys can still reach MCP servers. To cut off all access, also revoke the user's keys on the **API Keys** page.
+</Aside>
+
+### Bootstrap admin
+
+The bootstrap admin is the first platform admin. It exists so someone can sign in before any other identity exists. It is not a normal managed user. [Start up and first access](/setup/first-access/#the-bootstrap-admin) explains when the gateway creates it and how the local and production configs differ.
+
+## Onboarding
+
+Admins create every user. Users can't sign up on their own, unless an SSO provider has just-in-time (JIT) creation turned on.
+
+- An admin creates users in config, with **Add user** on the **Users** page, or with **Add members** on the **Teams** page.
+- A password user needs an invite URL from the control plane. Each URL holds a unique token and lasts 7 days. The admin copies it from the dialog and sends it to the user.
+- An OIDC or OAuth user opens `/admin/login`, picks their provider, and signs in. The gateway activates the account when the provider identity matches the invited user.
+- An admin can also generate an SSO sign-in link. It picks the provider, adds an email hint, and ends on the account-ready page. It is a shortcut only.
+
+An SSO sign-in link doesn't grant access. The gateway still needs a valid provider identity and applies the provider's JIT setting. The login page lists the enabled providers, but it doesn't create an account when JIT is off. The gateway doesn't link an existing password user to an SSO identity by email. JIT applies fixed defaults from config and doesn't map groups or claims to roles. See [OIDC and SSO](/access/sso/) for sign-in links and provider setup.
+
+## Browser sessions
+
+Both platform admins and regular users can sign in to the admin UI. The gateway stores each browser session on the server and points to it with the `ogw_session` cookie. A session lasts 30 days.
+
+- Signing out ends only the current session.
+- Sign-out always clears the cookie, even if the session has already ended.
+- Deactivating a user ends all of that user's sessions.
+- An expired, revoked or missing session, or a session for a disabled user, counts as signed out. The UI sends the user back to sign-in.
+
+## Teams
+
+Only platform admins create and edit teams and change members. An admin opens **Teams** in the **Identity** section:
+
+- **Add team** creates a team. A team can have no members and no team admins at first.
+- **Edit team** renames the team and sets its team admins.
+- **Add members** adds existing users who have no team, or invites a new user straight into the team.
+- **Transfer** moves a member to another team. **Remove** takes them out of the team.
+
+Members with the `owner` role can't be removed or transferred. Their buttons are turned off.
+
+Team owners and team admins can manage their own team's service accounts and service-account keys. Platform admins can manage them for every team. See [Service accounts](/access/service-accounts/).
+
+### Team transfer
+
+A transfer changes only the user's membership. From then on, access that depends on the team follows the new team. For example, a user-owned key now checks the new team's model access.
+
+A transfer doesn't change:
+
+- past request logs
+- past spend records
+- the user's existing budgets
+- who owns the user's API keys
+- who owns any service account
+
+## Admin UI access
+
+The gateway puts each signed-in person in one permission group:
+
+- A user with the `platform_admin` global role is in `platform_admins`, even if they are also on a team.
+- A regular user who is an `owner` or `admin` of a team is in `team_admins`.
+- Every other user, with or without a team, is in `users`.
+
+Team admins get every `users` grant. Platform admins get every `team_admins` and `users` grant. The session response holds the group, its pages, its actions and its default page. If a user's membership changes, the next session response shows the new group.
+
+Config decides which pages and actions each group gets. [Auth and access settings](/access/access-settings/#permissions) lists the defaults and the rules. After sign-in, every user lands on their own **Profile** page (`/admin/profile`). A user with no pages lands on `/admin/no-access`.
+
+Page grants mostly control what the UI shows. They are not a full access check. The gateway checks the session, ownership, team and resource state on every API call. A few APIs also check a page grant: the **Spend Controls** APIs need `spend_controls`, and MCP server management needs `mcp`. The API-key actions (`create_api_key`, `update_api_key`, `revoke_api_key`, `reveal_api_key`) control both the API and the matching button.
+
+### What non-platform admins see
+
+Team admins and regular users share most data limits. The table shows the default behaviour:
+
+| Page | What they see and do |
+| --- | --- |
+| **API Keys** | Their own keys. They can create, update and revoke them. Team owners and admins also see and manage their team's service-account keys, and can reveal their secrets. A personal key's secret shows only once, when the key is created. |
+| **Models** | The full model catalogue, and client config for any model. Allowlist details and pricing refresh are for platform admins only. |
+| **Teams** and **Users** | The full directory, read-only. Invite links, provider setup and all changes are for platform admins only. |
+| **Usage Costs** | Only their own spend. Service-account spend is not included. |
+| **Request Logs** and **MCP Invocations** | Only their own records. Opening another user's record returns `403`. |
+| **Leaderboard** and **Agent Harnesses** | The same global view for everyone, across all teams. The leaderboard shows user names, exact spend, request counts and top models. |
+| **Service Accounts** | Active service accounts for their own team. A user with no team sees none. Ordinary members don't see the key details. |
+
+Team admins have team-scoped extras that depend on config: **Spend Controls** for their own team, and **Agent Sessions** when `agent_analysis.team_admin_enabled` is `true`. Identity changes, the **Review Agent**, **Rate Limits** and other platform-wide writes stay with platform admins.
+
+## Model access
+
+The gateway lets a request use a model only if every layer allows it:
+
+1. The API key's grant. A key with `model_grant_mode: explicit` can use only its listed models. A key with `all` can use every current and future gateway model.
+2. The team's model restriction, if the team is `restricted`.
+3. The service account's model restriction, if it is `restricted`.
+4. The user's model restriction, if the user is `restricted`.
+5. The model's own `allowlist` in config, if it has one.
+
+The layers intersect. `all` on a key never gets past a team, service-account, user or model restriction. A refusal returns `403 model_not_granted`.
+
+Restrictions on a user, team or service account answer "which models may this identity use?". A model `allowlist` answers "which users and teams may use this model?". Both must pass.
+
+New users, teams and service accounts start with `all`. The gateway enforces `restricted`, but there is no admin UI, API or config field to set it yet.
+
+For people, a model `allowlist` passes when it lists the user's email or their team key. For service accounts, the team and service-account restrictions apply, but user restrictions don't. Service-account keys must use explicit model grants, and the gateway always refuses them for a model that has an `allowlist`. Use a user-owned key for allowlisted models, or remove the `allowlist` from a model that automation must call. [Models and routes](/configuration/models-and-routes/#model-allowlists) has the full `allowlist` rules, including how aliases behave.
+
+## API key scopes
+
+An API key can be limited to the routes it needs. A key without scopes has full access. Keys created before scopes existed have full access.
+
+| Scope | UI label | Routes |
+| --- | --- | --- |
+| `inference` | Inference | `/v1/messages`, `/v1/messages/count_tokens`, `/v1/chat/completions`, `/v1/responses`, `/v1/embeddings`, `/v1/images`, `/v1/images/generations`, `/v1/decisions`, `/v1/systemone`, their unversioned aliases, `/v1/models`, `/models`, `/model_group/info`, `/v1/model-metadata`, `/api/v1/batches` and its sub-routes, and `/api/v1/guardrails/evaluate` |
+| `mcp:aggregate` | MCP aggregate | `/mcp` |
+| `mcp:proxy` | MCP proxy | `/mcp/<server_key>` |
+
+An admin sets scopes when they create a key, under **Capabilities** (**Full access** or **Limited**). To change them later, the admin opens **Manage** on the key, changes the fields in the **Manage API key** dialog, and selects **Save access**. The change applies to the key's next request, so callers keep the same key. A key with all three scopes ticked is still a scoped key, not a full-access key.
+
+![API Keys page listing keys with their owner, granted models and a Scopes column showing Full access](/images/screenshot-api-keys.png)
+
+Some routes need a full-access key: the Skills API, `/api/v1/me/provider-credentials`, and the Review Agent action routes. A scoped key gets `insufficient_scope` there.
+
+A key can also carry a list of MCP servers (**Selected servers**). It then reaches only those servers, on `/mcp/<server_key>` and through the `/mcp` tools, even if its owner has grants for other servers. The list needs `mcp:aggregate`, `mcp:proxy` or full access. The default, **All granted servers**, means every server the owner's grants allow.
+
+Scopes and server lists only narrow access. Model grants, model access, budgets and rate limits still apply. A scoped key keeps its key ID, so `api_key` rate-limit rules still match it. The gateway checks scopes before rate limits, so a refused request doesn't count against a limit.
+
+A refused request gets `403` with code `insufficient_scope`. OpenAI-style routes use the OpenAI error envelope. Anthropic routes use the Anthropic error shape. MCP routes return a JSON-RPC error. See [MCP client setup](/extensions/mcp-client-setup/).
+
+### Scopes in the admin API
+
+- `POST /api/v1/admin/api-keys` accepts optional `scopes` and `mcp_server_keys`. Leave them out, or send `null`, for full access and every granted server. An empty list is rejected.
+- `PUT /api/v1/admin/api-keys/<api_key_id>/scopes` replaces both. The body must include both fields. `null` restores full access or every granted server. The caller needs the `update_api_key` action.
+- `GET /api/v1/admin/api-keys` returns each key's `scopes` and `mcp_server_keys`, plus `available_scopes` and the active `mcp_servers`.
+
+Each real change is written to the [admin audit log](/access/admin-audit-log/) as `api_key.scopes_updated`. The design is in the [scoped API keys ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-17-scoped-api-keys.md).
+
+## MCP gateway credentials
+
+The MCP routes (`/mcp` and `/mcp/<server_key>`, with `GET`, `POST` and `DELETE`) use the same API keys as `/v1/*`. They accept the key in one of two headers:
+
+- `Authorization: Bearer <oceans-api-key>` (preferred)
+- `x-oceans-api-key: <oceans-api-key>`
+
+If both headers are present, they must hold the same key. A malformed `Authorization` header is rejected, even when `x-oceans-api-key` is valid. When MCP client OAuth is on, these headers can also carry an Oceans OAuth access token instead of a key.
+
+The MCP routes don't accept `x-api-key`, `API-Key`, credentials in the query string, or provider and upstream MCP credentials.
+
+Both user-owned and service-account keys can use MCP servers, within their grants and scopes. The gateway never forwards the caller's Oceans credential upstream. It sends only the upstream credential that the server's config asks for. Upstream auth modes and per-user credentials are covered in [MCP servers](/extensions/mcp-servers/).
+
+## Request logging
+
+Request logging depends partly on who owns the key:
+
+- For a user-owned key, the gateway follows the user's `request_logging_enabled` setting. The **Overview** tab of the **Manage user** dialog shows it read-only. Set it in config.
+- For a service-account key, the gateway always writes a request-log record.
+- If `request_logging.payloads.capture_mode` is `disabled`, the gateway writes no request-log records for anyone. See [Configuration reference](/configuration/#request_logging).
+
+MCP invocation records keep the API key, user and team IDs known when the call ran. Later team transfers and key revocations don't change them. For a user-owned key, the team ID is usually empty, because a user's key has no team of its own. See [MCP invocations](/extensions/mcp-invocations/).
+
+## Identity tags
+
+Admins can add key/value tags to users, teams and service accounts. Tags help with attribution, exports and matching records in other systems. Platform admins edit user and team tags in the admin UI. Service-account tags show on the **Service Accounts** page but can't be edited there. Config-seeded tags are applied at startup.
+
+Tags don't change access, budgets, routing, request-log filtering or past ownership. The rules are in [Tagging](/observability/tagging/).
+
+## Identities from config
+
+The gateway can create teams, users and service accounts from config at startup:
+
+- Teams match by `id`, users by normalised email, and service accounts by `id`.
+- A listed user's team membership and active budget can come from config.
+- New config-seeded users start as `invited`. Seeding doesn't create invite URLs.
+- A seeded OIDC or OAuth user can sign in from `/admin/login` straight away. A seeded password user still needs an invite URL from the control plane.
+- If `tags` is left out, existing tags stay. `tags: []` clears them.
+
+Seeding doesn't create team-owned API keys. Non-human access comes from service accounts. The fields are in [Auth and access settings](/access/access-settings/#declarative-teams-users-and-service-accounts).
+
+## Limits
+
+- A user can belong to only one team.
+- `owner` memberships can't be removed, transferred or assigned through the admin UI.
+- SSO doesn't map identity-provider groups or claims to roles.
+- There is no admin UI to list or end a user's sessions, apart from deactivation.
+- User, team and service-account model restrictions can't be set yet.
+
+The design choices are in the ADRs for [configurable admin page permissions](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-08-05-configurable-admin-page-permissions.md), [team service accounts](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-05-10-team-service-accounts.md) and [admin identity lifecycle](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md).

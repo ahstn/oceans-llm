@@ -1,0 +1,465 @@
+---
+title: Google Vertex AI
+description: Connect Oceans to Gemini and Claude models on Google Vertex AI, including text embeddings and batches.
+sidebar:
+  order: 7
+---
+
+One `gcp_vertex` provider serves Gemini models, Claude models and Google text embeddings. The publisher prefix on each route's `upstream_model` decides which Vertex API the gateway calls. This page covers setup and the behaviour that is specific to Vertex. The field list for the provider is in [Providers](/configuration/providers/).
+
+| Route `upstream_model` | Vertex methods | Gateway APIs |
+| --- | --- | --- |
+| `google/gemini-...` chat models | `generateContent`, `streamGenerateContent?alt=sse` | Chat Completions, Anthropic Messages, batches |
+| `google/` text embedding models | `:predict`, or `:embedContent` for `gemini-embedding-2` | Embeddings |
+| `anthropic/...` | `rawPredict`, `streamRawPredict`, `count-tokens:rawPredict` | Chat Completions, Anthropic Messages, token counting |
+
+Vertex routes don't serve `/v1/responses`, image generation or Decisions. Route selection skips Vertex routes for these APIs, and the adapter itself rejects Responses requests.
+
+## Set up the provider
+
+<Steps>
+<Step title="Choose a location">
+Set `location` to `global`, a multi-region (`us` or `eu`), or a region such as `us-east5`. The default is `global`. Google documents that model availability differs by location, so check the model page in Google Cloud first. Use `global` when your residency policy allows it. Use `us`, `eu` or a region when you need a fixed processing geography.
+</Step>
+<Step title="Choose how the gateway authenticates">
+Pick `adc`, `service_account` or `bearer`. See [Authentication](#authentication).
+</Step>
+<Step title="Add the provider">
+An admin adds the provider to `gateway.yaml`:
+
+```yaml title="gateway.yaml"
+providers:
+  - id: vertex-global
+    type: gcp_vertex
+    project_id: my-gcp-project
+    location: global
+    auth:
+      mode: adc
+    display:
+      label: Google Vertex AI
+      icon_key: vertexai
+```
+</Step>
+<Step title="Add routes">
+Add a route for each model with a publisher-qualified `upstream_model`. See [Claude on Vertex](#claude-on-vertex), [Gemini on Vertex](#gemini-on-vertex) and [Text embeddings](#text-embeddings).
+</Step>
+<Step title="Check the routes">
+Apply the config, then open **Models** in the admin UI. Each Vertex route shows its `upstream_model` and the provider's `display.label` in the **Provider & Model** column.
+</Step>
+</Steps>
+
+![The admin Models page. The Provider and Model column shows anthropic/claude-fable-5-1, anthropic/claude-opus-4-7 and anthropic/claude-sonnet-4-6 routes, each labelled Google Vertex AI.](/images/screenshot-models-2.png)
+
+<Aside type="caution" title="project_id is a plain string">
+`project_id` doesn't accept `env.` or `literal.` references. The gateway uses the value as written in the Vertex URL. Write the project ID itself, for example `project_id: my-gcp-project`.
+</Aside>
+
+### Locations and API hosts
+
+`api_host` is optional. When you omit it, the gateway derives it from `location` ([`vertex/mod.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-providers/src/vertex/mod.rs)):
+
+| `location` | Derived `api_host` |
+| --- | --- |
+| `global` | `aiplatform.googleapis.com` |
+| `us` or `eu` | `aiplatform.us.rep.googleapis.com` or `aiplatform.eu.rep.googleapis.com` |
+| Any other value, for example `us-east5` | `us-east5-aiplatform.googleapis.com` |
+
+Set `api_host` only to override the host, for example for a private endpoint. Every request goes to `https://<api_host>/v1/projects/<project_id>/locations/<location>/publishers/<publisher>/models/<model_id>:<method>`.
+
+## Authentication
+
+Every mode sends a Google OAuth access token as `Authorization: Bearer` with the `https://www.googleapis.com/auth/cloud-platform` scope. The gateway caches the token and gets a new one 60 seconds before it expires ([`token.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-providers/src/token.rs)).
+
+| `auth.mode` | Where the token comes from |
+| --- | --- |
+| `adc` | Application Default Credentials. See the lookup order below. |
+| `service_account` | The service-account JSON file at `auth.credentials_path`. |
+| `bearer` | The static access token in `auth.token`. The gateway never refreshes it. |
+
+With `adc`, the gateway looks for credentials in this order:
+
+1. The file named by `GOOGLE_APPLICATION_CREDENTIALS`.
+2. `~/.config/gcloud/application_default_credentials.json`, from `gcloud auth application-default login`.
+3. The Google Cloud metadata server, which serves the attached service account or GKE Workload Identity.
+
+An ADC file must have `type` set to `service_account` or `authorized_user`. Other credential types, such as `external_account` for workload identity federation, fail with `unsupported ADC credential type`. On Google Cloud, prefer `adc` with an attached identity, so no key file is needed.
+
+```yaml title="gateway.yaml"
+providers:
+  - id: vertex-service-account
+    type: gcp_vertex
+    project_id: my-gcp-project
+    location: us
+    auth:
+      mode: service_account
+      credentials_path: /var/run/secrets/gcp/service-account.json
+
+  - id: vertex-bearer
+    type: gcp_vertex
+    project_id: my-gcp-project
+    location: us-central1
+    auth:
+      mode: bearer
+      token: env.GCP_VERTEX_ACCESS_TOKEN
+```
+
+For `service_account`:
+
+- Create the Google service account in the target project. Give it only the Vertex AI permissions the configured models need. Anthropic's [Claude on Vertex AI guide](https://platform.claude.com/docs/en/build-with-claude/claude-on-vertex-ai) names `roles/aiplatform.user`.
+- Mount the JSON as a file and point `credentials_path` at it. `credentials_path` takes a plain path, `env.NAME` or `literal.value`.
+- Don't put the JSON document in `gateway.yaml`. See [Kubernetes and Helm](/setup/kubernetes-and-helm/#secrets) for secrets.
+- To rotate the key, replace the mounted file. The gateway reads the file again each time it gets a new access token, so the new key takes effect at the next refresh without a restart.
+
+`bearer` suits short tests only. Google access tokens are short-lived, and requests fail when the token expires. `auth.token` takes `env.NAME`, `file./path` or `literal.value`, and the gateway reads it once at startup.
+
+These Google service accounts are upstream credentials for the gateway. They aren't Oceans [service accounts](/access/service-accounts/), and they don't give callers access to `/v1/*`.
+
+A model with a `routing` block that uses an `adc` or `service_account` Vertex provider also needs `routing_account_scope`. See [Routing account scope](/configuration/providers/#routing-account-scope).
+
+## Model identity
+
+Every Vertex route sets `upstream_model` as `<publisher>/<model_id>`. The gateway puts the model ID after the slash into the Vertex endpoint path.
+
+- `google/<model-id>` uses the Gemini or embeddings mapper and Google Vertex pricing (`google-vertex`).
+- `anthropic/<model-id>` uses the Claude mapper and Anthropic-on-Vertex pricing (`google-vertex-anthropic`).
+
+A value without a slash, or with an empty part, fails config loading with `gcp_vertex routes require upstream_model in <publisher>/<model_id> format`. Any other publisher, such as `meta/...`, loads but fails at request time with `vertex publisher ... is not supported`.
+
+There is no `pricing_provider_id` on Vertex providers. Anthropic-on-Vertex pricing works only for `location: global`. Claude routes on other locations are recorded as `unpriced` ([`pricing_catalog/target.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-service/src/pricing_catalog/target.rs)). See [Pricing catalog and accounting](/spend/pricing-and-accounting/).
+
+Example routes:
+
+| Gateway model | `upstream_model` | Notes |
+| --- | --- | --- |
+| `claude-fable-5.1` | `anthropic/claude-fable-5-1` | Capped at `high` effort in the shipped `gateway.yaml`. |
+| `claude-opus-4-7` | `anthropic/claude-opus-4-7` | Adaptive thinking only. |
+| `claude-sonnet` | `anthropic/claude-sonnet-4-6` | Adaptive thinking with effort. Manual budgets still pass through. |
+| `claude-sonnet-45-vertex` | `anthropic/claude-sonnet-4-5@20250929` | Vertex pins Claude versions with an `@YYYYMMDD` suffix. |
+| `gemini-pro-preview` | `google/gemini-3.1-pro-preview` | Gemini chat. |
+| `gemini-embedding` | `google/gemini-embedding-001` | Text embeddings. |
+
+Check the Anthropic and Google Cloud model pages before you add a Claude route. Model IDs, locations, context windows and retirement dates differ by model.
+
+## What each route can do
+
+The gateway caps each Vertex route by its `upstream_model` ([`domain.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-core/src/domain.rs)). Route `capabilities` can turn a flag off, but they can't turn on a flag the cap doesn't allow:
+
+| `upstream_model` | The adapter allows |
+| --- | --- |
+| `google/gemini-...` (not an embedding model) | `chat_completions`, `stream`, `tools`, `vision`, `json_schema` |
+| `anthropic/...` | `chat_completions`, `stream`, `tools`, `vision` |
+| One of the four [text embedding models](#text-embeddings) | `embeddings` only |
+| Any other `google/...` model | `chat_completions`, `stream`, `vision` |
+
+No Vertex route serves `responses`, `images` or `decisions`. You don't need a `capabilities` block for these limits. Setting `responses: false` and `embeddings: false` on chat routes still makes the intent clear in the config. See [Effective capabilities](/reference/provider-api-compatibility/#effective-capabilities) for how flags are resolved.
+
+## Claude on Vertex
+
+Claude routes send the Anthropic Messages body with the Vertex transport rules ([`vertex/anthropic.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-providers/src/vertex/anthropic.rs)):
+
+- The model is in the endpoint path, not the body.
+- The body includes `anthropic_version: "vertex-2023-10-16"`.
+- Non-streaming requests use `rawPredict`. Streaming requests use `streamRawPredict`.
+- If the caller sends neither `max_tokens` nor `max_completion_tokens`, the gateway sends `max_tokens: 4096`. Send `max_tokens` yourself if you need a different ceiling.
+
+```yaml title="gateway.yaml"
+models:
+  - id: claude-fable-5.1
+    description: Claude Fable 5.1 on Google Vertex AI
+    tags: [vertex, claude, reasoning]
+    max_reasoning_effort: high
+    routes:
+      - provider: vertex-global
+        upstream_model: anthropic/claude-fable-5-1
+        context_window_tokens: 1000000
+        capabilities:
+          responses: false
+          embeddings: false
+```
+
+### Tools, images and limits
+
+The gateway maps Chat Completions function tools, assistant `tool_calls`, tool results and streamed tool-use deltas to and from the Messages shape. Some new Claude models reject a forced `tool_choice`, and the gateway rejects those requests locally. See [Forced tool choice](/reference/provider-api-compatibility/#forced-tool-choice).
+
+Images work when they are base64: an Anthropic `image` block with a base64 source, or an OpenAI `image_url` with a `data:` URL. The types are `image/jpeg`, `image/png`, `image/webp` and `image/gif`. The gateway rejects remote `http` and `https` image URLs. Other content blocks, such as `document`, pass through for Vertex to check.
+
+Claude routes don't map `response_format`, so `json_schema` is off for them.
+
+Google limits Claude request payloads on Vertex to 30 MB ([Claude on Vertex AI](https://platform.claude.com/docs/en/build-with-claude/claude-on-vertex-ai)). The gateway's own inference body limit is 64 MiB and it doesn't check the Vertex limit. Large documents and many images can reach 30 MB before the model's token limit.
+
+### Thinking and effort
+
+Claude thinking rules are the same on Vertex as on other Claude routes. See [Claude thinking by model](/reference/provider-api-compatibility/#claude-thinking-by-model). In short, `reasoning_effort` (or `reasoning.effort`) becomes Anthropic `output_config.effort`, and adaptive models also get `thinking: { "type": "adaptive" }`. The gateway doesn't forward `reasoning_effort` itself.
+
+A caller sends this Chat Completions request:
+
+```json
+{
+  "model": "claude-fable-5.1",
+  "max_tokens": 16000,
+  "reasoning_effort": "high",
+  "messages": [{ "role": "user", "content": "Review this implementation plan." }]
+}
+```
+
+The gateway sends this body to `rawPredict`:
+
+```json
+{
+  "anthropic_version": "vertex-2023-10-16",
+  "max_tokens": 16000,
+  "thinking": { "type": "adaptive" },
+  "output_config": { "effort": "high" },
+  "messages": [{ "role": "user", "content": "Review this implementation plan." }]
+}
+```
+
+Vertex-specific points:
+
+- For Claude Opus 4.5, an effort maps to `output_config.effort` only together with a manual thinking budget. The gateway then adds the `effort-2025-11-24` beta for you.
+- For older models that need a manual budget, such as Claude Sonnet 4.5, send `reasoning.budget_tokens` (or `reasoning_budget_tokens`, `thinking_budget_tokens`). The gateway sends `thinking.type: "enabled"` with `budget_tokens` and no `output_config.effort`.
+- `max_reasoning_effort` on the model applies first. With `high`, the gateway rejects `xhigh` and `max` before it selects a route. See [Reasoning effort ceilings](/configuration/models-and-routes/#reasoning-effort-ceilings).
+- For turning thinking off on adaptive-only models, see [Anthropic Messages](/configuration/model-routing/#anthropic-messages).
+
+Anthropic documents [per-message effort](https://platform.claude.com/docs/en/build-with-claude/effort#change-effort-mid-conversation-beta) as a beta. It uses the `mid-conversation-output-config-2026-07-01` beta header and an `output_config` on a message. The gateway checks every `output_config.effort` against the model ceiling, including message-level values. That check doesn't make the beta available on Vertex: confirm that Vertex supports it before you depend on it.
+
+### Thinking in responses
+
+Chat Completions never puts Claude thinking into `content` or `delta.content`. The gateway keeps `thinking`, `redacted_thinking`, `thinking_delta` and `signature_delta` data under `provider_metadata.gcp_vertex.reasoning`. When a caller sends that assistant message back with its `provider_metadata`, the gateway puts the thinking blocks back at the start of the assistant turn. This keeps tool-use continuations valid. See [Thinking replay](/reference/provider-api-compatibility/#thinking-replay).
+
+Anthropic `stop_reason` values map to OpenAI `finish_reason`: `end_turn` and `stop_sequence` to `stop`, `max_tokens` to `length`, `tool_use` to `tool_calls`, and `refusal` to `content_filter`. Other values, such as `pause_turn`, map to `stop`.
+
+### Beta headers and token counting
+
+Claude beta names go to Vertex in one `anthropic-beta` header, because Google Cloud reads only one occurrence of it. The gateway merges names from the caller's `anthropic-beta` header, the `anthropic_beta` body field, route `extra_headers` and provider `default_headers`, and removes duplicates. It removes the body field before it sends the request. Other caller headers and credentials aren't forwarded. Limits are in [Beta headers](/reference/provider-api-compatibility/#beta-headers).
+
+`POST /v1/messages/count_tokens` works on Claude routes through `count-tokens:rawPredict`. The gateway removes any `@version` suffix from the model in that body. Gemini routes return `501`. See [Messages token counting](/reference/provider-api-compatibility/#messages-token-counting).
+
+## Gemini on Vertex
+
+Gemini routes use `generateContent`, and `streamGenerateContent?alt=sse` for streams.
+
+```yaml title="gateway.yaml"
+models:
+  - id: gemini-pro-preview
+    description: Gemini preview on Google Vertex AI
+    tags: [vertex, gemini]
+    routes:
+      - provider: vertex-global
+        upstream_model: google/gemini-3.1-pro-preview
+        capabilities:
+          responses: false
+          embeddings: false
+```
+
+### Request mapping
+
+The gateway builds the Gemini body from the Chat Completions request ([`google_request.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-providers/src/vertex/google_request.rs)):
+
+- `system` and `developer` messages join into `systemInstruction`. `assistant` becomes `model`, and tool results go in a `user` turn.
+- `max_tokens` or `max_completion_tokens` becomes `maxOutputTokens`. Different values in the two fields fail.
+- `temperature`, `top_p`, `top_k`, `presence_penalty`, `frequency_penalty`, `seed`, `n`, `stop`, `logprobs` and `top_logprobs` map to their `generationConfig` fields.
+- `response_format` with `json_object` sets `responseMimeType: application/json`. With `json_schema`, the schema also goes in `responseJsonSchema`.
+- The gateway ignores OpenAI-only fields such as `user`, `store`, `metadata`, `service_tier` and `logit_bias`. It copies other unknown top-level fields into the body unchanged.
+- A caller's native `generationConfig` (or `generation_config`) is deep-merged over the mapped fields. Route `extra_body` is merged last.
+
+### Tools
+
+Gemini routes support function tools, assistant `tool_calls`, tool results (`role: tool`) and streamed function calls. `tool_choice` maps to `toolConfig.functionCallingConfig`:
+
+| `tool_choice` | Gemini `mode` |
+| --- | --- |
+| `auto` | `AUTO` |
+| `none` | `NONE` |
+| `required` or `any` | `ANY` |
+| A named function | `ANY` with `allowedFunctionNames` set to that function |
+
+The gateway rejects `parallel_tool_calls: false` on requests with tools, because Gemini can't turn off parallel calls. It also rejects `streamFunctionCallArguments`.
+
+Gemini 3 returns thought signatures. The gateway puts them on each tool call as `thought_signature`, and on the message as `thought_signature` and `provider_metadata.gcp_vertex.thought_signature`. When the caller sends the assistant turn back, the gateway replays the signatures to Vertex.
+
+### Reasoning effort
+
+`reasoning_effort` (or `reasoning.effort`) maps to `generationConfig.thinkingConfig` and isn't forwarded ([`gemini.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-providers/src/vertex/gemini.rs)). The gateway reads the version and tier from the model ID, for example `gemini-3.1-pro-preview`:
+
+| Model | Mapping |
+| --- | --- |
+| Gemini 3 and later, Pro | `thinkingLevel`: `minimal` and `low` to `LOW`, `medium` and higher to `HIGH`. |
+| Gemini 3.0 to 3.6, Flash and Flash-Lite | `thinkingLevel`: `minimal` to `MINIMAL`, `low` to `LOW`, `medium` to `MEDIUM`, `high`, `xhigh` and `max` to `HIGH`. |
+| Other Gemini 3 and later models, including Flash 3.7 and later | As the row above, but `minimal` maps to `LOW`. |
+| Gemini 2.5 | `thinkingBudget`: `minimal` 128, `low` 2048, `medium` 8192, `high` and higher 24576 (32768 on Pro). |
+| Gemini 2.0 and older, or an ID the gateway can't parse | No thinking. Any `reasoning_effort`, including `none`, fails with `400 invalid_request_error`. Omit the field. |
+
+With an effort, the gateway also sets `includeThoughts: true`. Thought text then comes back as `reasoning_content` on the message, or on `delta` in streams, never in `content`. Thinking tokens count in `completion_tokens` and in `completion_tokens_details.reasoning_tokens`.
+
+`reasoning_effort: "none"` (or `"off"`) turns thinking down as far as the model allows, with `includeThoughts: false`:
+
+- Gemini 3 can't turn thinking off. It gets its lowest level: `MINIMAL` on Flash and Flash-Lite before 3.7, otherwise `LOW`. The model still thinks and bills those tokens.
+- Gemini 2.5 gets `thinkingBudget: 0`. Gemini 2.5 Pro can't turn thinking off, so it gets 128.
+
+A request that sets an effort and also sends its own `generationConfig.thinkingConfig` fails. Set only one.
+
+### Sampling on Gemini 3.6 and later
+
+Gemini 3.6 and later deprecate the classic sampling fields. The gateway follows the [3.6](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-6-flash) and [3.7](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-7-flash) model guides:
+
+- It drops `temperature`, `topP` and `topK`, because Vertex ignores them.
+- It accepts `presencePenalty: 0`, `frequencyPenalty: 0` and `candidateCount: 1`, and drops them. Other values fail with `400 invalid_request_error` that names the field, because Vertex would return an error.
+- These rules run on the fully merged `generationConfig`, so they also cover a caller's native `generationConfig` and route `extra_body`.
+
+Gemini 3.5 and older keep every sampling field.
+
+### Streaming and finish reasons
+
+The gateway sends the `finish_reason` chunk once, at the end of the stream, so late `usageMetadata` isn't lost. A Gemini stream must end with a candidate `finishReason` or a blocked prompt. If the connection closes first, the gateway sends an error chunk with `google_stream_premature_eof` instead of `finish_reason: "stop"`. Clients then don't take truncated output as complete. A streaming request with `n` (or `candidateCount`) above 1 fails.
+
+| Gemini result | `finish_reason` |
+| --- | --- |
+| A function call | `tool_calls` |
+| `MAX_TOKENS` | `length` |
+| `SAFETY`, `RECITATION`, `BLOCKLIST`, `PROHIBITED_CONTENT`, `SPII` and other safety reasons, or a blocked prompt | `content_filter` |
+| Anything else | `stop` |
+
+`MALFORMED_FUNCTION_CALL` doesn't become a finish reason. The gateway returns it as an upstream error. An error object inside a stream (for example `RESOURCE_EXHAUSTED`) also becomes an error.
+
+### Remote media
+
+Gemini routes accept media by URL only. The gateway sends the URL to Vertex as `fileData` and doesn't download or check the media. Chat Completions accepts these content parts:
+
+- `image_url` and `input_image` for images.
+- `video_url` and `input_video` for videos.
+- `file`, `input_file` and `document` for any media type the model supports, including video.
+
+URLs must use `gs://` or `https://` and have a host. Vertex must be able to read an HTTPS URL without credentials. The gateway rejects other schemes (including `http://`, `file://` and `data:` URLs) and URLs with a user name or password. It forwards an accepted URL unchanged, including a signed query string.
+
+Set the MIME type in `mime_type`. The gateway also accepts `media_type` and `mediaType`. If you set more than one, they must match. Image parts need an `image/*` type and video parts need a `video/*` type. Without a MIME field, the gateway infers common image, audio, document and video types from the URL path, without the query string. A missing or unknown type fails locally.
+
+Request logs keep the media scheme, host and path, but replace the query string with `?<redacted>`. This protects signed URL credentials in stored payloads. It doesn't change the URL sent to Vertex.
+
+Media limits depend on the Gemini model and endpoint. Check formats, file sizes, media counts, video length and VPC Service Controls rules in the [Vertex Gemini inference reference](https://cloud.google.com/vertex-ai/generative-ai/docs/model-reference/inference) and [video understanding guide](https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/video-understanding).
+
+## Text embeddings
+
+`POST /v1/embeddings` uses native Vertex text embeddings on routes to these models ([`embeddings.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-providers/src/vertex/embeddings.rs)):
+
+| `upstream_model` | Maximum dimensions | Vertex call |
+| --- | ---: | --- |
+| `google/gemini-embedding-001` | 3072 | `:predict`, one input per call |
+| `google/gemini-embedding-2` | 3072 | `:embedContent`, one input per call, text only |
+| `google/text-embedding-005` | 768 | `:predict`, up to 250 inputs per call |
+| `google/text-multilingual-embedding-002` | 768 | `:predict`, up to 250 inputs per call |
+
+Make embedding routes embedding-only:
+
+```yaml title="gateway.yaml"
+models:
+  - id: gemini-embedding
+    description: Gemini embeddings on Vertex AI
+    tags: [vertex, embeddings]
+    routes:
+      - provider: vertex-global
+        upstream_model: google/gemini-embedding-001
+        capabilities:
+          chat_completions: false
+          responses: false
+          embeddings: true
+          stream: false
+          tools: false
+          vision: false
+          json_schema: false
+```
+
+A caller sends a request like this:
+
+```bash
+curl "$OCEANS_BASE_URL/v1/embeddings" \
+  -H "Authorization: Bearer $OCEANS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gemini-embedding",
+    "input": ["search query", "document text"],
+    "dimensions": 768,
+    "task_type": "SEMANTIC_SIMILARITY"
+  }'
+```
+
+With the OpenAI Python SDK, Vertex-only fields go in `extra_body`:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="https://gateway.example.com/v1", api_key="...")
+
+response = client.embeddings.create(
+    model="gemini-embedding",
+    input=["search query", "document text"],
+    dimensions=768,
+    extra_body={"task_type": "SEMANTIC_SIMILARITY", "auto_truncate": False},
+)
+```
+
+### Request fields
+
+The field mapping is in [Google Vertex text embeddings](/reference/provider-api-compatibility/#google-vertex-text-embeddings). These points add to it:
+
+- Input must be a string or an array of strings. The response keeps the input order.
+- `encoding_format` must be omitted or `float`.
+- `task_type` (or its alias `input_type`) accepts `RETRIEVAL_QUERY`, `RETRIEVAL_DOCUMENT`, `SEMANTIC_SIMILARITY`, `CLASSIFICATION`, `CLUSTERING`, `QUESTION_ANSWERING`, `FACT_VERIFICATION` and `CODE_RETRIEVAL_QUERY`. Case, spaces and hyphens don't matter, and `query` and `document` are short forms of the retrieval types.
+- `title` needs `task_type: RETRIEVAL_DOCUMENT`.
+- `google/gemini-embedding-2` rejects `task_type`, `input_type`, `title` and `auto_truncate`. Put task instructions in the input text.
+- The gateway rejects any other field it doesn't know. Route `extra_body` is merged into each Vertex call.
+
+### Batching and token limits
+
+The gateway sends one Vertex call after another, so a large array to a one-input model takes longer. For `:predict` models that batch, it also keeps each call under the Vertex limit of 20,000 tokens across all inputs. It has no Gemini tokenizer, so it counts one token per UTF-8 byte. No input can tokenize to more tokens than bytes, so a batch never goes over the limit. A `title` counts once per input, because Vertex adds it to every input. Prose makes smaller batches than needed, which only costs extra calls. One input that is larger than the limit still goes in its own call, and Vertex truncates or rejects it, as `auto_truncate` sets.
+
+If a later call fails after earlier calls worked, the whole request fails. The gateway still records the token counts from the calls that finished.
+
+### Usage and pricing
+
+The gateway uses only token counts that Vertex reports: `statistics.token_count` per prediction for `:predict`, and `usageMetadata.promptTokenCount` for `:embedContent`. It never turns characters or bytes into tokens.
+
+- With token counts and an exact price, embedding spend counts against [budgets](/spend/budgets/) like other traffic.
+- If Vertex omits token counts, the ledger row is `usage_missing`. If the catalog has no exact price, the row is `unpriced`. Both rows show in reporting but don't use budget.
+
+The vendored pricing snapshots include `gemini-embedding-001` and `gemini-embedding-2` only. See [Pricing catalog and accounting](/spend/pricing-and-accounting/).
+
+### Troubleshooting embeddings
+
+| Symptom | Check |
+| --- | --- |
+| Capability or invalid-request error | The route has `embeddings: true` and uses one of the four models above, not a Gemini chat model. |
+| `encoding_format` fails | Use `float`. Vertex `base64` encoding isn't supported. |
+| Token-array or nested-array input fails | Send text strings. The gateway can't turn OpenAI token arrays into Vertex text. |
+| `unsupported vertex embeddings request field(s)` | Remove the named field, or move it to a field the model accepts. |
+| Spend row is `usage_missing` | Vertex didn't return token counts, so the request doesn't use budget. |
+| Spend row is `unpriced` | The catalog has no exact price for the model. |
+
+## Batches
+
+A Vertex provider can run durable batches through `POST /api/v1/batches` when it has a `batch` block. Vertex batches accept Chat Completions items for `google/...` models only. Claude, Responses and Embeddings batches on Vertex are rejected ([`vertex/batch.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-providers/src/vertex/batch.rs)).
+
+```yaml title="gateway.yaml"
+providers:
+  - id: vertex-batch
+    type: gcp_vertex
+    project_id: my-gcp-project
+    location: europe-west4
+    auth:
+      mode: adc
+    batch:
+      dataset: oceans_batches
+      bigquery_project_id: my-billing-project
+```
+
+`batch.dataset` is required. `batch.bigquery_project_id` defaults to `project_id`. For each batch, the gateway:
+
+1. Creates an input table `oceans_batch_<batch id>` in the dataset and writes the mapped Gemini requests to it.
+2. Starts a Vertex batch prediction job in the provider's `location`, with output to the `_output` table next to it.
+3. Reads results from the output table when the job finishes.
+
+Both tables expire 30 days after the gateway writes them. Batches can be cancelled. The gateway's Google identity needs to create, write, read and delete tables in the dataset, run BigQuery queries, and create and cancel Vertex batch prediction jobs. Admins can follow batches on the **Batch Requests** page. For the design, see the [durable provider batch ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-08-17-durable-provider-batch-processing.md).
+
+## Model Armor
+
+Google Model Armor guardrails are separate from Vertex routing. The gateway calls Model Armor at its own boundary, so a template can protect routes on any provider. See [Gateway guardrails](/operations/gateway-guardrails/) for setup, credentials and failure behaviour.
