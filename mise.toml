@@ -19,6 +19,7 @@ config_roots = [
   "crates/oceans-cli",
   "deploy/helm",
   "docs",
+  "packages/opencode-oceans",
   "tests/harness-integration",
 ]
 # Keep a single mise.lock at the root for every project.
@@ -30,6 +31,7 @@ cli = "crates/oceans-cli"
 gateway = "crates/gateway"
 harness = "tests/harness-integration"
 helm = "deploy/helm"
+opencode = "packages/opencode-oceans"
 review-agent = "actions/review-agent"
 store = "crates/gateway-store"
 ui = "crates/admin-ui/web"
@@ -250,6 +252,9 @@ depends = [
   "//crates/admin-ui/web:lint",
   "//actions/review-agent:typecheck",
   "//actions/review-agent:lint",
+  "//packages/opencode-oceans:typecheck",
+  "//packages/opencode-oceans:lint",
+  "//packages/opencode-oceans:fmt-check",
   "//tests/harness-integration:typecheck",
 ]
 
@@ -263,6 +268,7 @@ depends = [
   "rust-test",
   "//crates/admin-ui/web:test",
   "//actions/review-agent:test",
+  "//packages/opencode-oceans:test",
   "copilot-installation-canary-test",
   "e2e-stack-test",
 ]

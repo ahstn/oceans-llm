@@ -1,0 +1,58 @@
+{
+  "name": "@ahstn/opencode-oceans",
+  "version": "0.1.0",
+  "description": "Discover Oceans and LiteLLM gateway models in OpenCode",
+  "homepage": "https://github.com/ahstn/oceans-llm/tree/main/packages/opencode-oceans",
+  "bugs": "https://github.com/ahstn/oceans-llm/issues",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ahstn/oceans-llm.git",
+    "directory": "packages/opencode-oceans"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "typecheck": "bun run --bun effect-tsgo tsc --noEmit",
+    "diagnostics": "bun run --bun effect-tsgo diagnostics --project tsconfig.json",
+    "test": "bun test",
+    "lint": "bun run --bun oxlint -c .oxlintrc.json src tests scripts",
+    "fmt": "bun run --bun oxfmt -c .oxfmtrc.json .",
+    "fmt:check": "bun run --bun oxfmt -c .oxfmtrc.json --check .",
+    "smoke": "bun run scripts/smoke.ts",
+    "check": "bun run typecheck && bun run test && bun run lint && bun run fmt:check && bun run smoke",
+    "pack": "bun pm pack --destination dist"
+  },
+  "devDependencies": {
+    "@effect/tsgo": "0.67.4",
+    "@opencode/cli": "2.2.6",
+    "@opencode/client": "2.2.6",
+    "@opencode/plugin": "2.2.6",
+    "@types/node": "26.6.6",
+    "bun-types": "1.4.4",
+    "effect": "4.1.0",
+    "oxfmt": "0.75.0",
+    "oxlint": "1.90.0",
+    "oxlint-tsgolint": "7.0.2005",
+    "typescript": "7.0.2"
+  },
+  "peerDependencies": {
+    "@opencode/plugin": "2.2.6",
+    "effect": "4.1.0"
+  },
+  "engines": {
+    "bun": ">=1.4.4"
+  },
+  "packageManager": "bun@1.4.4"
+}
