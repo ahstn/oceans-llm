@@ -1,0 +1,23 @@
+docs-nimbus/src/content/docs/configuration/model-routing.mdx
+  s_397b5a20224eaa::t_425279b2000610 302,345
+docs-nimbus/src/content/docs/harnesses/index.mdx
+  s_397b5a20224eaa::t_425279b2000610 3,13,18
+docs-nimbus/src/content/docs/harnesses/omp.mdx
+  s_397b5a20224eaa::t_425279b2000610 2-3,5,9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "482bf7f0f0d99612ed4232ff89f4bea2147f7a1c",
+  "prompts": {},
+  "sessions": {
+    "s_397b5a20224eaa": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1aae3-a475-75cb-9430-4462f4b0f4ad",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
