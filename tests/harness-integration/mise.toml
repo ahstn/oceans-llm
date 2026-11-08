@@ -5,7 +5,7 @@
 description = "Install native coding-harness integration test dependencies"
 sources = ["package-lock.json", "package.json"]
 outputs = ["node_modules/.package-lock.json"]
-run = "npm ci"
+run = ["npm ci", "bun node_modules/@opencode/cli/postinstall.mjs"]
 
 [tasks.typecheck]
 description = "Typecheck native coding-harness integration tests"
@@ -16,3 +16,8 @@ run = "npm run typecheck"
 description = "Run Pi and OpenCode live integration tests through Oceans"
 depends = ["install"]
 run = "npm test"
+
+[tasks.plugin-test]
+description = "Verify packed Oceans discovery plugin with live OpenAI and Anthropic models through OpenRouter"
+depends = ["install"]
+run = "npm test -- src/opencode-plugin.test.ts"
