@@ -1,0 +1,112 @@
+name: OpenCode Oceans plugin
+
+on:
+  pull_request:
+    paths:
+      - "packages/opencode-oceans/**"
+      - "actions/.oxlintrc.json"
+      - "actions/.oxfmtrc.json"
+      - ".github/workflows/opencode-oceans.yml"
+      - "mise.toml"
+      - "mise.lock"
+  push:
+    branches: ["main"]
+    paths:
+      - "packages/opencode-oceans/**"
+      - "actions/.oxlintrc.json"
+      - "actions/.oxfmtrc.json"
+      - ".github/workflows/opencode-oceans.yml"
+      - "mise.toml"
+      - "mise.lock"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag (opencode-oceans-vX.Y.Z); dispatch from main"
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ inputs.tag || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+permissions:
+  contents: read
+
+env:
+  MISE_TASK_RUN_AUTO_INSTALL: "false"
+  MISE_EXEC_AUTO_INSTALL: "false"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      commit: ${{ steps.release.outputs.commit }}
+    steps:
+      - name: Checkout package revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.sha }}
+          persist-credentials: false
+
+      - name: Setup mise and Bun
+        uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          install_args: bun
+
+      - name: Validate release identity
+        id: release
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_EVENT: ${{ github.event_name }}
+          DISPATCH_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$RELEASE_EVENT" = workflow_dispatch ]; then
+            test "$DISPATCH_REF" = refs/heads/main
+            mise exec -- bun -e '
+              const pkg = await Bun.file("packages/opencode-oceans/package.json").json();
+              const tag = process.env.RELEASE_TAG;
+              if (!/^opencode-oceans-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(tag ?? "") ||
+                  tag !== "opencode-oceans-v" + pkg.version ||
+                  pkg.name !== "@ahstn/opencode-oceans" ||
+                  pkg.publishConfig?.registry !== "https://npm.pkg.github.com" ||
+                  pkg.publishConfig?.access !== "public") {
+                throw new Error("Release tag, package version, name, registry, or access does not match");
+              }
+            '
+          fi
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Check package with frozen dependencies
+        run: mise run //opencode:check
+
+      - name: Pack source package
+        working-directory: packages/opencode-oceans
+        run: mise exec -- bun run pack
+
+  publish:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'ahstn/oceans-llm'
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout checked release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.check.outputs.commit }}
+          persist-credentials: false
+
+      - name: Setup mise and Bun
+        uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          install_args: bun
+
+      - name: Publish source package to GitHub Packages
+        working-directory: packages/opencode-oceans
+        env:
+          NPM_CONFIG_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: mise exec -- bun publish --access public --tag latest

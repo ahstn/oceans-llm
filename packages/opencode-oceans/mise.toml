@@ -1,0 +1,51 @@
+#:schema https://mise.jdx.dev/schema/mise.json
+# From anywhere in the repository: mise run //opencode:check.
+
+[tasks.install]
+description = "Install OpenCode plugin dependencies from the frozen lockfile"
+run = "bun install --frozen-lockfile"
+
+[tasks.typecheck]
+description = "Typecheck TypeScript and report Effect diagnostics"
+depends = ["install"]
+run = "bun run typecheck"
+
+[tasks.diagnostics]
+description = "Report standalone Effect diagnostics"
+depends = ["install"]
+run = "bun run diagnostics"
+
+[tasks.test]
+description = "Run OpenCode plugin unit tests"
+depends = ["install"]
+run = "bun run test"
+
+[tasks.lint]
+description = "Lint the OpenCode plugin"
+depends = ["install"]
+run = "bun run lint"
+
+[tasks.fmt]
+description = "Format the OpenCode plugin"
+depends = ["install"]
+run = "bun run fmt"
+
+[tasks.fmt-check]
+description = "Check OpenCode plugin formatting without modifications"
+depends = ["install"]
+run = "bun run fmt:check"
+
+[tasks.smoke]
+description = "Exercise plugin integration against a local mock gateway"
+depends = ["install"]
+run = "bun run smoke"
+
+[tasks.check]
+description = "Typecheck, test, lint, format-check, and smoke-test the OpenCode plugin"
+depends = ["typecheck", "test", "lint", "fmt-check"]
+run = "bun run smoke"
+
+[tasks.pack]
+description = "Create the source-only OpenCode plugin package in dist"
+depends = ["check"]
+run = "bun run pack"

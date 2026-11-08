@@ -161,7 +161,7 @@ export class OpenCodeAdapter implements HarnessAdapter {
   }
 }
 
-interface PrivateServer {
+export interface PrivateServer {
   url: string;
   /** Client environment, including the server password. */
   env: NodeJS.ProcessEnv;
@@ -172,7 +172,7 @@ interface PrivateServer {
  * it running across several client commands. Without a private server, OpenCode V2 reuses a shared
  * background service that ignores this process's environment and config.
  */
-async function withPrivateServer<T>(
+export async function withPrivateServer<T>(
   workspace: string,
   environment: NodeJS.ProcessEnv,
   use: (server: PrivateServer) => Promise<T>,
