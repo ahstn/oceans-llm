@@ -6,9 +6,9 @@
 
 ## Current state
 
-- [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), for the Images API routes and the `images` route capability
-- [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), for provider-reported cost and `image_output_usd_per_million_tokens`
-- [Observability and Request Logs](../operations/observability-and-request-logs.md), for the image and reasoning large-field paths
+- [Model Routing and API Behavior](https://oceans-llm.com/configuration/model-routing/), for the Images API routes and the `images` route capability
+- [Pricing Catalog and Accounting](https://oceans-llm.com/spend/pricing-and-accounting/), for provider-reported cost and `image_output_usd_per_million_tokens`
+- [Observability and Request Logs](https://oceans-llm.com/observability/), for the image and reasoning large-field paths
 - [Verification recipe: Image generation](../../.agents/skills/verify-oceans-admin/features/image-generation.md)
 
 ## Context

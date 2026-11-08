@@ -1,8 +1,8 @@
 # Budgets and Spending
 
-`See also`: [Budgets](../../access/budgets.md), [Data Relationships](../reference/data-relationships.md), [Pricing Catalog and Accounting](../../configuration/pricing-catalog-and-accounting.md), [Request Lifecycle and Failure Modes](../../reference/request-lifecycle-and-failure-modes.md), [Identity and Access](../../access/identity-and-access.md), [Service Accounts](../../access/service-accounts.md), [Admin Control Plane](../../access/admin-control-plane.md)
+`See also`: [Budgets](https://oceans-llm.com/spend/budgets/), [Data Relationships](../reference/data-relationships.md), [Pricing Catalog and Accounting](https://oceans-llm.com/spend/pricing-and-accounting/), [Request Lifecycle and Failure Modes](https://oceans-llm.com/reference/request-lifecycle/), [Identity and Access](https://oceans-llm.com/access/identity-and-access/), [Service Accounts](https://oceans-llm.com/access/service-accounts/), [Admin Control Plane](https://oceans-llm.com/access/admin-control-plane/)
 
-This page is the developer/operator contract for spend accounting and budget enforcement. Product-facing setup guidance lives in [Budgets](../../access/budgets.md).
+This page is the developer/operator contract for spend accounting and budget enforcement. Product-facing setup guidance lives in [Budgets](https://oceans-llm.com/spend/budgets/).
 
 ## Source of Truth
 

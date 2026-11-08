@@ -1,6 +1,6 @@
 # MCP Gateway Auth Alignment Interview
 
-`See also`: [MCP Registry and Discovery](../mcp/mcp-registry-and-discovery.md), [Identity and Access](../../access/identity-and-access.md), [Admin Control Plane](../../access/admin-control-plane.md)
+`See also`: [MCP Registry and Discovery](../mcp/mcp-registry-and-discovery.md), [Identity and Access](https://oceans-llm.com/access/identity-and-access/), [Admin Control Plane](https://oceans-llm.com/access/admin-control-plane/)
 
 Date: 2026-05-27
 

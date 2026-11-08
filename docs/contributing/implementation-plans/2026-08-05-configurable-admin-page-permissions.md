@@ -1,6 +1,6 @@
 # Configurable Admin Page Permissions
 
-`See also`: [Identity and Access](../../access/identity-and-access.md), [Admin Control Plane](../../access/admin-control-plane.md), [Configuration Reference](../../configuration/configuration-reference.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../../adr/2026-05-10-team-service-accounts.md)
+`See also`: [Identity and Access](https://oceans-llm.com/access/identity-and-access/), [Admin Control Plane](https://oceans-llm.com/access/admin-control-plane/), [Configuration Reference](https://oceans-llm.com/configuration/), [ADR: Team Service Accounts for Non-Human Gateway Access](../../adr/2026-05-10-team-service-accounts.md)
 
 - Date: 2026-08-05
 - Status: Implemented
@@ -44,7 +44,7 @@ The default `users` set will include Leaderboard, Agent Harnesses, and Service A
 
 ### Follow-up
 
-On 2026-08-06, a later change added enforced API-key actions to the same permission sets. The non-goal above records the scope of this original page-permission phase. See the [ADR amendment](../../adr/2026-08-05-configurable-admin-page-permissions.md#amendment-api-key-action-permissions) and the current [`permissions` config reference](../../configuration/configuration-reference.md#permissions).
+On 2026-08-06, a later change added enforced API-key actions to the same permission sets. The non-goal above records the scope of this original page-permission phase. See the [ADR amendment](../../adr/2026-08-05-configurable-admin-page-permissions.md#amendment-api-key-action-permissions) and the current [`permissions` config reference](https://oceans-llm.com/access/access-settings/#permissions).
 
 ## Current Behavior
 
@@ -346,9 +346,9 @@ Files:
 - `gateway.prod.yaml`
 - `deploy/config/gateway.yaml`
 - `deploy/config/gateway.local.yaml`
-- `docs/configuration/configuration-reference.md`
-- `docs/access/identity-and-access.md`
-- `docs/access/admin-control-plane.md`
+- [Configuration reference](https://oceans-llm.com/configuration/)
+- [Identity and access](https://oceans-llm.com/access/identity-and-access/)
+- [Admin control plane](https://oceans-llm.com/access/admin-control-plane/)
 - a new ADR under `docs/adr/`
 
 Use the Configuration Reference as the canonical syntax page. Use Identity and Access as the canonical page for group inheritance and data scope. Keep the Admin Control Plane page concise and link to those owners.

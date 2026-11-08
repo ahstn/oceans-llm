@@ -24,7 +24,6 @@
       "reason": "documentation only",
       "paths": [
         "docs/**",
-        "docs-nimbus/**",
         "*.md",
         "crates/**/*.md",
         ".github/**/*.md",

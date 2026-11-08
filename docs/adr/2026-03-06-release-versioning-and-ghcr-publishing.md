@@ -8,14 +8,14 @@ GitHub release creation and distribution workflow ownership are superseded by [C
 ## Current state
 
 - [../release-process.md](../contributing/reference/release-process.md)
-- [../deploy-and-operations.md](../setup/deploy-and-operations.md)
+- [Topology and operations](https://oceans-llm.com/setup/deploy-and-operations/)
 
 ## Context
 
 Implemented by:
 
 - [../release-process.md](../contributing/reference/release-process.md)
-- [../deploy-and-operations.md](../setup/deploy-and-operations.md)
+- [Topology and operations](https://oceans-llm.com/setup/deploy-and-operations/)
 
 The repository had a single Rust CI workflow, no release workflow, no Docker image publishing, no release tags, and no structured release-note configuration. The codebase also ships two deployable applications:
 

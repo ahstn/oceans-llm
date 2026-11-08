@@ -6,8 +6,8 @@
 
 ## Current state
 
-- [MCP Client Setup: OAuth sign-in](../mcp/mcp-client-setup.md#oauth-sign-in)
-- [MCP Servers: OAuth for Any MCP Server](../configuration/mcp-servers.md#oauth-for-any-mcp-server)
+- [MCP Client Setup: OAuth sign-in](https://oceans-llm.com/extensions/mcp-client-setup/#sign-in-with-oauth)
+- [MCP Servers: OAuth for Any MCP Server](https://oceans-llm.com/extensions/mcp-servers/#oauth-for-any-mcp-server)
 
 ## Context
 

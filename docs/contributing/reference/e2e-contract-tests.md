@@ -1,6 +1,6 @@
 # End-to-End Contract Tests
 
-`See also`: [Admin Control Plane](../../access/admin-control-plane.md), [Admin API Contract Workflow](admin-api-contract-workflow.md)
+`See also`: [Admin Control Plane](https://oceans-llm.com/access/admin-control-plane/), [Admin API Contract Workflow](admin-api-contract-workflow.md)
 
 The E2E harness boots three real processes:
 

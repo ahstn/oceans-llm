@@ -1,6 +1,6 @@
 # Gateway config for the self-hosted (mise daemons) deployment.
 # Loopback bind only: put a reverse proxy or `tailscale serve` in front. Secrets
-# come from `mise.selfhost.local.toml` (see docs/setup/self-hosting-mise-daemons.md).
+# come from `mise.selfhost.local.toml` (see https://oceans-llm.com/setup/self-hosting/).
 server:
   bind: "127.0.0.1:8080"
   log_format: "json"
@@ -67,8 +67,8 @@ service_accounts:
           - claude-sonnet-latest
           - deepseek-flash-latest
 
-# Replace with the providers and models you actually use. Reference
-# docs/configuration/configuration-reference.md for every provider type.
+# Replace with the providers and models you actually use. See
+# https://oceans-llm.com/configuration/providers/ for every provider type.
 providers:
   - id: openrouter
     type: openai_compat

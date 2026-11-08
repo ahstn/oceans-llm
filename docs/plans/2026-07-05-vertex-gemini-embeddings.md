@@ -1,6 +1,6 @@
 # Vertex Gemini Embeddings Implementation Plan
 
-`See also`: [Google Vertex AI](../providers/gcp-vertex.md), [Provider API Compatibility](../reference/provider-api-compatibility.md), [Model Routing and APIs](../configuration/model-routing-and-api-behavior.md), [Budgets](../access/budgets.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md)
+`See also`: [Google Vertex AI](https://oceans-llm.com/providers/gcp-vertex/), [Provider API Compatibility](https://oceans-llm.com/reference/provider-api-compatibility/), [Model Routing and APIs](https://oceans-llm.com/configuration/model-routing/), [Budgets](https://oceans-llm.com/spend/budgets/), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [Pricing Catalog and Accounting](https://oceans-llm.com/spend/pricing-and-accounting/)
 
 - Date: 2026-07-05
 - Status: Draft plan
@@ -26,7 +26,7 @@ The implementation should be conservative. Do not infer token usage from charact
 2. Keep the synchronous OpenAI-compatible endpoint. Async batch embeddings, vector database storage, and multimodal Gemini Embedding 2 inputs remain out of scope.
 3. Reject unsupported OpenAI features locally for this provider path instead of forwarding malformed requests to Vertex.
 4. Preserve the existing generic handler/accounting flow. Vertex-specific work belongs in provider mapping, response normalization, and capability derivation.
-5. Keep user-facing budget setup in `docs/access/budgets.md`; keep ledger/pricing/budget internals in `docs/contributing/operations/budgets-and-spending.md` and `docs/configuration/pricing-catalog-and-accounting.md`.
+5. Keep user-facing budget setup in [Budgets](https://oceans-llm.com/spend/budgets/); keep ledger/pricing/budget internals in `docs/contributing/operations/budgets-and-spending.md` and [Pricing catalog and accounting](https://oceans-llm.com/spend/pricing-and-accounting/).
 
 ## Goals
 
@@ -66,7 +66,7 @@ Observed from the codebase:
 - Initial planning found `crates/gateway-service/src/admin_models.rs::provider_capabilities` treating non-Anthropic `gcp_vertex` as `chat_only_streaming()`; admin/model views now use the shared Vertex route capability metadata.
 - `crates/gateway-service/src/pricing_catalog.rs` maps `gcp_vertex` `google/<model_id>` routes to pricing provider `google-vertex` and model id `<model_id>`.
 - `crates/gateway-service/data/pricing_catalog_fallback.json` contains input pricing for `google-vertex/gemini-embedding-001` and `google-vertex/gemini-embedding-2`.
-- `docs/providers/gcp-vertex.md`, `docs/reference/provider-api-compatibility.md`, and `docs/configuration/model-routing-and-api-behavior.md` document current Vertex embedding support and capability gating.
+- [Google Vertex AI](https://oceans-llm.com/providers/gcp-vertex/), [Provider API compatibility](https://oceans-llm.com/reference/provider-api-compatibility/), and [Model routing and APIs](https://oceans-llm.com/configuration/model-routing/) document current Vertex embedding support and capability gating.
 
 ## External API Facts Used For Planning
 
@@ -278,7 +278,7 @@ Route `extra_body` policy:
 
 - Prefer not to rely on `extra_body` for ordinary embedding parameters; request fields should be documented and validated.
 - If `extra_body` is applied, merge it after generated body only for admin-controlled experiments, then re-run validation so route config cannot bypass local safeguards.
-- Document any final override behavior in `docs/providers/gcp-vertex.md` and `docs/reference/provider-api-compatibility.md`.
+- Document any final override behavior in [Google Vertex AI](https://oceans-llm.com/providers/gcp-vertex/) and [Provider API compatibility](https://oceans-llm.com/reference/provider-api-compatibility/).
 
 ### 5. Preserve OpenAI Array Semantics
 
@@ -415,7 +415,7 @@ Do not estimate request spend from input character length or output dimensions.
 
 ### Budget Documentation Split
 
-User-facing `docs/access/budgets.md` should explain:
+User-facing [Budgets](https://oceans-llm.com/spend/budgets/) should explain:
 
 - budget taxonomy: user budgets, service-account budgets, user model budgets
 - embedding requests are chargeable gateway traffic when usage/pricing are available
@@ -462,34 +462,34 @@ Config/admin docs should recommend explicit route capabilities. Do not rely on p
 
 Update these pages after implementation:
 
-1. `docs/providers/gcp-vertex.md`
+1. [Google Vertex AI](https://oceans-llm.com/providers/gcp-vertex/)
    - Replace blanket unsupported statement for `/v1/embeddings`.
    - Add Vertex embeddings route example.
    - Add curl and OpenAI SDK examples.
    - Document supported models, request parameters, limits, fan-out behavior, usage/pricing/budget notes, and troubleshooting.
    - Keep chat Gemini examples with `embeddings: false`.
 
-2. `docs/reference/provider-api-compatibility.md`
+2. [Provider API compatibility](https://oceans-llm.com/reference/provider-api-compatibility/)
    - Update provider endpoint matrix for `gcp_vertex` `google/*` embeddings.
    - Keep `anthropic/*` embeddings as not applicable.
    - Add Vertex embeddings compatibility section for input support, local rejections, parameter mapping, response normalization, usage/pricing caveats.
    - Remove or reclassify #103 as completed after implementation lands.
 
-3. `docs/configuration/model-routing-and-api-behavior.md`
+3. [Model routing and APIs](https://oceans-llm.com/configuration/model-routing/)
    - Replace current limitation saying Vertex embeddings are out of scope.
    - Explain embedding route capability filtering and embedding-only Vertex routes.
    - Add failure examples for capability mismatch and unsupported input.
 
-4. `docs/configuration/configuration-reference.md`
+4. [Configuration reference](https://oceans-llm.com/configuration/)
    - Add a Vertex embedding-only route example.
    - Add `gcp_vertex` caveat that pricing is inferred from `google/*` and embedding routes should declare explicit capabilities.
 
-5. `docs/access/budgets.md`
+5. [Budgets](https://oceans-llm.com/spend/budgets/)
    - Add user-facing section for embedding spend and budgets per model.
    - Include steps for a user model budget targeting an embedding gateway model.
    - Keep taxonomy, setup, and principal model here.
 
-6. `docs/access/admin-control-plane.md`
+6. [Admin control plane](https://oceans-llm.com/access/admin-control-plane/)
    - Broaden current capability visibility wording from Responses-only to Responses and embeddings.
 
 ### Developer/Maintainer Docs
@@ -498,16 +498,16 @@ Update these pages after implementation:
 
 1. `docs/contributing/operations/budgets-and-spending.md`
    - Add embeddings-specific ledger lifecycle details.
-   - Keep setup/taxonomy out of this page; link to `docs/access/budgets.md`.
+   - Keep setup/taxonomy out of this page; link to [Budgets](https://oceans-llm.com/spend/budgets/).
 
-2. `docs/configuration/pricing-catalog-and-accounting.md`
+2. [Pricing catalog and accounting](https://oceans-llm.com/spend/pricing-and-accounting/)
    - Document Vertex embedding pricing behavior, `usage_missing`, `unpriced`, and input-token-only charging.
    - State whether dimensions/task/truncation affects pricing status.
 
-3. `docs/reference/request-lifecycle-and-failure-modes.md`
+3. [Request lifecycle and failure modes](https://oceans-llm.com/reference/request-lifecycle/)
    - Add Vertex embeddings lifecycle/failure examples.
 
-4. `docs/operations/observability-and-request-logs.md`
+4. [Observability and request logs](https://oceans-llm.com/observability/)
    - Add a note that native Vertex embeddings log `operation: embeddings`, provider attempts, and sanitized payloads through existing policy.
 
 5. Historical ADRs

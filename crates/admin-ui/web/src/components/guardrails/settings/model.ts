@@ -82,12 +82,12 @@ export const MANAGED_KINDS = [
   {
     kind: 'amazon_bedrock',
     label: 'Amazon Bedrock Guardrails',
-    docs: 'https://github.com/ahstn/oceans-llm/blob/main/docs/operations/gateway-guardrails.md#amazon-bedrock-guardrails',
+    docs: 'https://oceans-llm.com/operations/gateway-guardrails/#amazon-bedrock-guardrails',
   },
   {
     kind: 'google_model_armor',
     label: 'Google Model Armor',
-    docs: 'https://github.com/ahstn/oceans-llm/blob/main/docs/operations/gateway-guardrails.md#google-cloud-model-armor',
+    docs: 'https://oceans-llm.com/operations/gateway-guardrails/#google-cloud-model-armor',
   },
 ]
 

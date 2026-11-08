@@ -1,6 +1,6 @@
 # Release Process
 
-`See also`: [Contributing](../../../CONTRIBUTING.md), [Deploy and Operations](../../setup/deploy-and-operations.md), [Admin Runbooks](../../operations/operator-runbooks.md), [ADR: Cocogitto Releases, git-cliff Changelogs, and GHCR Image Publishing](../../adr/2026-03-06-release-versioning-and-ghcr-publishing.md), [ADR: git-cliff Owns Release Versioning and a Pull-Request Changelog](../../adr/2026-10-18-git-cliff-release-versioning-and-pull-request-changelog.md)
+`See also`: [Contributing](../../../CONTRIBUTING.md), [Topology and operations](https://oceans-llm.com/setup/deploy-and-operations/), [Admin Runbooks](https://oceans-llm.com/operations/admin-runbooks/), [ADR: Cocogitto Releases, git-cliff Changelogs, and GHCR Image Publishing](../../adr/2026-03-06-release-versioning-and-ghcr-publishing.md), [ADR: git-cliff Owns Release Versioning and a Pull-Request Changelog](../../adr/2026-10-18-git-cliff-release-versioning-and-pull-request-changelog.md)
 
 This runbook explains how maintainers publish an Oceans LLM release.
 

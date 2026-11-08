@@ -1,8 +1,8 @@
 # Agent Session Analysis Architecture
 
-`See also`: [Agent Session Analysis](../../operations/agent-session-analysis.md), [Admin API Contract Workflow](admin-api-contract-workflow.md), [Data Relationships](data-relationships.md), [Passive, Versioned Agent Session Analysis](../../adr/2026-07-21-passive-agent-session-analysis.md)
+`See also`: [Agent Session Analysis](https://oceans-llm.com/observability/agent-session-analysis/), [Admin API Contract Workflow](admin-api-contract-workflow.md), [Data Relationships](data-relationships.md), [Passive, Versioned Agent Session Analysis](../../adr/2026-07-21-passive-agent-session-analysis.md)
 
-This page is the maintainer reference for the passive correlation, immutable analysis, storage, API, and admin-UI pipeline tracked by [issue #255](https://github.com/ahstn/oceans-llm/issues/255). Admin-facing behavior and runtime flags belong in [Agent Session Analysis](../../operations/agent-session-analysis.md).
+This page is the maintainer reference for the passive correlation, immutable analysis, storage, API, and admin-UI pipeline tracked by [issue #255](https://github.com/ahstn/oceans-llm/issues/255). Admin-facing behavior and runtime flags belong in [Agent Session Analysis](https://oceans-llm.com/observability/agent-session-analysis/).
 
 ## Ownership Boundaries
 

@@ -24,7 +24,7 @@ Clients use `POST /v1/messages` (or `/messages`) with Anthropic messages, tools,
 Preconditions:
 
 - Run `control-oceans-admin plan` first. Use an explicit base ref when the checkout has no `origin/main` or `main`.
-- Read the [native contract](../../../../docs/reference/provider-api-compatibility.md#native-messages-thinking-controls) and [research matrix](../../../../docs/internal/anthropic-thinking-compatibility.md) when model behavior changes. Model capabilities and effort ceilings must match the selected scenario.
+- Read the [native contract](https://oceans-llm.com/reference/provider-api-compatibility/#native-messages-thinking-controls) and [research matrix](../../../../docs/internal/anthropic-thinking-compatibility.md) when model behavior changes. Model capabilities and effort ceilings must match the selected scenario.
 - Run only the isolated stack owned by this run; `control-oceans-admin doctor` must pass before browser work and after any failed drive.
 - The [live LLM policy](./live-llm-requests.md) authorizes one bounded canary for request-path verification when credentials are available. Do not run the effort matrix against paid providers. Tool loops and additional native scenarios have their own explicit call budgets.
 

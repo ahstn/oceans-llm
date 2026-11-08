@@ -34,7 +34,7 @@ Configuring OpenCode Zen as `openai_compat` fails because `openai_compat` always
 - `crates/gateway/src/config/providers.rs` & `crates/gateway/src/config.rs`: Parses, validates, and seeds `anthropic_compat` configurations.
 - `crates/gateway/src/main.rs`: Registers `AnthropicCompatProvider` in the runtime provider registry.
 - `crates/gateway-client-config/src/templates/pi.rs`: Emits `"max": "max"` in Pi's `thinkingLevelMap`.
-- `docs/providers/opencode-zen.md`: Documentation and configuration examples for OpenCode Zen and Pi.
+- [OpenCode Zen](https://oceans-llm.com/providers/opencode-zen/): Documentation and configuration examples for OpenCode Zen and Pi.
 
 ## Trade-Offs
 
@@ -43,4 +43,4 @@ Configuring OpenCode Zen as `openai_compat` fails because `openai_compat` always
 
 ## Amendment: forced tool choice by model (2026-10-20)
 
-The forced `tool_choice` check now follows the upstream model list instead of the `claude-fable-5` marker. Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, and Claude Sonnet 5.5 reject forced choice; Claude Fable 5, which the marker also matched, accepts it. `claude_rejects_forced_tool_choice` in `crates/gateway-core/src/claude_models.rs` (shared with the client-config generator) classifies models by family and minor version, and Bedrock Converse and Runtime Anthropic routes now apply the same check. See [forced tool choice](../reference/provider-api-compatibility.md#forced-tool-choice).
+The forced `tool_choice` check now follows the upstream model list instead of the `claude-fable-5` marker. Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, and Claude Sonnet 5.5 reject forced choice; Claude Fable 5, which the marker also matched, accepts it. `claude_rejects_forced_tool_choice` in `crates/gateway-core/src/claude_models.rs` (shared with the client-config generator) classifies models by family and minor version, and Bedrock Converse and Runtime Anthropic routes now apply the same check. See [forced tool choice](https://oceans-llm.com/reference/provider-api-compatibility/#forced-tool-choice).

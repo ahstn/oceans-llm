@@ -16,10 +16,10 @@
 
 ## Current state
 
-- [../configuration/configuration-reference.md](../configuration/configuration-reference.md)
-- [../access/identity-and-access.md](../access/identity-and-access.md)
+- [Configuration reference](https://oceans-llm.com/configuration/)
+- [Identity and access](https://oceans-llm.com/access/identity-and-access/)
 - [../operations/budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
-- [../setup/runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)
+- [Start up and first access](https://oceans-llm.com/setup/first-access/)
 
 ## Context
 
@@ -191,11 +191,11 @@ Why:
 
 Canonical docs updated with the new contract:
 
-- [../configuration/configuration-reference.md](../configuration/configuration-reference.md)
-- [../access/identity-and-access.md](../access/identity-and-access.md)
+- [Configuration reference](https://oceans-llm.com/configuration/)
+- [Identity and access](https://oceans-llm.com/access/identity-and-access/)
 - [../operations/budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
-- [../setup/runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)
-- [../access/oidc-and-sso-status.md](../access/oidc-and-sso-status.md)
+- [Start up and first access](https://oceans-llm.com/setup/first-access/)
+- [OIDC and SSO](https://oceans-llm.com/access/sso/)
 
 ## Consequences
 

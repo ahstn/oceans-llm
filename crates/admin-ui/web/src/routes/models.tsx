@@ -62,8 +62,7 @@ import {
 const DEFAULT_PAGE = 1
 const DEFAULT_PAGE_SIZE = 30
 
-const CLIENT_HARNESS_CONFIGURATION_URL =
-  'https://oceans-llm.com/configuration/client-harness-configuration.html'
+const CLIENT_HARNESS_CONFIGURATION_URL = 'https://oceans-llm.com/harnesses/'
 
 type PricingSourceRefresh = RefreshModelPricingCatalogResponse['sources'][number]
 

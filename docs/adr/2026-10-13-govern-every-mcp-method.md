@@ -5,7 +5,7 @@
 
 ## Current state
 
-- [MCP Tool Access](../mcp/mcp-tool-access.md#other-methods-on-direct-mcpserver_key)
+- [MCP Tool Access](https://oceans-llm.com/extensions/mcp-tool-access/#other-methods-on-the-direct-endpoint)
 
 ## Context
 

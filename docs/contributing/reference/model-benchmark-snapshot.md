@@ -1,6 +1,6 @@
 # Model Benchmark Snapshot
 
-`See also`: [Configuration Reference](../../configuration/configuration-reference.md#benchmark-catalogue), [ADR: OpenRouter benchmark snapshot](../../adr/2026-09-24-openrouter-benchmark-snapshot.md)
+`See also`: [Configuration Reference](https://oceans-llm.com/configuration/#benchmark-catalog), [ADR: OpenRouter benchmark snapshot](../../adr/2026-09-24-openrouter-benchmark-snapshot.md)
 
 This page is maintainer-facing. It explains how the vendored benchmark snapshot behind the admin Models page is refreshed.
 

@@ -1,6 +1,6 @@
 # Service Account Config and Managed API Key Secrets
 
-`See also`: [Configuration Reference](../configuration/configuration-reference.md), [Service Accounts](../access/service-accounts.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [Issue 206 Implementation Plan](../contributing/implementation-plans/issue-206-service-account-config.md)
+`See also`: [Configuration Reference](https://oceans-llm.com/configuration/), [Service Accounts](https://oceans-llm.com/access/service-accounts/), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [Issue 206 Implementation Plan](../contributing/implementation-plans/issue-206-service-account-config.md)
 
 ## Status
 

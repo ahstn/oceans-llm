@@ -5,7 +5,7 @@
 
 ## Current state
 
-- [../pricing-catalog-and-accounting.md](../configuration/pricing-catalog-and-accounting.md)
+- [Pricing catalog and accounting](https://oceans-llm.com/spend/pricing-and-accounting/)
 - [../budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
 - [../data-relationships.md](../contributing/reference/data-relationships.md)
 

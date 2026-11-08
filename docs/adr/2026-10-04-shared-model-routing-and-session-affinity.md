@@ -79,6 +79,6 @@ Configuration is YAML-only for this implementation. The admin UI does not expose
 
 ## References
 
-- [Model Routing and APIs](../configuration/model-routing-and-api-behavior.md#control-route-selection)
+- [Model Routing and APIs](https://oceans-llm.com/configuration/model-routing/#route-selection)
 - [Capability-Aware Route Gating](2026-03-13-capability-aware-route-gating.md)
 - [Durable Provider Batch Processing](2026-08-17-durable-provider-batch-processing.md)

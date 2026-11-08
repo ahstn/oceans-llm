@@ -11,8 +11,8 @@
 
 ## Current state
 
-- [../identity-and-access.md](../access/identity-and-access.md)
-- [../admin-control-plane.md](../access/admin-control-plane.md)
+- [Identity and access](https://oceans-llm.com/access/identity-and-access/)
+- [Admin control plane](https://oceans-llm.com/access/admin-control-plane/)
 
 ## Context
 
@@ -209,8 +209,8 @@ The UI remains a thin control plane over same-origin server functions and route 
 
 Canonical docs were updated alongside the code:
 
-- [../identity-and-access.md](../access/identity-and-access.md)
-- [../admin-control-plane.md](../access/admin-control-plane.md)
+- [Identity and access](https://oceans-llm.com/access/identity-and-access/)
+- [Admin control plane](https://oceans-llm.com/access/admin-control-plane/)
 - [../e2e-contract-tests.md](../contributing/reference/e2e-contract-tests.md)
 
 ## Consequences

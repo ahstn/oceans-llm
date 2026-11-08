@@ -1,15 +1,40 @@
 {
   "name": "oceans-llm-docs",
+  "version": "0.0.1",
   "private": true,
+  "type": "module",
   "scripts": {
-    "docs:dev": "vitepress dev . --host 0.0.0.0",
-    "docs:build": "vitepress build .",
-    "docs:preview": "vitepress preview . --host 0.0.0.0"
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "typecheck": "astro check",
+    "lint:docs": "nimbus-docs lint",
+    "lint:docs:fix": "nimbus-docs lint --fix",
+    "preview:cf": "wrangler pages dev",
+    "deploy": "wrangler pages deploy"
   },
-  "devDependencies": {
+  "dependencies": {
+    "@cloudflare/nimbus-docs": "^0.19.2",
     "@fontsource-variable/geist": "5.3.0",
     "@fontsource-variable/geist-mono": "5.3.0",
-    "@hugeicons/core-free-icons": "4.4.0",
-    "vitepress": "1.6.4"
+    "@iconify-json/ph": "^1.2.0",
+    "@readme/httpsnippet": "11.4.0",
+    "@resvg/resvg-js": "^2.6.2",
+    "@scalar/openapi-parser": "0.28.12",
+    "astro": "7.3.3",
+    "clsx": "^2.1.1",
+    "openapi-sampler": "1.7.4",
+    "satori": "^0.26.0",
+    "sharp": "^0.35.4",
+    "tailwind-merge": "^3.5.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.8",
+    "@astrojs/language-server": "2.16.13",
+    "@tailwindcss/vite": "^4.1.4",
+    "pagefind": "^1.5.2",
+    "tailwindcss": "^4.1.4",
+    "typescript": "^5.8.3",
+    "wrangler": "^4.95.0"
   }
 }

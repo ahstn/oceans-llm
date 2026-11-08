@@ -7,14 +7,14 @@
 ## Implemented By
 
 - Canonical docs:
-  - [../identity-and-access.md](../access/identity-and-access.md)
+  - [Identity and access](https://oceans-llm.com/access/identity-and-access/)
   - [../data-relationships.md](../contributing/reference/data-relationships.md)
-  - [../admin-control-plane.md](../access/admin-control-plane.md)
+  - [Admin control plane](https://oceans-llm.com/access/admin-control-plane/)
 
 ## Current state
 
-- [../identity-and-access.md](../access/identity-and-access.md)
-- [../runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)
+- [Identity and access](https://oceans-llm.com/access/identity-and-access/)
+- [Start up and first access](https://oceans-llm.com/setup/first-access/)
 - [../data-relationships.md](../contributing/reference/data-relationships.md)
 
 ## Context

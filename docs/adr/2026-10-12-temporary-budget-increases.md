@@ -5,8 +5,8 @@
 
 ## Current state
 
-- [Budgets](../access/budgets.md#temporary-budget-increases)
-- [Configuration Reference](../configuration/configuration-reference.md#permissions)
+- [Budgets](https://oceans-llm.com/spend/budgets/#temporary-budget-increases)
+- [Auth and access settings](https://oceans-llm.com/access/access-settings/#permissions)
 
 ## Context
 

@@ -11,7 +11,7 @@ exclude_path = [
   "(^|/)videos/",
   "(^|/)gha-research/",
   "node_modules",
-  "(^|/)docs-nimbus/src/content/"
+  "(^|/)docs/src/content/"
 ]
 # Local servers and example hosts in guides are not reachable from CI.
 exclude_loopback = true

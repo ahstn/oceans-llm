@@ -6,7 +6,7 @@
 
 ## Current state
 
-- [../setup/self-hosting-mise-daemons.md](../setup/self-hosting-mise-daemons.md)
+- [Self-hosting with mise](https://oceans-llm.com/setup/self-hosting/)
 
 ## Context
 
