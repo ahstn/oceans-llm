@@ -59,28 +59,7 @@ It prefers `gateways.local.yml` over `gateways.yml`. The local file **replaces**
 the shared file, even when empty or invalid. Missing files produce no gateway providers. Restart
 OpenCode after editing gateway configuration.
 
-The format is the OMP `providers` map. Only entries with `discovery.type: litellm` are used:
-
-```yaml
-providers:
-  oceans:
-    name: Oceans gateway
-    baseUrl: https://gateway.example.com/v1
-    apiKey: [OCEANS_API_KEY, LITELLM_API_KEY]
-    api: openai-completions
-    discovery:
-      type: litellm
-    modelOverrides:
-      claude-sonnet-5-5:
-        api: anthropic-messages
-        input: [text, image, pdf]
-        thinking:
-          mode: anthropic-adaptive
-          efforts: [low, medium, high]
-          defaultLevel: medium
-      gpt-6.1-sol:
-        api: openai-responses
-```
+The format is the OMP `providers` map. Only entries with `discovery.type: litellm` are used. Copy [gateways.example.yml](./gateways.example.yml) to `gateways.yml` in your configuration directory. This single reference includes optional overrides for one OpenAI model and one Anthropic model; discovery normally supplies these settings.
 
 Replace the URL and model names with routes your gateway actually serves. `baseUrl` accepts a gateway
 root or a URL ending in `/v1`; the plugin normalizes the suffix. HTTP(S) URLs must not contain embedded

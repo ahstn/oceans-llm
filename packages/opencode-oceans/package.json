@@ -12,6 +12,7 @@
   },
   "files": [
     "src",
+    "gateways.example.yml",
     "README.md",
     "LICENSE"
   ],
