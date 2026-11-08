@@ -1,0 +1,100 @@
+---
+/**
+ * The request lifecycle beside a trace of one request. Each step's colour
+ * marks its spans; hovering a step dims the others (CSS `:has()`, no script).
+ */
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import SectionHeading from "./SectionHeading.astro";
+import { lifecycle, stepColors, trace } from "./content";
+
+const pct = (seconds: number) => (seconds / trace.total) * 100;
+const ticks = Array.from({ length: Math.floor(trace.total) + 1 }, (_, s) => s);
+
+// Put each label where it fits: after a short bar, inside a long one that
+// reaches the end, or before a short bar near the end.
+const spans = trace.spans.map((span) => {
+  const left = pct(span.start);
+  const width = pct(span.duration);
+  const end = left + width;
+  const place = end < 80 ? "after" : width > 30 ? "inside" : "before";
+  const color = span.step === 0 ? "rgb(232 237 243 / 0.16)" : stepColors[span.step - 1];
+  const [prefix, rest] = span.name.startsWith("gateway.")
+    ? ["gateway.", span.name.slice("gateway.".length)]
+    : ["", span.name];
+  return { ...span, left, width, end, place, color, prefix, rest };
+});
+---
+
+<section aria-labelledby="lp-how" class="lp-section lp-lifecycle">
+  <div class="lp-container grid items-start gap-12 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-16">
+    <div>
+      <SectionHeading id="lp-how" eyebrow={lifecycle.eyebrow} title={lifecycle.title} lede={lifecycle.lede} />
+      <ol class="mt-10 border-b border-border">
+        {
+          lifecycle.steps.map((step, i) => (
+            <li class="lp-step" data-step={i + 1} style={`--c: ${stepColors[i]}`}>
+              <span class="lp-step-num">{String(i + 1).padStart(2, "0")}</span>
+              <p>
+                <span class="font-medium text-foreground">{step.title}.</span> {step.body}
+              </p>
+            </li>
+          ))
+        }
+      </ol>
+      <a href={lifecycle.link.href} class="lp-more mt-6">
+        {lifecycle.link.label}
+        <Icon name="ph:arrow-right" class="size-3.5" />
+      </a>
+    </div>
+
+    <figure data-mode="dark" class="lp-trace lg:sticky lg:top-24">
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-3.5 sm:px-5">
+        <span class="lp-method">{trace.method}</span>
+        <span class="font-mono text-sm text-foreground">{trace.path}</span>
+        <span class="ms-auto rounded-full bg-success-muted px-2 py-0.5 font-mono text-xs text-success">{trace.status}</span>
+        <span class="font-mono text-xs text-muted-foreground">{trace.total} s</span>
+      </div>
+
+      <div class="lp-trace-body" style={`--lp-tick: ${pct(1)}%`}>
+        <div class="lp-trace-row lp-trace-axis" aria-hidden="true">
+          <span>Span</span>
+          <span class="lp-trace-track">
+            {ticks.map((s) => <span class="lp-trace-tick" style={`left: ${pct(s)}%`}>{s} s</span>)}
+          </span>
+        </div>
+        <ul>
+          {
+            spans.map((span) => (
+              <li class="lp-trace-row lp-span" data-step={span.step} style={`--c: ${span.color}`}>
+                <span class="lp-span-name" title={span.name}>
+                  {span.prefix && <span class="max-sm:hidden text-muted-foreground/70">{span.prefix}</span>}
+                  {span.rest}
+                </span>
+                <span class="lp-trace-track">
+                  <span class="lp-bar" style={`left: ${span.left}%; width: max(3px, ${span.width}%)`} />
+                  <span
+                    class:list={["lp-bar-label", `lp-bar-label-${span.place}`, span.step === 0 && "lp-bar-label-root"]}
+                    style={
+                      span.place === "after"
+                        ? `left: calc(${span.end}% + 6px)`
+                        : span.place === "inside"
+                          ? `right: calc(${100 - span.end}% + 8px)`
+                          : `right: calc(${100 - span.left}% + 6px)`
+                    }
+                  >
+                    {span.label}
+                  </span>
+                </span>
+              </li>
+            ))
+          }
+        </ul>
+      </div>
+
+      <figcaption class="border-t border-border px-4 py-3 text-xs text-muted-foreground sm:px-5">
+        {trace.caption}
+        <a href={trace.link.href} class="lp-link-inline ms-1">{trace.link.label}</a>
+      </figcaption>
+    </figure>
+  </div>
+</section>

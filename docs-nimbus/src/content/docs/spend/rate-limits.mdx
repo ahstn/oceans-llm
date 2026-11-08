@@ -117,7 +117,7 @@ When the counter store fails in `open` mode, the gateway admits the request with
 
 ### Retries and fallbacks
 
-- The gateway checks a request once, before any provider attempt. Provider retries and fallbacks inside the gateway are not counted again.
+- The gateway checks a request once, before the provider call. It makes one provider attempt and doesn't retry or fall back to another route ([issue #118](https://github.com/ahstn/oceans-llm/issues/118)). See [Request lifecycle and failure modes](/reference/request-lifecycle/).
 - A client retry is a new request, so it's counted again. The OpenAI and Anthropic Python SDKs retry `429` with backoff by default and read `Retry-After`.
 - Budget rejections use `422` by default, so `429` from this gateway normally means "slow down". If `budgets.exceeded_status_code` is set to `429`, a `429` can also be a budget rejection. Check `error.code`: it's `rate_limited` for a rate limit and `budget_exceeded` for a budget. See [hard and soft limits](/spend/budgets/#hard-and-soft-budgets).
 - Each key can have at most 8 token counts in flight on each gateway instance. The gateway checks that cap before rate limits, and it also returns `429`.

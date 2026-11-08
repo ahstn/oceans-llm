@@ -23,7 +23,7 @@ const nimbusConfig = defineNimbusConfig({
     // `defaultCollapsed` only stamps groups with no explicit value.
     defaultCollapsed: true,
     items: [
-      "index",
+      "introduction",
       "features",
       { label: "Setup", icon: "ph:wrench", collapsed: false, autogenerate: { directory: "setup" } },
       { label: "Server configuration", icon: "ph:gear-six", collapsed: false, autogenerate: { directory: "configuration" } },

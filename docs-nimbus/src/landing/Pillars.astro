@@ -1,0 +1,93 @@
+---
+/**
+ * One row per feature area: copy on one side, a staged screenshot on the
+ * other, alternating. Each stage is a wave backdrop with the main screenshot
+ * bleeding off its right and bottom edges (admin pages read from the top
+ * left, so that corner stays in view) and a crop floating over it.
+ */
+import { Image } from "astro:assets";
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import { cn } from "@/lib/cn";
+import Frame from "./Frame.astro";
+import Float from "./Float.astro";
+import RichText from "./RichText.astro";
+import SectionHeading from "./SectionHeading.astro";
+import { pillars } from "./content";
+---
+
+<section id="features" aria-labelledby="lp-features" class="lp-section">
+  <div class="lp-container">
+    <SectionHeading
+      id="lp-features"
+      eyebrow="Features"
+      title="Everything between your callers and your providers."
+      lede="Oceans takes the shared jobs off each client: keys, routing, budgets, logs and tool access. Adding a provider or changing a policy doesn't mean touching every tool that uses it."
+    />
+
+    {
+      pillars.map((pillar, i) => {
+        const mirror = i % 2 === 1;
+        const { stage } = pillar;
+        return (
+          <article
+            id={pillar.id}
+            aria-labelledby={`lp-${pillar.id}`}
+            class={cn(
+              "grid items-center gap-10 border-t border-border py-16 first-of-type:mt-16 md:py-24 lg:gap-16",
+              mirror
+                ? "lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]"
+                : "lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]",
+            )}
+          >
+            <div class={cn("max-w-[32rem]", mirror && "lg:order-2")}>
+              <p class="lp-eyebrow">
+                <Icon name={pillar.icon} class="size-4" />
+                {pillar.eyebrow}
+              </p>
+              <h3 id={`lp-${pillar.id}`} class="lp-title-sm mt-4">
+                {pillar.title}
+              </h3>
+              <p class="lp-lede mt-5">
+                <RichText runs={pillar.body} />
+              </p>
+              <ul class="mt-7 grid gap-3">
+                {pillar.points.map((point) => (
+                  <li class="flex gap-3 text-[0.9375rem] leading-6 text-muted-foreground">
+                    <Icon name="ph:check" class="mt-1 size-4 shrink-0 text-(--lp-sea)" />
+                    {point}
+                  </li>
+                ))}
+              </ul>
+              <a href={pillar.link.href} class="lp-more mt-8">
+                {pillar.link.label}
+                <Icon name="ph:arrow-right" class="size-3.5" />
+              </a>
+            </div>
+
+            <figure data-mode="dark" class="lp-stage">
+              <Image
+                src={stage.backdrop}
+                alt=""
+                widths={[800, 1200, 1600, 2400]}
+                sizes="(min-width: 1024px) 40rem, 94vw"
+                format="webp"
+                quality={80}
+                class={cn("lp-stage-backdrop", stage.flip && "-scale-x-100")}
+              />
+              <Frame
+                kind={stage.kind}
+                title={stage.title}
+                shot={stage.main}
+                sizes="(min-width: 1024px) 54rem, 130vw"
+                class={stage.kind === "panel" ? "lp-stage-panel" : "lp-stage-window"}
+              />
+              {stage.floats.map((shot) => (
+                <Float shot={shot} sizes="(min-width: 1024px) 26rem, 50vw" />
+              ))}
+            </figure>
+          </article>
+        );
+      })
+    }
+  </div>
+</section>

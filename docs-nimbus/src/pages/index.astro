@@ -1,0 +1,49 @@
+---
+/**
+ * The landing page at `/`, where visitors from oceans-llm.com arrive before
+ * the docs. The docs start at /introduction/. Copy and data live in
+ * src/landing/content.ts; src/pages/index.md.ts serves the same content as
+ * Markdown for agents.
+ */
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import Header from "@/components/Header.astro";
+import { LinkButton } from "@/components/ui/link-button";
+import Hero from "@/landing/Hero.astro";
+import Statement from "@/landing/Statement.astro";
+import Lifecycle from "@/landing/Lifecycle.astro";
+import Pillars from "@/landing/Pillars.astro";
+import Harnesses from "@/landing/Harnesses.astro";
+import Bento from "@/landing/Bento.astro";
+import Deploy from "@/landing/Deploy.astro";
+import Faq from "@/landing/Faq.astro";
+import Closing from "@/landing/Closing.astro";
+import Footer from "@/landing/Footer.astro";
+import { hero, meta } from "@/landing/content";
+import "@/landing/landing.css";
+
+export const prerender = true;
+---
+
+<BaseLayout title={meta.title} description={meta.description} markdownUrl="/index.md">
+  <Header showSidebar={false}>
+    <LinkButton slot="actions" href={hero.primary.href} size="sm" class="max-sm:hidden">
+      {hero.primary.label}
+    </LinkButton>
+  </Header>
+  <main id="main-content" tabindex="-1" class="lp-root">
+    <Hero />
+    <Statement />
+    <Lifecycle />
+    <Pillars />
+    <Harnesses />
+    <Bento />
+    <Deploy />
+    <Faq />
+    <Closing />
+  </main>
+  <Footer />
+</BaseLayout>
+
+<script>
+  import "@/landing/landing.client";
+</script>

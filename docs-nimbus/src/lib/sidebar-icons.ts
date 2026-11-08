@@ -4,7 +4,7 @@
  * isn't listed renders without an icon. Names are Phosphor icons (`ph:`).
  */
 const sidebarIcons: Record<string, string> = {
-  "/": "ph:book-open",
+  "/introduction": "ph:book-open",
   "/features": "ph:rocket-launch",
   "/setup": "ph:compass",
   "/setup/first-access": "ph:sign-in",

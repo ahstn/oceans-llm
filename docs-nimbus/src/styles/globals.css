@@ -216,6 +216,41 @@
 	--nb-shadow-lg: 0 12px 28px -8px rgb(0 0 0 / 0.55);
 }
 
+/* @theme below resolves each --color-* once, at :root. A dark subtree (an
+   element with data-mode="dark" on a light page, such as the landing page's
+   product pictures) needs them resolved again from its own --nb-* values, or
+   bg-card, text-foreground and the rest keep their light colours there. */
+[data-mode="dark"] {
+	--color-background: var(--nb-background);
+	--color-foreground: var(--nb-foreground);
+	--color-card: var(--nb-card);
+	--color-card-foreground: var(--nb-card-foreground);
+	--color-muted: var(--nb-muted);
+	--color-muted-foreground: var(--nb-muted-foreground);
+	--color-accent: var(--nb-accent);
+	--color-accent-foreground: var(--nb-accent-foreground);
+	--color-brand: var(--nb-brand);
+	--color-primary: var(--nb-primary);
+	--color-primary-foreground: var(--nb-primary-foreground);
+	--color-primary-hover: var(--nb-primary-hover);
+	--color-border: var(--nb-border);
+	--color-border-strong: var(--nb-border-strong);
+	--color-selected: var(--nb-selected);
+	--color-ring: var(--nb-ring);
+	--color-info: var(--nb-info);
+	--color-info-foreground: var(--nb-info-foreground);
+	--color-info-muted: var(--nb-info-muted);
+	--color-success: var(--nb-success);
+	--color-success-foreground: var(--nb-success-foreground);
+	--color-success-muted: var(--nb-success-muted);
+	--color-warning: var(--nb-warning);
+	--color-warning-foreground: var(--nb-warning-foreground);
+	--color-warning-muted: var(--nb-warning-muted);
+	--color-danger: var(--nb-danger);
+	--color-danger-foreground: var(--nb-danger-foreground);
+	--color-danger-muted: var(--nb-danger-muted);
+}
+
 /* ---- Tailwind theme mapping ----
  * These generate Tailwind utility classes:
  *   bg-card, text-foreground, border-border, ring-ring, etc.

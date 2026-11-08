@@ -11,15 +11,19 @@ astro.config.ts              # imports nimbus + defineNimbusConfig
 nimbus.json                  # records the last reviewed Nimbus package version
 src/
 ├── api/openapi.json         # the OpenAPI spec the API reference is generated from
+├── assets/landing/          # landing page art and screenshot crops (WebP, optimised at build)
 ├── components.ts            # MDX globals — components every .mdx can use without an import
 ├── components/              # AgentDirective, Header, Logo (Oceans mark + wordmark), Render + ui/<slug>/
 ├── content/
 │   ├── docs/*.mdx
 │   └── partials/*.mdx       # referenced via <Render file="..." />
 ├── content.config.ts        # registers docsCollection() + partialsCollection() + apiCollection()
+├── landing/                 # the landing page: content.ts (all copy and data), one .astro per section, landing.css
 ├── layouts/                 # BaseLayout (NimbusHead), DocsLayout (sidebar/TOC/breadcrumbs)
 ├── lib/cn.ts                # Tailwind className merger
 ├── pages/
+│   ├── index.astro             # the landing page, at /
+│   ├── index.md.ts             # the landing page as Markdown, built from landing/content.ts
 │   ├── [...slug].astro
 │   ├── api/[...slug].astro     # the API reference, at /api
 │   ├── [...slug]/index.md.ts   # Markdown version of every page, all collections
@@ -39,6 +43,14 @@ src/
 ```
 
 Cloudflare deploys also have `wrangler.jsonc` at the project root.
+
+## Landing page
+
+`/` is a landing page for visitors from oceans-llm.com, not a docs page. The docs start at `/introduction/` (`src/content/docs/introduction.mdx`), which the header's Docs tab opens. The logo and the breadcrumb's Home link go to the landing page.
+
+- Change copy, links or screenshots in `src/landing/content.ts`. The page and its Markdown version both read it. Link labels follow the docs rule: use the destination page's title.
+- Product pictures (the hero, screenshot stages, the trace and code panels) sit in `data-mode="dark"` subtrees, so they stay dark in light mode. `globals.css` resolves the Tailwind colour utilities again in such a subtree.
+- Screenshots come from `docs/public/images/`, cropped and saved as WebP in `src/assets/landing/`. The wave art is generated in the style of the admin UI's sign-in illustration. Astro resizes all of them at build time.
 
 ## Writing docs
 

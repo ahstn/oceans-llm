@@ -47,7 +47,8 @@ const sections =
     ? sidebarSections
     : [
         // A page outside every collection (the 404) is in neither tab.
-        { label: "Docs", href: "/", isActive: activeApi === undefined && collection !== undefined },
+        // The landing page owns `/`, so the Docs tab opens the docs' first page.
+        { label: "Docs", href: "/introduction/", isActive: activeApi === undefined && collection !== undefined },
         ...apiHrefs.map((api) => ({
           label: apiHrefs.length === 1 ? "API reference" : (api.entry.label ?? api.entry.collection),
           href: api.href,

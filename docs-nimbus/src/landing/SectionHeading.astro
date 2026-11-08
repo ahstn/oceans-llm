@@ -1,0 +1,23 @@
+---
+/** Eyebrow, title and lede for a landing section. */
+import { cn } from "@/lib/cn";
+
+interface Props {
+  eyebrow: string;
+  title: string;
+  lede?: string;
+  /** Heading level; sections use h2, features inside a section use h3. */
+  as?: "h2" | "h3";
+  id?: string;
+  class?: string;
+}
+
+const { eyebrow, title, lede, as: Tag = "h2", id, class: className } = Astro.props;
+---
+
+<div class={cn("max-w-[40rem]", className)}>
+  <p class="lp-eyebrow">{eyebrow}</p>
+  <Tag id={id} class="lp-title mt-4">{title}</Tag>
+  {lede && <p class="lp-lede mt-5">{lede}</p>}
+  <slot />
+</div>

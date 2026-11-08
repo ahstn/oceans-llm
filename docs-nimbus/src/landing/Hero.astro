@@ -1,0 +1,79 @@
+---
+/**
+ * The hero: an always-dark ocean panel with the brand wave, and the admin UI
+ * rising out of its lower edge. The wave is a wide redraw of the sign-in
+ * page's illustration (crates/admin-ui/web/src/assets/auth-hero-wave.png).
+ */
+import { Image } from "astro:assets";
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import { LinkButton } from "@/components/ui/link-button";
+import heroWave from "@/assets/landing/hero-wave.webp";
+import Frame from "./Frame.astro";
+import Float from "./Float.astro";
+import { GITHUB_URL, hero } from "./content";
+---
+
+<div class="px-2 pt-2 sm:px-3 sm:pt-3">
+  <section data-mode="dark" aria-labelledby="lp-hero-title" class="lp-hero">
+    <div class="lp-hero-art" aria-hidden="true">
+      <Image
+        src={heroWave}
+        alt=""
+        widths={[960, 1600, 2400, 3200]}
+        sizes="100vw"
+        format="webp"
+        quality={86}
+        loading="eager"
+        fetchpriority="high"
+        class="size-full object-cover"
+      />
+    </div>
+
+    <div class="lp-container lp-hero-copy">
+      <a href={GITHUB_URL} target="_blank" rel="noopener" class="lp-pill">
+        <span class="lp-pill-dot" aria-hidden="true"></span>
+        {hero.eyebrow}
+        <span class="lp-pill-sep" aria-hidden="true"></span>
+        <span class="text-muted-foreground">{hero.license}</span>
+        <Icon name="ph:arrow-up-right" class="size-3.5 text-muted-foreground" />
+      </a>
+
+      <h1 id="lp-hero-title" class="lp-display mt-7">
+        <span class="block">{hero.title}</span>
+        <span class="lp-display-soft block">{hero.subtitle}</span>
+      </h1>
+
+      <p class="lp-hero-lede mt-6">{hero.lede}</p>
+
+      <div class="mt-9 flex flex-wrap items-center gap-3">
+        <LinkButton href={hero.primary.href} size="lg" icon>{hero.primary.label}</LinkButton>
+        <LinkButton href={hero.secondary.href} variant="secondary" size="lg">{hero.secondary.label}</LinkButton>
+      </div>
+
+      <div class="mt-9">
+        <div class="lp-command">
+          <span class="select-none text-[#b5dde5]/50" aria-hidden="true">$</span>
+          <code>{hero.command}</code>
+          <button type="button" class="lp-copy" data-lp-copy={hero.command} aria-label="Copy command">
+            <Icon name="ph:copy" class="lp-copy-idle size-4" />
+            <Icon name="ph:check" class="lp-copy-done size-4" />
+          </button>
+        </div>
+        <p class="mt-2.5 text-xs text-muted-foreground">{hero.commandNote}</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="lp-container lp-hero-shot">
+  <div class="lp-rise relative mx-auto max-w-[68rem]">
+    <Frame
+      kind="window"
+      title={hero.shot.title}
+      shot={hero.shot.main}
+      sizes="(min-width: 1152px) 68rem, 94vw"
+      eager
+    />
+    {hero.shot.floats.map((shot) => <Float shot={shot} sizes="(min-width: 1152px) 30rem, 44vw" eager />)}
+  </div>
+</div>
