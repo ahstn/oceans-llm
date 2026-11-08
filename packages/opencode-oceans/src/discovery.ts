@@ -11,12 +11,12 @@ const identity = (entry: Entry) =>
   text(record(entry.litellm_params).model)
 
 function entries(body: unknown): Entry[] | undefined {
-  if (Array.isArray(body)) return body.map(record)
-  const object = record(body)
-  for (const key of ['data', 'models', 'result', 'items']) {
-    if (Array.isArray(object[key])) return object[key].map(record)
-  }
-  return undefined
+  const list = Array.isArray(body)
+    ? body
+    : ['data', 'models', 'result', 'items'].map((key) => record(body)[key]).find(Array.isArray)
+  if (!list) return undefined
+  const result = list.map(record)
+  return result.every((entry) => identity(entry) !== undefined) ? result : undefined
 }
 
 export class DiscoveryError extends Schema.TaggedError<
@@ -60,13 +60,11 @@ function complete(entry: Entry) {
 }
 
 function mergeEntry(entry: Entry, previous: Entry | undefined) {
-  const merged = { ...record(entry.model_info), ...entry }
-  for (const [field, value] of Object.entries({
-    ...record(previous?.model_info),
-    ...previous,
-  })) {
-    if (value === null || value === undefined) continue
-    merged[field] = value
+  const merged: Entry = {}
+  for (const source of [record(entry.model_info), entry, record(previous?.model_info), previous]) {
+    for (const [field, value] of Object.entries(source ?? {})) {
+      if (value !== null && value !== undefined) merged[field] = value
+    }
   }
   return merged
 }
@@ -77,8 +75,11 @@ export const discover = Effect.fn('Oceans.discover')(function* (
   key: string | undefined,
 ) {
   const found = new Map<string, Entry>()
+  let available = false
   for (const path of richPaths) {
-    for (const entry of (yield* fetchEntries(`${root}${path}`, key)) ?? []) {
+    const entries = yield* fetchEntries(`${root}${path}`, key)
+    if (entries !== undefined) available = true
+    for (const entry of entries ?? []) {
       const id = identity(entry)
       if (!id) continue
       found.set(id, mergeEntry(entry, found.get(id)))
@@ -95,7 +96,7 @@ export const discover = Effect.fn('Oceans.discover')(function* (
   }
   // The authenticated list is authoritative for visibility, including model removals.
   if (listed) for (const id of found.keys()) if (!listings.has(id)) found.delete(id)
-  if (!found.size && !listed)
+  if (!available && !listed)
     return yield* new DiscoveryError({ url: root, reason: 'no discovery endpoints available' })
   return [...found]
     .filter(

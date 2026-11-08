@@ -108,6 +108,8 @@ excluded.
 
 Inventory refresh runs every 60 seconds inside the plugin's Effect scope. Each inventory is bound to the
 connection that produced it, so switching accounts hides stale models until discovery succeeds. This does not poll YAML.
+Malformed model entries fail the refresh and keep the last good inventory. A valid empty public list clears the inventory. On rich-only gateways, an empty result also clears it; an absent endpoint is not an empty result. Earlier rich endpoints keep their non-null metadata, including nested fields when a flat field is null.
+
 Model IDs remain gateway IDs: for example, select `oceans/gpt-6.1-sol` in `/models`, or run:
 
 ```sh
@@ -138,6 +140,8 @@ the gateway explicitly limits it. `thinking.efforts` is an explicit user overrid
 levels the route supports. Select an advertised variant with a suffix such as
 `oceans/gpt-6.1-sol#high`.
 
+When native effort support is present but per-level flags are missing, the plugin keeps the gateway's hinted presets. Explicit per-level flags still set the allowed ladder. Missing input limits use the catalog's separate input limit, capped by the gateway context window.
+
 ## Usage and pricing limitations
 
 OpenCode's native adapter reports actual response usage, including cache tokens when the gateway and
@@ -146,6 +150,8 @@ It supplies catalog prices for OpenCode's local cost calculation: LiteLLM's per-
 and cache rates are converted to USD per million tokens. Explicit zero rates remain zero. Missing
 cache rates fall back to a catalog cache rate, then to the input rate, rather than implying free
 cached tokens. If no gateway rates exist, first-party catalog prices may be used.
+
+Gateway cache rates override catalog cache rates even when input and output prices are absent.
 
 An endpoint-reported charge overrides local catalog calculation, including a reported zero.
 Without any known price, OpenCode displays zero; it has no unknown-price marker.
@@ -194,6 +200,8 @@ manual only: update the package version and lockfile, create the matching existi
 tag. The workflow validates the tag against the package version and checks the tagged commit before
 publishing that exact commit with `bun publish --access public --tag latest` to GitHub Packages. Only
 the publish job receives `packages: write`. No npmjs.org publication or bundled build is produced.
+
+Non-release checks use the triggering commit SHA, so reruns do not check a newer branch revision.
 
 GitHub initially creates npm packages as private, regardless of npm access flags: after the first
 publication, a package administrator must set this package's visibility to **public** in GitHub

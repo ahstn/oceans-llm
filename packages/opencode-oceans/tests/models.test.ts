@@ -35,6 +35,40 @@ describe('transport selection', () => {
   })
 })
 
+test('partial native effort metadata preserves hinted presets but explicit denials do not', () => {
+  const listing = {
+    ...hints('anthropic-messages', [
+      { id: 'low', settings: { effort: 'low' } },
+      { id: 'high', settings: { effort: 'high' } },
+    ]),
+    capabilities: {
+      thinking: { supported: true, types: { adaptive: { supported: true } } },
+      effort: { supported: true },
+    },
+  }
+  const model = toModel(
+    provider,
+    'claude',
+    { supported_openai_params: ['tools'] },
+    undefined,
+    undefined,
+    undefined,
+    listing,
+  )
+  assert.deepEqual(model.variants, [
+    { id: 'low', settings: { thinking: { type: 'adaptive' }, effort: 'low' } },
+    { id: 'high', settings: { thinking: { type: 'adaptive' }, effort: 'high' } },
+  ])
+  expect(
+    toModel(provider, 'claude', {}, undefined, undefined, undefined, {
+      ...listing,
+      capabilities: {
+        effort: { supported: true, low: { supported: false }, high: { supported: false } },
+      },
+    }).variants,
+  ).toEqual([])
+})
+
 describe('reasoning policy', () => {
   test('native effort ladder and preset remapping respect ceiling', () => {
     const model = toModel(
@@ -142,6 +176,19 @@ describe('reasoning policy', () => {
 })
 
 describe('modalities and limits', () => {
+  test('catalog input ceilings survive missing metadata and tighter gateway contexts', () => {
+    const reference = {
+      ...Model.Info.default(provider, Model.ID.make('alias')),
+      limit: { context: 128_000, input: 100_000, output: 4096 },
+    }
+    expect(toModel(provider, 'alias', {}, reference).limit).toEqual(reference.limit)
+    expect(
+      toModel(provider, 'alias', {}, reference, undefined, undefined, {
+        context_length: 80_000,
+      }).limit,
+    ).toEqual({ context: 80_000, input: 80_000, output: 4096 })
+  })
+
   test('independent image and PDF declarations are honored', () => {
     const model = toModel(
       provider,
@@ -200,6 +247,16 @@ describe('cost units', () => {
     assert.deepEqual(
       toModel(provider, 'alias', { output_cost_per_token: 0.00001 }, reference).cost,
       [{ input: 3, output: 10, cache: { read: 0.3, write: 3.75 } }],
+    )
+    assert.deepEqual(
+      toModel(provider, 'alias', { cache_read_input_token_cost: 0 }, reference).cost,
+      [{ input: 3, output: 15, cache: { read: 0, write: 3.75 } }],
+    )
+    assert.deepEqual(
+      toModel(provider, 'alias', {}, reference, undefined, undefined, {
+        pricing: { input_cache_write: 0.000002 },
+      }).cost,
+      [{ input: 3, output: 15, cache: { read: 0.3, write: 2 } }],
     )
   })
 })

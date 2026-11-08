@@ -121,3 +121,101 @@ test('an authoritative empty listing removes the inventory', async () => {
     await server.stop(true)
   }
 })
+
+test('a malformed listing entry fails instead of clearing a valid rich inventory', async () => {
+  const server = Bun.serve({
+    port: 0,
+    fetch(request) {
+      return Response.json({
+        data:
+          new URL(request.url).pathname === '/v1/models'
+            ? [{ id: 'valid' }, null]
+            : [
+                {
+                  model_group: 'valid',
+                  supports_vision: false,
+                  input_cost_per_token: 0,
+                  output_cost_per_token: 0,
+                },
+              ],
+      })
+    },
+  })
+  try {
+    const result = await Effect.runPromise(Effect.result(discover(server.url.origin, undefined)))
+    expect(result._tag).toBe('Failure')
+    if (result._tag === 'Failure') {
+      expect(result.failure.url).toBe(`${server.url.origin}/v1/models`)
+    }
+  } finally {
+    await server.stop(true)
+  }
+})
+
+test('empty rich-only discovery clears removed models while absent endpoints still fail', async () => {
+  let inventory: unknown[] | undefined = [{ model_group: 'removed' }]
+  const server = Bun.serve({
+    port: 0,
+    fetch(request) {
+      return new URL(request.url).pathname === '/model_group/info' && inventory !== undefined
+        ? Response.json({ data: inventory })
+        : new Response('missing', { status: 404 })
+    },
+  })
+  try {
+    expect(
+      (await Effect.runPromise(discover(server.url.origin, undefined))).map((m) => m.id),
+    ).toEqual(['removed'])
+    inventory = []
+    expect(await Effect.runPromise(discover(server.url.origin, undefined))).toEqual([])
+    inventory = undefined
+    const unavailable = await Effect.runPromise(
+      Effect.result(discover(server.url.origin, undefined)),
+    )
+    expect(unavailable._tag).toBe('Failure')
+  } finally {
+    await server.stop(true)
+  }
+})
+
+test('non-null nested metadata keeps source precedence when flat fields are null', async () => {
+  const server = Bun.serve({
+    port: 0,
+    fetch(request) {
+      switch (new URL(request.url).pathname) {
+        case '/model_group/info':
+          return Response.json({
+            data: [
+              {
+                model_group: 'alias',
+                supports_vision: false,
+                input_cost_per_token: null,
+                model_info: { input_cost_per_token: 0.000001 },
+              },
+            ],
+          })
+        case '/v2/model/info':
+          return Response.json({
+            data: [
+              {
+                model_name: 'alias',
+                input_cost_per_token: 0.000002,
+                output_cost_per_token: 0.000003,
+              },
+            ],
+          })
+        case '/v1/models':
+          return Response.json({ data: [{ id: 'alias' }] })
+        default:
+          return new Response('missing', { status: 404 })
+      }
+    },
+  })
+  try {
+    const models = await Effect.runPromise(discover(server.url.origin, undefined))
+    expect(models[0]?.entry.input_cost_per_token).toBe(0.000001)
+    expect(models[0]?.entry.output_cost_per_token).toBe(0.000003)
+  } finally {
+    await server.stop(true)
+  }
+})

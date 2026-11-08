@@ -82,15 +82,16 @@ function costs(entry: Entry, listing: Entry, reference?: Model.Info): Model.Info
   const pricing = record(listing.pricing)
   const input = rate(metadata(entry, 'input_cost_per_token')) ?? rate(pricing.prompt)
   const output = rate(metadata(entry, 'output_cost_per_token')) ?? rate(pricing.completion)
-  if (input === undefined && output === undefined) return reference?.cost ?? []
-  const usd = (value: number) => Model.Cost.fields.input.make(value)
-  const first = reference?.cost[0]
-  const inputRate = input === undefined ? (first?.input ?? 0) : input * 1_000_000
-  const outputRate = output === undefined ? (first?.output ?? 0) : output * 1_000_000
   const read =
     rate(metadata(entry, 'cache_read_input_token_cost')) ?? rate(pricing.input_cache_read)
   const write =
     rate(metadata(entry, 'cache_creation_input_token_cost')) ?? rate(pricing.input_cache_write)
+  if ([input, output, read, write].every((value) => value === undefined))
+    return reference?.cost ?? []
+  const usd = (value: number) => Model.Cost.fields.input.make(value)
+  const first = reference?.cost[0]
+  const inputRate = input === undefined ? (first?.input ?? 0) : input * 1_000_000
+  const outputRate = output === undefined ? (first?.output ?? 0) : output * 1_000_000
   return [
     {
       input: usd(inputRate),
@@ -174,14 +175,20 @@ function effortsFor(
   const hinted = hintedVariants(listing)
   if (api === 'anthropic-messages' && typeof native.supported === 'boolean') {
     if (!native.supported) return []
-    const levels = [...effortNames].filter((level) => record(native[level]).supported === true)
-    // Native capability ladders are authoritative; hints may map a preset to a safer level.
-    return levels.map((id) => ({
-      id,
-      effort:
-        hinted?.find((variant) => variant.id === id && levels.includes(variant.effort))?.effort ??
+    const declared = [...effortNames].filter(
+      (level) => typeof record(native[level]).supported === 'boolean',
+    )
+    if (declared.length) {
+      const levels = declared.filter((level) => record(native[level]).supported === true)
+      // Explicit ladders are authoritative; missing per-level metadata is not a denial.
+      return levels.map((id) => ({
         id,
-    }))
+        effort:
+          hinted?.find((variant) => variant.id === id && levels.includes(variant.effort))?.effort ??
+          id,
+      }))
+    }
+    if (hinted) return hinted
   }
   const params = strings(metadata(entry, 'supported_openai_params'))
   if (params && !params.includes('reasoning_effort')) return []
@@ -280,8 +287,13 @@ export function toModel(
     tokens(listing.max_input_tokens) ??
     reference?.limit.context ??
     128_000
-  const input =
-    tokens(metadata(entry, 'max_input_tokens')) ?? tokens(listing.max_input_tokens) ?? context
+  const input = Math.min(
+    context,
+    tokens(metadata(entry, 'max_input_tokens')) ??
+      tokens(listing.max_input_tokens) ??
+      reference?.limit.input ??
+      context,
+  )
   const output =
     tokens(metadata(entry, 'max_output_tokens')) ??
     tokens(listing.max_output_tokens) ??
