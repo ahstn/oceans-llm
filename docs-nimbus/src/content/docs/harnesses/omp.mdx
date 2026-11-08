@@ -1,12 +1,12 @@
 ---
-title: Oh My Pi (omp)
-description: Connect Oh My Pi to Oceans with omp's native LiteLLM model discovery, so models, prices and reasoning levels come from the gateway.
+title: Oh-My-Pi (OMP)
+description: Connect Oh-My-Pi to Oceans with omp's native LiteLLM model discovery, so models, prices and reasoning levels come from the gateway.
 sidebar:
-  label: Oh My Pi (omp)
+  label: Oh-My-Pi (OMP)
   order: 2
 ---
 
-[Oh My Pi](https://github.com/can1357/oh-my-pi) (omp) finds models on its own. You add Oceans as a provider in omp's `models.yml`, and omp asks the gateway which models your API key can use. You don't need a plugin or a generated snippet, and new models appear when omp refreshes its model list.
+[Oh-My-Pi](https://github.com/can1357/oh-my-pi) (OMP) finds models on its own. You add Oceans as a provider in omp's `models.yml`, and omp asks the gateway which models your API key can use. You don't need a plugin or a generated snippet, and new models appear when omp refreshes its model list.
 
 omp uses its `litellm` discovery type with Oceans. The gateway serves `GET /model_group/info` in LiteLLM's format, so omp gets the limits, prices, tool and image support, and reasoning levels of each model. The [ADR on LiteLLM model group info](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-21-litellm-model-group-info.md) explains the choice.
 

@@ -299,7 +299,7 @@ The context value is metadata only. The gateway doesn't tokenise every request o
 - Harness blocks match the snippets in [Client harness configuration](/harnesses/). They never contain a base URL or API key.
 - Models that serve neither Chat Completions nor Responses omit `client_hints`.
 
-`supported_endpoint_types` uses the new-api vocabulary (`anthropic`, `openai`, `openai-response`) so proxy-style clients can pick a wire format per model. The preferred format comes first. Proxy-style clients choose Anthropic Messages whenever `anthropic` is listed, so the gateway lists `anthropic` only when `preferred_api_format` is `anthropic-messages`. Use `client_hints.api_formats` for the full list. Oh My Pi (omp) reads [LiteLLM model metadata](#litellm-model-metadata) instead. See [Oh My Pi (omp)](/harnesses/omp/).
+`supported_endpoint_types` uses the new-api vocabulary (`anthropic`, `openai`, `openai-response`) so proxy-style clients can pick a wire format per model. The preferred format comes first. Proxy-style clients choose Anthropic Messages whenever `anthropic` is listed, so the gateway lists `anthropic` only when `preferred_api_format` is `anthropic-messages`. Use `client_hints.api_formats` for the full list. Oh-My-Pi (OMP) reads [LiteLLM model metadata](#litellm-model-metadata) instead. See [Oh-My-Pi (OMP)](/harnesses/omp/).
 
 Models with an eligible Decisions route report `decisions` in `architecture.output_modalities`. Models with an eligible `images` route report `image`, plus `text` output when any eligible route serves Chat Completions or Responses. With no catalog modality data, an image route reports `text` input and `image` output. A model that serves only Decisions or only images has an empty `supported_endpoint_types`, and proxy clients that ignore output modalities may list it as a chat model. Image and PDF inputs are removed from `architecture` unless every route guarantees `vision`.
 
@@ -342,7 +342,7 @@ The vendor in `providers` is found in this order: the model family in the upstre
 - If the vendor is `openai` but an eligible chat route doesn't serve Responses, the gateway sends the primary route's provider type instead (or `oceans-llm` if that is empty or `openai`).
 - If no eligible route serves Chat Completions but one serves Responses, the gateway sends `["openai"]` for any vendor.
 
-These rules exist because omp sends `providers: ["openai"]` models to `/v1/responses` and all others to the configured `api`. No field selects Anthropic Messages; omp sends Claude models to `/v1/chat/completions` by default and the gateway translates them. To set up omp with this endpoint, see [Oh My Pi (omp)](/harnesses/omp/).
+These rules exist because omp sends `providers: ["openai"]` models to `/v1/responses` and all others to the configured `api`. No field selects Anthropic Messages; omp sends Claude models to `/v1/chat/completions` by default and the gateway translates them. To set up omp with this endpoint, see [Oh-My-Pi (OMP)](/harnesses/omp/).
 
 The gateway doesn't register `/model/info`, `/v1/model/info`, `/v2/model/info` or `/v1/model_group/info`. omp may call them during a model list refresh and falls back to the `/model_group/info` rows when they fail. With the admin UI mounted at `/`, those paths reach the UI proxy instead of a gateway 404.
 
