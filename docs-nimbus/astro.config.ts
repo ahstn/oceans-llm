@@ -27,6 +27,7 @@ const nimbusConfig = defineNimbusConfig({
       "features",
       { label: "Setup", icon: "ph:wrench", collapsed: false, autogenerate: { directory: "setup" } },
       { label: "Server configuration", icon: "ph:gear-six", collapsed: false, autogenerate: { directory: "configuration" } },
+      { label: "Harness configuration", icon: "ph:terminal-window", collapsed: false, autogenerate: { directory: "harnesses" } },
       { label: "Providers", icon: "ph:cpu", collapsed: false, autogenerate: { directory: "providers" } },
       { label: "Identity and access", icon: "ph:fingerprint", collapsed: false, autogenerate: { directory: "access" } },
       { label: "Spend and limits", icon: "ph:coins", collapsed: false, autogenerate: { directory: "spend" } },

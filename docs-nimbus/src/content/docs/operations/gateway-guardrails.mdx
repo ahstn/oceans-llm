@@ -422,7 +422,7 @@ The body has `tool_name` and exactly one of `command` (a shell command string) o
 
 The response has `decision_id`, `action`, `allowed`, `transformed`, `reason_code`, `failure_disposition`, `matched_rule` (pack, rule, matched field, description, and a safer action), and `output_command` or `output_arguments` when a check changed the input. The check uses the `default` policy in the `harness_pre_tool` phase.
 
-Oceans' own Pi and OpenCode harness adapters, in [`tests/harness-integration`](https://github.com/ahstn/oceans-llm/tree/main/tests/harness-integration), install a hook like this. A deny, a network failure, or an invalid response stops the command, so a missing decision can't become a way around the check. An audit or allow keeps the decision ID. A transformed decision replaces the command. The hook waits `2000` ms by default; set `OCEANS_GUARDRAIL_TIMEOUT_MS` to change it. See [Client harness configuration](/configuration/client-harnesses/#shell-guardrail-hooks) and [Agent harness usage](/observability/agent-harness-usage/).
+Oceans' own Pi and OpenCode harness adapters, in [`tests/harness-integration`](https://github.com/ahstn/oceans-llm/tree/main/tests/harness-integration), install a hook like this. A deny, a network failure, or an invalid response stops the command, so a missing decision can't become a way around the check. An audit or allow keeps the decision ID. A transformed decision replaces the command. The hook waits `2000` ms by default; set `OCEANS_GUARDRAIL_TIMEOUT_MS` to change it. See [Client harness configuration](/harnesses/#shell-guardrail-hooks) and [Agent harness usage](/observability/agent-harness-usage/).
 
 ## Observe decisions
 

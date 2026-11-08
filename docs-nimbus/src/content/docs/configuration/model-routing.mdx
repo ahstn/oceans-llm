@@ -296,10 +296,10 @@ The context value is metadata only. The gateway doesn't tokenise every request o
 - `anthropic-messages` is listed whenever the model serves Chat Completions, because `/v1/messages` is translated onto the chat pipeline. A Responses-only model doesn't list it.
 - `preferred_api_format` comes from the primary route. `anthropic_compat` and Vertex `anthropic/*` prefer Anthropic Messages, GitHub Copilot follows `chat_api`, and Bedrock follows `api_style`. A route whose upstream speaks Responses prefers it. Other provider types fall back to model-name matching.
 - OpenCode presets above the reasoning ceiling are dropped. Pi levels above it map to the strongest effort allowed, or `null` if there's none.
-- Harness blocks match the snippets in [Client harness configuration](/configuration/client-harnesses/). They never contain a base URL or API key.
+- Harness blocks match the snippets in [Client harness configuration](/harnesses/). They never contain a base URL or API key.
 - Models that serve neither Chat Completions nor Responses omit `client_hints`.
 
-`supported_endpoint_types` uses the new-api vocabulary (`anthropic`, `openai`, `openai-response`) so proxy-style clients can pick a wire format per model. The preferred format comes first. Proxy-style clients choose Anthropic Messages whenever `anthropic` is listed, so the gateway lists `anthropic` only when `preferred_api_format` is `anthropic-messages`. Use `client_hints.api_formats` for the full list. Oh My Pi (omp) can read this field with `discovery.type: proxy`, but the [ADR on LiteLLM model group info](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-21-litellm-model-group-info.md) explains why `discovery.type: litellm` works better.
+`supported_endpoint_types` uses the new-api vocabulary (`anthropic`, `openai`, `openai-response`) so proxy-style clients can pick a wire format per model. The preferred format comes first. Proxy-style clients choose Anthropic Messages whenever `anthropic` is listed, so the gateway lists `anthropic` only when `preferred_api_format` is `anthropic-messages`. Use `client_hints.api_formats` for the full list. Oh My Pi (omp) reads [LiteLLM model metadata](#litellm-model-metadata) instead. See [Oh My Pi (omp)](/harnesses/omp/).
 
 Models with an eligible Decisions route report `decisions` in `architecture.output_modalities`. Models with an eligible `images` route report `image`, plus `text` output when any eligible route serves Chat Completions or Responses. With no catalog modality data, an image route reports `text` input and `image` output. A model that serves only Decisions or only images has an empty `supported_endpoint_types`, and proxy clients that ignore output modalities may list it as a chat model. Image and PDF inputs are removed from `architecture` unless every route guarantees `vision`.
 
@@ -342,27 +342,7 @@ The vendor in `providers` is found in this order: the model family in the upstre
 - If the vendor is `openai` but an eligible chat route doesn't serve Responses, the gateway sends the primary route's provider type instead (or `oceans-llm` if that is empty or `openai`).
 - If no eligible route serves Chat Completions but one serves Responses, the gateway sends `["openai"]` for any vendor.
 
-These rules exist because omp sends `providers: ["openai"]` models to `/v1/responses` and all others to the configured `api`. No field selects Anthropic Messages; omp sends Claude models to `/v1/chat/completions` by default and the gateway translates them. The omp behaviour on this page comes from the ADR, not gateway code.
-
-This omp `models.yml` configures Oceans:
-
-```yaml title="models.yml"
-providers:
-  oceans:
-    baseUrl: https://<gateway>/v1
-    apiKey: OCEANS_LLM_API_KEY
-    api: openai-completions
-    discovery:
-      type: litellm
-    modelOverrides:
-      claude-fable-5.1:
-        api: anthropic-messages
-```
-
-- `baseUrl` must end in `/v1`. omp removes `/v1` before it calls `/model_group/info`.
-- `modelOverrides` is optional. Add `api: anthropic-messages` for each Claude model that must use `/v1/messages`.
-- omp takes effort levels from its own catalog by model ID, so aliases such as `claude-sonnet-latest` get its generic list. Set `thinking` under the model's `modelOverrides` entry to correct it.
-- omp ignores tiered prices and lists decision models as chat models.
+These rules exist because omp sends `providers: ["openai"]` models to `/v1/responses` and all others to the configured `api`. No field selects Anthropic Messages; omp sends Claude models to `/v1/chat/completions` by default and the gateway translates them. To set up omp with this endpoint, see [Oh My Pi (omp)](/harnesses/omp/).
 
 The gateway doesn't register `/model/info`, `/v1/model/info`, `/v2/model/info` or `/v1/model_group/info`. omp may call them during a model list refresh and falls back to the `/model_group/info` rows when they fail. With the admin UI mounted at `/`, those paths reach the UI proxy instead of a gateway 404.
 
@@ -391,7 +371,7 @@ These models reject `minimal`, `none`, `off` and unknown effort values. The gate
 
 For Chat Completions on `anthropic_compat` and Vertex `anthropic/*` routes, adaptive-only models get adaptive thinking when `thinking` is omitted, with `output_config.effort: high` unless the caller set a supported effort. Bedrock Chat Completions adds adaptive thinking only when the request sets an effort. Native Messages requests keep omitted thinking and effort omitted.
 
-To keep Claude Code background work on a model that can turn thinking off, see [Client harness configuration](/configuration/client-harnesses/).
+To keep Claude Code background work on a model that can turn thinking off, see [Client harness configuration](/harnesses/).
 
 ### Anthropic token counting
 

@@ -1,11 +1,24 @@
 ---
 title: Client harness configuration
-description: Generate OpenCode, Pi, Claude Code and Codex config snippets from the live model catalog.
+description: Connect OpenCode, Oh My Pi, Pi, Claude Code and Codex to Oceans, and generate their config snippets from the live model catalog.
 sidebar:
-  order: 4
+  label: Overview
+  order: 0
+  group:
+    label: Harness configuration
 ---
 
-Oceans generates config snippets for local agent harnesses from the live model catalog. Users copy a snippet into their harness and point it at the gateway. They don't write model data by hand.
+Users point local agent harnesses, such as OpenCode or Claude Code, at the gateway. Oceans generates a config snippet for each harness from the live model catalog, so users don't write model data by hand.
+
+This page covers the snippets that every harness shares. OpenCode and Oh My Pi have their own pages. The other harnesses are covered below.
+
+| Harness | Setup |
+| --- | --- |
+| OpenCode | [OpenCode](/harnesses/opencode/): the Oceans plugin, which finds your models on the gateway, or a generated snippet. |
+| Oh My Pi (omp) | [Oh My Pi (omp)](/harnesses/omp/): omp's own model discovery reads the gateway. No snippet needed. |
+| Pi | [Pi](#pi), below. |
+| Claude Code | [Claude Code](#claude-code), below. |
+| Codex | [Codex](#codex), below. |
 
 ![Client config dialog with the OpenCode tab open](/images/screenshot-model-client-config-opencode.jpeg)
 
@@ -80,20 +93,6 @@ Snippets for OpenCode and Pi carry model data from the Models API:
 - **Input media** is `text`, plus `image` for vision routes.
 
 See [Pricing catalog and accounting](/spend/pricing-and-accounting/) for how effective pricing is resolved.
-
-## OpenCode
-
-The OpenCode tab emits `opencode.json` for the user-level config at `~/.config/opencode/opencode.json`. It links to the [OpenCode config docs](https://opencode.ai/docs/config/).
-
-The snippet uses the OpenCode 2 config shape: `providers`, `package`, `settings.baseURL` and `env`. OpenCode 1 can't read it. The `env` list holds `OCEANS_LLM_API_KEY`, so OpenCode reads the key from that variable in the OpenCode server process environment. The top-level `model` is set to the first selected model.
-
-Each model states its `capabilities`, so OpenCode doesn't apply its own defaults for unknown models:
-
-- `tools` comes from the route's tool-calling support.
-- `input` is `text`, plus `image` for vision routes, plus `pdf` for vision routes whose catalog input includes PDF. OpenCode sends only images and PDFs as file media, and the gateway accepts file parts only on vision routes.
-- `reasoning.supported` is `false` for models without a thinking policy.
-
-Reasoning models also get explicit effort `variants`. Anthropic Messages variants set `effort` with adaptive thinking. OpenAI-compatible variants set `reasoningEffort`. Claude models with adaptive effort get `high` and `max` variants, and the `max` variant sends effort `xhigh`. Gemini models get the levels they support from `minimal`, `low`, `medium` and `high`. Variants above the model's reasoning ceiling are left out. See [Models and routes](/configuration/models-and-routes/) for effort ceilings.
 
 ## Pi
 

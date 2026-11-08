@@ -16,7 +16,7 @@ Oceans puts one governed gateway in front of your organisation's AI traffic. It 
 ## Routing and clients
 
 - **One API surface for many providers.** Callers use OpenAI-compatible Chat Completions, Responses, and embeddings, Anthropic Messages with token counting, and image generation. Admins manage model aliases, provider routes, capability checks, and compatibility rules in the config. See [Model routing and APIs](/configuration/model-routing/).
-- **Client setup snippets.** The admin UI generates config for Claude Code, Codex, OpenCode, and Pi from the live model catalog, so users don't type model data by hand. In production, set the public gateway URL the snippets use. See [Client harness configuration](/configuration/client-harnesses/).
+- **Client setup snippets.** The admin UI generates config for Claude Code, Codex, OpenCode, and Pi from the live model catalog, so users don't type model data by hand. In production, set the public gateway URL the snippets use. See [Client harness configuration](/harnesses/). OpenCode can also use the Oceans plugin, which reads the model list from the gateway and keeps it current. See [OpenCode](/harnesses/opencode/).
 - **Tags for attribution.** Callers attach a bounded set of request tags, and admins add tags to identities, so usage maps back to cost centres, workloads, applications, or environments. See [Tagging](/observability/tagging/).
 
 ![Models page listing gateway models with their provider routes and Intelligence Index scores](/images/screenshot-models-2.png)
