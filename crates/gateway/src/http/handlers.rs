@@ -777,6 +777,7 @@ fn build_provider_context(
         extra_body: route.extra_body.clone(),
         request_headers,
         compatibility: route.compatibility.clone(),
+        service_tier: None,
     }
 }
 
@@ -2494,6 +2495,7 @@ mod tests {
             extra_body: Default::default(),
             capabilities: PartialCapabilities::from_capabilities(capabilities),
             compatibility: Default::default(),
+            service_tier: None,
         }
     }
 

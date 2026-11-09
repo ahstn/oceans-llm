@@ -29,6 +29,7 @@ fn route() -> ModelRoute {
             ..PartialCapabilities::default()
         },
         compatibility: Default::default(),
+        service_tier: None,
     }
 }
 
@@ -76,6 +77,7 @@ fn billing_modifiers_suppress_catalog_prices_but_preserve_explicit_overrides() {
         cache_read_cost_per_million_tokens: None,
         cache_write_cost_per_million_tokens: None,
         image_output_cost_per_million_tokens: None,
+        service_tiers: Vec::new(),
     });
     let configured = route_metadata(&route, Some(&provider()), &snapshot);
     assert_eq!(configured.pricing_source, Some("configured_override"));
@@ -187,6 +189,7 @@ async fn litellm_only_models_are_described_with_litellm_provenance() {
         description: None,
         tags: vec![],
         rank: 0,
+        service_tiers: None,
     };
     let mut house_route = route();
     house_route.model_id = model.id;
@@ -358,6 +361,7 @@ async fn aliases_use_batched_target_routes_without_exposing_ungranted_model_ids(
         description: None,
         tags: vec![],
         rank: 0,
+        service_tiers: None,
     };
     let alias = GatewayModel {
         id: Uuid::new_v4(),
@@ -420,6 +424,7 @@ fn broken_and_cyclic_aliases_have_no_execution_metadata() {
         description: None,
         tags: vec![],
         rank: 0,
+        service_tiers: None,
     };
     assert!(execution_model_from_snapshot(&HashMap::new(), &model).is_none());
     let cycle = GatewayModel {
@@ -591,6 +596,7 @@ async fn models_list_describes_claude_routes_from_catalog_and_provider_type() {
         description: Some("Primary coding model".into()),
         tags: vec![],
         rank: 0,
+        service_tiers: None,
     };
     let alias = GatewayModel {
         id: Uuid::new_v4(),
@@ -694,6 +700,7 @@ async fn decision_models_report_the_openrouter_decisions_output_modality() {
         description: None,
         tags: vec![],
         rank: 0,
+        service_tiers: None,
     };
     let mut judge_route = route();
     judge_route.model_id = model.id;
@@ -738,6 +745,7 @@ fn image_listing(capabilities: ProviderCapabilities) -> (GatewayModel, ListingRe
         description: None,
         tags: vec![],
         rank: 0,
+        service_tiers: None,
     };
     let mut image_route = route();
     image_route.model_id = model.id;
@@ -868,6 +876,7 @@ async fn models_list_holds_aliases_to_the_strictest_ceiling_in_their_chain() {
         description: None,
         tags: vec![],
         rank: 0,
+        service_tiers: None,
     };
     // Hidden from the caller, but its ceiling still applies to requests through it.
     let middle = GatewayModel {
@@ -932,6 +941,7 @@ async fn anthropic_request_features_are_only_advertised_for_messages_native_rout
         description: None,
         tags: vec![],
         rank: 0,
+        service_tiers: None,
     };
     let mut openai_route = route();
     openai_route.model_id = model.id;
@@ -980,6 +990,7 @@ async fn anthropic_request_features_require_every_fallback_route_to_be_messages_
         description: None,
         tags: vec![],
         rank: 0,
+        service_tiers: None,
     };
     let mut claude_route = route();
     claude_route.model_id = model.id;

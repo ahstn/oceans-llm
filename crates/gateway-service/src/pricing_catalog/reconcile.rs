@@ -244,6 +244,7 @@ fn pricing_record_at(
         },
         created_at: effective_at,
         updated_at: effective_at,
+        service_tiers: Vec::new(),
     })
 }
 

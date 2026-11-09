@@ -484,6 +484,8 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
             pricing_tier_above_input_tokens: None,
             computed_cost_usd: Money4::from_scaled(fixture.cost_scaled),
             occurred_at,
+            requested_service_tier: None,
+            served_service_tier: None,
         };
         store
             .insert_usage_ledger_if_absent(&ledger)
@@ -986,11 +988,13 @@ mod tests {
                         extra_body: serde_json::Map::new(),
                         capabilities: ProviderCapabilities::all_enabled().into(),
                         compatibility: RouteCompatibility::default(),
+                        service_tier: None,
                     }]
                 } else {
                     Vec::new()
                 },
                 allowlist: None,
+                service_tiers: None,
             })
             .collect();
         let service_accounts = vec![SeedServiceAccount {

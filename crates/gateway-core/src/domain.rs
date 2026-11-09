@@ -10,6 +10,7 @@ use crate::protocol::decisions::DecisionsWireFormat;
 use crate::provider::ProviderCapabilities;
 use crate::route_capabilities::PartialCapabilities;
 use crate::routing::ModelRoutingPolicy;
+use crate::service_tier::ServiceTier;
 
 pub const SYSTEM_BOOTSTRAP_ADMIN_USER_ID: &str = "00000000-0000-0000-0000-000000000002";
 pub const SYSTEM_BOOTSTRAP_ADMIN_EMAIL: &str = "admin@local";
@@ -1112,6 +1113,12 @@ pub struct UsageLedgerRecord {
     /// rate, route overrides, and provider-reported cost.
     #[serde(default)]
     pub pricing_tier_above_input_tokens: Option<i64>,
+    /// Tier the caller asked for, after route and policy; `None` when none was asked.
+    #[serde(default)]
+    pub requested_service_tier: Option<ServiceTier>,
+    /// Tier the provider reported serving; `None` when the response did not say.
+    #[serde(default)]
+    pub served_service_tier: Option<ServiceTier>,
     pub computed_cost_usd: Money4,
     pub occurred_at: OffsetDateTime,
 }
@@ -2690,6 +2697,7 @@ pub struct PricingCatalogCacheRecord {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RoutePricingOverride {
+    /// Rates for the tier the route serves by default: its `service_tier`, else default.
     pub input_cost_per_million_tokens: Money4,
     pub output_cost_per_million_tokens: Money4,
     pub cache_read_cost_per_million_tokens: Option<Money4>,
@@ -2698,6 +2706,20 @@ pub struct RoutePricingOverride {
     /// Overrides persisted before this field existed deserialize without it.
     #[serde(default)]
     pub image_output_cost_per_million_tokens: Option<Money4>,
+    /// Flat rates for other tiers callers may request on this route. A request billed at
+    /// a tier with no rates here is unpriced. Sorted by tier, tiers unique.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub service_tiers: Vec<RouteServiceTierPricing>,
+}
+
+/// One tier's flat rates in a route pricing override.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RouteServiceTierPricing {
+    pub service_tier: ServiceTier,
+    pub input_cost_per_million_tokens: Money4,
+    pub output_cost_per_million_tokens: Money4,
+    pub cache_read_cost_per_million_tokens: Option<Money4>,
+    pub cache_write_cost_per_million_tokens: Option<Money4>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -2732,6 +2754,22 @@ pub struct ContextPricingTier {
     pub cache_write: Option<Money4>,
 }
 
+/// Catalog rates for one non-default service tier. They replace the base schedule for a
+/// request billed at that tier. Unlike a context tier, a `None` rate does not inherit the
+/// base: the tier has no rate for that bucket, and a request that uses it is unpriced.
+/// `context_tiers` apply within the service tier the same way base context tiers do.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ServiceTierPricing {
+    pub service_tier: ServiceTier,
+    pub input: Option<Money4>,
+    pub output: Option<Money4>,
+    pub cache_read: Option<Money4>,
+    pub cache_write: Option<Money4>,
+    /// Sorted ascending by `above_input_tokens`, thresholds unique.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub context_tiers: Vec<ContextPricingTier>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ResolvedModelPricing {
     pub model_pricing_id: Uuid,
@@ -2749,6 +2787,9 @@ pub struct ResolvedModelPricing {
     /// Sorted ascending by `above_input_tokens`, thresholds unique.
     #[serde(default)]
     pub context_tiers: Vec<ContextPricingTier>,
+    /// Non-default service tier schedules, sorted by tier, tiers unique.
+    #[serde(default)]
+    pub service_tiers: Vec<ServiceTierPricing>,
     pub release_date: String,
     pub last_updated: String,
     pub effective_start_at: OffsetDateTime,
@@ -2775,6 +2816,9 @@ pub struct ModelPricingRecord {
     /// Sorted ascending by `above_input_tokens`, thresholds unique.
     #[serde(default)]
     pub context_tiers: Vec<ContextPricingTier>,
+    /// Non-default service tier schedules, sorted by tier, tiers unique.
+    #[serde(default)]
+    pub service_tiers: Vec<ServiceTierPricing>,
     pub release_date: String,
     pub last_updated: String,
     pub effective_start_at: OffsetDateTime,
@@ -2874,6 +2918,9 @@ pub struct GatewayModel {
     pub rank: i32,
     #[serde(default)]
     pub routing: Option<ModelRoutingPolicy>,
+    /// Non-default tiers callers may request; `None` allows every tier.
+    #[serde(default)]
+    pub service_tiers: Option<Vec<ServiceTier>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -2899,6 +2946,9 @@ pub struct ModelRoute {
     pub extra_headers: Map<String, Value>,
     #[serde(default)]
     pub extra_body: Map<String, Value>,
+    /// Tier every request on this route uses, whatever the caller asks for.
+    #[serde(default)]
+    pub service_tier: Option<ServiceTier>,
     /// Explicit route settings only. Use `effective_route_capabilities` to read what the
     /// route serves.
     #[serde(default)]
@@ -3350,6 +3400,8 @@ pub struct SeedModelRoute {
     pub extra_headers: Map<String, Value>,
     #[serde(default)]
     pub extra_body: Map<String, Value>,
+    #[serde(default)]
+    pub service_tier: Option<ServiceTier>,
     /// Explicit route settings only; unset fields are inferred at read time.
     #[serde(default)]
     pub capabilities: PartialCapabilities,
@@ -3370,6 +3422,8 @@ pub struct SeedModel {
     pub rank: i32,
     #[serde(default)]
     pub routing: Option<ModelRoutingPolicy>,
+    #[serde(default)]
+    pub service_tiers: Option<Vec<ServiceTier>>,
     #[serde(default)]
     pub routes: Vec<SeedModelRoute>,
     pub allowlist: Option<ModelAllowlistPolicy>,

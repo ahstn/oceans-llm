@@ -205,6 +205,7 @@ impl RoutePricingOverrideConfig {
                 label,
                 "image_output_usd_per_million_tokens",
             )?,
+            service_tiers: Vec::new(),
         })
     }
 }

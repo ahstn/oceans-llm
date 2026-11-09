@@ -36,6 +36,7 @@ async fn exercise_request_log_purge<S: GatewayStore + Sync>(store: &S) {
         rank: 10,
         routes: Vec::new(),
         allowlist: None,
+        service_tiers: None,
     }];
     let api_keys = [SeedApiKey {
         name: "dev".to_string(),

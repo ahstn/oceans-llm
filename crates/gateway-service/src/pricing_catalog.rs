@@ -289,6 +289,7 @@ fn resolved_model_pricing(record: &ModelPricingRecord) -> ResolvedModelPricing {
         limits: record.limits.clone(),
         modalities: record.modalities.clone(),
         provenance: record.provenance.clone(),
+        service_tiers: Vec::new(),
     }
 }
 

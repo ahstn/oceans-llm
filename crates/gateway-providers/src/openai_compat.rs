@@ -966,6 +966,7 @@ mod tests {
                 openai_compat: Some(profile),
                 ..Default::default()
             },
+            service_tier: None,
         }
     }
 
@@ -1022,6 +1023,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         }
     }
 
@@ -1273,6 +1275,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let built = provider
@@ -1554,6 +1557,7 @@ mod tests {
             extra_body,
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let built = provider
@@ -1966,6 +1970,7 @@ mod tests {
                 }),
                 ..Default::default()
             },
+            service_tier: None,
         };
 
         let built = provider
@@ -2076,6 +2081,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let error = provider
@@ -2163,6 +2169,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let response = provider
@@ -2229,6 +2236,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider
@@ -2312,6 +2320,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let rendered = render_provider_stream(
@@ -2383,6 +2392,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider
@@ -2458,6 +2468,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider
@@ -2532,6 +2543,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider
@@ -2606,6 +2618,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider
@@ -2675,6 +2688,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let error = match provider.chat_completions_stream(&request, &context).await {
@@ -2749,6 +2763,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider
@@ -2819,6 +2834,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let error = match provider.chat_completions_stream(&request, &context).await {
@@ -2889,6 +2905,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider
@@ -2959,6 +2976,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider

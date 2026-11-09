@@ -77,9 +77,11 @@ async fn exercise_route_identity<S: GatewayStore + Sync>(store: &S) {
                 extra_body: Map::new(),
                 capabilities: PartialCapabilities::default(),
                 compatibility: Default::default(),
+                service_tier: None,
             })
             .collect(),
         allowlist: None,
+        service_tiers: None,
     };
     seed_model(store, &providers, &model).await;
     let model_id = store

@@ -112,6 +112,7 @@ pub(super) fn decode_gateway_model(row: &PgRow) -> Result<GatewayModel, StoreErr
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
         rank: row.try_get(6).map_err(to_query_error)?,
         routing: parse_model_routing_policy(routing_policy_json.as_deref())?,
+        service_tiers: None,
     })
 }
 
@@ -147,6 +148,7 @@ pub(super) fn decode_model_route(row: &PgRow) -> Result<ModelRoute, StoreError> 
         extra_body: json_object_from_str(&extra_body_json)?,
         capabilities,
         compatibility,
+        service_tier: None,
     })
 }
 
@@ -712,6 +714,8 @@ pub(super) fn decode_usage_ledger_record(row: &PgRow) -> Result<UsageLedgerRecor
         pricing_tier_above_input_tokens,
         computed_cost_usd: Money4::from_scaled(computed_cost_10000),
         occurred_at: unix_to_datetime(occurred_at)?,
+        requested_service_tier: None,
+        served_service_tier: None,
     })
 }
 
@@ -775,6 +779,7 @@ pub(super) fn decode_model_pricing_record(row: &PgRow) -> Result<ModelPricingRec
         },
         created_at: unix_to_datetime(created_at)?,
         updated_at: unix_to_datetime(updated_at)?,
+        service_tiers: Vec::new(),
     })
 }
 

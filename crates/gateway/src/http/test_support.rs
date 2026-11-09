@@ -102,8 +102,10 @@ pub async fn seed_stream_cancellation_test(store: &AnyStore) {
                     extra_body: Default::default(),
                     capabilities: ProviderCapabilities::all_enabled().into(),
                     compatibility: RouteCompatibility::default(),
+                    service_tier: None,
                 }],
                 allowlist: None,
+                service_tiers: None,
             }],
             &[SeedApiKey {
                 name: "Stream Test Key".to_string(),

@@ -640,6 +640,7 @@ mod tests {
             pricing_override: None,
             capabilities: gateway_core::ProviderCapabilities::all_enabled().into(),
             compatibility: Default::default(),
+            service_tier: None,
         };
         if openai {
             route.compatibility.openai_compat =

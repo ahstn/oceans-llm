@@ -17,11 +17,12 @@ use crate::{
         BatchCapabilities, ProviderBatchRequest, ProviderBatchResult, ProviderBatchState,
         ProviderBatchSubmission,
     },
-    domain::RouteCompatibility,
+    domain::{ModelRoute, RouteCompatibility},
     protocol::{
         core::{ChatRequest, EmbeddingsRequest, ImagesRequest, ResponsesRequest},
         decisions::{DecisionsRequest, ProviderDecisionsResponse},
     },
+    service_tier::ServiceTier,
 };
 
 /// Public API contract used when dispatching through the common chat execution path.
@@ -56,6 +57,10 @@ pub struct ProviderRequestContext {
     pub request_headers: BTreeMap<String, String>,
     #[serde(default)]
     pub compatibility: RouteCompatibility,
+    /// Effective tier for this request: the route's forced tier, else the caller's.
+    /// Request bodies never carry tier fields; adapters write this in their wire form.
+    #[serde(default)]
+    pub service_tier: Option<ServiceTier>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -274,6 +279,11 @@ pub trait ProviderClient: Send + Sync {
     fn provider_key(&self) -> &str;
     fn provider_type(&self) -> &str;
     fn capabilities(&self) -> ProviderCapabilities;
+    /// Tiers this adapter can send for `route`. Routing skips a route that cannot serve
+    /// the effective tier, and adapters reject one they are handed anyway.
+    fn service_tiers(&self, _route: &ModelRoute) -> &'static [ServiceTier] {
+        &[ServiceTier::Default]
+    }
     /// Whether this route can carry Anthropic Messages without translating the response.
     fn supports_native_messages(&self, _context: &ProviderRequestContext) -> bool {
         false

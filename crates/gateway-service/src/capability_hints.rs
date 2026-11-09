@@ -137,6 +137,7 @@ mod tests {
             extra_body: Default::default(),
             capabilities,
             compatibility: Default::default(),
+            service_tier: None,
         }
     }
 

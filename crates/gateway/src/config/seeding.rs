@@ -370,6 +370,7 @@ impl GatewayConfig {
                                 extra_body: route.extra_body.clone(),
                                 capabilities: route.capabilities.into_partial(),
                                 compatibility: route.compatibility.clone().into_compatibility(),
+                                service_tier: None,
                             })
                         })
                         .collect::<anyhow::Result<Vec<_>>>()?,
@@ -378,6 +379,7 @@ impl GatewayConfig {
                         .as_ref()
                         .map(|allowlist| normalize_model_allowlist(&model.id, allowlist))
                         .transpose()?,
+                    service_tiers: None,
                 })
             })
             .collect::<anyhow::Result<Vec<_>>>()?;

@@ -57,6 +57,7 @@ fn context(upstream_model: &str) -> ProviderRequestContext {
         extra_body: Map::new(),
         request_headers: std::collections::BTreeMap::new(),
         compatibility: Default::default(),
+        service_tier: None,
     }
 }
 fn vertex_provider_for_test(api_host: String) -> VertexProvider {

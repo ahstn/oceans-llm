@@ -466,6 +466,7 @@ async fn route_pricing_override_ignores_catalog_tiers() {
         cache_read_cost_per_million_tokens: None,
         cache_write_cost_per_million_tokens: None,
         image_output_cost_per_million_tokens: None,
+        service_tiers: Vec::new(),
     });
     let event = recorded_catalog_usage(
         &route,

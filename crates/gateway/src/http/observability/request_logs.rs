@@ -742,6 +742,8 @@ mod tests {
             pricing_tier_above_input_tokens: None,
             computed_cost_usd: gateway_core::Money4::from_scaled(1_234),
             occurred_at: log.occurred_at,
+            requested_service_tier: None,
+            served_service_tier: None,
         }
     }
 

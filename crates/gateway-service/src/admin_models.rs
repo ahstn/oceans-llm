@@ -935,6 +935,7 @@ mod tests {
             extra_body: Default::default(),
             capabilities: ProviderCapabilities::all_enabled().into(),
             compatibility: Default::default(),
+            service_tier: None,
         }
     }
 
@@ -1012,6 +1013,7 @@ mod tests {
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
+            service_tiers: Vec::new(),
         };
         let summary = list_tiered_model(vec![
             catalog_route("tiered-upstream", 0, Some(pricing_override)),
@@ -1264,6 +1266,7 @@ mod tests {
             },
             created_at: now,
             updated_at: now,
+            service_tiers: Vec::new(),
         }
     }
 
@@ -1291,6 +1294,7 @@ mod tests {
             extra_body: Default::default(),
             capabilities: capabilities.into(),
             compatibility: Default::default(),
+            service_tier: None,
         }
     }
 
@@ -1340,6 +1344,7 @@ mod tests {
             description: None,
             tags: Vec::new(),
             rank: 1,
+            service_tiers: None,
         };
         let provider = ProviderConnection {
             provider_key: "openrouter".to_string(),
@@ -1469,6 +1474,7 @@ mod tests {
             description: None,
             tags: Vec::new(),
             rank: 0,
+            service_tiers: None,
         }
     }
 
@@ -1566,6 +1572,7 @@ mod tests {
                     description: Some("alias".to_string()),
                     tags: vec!["alias".to_string()],
                     rank: 1,
+                    service_tiers: None,
                 },
                 GatewayModel {
                     id: execution_model_id,
@@ -1576,6 +1583,7 @@ mod tests {
                     description: Some("base".to_string()),
                     tags: vec!["base".to_string()],
                     rank: 2,
+                    service_tiers: None,
                 },
             ],
             routes_by_model: HashMap::from([(
@@ -1595,6 +1603,7 @@ mod tests {
                         extra_body: Default::default(),
                         capabilities: Default::default(),
                         compatibility: Default::default(),
+                        service_tier: None,
                     },
                     ModelRoute {
                         id: disabled_route_id,
@@ -1782,6 +1791,7 @@ mod tests {
                 description: None,
                 tags: Vec::new(),
                 rank: 1,
+                service_tiers: None,
             }],
             routes_by_model: HashMap::from([(
                 model_id,
@@ -1799,6 +1809,7 @@ mod tests {
                     extra_body: Default::default(),
                     capabilities: Default::default(),
                     compatibility: Default::default(),
+                    service_tier: None,
                 }],
             )]),
             ..Default::default()
@@ -1838,6 +1849,7 @@ mod tests {
             extra_body: Default::default(),
             capabilities: ProviderCapabilities::all_enabled().into(),
             compatibility: Default::default(),
+            service_tier: None,
         };
         let provider = ProviderConnection {
             provider_key: route.provider_key.clone(),
@@ -1863,6 +1875,7 @@ mod tests {
                 description: None,
                 tags: Vec::new(),
                 rank: 1,
+                service_tiers: None,
             }],
             routes_by_model: HashMap::from([(model_id, vec![route])]),
             providers_by_key: HashMap::from([("openai".to_string(), provider)]),
@@ -1904,6 +1917,7 @@ mod tests {
                 description: None,
                 tags: Vec::new(),
                 rank: 1,
+                service_tiers: None,
             }],
             routes_by_model: HashMap::from([(
                 model_id,
@@ -1922,6 +1936,7 @@ mod tests {
                         extra_body: Default::default(),
                         capabilities: Default::default(),
                         compatibility: Default::default(),
+                        service_tier: None,
                     },
                     ModelRoute {
                         id: healthy_route_id,
@@ -1940,6 +1955,7 @@ mod tests {
                         )
                         .into(),
                         compatibility: Default::default(),
+                        service_tier: None,
                     },
                 ],
             )]),
@@ -2131,6 +2147,7 @@ mod tests {
                 description: None,
                 tags: Vec::new(),
                 rank: 1,
+                service_tiers: None,
             }],
             fail_pricing_sync: AtomicBool::new(true),
             ..Default::default()
@@ -2158,6 +2175,7 @@ mod tests {
                 description: None,
                 tags: Vec::new(),
                 rank: 1,
+                service_tiers: None,
             }],
             routes_by_model: HashMap::from([(
                 model_id,
@@ -2181,6 +2199,7 @@ mod tests {
                     )
                     .into(),
                     compatibility: Default::default(),
+                    service_tier: None,
                 }],
             )]),
             providers_by_key: HashMap::from([(
@@ -2246,6 +2265,7 @@ mod tests {
                     description: Some("Claude Sonnet".to_string()),
                     tags: vec!["anthropic".to_string()],
                     rank: 1,
+                    service_tiers: None,
                 }],
                 routes_by_model: HashMap::from([(
                     model_id,
@@ -2263,6 +2283,7 @@ mod tests {
                         extra_body: Default::default(),
                         capabilities: capabilities.into(),
                         compatibility: Default::default(),
+                        service_tier: None,
                     }],
                 )]),
                 providers_by_key: HashMap::from([(
@@ -2458,6 +2479,7 @@ mod tests {
             description: None,
             tags: vec![],
             rank: 0,
+            service_tiers: None,
         };
         let provider = ProviderConnection {
             provider_key: "mantle".into(),
@@ -2484,6 +2506,7 @@ mod tests {
             }
             .into(),
             compatibility: Default::default(),
+            service_tier: None,
         };
         let input = super::build_client_config_input(super::ClientConfigContext {
             model: &model,
@@ -2536,6 +2559,7 @@ mod tests {
             extra_body: Default::default(),
             capabilities: ProviderCapabilities::all_enabled().into(),
             compatibility: Default::default(),
+            service_tier: None,
         };
         let mut google_route = anthropic_route.clone();
         google_route.upstream_model = "google/gemini-2.0-flash".to_string();
@@ -2582,6 +2606,7 @@ mod tests {
                 description: Some("Claude Fable 5.1".to_string()),
                 tags: vec!["anthropic".to_string()],
                 rank: 1,
+                service_tiers: None,
             }],
             routes_by_model: HashMap::from([(
                 model_id,
@@ -2599,6 +2624,7 @@ mod tests {
                     extra_body: Default::default(),
                     capabilities: ProviderCapabilities::all_enabled().into(),
                     compatibility: Default::default(),
+                    service_tier: None,
                 }],
             )]),
             providers_by_key: HashMap::from([(

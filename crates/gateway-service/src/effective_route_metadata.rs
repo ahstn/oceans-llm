@@ -352,6 +352,7 @@ mod tests {
             extra_body: Default::default(),
             capabilities: Default::default(),
             compatibility: Default::default(),
+            service_tier: None,
         };
         for model in ["~anthropic/claude-opus-latest", "anthropic/claude-opus-5.5"] {
             route.upstream_model = model.into();
@@ -506,6 +507,7 @@ mod tests {
             extra_body: Default::default(),
             capabilities: PartialCapabilities::default(),
             compatibility: Default::default(),
+            service_tier: None,
         };
         assert_eq!(super::native_api_format(&provider, &route), None);
 

@@ -154,6 +154,7 @@ mod tests {
             extra_body: Map::from_iter([("seed".to_string(), json!(7))]),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         }
     }
 

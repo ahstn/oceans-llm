@@ -394,6 +394,7 @@ pub(super) fn route(provider_key: &str, upstream_model: &str) -> ModelRoute {
         extra_body: serde_json::Map::new(),
         capabilities: ProviderCapabilities::all_enabled().into(),
         compatibility: Default::default(),
+        service_tier: None,
     }
 }
 

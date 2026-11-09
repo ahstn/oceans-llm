@@ -124,6 +124,7 @@ impl TestRequest {
             tags: Vec::new(),
             rank: 10,
             routing: policy,
+            service_tiers: None,
         };
         let routes: Vec<_> = [2, 1]
             .into_iter()
@@ -141,6 +142,7 @@ impl TestRequest {
                 extra_body: Map::new(),
                 capabilities: ProviderCapabilities::all_enabled().into(),
                 compatibility: Default::default(),
+                service_tier: None,
             })
             .collect();
         let provider_connections = routes

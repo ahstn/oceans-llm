@@ -361,6 +361,7 @@ where
         extra_body: route.extra_body.clone(),
         request_headers: BTreeMap::new(),
         compatibility: route.compatibility.clone(),
+        service_tier: None,
     };
     let batch_id = Uuid::new_v4();
     let idempotency_key = input.idempotency_key.clone();

@@ -1079,6 +1079,8 @@ where
             pricing_tier_above_input_tokens: None,
             computed_cost_usd: Money4::ZERO,
             occurred_at,
+            requested_service_tier: None,
+            served_service_tier: None,
         };
         self.price_usage(&mut record, &usage_summary, model, route, occurred_at)
             .await?;
@@ -1288,6 +1290,8 @@ where
             pricing_tier_above_input_tokens: None,
             computed_cost_usd: cost_usd,
             occurred_at,
+            requested_service_tier: None,
+            served_service_tier: None,
         };
         match self.budget_guard.record_incurred_usage(auth, &record).await {
             Ok(overruns) => {
@@ -1929,6 +1933,7 @@ mod tests {
                 extra_body: Map::new(),
                 request_headers: Default::default(),
                 compatibility: Default::default(),
+                service_tier: None,
             },
             pricing_snapshot: None,
         };
@@ -1990,6 +1995,7 @@ mod tests {
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
+            service_tiers: Vec::new(),
         });
         let occurred_at = OffsetDateTime::now_utc();
         let scope = BudgetScope::User {
@@ -2527,6 +2533,7 @@ mod tests {
             description: None,
             tags: Vec::new(),
             rank: 0,
+            service_tiers: None,
         }
     }
 
@@ -2545,6 +2552,7 @@ mod tests {
             extra_body: Map::new(),
             capabilities: ProviderCapabilities::all_enabled().into(),
             compatibility: Default::default(),
+            service_tier: None,
         }
     }
 
@@ -2592,6 +2600,7 @@ mod tests {
             },
             created_at: now,
             updated_at: now,
+            service_tiers: Vec::new(),
         }
     }
 
@@ -2668,6 +2677,7 @@ mod tests {
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
+            service_tiers: Vec::new(),
         });
         let provider = openai_provider(&route.provider_key);
         let service = GatewayService::new(
@@ -2894,6 +2904,7 @@ mod tests {
             cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
             cache_write_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
+            service_tiers: Vec::new(),
         });
         let provider = openai_provider(&route.provider_key);
         let mut conflicting_catalog_pricing = pricing_record(Some(256_000));
@@ -3005,6 +3016,7 @@ mod tests {
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: Some(Money4::from_scaled(15_000)),
             image_output_cost_per_million_tokens: None,
+            service_tiers: Vec::new(),
         });
         let service = GatewayService::new(
             Arc::new(UsageAccountingRepo::default()),
@@ -3042,6 +3054,7 @@ mod tests {
             cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
             cache_write_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
+            service_tiers: Vec::new(),
         });
         let repo = Arc::new(UsageAccountingRepo::default());
         let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
@@ -3093,6 +3106,7 @@ mod tests {
             cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
             cache_write_cost_per_million_tokens: Some(Money4::from_scaled(12_500)),
             image_output_cost_per_million_tokens: None,
+            service_tiers: Vec::new(),
         });
         let repo = Arc::new(UsageAccountingRepo::default());
         let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
@@ -3269,6 +3283,7 @@ mod tests {
             cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
             cache_write_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
+            service_tiers: Vec::new(),
         });
         let repo = Arc::new(UsageAccountingRepo::default());
         let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
@@ -3313,6 +3328,7 @@ mod tests {
             cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
             cache_write_cost_per_million_tokens: Some(Money4::from_scaled(12_500)),
             image_output_cost_per_million_tokens: None,
+            service_tiers: Vec::new(),
         });
         let repo = Arc::new(UsageAccountingRepo::default());
         let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));

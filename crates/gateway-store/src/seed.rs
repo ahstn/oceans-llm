@@ -348,6 +348,7 @@ fn demo_batch_job(
             extra_body: route.extra_body.clone(),
             request_headers: BTreeMap::new(),
             compatibility: route.compatibility.clone(),
+            service_tier: None,
         },
         pricing_snapshot: None,
     }

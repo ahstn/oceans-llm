@@ -52,6 +52,7 @@ fn context(upstream_model: &str) -> ProviderRequestContext {
         extra_body: Map::new(),
         request_headers: BTreeMap::new(),
         compatibility: Default::default(),
+        service_tier: None,
     }
 }
 

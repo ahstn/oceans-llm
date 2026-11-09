@@ -993,6 +993,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: RouteCompatibility::default(),
+            service_tier: None,
         };
 
         let error = provider
@@ -1025,6 +1026,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: RouteCompatibility::default(),
+            service_tier: None,
         };
         let results = parse_bigquery_results(
             &json!({"rows": [{"f": [
@@ -1054,6 +1056,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: RouteCompatibility::default(),
+            service_tier: None,
         };
         let results = parse_bigquery_results(
             &json!({"rows": [

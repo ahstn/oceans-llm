@@ -641,6 +641,7 @@ mod tests {
                     extra_body: Map::new(),
                     request_headers: BTreeMap::new(),
                     compatibility: RouteCompatibility::default(),
+                    service_tier: None,
                 },
                 pricing_snapshot: Some(BatchPricingSnapshot {
                     rates: Some(BatchTokenRates {

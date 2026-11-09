@@ -983,6 +983,7 @@ mod tests {
             description: None,
             tags: Vec::new(),
             rank: 0,
+            service_tiers: None,
         }
     }
 

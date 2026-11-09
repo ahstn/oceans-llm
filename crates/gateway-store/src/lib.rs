@@ -307,6 +307,7 @@ pub(crate) mod tests {
             rank: 10,
             routes: Vec::new(),
             allowlist: None,
+            service_tiers: None,
         }];
 
         store
@@ -802,6 +803,8 @@ pub(crate) mod tests {
             pricing_tier_above_input_tokens: None,
             computed_cost_usd: Money4::from_scaled(computed_cost_10000),
             occurred_at,
+            requested_service_tier: None,
+            served_service_tier: None,
         }
     }
 
@@ -857,6 +860,7 @@ pub(crate) mod tests {
             },
             created_at: fetched_at,
             updated_at: fetched_at,
+            service_tiers: Vec::new(),
         }
     }
 
@@ -1433,8 +1437,10 @@ pub(crate) mod tests {
                 extra_body: Map::new(),
                 capabilities: PartialCapabilities::default(),
                 compatibility: Default::default(),
+                service_tier: None,
             }],
             allowlist: None,
+            service_tiers: None,
         }];
         let api_keys = vec![SeedApiKey {
             name: "dev".to_string(),
@@ -5047,8 +5053,10 @@ pub(crate) mod tests {
                     extra_body: Map::new(),
                     capabilities: PartialCapabilities::default(),
                     compatibility: Default::default(),
+                    service_tier: None,
                 }],
                 allowlist: None,
+                service_tiers: None,
             },
             SeedModel {
                 model_key: "reasoning".to_string(),
@@ -5071,8 +5079,10 @@ pub(crate) mod tests {
                     extra_body: Map::new(),
                     capabilities: PartialCapabilities::default(),
                     compatibility: Default::default(),
+                    service_tier: None,
                 }],
                 allowlist: None,
+                service_tiers: None,
             },
         ];
         let api_keys = vec![SeedApiKey {
@@ -6835,6 +6845,7 @@ pub(crate) mod tests {
                     cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_250)),
                     cache_write_cost_per_million_tokens: None,
                     image_output_cost_per_million_tokens: Some(Money4::from_scaled(300_000)),
+                    service_tiers: Vec::new(),
                 }),
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
@@ -6856,8 +6867,10 @@ pub(crate) mod tests {
                     }),
                     ..Default::default()
                 },
+                service_tier: None,
             }],
             allowlist: None,
+            service_tiers: None,
         }];
 
         let api_keys = vec![SeedApiKey {
@@ -6948,6 +6961,7 @@ pub(crate) mod tests {
                         extra_body: seeded_route.extra_body.clone(),
                         request_headers: BTreeMap::new(),
                         compatibility: seeded_route.compatibility.clone(),
+                        service_tier: None,
                     },
                     pricing_snapshot: None,
                 },
@@ -7524,7 +7538,7 @@ pub(crate) mod tests {
                 description: None,
                 tags: Vec::new(),
                 rank: 10,
-                routes: Vec::new(), allowlist: None, }], &[SeedApiKey {
+                routes: Vec::new(), allowlist: None,service_tiers: None, }], &[SeedApiKey {
                     name: "dev".to_string(),
                     public_id: "dev123".to_string(),
                     secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
@@ -7804,7 +7818,7 @@ pub(crate) mod tests {
                 description: None,
                 tags: Vec::new(),
                 rank: 10,
-                routes: Vec::new(), allowlist: None, }], &[SeedApiKey {
+                routes: Vec::new(), allowlist: None,service_tiers: None, }], &[SeedApiKey {
                     name: "dev".to_string(),
                     public_id: "dev123".to_string(),
                     secret_hash: "$argon2id$v=19$m=19456,t=2,p=1$8WJ6UydAx2RbDXy+zuYbAw$EF+rEtkc71VhwwvS+TS6EiZZvW6rtrjzXX4XvIsDhbU".to_string(),
@@ -8070,6 +8084,7 @@ pub(crate) mod tests {
                 rank: 10,
                 routes: Vec::new(),
                 allowlist: None,
+                service_tiers: None,
             },
             SeedModel {
                 model_key: "fast-v2".to_string(),
@@ -8092,8 +8107,10 @@ pub(crate) mod tests {
                     extra_body: Map::new(),
                     capabilities: PartialCapabilities::default(),
                     compatibility: Default::default(),
+                    service_tier: None,
                 }],
                 allowlist: None,
+                service_tiers: None,
             },
         ];
 
@@ -8209,6 +8226,7 @@ pub(crate) mod tests {
                     users: vec!["z@example.com".to_string(), "a@example.com".to_string()],
                     teams: vec!["team-z".to_string(), "team-a".to_string()],
                 }),
+                service_tiers: None,
             },
             SeedModel {
                 model_key: "fast-v2".to_string(),
@@ -8223,6 +8241,7 @@ pub(crate) mod tests {
                     users: vec!["target@example.com".to_string()],
                     teams: Vec::new(),
                 }),
+                service_tiers: None,
             },
         ];
         store
@@ -8277,6 +8296,7 @@ pub(crate) mod tests {
                     users: vec!["only@example.com".to_string()],
                     teams: vec!["team-b".to_string()],
                 }),
+                service_tiers: None,
             },
             SeedModel {
                 model_key: "fast-v2".to_string(),
@@ -8288,6 +8308,7 @@ pub(crate) mod tests {
                 rank: 20,
                 routes: Vec::new(),
                 allowlist: None,
+                service_tiers: None,
             },
         ];
         store
@@ -8350,6 +8371,7 @@ pub(crate) mod tests {
                     "research".to_string(),
                 ],
             }),
+            service_tiers: None,
         }];
         store
             .seed_from_inputs(&[], &models, &[], &[], &[], &[], &[], &[])
@@ -9900,8 +9922,10 @@ pub(crate) mod tests {
                 extra_body: Map::new(),
                 capabilities: PartialCapabilities::default(),
                 compatibility: Default::default(),
+                service_tier: None,
             }],
             allowlist: None,
+            service_tiers: None,
         }];
         let api_keys = vec![SeedApiKey {
             name: "dev".to_string(),
@@ -11098,8 +11122,10 @@ pub(crate) mod tests {
                 extra_body: Map::new(),
                 capabilities: PartialCapabilities::default(),
                 compatibility: Default::default(),
+                service_tier: None,
             }],
             allowlist: None,
+            service_tiers: None,
         }];
         let api_keys = vec![SeedApiKey {
             name: "dev".to_string(),
@@ -11548,6 +11574,7 @@ pub(crate) mod tests {
                     cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_250)),
                     cache_write_cost_per_million_tokens: Some(Money4::from_scaled(2_500)),
                     image_output_cost_per_million_tokens: Some(Money4::from_scaled(300_000)),
+                    service_tiers: Vec::new(),
                 }),
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
@@ -11558,8 +11585,10 @@ pub(crate) mod tests {
                     ..PartialCapabilities::default()
                 },
                 compatibility: Default::default(),
+                service_tier: None,
             }],
             allowlist: None,
+            service_tiers: None,
         }];
         let api_keys = vec![SeedApiKey {
             name: "dev".to_string(),
@@ -11653,6 +11682,7 @@ pub(crate) mod tests {
                 cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_250)),
                 cache_write_cost_per_million_tokens: Some(Money4::from_scaled(2_500)),
                 image_output_cost_per_million_tokens: Some(Money4::from_scaled(300_000)),
+                service_tiers: Vec::new(),
             })
         );
 
@@ -11833,6 +11863,7 @@ pub(crate) mod tests {
             },
             created_at: pricing_time,
             updated_at: pricing_time,
+            service_tiers: Vec::new(),
         };
         store
             .insert_model_pricing(&pricing_record)
@@ -11885,6 +11916,8 @@ pub(crate) mod tests {
             pricing_tier_above_input_tokens: None,
             computed_cost_usd: Money4::from_scaled(25),
             occurred_at: pricing_time,
+            requested_service_tier: None,
+            served_service_tier: None,
         };
         let unpriced_event = UsageLedgerRecord {
             usage_event_id: Uuid::new_v4(),
@@ -11924,6 +11957,8 @@ pub(crate) mod tests {
             pricing_tier_above_input_tokens: None,
             computed_cost_usd: Money4::ZERO,
             occurred_at: pricing_time,
+            requested_service_tier: None,
+            served_service_tier: None,
         };
         assert!(
             store
@@ -12300,8 +12335,10 @@ pub(crate) mod tests {
                 extra_body: Map::new(),
                 capabilities: PartialCapabilities::default(),
                 compatibility: Default::default(),
+                service_tier: None,
             }],
             allowlist: None,
+            service_tiers: None,
         }];
         let api_keys = vec![SeedApiKey {
             name: "dev".to_string(),
@@ -12768,6 +12805,7 @@ pub(crate) mod tests {
                 rank: 10,
                 routes: Vec::new(),
                 allowlist: None,
+                service_tiers: None,
             },
             SeedModel {
                 model_key: "fast-v2".to_string(),
@@ -12790,8 +12828,10 @@ pub(crate) mod tests {
                     extra_body: Map::new(),
                     capabilities: PartialCapabilities::default(),
                     compatibility: Default::default(),
+                    service_tier: None,
                 }],
                 allowlist: None,
+                service_tiers: None,
             },
         ];
         let api_keys = vec![SeedApiKey {
