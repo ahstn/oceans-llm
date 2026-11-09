@@ -41,7 +41,7 @@ Responses, Images and Decisions are their own API families. The gateway doesn't 
 | Embeddings | `openai_compat`, `gcp_cloud_run_openai_compat`, `gcp_vertex` (listed Google models), `github_copilot` | Vertex uses its own mapper with local validation. |
 | Images | `openai_compat`, `gcp_cloud_run_openai_compat` | Non-streaming. See [Model routing and APIs](/configuration/model-routing/). |
 | Decisions | `typesafe`, `openai_compat` Decisions routes | See [Decisions API](#decisions-api). |
-| Anthropic Messages | Every chat-capable provider type | Native Anthropic upstreams get the Messages body. OpenAI-shaped upstreams get a Chat Completions translation. |
+| Anthropic Messages | Every chat-capable provider type | `anthropic_compat`, Vertex Claude, Bedrock Anthropic, OpenRouter Claude and Copilot routes with `chat_api: anthropic_messages` use native requests, responses and SSE. Other chat-capable routes get a Chat Completions translation. See [Anthropic Messages on OpenAI-compatible routes](#anthropic-messages-on-openai-compatible-routes). |
 | Batches | Providers with a batch adapter | The batch `endpoint` selects Chat Completions, Responses or Embeddings. Item bodies use the same effort policy as synchronous requests and are validated before the gateway stores them. |
 
 The gateway has no direct Google Generative AI (API-key) provider. Google models run through `gcp_vertex` ([issue #90](https://github.com/ahstn/oceans-llm/issues/90)). Image and file inputs are partial and depend on the provider ([issue #93](https://github.com/ahstn/oceans-llm/issues/93)).
@@ -92,9 +92,36 @@ On `aws_bedrock` routes with `api_style: mantle_openai_responses`, Bedrock serve
 
 ## Native Messages thinking controls
 
+Native Messages routes keep:
+
+- Content order, signed and redacted thinking, and server-tool blocks.
+- Stop reasons such as `pause_turn`, and complete usage objects.
+- Unknown body fields and SSE events.
+
+Top-level `system` and system turns inside `messages` stay separate. The gateway rewrites the response model to the requested gateway model. Configured guardrail transformations and route overrides still apply. Budget checks, usage accounting and request logs use the native response. The gateway doesn't rebuild it from Chat Completions.
+
+Stream guardrails inspect each non-empty, complete `tool_use.input` object in a native start frame, separately from later JSON deltas. So a complete input can't skip inspection by omitting deltas or by sending a different delta payload. A transformed start-frame input stays a JSON object. Empty opening objects keep their normal delta behaviour.
+
+OpenRouter Claude routes always use `/api/v1/messages`, for both native Messages and Chat Completions callers. `anthropic_compat` providers use `/v1/messages`. Vertex and Bedrock keep their own native endpoints. Generic `openai_compat` routes still translate Messages through Chat Completions.
+
+Tool and image translation:
+
+- A Chat function tool's explicit `function.strict: true` or `false` becomes native tool-level `strict`. A null or omitted `strict` stays unset. In the other direction, native `strict` becomes `function.strict` for generic Chat upstreams. The gateway doesn't change tool schemas, and native Messages requests stay opaque. The upstream checks model support and enforces the constraints.
+- Chat image translation keeps the outer `cache_control` object, including its TTL, for data URLs, base64 sources and supported remote URL forms. Remote HTTP(S) images still need the existing OpenRouter opt-in. Other transport limits don't change.
+
+Rolling aliases such as `~anthropic/claude-opus-latest`, private deployment names and unrecognised model versions send native controls to the upstream, which validates them for the model. The gateway doesn't treat an unknown native model as a manual-thinking model. Known explicit versions keep the local rules below. Model access, effort ceilings and budgets are gateway policy for every model.
+
+An unknown native model can still use explicit manual thinking or a budget alias. An OpenAI effort alias doesn't force adaptive thinking or add native effort to that manual request. An explicit `output_config.effort` stays unchanged. Conflicting controls still fail locally.
+
+Headers:
+
+- Caller headers in the `anthropic-*` and `x-claude-code-*` namespaces go upstream on supported transports. Beta lists use the merge and limits in [Beta headers](#beta-headers).
+- Native responses and upstream HTTP errors keep Anthropic and OpenRouter extension headers, rate-limit headers, the upstream `request-id`, `retry-after` and `x-should-retry`. The gateway keeps its own `x-request-id`. Credentials, cookies and connection headers are removed.
+- Upstream native error bodies keep their original wording, so clients can retry and recover from capability rejections.
+
 These rules apply to native Anthropic Messages requests on `anthropic_compat`, Vertex Claude and Bedrock Anthropic routes.
 
-Native `output_config.effort` is independent of `thinking`. The gateway keeps `low`, `medium`, `high`, `xhigh` and `max`, subject to the model's effort ceiling and to what the upstream model supports. If the caller omits effort, the gateway omits it. If the caller sends `effort: null`, the gateway sends null. The gateway doesn't add a thinking mode or a default effort to native requests. Anthropic's own default effort varies by model; see [Anthropic effort](https://platform.claude.com/docs/en/build-with-claude/effort).
+Native `output_config.effort` is independent of `thinking`. The gateway keeps `low`, `medium`, `high`, `xhigh` and `max`, subject to the model's effort ceiling and to what the upstream model supports. If the caller omits effort, the gateway omits it. If the caller sends `effort: null`, the gateway sends null. The gateway doesn't add a thinking mode or a default effort to native requests. Anthropic's own default effort varies by model. For example, Opus 5.5 and Haiku 5.5 default to `medium`; see [Anthropic effort](https://platform.claude.com/docs/en/build-with-claude/effort).
 
 The gateway picks the native Messages or Chat Completions thinking rules from trusted endpoint metadata. Request fields can't switch between them. Chat Completions keeps its own model-specific defaults, described in [Model routing and APIs](/configuration/model-routing/).
 
@@ -107,10 +134,10 @@ For thinking:
 
 OpenAI-shaped `reasoning_effort` and `reasoning.effort` use the model-aware mappings in [Claude thinking by model](#claude-thinking-by-model). These aliases can turn thinking on; native effort alone doesn't. Conflicting explicit controls are errors. On Vertex and Bedrock, Opus 4.5 native effort gets the `effort-2025-11-24` beta even when thinking is omitted or disabled.
 
-System messages that change effort keep their position and `output_config`, including empty content. Native `safeguards` requests and opaque `safeguard_results` responses pass through, including verdicts in the stream's message-start and message-delta events. These support [Claude Code auto mode](https://code.claude.com/docs/en/llm-gateway-protocol). Auto mode isn't an effort value: `"auto"` and `"none"` aren't native Anthropic efforts.
+System messages keep their position and message-level fields, including empty content and per-message `output_config`. Native `safeguards` requests and opaque `safeguard_results` responses pass through, including verdicts in the stream's message-start and message-delta events. These support [Claude Code auto mode](https://code.claude.com/docs/en/llm-gateway-protocol). Auto mode isn't an effort value: `"auto"` and `"none"` aren't native Anthropic efforts.
 
 <Aside type="caution" title="Claude Code compatibility is partial">
-Mid-conversation system messages without effort controls are still hoisted into the top-level system prompt. Unknown SSE event types aren't passed through.
+This support doesn't mean every Claude Code workflow works. Each cloud provider and upstream model still decides which features and betas are available.
 </Aside>
 
 ### Beta headers
@@ -197,9 +224,9 @@ These transforms apply to Chat Completions requests unless a field says otherwis
 
 ## Anthropic Messages on OpenAI-compatible routes
 
-`POST /v1/messages` requests keep their Anthropic content blocks until the provider adapter. The adapter rewrites them into Chat Completions shapes before calling `/chat/completions` when the route is one of these ([`crates/gateway-providers/src/openai_compat/anthropic_messages.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-providers/src/openai_compat/anthropic_messages.rs)):
+`POST /v1/messages` requests keep their Anthropic content blocks until the provider adapter. OpenRouter Claude routes use native Messages automatically. For the routes below, the adapter rewrites the blocks into Chat Completions shapes before calling `/chat/completions`:
 
-- `openai_compat` or `gcp_cloud_run_openai_compat`.
+- Other `openai_compat` routes, and `gcp_cloud_run_openai_compat`.
 - `github_copilot` with `chat_api: chat_completions`.
 - `aws_bedrock` with `runtime_openai_chat` or `mantle_openai_chat`.
 
@@ -209,10 +236,10 @@ The rewrite works like this:
 - **Assistant tool calls.** `tool_use` blocks become `tool_calls` entries with the block `id`, the tool name, and `input` as a JSON string. Text blocks join into a string `content`. A turn with only tool calls sends `content: null`. A turn with only thinking blocks sends `content: ""`.
 - **Tool results.** Each user `tool_result` block becomes a `tool` message with its `tool_call_id`, placed before the rest of that user turn. String content passes through. Block-array content becomes its text blocks joined with newlines. `is_error: true` adds an `Error: ` prefix, because Chat Completions has no error flag on tool messages.
 - **Images.** `image` blocks with `base64` or `url` sources become `image_url` parts. Images inside a `tool_result` move to the trailing user message, because `tool` messages can't carry images. Other sources, such as Files API `file` references, get a local 400. Assistant `image` blocks also get a 400, because Chat Completions accepts images only from users.
-- **Thinking.** `thinking` and `redacted_thinking` blocks in assistant history are dropped. Chat Completions can't send them back to the model, and their signatures are valid only for Anthropic upstreams. Use an `anthropic_compat` route when thinking continuity across tool turns matters.
+- **Thinking.** `thinking` and `redacted_thinking` blocks in assistant history are dropped on these translated routes. Use a native Messages route, such as OpenRouter Claude, when thinking continuity across tool turns matters.
 - **Other fields.** `stop_sequences` becomes `stop` unless the caller already set `stop`. `top_k`, `thinking` and `metadata` pass through, because several OpenAI-compatible upstreams accept them as extensions.
 
-Route selection sees the request before the rewrite. Anthropic `image` blocks, including those inside a `tool_result`, need the `vision` capability. Tool history (`tool_use`, `tool_result`, `tool_calls` or `tool` messages) needs the `tools` capability, even when `tools` is empty or missing. Both default to `true`, so only routes that opt out are filtered.
+Route selection sees the request before the rewrite. Anthropic `image` blocks, including those inside a `tool_result`, need the `vision` capability. Tool history (`tool_use`, `tool_result`, `tool_calls` or `tool` messages) needs the `tools` capability, even when `tools` is empty or missing. The check uses [effective capabilities](#effective-capabilities): explicit configuration, catalog hints and adapter limits.
 
 OpenAI-shaped messages pass through unchanged, so Chat Completions callers on the same route aren't affected. Chat Completions batch items on these providers use the same rewrite.
 
@@ -278,11 +305,27 @@ A `gcp_vertex` route uses Vertex-hosted Claude when its `upstream_model` starts 
 - The body has no `model` field, and includes `anthropic_version: "vertex-2023-10-16"`.
 - The body uses the Anthropic Messages shape, so the gateway applies the same Claude request rules as `anthropic_compat` routes. See [Claude thinking by model](#claude-thinking-by-model).
 
-Chat Completions responses never put Claude `thinking` or `redacted_thinking` blocks into `choices[*].message.content`. Streamed `thinking_delta` and `signature_delta` events never become `delta.content`. The gateway keeps them under `choices[*].message.provider_metadata.gcp_vertex.reasoning` and `choices[*].delta.provider_metadata.gcp_vertex.reasoning`.
+Chat Completions responses never put Claude `thinking` or `redacted_thinking` blocks into `choices[*].message.content` or stream them as `delta.content`. Ordered native blocks and indexed stream events follow [native chat replay](#native-chat-replay). JSON reasoning metadata is still returned, but clients mustn't join thinking fragments into a replay block.
 
-Function tools, tool-result turns and streamed tool-use deltas work on Vertex Claude. Images work when they are base64: an Anthropic `image` block with a base64 source, or an OpenAI `image_url` with a `data:` URL. Supported types are `image/jpeg`, `image/png`, `image/webp` and `image/gif`. Remote `http` and `https` image URLs are rejected locally. Other content blocks, such as `document`, pass through for Vertex to validate.
+Native Messages callers send the returned assistant `content` back unchanged, including signed and redacted thinking. Chat Completions callers keep the complete native replay metadata when they continue a conversation. The upstream checks signatures and that the conversation prefix matches.
+
+Function tools, tool-result turns and streamed tool-use deltas work on Vertex Claude. Native Messages keeps image and document blocks, subject to the route's `vision` capability and upstream support. Chat Completions conversion has its own image rules: images must be base64, either an Anthropic `image` block with a base64 source or an OpenAI `image_url` with a `data:` URL. Supported types are `image/jpeg`, `image/png`, `image/webp` and `image/gif`. Remote `http` and `https` image URLs are rejected locally. Live multimodal coverage is tracked in [issue #91](https://github.com/ahstn/oceans-llm/issues/91) and [issue #93](https://github.com/ahstn/oceans-llm/issues/93).
 
 Vertex Google routes are separate. `google/*` models use `generateContent` and `streamGenerateContent`. Anthropic fields such as `thinking`, `output_config` and `anthropic_version` don't apply to them.
+
+### Google publisher Chat behaviour
+
+Streams:
+
+- A function call doesn't end a stream. The gateway needs an observed `finishReason`. EOF without one fails, with no `[DONE]`.
+- `STOP` can become `tool_calls`. `MAX_TOKENS` stays `length`. Safety filters, including `MODEL_ARMOR`, stay `content_filter`.
+- An explicit failure or unknown finish value is an upstream error.
+- A non-streaming response with no finish reason or no candidates also fails, unless it has a valid `promptFeedback` block.
+- Observed usage is kept through these failures, including later usage-only stream frames.
+
+On models without call IDs, a complete group of consecutive tool results follows the original Chat `tool_call_id` order, even when parallel functions share a name. Reordering needs unique call IDs and one matching result for each call. Incomplete or ambiguous groups keep their input order. The mapper doesn't invent missing results or move them across turns. Ordered signed parts follow [native chat replay](#native-chat-replay). The existing model-specific function-ID rules don't change.
+
+An explicit `strict: true` on a function tool or response schema is rejected locally, not silently weakened. The gateway doesn't rewrite `AUTO` to a forced-tool mode, and doesn't add speculative `const` rewrites to schemas. When Vertex returns `logprobsResult`, the chosen tokens and top alternatives appear in `choices[*].logprobs`, in JSON and in streams. This doesn't mean every model or API version supports log probabilities.
 
 ## Google Vertex text embeddings
 
@@ -361,7 +404,7 @@ With `auth.mode: default_chain` or `static_credentials`, the gateway signs reque
 
 ### Runtime Anthropic InvokeModel
 
-`runtime_anthropic_invoke` sends non-streaming Chat Completions to `/model/<model-id>/invoke` with Anthropic's Messages body. The body includes:
+`runtime_anthropic_invoke` sends non-streaming Chat Completions to `/model/<model-id>/invoke` with Anthropic's Messages body. For Chat Completions callers, the translated body includes:
 
 - `anthropic_version: bedrock-2023-05-31`.
 - `system` and `developer` text combined into Anthropic `system`.
@@ -387,11 +430,15 @@ Tool results accept text, JSON, base64 images and Bedrock document formats (`pdf
 
 Requests can include `requestMetadata`, `performanceConfig`, `guardrailConfig` and `additionalModelResponseFieldPaths` (or their snake_case aliases). The gateway checks AWS limits, enum values, guardrail shapes and RFC 6901 response paths before dispatch. `streamProcessingMode` is accepted for ConverseStream only. Route `extra_body` is merged afterwards.
 
+Returned `additionalModelResponseFields` stay under `provider_metadata.aws_bedrock.additionalModelResponseFields`, including in the stream's message-stop metadata. Consecutive tool results share one user turn, but a later ordinary user message isn't merged into it. `malformed_tool_use` and `malformed_model_output` are upstream failures, not successful Chat completions. The gateway keeps their billable usage.
+
 ### Reasoning in responses
 
 Chat Completions content stays answer text and tool calls only. Claude `thinking` and `redacted_thinking` blocks, and Converse `reasoningContent` text, signatures and redacted data, never go into `message.content` or `delta.content`. The gateway keeps them under `choices[*].message.provider_metadata.aws_bedrock.reasoning`, and under `choices[*].delta.provider_metadata.aws_bedrock.reasoning` for ConverseStream. The public Messages endpoint keeps the same split when it runs through chat-backed execution.
 
 Some models default thinking display to `omitted`. Then a stream can open an empty thinking block, send only a signature delta, and then start normal text.
+
+Chat Completions continuations restore signed, redacted and ordered content through [native chat replay](#native-chat-replay). This closes the request-side gap in [issue #140](https://github.com/ahstn/oceans-llm/issues/140). Older reasoning-only fragments can't rebuild the original full order. Native Messages callers instead send their assistant content blocks back unchanged through the native Bedrock mapper. Exact reasoning and modality token accounting is tracked in [issue #92](https://github.com/ahstn/oceans-llm/issues/92).
 
 ## Claude thinking by model
 
@@ -421,10 +468,6 @@ Some Claude models return 400 for a forced `tool_choice` on Messages, token coun
 | Accepted | Fable 5, Opus 5, Sonnet 5, Haiku 5.5 and earlier Claude models |
 
 Forced choices are OpenAI `required` and named function choices, and Anthropic `{"type": "any"}` and `{"type": "tool"}`. `auto`, `none` and an omitted `tool_choice` are always accepted. The gateway matches the model from `upstream_model`, so Bedrock application inference profile IDs and ARNs that hide the model name pass through to the upstream unchanged.
-
-### Thinking replay
-
-On `anthropic_compat` and Vertex Claude routes, the gateway keeps `thinking` and `redacted_thinking` blocks (with their signatures) in assistant history. If a Chat Completions caller sends back an assistant message with the `provider_metadata` reasoning the gateway returned, and no thinking blocks of its own, the gateway puts those blocks back at the start of the assistant turn. This keeps tool-use continuations valid. The Bedrock request mappers don't read `provider_metadata` reasoning back, so Chat Completions callers on Bedrock routes lose thinking continuity across tool turns.
 
 ## OpenRouter routing policy
 
@@ -468,15 +511,20 @@ It doesn't normalise tool-call streaming across providers ([issue #91](https://g
 
 The Responses stream adapter is separate. It keeps `event: response.*` names and JSON payloads. It treats `response.completed` and `response.incomplete` as successful ends. It reports `response.failed`, top-level errors, conflicting status or type fields, Chat Completions payloads on a Responses stream, and early EOF, without adding `[DONE]`. It adds one final `data: [DONE]` only after a valid completed or incomplete event.
 
+Native Messages streams keep their SSE frames. Guardrails handle CR, LF, CRLF and mixed line endings, including frames split across transport chunks. EOF before `message_stop` fails the response body and records a stream error. The gateway keeps observed usage for accounting and doesn't fake a completion.
+
 Bedrock ConverseStream doesn't use SSE, so a separate adapter decodes AWS EventStream frames and turns them into Chat Completions SSE chunks:
 
 - `messageStart` sends the assistant role.
 - `contentBlockDelta` sends text, function-argument deltas, or reasoning metadata deltas.
-- `messageStop` sends the finish reason.
-- `metadata.usage` sends an OpenAI-shaped usage chunk.
+- A valid `messageStop` sends the finish reason and any usable replay snapshot.
+- `metadata.usage` sends an OpenAI-shaped usage chunk, including after `messageStop`.
+- A valid completed stream gets `[DONE]` at EOF.
 - Exception frames and malformed or incomplete frames send structured SSE error chunks with no `[DONE]`.
 
-The frame parser checks frame lengths (up to 16 MiB), header bounds, header encodings, JSON payloads and clean finalisation. It reads the prelude and message CRC fields but doesn't verify the checksums.
+The frame parser checks both IEEE CRC32 checksums, frame lengths (up to 16 MiB), every legal header type (0 to 9), JSON payloads and clean finalisation. Unknown header types and cut-off header values fail. Valid events before a corrupt frame still reach accounting, whatever the HTTP chunk boundaries. Tool blocks use stable, dense Chat indexes, not sparse native block indexes. Provider-native `InvokeModelWithResponseStream` is separate work, tracked in [issue #139](https://github.com/ahstn/oceans-llm/issues/139).
+
+Replay assembly checks known tool and reasoning containers before it changes them. A malformed container records one error and suppresses later content. The stream still drains usage and message-stop diagnostics, but it can't end with a successful finish or `[DONE]`. Unknown fields stay opaque and merge without replacing tool identity, input or reasoning state. A valid length or filter end can hold incomplete tool JSON. That response keeps its finish reason and usage, but leaves out the unusable native replay snapshot.
 
 ## Replay identifiers
 
@@ -488,11 +536,39 @@ The gateway keeps provider-native IDs that already suit the target API:
 
 This is per request and stateless. It doesn't mean an ID belongs to a stored upstream response.
 
+## Native chat replay
+
+Keep the returned `message.provider_metadata` with the assistant message. Stream clients keep the complete final `delta.provider_metadata.*.native_content` snapshot. Indexed Anthropic `native_event` entries show block boundaries; they aren't complete reasoning blocks on their own.
+
+| Transport | Replay envelope under its provider namespace |
+| --- | --- |
+| `anthropic_compat`, Vertex Claude, OpenRouter Claude and Bedrock Anthropic | `native_content: {source: "anthropic_messages", blocks: [...]}` |
+| Bedrock Converse | `native_content: {source: "bedrock_converse", blocks: [...]}` |
+| Vertex Google | `native_content: {source: "google_generate_content", parts: [...], tool_call_ids: [...]}` |
+
+Before it restores native content, the mapper checks the public text, any reasoning, and the ordered tool IDs, names and parsed arguments. Conflicting or edited replay state fails locally, and doesn't overwrite the public message. A known source from another transport uses the public Chat message, not that family's signatures or blocks.
+
+This keeps signed thinking order, redacted content, server tools, citations and future block types without guessing their schema. Anthropic context-window exhaustion maps to `length`. Native stop reasons, including `pause_turn`, stay in message metadata. The gateway doesn't run a client's pause and resume loop or hosted-tool loop.
+
+Anthropic compaction deltas carry a complete summary, not text fragments. Both Chat stream adapters replace the compaction snapshot, keep null summaries, and tell an absent encrypted checkpoint apart from an explicit null. Text after compaction stays visible, and the compaction block stays in continuation metadata. Malformed compaction values or block boundaries fail the stream with no successful end, and observed usage is kept.
+
+An inline Chat continuation needs one complete, ordered replay sequence, so replay memory grows with response size. Final assembly moves blocks instead of copying the full sequence, frees parsed tool-input buffers, and drops failed replay state. Required legacy reasoning fields and serialised SSE output still use memory. This isn't a constant-memory or spooled protocol.
+
+Output guardrail transformations remove opaque replay snapshots, indexed native events and signed reasoning state across the response or buffered stream. This stops original text or tool arguments leaking through metadata or a later complete snapshot. Native Messages stays a separate opaque transport. Successful native JSON must be valid UTF-8. Incomplete bodies and body-read timeouts are upstream failures.
+
 ## Accounting boundary
 
 Compatibility profiles can make usage appear in a standard place more often. They don't change how the gateway prices or charges it.
 
 The gateway reads prompt, completion and total tokens from each response. Where the provider reports them, it also records uncached input, cache-read, cache-write and image-output tokens. Other provider counters, such as reasoning tokens, stay in the stored provider usage and aren't priced separately. See [Pricing catalog and accounting](/spend/pricing-and-accounting/) for how these are priced.
+
+Ordinary Chat usage that has `prompt_tokens` also accepts root `cached_tokens` and `cache_write_tokens`, and DeepSeek `prompt_cache_hit_tokens`:
+
+- Canonical nested cache fields win one by one, including explicit zero and invalid values. Aliases only fill missing fields.
+- Selected DeepSeek hit and miss counts must be non-negative integers whose checked sum equals the prompt total. Misses aren't cache writes.
+- Invalid buckets keep their diagnostics and the existing legacy estimate. The gateway doesn't invent cache discounts.
+
+These root aliases don't reinterpret Responses or native cache-exclusive inputs. Raw provider usage stays unchanged. A valid provider-reported cost wins over token-rate pricing. Valid mixed-TTL counts stay available to the ledger and token limits. TTL-specific pricing that isn't supported stays unpriced unless the provider supplies a valid cost.
 
 - Responses usage comes from `usage.input_tokens`, `usage.output_tokens` and `usage.total_tokens`. Streaming Responses read it from the completed event's `response.usage`.
 - Vertex text embeddings read real token counts: `predictions[].embeddings.statistics.token_count` on `:predict` models, and `usageMetadata.promptTokenCount` on `gemini-embedding-2`. The gateway never infers tokens from characters or bytes.

@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::credential_scopes::ApiKeyAccess;
 use crate::protocol::decisions::DecisionsWireFormat;
+use crate::provider::ProviderCapabilities;
 use crate::route_capabilities::PartialCapabilities;
 use crate::routing::ModelRoutingPolicy;
 
@@ -2914,40 +2915,6 @@ pub struct ProviderConnection {
     pub secrets: Option<Value>,
 }
 
-/// Public API contract used when dispatching through the common chat execution path.
-/// This is trusted endpoint metadata, never inferred from a caller's JSON fields.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum ChatRequestProtocol {
-    #[default]
-    ChatCompletions,
-    AnthropicMessages,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProviderRequestContext {
-    pub request_id: String,
-    pub model_key: String,
-    pub provider_key: String,
-    pub upstream_model: String,
-    /// Trusted user identity derived from the authenticated gateway API key.
-    #[serde(default)]
-    pub owner_user_id: Option<Uuid>,
-    /// Credential generation selected during routing, if the provider uses user credentials.
-    #[serde(default)]
-    pub expected_provider_credential_id: Option<Uuid>,
-    /// Only relevant to chat execution; skipped so callers cannot override the endpoint contract.
-    #[serde(skip)]
-    pub chat_protocol: ChatRequestProtocol,
-    #[serde(default)]
-    pub extra_headers: Map<String, Value>,
-    #[serde(default)]
-    pub extra_body: Map<String, Value>,
-    #[serde(default)]
-    pub request_headers: BTreeMap<String, String>,
-    #[serde(default)]
-    pub compatibility: RouteCompatibility,
-}
-
 #[derive(Clone)]
 pub struct ProviderUserCredentialRecord {
     pub credential_id: Uuid,
@@ -2977,146 +2944,6 @@ pub struct UpsertProviderUserCredentialRecord {
     pub secret_nonce: String,
     pub secret_key_id: String,
     pub updated_at: OffsetDateTime,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ProviderCapabilities {
-    #[serde(default = "default_true")]
-    pub chat_completions: bool,
-    #[serde(default = "default_true")]
-    pub responses: bool,
-    #[serde(default = "default_true")]
-    pub stream: bool,
-    #[serde(default = "default_true")]
-    pub embeddings: bool,
-    /// Images API generation (`POST /v1/images`). Opt-in per route: only
-    /// image models serve it.
-    #[serde(default)]
-    pub images: bool,
-    #[serde(default)]
-    pub decisions: bool,
-    #[serde(default = "default_true")]
-    pub tools: bool,
-    #[serde(default = "default_true")]
-    pub vision: bool,
-    #[serde(default = "default_true")]
-    pub json_schema: bool,
-    #[serde(default = "default_true")]
-    pub developer_role: bool,
-}
-
-impl ProviderCapabilities {
-    #[must_use]
-    pub const fn none() -> Self {
-        Self {
-            chat_completions: false,
-            responses: false,
-            stream: false,
-            embeddings: false,
-            images: false,
-            decisions: false,
-            tools: false,
-            vision: false,
-            json_schema: false,
-            developer_role: false,
-        }
-    }
-
-    #[must_use]
-    pub const fn new(chat_completions: bool, stream: bool, embeddings: bool) -> Self {
-        Self::with_dimensions(
-            chat_completions,
-            stream,
-            embeddings,
-            false,
-            false,
-            false,
-            false,
-        )
-    }
-
-    #[must_use]
-    pub const fn with_dimensions(
-        chat_completions: bool,
-        stream: bool,
-        embeddings: bool,
-        tools: bool,
-        vision: bool,
-        json_schema: bool,
-        developer_role: bool,
-    ) -> Self {
-        Self {
-            chat_completions,
-            responses: false,
-            stream,
-            embeddings,
-            images: false,
-            decisions: false,
-            tools,
-            vision,
-            json_schema,
-            developer_role,
-        }
-    }
-
-    #[must_use]
-    pub const fn chat_only_streaming() -> Self {
-        Self::with_dimensions(true, true, false, false, true, false, true)
-    }
-
-    #[must_use]
-    pub const fn openai_compat_baseline() -> Self {
-        Self {
-            chat_completions: true,
-            responses: true,
-            stream: true,
-            embeddings: true,
-            images: true,
-            decisions: false,
-            tools: true,
-            vision: true,
-            json_schema: true,
-            developer_role: true,
-        }
-    }
-
-    #[must_use]
-    pub const fn all_enabled() -> Self {
-        Self {
-            chat_completions: true,
-            responses: true,
-            stream: true,
-            embeddings: true,
-            images: true,
-            decisions: true,
-            tools: true,
-            vision: true,
-            json_schema: true,
-            developer_role: true,
-        }
-    }
-
-    #[must_use]
-    pub const fn intersect(self, other: Self) -> Self {
-        Self {
-            chat_completions: self.chat_completions && other.chat_completions,
-            responses: self.responses && other.responses,
-            stream: self.stream && other.stream,
-            embeddings: self.embeddings && other.embeddings,
-            images: self.images && other.images,
-            decisions: self.decisions && other.decisions,
-            tools: self.tools && other.tools,
-            vision: self.vision && other.vision,
-            json_schema: self.json_schema && other.json_schema,
-            developer_role: self.developer_role && other.developer_role,
-        }
-    }
-}
-
-impl Default for ProviderCapabilities {
-    fn default() -> Self {
-        Self::all_enabled()
-    }
 }
 
 pub const VERTEX_TEXT_EMBEDDING_MODEL_IDS: &[&str] = &[

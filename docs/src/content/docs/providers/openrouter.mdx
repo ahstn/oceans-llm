@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-OpenRouter uses the generic `openai_compat` provider type. Chat Completions, Responses, embeddings and the Images API use OpenRouter's OpenAI-compatible paths. Decisions routes use OpenRouter's separate alpha path. Two things are specific to OpenRouter: a route-level `compatibility.openrouter` block for OpenRouter's upstream provider routing, and the cost OpenRouter reports in each response.
+OpenRouter uses the generic `openai_compat` provider type. Claude routes use OpenRouter's native Messages endpoint (see [Claude routes](#claude-routes)). Other chat models, Responses, embeddings and the Images API use OpenRouter's OpenAI-compatible paths. Decisions routes use OpenRouter's separate alpha path. Two things are specific to OpenRouter: a route-level `compatibility.openrouter` block for OpenRouter's upstream provider routing, and the cost OpenRouter reports in each response.
 
 For every provider field, see [Providers](/configuration/providers/#openai_compat). For every route field, see [Models and routes](/configuration/models-and-routes/).
 
@@ -38,6 +38,19 @@ models:
       - provider: openrouter
         upstream_model: deepseek/deepseek-v4.1-flash
 ```
+
+## Claude routes
+
+A route whose `upstream_model` starts with `anthropic/claude-` or `~anthropic/claude-` uses OpenRouter's `/api/v1/messages` endpoint automatically. This includes rolling identities such as `~anthropic/claude-opus-latest`. Callers can use either `/v1/messages` or `/v1/chat/completions`. Oceans translates Chat Completions callers at the API boundary, and native Messages responses keep their own protocol.
+
+Native Messages requests keep their thinking blocks, signatures, cache controls and extension fields. Rolling aliases use OpenRouter's model-specific validation, so adaptive thinking and native effort work without a pinned model ID or a local policy override.
+
+For Chat Completions callers on these routes:
+
+- Image URLs with HTTP(S) sources still work.
+- A route-level `max_tokens` or `max_completion_tokens` overrides the caller's limit. Oceans sends only the native `max_tokens`.
+- `response_format.type: json_schema` maps the schema to the native `output_config.format` and keeps the other output options. Conflicting explicit formats fail in the gateway. Native Messages callers keep their `output_config` unchanged.
+- Streaming totals include uncached input, cache reads, cache writes and output tokens.
 
 ## Set OpenRouter provider routing
 
@@ -76,7 +89,7 @@ What each field asks OpenRouter to do:
 
 Provider slugs must match OpenRouter's provider names. Oceans doesn't keep a list of them, so OpenRouter validates the slugs. Oceans checks the shape: no empty or duplicate slugs, and no slug in both `only` and `ignore`. The full validation rules are in [OpenRouter profile](/configuration/models-and-routes/#openrouter-profile).
 
-Oceans sends the block as the upstream `provider` object on Chat Completions, Responses and Images requests. It replaces any `provider` object the caller sends.
+Oceans sends the block as the upstream `provider` object on Messages, Chat Completions, Responses and Images requests. It replaces any `provider` object the caller sends.
 
 Keep these rules in mind:
 

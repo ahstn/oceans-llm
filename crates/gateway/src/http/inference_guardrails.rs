@@ -26,6 +26,7 @@ const PROMPT_TEXT_FIELDS: &[&str] = &[
     "name",
     "prompt",
     "summary",
+    "system",
     "text",
     "title",
 ];
@@ -69,7 +70,7 @@ pub async fn guard_prompt(
     // Redact before any other evaluator, so managed services never see the secrets either.
     let redactions = redact_prompt_secrets(&policy, request);
     record_guardrail_decisions_in_background(state, vec![(request_id.to_string(), redactions)]);
-    let associated_prompt = inspect_text_fields(
+    let (associated_prompt, _) = inspect_text_fields(
         state,
         &route_key,
         request_id,
@@ -146,8 +147,8 @@ pub async fn guard_model_response(
     context: &InferenceGuardContext,
     response: &mut Value,
 ) -> Result<(), GatewayError> {
-    inspect_generated_tool_calls(state, context, response).await?;
-    inspect_text_fields(
+    let tools_transformed = inspect_generated_tool_calls(state, context, response).await?;
+    let (_, text_transformed) = inspect_text_fields(
         state,
         &context.route_key,
         &context.request_id,
@@ -157,7 +158,44 @@ pub async fn guard_model_response(
         MODEL_RESPONSE_TEXT_FIELDS,
     )
     .await?;
+    if tools_transformed || text_transformed {
+        invalidate_native_replay(response);
+    }
     Ok(())
+}
+
+/// Native replay state can duplicate text or arguments outside the guardrail selectors.
+/// A changed projection cannot safely retain its original signatures or opaque snapshots.
+fn invalidate_native_replay(response: &mut Value) -> bool {
+    let Some(choices) = response.get_mut("choices").and_then(Value::as_array_mut) else {
+        return false;
+    };
+    let mut removed = false;
+    for choice in choices {
+        for field in ["message", "delta"] {
+            let Some(message) = choice.get_mut(field).and_then(Value::as_object_mut) else {
+                continue;
+            };
+            removed |= message.remove("thought_signature").is_some();
+            let Some(metadata) = message
+                .get_mut("provider_metadata")
+                .and_then(Value::as_object_mut)
+            else {
+                continue;
+            };
+            for namespace in metadata.values_mut().filter_map(Value::as_object_mut) {
+                for field in [
+                    "native_content",
+                    "native_event",
+                    "reasoning",
+                    "thought_signature",
+                ] {
+                    removed |= namespace.remove(field).is_some();
+                }
+            }
+        }
+    }
+    removed
 }
 
 pub struct GuardStreamError {
@@ -270,85 +308,75 @@ async fn guard_sse_payload(
             )));
         }
     };
-    let separator = if source.contains("\r\n") {
-        "\r\n"
-    } else {
-        "\n"
-    };
-    let event_separator = format!("{separator}{separator}");
     let mut blocks = Vec::new();
     let mut tool_fragments = BTreeMap::<String, ToolCallFragments>::new();
     let mut text_locations = Vec::<(String, usize, String)>::new();
     let mut snapshot_text_locations = Vec::<(String, usize, String)>::new();
+    let mut replay_locations_by_group = BTreeMap::<(String, String), Vec<(usize, String)>>::new();
 
-    for block in source.split(&event_separator) {
+    for raw in sse_frames(source) {
         let event_index = blocks.len();
-        let mut lines = Vec::new();
-        let mut data = Vec::new();
-        let mut raw_data = Vec::new();
-        let mut data_index = None;
-        for line in block.split(separator) {
-            let Some(payload) = line.strip_prefix("data:") else {
-                lines.push(StreamLine::Other(line.to_string()));
-                continue;
-            };
-            raw_data.push(line.to_string());
-            data_index.get_or_insert(lines.len());
-            data.push(payload.strip_prefix(' ').unwrap_or(payload));
-        }
-        if let Some(data_index) = data_index {
-            let payload = data.join("\n");
-            let stream_line = if payload.trim().is_empty() {
-                StreamLine::Other(raw_data.join(separator))
-            } else if payload == "[DONE]" {
-                StreamLine::Done
-            } else {
-                let value = match parse_guarded_sse_json(&payload) {
-                    Ok(value) => value,
-                    Err(_)
-                        if release_uninspected_stream(
-                            state,
-                            context,
-                            UninspectedContent::Unparseable,
-                            &[source.as_bytes()],
-                        ) =>
-                    {
-                        return Ok(source.as_bytes().to_vec());
-                    }
-                    Err(error) => return Err(error),
-                };
-                let mut pointers = Vec::new();
-                collect_string_pointers(&value, "", MODEL_RESPONSE_TEXT_FIELDS, &mut pointers);
-                if let Some(error) = value.get("error") {
-                    collect_all_string_pointers(error, "/error", &mut pointers);
+        let payload = sse_lines(raw)
+            .filter_map(|(line, _)| sse_data(line))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let value = if payload.trim().is_empty() || payload == "[DONE]" {
+            None
+        } else {
+            let value = match parse_guarded_sse_json(&payload) {
+                Ok(value) => value,
+                Err(_)
+                    if release_uninspected_stream(
+                        state,
+                        context,
+                        UninspectedContent::Unparseable,
+                        &[source.as_bytes()],
+                    ) =>
+                {
+                    return Ok(source.as_bytes().to_vec());
                 }
-                let event_type = value.get("type").and_then(Value::as_str);
-                if event_type.is_some_and(|kind| {
-                    kind == "response.completed"
-                        || kind == "response.done"
-                        || kind == "response.output_text.done"
-                }) {
-                    snapshot_text_locations.extend(pointers.into_iter().map(|pointer| {
-                        (stream_text_group(&value, &pointer), event_index, pointer)
-                    }));
+                Err(error) => return Err(error),
+            };
+            let mut pointers = Vec::new();
+            collect_string_pointers(&value, "", MODEL_RESPONSE_TEXT_FIELDS, &mut pointers);
+            if let Some(error) = value.get("error") {
+                collect_all_string_pointers(error, "/error", &mut pointers);
+            }
+            let event_type = value.get("type").and_then(Value::as_str);
+            let snapshot = event_type.is_some_and(|kind| {
+                kind == "response.completed"
+                    || kind == "response.done"
+                    || kind == "response.output_text.done"
+            });
+            if !snapshot
+                && event_type.is_some_and(|kind| {
+                    kind.ends_with("output_text.delta") || kind.ends_with("reasoning_text.delta")
+                })
+                && value.get("delta").is_some_and(Value::is_string)
+            {
+                pointers.push("/delta".to_string());
+            }
+            for pointer in pointers {
+                let group = stream_text_group(&value, &pointer);
+                if let Some(owner) = stream_replay_text_owner(&value, &pointer, event_index) {
+                    replay_locations_by_group
+                        .entry((group, owner))
+                        .or_default()
+                        .push((event_index, pointer));
+                } else if snapshot {
+                    snapshot_text_locations.push((group, event_index, pointer));
                 } else {
-                    if event_type.is_some_and(|kind| {
-                        kind.ends_with("output_text.delta")
-                            || kind.ends_with("reasoning_text.delta")
-                    }) && value.get("delta").is_some_and(Value::is_string)
-                    {
-                        pointers.push("/delta".to_string());
-                    }
-                    text_locations.extend(pointers.into_iter().map(|pointer| {
-                        (stream_text_group(&value, &pointer), event_index, pointer)
-                    }));
+                    text_locations.push((group, event_index, pointer));
                 }
-                collect_stream_tool_fragments(&value, "", event_index, &mut tool_fragments);
-                StreamLine::Json(value)
-            };
-            lines.insert(data_index, stream_line);
-        }
-        blocks.push(lines);
+            }
+            collect_stream_tool_fragments(&value, "", event_index, &mut tool_fragments);
+            Some(value)
+        };
+        blocks.push(StreamBlock {
+            raw,
+            value,
+            transformed: false,
+        });
     }
 
     let owners = call_id_owners(&tool_fragments);
@@ -416,6 +444,7 @@ async fn guard_sse_payload(
             .or_default()
             .push((event_index, pointer));
     }
+    let mut inspected_text_by_group = BTreeMap::<String, Vec<String>>::new();
     for (group, locations) in text_locations_by_group {
         let combined_text = stream_text_at_locations(&blocks, &locations);
         if combined_text.is_empty() {
@@ -425,17 +454,19 @@ async fn guard_sse_payload(
         if let Some(transformed) = &replacement {
             replace_stream_text(&mut blocks, &locations, transformed, true);
         }
-        let Some(snapshot_locations) = snapshot_locations_by_group.remove(&group) else {
-            continue;
-        };
-        let snapshot_text = stream_text_at_locations(&blocks, &snapshot_locations);
-        if snapshot_text == combined_text {
-            if let Some(transformed) = &replacement {
-                replace_stream_text(&mut blocks, &snapshot_locations, transformed, true);
+        if let Some(snapshot_locations) = snapshot_locations_by_group.remove(&group) {
+            let snapshot_text = stream_text_at_locations(&blocks, &snapshot_locations);
+            if snapshot_text == combined_text {
+                if let Some(transformed) = &replacement {
+                    replace_stream_text(&mut blocks, &snapshot_locations, transformed, true);
+                }
+            } else if let Some(transformed) =
+                guard_stream_text(state, context, &snapshot_text).await?
+            {
+                replace_stream_text(&mut blocks, &snapshot_locations, &transformed, true);
             }
-        } else if let Some(transformed) = guard_stream_text(state, context, &snapshot_text).await? {
-            replace_stream_text(&mut blocks, &snapshot_locations, &transformed, true);
         }
+        inspected_text_by_group.insert(group, vec![combined_text]);
     }
     for locations in snapshot_locations_by_group.values() {
         let snapshot_text = stream_text_at_locations(&blocks, locations);
@@ -443,26 +474,36 @@ async fn guard_sse_payload(
             replace_stream_text(&mut blocks, locations, &transformed, true);
         }
     }
+    for ((group, _), locations) in replay_locations_by_group {
+        let replay_text = stream_text_at_locations(&blocks, &locations);
+        // Public deltas own the visible answer. Replay events and complete snapshots
+        // are copies, not incremental output; inspect differing or unprojected text
+        // independently rather than silently trusting the metadata.
+        let inspected = inspected_text_by_group.entry(group).or_default();
+        if inspected.contains(&replay_text) {
+            continue;
+        }
+        if let Some(transformed) = guard_stream_text(state, context, &replay_text).await? {
+            replace_stream_text(&mut blocks, &locations, &transformed, true);
+        }
+        inspected.push(replay_text);
+    }
 
-    let rendered = blocks
-        .into_iter()
-        .map(|lines| {
-            lines
-                .into_iter()
-                .map(|line| match line {
-                    StreamLine::Json(value) => format!(
-                        "data: {}",
-                        serde_json::to_string(&value).expect("JSON stream event serialization")
-                    ),
-                    StreamLine::Done => "data: [DONE]".to_string(),
-                    StreamLine::Other(line) => line,
-                })
-                .collect::<Vec<_>>()
-                .join(separator)
-        })
-        .collect::<Vec<_>>()
-        .join(&event_separator);
-    Ok(rendered.into_bytes())
+    // A later complete snapshot can contain data transformed in an earlier delta.
+    // Guarding buffers the whole stream, so invalidate replay state across every frame.
+    if blocks.iter().any(|block| block.transformed) {
+        for block in &mut blocks {
+            if let Some(value) = &mut block.value {
+                block.transformed |= invalidate_native_replay(value);
+            }
+        }
+    }
+
+    let mut rendered = Vec::with_capacity(payload.len());
+    for block in blocks {
+        block.write_to(&mut rendered);
+    }
+    Ok(rendered)
 }
 
 /// Replacements already decided for one tool call, keyed by tool name, shell-command shape,
@@ -536,14 +577,15 @@ async fn evaluate_stream_tool_arguments(
     Ok(replacement)
 }
 
-fn stream_text_at_locations(blocks: &[Vec<StreamLine>], locations: &[(usize, String)]) -> String {
+fn stream_text_at_locations(blocks: &[StreamBlock<'_>], locations: &[(usize, String)]) -> String {
     locations
         .iter()
         .filter_map(|(event_index, pointer)| {
-            blocks[*event_index].iter().find_map(|line| match line {
-                StreamLine::Json(value) => value.pointer(pointer).and_then(Value::as_str),
-                _ => None,
-            })
+            blocks[*event_index]
+                .value
+                .as_ref()?
+                .pointer(pointer)
+                .and_then(Value::as_str)
         })
         .collect()
 }
@@ -581,6 +623,39 @@ fn parse_guarded_sse_json(payload: &str) -> Result<Value, GatewayError> {
     })
 }
 
+fn stream_replay_text_owner(value: &Value, pointer: &str, event_index: usize) -> Option<String> {
+    let mut segments = pointer.strip_prefix("/choices/")?.split('/');
+    let choice_index = segments.next()?.parse::<usize>().ok()?;
+    let message_field = segments.next()?;
+    if !matches!(message_field, "message" | "delta") || segments.next()? != "provider_metadata" {
+        return None;
+    }
+    let namespace = segments.next()?;
+    let field = segments.next()?;
+    if namespace == "aws_bedrock" && field == "reasoning" {
+        let choice = value.get("choices")?.get(choice_index)?;
+        let metadata = choice
+            .get(message_field)?
+            .get("provider_metadata")?
+            .get(namespace)?;
+        // Converse emits reasoning fragments before messageStop. Its terminal
+        // snapshot always has stop_reason, even when a failure leaves finish_reason null.
+        if metadata.get("reasoning")?.get("source")?.as_str() == Some("bedrock_converse_stream")
+            && metadata.get("stop_reason").is_none()
+            && choice.get("finish_reason").is_none_or(Value::is_null)
+        {
+            return Some(format!("{namespace}:{field}"));
+        }
+    }
+    match field {
+        "native_event" => Some(format!("{namespace}:{field}")),
+        "native_content" | "reasoning" | "thought_signature" => {
+            Some(format!("{namespace}:{field}:{event_index}"))
+        }
+        _ => None,
+    }
+}
+
 fn stream_text_group(value: &Value, pointer: &str) -> String {
     let segments = pointer
         .split('/')
@@ -603,6 +678,20 @@ fn stream_text_group(value: &Value, pointer: &str) -> String {
     if let Some(item_id) = value.get("item_id").and_then(Value::as_str) {
         return format!("item:{item_id}:{kind}");
     }
+    // Native text blocks form one visible answer; keep their original locations
+    // so a transformed answer can replace the first fragment and clear the rest.
+    let native_text = match (value.get("type").and_then(Value::as_str), pointer) {
+        (Some("content_block_start"), "/content_block/text") => {
+            value.pointer("/content_block/type").and_then(Value::as_str) == Some("text")
+        }
+        (Some("content_block_delta"), "/delta/text") => {
+            value.pointer("/delta/type").and_then(Value::as_str) == Some("text_delta")
+        }
+        _ => false,
+    };
+    if native_text {
+        return "message:content".to_string();
+    }
     if let Some(content_block_index) = value.get("index").and_then(Value::as_u64) {
         return format!("content-block:{content_block_index}:{kind}");
     }
@@ -618,7 +707,10 @@ fn stream_text_kind(value: &Value, segments: &[&str]) -> &'static str {
     if matches!(
         field,
         "thinking" | "reasoning" | "reasoning_content" | "reasoning_text"
-    ) || event_type.contains("reasoning")
+    ) || segments
+        .iter()
+        .any(|segment| matches!(*segment, "reasoning" | "reasoningContent" | "reasoningText"))
+        || event_type.contains("reasoning")
     {
         "reasoning"
     } else if field == "refusal" {
@@ -629,31 +721,30 @@ fn stream_text_kind(value: &Value, segments: &[&str]) -> &'static str {
 }
 
 fn replace_stream_text(
-    blocks: &mut [Vec<StreamLine>],
+    blocks: &mut [StreamBlock<'_>],
     locations: &[(usize, String)],
     replacement: &str,
     clear_after_first: bool,
 ) {
     let mut first = true;
     for (event_index, pointer) in locations {
-        for line in &mut blocks[*event_index] {
-            if let StreamLine::Json(value) = line
-                && let Some(slot) = value.pointer_mut(pointer)
-            {
-                *slot = Value::String(if first || !clear_after_first {
-                    replacement.to_string()
-                } else {
-                    String::new()
-                });
-                first = false;
-                break;
-            }
+        let block = &mut blocks[*event_index];
+        if let Some(value) = &mut block.value
+            && let Some(slot) = value.pointer_mut(pointer)
+        {
+            *slot = Value::String(if first || !clear_after_first {
+                replacement.to_string()
+            } else {
+                String::new()
+            });
+            block.transformed = true;
+            first = false;
         }
     }
 }
 
 fn replace_stream_arguments(
-    blocks: &mut [Vec<StreamLine>],
+    blocks: &mut [StreamBlock<'_>],
     locations: &[(usize, String)],
     replacement: &str,
     shell_command: bool,
@@ -661,33 +752,108 @@ fn replace_stream_arguments(
 ) {
     let mut first = true;
     for (event_index, pointer) in locations {
-        for line in &mut blocks[*event_index] {
-            if let StreamLine::Json(value) = line
-                && let Some(slot) = value.pointer_mut(pointer)
-            {
-                let value = if first || !clear_after_first {
-                    replacement
+        let block = &mut blocks[*event_index];
+        if let Some(value) = &mut block.value
+            && let Some(slot) = value.pointer_mut(pointer)
+        {
+            let value = if first || !clear_after_first {
+                replacement
+            } else {
+                ""
+            };
+            replace_stream_argument(slot, value, shell_command);
+            block.transformed = true;
+            first = false;
+        }
+    }
+}
+
+/// Keep the original frame, including its line endings and metadata, unless a
+/// guardrail transforms its data. The shared SSE parser only retains event/data.
+struct StreamBlock<'a> {
+    raw: &'a str,
+    value: Option<Value>,
+    transformed: bool,
+}
+
+impl StreamBlock<'_> {
+    fn write_to(self, output: &mut Vec<u8>) {
+        if !self.transformed {
+            output.extend_from_slice(self.raw.as_bytes());
+            return;
+        }
+        let mut written = false;
+        for (line, ending) in sse_lines(self.raw) {
+            if sse_data(line).is_some() {
+                if !written {
+                    output.extend_from_slice(b"data: ");
+                    serde_json::to_writer(&mut *output, self.value.as_ref().expect("JSON event"))
+                        .expect("JSON stream event serialization");
+                    written = true;
                 } else {
-                    ""
-                };
-                replace_stream_argument(slot, value, shell_command);
-                first = false;
-                break;
+                    // Retain each data line's ending: removing one can turn an
+                    // adjacent CR and LF into a single CRLF and merge events.
+                    output.extend_from_slice(b"data:");
+                }
+                output.extend_from_slice(ending.as_bytes());
+            } else {
+                output.extend_from_slice(line.as_bytes());
+                output.extend_from_slice(ending.as_bytes());
             }
         }
     }
 }
 
-enum StreamLine {
-    Json(Value),
-    Done,
-    Other(String),
+/// SSE permits CR, LF, and CRLF, even within a single event. Since the guard
+/// buffers the stream first, a CRLF or UTF-8 sequence split across chunks is intact.
+fn sse_lines(mut source: &str) -> impl Iterator<Item = (&str, &str)> {
+    std::iter::from_fn(move || {
+        if source.is_empty() {
+            return None;
+        }
+        let end = source.find(['\r', '\n']).unwrap_or(source.len());
+        let ending_len = if source[end..].starts_with("\r\n") {
+            2
+        } else {
+            usize::from(end < source.len())
+        };
+        let (line, rest) = source.split_at(end);
+        let (ending, rest) = rest.split_at(ending_len);
+        source = rest;
+        Some((line, ending))
+    })
+}
+
+fn sse_frames(mut source: &str) -> impl Iterator<Item = &str> {
+    std::iter::from_fn(move || {
+        if source.is_empty() {
+            return None;
+        }
+        let mut end = 0;
+        for (line, ending) in sse_lines(source) {
+            end += line.len() + ending.len();
+            if line.is_empty() {
+                break;
+            }
+        }
+        let (frame, rest) = source.split_at(end);
+        source = rest;
+        Some(frame)
+    })
+}
+
+fn sse_data(line: &str) -> Option<&str> {
+    if line == "data" {
+        return Some("");
+    }
+    line.strip_prefix("data:")
+        .map(|data| data.strip_prefix(' ').unwrap_or(data))
 }
 
 /// The tool calls in one guarded stream, keyed by call identity. `name`, `arguments`, and
-/// `shell_command_locations` describe the streamed deltas. Each terminal snapshot keeps the
-/// name and argument encoding from its own event, so a snapshot can never change how the
-/// deltas, or another snapshot, are evaluated and rewritten.
+/// `shell_command_locations` describe the streamed deltas. Each complete snapshot, including
+/// native initial input, keeps the name and argument encoding from its own event, so a snapshot
+/// can never change how the deltas, or another snapshot, are evaluated and rewritten.
 #[derive(Default)]
 struct ToolCallFragments {
     name: String,
@@ -805,6 +971,21 @@ fn collect_stream_tool_fragments(
                     let fragments = output.entry(key.clone()).or_default();
                     if let Some(name) = block.get("name").and_then(Value::as_str) {
                         fragments.name.push_str(name);
+                    }
+                    if let Some(input) = block.get("input")
+                        && !input.as_object().is_some_and(Map::is_empty)
+                    {
+                        // Empty objects open calls populated by deltas. A complete initial
+                        // input is independently executable, not a prefix of later deltas.
+                        fragments.terminal_arguments.push(TerminalArguments {
+                            name: block
+                                .get("name")
+                                .and_then(Value::as_str)
+                                .map(str::to_string),
+                            arguments: serialized_arguments(input),
+                            location: (event_index, format!("{pointer}/content_block/input")),
+                            shell_command: false,
+                        });
                     }
                 }
                 if let Some(delta) = object.get("delta").and_then(Value::as_object)
@@ -982,7 +1163,7 @@ async fn inspect_text_fields(
     value: &mut Value,
     associated_prompt: Option<&str>,
     field_names: &[&str],
-) -> Result<Option<String>, GatewayError> {
+) -> Result<(Option<String>, bool), GatewayError> {
     debug_assert!(matches!(
         phase,
         GuardPhase::Prompt | GuardPhase::ModelResponse
@@ -995,7 +1176,7 @@ async fn inspect_text_fields(
         .map(str::to_string)
         .collect::<Vec<_>>();
     if inspected.is_empty() {
-        return Ok(None);
+        return Ok((None, false));
     }
 
     let mut input = EvaluationInput::new(
@@ -1033,15 +1214,19 @@ async fn inspect_text_fields(
     } else {
         &inspected
     };
-    Ok(Some(final_segments.join("\n")))
+    Ok((
+        Some(final_segments.join("\n")),
+        final_segments != &inspected,
+    ))
 }
 
 async fn inspect_generated_tool_calls(
     state: &AppState,
     context: &InferenceGuardContext,
     response: &mut Value,
-) -> Result<(), GatewayError> {
+) -> Result<bool, GatewayError> {
     let mut pointers = Vec::new();
+    let mut transformed = false;
     collect_tool_call_pointers(response, "", &mut pointers);
     for pointer in pointers {
         let Some((name, arguments)) = response
@@ -1068,15 +1253,16 @@ async fn inspect_generated_tool_calls(
             .decisions
             .iter()
             .any(|decision| decision.transformed)
-            && let Some(arguments) = transformed_tool_arguments(&evaluation.output, &arguments)
+            && let Some(replacement) = transformed_tool_arguments(&evaluation.output, &arguments)
             && let Some(object) = response
                 .pointer_mut(&pointer)
                 .and_then(Value::as_object_mut)
         {
-            replace_tool_call_arguments(object, arguments);
+            transformed |= replacement != arguments;
+            replace_tool_call_arguments(object, replacement);
         }
     }
-    Ok(())
+    Ok(transformed)
 }
 
 async fn evaluate(
@@ -1327,6 +1513,9 @@ fn replace_stream_argument(slot: &mut Value, replacement: &str, shell_command: b
                 .map(|line| Value::String(line.to_string()))
                 .collect(),
         );
+    } else if !shell_command && slot.is_object() {
+        *slot =
+            serde_json::from_str(replacement).expect("transformed tool arguments are valid JSON");
     } else {
         *slot = Value::String(replacement.to_string());
     }
@@ -1381,6 +1570,10 @@ fn replace_json_value(slot: &mut Value, replacement: Value) {
 fn escape_pointer(value: &str) -> String {
     value.replace('~', "~0").replace('/', "~1")
 }
+
+#[cfg(test)]
+#[path = "inference_guardrails_regression_tests.rs"]
+mod regression_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1893,7 +2086,7 @@ mod tests {
         assert_eq!(String::from_utf8(guarded).expect("UTF-8"), stream);
     }
 
-    fn stream_guard_context(stream_buffer_bytes: usize) -> super::InferenceGuardContext {
+    pub(super) fn stream_guard_context(stream_buffer_bytes: usize) -> super::InferenceGuardContext {
         super::InferenceGuardContext {
             route_key: "openai/gpt".into(),
             request_id: "request-1".into(),
@@ -1903,7 +2096,9 @@ mod tests {
         }
     }
 
-    async fn stream_state(mode: gateway_guardrails::PolicyMode) -> (tempfile::TempDir, AppState) {
+    pub(super) async fn stream_state(
+        mode: gateway_guardrails::PolicyMode,
+    ) -> (tempfile::TempDir, AppState) {
         let (directory, mut state) = built_in_guardrail_state().await;
         let policy = &mut Arc::make_mut(&mut state.guardrail_config).default;
         policy.enabled = true;
@@ -2507,19 +2702,26 @@ mod tests {
     #[test]
     fn preserves_responses_delta_and_terminal_snapshot_semantics() {
         let mut blocks = vec![
-            vec![StreamLine::Json(json!({
+            json!({
                 "type": "response.output_item.added",
                 "item": {"arguments": ""}
-            }))],
-            vec![StreamLine::Json(json!({
+            }),
+            json!({
                 "type": "response.function_call_arguments.delta",
                 "delta": "{\"command\":\"old\"}"
-            }))],
-            vec![StreamLine::Json(json!({
+            }),
+            json!({
                 "type": "response.output_item.done",
                 "item": {"arguments": "{\"command\":\"old\"}"}
-            }))],
-        ];
+            }),
+        ]
+        .into_iter()
+        .map(|value| StreamBlock {
+            raw: "",
+            value: Some(value),
+            transformed: false,
+        })
+        .collect::<Vec<_>>();
         replace_stream_arguments(
             &mut blocks,
             &[(1, "/delta".into())],
@@ -2535,10 +2737,7 @@ mod tests {
             false,
         );
 
-        let json_at = |index: usize| match &blocks[index][0] {
-            StreamLine::Json(value) => value,
-            _ => panic!("expected JSON"),
-        };
+        let json_at = |index: usize| blocks[index].value.as_ref().expect("JSON");
         assert_eq!(json_at(0)["item"]["arguments"], "");
         assert_eq!(json_at(1)["delta"], "{\"command\":\"[masked]\"}");
         assert_eq!(
@@ -2550,15 +2749,22 @@ mod tests {
     #[test]
     fn rewrites_responses_text_deltas_and_completion_snapshot() {
         let mut blocks = vec![
-            vec![StreamLine::Json(json!({
+            json!({
                 "type": "response.output_text.delta",
                 "delta": "private"
-            }))],
-            vec![StreamLine::Json(json!({
+            }),
+            json!({
                 "type": "response.completed",
                 "response": {"output": [{"content": [{"text": "private"}]}]}
-            }))],
-        ];
+            }),
+        ]
+        .into_iter()
+        .map(|value| StreamBlock {
+            raw: "",
+            value: Some(value),
+            transformed: false,
+        })
+        .collect::<Vec<_>>();
         replace_stream_text(&mut blocks, &[(0, "/delta".into())], "[masked]", true);
         replace_stream_text(
             &mut blocks,
@@ -2567,10 +2773,7 @@ mod tests {
             true,
         );
 
-        let json_at = |index: usize| match &blocks[index][0] {
-            StreamLine::Json(value) => value,
-            _ => panic!("expected JSON"),
-        };
+        let json_at = |index: usize| blocks[index].value.as_ref().expect("JSON");
         assert_eq!(json_at(0)["delta"], "[masked]");
         assert_eq!(
             json_at(1)["response"]["output"][0]["content"][0]["text"],

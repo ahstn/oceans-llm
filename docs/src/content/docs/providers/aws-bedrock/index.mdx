@@ -214,9 +214,9 @@ The gateway merges caller `anthropic-beta` values with provider default headers,
 
 ### Reasoning output and tool continuations
 
-Chat Completions responses keep Claude thinking out of `content` and `delta.content`. The gateway keeps native thinking blocks and Converse reasoning content under `provider_metadata.aws_bedrock.reasoning`.
+Chat Completions responses keep Claude thinking out of `content` and `delta.content`. The gateway keeps native thinking blocks and Converse reasoning content under `provider_metadata.aws_bedrock.reasoning`, and the ordered native blocks under `provider_metadata.aws_bedrock.native_content`.
 
-The Bedrock request mappers don't read that metadata back into later requests. A Chat Completions caller that sends tool results doesn't get its earlier thinking blocks replayed, so thinking continuity across tool turns is lost. On the two Anthropic styles, thinking blocks that the caller puts in assistant content are forwarded unchanged.
+When a Chat Completions caller sends the assistant message back with its `provider_metadata`, the gateway restores the signed, redacted and ordered content. This keeps thinking across tool turns. See [Native chat replay](/reference/provider-api-compatibility/#native-chat-replay). On the two Anthropic styles, thinking blocks that the caller puts in assistant content are forwarded unchanged.
 
 ### Tool settings
 

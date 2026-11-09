@@ -199,7 +199,9 @@ Missing cache evidence stays `NULL`. Reports show the cache aggregate as unavail
 
 To price cached traffic, Oceans needs the input and output rates, plus a cache-read or cache-write rate for each bucket that has tokens. If a needed rate is missing, the request is `unpriced` with a reason such as `missing_cache_read_rate` or `missing_cache_write_rate`. Malformed cache counters fall back to `legacy_estimated` (see [Ledger states](#ledger-states)).
 
-Mixed 5-minute and 1-hour cache writes stay `unpriced`, because one cache-write rate can't price both without loss. This affects Bedrock Anthropic Claude responses, which keep the raw Anthropic usage under `usage.provider_usage`, including `cache_read_input_tokens` and `cache_creation_input_tokens`. TTL-specific cache writes are tracked in [issue #92](https://github.com/ahstn/oceans-llm/issues/92).
+Valid usage with mixed cache TTLs still counts in full: its uncached, cache-read and cache-write tokens go into prompt totals, rate limits and ledger buckets. Only the price is limited. Mixed 5-minute and 1-hour cache writes stay `unpriced` unless the provider reports a valid request cost, because one cache-write rate can't price both without loss. A single TTL uses the generic cache-write rate. Oceans doesn't infer a separate 1-hour rate.
+
+Bedrock Anthropic Claude responses keep the raw Anthropic usage under `usage.provider_usage`, including `cache_read_input_tokens` and `cache_creation_input_tokens`. Native Messages usage has the same counters at the root, and Bedrock Converse `cacheDetails` follows the same rules. Oceans normalises valid aggregate counts in each shape, including mixed TTLs. TTL-specific cache writes are tracked in [issue #92](https://github.com/ahstn/oceans-llm/issues/92).
 
 ## What Oceans charges
 

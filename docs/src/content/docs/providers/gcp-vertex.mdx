@@ -225,7 +225,7 @@ Anthropic documents [per-message effort](https://platform.claude.com/docs/en/bui
 
 ### Thinking in responses
 
-Chat Completions never puts Claude thinking into `content` or `delta.content`. The gateway keeps `thinking`, `redacted_thinking`, `thinking_delta` and `signature_delta` data under `provider_metadata.gcp_vertex.reasoning`. When a caller sends that assistant message back with its `provider_metadata`, the gateway puts the thinking blocks back at the start of the assistant turn. This keeps tool-use continuations valid. See [Thinking replay](/reference/provider-api-compatibility/#thinking-replay).
+Chat Completions never puts Claude thinking into `content` or `delta.content`. The gateway returns the ordered native blocks, including signed and redacted thinking, under `provider_metadata.gcp_vertex.native_content`. When a caller sends that assistant message back with its `provider_metadata`, the gateway restores the blocks in their original order. This keeps tool-use continuations valid. Don't join thinking fragments into a replay block yourself. See [Native chat replay](/reference/provider-api-compatibility/#native-chat-replay).
 
 Anthropic `stop_reason` values map to OpenAI `finish_reason`: `end_turn` and `stop_sequence` to `stop`, `max_tokens` to `length`, `tool_use` to `tool_calls`, and `refusal` to `content_filter`. Other values, such as `pause_turn`, map to `stop`.
 

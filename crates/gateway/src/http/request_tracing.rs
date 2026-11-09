@@ -142,7 +142,9 @@ where
 fn provider_error_type(error: &ProviderError) -> &'static str {
     match error {
         ProviderError::InvalidRequest(_) => "invalid_request",
-        ProviderError::UpstreamHttp { .. } => "upstream_http",
+        ProviderError::UpstreamHttp { .. } | ProviderError::NativeMessagesHttp { .. } => {
+            "upstream_http"
+        }
         ProviderError::Timeout => "timeout",
         ProviderError::Transport(_) => "transport",
         ProviderError::PartialUsage { .. } => "partial_usage",

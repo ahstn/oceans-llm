@@ -717,6 +717,17 @@ pub fn usage_summary_from_value(value: Option<&Value>) -> UsageSummary {
     let Some(usage) = value.and_then(Value::as_object) else {
         return UsageSummary::default();
     };
+    if usage.contains_key("input_tokens")
+        && (usage.contains_key("cache_read_input_tokens")
+            || usage.contains_key("cache_creation_input_tokens"))
+        && let Ok(summary) = crate::usage::usage_summary_from_value(value)
+    {
+        return UsageSummary {
+            prompt_tokens: summary.prompt_tokens,
+            completion_tokens: summary.completion_tokens,
+            total_tokens: summary.total_tokens,
+        };
+    }
 
     let prompt_tokens = usage
         .get("prompt_tokens")
@@ -728,6 +739,7 @@ pub fn usage_summary_from_value(value: Option<&Value>) -> UsageSummary {
         .and_then(Value::as_i64);
     let total_tokens = match usage.get("total_tokens").and_then(Value::as_i64) {
         some @ Some(_) => some,
+        None if usage.get("total_tokens").is_some_and(Value::is_null) => None,
         None => match (prompt_tokens, completion_tokens) {
             (Some(prompt), Some(completion)) => prompt.checked_add(completion),
             _ => None,

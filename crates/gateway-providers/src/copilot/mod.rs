@@ -10,9 +10,10 @@ use gateway_core::{
 };
 use serde_json::Value;
 
+use crate::anthropic::normalize_anthropic_messages_stream;
 use crate::bedrock::{
     AnthropicMessagesTarget, map_chat_request_to_anthropic_messages, merge_object_overrides,
-    normalize_anthropic_messages_response, normalize_anthropic_messages_stream,
+    normalize_anthropic_messages_response,
 };
 use crate::http::{
     TracedResponse, execute_request as execute_http_request, join_base_url, map_reqwest_error,
@@ -289,17 +290,40 @@ impl CopilotProvider {
     async fn build_copilot_request(
         &self,
         endpoint_suffix: &str,
-        body: Value,
+        mut body: Value,
         context: &ProviderRequestContext,
         chat_api: Option<GitHubCopilotChatApi>,
         initiator: CopilotInitiator,
     ) -> Result<reqwest::Request, ProviderError> {
+        let native = chat_api == Some(GitHubCopilotChatApi::AnthropicMessages);
+        let betas = if native {
+            crate::anthropic::beta::take_request_betas(
+                &mut body,
+                context,
+                &self.config.default_headers,
+            )?
+        } else {
+            Vec::new()
+        };
         let token = self.token(context).await?;
         let url = join_base_url(&self.config.base_url, endpoint_suffix)?;
         let req_builder = self.client.post(url).json(&body);
         let req_builder = self.apply_copilot_headers(req_builder, context);
+        let req_builder = if native {
+            crate::anthropic::native::request_headers(req_builder, context)
+        } else {
+            req_builder
+        };
         let mut request = req_builder.build().map_err(map_reqwest_error)?;
         if chat_api == Some(GitHubCopilotChatApi::AnthropicMessages) {
+            request.headers_mut().remove("anthropic-beta");
+            if !betas.is_empty() {
+                request.headers_mut().insert(
+                    "anthropic-beta",
+                    reqwest::header::HeaderValue::from_str(&betas.join(","))
+                        .map_err(|error| ProviderError::InvalidRequest(error.to_string()))?,
+                );
+            }
             request.headers_mut().insert(
                 "anthropic-version",
                 reqwest::header::HeaderValue::from_static(
@@ -518,6 +542,59 @@ impl CopilotProvider {
 
 #[async_trait]
 impl ProviderClient for CopilotProvider {
+    fn supports_native_messages(&self, context: &ProviderRequestContext) -> bool {
+        matches!(
+            Self::resolve_chat_api(context),
+            Ok(GitHubCopilotChatApi::AnthropicMessages)
+        )
+    }
+
+    async fn messages(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<gateway_core::NativeMessagesResponse<Value>, ProviderError> {
+        let request = self
+            .build_chat_request(
+                request,
+                context,
+                GitHubCopilotChatApi::AnthropicMessages,
+                false,
+            )
+            .await?;
+        let response = crate::anthropic::native::execute_request(
+            &self.client,
+            request,
+            "github_copilot",
+            &self.config.provider_key,
+        )
+        .await?;
+        crate::anthropic::native::json_response(response).await
+    }
+
+    async fn messages_stream(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<gateway_core::NativeMessagesResponse<ProviderStream>, ProviderError> {
+        let request = self
+            .build_chat_request(
+                request,
+                context,
+                GitHubCopilotChatApi::AnthropicMessages,
+                true,
+            )
+            .await?;
+        let response = crate::anthropic::native::execute_request(
+            &self.client,
+            request,
+            "github_copilot",
+            &self.config.provider_key,
+        )
+        .await?;
+        Ok(crate::anthropic::native::stream_response(response))
+    }
+
     fn provider_key(&self) -> &str {
         &self.config.provider_key
     }

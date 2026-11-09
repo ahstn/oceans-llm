@@ -42,6 +42,242 @@ fn chat(extra: Value) -> CoreChatRequest {
     request
 }
 
+#[test]
+fn chat_remote_images_remain_restricted_by_default() {
+    for url in [
+        "https://example.test/image.png",
+        "http://example.test/image.png",
+    ] {
+        let mut request = chat(json!({}));
+        request.messages[0].content = json!([
+            {"type": "image_url", "image_url": {"url": url}}
+        ]);
+        let error = map_anthropic_request(
+            &request,
+            &context(),
+            false,
+            &AnthropicRequestOptions::default(),
+        )
+        .expect_err("remote URLs require explicit platform support");
+        assert!(
+            error
+                .to_string()
+                .contains("remote image URLs are not supported")
+        );
+    }
+}
+
+#[test]
+fn native_boundary_remote_image_outer_cache_policy_survives_openrouter_mapping() {
+    let url = "https://example.test/image.png";
+    for image_url in [json!(url), json!({"url": url})] {
+        for ttl in ["1h", "5m"] {
+            let cache_control = json!({"type": "ephemeral", "ttl": ttl});
+            let mut request = chat(json!({}));
+            request.messages[0].content = json!([{
+                "type": "image_url",
+                "image_url": image_url,
+                "cache_control": cache_control
+            }]);
+            for stream in [false, true] {
+                let error = map_anthropic_request(
+                    &request,
+                    &context(),
+                    stream,
+                    &AnthropicRequestOptions::default(),
+                )
+                .expect_err("cache policy must not bypass the remote-image opt-in");
+                assert!(
+                    error
+                        .to_string()
+                        .contains("remote image URLs are not supported")
+                );
+
+                let body = map_anthropic_request(
+                    &request,
+                    &context(),
+                    stream,
+                    &AnthropicRequestOptions {
+                        allow_remote_images: true,
+                        ..Default::default()
+                    },
+                )
+                .expect("OpenRouter-enabled URL images should map");
+                let image = &body["messages"][0]["content"][0];
+                assert_eq!(image["type"], "image");
+                assert_eq!(image["source"], json!({"type": "url", "url": url}));
+                assert_eq!(
+                    image["cache_control"], cache_control,
+                    "outer policy lost for {image_url}, stream={stream}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn native_boundary_data_image_outer_cache_policy_survives_mapping() {
+    let data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    let url = format!("data:image/png;base64,{data}");
+    for image_url in [json!(url), json!({"url": url})] {
+        for ttl in ["1h", "5m"] {
+            let cache_control = json!({"type": "ephemeral", "ttl": ttl});
+            let mut request = chat(json!({}));
+            request.messages[0].content = json!([{
+                "type": "image_url",
+                "image_url": image_url,
+                "cache_control": cache_control
+            }]);
+            for stream in [false, true] {
+                let body = map_anthropic_request(
+                    &request,
+                    &context(),
+                    stream,
+                    &AnthropicRequestOptions::default(),
+                )
+                .expect("data images should map without remote-image opt-in");
+                let image = &body["messages"][0]["content"][0];
+                assert_eq!(image["type"], "image");
+                assert_eq!(
+                    image["source"],
+                    json!({"type": "base64", "media_type": "image/png", "data": data})
+                );
+                assert_eq!(
+                    image["cache_control"], cache_control,
+                    "outer policy lost for {image_url}, stream={stream}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn native_boundary_base64_image_outer_cache_policy_survives_mapping() {
+    let source = json!({
+        "type": "base64",
+        "media_type": "image/png",
+        "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    });
+    for ttl in ["1h", "5m"] {
+        let cache_control = json!({"type": "ephemeral", "ttl": ttl});
+        for block in [
+            json!({"type": "image", "source": source, "cache_control": cache_control}),
+            json!({"type": "image_url", "image_url": source, "cache_control": cache_control}),
+            json!({
+                "type": "image_url",
+                "image_url": {"source": source},
+                "cache_control": cache_control
+            }),
+        ] {
+            let mut request = chat(json!({}));
+            request.messages[0].content = json!([block]);
+            for stream in [false, true] {
+                let body = map_anthropic_request(
+                    &request,
+                    &context(),
+                    stream,
+                    &AnthropicRequestOptions::default(),
+                )
+                .expect("native and wrapped base64 sources should map");
+                let image = &body["messages"][0]["content"][0];
+                assert_eq!(image["type"], "image");
+                assert_eq!(image["source"], source);
+                assert_eq!(
+                    image["cache_control"], cache_control,
+                    "outer policy lost for {block}, stream={stream}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn route_token_aliases_override_caller_limits_without_unsupported_fields() {
+    for protocol in [
+        gateway_core::ChatRequestProtocol::ChatCompletions,
+        gateway_core::ChatRequestProtocol::AnthropicMessages,
+    ] {
+        for route_limits in [
+            json!({"max_tokens": 128}),
+            json!({"max_completion_tokens": 128}),
+            json!({"max_tokens": 128, "max_completion_tokens": 128}),
+        ] {
+            let mut context = context();
+            context.chat_protocol = protocol;
+            context.extra_body = route_limits.as_object().unwrap().clone();
+            for caller_limits in [
+                json!({}),
+                json!({"max_tokens": 8192}),
+                json!({"max_completion_tokens": 8192}),
+                json!({"max_tokens": 8192, "max_completion_tokens": 8192}),
+            ] {
+                let body = map_anthropic_request(
+                    &chat(caller_limits.clone()),
+                    &context,
+                    false,
+                    &AnthropicRequestOptions::default(),
+                )
+                .unwrap();
+                assert_eq!(body["max_tokens"], 128, "{route_limits}, {caller_limits}");
+                assert!(body.get("max_completion_tokens").is_none());
+            }
+        }
+    }
+}
+
+#[test]
+fn token_aliases_keep_defaults_and_same_precedence_conflicts() {
+    for (caller_limits, expected) in [
+        (json!({}), 4096),
+        (json!({"max_tokens": 128}), 128),
+        (json!({"max_completion_tokens": 128}), 128),
+        (
+            json!({"max_tokens": 128, "max_completion_tokens": 128}),
+            128,
+        ),
+    ] {
+        let body = map_anthropic_request(
+            &chat(caller_limits),
+            &context(),
+            false,
+            &AnthropicRequestOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(body["max_tokens"], expected);
+        assert!(body.get("max_completion_tokens").is_none());
+    }
+
+    for (caller_limits, route_limits) in [
+        (
+            json!({"max_tokens": 256, "max_completion_tokens": 128}),
+            json!({}),
+        ),
+        (
+            json!({"max_tokens": 256, "max_completion_tokens": 128}),
+            json!({"max_tokens": 64}),
+        ),
+        (
+            json!({}),
+            json!({"max_tokens": 256, "max_completion_tokens": 128}),
+        ),
+        (
+            json!({"max_tokens": 8192}),
+            json!({"max_tokens": 256, "max_completion_tokens": 128}),
+        ),
+    ] {
+        let mut context = context();
+        context.extra_body = route_limits.as_object().unwrap().clone();
+        let error = map_anthropic_request(
+            &chat(caller_limits),
+            &context,
+            false,
+            &AnthropicRequestOptions::default(),
+        )
+        .expect_err("conflicting aliases at the same precedence must be rejected");
+        assert!(error.to_string().contains("conflicts with `max_tokens`"));
+    }
+}
+
 fn native_messages_request(extra: Value) -> CoreChatRequest {
     let mut payload = json!({
         "model": "claude", "max_tokens": 128000,
@@ -169,6 +405,46 @@ fn native_opus_5_5_leaves_omitted_thinking_and_effort_to_upstream_defaults() {
             .unwrap();
             assert_eq!(body.get("thinking"), controls.get("thinking"));
             assert_eq!(body.get("output_config"), controls.get("output_config"));
+        }
+    }
+}
+
+#[test]
+fn native_private_model_names_preserve_caller_controls() {
+    for model in [
+        "private-claude-opus-5-5",
+        "anthropic/private-claude-opus-5.5",
+        "private-claude-sonnet-4-6",
+        "deployment/claude-sonnet-4-6-custom",
+    ] {
+        let mut context = messages_context();
+        context.upstream_model = model.into();
+        for controls in [
+            json!({
+                "thinking": {"type": "enabled", "budget_tokens": 4096},
+                "output_config": {"effort": "deployment-effort"}
+            }),
+            json!({
+                "thinking": {"type": "disabled"},
+                "output_config": {"effort": "high"}
+            }),
+            json!({
+                "thinking": {"type": "adaptive", "display": "deployment-display"},
+                "output_config": {"effort": "deployment-effort"}
+            }),
+        ] {
+            let request = native_messages_request(controls.clone());
+            for stream in [false, true] {
+                let body = map_anthropic_request(
+                    &request,
+                    &context,
+                    stream,
+                    &AnthropicRequestOptions::default(),
+                )
+                .unwrap_or_else(|error| panic!("{model}: {error}"));
+                assert_eq!(body["thinking"], controls["thinking"], "{model}");
+                assert_eq!(body["output_config"], controls["output_config"], "{model}");
+            }
         }
     }
 }
@@ -368,6 +644,49 @@ fn chat_system_and_developer_strings_become_ordered_blocks() {
         body["system"],
         json!([{"type": "text", "text": "first"}, {"type": "text", "text": "second"}])
     );
+}
+
+#[test]
+fn chat_function_strict_preserves_booleans_and_leaves_null_or_omission_unset() {
+    let schema = json!({
+        "type": "object", "properties": {"city": {"type": "string"}},
+        "required": ["city"], "additionalProperties": false
+    });
+    for strict in [
+        Some(json!(true)),
+        Some(json!(false)),
+        Some(Value::Null),
+        None,
+    ] {
+        let mut function = json!({
+            "name": "lookup", "description": "Look up a city", "parameters": schema
+        });
+        let mut expected = json!({
+            "name": "lookup", "description": "Look up a city", "input_schema": schema,
+            "cache_control": {"type": "ephemeral"}, "future_tool_option": {"preserve": true}
+        });
+        if let Some(strict) = &strict {
+            function["strict"] = strict.clone();
+            if !strict.is_null() {
+                expected["strict"] = strict.clone();
+            }
+        }
+        let request = chat(json!({"tools": [{
+            "type": "function", "function": function,
+            "cache_control": {"type": "ephemeral"}, "future_tool_option": {"preserve": true}
+        }]}));
+        for stream in [false, true] {
+            let body = map_anthropic_request(
+                &request,
+                &context(),
+                stream,
+                &AnthropicRequestOptions::default(),
+            )
+            .unwrap();
+            assert_eq!(body["tools"], json!([expected]), "strict={strict:?}");
+            assert_eq!(body["stream"], stream);
+        }
+    }
 }
 
 #[test]

@@ -20,6 +20,12 @@ const GATEWAY_MODEL = "harness-openrouter";
 const ALLOWLISTED_GATEWAY_MODEL = "harness-openrouter-user-allowlist";
 const ALLOWLISTED_USER_EMAIL = "allowlisted.harness@example.com";
 const DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-v4.1-flash";
+const PLUGIN_MODELS = {
+  openai: "gpt-6-luna",
+  anthropic: "claude-haiku-5.5",
+  textOnly: "harness-plugin-text-only",
+  hidden: "harness-plugin-hidden",
+};
 const MANAGED_API_KEY = "gwk_harness.integration-secret";
 const MANAGED_ADMIN_EMAIL = "harness-admin@local";
 const MANAGED_ADMIN_PASSWORD = "harness-admin-password";
@@ -90,6 +96,7 @@ export default async function setup(context: TestProject): Promise<() => Promise
       apiKey: MANAGED_API_KEY,
       baseUrl,
       model: GATEWAY_MODEL,
+      pluginModels: PLUGIN_MODELS,
     };
     await assertGatewayReady(baseUrl, runningGateway.process);
     runtime.allowlistedUser = {
@@ -120,6 +127,12 @@ function externalRuntime(baseUrl: string): GatewayRuntime {
     apiKey: requiredEnvironment("OCEANS_API_KEY"),
     baseUrl,
     model: process.env.OCEANS_TEST_MODEL ?? GATEWAY_MODEL,
+    pluginModels: {
+      openai: process.env.OCEANS_PLUGIN_OPENAI_MODEL ?? PLUGIN_MODELS.openai,
+      anthropic: process.env.OCEANS_PLUGIN_ANTHROPIC_MODEL ?? PLUGIN_MODELS.anthropic,
+      textOnly: process.env.OCEANS_PLUGIN_TEXT_ONLY_MODEL ?? PLUGIN_MODELS.textOnly,
+      hidden: process.env.OCEANS_PLUGIN_HIDDEN_MODEL ?? PLUGIN_MODELS.hidden,
+    },
     ...(allowlistedUser ? { allowlistedUser } : {}),
   };
 }
@@ -185,8 +198,7 @@ function startGateway(
       GATEWAY_CONFIG: configPath,
       GATEWAY_IDENTITY_TOKEN_SECRET: "harness-integration-identity-secret",
       HARNESS_OCEANS_API_KEY: MANAGED_API_KEY,
-      OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:
-        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      OCEANS_API_KEY_SECRET_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
       OPENROUTER_API_KEY: openRouterApiKey,
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -313,8 +325,8 @@ async function configureManagedGateway(runtime: GatewayRuntime): Promise<string>
     undefined,
     PasswordInviteSchema,
   );
-  const invitationToken = new URL(invitation.invite_url, runtime.baseUrl)
-    .pathname.split("/")
+  const invitationToken = new URL(invitation.invite_url, runtime.baseUrl).pathname
+    .split("/")
     .filter(Boolean)
     .pop();
   if (!invitationToken) {
@@ -475,7 +487,7 @@ service_accounts:
       - id: integration
         name: Harness Integration Key
         value: env.HARNESS_OCEANS_API_KEY
-        allowed_models: [${GATEWAY_MODEL}]
+        allowed_models: [${GATEWAY_MODEL}, ${PLUGIN_MODELS.openai}, ${PLUGIN_MODELS.anthropic}, ${PLUGIN_MODELS.textOnly}]
 
 providers:
   - id: openrouter
@@ -501,5 +513,34 @@ models:
     routes:
       - provider: openrouter
         upstream_model: ${JSON.stringify(upstreamModel)}
+
+  - id: ${PLUGIN_MODELS.openai}
+    description: OpenAI Responses discovery and multimodal plugin canary
+    routes:
+      - provider: openrouter
+        upstream_model: ${JSON.stringify(process.env.OPENROUTER_PLUGIN_OPENAI_MODEL ?? "openai/gpt-6-luna")}
+
+  - id: ${PLUGIN_MODELS.anthropic}
+    description: Native Anthropic Messages discovery and multimodal plugin canary
+    max_reasoning_effort: high
+    routes:
+      - provider: openrouter
+        upstream_model: ${JSON.stringify(process.env.OPENROUTER_PLUGIN_ANTHROPIC_MODEL ?? "anthropic/claude-haiku-5.5")}
+
+  - id: ${PLUGIN_MODELS.textOnly}
+    description: Restricted capability and effort discovery negative control
+    max_reasoning_effort: medium
+    routes:
+      - provider: openrouter
+        upstream_model: ${JSON.stringify(process.env.OPENROUTER_PLUGIN_ANTHROPIC_MODEL ?? "anthropic/claude-haiku-5.5")}
+        capabilities:
+          vision: false
+          tools: false
+
+  - id: ${PLUGIN_MODELS.hidden}
+    description: Model excluded from the harness API key
+    routes:
+      - provider: openrouter
+        upstream_model: ${JSON.stringify(process.env.OPENROUTER_PLUGIN_ANTHROPIC_MODEL ?? "anthropic/claude-haiku-5.5")}
 `;
 }
