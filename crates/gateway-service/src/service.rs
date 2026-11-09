@@ -11,8 +11,8 @@ use gateway_core::{
     PricingResolution, PricingUnpricedReason, ProviderBatchResult, ProviderRepository,
     RequestLogDetail, RequestLogPage, RequestLogPurgeResult, RequestLogQuery, RequestLogRecord,
     RequestLogRepository, RequestLogRetentionWindow, RequestTags, ResolvedModelPricing,
-    ResponsesRequest, RouteError, RoutePlanner, RoutePricingOverride, StoreHealth,
-    UsageLedgerRecord, UsagePricingStatus,
+    ResponsesRequest, RouteError, RoutePlanner, RoutePricingOverride, ServiceTierOutcome,
+    StoreHealth, UsageLedgerRecord, UsagePricingStatus,
 };
 use serde_json::{Value, json};
 use time::{Duration, OffsetDateTime};
@@ -415,6 +415,7 @@ where
             routes: viable_routes,
             provider_connections,
             capability_hints,
+            billable_service_tiers: std::collections::HashMap::new(),
         })
     }
 
@@ -1028,6 +1029,7 @@ where
             gateway.usage.cost_usd = tracing::field::Empty,
         )
     )]
+    #[allow(clippy::too_many_arguments)]
     pub async fn record_chat_usage(
         &self,
         auth: &AuthenticatedApiKey,
@@ -1035,6 +1037,7 @@ where
         route: &ModelRoute,
         request_id: &str,
         provider_usage: Option<Value>,
+        service_tiers: ServiceTierOutcome,
         occurred_at: OffsetDateTime,
     ) -> Result<RecordedChatUsage, GatewayError> {
         let ownership_scope_key = usage_ownership_scope_key(auth)?;
@@ -1079,8 +1082,8 @@ where
             pricing_tier_above_input_tokens: None,
             computed_cost_usd: Money4::ZERO,
             occurred_at,
-            requested_service_tier: None,
-            served_service_tier: None,
+            requested_service_tier: service_tiers.requested,
+            served_service_tier: service_tiers.served,
         };
         self.price_usage(&mut record, &usage_summary, model, route, occurred_at)
             .await?;
@@ -2033,6 +2036,7 @@ mod tests {
                     "completion_tokens": 500_000,
                     "total_tokens": 1_500_000
                 })),
+                gateway_core::ServiceTierOutcome::default(),
                 occurred_at,
             )
             .await
@@ -2868,6 +2872,7 @@ mod tests {
                 &route,
                 "req_missing_embedding_usage",
                 Some(json!({"statistics": {"billable_character_count": 999}})),
+                gateway_core::ServiceTierOutcome::default(),
                 OffsetDateTime::now_utc(),
             )
             .await
@@ -2951,6 +2956,7 @@ mod tests {
                     "completion_tokens": 500_000,
                     "total_tokens": 1_500_000
                 })),
+                gateway_core::ServiceTierOutcome::default(),
                 occurred_at,
             )
             .await
@@ -3072,6 +3078,7 @@ mod tests {
                     "output_tokens_details": {"reasoning_tokens": 1_500},
                     "total_tokens": 122_000
                 })),
+                gateway_core::ServiceTierOutcome::default(),
                 OffsetDateTime::now_utc(),
             )
             .await
@@ -3127,6 +3134,7 @@ mod tests {
                     },
                     "output_tokens_details": {"reasoning_tokens": 95}
                 })),
+                gateway_core::ServiceTierOutcome::default(),
                 OffsetDateTime::now_utc(),
             )
             .await
@@ -3302,6 +3310,7 @@ mod tests {
                         "cache_write_tokens": 500
                     }
                 })),
+                gateway_core::ServiceTierOutcome::default(),
                 OffsetDateTime::now_utc(),
             )
             .await
@@ -3347,6 +3356,7 @@ mod tests {
                         "cache_write_tokens": 20_000
                     }
                 })),
+                gateway_core::ServiceTierOutcome::default(),
                 OffsetDateTime::now_utc(),
             )
             .await
@@ -3387,6 +3397,7 @@ mod tests {
                         "cache_write_tokens": 20
                     }
                 })),
+                gateway_core::ServiceTierOutcome::default(),
                 OffsetDateTime::now_utc(),
             )
             .await

@@ -220,8 +220,8 @@ pub use routing::{
     RoutingStrategy, SessionAffinityPolicy,
 };
 pub use service_tier::{
-    SERVICE_TIER_REQUEST_FIELDS, ServiceTier, billed_service_tier, enforce_service_tier_policy,
-    served_service_tier, take_requested_service_tier,
+    SERVICE_TIER_REQUEST_FIELDS, ServiceTier, ServiceTierOutcome, billed_service_tier,
+    enforce_service_tier_policy, served_service_tier, take_requested_service_tier,
 };
 pub use skills::{
     SkillDetail, SkillListQuery, SkillNamespaceRecord, SkillObjectStore, SkillRecord,

@@ -192,6 +192,7 @@ impl TestRequest {
                 routes,
                 provider_connections,
                 capability_hints: Default::default(),
+                billable_service_tiers: std::collections::HashMap::new(),
             },
             extra: BTreeMap::new(),
             headers: BTreeMap::new(),

@@ -1845,6 +1845,7 @@ async fn finalize_successful_usage_accounting_from_parts(
             context.route,
             context.request_id,
             provider_usage,
+            gateway_core::ServiceTierOutcome::default(),
             OffsetDateTime::now_utc(),
         )
         .await

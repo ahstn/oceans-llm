@@ -53,6 +53,7 @@ async fn recorded_catalog_usage(
             route,
             "req_context_tier",
             Some(provider_usage),
+            gateway_core::ServiceTierOutcome::default(),
             OffsetDateTime::now_utc(),
         )
         .await

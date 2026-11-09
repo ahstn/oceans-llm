@@ -194,6 +194,23 @@ pub fn billed_service_tier(
     served.or(requested).unwrap_or(ServiceTier::Default)
 }
 
+/// The tiers one request asked for and got, as usage accounting records them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ServiceTierOutcome {
+    /// Effective requested tier: the route's forced tier, else the caller's.
+    pub requested: Option<ServiceTier>,
+    /// Tier the provider reported serving.
+    pub served: Option<ServiceTier>,
+}
+
+impl ServiceTierOutcome {
+    /// See [`billed_service_tier`].
+    #[must_use]
+    pub fn billed(self) -> ServiceTier {
+        billed_service_tier(self.requested, self.served)
+    }
+}
+
 /// Rejects a requested tier that the model's `service_tiers` allow-list leaves out.
 /// `None` allows every tier; `default` is always allowed.
 ///

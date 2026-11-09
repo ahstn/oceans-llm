@@ -29,6 +29,7 @@ async fn recorded_usage_event(route: &ModelRoute, provider_usage: Value) -> Usag
             route,
             "req_image_usage",
             Some(provider_usage),
+            gateway_core::ServiceTierOutcome::default(),
             OffsetDateTime::now_utc(),
         )
         .await
