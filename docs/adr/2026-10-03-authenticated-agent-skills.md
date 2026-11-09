@@ -6,7 +6,7 @@
 ## Current state
 
 - [Agent Skills](https://oceans-llm.com/extensions/skills/)
-- [Self-hosting with mise](https://oceans-llm.com/setup/self-hosting/)
+- [Local process (mise)](https://oceans-llm.com/setup/self-hosting/)
 - [Oceans Helm chart](../../deploy/helm/oceans-llm/README.md)
 
 ## Context

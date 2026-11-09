@@ -6,7 +6,7 @@
 
 ## Current state
 
-- [Self-hosting with mise](https://oceans-llm.com/setup/self-hosting/)
+- [Local process (mise)](https://oceans-llm.com/setup/self-hosting/)
 
 ## Context
 

@@ -152,7 +152,7 @@ Use the docs site instead of treating this file as the full admin and maintainer
   - [Kubernetes and Helm](https://oceans-llm.com/setup/kubernetes-and-helm/)
   - [Helm Chart](deploy/helm/oceans-llm/README.md)
 - self-hosting (mise daemons + Tailscale):
-  - [Self-hosting with mise](https://oceans-llm.com/setup/self-hosting/)
+  - [Local process (mise)](https://oceans-llm.com/setup/self-hosting/)
 
 ## Same-Origin Runtime Model
 

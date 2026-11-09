@@ -143,7 +143,7 @@ Use the mise tasks as the stable interface:
 - `mise run //crates/gateway-store:postgres:reset`
 - `eval "$(mise run -q //crates/gateway-store:postgres:env)"` exports `POSTGRES_URL` and `TEST_POSTGRES_URL`
 
-Treat the daemon as local service orchestration for Postgres, not as a replacement for the repo's GitHub templates, PR flow, or CI checks. To run the app on a server, see [Self-hosting with mise](https://oceans-llm.com/setup/self-hosting/).
+Treat the daemon as local service orchestration for Postgres, not as a replacement for the repo's GitHub templates, PR flow, or CI checks. To run the app on a server, see [Local process (mise)](https://oceans-llm.com/setup/self-hosting/).
 
 ## VS Code
 

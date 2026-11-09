@@ -16,7 +16,7 @@ Oceans runs as two processes behind one address: the gateway, and the admin UI i
 | Production-shaped local | `mise run prod-stack` | `admin@local` / `admin`, then a new password |
 | Docker Compose | `docker compose -f deploy/compose.yaml up -d` | `admin@local` with your password, after one config change |
 | Kubernetes with Helm | `helm install` | Only with the bootstrap-admin Job |
-| Self-hosted with mise | `mise run deploy` | `admin@local` with your password, then a new password |
+| Local process (mise) | `mise run deploy` | `admin@local` with your password, then a new password |
 
 The two local setups build from source and are for trying Oceans or working on it. Local development keeps its data in a libsql file; every other setup uses PostgreSQL. Compose and Helm run the published images from GHCR. The self-hosted setup builds a tagged release from source on a single Linux machine and serves it over Tailscale.
 
@@ -25,7 +25,7 @@ The two local setups build from source and are for trying Oceans or working on i
 - [Start up and first access](/setup/first-access/) explains what the gateway does when it starts, and how to sign in and get an API key for each setup.
 - [Topology and operations](/setup/deploy-and-operations/) covers what every deployment shares: the same-origin routing, the database and migrations, telemetry, and the published images.
 - [Kubernetes and Helm](/setup/kubernetes-and-helm/) is the chart's contract: secrets, database modes, startup Jobs, and scaling.
-- [Self-hosting with mise](/setup/self-hosting/) walks through a single-host install, updates, and rollback.
+- [Local process (mise)](/setup/self-hosting/) walks through a single-host install, updates, and rollback.
 - [Agent Skills](/extensions/skills/) turns on the skills registry and its S3 storage.
 
 Once the gateway is up, the [configuration reference](/configuration/) describes every field in the gateway YAML.

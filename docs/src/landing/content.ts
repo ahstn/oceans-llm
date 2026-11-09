@@ -608,7 +608,7 @@ export const deployments = [
     store: "PostgreSQL",
     body: "One Linux machine with mise daemons, reachable over Tailscale.",
     command: "mise run deploy",
-    link: { label: "Self-hosting with mise", href: "/setup/self-hosting/" },
+    link: { label: "Local process (mise)", href: "/setup/self-hosting/" },
   },
 ];
 
