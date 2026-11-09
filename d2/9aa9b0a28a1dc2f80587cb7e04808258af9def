@@ -1,0 +1,14 @@
+docs/src/landing/content.ts
+  h_2f452a9c375069 64,93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d29aa9b0a28a1dc2f80587cb7e04808258af9def",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
