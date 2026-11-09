@@ -481,6 +481,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V76__pricing_context_tiers.sql"),
         postgres_sql: include_str!("../migrations/postgres/V76__pricing_context_tiers.sql"),
     },
+    MigrationManifest {
+        version: 77,
+        name: "service_tiers",
+        checksum: "V77__service_tiers.sql",
+        libsql_sql: include_str!("../migrations/V77__service_tiers.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V77__service_tiers.sql"),
+    },
 ];
 
 #[cfg(test)]

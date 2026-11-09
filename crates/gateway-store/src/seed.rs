@@ -12,7 +12,7 @@ use gateway_core::{
     GlobalRole, IdentityUserRecord, MembershipRole, ModelRoute, Money4, NewBatchItem, NewBatchJob,
     OauthProviderRecord, OidcProviderRecord, ProviderBatchResult, ProviderBatchState,
     ProviderRequestContext, SeedApiKeySecretMaterial, SeedManagedServiceAccountApiKey,
-    SeedServiceAccount, SeedTeam, SeedUser, StoreError, TeamRecord, UserStatus,
+    SeedServiceAccount, SeedTeam, SeedUser, ServiceTier, StoreError, TeamRecord, UserStatus,
     encrypt_gateway_api_key_secret, generate_gateway_api_key_value, hash_gateway_key_secret,
     parse_gateway_api_key,
 };
@@ -29,15 +29,20 @@ pub(crate) fn model_uuid(model_key: &str) -> Uuid {
     )
 }
 
+/// A route's stable id. An explicit `route_key` keeps the id across reordering and
+/// priority changes but tracks the route's target: model, provider, upstream model and
+/// forced service tier. A route without a forced tier keeps the id it had before tiers
+/// existed.
 pub(crate) fn route_uuid(
     model_key: &str,
     route_key: Option<&str>,
     provider_key: &str,
     upstream_model: &str,
+    service_tier: Option<ServiceTier>,
     priority: i32,
     route_index: usize,
 ) -> Uuid {
-    let key = match route_key {
+    let mut key = match route_key {
         Some(route_key) => format!(
             "route-key:v1:{}:{model_key}:{}:{route_key}:{}:{provider_key}:{}:{upstream_model}",
             model_key.len(),
@@ -49,6 +54,10 @@ pub(crate) fn route_uuid(
             format!("route:{model_key}:{provider_key}:{upstream_model}:{priority}:{route_index}")
         }
     };
+    if let Some(service_tier) = service_tier {
+        key.push_str(":service-tier:");
+        key.push_str(service_tier.as_str());
+    }
     Uuid::new_v5(&Uuid::NAMESPACE_OID, key.as_bytes())
 }
 
@@ -348,7 +357,7 @@ fn demo_batch_job(
             extra_body: route.extra_body.clone(),
             request_headers: BTreeMap::new(),
             compatibility: route.compatibility.clone(),
-            service_tier: None,
+            service_tier: route.service_tier,
         },
         pricing_snapshot: None,
     }

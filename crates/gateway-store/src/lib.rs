@@ -860,11 +860,35 @@ pub(crate) mod tests {
             },
             created_at: fetched_at,
             updated_at: fetched_at,
-            service_tiers: Vec::new(),
+            service_tiers: vec![
+                gateway_core::ServiceTierPricing {
+                    service_tier: gateway_core::ServiceTier::Flex,
+                    input: Some(Money4::from_scaled(50_000)),
+                    output: Some(Money4::from_scaled(250_000)),
+                    cache_read: Some(Money4::from_scaled(5_000)),
+                    cache_write: None,
+                    context_tiers: Vec::new(),
+                },
+                gateway_core::ServiceTierPricing {
+                    service_tier: gateway_core::ServiceTier::Priority,
+                    input: Some(Money4::from_scaled(200_000)),
+                    output: Some(Money4::from_scaled(1_000_000)),
+                    cache_read: Some(Money4::from_scaled(20_000)),
+                    cache_write: None,
+                    context_tiers: vec![gateway_core::ContextPricingTier {
+                        above_input_tokens: 200_000,
+                        input: Some(Money4::from_scaled(300_000)),
+                        output: Some(Money4::from_scaled(1_200_000)),
+                        cache_read: None,
+                        cache_write: None,
+                    }],
+                },
+            ],
         }
     }
 
-    /// Context tiers and the catalog image rate survive both insert paths.
+    /// Context tiers, service tier schedules and the catalog image rate survive both
+    /// insert paths.
     async fn exercise_model_pricing_context_tiers_round_trip<S>(store: &S)
     where
         S: PricingCatalogRepository,
@@ -897,6 +921,7 @@ pub(crate) mod tests {
         let second_at = first_at + Duration::hours(1);
         let mut second = tiered_model_pricing_record(&model_id, second_at);
         second.context_tiers.truncate(1);
+        second.service_tiers.truncate(1);
         second.output_image_usd_per_million = None;
         store
             .apply_model_pricing_sync(
@@ -7661,6 +7686,8 @@ pub(crate) mod tests {
             now,
         );
         kept_event.pricing_tier_above_input_tokens = Some(272_000);
+        kept_event.requested_service_tier = Some(gateway_core::ServiceTier::Priority);
+        kept_event.served_service_tier = Some(gateway_core::ServiceTier::Default);
         assert!(
             store
                 .insert_usage_ledger_if_absent(&seeded_event)
@@ -7732,6 +7759,14 @@ pub(crate) mod tests {
             Some(Money4::from_scaled(300_000))
         );
         assert_eq!(kept_usage.pricing_tier_above_input_tokens, Some(272_000));
+        assert_eq!(
+            kept_usage.requested_service_tier,
+            Some(gateway_core::ServiceTier::Priority)
+        );
+        assert_eq!(
+            kept_usage.served_service_tier,
+            Some(gateway_core::ServiceTier::Default)
+        );
 
         // Repeat deletes are no-ops, which is what makes reseeding idempotent.
         assert_eq!(
@@ -7941,6 +7976,8 @@ pub(crate) mod tests {
             now,
         );
         kept_event.pricing_tier_above_input_tokens = Some(272_000);
+        kept_event.requested_service_tier = Some(gateway_core::ServiceTier::Priority);
+        kept_event.served_service_tier = Some(gateway_core::ServiceTier::Default);
         assert!(
             store
                 .insert_usage_ledger_if_absent(&seeded_event)
@@ -8012,6 +8049,14 @@ pub(crate) mod tests {
             Some(Money4::from_scaled(300_000))
         );
         assert_eq!(kept_usage.pricing_tier_above_input_tokens, Some(272_000));
+        assert_eq!(
+            kept_usage.requested_service_tier,
+            Some(gateway_core::ServiceTier::Priority)
+        );
+        assert_eq!(
+            kept_usage.served_service_tier,
+            Some(gateway_core::ServiceTier::Default)
+        );
 
         // Repeat deletes are no-ops, which is what makes reseeding idempotent.
         assert_eq!(

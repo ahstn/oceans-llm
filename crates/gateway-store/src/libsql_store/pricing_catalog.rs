@@ -89,7 +89,8 @@ impl PricingCatalogRepository for LibsqlStore {
                     release_date, last_updated, effective_start_at, effective_end_at,
                     limits_json, modalities_json, provenance_source, provenance_etag,
                     provenance_fetched_at, created_at, updated_at,
-                    output_image_cost_per_million_tokens_10000, context_tiers_json
+                    output_image_cost_per_million_tokens_10000, context_tiers_json,
+                    service_tiers_json
                 FROM model_pricing
                 WHERE effective_end_at IS NULL
                 ORDER BY pricing_provider_id ASC, pricing_model_id ASC, effective_start_at ASC
@@ -111,6 +112,7 @@ impl PricingCatalogRepository for LibsqlStore {
         let limits_json = crate::shared::serialize_json(&record.limits)?;
         let modalities_json = crate::shared::serialize_json(&record.modalities)?;
         let context_tiers_json = crate::shared::serialize_json(&record.context_tiers)?;
+        let service_tiers_json = crate::shared::serialize_json(&record.service_tiers)?;
 
         self.connection
             .execute(
@@ -126,10 +128,11 @@ impl PricingCatalogRepository for LibsqlStore {
                     release_date, last_updated, effective_start_at, effective_end_at,
                     limits_json, modalities_json, provenance_source, provenance_etag,
                     provenance_fetched_at, created_at, updated_at,
-                    output_image_cost_per_million_tokens_10000, context_tiers_json
+                    output_image_cost_per_million_tokens_10000, context_tiers_json,
+                    service_tiers_json
                 ) VALUES (
                     ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                    ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23
+                    ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24
                 )
                 "#,
                 libsql::params![
@@ -169,7 +172,8 @@ impl PricingCatalogRepository for LibsqlStore {
                     record
                         .output_image_usd_per_million
                         .map(Money4::as_scaled_i64),
-                    context_tiers_json
+                    context_tiers_json,
+                    service_tiers_json
                 ],
             )
             .await
@@ -257,6 +261,7 @@ impl PricingCatalogRepository for LibsqlStore {
             let limits_json = crate::shared::serialize_json(&record.limits)?;
             let modalities_json = crate::shared::serialize_json(&record.modalities)?;
             let context_tiers_json = crate::shared::serialize_json(&record.context_tiers)?;
+            let service_tiers_json = crate::shared::serialize_json(&record.service_tiers)?;
 
             tx.execute(
                 r#"
@@ -271,10 +276,11 @@ impl PricingCatalogRepository for LibsqlStore {
                     release_date, last_updated, effective_start_at, effective_end_at,
                     limits_json, modalities_json, provenance_source, provenance_etag,
                     provenance_fetched_at, created_at, updated_at,
-                    output_image_cost_per_million_tokens_10000, context_tiers_json
+                    output_image_cost_per_million_tokens_10000, context_tiers_json,
+                    service_tiers_json
                 ) VALUES (
                     ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                    ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23
+                    ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24
                 )
                 "#,
                 libsql::params![
@@ -314,7 +320,8 @@ impl PricingCatalogRepository for LibsqlStore {
                     record
                         .output_image_usd_per_million
                         .map(Money4::as_scaled_i64),
-                    context_tiers_json
+                    context_tiers_json,
+                    service_tiers_json
                 ],
             )
             .await
@@ -381,7 +388,8 @@ impl LibsqlStore {
                     release_date, last_updated, effective_start_at, effective_end_at,
                     limits_json, modalities_json, provenance_source, provenance_etag,
                     provenance_fetched_at, created_at, updated_at,
-                    output_image_cost_per_million_tokens_10000, context_tiers_json
+                    output_image_cost_per_million_tokens_10000, context_tiers_json,
+                    service_tiers_json
                 FROM model_pricing
                 WHERE pricing_provider_id = ?1
                   AND pricing_model_id IN (?2, ?3)

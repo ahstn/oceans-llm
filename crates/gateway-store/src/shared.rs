@@ -1,6 +1,7 @@
 use gateway_core::{
     AgentObservationSetRecord, AgentSessionAnalysisRecord, AgentSessionRecord,
-    AgentSessionRequestLinkRecord, AgentSessionSourceRecord, ModelRoutingPolicy, StoreError,
+    AgentSessionRequestLinkRecord, AgentSessionSourceRecord, ModelRoutingPolicy, ServiceTier,
+    StoreError,
 };
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -311,6 +312,35 @@ pub(crate) fn parse_model_routing_policy(
         .transpose()
 }
 
+/// A stored tier column, written as [`ServiceTier::as_str`]; NULL is no tier.
+pub(crate) fn parse_stored_service_tier(
+    value: Option<&str>,
+) -> Result<Option<ServiceTier>, StoreError> {
+    value.map(parse_service_tier_name).transpose()
+}
+
+/// A model's stored tier allow-list, a JSON array of tier names; NULL allows every tier.
+pub(crate) fn parse_stored_service_tiers(
+    value: Option<&str>,
+) -> Result<Option<Vec<ServiceTier>>, StoreError> {
+    value
+        .map(|value| {
+            let names: Vec<String> = serde_json::from_str(value)
+                .map_err(|error| StoreError::Serialization(error.to_string()))?;
+            names
+                .iter()
+                .map(String::as_str)
+                .map(parse_service_tier_name)
+                .collect()
+        })
+        .transpose()
+}
+
+fn parse_service_tier_name(value: &str) -> Result<ServiceTier, StoreError> {
+    ServiceTier::parse(value)
+        .ok_or_else(|| StoreError::Serialization(format!("unknown service tier `{value}`")))
+}
+
 fn same_timestamp(left: OffsetDateTime, right: OffsetDateTime) -> bool {
     left.unix_timestamp() == right.unix_timestamp()
 }
@@ -504,9 +534,13 @@ pub(crate) fn ensure_active_for_update(status: &str) -> Result<(), StoreError> {
 
 #[cfg(test)]
 mod tests {
+    use gateway_core::{ServiceTier, StoreError};
     use serde_json::json;
 
-    use super::{json_object_from_str, parse_uuid, serialize_json, serialize_optional_json};
+    use super::{
+        json_object_from_str, parse_stored_service_tier, parse_stored_service_tiers, parse_uuid,
+        serialize_json, serialize_optional_json,
+    };
 
     #[test]
     fn serialize_helpers_round_trip_json_values() {
@@ -529,5 +563,28 @@ mod tests {
     #[test]
     fn parse_uuid_rejects_invalid_values() {
         assert!(parse_uuid("not-a-uuid").is_err());
+    }
+
+    #[test]
+    fn stored_service_tiers_parse_and_reject_unknown_values() {
+        assert_eq!(parse_stored_service_tier(None).expect("null"), None);
+        assert_eq!(
+            parse_stored_service_tier(Some("priority")).expect("priority"),
+            Some(ServiceTier::Priority)
+        );
+        assert!(matches!(
+            parse_stored_service_tier(Some("turbo")),
+            Err(StoreError::Serialization(_))
+        ));
+
+        assert_eq!(parse_stored_service_tiers(None).expect("null"), None);
+        assert_eq!(
+            parse_stored_service_tiers(Some(r#"["flex","priority"]"#)).expect("list"),
+            Some(vec![ServiceTier::Flex, ServiceTier::Priority])
+        );
+        assert!(matches!(
+            parse_stored_service_tiers(Some(r#"["priority","turbo"]"#)),
+            Err(StoreError::Serialization(_))
+        ));
     }
 }
