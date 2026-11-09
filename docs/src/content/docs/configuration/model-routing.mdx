@@ -135,7 +135,7 @@ If `routing` is omitted, the gateway uses weighted selection on every request wi
 
 ### Route identity
 
-Every route needs a stable `id` when the model defines `routing`. Keep the ID when changing a route's priority, weight or YAML position. These edits keep the route's identity and don't break a valid session binding. Changing the provider or upstream model creates a new route identity.
+Every route needs a stable `id` when the model defines `routing`. Keep the ID when changing a route's priority, weight or YAML position. These edits keep the route's identity and don't break a valid session binding. Changing the provider, upstream model or `service_tier` creates a new route identity.
 
 Each binding also stores an execution fingerprint. It covers the initialised provider's endpoint, authentication and headers, the request-affecting route settings, and the caller's linked provider credential ID. A change to any of these invalidates the binding. Display, pricing, timeout and batch settings don't affect it. Normal token refresh doesn't change it.
 

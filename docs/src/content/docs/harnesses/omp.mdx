@@ -128,6 +128,14 @@ providers:
 
 The [OMP `models.yml` docs](https://github.com/can1357/oh-my-pi/blob/main/docs/models.md) list every override field.
 
+## Use fast mode
+
+The gateway accepts a [service tier](/configuration/model-routing/#service-tiers) on each request. OMP's `/fast` command asks for the `priority` tier. OMP sends it as `service_tier: "priority"` only for models it knows as OpenAI models on Chat Completions or Responses, such as `gpt-6-luna`. It doesn't send a tier for Claude or other models through a custom provider.
+
+For those models, pick a fast model that your admin published, such as `gpt-6-luna-fast` or `claude-opus-5.5-fast`. The gateway sends every request on that model at the `priority` tier. See [Publish a fast model](/configuration/models-and-routes/#service-tiers).
+
+A request for a tier the model doesn't allow fails with `403` and `service_tier_not_allowed`. Turn off `/fast`, or ask your admin to allow the tier.
+
 ## Limits
 
 - **Tiered prices.** Each row has one price per token type. OMP doesn't apply higher prices above a context size, for example a higher GPT price above 272,000 tokens.
