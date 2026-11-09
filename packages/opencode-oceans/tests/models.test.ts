@@ -260,3 +260,48 @@ describe('cost units', () => {
     )
   })
 })
+
+describe('service tiers', () => {
+  test('optional tiers become variants spelled for the package', () => {
+    const openai = toModel(
+      provider,
+      'gpt',
+      { supported_openai_params: ['service_tier'] },
+      undefined,
+      undefined,
+      undefined,
+      {
+        ...hints('openai-chat-completions'),
+        service_tiers: ['default', 'flex', 'priority', 'ultrafast'],
+      },
+    )
+    assert.deepEqual(openai.variants, [
+      { id: 'flex', settings: { serviceTier: 'flex' } },
+      { id: 'fast', settings: { serviceTier: 'priority' } },
+      { id: 'ultrafast', settings: { serviceTier: 'ultrafast' } },
+    ])
+
+    // Anthropic sends Fast as `speed`, after the effort presets and with the default thinking.
+    const claude = toModel(provider, 'claude', {}, undefined, undefined, undefined, {
+      ...hints('anthropic-messages', [{ id: 'high', settings: { effort: 'high' } }]),
+      capabilities: {
+        thinking: { supported: true, types: { adaptive: { supported: true } } },
+        effort: { supported: true },
+      },
+      service_tiers: ['default', 'priority'],
+    })
+    assert.deepEqual(claude.variants, [
+      { id: 'high', settings: { thinking: { type: 'adaptive' }, effort: 'high' } },
+      { id: 'fast', settings: { thinking: { type: 'adaptive' }, speed: 'fast' } },
+    ])
+  })
+  test('fixed, default-only, or unknown tiers add no variant', () => {
+    for (const service_tiers of [['priority'], ['default'], ['default', 'scale'], undefined])
+      expect(
+        toModel(provider, 'gpt', {}, undefined, undefined, undefined, {
+          ...hints('openai-chat-completions'),
+          service_tiers,
+        }).variants,
+      ).toEqual([])
+  })
+})

@@ -1,3 +1,4 @@
+use gateway_core::ServiceTier;
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_GATEWAY_BASE_URL: &str = "http://127.0.0.1:3000";
@@ -158,9 +159,23 @@ pub struct ClientConfigInput {
     /// clamped so harnesses never offer a level the gateway rejects.
     #[serde(default)]
     pub max_reasoning_effort: Option<ReasoningLevel>,
+    /// Every tier a request can be served at, ascending. Harness configs offer a variant
+    /// for each non-default tier only when `default` is among them: without it the
+    /// gateway fixes the tier and there is nothing to choose.
+    #[serde(default)]
+    pub service_tiers: Vec<ServiceTier>,
 }
 
 impl ClientConfigInput {
+    /// The non-default tiers a client may choose between, ascending.
+    pub fn optional_service_tiers(&self) -> impl Iterator<Item = ServiceTier> + '_ {
+        let selectable = self.service_tiers.contains(&ServiceTier::Default);
+        self.service_tiers
+            .iter()
+            .copied()
+            .filter(move |&tier| selectable && tier != ServiceTier::Default)
+    }
+
     #[must_use]
     pub fn context_window(&self) -> i64 {
         self.input_window_tokens
@@ -245,6 +260,7 @@ impl Default for ClientConfigInput {
             codex_reasoning_effort: None,
             native_api_format: None,
             max_reasoning_effort: None,
+            service_tiers: Vec::new(),
         }
     }
 }

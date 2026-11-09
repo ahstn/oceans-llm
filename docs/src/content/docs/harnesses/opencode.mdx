@@ -109,6 +109,18 @@ opencode run --model oceans/gpt-6.1-sol#high "Review this diff"
 
 The plugin leaves out levels above the model's reasoning ceiling, so every variant it shows is one the gateway accepts. See [Reasoning effort ceilings](/configuration/models-and-routes/#reasoning-effort-ceilings).
 
+### Choose a service tier
+
+When a model can run at more than one [service tier](/configuration/model-routing/#service-tiers), the plugin adds a variant for each extra tier: `fast` (priority), `flex` and `ultrafast`. It takes the tiers from `service_tiers` in `/v1/models`, so it shows only tiers the gateway allows and can serve:
+
+```sh
+opencode run --model oceans/gpt-6-luna#fast "Review this diff"
+```
+
+A tier variant keeps the model's default reasoning level. A fast model that your admin published, such as `gpt-6-luna-fast`, always runs at the `priority` tier and has no tier variants.
+
+OpenCode prices every variant at the standard rate, so its session cost is low for `fast` and high for `flex`. The gateway bills the tier that served the request.
+
 ## How the plugin finds models
 
 When OpenCode starts, the plugin calls two gateway routes with your API key:
@@ -234,5 +246,7 @@ Each model states its `capabilities`, so OpenCode doesn't apply its own defaults
 - `reasoning.supported` is `false` for models without a thinking policy.
 
 Reasoning models also get explicit effort `variants`. Anthropic Messages variants set `effort` with adaptive thinking. OpenAI-compatible variants set `reasoningEffort`. Claude models with adaptive effort get `high` and `max` variants, and the `max` variant sends effort `xhigh`. Gemini models get the levels they support from `minimal`, `low`, `medium` and `high`. Variants above the model's reasoning ceiling are left out.
+
+Models that can serve more than one service tier also get `fast`, `flex` and `ultrafast` variants for the tiers they serve. Anthropic Messages `fast` sends `speed: "fast"`. Other variants send `serviceTier`, which OpenCode sends as `service_tier`.
 
 For prices and limits in the snippet, see [Model data in snippets](/harnesses/#model-data-in-snippets).

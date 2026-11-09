@@ -121,6 +121,13 @@ levels the route supports. Select an advertised variant with a suffix such as
 
 When native effort support is present but per-level flags are missing, the plugin keeps the gateway's hinted presets. Explicit per-level flags still set the allowed ladder. Missing input limits use the catalog's separate input limit, capped by the gateway context window.
 
+Models whose `/v1/models` row lists `service_tiers` with `default` and another tier get one variant
+per optional tier: `fast` (priority), `flex`, and `ultrafast`, as in `oceans/gpt-6-luna#fast`. Anthropic
+Messages variants send `speed: fast`; others send `serviceTier`. A tier variant keeps the default
+effort. A model that lists only `priority` is a fixed fast model, so it gets no tier variant. OpenCode
+prices every variant at the model's standard rate; Oceans bills and records the tier that served the
+request.
+
 ## Usage and pricing limitations
 
 OpenCode's native adapter reports actual response usage, including cache tokens when the gateway and

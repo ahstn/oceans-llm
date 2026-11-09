@@ -9,6 +9,12 @@ export const packages = {
   'anthropic-messages': '@opencode/ai/providers/anthropic-compatible',
 } as const satisfies Record<API, string>
 const effortNames = new Set(['minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+/** Optional service tiers and their variant ids; Priority is the tier vendors sell as Fast. */
+const tierVariantIDs: Record<string, string> = {
+  flex: 'flex',
+  priority: 'fast',
+  ultrafast: 'ultrafast',
+}
 const vendors = [
   'anthropic',
   'openai',
@@ -271,6 +277,32 @@ function reasoning(
   }
 }
 
+/**
+ * One variant per optional tier. Discovery lists every tier a model is served at; without
+ * `default` an admin fixed the tier and there is nothing to choose. Anthropic packages carry
+ * Fast as `speed`; every package sends `serviceTier` as `service_tier`. A tier variant keeps
+ * the model's default settings, and Oceans records the cost of the tier that served it.
+ */
+function tierVariants(
+  entry: Entry,
+  listing: Entry,
+  api: API,
+  defaults: Model.Settings | undefined,
+): Model.Info['variants'] {
+  const tiers = strings(listing.service_tiers) ?? strings(metadata(entry, 'service_tiers'))
+  if (!tiers?.includes('default')) return []
+  return tiers.flatMap((tier) => {
+    if (!Object.hasOwn(tierVariantIDs, tier)) return []
+    const settings =
+      api === 'anthropic-messages' && tier === 'priority'
+        ? { speed: 'fast' }
+        : { serviceTier: tier }
+    return [
+      { id: Model.VariantID.make(tierVariantIDs[tier]), settings: { ...defaults, ...settings } },
+    ]
+  })
+}
+
 export function toModel(
   providerID: Provider.ID,
   id: string,
@@ -300,6 +332,7 @@ export function toModel(
     tokens(listing.max_tokens) ??
     reference?.limit.output ??
     Math.min(context, 32_768)
+  const thinking = reasoning(api, entry, listing, output, reference, override)
   return {
     ...Model.Info.default(providerID, Model.ID.make(id)),
     name: text(listing.display_name) ?? text(listing.name) ?? reference?.name ?? id,
@@ -308,7 +341,8 @@ export function toModel(
     capabilities: capabilities(entry, listing, api, reference, override),
     limit: { context, input, output },
     cost: costs(entry, listing, reference),
-    ...reasoning(api, entry, listing, output, reference, override),
+    settings: thinking.settings,
+    variants: [...thinking.variants, ...tierVariants(entry, listing, api, thinking.settings)],
   }
 }
 
