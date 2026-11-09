@@ -21,6 +21,7 @@ A model must set exactly one of `routes` or `alias_of`. Setting both, or neither
 | `rank` | `100` | Display and ordering rank. |
 | `routing` | none | Routing policy. Provider-backed models only. See [Routing policy and session affinity](#routing-policy-and-session-affinity). |
 | `max_reasoning_effort` | none | See [Reasoning effort ceilings](#reasoning-effort-ceilings). |
+| `service_tiers` | none | Non-default tiers callers may request. See [Service tiers](#service-tiers). |
 | `allowlist` | none | See [Model allowlists](#model-allowlists). |
 | `benchmark_model_id` | none | OpenRouter model ID (`publisher/model`, no `:variant`) for benchmark lookup. See [Configuration reference](/configuration/). |
 
@@ -101,6 +102,65 @@ Startup checks explicit effort values in each route's `extra_body` against the c
 
 For request shapes and rejection behaviour, see [Model routing and APIs](/configuration/model-routing/).
 
+## Service tiers
+
+Providers sell some models at more than one capacity tier. The gateway knows four tiers:
+
+| Tier | Aliases | Typical price | Notes |
+| --- | --- | --- | --- |
+| `default` | `standard` | 1× | The provider's normal tier. |
+| `flex` | none | about 0.5× | Slower and can fail when the provider is busy. |
+| `priority` | `fast` | about 2× | OpenAI Fast, Anthropic fast mode, Gemini and Bedrock priority. |
+| `ultrafast` | none | about 6× | OpenAI only, on a few models. |
+
+Callers ask for a tier per request. See [Service tiers in requests](/configuration/model-routing/#service-tiers). Admins control tiers in two places.
+
+**Limit the tiers of a model.** `service_tiers` lists the non-default tiers callers may request. When you omit it, callers may request every tier. `default` is always allowed, so don't list it.
+
+```yaml
+models:
+  - id: deepseek-v4.1-flash
+    service_tiers: [flex]
+    routes:
+      - provider: openrouter
+        upstream_model: deepseek/deepseek-v4.1-flash
+```
+
+A request for a tier that isn't listed fails with 403 `service_tier_not_allowed`.
+
+**Publish a fast model.** A route's `service_tier` fixes the tier of every request on that route. The route's tier wins over the caller's. Give the fast model its own `id`, so you can grant it, budget it and price it on its own.
+
+```yaml
+models:
+  - id: gpt-6-luna
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-6-luna
+
+  - id: gpt-6-luna-fast
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-6-luna
+        service_tier: priority
+```
+
+Each provider type sends the tier in its own form:
+
+| Provider type | Tiers | Sent as |
+| --- | --- | --- |
+| `openai_compat` | all | `service_tier` in the body |
+| `anthropic_compat` | `default`, `priority` | `speed: "fast"`, with the fast-mode beta header for Opus 5 and Opus 4.8. `default` sends `service_tier: "standard_only"`. |
+| `gcp_vertex` (Claude) | `default`, `priority` | `speed: "fast"` |
+| `gcp_vertex` (Gemini) | `default`, `flex`, `priority` | `X-Vertex-AI-LLM-Shared-Request-Type` header |
+| `aws_bedrock` | `default`, `flex`, `priority` | `serviceTier` (Converse), `X-Amzn-Bedrock-Service-Tier` (InvokeModel), or `service_tier` (Mantle) |
+| `github_copilot` and others | `default` | nothing |
+
+A route serves a non-default tier only when its provider type supports the tier and the gateway can price it. The gateway can price a tier when the provider reports the cost (OpenRouter), when the catalog or `pricing_override` has a rate for the tier, or when the route has no price at all. A request that no route can serve fails with 400.
+
+The model may not match the tier you choose. For example, OpenRouter's `claude-haiku-5.5` has no fast mode, so a fast request is served at standard speed. The request log shows the tier the caller requested and the tier the provider served. Usage is billed at the served tier.
+
+The design and its trade-offs are in the [service tiers ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-11-09-service-tiers.md).
+
 ## Model allowlists
 
 `models[*].allowlist` limits which human users and teams may use a model. It's separate from API-key grants and from user, team, and service-account model restrictions.
@@ -148,6 +208,7 @@ Route entries aren't checked for unknown fields. A misspelled route key is silen
 | `enabled` | `true` | Set `false` to keep the route but stop using it. |
 | `context_window_tokens` | none | See [Route metadata overrides](#route-metadata-overrides). |
 | `pricing_override` | none | See [Route metadata overrides](#route-metadata-overrides). |
+| `service_tier` | none | Tier for every request on this route. See [Service tiers](#service-tiers). |
 | `capabilities` | all unset | See [Route capabilities](#route-capabilities). |
 | `compatibility` | none | See [Route compatibility](#route-compatibility). |
 | `extra_headers` | `{}` | Headers added to upstream requests for this route. |
@@ -158,6 +219,8 @@ Keep route `id` stable when you change priority, weight, or YAML order. Changing
 `extra_headers` is how you send provider headers such as `OpenAI-Project`. The gateway doesn't forward arbitrary caller headers to providers.
 
 `extra_body` is for additive provider-specific fields. Don't use it for compatibility transforms. When a typed compatibility profile conflicts with `extra_body`, the profile wins.
+
+Set a tier with the route's `service_tier`, not with `extra_body` or `extra_headers`. Config loading fails when `extra_body` has `service_tier`, `serviceTier` or `speed`, or when `extra_headers` has `X-Vertex-AI-LLM-Shared-Request-Type` or `X-Amzn-Bedrock-Service-Tier`.
 
 ### Route metadata overrides
 
@@ -183,7 +246,20 @@ models:
 
 - `input_usd_per_million_tokens` and `output_usd_per_million_tokens` are required.
 - `cache_read_usd_per_million_tokens`, `cache_write_usd_per_million_tokens`, and `image_output_usd_per_million_tokens` are optional. Omitted rates stay absent. They don't fall back to catalog rates.
+- The rates price the route's own tier: its `service_tier`, or `default` when it has none.
+- `service_tiers` is an optional list of rates for the other tiers the route can bill. Each entry has `service_tier`, `input_usd_per_million_tokens`, `output_usd_per_million_tokens`, and optional `cache_read_usd_per_million_tokens` and `cache_write_usd_per_million_tokens`. A tier may appear once, and the route's own tier can't appear. A request billed at a tier with no rates is unpriced. The gateway never bills a premium tier at the default rate.
+- On a route with `service_tier: priority`, add a `default` entry to price requests that the provider serves at the default tier instead.
 - Every rate is a quoted decimal string with at most four fractional digits. Zero is valid. Unquoted numbers, negative, malformed, and overflowing values fail config loading. Unknown fields are rejected.
+
+```yaml
+        pricing_override:
+          input_usd_per_million_tokens: "1.2500"
+          output_usd_per_million_tokens: "5.0000"
+          service_tiers:
+            - service_tier: priority
+              input_usd_per_million_tokens: "2.5000"
+              output_usd_per_million_tokens: "10.0000"
+```
 
 `image_output_usd_per_million_tokens` prices the image tokens a provider reports in `completion_tokens_details.image_tokens` or `output_tokens_details.image_tokens`. Other completion tokens use the output rate. A cost the provider reports in usage, such as OpenRouter's `usage.cost`, takes precedence over the whole override. See [Pricing catalog and accounting](/spend/pricing-and-accounting/).
 

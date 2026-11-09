@@ -62,6 +62,7 @@ Preconditions:
 - Bedrock `CountTokens` accepts foundation model IDs only. The gateway strips a cross-Region profile prefix such as `us.`, including inside a system-defined `inference-profile/` ARN; an application inference profile ARN is rejected upstream.
 - The unversioned aliases (`/chat/completions`, `/responses`, `/embeddings`, `/images`, `/images/generations`, `/decisions`, `/models`) reuse the `/v1` handlers. A canary on an alias proves routing only, not provider behavior.
 - Image generation (`/v1/images` and chat image output) has its own paid recipe: [Image generation](./image-generation.md).
+- Service tier changes (`service_tier`, `speed`, tier pricing, `-fast` routes) have their own paid A/B recipe: [Service tiers](./service-tiers.md). A generic canary does not prove the tier reached the provider.
 - Bedrock stored responses default to retention. Keep `store: false` unless storage behavior is the test target.
 - A provider outage, missing model access, expired credential, quota, or network block is an integration failure with a specific cause. It does not invalidate separate local UI proof.
 - Never record raw API keys, authorization headers, full environment dumps, or provider response content that can contain submitted data.

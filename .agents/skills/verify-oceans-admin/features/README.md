@@ -31,6 +31,7 @@ When you add a recipe or a UI route, add its routing entry in the same change. `
 - Use `control-oceans-admin drive models` for the automated Models proof.
 - Use `control-oceans-admin drive observability` for the combined Leaderboard and Agent Harnesses proof.
 - Use `control-oceans-admin drive backend-gateway` for the bounded OpenRouter, deterministic guardrail, generated-tool decision, and request-log proof.
+- Use `control-oceans-admin drive service-tiers` for the paid OpenRouter service tier A/B proof, the free tier rejections, tier discovery, and request-log tier evidence.
 - Use `control-oceans-admin drive mcp` for the MCP registry, Tool Sets workbench, grant checks, bounded live tool calls, and invocation proof. Read its credential preconditions before launch.
 - Use `control-oceans-admin drive profile` for the Profile landing page, budget meter, heatmap, and create-key links.
 - Use `control-oceans-admin drive skills` for browser uploads, immutable versions, archive digests, and owner access against native RustFS. Read its launch preconditions first.
@@ -70,6 +71,7 @@ Each feature file starts with an H1 title and one paragraph that describes user-
 - [Image generation](./image-generation.md) covers the Images API routes, chat image output, provider-reported image cost, image-safe request logs, and image output modalities in `/v1/models`.
 - [Anthropic Messages](./anthropic-messages.md) covers `/v1/messages`, thinking/display/effort regressions, native transport boundaries, SSE, tool continuity, safeguards and one scoped public-endpoint canary.
 - [Backend gateway](./backend-gateway.md) covers the OpenRouter route for `deepseek-v4.1-flash`, deterministic and generated-tool guardrails, request-log evidence, and temporary key cleanup.
+- [Service tiers](./service-tiers.md) covers `service_tier` and `speed` requests, the default/priority/flex A/B through OpenRouter, a route-forced fast model, tier policy and routing rejections, tier discovery, and requested and served tiers in Request Logs.
 - [Usage costs](./usage-costs.md) covers the spend KPIs, the 7- and 30-day windows, the owner filter, breakdowns, FOCUS export, and spend-report API parity.
 - [Spend controls](./spend-controls.md) covers user, service-account, and model budgets, alert history, and a safe model-budget mutation with cleanup.
 - [Rate limits](./rate-limits.md) covers the policy list, creating a per-key limit, enforcement headers and the `429` contract, pausing, deletion, and optional MCP tool-call limits.

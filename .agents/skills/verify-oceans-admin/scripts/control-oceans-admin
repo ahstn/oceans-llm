@@ -536,11 +536,12 @@ drive() {
     models) driver="drive-models.mjs" ;;
     observability) driver="drive-observability.mjs" ;;
     backend-gateway) driver="drive-backend-gateway.mjs" ;;
+    service-tiers) driver="drive-service-tiers.mjs" ;;
     mcp) driver="drive-mcp.mjs" ;;
     profile) driver="drive-profile.mjs" ;;
     skills) driver="drive-skills.mjs" ;;
     *)
-      echo "Supported drive targets: models, observability, backend-gateway, mcp, profile, skills" >&2
+      echo "Supported drive targets: models, observability, backend-gateway, service-tiers, mcp, profile, skills" >&2
       exit 2
       ;;
   esac
@@ -585,7 +586,7 @@ case "${1:-}" in
   evidence | record | report) proof_cli "$@" ;;
   cleanup) cleanup ;;
   *)
-    echo "Usage: $0 {plan [base-ref] [--json]|launch|doctor|drive {models|observability|backend-gateway|mcp|profile|skills}|evidence [feature...] [--require-current]|record <feature> --check id=status[:note] --artifact file|report [--plan [base-ref]]|cleanup}" >&2
+    echo "Usage: $0 {plan [base-ref] [--json]|launch|doctor|drive {models|observability|backend-gateway|service-tiers|mcp|profile|skills}|evidence [feature...] [--require-current]|record <feature> --check id=status[:note] --artifact file|report [--plan [base-ref]]|cleanup}" >&2
     exit 2
     ;;
 esac

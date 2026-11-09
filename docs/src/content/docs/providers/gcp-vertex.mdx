@@ -260,7 +260,8 @@ The gateway builds the Gemini body from the Chat Completions request ([`google_r
 - `max_tokens` or `max_completion_tokens` becomes `maxOutputTokens`. Different values in the two fields fail.
 - `temperature`, `top_p`, `top_k`, `presence_penalty`, `frequency_penalty`, `seed`, `n`, `stop`, `logprobs` and `top_logprobs` map to their `generationConfig` fields.
 - `response_format` with `json_object` sets `responseMimeType: application/json`. With `json_schema`, the schema also goes in `responseJsonSchema`.
-- The gateway ignores OpenAI-only fields such as `user`, `store`, `metadata`, `service_tier` and `logit_bias`. It copies other unknown top-level fields into the body unchanged.
+- The gateway ignores OpenAI-only fields such as `user`, `store`, `metadata` and `logit_bias`. It copies other unknown top-level fields into the body unchanged.
+- A `flex` or `priority` [service tier](/configuration/models-and-routes/#service-tiers) is sent as the `X-Vertex-AI-LLM-Shared-Request-Type` header. The served tier comes from `usageMetadata.trafficType`.
 - A caller's native `generationConfig` (or `generation_config`) is deep-merged over the mapped fields. Route `extra_body` is merged last.
 
 ### Tools
