@@ -31,7 +31,7 @@ Two more commands help before a start or an upgrade. `gateway config validate` c
 
 The bootstrap admin is the first platform admin, and it's how you get into `/admin` on a new install. Its email, password, and password-change rule come from `auth.bootstrap_admin` in the config.
 
-The gateway creates it only when `auth.bootstrap_admin.enabled` is `true` and the database has no platform admin at all. Any platform admin counts, including one who was seeded by config and hasn't signed in yet. Bootstrap never resets an existing user's password.
+The gateway creates it only when `auth.bootstrap_admin.enabled` is `true` and the database has no platform admin at all. Any platform admin counts, including one who was seeded by config and hasn't signed in yet. When bootstrap does run, it writes the configured password to the bootstrap account, even if that account already exists. So if you demote the bootstrap admin and no platform admin is left, the next start resets its password. Two gateways that start at the same time on a new database can both run bootstrap, and the later one's password wins.
 
 <Aside type="caution" title="A seeded platform admin blocks the bootstrap admin">
   Seeding runs before bootstrap. If the config's `users` list includes someone with `global_role: platform_admin`, they exist by the time bootstrap checks, so `admin@local` is never created. That user starts as `invited`, and only an admin can create their invite link.

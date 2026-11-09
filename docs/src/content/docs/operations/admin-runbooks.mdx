@@ -67,7 +67,7 @@ Where you run them depends on the setup:
     Also add `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY` and `GATEWAY_PUBLIC_BASE_URL`. Compose won't start without them, and `.env.example` doesn't list them. [Start up and first access](/setup/first-access/#docker-compose) lists every variable, and explains why you should add `GATEWAY_IDENTITY_TOKEN_SECRET` too.
   </Step>
   <Step title="Check the config">
-    Read `deploy/config/gateway.yaml`, which Compose mounts into the gateway. It seeds `ops@example.com` as a platform admin, and that stops the bootstrap admin from being created. Remove that user or change its `global_role` before the first start if you want to sign in as `admin@local`.
+    Read `deploy/config/gateway.yaml`, which Compose mounts into the gateway. It seeds `ops@example.com` as a platform admin, and that stops the bootstrap admin from being created. Remove that user or change its `global_role` before the first start. Otherwise no one can sign in: a seeded user needs an invite link, and only an admin can create one.
   </Step>
   <Step title="Start the stack">
     ```sh
@@ -174,7 +174,7 @@ Before any upgrade, read the release notes and back up the database. Migrations 
    kubectl rollout status deploy/oceans-llm-gateway -n <namespace>
    ```
 
-If the upgrade fails after the chart renders but before the pods are healthy, look at the hook Jobs first, then the gateway deployment's events. A pod that stays in its `wait-for-migrations` init container is waiting for the migration Job, which runs `gateway migrate --check` until the schema is current or `gateway.migrationWaiter.timeoutSeconds` (default `600`) passes.
+If the upgrade fails after the chart renders but before the pods are healthy, look at the hook Jobs first, then the gateway deployment's events. A pod that stays in its `wait-for-migrations` init container is waiting for the migration Job. The init container runs `gateway migrate --check` until the schema is current or `gateway.migrationWaiter.timeoutSeconds` (default `600`) passes.
 
 ## Roll back
 
@@ -305,7 +305,7 @@ A purge deletes:
 
 - request-log rows older than the cutoff, with their payloads, tags, and provider attempts;
 - [guardrail decisions](/operations/gateway-guardrails/#observe-decisions) older than the cutoff;
-- the stored inputs of finished [agent sessions](/observability/agent-session-analysis/) older than the cutoff.
+- the stored inputs, detected activity and reports of finished [agent sessions](/observability/agent-session-analysis/) older than the cutoff.
 
 It keeps `usage_cost_events`, so spend and budget reports still work after the request detail is gone.
 

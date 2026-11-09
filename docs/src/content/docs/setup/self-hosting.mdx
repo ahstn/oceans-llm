@@ -215,7 +215,7 @@ Run `mise run rustfs:setup` before the next deploy. It creates random credential
 
 The `selfhost-rustfs` environment gives RustFS a fixed port, `9000`, a start at boot, and a data directory outside the checkout at `$HOME/.local/share/oceans-llm/rustfs/data`. A one-off bucket check runs once RustFS is ready, and the gateway waits for both it and PostgreSQL. RustFS listens on `127.0.0.1` only, and its web console is off.
 
-Then add the `skills` section to your gateway config, using the [RustFS example](/extensions/skills/#rustfs-or-another-s3-compatible-service). Its endpoint and credential variables come from the RustFS environment.
+Then add the `skills` section to your gateway config, using the [RustFS example](/extensions/skills/#rustfs-or-another-s3-compatible-service). Its endpoint and credential variables come from the RustFS environment. The endpoint is plain HTTP on `127.0.0.1`, so also set `skills.storage.allow_http: true`, or the gateway rejects the config.
 
 To move the data, set `OCEANS_RUSTFS_DATA_DIR` in `mise.selfhost-rustfs.local.toml`. Stop RustFS first, copy the data with its permissions, and keep the original until a test download works. If other applications share this RustFS, give the gateway its own identity scoped to its bucket, and keep the root credentials for administration.
 

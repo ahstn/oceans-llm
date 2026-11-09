@@ -10,7 +10,6 @@ Astro-based docs. The `nimbus-docs` package handles content schemas, sidebar/TOC
 astro.config.ts              # imports nimbus + defineNimbusConfig
 nimbus.json                  # records the last reviewed Nimbus package version
 src/
-├── api/openapi.json         # the OpenAPI spec the API reference is generated from
 ├── assets/landing/          # landing page art and screenshot crops (WebP, optimised at build)
 ├── components.ts            # MDX globals — components every .mdx can use without an import
 ├── components/              # AgentDirective, Header, Logo (Oceans mark + wordmark), Render + ui/<slug>/
@@ -136,9 +135,9 @@ Everything else: <https://nimbus-docs.com/navigation/sidebar/>.
 
 ## API reference
 
-The reference at `/api` is generated from `src/api/openapi.json`, an OpenAPI 3.x spec, through the `api` entry in `astro.config.ts` and the route `src/pages/api/[...slug].astro`. Its pages, Markdown versions, search entries and `llms.txt` follow the spec: change the spec, not the pages.
+The reference at `/api` is generated from the gateway's admin contract, `crates/gateway/openapi/admin-api.json`, through the `api` entry in `astro.config.ts` and the route `src/pages/api/[...slug].astro`. Its pages, Markdown versions, search entries and `llms.txt` follow the spec: change the spec, not the pages.
 
-- Replace the spec: overwrite `src/api/openapi.json`, or point `spec` in the `api` entry at another local file, then build.
+- Update the spec: change the gateway's admin routes, run `mise run admin-contract-generate`, then build. `mise run admin-contract-check` catches a stale contract.
 - Add a version, link an operation from prose with `api.ref:`, or change the reference's URLs: <https://nimbus-docs.com/api-reference/>.
 - Its components in `src/components/ui/` came from the registry; upgrade them like any registry component.
 

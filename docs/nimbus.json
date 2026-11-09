@@ -8,7 +8,7 @@
   "site": {
     "template": "docs",
     "api": {
-      "spec": "src/api/openapi.json"
+      "spec": "../crates/gateway/openapi/admin-api.json"
     }
   },
   "install": {

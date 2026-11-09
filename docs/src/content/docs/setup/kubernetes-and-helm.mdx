@@ -61,7 +61,7 @@ A production install needs:
 | `GATEWAY_IDENTITY_TOKEN_SECRET` | Always. It signs sessions and invite links. |
 | Provider credentials | For every provider in `gateway.config.providers`. |
 | The bootstrap admin's password | When the bootstrap-admin Job runs. |
-| `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY` | When `gateway.config.service_accounts[*].keys` declares keys. |
+| `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY` | When `gateway.config.service_accounts[*].keys` declares keys, or admins create service-account API keys in `/admin`. Without it, creating a service-account key fails. |
 | `OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY` | When users store upstream MCP credentials, or `gateway.config.mcp.oauth.providers` is set. |
 | The MCP OAuth client ID and secret | For each provider in `gateway.config.mcp.oauth.providers`. |
 | `OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY` | When a GitHub Copilot provider uses each user's own GitHub credentials. |

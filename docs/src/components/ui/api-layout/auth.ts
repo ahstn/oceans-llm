@@ -25,6 +25,9 @@ function authExample(a: ApiAuthView): string | null {
 const authAnchor = (scheme: string): string =>
   `auth-${scheme.replace(/[^A-Za-z0-9._-]/g, "-")}`;
 
+const escapeHtml = (text: string): string =>
+  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
 interface AuthAgg {
   view: ApiAuthView;
   scopes: Set<string>;
@@ -39,6 +42,13 @@ function toField(agg: AuthAgg): ApiFieldView {
     example ? `\`${example}\`` : "",
     scopes.length > 0 ? `Scopes: ${scopes.map((s) => `\`${s}\``).join(", ")}` : "",
   ].filter(Boolean);
+  // The field rows render only `descriptionHtml`; `description` feeds the Markdown views.
+  const htmlParts = [
+    example ? `<code>${escapeHtml(example)}</code>` : "",
+    scopes.length > 0
+      ? `Scopes: ${scopes.map((s) => `<code>${escapeHtml(s)}</code>`).join(", ")}`
+      : "",
+  ].filter(Boolean);
   return {
     coordinate: `auth:${a.scheme}`,
     name: a.scheme,
@@ -49,6 +59,7 @@ function toField(agg: AuthAgg): ApiFieldView {
     childCount: 0,
     truncated: false,
     description: parts.length > 0 ? parts.join(" · ") : undefined,
+    descriptionHtml: htmlParts.length > 0 ? `<p>${htmlParts.join(" · ")}</p>` : undefined,
   };
 }
 

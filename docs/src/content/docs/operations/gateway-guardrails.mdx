@@ -363,7 +363,7 @@ Set `fail_closed` only once the managed service meets your availability target.
 
 Generated tool arguments that aren't a JSON object, such as a call cut off by the output limit, can't be checked against the packs. They record `tool_call.malformed_arguments`. In `deny` mode the call stops. In `audit` mode it's recorded and released.
 
-Masked or sanitised text from a managed check goes to the next check, and then to the caller or the upstream service. A transformation must keep the payload's shape: JSON keeps its object keys, array lengths, and value types, and text keeps its number of segments. A transformation that doesn't is rejected as `managed.invalid_transformation`, and the gateway carries on with the content it had before.
+Masked or sanitised text from a managed check goes to the next check, and then to the caller or the upstream service. A transformation must keep the payload's shape: JSON keeps its object keys, array lengths, and value types, and text keeps its number of segments. A transformation that doesn't is rejected as `managed.invalid_transformation`, and it's handled like any other failure above. In `deny` mode with `fail_closed`, the operation is denied. Otherwise the gateway carries on with the content it had before.
 
 ## Streams and MCP results
 

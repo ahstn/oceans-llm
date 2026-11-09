@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "docs/**"
+      - "crates/gateway/openapi/admin-api.json"
       - ".github/workflows/docs-ci.yml"
       - "mise.toml"
       - "mise.lock"

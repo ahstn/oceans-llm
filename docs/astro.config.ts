@@ -42,7 +42,7 @@ const nimbusConfig = defineNimbusConfig({
   api: [
     {
       collection: "api",
-      spec: "./src/api/openapi.json",
+      spec: "../crates/gateway/openapi/admin-api.json",
       routes: { convention: "resource-action-v2" },
     },
   ],

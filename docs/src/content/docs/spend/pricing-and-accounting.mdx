@@ -18,12 +18,14 @@ Every spend event has one of four pricing states. Only two of them count toward 
 | `unpriced` | Usage exists, but Oceans couldn't resolve an exact price safely. | No |
 | `usage_missing` | The provider response had no usable usage counters. | No |
 
+Oceans doesn't guess a price for `unpriced` or `usage_missing` events. This is deliberate: approximate charges would make budget enforcement and audits misleading, so Oceans records the gap instead.
+
 Oceans sets `legacy_estimated` in two cases:
 
 - The cache counters in the usage are malformed. Oceans charges aggregate input and output tokens at the standard rates and records an `invalid_cache_token_usage` reason.
 - A batch job is only partly priced. The reason is `batch_partially_priced`.
 
-This is deliberate. Approximate charges would make budget enforcement and audits misleading, so Oceans records the gap instead. For budget setup, alerts and precedence, see [Budgets](/spend/budgets/).
+For budget setup, alerts and precedence, see [Budgets](/spend/budgets/).
 
 ## How Oceans picks a price
 

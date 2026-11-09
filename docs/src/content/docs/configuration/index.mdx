@@ -164,6 +164,8 @@ models:
         upstream_model: google/gemini-2.0-flash
 ```
 
+On a new database, the seeded `ops@example.com` platform admin stops the bootstrap admin from being created, and a seeded password user can't sign in until an admin creates their invite link. So leave that user out for the first start, and sign in as the bootstrap admin. Then add the user back, restart, and create their invite link from `/admin`. See [Start up and first access](/setup/first-access/#the-bootstrap-admin).
+
 The checked-in files show fuller setups: [`gateway.yaml`](https://github.com/ahstn/oceans-llm/blob/main/gateway.yaml) (local demo), [`gateway.prod.yaml`](https://github.com/ahstn/oceans-llm/blob/main/gateway.prod.yaml), [`deploy/config/gateway.yaml`](https://github.com/ahstn/oceans-llm/blob/main/deploy/config/gateway.yaml) (container deploys), and [`deploy/selfhost/gateway.yaml`](https://github.com/ahstn/oceans-llm/blob/main/deploy/selfhost/gateway.yaml) (self-hosting with mise). They are opinionated examples, not the full config space.
 
 ## Defaults that matter
