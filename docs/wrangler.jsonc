@@ -1,0 +1,10 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // The Cloudflare Pages project that serves oceans-llm.com. `wrangler pages
+  // deploy` and `wrangler pages dev` read the project name and the build
+  // output from here. Pages serves dist/404.html for unknown paths and reads
+  // dist/_headers and dist/_redirects.
+  "name": "oceans-llm-docs",
+  "compatibility_date": "2026-11-03",
+  "pages_build_output_dir": "./dist"
+}

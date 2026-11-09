@@ -14,7 +14,7 @@ helm install oceans-llm oci://ghcr.io/ahstn/charts/oceans-llm \
   --values values.yaml
 ```
 
-Use [Kubernetes and Helm](../../../docs/setup/kubernetes-and-helm.md) for the full chart contract.
+Use [Kubernetes and Helm](https://oceans-llm.com/setup/kubernetes-and-helm/) for the full chart contract.
 
 Release chart packages set `appVersion` to the release tag, for example `v0.4.0`.
 The default image tags are empty in `values.yaml`, so gateway and admin UI images
@@ -58,7 +58,7 @@ storage deliberately before using this mode in EKS or any persistent cluster.
 
 ## Skill Storage
 
-Skill storage is disabled by default. Set `gateway.config.skills.enabled=true` and configure `gateway.config.skills.storage` to enable it. Use the [skill configuration reference](../../../docs/setup/skills.md) for the complete gateway contract. The gateway database stores skill metadata and versions; S3 stores the archive objects. Clients authenticate to Oceans and download through the gateway. They do not receive storage credentials.
+Skill storage is disabled by default. Set `gateway.config.skills.enabled=true` and configure `gateway.config.skills.storage` to enable it. Use the [skill configuration reference](https://oceans-llm.com/extensions/skills/) for the complete gateway contract. The gateway database stores skill metadata and versions; S3 stores the archive objects. Clients authenticate to Oceans and download through the gateway. They do not receive storage credentials.
 
 The chart supports an existing S3 service or the optional upstream RustFS dependency:
 

@@ -1,0 +1,127 @@
+---
+title: Observability and request logs
+description: What the gateway records about each request, where admins find it, and the OpenTelemetry metrics it exports.
+sidebar:
+  order: 0
+  group:
+    label: Observability
+  label: Overview
+---
+
+Oceans gives admins two kinds of signal. The gateway stores request logs, MCP invocation records and usage rows in its own database, and admins read them in the admin UI. It also exports OpenTelemetry traces and metrics to a collector or agent that you run. The two don't depend on each other: request logs work with no collector, and exported telemetry never carries prompt content.
+
+## Where to look
+
+| Question | Admin UI page | Docs page |
+| --- | --- | --- |
+| What happened to one request? | **Request Logs** | [Request logs](/observability/request-logs/) |
+| Which MCP tools did a request call? | **MCP Invocations** | [MCP invocations](/extensions/mcp-invocations/) |
+| Who spends the most? | **Leaderboard** | [Leaderboard](#leaderboard) on this page |
+| Which agent harnesses call the gateway? | **Agent Harnesses** | [Agent harness usage](/observability/agent-harness-usage/) |
+| How did an agent session go? | **Agent Sessions** | [Agent session analysis](/observability/agent-session-analysis/) |
+| How much did a user or team spend? | **Usage Costs**, **Spend Controls** | [Pricing catalog and accounting](/spend/pricing-and-accounting/), [Budgets](/spend/budgets/) |
+| What did a guardrail decide? | **Guardrails** | [Gateway guardrails](/operations/gateway-guardrails/) |
+| Who changed a setting? | **Audit Log** | [Admin audit log](/access/admin-audit-log/) |
+| How do I attribute traffic to a feature or team? | Request log filters | [Tagging](/observability/tagging/) |
+| How do I chart and alert in my own backend? | None | [Export traces and metrics](/observability/export-traces-and-metrics/) |
+
+**Usage Costs**, **Spend Controls** and **Leaderboard** are in the **Budget & Spending** section of the admin UI navigation. The other pages are in **Observability**. **Guardrails** and **Audit Log** show for platform admins only.
+
+## Stored data and exported data
+
+Request logs live in the gateway database. Each row describes one inference request as the caller saw it. The payload policy in `request_logging` decides whether the gateway stores the request and response bodies, and how it redacts and truncates them. [Request logs](/observability/request-logs/) covers what is logged, who can see it, the payload policy and retention.
+
+Request logs and spend accounting are related but separate. A request log row describes the outcome the caller saw. The canonical spend record is the usage ledger (`usage_cost_events`), described in [Pricing catalog and accounting](/spend/pricing-and-accounting/). Purging request logs never deletes ledger rows.
+
+Traces and metrics go out over OTLP/gRPC. Set `server.otel_endpoint` to turn on trace export and `server.otel_metrics_endpoint` for metrics (metrics fall back to `otel_endpoint`). With neither set, the gateway exports nothing. There is no in-process Prometheus endpoint, and neither the compose stack nor the Helm chart includes a collector. [Export traces and metrics](/observability/export-traces-and-metrics/) explains the settings, sampling, and collector and Datadog setup. The [OTLP observability ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-03-15-otlp-observability-and-request-log-payloads.md) explains why export goes through a collector.
+
+## Correlate one request
+
+Every inference request has a request ID. The gateway uses the caller's `x-request-id` header when it is present, or generates a UUID when it isn't. It returns the ID in the `x-request-id` response header.
+
+The same ID appears in these places:
+
+- the request log row (**Request ID** in the detail sheet, and the **Request ID** filter on **Request Logs**)
+- the usage ledger row
+- the `request_id` attribute on the `http.server.request`, `gateway.provider.operation` and `gateway.provider.stream` spans
+
+The gateway also reads W3C trace context (`traceparent`) from the caller, so its spans join the caller's trace. [Request lifecycle and failure modes](/reference/request-lifecycle/) shows where the ID is set in the request path.
+
+MCP invocation records don't share this ID. They store the JSON-RPC `id` of the MCP call as their request ID, so you can't join an MCP tool call to an inference request by request ID.
+
+## Gateway metrics
+
+The gateway records these metric instruments. Durations are histograms in seconds. The other request and usage instruments are counters.
+
+| Metric | What it counts | Attributes |
+| --- | --- | --- |
+| `gateway.chat.requests`, `gateway.chat.request.duration` | Chat Completions, Responses and Messages requests | `requested_model`, `resolved_model`, `provider`, `stream`, `http.route`, `http.method`, `http.response.status_code`, `outcome` |
+| `gateway.decisions.requests`, `gateway.decisions.request.duration` | Decisions requests | `requested_model`, `resolved_model`, `provider`, `http.route`, `http.method`, `http.response.status_code`, `request_format`, `outcome` |
+| `gateway.embeddings.requests`, `gateway.embeddings.request.duration` | Embeddings requests | `requested_model`, `resolved_model`, `provider`, `http.route`, `http.method`, `http.response.status_code`, `outcome` |
+| `gateway.images.requests`, `gateway.images.request.duration` | Image generation requests | Same as embeddings |
+| `gateway.chat.tokens` | Tokens from every priced request | Chat attributes plus `pricing_status`, `usage_reason` (optional) and `token_type` |
+| `gateway.chat.cost.usd` | Cost in USD, recorded only when it is above zero | Chat attributes plus `pricing_status` and `usage_reason` (optional) |
+| `gateway.chat.usage_records` | Usage ledger rows written | Chat attributes plus `pricing_status` and `usage_reason` (optional) |
+| `gateway.chat.usage_record_failures` | Usage rows the gateway failed to write | `requested_model`, `resolved_model`, `provider`, `stream`, `operation` |
+| `gateway.chat.tool_cardinality` | Tool counts per request (histogram) | `requested_model`, `resolved_model`, `provider`, `stream`, `operation`, `dimension` |
+| `gateway.mcp.tool_invocations`, `gateway.mcp.tool_invocation.duration` | MCP tool calls | `status`, `policy_result`, `owner_kind` |
+| `gateway.mcp.discovery.refreshes`, `gateway.mcp.discovery.refresh.duration` | MCP discovery refreshes | `server_id`, `result`, `status` |
+| `gateway.guardrails.decisions`, `gateway.guardrails.decision.duration` | Guardrail decisions | `guardrail.phase`, `guardrail.action`, `guardrail.evaluator`, `guardrail.failure_disposition` |
+| `gateway.rate_limit.decisions` | Rate-limit decisions where a policy matched | `rate_limit.operation`, `rate_limit.outcome` |
+| `gateway.admin.view_cache.requests`, `gateway.admin.view_cache.load.duration` | Admin UI aggregate view cache use | `view`, and `result` or `outcome` |
+
+The definitions are in [`crates/gateway/src/observability.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway/src/observability.rs).
+
+### Attribute values
+
+- `outcome` is `success`, or the error `type` from the response body, such as `invalid_request_error`, `rate_limit_error`, `policy_error`, `budget_error` or `upstream_error`. A stream that the client cancels records `client_cancelled` with status `499`.
+- `provider` is the selected provider key. On Decisions, embeddings and images it is `unavailable` when no route was selected.
+- `token_type` is `prompt`, `uncached_input`, `cache_read`, `cache_write`, `completion` or `total`.
+- `pricing_status` is `priced`, `unpriced`, `usage_missing` or `legacy_estimated`. `usage_reason` keeps only the reason category, the part before the first `:` or `;`.
+- `dimension` is `referenced_mcp_servers`, `exposed_tools`, `invoked_tools` or `filtered_tools`. A dimension with no recorded value gets no sample. [Request logs](/observability/request-logs/#tool-counts) explains each count.
+- `rate_limit.outcome` is `admitted`, `rejected` or `store_error`.
+
+<Aside type="caution" title="One route label for three APIs">
+`gateway.chat.requests` and `gateway.chat.request.duration` always set `http.route` to `/v1/chat/completions`, including for Responses and Messages requests. These metrics have no attribute that tells the three APIs apart. Use traces when you need the split: the `http.server.request` span records the real route.
+</Aside>
+
+### Decisions, embeddings and images
+
+These three API families have their own request metrics, so they don't record `gateway.chat.requests`, `gateway.chat.request.duration` or `gateway.chat.tool_cardinality`. They never stream and carry no tools, so they have no `stream` attribute.
+
+- **Decisions.** `POST /v1/decisions`, `POST /v1/systemone` and the unversioned `/decisions` alias. `http.route` is `/v1/decisions` or `/v1/systemone`. `request_format` is `openai` or `system_one`. See the [Decisions request metrics ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-14-decisions-request-metrics.md).
+- **Embeddings.** `POST /v1/embeddings` and `/embeddings`. `http.route` is always `/v1/embeddings`.
+- **Images.** `POST /v1/images`, `POST /v1/images/generations` and their unversioned aliases. `http.route` is always `/v1/images`.
+
+Each records one sample per request once the model resolves, whether the request succeeds or fails. That includes rate-limit rejections, requests with no compatible route, guardrail blocks on embeddings and images, budget rejections, and provider failures, including a failure after billable upstream usage. Requests that fail authentication, body parsing or model resolution record no sample. An image request with `stream: true` is rejected before model resolution, so it records no sample either.
+
+Tokens, cost and usage rows for these families still go to `gateway.chat.tokens`, `gateway.chat.cost.usd` and `gateway.chat.usage_records`, like every other priced request.
+
+## Leaderboard
+
+The **Leaderboard** page ranks users by spend over the last 7 or 31 days. Use it to find recent heavy users. For owner totals, budgets or pricing-status counts, use **Usage Costs** and **Spend Controls** instead.
+
+![Leaderboard page with a chart of 12-hour costs for the top five users and the Top Users table](/images/screenshot-leaderboard.png)
+
+The page works like this:
+
+- Spend is the priced and legacy-estimated usage ledger rows owned by each user. Service-account usage isn't ranked.
+- Ties sort by request count, then user name.
+- The chart shows the top 5 users in 12-hour UTC buckets. Empty buckets show as zero.
+- The **Top Users** table shows the top 30 users, with total spend, most used model, most used harness, total requests and average tool counts.
+- The most used model is the one with the most requests. Ties go to the most spend, then to the first model key in alphabetical order.
+- Average tool counts skip requests where a count wasn't recorded, so older rows don't pull the averages down. These averages and the harness come from request logs, so they cover only requests that are still retained and logged.
+
+The API is `GET /api/v1/admin/observability/leaderboard?range=7d` (or `range=31d`). Any signed-in user can call it, and it returns platform-wide figures. The `leaderboard` page grant controls only whether the page shows in the navigation. See [Auth and access settings](/access/access-settings/#pages-and-actions).
+
+## Admin observability API
+
+The admin UI reads these endpoints. They all use the admin session cookie.
+
+| Endpoint | Who can read it |
+| --- | --- |
+| `GET /api/v1/admin/observability/request-logs`, `.../request-logs/<request_log_id>` | Platform admins see every row. Other users see only their own. See [Request logs](/observability/request-logs/#who-can-see-request-logs). |
+| `GET /api/v1/admin/observability/mcp-invocations`, `.../mcp-invocations/<mcp_tool_invocation_id>` | Same rule as request logs. See [MCP invocations](/extensions/mcp-invocations/). |
+| `GET /api/v1/admin/observability/leaderboard` | Any signed-in user |
+| `GET /api/v1/admin/observability/harness-usage` | Any signed-in user. See [Agent harness usage](/observability/agent-harness-usage/). |
+| `GET /api/v1/admin/observability/agent-sessions`, `.../agent-sessions/<session_id>` | Platform admins, and team owners and admins when agent analysis allows it. See [Agent session analysis](/observability/agent-session-analysis/). |

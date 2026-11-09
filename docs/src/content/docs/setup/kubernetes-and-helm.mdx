@@ -1,0 +1,146 @@
+---
+title: Kubernetes and Helm
+description: Install Oceans from the published Helm chart, and what the chart expects from your cluster.
+sidebar:
+  order: 3
+---
+
+The Helm chart is the supported way to run Oceans on Kubernetes. This page covers what it deploys, what it expects you to provide, and the choices you make in your values. The [chart README](https://github.com/ahstn/oceans-llm/blob/main/deploy/helm/oceans-llm/README.md) lists every value.
+
+## The chart
+
+```sh
+helm install oceans-llm oci://ghcr.io/ahstn/charts/oceans-llm \
+  --version <version> \
+  --values values.yaml
+```
+
+Each release tag `vX.Y.Z` publishes chart version `X.Y.Z`. The chart's `appVersion` is the tag itself, such as `v0.4.0`, and the gateway and admin UI images use that tag unless your values override them.
+
+## What it deploys
+
+- A gateway `Deployment` and `Service`.
+- An admin UI `Deployment` and `Service`.
+- A `ConfigMap` holding the gateway config.
+- A migration `Job`, and optional bootstrap-admin and seed-config `Job`s.
+- Optionally: an inline `Secret`, an `Ingress`, a `HorizontalPodAutoscaler`, a `PodDisruptionBudget`, an `ExternalSecret`, a CloudNativePG `Cluster`, and RustFS for skill storage.
+
+All public traffic goes through the gateway service, which proxies `/admin*` to the admin UI. The chart never renders an ingress for the admin UI. Its service is a `ClusterIP` by default; `service.adminUi.type` can change that, but keep it internal so the [same-origin rule](/setup/deploy-and-operations/#one-origin-for-everything) holds.
+
+## Gateway config
+
+Write the gateway config as a map under `gateway.config` in your values. The chart renders it to a `ConfigMap` and mounts it at `gateway.configMountPath`, which defaults to `/app/gateway.yaml`. There's no way to pass raw YAML instead, so keep each environment's config in its values file.
+
+Set `gateway.clientConfigGatewayBaseUrl` to the public base URL that callers use for the API. The gateway strips a trailing `/` or `/v1`, so either form works. The admin UI puts it in the client setup snippets it generates, through `GATEWAY_CLIENT_CONFIG_BASE_URL`. See [Client harness configuration](/harnesses/).
+
+```yaml title="values.yaml"
+gateway:
+  clientConfigGatewayBaseUrl: https://gateway.example.com/v1
+```
+
+Don't rely on the admin UI's own address for this. The admin UI can sit behind a different ingress path or proxy than the API that coding agents call.
+
+## Secrets
+
+The gateway config refers to secrets with `env.*`, `file.*`, and `literal.*` references. Because the chart renders the config into a `ConfigMap`, it rejects `literal.*` references unless you set `gateway.allowLiteralSecretsInConfig=true`. Only do that if you accept the secret being readable in the `ConfigMap`.
+
+Use `env.*` references, and supply the values from one of these sources. The chart loads them into the gateway with `envFrom`, so you don't need `gateway.extraEnv`.
+
+- `database.external.existingSecret`, for `POSTGRES_URL`.
+- `secrets.existingSecret.name`, for a Secret you already manage.
+- `secrets.inline`, for a Secret the chart renders.
+- `externalSecrets.enabled`, for an `ExternalSecret` that reads from your existing `SecretStore` or `ClusterSecretStore`. The chart doesn't install External Secrets Operator or create a store.
+
+For `file.*` references, mount a Secret with `gateway.extraVolumes` and `gateway.extraVolumeMounts`. Those mounts reach the gateway, its migration waiter, and every Job.
+
+A production install needs:
+
+| Secret | When |
+| --- | --- |
+| `POSTGRES_URL` | Always, unless CloudNativePG generates the connection Secret. Rendering fails without a PostgreSQL source. |
+| `GATEWAY_IDENTITY_TOKEN_SECRET` | Always. It signs sessions and invite links. |
+| Provider credentials | For every provider in `gateway.config.providers`. |
+| The bootstrap admin's password | When the bootstrap-admin Job runs. |
+| `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY` | When `gateway.config.service_accounts[*].keys` declares keys, or admins create service-account API keys in `/admin`. Without it, creating a service-account key fails. |
+| `OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY` | When users store upstream MCP credentials, or `gateway.config.mcp.oauth.providers` is set. |
+| The MCP OAuth client ID and secret | For each provider in `gateway.config.mcp.oauth.providers`. |
+| `OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY` | When a GitHub Copilot provider uses each user's own GitHub credentials. |
+
+The encryption keys are base64-encoded 32-byte values, such as the output of `openssl rand -base64 32`. Generate a separate key for each, and keep them in your secret manager: if you lose one, the data it encrypted can't be read.
+
+## Database
+
+`database.mode: external` is the default. It reads a PostgreSQL URL from a Secret, as above.
+
+`database.mode: cloudnativepg` renders a CloudNativePG `Cluster`. The CloudNativePG operator and its CRDs must already be in the cluster; the chart doesn't install them, or PostgreSQL in any other form. Set storage explicitly with `database.cloudnativepg.storage`, and `database.cloudnativepg.walStorage` if you want a separate WAL volume.
+
+## Startup Jobs
+
+Gateway pods start with all three [startup steps](/setup/first-access/#what-happens-at-startup) turned off:
+
+```text
+GATEWAY_RUN_MIGRATIONS=false
+GATEWAY_BOOTSTRAP_ADMIN=false
+GATEWAY_SEED_CONFIG=false
+```
+
+The chart runs them as Helm hook Jobs instead, so replicated pods never race to change the database:
+
+- **Migrations** run on every install and upgrade. This is on by default, in the `post-install,post-upgrade` phase, so the Job can read the `ConfigMap` and Secrets the chart renders.
+- **Bootstrap admin** runs with `bootstrapAdminJob.enabled=true`. It also needs `gateway.config.auth.bootstrap_admin.enabled: true`.
+- **Config seeding** runs with `seedConfigJob.enabled=true`.
+
+While migrations run after install, each gateway pod has an init container that waits for them. It runs `gateway config validate`, then `gateway migrate --check` until the schema is current or `gateway.migrationWaiter.timeoutSeconds` passes. Invalid config stops it before it starts waiting. `gateway.migrationWaiter.enabled` overrides the automatic choice.
+
+<Aside type="caution" title="Don't combine --wait with post-install migrations">
+  With `helm install --wait`, Helm waits for every pod to be ready before it runs post-install hooks. Gateway pods wait for the migration Job, which is a post-install hook, so neither can finish and the install times out. Leave out `--wait`, or watch the rollout separately.
+</Aside>
+
+Each Job keeps `before-hook-creation` as its `hookDeletePolicy` and `ttlSecondsAfterFinished: 300`. A finished Job stays for five minutes for its logs, and Helm deletes the old one before it creates the next. Add `hook-succeeded` to the Job's `hookDeletePolicy`, such as `migrations.hookDeletePolicy`, to delete successful Jobs straight away.
+
+## Traffic, scaling, and scheduling
+
+`ingress.*` renders an `Ingress` for the gateway service only. Bring your own ingress controller, DNS, TLS, and certificate automation.
+
+`autoscaling.*` renders an `autoscaling/v2` `HorizontalPodAutoscaler` for the gateway. Its metrics and behaviour fields pass straight through to Kubernetes.
+
+The chart adds a `PodDisruptionBudget` for the gateway when it runs more than one replica. With autoscaling on, that means `autoscaling.minReplicas` is above 1; with it off, `gateway.replicaCount` is above 1. Set `podDisruptionBudget.enabled` to `true` or `false` to choose for yourself.
+
+`scheduling.*` holds the chart's shared pod placement controls: resources, node selectors, affinity, tolerations, topology spread constraints, and priority class. They're plain Kubernetes fields, so EKS, Karpenter, and other clusters can apply their own policies without special cases in the chart.
+
+The chart doesn't render Karpenter `NodePool`, `EC2NodeClass`, or disruption resources. Manage those yourself, and connect the workloads through labels, taints, tolerations, topology spread, resource requests, and priority classes. On Karpenter, keep autoscaling and node provisioning aligned:
+
+- Set realistic CPU and memory requests, so the autoscaler and Karpenter's bin packing read the same capacity.
+- Use topology spread constraints if the gateway should span zones or capacity types.
+- Avoid selectors that match only a small node pool, unless it has room for surge and disruption.
+- Check that the `PodDisruptionBudget` doesn't conflict with Karpenter's disruption budgets.
+
+## Telemetry
+
+The chart doesn't install an OpenTelemetry Collector or a vendor agent. Instead, it gives you hooks to wire in your own:
+
+- `observability.env`
+- `observability.podLabels`
+- `observability.podAnnotations`
+- `observability.volumes`
+- `observability.volumeMounts`
+- `observability.sidecars`
+
+Configure the gateway's own export with `otel_endpoint`, `otel_metrics_endpoint`, and `otel_trace_sample_ratio` under `gateway.config.server`, and use `observability.env` for anything a sidecar or agent needs. Sampling follows the parent trace's decision and never applies to metrics. [Export traces and metrics](/observability/export-traces-and-metrics/) has the full setup and a way to check it.
+
+## Skill storage
+
+[Agent Skills](/extensions/skills/) keep their archives in S3. Use an external S3 bucket, or turn on the chart's optional RustFS dependency with `rustfs.enabled`. It's off by default. The database holds the skill metadata and the bucket holds the archives, so back them up together.
+
+## Example values
+
+The chart ships [example values](https://github.com/ahstn/oceans-llm/tree/main/deploy/helm/oceans-llm/examples) for:
+
+- External PostgreSQL.
+- An inline Secret.
+- An `ExternalSecret`.
+- An ingress with TLS, and autoscaling.
+- CloudNativePG.
+- A telemetry sidecar.
+- Direct OpenTelemetry export to an existing Datadog Agent `DaemonSet`.
+- Skill storage on external S3, distributed RustFS, and standalone RustFS for development.

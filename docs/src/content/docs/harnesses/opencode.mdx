@@ -1,0 +1,238 @@
+---
+title: OpenCode
+description: Connect OpenCode to Oceans with the opencode-oceans plugin, which finds your models on the gateway, or with a generated opencode.json snippet.
+sidebar:
+  order: 1
+---
+
+OpenCode can reach Oceans in two ways:
+
+| Way | How the model list stays current | Use it when |
+| --- | --- | --- |
+| [The Oceans plugin](#set-up-the-plugin) | The plugin asks the gateway for your models when OpenCode starts, then every 60 seconds. | You want new models, prices and limits to appear without editing config. This is the recommended way. |
+| [A generated snippet](#use-a-generated-snippet) | You copy a fixed model list from the admin UI. You generate it again when models change. | You can't install the plugin, or you use an OpenCode version other than 2.2.6. |
+
+Both ways send requests straight from OpenCode to the gateway. The plugin only builds the model list. It doesn't proxy requests.
+
+## Before you start
+
+You need:
+
+- **OpenCode 2.2.6.** The plugin is built and tested for this version. The generated snippet needs OpenCode 2 or later.
+- **Bun 1.4.4 or later**, for the plugin. The plugin ships as TypeScript source, so Node.js alone can't load it.
+- **An Oceans API key.** Create one on the **API Keys** page (`/admin/api-keys`). If you limit the key's scopes, tick **Inference**. That scope covers model requests and the model list routes the plugin reads. See [API key scopes](/access/identity-and-access/#api-key-scopes).
+- **The gateway URL**, for example `https://api.oceans-llm.com`. Ask your admin if you don't know it.
+
+## Set up the plugin
+
+The plugin is [`@ahstn/opencode-oceans`](https://github.com/ahstn/oceans-llm/tree/main/packages/opencode-oceans). It's published to GitHub Packages, which needs a GitHub token to download any package, even a public one.
+
+<Steps>
+<Step title="Create a GitHub token for the package registry">
+In GitHub, create a personal access token (classic) with the `read:packages` scope. Then make it available to the shell that starts OpenCode:
+
+```sh
+export GITHUB_PACKAGES_TOKEN='<GitHub token>'
+```
+
+This token only downloads the plugin. It isn't your Oceans API key.
+</Step>
+<Step title="Point the @ahstn scope at GitHub Packages">
+Add these lines to your user `~/.npmrc`. Keep the `${GITHUB_PACKAGES_TOKEN}` reference as written, so the file never holds the token itself:
+
+```ini title="~/.npmrc"
+@ahstn:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}
+```
+</Step>
+<Step title="Add the plugin to OpenCode">
+Add the plugin to your user config, `~/.config/opencode/opencode.jsonc` (or `opencode.json`). Pin the exact version:
+
+```jsonc title="~/.config/opencode/opencode.jsonc"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["@ahstn/opencode-oceans@0.1.0"],
+}
+```
+
+OpenCode installs the package the next time it starts. You can also run `opencode plugin add @ahstn/opencode-oceans@0.1.0`.
+</Step>
+<Step title="Tell the plugin where the gateway is">
+Create `~/.config/opencode/gateways.yml`. If you set `XDG_CONFIG_HOME`, use `$XDG_CONFIG_HOME/opencode/gateways.yml` instead.
+
+```yaml title="~/.config/opencode/gateways.yml"
+providers:
+  oceans:
+    name: Oceans
+    baseUrl: https://api.oceans-llm.com
+    apiKey: OCEANS_LLM_API_KEY
+    discovery:
+      type: litellm
+```
+
+- `oceans` is the provider ID. Your models appear in OpenCode as `oceans/<model id>`.
+- `baseUrl` is the gateway root. A URL that ends in `/v1` also works. The URL can't contain a username, password, query or fragment.
+- `apiKey` is the **name** of an environment variable, not the key. You can give a list of names, and the first one that is set wins.
+- `discovery.type: litellm` is required. The plugin ignores every entry without it.
+</Step>
+<Step title="Give OpenCode your Oceans API key">
+Set the variable that `apiKey` names, in the environment that starts OpenCode:
+
+```sh
+export OCEANS_LLM_API_KEY='<Oceans API key>'
+```
+
+Or connect the **Oceans** provider in OpenCode's providers screen and paste the key there. A key saved in OpenCode takes precedence over the environment variable.
+
+Don't put the key in `gateways.yml` or `opencode.jsonc`. The plugin accepts only variable names in `apiKey`. It skips a gateway entry whose `apiKey` isn't a valid variable name, and logs a warning.
+</Step>
+<Step title="Start OpenCode and pick a model">
+Restart OpenCode. Run `/models` and pick a model under **Oceans**, or run one prompt from the shell:
+
+```sh
+opencode run --model oceans/gpt-6.1-sol "Explain this repository"
+```
+
+Use a model ID that your gateway serves. The IDs are the same as on the **Models** page.
+</Step>
+</Steps>
+
+To check that requests reach Oceans, open **Request Logs** in the admin UI and find your request. See [Request logs](/observability/request-logs/).
+
+### Choose a reasoning level
+
+Reasoning models get one variant per effort level that the gateway allows for them. Add the level to the model ID with `#`:
+
+```sh
+opencode run --model oceans/gpt-6.1-sol#high "Review this diff"
+```
+
+The plugin leaves out levels above the model's reasoning ceiling, so every variant it shows is one the gateway accepts. See [Reasoning effort ceilings](/configuration/models-and-routes/#reasoning-effort-ceilings).
+
+## How the plugin finds models
+
+When OpenCode starts, the plugin calls two gateway routes with your API key:
+
+- `GET /model_group/info` returns each model's limits, prices, input types and reasoning support, in LiteLLM's format.
+- `GET /v1/models` returns the models your key can use, with hints for each harness. This list decides which models OpenCode shows. A model you lose access to disappears at the next refresh.
+
+The plugin also tries the LiteLLM routes `/v2/model/info`, `/model/info` and `/v1/model/info`. Oceans doesn't serve them, so they return `404` and the plugin skips them.
+
+The plugin then refreshes the list every 60 seconds. If a refresh fails, for example because the gateway is down or returns an error, the plugin keeps the last list that worked. If the first attempt fails, OpenCode shows no Oceans models and logs a warning. The plugin doesn't watch `gateways.yml`: restart OpenCode after you change it.
+
+The plugin leaves out models that OpenCode can't use: embedding, image generation and Decisions models.
+
+### Which API each model uses
+
+Each model uses one of OpenCode's built-in provider packages:
+
+| API | OpenCode package |
+| --- | --- |
+| Chat Completions | `@opencode/ai/providers/openai-compatible` |
+| Responses | `@opencode/ai/providers/openai-compatible/responses` |
+| Anthropic Messages | `@opencode/ai/providers/anthropic-compatible` |
+
+The plugin picks the API from the gateway's metadata for each model, including the preferred API that the gateway lists for the model in `/v1/models`. The generated snippet uses the same preference. See [How the API style is chosen](/harnesses/#how-the-api-style-is-chosen). A Claude name alone doesn't make the plugin use Messages: the gateway metadata must say that the route serves it.
+
+### Override a model
+
+Overrides are rarely needed, because the gateway metadata normally covers each model. Use one only when a model's API, input types or reasoning levels come out wrong. Add `modelOverrides` under the gateway entry, keyed by gateway model ID:
+
+```yaml title="~/.config/opencode/gateways.yml"
+providers:
+  oceans:
+    name: Oceans
+    baseUrl: https://api.oceans-llm.com
+    apiKey: OCEANS_LLM_API_KEY
+    discovery:
+      type: litellm
+    modelOverrides:
+      claude-haiku-5.5:
+        api: anthropic-messages
+        input: [text, image, pdf]
+        thinking:
+          mode: anthropic-adaptive
+          efforts: [low, medium, high]
+          defaultLevel: medium
+```
+
+- `api` is `openai-completions`, `openai-responses` or `anthropic-messages`. Set it only when the gateway really serves that API for the model.
+- `input` lists the input types the model accepts, from `text`, `image`, `pdf`, `audio` and `video`.
+- `thinking.efforts` lists the reasoning levels to show, from `minimal`, `low`, `medium`, `high`, `xhigh` and `max`. List only levels the gateway allows.
+
+A provider-level `api` field, beside `baseUrl`, is a fallback for models that have no API metadata. It doesn't force every model onto that API.
+
+### Use another config folder or file
+
+`gateways.local.yml` in the same folder replaces `gateways.yml`. The plugin reads only the local file when it exists, even when it's empty or invalid. Use it for a personal setup that you don't commit.
+
+To read gateway files from another folder, give the plugin an option. Use an absolute path, because the plugin doesn't expand `~`:
+
+```jsonc title="~/.config/opencode/opencode.jsonc"
+{
+  "plugins": [
+    {
+      "package": "@ahstn/opencode-oceans@0.1.0",
+      "options": { "configDir": "/Users/me/oceans-opencode" },
+    },
+  ],
+}
+```
+
+### Costs in OpenCode
+
+OpenCode shows a cost for each session. The plugin converts the gateway's prices to USD per million tokens, and OpenCode works out the cost from the token counts in each response. That cost is an estimate. The gateway's own records are the real spend that counts against budgets: see **Usage Costs** and [Pricing catalog and accounting](/spend/pricing-and-accounting/).
+
+The two can differ, for example when the gateway applies long-context pricing or when an upstream doesn't report cache tokens. A model with no known price shows a cost of zero in OpenCode. That doesn't mean the model is free.
+
+## Troubleshooting
+
+| Problem | What to check |
+| --- | --- |
+| OpenCode can't install the plugin | `GITHUB_PACKAGES_TOKEN` is set in the shell that starts OpenCode, the token has `read:packages`, and `~/.npmrc` has both lines from the setup. |
+| No Oceans models appear | The file is `gateways.yml` in the OpenCode config folder, the entry has `discovery.type: litellm`, and a `gateways.local.yml` doesn't replace it. Restart OpenCode, then look for the warning `Oceans discovery failed` in its logs. |
+| The warning gives `HTTP 401` | The API key is missing, wrong or revoked. Check the variable that `apiKey` names, or the key saved in OpenCode. |
+| The warning gives `HTTP 403` | The key has limited scopes without **Inference**. |
+| A model is missing | Your key has no access to it, or it's an embedding, image or Decisions model. The **Models** page shows the models you can use. |
+| A request fails with `budget_exceeded` | A hard budget has no room left. See [Budgets](/spend/budgets/). |
+
+## Use a generated snippet
+
+The admin UI generates an `opencode.json` snippet with a fixed list of the models you pick. Use it when you can't install the plugin.
+
+<Steps>
+<Step title="Generate the snippet">
+On the **Models** page (`/admin/models`), tick the models you want and click **Generate config**. Open the **OpenCode** tab. See [Generate a snippet](/harnesses/#generate-a-snippet).
+</Step>
+<Step title="Copy it into your config">
+Paste the snippet into `~/.config/opencode/opencode.json`. If the file already has content, merge the `providers` block into it.
+</Step>
+<Step title="Set your API key">
+The snippet reads the key from `OCEANS_LLM_API_KEY`:
+
+```sh
+export OCEANS_LLM_API_KEY='<Oceans API key>'
+```
+
+OpenCode reads the variable from the environment of the OpenCode server process.
+</Step>
+<Step title="Start OpenCode">
+The snippet sets the top-level `model` to the first model you picked. Run `/models` to switch.
+</Step>
+</Steps>
+
+When admins add models or change prices, the snippet doesn't change. Generate it again to pick up the changes.
+
+### What the snippet contains
+
+The snippet uses the OpenCode 2 config shape: `providers`, `package`, `settings.baseURL` and `env`. OpenCode 1 can't read it. If the models you pick use more than one API, the snippet has one provider for each API. See [How the API style is chosen](/harnesses/#how-the-api-style-is-chosen).
+
+Each model states its `capabilities`, so OpenCode doesn't apply its own defaults for unknown models:
+
+- `tools` comes from the route's tool-calling support.
+- `input` is `text`, plus `image` for vision routes, plus `pdf` for vision routes whose catalog input includes PDF. OpenCode sends only images and PDFs as file media, and the gateway accepts file parts only on vision routes.
+- `reasoning.supported` is `false` for models without a thinking policy.
+
+Reasoning models also get explicit effort `variants`. Anthropic Messages variants set `effort` with adaptive thinking. OpenAI-compatible variants set `reasoningEffort`. Claude models with adaptive effort get `high` and `max` variants, and the `max` variant sends effort `xhigh`. Gemini models get the levels they support from `minimal`, `low`, `medium` and `high`. Variants above the model's reasoning ceiling are left out.
+
+For prices and limits in the snippet, see [Model data in snippets](/harnesses/#model-data-in-snippets).

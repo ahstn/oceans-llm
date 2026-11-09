@@ -1,0 +1,41 @@
+---
+/** The four ways to run Oceans, each with its first command. */
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import { Code } from "@/components/ui/code";
+import SectionHeading from "./SectionHeading.astro";
+import { deploySection, deployments } from "./content";
+---
+
+<section aria-labelledby="lp-deploy" class="lp-section">
+  <div class="lp-container">
+    <div class="flex flex-wrap items-end justify-between gap-6">
+      <SectionHeading id="lp-deploy" eyebrow={deploySection.eyebrow} title={deploySection.title} lede={deploySection.lede} />
+      <a href={deploySection.link.href} class="lp-more">
+        {deploySection.link.label}
+        <Icon name="ph:arrow-right" class="size-3.5" />
+      </a>
+    </div>
+
+    <ul class="mt-14 grid gap-4 md:grid-cols-2">
+      {
+        deployments.map((d) => (
+          <li class="lp-deploy">
+            <div class="flex items-center gap-3">
+              <span class="lp-icon-tile">
+                <Icon name={d.icon} class="size-[1.125rem]" />
+              </span>
+              <h3 class="text-base font-medium text-foreground">{d.title}</h3>
+              <span class="lp-chip ms-auto">{d.store}</span>
+            </div>
+            <p class="mt-4 text-sm leading-6 text-muted-foreground">{d.body}</p>
+            <Code code={d.command} lang="sh" themes={{ light: "github-light", dark: "tokyo-night" }} defaultColor={false} />
+            <a href={d.link.href} class="lp-more mt-auto">
+              {d.link.label}
+              <Icon name="ph:arrow-right" class="size-3.5" />
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>

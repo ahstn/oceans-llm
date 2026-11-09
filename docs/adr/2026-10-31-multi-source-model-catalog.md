@@ -7,10 +7,10 @@
 
 ## Current state
 
-- [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), for catalog sources, refresh, context tiers, and the catalog image rate
-- [Model Routing and APIs: Gate routes by capability](../configuration/model-routing-and-api-behavior.md#gate-routes-by-capability), for tri-state capabilities, inference, and catalog hints
-- [Configuration Reference: Route Config](../configuration/configuration-reference.md#route-config), for capability syntax and validation
-- [Request Lifecycle and Failure Modes: Model metadata discovery](../reference/request-lifecycle-and-failure-modes.md#model-metadata-discovery), for `/v1/model-metadata` schema version 2
+- [Pricing Catalog and Accounting](https://oceans-llm.com/spend/pricing-and-accounting/), for catalog sources, refresh, context tiers, and the catalog image rate
+- [Model routing and APIs: Capability gating](https://oceans-llm.com/configuration/model-routing/#capability-gating), for tri-state capabilities, inference, and catalog hints
+- [Models and routes: Route capabilities](https://oceans-llm.com/configuration/models-and-routes/#route-capabilities), for capability syntax and validation
+- [Model Routing and APIs: Model discovery](https://oceans-llm.com/configuration/model-routing/#model-discovery), for `/v1/model-metadata` schema version 2
 
 ## Context
 

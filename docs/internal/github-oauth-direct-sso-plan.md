@@ -253,7 +253,7 @@ UI:
 
 ### 7. Docs and examples
 
-Add an admin-facing docs subpage under `docs/access/` for GitHub SSO/OAuth setup. Link it from `docs/access/oidc-and-sso-status.md`.
+Add an admin-facing docs subpage under `docs/access/` for GitHub SSO/OAuth setup. Link it from [OIDC and SSO](https://oceans-llm.com/access/sso/).
 
 Include:
 

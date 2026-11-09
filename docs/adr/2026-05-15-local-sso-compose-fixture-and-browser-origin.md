@@ -8,7 +8,7 @@
   - [#64: Add declarative teams and users config to gateway.yaml](https://github.com/ahstn/oceans-llm/issues/64)
   - [#65: Refine declarative teams/users config for hardened SSO and OIDC identities](https://github.com/ahstn/oceans-llm/issues/65)
 - Related Docs:
-  - [OIDC and SSO](../access/oidc-and-sso-status.md)
+  - [OIDC and SSO](https://oceans-llm.com/access/sso/)
   - [Testing Authentication Locally](../contributing/development/authentication-testing.md)
   - [ADR: Authentik Local SSO Test IdP](2026-05-15-authentik-local-sso-test-idp.md)
 

@@ -1,0 +1,33 @@
+---
+/** What Oceans is, in one sentence, then what it gives each audience. */
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import RichText from "./RichText.astro";
+import { audiences, statement } from "./content";
+---
+
+<section aria-label="What Oceans LLM does" class="lp-container pt-24 md:pt-32">
+  <p class="lp-statement">
+    <RichText runs={statement} linkClass="lp-statement-link" />
+  </p>
+
+  <div class="mt-14 grid gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-2">
+    {
+      audiences.map((audience) => (
+        <div class="bg-background p-6 sm:p-8">
+          <h2 class="flex items-center gap-2.5 text-sm font-medium text-foreground">
+            <Icon name={audience.icon} class="size-4 text-(--lp-sea)" />
+            {audience.title}
+          </h2>
+          <ul class="mt-5 grid gap-3.5">
+            {audience.items.map((item) => (
+              <li class="flex gap-3 text-[0.9375rem] leading-6 text-muted-foreground">
+                <Icon name="ph:check" class="mt-1 size-4 shrink-0 text-(--lp-sea)" />
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))
+    }
+  </div>
+</section>

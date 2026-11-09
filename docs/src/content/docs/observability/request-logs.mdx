@@ -1,0 +1,281 @@
+---
+title: Request logs
+description: What a request log row records, who can see it, how the payload policy redacts and truncates bodies, and how to purge old rows.
+sidebar:
+  order: 1
+---
+
+A request log row describes one inference request as the caller saw it. It records who sent the request, which model and provider served it, the status, latency, tokens, cost and tool counts. Depending on the payload policy, it can also hold sanitised copies of the request and response bodies. Rows are request-scoped: each MCP tool call made during a request has its own record in [MCP invocations](/extensions/mcp-invocations/).
+
+## What gets logged
+
+The gateway writes request log rows for these API families. The `operation` value is stored in the row's `metadata`.
+
+| API | `operation` |
+| --- | --- |
+| `POST /v1/chat/completions` | `chat_completions` |
+| `POST /v1/messages` | `chat_completions` |
+| `POST /v1/responses` | `responses` |
+| `POST /v1/embeddings` | `embeddings` |
+| `POST /v1/images`, `POST /v1/images/generations` | `images` |
+| `POST /v1/decisions`, `POST /v1/systemone` | `decisions` |
+
+The unversioned aliases log the same way. Anthropic Messages requests have no operation of their own. The gateway stores them as `chat_completions`, and stores the request body in the gateway's internal Chat Completions shape, not the Anthropic wire format.
+
+These requests never get a row:
+
+- Token counts (`POST /v1/messages/count_tokens`).
+- Batch creation (`POST /api/v1/batches`). Use **Batch Requests** in the admin UI for batches.
+- Requests that fail before the gateway starts a request log, such as authentication failures, unknown models and rate-limit rejections.
+
+Guardrail and budget rejections get a summary row with no provider attempts. Anything that reaches the provider gets a row with one attempt. [Request lifecycle and failure modes](/reference/request-lifecycle/#failure-modes) lists every failure and whether it writes a row.
+
+### Whose requests are logged
+
+Two rules decide whether a request is logged at all:
+
+- `request_logging.payloads.capture_mode: disabled` turns off request logs for every API family and every caller. The gateway writes no summary, payload or attempt rows.
+- Requests made with a user's API key are logged only when that user has request logging turned on. Request logging is on by default. When it is off, the gateway stores nothing for that user's requests: no summary, no payload and no attempts. Requests made with a service-account key are always logged, unless `capture_mode` is `disabled`.
+
+That is why a user's request can be missing from **Request Logs** while a service-account request with the same payload policy shows up. Admins set the user flag with `request_logging_enabled` on a declared user or on a JIT sign-in provider (see [Auth and access settings](/access/access-settings/)). The admin UI shows it as **Request logging** on the user's **Overview** tab in **Users**, but doesn't edit it.
+
+## Who can see request logs
+
+Platform admins see every row. Every other user, including team owners and admins, sees only rows for requests made with their own user-owned API keys. Service-account requests are visible to platform admins only. A user who opens another user's row gets an authorisation error.
+
+The **Request Logs** page shows in the navigation for groups that have the `request_logs` page grant. Every group has it by default. See [Auth and access settings](/access/access-settings/#pages-and-actions).
+
+## Find a request
+
+An admin opens **Request Logs** in the **Observability** section of the navigation (`/admin/observability/request-logs`). The page shows the 100 newest requests that match the search and filters.
+
+![Request Logs page with the request list, a search box, the Filters button, and columns for time, model, caller, status, cost, latency, tokens and tools](/images/request-logs-page.png)
+
+Each row shows:
+
+| Column | Shows |
+| --- | --- |
+| **Time** | When the gateway wrote the row, at the end of the request, in UTC |
+| **Model** | The requested model, with the provider key below it |
+| **Caller** | The user, or the service account, that owns the API key |
+| **Status** | The HTTP status the caller received |
+| **Cost** | The cost from the usage ledger |
+| **Latency** | Total request time |
+| **Tokens** | Total tokens. An icon shows when the provider served cached prompt tokens. |
+| **Tools (Used / Total)** | Distinct tools the model called, out of the tools declared in the request |
+
+To narrow the list:
+
+1. Type in **Search by model or user**. The search matches the requested or resolved model key, or the user's name or email. It isn't case-sensitive.
+2. Select **Filters**, then pick **Model**, **Provider**, **Service**, **Component**, **Environment**, **Tag** or **Request ID**. Each filter adds a chip with its own value box.
+3. For **Tag**, enter both the tag key and the tag value. The page warns you if one is missing. [Tagging](/observability/tagging/) explains caller tags.
+4. Select **Clear** to remove every filter.
+
+The filters are in the page URL, so you can share a filtered view. Other pages link here with a filter already set. For example, **Agent Sessions** opens a request with `?request_id=<request_id>`.
+
+To open a request, select **Inspect** on its row.
+
+## Read the request detail
+
+**Inspect** opens a detail sheet. The header shows the status, the operation, a **stream** badge for streamed requests, the time and the request ID. Below the ID, it shows the requested model, the resolved model when it differs, and the provider.
+
+The sheet then has these parts:
+
+- **Key metrics.** **Latency**, **Tokens** (with input and output counts), **Cost** and **Cache hit** (the share of prompt tokens served from the provider's cache).
+- **Request facts.** **Caller**, **API key**, **Agent harness**, **User-agent**, **Request ID**, **Request log ID**, **Operation**, **Stream**, **Occurred at**, **Error code** and **Tags**. The raw `User-Agent` is trimmed and kept up to 512 characters. [Agent harness usage](/observability/agent-harness-usage/) explains how the harness is classified.
+- **MCP & tools.** The seven tool counts described in [Tool counts](#tool-counts). When the gateway estimated it, this part also shows how many tokens the key's MCP tool definitions would take in the context window. That estimate is about context pressure, not spend. Users who can open **MCP Invocations** also get a **View MCP invocations** button, which opens that page filtered by this request ID. MCP invocation records store the JSON-RPC `id` of the MCP call as their request ID, not the inference request ID, so this filtered list is usually empty.
+- **Provider attempts.** One row per upstream provider attempt. See [Provider attempts](#provider-attempts).
+- **Payloads.** The stored request and response bodies. **Request**, **Response** and **Split** switch the view. Each body shows a **truncated** badge when the gateway cut it, or **full** when it didn't.
+
+The sheet doesn't show the payload policy. The API returns it in `metadata.payload_policy` (see [Payload policy](#payload-policy)).
+
+### Tool counts
+
+The tool counts are separate columns on the row. A count the gateway didn't record shows as a dash in the admin UI and as `null` in the API. A real zero shows as `0`.
+
+| Count | Detail label | Meaning |
+| --- | --- | --- |
+| `request_tool_count` | **Request tools** | Tools declared in the request body's `tools` array, including any MCP tools the client loaded itself |
+| `exposed_tool_count` | **Tools exposed** | For a key with the `mcp:aggregate` or `mcp:proxy` scope, the MCP tools the key may use. For other keys, the same as `request_tool_count`. |
+| `filtered_tool_count` | **Tools filtered** | MCP tools hidden from the key by grants or server ownership. Recorded only for keys with an MCP scope. |
+| `referenced_mcp_server_count` | **MCP servers** | MCP servers that hold the key's usable tools. Recorded only for keys with an MCP scope. |
+| `invoked_tool_count` | **Tool calls** | Every tool call in the model's output, including calls seen in streamed output |
+| `invoked_distinct_tool_count` | **Distinct tools called** | Distinct tool names the model called |
+| `invoked_mcp_tool_count` | **MCP tool calls** | Calls that target MCP tools: provider-run MCP calls, and client tools named `mcp__<server>__<tool>` |
+
+Rows written before a count existed have `null` for it. The **Tools (Used / Total)** column uses the call count for those older rows.
+
+### Provider attempts
+
+An attempt row describes one upstream provider call. Its columns are **Attempt**, **Status**, **Provider**, **Upstream model**, **Latency** and **Flags** (`retryable`, `terminal`, `final response`, `stream`). Error detail for a failed attempt shows below the table.
+
+Attempt statuses are `success`, `provider_error`, `stream_start_error` and `stream_error`. The gateway runs one selected route and doesn't retry or fail over, so a request has at most one attempt. A `retryable` flag records what the provider said. It doesn't mean the gateway retried. [Model routing and APIs](/configuration/model-routing/#no-failover) explains why.
+
+A request that failed before the provider call has no attempts. The sheet shows **No provider attempts recorded**.
+
+### Read a failed request
+
+- **Budget rejection.** `error_code` is `budget_exceeded` and there are no attempts. The status is the one the caller got, `422` by default (see [Budget settings](/spend/budget-settings/)). The row keeps the resolved model and provider, so you can find it by request ID or model. [Budgets](/spend/budgets/) explains hard limits.
+- **Guardrail block on the prompt.** A summary row with no attempts. See [Gateway guardrails](/operations/gateway-guardrails/).
+- **Provider failure.** One attempt with the provider's error code and detail.
+- **Cancelled stream.** When the client drops a stream, the row has status `499` and `error_code` `client_cancelled`.
+
+## Payload policy
+
+`request_logging.payloads` in the gateway config controls what bodies the gateway stores. The field table and defaults are in the [configuration reference](/configuration/#request_logging). The policy comes from YAML only: the admin UI can't change it.
+
+`capture_mode` has three values:
+
+| Value | What the gateway stores |
+| --- | --- |
+| `redacted_payloads` (default) | Summary rows, plus sanitised request and response bodies |
+| `summary_only` | Summary rows with `has_payload=false`, and no bodies |
+| `disabled` | Nothing, for every API family and every caller |
+
+With `summary_only` or `disabled`, [Agent session analysis](/observability/agent-session-analysis/) gets no request bodies to analyse.
+
+Stored bodies are what the caller sent and got back. The gateway stores the request before it applies route compatibility transforms, so the transformed body sent to the provider is never stored. Streamed responses can include normalised output, such as promoted usage or reasoning deltas, because that normalised stream is what the caller received.
+
+Each row records the policy it was written with, in `metadata`:
+
+```json
+{
+  "operation": "chat_completions",
+  "stream": false,
+  "payload_policy": {
+    "capture_mode": "redacted_payloads",
+    "request_max_bytes": 131072,
+    "response_max_bytes": 65536,
+    "stream_max_events": 128,
+    "version": "builtin:v2"
+  }
+}
+```
+
+When secret redaction is on, `payload_policy` also has a `secret_redaction` object with the scanner settings used. `metadata` also holds icon keys that the admin UI uses.
+
+## Redaction
+
+The gateway wraps each body before it redacts it, and redaction paths start from the wrapper:
+
+- Requests: `{ "headers": ..., "body": ... }`
+- Responses: `{ "body": ... }`
+- Streams: `{ "stream": true, "events": ..., "usage": ..., "error": ... }`
+
+Redaction runs in this order:
+
+1. **Headers.** The gateway keeps only these request headers, matched without regard to case: `session-id`, `session_id`, `thread-id`, `x-claude-code-agent-id`, `x-claude-code-parent-agent-id`, `x-claude-code-session-id`, `x-client-request-id`, `x-codex-turn-metadata`, `x-opencode-session`, `x-parent-session-id`, `x-session-affinity` and `x-session-id`. It drops every other header, including credentials. From `x-codex-turn-metadata` it keeps only the string values of `forked_from_thread_id`, `parent_thread_id`, `session_id`, `thread_id` and `turn_id`. These headers feed [Agent session analysis](/observability/agent-session-analysis/).
+2. **Sensitive keys.** Any JSON value under one of these keys becomes `[REDACTED]`: `authorization`, `proxy_authorization`, `cookie`, `set_cookie`, `x_api_key`, `api_key`, `raw_key`, `generated_key`, `key_material`, `anthropic_api_key`, `client_secret`, `credentials`, `private_key`, `token`, `access_token`, `refresh_token`, `secret` and `password`. The match ignores case and treats `-` as `_`, so `Api-Key` matches `api_key`.
+3. **URL queries.** In the built-in media URL fields, the gateway replaces the query string with `?<redacted>` and removes any user name and password from the URL. It does the same for HTTPS URLs inside `body.error` and `body.error.message`. Other URL fields aren't scanned.
+4. **Admin paths.** Every path in `request_logging.payloads.redaction_paths` is redacted too. A path is dot-separated object keys from the wrapper root, and `*` matches one whole segment. For example, `body.messages.*.content.*.image_url.url`. The paths add to the built-in rules. They don't replace them.
+5. **Secrets in text.** When a guardrail policy turns on `secret_redaction`, detected API keys and credentials become `[REDACTED:<rule_id>]`. This runs before truncation. Recognised inline base64 media is skipped. [Gateway guardrails](/operations/gateway-guardrails/) explains how the effective policy is built.
+
+## Truncation
+
+The gateway bounds every stored body. Byte limits count the uncompressed serialised JSON, because database compression doesn't reduce the gateway's serialisation work, the API transfer or the admin UI rendering.
+
+### Large binary fields
+
+First, the gateway replaces known bulky fields with `{ "truncated": true, "size_bytes": ..., "preview": ... }`, with a preview of about 96 bytes. The rest of the JSON, including `usage`, stays as it was. The built-in fields cover:
+
+- OpenAI-compatible image, audio and file content, in requests and in streamed deltas
+- Vertex Gemini inline data, and Anthropic base64 `source.data`
+- Responses `input` image, file URL and file data content
+- Generated images: `body.choices.*.message.images.*.image_url.url`, `events.*.choices.*.delta.images.*.image_url.url`, `body.messages.*.images.*.image_url.url`, `body.input_references.*.image_url.url` and `body.data.*.b64_json`
+- Opaque reasoning state: `body.choices.*.message.reasoning_details.*.data`, `events.*.choices.*.delta.reasoning_details.*.data` and `body.messages.*.reasoning_details.*.data`
+
+A `data:` URL in a media field is always replaced. Plain base64 is replaced when it is longer than 256 bytes. Remote URLs stay, after query redaction. Reasoning fields also accept URL-safe base64 (`-` and `_`), because encrypted reasoning tokens use it. The full path list is in [`large_fields.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-service/src/redaction/large_fields.rs).
+
+### Request bodies
+
+`request_max_bytes` defaults to 128 KiB. The gateway never stores more than 256 KiB inline, even if a larger value is configured. The [structured request-log bounding ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-08-25-structured-request-log-bounding.md) explains the size levels:
+
+- Up to 64 KiB is the normal range for interactive use and debugging.
+- 64 to 128 KiB is accepted, and the gateway trims content when the cap needs it.
+- 128 to 256 KiB is exceptional, and the gateway trims it down to the cap.
+- Over 256 KiB is never stored in full.
+
+A request within the cap is stored as it is. For a larger request, the gateway keeps the structure and trims text:
+
+1. It keeps a diagnostic envelope first, with a 16 KiB target. The envelope holds the session headers, model and reasoning settings, tool names and choice, tool schema shape, stream and include settings, cache keys, metadata, and message or item IDs. If the envelope is too big, the gateway shortens tool and schema descriptions, examples and defaults.
+2. It gives retained input content at most 96 KiB in total. An ordinary message gets 8 to 16 KiB. A message on its own, or a system or developer message, can keep up to 32 KiB.
+3. It trims text in Chat `body.messages[*].content`, and in Responses `body.instructions`, `body.input` or `body.input[*].content`. Each text keeps its start and end, with a marker that says how many bytes were left out. Every message, item and unknown field stays.
+4. If even the envelope can't fit, it stores one `{ "truncated": true, "size_bytes": ..., "preview": ... }` marker for the whole request.
+
+A trimmed request gets a top-level `truncation` object beside `headers` and `body`. It records `strategy_version` (`structured-request-v2`), `original_size_bytes`, `stored_size_bytes`, `omitted_bytes`, `truncated_field_count`, `affected_path_count`, `affected_paths` (up to 32), `tool_fields_compacted` and `known_large_fields_truncated`.
+
+`request_payload_truncated=true` means at least one request field was cut. Agent session analysis reads the request before this trimming, so trimming doesn't hide sessions, prompt sizes or tool facts from it.
+
+### Response bodies
+
+`response_max_bytes` defaults to 64 KiB. After the bulky fields are replaced, a response over the limit becomes a single marker with a preview of its first bytes, and `response_payload_truncated=true`. Replacing bulky fields alone doesn't set the flag.
+
+### Streams
+
+For a streamed response, the gateway stores a transcript of parsed events, not the raw bytes. It reassembles UTF-8 text and SSE `data:` frames across chunk boundaries, and accepts both `data:` and `data: `. It reads every event for usage, errors, response IDs and tool calls, including Responses `response.usage`. Responses streams keep their `response.*` event names. They aren't rewritten as Chat Completions chunks.
+
+`stream_max_events` (default 128) caps only the stored events. Events after the cap still count for usage and errors. When bodies are stored, hitting the cap or failing to parse the stream sets `response_payload_truncated=true`.
+
+## Retention and purge
+
+Request logs are kept until something purges them. Retention windows are `1d`, `3d` or `7d`, with `7d` as the default. Recurring purge is off by default.
+
+### Purge by hand
+
+An admin runs the purge from the repository with mise:
+
+```bash
+mise run //gateway:purge-request-logs --dry-run
+mise run //gateway:purge-request-logs --retention 3d
+```
+
+`//gateway:purge-request-logs` uses `gateway.yaml`, and `//gateway:prod:purge-request-logs` uses `gateway.prod.yaml`. Both run `gateway purge-request-logs --retention <window>`, with `--dry-run` if you pass it. The command prints `cutoff`, `dry_run`, `matched_count` and `deleted_count`.
+
+Run `--dry-run` first on production-shaped databases. It counts the request log rows older than the cutoff and deletes nothing. It refuses to run while database migrations are pending. A real run applies pending migrations first.
+
+### Purge on a schedule
+
+Set `request_logging.purge.enabled: true` to start a purge worker inside each gateway process:
+
+```yaml title="gateway.yaml"
+request_logging:
+  purge:
+    enabled: true
+    retention: 7d
+    schedule: "0 0 * * *"
+```
+
+`schedule` is five-field cron in UTC. At startup, the gateway rejects a schedule whose next two runs are less than a day apart. Each worker also skips a second run on the same UTC day. That guard is in memory, so it resets when the process restarts, and every replica runs its own worker. [Configuration reference](/configuration/#purge-fields) lists the fields and the weekday numbering.
+
+### What a purge deletes
+
+A real purge deletes request log rows older than the cutoff, with their payloads, tags and attempts. It also deletes:
+
+- guardrail decision records older than the cutoff
+- agent-session analysis data for finalised sessions older than the cutoff, which can include their reports (see [Agent session analysis](/observability/agent-session-analysis/))
+
+It doesn't delete usage ledger rows (`usage_cost_events`), budget history, MCP invocation records, MCP token-overhead estimates, or any configuration, users, teams or API keys.
+
+Don't delete rows from one request log table by hand. Partial deletes leave the detail view misleading, even where database constraints stop orphan rows.
+
+## Admin API
+
+The **Request Logs** page uses these endpoints, with the admin session cookie:
+
+- `GET /api/v1/admin/observability/request-logs`
+- `GET /api/v1/admin/observability/request-logs/<request_log_id>`
+
+The detail endpoint returns `404` with code `not_found` when the row doesn't exist. List and detail responses include `metadata` (with `operation` and `payload_policy`), the truncation flags and the tool counts.
+
+The list endpoint accepts these query parameters:
+
+| Parameter | Notes |
+| --- | --- |
+| `page`, `page_size` | `page` starts at `1`. `page_size` defaults to `100`, from `1` to `200`. |
+| `q` | Search text, as in the page's search box |
+| `request_id`, `model_key`, `provider_key`, `status_code` | Exact matches. `model_key` is the requested model. |
+| `user_id`, `team_id`, `service_account_id` | Owner filters. For users who aren't platform admins, the gateway always limits results to their own user ID. |
+| `service`, `component`, `env` | Caller tag filters |
+| `tag_key`, `tag_value` | One custom tag pair. Send both, or neither. |
+
+Tag keys and values follow the rules in [Tagging](/observability/tagging/#validation-rules).

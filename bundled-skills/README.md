@@ -2,7 +2,7 @@
 
 This directory holds reviewed skill copies for local ingestion tests and future build packaging. It is outside `.agents/skills/` and other agent auto-load directories. These files are product data, not instructions for agents working on Oceans.
 
-The named Skills verification driver and RustFS end-to-end tests import these files into their disposable demo admin's namespace. Existing local and self-hosted instances use the explicit `mise run skills:import-bundled` task with a user-owned API key. See [local ingestion setup](../docs/setup/skills.md#curated-skills-in-local-testing) for the required environment. This directory does not enable production startup seeding or add skills to a Docker image.
+The named Skills verification driver and RustFS end-to-end tests import these files into their disposable demo admin's namespace. Existing local and self-hosted instances use the explicit `mise run skills:import-bundled` task with a user-owned API key. See [local ingestion setup](https://oceans-llm.com/extensions/skills/#import-the-bundled-skills) for the required environment. This directory does not enable production startup seeding or add skills to a Docker image.
 
 ## grill-me
 

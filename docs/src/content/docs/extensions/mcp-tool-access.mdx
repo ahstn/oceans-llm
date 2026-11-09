@@ -1,0 +1,368 @@
+---
+title: MCP tool access
+description: Decide which discovered MCP tools each API key, user, team or service account can see and call.
+sidebar:
+  order: 3
+---
+
+MCP tool access decides which discovered tools a caller can find through `/mcp`, and see or call through `/mcp/<server_key>`. Nothing is granted by default. A caller can use a tool only when a grant or an include [tag rule](#tag-rules) gives it to them, and no exclude rule removes it.
+
+## How the gateway resolves access
+
+The gateway resolves access on every request, from the subjects behind the credential:
+
+- the API key itself
+- the key's owner: a user or a service account
+- a team: the user's current team, or the team that owns the service account
+
+Effective access is every tool that a grant or toolset grant gives to any of these subjects, plus every tool their include tag rules match, minus every tool any of their exclude rules match.
+
+A tool in that set is usable only when all of these are also true:
+
+- The tool is active, and its server is enabled.
+- The tool's review state lets it be served (see [Tool versions and approval](#tool-versions-and-approval)).
+- The grant or toolset is still active.
+- The key has the scope for the endpoint: `mcp:aggregate` for `/mcp` and `mcp:proxy` for `/mcp/<server_key>`. If the key has a server list, the server must be on it. A key created before scopes existed has every scope and no server list. [MCP client setup](/extensions/mcp-client-setup/) covers key scopes.
+- For a `team` server, the caller's current team owns the server (see [Team-managed servers](#team-managed-servers)).
+
+Each grant is one path to a tool. Revoking a grant, disabling a toolset, or leaving a team removes that path only. Another grant or rule can still give the caller the same tool.
+
+Teams are access metadata, not runtime owners. Spend, request ownership and service-account budget checks still belong to the user or service account that authenticated. See [Budgets](/spend/budgets/).
+
+## Toolsets
+
+A toolset is a named bundle of discovered tools. Use toolsets when several API keys, users, service accounts or teams need the same tools. They're the main way to keep the tool list an agent sees small and clear.
+
+Platform admins manage toolsets on the **Tool Sets** tab at `/admin/mcp/toolsets`. Team owners and admins don't see this tab, because toolsets are platform-managed.
+
+![Tool Sets tab of the MCP Servers page, with the New tool set button, the tool set workbench, search, and All sets, Active and Disabled filters](/images/mcp-toolsets-page.png)
+
+To build a toolset and give it to callers:
+
+<Steps>
+<Step title="Register the server">
+An admin registers or imports the MCP server. See [MCP servers](/extensions/mcp-servers/).
+</Step>
+<Step title="Refresh discovery">
+The admin refreshes discovery, so the gateway stores the server's current tools and schemas.
+</Step>
+<Step title="Choose the tools">
+The admin opens the server, selects the **Tools** section, checks the active tools they want, and selects **Add to toolset**. This opens the **Tool Sets** tab with those tools already selected. The admin can also start from **New tool set** on the **Tool Sets** tab.
+</Step>
+<Step title="Save the membership">
+The admin selects **Save** on the set in the tool set list.
+</Step>
+<Step title="Grant the toolset">
+On the **Access** tab, the admin grants the toolset to the API key, user, team or service account that needs the tools. See [Grants](#grants).
+</Step>
+</Steps>
+
+A toolset holds tools by their stable `mcp_tool_id`. The ID stays the same for the same upstream tool name on the same server, so a changed definition doesn't break membership. If discovery marks a tool inactive, the tool stays in the toolset for audit, but no one can call it.
+
+A toolset can hold tools from more than one server. Toolsets are granted across the organisation, so they hold only tools of servers published to the `organisation`. Saving a toolset that holds a tool of a `team` server returns `409`, even when the membership is unchanged. See [Ownership and visibility](/extensions/mcp-servers/#ownership-and-visibility).
+
+Each toolset is active or disabled. **Disable set** disables the selected toolset. A disabled toolset gives no tools through its grants, and the grant picker doesn't offer it.
+
+## Grants
+
+A grant gives one subject one target.
+
+| Subjects | Targets |
+| --- | --- |
+| API key, user, team, service account | One tool, or one toolset |
+
+Use toolset grants when callers need the same bundle. Use direct tool grants for exceptions.
+
+Admins manage grants on the **Access** tab at `/admin/mcp?tab=access`. The old address `/admin/mcp/access` redirects there.
+
+![Access tab of the MCP Servers page, with the New grant form, the Effective access preview, the Grants list and the Tag rules section](/images/mcp-access-page.png)
+
+On the Access tab:
+
+- **New grant** creates a grant. The admin chooses a **Subject type** and **Subject**, then a **Target type** and **Target**, from pickers of real records, and selects **Save grant**.
+- **Grants** lists the active grants. **Revoke** removes one.
+- **Effective access** previews the tools one subject can call. See [Preview effective access](#preview-effective-access).
+- **Tag rules** adds or removes tools by tag. Only platform admins see this section. See [Tag rules](#tag-rules).
+
+Every grant change is written to the [admin audit log](/access/admin-audit-log/) with the actor's `actor_access` (`platform_admin` or `team_admin`). When the actor belongs to a team, the entry also has `actor_team_id` and `actor_team_role`. Saving a grant that already exists, or revoking one that isn't active, changes nothing and writes no entry.
+
+### Preview effective access
+
+The **Effective access** preview resolves the tools a subject can call, with every grant and rule applied. The admin chooses a **Subject type** and **Subject**, and can choose a server, then selects **Preview access**.
+
+The preview expands the subject in the same way as a real request:
+
+- An API key brings its owner and team. It also applies the key's scopes and server list, so it can't be combined with another subject.
+- A user or service account brings its team.
+
+So the preview shows the grants and exclude rules of those subjects too. A key with neither `mcp:aggregate` nor `mcp:proxy`, or with a server list that leaves out the server, previews no tools. The preview accepts either MCP scope, so it doesn't tell you which endpoint the key can use.
+
+A preview for a key that can't authenticate, or for a disabled service account, returns `400`. A service account with no active budget previews no tools.
+
+## Team-managed servers
+
+Team owners and admins manage access to the servers their team owns. They use the same **Access** tab, limited to their team:
+
+- The target is always one tool of one of their team's servers. Toolsets are platform-managed.
+- The subject must be inside their team: the team itself, a member, one of the team's service accounts, or an API key owned by one of those. A subject outside the team returns `403`.
+- They can revoke any grant on their team's servers' tools, including grants a platform admin made.
+- They see only grants on their team's servers' tools.
+- The preview needs one of their team's servers and a subject inside their team. Without a server, it returns `400`.
+
+A server's visibility limits every admin, platform admins included. A platform admin who grants a `team` server's tool to a subject outside its owning team gets `400`. To share the tools more widely, publish the server to the organisation first. See [Ownership and visibility](/extensions/mcp-servers/#ownership-and-visibility).
+
+The gateway checks visibility twice:
+
+- **When a grant is saved.** The check runs inside the same write. If the server's owner or visibility, or the subject's team, changes while the grant is saved, the gateway returns `409` and writes nothing.
+- **On every request.** A `team` server's tools work only for a caller whose current team owns the server. When the holder leaves the team, or the server moves to another team, that grant stops working. The grant itself stays until someone revokes it.
+
+Tag rules, admin tags, annotation overrides and tool reviews are platform-managed. An include tag rule on a `team` server, like a grant, can name only a subject of its owning team (`400` otherwise). It also counts as access that blocks narrowing the server's visibility. Only platform admins can change **Require approval for tool changes**, since only they review tool changes.
+
+## Tag rules
+
+A tag rule grants or denies tools by what they do, not by name. For example: "team X may use every read-only tool on server Y", or "service account Z may never use a destructive tool on any server". Only platform admins manage tag rules.
+
+Each rule has:
+
+- **A subject**: an API key, user, team or service account, as for grants.
+- **An effect**: `include` adds every matching tool, and `exclude` removes every matching tool.
+- **A server**: an include rule must name one server. An exclude rule can name one server, or apply to all servers.
+- **A tag**: one [derived tag or admin tag](#tags).
+
+The gateway resolves a caller's tools in this order:
+
+1. It collects the explicit tool and toolset grants of every subject: the key, its owner user or service account, and the team.
+2. Include rules add every served, active tool on their server whose tags contain the rule's tag. Tools that discovery adds later match without a new grant. An include rule on a derived tag selects only tools whose hints an admin vouched for (see [Tags](#tags)).
+3. Exclude rules from any of the caller's subjects remove every matching tool. An exclude rule wins over explicit grants, toolset grants and include rules, whichever subject they came from. An exclude rule on a team also removes a tool granted to a member's own key.
+
+Tag rules apply everywhere grants do:
+
+- direct `tools/list` and `tools/call`
+- aggregate `search_tools`, `describe_tool` and `call_tool`
+- the server check for resources, prompts, completions and the event stream (see [Other methods on the direct endpoint](#other-methods-on-the-direct-endpoint))
+- the effective-access preview
+
+If an exclude rule removes a caller's last tool on a server, the caller also loses that server's resources and prompts.
+
+### Tags
+
+Every tool has derived tags. The gateway computes them from the tool's effective annotations, which are the upstream hints with any [admin overrides](#annotation-overrides) applied.
+
+| Tag | When the tool has it |
+| --- | --- |
+| `read_only` | `readOnlyHint` is `true`. |
+| `destructive` | The tool isn't read-only, and `destructiveHint` isn't `false`. |
+| `idempotent` | `idempotentHint` is `true`. |
+| `open_world` | `openWorldHint` isn't `false`. |
+
+These follow the MCP protocol defaults, which fail safe. An include rule for `read_only` matches only tools whose effective hint says they're read-only. A tool that declares no hints counts as `destructive` and `open_world`, so exclude rules catch it.
+
+Hints are claims made by the upstream server. On a server without [tool approval](#tool-versions-and-approval), discovery serves whatever the upstream declares. Without a safeguard, a new tool could give itself access by claiming `readOnlyHint`. So an include rule on a derived tag selects a tool only when an admin vouched for its hints, in one of two ways:
+
+- The admin [overrode](#annotation-overrides) the tag's own hint to `true`.
+- The admin approved the served version, on a server with approval turned on.
+
+A protocol default doesn't count. Turning approval on doesn't vouch for definitions that discovery approved before. Override those hints, or they count once the upstream's next change is approved. Include rules on admin tags, and all exclude rules, use the effective tags on every server.
+
+Admins can also add their own tags to a tool, such as `finance` or `pii:low`. The gateway trims and lowercases each tag and removes duplicates. Then each tag must be 1 to 64 characters: lowercase letters, digits, `_`, `-`, `.` and `:`. A tool can have at most 32 admin tags. The four derived names are reserved, so an admin tag can't claim `read_only` for a tool. Override the annotation instead.
+
+### Annotation overrides
+
+Platform admins can override `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint` for each tool. An override:
+
+- changes the tool's derived tags, and so which tag rules match it
+- is what clients see: `describe_tool`, `search_tools` and direct `tools/list` return the overridden value, and other annotation members pass through
+- is stored apart from the discovered value, which the admin UI shows next to it, and discovery never changes it
+- doesn't change the tool's `schema_hash` or `schema_version`, which describe the upstream definition
+
+![Tools section of an MCP server dialog, with a tool expanded to show its upstream hints, access tags, and annotation overrides set to Use upstream](/images/mcp-server-tools-dialog.png)
+
+### Manage tags and rules
+
+To set **tags and overrides**, a platform admin opens a server from `/admin/mcp`, selects **Tools**, and expands a tool:
+
+- **Annotation overrides** lists each hint with its upstream value, and a choice of **Use upstream**, **Yes** or **No**. **Save overrides** saves them.
+- **Admin tags** takes a comma-separated list. **Save tags** saves it.
+- **Access tags** shows the tags that rules match.
+
+To manage **rules**, a platform admin opens the **Access** tab and uses **Tag rules**. They choose **Subject type**, **Subject**, **Effect**, **Server** and **Tag**, then select **Save rule**. **Revoke** removes a rule.
+
+**Preview matches** lists the active tools the rule would select, before the admin saves it. It checks at most 5,120 tools and lists at most 200 matches. It says when more tools may match. To see a subject's resolved tools with every rule applied, use [Preview effective access](#preview-effective-access).
+
+### Tag and rule API
+
+These endpoints need a platform admin session.
+
+| Method | Path |
+| --- | --- |
+| `PUT` | `/api/v1/admin/mcp/servers/<server_id>/tools/<tool_id>/tags` |
+| `PUT` | `/api/v1/admin/mcp/servers/<server_id>/tools/<tool_id>/annotation-overrides` |
+| `GET`, `POST` | `/api/v1/admin/mcp/tag-rules` |
+| `DELETE` | `/api/v1/admin/mcp/tag-rules/<rule_id>` |
+| `GET` | `/api/v1/admin/mcp/tag-rules/preview` |
+
+Both `PUT` requests replace the stored value. In the overrides body, an omitted or `null` hint uses the upstream value:
+
+```json
+{ "annotation_overrides": { "read_only_hint": true } }
+```
+
+The preview takes `tag` and `effect`. It also takes `server_id`, which an include rule needs. Leave `server_id` out to preview an exclude rule on all servers.
+
+An invalid tag or effect, or an include rule without a server, returns `400`. An unknown tool returns `404`.
+
+Changes are written to the [admin audit log](/access/admin-audit-log/) as `mcp_tool.tags_updated`, `mcp_tool.annotations_overridden`, `mcp_tag_rule.set` and `mcp_tag_rule.revoked`. A save that changes nothing writes no entry. The design is in the [MCP tag grants and tool versioning ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md).
+
+## Tool versions and approval
+
+The gateway keeps each tool definition that discovery finds as a version. A version holds the tool's description, input schema, title, annotations, output schema, schema hash, and when it was discovered. Only definitions seen by a successful discovery are kept, not every response the upstream serves in between.
+
+A definition counts as changed when its schema hash, description or title changes. The schema hash doesn't cover the description, so the gateway compares the description on its own. A title kept in the older `annotations.title` member counts as a title change, not an annotation change. Admin [annotation overrides](#annotation-overrides) aren't part of the definition and never create a version.
+
+A changed definition doesn't always get a new version number. If the upstream goes back to a definition the gateway has seen before, the gateway reuses that earlier version.
+
+### Require approval for tool changes
+
+Each server has a **Require approval for tool changes** setting. It's off by default, and only platform admins can change it.
+
+When it's off, discovery approves every definition it finds, so changes are served at once. When it's on, discovery does this:
+
+| Discovery finds | Result |
+| --- | --- |
+| A new tool | **Pending review**. The tool isn't listed, searchable or callable. |
+| A change to the description or title only | **Change pending**. The previous approved version is still served and callable. Clients don't see the new text until it's approved. |
+| A change to the input schema, output schema or annotations | **Pending review**. The tool is withheld, because the approved definition no longer describes what the upstream accepts or claims. |
+| The first title, annotations or output schema for a tool discovered before Oceans stored them | **Change pending**, unless the input schema changed too. The tool is still served on its approved definition, without the new hints, until an admin approves them. After that, changes to annotations or the output schema are **Pending review** like any other. |
+| The approved definition again | The waiting version is superseded, and the tool is served as approved. |
+| An older definition an admin approved | That earlier version is served again, with no new version and no review. An older definition that discovery approved on its own, while approval was off, waits for review instead. |
+| An older definition that was superseded before review | It waits for review again, under its earlier version number. |
+| A definition an admin already rejected | Review doesn't reopen. Any newer waiting version is dropped. The tool is served as approved only when the rejected change was to the description or title, or was the first metadata captured for an older tool. |
+
+**Pending review** and **Rejected** tools are left out of every grant: tool grants, toolset grants and [tag rules](#tag-rules). A **Change pending** tool stays callable on its approved definition.
+
+On a server with approval on, direct `tools/list` takes the members the gateway versions from the stored approved definition, not from the live upstream object. These are `name`, `title`, `description`, `inputSchema`, `outputSchema`, and the effective `annotations`. The gateway applies them only to tools that the live upstream list still contains. Members it doesn't version, such as `_meta` and `icons`, pass through from the upstream without review. The gateway removes `execution.taskSupport` (see [Other methods on the direct endpoint](#other-methods-on-the-direct-endpoint)).
+
+If approval is turned off while a change waits, that tool keeps its stored definition until the next discovery approves what the upstream serves.
+
+### Review tool changes
+
+A platform admin reviews changes in the **Reviews** section of the server dialog. Each waiting active tool is a collapsed row. Expanding a row loads its versions. It shows a line diff of each changed section, from the served version to the waiting one, with **Approve** and **Reject**:
+
+- **Approve** serves the waiting version.
+- **Reject** keeps a description-only or title-only change, or the first metadata captured for an older tool, on the previous version. It keeps a new tool or a contract change withheld until a later definition is approved, or the upstream goes back to an approved one.
+
+<Aside type="caution" title="Long diffs are cut">
+The diff shows at most 400 lines for each section, and has no control to show more. Check a long schema change in full, for example with the versions API below, before you approve it.
+</Aside>
+
+A version can be reviewed once. A second review, or a review of a version that a newer discovery replaced, returns `409`. Turning the setting off approves the current definitions at the next discovery.
+
+Each `tools/call` [invocation](/extensions/mcp-invocations/) records the tool version the gateway served, when it served its stored definition. Approvals and rejections are written to the [admin audit log](/access/admin-audit-log/) as `mcp_tool.version_approved` and `mcp_tool.version_rejected`.
+
+### Version API
+
+These endpoints need a platform admin session.
+
+| Method | Path |
+| --- | --- |
+| `GET` | `/api/v1/admin/mcp/servers/<server_id>/tools/<tool_id>/versions` |
+| `POST` | `/api/v1/admin/mcp/servers/<server_id>/tools/<tool_id>/versions/<schema_version>/approve` |
+| `POST` | `/api/v1/admin/mcp/servers/<server_id>/tools/<tool_id>/versions/<schema_version>/reject` |
+
+The versions endpoint returns one of two things:
+
+- The versions named in `schema_versions`, a comma-separated list of at most 10. Paging doesn't apply.
+- One page of history, newest first. `limit` is 1 to 100 (default 20). Pass the response's `next_before` as `before` to get the next page.
+
+An invalid `limit` or `schema_versions` returns `400`. An unknown tool or version returns `404`.
+
+The server setting is `approve_tool_changes` on `POST /api/v1/admin/mcp/servers` and `PATCH /api/v1/admin/mcp/servers/<server_id>`. A team admin can leave it out or send its current value. Changing it needs a platform admin.
+
+## What clients can see
+
+MCP clients never see the whole registry. The gateway builds their tool list from effective access at request time.
+
+### Aggregate endpoint
+
+On `/mcp`, `tools/list` returns only the gateway's own tools: `search_tools`, `describe_tool` and `call_tool`.
+
+- `search_tools` searches the caller's granted, active tools across all servers. Results include each tool's `title` and effective `annotations` when the server declares them. It returns 10 results by default, and at most 50.
+- `describe_tool` returns the stored schema and metadata for one granted tool, by its canonical address, such as `mcp://github/tools/issues.create`. This includes the `title`, `output_schema` and `annotations` when the server declares them. The annotations include any [admin overrides](#annotation-overrides).
+- `call_tool` checks the grant again, resolves the upstream credential, and calls the upstream server.
+
+`call_tool` takes:
+
+```json
+{
+  "address": "mcp://github/tools/issues.create",
+  "arguments": {},
+  "schema_hash": "sha256:optional"
+}
+```
+
+`address` is required. `arguments` defaults to `{}`. If the caller sends `schema_hash` and it no longer matches the stored tool, the gateway returns `tool_schema_changed` and doesn't contact the upstream server. The hash covers the input schema, title, upstream annotations and output schema. It doesn't cover admin overrides, so an override doesn't trigger `tool_schema_changed`.
+
+A missing upstream credential returns `credential_required`, and an expired one returns `credential_expired`. These errors, and `tool_schema_changed`, come back as a tool result with `isError: true` and the code in `structuredContent.error_code`.
+
+### Direct endpoint
+
+On `/mcp/<server_key>`, the gateway filters the upstream `tools/list` response down to the caller's granted, active tools on that server. Tools in **Pending review** or **Rejected** are left out.
+
+- On a server without approval, granted tool objects pass through as the upstream sent them, including `title`, `annotations` and `outputSchema`. Admin [annotation overrides](#annotation-overrides) replace the matching hints.
+- On a server with approval, and for a **Change pending** tool after approval was turned off, the gateway serves the stored approved definition (see [Tool versions and approval](#tool-versions-and-approval)).
+
+The gateway can rewrite JSON responses and finite `text/event-stream` responses.
+
+For `tools/call`, the gateway checks access before it contacts the upstream server. A call to a tool the caller can't use returns HTTP `403` with JSON-RPC code `-32001`. The gateway records it as a policy-denied [invocation](/extensions/mcp-invocations/) with error code `mcp_tool_not_granted`.
+
+Request bodies, and responses the gateway rewrites, are limited to 4 MiB. A larger body returns `413`.
+
+### Other methods on the direct endpoint
+
+Resources, prompts and completions can return server data, just as tools can. So the direct endpoint classifies every JSON-RPC method before it contacts the upstream server:
+
+| Method | What the gateway does |
+| --- | --- |
+| `initialize` | Forwards it, and removes the `tasks` capability from the result. |
+| `ping`, `logging/setLevel`, `notifications/initialized`, `notifications/cancelled`, `notifications/progress`, `notifications/roots/list_changed` (with no `id`), client replies to server requests, and `DELETE` (end session) | Forwards them. These carry no server data. |
+| `tools/list`, `tools/call` | Filters and checks each tool, as above. `tools/list` results lose each tool's `execution.taskSupport`. A `tools/call` with a `task` param returns HTTP `400`. |
+| `resources/list`, `resources/templates/list`, `resources/read`, `resources/subscribe`, `resources/unsubscribe`, `prompts/list`, `prompts/get`, `completion/complete` | Forwards them only when the caller can use at least one tool on the server. Otherwise returns HTTP `403` with JSON-RPC code `-32001`, and records a policy-denied invocation with error code `mcp_server_not_granted`. |
+| `GET` (server-to-client event stream) | Forwards it only when the caller can use at least one tool on the server. See [Sessions and event streams](#sessions-and-event-streams). |
+| Any other method | Denies it with HTTP `403` and JSON-RPC code `-32601`, and records it with error code `mcp_method_not_allowed`. |
+| `POST` with an empty or malformed body, or `GET` or `DELETE` with a body | Rejects it with HTTP `400` and JSON-RPC code `-32600`. |
+
+The gateway doesn't proxy MCP tasks. A task's result comes back through `tasks/result`, which names no tool, so the gateway couldn't check grants or guardrails on it. `tasks/*` methods count as "any other method". The gateway also removes the task capability and tool hints above, so clients call tools directly.
+
+Resources and prompts have no grant model of their own. Being able to use any tool on the server is the minimum bar for reading its resources or prompts. Use the server's tool grants to decide who may use the server at all.
+
+The gateway applies result [guardrails](/operations/gateway-guardrails/) to `resources/read` and `prompts/get` responses, including finite `text/event-stream` responses, in the same way as `tools/call` results. List and completion results aren't checked by result guardrails, which matches `tools/list`. Resource and prompt requests aren't checked by request guardrails.
+
+Each governed call is recorded on the **MCP Invocations** page. See [MCP invocations](/extensions/mcp-invocations/).
+
+Before the direct endpoint governed every method, it forwarded every method except `tools/list` and `tools/call` without checking grants or guardrails, and without logging. The [govern every MCP method ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-13-govern-every-mcp-method.md) explains the change.
+
+### Sessions and event streams
+
+The gateway returns its own `Mcp-Session-Id`, not the raw upstream one. It wraps the upstream ID and signs it for the server, the API key or OAuth grant, and the key's owner. A request that sends a session ID issued to another credential, or the raw upstream ID, gets HTTP `404` and isn't forwarded. MCP clients treat that as an expired session and start a new one. This matters on servers with a shared or service-account credential, where the upstream can't tell callers apart.
+
+The gateway doesn't support stream resumption. It never forwards `Last-Event-ID`, and it removes the `id` field from every upstream event, so clients have no event ID to resume from. A resumed upstream stream would replay results without the grant filtering, approved definitions, result guardrails and invocation records of the first request.
+
+On the `GET` event stream, the gateway drops JSON-RPC responses, so only server requests and notifications reach the client. While any stream is open, the gateway runs one shared check every 30 seconds for all open streams. The API key must still authenticate with an MCP scope, and the caller must still be able to use a tool on a server they can see. If the check fails, or can't be answered, the stream ends and the client can reconnect. Streamed `POST` responses follow the same check. The event stream isn't recorded as an invocation.
+
+### Credential errors
+
+For `tools/call`, and for the resource, prompt and completion methods, the gateway checks access before it resolves the upstream credential. So a caller without access doesn't learn whether a credential exists.
+
+<Aside type="caution" title="Some methods resolve credentials without a grant">
+`initialize`, the forwarded lifecycle methods and `tools/list` resolve the upstream credential without first checking for a grant. On a server that needs a per-caller credential, a caller with no grant can see a `credential_required` or `credential_expired` error from these methods.
+</Aside>
+
+## Budgets and token overhead
+
+MCP grants decide which tools a caller can see and call. They don't create spend budgets.
+
+Service-account MCP credentials and service-account budgets are separate controls. A service account can have an upstream credential binding while a budget blocks it. It can also have budget room but no MCP credential for a given server. A service-account API key needs an active budget to authenticate at all. Budget setup is on [Budgets](/spend/budgets/).
+
+MCP token-overhead estimates are context-window telemetry. They estimate how many prompt tokens the caller's granted tool definitions may use. They aren't billing data and don't count toward spend budgets. Results aren't estimated.
+
+For an inference request from a key with an MCP scope, the gateway looks up the caller's tool set, cached for 30 seconds, and runs the estimate in the background. So the estimate can lag a grant change by up to 30 seconds. When too many estimates are already running, the gateway skips the estimate for that request. [Request logs](/observability/request-logs/) show the tool counts and estimates.

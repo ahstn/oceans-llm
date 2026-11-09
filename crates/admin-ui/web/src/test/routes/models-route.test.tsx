@@ -943,7 +943,7 @@ describe('ModelsPage client configuration', () => {
     expect(screen.getByText('/v1')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'client harness configuration' })).toHaveAttribute(
       'href',
-      'https://oceans-llm.com/configuration/client-harness-configuration.html',
+      'https://oceans-llm.com/harnesses/',
     )
     expect(screen.getByRole('link', { name: 'https://opencode.ai/docs/config/' })).toHaveAttribute(
       'href',

@@ -7,8 +7,8 @@
 
 ## Current state
 
-- [MCP Client Setup: OAuth sign-in](../mcp/mcp-client-setup.md#oauth-sign-in)
-- [OIDC and SSO](../access/oidc-and-sso-status.md)
+- [MCP Client Setup: OAuth sign-in](https://oceans-llm.com/extensions/mcp-client-setup/#sign-in-with-oauth)
+- [OIDC and SSO](https://oceans-llm.com/access/sso/)
 - [ADR: SSRF-safe outbound fetch](2026-10-17-ssrf-safe-outbound-fetch.md), which Client ID Metadata Documents use
 
 ## Context

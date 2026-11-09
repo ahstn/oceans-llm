@@ -1,0 +1,472 @@
+---
+title: MCP servers
+description: Register upstream MCP servers, set their auth, and expose their tools through the Oceans gateway.
+sidebar:
+  order: 1
+---
+
+Oceans registers external Streamable HTTP MCP servers and exposes their tools to clients through one gateway. Admins register servers and discover their tools. Clients connect to Oceans with an Oceans API key, never with upstream credentials.
+
+![Oceans MCP: one gateway connects MCP servers to Engineer and Project Manager personas, with tool checkboxes, and six client harnesses](/images/oceans-mcp-personas.webp)
+
+- **MCP servers** provide tools from services such as GitHub, Datadog, Kubernetes, Notion, Atlassian and Snowflake.
+- **Personas** are tool selections for company roles, such as Engineer or Project Manager. Build them with toolsets and grants, as described in [MCP tool access](/extensions/mcp-tool-access/). The checked boxes in the diagram are examples. Effective access depends on the active grants for the client's API key and its owner.
+- **Client harnesses** are the applications that call the tools, such as Claude Code, Codex, OpenCode, GitHub Copilot, Pi and Hermes. [MCP client setup](/extensions/mcp-client-setup/) covers endpoints and authentication for each one.
+
+## Gateway endpoints
+
+The gateway serves two MCP routes:
+
+```text
+/mcp
+/mcp/<server_key>
+```
+
+`/mcp` is the aggregate endpoint. It exposes `search_tools`, `describe_tool` and `call_tool` over the caller's granted, active tools across all registered servers.
+
+`/mcp/<server_key>` is the direct proxy. The gateway authenticates the caller's Oceans API key, finds the active server, adds any gateway-managed upstream credential, and forwards the Streamable HTTP request to the server URL.
+
+Discovered tools are not callable by default. An admin must grant a tool or toolset before clients see it in `tools/list` or can call it with `tools/call`. See [MCP tool access](/extensions/mcp-tool-access/).
+
+## Add a server
+
+![MCP servers page](/images/mcp-servers-page.png)
+
+Platform admins, and team owners and admins, manage servers at `/admin/mcp/servers`. The **Servers** tab lists registered servers separately from the [recommended catalog](#recommended-catalog), so it's clear which upstreams are real records and which are only suggestions.
+
+On this page an admin can:
+
+- import a recommended catalog entry, or add a custom Streamable HTTP server
+- select **Discover OAuth** to read a server's OAuth settings from its URL, then review and override them before saving
+- edit the display name, URL, auth mode, auth config and timeout
+- refresh discovery
+- open a server's detail dialog to see its overview, configuration, discovered tools and credential bindings
+- disable or enable a server from **More actions** in the detail dialog
+- filter the registry by owner, and see each server's owner and visibility
+
+Disabling takes effect at once, with no confirmation step: callers lose the server's tools. Enabling restores the tools, toolset memberships and grants the server had before. Its discovery status then reads **Not discovered** until an admin refreshes discovery, which also picks up upstream changes made while it was off.
+
+## Ownership and visibility
+
+Every server has an owner: a team, or the platform. Servers registered before ownership existed are platform-owned and published to the organisation, so their access did not change. The reasoning is in the [delegated MCP server ownership ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-17-delegated-mcp-server-ownership.md).
+
+| Field | Meaning |
+|---|---|
+| `owner_team_id` | The owning team. `null` means the platform owns the server. |
+| `owner_contact` | Who to ask about the server, such as an email or chat channel. Up to 256 characters. Defaults to the email of the admin who registered it. |
+| `visibility` | `team` or `organisation`. |
+
+Visibility decides who *may* be granted the server's tools. It never grants access by itself.
+
+- **`team`** is the default for a team-owned server. Its tools can be granted only to the owning team, its members, its service accounts, and API keys they own. This limit applies to platform admins too. Its tools can't join a toolset, and other teams' admins don't see the server.
+- **`organisation`** means every team admin sees the server, read-only unless their team owns it. Platform admins can grant its tools to anyone and add them to toolsets. A platform-owned server is always `organisation`.
+
+Setting `organisation` publishes the server. By default only platform admins can publish. To let team owners and admins publish their own team's servers, set:
+
+```yaml title="gateway.yaml"
+mcp:
+  registry:
+    organisation_publishing: team_admins   # default: platform_admins
+```
+
+A team admin can always unpublish their own server. The gateway returns `409` in these cases:
+
+- Narrowing a server to `team`, or moving a team-only server to another team, while one of its tools is in an active toolset or granted to a subject outside the new owning team. Revoke those first. A disabled server's toolsets and grants reach no one, so they never block narrowing.
+- Adding a team-only server's tools to a toolset.
+- Saving a grant or credential binding while its server changes owner or visibility. Nothing is written; reload the server and try again.
+
+An unpublish saved together with other settings is one write. If the unpublish is refused, none of the other settings are saved.
+
+### What team owners and admins can do
+
+Team owners and admins reach the MCP area when the `team_admins` permission group includes the `mcp` page. By default it inherits that page from the `users` group. See [Auth and access settings](/access/access-settings/) for permission groups.
+
+Other signed-in users also get the `mcp` page by default. They see, read-only, only the servers they can connect to: servers where a grant to them, their team, or one of their API keys reaches an active tool. Each server shows its owner, its URL's origin, and the tools they can call. All writes, and the grant, credential and toolset routes, stay admin-only.
+
+| Action | Team owner or admin |
+|---|---|
+| See servers | Their team's servers, and every `organisation` server read-only. For servers they don't manage, only the URL origin (`scheme://host[:port]`) is shown, and auth config and discovery errors are hidden. |
+| Register a server | Yes, at an address that resolves and is public. It's owned by their team and starts as `team`. They can't name gateway secrets (`env/...`) in its auth config. A secret a platform admin set stays only while the server URL and every URL in the auth config are unchanged. |
+| Edit, disable, enable, refresh discovery | Their team's servers. Disable and enable fail with `409` if the server changed owner in the meantime. |
+| Change visibility and contact | Their team's servers. Publishing follows `organisation_publishing`. |
+| Grant tools | Tools of their team's servers, to their team, its members, its service accounts and their API keys. |
+| Revoke grants | Any grant on their team's servers' tools. |
+| Toolsets | No. Toolsets are platform-managed. |
+| Credential bindings | On their team's servers: set team and service-account credentials as encrypted secrets (not `secret_ref`), and revoke any binding. |
+| Change the owning team | No. |
+
+A server they can't see returns `404`. An action they can't take on a server they can see returns `403`. Platform admins register servers on internal networks or with gateway secrets, including on behalf of a team.
+
+### Destination limits for team servers
+
+A team-owned server's traffic reaches public addresses only. This covers discovery, every proxied call, and its OAuth metadata, registration and token requests, and it's checked on every connection. The rules are:
+
+- A URL given as an IP address, or as `localhost`, keeps that address's own kind.
+- A host listed under `mcp.oauth.private_network_hosts` (or a subdomain of one) may also reach private networks. Only a platform admin can save a URL on a listed host; a team admin gets `400`.
+- Link-local and cloud metadata addresses are never reached.
+- This traffic follows no redirects and uses no HTTP proxy.
+
+Platform-owned servers have no destination limit. A server keeps the limit after a platform admin takes it over, because its team may have chosen its URL and auth endpoints. When a platform admin saves the server's settings, they vouch for them and the limit lifts. The audit log records that save with `destinations_vouched: true`, even when no setting changed. See the [SSRF-safe outbound fetch ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-17-ssrf-safe-outbound-fetch.md).
+
+### Take over a server
+
+A platform admin moves a server to another team, or takes it over for the platform, from the server's **Overview** tab, or with:
+
+```text
+PUT /api/v1/admin/mcp/servers/<server_id>/owner
+{ "owner_team_id": null }
+```
+
+`owner_team_id` is required: a team ID, or `null` to move the server to the platform and publish it to the organisation. The request can also set `owner_contact` and `visibility`. Each change is recorded as `mcp_server.ownership_transferred` in the [admin audit log](/access/admin-audit-log/).
+
+## View discovered tools
+
+An admin opens a server from the Servers table, then selects the **Tools** tab.
+
+![MCP server tools dialog](/images/mcp-server-tools-dialog.png)
+
+Each tool row is collapsed by default and shows a selector checkbox, the tool name, a truncated description, and active or inactive status. Expanding a row shows:
+
+- the stable Oceans tool ID and the upstream tool name
+- the display title, when the server declares one
+- hint badges: **Read-only**, **Destructive** or **Non-destructive**, **Idempotent**, and **Open world** or **Closed world**
+- the schema version
+- the stored JSON input schema, and the output schema when the server declares one
+
+The input schema is what `describe_tool` returns to aggregate clients, and what direct `tools/call` arguments are checked against.
+
+Hint badges come from the tool's `annotations`. They're claims made by the upstream server, not checks made by Oceans, so treat them as review aids. A tool that declares `readOnlyHint` shows **Read-only** and never **Destructive**, because the protocol ignores `destructiveHint` on read-only tools. An omitted `destructiveHint` or `openWorldHint` means true, so **Non-destructive** and **Closed world** appear only when the server declares false. A tool with no annotations shows no badges.
+
+With one or more active tools selected, **Add to toolset** opens the toolsets workflow with those tools preselected. Inactive tools stay visible for audit and drift review, but can't be selected or called.
+
+## Recommended catalog
+
+Recommended entries are curated shortcuts for common MCP servers. They aren't registered servers, don't imply access, and are never called until an admin imports one. **Import** registers the entry with its defaults. **Customize** lets the admin review or change the key, URL, auth mode, timeout or display name first.
+
+## Server keys
+
+`server_key` is the public name used in direct `/mcp/<server_key>` URLs and in aggregate tool addresses such as `mcp://github/tools/issues.create`. The gateway trims and lowercases the key, then requires:
+
+- 3 to 64 characters
+- only lowercase letters, digits, `-` and `_`
+
+Keep the key stable once clients use it. An unknown or disabled server key returns not found.
+
+## Auth modes
+
+`auth_mode` is one of:
+
+| Mode | What the gateway does |
+|---|---|
+| `none` | Adds no upstream credential. |
+| `gateway_static_header` | Adds one shared API key as a header (optionally wrapped in a template) or as a URL query parameter. The admin UI calls this **Gateway static credential**. |
+| `gateway_bearer_token` | Adds a shared `Authorization: Bearer ...` header. |
+| `user_passthrough` | Resolves a credential binding owned by the caller's user, service account or team at call time. |
+| `oauth_obo` | Resolves and refreshes a user-owned OAuth token at call time. The OAuth client comes from a configured provider (`google` or `oauth2`), or from the server's own authorization server found by [OAuth discovery](#oauth-for-any-mcp-server). |
+
+Discovery normally uses `none`, `gateway_static_header` or `gateway_bearer_token`. An `oauth_obo` server can set `auth_config.discovery_auth` to `none` when its upstream allows public `initialize` and `tools/list` requests. Calls still need a user OAuth connection.
+
+## Google Workspace OAuth
+
+Google Drive and Google Docs are separate upstream MCP servers. Oceans can expose both through `/mcp`. The client authenticates to Oceans with an Oceans API key and never receives a Google token, client secret or callback URI.
+
+Use Google's [Drive MCP guide](https://developers.google.com/workspace/drive/api/guides/configure-mcp-server) and [Workspace MCP guide](https://developers.google.com/workspace/guides/configure-mcp-servers) to set up the Google Cloud project.
+
+<Steps>
+<Step title="Prepare Google Cloud">
+An admin joins the Google Workspace Developer Preview if Google requires it. In one Cloud project, they enable the Drive API, Docs API, Drive MCP API and Docs MCP API. They configure the OAuth consent screen, audience, test users and the two read-only scopes below, then publish or verify the consent app as the audience and restricted scopes require.
+</Step>
+<Step title="Create the OAuth client">
+The admin creates a **Web application** OAuth client and registers this exact callback URI:
+
+```text
+https://gateway.example.com/api/v1/mcp/oauth/google/callback
+```
+</Step>
+<Step title="Configure the provider">
+The admin adds the client to gateway configuration. `provider_type` defaults to `google`, and a `google` provider requires `client_secret`.
+
+```yaml title="gateway.yaml"
+mcp:
+  oauth:
+    public_base_url: https://gateway.example.com
+    providers:
+      - key: google
+        provider_type: google
+        client_id: env.OCEANS_MCP_OAUTH_GOOGLE_CLIENT_ID
+        client_secret: env.OCEANS_MCP_OAUTH_GOOGLE_CLIENT_SECRET
+```
+
+The gateway won't start with an MCP OAuth provider configured unless `OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY` is set (see [principal-bound credentials](#principal-bound-upstream-credentials)).
+</Step>
+<Step title="Import the catalog entries">
+The admin imports the recommended Drive and Docs entries and refreshes discovery. The entries set the provider key, OAuth resource, read-only scope and public discovery mode. Drive requests `drive.readonly`. Docs requests only `documents.readonly`, for `read_doc`. A client can find a document with the Drive tools, then pass its ID to Docs.
+</Step>
+<Step title="Users connect">
+Each user opens `/admin/account/connections` and grants access for Drive and Docs separately.
+</Step>
+</Steps>
+
+The client must use an Oceans API key owned by that user so the gateway can find the user's Google bindings. Service-account keys don't borrow user credentials; they need a separate service-account or team binding.
+
+Disconnecting a server revokes its Oceans binding at once, but doesn't call Google's token revocation endpoint. Revoking at Google removes the grant for the whole Cloud project, which can invalidate both Drive and Docs tokens. A user who wants to remove all access can revoke the app from their Google Account settings. Oceans then reports `credential_required` for each affected server.
+
+Start with a read-only toolset:
+
+- Drive: `download_file_content`, `get_file_metadata`, `get_file_permissions`, `list_recent_files`, `read_file_content`, `search_files`
+- Docs: `read_doc`
+
+Don't add Drive `copy_file` or `create_file`, or Docs `update_doc`, to a read-only toolset. OAuth scopes are the main permission boundary, but a narrow toolset gives callers a clear contract.
+
+<Aside type="caution" title="Restricted scope and untrusted content">
+Google classifies `drive.readonly` as a restricted scope. An external production app can need Google verification and a security assessment; check Google's current rules before rollout. Workspace content is untrusted model input. Keep write tools off, review grants, and apply Google's [Workspace MCP security guidance](https://developers.google.com/workspace/guides/configure-mcp-security).
+</Aside>
+
+## OAuth for any MCP server
+
+Any remote MCP server that follows the MCP authorization spec can use per-user OAuth with no gateway configuration change. Each user connects their own account from `/admin/account/connections`. The [generic upstream MCP OAuth ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-15-generic-upstream-mcp-oauth.md) explains the design.
+
+Every user connection needs `mcp.oauth.public_base_url` for its callback URL, so set it first. It must be an HTTPS origin.
+
+```yaml title="gateway.yaml"
+mcp:
+  oauth:
+    public_base_url: https://gateway.example.com
+```
+
+Servers that use their own authorization server share one callback URI:
+
+```text
+https://gateway.example.com/api/v1/mcp/oauth/callback
+```
+
+### Register a server by URL
+
+<Steps>
+<Step title="Enter the URL">
+An admin opens **Add server** on `/admin/mcp/servers` and enters the server URL.
+</Step>
+<Step title="Discover OAuth">
+The admin selects **Discover OAuth**. Oceans sends an unauthenticated request to the server, then reads the protected-resource metadata (RFC 9728) named by the `WWW-Authenticate` challenge or found at `/.well-known/oauth-protected-resource`. It then reads the authorization-server metadata (RFC 8414) at `/.well-known/oauth-authorization-server`, falling back to OpenID Connect discovery.
+</Step>
+<Step title="Review">
+The admin reviews the resource, authorization server, endpoints, default scopes, how Oceans will get a client, and any warnings.
+</Step>
+<Step title="Save">
+The admin selects **Use discovered settings**. The auth mode becomes `oauth_obo` and the auth config JSON is filled in. The admin can override values such as scopes, then saves. The `issuer` and endpoints must stay the ones the authorization server publishes.
+</Step>
+</Steps>
+
+Discovery only reads metadata and stores nothing until the save. Metadata URLs must use HTTPS. Plain HTTP is accepted only when both the MCP server and the metadata are on a loopback host, for local development. Every metadata, registration and token request follows the same address rules as [team servers](#destination-limits-for-team-servers): a server registered by hostname on a private network needs an entry under `mcp.oauth.private_network_hosts`. Oceans refuses an authorization server that lists PKCE methods without `S256`.
+
+A discovered server's auth config looks like this:
+
+```json
+{
+  "resource": "https://mcp.linear.example/mcp",
+  "resource_indicator": true,
+  "issuer": "https://auth.linear.example",
+  "authorization_endpoint": "https://auth.linear.example/authorize",
+  "token_endpoint": "https://auth.linear.example/token",
+  "registration_endpoint": "https://auth.linear.example/register",
+  "client_registration": "dynamic",
+  "token_endpoint_auth_method": "client_secret_basic",
+  "scopes": ["read"]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `resource` | The protected resource. It must share an origin with the server URL. |
+| `resource_indicator` | Whether authorization and token requests send the RFC 8707 `resource` parameter. Defaults to `true`. |
+| `issuer`, `authorization_endpoint`, `token_endpoint` | The authorization server. These, and `registration_endpoint` when set, must match the issuer's published metadata. |
+| `scopes` | Scopes to request and require. Discovery fills them from the challenge's `scope`, then from the resource's `scopes_supported`. Omit them to let the authorization server choose. |
+| `client_registration` | How Oceans gets its OAuth client: `dynamic`, `metadata_document` or `manual`. |
+| `token_endpoint_auth_method` | `client_secret_basic`, `client_secret_post` or `none`. |
+| `authorization_response_iss_parameter_supported` | Whether the authorization server returns `iss` with every authorization response (RFC 9207). When `true`, a callback without `iss` is refused. Defaults to `false`. |
+
+Every connection records the expected issuer. If a callback carries an `iss` for a different issuer, Oceans refuses the code and redirects to the connections page with `oauth_error=issuer_mismatch`. The code never reaches a token endpoint. This blocks mix-up attacks, which matter because these servers share one callback URI (and, with `metadata_document`, one client ID). Issuers must match exactly, except that one trailing `/` is ignored.
+
+The code must also go to that issuer's own token endpoint. When a save creates a server with its own authorization server, or changes its `issuer`, `authorization_endpoint`, `token_endpoint` or `registration_endpoint`, Oceans fetches the issuer's metadata and refuses the save with `400` unless each endpoint matches. An issuer that publishes no metadata is refused; use a [configured `oauth2` provider](#a-configured-oauth2-provider) for it. Edits that leave these fields unchanged fetch nothing.
+
+### Client registration
+
+Discovery recommends a registration method in this order.
+
+**`dynamic`** is used when the authorization server has a `registration_endpoint`. When the first user connects, Oceans registers itself (RFC 7591) with the shared callback URI and stores the client once per server. The client secret and registration access token are encrypted with `OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY`. Oceans registers again only when the authorization server or callback changes, or the client secret expires. A token refresh never registers a new client. Changing the server's URL, auth mode or auth config drops the registered client and revokes every user's OAuth tokens for that server, so each user connects again.
+
+**`metadata_document`** is used when the authorization server sets `client_id_metadata_document_supported`. Oceans uses the URL of a Client ID Metadata Document hosted by the gateway as its client ID, and connects as a public client protected by PKCE:
+
+```text
+https://gateway.example.com/api/v1/mcp/oauth/client-metadata.json
+```
+
+The document is public and lists only the client name, callback URI and grant types.
+
+**`manual`** is used when the authorization server supports neither. An admin registers an OAuth app with the upstream using the shared callback URI, then sets `client_id`. For a confidential client, they set `client_secret_ref` to an `env/OCEANS_MCP_DISCOVERY_*` variable:
+
+```json
+{
+  "client_registration": "manual",
+  "client_id": "oceans-gateway",
+  "client_secret_ref": "env/OCEANS_MCP_DISCOVERY_LINEAR_CLIENT_SECRET"
+}
+```
+
+### A configured oauth2 provider
+
+To share one OAuth app across servers, or keep client credentials in gateway configuration, add an `oauth2` provider with explicit endpoints:
+
+```yaml title="gateway.yaml"
+mcp:
+  oauth:
+    public_base_url: https://gateway.example.com
+    providers:
+      - key: linear
+        provider_type: oauth2
+        client_id: env.OCEANS_MCP_OAUTH_LINEAR_CLIENT_ID
+        client_secret: env.OCEANS_MCP_OAUTH_LINEAR_CLIENT_SECRET   # optional
+        authorization_url: https://auth.linear.example/authorize
+        token_url: https://auth.linear.example/token
+        scopes: [read]                                            # optional defaults
+        token_endpoint_auth_method: client_secret_basic           # optional
+```
+
+Register this callback URI with the upstream OAuth app:
+
+```text
+https://gateway.example.com/api/v1/mcp/oauth/linear/callback
+```
+
+A server then references the provider instead of naming an authorization server:
+
+```json
+{
+  "provider_key": "linear",
+  "resource": "https://mcp.linear.example/mcp"
+}
+```
+
+Rules for `oauth2` providers:
+
+- `authorization_url` and `token_url` are required and must use HTTPS.
+- Without `client_secret`, the provider is a public client and `token_endpoint_auth_method` defaults to `none`. With a secret, it defaults to `client_secret_basic`. A secret is required for `client_secret_basic` and `client_secret_post`, and not allowed for `none`.
+- When the server sets no `scopes`, Oceans requests the provider's `scopes`.
+- Keys may use letters, digits, `-` and `_`. The key `mcp_server` is reserved. Provider keys must be unique.
+
+### Tokens, refresh and expiry
+
+Connections behave the same way for every provider. Oceans:
+
+- runs the authorization code flow with PKCE
+- refreshes the access token five minutes before it expires, and serialises refreshes across gateway replicas with a lease
+- replaces the stored refresh token when the provider rotates it
+- revokes the connection and asks the user to reconnect after `invalid_grant`
+- stores the token, and a dynamically registered client, only if the server still has the URL and auth settings the flow started with; otherwise the connection fails and the user connects again
+- lists a team-only server, and lets a user connect to it, only while their current team owns it (checked again on callback); a connection they already hold stays listed so they can disconnect it
+
+Some providers return no refresh token. The connection then lasts until the access token expires, and the user must reconnect. A token with no refresh token and no `expires_in` doesn't expire. When a refreshable grant omits `expires_in`, Oceans assumes one hour.
+
+When a call needs a connection the user hasn't made, or one that has expired, the `credential_required` or `credential_expired` error includes a connect URL. The [credential connect URL ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-13-mcp-credential-connect-url.md) explains why.
+
+Changing a server's `provider_key`, `issuer`, `resource` or required scopes marks existing connections **Expired** on the connections page. Each user must reconnect.
+
+## Gateway-managed upstream credentials
+
+Gateway-managed credentials authenticate the gateway to the upstream MCP server. They aren't caller credentials and are never returned to admin UI clients. `secret_ref` values must use `env/OCEANS_MCP_DISCOVERY_*`; the gateway reads the variable at discovery and call time.
+
+<Tabs syncKey="mcp-static-credential">
+<TabItem label="Header">
+```json
+{
+  "header_name": "X-API-Key",
+  "secret_ref": "env/OCEANS_MCP_DISCOVERY_EXAMPLE_KEY"
+}
+```
+</TabItem>
+<TabItem label="Header with template">
+The template must contain `{{api_key}}` exactly once.
+
+```json
+{
+  "header_name": "Authorization",
+  "value_template": "Token {{api_key}}",
+  "secret_ref": "env/OCEANS_MCP_DISCOVERY_EXAMPLE_KEY"
+}
+```
+</TabItem>
+<TabItem label="Query parameter">
+```json
+{
+  "query_param": "api_key",
+  "secret_ref": "env/OCEANS_MCP_DISCOVERY_EXAMPLE_KEY"
+}
+```
+</TabItem>
+<TabItem label="Bearer token">
+For `gateway_bearer_token`:
+
+```json
+{
+  "secret_ref": "env/OCEANS_MCP_DISCOVERY_EXAMPLE_TOKEN"
+}
+```
+</TabItem>
+</Tabs>
+
+For `gateway_static_header`, set exactly one of `header_name` or `query_param`. `value_template` applies only to headers. A query parameter name is 1 to 64 letters, digits, `-`, `_`, `.` or `~`, and the stored `server_url` must not already contain it.
+
+The query value never enters the stored `server_url`. Oceans adds it only when it sends each request, and debug output redacts it. Transport errors drop the URL before they're logged or returned. Prefer a header when the upstream accepts one, because the upstream's own access logs may record query strings.
+
+Credentialed modes need an HTTPS `server_url`. `gateway_static_header` and `gateway_bearer_token` have two exceptions:
+
+- A loopback host, such as `http://127.0.0.1:8080/mcp`, for local development.
+- A Kubernetes Service in the same cluster, such as `http://github-mcp.tools.svc.cluster.local:8080/mcp`. The host must be `<service>.<namespace>.svc.<cluster domain>`. The cluster domain defaults to `cluster.local`; set `mcp.kubernetes.cluster_domain` if yours differs.
+
+`oauth_obo` never sends a token over plain HTTP to a Kubernetes Service. It needs HTTPS or a loopback host.
+
+Plain HTTP doesn't change which addresses a server can reach. A Service name resolves to a private cluster address. A platform-owned server can reach it. A team-owned server can reach it only when a platform admin lists the cluster domain (for example `svc.cluster.local`) under `mcp.oauth.private_network_hosts`.
+
+The gateway always strips inbound Oceans credentials before forwarding. It forwards only MCP protocol and runtime headers, plus the configured upstream auth.
+
+## Principal-bound upstream credentials
+
+For `user_passthrough`, admins set MCP credential bindings in the control plane. Team owners and admins can set team and service-account bindings on their own team's servers; user bindings stay with each user or a platform admin. For an `oauth_obo` server, users create and revoke their own binding from **Workspace connections**. Bindings are separate from server records and grants:
+
+- owner scopes are `user`, `team` or `service_account`
+- material kinds are `static_header`, `bearer_token` or `oauth_tokens`
+- storage is either an encrypted blob or a `secret_ref`, which must use `env/OCEANS_MCP_CREDENTIAL_*`
+- raw secrets are accepted only on submission and are never returned by admin APIs
+
+Encrypted bindings need `OCEANS_MCP_CREDENTIAL_ENCRYPTION_KEY` set to a base64-encoded 32-byte key in the gateway process. Use a key separate from other gateway encryption keys. The gateway won't start with an MCP OAuth provider configured unless this key is present and valid.
+
+The gateway resolves bindings in this order:
+
+- user-owned API key: user binding, then team binding
+- service-account API key: service-account binding, then owning-team binding
+
+Grant checks run before credential lookup, so a denied tool address doesn't reveal whether a credential exists. The [credential bindings ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-06-09-mcp-upstream-credential-bindings-and-execution.md) has the background.
+
+## Discovery
+
+Discovery is the server's health signal. An admin must refresh discovery after adding or editing a server. Discovery:
+
+- initialises the Streamable HTTP session and lists upstream tools
+- stores normalised tool schemas, plus each tool's `title`, `annotations` and `outputSchema` when declared
+- updates schema hashes and schema versions
+- marks missing tools inactive
+- records a bounded failure summary
+
+There is no separate ping health check and no discovery-run history in the admin UI.
+
+A tool's schema hash covers its input schema, title, annotations and output schema. A change to any of them bumps the schema version, and `call_tool` then rejects a stale caller-supplied `schema_hash`. A tool with none of the three optional members keeps the hash of its input schema alone. Invalid optional members, such as a non-object `outputSchema`, are dropped rather than failing discovery. See the [tool metadata and schema hash ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-13-mcp-tool-metadata-and-schema-hash.md).
+
+Every new hash is stored as a tool version. With **Require approval for tool changes** on, new and changed tools wait for an admin before they're served. See [tool versions and approval](/extensions/mcp-tool-access/#tool-versions-and-approval).
+
+## Access
+
+On `/mcp`, `search_tools`, `describe_tool` and `call_tool` resolve only active tools granted to the API key, its owner user or service account, or its team.
+
+On `/mcp/<server_key>`, `tools/list` is filtered to granted, active tools for that server. `tools/call` for a tool that isn't granted is rejected before it reaches the upstream. Disabled servers, inactive tools, disabled toolsets, revoked grants, inactive memberships, and missing or expired credentials never count as callable access. [MCP tool access](/extensions/mcp-tool-access/) owns the grant rules.
+
+Granted tool calls on both endpoints also count against `mcp_tool_call` limits. A call over a limit gets HTTP `429` with JSON-RPC error `-32029` and never reaches the upstream. See [Rate limits](/spend/rate-limits/).

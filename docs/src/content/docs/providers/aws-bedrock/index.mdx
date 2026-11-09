@@ -1,0 +1,320 @@
+---
+title: AWS Bedrock
+description: Connect Oceans to Amazon Bedrock Runtime or Mantle, pick an API style for each route, and set up AWS credentials.
+sidebar:
+  label: Overview
+  order: 4
+  group:
+    label: AWS Bedrock
+    icon: ph:amazon-logo
+---
+
+The `aws_bedrock` provider connects the gateway to Amazon Bedrock. Each provider entry points at one Bedrock endpoint in one AWS Region. Each route on that provider names the Bedrock API it calls. This page shows admins how to set up the provider, its credentials and its routes. Field defaults are in [Providers](/configuration/providers/#aws_bedrock) and [Models and routes](/configuration/models-and-routes/#aws-bedrock-route-compatibility). For OpenAI models on Bedrock, see [OpenAI models on AWS Bedrock](/providers/aws-bedrock/openai/).
+
+## Choose an endpoint and API style
+
+A Bedrock provider sets `endpoint_kind` to one of two endpoints:
+
+| `endpoint_kind` | Default endpoint URL | SigV4 service |
+| --- | --- | --- |
+| `bedrock_runtime` | `https://bedrock-runtime.<region>.amazonaws.com` | `bedrock` |
+| `bedrock_mantle` | `https://bedrock-mantle.<region>.api.aws` | `bedrock-mantle` |
+
+Every route on a Bedrock provider must set `compatibility.aws_bedrock.api_style`. The gateway never guesses the upstream API from the hostname or the model name. The style must match the provider's `endpoint_kind`, or startup fails:
+
+| `api_style` | `endpoint_kind` | Upstream API | Streams |
+| --- | --- | --- | --- |
+| `runtime_converse` | `bedrock_runtime` | Converse and ConverseStream | Yes |
+| `runtime_anthropic_invoke` | `bedrock_runtime` | `InvokeModel` with an Anthropic Messages body | No |
+| `runtime_openai_chat` | `bedrock_runtime` | OpenAI Chat Completions | Yes |
+| `mantle_openai_responses` | `bedrock_mantle` | OpenAI Responses | Yes |
+| `mantle_openai_chat` | `bedrock_mantle` | OpenAI Chat Completions | Yes |
+| `mantle_anthropic_messages` | `bedrock_mantle` | Anthropic Messages | Yes |
+
+The three OpenAI styles also need `compatibility.aws_bedrock.openai_base_path`, for example `/openai/v1`. The other styles can't set it. The checks are in [`crates/gateway/src/config/routes.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway/src/config/routes.rs).
+
+The gateway infers the API families from `api_style`, so most Bedrock routes need no `capabilities` block. Only `mantle_openai_responses` serves `/v1/responses` and `json_schema`, and it can't serve Chat Completions. `runtime_anthropic_invoke` can't stream. An explicit flag that contradicts the style fails startup. Bedrock routes never serve embeddings, images or Decisions. The full list of inferred flags is in [Models and routes](/configuration/models-and-routes/#aws-bedrock-route-compatibility).
+
+## Set up credentials
+
+The gateway supports three `auth.mode` values. If a provider has no `auth` block, the gateway uses `default_chain`.
+
+<Tabs syncKey="bedrock-auth">
+<TabItem label="Default chain">
+```yaml title="gateway.yaml"
+providers:
+  - id: bedrock-us-east-1
+    type: aws_bedrock
+    region: us-east-1
+    endpoint_kind: bedrock_runtime
+    auth:
+      mode: default_chain
+```
+
+The gateway gets credentials from the AWS SDK default credential provider chain for the provider's `region`, and signs each request with SigV4. On EKS, IRSA works through this chain when the pod has `AWS_ROLE_ARN`, `AWS_WEB_IDENTITY_TOKEN_FILE` and, optionally, `AWS_ROLE_SESSION_NAME`. Earlier sources in the chain can still win, as in the AWS SDK.
+
+The gateway caches the credentials and gets new ones 60 seconds before they expire. Credentials without an expiry time are cached for 15 minutes ([`credentials.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-providers/src/bedrock/credentials.rs)).
+</TabItem>
+<TabItem label="Bedrock API key">
+```yaml title="gateway.yaml"
+providers:
+  - id: bedrock-us-east-1
+    type: aws_bedrock
+    region: us-east-1
+    endpoint_kind: bedrock_runtime
+    auth:
+      mode: bearer
+      token: env.AWS_BEARER_TOKEN_BEDROCK
+```
+
+AWS documents `AWS_BEARER_TOKEN_BEDROCK` as the environment variable for Bedrock API keys ([Use an Amazon Bedrock API key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys-use.html)). The gateway sends the key as `Authorization: Bearer`. On `mantle_anthropic_messages` routes it sends the key in the `x-api-key` header instead.
+</TabItem>
+<TabItem label="Static credentials">
+```yaml title="gateway.yaml"
+providers:
+  - id: bedrock-us-east-1
+    type: aws_bedrock
+    region: us-east-1
+    endpoint_kind: bedrock_runtime
+    auth:
+      mode: static_credentials
+      access_key_id: env.AWS_ACCESS_KEY_ID
+      secret_access_key: env.AWS_SECRET_ACCESS_KEY
+      session_token: env.AWS_SESSION_TOKEN
+```
+
+The gateway signs each request with SigV4 using these keys. `access_key_id` and `secret_access_key` are required. `session_token` is optional. None of them can resolve to an empty value. The gateway reads them at startup, so restart it after you rotate them.
+</TabItem>
+</Tabs>
+
+Secret fields take a value source: `env.NAME`, `file.PATH` or `literal.VALUE`. A bare value such as `token: abc123` fails config loading.
+
+For production, use `default_chain` with an IAM role or IRSA. Use `static_credentials` only where something outside the gateway rotates the keys.
+
+These AWS credentials belong to the gateway process. They're separate from the gateway API keys that callers use. A workload that calls Oceans uses a gateway API key, normally one attached to a [service account](/access/service-accounts/). Keep API-key ownership and [budgets](/spend/budgets/) in Oceans, and keep AWS permission boundaries in IAM.
+
+If a model with a `routing` block has a route on a `default_chain` provider, the provider must also set `routing_account_scope`. See [Routing account scope](/configuration/providers/#routing-account-scope).
+
+### IAM permissions
+
+Grant the gateway's role only the Bedrock actions and model resources that its routes use. Bedrock model cards and the [Bedrock IAM documentation](https://docs.aws.amazon.com/bedrock/latest/userguide/security-iam.html) list the actions for each API.
+
+### Token counting permissions
+
+`POST /v1/messages/count_tokens` on a `runtime_anthropic_invoke` or `runtime_converse` route calls Bedrock Runtime `CountTokens`. That API needs its own IAM action, `bedrock:CountTokens`. A role that can call `InvokeModel` still gets `AccessDenied` on every count without it. Other Bedrock styles have no count path, and the gateway returns 501 for them.
+
+`CountTokens` accepts foundation model IDs only. Before it counts, the gateway removes a geo or global profile prefix (`us.`, `us-gov.`, `eu.`, `apac.`, `jp.`, `au.`, `ca.` or `global.`). So `us.anthropic.claude-sonnet-4-6` is counted as `anthropic.claude-sonnet-4-6`. A system-defined inference profile ARN such as `arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-4-6` is counted the same way. Foundation-model ARNs and application inference profile ARNs are sent unchanged. Bedrock rejects counts for application inference profiles, because their IDs don't name the model.
+
+Grant the action on the foundation-model resource, not on the inference profile. Use the provider's `region` in the ARN:
+
+```json
+{
+  "Effect": "Allow",
+  "Action": "bedrock:CountTokens",
+  "Resource": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-6"
+}
+```
+
+Runtime `CountTokens` supports only some models and Regions. The model card in the Bedrock console says whether a model supports it. Some Claude models, including some offered only through cross-Region inference, don't support it. AWS counts those through the Mantle Anthropic `count_tokens` endpoint, which the gateway doesn't call. For these models Bedrock rejects the count with a validation error, and the gateway returns it as an upstream 400 `upstream_error`. The gateway doesn't try another endpoint or estimate a count.
+
+If callers don't count tokens, you can leave the action out. Each count then fails with the Bedrock error, and inference isn't affected.
+
+## Add the provider
+
+This provider uses a Bedrock API key on the Runtime endpoint and sets a label and icon for the admin UI:
+
+```yaml title="gateway.yaml"
+providers:
+  - id: bedrock-us-east-1
+    type: aws_bedrock
+    region: us-east-1
+    endpoint_kind: bedrock_runtime
+    auth:
+      mode: bearer
+      token: env.AWS_BEARER_TOKEN_BEDROCK
+    display:
+      label: Amazon Bedrock
+      icon_key: aws
+```
+
+`endpoint_url` is optional. When you omit it, the gateway builds it from `endpoint_kind` and `region`. When you set it, it must be an `http` or `https` URL with a host. The gateway removes a trailing slash. SigV4 always signs for the provider's `region`, so keep a custom `endpoint_url` in the same Region.
+
+Config changes take effect after a gateway restart.
+
+## Pick model IDs
+
+Set `upstream_model` to a Bedrock model identity that the endpoint and API style accept. This can be a base model ID, a geo or global inference profile ID, or a Bedrock ARN.
+
+Each Bedrock model card lists the model's programmatic IDs, supported endpoints and APIs, Regions, quotas and sample code. Start from [Models at a glance](https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards.html). The model cards listed these IDs on 2026-04-30:
+
+| Use case | Gateway model ID | `upstream_model` | Notes |
+| --- | --- | --- | --- |
+| High-capability Claude | `claude-opus-bedrock` | `global.anthropic.claude-opus-4-7` | [Claude Opus 4.7](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-opus-4-7.html) has a base ID plus US, EU, JP and global inference IDs. |
+| Claude regional profile | `claude-sonnet-bedrock` | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | [Claude Sonnet 4.5](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-4-5.html) has base, geo and global IDs. |
+| Low-cost multimodal | `nova-lite-bedrock` | `global.amazon.nova-2-lite-v1:0` | [Nova 2 Lite](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-2-lite.html) has a base ID, US and EU geo IDs, and a global ID. |
+| Reasoning and distillation | `nova-premier-bedrock` | `us.amazon.nova-premier-v1:0` | [Nova Premier](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-premier.html) has a base ID and a US geo ID, but no global ID. |
+
+Check the model card again before you add a new `upstream_model`. IDs and inference profile support differ by model and Region.
+
+Use a geo or global inference profile ID when your AWS account and data-residency policy allow it. Bedrock can then route the request across Regions in that geography, or globally, for more throughput. Use an in-Region base model ID when data must stay in one Region.
+
+The gateway puts the model ID in the URL path and percent-encodes it. For ARNs, including `application-inference-profile` ARNs, it keeps the `:` and `/` delimiters that Bedrock needs.
+
+## Claude routes
+
+This route sends Chat Completions requests to Bedrock Runtime `InvokeModel` with an Anthropic Messages body:
+
+```yaml title="gateway.yaml"
+models:
+  - id: claude-opus-bedrock
+    description: Claude Opus on AWS Bedrock
+    tags: [bedrock, claude, reasoning]
+    routes:
+      - provider: bedrock-us-east-1
+        upstream_model: global.anthropic.claude-opus-4-7
+        compatibility:
+          aws_bedrock:
+            api_style: runtime_anthropic_invoke
+```
+
+The gateway adds `anthropic_version: bedrock-2023-05-31` to the body. On both Anthropic styles (`runtime_anthropic_invoke` and `mantle_anthropic_messages`), callers must set `max_tokens` or `max_completion_tokens`. The gateway rejects requests without one.
+
+`runtime_anthropic_invoke` doesn't stream. The gateway rejects a streaming request on it before it calls Bedrock. For streaming Claude, use `runtime_converse` (Bedrock ConverseStream) or `mantle_anthropic_messages` (Mantle Messages server-sent events).
+
+Images must be base64 data in `jpeg`, `png`, `webp` or `gif` format. The gateway rejects remote image URLs before it calls Bedrock, on Anthropic and Converse routes alike.
+
+The full request mapping is in [Provider API compatibility](/reference/provider-api-compatibility/#aws-bedrock).
+
+### Claude thinking
+
+The gateway maps OpenAI-style `reasoning_effort` to Anthropic `output_config.effort` by model generation. The rules are in [Claude thinking by model](/reference/provider-api-compatibility/#claude-thinking-by-model). These parts are specific to Bedrock:
+
+- On Chat Completions, the gateway adds adaptive thinking only when the request sets an effort. It doesn't add a default effort.
+- On the two Anthropic styles, Opus 4.5 gets the `effort-2025-11-24` beta when the gateway maps an effort to `output_config.effort`. On Converse, an effort on Opus 4.5 also needs a manual thinking budget, or the gateway rejects the request.
+- On Converse and ConverseStream, thinking settings go in `additionalModelRequestFields`. Effort goes in a sibling `output_config`, because Bedrock rejects it inside `thinking`:
+
+```json
+{
+  "additionalModelRequestFields": {
+    "thinking": {
+      "type": "adaptive"
+    },
+    "output_config": {
+      "effort": "high"
+    }
+  }
+}
+```
+
+To turn thinking off on models that accept only adaptive thinking, see [Model routing and APIs](/configuration/model-routing/#anthropic-messages).
+
+### Beta headers
+
+The gateway merges caller `anthropic-beta` values with provider default headers, route headers and `anthropic_beta` body values, and removes duplicates. How Bedrock receives them depends on the API. `InvokeModel` gets an `anthropic_beta` array in the body, including inside the encoded `CountTokens` input. Mantle gets one `anthropic-beta` header. The gateway doesn't limit which beta names it forwards: Bedrock checks model support and access. It doesn't forward caller gateway credentials or other caller headers. Size limits are in [Beta headers](/reference/provider-api-compatibility/#beta-headers).
+
+### Reasoning output and tool continuations
+
+Chat Completions responses keep Claude thinking out of `content` and `delta.content`. The gateway keeps native thinking blocks and Converse reasoning content under `provider_metadata.aws_bedrock.reasoning`, and the ordered native blocks under `provider_metadata.aws_bedrock.native_content`.
+
+When a Chat Completions caller sends the assistant message back with its `provider_metadata`, the gateway restores the signed, redacted and ordered content. This keeps thinking across tool turns. See [Native chat replay](/reference/provider-api-compatibility/#native-chat-replay). On the two Anthropic styles, thinking blocks that the caller puts in assistant content are forwarded unchanged.
+
+### Tool settings
+
+Bedrock rejects `strict` in Claude Opus 4.7 and 4.8 tool specifications. On `runtime_converse` routes, the gateway leaves `strict` out when the upstream model ID names one of those models. Application inference profile IDs and ARNs hide the model name. If such a profile targets Opus 4.7 or 4.8, set `compatibility.aws_bedrock.supports_strict_tools: false`. An explicit `true` or `false` overrides the model-ID check. Other styles can't set this field.
+
+Some Claude models (Fable 5.1, Mythos 5.1, Opus 5.5 and Sonnet 5.5) reject a forced `tool_choice`. The gateway returns 400 before it calls Bedrock. See [Forced tool choice](/reference/provider-api-compatibility/#forced-tool-choice).
+
+## Converse routes
+
+Amazon Nova and other non-Claude models use the generic Converse request shape:
+
+```yaml title="gateway.yaml"
+models:
+  - id: nova-lite-bedrock
+    description: Amazon Nova 2 Lite on AWS Bedrock
+    tags: [bedrock, nova, multimodal]
+    routes:
+      - provider: bedrock-us-east-1
+        upstream_model: global.amazon.nova-2-lite-v1:0
+        compatibility:
+          aws_bedrock:
+            api_style: runtime_converse
+
+  - id: nova-premier-bedrock
+    description: Amazon Nova Premier on AWS Bedrock
+    tags: [bedrock, nova, reasoning]
+    routes:
+      - provider: bedrock-us-east-1
+        upstream_model: us.amazon.nova-premier-v1:0
+        compatibility:
+          aws_bedrock:
+            api_style: runtime_converse
+        capabilities:
+          vision: false
+```
+
+`tools` and `vision` depend on the model, so the gateway doesn't infer them from `api_style`. They come from the pricing catalog when it knows the model, and otherwise default to `true`. Set `vision: false` (or `tools: false`) when you haven't tested that feature with the request shapes your callers send. A model card can list multimodal support that the gateway's OpenAI-style request mapping doesn't cover.
+
+### Request controls
+
+Callers can send these Converse fields on `runtime_converse` routes. Snake-case aliases such as `request_metadata` also work. The gateway checks them against the Bedrock API rules before it calls Bedrock ([`inference.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-providers/src/bedrock/request/inference.rs)):
+
+| Field | Rule |
+| --- | --- |
+| `requestMetadata` | A string map with at most 16 entries. Keys are 1 to 256 characters and values at most 256, using letters, numbers, whitespace or `:_@$#=/+,-.`. |
+| `performanceConfig.latency` | `standard` or `optimized`. |
+| `guardrailConfig` | `guardrailIdentifier`, `guardrailVersion` and `trace` are checked. `streamProcessingMode` (`sync` or `async`) is allowed on ConverseStream only. |
+| `additionalModelResponseFieldPaths` | At most 10 non-empty RFC 6901 JSON Pointers of up to 256 characters each. |
+
+Route `extra_body` merges last and wins, as the admin-controlled override. The gateway checks the merged result against the same rules.
+
+### Content and tool results
+
+User content and tool results use the same conversion:
+
+- Images: base64 `jpeg`, `png`, `webp` or `gif`.
+- Documents: base64 PDF, CSV, Word (`doc`, `docx`), Excel (`xls`, `xlsx`), HTML, Markdown and plain text.
+- Tool results can also carry structured JSON.
+
+Images and documents are allowed only in user messages. A user message with a document must also contain text. The gateway removes the file extension from a document name and replaces characters that Bedrock doesn't allow. It replaces a tool-call ID that is longer than 64 characters or uses characters other than letters, digits, `_` and `-` with a stable hash, on both the tool-use and the tool-result block. Valid IDs stay unchanged.
+
+## Fall back across providers
+
+Route priority and weight can put Bedrock behind another provider under one stable gateway model ID:
+
+```yaml title="gateway.yaml"
+models:
+  - id: coding-default
+    description: Stable model alias for coding workloads
+    tags: [coding]
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-5
+        priority: 10
+        weight: 1.0
+      - provider: bedrock-us-east-1
+        upstream_model: global.anthropic.claude-opus-4-7
+        compatibility:
+          aws_bedrock:
+            api_style: runtime_anthropic_invoke
+        priority: 20
+        weight: 1.0
+```
+
+The gateway runs one selected route per request. Priority and weight affect route planning. They don't retry another route after an upstream error. See [No failover](/configuration/model-routing/#no-failover).
+
+## Standalone guardrails
+
+Gateway guardrails can call the Bedrock Runtime `ApplyGuardrail` API. This is separate from route-level Converse `guardrailConfig`. Evaluation happens at the gateway, so a Bedrock guardrail can protect routes on any provider, not only on Bedrock.
+
+The gateway refers to an existing guardrail identifier and version. It doesn't create, update, version or delete Bedrock guardrails. The runtime identity needs `bedrock:ApplyGuardrail` on the guardrail. Guardrail checks have their own `region` and `auth` settings. Note that guardrail auth uses `auth.kind` (`default_chain` or `static_credentials`), not `auth.mode`, and has no bearer option. Use `default_chain` in production. See [Gateway guardrails](/operations/gateway-guardrails/) for configuration, failure behaviour and rollout.
+
+## Pricing
+
+The gateway prices Bedrock routes from the `amazon-bedrock` catalog family, using the upstream model ID. Bedrock providers have no `pricing_provider_id` field. See [Pricing catalog and accounting](/spend/pricing-and-accounting/) for how IDs are matched and how cache and reasoning tokens are counted.
+
+## Check the model in the admin UI
+
+After a restart, the new model appears on the **Models** page. The **Provider & Model** column shows the `upstream_model` and the provider's `display.label`.
+
+![The Models page in the admin UI. The claude-sonnet-4.6 row shows us.anthropic.claude-sonnet-4-6 with the provider label AWS Bedrock in the Provider & Model column.](/images/screenshot-models.png)

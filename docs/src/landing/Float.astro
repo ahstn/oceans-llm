@@ -1,0 +1,30 @@
+---
+/**
+ * A crop that floats over a larger screenshot, like a popover lifted off the
+ * page. Hidden on narrow screens, where it would cover most of what's under it.
+ */
+import { Image } from "astro:assets";
+import { cn } from "@/lib/cn";
+import type { FloatShot } from "./content";
+
+interface Props {
+  shot: FloatShot;
+  sizes: string;
+  eager?: boolean;
+}
+
+const { shot, sizes, eager = false } = Astro.props;
+---
+
+<div class={cn("lp-float absolute hidden md:block", shot.class)}>
+  <Image
+    src={shot.src}
+    alt={shot.alt}
+    widths={[320, 640, 960, 1280].filter((w) => w <= shot.src.width)}
+    sizes={sizes}
+    format="webp"
+    quality={86}
+    loading={eager ? "eager" : "lazy"}
+    class="block h-auto w-full"
+  />
+</div>

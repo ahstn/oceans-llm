@@ -1,0 +1,47 @@
+---
+/**
+ * A screenshot in product chrome. `window` adds a title bar, for full admin
+ * pages; `panel` is a bare card, for a crop of one part of a page.
+ */
+import { Image } from "astro:assets";
+import { cn } from "@/lib/cn";
+import type { Shot } from "./content";
+
+interface Props {
+  kind: "window" | "panel";
+  title?: string;
+  shot: Shot;
+  /** Rendered width hint for the srcset, as an `<img sizes>` value. */
+  sizes: string;
+  eager?: boolean;
+  class?: string;
+}
+
+const { kind, title, shot, sizes, eager = false, class: className } = Astro.props;
+---
+
+<div class={cn("lp-frame", kind === "window" ? "lp-frame-window" : "lp-frame-panel", className)}>
+  {
+    kind === "window" && (
+      <div class="lp-frame-bar" aria-hidden="true">
+        <span class="lp-frame-dots">
+          <i />
+          <i />
+          <i />
+        </span>
+        <span class="lp-frame-title">Oceans Gateway · {title}</span>
+      </div>
+    )
+  }
+  <Image
+    src={shot.src}
+    alt={shot.alt}
+    widths={[640, 960, 1440, 1920, 2560].filter((w) => w <= shot.src.width)}
+    sizes={sizes}
+    format="webp"
+    quality={84}
+    loading={eager ? "eager" : "lazy"}
+    fetchpriority={eager ? "high" : "auto"}
+    class="block h-auto w-full"
+  />
+</div>

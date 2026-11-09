@@ -5,8 +5,8 @@
 
 ## Current state
 
-- [Observability and Request Logs](../operations/observability-and-request-logs.md#decisions-request-metrics)
-- [Export Traces and Metrics](../operations/observability/export-traces-and-metrics.md#verify-the-export)
+- [Observability and Request Logs](https://oceans-llm.com/observability/#decisions-embeddings-and-images)
+- [Export Traces and Metrics](https://oceans-llm.com/observability/export-traces-and-metrics/#check-the-export)
 
 ## Context
 
@@ -36,7 +36,7 @@ Decisions requests record their own metric pair, `gateway.decisions.requests` an
 
 ## Follow-up
 
-- **Resolved: `/v1/embeddings` gets a dedicated metric pair.** Embeddings recorded no request metric on success, provider failure or the no-route exit. It recorded `gateway.chat.requests` and tool cardinality only on a guardrail block, and on a budget rejection since #481, always under the chat route. It now records `gateway.embeddings.requests` and `gateway.embeddings.request.duration` with the same coverage and labels as Decisions, minus `request_format`, and no longer emits chat request or tool-cardinality samples. See [Embeddings Request Metrics](../operations/observability-and-request-logs.md#embeddings-request-metrics).
+- **Resolved: `/v1/embeddings` gets a dedicated metric pair.** Embeddings recorded no request metric on success, provider failure or the no-route exit. It recorded `gateway.chat.requests` and tool cardinality only on a guardrail block, and on a budget rejection since #481, always under the chat route. It now records `gateway.embeddings.requests` and `gateway.embeddings.request.duration` with the same coverage and labels as Decisions, minus `request_format`, and no longer emits chat request or tool-cardinality samples. See [Embeddings Request Metrics](https://oceans-llm.com/observability/#decisions-embeddings-and-images).
 
   We chose a dedicated pair over one shared non-chat request metric with an `operation` label, for these reasons:
 

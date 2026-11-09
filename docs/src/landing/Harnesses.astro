@@ -1,0 +1,68 @@
+---
+/**
+ * The harness configs, one tab each, in the same titled code blocks the docs
+ * use. The panel is always dark, like the terminal the config ends up in.
+ */
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import { Code } from "@/components/ui/code";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import SectionHeading from "./SectionHeading.astro";
+import { harnessSection, harnesses } from "./content";
+---
+
+<section aria-labelledby="lp-agents" class="lp-section">
+  <div class="lp-container grid items-center gap-12 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-16">
+    <div>
+      <SectionHeading
+        id="lp-agents"
+        eyebrow={harnessSection.eyebrow}
+        title={harnessSection.title}
+        lede={harnessSection.lede}
+      />
+      <a href={harnessSection.link.href} class="lp-more mt-6">
+        {harnessSection.link.label}
+        <Icon name="ph:arrow-right" class="size-3.5" />
+      </a>
+
+      <div class="mt-10">
+        <p class="text-xs font-medium text-muted-foreground">{harnessSection.trackedLabel}</p>
+        <ul class="mt-3 flex flex-wrap gap-1.5">
+          {harnessSection.tracked.map((name) => <li class="lp-chip">{name}</li>)}
+        </ul>
+        <a href={harnessSection.trackedLink.href} class="lp-more mt-4">
+          {harnessSection.trackedLink.label}
+          <Icon name="ph:arrow-right" class="size-3.5" />
+        </a>
+      </div>
+    </div>
+
+    <div data-mode="dark" class="lp-code-panel">
+      <Tabs>
+        <TabsList class="px-2 sm:px-3" aria-label="Agent harness">
+          {harnesses.map((h) => <TabsTrigger value={h.id}>{h.label}</TabsTrigger>)}
+        </TabsList>
+        {
+          harnesses.map((h) => (
+            <TabsContent value={h.id} class="mt-0 px-4 pb-5 pt-1 sm:px-5">
+              {h.files.map((file) => (
+                <Code
+                  code={file.code}
+                  lang={file.lang}
+                  meta={`title="${file.path}"`}
+                  themes={{ light: "github-light", dark: "tokyo-night" }}
+                  defaultColor={false}
+                />
+              ))}
+              <p class="text-sm text-muted-foreground">
+                {h.note}{" "}
+                <a href={h.link.href} class="lp-link-inline">
+                  {h.link.label}
+                </a>
+              </p>
+            </TabsContent>
+          ))
+        }
+      </Tabs>
+    </div>
+  </div>
+</section>

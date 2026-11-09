@@ -1,0 +1,126 @@
+---
+title: OpenCode Zen
+description: Connect Oceans to OpenCode Zen for GPT, Claude, Gemini and open-weight models, with one provider for the OpenAI APIs and one for Anthropic Messages.
+sidebar:
+  order: 3
+---
+
+OpenCode Zen is OpenCode's pay-as-you-go model gateway. OpenCode now documents it as [OpenCode Console](https://opencode.ai/docs/console/models/). It serves GPT, Claude, Gemini, Grok, GLM, Kimi, Qwen, DeepSeek, MiniMax and other models with one API key.
+
+Zen serves four model APIs. Each model has a native API, and Zen translates requests on the other APIs, so every paid text model works on every API ([Base URLs](https://opencode.ai/docs/console/harnesses/#base-urls)). Oceans calls Zen with two provider types:
+
+| Zen API | Oceans provider type | `base_url` |
+| --- | --- | --- |
+| OpenAI Responses and Chat Completions | `openai_compat` | `https://opencode.ai/inference/openai/v1` |
+| Anthropic Messages | `anthropic_compat` | `https://opencode.ai/inference/anthropic` |
+| Gemini | None | Use one of the providers above. Zen translates the request. |
+
+Zen's System One endpoint for Jev models isn't available through Oceans. The `typesafe` provider type accepts only a `base_url` path of empty, `/` or `/v1`, so it can't reach `/inference/systemone`.
+
+For every field, see [Providers](/configuration/providers/), in the [`openai_compat`](/configuration/providers/#openai_compat) and [`anthropic_compat`](/configuration/providers/#anthropic_compat) sections.
+
+## Choose a provider for each model
+
+Route each model to the provider that speaks its native API. The [Zen model list](https://opencode.ai/docs/console/models/#endpoints) shows the native endpoint for each model.
+
+- **`openai_compat`**: GPT, Grok and Muse models (native Responses), and GLM, Kimi, DeepSeek, MiniMax, Mistral and Qwen Max models (native Chat Completions). Use it for Gemini models too.
+- **`anthropic_compat`**: Claude models, and the Qwen Flash and Plus models that list Anthropic Messages as their endpoint.
+
+A route on the other provider also works, because Zen translates the request. A native route avoids that extra translation step.
+
+## Add the providers and models
+
+An admin adds both providers and the models that route to them. Both providers use the same Zen API key:
+
+```yaml title="gateway.yaml"
+providers:
+  - id: opencode-zen-openai
+    type: openai_compat
+    base_url: https://opencode.ai/inference/openai/v1
+    pricing_provider_id: opencode
+    auth:
+      kind: bearer
+      token: env.OPENCODE_API_KEY
+    display:
+      label: OpenCode Zen (OpenAI)
+      icon_key: openai
+
+  - id: opencode-zen-anthropic
+    type: anthropic_compat
+    base_url: https://opencode.ai/inference/anthropic
+    pricing_provider_id: opencode
+    auth:
+      kind: x_api_key
+      token: env.OPENCODE_API_KEY
+    display:
+      label: OpenCode Zen (Anthropic)
+      icon_key: anthropic
+
+models:
+  - id: gpt-5.4
+    description: GPT 5.4 through OpenCode Zen
+    routes:
+      - provider: opencode-zen-openai
+        upstream_model: gpt-5.4
+        capabilities:
+          embeddings: false
+
+  - id: glm-5.1
+    description: GLM 5.1 through OpenCode Zen
+    routes:
+      - provider: opencode-zen-openai
+        upstream_model: glm-5.1
+        capabilities:
+          embeddings: false
+
+  - id: gemini-3.1-pro
+    description: Gemini 3.1 Pro through OpenCode Zen
+    routes:
+      - provider: opencode-zen-openai
+        upstream_model: gemini-3.1-pro
+        capabilities:
+          embeddings: false
+
+  - id: claude-sonnet-4-6
+    description: Claude Sonnet 4.6 through OpenCode Zen
+    routes:
+      - provider: opencode-zen-anthropic
+        upstream_model: claude-sonnet-4-6
+```
+
+The key settings:
+
+- `base_url`: on `openai_compat`, the gateway appends `chat/completions` or `responses`, so the base ends in `/openai/v1`. On `anthropic_compat`, the gateway appends `/v1/messages`, so the base stops at `/anthropic`. A base that already ends in `/v1` also works.
+- `auth`: `openai_compat` always sends the token as `Authorization: Bearer`. On `anthropic_compat`, `kind: x_api_key` sends the `x-api-key` header. Zen accepts both.
+- `upstream_model`: the Zen model ID, such as `gpt-5.4` or `claude-sonnet-4-6`. Don't add the `opencode/` prefix that OpenCode's own config uses.
+- `pricing_provider_id`: `opencode`. The vendored `opencode` catalog lists Zen's models by their Zen IDs, so a route needs no `pricing_override` unless your rates differ. See [Pricing catalog and accounting](/spend/pricing-and-accounting/).
+- `capabilities.embeddings: false`: Zen doesn't list an embeddings API. This flag stops the gateway from sending `POST /v1/embeddings` requests to the route.
+
+Configs that use the earlier base, `https://opencode.ai/zen`, still reach Zen.
+
+## What each route serves
+
+| Caller API | `openai_compat` route | `anthropic_compat` route |
+| --- | --- | --- |
+| `POST /v1/chat/completions` | Sent to Zen Chat Completions | Translated to Anthropic Messages |
+| `POST /v1/responses` | Sent to Zen Responses | Not supported |
+| `POST /v1/messages` | Translated to Chat Completions | Sent to Zen Messages |
+| `POST /v1/messages/count_tokens` | Not implemented, returns `501` | Sent to the upstream `messages/count_tokens` |
+
+The gateway caps an `anthropic_compat` route to Chat Completions, streaming, tools and vision, so the route needs no `capabilities` block. For the full matrix, see [Provider API compatibility](/reference/provider-api-compatibility/).
+
+On Claude routes, the gateway applies its Claude rules for thinking, effort and tool choice from `upstream_model`. See [Claude thinking by model](/reference/provider-api-compatibility/#claude-thinking-by-model). To cap reasoning effort on a model, set `max_reasoning_effort`. See [Reasoning effort ceilings](/configuration/models-and-routes/#reasoning-effort-ceilings).
+
+## Limits
+
+- Zen's free-tier chat models work only inside OpenCode. Other clients, Oceans included, get HTTP `403` for those models. Route paid models only.
+- Zen bills each request to the workspace that owns the API key. Oceans records its own spend from the catalog rates, so the two totals can differ when Zen changes its prices before the catalog refreshes.
+
+## Connect clients
+
+Clients connect to Oceans, not directly to Zen. Keep the two credentials apart:
+
+- `OPENCODE_API_KEY` stays on the gateway. It authenticates Oceans to Zen.
+- Each user's Oceans API key stays on the client. It authenticates the client to Oceans.
+
+A user generates a client config from the **Models** page. See [Client harness configuration](/harnesses/).

@@ -1,0 +1,158 @@
+---
+title: OpenAI models on AWS Bedrock
+description: Serve OpenAI models such as GPT-5.5 and gpt-oss through Amazon Bedrock, with Responses or Chat Completions routes.
+sidebar:
+  label: OpenAI models
+  order: 1
+---
+
+Oceans can serve OpenAI models that Amazon Bedrock hosts, such as GPT-5.5 and gpt-oss. Callers use the normal gateway endpoints and a gateway API key. The gateway calls Bedrock with the provider's AWS credentials. This page shows admins how to set up these routes. For general Bedrock setup (credentials, IAM and model IDs), see [AWS Bedrock](/providers/aws-bedrock/).
+
+## Choose a route shape
+
+Each route uses one OpenAI-style `api_style`. All three need `compatibility.aws_bedrock.openai_base_path`:
+
+| `api_style` | `endpoint_kind` | Gateway endpoint it serves |
+| --- | --- | --- |
+| `mantle_openai_responses` | `bedrock_mantle` | `/v1/responses` only |
+| `mantle_openai_chat` | `bedrock_mantle` | `/v1/chat/completions` |
+| `runtime_openai_chat` | `bedrock_runtime` | `/v1/chat/completions` |
+
+A `mantle_openai_responses` route can't serve Chat Completions, and the chat styles can't serve Responses. The gateway infers this from `api_style`, so the routes need no `capabilities` block for it. If a model needs both APIs, give it one route of each kind. Capability gating then sends each request to the route that serves it ([Model routing and APIs](/configuration/model-routing/#capability-gating)).
+
+The gateway appends `responses` or `chat/completions` to the endpoint URL plus `openai_base_path`. The base path differs by model, so copy it from the model card:
+
+- GPT-5.5 uses `/openai/v1` on Mantle. AWS says `/v1` doesn't work for inference on this model.
+- The repository's [`gateway.yaml`](https://github.com/ahstn/oceans-llm/blob/main/gateway.yaml) uses `/v1` for `openai.gpt-oss-120b` on Mantle, and `/openai/v1` for `openai.gpt-oss-120b-1:0` on Runtime.
+
+## GPT-5.5 on Bedrock
+
+The [GPT-5.5 model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-55.html) lists these settings. Check the card before you deploy, because AWS changes them:
+
+- Model ID `openai.gpt-5.5` on both endpoints.
+- Mantle: in-Region only, in `us-east-1` and `us-east-2`. Responses and Chat Completions under `https://bedrock-mantle.<region>.api.aws/openai/v1`.
+- Runtime: cross-Region only. Requests must use `us.openai.gpt-5.5` or `global.openai.gpt-5.5`. Responses, Chat Completions and Converse are listed.
+
+Oceans serves Responses on Bedrock only through Mantle (`mantle_openai_responses`). This is the main setup for GPT-5.5.
+
+### Use a Bedrock API key
+
+An admin sets `AWS_BEARER_TOKEN_BEDROCK` in the gateway's environment and adds the provider and model:
+
+```yaml title="gateway.yaml"
+providers:
+  - id: bedrock-mantle-openai
+    type: aws_bedrock
+    region: us-east-2
+    endpoint_kind: bedrock_mantle
+    auth:
+      mode: bearer
+      token: env.AWS_BEARER_TOKEN_BEDROCK
+    display:
+      label: Bedrock Mantle OpenAI
+      icon_key: aws
+
+models:
+  - id: gpt-55-bedrock
+    description: OpenAI GPT-5.5 on Amazon Bedrock Mantle
+    tags: [bedrock, mantle, openai, gpt-5-5]
+    routes:
+      - provider: bedrock-mantle-openai
+        upstream_model: openai.gpt-5.5
+        compatibility:
+          aws_bedrock:
+            api_style: mantle_openai_responses
+            openai_base_path: /openai/v1
+```
+
+The gateway sends the key upstream as `Authorization: Bearer`. It calls `https://bedrock-mantle.us-east-2.api.aws/openai/v1/responses`.
+
+`tools`, `vision` and `json_schema` aren't fixed by `api_style`. They come from the pricing catalog when it knows the model, and otherwise default to `true`. Set any of them to `false` under `capabilities` if the model or your tests don't support it.
+
+### Use IAM credentials
+
+To sign Mantle requests with the AWS SDK default credential chain, change only the provider's `auth` block:
+
+```yaml title="gateway.yaml"
+providers:
+  - id: bedrock-mantle-openai
+    type: aws_bedrock
+    region: us-east-2
+    endpoint_kind: bedrock_mantle
+    auth:
+      mode: default_chain
+```
+
+The route stays the same. For `bedrock_mantle` providers, SigV4 signs for service `bedrock-mantle` in the provider's `region`. `static_credentials` also works. See [AWS Bedrock](/providers/aws-bedrock/#set-up-credentials) for each auth mode.
+
+### Use Chat Completions
+
+If callers need Chat Completions for GPT-5.5, add a route with `mantle_openai_chat` on the same Mantle provider:
+
+```yaml title="gateway.yaml"
+      - provider: bedrock-mantle-openai
+        upstream_model: openai.gpt-5.5
+        compatibility:
+          aws_bedrock:
+            api_style: mantle_openai_chat
+            openai_base_path: /openai/v1
+```
+
+On a Runtime provider, use `runtime_openai_chat` with `openai_base_path: /openai/v1` and a cross-Region ID such as `us.openai.gpt-5.5`. AWS says the IAM identity then also needs `bedrock:InvokeModel` on the account's default project.
+
+## Bedrock projects
+
+Bedrock projects for OpenAI-compatible APIs use the `OpenAI-Project` request header ([Projects](https://docs.aws.amazon.com/bedrock/latest/userguide/projects.html)). Set it on the route with `extra_headers`:
+
+```yaml title="gateway.yaml"
+models:
+  - id: gpt-55-bedrock
+    routes:
+      - provider: bedrock-mantle-openai
+        upstream_model: openai.gpt-5.5
+        extra_headers:
+          OpenAI-Project: proj_123
+        compatibility:
+          aws_bedrock:
+            api_style: mantle_openai_responses
+            openai_base_path: /openai/v1
+```
+
+The gateway doesn't forward caller request headers to Bedrock, so a caller can't choose the project. Set `OpenAI-Project` on each route that needs it. AWS lists full project support on Mantle, and only the default project on Runtime.
+
+## Hosted tools
+
+`tools` on a route means the route can try requests that carry tools. It doesn't mean Bedrock supports every OpenAI-hosted Responses tool.
+
+On every `mantle_openai_responses` route, the gateway treats the hosted `image_generation` tool as unsupported ([`request/mod.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-providers/src/bedrock/request/mod.rs)):
+
+- If a request only offers `image_generation` among its tools, the gateway removes it and sends the rest of the request. Normal coding workflows keep working.
+- If a request requires image generation, for example with `tool_choice: { "type": "image_generation" }`, the gateway returns 400 before it calls Bedrock. The error names the provider and upstream model.
+
+See [Hosted Responses tools](/reference/provider-api-compatibility/#hosted-responses-tools) for the general rule.
+
+## Route overrides
+
+Route `extra_body` values are added to the Responses request. The gateway rejects a request when `extra_body` sets `prompt_cache_key`, `prompt_cache_options` or `prompt_cache_retention` to a value that differs from the caller's value. This keeps a route from overriding the caller's prompt-cache intent.
+
+## Pricing
+
+The gateway prices these routes from the `amazon-bedrock` catalog family by upstream model ID. If the catalog has no price for the model, set a `pricing_override` on the route. See [Models and routes](/configuration/models-and-routes/#route-metadata-overrides) and [Pricing catalog and accounting](/spend/pricing-and-accounting/).
+
+## Call the model
+
+Callers send a Responses request to the gateway with the gateway model ID:
+
+```bash
+curl https://<gateway-host>/v1/responses \
+  -H "Authorization: Bearer $OCEANS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-55-bedrock",
+    "input": "Write a concise migration note."
+  }'
+```
+
+A Chat Completions request to a model with only a `mantle_openai_responses` route fails at route selection. Add a chat route, as in [Use Chat Completions](#use-chat-completions), if callers need that API.
+
+For more detail from AWS and OpenAI, see the [AWS launch post](https://aws.amazon.com/blogs/aws/get-started-with-openai-gpt-5-5-gpt-5-4-models-and-codex-on-amazon-bedrock/) and [OpenAI models in Amazon Bedrock](https://developers.openai.com/api/docs/guides/amazon-bedrock).

@@ -4,8 +4,17 @@
 # Walk .agents/ and .github/ too; .gitignore still applies.
 
 hidden = true
-exclude_path = ["(^|/)\\.git/", "(^|/)videos/", "(^|/)gha-research/", "node_modules"]
+# Nimbus pages link by root-relative URL (`/setup/`), which lychee can't map to
+# files; `nimbus-docs check` and the build's `nimbus/internal-link` rule check them.
+exclude_path = [
+  "(^|/)\\.git/",
+  "(^|/)videos/",
+  "(^|/)gha-research/",
+  "node_modules",
+  "(^|/)docs/src/content/"
+]
 # Local servers and example hosts in guides are not reachable from CI.
 exclude_loopback = true
-exclude = ["^https?://(www\\.)?example\\.(com|org)"]
+# Stylesheets load fonts from node_modules, which the lint job doesn't install.
+exclude = ["^https?://(www\\.)?example\\.(com|org)", "/node_modules/"]
 include_fragments = "anchor-only"

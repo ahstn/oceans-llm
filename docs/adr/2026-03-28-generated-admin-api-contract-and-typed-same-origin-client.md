@@ -14,7 +14,7 @@
 ## Current state
 
 - [../admin-api-contract-workflow.md](../contributing/reference/admin-api-contract-workflow.md)
-- [../admin-control-plane.md](../access/admin-control-plane.md)
+- [Admin control plane](https://oceans-llm.com/access/admin-control-plane/)
 - [../e2e-contract-tests.md](../contributing/reference/e2e-contract-tests.md)
 
 ## Context
@@ -148,8 +148,8 @@ This approach keeps the source of truth inspectable and makes contract drift a n
 Canonical docs now describe the generated live contract pipeline and the boundary between live and preview-backed surfaces:
 
 - [../../README.md](../../README.md)
-- [../access/admin-control-plane.md](../access/admin-control-plane.md)
-- [../operations/observability-and-request-logs.md](../operations/observability-and-request-logs.md)
+- [Admin control plane](https://oceans-llm.com/access/admin-control-plane/)
+- [Observability and request logs](https://oceans-llm.com/observability/)
 - [../reference/e2e-contract-tests.md](../contributing/reference/e2e-contract-tests.md)
 
 ## Tradeoffs

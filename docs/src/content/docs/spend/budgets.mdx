@@ -1,0 +1,333 @@
+---
+title: Budgets
+description: How user, service account and user model budgets cap or watch spend, and how admins manage and raise them.
+sidebar:
+  order: 1
+---
+
+Budgets cap or watch the money that users and service accounts spend through the gateway. They control spend, not model access. API key grants and model allowlists decide first whether a caller may use a model. A request that those checks block never reaches the budget check.
+
+This page explains how budgets work and how admins manage them. The YAML fields for `budgets`, `users[*].budget` and `service_accounts[*].budget` are on [Budget settings](/spend/budget-settings/).
+
+## Budget types
+
+Users and service accounts are the only budget owners. There are three budget types:
+
+| Type | What it limits |
+| --- | --- |
+| User budget | All spend from one user's API keys. |
+| Service account budget | All spend from one service account's API keys. Active service account keys need one. |
+| User model budget | One user's spend on one gateway model. |
+
+Teams are not budget owners. A team groups users, owns service accounts and labels service account spend in reports, but it has no budget of its own.
+
+There is no shared budget for a model across the whole platform. To cap an expensive model, an admin sets `budgets.users.model_defaults`. This gives every user their own budget for that model, so one user's spend doesn't use up another user's cap. Service accounts are not affected: their spend counts only against their own budget. That's why the setting lives under `budgets.users` and not under `models[*]`, where it would read like one cap for everyone. The [budget principal taxonomy ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-05-27-budget-principal-taxonomy.md) explains the choice.
+
+MCP tool grants are a separate access control (see [MCP tool access](/extensions/mcp-tool-access/)). MCP token overhead figures estimate context-window use. They are not spend and don't count against budgets.
+
+## Budget settings
+
+Every budget has the same four settings, whether it comes from the admin UI, the admin API or YAML:
+
+- `cadence`: `daily`, `weekly` or `monthly`. This sets the length of the budget window.
+- `amount_usd`: the cap in US dollars. It must be greater than zero, with at most four decimal places.
+- `hard_limit`: `true` blocks requests once the cap is reached. `false` makes a soft budget that only reports and alerts.
+- `timezone`: stored with the budget. It defaults to `UTC` and must not be empty.
+
+Budget windows always use UTC, whatever the `timezone` value is:
+
+- A daily window starts at `00:00:00 UTC`.
+- A weekly window starts on Monday at `00:00:00 UTC`.
+- A monthly window starts at `00:00:00 UTC` on the first day of the month.
+
+Spend resets to zero when a new window starts.
+
+## Hard and soft budgets
+
+A hard budget rejects a new request when the spend already recorded in the current window is at or above the limit. The limit is the budget amount plus any active [temporary budget increase](#temporary-budget-increases). The gateway runs this check before it calls the provider, so a rejected request costs nothing upstream.
+
+The default rejection status is `422`. The error body has `type: budget_error` and `code: budget_exceeded`, so a client can tell it apart from a validation error. The message names the cadence and the scope (`user`, `service account` or `user+model`), the spend and the limit. For example: `daily user budget exhausted: spent $70.0000 of the $70.0000 limit`. An admin can change the status to `402` or `429` with `budgets.exceeded_status_code` (see [Budget settings](/spend/budget-settings/)). The default is `422` because the OpenAI and Anthropic Python SDKs retry `429` but not `422`, so they stop at once instead of retrying a request that can't succeed. The [budget exceeded status code ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-14-budget-exceeded-status-code.md) explains the choice.
+
+A soft budget never rejects traffic. Use it to get alerts and reports before you enforce a hard cap.
+
+### Overruns
+
+A hard budget can go over its limit. When a provider has answered, the money is already spent, so the gateway always records the cost. The request that goes over the limit still returns its result. The next request from the same caller is rejected. This is the same for normal requests, streamed responses and batch results.
+
+The check before the provider call reads spend that is already recorded. It doesn't reserve money for requests that are still running. Every request that starts while the window still has room is let through. So a caller that runs 10 requests at the same time can go over the limit by up to the cost of those 10 requests. Set the cap with this in mind.
+
+For streamed responses, the gateway records spend when the stream ends, from the last usage the provider reported. If the provider sends an error event or the upstream connection fails after it reported usage, that usage still counts. If the client disconnects before the stream ends, the gateway doesn't record budget spend for that request. [Streaming requests](/reference/request-lifecycle/#streaming-requests) lists each outcome.
+
+## Which spend counts
+
+Only requests with a known cost count toward budget windows. Each request in the ledger has a pricing state, and only `priced` and `legacy_estimated` requests count. `unpriced` and `usage_missing` requests still show in reports and request logs, but they don't use up any budget, hard or soft. [Pricing catalog and accounting](/spend/pricing-and-accounting/#ledger-states) explains the states and how to fix traffic that isn't priced.
+
+Embedding requests follow the same rules as chat and Responses traffic. A priced embedding request counts against the caller's user budget or service account budget, and against a matching user model budget. For how Vertex embeddings get a price, see [Vertex text embeddings](/spend/pricing-and-accounting/#vertex-text-embeddings).
+
+A Google Cloud service account in a Vertex provider's `auth` block is only a provider credential. It is not an Oceans service account and has no budget. Oceans service accounts are gateway identities for automated callers (see [Service accounts](/access/service-accounts/)).
+
+## Which budgets apply to a request
+
+For a request made with a user's API key, the gateway checks:
+
+1. the user's model budget for the gateway model that serves the request, if one exists
+2. the user's budget
+
+Each hard budget can block the request on its own. A user with room in their user budget is still blocked when their model budget for that model is spent. Each budget also sends its own alerts.
+
+For a request made with a service account's API key, the gateway checks only the service account budget. User model budgets never apply to service accounts.
+
+A user model budget matches the gateway model that serves the request. If a caller sends an alias, that is the model the alias resolves to, not the alias itself. So set model budgets, and `budgets.users.model_defaults` entries, on the target model, not on an alias.
+
+<Aside type="caution" title="Upstream model budgets">
+The admin UI and API can also create a user model budget for an exact upstream model name. This budget matches only ledger rows that have no gateway model. Every request path in the current gateway records the gateway model, so an upstream model budget doesn't match new traffic. Use a gateway model budget instead.
+</Aside>
+
+## Where budgets come from
+
+Each active budget has a source. The admin UI shows it as a badge on the budget, and the admin API returns it as `budget_source.kind`.
+
+| Source | `budget_source.kind` | Badge |
+| --- | --- | --- |
+| Admin UI or admin API | `manual` | none |
+| `users[*].budget` for a user listed in config | `config_user_override` | **Config (user)** |
+| `budgets.users.default` | `config_user_default` | **Config default** |
+| `budgets.users.model_defaults` | `config_user_model_default` | **Config model default** |
+| `service_accounts[*].budget` | `config_service_account` | **Config (service account)** |
+
+`budget_source.key` holds extra detail: the user's normalised email, `budgets.users.default`, `budgets.users.model_defaults:<model>`, or the service account id.
+
+The gateway applies config budgets at startup. It also applies the default budgets when a user is created: the bootstrap admin, users that an admin creates, and users created on first OIDC or OAuth sign-in.
+
+These rules decide which source wins:
+
+- **Admin changes win over config.** Saving a budget in the admin UI or with `PUT /api/v1/admin/spend/budgets` always makes it a manual budget, even when it came from config. Later startups don't change a manual budget.
+- **`users[*].budget` and `service_accounts[*].budget` win over defaults.** They replace any config budget for that user or service account at startup.
+- **Defaults fill the gaps.** `budgets.users.default` and `budgets.users.model_defaults` apply only where no budget from another source is active.
+- **Removing a budget in the admin UI or API sticks for defaults.** The gateway marks the budget as removed by an admin, and the defaults don't create it again. A `users[*].budget` or `service_accounts[*].budget` block does make it active again at the next startup, because the config states that budget on purpose.
+
+When an admin changes the config file, the next startup does this:
+
+- If a listed user's `budget` block is removed, the user gets `budgets.users.default` when one is set. The gateway replaces the budget in place, so the user is never left without a budget in between. If no default is set, the gateway removes the budget that came from the old block.
+- If `budgets.users.default` is removed, the gateway removes the budgets that it created.
+- If an entry is removed from `budgets.users.model_defaults`, the gateway removes the model budgets that the entry created.
+- Manual budgets are never changed.
+
+The [config reconciliation ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-03-31-declarative-config-seeded-identity-and-budget-reconciliation.md) explains the design.
+
+## Manage budgets in the admin UI
+
+Admins manage budgets on the **Spend Controls** page at `/admin/spend-controls`. Platform admins can create, edit and remove every budget. Team owners and team admins get a read-only view of their own team, where they can only raise budgets (see [Team admins](#team-admins)).
+
+A summary strip at the top shows **Spend against budgets**, **Budgeted owners**, **Over budget** and **Near limit**. These count both users and service accounts. Below it, the **Budgets** card has one tab for each budget type: **Users**, **Service accounts** and **Model budgets**.
+
+![Spend Controls page for a platform admin. The summary strip shows spend against budgets, budgeted owners, over budget and near limit counts. The Users tab lists users with their budget amount, Monthly, Hard and Config (user) badges, a usage bar, a status badge, the alert email, and Increase budget and Configure buttons.](/images/spend-controls-budgets.png)
+
+Each row shows the budget amount, the cadence, a **Hard** badge for hard budgets and a source badge for config budgets. The usage bar compares current-window spend with the limit, including any active increase. The status badge is one of:
+
+| Status | Spend compared with the limit |
+| --- | --- |
+| **No budget** | The owner has no active budget. |
+| **Low usage** | Under 20%. |
+| **On track** | 20% to under 80%. |
+| **Near limit** | 80% to under 100%. |
+| **Over budget** | 100% or more. |
+
+The **Users** tab has a search box, a **Filters** menu and a sort order. By default, **Hide quiet users** is on, so users under 20% of their budget are hidden. Users without a budget always show. The default sort is **Spend, high to low**.
+
+### Create or edit a budget
+
+<Steps>
+<Step title="Open the budget">
+On the **Users** or **Service accounts** tab, the admin selects **Configure** on the row.
+</Step>
+<Step title="Set the budget">
+In the **Configure budget** dialog, the admin sets **Amount (USD)**, **Cadence**, **Timezone** and **Enforce hard limit**. If the budget came from config, the dialog warns that saving makes it a manual budget that later startups won't change.
+</Step>
+<Step title="Save">
+The admin selects **Save budget**.
+</Step>
+</Steps>
+
+To remove a budget, the admin selects **Remove** on the row. You can't remove a service account budget while the service account has active API keys. Revoke the keys first.
+
+### Add a user model budget
+
+Use a user model budget when one user needs a separate or lower limit for one model.
+
+<Steps>
+<Step title="Open the Model budgets tab">
+The admin opens the **Model budgets** tab and goes to **Add model budget**.
+</Step>
+<Step title="Choose the user and model">
+The admin picks the **User**, leaves **Scope** set to **Model id**, and picks the **Model**.
+</Step>
+<Step title="Set and save the budget">
+The admin sets the amount, cadence, timezone and hard limit, then selects **Add model budget**.
+</Step>
+</Steps>
+
+The same steps give one user a separate cap for an embedding model, such as a `gemini-embedding` gateway model.
+
+### Alert history
+
+Platform admins also see an **Alert history** card below the budgets. It lists recent threshold alerts and whether their emails were sent. See [Budget alerts](#budget-alerts).
+
+## Manage budgets with the admin API
+
+The admin API uses the admin session cookie. These endpoints manage budgets:
+
+| Method and path | Who can call it | Purpose |
+| --- | --- | --- |
+| `GET /api/v1/admin/spend/budgets` | Platform admins, team admins | List budgets and current-window spend. |
+| `PUT /api/v1/admin/spend/budgets` | Platform admins | Create or update a budget. |
+| `POST /api/v1/admin/spend/budgets/deactivate` | Platform admins | Remove a budget. |
+| `POST /api/v1/admin/spend/budgets/increases` | Platform admins, team admins | Add a temporary increase. |
+| `GET /api/v1/admin/spend/budget-alerts` | Platform admins | List alert history. |
+
+Team admins see only their own team's users, service accounts and model budgets in the list.
+
+List budgets and current-window spend:
+
+```bash
+curl -sS "$OCEANS_BASE_URL/api/v1/admin/spend/budgets" \
+  -H "cookie: $OCEANS_ADMIN_SESSION_COOKIE"
+```
+
+The list has `users`, `service_accounts` and `user_model_budgets`. Each budget includes `budget_source`, and each user includes `active_increase` when an increase is active.
+
+Create or update a budget with `PUT`. The request body sets a `scope` and the budget settings. `timezone` is optional and defaults to `UTC`. The user, service account or model in the scope must exist.
+
+```bash
+curl -sS -X PUT "$OCEANS_BASE_URL/api/v1/admin/spend/budgets" \
+  -H "content-type: application/json" \
+  -H "cookie: $OCEANS_ADMIN_SESSION_COOKIE" \
+  --data '{
+    "scope": {
+      "kind": "user",
+      "user_id": "00000000-0000-0000-0000-000000000000"
+    },
+    "cadence": "monthly",
+    "amount_usd": "100.0000",
+    "hard_limit": true,
+    "timezone": "UTC"
+  }'
+```
+
+Use a different `scope` for the other budget types:
+
+<Tabs syncKey="budget-scope">
+<TabItem label="Service account">
+
+```json
+{
+  "kind": "service_account",
+  "service_account_id": "00000000-0000-0000-0000-000000000000"
+}
+```
+
+</TabItem>
+<TabItem label="User model">
+
+```json
+{
+  "kind": "user_model",
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "model_id": "00000000-0000-0000-0000-000000000000"
+}
+```
+
+</TabItem>
+</Tabs>
+
+`model_id` is the gateway model's UUID from the admin models API or UI. It is not the model key that callers send as `model`. A `user_model` scope can use `upstream_model` instead of `model_id`, but that budget doesn't match current traffic (see [Which budgets apply to a request](#which-budgets-apply-to-a-request)).
+
+Remove a budget by sending its scope:
+
+```bash
+curl -sS -X POST "$OCEANS_BASE_URL/api/v1/admin/spend/budgets/deactivate" \
+  -H "content-type: application/json" \
+  -H "cookie: $OCEANS_ADMIN_SESSION_COOKIE" \
+  --data '{
+    "scope": {
+      "kind": "user_model",
+      "user_id": "00000000-0000-0000-0000-000000000000",
+      "model_id": "00000000-0000-0000-0000-000000000000"
+    }
+  }'
+```
+
+## Temporary budget increases
+
+An admin can raise a user's budget for a limited time without editing it. This helps a user who is close to their limit finish their work.
+
+- **Who:** platform admins for any user. Team owners and team admins for members of their own team.
+- **Which budgets:** user budgets only. Service account budgets and user model budgets can't be raised this way.
+- **When:** current-window spend is at least 85% of the current limit. Users already over their limit qualify.
+- **How much:** more than `0` and at most 3 times the base budget.
+- **How long:** until the end of the calendar month in UTC (the default), or for 7 days from when the admin adds it.
+
+The increase adds to the base budget for hard limit checks and for alerts. A budget has at most one active increase. A new increase replaces the current one: it doesn't add to it. Editing the budget keeps the increase. Removing the budget ends it. There is no way to cancel an increase: it lasts until it expires or a newer increase replaces it. The gateway checks the 85% rule and the cap when it gets the request. If the budget or its increase changes while the gateway handles the request, it rejects the request so the admin can check the new limit. The [temporary budget increases ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-12-temporary-budget-increases.md) explains the design.
+
+<Steps>
+<Step title="Open the dialog">
+On the **Users** tab, the admin selects **Increase budget** on the user's row. The button is turned off until the user qualifies. A tooltip says why.
+</Step>
+<Step title="Choose the period and amount">
+In the dialog, the admin picks **End of month** or **7 days**. The admin types an **Increase amount (USD)** or picks a prefill button at 50%, 100%, 150% or 200% of the budget.
+</Step>
+<Step title="Save">
+The admin selects **Increase budget**.
+</Step>
+</Steps>
+
+![Increase budget dialog for a monthly budget of $150.00. It shows the End of month and 7 days period buttons, the last day the increase applies, prefill buttons from $75.00 to $300.00, an amount field, and the $450.00 cap at 3 times the budget.](/images/spend-controls-increase-dialog.png)
+
+After the increase is saved, the row shows a badge such as `+$75.00 until Oct 19`, with the last day the increase applies. The usage bar measures against the raised limit. The user's budget meter on their profile page (`/admin/profile`) also uses the raised limit and names the increase and its last day.
+
+To add an increase with the API:
+
+```bash
+curl -sS -X POST "$OCEANS_BASE_URL/api/v1/admin/spend/budgets/increases" \
+  -H "content-type: application/json" \
+  -H "cookie: $OCEANS_ADMIN_SESSION_COOKIE" \
+  --data '{
+    "user_id": "00000000-0000-0000-0000-000000000000",
+    "amount_usd": "75.0000",
+    "period": "end_of_month"
+  }'
+```
+
+`period` is `end_of_month` or `seven_days`.
+
+### Team admins
+
+Team owners and team admins see a read-only **Spend Controls** page for their own team. They see their team's users, service accounts and model budgets. They can raise a member's budget, but they can't configure or remove budgets, and they don't see alert history.
+
+![Spend Controls page for a Research team admin. It lists only Research team members, each with an Increase budget button and no Configure or Remove buttons.](/images/spend-controls-team-admin.png)
+
+Team admins get this page through the `spend_controls` page grant for the `team_admins` group. It is on by default. If an admin removes the grant in [`permissions`](/access/access-settings/#permissions), team admins lose both the page and the API access.
+
+## Budget alerts
+
+The gateway creates an alert when a budget's remaining amount falls to 20% of its limit or less. The limit includes any active increase. Alerts work for hard and soft budgets.
+
+- An alert is created when spend crosses the threshold. It is also created when an admin saves a budget whose window is already past the threshold.
+- Each budget gets at most one alert per window.
+- User budget and user model budget alerts go to the user's email.
+- Service account budget alerts go to the active owners and admins of the service account's team.
+
+The gateway sends alert emails through `budget_alerts.email` (see [Budget settings](/spend/budget-settings/)). With the default `sink` transport, it records the delivery but sends no email.
+
+The **Alert history** card on **Spend Controls** shows recent alerts and their delivery status. The same data is at `GET /api/v1/admin/spend/budget-alerts`. It takes `page`, `page_size` (default `25`), `owner_kind` (`user` or `service_account`), `channel` (`email`) and `status` (`pending`, `sent` or `failed`).
+
+## Service account budget requirement
+
+An active service account API key needs an active service account budget. This applies to keys created in the admin UI and to keys in the config file:
+
+- The admin UI and API refuse to create a service account key when the service account has no active budget.
+- `service_accounts[*].budget` is required in the config file.
+- If a service account somehow has an active key but no budget, the gateway rejects its requests with `403` and `code: service_account_budget_required`.
+- An admin can't remove a service account budget while the service account has active API keys. Revoke the keys first.
+
+For spend reports and FOCUS CSV exports, see `GET /api/v1/admin/spend/report`, `GET /api/v1/admin/spend/focus.csv` and, for a user's own spend, `GET /api/v1/me/spend/focus.csv`.

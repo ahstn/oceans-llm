@@ -31,7 +31,7 @@ Gemini 3.7 Flash and 3.8 Flash on Vertex AI (Agent Platform) are the primary Goo
 4. Normalize thoughts into `reasoning_content`, surface text-part signatures as `message.thought_signature` and `provider_metadata.gcp_vertex.thought_signature`, add `thoughtsTokenCount` into `completion_tokens` with `completion_tokens_details.reasoning_tokens`, and map `cachedContentTokenCount` to `prompt_tokens_details.cached_tokens`. `RECITATION`, `LANGUAGE`, `SPII` map to `content_filter`. `MALFORMED_FUNCTION_CALL` and in-band `{error}` objects become `ProviderError::Transport`; a prompt block with no candidates stays an OpenAI `content_filter` finish.
 5. Stream Gemini over `streamGenerateContent?alt=sse` with the shared `SseEventParser` and a unit-testable `GoogleStreamState` (`on_response` / `finish`), replacing the hand-rolled JSON array parser.
 6. Move `anthropic-beta` values from provider default headers and route headers into the `anthropic_beta` body array for `rawPredict`, appending `effort-2025-11-24` when `output_config.effort` is used with manual thinking.
-   - The Anthropic-on-Vertex mapper now shares `AnthropicRequestOptions` with the direct Anthropic adapter, including its `max_tokens: 4096` default when the caller omits a limit. The previous Vertex-only default of `1024` truncated most tool-using Claude turns; the change is documented in `docs/providers/gcp-vertex.md`.
+   - The Anthropic-on-Vertex mapper now shares `AnthropicRequestOptions` with the direct Anthropic adapter, including its `max_tokens: 4096` default when the caller omits a limit. The previous Vertex-only default of `1024` truncated most tool-using Claude turns; the change is documented in [Google Vertex AI](https://oceans-llm.com/providers/gcp-vertex/).
 7. Derive `api_host` from `location` when unset (`global`, `us`/`eu` multi-region, regional). Batch text-embedding `predict` calls at 250 instances (one for `gemini-embedding-001`, which Vertex limits to a single input per request) and a 20,000-token aggregate budget bounded locally at one token per UTF-8 byte (the tokenizer's byte-fallback ceiling); validate the prediction count per batch.
 8. Replace `AnthropicThinkingPolicy` in `gateway-client-config` with a provider-neutral `ThinkingPolicy` (`AnthropicSafeEffort`, `AnthropicManualBudget`, `GeminiLevel { supports_minimal, supports_medium }`, `GeminiBudget`). Pi renders `reasoning: true` plus a `thinkingLevelMap` for Gemini; OpenCode renders `reasoningEffort` variants.
 
@@ -41,7 +41,7 @@ Gemini 3.7 Flash and 3.8 Flash on Vertex AI (Agent Platform) are the primary Goo
 - `crates/gateway-providers/src/vertex/tests/` rewritten around behavior: wire shape, precedence, and error paths, with Gemini 3.7 fixtures.
 - `crates/gateway/src/config/providers.rs`: `api_host: Option<String>` with `resolved_api_host()`; `gateway_providers::vertex_api_host_for_location` is the single source for the mapping.
 - `crates/gateway-client-config/src/{types,thinking}.rs`, `templates/{pi,opencode,notes}.rs`; caller `gateway-service/src/admin_models.rs`.
-- `docs/providers/gcp-vertex.md`, `docs/configuration/configuration-reference.md`.
+- [Google Vertex AI](https://oceans-llm.com/providers/gcp-vertex/), [Configuration reference](https://oceans-llm.com/configuration/).
 
 ## Trade-Offs
 
@@ -56,4 +56,4 @@ Gemini 3.7 Flash and 3.8 Flash on Vertex AI (Agent Platform) are the primary Goo
 
 ## Supersession — 2026-10-21
 
-[PR #564](https://github.com/ahstn/oceans-llm/pull/564) supersedes the Context claim that Vertex ignores `anthropic-beta`, Decision 6's body-beta transport, and the corresponding body-beta follow-up. The current [Anthropic-on-Vertex contract](../providers/gcp-vertex.md#claude-example) sends beta opt-ins in one `anthropic-beta` header and removes the legacy `anthropic_beta` body field before transport. Any live effort verification should use that header contract. The remaining decisions stay accepted; the original text above is retained as history.
+[PR #564](https://github.com/ahstn/oceans-llm/pull/564) supersedes the Context claim that Vertex ignores `anthropic-beta`, Decision 6's body-beta transport, and the corresponding body-beta follow-up. The current [Anthropic-on-Vertex contract](https://oceans-llm.com/providers/gcp-vertex/#claude-on-vertex) sends beta opt-ins in one `anthropic-beta` header and removes the legacy `anthropic_beta` body field before transport. Any live effort verification should use that header contract. The remaining decisions stay accepted; the original text above is retained as history.
