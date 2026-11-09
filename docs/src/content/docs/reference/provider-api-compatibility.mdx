@@ -119,9 +119,7 @@ Headers:
 - Native responses and upstream HTTP errors keep Anthropic and OpenRouter extension headers, rate-limit headers, the upstream `request-id`, `retry-after` and `x-should-retry`. The gateway keeps its own `x-request-id`. Credentials, cookies and connection headers are removed.
 - Upstream native error bodies keep their original wording, so clients can retry and recover from capability rejections.
 
-These rules apply to native Anthropic Messages requests on `anthropic_compat`, Vertex Claude and Bedrock Anthropic routes.
-
-Native `output_config.effort` is independent of `thinking`. The gateway keeps `low`, `medium`, `high`, `xhigh` and `max`, subject to the model's effort ceiling and to what the upstream model supports. If the caller omits effort, the gateway omits it. If the caller sends `effort: null`, the gateway sends null. The gateway doesn't add a thinking mode or a default effort to native requests. Anthropic's own default effort varies by model. For example, Opus 5.5 and Haiku 5.5 default to `medium`; see [Anthropic effort](https://platform.claude.com/docs/en/build-with-claude/effort).
+On `anthropic_compat`, Vertex Claude and Bedrock Anthropic routes, native `output_config.effort` is independent of `thinking`. The gateway keeps `low`, `medium`, `high`, `xhigh` and `max`, subject to the model's effort ceiling and to what the upstream model supports. If the caller omits effort, the gateway omits it. If the caller sends `effort: null`, the gateway sends null. The gateway doesn't add a thinking mode or a default effort to native requests. Anthropic's own default effort varies by model. For example, Opus 5.5 and Haiku 5.5 default to `medium`; see [Anthropic effort](https://platform.claude.com/docs/en/build-with-claude/effort).
 
 The gateway picks the native Messages or Chat Completions thinking rules from trusted endpoint metadata. Request fields can't switch between them. Chat Completions keeps its own model-specific defaults, described in [Model routing and APIs](/configuration/model-routing/).
 
