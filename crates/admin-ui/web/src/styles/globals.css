@@ -294,7 +294,11 @@ a {
   --color-success: var(--success);
   --color-destructive-foreground: var(--destructive-foreground);
   /* Admin surfaces: a text step between foreground and muted-foreground, and table header fills. */
-  --color-subtle-foreground: color-mix(in oklch, var(--foreground) 72%, var(--muted-foreground) 28%);
+  --color-subtle-foreground: color-mix(
+    in oklch,
+    var(--foreground) 72%,
+    var(--muted-foreground) 28%
+  );
   --color-surface-muted: var(--surface-muted);
   /* Logo-wave accents for illustration and brand surfaces, never for actions. */
   --color-wave-deep: var(--wave-deep);

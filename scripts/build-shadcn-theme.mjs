@@ -39,7 +39,9 @@ function block(source, selector, from = 0) {
 function declarations(body) {
   const withoutComments = body.replace(/\/\*[\s\S]*?\*\//g, '')
   const flat = withoutComments.replace(/@keyframes[\s\S]*?\{[\s\S]*?\}\s*\}/g, '')
-  return [...flat.matchAll(/--([\w-]+):\s*([^;]+);/g)].map(([, name, value]) => [name, value.trim().replace(/\s+/g, ' ')])
+  // Formatters wrap long values such as color-mix() across lines; emit them on one line.
+  const oneLine = (value) => value.trim().replace(/\s+/g, ' ').replace(/\(\s+/g, '(').replace(/\s+\)/g, ')')
+  return [...flat.matchAll(/--([\w-]+):\s*([^;]+);/g)].map(([, name, value]) => [name, oneLine(value)])
 }
 
 function rules(body) {

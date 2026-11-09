@@ -15,5 +15,6 @@ exclude_path = [
 ]
 # Local servers and example hosts in guides are not reachable from CI.
 exclude_loopback = true
-exclude = ["^https?://(www\\.)?example\\.(com|org)"]
+# Stylesheets load fonts from node_modules, which the lint job doesn't install.
+exclude = ["^https?://(www\\.)?example\\.(com|org)", "/node_modules/"]
 include_fragments = "anchor-only"
