@@ -49,18 +49,6 @@ import { GITHUB_URL, hero } from "./content";
         <LinkButton href={hero.primary.href} size="lg" icon>{hero.primary.label}</LinkButton>
         <LinkButton href={hero.secondary.href} variant="secondary" size="lg">{hero.secondary.label}</LinkButton>
       </div>
-
-      <div class="mt-9">
-        <div class="lp-command">
-          <span class="select-none text-[#b5dde5]/50" aria-hidden="true">$</span>
-          <code>{hero.command}</code>
-          <button type="button" class="lp-copy" data-lp-copy={hero.command} aria-label="Copy command">
-            <Icon name="ph:copy" class="lp-copy-idle size-4" />
-            <Icon name="ph:check" class="lp-copy-done size-4" />
-          </button>
-        </div>
-        <p class="mt-2.5 text-xs text-muted-foreground">{hero.commandNote}</p>
-      </div>
     </div>
   </section>
 </div>

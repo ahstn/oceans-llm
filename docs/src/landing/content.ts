@@ -61,7 +61,7 @@ export const hero = {
   license: "AGPL-3.0",
   title: "Every model. Every agent.",
   subtitle: "One gateway.",
-  lede: "Oceans LLM sits between your AI clients and the providers and MCP servers they call. Route requests, decide who can use what, cap spend, and see where the usage goes.",
+  lede: "Oceans LLM sits between your AI clients and both the providers and MCP servers they call. Route requests, decide who can use what, cap spend, and see where the usage goes.",
   primary: { label: "Get started", href: "/setup/" },
   secondary: { label: "Read the docs", href: "/introduction/" },
   command: "mise run dev-stack",
@@ -90,7 +90,7 @@ export const hero = {
 // ---- Statement (introduction.mdx) ----
 
 export const statement: Run[] = [
-  { text: "Coding agents, apps and scripts call " },
+  { text: "Coding agents and backend applications call " },
   { text: "one API", href: "/configuration/model-routing/" },
   { text: " with an Oceans key. Admins decide, in one place, which " },
   { text: "models and tools", href: "/access/identity-and-access/" },

@@ -34,7 +34,6 @@ export function GET() {
     `**${hero.title} ${hero.subtitle}**`,
     hero.lede,
     `${link(hero.primary)} · ${link(hero.secondary)}`,
-    `${hero.commandNote}\n\n\`\`\`sh\n${hero.command}\n\`\`\``,
     inline(statement),
     ...audiences.map((a) => `## ${a.title}\n\n${list(a.items)}`),
     `## ${lifecycle.title}\n\n${lifecycle.lede}\n\n${lifecycle.steps
