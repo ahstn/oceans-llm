@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "docs/**"
+      - "crates/gateway/openapi/admin-api.json"
       - ".github/workflows/docs-ci.yml"
       - "mise.toml"
       - "mise.lock"
@@ -32,10 +33,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup mise and Node.js
+      - name: Setup mise, Node.js and Bun
         uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
-          install_args: node
+          install_args: node bun
 
-      - name: Build docs site
-        run: mise run //docs:build
+      # Builds the site, then runs astro check and nimbus-docs check against it.
+      # Deploys are manual: mise run //docs:deploy.
+      - name: Build and check docs site
+        run: mise run //docs:check

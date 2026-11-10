@@ -1,6 +1,6 @@
 # Agent Session Analysis and Efficiency
 
-`See also`: [Agent Session Analysis](../operations/agent-session-analysis.md), [Agent Session Analysis Architecture](../contributing/reference/agent-session-analysis.md), [Passive, Versioned Agent Session Analysis](../adr/2026-07-21-passive-agent-session-analysis.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Request Logs](../operations/observability/request-logs.md), [MCP Invocations](../mcp/mcp-invocations.md), [MCP Tool Access](../mcp/mcp-tool-access.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), [Admin Control Plane](../access/admin-control-plane.md), [Data Relationships](../contributing/reference/data-relationships.md)
+`See also`: [Agent Session Analysis](https://oceans-llm.com/observability/agent-session-analysis/), [Agent Session Analysis Architecture](../contributing/reference/agent-session-analysis.md), [Passive, Versioned Agent Session Analysis](../adr/2026-07-21-passive-agent-session-analysis.md), [Agent Harness Usage](https://oceans-llm.com/observability/agent-harness-usage/), [Request Logs](https://oceans-llm.com/observability/request-logs/), [MCP Invocations](https://oceans-llm.com/extensions/mcp-invocations/), [MCP Tool Access](https://oceans-llm.com/extensions/mcp-tool-access/), [Pricing Catalog and Accounting](https://oceans-llm.com/spend/pricing-and-accounting/), [Admin Control Plane](https://oceans-llm.com/access/admin-control-plane/), [Data Relationships](../contributing/reference/data-relationships.md)
 
 - Date: 2026-07-20
 - Status: Implemented after session-model consolidation
@@ -983,7 +983,7 @@ Follow `docs/AGENTS.md` terminology and audience boundaries. Use `admins`, not `
 
 ### Primary Admin-Facing Docs
 
-Implemented as [Agent Session Analysis](../operations/agent-session-analysis.md), covering:
+Implemented as [Agent Session Analysis](https://oceans-llm.com/observability/agent-session-analysis/), covering:
 
 - what Agent tasks are;
 - gateway-observed versus semantic outcome;
@@ -994,12 +994,12 @@ Implemented as [Agent Session Analysis](../operations/agent-session-analysis.md)
 
 Update canonical owners:
 
-- `docs/operations/observability-and-request-logs.md` for passive correlation, payload policy, retention, and optional links;
-- `docs/operations/observability/request-logs.md` for task correlation and one-to-many request/usage/MCP links;
-- `docs/operations/agent-harness-usage.md` for self-reported User-Agent/session evidence;
-- `docs/configuration/pricing-catalog-and-accounting.md` for bucket semantics and shadow/cutover behavior;
-- `docs/access/budgets.md` for the dated authoritative cost cutover;
-- `docs/access/admin-control-plane.md` for platform/team capabilities and Agent tasks.
+- [Observability and request logs](https://oceans-llm.com/observability/) for passive correlation, payload policy, retention, and optional links;
+- [Request logs](https://oceans-llm.com/observability/request-logs/) for task correlation and one-to-many request/usage/MCP links;
+- [Agent harness usage](https://oceans-llm.com/observability/agent-harness-usage/) for self-reported User-Agent/session evidence;
+- [Pricing catalog and accounting](https://oceans-llm.com/spend/pricing-and-accounting/) for bucket semantics and shadow/cutover behavior;
+- [Budgets](https://oceans-llm.com/spend/budgets/) for the dated authoritative cost cutover;
+- [Admin control plane](https://oceans-llm.com/access/admin-control-plane/) for platform/team capabilities and Agent tasks.
 
 ### Maintainer-Facing Docs
 
@@ -1014,8 +1014,8 @@ Update:
 - `docs/contributing/reference/admin-api-contract-workflow.md`;
 - `docs/contributing/reference/e2e-contract-tests.md`;
 - `docs/contributing/operations/budgets-and-spending.md`;
-- `docs/mcp/mcp-invocations.md`;
-- `docs/mcp/mcp-tool-access.md`;
+- [MCP invocations](https://oceans-llm.com/extensions/mcp-invocations/);
+- [MCP tool access](https://oceans-llm.com/extensions/mcp-tool-access/);
 - `crates/gateway-store/README.md` to distinguish the V17 reset baseline from current migration head;
 - VitePress primary and contributor sidebars plus matching `See also` links.
 

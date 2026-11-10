@@ -1,0 +1,98 @@
+---
+title: Tagging
+description: Attach key and value tags to requests and identities for attribution, filtering and export.
+sidebar:
+  order: 5
+---
+
+Tags are small key and value pairs that link Oceans activity to your own systems, such as a cost centre, an application or an environment. Use them for attribution, filtering, export and reconciliation. Don't use them for access control, and never put secrets in them.
+
+## Two kinds of tag
+
+Oceans has two places for tags, and both use the same rules, so you need only one naming scheme:
+
+| Kind | Set by | Where it's used |
+| --- | --- | --- |
+| Request tags | Callers, with headers on each request | Request logs and their filters, and agent session grouping and filters. |
+| Identity tags | Admins or config, on users, teams and service accounts | Admin identity views and the FOCUS CSV export. |
+
+## Choose good tags
+
+Pick tags that are stable, have few distinct values, and mean something outside Oceans. Good examples:
+
+- `cost-center=platform`
+- `workload=agent-harness`
+- `app=internal-support`
+- `external-owner=finops`
+- `deployment=prod-eu`
+
+Avoid these:
+
+- Secrets, tokens, email addresses, prompts or any other sensitive data.
+- Values that are unique to each request, such as trace IDs, timestamps, session IDs or full URLs.
+- Values that change with every code deployment, unless the deployment is what you want to track.
+- Copies of built-in fields such as user ID, team ID, model, provider or request ID.
+
+Keep the set of keys small, and add a key only when it answers a real question. Every new key is one more thing that admins must keep consistent in exports and reports.
+
+## Validation rules
+
+The gateway trims spaces from each key and value, then checks these rules. It rejects a tag that breaks a rule. It doesn't change letter case for you, so `Platform` fails.
+
+| Rule | Keys | Values |
+| --- | --- | --- |
+| Length | 1 to 32 characters | 1 to 64 characters |
+| First character | A lowercase ASCII letter | Any allowed character |
+| Allowed characters | `a-z`, `0-9`, `.`, `_`, `-` | `a-z`, `0-9`, `.`, `_`, `-`, `/`, `:` |
+
+Each tag set can also have at most 5 tags, and each key only once. The keys `service`, `component` and `env` are reserved for the request tag headers below, so you can't use them as bespoke keys. For other dimensions, use names such as `app`, `workload`, `tenant` or `deployment`.
+
+## Request tag headers
+
+A caller adds request tags with these optional headers:
+
+| Header | Sets |
+| --- | --- |
+| `x-oceans-service` | The `service` tag. |
+| `x-oceans-component` | The `component` tag. |
+| `x-oceans-env` | The `env` tag. |
+| `x-oceans-tags` | Up to 5 bespoke tags, as `key=value` pairs separated by semicolons. |
+
+```http
+x-oceans-service: support-bot
+x-oceans-env: prod
+x-oceans-tags: cost-center=platform; workload=agent-harness
+```
+
+The values of `x-oceans-service`, `x-oceans-component` and `x-oceans-env` follow the value rules. A caller can send each header only once. In `x-oceans-tags`, an empty entry (for example, a trailing `;`) is an error. The gateway rejects a request with an invalid or repeated tag header with `400` and error code `invalid_request`, before it calls a provider.
+
+The gateway stores request tags with the request log, if it writes a log for that request. Admins can filter [Request logs](/observability/request-logs/) by **Service**, **Component**, **Environment**, and one bespoke **Tag** (a **Tag key** and **Tag value** pair). Matching is exact. Request tags also decide which requests can share an agent session, and admins can filter by them in [Agent session analysis](/observability/agent-session-analysis/).
+
+Request tags don't appear in OTLP trace attributes or metric labels.
+
+## Identity tags
+
+Admins set tags on users and teams in the admin UI user and team editors. The **Service Accounts** page shows service-account tags but doesn't edit them. The service-account API accepts tags.
+
+Config can also seed tags with `users[].tags`, `teams[].tags` and `service_accounts[].tags`. When the gateway seeds config, an identity with no `tags` field keeps its existing tags, and `tags: []` removes them all. The field rules are on [Auth and access settings](/access/access-settings/#tags).
+
+Identity tags carry ownership context that doesn't match Oceans user or team names. For example:
+
+- Cost allocation hierarchies.
+- Internal product or workload catalogues.
+- Compliance or data-boundary labels.
+- External owner IDs used by reporting systems.
+
+The **Export FOCUS CSV** action on **Usage Costs** writes identity tags to the `Tags` column as a JSON object. Usage owned by a user gets that user's tags. Usage owned by a service account gets its team's tags, not the service account's own tags.
+
+Identity tags don't affect authorisation, budget checks, routing or request-log filters.
+
+## Storage and retention
+
+Request tags and identity tags have different lifetimes:
+
+- Request tags are request-log detail. [Request-log purge](/observability/request-logs/#retention-and-purge) deletes them with their request log. Agent sessions keep their own copy. Purge also deletes finalised sessions older than its cutoff, unless they're still queued for analysis.
+- Identity tags are lasting metadata on users, teams and service accounts. Request-log purge never removes them.
+- Spend ledger rows don't follow request-log retention. If you join request tags to spend data, export the request tags before purge removes them.
+
+For budgets and the spend ledger, see [Budgets](/spend/budgets/) and [Pricing catalog and accounting](/spend/pricing-and-accounting/). For user, team, service-account and API key rules, see [Identity and access](/access/identity-and-access/). The design is in the [request-log caller tags ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-03-26-request-log-caller-tags.md).

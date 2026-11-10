@@ -27,17 +27,17 @@ Rust-first LLM gateway workspace with an embedded TanStack Start admin control p
 
 | If you want to... | Start here |
 | --- | --- |
-| Understand the product and its capabilities | [Overview and Features](docs/overview-features.md) |
-| Run Oceans LLM for the first time | [Getting Started](docs/getting-started.md) |
-| Choose between local, Compose, and Kubernetes deployments | [Deploy Oceans LLM](docs/setup/deploy-and-operations.md) |
-| Understand startup, seeded state, and first access | [Runtime Bootstrap and Access](docs/setup/runtime-bootstrap-and-access.md) |
-| Configure providers, models, authentication, and runtime behavior | [Configuration Reference](docs/configuration/configuration-reference.md) |
-| Understand routing and supported API families | [Model Routing and APIs](docs/configuration/model-routing-and-api-behavior.md) and [Provider API Compatibility](docs/reference/provider-api-compatibility.md) |
-| Configure identities, service accounts, API keys, or budgets | [Identity and Access](docs/access/identity-and-access.md), [Service Accounts](docs/access/service-accounts.md), and [Budgets](docs/access/budgets.md) |
-| Register MCP servers and control tool access | [MCP Servers](docs/configuration/mcp-servers.md), [MCP Tool Access](docs/mcp/mcp-tool-access.md), and [MCP Client Setup](docs/mcp/mcp-client-setup.md) |
-| Enable and operate gateway guardrails | [Gateway Guardrails](docs/operations/gateway-guardrails.md) |
-| Configure telemetry or inspect request logs | [Observability and Request Logs](docs/operations/observability-and-request-logs.md) |
-| Upgrade a deployment or recover a failure | [Admin Runbooks](docs/operations/operator-runbooks.md) |
+| Understand the product and its capabilities | [Features](https://oceans-llm.com/features/) |
+| Run Oceans LLM for the first time | [Introduction](https://oceans-llm.com/introduction/) |
+| Choose between local, Compose, and Kubernetes deployments | [Topology and operations](https://oceans-llm.com/setup/deploy-and-operations/) |
+| Understand startup, seeded state, and first access | [Start up and first access](https://oceans-llm.com/setup/first-access/) |
+| Configure providers, models, authentication, and runtime behavior | [Configuration Reference](https://oceans-llm.com/configuration/) |
+| Understand routing and supported API families | [Model Routing and APIs](https://oceans-llm.com/configuration/model-routing/) and [Provider API Compatibility](https://oceans-llm.com/reference/provider-api-compatibility/) |
+| Configure identities, service accounts, API keys, or budgets | [Identity and Access](https://oceans-llm.com/access/identity-and-access/), [Service Accounts](https://oceans-llm.com/access/service-accounts/), and [Budgets](https://oceans-llm.com/spend/budgets/) |
+| Register MCP servers and control tool access | [MCP Servers](https://oceans-llm.com/extensions/mcp-servers/), [MCP Tool Access](https://oceans-llm.com/extensions/mcp-tool-access/), and [MCP Client Setup](https://oceans-llm.com/extensions/mcp-client-setup/) |
+| Enable and operate gateway guardrails | [Gateway Guardrails](https://oceans-llm.com/operations/gateway-guardrails/) |
+| Configure telemetry or inspect request logs | [Observability and Request Logs](https://oceans-llm.com/observability/) |
+| Upgrade a deployment or recover a failure | [Admin Runbooks](https://oceans-llm.com/operations/admin-runbooks/) |
 | Contribute to the repository | [Contributing](CONTRIBUTING.md) and [Contributing & Internal](docs/contributing/index.md) |
 
 Install the repo toolchain:
@@ -116,43 +116,43 @@ Use the docs site instead of treating this file as the full admin and maintainer
 - repo workflow:
   - [Contributing](CONTRIBUTING.md)
 - docs site:
-  - [Documentation Home](docs/index.md)
+  - [Documentation Home](https://oceans-llm.com/)
 - startup and first access:
-  - [Runtime Bootstrap and Access](docs/setup/runtime-bootstrap-and-access.md)
+  - [Start up and first access](https://oceans-llm.com/setup/first-access/)
 - config contract:
-  - [Configuration Reference](docs/configuration/configuration-reference.md)
+  - [Configuration Reference](https://oceans-llm.com/configuration/)
 - identity:
-  - [Identity and Access](docs/access/identity-and-access.md)
+  - [Identity and Access](https://oceans-llm.com/access/identity-and-access/)
 - gateway API keys and service-account-style callers:
-  - [Admin Control Plane](docs/access/admin-control-plane.md)
+  - [Admin Control Plane](https://oceans-llm.com/access/admin-control-plane/)
 - budgets:
-  - [Budgets](docs/access/budgets.md)
+  - [Budgets](https://oceans-llm.com/spend/budgets/)
 - routing:
-  - [Model Routing and API Behavior](docs/configuration/model-routing-and-api-behavior.md)
+  - [Model Routing and APIs](https://oceans-llm.com/configuration/model-routing/)
 - provider API compatibility:
-  - [Provider API Compatibility](docs/reference/provider-api-compatibility.md)
+  - [Provider API Compatibility](https://oceans-llm.com/reference/provider-api-compatibility/)
 - provider setup:
-  - [Google Cloud Run OpenAI-Compatible Models](docs/providers/gcp-cloud-run-openai-compat.md)
-  - [Google Vertex AI](docs/providers/gcp-vertex.md)
+  - [Google Cloud Run](https://oceans-llm.com/providers/gcp-cloud-run/)
+  - [Google Vertex AI](https://oceans-llm.com/providers/gcp-vertex/)
 - cross-cutting request flow:
-  - [Request Lifecycle and Failure Modes](docs/reference/request-lifecycle-and-failure-modes.md)
+  - [Request Lifecycle and Failure Modes](https://oceans-llm.com/reference/request-lifecycle/)
 - pricing and spend:
-  - [Pricing Catalog and Accounting](docs/configuration/pricing-catalog-and-accounting.md)
+  - [Pricing Catalog and Accounting](https://oceans-llm.com/spend/pricing-and-accounting/)
   - [Budgets and Spending](docs/contributing/operations/budgets-and-spending.md)
 - observability:
-  - [Observability and Request Logs](docs/operations/observability-and-request-logs.md)
+  - [Observability and Request Logs](https://oceans-llm.com/observability/)
   - [MCP Registry and Discovery](docs/contributing/mcp/mcp-registry-and-discovery.md)
 - admin UI:
-  - [Admin Control Plane](docs/access/admin-control-plane.md)
+  - [Admin Control Plane](https://oceans-llm.com/access/admin-control-plane/)
 - maintainer-facing docs source notes:
   - [Documentation Source Notes](docs/README.md)
 - deploy quick start:
   - [Deploy](deploy/README.md)
 - Kubernetes and Helm:
-  - [Kubernetes and Helm](docs/setup/kubernetes-and-helm.md)
+  - [Kubernetes and Helm](https://oceans-llm.com/setup/kubernetes-and-helm/)
   - [Helm Chart](deploy/helm/oceans-llm/README.md)
 - self-hosting (mise daemons + Tailscale):
-  - [Self-Hosting with mise Daemons](docs/setup/self-hosting-mise-daemons.md)
+  - [Local process (mise)](https://oceans-llm.com/setup/self-hosting/)
 
 ## Same-Origin Runtime Model
 

@@ -5,10 +5,10 @@
 
 ## Current state
 
-- [Configuration Reference](../configuration/configuration-reference.md#route-metadata-overrides)
-- [Model Routing and APIs](../configuration/model-routing-and-api-behavior.md#configure-route-metadata)
-- [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md#route-pricing-overrides)
-- [Client Harness Configuration](../configuration/client-harness-configuration.md)
+- [Models and routes: Route metadata overrides](https://oceans-llm.com/configuration/models-and-routes/#route-metadata-overrides)
+- [Model Routing and APIs](https://oceans-llm.com/configuration/model-routing/#route-metadata)
+- [Pricing Catalog and Accounting](https://oceans-llm.com/spend/pricing-and-accounting/#route-pricing-overrides)
+- [Client Harness Configuration](https://oceans-llm.com/harnesses/)
 
 ## Context
 

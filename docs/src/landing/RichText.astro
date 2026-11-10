@@ -1,0 +1,31 @@
+---
+/** Renders content.ts `Run`s: plain text, links, and inline code. */
+import type { Run } from "./content";
+
+interface Props {
+  runs: Run[];
+  /** Classes for links; defaults to the landing's underlined link. */
+  linkClass?: string;
+}
+
+const { runs, linkClass = "lp-link-inline" } = Astro.props;
+const external = (href: string) => /^https?:\/\//.test(href);
+---
+
+{
+  runs.map((run) =>
+    run.href ? (
+      <a
+        href={run.href}
+        class={linkClass}
+        {...(external(run.href) ? { target: "_blank", rel: "noopener" } : {})}
+      >
+        {run.text}
+      </a>
+    ) : run.code ? (
+      <code class="lp-code-inline">{run.text}</code>
+    ) : (
+      <Fragment>{run.text}</Fragment>
+    ),
+  )
+}

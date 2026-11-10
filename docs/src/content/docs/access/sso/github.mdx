@@ -1,0 +1,106 @@
+---
+title: GitHub OAuth setup
+description: Set up a GitHub OAuth App so users can sign in to Oceans with their GitHub accounts.
+sidebar:
+  order: 2
+---
+
+Oceans can sign users in with GitHub directly, with no other identity provider in between. It uses a GitHub OAuth App and the `auth.oauth` config section. For how sign-in, matching and JIT work, see [OIDC and SSO](/access/sso/). The provider fields are on [Auth and access settings](/access/access-settings/).
+
+## Create the GitHub OAuth App
+
+Create one OAuth App for each Oceans deployment. An admin opens **Developer settings** in the settings of their GitHub account, or of the GitHub organisation that should own the app. The admin then opens **OAuth Apps**, chooses **New OAuth App**, and fills in these fields:
+
+| Field | Value |
+| --- | --- |
+| **Application name** | A name users recognise, for example `Oceans LLM` |
+| **Homepage URL** | `https://<your-oceans-host>` |
+| **Authorization callback URL** | `https://<your-oceans-host>/api/v1/auth/oauth/callback/github` |
+
+The callback URL must use the deployment's public Oceans URL, the same value as `auth.oauth.public_base_url`. The path is always `/api/v1/auth/oauth/callback/github`, whatever the provider `key` is.
+
+After the admin registers the app, GitHub shows the client ID. The admin generates a client secret and copies it at once, because GitHub shows it only once.
+
+## Store the credentials
+
+Give the gateway the client ID, the client secret and the public URL as deployment secrets or environment variables:
+
+```text
+GITHUB_OAUTH_CLIENT_ID=<github client id>
+GITHUB_OAUTH_CLIENT_SECRET=<github client secret>
+GATEWAY_PUBLIC_BASE_URL=https://<your-oceans-host>
+```
+
+Unlike OIDC, the GitHub `client_id` can be an `env.` reference. The gateway resolves the client secret at each sign-in, so its variable must stay set on the gateway process.
+
+## Configure Oceans
+
+Add GitHub under `auth.oauth.providers`:
+
+```yaml title="gateway.yaml"
+auth:
+  oauth:
+    public_base_url: env.GATEWAY_PUBLIC_BASE_URL
+    providers:
+      - key: github
+        label: GitHub
+        provider_type: github
+        client_id: env.GITHUB_OAUTH_CLIENT_ID
+        client_secret: env.GITHUB_OAUTH_CLIENT_SECRET
+        scopes:
+          - read:user
+          - user:email
+        sso_email_verification_enabled: true
+        allowed_email_domains:
+          - example.com
+        enabled: true
+        jit:
+          enabled: false
+          global_role: user
+          request_logging_enabled: true
+```
+
+`auth.oauth.public_base_url` is required when a provider is enabled. `scopes` must include `user:email`, because Oceans reads the user's emails. The login page shows a GitHub icon on the button when the provider `key` contains `github`.
+
+### Email verification
+
+`sso_email_verification_enabled` is `true` by default. Oceans then accepts the GitHub account's primary email only if GitHub has verified it. If it isn't verified, the login page shows the `github_unverified_email` error and the gateway logs `github account has no primary verified email`. The user verifies their primary email in [GitHub email settings](https://github.com/settings/emails) and signs in again.
+
+Set `sso_email_verification_enabled: false` only if you choose to trust GitHub primary emails that GitHub hasn't verified. The domain rule still applies to the primary email.
+
+### Allowed email domains
+
+`allowed_email_domains` is optional. If it's empty or missing, the invite and JIT rules alone decide who can sign in. If you set it, sign-in works only for accounts whose primary email domain is in the list.
+
+Matching ignores case and is exact on the domain: `alice@example.com` matches `example.com`, but `alice@mail.example.com` and `alice@evil-example.com` don't. The gateway checks the domain before it links an account, activates an invited user, creates a JIT user or sets the session cookie. An account that fails the check sees `unmatched_identity`. For the entry format rules, see [Auth and access settings](/access/access-settings/).
+
+## How GitHub identities map to Oceans users
+
+| Oceans uses | From GitHub |
+| --- | --- |
+| Subject id | The numeric user id from `/user`. It doesn't change when the user renames their account. |
+| Email for invite and JIT matching | The primary email from `/user/emails`. By default it must be verified. |
+| Domain check | The domain part of that primary email. |
+
+Oceans uses only the primary email, even if the account has other verified emails. It doesn't link an existing password user by email. See [How Oceans matches an identity](/access/sso/#how-oceans-matches-an-identity).
+
+## Set up users and check sign-in
+
+For invite-only access, keep `jit.enabled: false`. Admins then set up each user in one of two ways:
+
+- Declare the user in config with `auth_mode: oauth` and `oauth_provider_key: github`. See [Auth and access settings](/access/access-settings/).
+- Add the user on the **Users** page (under **Identity**) with **Add user**, pick **SSO (OAuth)** as the **Auth method**, and pick `github` as the **OAuth provider**.
+
+The user's GitHub primary email must match their Oceans email, compared in lowercase. With the default setting, GitHub must also have verified it.
+
+Seed the provider and users for your deployment as described in [SSO users seeded by config](/setup/first-access/#sso-users-seeded-by-config). On Helm, a gateway pod restart doesn't seed config.
+
+Before you ask users to sign in, open `https://<your-oceans-host>/api/v1/auth/oauth/providers` and check that it lists the `github` provider. Then users sign in as described in [Start SSO sign-in](/access/sso/#start-sso-sign-in).
+
+## Security notes
+
+- Keep `jit.enabled: false` unless you want GitHub accounts to create Oceans users automatically.
+- Keep `sso_email_verification_enabled: true` unless you have a clear reason to trust unverified GitHub emails.
+- When JIT is on, set `allowed_email_domains`. Without it, any GitHub account with an acceptable primary email can create a user.
+- Don't grant `platform_admin` through JIT unless your organisation's policy allows it for every account that can pass the checks.
+- Rotate the GitHub client secret if it leaks.

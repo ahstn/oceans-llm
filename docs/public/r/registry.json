@@ -1,7 +1,7 @@
 {
   "$schema": "https://ui.shadcn.com/schema/registry.json",
   "name": "oceans",
-  "homepage": "https://docs.oceans-llm.com",
+  "homepage": "https://oceans-llm.com",
   "items": [
     {
       "name": "oceans-theme",

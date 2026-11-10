@@ -5,9 +5,9 @@
 
 ## Current state
 
-- [../model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)
-- [../request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
-- [../observability-and-request-logs.md](../operations/observability-and-request-logs.md)
+- [Model routing and APIs](https://oceans-llm.com/configuration/model-routing/)
+- [Request lifecycle and failure modes](https://oceans-llm.com/reference/request-lifecycle/)
+- [Observability and request logs](https://oceans-llm.com/observability/)
 
 ## Context
 

@@ -1,0 +1,170 @@
+---
+title: Client harness configuration
+description: Connect OpenCode, Oh-My-Pi, Pi, Claude Code and Codex to Oceans, and generate their config snippets from the live model catalog.
+sidebar:
+  label: Overview
+  order: 0
+  group:
+    label: Harness configuration
+---
+
+Users point local agent harnesses, such as OpenCode or Claude Code, at the gateway. Oceans generates a config snippet for each harness from the live model catalog, so users don't write model data by hand.
+
+This page covers the snippets that every harness shares. OpenCode and Oh-My-Pi have their own pages. The other harnesses are covered below.
+
+| Harness | Setup |
+| --- | --- |
+| OpenCode | [OpenCode](/harnesses/opencode/): the Oceans plugin, which finds your models on the gateway, or a generated snippet. |
+| Oh-My-Pi (OMP) | [Oh-My-Pi (OMP)](/harnesses/omp/): omp's own model discovery reads the gateway. No snippet needed. |
+| Pi | [Pi](#pi), below. |
+| Claude Code | [Claude Code](#claude-code), below. |
+| Codex | [Codex](#codex), below. |
+
+![Client config dialog with the OpenCode tab open](/images/screenshot-model-client-config-opencode.jpeg)
+
+## Generate a snippet
+
+<Steps>
+<Step title="Open the Models page">
+A user opens `/admin/models`.
+</Step>
+<Step title="Choose models">
+The user ticks one or more models in the table, then clicks **Generate config**. To get a snippet for one model, the user clicks the row's **Config** button instead.
+
+![Models page with two models ticked, the "2 selected for client config" count, and the Generate config button](/images/screenshot-models.png)
+</Step>
+<Step title="Copy the config">
+The **Client config** dialog shows one tab per harness. Each tab lists the config file path, the API key variable and a link to the harness docs, then the code block to copy.
+</Step>
+</Steps>
+
+A model is selectable only if its primary route can serve Chat Completions or Responses. Decisions-only and image-only models get no snippets, because these harnesses use chat-shaped APIs. Their checkbox and row button are disabled ([source](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-service/src/admin_models.rs)).
+
+The dialog shows these tabs:
+
+| Tab | File | When it appears |
+| --- | --- | --- |
+| OpenCode | `opencode.json` | Always |
+| Pi | `models.json` | Always |
+| Claude Code | `settings.json` | When the selection has at least one model that uses Anthropic Messages (a Claude model, or a route whose provider speaks Messages) |
+| Codex | `config.toml` | When exactly one model is selected and it supports Responses |
+
+If the selection has more than one model and at least one supports Responses, each tab adds a note: select one model and generate again to get the Codex snippet.
+
+Snippets use the gateway model ids shown in the Models table. A snippet doesn't create or grant anything. Users still create API keys in Oceans. The snippet only tells the harness the gateway URL, the key variable and the model ids.
+
+## Gateway base URL
+
+The gateway sets the base URL in snippets from `GATEWAY_CLIENT_CONFIG_BASE_URL`. If the variable is unset, snippets use `http://127.0.0.1:3000`. In Helm, set `gateway.clientConfigGatewayBaseUrl`. The chart passes it to the gateway as `GATEWAY_CLIENT_CONFIG_BASE_URL`. The chart default is empty, so the local default applies.
+
+Set it to the public gateway URL that users can reach, for example `https://api.oceans-llm.com`. A trailing `/` or `/v1` is removed, so `https://api.oceans-llm.com` and `https://api.oceans-llm.com/v1` give the same snippets. The gateway won't start if the value is empty, has leading or trailing whitespace, isn't an absolute `http` or `https` URL, or has no host ([source](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway/src/main.rs)). The same value sets the endpoint in [MCP servers](/extensions/mcp-servers/) connection snippets.
+
+Each harness then adds `/v1` or not, based on the API style it uses. For a gateway at `https://api.oceans-llm.com`:
+
+| Harness | API style or package | Generated base URL |
+| --- | --- | --- |
+| Claude Code | Anthropic Messages | `https://api.oceans-llm.com` |
+| Codex | Responses (`wire_api = "responses"`) | `https://api.oceans-llm.com/v1` |
+| OpenCode | `@opencode/ai/providers/anthropic-compatible` | `https://api.oceans-llm.com` |
+| OpenCode | `@opencode/ai/providers/openai-compatible` | `https://api.oceans-llm.com/v1` |
+| OpenCode | `@opencode/ai/providers/openai-compatible/responses` | `https://api.oceans-llm.com/v1` |
+| Pi | `anthropic-messages` | `https://api.oceans-llm.com` |
+| Pi | `openai-completions` | `https://api.oceans-llm.com/v1` |
+| Pi | `openai-responses` | `https://api.oceans-llm.com/v1` |
+
+The gateway accepts inference requests with or without the `/v1` prefix. `/chat/completions`, `/responses`, `/embeddings`, `/decisions`, `/models`, `/messages` and `/messages/count_tokens` behave the same as their `/v1` forms. So a harness set to either the gateway root or the `/v1` URL reaches the same endpoints. Don't add `/v1` twice, as in `https://api.oceans-llm.com/v1/v1`.
+
+### How the API style is chosen
+
+For OpenCode and Pi, each model gets one API style:
+
+- Responses, if the model supports Responses and either its provider speaks Responses natively or it doesn't support Chat Completions.
+- Anthropic Messages, if its provider speaks Messages natively. If the provider format isn't known, the gateway checks whether the model id or upstream model contains `anthropic` or `claude`.
+- Chat Completions otherwise.
+
+If the selected models use more than one style, the snippet has one provider per style. The provider ids get a suffix, such as `oceans-llm-openai-compatible` or `oceans-llm-anthropic-messages`. With one style, the provider id is `oceans-llm`.
+
+## Model data in snippets
+
+Snippets for OpenCode and Pi carry model data from the Models API:
+
+- **Pricing** comes from the primary display route's effective pricing. If routes differ in price, the Models API marks `pricing_varies_by_route`, but the snippet still uses the primary route's rates. Pi always gets `input`, `output`, `cacheRead` and `cacheWrite`, with `0` for any missing rate. OpenCode gets `input` and `output` (`0` if missing), and `cache.read` and `cache.write` only when those rates exist.
+- **Context window** is the model's input window, or its context window if no input window is known, capped at 200,000 tokens. The output limit is the model's output window, or `0` if unknown.
+- **Input media** is `text`, plus `image` for vision routes.
+
+See [Pricing catalog and accounting](/spend/pricing-and-accounting/) for how effective pricing is resolved.
+
+## Pi
+
+The Pi tab emits `models.json` for Pi's custom provider config at `~/.pi/agent/models.json`. Pi settings are a separate file: `~/.pi/agent/settings.json` for global settings and `.pi/settings.json` for project overrides. The tab links to the [Pi settings docs](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/settings.md).
+
+Each provider sets `baseUrl`, `api` and `apiKey`. The `apiKey` value is `$OCEANS_LLM_API_KEY`, so Pi reads the key from that variable. Each model sets `reasoning`, `input`, `contextWindow`, `maxTokens` and `cost`.
+
+Reasoning models get a `thinkingLevelMap`. Levels above the model's reasoning ceiling are clamped to the strongest allowed effort, so picking `max` in Pi still sends an effort the gateway accepts. If no effort is allowed, the level is hidden with `null`.
+
+## Claude Code
+
+![Client config dialog with the Claude Code tab open](/images/screenshot-model-client-config-claude-code.png)
+
+The Claude Code tab emits `settings.json` content with the SchemaStore Claude Code schema URL. Use `~/.claude/settings.json` for user config or `.claude/settings.json` for project config. The tab links to the [Claude Code settings docs](https://code.claude.com/docs/en/settings). Only models that use Anthropic Messages are included.
+
+The first block, **Gateway model settings**, sets these values:
+
+- `ANTHROPIC_AUTH_TOKEN`, set to the placeholder `<gateway api token>`. Replace it with a gateway API key.
+- `ANTHROPIC_BASE_URL`, set to the gateway root without `/v1`.
+- `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY`, set to `1`, so Claude Code can discover gateway models.
+- `ANTHROPIC_MODEL`, set to the first selected model.
+- `ANTHROPIC_SMALL_FAST_MODEL`, set to the background model (see below).
+- `ANTHROPIC_DEFAULT_OPUS_MODEL`, `ANTHROPIC_DEFAULT_SONNET_MODEL`, `ANTHROPIC_DEFAULT_HAIKU_MODEL` or `ANTHROPIC_DEFAULT_FABLE_MODEL`, set to the first selected model of that family.
+- `modelOverrides`, which maps Claude Code's Anthropic model ids (such as `claude-sonnet-4-6`) to the selected gateway model ids.
+
+Claude Code appends Anthropic paths such as `/v1/messages`, `/v1/messages/count_tokens` and `/v1/models` to `ANTHROPIC_BASE_URL`. Don't put `/v1/messages` in the base URL. Token counting returns a real count only when the selected route's provider has an upstream count API. Other routes return `501 not_implemented_error`. See [Provider API compatibility](/reference/provider-api-compatibility/).
+
+The second block, **Lower token usage settings**, is optional. It turns off telemetry, error reporting, experimental betas, 1M context and the terminal title. It also sets a simple system prompt, sets `CLAUDE_CODE_AUTO_COMPACT_WINDOW` to `200000`, and sets `ENABLE_TOOL_SEARCH` to `auto`.
+
+### Claude Code background model
+
+Claude Code runs background work, such as WebFetch summaries and session titles, on its small/fast model. It sends `thinking: { "type": "disabled" }` with that work. The snippet sets `ANTHROPIC_SMALL_FAST_MODEL` to the first selected model that can turn thinking off. If every selected model always thinks, it uses the first selected model and adds a note.
+
+Some Claude models always think, such as Claude Opus 5.5 and Fable 5. The gateway rejects thinking-off requests to them with a 400, and Claude Code reports a tool failure. Other models forward or rewrite the request, in some cases only at lower effort. [Model routing and APIs](/configuration/model-routing/) has the per-model rules.
+
+To avoid failures, include a Haiku or Sonnet model in the selection. Or set `ANTHROPIC_SMALL_FAST_MODEL` and `ANTHROPIC_DEFAULT_HAIKU_MODEL` to a gateway model that can turn thinking off.
+
+When a host app manages Claude Code's provider settings, such as the Claude desktop app with `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1`, user-level overrides of these variables may not apply. In that case, choose a main model that can turn thinking off.
+
+## Codex
+
+The Codex tab emits `config.toml` for the user-level config at `~/.codex/config.toml`. Codex ignores provider, auth and telemetry keys in project-local `.codex/config.toml` files, so copy the block into the user-level file. The tab links to the [Codex config reference](https://developers.openai.com/codex/config-reference).
+
+The snippet sets these values:
+
+```toml title="config.toml"
+model = "<gateway model id>"
+model_provider = "oceans-llm"
+
+[model_providers.oceans-llm]
+name = "oceans-llm"
+base_url = "https://api.oceans-llm.com/v1"
+env_key = "OCEANS_LLM_API_KEY"
+env_key_instructions = "Set OCEANS_LLM_API_KEY in your environment"
+requires_openai_auth = false
+wire_api = "responses"
+
+[analytics]
+enabled = false
+
+[otel]
+log_user_prompt = false
+```
+
+The snippet doesn't set `model_reasoning_effort`, so Codex uses the model's own default. A gateway `max_reasoning_effort` is an enforcement ceiling. It doesn't become a client default.
+
+Responses-compatible Bedrock routes may support only some OpenAI-hosted tools. For example, Bedrock Mantle GPT-5.5 works with Codex over Responses, but doesn't support the hosted `image_generation` tool. See [Provider API compatibility](/reference/provider-api-compatibility/).
+
+## Shell guardrail hooks
+
+The snippets don't include a guardrail hook. Oceans' own Pi and OpenCode harness adapters install a pre-tool hook that calls `POST /api/v1/guardrails/evaluate` before each shell command. A deny or a failed evaluation stops the command. See [agent harness usage](/observability/agent-harness-usage/) and [gateway guardrails](/operations/gateway-guardrails/).
+
+## Access and budgets
+
+A snippet doesn't grant access. The gateway accepts a request only when the API key is active, the caller has access to the model, and every hard budget still has room. Budgets apply the same way whatever harness sends the request. Admins set them in `/admin/spend-controls`. See [budgets](/spend/budgets/) for the budget types and setup, and [Budget settings](/spend/budget-settings/) for the YAML fields.

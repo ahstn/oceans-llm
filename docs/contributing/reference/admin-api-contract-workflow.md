@@ -1,6 +1,6 @@
 # Admin API Contract Workflow
 
-`See also`: [Admin Control Plane](../../access/admin-control-plane.md), [End-to-End Contract Tests](e2e-contract-tests.md), [Oceans LLM Gateway](../../../README.md), [ADR: Generated Admin API Contract and Typed Same-Origin Client](../../adr/2026-03-28-generated-admin-api-contract-and-typed-same-origin-client.md), [ADR: Live Admin API-Key Management and Contract Coverage](../../adr/2026-03-29-live-admin-api-key-management-and-contract-coverage.md)
+`See also`: [Admin Control Plane](https://oceans-llm.com/access/admin-control-plane/), [End-to-End Contract Tests](e2e-contract-tests.md), [Oceans LLM Gateway](../../../README.md), [ADR: Generated Admin API Contract and Typed Same-Origin Client](../../adr/2026-03-28-generated-admin-api-contract-and-typed-same-origin-client.md), [ADR: Live Admin API-Key Management and Contract Coverage](../../adr/2026-03-29-live-admin-api-key-management-and-contract-coverage.md)
 
 This page is maintainer-facing. It explains how the live admin contract is generated and why the checked-in artifacts are part of the review surface.
 
@@ -106,7 +106,7 @@ Use this rough rule:
 - route shape, query params, or response envelopes changed:
   - update this page
 - admin UI capability changed:
-  - update [admin-control-plane.md](../../access/admin-control-plane.md)
+  - update [Admin control plane](https://oceans-llm.com/access/admin-control-plane/)
 - test coverage rules changed:
   - update [e2e-contract-tests.md](e2e-contract-tests.md)
 - architectural reasoning changed:
@@ -114,6 +114,6 @@ Use this rough rule:
 
 ## What This Page Does Not Own
 
-- admin-facing UI capability map: [admin-control-plane.md](../../access/admin-control-plane.md)
+- admin-facing UI capability map: [Admin control plane](https://oceans-llm.com/access/admin-control-plane/)
 - browser and HTTP contract test scope: [e2e-contract-tests.md](e2e-contract-tests.md)
 - local quick-start commands: [../README.md](../../../README.md)

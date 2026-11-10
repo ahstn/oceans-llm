@@ -1,0 +1,221 @@
+---
+title: Start up and first access
+description: What the gateway does when it starts, and how to get your first admin sign-in and API key in each setup.
+sidebar:
+  label: First access
+  order: 1
+---
+
+Oceans has two kinds of access, and they're set up separately:
+
+- **Admin access** lets a person sign in to the admin UI at `/admin`. On a new install, this comes from the bootstrap admin.
+- **API access** lets a caller send requests to `/v1/*` with an API key. On a new install, this comes from a service account declared in the config, or one an admin creates later.
+
+Because they're separate, a new environment can have API access but no admin sign-in, an admin sign-in but no API key, both, or neither. This page explains what creates each one, then walks through first access for every [setup](/setup/).
+
+## What happens at startup
+
+`gateway serve` starts the gateway. Running `gateway` with no command does the same. Before it serves traffic, it can do three things, in this order:
+
+| Step | Turned off with | Run on its own with |
+| --- | --- | --- |
+| Apply database migrations | `GATEWAY_RUN_MIGRATIONS=false` | `gateway migrate --apply` |
+| Seed objects from the config: providers, models, teams, users, service accounts, and budgets | `GATEWAY_SEED_CONFIG=false` | `gateway seed-config` |
+| Create the bootstrap admin, if needed | `GATEWAY_BOOTSTRAP_ADMIN=false` | `gateway bootstrap-admin` |
+
+All three are on by default. `gateway seed-config` and `gateway bootstrap-admin` apply migrations first, whatever the toggles say.
+
+Every command reads the main config from `--config` or `GATEWAY_CONFIG`, plus any fragments under `--config-dir` or `GATEWAY_CONFIG_DIR` ([Config files and fragments](/configuration/#config-files-and-fragments)). Seeding creates and updates config-backed objects. It never removes providers or models deleted from config, and their routes stay enabled.
+
+Two more commands help before a start or an upgrade. `gateway config validate` checks the config file, and `gateway migrate --check` reports whether the database schema is current; `--status` lists every migration.
+
+## The bootstrap admin
+
+The bootstrap admin is the first platform admin, and it's how you get into `/admin` on a new install. Its email, password, and password-change rule come from `auth.bootstrap_admin` in the config.
+
+The gateway creates it only when `auth.bootstrap_admin.enabled` is `true` and the database has no platform admin at all. Any platform admin counts, including one who was seeded by config and hasn't signed in yet. When bootstrap does run, it writes the configured password to the bootstrap account, even if that account already exists. So if you demote the bootstrap admin and no platform admin is left, the next start resets its password. Two gateways that start at the same time on a new database can both run bootstrap, and the later one's password wins.
+
+<Aside type="caution" title="A seeded platform admin blocks the bootstrap admin">
+  Seeding runs before bootstrap. If the config's `users` list includes someone with `global_role: platform_admin`, they exist by the time bootstrap checks, so `admin@local` is never created. That user starts as `invited`, and only an admin can create their invite link.
+</Aside>
+
+Once you're signed in, see [identity and access](/access/identity-and-access/) for how users, teams, and roles work from there.
+
+## Service accounts and API keys
+
+Service accounts are the non-human callers of the gateway.
+
+- Each one belongs to a team. Platform admins, and owners or admins of that team, manage it.
+- Its API keys reach the data plane only. They never sign in to `/admin`.
+- A key works only while its service account is active and has an active budget.
+- Keys declared in config (`service_accounts[*].keys`) need `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY`, a base64-encoded 32-byte key. The gateway stores each key encrypted, so it can show it again later. Keep this key safe: without it, stored keys can't be decrypted.
+
+Every API key belongs to a user or a service account. Keys owned directly by a team, and the old `system-legacy` seeded keys, aren't supported.
+
+![API keys page listing each key's owner, granted models, scopes, last use, and status](/images/screenshot-api-keys.png)
+
+## Who can sign in, and who can call
+
+| Identity | Sign in to `/admin` | Call `/v1/*` | Notes |
+| --- | --- | --- | --- |
+| Bootstrap admin | Yes | Only with a key created for them | The first way into the admin UI. |
+| User seeded by config | After onboarding | Only with a key created for them | Starts as `invited`. |
+| Platform admin seeded by config | After onboarding | Only with a key created for them | The role is seeded, but they still have to complete onboarding. |
+| Service account | No | Yes, with one of its keys | Owned by a team. |
+
+Users seeded by config start as `invited`. Password users need an invite link, which an admin creates in the admin UI. SSO users can sign in from the shared login page instead; see [SSO users seeded by config](#sso-users-seeded-by-config).
+
+When a user finishes onboarding, the admin UI shows an **Account ready** page with a link to the control plane.
+
+![Account ready page after onboarding, with the Open control plane button](/images/auth-flow/account-ready.png)
+
+## First access, by setup
+
+### Local development
+
+`mise run dev-stack` runs the gateway with `gateway.yaml` and a libsql database in `./gateway.db`, and the admin UI's dev server on port 3001. It reads `OPENAI_API_KEY` and `OPENROUTER_API_KEY` as secrets, and fills in local defaults for the key encryption key and the public URL. Override the ports with `GATEWAY_PORT` and `UI_PORT`.
+
+Before the gateway starts, the task seeds a demo dataset:
+
+- 16 demo users across four teams: `platform`, `research`, `applied-ai`, and `operations`. They're active, with the password `localdemo123`.
+- User-owned demo API keys for testing the data plane.
+- Sample request logs and usage, so the observability pages have something to show.
+
+Every run resets the demo users' passwords and statuses and replaces the sample rows. The seed refuses a PostgreSQL database that isn't on loopback. The config also creates a key for the `local-ci-runner` service account.
+
+To sign in:
+
+<Steps>
+  <Step title="Open the admin UI">
+    Go to `http://localhost:8080/admin`.
+  </Step>
+  <Step title="Sign in">
+    Use `admin@local` with the password `admin`. There's no forced password change locally.
+  </Step>
+</Steps>
+
+![Oceans sign-in page with the email and password fields and the bootstrap admin hint](/images/auth-flow/login.png)
+
+### Production-shaped local run
+
+`mise run prod-stack` runs the built admin UI server with `gateway.prod.yaml` and PostgreSQL. It's closer to a real deployment than `dev-stack`. Set `POSTGRES_URL` before you start it; the task also reads `OPENAI_API_KEY`.
+
+There's no demo data and no seeded service account.
+
+<Steps>
+  <Step title="Sign in">
+    Open `http://localhost:8080/admin` and sign in as `admin@local` with `admin`.
+  </Step>
+  <Step title="Change the password">
+    The gateway asks for a new password at first sign-in.
+  </Step>
+  <Step title="Create API access">
+    Create a key for yourself on the **API Keys** page. The admin UI can't create service accounts: declare them in `service_accounts` in the config (see [Auth and access settings](/access/access-settings/)), or create them with the admin API. See [Service accounts](/access/service-accounts/).
+  </Step>
+</Steps>
+
+### Docker Compose
+
+The compose stack in `deploy/compose.yaml` runs the published gateway, admin UI, and PostgreSQL images, with `deploy/config/gateway.yaml` mounted as the config. It reads its settings from `deploy/.env`; copy `deploy/.env.example` to start.
+
+Compose refuses to start without these two:
+
+- `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY`: a base64-encoded 32-byte key, such as the output of `openssl rand -base64 32`.
+- `GATEWAY_PUBLIC_BASE_URL`: the public URL of the gateway.
+
+Other values fall back to insecure placeholders if you leave them out, so set them as well: `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD` (otherwise `change-me-admin`), `GATEWAY_API_KEY` (otherwise `gwk_deploy.replace-me`), `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`. Add the provider keys your config uses, such as `OPENAI_API_KEY`.
+
+<Aside type="caution" title="Set an identity token secret">
+  The gateway signs sessions and invite links with `GATEWAY_IDENTITY_TOKEN_SECRET`. Without it, the gateway falls back to a built-in development secret that anyone can read in the source. `deploy/compose.yaml` doesn't pass this variable through, so add it to the gateway service's `environment` before you expose the stack.
+</Aside>
+
+The config seeds a `platform` team, a `default` service account with a $100 monthly hard budget, and `GATEWAY_API_KEY` as that account's key. It also seeds `ops@example.com` as a platform admin, which [blocks the bootstrap admin](#the-bootstrap-admin). Before the first start, remove that entry from `users` or change its `global_role`, so the gateway creates `admin@local`.
+
+<Steps>
+  <Step title="Start the stack">
+    ```sh
+    cp deploy/.env.example deploy/.env
+    docker compose -f deploy/compose.yaml up -d
+    docker compose -f deploy/compose.yaml ps
+    ```
+  </Step>
+  <Step title="Check the gateway">
+    ```sh
+    curl --fail http://localhost:8080/healthz
+    curl --fail http://localhost:8080/readyz
+    ```
+  </Step>
+  <Step title="Check the API key">
+    ```sh
+    curl --fail -H "Authorization: Bearer ${GATEWAY_API_KEY}" http://localhost:8080/v1/models
+    ```
+  </Step>
+  <Step title="Sign in">
+    Open `/admin` and sign in as `admin@local` with `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD`. Change the password when asked.
+  </Step>
+  <Step title="Send one real request">
+    Send one low-cost `/v1/*` request to confirm your provider keys work. If it fails, check the gateway logs for config seeding, provider auth, or routing errors.
+  </Step>
+</Steps>
+
+### Kubernetes with Helm
+
+Gateway pods never change the database when they start. The chart turns off all three startup steps and runs them as Jobs instead:
+
+- **Migrations** run as a Helm hook Job on every install and upgrade. This is on by default.
+- **The bootstrap admin** needs two settings: `bootstrapAdminJob.enabled=true`, and `gateway.config.auth.bootstrap_admin.enabled: true`, plus a Secret for its password. Both are off by default.
+- **Config seeding** runs only with `seedConfigJob.enabled=true`, and only during the install or upgrade that has it on.
+
+Without the bootstrap-admin Job, admin access exists only if the database already has an admin. API access starts once an admin creates a service account and a key, or once the seed Job seeds the service accounts in your config.
+
+<Steps>
+  <Step title="Render your values">
+    Run `helm template` with the values you'll install, and check the output.
+  </Step>
+  <Step title="Create the secrets">
+    Make sure every Secret exists before you install, or that your `ExternalSecret` creates it. See [secrets](/setup/kubernetes-and-helm/#secrets).
+  </Step>
+  <Step title="Watch the migration Job">
+    Confirm it succeeds, then confirm the gateway and admin UI pods become ready.
+  </Step>
+  <Step title="Check the gateway">
+    Call `/healthz` and `/readyz` through the gateway service or ingress.
+  </Step>
+  <Step title="Sign in">
+    Open `/admin` once the bootstrap-admin Job has run, or with an admin that already exists.
+  </Step>
+</Steps>
+
+### Local process (mise)
+
+The self-hosted setup creates `admin@local` with `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD` and asks for a new password at first sign-in. [Local process (mise)](/setup/self-hosting/#deploy-for-the-first-time) covers the whole sequence.
+
+## SSO users seeded by config
+
+OIDC and OAuth providers, and the users who sign in with them, can be declared in config. A seeded SSO user doesn't need an invite link: they can sign in from the shared login page as soon as the seed has run.
+
+<Steps>
+  <Step title="Seed the config">
+    Start or restart the gateway with config seeding on. On Helm, turn on `seedConfigJob.enabled` for the install or upgrade that applies the config. Gateway pods don't seed when they restart.
+  </Step>
+  <Step title="Check the provider">
+    Confirm it's listed at `/api/v1/auth/oidc/providers` or `/api/v1/auth/oauth/providers`.
+  </Step>
+  <Step title="Share the login page">
+    Send the user `https://<your-oceans-host>/admin/login`. It works for every setup, and doesn't need a per-user link.
+  </Step>
+  <Step title="Sign in">
+    The user picks the provider declared for them and signs in with an identity whose email, as the provider reports it, matches the seeded email. The provider's email verification and allowed-domain rules must accept it.
+  </Step>
+  <Step title="Confirm">
+    The user's status changes from `invited` to `active` after their first successful sign-in.
+  </Step>
+</Steps>
+
+[OIDC and SSO](/access/sso/#start-sso-sign-in) lists the direct provider URLs and their parameters.
+
+## Troubleshooting: `/admin` loads without styles
+
+The gateway proxies `/admin/*` to the admin UI, which serves its own assets under `/admin/assets/`. If an asset request reaches the admin UI's sign-in check instead, it comes back as the login page's HTML, and `/admin` renders without styles even though the page itself loads.
+
+The admin UI server answers asset misses as plain misses before it checks sign-in, so this shows up only when something between the browser and the admin UI rewrites or reroutes asset paths. Request a stylesheet URL from the page directly: it should return `text/css`, not `text/html`. [Issue #222](https://github.com/ahstn/oceans-llm/issues/222) has the original report.

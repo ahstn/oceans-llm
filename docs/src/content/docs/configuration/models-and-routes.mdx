@@ -1,0 +1,516 @@
+---
+title: Models and routes
+description: Field reference for models entries, routing policy, effort ceilings, allowlists, routes, route metadata, and route compatibility profiles.
+sidebar:
+  order: 2
+---
+
+A `models[*]` entry defines one gateway model that callers can request. Each model either has `routes` to providers or is an alias of another model. This page lists the fields and their validation rules. For how the gateway picks a route and gates a request, see [Model routing and APIs](/configuration/model-routing/). For provider fields, see [Providers](/configuration/providers/).
+
+## Model fields
+
+`models` is a map keyed by model id, or a list of entries with `id`; see [Config files and fragments](/configuration/#config-files-and-fragments). A model must set exactly one of `routes`, `route`, or `alias_of`. Setting more than one, or none, fails config loading. Model ids must be unique, including across fragments. Unknown model fields are rejected.
+
+The model id is the stable key for grants, budgets, request logs, and spend. The gateway never derives it from `upstream_model`, so changing the upstream model does not rename the gateway model.
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `id` | required | The model name callers send. |
+| `routes` | `[]` | Provider-backed routes. See [Route fields](#route-fields). |
+| `route` | none | Shorthand for a single route: the same fields as one `routes` entry. Can't be combined with `routes`. |
+| `alias_of` | none | Target model `id`. The target must exist. A model can't alias itself, and alias cycles fail. |
+| `description` | none | Shown in the admin UI and model lists. |
+| `tags` | `[]` | Used by `tag:` selectors. |
+| `rank` | `100` | Display and ordering rank. |
+| `routing` | none | Routing policy. Provider-backed models only. See [Routing policy and session affinity](#routing-policy-and-session-affinity). |
+| `max_reasoning_effort` | none | See [Reasoning effort ceilings](#reasoning-effort-ceilings). |
+| `allowlist` | none | See [Model allowlists](#model-allowlists). |
+| `benchmark_model_id` | none | OpenRouter model ID (`publisher/model`, no `:variant`) for benchmark lookup. See [Configuration reference](/configuration/). |
+
+A provider-backed model and an alias that points to it:
+
+```yaml
+models:
+  - id: coding-default
+    alias_of: coding-primary
+
+  - id: coding-primary
+    routes:
+      - provider: openai-primary
+        upstream_model: gpt-5
+```
+
+Callers can request either name. Access to one doesn't grant access to the other, so grant the name callers will send.
+
+## Routing policy and session affinity
+
+`models[*].routing` is optional and applies only to provider-backed models. An alias can't set `routing`: it inherits the resolved target's policy.
+
+| Field | Default | Accepted values |
+| --- | --- | --- |
+| `routing.strategy` | `weighted_random` | `preferred`, `weighted_random`, `round_robin` |
+| `routing.affinity` | absent (no session affinity) | An object. `{}` enables affinity with the default timeout. |
+| `routing.affinity.idle_timeout_seconds` | `3600` | Integer from `1` to `4294967295` |
+
+When `routing` is present, even as `routing: {}`, every route on the model needs an explicit `id`. Unknown routing fields and unknown strategy names fail config loading. Omitting `routing` keeps weighted selection without affinity.
+
+This pool rotates new sessions between two provider connections:
+
+```yaml
+models:
+  - id: coding-pool
+    routing:
+      strategy: round_robin
+      affinity:
+        idle_timeout_seconds: 3600
+    routes:
+      - id: primary
+        provider: openai-primary
+        upstream_model: gpt-6-sol
+        priority: 10
+        weight: 3
+      - id: secondary
+        provider: openrouter
+        upstream_model: openai/gpt-6-sol
+        priority: 10
+        weight: 1
+```
+
+Under `round_robin` both routes get turns. The weights matter only if the strategy changes to `weighted_random`.
+
+Routes on `aws_bedrock`, `gcp_vertex`, or `gcp_cloud_run_openai_compat` providers with ambient or file-based credentials also need the provider's [routing account scope](/configuration/providers/#routing-account-scope).
+
+Routing policy is YAML-only. Apply changes by reseeding the deployment. For which APIs use the policy, session IDs, and response-origin tracking, see [Model routing and APIs](/configuration/model-routing/).
+
+## Reasoning effort ceilings
+
+`models[*].max_reasoning_effort` is an optional ceiling for explicit categorical reasoning effort.
+
+```yaml
+models:
+  - id: claude-fable-5.1
+    description: Claude Fable 5.1 on Vertex
+    max_reasoning_effort: high
+    routes:
+      - provider: vertex-global
+        upstream_model: anthropic/claude-fable-5-1
+```
+
+Accepted values, from least to most effort: `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Omitting the field or setting `null` means no ceiling. The gateway compares values in this order. It doesn't clamp or rewrite requests.
+
+The ceiling covers categorical effort only. It doesn't cap numeric controls such as `thinking.budget_tokens` or `reasoning.budget_tokens`. It also doesn't govern a default the provider picks when neither the caller nor the route sets effort. If a provider default must respect the ceiling, set it explicitly on the route.
+
+Startup checks explicit effort values in each route's `extra_body` against the ceiling. Known values above the ceiling, unknown strings, and non-string values fail config loading. Omitted and `null` values pass. For aliases, startup uses the strictest ceiling in the whole alias chain and checks the target's routes against it.
+
+For request shapes and rejection behaviour, see [Model routing and APIs](/configuration/model-routing/).
+
+## Model allowlists
+
+`models[*].allowlist` limits which human users and teams may use a model. It's separate from API-key grants and from user, team, and service-account model restrictions.
+
+```yaml
+models:
+  - id: finance-gpt-4o
+    tags: [finance, fast]
+    allowlist:
+      users:
+        - Analyst@Example.com
+      teams:
+        - Finance
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-4o
+```
+
+Rules:
+
+- `users` entries are trimmed and lowercased like config user emails. `teams` entries are normalised like config team keys. Duplicates collapse after normalisation.
+- Unknown user and team refs are accepted, so a future user or team can match without a config change.
+- `allowlist: {}`, empty `users` and `teams`, or refs that normalise to nothing fail config loading.
+- Omitting `allowlist` means no model-level restriction. On reseed, omission also clears any allowlist stored earlier for that model.
+- A user-owned API key may use the model when the user's normalised email or an effective team key is listed.
+- A service-account-owned API key is always denied a model that has an allowlist, even when its team is listed.
+- Aliases are separate models. An alias doesn't inherit its target's allowlist, and the target's allowlist doesn't apply to the alias.
+- `tag:` selectors skip allowlisted models the caller can't use.
+
+## Route fields
+
+Each `models[*].routes[*]` entry sends the model to one provider.
+
+Unknown route fields, including inside `capabilities` and `compatibility`, fail config loading.
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `id` | provider key | Defaults to the provider key when that provider appears once in the model, the key is a valid route id, and no explicit route `id` in the model already uses it. Set it explicitly when two routes in one model share a provider. Every route needs one when the model has `routing`. Unique within the model. 1 to 128 ASCII letters, digits, periods, underscores, or hyphens. |
+| `provider` | required | A `providers[*].id`. Unknown providers fail config loading. |
+| `upstream_model` | required | Model name sent to the provider. `gcp_vertex` routes need `<publisher>/<model_id>`. |
+| `priority` | `100` | Route priority. |
+| `weight` | `1.0` | Weight for weighted selection. |
+| `enabled` | `true` | Set `false` to keep the route but stop using it. |
+| `context_window_tokens` | none | See [Route metadata overrides](#route-metadata-overrides). |
+| `pricing_override` | none | See [Route metadata overrides](#route-metadata-overrides). |
+| `capabilities` | all unset | See [Route capabilities](#route-capabilities). |
+| `compatibility` | none | See [Route compatibility](#route-compatibility). |
+| `extra_headers` | `{}` | Headers added to upstream requests for this route. |
+| `extra_body` | `{}` | Fields merged into the upstream request body. |
+
+Keep route `id` stable when you change priority, weight, or YAML order. Changing `provider` or `upstream_model` creates a different internal route identity. A route that still has no id gets an identity from its priority and position, so reordering or reprioritizing it creates a new route.
+
+A route that had no `id` before ids defaulted to the provider key keeps its old internal id after the upgrade, so Responses continuations, session affinity, and request-log links keep working. It moves to the stable keyed id the first time its priority or position changes.
+
+`extra_headers` is how you send provider headers such as `OpenAI-Project`. The gateway doesn't forward arbitrary caller headers to providers.
+
+`extra_body` is for additive provider-specific fields. Don't use it for compatibility transforms. When a typed compatibility profile conflicts with `extra_body`, the profile wins.
+
+### Route metadata overrides
+
+Route metadata is deployment policy, so it lives on each route.
+
+```yaml
+models:
+  - id: contracted-model
+    routes:
+      - provider: private-provider
+        upstream_model: upstream-model
+        context_window_tokens: 128000
+        pricing_override:
+          input_usd_per_million_tokens: "1.2500"
+          output_usd_per_million_tokens: "5.0000"
+          cache_read_usd_per_million_tokens: "0.1250"
+          cache_write_usd_per_million_tokens: "1.5000"
+```
+
+`context_window_tokens` is an optional positive integer. It can lower the route's effective context, but not raise it above a known catalog limit. Startup fails when the value is above a known catalog limit. When the catalog doesn't know the context, the value is accepted as admin policy. If a later catalog refresh reports a smaller limit, the gateway logs a warning and uses the catalog limit.
+
+`pricing_override` is optional. When present:
+
+- `input_usd_per_million_tokens` and `output_usd_per_million_tokens` are required.
+- `cache_read_usd_per_million_tokens`, `cache_write_usd_per_million_tokens`, and `image_output_usd_per_million_tokens` are optional. Omitted rates stay absent. They don't fall back to catalog rates.
+- Every rate is a quoted decimal string with at most four fractional digits. Zero is valid. Unquoted numbers, negative, malformed, and overflowing values fail config loading. Unknown fields are rejected.
+
+`image_output_usd_per_million_tokens` prices the image tokens a provider reports in `completion_tokens_details.image_tokens` or `output_tokens_details.image_tokens`. Other completion tokens use the output rate. A cost the provider reports in usage, such as OpenRouter's `usage.cost`, takes precedence over the whole override. See [Pricing catalog and accounting](/spend/pricing-and-accounting/).
+
+### Route capabilities
+
+`capabilities` holds flags that are `true`, `false`, or omitted:
+
+- API families: `chat_completions`, `responses`, `embeddings`, `images`, `decisions`.
+- Features: `stream`, `tools`, `vision`, `json_schema`, `developer_role`.
+
+Omit a flag to let the gateway fill it in. Set it only to override. A route can narrow what the provider supports. It can't expand it. When nothing else sets a flag, `images` and `decisions` default to `false` and every other flag defaults to `true`. The order of sources and the catalog hint rules are described in [Model routing and APIs](/configuration/model-routing/).
+
+Startup validation uses explicit flags, then compatibility inference, then defaults. It doesn't use catalog hints. An omitted flag never fails validation. An explicit flag that contradicts the route's compatibility fails startup. So does `true` for a flag the provider type and compatibility profile cannot serve at all, such as `responses: true` on an `anthropic_compat` route or `tools: true` on a Vertex model without tool support, because the adapter cap would silently drop it.
+
+Rules for specific flags:
+
+- `decisions` works only on a `typesafe` provider, an `openai_compat` route with `compatibility.openai_compat.decisions_api: openai`, or an OpenRouter route with `compatibility.openrouter.api: decisions`. On these routes the gateway sets `decisions` to `true` and every other flag to `false`, so no `capabilities` block is needed. An explicit `decisions: false`, or `true` for any other flag, fails startup.
+- `images` works only on `openai_compat` and `gcp_cloud_run_openai_compat` providers, and never on a Decisions route. Set `images: true` on routes that serve `POST /v1/images`.
+
+## Route compatibility
+
+Capabilities decide whether a route may serve a request. `compatibility` describes request and stream-shape transforms for the provider. Each profile belongs to one provider type.
+
+| Profile | Valid on |
+| --- | --- |
+| `compatibility.openai_compat` | OpenAI-compatible routes |
+| `compatibility.openrouter` | `openai_compat` providers whose `base_url` is HTTPS on `openrouter.ai` |
+| `compatibility.aws_bedrock` | `aws_bedrock` providers (required) |
+| `compatibility.github_copilot` | `github_copilot` providers |
+
+For what each adapter does with these settings, see [Provider API compatibility](/reference/provider-api-compatibility/).
+
+### OpenAI-compatible profile
+
+| Field | Default | Accepted values |
+| --- | --- | --- |
+| `supports_store` | `true` | `true`, `false` |
+| `max_tokens_field` | `max_completion_tokens` | `max_completion_tokens`, `max_tokens` |
+| `developer_role` | `developer` | `developer`, `system` |
+| `reasoning_effort` | `passthrough` | `passthrough`, `omit`, `reasoning_object` |
+| `supports_stream_usage` | `false` | `true`, `false` |
+| `empty_tools` | `preserve` | `preserve`, `omit`, `preserve_with_tool_history` |
+| `decisions_api` | unset | `openai` |
+
+`empty_tools` controls `tools: []` in Chat Completions and Responses requests:
+
+- `preserve` keeps the empty array.
+- `omit` removes it, for providers such as DashScope/Qwen that reject an empty array. Neutral `tool_choice` values (`auto`, `none`, `null`) are removed with it. `required` and named choices are rejected locally, because no tool can satisfy them.
+- `preserve_with_tool_history` removes an empty array, but keeps it and `tool_choice` when the request has function-tool history. Some LiteLLM and Anthropic proxy routes need this.
+
+`decisions_api: openai` sends the OpenAI Decisions format to `<base_url>/decisions`. It needs an `openai_compat` provider and can't be combined with `compatibility.openrouter`.
+
+The other fields are Chat Completions transforms. `/v1/responses` is a separate API family and doesn't reuse them.
+
+### OpenRouter profile
+
+| Field | Default | Accepted values |
+| --- | --- | --- |
+| `api` | `open_ai_compat` | `open_ai_compat`, `decisions` |
+| `provider.zdr` | unset | `true`, `false` |
+| `provider.only` | `[]` | OpenRouter provider slugs |
+| `provider.ignore` | `[]` | OpenRouter provider slugs |
+| `provider.order` | `[]` | OpenRouter provider slugs in preferred order |
+| `provider.preferred_max_latency` | unset | A positive number, or an object with at least one positive `p50`, `p75`, `p90`, `p99` (seconds) |
+| `provider.max_price` | unset | An object with at least one non-negative `prompt`, `completion`, `request`, `image` |
+
+Validation:
+
+- Slug lists can't contain empty or duplicate entries, and a slug can't be in both `only` and `ignore`.
+- With `api: open_ai_compat`, at least one `provider` field must be set. `api: decisions` may leave `provider` empty.
+- A route can't set both `compatibility.openrouter` and `extra_body.provider`.
+- Unknown fields are rejected.
+
+### AWS Bedrock route compatibility
+
+Every `aws_bedrock` route must set `compatibility.aws_bedrock.api_style`.
+
+| Field | Notes |
+| --- | --- |
+| `api_style` | Required. Runtime styles need `endpoint_kind: bedrock_runtime`. Mantle styles need `bedrock_mantle`. |
+| `openai_base_path` | OpenAI-shaped styles only (`runtime_openai_chat`, `mantle_openai_chat`, `mantle_openai_responses`). Defaults to `/openai/v1` for `runtime_openai_chat` and `/v1` for the Mantle styles, the AWS defaults. Set it when a Mantle model is served under `/openai/v1`, as GPT-5.5 is. Not allowed on other styles. |
+| `supports_strict_tools` | Optional, `runtime_converse` only. |
+
+The gateway infers these capabilities from `api_style`, so a Bedrock route needs no `capabilities` block for them:
+
+| `api_style` | Inferred |
+| --- | --- |
+| `runtime_converse`, `runtime_openai_chat`, `mantle_openai_chat`, `mantle_anthropic_messages` | `chat_completions` and `stream` on. `responses`, `json_schema`, `embeddings`, `images`, `decisions` off. |
+| `runtime_anthropic_invoke` | `chat_completions` on. `responses`, `stream`, `json_schema`, `embeddings`, `images`, `decisions` off. |
+| `mantle_openai_responses` | `responses` and `stream` on. `chat_completions`, `embeddings`, `images`, `decisions` off. |
+
+`tools` and `vision` (and `json_schema` on `mantle_openai_responses`) depend on the model. Catalog hints fill them when the catalog knows the model. Otherwise they default to `true`. Set them to `false` when the model lacks them. Startup rejects explicit flags that conflict with `api_style`, such as `stream: true` on `runtime_anthropic_invoke` or `responses: true` on any style other than `mantle_openai_responses`. It doesn't check live model support.
+
+When `supports_strict_tools` is unset, `runtime_converse` routes infer it from transparent upstream model IDs, and omit `strict` for Claude Opus 4.7 and 4.8. Set it to `false` for opaque application inference profile IDs or ARNs backed by those models. An explicit value overrides inference.
+
+### GitHub Copilot route compatibility
+
+Copilot route support is fail-closed. Copy each value from a current `/models` response for the exact `upstream_model`. The [installation-token canary](/providers/github-copilot/#run-the-installation-token-canary) produces the projection you need.
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `chat_api` | unset | `chat_completions` only when `supported_endpoints` has `/chat/completions`. `anthropic_messages` only when it has `/v1/messages`. Leave unset for Responses-only or embeddings-only routes. |
+| `supports_responses` | `false` | |
+| `supports_embeddings` | `false` | |
+| `upstream_supports.streaming` | `false` | |
+| `upstream_supports.tool_calls` | `false` | |
+| `upstream_supports.vision` | `false` | |
+| `upstream_supports.structured_outputs` | `false` | |
+
+Unknown fields are rejected, and the profile is valid only on a `github_copilot` provider.
+
+The gateway sets every capability flag from this evidence, so a Copilot route needs no `capabilities` block. Use `capabilities` only to turn off a feature the evidence declares. A flag can't enable support the evidence doesn't declare. `developer_role` and `images` are always off. `json_schema` is on only with `structured_outputs` and either `supports_responses` or `chat_api: chat_completions`.
+
+```yaml
+models:
+  - id: copilot-chat
+    routes:
+      - provider: copilot-org
+        upstream_model: <exact-model-id-from-canary>
+        compatibility:
+          github_copilot:
+            chat_api: chat_completions
+            supports_responses: false
+            supports_embeddings: false
+            upstream_supports:
+              streaming: true
+              tool_calls: true
+              vision: true
+              structured_outputs: false
+```
+
+## Route examples
+
+OpenAI direct routes need no compatibility overrides:
+
+```yaml
+models:
+  - id: openai-direct
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-5
+```
+
+OpenAI-compatible aggregator routes declare known Chat Completions quirks:
+
+```yaml
+models:
+  - id: openrouter-fast
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-4o-mini
+        compatibility:
+          openai_compat:
+            supports_store: false
+            max_tokens_field: max_tokens
+            developer_role: system
+            reasoning_effort: omit
+            supports_stream_usage: true
+            empty_tools: omit
+```
+
+OpenRouter routes can set upstream provider policy:
+
+```yaml
+models:
+  - id: openrouter-fast-zdr
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-4o-mini
+        compatibility:
+          openrouter:
+            provider:
+              zdr: true
+              only: [openai, anthropic]
+              ignore: [deepinfra]
+              order: [openai, anthropic]
+              preferred_max_latency:
+                p90: 2.5
+              max_price:
+                prompt: 1.0
+                completion: 2.0
+```
+
+An OpenRouter Decisions route needs no `capabilities` block:
+
+```yaml
+models:
+  - id: jev
+    routes:
+      - provider: openrouter
+        upstream_model: typesafe/jev-1.13
+        compatibility:
+          openrouter:
+            api: decisions
+```
+
+Vertex routes use a publisher-qualified upstream model. Vertex text embeddings are configured as embedding-only routes for `google/gemini-embedding-001`, `google/gemini-embedding-2`, `google/text-embedding-005`, or `google/text-multilingual-embedding-002`. Flags left unset default to `true` unless the catalog says otherwise, so disable API families the route doesn't serve:
+
+```yaml
+models:
+  - id: gemini-fast
+    routes:
+      - provider: vertex-adc
+        upstream_model: google/gemini-2.0-flash
+        capabilities:
+          chat_completions: true
+          responses: false
+          embeddings: false
+
+  - id: gemini-embedding
+    routes:
+      - provider: vertex
+        upstream_model: google/gemini-embedding-001
+        capabilities:
+          chat_completions: false
+          responses: false
+          embeddings: true
+          stream: false
+          tools: false
+          vision: false
+          json_schema: false
+```
+
+Cloud Run vLLM routes can pass vLLM or Gemma request controls through `extra_body`:
+
+```yaml
+models:
+  - id: gemma-cloud-run
+    routes:
+      - provider: gemma-cloud-run
+        upstream_model: google/gemma-4-12b-it
+        capabilities:
+          chat_completions: true
+          responses: false
+          embeddings: false
+        extra_body:
+          chat_template_kwargs:
+            enable_thinking: true
+          skip_special_tokens: false
+```
+
+Bedrock Runtime Converse route. The `api_style` already turns off Responses and embeddings:
+
+```yaml
+models:
+  - id: claude-bedrock
+    routes:
+      - provider: bedrock
+        upstream_model: us.anthropic.claude-3-5-sonnet-20240620-v1:0
+        compatibility:
+          aws_bedrock:
+            api_style: runtime_converse
+```
+
+Bedrock Mantle Responses route with a provider header:
+
+```yaml
+models:
+  - id: gpt-55-bedrock
+    routes:
+      - provider: bedrock-mantle-openai
+        upstream_model: openai.gpt-5.5
+        extra_headers:
+          OpenAI-Project: proj_123
+        compatibility:
+          aws_bedrock:
+            api_style: mantle_openai_responses
+            openai_base_path: /openai/v1
+```
+
+Embeddings-only OpenAI-compatible routes narrow capabilities so chat and Responses requests fail early:
+
+```yaml
+models:
+  - id: text-embedding
+    routes:
+      - provider: openai-prod
+        upstream_model: text-embedding-3-small
+        capabilities:
+          chat_completions: false
+          responses: false
+          embeddings: true
+          stream: false
+```
+
+Image-only routes opt in to `images`. The OpenRouter catalog already marks models such as `openai/gpt-image-2.5-flare` as image-only, but explicit flags keep the route stable and cover models the catalog doesn't list:
+
+```yaml
+models:
+  - id: image-flare
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-image-2.5-flare
+        capabilities:
+          images: true
+          chat_completions: false
+          responses: false
+          embeddings: false
+          stream: false
+```
+
+An OpenAI Decisions provider and route. `decisions_api: openai` turns `decisions` on and every other flag off, so no `capabilities` block is needed. The example rates are illustrative: set OpenAI's published input and cached-input rates. Decisions pricing is input-only, so output is `"0"`:
+
+```yaml
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+    auth:
+      kind: bearer
+      token: env.OPENAI_API_KEY
+
+models:
+  - id: luna
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-6-luna
+        compatibility:
+          openai_compat:
+            decisions_api: openai
+        pricing_override:
+          # Example rates: set OpenAI's published input and cached-input rates.
+          input_usd_per_million_tokens: "1.2500"
+          cache_read_usd_per_million_tokens: "0.1250"
+          output_usd_per_million_tokens: "0"
+```

@@ -8,12 +8,12 @@
 
 - Canonical docs:
   - [../budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
-  - [../admin-control-plane.md](../access/admin-control-plane.md)
+  - [Admin control plane](https://oceans-llm.com/access/admin-control-plane/)
 
 ## Current state
 
 - [../budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
-- [../admin-control-plane.md](../access/admin-control-plane.md)
+- [Admin control plane](https://oceans-llm.com/access/admin-control-plane/)
 
 ## Context
 

@@ -1,6 +1,6 @@
 # Screenshots
 
-`See also`: [Admin Control Plane](../../access/admin-control-plane.md), [Observability and Request Logs](../../operations/observability-and-request-logs.md), [Admin API Contract Workflow](admin-api-contract-workflow.md)
+`See also`: [Admin Control Plane](https://oceans-llm.com/access/admin-control-plane/), [Observability and Request Logs](https://oceans-llm.com/observability/), [Admin API Contract Workflow](admin-api-contract-workflow.md)
 
 Reference screenshots for the admin UI. These images are useful when reviewing documentation, release notes, and user-facing workflow changes.
 

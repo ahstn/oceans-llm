@@ -3,6 +3,7 @@
 - Date: 2026-04-27
 - Status: Accepted
 - Supersession note: The repository-managed docs graph check was removed on 2026-08-14. The docs CI workflow now runs the VitePress static-site build, and the Cloudflare Pages tasks remain available.
+- Supersession note: On 2026-11-08 a Nimbus site replaced VitePress in `docs/`, served at `oceans-llm.com` by the same Pages project. The custom domain, tasks and output directory below are out of date. See [Nimbus docs site at oceans-llm.com](2026-11-08-nimbus-docs-site-at-oceans-llm-com.md).
 
 ## Context
 

@@ -5,9 +5,9 @@
 
 ## Current state
 
-- [Rate Limits](../configuration/rate-limits.md)
-- [Configuration Reference](../configuration/configuration-reference.md#rate_limits)
-- [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md#rate_limited)
+- [Rate Limits](https://oceans-llm.com/spend/rate-limits/)
+- [Rate limits](https://oceans-llm.com/spend/rate-limits/#yaml-fields)
+- [Request Lifecycle and Failure Modes](https://oceans-llm.com/reference/request-lifecycle/#rate-limits)
 
 ## Context
 

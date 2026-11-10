@@ -1,0 +1,147 @@
+---
+title: Oh-My-Pi (OMP)
+description: Connect Oh-My-Pi to Oceans with OMP's native LiteLLM model discovery, so models, prices and reasoning levels come from the gateway.
+sidebar:
+  label: Oh-My-Pi (OMP)
+  order: 2
+---
+
+[Oh-My-Pi](https://github.com/can1357/oh-my-pi) (OMP) finds models on its own. You add Oceans as a provider in OMP's `models.yml`, and OMP asks the gateway which models your API key can use. You don't need a plugin or a generated snippet, and new models appear when OMP refreshes its model list.
+
+OMP uses its `litellm` discovery type with Oceans. The gateway serves `GET /model_group/info` in LiteLLM's format, so OMP gets the limits, prices, tool and image support, and reasoning levels of each model. The [ADR on LiteLLM model group info](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-21-litellm-model-group-info.md) explains the choice.
+
+## Before you start
+
+You need:
+
+- **OMP installed.** See the [OMP README](https://github.com/can1357/oh-my-pi).
+- **An Oceans API key.** Create one on the **API Keys** page (`/admin/api-keys`). If you limit the key's scopes, tick **Inference**. That scope covers model requests and `/model_group/info`. See [API key scopes](/access/identity-and-access/#api-key-scopes).
+- **The gateway URL**, for example `https://api.oceans-llm.com`. Ask your admin if you don't know it.
+
+## Set up model discovery
+
+<Steps>
+<Step title="Set your Oceans API key">
+Export the key in the shell that starts OMP:
+
+```sh
+export OCEANS_LLM_API_KEY='<Oceans API key>'
+```
+</Step>
+<Step title="Add Oceans to models.yml">
+Open `~/.omp/agent/models.yml`, or create it, and add an `oceans` provider:
+
+```yaml title="~/.omp/agent/models.yml"
+providers:
+  oceans:
+    baseUrl: https://api.oceans-llm.com/v1
+    apiKey: OCEANS_LLM_API_KEY
+    api: openai-completions
+    discovery:
+      type: litellm
+```
+
+- `oceans` is the provider ID. Your models appear in OMP as `oceans/<model id>`.
+- `baseUrl` must end in `/v1`. OMP removes `/v1` before it calls `/model_group/info`, and keeps it for model requests.
+- `apiKey` names the environment variable that holds the key. If the variable is unset or empty, OMP sends the name itself as the key, and the gateway returns `401`. A value that starts with `!` runs a command and uses its output, for example `"!op read op://dev/oceans/api-key"`.
+- `api` is the API for models that the gateway doesn't mark as OpenAI. `litellm` discovery needs it.
+
+With a named OMP profile, the file is `~/.omp/profiles/<name>/agent/models.yml`.
+</Step>
+<Step title="Check the model list">
+List the models OMP found on the gateway:
+
+```sh
+omp models oceans
+```
+
+The IDs are the same as on the **Models** page. If the list is empty or old, run `omp models refresh` to fetch it again.
+</Step>
+<Step title="Pick a model">
+In OMP, run `/model` and pick a model under **oceans**, or start OMP with one:
+
+```sh
+omp --model oceans/gpt-6.1-sol:high
+```
+
+The `:high` suffix sets the reasoning level. Leave it out to use the model's default.
+</Step>
+</Steps>
+
+To check that requests reach Oceans, open **Request Logs** in the admin UI. The gateway labels requests from OMP as **Oh My Pi**. See [Agent harness usage](/observability/agent-harness-usage/).
+
+## How OMP uses the gateway metadata
+
+The gateway builds each `/model_group/info` row from the model's routes. [LiteLLM model metadata](/configuration/model-routing/#litellm-model-metadata) has the field rules. For OMP, these fields matter most:
+
+| Field | What OMP does with it |
+| --- | --- |
+| `providers` | A model with `["openai"]` goes to `/v1/responses`. Every other model goes to the provider `api`, which is `/v1/chat/completions` in the example. The gateway reports `openai` only when every route can serve Responses. |
+| `max_input_tokens`, `max_output_tokens` | OMP uses them as the context window and the output limit. |
+| Cost fields | OMP works out the session cost from them. The gateway sends USD per token. |
+| `supported_openai_params` | OMP sends a reasoning effort only when this list has `reasoning_effort`. |
+| `mode` | OMP leaves out `embedding` and `image_generation` models. |
+
+The gateway also doesn't serve `/v2/model/info`, `/model/info` or `/v1/model/info`. OMP calls them when a row has no vision flag or not all four prices. They return `404`, and OMP keeps the `/model_group/info` rows. This happens only when OMP refreshes its model list.
+
+## Override a model
+
+OMP takes some details from its own catalog by model ID. When an Oceans model ID doesn't match that catalog, such as an alias like `claude-sonnet-latest`, set the details under `modelOverrides`, keyed by gateway model ID.
+
+### Send Claude models over Anthropic Messages
+
+No LiteLLM field selects Anthropic Messages, so OMP sends Claude models to `/v1/chat/completions`, and the gateway translates the request. To use `/v1/messages` instead, set `api` on each Claude model:
+
+```yaml title="~/.omp/agent/models.yml"
+providers:
+  oceans:
+    # ...the settings from the setup above
+    modelOverrides:
+      claude-opus-5.5:
+        api: anthropic-messages
+```
+
+### Set the reasoning levels
+
+For a model whose ID isn't in OMP's catalog, OMP shows a generic list of levels, `minimal` to `xhigh`. That list can include levels the model rejects and leave out `max`. Set `thinking` to the levels the model supports:
+
+```yaml title="~/.omp/agent/models.yml"
+providers:
+  oceans:
+    # ...the settings from the setup above
+    modelOverrides:
+      claude-opus-5.5:
+        api: anthropic-messages
+        thinking:
+          mode: anthropic-adaptive
+          efforts: [low, medium, high, xhigh, max]
+      gpt-6.1-sol:
+        thinking:
+          mode: effort
+          efforts: [low, medium, high, xhigh, max]
+          defaultLevel: medium
+```
+
+- `mode` is how OMP asks for reasoning. Use `anthropic-adaptive` for Claude models on Anthropic Messages, and `effort` for models that take a `reasoning_effort`.
+- `efforts` lists the levels, lowest first, from `minimal`, `low`, `medium`, `high`, `xhigh` and `max`. List only levels the gateway allows. A level above the model's reasoning ceiling fails. See [Reasoning effort ceilings](/configuration/models-and-routes/#reasoning-effort-ceilings).
+- `defaultLevel` is the level OMP uses when you don't pick one.
+
+The [OMP `models.yml` docs](https://github.com/can1357/oh-my-pi/blob/main/docs/models.md) list every override field.
+
+## Limits
+
+- **Tiered prices.** Each row has one price per token type. OMP doesn't apply higher prices above a context size, for example a higher GPT price above 272,000 tokens.
+- **Unknown cache prices.** When the gateway has no cache price for a model, the row leaves it out, and OMP counts cache tokens at zero.
+- **Decisions models.** LiteLLM's `mode` has no value for them, so OMP lists them as chat models. Don't pick them for chat.
+- **Costs are estimates.** OMP's session cost comes from the row prices. The gateway's own records are the spend that counts against budgets: see **Usage Costs** and [Pricing catalog and accounting](/spend/pricing-and-accounting/).
+
+## Troubleshooting
+
+| Problem | What to check |
+| --- | --- |
+| `omp models oceans` shows nothing | `models.yml` is in the active agent folder, the provider has `discovery.type: litellm` and `api`, and `baseUrl` ends in `/v1`. Run `omp models refresh`. |
+| Requests fail with `401` | The variable that `apiKey` names is set in the shell that starts OMP. If it's unset, OMP sends the variable name as the key. |
+| Requests fail with `403 insufficient_scope` | The key has limited scopes without **Inference**. |
+| A GPT model fails on `/v1/responses` | The model has a route that can't serve Responses. Ask an admin to check the routes, or set `api: openai-completions` on the model in `modelOverrides`. |
+| A reasoning level fails | The level is above the model's reasoning ceiling, or isn't one the model supports. Set `thinking.efforts` in `modelOverrides`. |
+| A request fails with `budget_exceeded` | A hard budget has no room left. See [Budgets](/spend/budgets/). |

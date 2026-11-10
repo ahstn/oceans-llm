@@ -6,13 +6,13 @@
 ## Implemented By
 
 - Canonical docs:
-  - [../identity-and-access.md](../access/identity-and-access.md)
-  - [../admin-control-plane.md](../access/admin-control-plane.md)
+  - [Identity and access](https://oceans-llm.com/access/identity-and-access/)
+  - [Admin control plane](https://oceans-llm.com/access/admin-control-plane/)
 
 ## Current state
 
-- [../identity-and-access.md](../access/identity-and-access.md)
-- [../admin-control-plane.md](../access/admin-control-plane.md)
+- [Identity and access](https://oceans-llm.com/access/identity-and-access/)
+- [Admin control plane](https://oceans-llm.com/access/admin-control-plane/)
 
 ## Context
 

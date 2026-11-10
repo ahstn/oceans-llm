@@ -8,6 +8,12 @@ export interface GatewayRuntime {
   apiKey: string;
   baseUrl: string;
   model: string;
+  pluginModels: {
+    openai: string;
+    anthropic: string;
+    textOnly: string;
+    hidden: string;
+  };
 }
 
 export interface ToolCall {

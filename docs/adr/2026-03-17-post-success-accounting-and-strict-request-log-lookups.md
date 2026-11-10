@@ -5,8 +5,8 @@
 
 ## Current state
 
-- [../request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
-- [../observability-and-request-logs.md](../operations/observability-and-request-logs.md)
+- [Request lifecycle and failure modes](https://oceans-llm.com/reference/request-lifecycle/)
+- [Observability and request logs](https://oceans-llm.com/observability/)
 - [../budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
 
 ## Context

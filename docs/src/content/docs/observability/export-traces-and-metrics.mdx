@@ -1,0 +1,148 @@
+---
+title: Export traces and metrics
+description: Send gateway traces and metrics over OTLP to an OpenTelemetry Collector or a Datadog Agent.
+sidebar:
+  order: 2
+---
+
+The gateway sends traces and metrics with the OpenTelemetry Protocol (OTLP) over gRPC. Admins point it at an OpenTelemetry Collector or at a Datadog Agent that accepts OTLP. Neither the compose stack nor the Helm chart installs a collector or an agent, so you bring your own.
+
+![A Datadog trace waterfall for one POST /v1/responses request to oceans-llm-gateway, with spans for authentication, request resolution, budget precheck, provider stream, provider operation, usage accounting and request-log persistence](/images/exported-trace-waterfall.png)
+
+One trace ID covers the whole request. Spans show authentication, model resolution, request preparation, route planning, MCP telemetry, the budget precheck, the provider call and stream, usage accounting, and request-log persistence. The exact spans depend on the API and on how far the request gets.
+
+## How the data flows
+
+The gateway sends each signal to its own OTLP/gRPC receiver. Both signals can use the same receiver.
+
+```text
+Oceans LLM gateway -- traces --> OTLP/gRPC receiver -- traces --> backend
+                   -- metrics -> OTLP/gRPC receiver -- metrics -> backend
+```
+
+The receiver can be any of these:
+
+- An OpenTelemetry Collector `Service`.
+- An OpenTelemetry Collector sidecar in the gateway pod.
+- A node-local collector or vendor agent.
+- A Datadog Agent `Service` backed by a DaemonSet.
+
+OTLP export is separate from request logs. The gateway stores request logs in its database whether or not a receiver exists, and admins and users still see the request logs they're allowed to see. See [Observability and request logs](/observability/) for what the gateway records.
+
+## Before you start
+
+An admin prepares the receiver first:
+
+1. Deploy a receiver that accepts OTLP over gRPC. The examples use port `4317`.
+2. Make the receiver address reachable from the gateway process or pod, and allow TCP traffic to the receiver port.
+3. Configure the receiver to send data on to its backend.
+
+<Aside type="caution" title="Use plaintext to a local receiver">
+The gateway is built without TLS support for its OTLP exporter. Config validation accepts an `https://` endpoint, but the gateway can't make a TLS connection to it. Use an `http://` endpoint on a trusted network. For export to an external backend, send plaintext to a local or in-cluster collector and let the collector use TLS for the next hop.
+</Aside>
+
+## Configure OTLP export
+
+Add the endpoints to the `server` section of the gateway config:
+
+```yaml title="gateway.yaml"
+server:
+  otel_endpoint: http://otel-collector.observability.svc:4317
+  otel_metrics_endpoint: http://otel-collector.observability.svc:4317
+  otel_trace_sample_ratio: 1.0
+  otel_export_interval_secs: 30
+```
+
+The defaults and value rules for these four fields are on [Topology and operations](/setup/deploy-and-operations/#telemetry) and in the [configuration reference](/configuration/#server). What each one turns on:
+
+- `otel_endpoint` turns on trace export.
+- `otel_metrics_endpoint` turns on metric export. If it's absent, metrics go to `otel_endpoint`. So one endpoint is enough to export both signals.
+- `otel_trace_sample_ratio` sets the share of new root traces to keep.
+- `otel_export_interval_secs` sets how often the gateway sends a batch of metrics.
+
+Restart the gateway after a change. An endpoint that isn't an absolute `http` or `https` URI with a host fails config validation, and so does a sample ratio outside `0.0` to `1.0`.
+
+### Sampling
+
+The gateway uses parent-based head sampling. If the caller sends a W3C `traceparent` header, the gateway follows the caller's sampling decision. If not, it keeps new root traces at the configured ratio, so `0.5` keeps about half of them. Sampling never applies to metrics: every metric is recorded for every request.
+
+The gateway decides at the start of a request, before it knows the outcome. A collector can keep errors, slow requests, client cancellations or budget failures only from the traces it receives. To let the collector choose, keep `otel_trace_sample_ratio` at `1.0` and reduce volume with tail sampling in the collector. The [LLM request trace boundaries ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-08-27-llm-request-trace-boundaries.md) explains this choice.
+
+## Send data to an OpenTelemetry Collector
+
+Point both endpoints at the collector's OTLP/gRPC receiver. The collector can then send traces and metrics to different backends.
+
+In Kubernetes, use the collector `Service` DNS name in your Helm values:
+
+```yaml title="values.yaml"
+gateway:
+  config:
+    server:
+      otel_endpoint: http://otel-collector.observability.svc:4317
+      otel_metrics_endpoint: http://otel-collector.observability.svc:4317
+      otel_trace_sample_ratio: 1.0
+      otel_export_interval_secs: 30
+```
+
+If the collector runs as a sidecar in the gateway pod, use `http://127.0.0.1:4317`. The [sidecar values example](https://github.com/ahstn/oceans-llm/blob/main/deploy/helm/oceans-llm/examples/observability-sidecar-values.yaml) adds the collector container with `observability.sidecars` and mounts its config from a `ConfigMap` named `oceans-llm-otel-config`. The chart doesn't create that `ConfigMap`: you create it with your collector config. The other chart hooks are described in [Kubernetes and Helm](/setup/kubernetes-and-helm/#telemetry).
+
+## Send data to Datadog
+
+An admin first turns on the OTLP/gRPC receiver on the existing Datadog Agent. Expose that receiver through an in-cluster `Service` that the gateway pods can reach. Then point the gateway at the Agent:
+
+```yaml title="values.yaml"
+gateway:
+  config:
+    server:
+      otel_endpoint: http://datadog-agent.monitoring.svc.cluster.local:4317
+      otel_metrics_endpoint: http://datadog-agent.monitoring.svc.cluster.local:4317
+      otel_trace_sample_ratio: 0.5
+      otel_export_interval_secs: 30
+
+observability:
+  podLabels:
+    tags.datadoghq.com/service: oceans-llm-gateway
+    tags.datadoghq.com/env: production
+```
+
+The [Datadog values example](https://github.com/ahstn/oceans-llm/blob/main/deploy/helm/oceans-llm/examples/observability-datadog-values.yaml) is a complete values file. Replace its namespace, `Service` name, database secret and environment label with your own.
+
+When the Agent runs as a DaemonSet, send each gateway pod to the Agent on its own node. A `Service` with `internalTrafficPolicy: Local` does this. Make sure every node that can run the gateway also runs an Agent pod, or that node's gateway pods can't export.
+
+If other services share the Agent, sample in the gateway and keep the Agent-wide sampler off. An Agent-wide sampler changes trace intake for every service that sends to that Agent. The gateway ratio changes only new root traces from Oceans.
+
+The gateway sets these OpenTelemetry resource attributes on all its telemetry:
+
+- `service.name=oceans-llm-gateway`
+- `service.namespace=oceans-llm`
+- `service.version`, set to the gateway version
+
+The Datadog pod labels use the same service name, so Datadog joins the telemetry under one service.
+
+## Check the export
+
+After the gateway restarts, an admin checks that data arrives:
+
+<Steps>
+<Step title="Check the gateway logs">
+Look for exporter errors. The default log filter shows only the gateway's own crates, so warnings from the OpenTelemetry exporter may not appear. To see them, restart with `RUST_LOG=info` for a short time.
+</Step>
+<Step title="Send a model request">
+Send a normal model request through the gateway, then wait at least one metric export interval.
+</Step>
+<Step title="Search the backend">
+Search for the service name `oceans-llm-gateway`. Confirm that there's a trace and at least one gateway metric, such as `gateway.chat.requests` or `gateway.chat.request.duration`. The full list of metrics and their labels is in [Gateway metrics](/observability/#gateway-metrics).
+</Step>
+</Steps>
+
+For a streaming model request, the trace contains `http.server.request`, `gateway.provider.operation`, `http.client.request` and `gateway.provider.stream`. The stream span records time to first chunk, time to first output, chunk and byte totals, whether a terminal event arrived, and a termination reason such as `client_cancelled` or `stream_transport_error`. Model access, routing, budget, usage, ledger and request-log spans appear when the request reaches those steps.
+
+Trace attributes don't contain prompts, message content, tool arguments, credentials, full request headers or URL query values. To see captured payloads, use [Request logs](/observability/request-logs/), which follow the request-log [payload policy](/observability/request-logs/#payload-policy).
+
+In Datadog, look for the `oceans-llm-gateway` service in APM and find the metrics in Metrics Explorer. Datadog can rename OpenTelemetry metrics during intake, so if an exact name search finds nothing, look at the names it received.
+
+If request logs appear in the admin UI but nothing reaches the backend, check the receiver address, network policy, receiver logs and the receiver's exporter settings. The [Missing OTLP collector](/operations/admin-runbooks/#missing-otlp-collector) runbook has more checks.
+
+## Turn off OTLP export
+
+Remove `otel_endpoint` and `otel_metrics_endpoint`, then restart the gateway. This stops trace and metric export. It doesn't stop process logs or request logs. If you remove only `otel_endpoint`, metrics still go to `otel_metrics_endpoint`.

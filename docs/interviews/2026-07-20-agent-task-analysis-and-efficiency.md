@@ -1,6 +1,6 @@
 # Agent Task Analysis and Efficiency Interview
 
-`See also`: [Agent Session Analysis and Efficiency](../plans/2026-07-20-agent-session-analysis-and-efficiency.md), [Agent Harness Usage](../operations/agent-harness-usage.md), [Request Logs](../operations/observability/request-logs.md), [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md)
+`See also`: [Agent Session Analysis and Efficiency](../plans/2026-07-20-agent-session-analysis-and-efficiency.md), [Agent Harness Usage](https://oceans-llm.com/observability/agent-harness-usage/), [Request Logs](https://oceans-llm.com/observability/request-logs/), [Pricing Catalog and Accounting](https://oceans-llm.com/spend/pricing-and-accounting/)
 
 - Date: 2026-07-20
 - Tracking issue: [#255: Add outcome-aware agent session efficiency analytics](https://github.com/ahstn/oceans-llm/issues/255)
@@ -518,7 +518,7 @@ Repository rules determined the split rather than a product preference question.
 
 ### Admin-Facing Canonical Page
 
-The implementation publishes [Agent Session Analysis](../operations/agent-session-analysis.md) as the canonical admin-facing page for:
+The implementation publishes [Agent Session Analysis](https://oceans-llm.com/observability/agent-session-analysis/) as the canonical admin-facing page for:
 
 - agent tasks and inferred boundaries;
 - gateway-observed outcome;

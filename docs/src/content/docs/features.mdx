@@ -1,0 +1,84 @@
+---
+title: Features
+description: What Oceans does for model traffic, identity, spend, observability, and MCP tools.
+sidebar:
+  order: 1
+---
+
+Oceans puts one governed gateway in front of your organisation's AI traffic. It routes requests across providers, manages who can use what, controls spend, records usage, and serves MCP tools, so each client doesn't have to solve those problems separately.
+
+## Identity and access
+
+- **SSO sign-in for the admin UI.** Users sign in with a password, GitHub OAuth, or an OIDC provider you configure. See [OIDC and SSO](/access/sso/).
+- **Users, teams, and service accounts as separate identities.** Users are people. Teams group users and own things, such as service accounts and MCP servers. Service accounts are non-human callers that belong to a team. See [Identity and access](/access/identity-and-access/).
+- **API keys with model access.** Every key belongs to a user or a service account, and can be limited to certain models. Team model restrictions apply on top, so a caller gets only the models both allow. Revoking a key cuts off that key alone. See [Service accounts](/access/service-accounts/).
+
+## Routing and clients
+
+- **One API surface for many providers.** Callers use OpenAI-compatible Chat Completions, Responses, and embeddings, Anthropic Messages with token counting, and image generation. Admins manage model aliases, provider routes, capability checks, and compatibility rules in the config. See [Model routing and APIs](/configuration/model-routing/).
+- **Client setup snippets.** The admin UI generates config for Claude Code, Codex, OpenCode, and Pi from the live model catalog, so users don't type model data by hand. In production, set the public gateway URL the snippets use. See [Client harness configuration](/harnesses/). OpenCode can also use the Oceans plugin, which reads the model list from the gateway and keeps it current. See [OpenCode](/harnesses/opencode/).
+- **Tags for attribution.** Callers attach a bounded set of request tags, and admins add tags to identities, so usage maps back to cost centres, workloads, applications, or environments. See [Tagging](/observability/tagging/).
+
+![Models page listing gateway models with their provider routes and Intelligence Index scores](/images/screenshot-models-2.png)
+
+## Spend
+
+- **Budgets for users and service accounts.** Set daily, weekly, or monthly limits, with alerts, and turn on a hard limit to block requests once a budget is spent.
+- **Model budgets for users.** Give a user a separate budget for one model, so they can use an expensive frontier model without risking their whole allowance.
+- **No team budgets, on purpose.** Teams group and own things; they don't spend. Each request is charged to the user or service account that made it. The [budget principal ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-05-27-budget-principal-taxonomy.md) explains why.
+
+A hard limit blocks new requests once recorded spend reaches the cap. It doesn't reserve the cost of requests already running, so concurrent requests can take spend past it. Service-account keys need an active budget to work at all, even for MCP-only use. See [Budgets](/spend/budgets/).
+
+![Spend Controls page with spend against budgets, owners over budget or near their limit, and per-user usage bars](/images/spend-controls-budgets.png)
+
+## Usage accounting and observability
+
+- **A usage ledger, not estimates.** Each request's usage is priced from an effective-dated catalog, with the price source recorded. Rows are `priced`, `unpriced`, `usage_missing`, or `legacy_estimated`, a fallback for malformed cache counters. Only `priced` and `legacy_estimated` rows count toward spend and budgets. See [Pricing catalog and accounting](/spend/pricing-and-accounting/).
+- **FOCUS CSV export.** Export usage as best-effort FOCUS-compatible CSV, so FinOps tools can read it without a custom pipeline.
+- **Request logs.** Inspect each request's owner, model resolution, provider attempts, latency, token usage, tags, payload policy, and truncation state. See [Request logs](/observability/request-logs/).
+- **Agent harness tracking.** See which coding agents send traffic, such as Claude Code, Codex, OpenCode, Pi, Gemini CLI, Copilot CLI, and GitHub Copilot. Oceans reads this from the caller's `User-Agent`, which the caller reports about itself; anything it doesn't recognise shows as `Unknown`. See [Agent harness usage](/observability/agent-harness-usage/).
+- **OTLP traces and metrics.** Export to the observability stack you already run. See [Export traces and metrics](/observability/export-traces-and-metrics/).
+
+![Request logs page listing each request's model, route, caller, status, cost, latency, and tokens](/images/request-logs-page.png)
+
+## Deployment
+
+Run Oceans locally with a libsql file, or deploy it with PostgreSQL on Docker Compose, Kubernetes with Helm, or a single host with mise. Secrets come from environment or file references in the config. [Choose a setup](/setup/) compares them.
+
+## MCP gateway
+
+Oceans sits between MCP clients and the MCP servers they use. Admins register a server once and decide who can use which tools. Tool calls then go through the same identity, rate limits, guardrails, and logs as model traffic. Clients only see the tools they're allowed to call.
+
+Session messages such as `initialize` and `ping` need only a valid credential. On the direct per-server route, they also need a key scoped to that server, a server the caller can see, and working upstream credentials.
+
+### Endpoints and discovery
+
+- **A central registry.** Register Streamable HTTP MCP servers once. Oceans discovers each server's tools and stores their names, titles, descriptions, schemas, and annotations. Refresh discovery after you add or edit a server. See [MCP servers](/extensions/mcp-servers/).
+- **One `/mcp` endpoint.** A single connection covers every server a client can use. Instead of loading every tool definition up front, clients call `search_tools`, `describe_tool`, and `call_tool` over a catalog of their granted tools, which keeps tool lists and context windows small. Request logs show a best-effort estimate of the context the granted tool definitions would take.
+- **A direct per-server proxy.** `/mcp/{server_key}` passes one server's own tools through, for clients that want them. The gateway classifies every JSON-RPC method before it reaches the server: tools are filtered and checked one by one, resources, prompts, and completions need a grant on the server, and unknown methods are denied.
+
+### Access control
+
+- **Per-tool grants and toolsets.** Grant single tools or toolsets to an API key, user, service account, or team. Users inherit their team's grants. Toolsets split a large server into smaller sets, so clients aren't flooded with tools they don't need. Tools from team-only servers can't go into toolsets. See [MCP tool access](/extensions/mcp-tool-access/).
+- **Tag rules and annotation overrides.** Platform admins can grant or deny tools by what they do, such as every read-only tool on a server for one team, or no destructive tools for a service account. Exclude rules always win. Annotations are claims made by the upstream server, so an include rule on a hint like read-only matches only once a platform admin vouches for it, by overriding the hint or approving the tool's version. Admins can add their own tags too, such as `finance` or `pii:low`. New tools have no admin tags until an admin assigns them.
+- **Scoped API keys.** Limit a key to MCP, to the aggregate or per-server routes, and to a list of servers. A leaked MCP client key can't call models. See [MCP client setup](/extensions/mcp-client-setup/#limit-the-key-to-mcp).
+- **Team-owned servers.** Team owners and admins can register their team's servers and grant their tools inside the team, without waiting for a platform admin. Every server has an owner and a contact. Other teams can't see a team server until it's published to the organisation, though platform admins always can. See [Ownership and visibility](/extensions/mcp-servers/#ownership-and-visibility).
+
+### Identity and credentials
+
+- **OAuth sign-in for MCP clients.** Clients that follow the MCP authorization spec connect with just the MCP URL, with no API key to paste. Users sign in as usual, approve the client on a consent page, and the client gets short-lived tokens tied to that user. Signing out or deactivating the user ends that access. It's off by default, and needs config and a public issuer URL. See [OAuth sign-in](/extensions/mcp-client-setup/#sign-in-with-oauth).
+- **Separate upstream credentials.** Oceans API keys never reach MCP servers. Upstream credentials belong to the gateway, a user, a service account, or a team. Secrets that people enter, and OAuth tokens, are stored encrypted. Gateway-wide credentials come from environment references.
+- **Per-user OAuth to MCP servers.** Users connect their own accounts to servers that follow the MCP authorization spec, so tool calls run as them rather than as a shared account. Oceans registers a client automatically where the server supports it; otherwise an admin configures an OAuth app. Team-owned servers can reach only public addresses until a platform admin vouches for their destinations. See [OAuth for any MCP server](/extensions/mcp-servers/#oauth-for-any-mcp-server).
+- **Connect from the error.** When a call fails because a user hasn't connected an OAuth server, or the connection has expired, the error links straight to connecting it. This needs the server's OAuth provider and the gateway's public URL configured. Otherwise, and for service-account callers, the error says to contact an admin. See [Connecting from an error](/extensions/mcp-client-setup/#connect-from-an-error).
+
+### Safety and change control
+
+- **Guardrails on tool calls and results.** Check tool-call arguments before any upstream credential is looked up, and check results, including streamed ones, before they reach the client. Built-in packs for destructive actions run first, then any managed checks. Guardrails are off by default, and in `audit` mode they record matches without blocking. See [Gateway guardrails](/operations/gateway-guardrails/).
+- **Schema drift detection.** Oceans hashes each discovered tool's input schema, title, annotations, and output schema. A client can send the hash it read with `call_tool`, and the gateway refuses the call if the stored record has changed since. Tool versions track description changes.
+- **Tool versions and approval.** Oceans keeps every definition a server serves for a tool as a version. With approval on, changes wait for a platform admin. A changed description or title waits while the last approved definition is still served; a new tool, or a change to its schemas or annotations, is held back until approved. Approval is off by default. See [Tool versions and approval](/extensions/mcp-tool-access/#tool-versions-and-approval).
+
+### Traffic and audit
+
+- **Rate limits and quotas.** Cap tool calls per minute, hour, day, or month, globally or per key, user, or team, and per server. Model traffic uses the same policy system with its own policies. Responses carry `X-RateLimit-*` headers when a policy matched, and rate-limited calls also get `Retry-After`. See [Rate limits](/spend/rate-limits/).
+- **MCP invocation logs.** Governed calls are logged with their method and target, owner, server, policy result, latency, and status. Tool calls also record the tool, and its version when the gateway served the stored definition. Arguments and results are kept, redacted and truncated, when the payload policy captures them. Some failures return before they're logged, and results passed through the direct proxy aren't logged. See [MCP invocations](/extensions/mcp-invocations/).
+- **Admin audit log.** Changes to servers, toolsets, grants, tag rules, annotation overrides, tool approvals, credentials, and rate limits record who made them, what changed, and where the request came from. See [Admin audit log](/access/admin-audit-log/).

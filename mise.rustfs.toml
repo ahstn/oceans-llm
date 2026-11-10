@@ -5,8 +5,8 @@
 min_version = "2026.9.18"
 
 [tools]
-rustfs = "1.0.1"
-aws-cli = "2.27.49"
+rustfs = { version = "1.0.4", prerelease = true }
+aws-cli = { version = "2.39.5", symlink_bins = "true" }
 
 [env]
 _.file = { path = ".local/rustfs/credentials.env", redact = true }

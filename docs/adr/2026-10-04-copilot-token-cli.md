@@ -33,4 +33,4 @@ Credential requests must not print raw response errors or submitted secrets. The
 - Users remain responsible for replacing expired or revoked GitHub tokens. The gateway's stable encryption-key requirement remains unchanged.
 - Token removal remains available to platform admins. A future CLI removal command must distinguish removing the Oceans copy from revoking the token at GitHub.
 
-See the [GitHub Copilot provider guide](../providers/github-copilot.md) for user instructions.
+See the [GitHub Copilot provider guide](https://oceans-llm.com/providers/github-copilot/) for user instructions.

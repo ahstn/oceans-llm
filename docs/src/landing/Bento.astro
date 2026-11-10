@@ -1,0 +1,149 @@
+---
+/**
+ * Smaller features, each with a small drawing of what it looks like in use.
+ * The drawings are illustrations built from the theme's tokens, not
+ * screenshots, so they follow light and dark mode. Header names, status codes
+ * and CSV columns are the gateway's real ones.
+ */
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import SectionHeading from "./SectionHeading.astro";
+import { bento, bentoSection } from "./content";
+
+const csvRows = [
+  ["Gina", "claude-sonnet", "208.00"],
+  ["Erin", "gpt-oss-120b", "138.00"],
+  ["ci-runner", "openai-fast", "12.40"],
+];
+---
+
+<section aria-labelledby="lp-details" class="lp-section">
+  <div class="lp-container">
+    <SectionHeading id="lp-details" eyebrow={bentoSection.eyebrow} title={bentoSection.title} />
+
+    <ul class="mt-14 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {
+        bento.map((item) => (
+          <li class="lp-bento">
+            <div class="lp-bento-art" aria-hidden="true">
+              {item.kind === "sso" && (
+                <div class="mx-auto grid w-full max-w-[15rem] gap-2">
+                  <span class="lp-mock-button lp-mock-button-active">
+                    <Icon name="ph:github-logo" class="size-4" />
+                    Continue with GitHub
+                  </span>
+                  <span class="lp-mock-button">
+                    <Icon name="ph:google-logo" class="size-4" />
+                    Continue with Google
+                  </span>
+                  <span class="lp-mock-button">
+                    <Icon name="ph:envelope-simple" class="size-4" />
+                    Email and password
+                  </span>
+                </div>
+              )}
+
+              {item.kind === "guardrails" && (
+                <div class="grid w-full gap-2 font-mono">
+                  {[
+                    ["rm -rf ~/", "core.shell · harness_pre_tool", "deny"],
+                    ["DROP TABLE invoices;", "database.postgresql · mcp_call", "audit"],
+                  ].map(([command, where, verdict]) => (
+                    <div class="lp-mock-row lp-mock-row-2">
+                      <span class="grid min-w-0 gap-0.5">
+                        <span class="truncate text-[0.8125rem] text-foreground">{command}</span>
+                        <span class="truncate text-[0.6875rem] text-muted-foreground">{where}</span>
+                      </span>
+                      <span class:list={["lp-verdict", `lp-verdict-${verdict}`]}>{verdict}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {item.kind === "limits" && (
+                <div class="w-full font-mono text-[0.75rem] leading-[1.35rem]">
+                  <p class="text-foreground">
+                    HTTP/1.1 <span class="text-danger">429</span> Too Many Requests
+                  </p>
+                  <p><span class="text-(--lp-sea)">Retry-After</span>: 12</p>
+                  <p><span class="text-(--lp-sea)">X-RateLimit-Limit</span>: 600</p>
+                  <p><span class="text-(--lp-sea)">X-RateLimit-Remaining</span>: 0</p>
+                  <p><span class="text-(--lp-sea)">X-RateLimit-Reset</span>: 2400</p>
+                </div>
+              )}
+
+              {item.kind === "tags" && (
+                <div class="grid w-full gap-1.5 font-mono text-[0.75rem] leading-[1.35rem]">
+                  <p><span class="text-(--lp-sea)">x-oceans-service</span>: support-bot</p>
+                  <p><span class="text-(--lp-sea)">x-oceans-env</span>: prod</p>
+                  <p class="text-(--lp-sea)">x-oceans-tags:</p>
+                  <div class="flex flex-wrap gap-1.5">
+                    {["cost-center=platform", "workload=agent-harness"].map((tag) => (
+                      <span class="lp-tag">{tag}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {item.kind === "focus" && (
+                <div class="w-full overflow-hidden rounded-[0.45rem] border border-border bg-card">
+                  <p class="flex items-center gap-1.5 border-b border-border px-2.5 py-1.5 font-mono text-[0.6875rem] text-muted-foreground">
+                    <Icon name="ph:file-csv" class="size-3.5" />
+                    focus.csv
+                  </p>
+                  <table class="lp-mock-table">
+                    <thead>
+                      <tr>
+                        <th>x_owner_name</th>
+                        <th>x_upstream_model</th>
+                        <th class="text-end">BilledCost</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {csvRows.map((row) => (
+                        <tr>
+                          {row.map((cell, c) => (
+                            <td class={c === 2 ? "text-end text-foreground" : undefined}>{cell}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {item.kind === "audit" && (
+                <ul class="grid w-full gap-2">
+                  {[
+                    ["AP", "Alice Platform Lead", "Granted a toolset to Research", "2 min"],
+                    ["FA", "Frank Applied Lead", "Rotated an MCP credential", "1 h"],
+                  ].map(([initials, who, what, when]) => (
+                    <li class="lp-mock-row">
+                      <span class="lp-avatar">{initials}</span>
+                      <span class="grid min-w-0">
+                        <span class="truncate text-[0.8125rem] text-foreground">{what}</span>
+                        <span class="truncate text-xs text-muted-foreground">{who}</span>
+                      </span>
+                      <span class="font-mono text-[0.6875rem] text-muted-foreground">{when}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div class="flex flex-1 flex-col p-6 pt-5">
+              <h3 class="flex items-center gap-2 text-[0.9375rem] font-medium text-foreground">
+                <Icon name={item.icon} class="size-4 text-(--lp-sea)" />
+                {item.title}
+              </h3>
+              <p class="mt-2 text-sm leading-6 text-muted-foreground">{item.body}</p>
+              <a href={item.link.href} class="lp-more mt-auto pt-4">
+                {item.link.label}
+                <Icon name="ph:arrow-right" class="size-3.5" />
+              </a>
+            </div>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</section>

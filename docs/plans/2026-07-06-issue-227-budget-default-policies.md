@@ -1,6 +1,6 @@
 # Issue 227: Declarative Default User And User-Model Budget Policies
 
-`See also`: [Budgets](../access/budgets.md), [Configuration Reference](../configuration/configuration-reference.md), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [Identity and Access](../access/identity-and-access.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Data Relationships](../contributing/reference/data-relationships.md), [ADR: Declarative Config-Seeded Identity and Budget Reconciliation](../adr/2026-03-31-declarative-config-seeded-identity-and-budget-reconciliation.md)
+`See also`: [Budgets](https://oceans-llm.com/spend/budgets/), [Configuration Reference](https://oceans-llm.com/configuration/), [Budgets and Spending](../contributing/operations/budgets-and-spending.md), [Identity and Access](https://oceans-llm.com/access/identity-and-access/), [Request Lifecycle and Failure Modes](https://oceans-llm.com/reference/request-lifecycle/), [Data Relationships](../contributing/reference/data-relationships.md), [ADR: Declarative Config-Seeded Identity and Budget Reconciliation](../adr/2026-03-31-declarative-config-seeded-identity-and-budget-reconciliation.md)
 
 - Date: 2026-07-06
 - Status: Draft plan
@@ -350,7 +350,7 @@ Admin editing an inherited default row converts it to `manual`.
 
 User-facing docs:
 
-- Update `docs/access/budgets.md`.
+- Update [Budgets](https://oceans-llm.com/spend/budgets/).
   - Explain taxonomy: user, service-account, user-model, default user, default user-model.
   - Show the `$70/day` user default plus `$40/day` selected model default example.
   - Explain precedence: manual or explicit per-user budget wins over default; user-model and user budgets both enforce.
@@ -359,7 +359,7 @@ User-facing docs:
 
 Config docs:
 
-- Update `docs/configuration/configuration-reference.md`.
+- Update [Configuration reference](https://oceans-llm.com/configuration/).
   - Add `budgets` to top-level sections.
   - Document YAML syntax and validation.
   - Document seed/reconciliation behavior and source ownership.

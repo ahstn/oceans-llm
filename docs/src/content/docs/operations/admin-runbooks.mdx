@@ -1,0 +1,358 @@
+---
+title: Admin runbooks
+description: Step-by-step checks for first deploys, upgrades, rollbacks, failed migrations, sign-in problems, provider errors, request-log purges, and secret rotation.
+sidebar:
+  order: 2
+---
+
+These runbooks are short checklists for common admin tasks and failures. They don't explain the design. For that, see [Start up and first access](/setup/first-access/), [Topology and operations](/setup/deploy-and-operations/), [Kubernetes and Helm](/setup/kubernetes-and-helm/), and the [Configuration reference](/configuration/).
+
+## Run gateway commands
+
+The gateway binary has maintenance commands next to `serve`. Each one reads its config from `--config` or `GATEWAY_CONFIG`, which defaults to `./gateway.yaml`.
+
+| Command | What it does |
+| --- | --- |
+| `gateway config validate` | Loads and checks the config, then exits. It doesn't connect to the database. |
+| `gateway migrate --status` | Lists each migration as `applied` or `pending`. |
+| `gateway migrate --check` | Fails unless the database is current. |
+| `gateway migrate --apply` | Applies pending migrations. |
+| `gateway bootstrap-admin` | Applies pending migrations, then creates the bootstrap admin if no platform admin exists. |
+| `gateway seed-config` | Applies pending migrations, then seeds the teams, users, service accounts, providers, and models in the config. |
+| `gateway purge-request-logs --retention 7d` | Deletes request logs older than the window. See [Request-log retention purge](#request-log-retention-purge). |
+
+`gateway migrate` needs exactly one of `--status`, `--check`, or `--apply`.
+
+<Aside type="caution" title="Check the config path">
+  If the config file doesn't exist, every command except `gateway config validate` carries on with built-in defaults instead of failing. The default database is a libsql file at `./gateway.db`, so a wrong `GATEWAY_CONFIG` points a command at a different, empty database. `gateway config validate` fails when the file is missing.
+</Aside>
+
+Where you run them depends on the setup:
+
+<Tabs syncKey="setup">
+  <TabItem label="Docker Compose">
+    The gateway container already has `GATEWAY_CONFIG=/app/gateway.yaml`.
+
+    ```sh
+    docker compose -f deploy/compose.yaml exec gateway gateway migrate --status
+    ```
+  </TabItem>
+  <TabItem label="Helm">
+    These names assume the release is called `oceans-llm`. Prefer the chart's Jobs for migrations, the bootstrap admin, and seeding; see [Startup Jobs](/setup/kubernetes-and-helm/#startup-jobs).
+
+    ```sh
+    kubectl exec -n <namespace> deploy/oceans-llm-gateway -c gateway -- gateway migrate --status
+    ```
+  </TabItem>
+  <TabItem label="Local checkout">
+    mise tasks build the gateway from source and run the same commands. `mise run //gateway:<task>` uses `gateway.yaml`. The `prod:` tasks use `gateway.prod.yaml` and need `POSTGRES_URL`.
+
+    ```sh
+    mise run //gateway:migrate
+    mise run //gateway:prod:migrate
+    ```
+
+    The tasks are `migrate` (runs `migrate --apply`), `bootstrap-admin`, `seed-config`, and `purge-request-logs`, each with a `prod:` version.
+  </TabItem>
+</Tabs>
+
+## First deploy
+
+### Docker Compose
+
+<Steps>
+  <Step title="Create the env file">
+    Copy `deploy/.env.example` to `deploy/.env`. Set the image version in `OCEANS_LLM_VERSION` and replace every placeholder secret.
+
+    Also add `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY` and `GATEWAY_PUBLIC_BASE_URL`. Compose won't start without them, and `.env.example` doesn't list them. [Start up and first access](/setup/first-access/#docker-compose) lists every variable, and explains why you should add `GATEWAY_IDENTITY_TOKEN_SECRET` too.
+  </Step>
+  <Step title="Check the config">
+    Read `deploy/config/gateway.yaml`, which Compose mounts into the gateway. It seeds `ops@example.com` as a platform admin, and that stops the bootstrap admin from being created. Remove that user or change its `global_role` before the first start. Otherwise no one can sign in: a seeded user needs an invite link, and only an admin can create one.
+  </Step>
+  <Step title="Start the stack">
+    ```sh
+    docker compose -f deploy/compose.yaml up -d
+    docker compose -f deploy/compose.yaml ps
+    ```
+  </Step>
+  <Step title="Check the gateway">
+    ```sh
+    curl --fail http://localhost:8080/healthz
+    curl --fail http://localhost:8080/readyz
+    curl --fail -H "Authorization: Bearer ${GATEWAY_API_KEY}" http://localhost:8080/v1/models
+    ```
+  </Step>
+  <Step title="Sign in">
+    Open `/admin` and sign in as `admin@local` with `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD`. The deploy config asks for a new password at first sign-in.
+  </Step>
+</Steps>
+
+### Helm
+
+<Steps>
+  <Step title="Create the namespace and Secrets">
+    The chart doesn't create your runtime Secrets unless you use `secrets.inline`. Create them first, or let your `ExternalSecret` create them. See [Secrets](/setup/kubernetes-and-helm/#secrets).
+  </Step>
+  <Step title="Render the chart">
+    ```sh
+    helm template oceans-llm oci://ghcr.io/ahstn/charts/oceans-llm \
+      --version <version> \
+      --values values.yaml
+    ```
+
+    Check that the ingress targets only the gateway service. Check that `database.mode` matches `gateway.config.database.url`. With `database.mode: external` and `url: env.POSTGRES_URL`, rendering fails unless a Secret or env entry supplies `POSTGRES_URL`.
+  </Step>
+  <Step title="Install">
+    ```sh
+    helm install oceans-llm oci://ghcr.io/ahstn/charts/oceans-llm \
+      --namespace <namespace> \
+      --version <version> \
+      --values values.yaml
+    ```
+
+    Don't add `--wait`. Migrations run after install, and gateway pods wait for them, so `--wait` never finishes.
+  </Step>
+  <Step title="Watch the migration Job">
+    ```sh
+    kubectl get job oceans-llm-migrate -n <namespace>
+    kubectl logs job/oceans-llm-migrate -n <namespace>
+    ```
+
+    Finished Jobs are deleted after 300 seconds (`ttlSecondsAfterFinished`). Read their logs before then if you need them. The bootstrap-admin and seed-config Jobs are `oceans-llm-bootstrap-admin` and `oceans-llm-seed-config`. Confirm they ran only if you turned them on.
+  </Step>
+  <Step title="Check the pods and the gateway">
+    Confirm the gateway and admin UI pods are ready. Then call `/healthz` and `/readyz` through the ingress, or through a port-forward:
+
+    ```sh
+    kubectl port-forward -n <namespace> svc/oceans-llm-gateway 8080:8080
+    curl --fail http://127.0.0.1:8080/readyz
+    ```
+  </Step>
+</Steps>
+
+## Upgrade
+
+Before any upgrade, read the release notes and back up the database. Migrations can't be undone; see [Roll back](#roll-back).
+
+### Docker Compose
+
+1. Set the new version in `OCEANS_LLM_VERSION` in `deploy/.env`. It applies to both the gateway and admin UI images.
+2. Pull and restart:
+
+   ```sh
+   docker compose -f deploy/compose.yaml pull
+   docker compose -f deploy/compose.yaml up -d
+   ```
+
+3. The gateway applies migrations when it starts. Check `/readyz`, sign in to `/admin` (or call `/v1/models` with the seeded key), and send one real `/v1/*` request.
+4. If the release changes admin APIs, open the admin pages you use as well, not only the public API.
+
+### Helm
+
+1. Pick the chart version. Read the release notes and any changes to chart values.
+2. Render the upgrade with your values and review it:
+
+   ```sh
+   helm template oceans-llm oci://ghcr.io/ahstn/charts/oceans-llm \
+     --version <version> \
+     --values values.yaml
+   ```
+
+3. Apply it:
+
+   ```sh
+   helm upgrade oceans-llm oci://ghcr.io/ahstn/charts/oceans-llm \
+     --namespace <namespace> \
+     --version <version> \
+     --values values.yaml
+   ```
+
+4. Confirm the `oceans-llm-migrate` Job completed, and read its logs.
+5. Watch the rollout, then check `/readyz`, admin sign-in, and one real `/v1/*` request:
+
+   ```sh
+   kubectl rollout status deploy/oceans-llm-gateway -n <namespace>
+   ```
+
+If the upgrade fails after the chart renders but before the pods are healthy, look at the hook Jobs first, then the gateway deployment's events. A pod that stays in its `wait-for-migrations` init container is waiting for the migration Job. The init container runs `gateway migrate --check` until the schema is current or `gateway.migrationWaiter.timeoutSeconds` (default `600`) passes.
+
+## Roll back
+
+A rollback changes the application, not the database. An older gateway refuses a database that has migrations it doesn't know about. The startup migration, every `gateway migrate` command, and the Helm init container fail with an error like this:
+
+```text
+database reset required for postgres: found historical migration v<N> outside the active registry; recreate the database and rerun migrations
+```
+
+So if the upgrade applied a migration, restore the database backup you took before the upgrade, then roll back the application. Don't recreate the database because the error says so, unless you're willing to lose its data.
+
+To see whether the upgrade applied migrations, run `gateway migrate --status` with the newer version, before you roll back.
+
+### Helm
+
+```sh
+helm history oceans-llm --namespace <namespace>
+helm rollback oceans-llm <revision> --namespace <namespace>
+kubectl rollout status deploy/oceans-llm-gateway -n <namespace>
+```
+
+Then check `/readyz`, admin sign-in, and one real `/v1/*` request. `helm rollback` doesn't run the migration Job, which is a `post-install,post-upgrade` hook by default.
+
+### Docker Compose
+
+Set the previous version in `OCEANS_LLM_VERSION`, restore the database if needed, and run `docker compose -f deploy/compose.yaml up -d`.
+
+## Scaling and high availability (Helm)
+
+For more than one gateway pod, check that:
+
+- `gateway.replicaCount` is above `1`, or, with `autoscaling.enabled`, `autoscaling.minReplicas` is above `1`.
+- The rendered `PodDisruptionBudget` matches the disruption you can accept. With `podDisruptionBudget.enabled: auto`, the chart renders one only for more than one replica, with `minAvailable: 1`.
+- `scheduling.topologySpreadConstraints` and affinity rules don't leave pods unschedulable.
+- On Karpenter or another node provisioner, node selectors, tolerations, and `scheduling.priorityClassName` match a node pool that exists.
+- The metrics the `HorizontalPodAutoscaler` uses are available before you rely on it.
+- The recurring request-log purge, if it's on, runs in every pod. See [Request-log retention purge](#request-log-retention-purge).
+
+[Kubernetes and Helm](/setup/kubernetes-and-helm/#traffic-scaling-and-scheduling) explains these values.
+
+## Failed migration recovery
+
+Start with the least destructive step.
+
+1. Read the gateway logs, or the migration Job logs on Helm.
+2. Run `gateway migrate --status` with the same config, to see which migrations are applied and which are pending.
+3. Check that `database.url` points at the database you expect.
+4. Check whether migrations are turned off. `GATEWAY_RUN_MIGRATIONS=false` stops `gateway serve` from migrating. The Helm chart sets it on purpose and runs a Job instead.
+5. Apply them with `gateway migrate --apply`, or `mise run //gateway:migrate` in a local checkout.
+
+If the error says `database reset required`, the command found history it can't upgrade in place. [Topology and operations](/setup/deploy-and-operations/#database-and-migrations) lists the causes. If the cause is an older gateway running against a newer database, see [Roll back](#roll-back). Otherwise, recreate the database, then run the migrations, the config seed, and the bootstrap admin again on the new one.
+
+If a PostgreSQL index migration fails with `canceling statement due to statement timeout` or `lock timeout`, the table was too large or too busy to index within the migration's time limit. Migrations run in a transaction, so they can't build indexes concurrently. Build the index online with the statement from the migration file, with `CONCURRENTLY` added. For `V77__batch_jobs_route_index`, that's `CREATE INDEX CONCURRENTLY IF NOT EXISTS batch_jobs_route_idx ON batch_jobs (route_id);`. Then run the migrations again. The migration finds the index and does nothing.
+
+For any other error, stop and read it before you retry. Don't assume a manual repair is safer than recreating the database.
+
+## Broken admin sign-in
+
+Work through these checks in order:
+
+1. Open `/admin` through the gateway's address, not the admin UI's own port (`3001` for the local dev server, `3000` in Compose and Helm). Sessions and cookies depend on [one origin](/setup/deploy-and-operations/#one-origin-for-everything).
+2. On a new install, check that `auth.bootstrap_admin.enabled` is `true`. The gateway creates the bootstrap admin only when no platform admin exists yet, so a platform admin seeded from `users` stops it. See [The bootstrap admin](/setup/first-access/#the-bootstrap-admin).
+3. Run the bootstrap step against the active config. On Compose, `docker compose -f deploy/compose.yaml exec gateway gateway bootstrap-admin`. On Helm, upgrade with `bootstrapAdminJob.enabled=true`. In a local checkout, `mise run //gateway:bootstrap-admin`. It does nothing if a platform admin already exists, and it never resets an existing password.
+4. Check the first-login rule in `auth.bootstrap_admin.require_password_change`. It's `false` in `gateway.yaml`, and `true` in `gateway.prod.yaml`, `deploy/config/gateway.yaml`, and the chart's default values.
+5. Sessions last 30 days. If a session has expired, sign in again.
+
+If users sign in with SSO, also check the provider is enabled, and check its public base URL, callback URL, and client secret. See [OIDC and SSO](/access/sso/).
+
+## Provider errors
+
+Many provider errors come from the config shape or a missing secret. Run `gateway config validate` with the same config and environment the gateway uses. The gateway refuses to start when:
+
+- an `env.*` reference names a variable that isn't set (`required environment variable ... is not set`);
+- an `openai_compat`, `anthropic_compat`, `typesafe`, or `gcp_cloud_run_openai_compat` provider has an empty or unsupported `pricing_provider_id`;
+- a `gcp_vertex` route's `upstream_model` isn't in `<publisher>/<model_id>` form.
+
+If the gateway starts but calls fail:
+
+- Check the secret has a value. An empty variable lets the gateway start, but the provider rejects the calls.
+- Check the route is `enabled` and has a `weight` above `0`. The gateway drops other routes when it plans a request.
+- A model can appear in `/v1/models` and still fail for a request it can't serve. Follow [Request lifecycle and failure modes](/reference/request-lifecycle/).
+
+The provider guides cover provider-specific checks, for example [GitHub Copilot](/providers/github-copilot/) user tokens and its installation-token canary.
+
+## Missing OTLP collector
+
+Neither the Compose stack nor the Helm chart includes an OpenTelemetry collector. If OTLP export is set up but no collector is reachable:
+
+1. Read the gateway logs from startup.
+2. Check `server.otel_endpoint` and `server.otel_metrics_endpoint`.
+3. Check the collector's address is reachable from the gateway container.
+4. Decide whether to connect a real collector, or to unset the endpoints and rely on logs and stored request logs.
+
+Request logs are stored in the database, so the request-log pages and APIs still work without a collector. On Helm, set the endpoints under `gateway.config.server`, and use the `observability.*` values to add a sidecar or agent. See [Export traces and metrics](/observability/export-traces-and-metrics/).
+
+## Request-log retention purge
+
+Use the purge command. Don't delete request-log tables by hand.
+
+<Tabs syncKey="setup">
+  <TabItem label="Docker Compose">
+    ```sh
+    docker compose -f deploy/compose.yaml exec gateway gateway purge-request-logs --retention 7d --dry-run
+    docker compose -f deploy/compose.yaml exec gateway gateway purge-request-logs --retention 7d
+    ```
+  </TabItem>
+  <TabItem label="Helm">
+    ```sh
+    kubectl exec -n <namespace> deploy/oceans-llm-gateway -c gateway -- gateway purge-request-logs --retention 7d --dry-run
+    kubectl exec -n <namespace> deploy/oceans-llm-gateway -c gateway -- gateway purge-request-logs --retention 7d
+    ```
+  </TabItem>
+  <TabItem label="Local checkout">
+    ```sh
+    mise run //gateway:purge-request-logs --dry-run
+    mise run //gateway:purge-request-logs
+    mise run //gateway:prod:purge-request-logs --dry-run
+    mise run //gateway:prod:purge-request-logs
+    ```
+
+    The tasks default to `7d`. Set `RETENTION=1d` or pass `--retention 3d` to change it.
+  </TabItem>
+</Tabs>
+
+The windows are `1d`, `3d`, and `7d`. The binary needs `--retention`; it has no default. Keep `7d` unless storage is tight and you accept losing request detail quickly.
+
+The command prints `cutoff`, `dry_run`, `matched_count`, and `deleted_count`. `--dry-run` deletes nothing, and fails if migrations are pending. Without `--dry-run`, the command applies any pending migrations first.
+
+A purge deletes:
+
+- request-log rows older than the cutoff, with their payloads, tags, and provider attempts;
+- [guardrail decisions](/operations/gateway-guardrails/#observe-decisions) older than the cutoff;
+- the stored inputs, detected activity and reports of finished [agent sessions](/observability/agent-session-analysis/) older than the cutoff.
+
+It keeps `usage_cost_events`, so spend and budget reports still work after the request detail is gone.
+
+### Recurring purge
+
+The recurring purge is off by default. Turn it on in the config:
+
+```yaml title="gateway.yaml"
+request_logging:
+  purge:
+    enabled: true
+    retention: 7d
+    schedule: "0 0 * * *"
+```
+
+`schedule` is a 5-field cron expression in UTC. It defaults to `"0 0 * * *"`, and the gateway won't start with a schedule that runs more than once a day. As a backstop, each process also skips a second run on the same UTC day.
+
+Each gateway process runs its own purge loop. With Helm, every pod gets the same config, so every pod runs the purge. To run it only once, leave it off and schedule `gateway purge-request-logs` yourself, for example as a Kubernetes `CronJob`.
+
+## Secret rotation
+
+When you rotate a secret, check the path that depends on it.
+
+### Gateway API keys
+
+For keys created in the admin UI or API, create the replacement key first, move the callers to it, then revoke the old key. For a service-account caller, name the key after the workload, give it a narrow model grant and an active budget, and keep the raw secret in your secret manager. See [Service accounts](/access/service-accounts/).
+
+For keys declared in config, under `service_accounts[].keys[].value`:
+
+1. Change the secret value at its source.
+2. Reseed. On Compose, restart the gateway, which seeds at startup. On Helm, upgrade with `seedConfigJob.enabled=true`. Or run `gateway seed-config`.
+3. Check `/v1/models` with the new key, and check the old key fails.
+
+When the seed finds a new value for a key ID, it replaces the old key at once. There's no overlap, so move the callers at the same time.
+
+### Bootstrap admin password
+
+`GATEWAY_BOOTSTRAP_ADMIN_PASSWORD` is used only when the bootstrap admin is created. Changing it later doesn't change the admin's password. To change it, the admin opens their user menu in the admin UI sidebar, selects **Change password**, enters the new password, and selects **Update password**. Check the new password works and the old one doesn't.
+
+### Provider credentials
+
+1. Update the secret at its source.
+2. Restart the gateway. It reads provider secret references when it starts.
+3. Send one real request through the provider, and check its request log shows the expected provider.
+
+Provider credentials are upstream cloud credentials, not caller credentials. Rotating a Vertex service-account file or an AWS IAM role changes provider access only. It doesn't rotate the gateway API keys that clients use.
+
+Guardrail credentials are different: a Model Armor token in a `file.` reference is read again before each check, so it rotates without a restart. See [Gateway guardrails](/operations/gateway-guardrails/#google-cloud-model-armor).

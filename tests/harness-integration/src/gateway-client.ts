@@ -8,6 +8,9 @@ const RequestLogSchema = z.object({
   provider_key: z.string(),
   request_log_id: z.string(),
   status_code: z.number().nullable(),
+  prompt_tokens: z.number().nullable(),
+  completion_tokens: z.number().nullable(),
+  cost_usd_10000: z.number().nullable(),
 });
 
 const RequestLogPageSchema = z.object({
@@ -69,17 +72,14 @@ export class GatewayAdminClient {
   }
 
   async login(): Promise<void> {
-    const response = await fetchWithTimeout(
-      `${this.#runtime.baseUrl}/api/v1/auth/login/password`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          email: this.#runtime.adminEmail,
-          password: this.#runtime.adminPassword,
-        }),
-      },
-    );
+    const response = await fetchWithTimeout(`${this.#runtime.baseUrl}/api/v1/auth/login/password`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: this.#runtime.adminEmail,
+        password: this.#runtime.adminPassword,
+      }),
+    });
     await assertSuccessful(response, "admin login");
     const setCookie = response.headers.get("set-cookie");
     if (!setCookie) {
@@ -142,11 +142,7 @@ export class GatewayAdminClient {
     url.searchParams.set("model_key", this.#runtime.model);
     url.searchParams.set("tag_key", "harness_run");
     url.searchParams.set("tag_value", requestTag);
-    const response = await fetchWithTimeout(
-      url,
-      { headers: { cookie: this.#cookie } },
-      timeoutMs,
-    );
+    const response = await fetchWithTimeout(url, { headers: { cookie: this.#cookie } }, timeoutMs);
     return readEnvelope(response, "request-log query", RequestLogPageSchema);
   }
 }

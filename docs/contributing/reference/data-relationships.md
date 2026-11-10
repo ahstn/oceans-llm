@@ -1,6 +1,6 @@
 # Data Relationships
 
-`See also`: [Identity and Access](../../access/identity-and-access.md), [Service Accounts](../../access/service-accounts.md), [Model Routing and APIs](../../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../../reference/provider-api-compatibility.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../../operations/observability-and-request-logs.md), [Request Logs](../../operations/observability/request-logs.md), [MCP Invocations](../../mcp/mcp-invocations.md), [MCP Registry and Discovery](../mcp/mcp-registry-and-discovery.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../../adr/2026-05-10-team-service-accounts.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../../adr/2026-03-05-identity-foundation.md), [ADR: Route-Level Provider API Compatibility Profiles](../../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../../adr/2026-04-28-mcp-tool-cardinality-observability.md), [ADR: External MCP Registry and Discovery Boundary](../../adr/2026-05-26-external-mcp-registry-and-discovery.md)
+`See also`: [Identity and Access](https://oceans-llm.com/access/identity-and-access/), [Service Accounts](https://oceans-llm.com/access/service-accounts/), [Model Routing and APIs](https://oceans-llm.com/configuration/model-routing/), [Provider API Compatibility](https://oceans-llm.com/reference/provider-api-compatibility/), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](https://oceans-llm.com/observability/), [Request Logs](https://oceans-llm.com/observability/request-logs/), [MCP Invocations](https://oceans-llm.com/extensions/mcp-invocations/), [MCP Registry and Discovery](../mcp/mcp-registry-and-discovery.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../../adr/2026-05-10-team-service-accounts.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../../adr/2026-03-05-identity-foundation.md), [ADR: Route-Level Provider API Compatibility Profiles](../../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../../adr/2026-04-28-mcp-tool-cardinality-observability.md), [ADR: External MCP Registry and Discovery Boundary](../../adr/2026-05-26-external-mcp-registry-and-discovery.md)
 
 This document is schema-oriented. It describes the persistent relationships that are hard to infer from a single file, but it does not try to restate every runtime rule owned by neighboring docs.
 
@@ -238,7 +238,7 @@ Model-level allowlist refs have no user/team foreign keys, so unknown emails and
 - `request_logs.model_key` stores the requested gateway model
 - `request_logs.resolved_model_key` stores the canonical execution model after alias resolution
 
-This distinction matters for admin-facing observability and historical debugging. See [model-routing-and-api-behavior.md](../../configuration/model-routing-and-api-behavior.md).
+This distinction matters for admin-facing observability and historical debugging. See [Model routing and APIs](https://oceans-llm.com/configuration/model-routing/).
 
 ## Route Viability Note
 
@@ -251,7 +251,7 @@ Operational viability also depends on:
 - positive route weights
 - capability filtering
 
-Those rules are owned by [configuration-reference.md](../../configuration/configuration-reference.md) and [model-routing-and-api-behavior.md](../../configuration/model-routing-and-api-behavior.md).
+Those rules are owned by [Configuration reference](https://oceans-llm.com/configuration/) and [Model routing and APIs](https://oceans-llm.com/configuration/model-routing/).
 
 ## Ownership Notes
 
@@ -260,7 +260,7 @@ Those rules are owned by [configuration-reference.md](../../configuration/config
 - Direct team-owned runtime API keys are removed from the schema contract
 - There is no reserved `system-legacy` ownership path
 
-That ownership model is explained operationally in [identity-and-access.md](../../access/identity-and-access.md), [service-accounts.md](../../access/service-accounts.md), and [budgets-and-spending.md](../operations/budgets-and-spending.md).
+That ownership model is explained operationally in [Identity and access](https://oceans-llm.com/access/identity-and-access/), [Service accounts](https://oceans-llm.com/access/service-accounts/), and [budgets-and-spending.md](../operations/budgets-and-spending.md).
 
 ## PostgreSQL and libsql Parity
 

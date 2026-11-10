@@ -1,0 +1,34 @@
+---
+/** Common questions, as native disclosure widgets: no script needed. */
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import RichText from "./RichText.astro";
+import SectionHeading from "./SectionHeading.astro";
+import { faq } from "./content";
+---
+
+<section aria-labelledby="lp-faq" class="lp-section">
+  <div class="lp-container grid gap-12 lg:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] lg:gap-16">
+    <SectionHeading
+      id="lp-faq"
+      eyebrow="Questions"
+      title="Before you deploy."
+      lede="Short answers here, with the full story in the docs."
+    />
+
+    <div class="border-t border-border">
+      {
+        faq.map((item) => (
+          <details class="lp-faq group">
+            <summary>
+              <span>{item.question}</span>
+              <Icon name="ph:plus" class="lp-faq-icon size-4 shrink-0" />
+            </summary>
+            <p class="pb-6 pe-10 text-[0.9375rem] leading-7 text-muted-foreground">
+              <RichText runs={item.answer} />
+            </p>
+          </details>
+        ))
+      }
+    </div>
+  </div>
+</section>

@@ -5,9 +5,9 @@
 
 ## Current state
 
-- [../configuration-reference.md](../configuration/configuration-reference.md)
-- [../model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)
-- [../pricing-catalog-and-accounting.md](../configuration/pricing-catalog-and-accounting.md)
+- [Configuration reference](https://oceans-llm.com/configuration/)
+- [Model routing and APIs](https://oceans-llm.com/configuration/model-routing/)
+- [Pricing catalog and accounting](https://oceans-llm.com/spend/pricing-and-accounting/)
 
 ## Context
 

@@ -1,8 +1,8 @@
 # Deploy
 
 `Owns`: the checked-in deploy entry points under `deploy/`.
-`Depends on`: [../README.md](../README.md), [../docs/setup/deploy-and-operations.md](../docs/setup/deploy-and-operations.md)
-`See also`: [../docs/setup/runtime-bootstrap-and-access.md](../docs/setup/runtime-bootstrap-and-access.md), [../docs/setup/kubernetes-and-helm.md](../docs/setup/kubernetes-and-helm.md), [../docs/operations/operator-runbooks.md](../docs/operations/operator-runbooks.md)
+`Depends on`: [../README.md](../README.md), [Topology and operations](https://oceans-llm.com/setup/deploy-and-operations/)
+`See also`: [Start up and first access](https://oceans-llm.com/setup/first-access/), [Kubernetes and Helm](https://oceans-llm.com/setup/kubernetes-and-helm/), [Admin runbooks](https://oceans-llm.com/operations/admin-runbooks/)
 
 This directory contains the checked-in compose quick start and the supported Helm chart.
 
@@ -45,7 +45,7 @@ helm install oceans-llm oci://ghcr.io/ahstn/charts/oceans-llm \
   --values values.yaml
 ```
 
-Use [Kubernetes and Helm](../docs/setup/kubernetes-and-helm.md) for the chart contract, secret modes, database modes, and scheduling controls.
+Use [Kubernetes and Helm](https://oceans-llm.com/setup/kubernetes-and-helm/) for the chart contract, secret modes, database modes, and scheduling controls.
 
 ## Required Environment
 
@@ -126,14 +126,14 @@ Hardened declarative SSO-backed identity matching remains tracked in [issue #65]
 Use the quick start here, then switch to the canonical pages for the rest:
 
 - Kubernetes and Helm:
-  - [Kubernetes and Helm](../docs/setup/kubernetes-and-helm.md)
+  - [Kubernetes and Helm](https://oceans-llm.com/setup/kubernetes-and-helm/)
 - startup and first access:
-  - [Runtime Bootstrap and Access](../docs/setup/runtime-bootstrap-and-access.md)
+  - [Start up and first access](https://oceans-llm.com/setup/first-access/)
 - topology and caveats:
-  - [Deploy and Operations](../docs/setup/deploy-and-operations.md)
+  - [Topology and operations](https://oceans-llm.com/setup/deploy-and-operations/)
 - action-oriented recovery:
-  - [Admin Runbooks](../docs/operations/operator-runbooks.md)
+  - [Admin Runbooks](https://oceans-llm.com/operations/admin-runbooks/)
 - config contract:
-  - [Configuration Reference](../docs/configuration/configuration-reference.md)
+  - [Configuration Reference](https://oceans-llm.com/configuration/)
 
-Use [Documentation Home](../docs/index.md) when you need the full admin, user, and maintainer map.
+Use [Documentation Home](https://oceans-llm.com/introduction/) when you need the full admin, user, and maintainer map.

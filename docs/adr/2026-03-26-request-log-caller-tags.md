@@ -9,7 +9,7 @@
 
 ## Current state
 
-- [../observability-and-request-logs.md](../operations/observability-and-request-logs.md)
+- [Observability and request logs](https://oceans-llm.com/observability/)
 
 ## Context
 

@@ -1,6 +1,6 @@
 # Migration Authoring
 
-`See also`: [Data Relationships](data-relationships.md), [Admin Runbooks](../../operations/operator-runbooks.md), [Release Process](release-process.md), [ADR: Pre-v1 Store Migration Re-Baseline](../../adr/2026-03-31-pre-v1-migration-rebaseline.md), [ADR: Migration Atomicity Hardening and Pitchfork-First Local Postgres Operations](../../adr/2026-03-17-migration-atomicity-and-local-postgres-ops-hardening.md)
+`See also`: [Data Relationships](data-relationships.md), [Admin Runbooks](https://oceans-llm.com/operations/admin-runbooks/), [Release Process](release-process.md), [ADR: Pre-v1 Store Migration Re-Baseline](../../adr/2026-03-31-pre-v1-migration-rebaseline.md), [ADR: Migration Atomicity Hardening and Pitchfork-First Local Postgres Operations](../../adr/2026-03-17-migration-atomicity-and-local-postgres-ops-hardening.md)
 
 This page is the maintainer checklist for adding migrations after the active `V17` baseline.
 
@@ -75,13 +75,13 @@ Update [data-relationships.md](data-relationships.md) when a migration changes:
 - provider, model, route, capability, or compatibility tables
 - generated admin API payloads that expose new persisted fields
 
-Update [admin-runbooks](../../operations/operator-runbooks.md) when the migration changes admin recovery, reset, upgrade, or first-access steps.
+Update [Admin runbooks](https://oceans-llm.com/operations/admin-runbooks/) when the migration changes admin recovery, reset, upgrade, or first-access steps.
 
 ## What This Page Does Not Own
 
 - schema relationship reference:
   - [data-relationships.md](data-relationships.md)
 - recovery and reset procedures:
-  - [operator-runbooks.md](../../operations/operator-runbooks.md)
+  - [Admin runbooks](https://oceans-llm.com/operations/admin-runbooks/)
 - release mechanics:
   - [release-process.md](release-process.md)

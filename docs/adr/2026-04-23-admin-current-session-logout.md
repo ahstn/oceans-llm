@@ -21,8 +21,8 @@
   - [../../crates/admin-ui/web/src/components/layout/app-shell.tsx](../../crates/admin-ui/web/src/components/layout/app-shell.tsx)
   - [../../crates/admin-ui/web/src/components/app-sidebar.tsx](../../crates/admin-ui/web/src/components/app-sidebar.tsx)
 - Docs:
-  - [../access/admin-control-plane.md](../access/admin-control-plane.md)
-  - [../access/identity-and-access.md](../access/identity-and-access.md)
+  - [Admin control plane](https://oceans-llm.com/access/admin-control-plane/)
+  - [Identity and access](https://oceans-llm.com/access/identity-and-access/)
   - [../reference/e2e-contract-tests.md](../contributing/reference/e2e-contract-tests.md)
 
 ## Context

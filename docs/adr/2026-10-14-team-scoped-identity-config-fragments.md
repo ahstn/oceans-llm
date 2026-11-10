@@ -10,10 +10,10 @@
 
 ## Current state
 
-- [../access/identity-and-access.md](../access/identity-and-access.md#declarative-identity-seed)
-- [../configuration/configuration-reference.md](../configuration/configuration-reference.md#declarative-teams-and-users)
-- [../operations/tagging.md](../operations/tagging.md)
-- [../setup/runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)
+- [Identity and access](https://oceans-llm.com/access/identity-and-access/)
+- [Auth and access settings: Declarative teams, users and service accounts](https://oceans-llm.com/access/access-settings/#declarative-teams-users-and-service-accounts)
+- [Tagging](https://oceans-llm.com/observability/tagging/)
+- [Start up and first access](https://oceans-llm.com/setup/first-access/)
 
 ## Context
 
@@ -212,10 +212,10 @@ Phased so each step is useful on its own:
 
 Docs to update with each phase:
 
-- [../access/identity-and-access.md](../access/identity-and-access.md)
-- [../configuration/configuration-reference.md](../configuration/configuration-reference.md)
-- [../operations/tagging.md](../operations/tagging.md)
-- [../setup/runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)
+- [Identity and access](https://oceans-llm.com/access/identity-and-access/)
+- [Configuration reference](https://oceans-llm.com/configuration/)
+- [Tagging](https://oceans-llm.com/observability/tagging/)
+- [Start up and first access](https://oceans-llm.com/setup/first-access/)
 
 The configuration reference also has existing errors to fix in phase 1:
 

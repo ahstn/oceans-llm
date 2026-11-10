@@ -1,0 +1,314 @@
+---
+title: Auth and access settings
+description: YAML fields for the bootstrap admin, OIDC and OAuth sign-in, admin page permissions, and declarative teams, users, and service accounts.
+sidebar:
+  order: 9
+---
+
+This page lists the YAML fields that control who can sign in and what they can do in the admin UI: `auth`, `permissions`, and the declarative `teams`, `users` and `service_accounts` lists. For how sign-in and access work at runtime, see [Identity and access](/access/identity-and-access/) and [OIDC and SSO](/access/sso/). For what happens at first startup, see [Start up and first access](/setup/first-access/).
+
+The gateway rejects unknown keys in `auth`, `permissions`, `teams`, `users` and `service_accounts`, except inside OIDC and OAuth provider entries, where unknown keys are ignored.
+
+## `auth.bootstrap_admin`
+
+The bootstrap admin is the first control-plane account. The gateway creates it at startup so an admin can sign in before any other identity exists.
+
+```yaml
+auth:
+  bootstrap_admin:
+    enabled: true
+    email: admin@local
+    password: env.GATEWAY_BOOTSTRAP_ADMIN_PASSWORD
+    require_password_change: true
+```
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `enabled` | `true` | Creates the bootstrap admin at startup. |
+| `email` | `admin@local` | Must contain `@`. No entry in `users` can use this email. |
+| `password` | `literal.admin` | A secret field: `env.`, `file.` or `literal.`. |
+| `require_password_change` | `false` | When `true`, the admin must set a new password at first sign-in. |
+
+<Aside type="caution">
+The default password is `admin`. Set `password` from a secret and set `require_password_change: true` for any shared or exposed gateway.
+</Aside>
+
+## `auth.oidc`
+
+OIDC providers use authorisation-code sign-in with provider discovery and ID-token verification.
+
+```yaml
+auth:
+  oidc:
+    public_base_url: env.GATEWAY_PUBLIC_BASE_URL
+    providers:
+      - key: authentik
+        label: Authentik
+        issuer_url: https://auth.example.com/application/o/oceans-llm/
+        client_id: oceans-llm
+        client_secret: env.AUTHENTIK_OCEANS_LLM_CLIENT_SECRET
+        scopes: [openid, email, profile]
+        enabled: true
+```
+
+`public_base_url` is the external origin of the gateway. It is a secret field, so use `env.`, `file.` or `literal.`. The resolved value must be an `http` or `https` URL with a host. A trailing `/` is removed.
+
+| Provider field | Default | Rule |
+| --- | --- | --- |
+| `key` | required | Unique, not empty. Users refer to it with `oidc_provider_key`. |
+| `label` | the `key` | Sign-in button label. |
+| `issuer_url` | required | An `http` or `https` URL. |
+| `client_id` | required | Not empty. |
+| `client_secret` | required | Secret field. Resolved and checked only when the provider is enabled. |
+| `scopes` | `[openid, email, profile]` | Must include `openid`. No empty scopes or scopes with spaces. |
+| `enabled` | `true` | |
+| `jit` | disabled | Just-in-time user creation. See [JIT fields](#jit-fields). |
+
+Google Auth Platform OAuth 2.0 clients use this OIDC shape with issuer `https://accounts.google.com`. See [Google OAuth and OIDC setup](/access/sso/google/).
+
+## `auth.oauth`
+
+OAuth providers are separate from OIDC providers. GitHub is the only supported `provider_type`.
+
+```yaml
+auth:
+  oauth:
+    public_base_url: env.GATEWAY_PUBLIC_BASE_URL
+    providers:
+      - key: github
+        label: GitHub
+        provider_type: github
+        client_id: env.GITHUB_OAUTH_CLIENT_ID
+        client_secret: env.GITHUB_OAUTH_CLIENT_SECRET
+        scopes: [read:user, user:email]
+        sso_email_verification_enabled: true
+        allowed_email_domains:
+          - example.com
+        enabled: true
+        jit:
+          enabled: false
+```
+
+`public_base_url` follows the same rules as `auth.oidc.public_base_url`. It is required when any OAuth provider is enabled.
+
+| Provider field | Default | Rule |
+| --- | --- | --- |
+| `key` | required | Unique, not empty. Users refer to it with `oauth_provider_key`. |
+| `label` | the `key` | Sign-in button label. |
+| `provider_type` | `github` | Must be `github`. |
+| `client_id` | required | `env.`, `literal.` or a plain value. |
+| `client_secret` | required | Secret field. Resolved and checked only when the provider is enabled. |
+| `scopes` | `[read:user, user:email]` | Must include `user:email`. |
+| `sso_email_verification_enabled` | `true` | See below. |
+| `allowed_email_domains` | `[]` | See below. |
+| `enabled` | `true` | |
+| `jit` | disabled | See [JIT fields](#jit-fields). |
+
+When `sso_email_verification_enabled` is `true`, sign-in needs a GitHub primary email that GitHub has verified. When it is `false`, Oceans accepts the primary email even if GitHub has not verified it.
+
+`allowed_email_domains` limits sign-in to primary emails in the listed domains. An empty list sets no domain limit. The gateway trims each entry, makes it lowercase, and removes trailing dots. Matching is exact on the domain part of the email, so `example.com` does not match `mail.example.com`. Startup fails for empty entries, email addresses, URLs, wildcards, single-label names such as `localhost`, invalid DNS characters, and duplicates after normalisation.
+
+For GitHub app setup and callback URLs, see [GitHub OAuth setup](/access/sso/github/).
+
+### JIT fields
+
+`jit` on an OIDC or OAuth provider controls whether a first sign-in creates a user:
+
+| Field | Default | Rule |
+| --- | --- | --- |
+| `enabled` | `false` | |
+| `global_role` | `user` | `user` or `platform_admin`. |
+| `membership.team` | unset | Must be a team in `teams`. |
+| `membership.role` | required with `membership` | `admin` or `member`. `owner` is rejected. |
+| `request_logging_enabled` | `true` | |
+
+JIT settings apply fixed defaults. They do not map claims or groups from the identity provider. Existing password users are not linked to SSO identities by email.
+
+MCP OAuth is a different feature. For `mcp.oauth`, see [MCP servers](/extensions/mcp-servers/). For `mcp.client_oauth`, see [MCP client setup](/extensions/mcp-client-setup/#turn-on-oauth-sign-in).
+
+## `permissions`
+
+`permissions` sets which admin UI pages and admin actions each group can use. Page grants control UI visibility only. The API and the UI both enforce action grants. An action grant does not bypass ownership, team scope, active-session or resource-state checks.
+
+The gateway puts each signed-in person in one group: `platform_admins` for the `platform_admin` global role, `team_admins` for a team owner or admin, and `users` for everyone else. See [Identity and access](/access/identity-and-access/#admin-ui-access) for group selection and data scope.
+
+This example shows the defaults:
+
+```yaml
+permissions:
+  users:
+    pages:
+      - api_keys
+      - models
+      - mcp
+      - usage_costs
+      - leaderboard
+      - agent_harnesses
+      - request_logs
+      - mcp_invocations
+      - teams
+      - users
+      - service_accounts
+    actions:
+      - create_api_key
+      - update_api_key
+      - revoke_api_key
+    default_page: usage_costs
+  team_admins:
+    pages:
+      - spend_controls
+      - agent_sessions
+    actions:
+      - reveal_api_key
+    default_page: usage_costs
+  platform_admins:
+    pages:
+      - mcp
+      - review_agent
+      - spend_controls
+      - rate_limits
+    actions: []
+    default_page: api_keys
+```
+
+### Inheritance
+
+Each list holds direct grants for that group. The effective sets are unions:
+
+| Group | Effective pages and actions |
+| --- | --- |
+| `users` | `users` grants |
+| `team_admins` | `users` grants plus `team_admins` grants |
+| `platform_admins` | all three groups' grants |
+
+If a group, `pages` or `actions` is absent, the default direct grants above apply. An explicit empty list removes that group's direct grants, but inherited grants still apply. For example, [`gateway.prod.yaml`](https://github.com/ahstn/oceans-llm/blob/main/gateway.prod.yaml) sets `team_admins.pages: []`, so team admins there get only the user pages. Repeated names are allowed and count once.
+
+### Pages and actions
+
+| Name | Who can be granted it |
+| --- | --- |
+| `api_keys`, `models`, `mcp`, `usage_costs`, `leaderboard`, `agent_harnesses`, `request_logs`, `mcp_invocations`, `teams`, `users`, `service_accounts` | all groups |
+| `spend_controls`, `agent_sessions` | `team_admins`, `platform_admins` |
+| `review_agent`, `rate_limits` | `platform_admins` only |
+| `create_api_key`, `update_api_key`, `revoke_api_key` | all groups |
+| `reveal_api_key` | `team_admins`, `platform_admins` |
+
+Users can't receive `reveal_api_key` because a personal key secret is shown only when the key is created. Some pages also depend on other settings or scope:
+
+- Users see `mcp` read-only, limited to the servers they can connect to. Team admins manage only their team's servers. See [MCP servers](/extensions/mcp-servers/).
+- Team admins see `spend_controls` for their own team only.
+- Team admins see `agent_sessions` only when `agent_analysis.team_admin_enabled` is `true`. See [`agent_analysis`](/configuration/#agent_analysis).
+
+By default, a user can create, update and revoke only their own keys. A team owner or admin can also create, update, revoke and reveal service-account keys for that team. A platform admin has global key scope. If an admin removes an action, the gateway hides its UI control and the matching API returns `403`. Other admin operations keep their own authorisation rules.
+
+### `default_page`
+
+`default_page` must be one of the group's effective pages. If it is absent, the gateway uses `usage_costs` for users and team admins and `api_keys` for platform admins, when that page is available. Otherwise it uses the first effective page. The session reports this value, but the admin UI now lands signed-in users on their profile page (`/admin/profile`). A group with no effective pages lands on `/admin/no-access`. See the [profile landing page ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-09-26-profile-landing-page.md).
+
+Startup fails for an unknown field, page or action, a page or action the group can't receive, or a `default_page` outside the effective set. The design is in the [configurable admin page permissions ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-08-05-configurable-admin-page-permissions.md).
+
+## Declarative teams, users and service accounts
+
+`teams`, `users` and `service_accounts` seed identities at startup, through the same seed step as providers and models. Seeding is additive: the gateway creates or updates listed entries and leaves unlisted ones alone.
+
+```yaml
+teams:
+  - id: platform
+    name: Platform
+
+users:
+  - name: Platform Admin
+    email: ops@example.com
+    auth_mode: password
+    global_role: platform_admin
+    membership:
+      team: platform
+      role: admin
+    budget:
+      cadence: monthly
+      amount_usd: "100.0000"
+
+service_accounts:
+  - id: ci-indexer
+    name: CI Indexer
+    team: platform
+    budget:
+      cadence: daily
+      amount_usd: "25.0000"
+    keys:
+      - id: primary
+        name: CI Indexer Primary
+        value: env.CI_INDEXER_GATEWAY_API_KEY
+        allowed_models:
+          - gpt-4o-mini
+```
+
+### `teams`
+
+| Field | Default | Rule |
+| --- | --- | --- |
+| `id` | required | Stable key. Unique and not empty after trimming. |
+| `name` | required | Not empty. |
+| `tags` | unset | Identity tags. |
+
+Teams have no `budget` field in config. The id `system-legacy` has no special meaning.
+
+### `users`
+
+| Field | Default | Rule |
+| --- | --- | --- |
+| `name` | required | Not empty. |
+| `email` | required | Trimmed and lowercased, must contain `@`, unique. Can't be the bootstrap admin email. |
+| `auth_mode` | required | `password`, `oidc` or `oauth`. |
+| `global_role` | `user` | `user` or `platform_admin`. |
+| `request_logging_enabled` | `true` | |
+| `oidc_provider_key` | unset | Required for `oidc` users, rejected for others. Must match an `auth.oidc.providers` key. |
+| `oauth_provider_key` | unset | Required for `oauth` users, rejected for others. Must match an `auth.oauth.providers` key. |
+| `membership.team` | unset | Must be a team in `teams`. |
+| `membership.role` | `member` | `admin` or `member`. `owner` is rejected. |
+| `budget` | unset | Per-user budget. Same shape as [budget settings](/spend/budget-settings/#budget-fields). |
+| `tags` | unset | Identity tags. |
+
+A seeded user's role, team, auth method and request logging setting show on the user's **Overview** tab in **Identity > Users**.
+
+![User dialog Overview tab with global role, team, team role, auth method, request logging, and status](/images/edit-user.png)
+
+### `service_accounts`
+
+Service accounts are gateway workload identities owned by a team. They are not cloud-provider service-account credentials. For how they work, see [Service accounts](/access/service-accounts/).
+
+| Field | Default | Rule |
+| --- | --- | --- |
+| `id` | required | Stable key. Unique and not empty. |
+| `name` | the `id` | Not empty if set. |
+| `team` | required | Must be a team in `teams`. Can't change after the first seed. |
+| `budget` | required | Active service-account budget. Same shape as [budget settings](/spend/budget-settings/#budget-fields). |
+| `keys` | `[]` | Managed gateway API keys. |
+| `tags` | unset | Identity tags. |
+
+Each entry in `keys`:
+
+| Field | Default | Rule |
+| --- | --- | --- |
+| `id` | required | Unique within the service account. |
+| `name` | the `id` | Not empty if set. |
+| `auto_create` | `true` | When `true` and `value` is unset, the gateway generates a key only if none exists yet. When `false`, `value` is required. |
+| `value` | unset | Secret field holding a full gateway key (`gwk_...`). Use it to import or rotate a known key. |
+| `allowed_models` | `[]` | Gateway model ids from `models[*].id`. Unknown ids fail startup. |
+
+The gateway encrypts managed key material before it stores it, so platform admins and the owning team's owners and admins can reveal it later. Set `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY` to a base64-encoded 32-byte key before you seed a key with `value` or create service-account keys in the admin UI. To rotate a configured key, change its `value`. Generated keys are created once and are not rotated on restart.
+
+### Tags
+
+`tags` is a list of `key`/`value` pairs, at most 5 per identity. If `tags` is absent, seeding leaves existing tags unchanged. `tags: []` clears them. See [Tagging](/observability/tagging/).
+
+### Seed behaviour
+
+- Teams are matched by `id`, service accounts by `id`, managed keys by `keys[*].id`, and users by normalised email.
+- New seeded users start as `invited`.
+- For listed users, the gateway reconciles membership and any explicit `budget`. Omitting `budget` doesn't remove a budget: the user inherits [`budgets.users`](/spend/budget-settings/) defaults or keeps the budget set in the admin UI.
+- A seeded user's `auth_mode` and SSO provider can change only while the user is still `invited`.
+- The gateway won't demote or deactivate the last active platform admin, and won't create, move or remove `owner` memberships.
+- At seed time, an OIDC or OAuth user's provider must be enabled.
+
+Seeding an OIDC or OAuth user creates the invited identity and its provider link. It doesn't create an onboarding URL: the user signs in from the shared `/admin/login` page. A seeded password user still needs a password invite URL from the control plane. See [OIDC and SSO](/access/sso/#start-sso-sign-in).

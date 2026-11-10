@@ -1,0 +1,178 @@
+---
+title: Google Cloud Run
+description: Connect Oceans to a private OpenAI-compatible service on Google Cloud Run, such as vLLM serving Gemma.
+sidebar:
+  order: 8
+---
+
+Use the `gcp_cloud_run_openai_compat` provider type for a private [Cloud Run](https://cloud.google.com/run) service that exposes an OpenAI-compatible `/v1` API, such as a vLLM deployment of Gemma. It is the OpenAI-compatible adapter with Cloud Run IAM authentication around it: the gateway gets a Google-signed ID token for the service and sends it with every request. The field list is in [Providers](/configuration/providers/).
+
+Choose the provider type by how the upstream authenticates:
+
+| Upstream | Provider type |
+| --- | --- |
+| A Cloud Run service that needs Cloud Run IAM authentication | `gcp_cloud_run_openai_compat` |
+| Any OpenAI-compatible endpoint with a static bearer token | `openai_compat` |
+| Gemini, Claude or embedding models on Vertex AI | `gcp_vertex`. See [Google Vertex AI](/providers/gcp-vertex/). |
+
+## Set up the provider
+
+<Steps>
+<Step title="Let the gateway call the service">
+In Google Cloud, an admin grants the gateway's Google identity `roles/run.invoker` on the receiving Cloud Run service.
+</Step>
+<Step title="Add the provider">
+Add the provider to `gateway.yaml`. `base_url` is the service URL with the `/v1` path:
+
+```yaml title="gateway.yaml"
+providers:
+  - id: gemma-cloud-run
+    type: gcp_cloud_run_openai_compat
+    base_url: https://gemma-service-abc-uc.a.run.app/v1
+    pricing_provider_id: google-vertex
+    auth:
+      mode: adc
+    display:
+      label: Gemma on Cloud Run
+      icon_key: vertexai
+```
+</Step>
+<Step title="Add a route">
+Add a model route with the model name the service expects. See [Routes](#routes).
+</Step>
+<Step title="Check the route">
+Apply the config, then open **Models** in the admin UI. The route shows its `upstream_model` and the provider's `display.label` in the **Provider & Model** column. Send one test request to confirm that the token is accepted.
+</Step>
+</Steps>
+
+## Provider settings
+
+The gateway checks these rules when it loads the config ([`config/providers.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway/src/config/providers.rs)):
+
+- `base_url` must be an absolute `https` URL with a host, and it can't have leading or trailing spaces.
+- `pricing_provider_id` is required and must be a supported pricing family. See [Pricing and budgets](#pricing-and-budgets).
+- Unknown fields are rejected, on the provider and in `auth`. This is the only provider type that rejects unknown top-level fields.
+
+The ID token's audience defaults to the origin of `base_url`, with the path and query removed. For example, `https://gemma-service-abc-uc.a.run.app/v1` gives the audience `https://gemma-service-abc-uc.a.run.app/`. The audience must match the Cloud Run service URL or one of its custom audiences.
+
+Set `audience` when the service uses a [Cloud Run custom audience](https://cloud.google.com/run/docs/configuring/custom-audiences), for example behind a custom domain. It can't be empty when set.
+
+```yaml title="gateway.yaml"
+providers:
+  - id: gemma-cloud-run-custom-audience
+    type: gcp_cloud_run_openai_compat
+    base_url: https://gemma.example.com/v1
+    audience: https://custom-audience.example.com
+    pricing_provider_id: google-vertex
+    auth:
+      mode: adc
+```
+
+## Authentication
+
+Every mode sends a Google ID token for the audience, not an OAuth access token ([`token.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-providers/src/token.rs)).
+
+| `auth.mode` | How the gateway gets the ID token |
+| --- | --- |
+| `adc` | From Application Default Credentials. See the lookup order below. |
+| `service_account` | From the service-account JSON at `auth.credentials_path`. The gateway signs a JWT with `target_audience` and exchanges it at the key's OAuth token URI. |
+| `bearer` | Uses the pre-minted ID token in `auth.token` as is. The gateway never refreshes it. |
+
+With `adc`, the gateway looks for credentials in this order:
+
+1. The file named by `GOOGLE_APPLICATION_CREDENTIALS`.
+2. `~/.config/gcloud/application_default_credentials.json`.
+3. The Google Cloud metadata server identity endpoint, which mints an ID token for the attached service account.
+
+An ADC file must be a `service_account` key. The gateway uses it like `auth.mode: service_account`. A `user` login from `gcloud auth application-default login` (type `authorized_user`) can't mint Cloud Run ID tokens, and requests fail with `authorized_user ADC cannot mint Cloud Run ID tokens without service-account impersonation`. Other credential types fail too.
+
+<Tabs syncKey="cloud-run-auth">
+<TabItem label="adc">
+```yaml title="gateway.yaml"
+auth:
+  mode: adc
+```
+</TabItem>
+<TabItem label="service_account">
+```yaml title="gateway.yaml"
+auth:
+  mode: service_account
+  credentials_path: /var/run/secrets/gcp/service-account.json
+```
+</TabItem>
+<TabItem label="bearer">
+```yaml title="gateway.yaml"
+auth:
+  mode: bearer
+  token: env.CLOUD_RUN_ID_TOKEN
+```
+</TabItem>
+</Tabs>
+
+The gateway caches the ID token. It reads the expiry from the token's `exp` claim and gets a new token 60 seconds before then. With `service_account`, it reads the key file again for each new token, so a replaced key takes effect at the next refresh.
+
+Prefer `adc` for gateways that run on Google Cloud. Use `service_account` when a mounted key file is the only option. Use `bearer` only for a short test: ID tokens expire, and requests fail after that.
+
+<Aside type="caution" title="Keep credentials out of gateway.yaml">
+Don't put service-account JSON or ID tokens in `gateway.yaml`. Mount the key as a file, or use an `env.NAME` reference for `auth.token`. See [Kubernetes and Helm](/setup/kubernetes-and-helm/#secrets).
+</Aside>
+
+A model with a `routing` block that uses an `adc` or `service_account` Cloud Run provider also needs `routing_account_scope`. See [Routing account scope](/configuration/providers/#routing-account-scope).
+
+## Auth header
+
+By default, the gateway sends the ID token as `Authorization: Bearer <token>`.
+
+Set `auth_header: x_serverless_authorization` to send it as `X-Serverless-Authorization: Bearer <token>` instead. The gateway then sends no `Authorization` header of its own. Use this when the application behind Cloud Run reads `Authorization` for its own authentication.
+
+```yaml title="gateway.yaml"
+providers:
+  - id: gemma-cloud-run
+    type: gcp_cloud_run_openai_compat
+    base_url: https://gemma-service-abc-uc.a.run.app/v1
+    pricing_provider_id: google-vertex
+    auth_header: x_serverless_authorization
+    auth:
+      mode: adc
+```
+
+## Routes
+
+Cloud Run routes are OpenAI-compatible routes. The gateway calls these paths under `base_url`:
+
+| Gateway API | Upstream path |
+| --- | --- |
+| Chat Completions, streaming or not | `chat/completions` |
+| Responses | `responses` |
+| Embeddings | `embeddings` |
+| Images | `images` |
+
+The adapter can attempt every one of these, but a given service may serve only some of them. Set `capabilities` to match the endpoints that the deployed server exposes, so unsupported requests fail at route selection. Image generation also needs `images: true` on the route. Decisions and durable batches aren't available on Cloud Run providers, and `/v1/messages/count_tokens` returns `501`.
+
+Put vLLM and Gemma request controls that add to the request body in route `extra_body`:
+
+```yaml title="gateway.yaml"
+models:
+  - id: gemma-cloud-run
+    description: Gemma served by vLLM on private Cloud Run
+    tags: [cloud-run, gemma]
+    routes:
+      - provider: gemma-cloud-run
+        upstream_model: google/gemma-4-12b-it
+        capabilities:
+          chat_completions: true
+          responses: false
+          embeddings: false
+        extra_body:
+          chat_template_kwargs:
+            enable_thinking: true
+          skip_special_tokens: false
+```
+
+For other route fields and compatibility profiles, see [Models and routes](/configuration/models-and-routes/).
+
+## Pricing and budgets
+
+`pricing_provider_id` is required, as on `openai_compat` providers. The gateway looks up the price with this pricing family and the route's `upstream_model`. If the catalog has no entry for the model, the request is recorded as `unpriced`. The gateway doesn't guess the cost of self-hosted inference. To charge a fixed rate, set a `pricing_override` on the route. See [Pricing catalog and accounting](/spend/pricing-and-accounting/).
+
+Provider credentials don't create a budget principal. Budgets still apply to the user or service account that sends the request. See [Budgets](/spend/budgets/).

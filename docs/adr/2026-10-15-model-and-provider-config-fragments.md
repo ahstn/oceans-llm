@@ -11,10 +11,11 @@
 
 ## Current state
 
-- [../configuration/configuration-reference.md](../configuration/configuration-reference.md#config-files-and-fragments)
-- [../configuration/model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md#gate-routes-by-capability)
-- [../setup/kubernetes-and-helm.md](../setup/kubernetes-and-helm.md#config-fragments-from-your-own-configmaps)
-- [../setup/runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)
+- [Configuration reference: Config files and fragments](https://oceans-llm.com/configuration/#config-files-and-fragments), for loading, keyed collections, and fragment rules
+- [Models and routes](https://oceans-llm.com/configuration/models-and-routes/), for route ids, the `route` shorthand, and inferred fields
+- [Model routing and APIs: Capability gating](https://oceans-llm.com/configuration/model-routing/#capability-gating), for the capability ceiling
+- [Kubernetes and Helm: Config fragments from your own ConfigMaps](https://oceans-llm.com/setup/kubernetes-and-helm/#config-fragments-from-your-own-configmaps)
+- [Start up and first access](https://oceans-llm.com/setup/first-access/)
 
 ## Context
 

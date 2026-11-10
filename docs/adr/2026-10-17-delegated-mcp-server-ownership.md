@@ -7,8 +7,8 @@
 
 ## Current state
 
-- [MCP Servers: Ownership and Visibility](../configuration/mcp-servers.md#ownership-and-visibility)
-- [MCP Tool Access: Team-Managed Servers](../mcp/mcp-tool-access.md#team-managed-servers)
+- [MCP Servers: Ownership and Visibility](https://oceans-llm.com/extensions/mcp-servers/#ownership-and-visibility)
+- [MCP Tool Access: Team-Managed Servers](https://oceans-llm.com/extensions/mcp-tool-access/#team-managed-servers)
 
 ## Context
 

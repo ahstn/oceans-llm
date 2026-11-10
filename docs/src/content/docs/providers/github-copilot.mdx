@@ -1,0 +1,200 @@
+---
+title: GitHub Copilot
+description: Route Oceans models to the GitHub Copilot API with each user's own GitHub token or a GitHub App installation.
+sidebar:
+  order: 6
+---
+
+The `github_copilot` provider sends requests straight to the Copilot HTTP API at `https://api.githubcopilot.com`. It doesn't use the Copilot SDK. The provider has three auth modes:
+
+| `auth.mode` | Credential sent to Copilot | Use it for |
+| --- | --- | --- |
+| `github_user` | Each Oceans user's own GitHub token, stored encrypted in Oceans | Per-user access with each user's own Copilot entitlement |
+| `github_app` | A repository-scoped `ghs_` installation token that the gateway mints from a GitHub App | Organisation-wide access billed to the organisation. Not ready for production (see below). |
+| `bearer` | One shared static token in `auth.token` | Constrained testing only |
+
+For every provider field, see [Providers](/configuration/providers/#github_copilot).
+
+<Aside type="caution" title="GitHub App mode isn't ready for production">
+[GitHub's server-to-server authentication guide](https://docs.github.com/en/copilot/how-tos/copilot-sdk/auth/server-to-server-tokens) describes GitHub App authentication for Copilot. The App needs the `copilot_requests: write` permission, and the gateway rejects installation tokens without it. At the time of writing, GitHub App registration doesn't offer that permission. Until it does, use `github_user` mode. See [GitHub Copilot SDK issue #2304](https://github.com/github/copilot-sdk/issues/2304).
+</Aside>
+
+## GitHub user authentication
+
+In `github_user` mode, each request uses the GitHub token of the Oceans user who owns the calling API key. Users store their own token with the Oceans CLI, or a platform admin stores it in the admin UI. A token never goes in YAML.
+
+### Configure the gateway (admins)
+
+An admin adds the provider without a token:
+
+```yaml title="gateway.yaml"
+providers:
+  - id: github-copilot-user
+    type: github_copilot
+    pricing_provider_id: github-copilot
+    auth:
+      mode: github_user
+    display:
+      label: GitHub Copilot (user token)
+```
+
+`pricing_provider_id: github-copilot` prices Copilot routes from the models.dev and LiteLLM GitHub Copilot catalogs. These catalogs use Copilot model IDs, such as `claude-haiku-4.5`. Without it, Copilot routes are unpriced unless a route sets a `pricing_override`. See [Pricing provider IDs](/spend/pricing-and-accounting/#pricing-provider-ids).
+
+The gateway encrypts stored tokens with `OCEANS_PROVIDER_CREDENTIAL_ENCRYPTION_KEY`. When any `github_user` provider exists, the gateway doesn't start without this key. Generate it once, keep it in your secret manager, and set the same value on every replica:
+
+```bash
+openssl rand -base64 32
+```
+
+The value is a base64-encoded 32-byte key. If it changes, the gateway can't decrypt the stored tokens, and every user has to store a token again. For Kubernetes secrets, see [Kubernetes and Helm](/setup/kubernetes-and-helm/).
+
+### Store a Copilot token with the CLI (users)
+
+A user stores their own GitHub token with the Oceans CLI. Install it as described in [Use the Oceans CLI](/extensions/skills/#use-the-oceans-cli). Set `OCEANS_URL` to your gateway, and put one of your own Oceans API keys in `OCEANS_API_KEY`. That key authenticates you to Oceans. The GitHub token is a separate credential.
+
+The API key must be owned by you and have **Full access**. A key with limited scopes, a service-account key or a key of a disabled user can't store a token.
+
+Check that GitHub CLI is signed in to the account with your Copilot access, then pipe its token to Oceans:
+
+```bash
+gh auth status --hostname github.com
+gh auth token --hostname github.com | oceans providers set-copilot-token --token-stdin
+```
+
+You can also type or paste the token at a hidden prompt:
+
+```bash
+oceans providers set-copilot-token
+```
+
+The command selects the provider for you when the gateway has exactly one `github_user` provider. When it has more, pass the provider ID:
+
+```bash
+oceans providers set-copilot-token --provider github-copilot-user
+```
+
+Some rules for the command:
+
+- Use only one input method. `oceans providers set-copilot-token TOKEN` also works, but the token can then show up in shell history and process listings. Prefer the prompt or `--token-stdin`.
+- Scripts must pass the token as an argument or with `--token-stdin`. The command doesn't prompt when standard input isn't a terminal.
+- The token must be 1 to 4,096 printable ASCII characters, with no whitespace.
+- `--url` overrides `OCEANS_URL`. Without either, the CLI uses `http://127.0.0.1:8080`.
+- Remote gateways need HTTPS. Plain HTTP works only for a loopback IP address. The CLI doesn't follow redirects.
+- `--json` prints status metadata without the token.
+
+Never put a real token in YAML, logs, an issue or a support message.
+
+A successful save means Oceans stored the token. It doesn't check GitHub entitlement, model access or whether the token is valid. Oceans doesn't refresh GitHub user tokens. When a token expires or GitHub revokes it, run the command again to replace it.
+
+The stored token belongs to your Oceans user and the selected provider, not to one API key. A new token applies to all your user-owned keys for that provider. The command can't read a saved token or change another user's token.
+
+### Manage stored tokens in the UI (platform admins)
+
+A platform admin can store, replace or remove a user's token in the admin UI:
+
+<Steps>
+<Step title="Open the user">
+Sign in as a platform admin, open **Identity** > **Users**, and select **Manage** on the user's row.
+</Step>
+<Step title="Open Provider Configuration">
+Select **Provider Configuration** in the dialog's sidebar. The section lists each `github_user` provider with a **Configured** or **Not configured** badge.
+
+![Manage user dialog with the Provider Configuration section in the sidebar, between Auth & onboarding and Usage](/images/edit-user.png)
+</Step>
+<Step title="Save the token">
+Paste the output of `gh auth token` into **GitHub token** for the provider, then select **Save token**.
+</Step>
+</Steps>
+
+The UI never shows a stored token again. To replace it, enter a new token and save. **Remove token** deletes the Oceans copy. It doesn't revoke the token at GitHub.
+
+The token needs no extra GitHub OAuth scope. If GitHub CLI asks you to refresh its authorization, run `gh auth refresh --hostname github.com`. The user must have an active GitHub Copilot entitlement.
+
+### Request isolation
+
+For each request to a `github_user` route, the gateway:
+
+1. Authenticates the gateway API key and reads the user who owns it.
+2. Loads the stored token for that exact user and provider.
+3. Decrypts the token and updates that token's last-used time.
+4. Sends the request to Copilot with `Authorization: Bearer` and that token.
+
+If any step fails, the request fails before it reaches Copilot. There's no provider-wide token and no fallback to another user's token. The gateway never takes a Copilot token from a request header. A request fails when its API key belongs to a service account, has no owner, or belongs to a user with no stored token. The key of a disabled user stops working at authentication. If a user replaces their token while a request is in progress, that request fails rather than mixing tokens.
+
+## Add a Copilot route
+
+Copilot routes declare what the upstream model supports in `compatibility.github_copilot`. The gateway sets every capability flag from this evidence, so a Copilot route needs no `capabilities` block. Support is fail-closed: copy each value from a current Copilot `/models` response for the exact `upstream_model`.
+
+```yaml title="gateway.yaml"
+models:
+  - id: copilot-gpt-5.6-luna
+    description: GPT-5.6 Luna through GitHub Copilot user-token authentication
+    routes:
+      - provider: github-copilot-user
+        upstream_model: gpt-5.6-luna
+        compatibility:
+          github_copilot:
+            supports_responses: true
+            upstream_supports:
+              streaming: true
+              tool_calls: true
+              vision: true
+              structured_outputs: true
+```
+
+This route serves Responses only, because it sets no `chat_api`. For Chat Completions, set `chat_api: chat_completions` when the model lists `/chat/completions`, or `chat_api: anthropic_messages` when it lists `/v1/messages`. The fields and rules are in [GitHub Copilot route compatibility](/configuration/models-and-routes/#github-copilot-route-compatibility). The installation-token canary below prints the evidence for every model.
+
+## GitHub App authentication
+
+An admin prepares a GitHub App and installation as [GitHub's server-to-server guide](https://docs.github.com/en/copilot/how-tos/copilot-sdk/auth/server-to-server-tokens) describes:
+
+1. Give the App the **Copilot Requests** repository permission with **Read & write**.
+2. Install the App on the organisation that must own the usage. The installation owner must be an organisation.
+3. Give the installation **All repositories** access. GitHub requires this, even though each installation token is scoped to one repository ID.
+4. Enable Copilot requests from GitHub App installations for the organisation.
+5. Pick one model that lists `/chat/completions`, streaming and tool calls, and one model that lists `/v1/messages` and streaming. The canary needs both.
+
+<Aside type="note" title="Where to enable App requests is unconfirmed">
+GitHub doesn't document where to enable Copilot requests from GitHub App installations (step 4). It may be the organisation Copilot policy **Allow use of Copilot CLI billed to the organization**, under **Copilot CLI** in the organisation's Copilot policy settings. This isn't confirmed. If GitHub rejects the App with `401 Unauthorized`, try enabling that policy.
+</Aside>
+
+The provider config needs the App ID, the private key, the installation ID and the numeric ID of the one repository placed in each token request. For the fields, see [GitHub App authentication](/configuration/providers/#github-app-authentication). The gateway asks GitHub for a token with `copilot_requests: write` for that one repository. It rejects a token response that grants a different permission or repository.
+
+### Run the installation-token canary
+
+Run the canary before you turn on a provider in GitHub App mode. It's a script in the repository, run with mise. It mints a `ghs_` installation token from the App and sends it straight to the Copilot API. It checks:
+
+- the installation owner, **All repositories** access and the `copilot_requests: write` permission
+- `/models`
+- `/chat/completions`, streaming and a tool-call continuation
+- `/v1/messages` and streaming
+- a second, distinct token after refresh
+- the organisation's daily AI-credit usage before and after the run
+
+It makes six inference requests and can use Copilot AI credits, so don't run it in normal CI. At the end it revokes every token it minted.
+
+Store the App private key outside the repository with `chmod 600`. The canary fails when group or other users can read the key. Set the App values in your shell, not in a checked-in file:
+
+```bash
+export COPILOT_CANARY_APP_ID="<github-app-id>"
+export COPILOT_CANARY_INSTALLATION_ID="<installation-id>"
+export COPILOT_CANARY_REPOSITORY_ID="<numeric-repository-id>"
+export COPILOT_CANARY_EXPECTED_OWNER="<organization-login>"
+export COPILOT_CANARY_PRIVATE_KEY_PATH="/secure/path/copilot-canary.private-key.pem"
+```
+
+Run it once without model variables to list the enabled models:
+
+```bash
+mise run copilot-installation-canary >copilot-canary-discovery.json
+```
+
+This first run reports `INCOMPLETE` and sends no inference request. Its `models` check lists each enabled model's `supported_endpoints` and a projection of `capabilities.supports` (`streaming`, `tool_calls`, `vision`, `structured_outputs`). A value is `true` only when `/models` returns exactly `true`. Copy the route compatibility for each exact `upstream_model` from this projection.
+
+Then set `COPILOT_CANARY_CHAT_MODEL` and `COPILOT_CANARY_MESSAGES_MODEL` to models from the same response, and run the canary again.
+
+The billing checks are required. To get a `PASS`, also set `COPILOT_CANARY_BILLING_TOKEN` to a GitHub token that can read the organisation's AI-credit usage. Without it, the result stays `INCOMPLETE`. GitHub billing data can lag, so the result is also `INCOMPLETE` when no usage increase is visible yet. `COPILOT_CANARY_BILLING_WAIT_SECONDS` (0 to 3,600) waits before the second billing read. Run the whole canary on one UTC day.
+
+The canary exits `0` for `PASS`, `1` for `FAIL` and `2` for `INCOMPLETE`. Don't turn on GitHub App mode after a `FAIL`.
+
+The report never contains the App JWT, the private key, installation tokens or request bodies. When GitHub rejects a request, the failing check includes up to 2,000 characters of the error response, with GitHub tokens and bearer credentials redacted. Review a failed report before you share it.

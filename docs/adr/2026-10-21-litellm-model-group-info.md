@@ -6,8 +6,8 @@
 
 ## Current state
 
-- [Model Routing and API Behavior: LiteLLM model metadata](../configuration/model-routing-and-api-behavior.md#litellm-model-metadata-get-model_groupinfo)
-- [Identity and Access: API key scopes](../access/identity-and-access.md#api-key-scopes)
+- [Model Routing and API Behavior: LiteLLM model metadata](https://oceans-llm.com/configuration/model-routing/#litellm-model-metadata)
+- [Identity and Access: API key scopes](https://oceans-llm.com/access/identity-and-access/#api-key-scopes)
 - [ADR: Enriched model list and client hints](2026-09-24-models-list-client-hints.md), which this ADR supersedes for omp
 
 ## Context

@@ -6,8 +6,8 @@
 
 ## Current state
 
-- [Identity and Access: API key scopes](../access/identity-and-access.md#api-key-scopes)
-- [MCP Client Setup: scoped API keys](../mcp/mcp-client-setup.md#scoped-api-keys)
+- [Identity and Access: API key scopes](https://oceans-llm.com/access/identity-and-access/#api-key-scopes)
+- [MCP Client Setup: scoped API keys](https://oceans-llm.com/extensions/mcp-client-setup/#limit-the-key-to-mcp)
 - [ADR: OAuth Authorization for MCP Clients](2026-10-15-mcp-client-oauth-authorization.md), section 5, which named the shared scopes
 
 ## Context

@@ -41,7 +41,7 @@ The ID-token implementation uses:
 - `crates/gateway-providers/src/openai_compat.rs` accepts optional cached identity-token auth and configurable bearer header placement.
 - `crates/gateway/src/config.rs` parses and validates `gcp_cloud_run_openai_compat`.
 - `crates/gateway-service/src/pricing_catalog.rs` prices Cloud Run OpenAI-compatible routes like ordinary `openai_compat` routes by using `pricing_provider_id` plus `upstream_model`.
-- `docs/providers/gcp-cloud-run-openai-compat.md` owns admin examples and Cloud Run-specific caveats.
+- [Google Cloud Run](https://oceans-llm.com/providers/gcp-cloud-run/) owns admin examples and Cloud Run-specific caveats.
 
 ## Trade-Offs
 

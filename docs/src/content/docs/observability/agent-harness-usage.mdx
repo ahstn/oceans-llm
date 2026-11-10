@@ -1,0 +1,81 @@
+---
+title: Agent harness usage
+description: How the gateway classifies coding-agent clients from their User-Agent header, and where admins see the results.
+sidebar:
+  order: 3
+---
+
+Agent harness usage shows which coding-agent clients (harnesses) send requests through the gateway. The gateway classifies each request from its inbound HTTP `User-Agent` header. A client chooses its own `User-Agent`, so this is self-reported evidence for operational reporting. It doesn't prove who the client is, and you can't use it to attribute abuse.
+
+## What the gateway stores
+
+For each request log it writes, the gateway stores three fields:
+
+| Field | Value |
+| --- | --- |
+| `user_agent_raw` | The `User-Agent` header with surrounding spaces trimmed, cut to 512 characters. `null` when the header is missing or blank. |
+| `agent_harness_key` | A stable, low-cardinality key used for grouping, such as `claude_code`. |
+| `agent_harness_label` | The display label, such as `Claude Code`. |
+
+The raw value is there to debug the classifier and to allow reclassification later. Charts and tables group by `agent_harness_key`, never by the raw value, so a new client version doesn't split the report.
+
+[Agent session analysis](/observability/agent-session-analysis/) uses the harness key, with bounded and permitted request metadata, to group requests into sessions. A `User-Agent` alone never establishes a session or an identity. Analysis reports never copy the raw `User-Agent`.
+
+## How the classifier works
+
+The classifier is explicit and conservative. It checks these rules in order, and the first match wins. Matching ignores letter case, except for the `GeminiCLI` and `CloudCodeVSCode` prefixes, which must match exactly.
+
+| `User-Agent` signal | Key | Label |
+| --- | --- | --- |
+| Starts with `codex_cli_rs/` or `codex/` | `codex` | Codex |
+| Starts with `oh-my-pi/` or `omp/` | `oh_my_pi` | Oh My Pi |
+| Is `mastra`, or starts with `mastra/` | `mastra` | Mastra |
+| Contains `Agent/opencode`, or starts with `opencode/` | `opencode` | Opencode |
+| Contains `Agent/claude-code`, or starts with `claude-code/` or `Claude-User (claude-code/` | `claude_code` | Claude Code |
+| Contains `Agent/gemini-cli`, or starts with `GeminiCLI/`, `GeminiCLI-` or `CloudCodeVSCode/` | `gemini_cli` | Gemini CLI |
+| Contains `Agent/copilot-cli` | `copilot_cli` | Copilot CLI |
+| Starts with `claude-cli/` | `claude_cli` | Claude CLI |
+| Starts with `dspy/` | `dspy` | DSPy |
+| Starts with `curl/` | `curl` | curl |
+| Starts with `pi/` | `pi` | Pi |
+| Starts with `GithubCopilot/` | `github_copilot` | GitHub Copilot |
+
+A missing, blank or unmatched value maps to key `unknown` with label `Unknown`. Generic runtime values, such as `undici`, stay `Unknown`. The rules are in [`harness.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-service/src/request_logging/harness.rs).
+
+## View harness usage
+
+An admin opens **Observability** → **Agent Harnesses** (`/admin/observability/agent-harnesses`). Groups with the `agent_harnesses` page in [`permissions`](/access/access-settings/#pages-and-actions) see this item. The checked-in configs grant it to every user.
+
+The page has two cards:
+
+- **Request activity**: a chart of request counts for the top five harnesses, in 12-hour UTC periods. Choose **7d** or **31d** for the range.
+- **Top Harnesses**: up to 30 harnesses ranked by request count, with **Requests**, **Input tokens**, **Output tokens**, **Total tokens** and the harness **Key**. A token total shows `n/a` when any request in the group has no count for it.
+
+The figures cover all gateway traffic, not only the viewer's own requests.
+
+![Agent Harnesses page with the Request activity chart for Codex, Opencode, Claude Code, Mastra and Oh My Pi over 7 days, and the Top Harnesses table below](/images/agent-harnesses-page.png)
+
+To debug a classification, open a request in [Request logs](/observability/request-logs/). Its detail shows **Agent harness** (the label) and **User-agent** (the raw value).
+
+## Admin API
+
+The page reads this endpoint:
+
+```http
+GET /api/v1/admin/observability/harness-usage?range=7d
+```
+
+- `range` is `7d` (default) or `31d`. Any other value returns `400` with error code `invalid_request`.
+- The window ends at the end of the current 12-hour UTC period.
+- The response holds 12-hour UTC buckets for the top five harnesses, and the top 30 harnesses by request count.
+- The gateway caches each range's response for 30 seconds.
+
+The endpoint needs a signed-in, active control-plane session. It doesn't check the `agent_harnesses` page grant, because page grants control only what the UI shows.
+
+## Shell guardrails in harnesses
+
+A harness can ask the gateway for a guardrail decision before it runs a shell command, with an authenticated `POST /api/v1/guardrails/evaluate`. The gateway stays the policy authority: the hook holds no copy of the rules.
+
+Oceans' harness integration tests include reference hooks for Pi (the `bash` tool) and OpenCode (the `shell` tool) in [`tests/harness-integration/src/adapters/`](https://github.com/ahstn/oceans-llm/tree/main/tests/harness-integration/src/adapters). They read `OCEANS_BASE_URL` and `OCEANS_API_KEY`, and wait up to 2,000 ms by default (`OCEANS_GUARDRAIL_TIMEOUT_MS`). An allowed decision lets the command run. A deny, a network failure or an invalid response stops it, so a missing decision can't become a local bypass. These hooks aren't part of the [client harness configuration](/harnesses/) snippets.
+
+Policy, rule packs and rollout are on [Gateway guardrails](/operations/gateway-guardrails/).

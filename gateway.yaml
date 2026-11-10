@@ -75,7 +75,7 @@ guardrails:
 
 mcp:
   # OAuth sign-in for MCP clients. The local mise tasks point the issuer at the
-  # gateway port; see docs/mcp/mcp-client-setup.md#oauth-sign-in.
+  # gateway port; see https://oceans-llm.com/extensions/mcp-client-setup/#sign-in-with-oauth.
   client_oauth:
     enabled: true
     public_base_url: env.OCEANS_LOCAL_PUBLIC_BASE_URL
@@ -365,8 +365,8 @@ providers:
     display:
       label: AWS Bedrock Mantle
 
-# Route ids default to the provider key, and capabilities default to what the provider and
-# compatibility profile can serve. See docs/configuration/configuration-reference.md#model-config.
+# Route ids default to the provider key. Omitted capability flags are inferred from route
+# compatibility and catalog hints. See https://oceans-llm.com/configuration/models-and-routes/.
 models:
   gpt-6-astra:
     description: GPT-6 Astra via OpenAI; use Responses for tools

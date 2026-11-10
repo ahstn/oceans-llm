@@ -1,0 +1,401 @@
+---
+title: Configuration reference
+description: How the gateway YAML file is loaded and validated, and the fields for server, database, request logging, and agent analysis.
+sidebar:
+  order: 0
+  group:
+    label: Server configuration
+  label: Overview
+---
+
+The gateway reads one main YAML file at startup, plus optional fragment files for providers and models. It holds structure: providers, models, identities, budgets, and runtime settings. Secrets and deployment-specific values come from environment variables or files through value references. This page explains how the file is loaded, lists every top-level section, and documents the sections that have no page of their own.
+
+## Load and validate the file
+
+The gateway reads the main file named by `--config` or the `GATEWAY_CONFIG` environment variable, and any fragments under `--config-dir` or `GATEWAY_CONFIG_DIR`. Both flags work with every subcommand.
+
+| Flag | Environment variable | Default | When the path is missing |
+| --- | --- | --- | --- |
+| `--config` | `GATEWAY_CONFIG` | `./gateway.yaml` | Startup fails when the path was set explicitly. Only the implicit default may be absent. |
+| `--config-dir` | `GATEWAY_CONFIG_DIR` | none | Startup fails. |
+
+An admin checks a file before deploying it:
+
+```sh
+gateway --config ./gateway.yaml config validate
+```
+
+`config validate` parses and validates the merged config, prints a `gateway configuration ... is valid` line, and exits. It fails if the main file does not exist, unless `--config-dir` supplies the config.
+
+<Aside type="caution" title="The implicit default file may be missing">
+When neither `--config` nor `GATEWAY_CONFIG` is set and `./gateway.yaml` does not exist, `gateway serve` and the other commands start with built-in defaults: a local libSQL database at `./gateway.db`, no providers or models, and a bootstrap admin `admin@local` with the password `admin`. A path you set explicitly must exist. Set `GATEWAY_CONFIG` in your deployment, or run `config validate` in your pipeline, so a wrong path fails loudly.
+</Aside>
+
+An empty or comment-only main file is the default config, so a deployment can keep every provider and model in fragments behind a placeholder main file.
+
+Config changes take effect after a gateway restart.
+
+## Config files and fragments
+
+`providers` and `models` accept either a list of entries with `id`, or a map keyed by id. Prefer the map form: Helm merges maps across `-f` values files but replaces lists, and a map cannot repeat an id. A map entry must not also set `id`.
+
+```yaml title="gateway.yaml"
+providers:
+  openai-prod:
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    auth:
+      token: env.OPENAI_API_KEY
+models:
+  gpt-5.6-luna:
+    route:
+      provider: openai-prod
+      upstream_model: gpt-5.6-luna
+```
+
+Fragment rules:
+
+- The gateway reads `*.yaml` and `*.yml` files below `--config-dir` recursively, in lexical order of relative path.
+- It skips files and directories whose names start with `.`, which covers the `..data` directories in Kubernetes ConfigMap mounts, and it follows symlinks.
+- A symlink must resolve inside `--config-dir`. The loader resolves each file and directory to its real path and fails at startup, naming the link and its target, when that path is outside the directory. It never reads files outside `--config-dir`. Kubernetes ConfigMap mounts link only within the mount, so they pass.
+- A main config file inside `--config-dir` is read once, as the main file, not again as a fragment.
+- A fragment may contain only `providers` and `models`. Every other section stays in the main file.
+- Fragments merge as a union. A provider or model id defined in two places, including the main file, is an error that names both files. No file overrides another.
+- References such as `routes[].provider`, `alias_of`, `budgets.users.model_defaults`, and `service_accounts[].keys[].allowed_models` resolve after the merge, so they can point across files.
+- Validation runs once on the merged result.
+
+A layout that keeps ownership clear puts each provider account and the models that route only to it in one file, and models whose routes span providers in a shared file:
+
+```text
+conf.d/
+  models/
+    openai.yaml          # openai-prod, openai-secondary, and their single-provider models
+    bedrock.yaml
+    multi-provider.yaml  # models whose routes use more than one provider file
+```
+
+[`deploy/examples/config-dir`](https://github.com/ahstn/oceans-llm/tree/main/deploy/examples/config-dir) is a runnable example. `gateway config render --show-sources` prints the merged config with `providers` and `models` in map form, and lists the file that defined each one. It fails rather than print a config that differs from the one the gateway loads. It redacts `literal.` values, raw credential fields, service-account key values, header values, and URL credentials (usernames, passwords, query values, and fragments); `env.` and `file.` references stay visible. Redaction covers credentials only: the output still includes identity data such as user emails and team keys.
+
+Removing a fragment does not remove what it seeded. Models and providers that disappear from config stay in the database, and their routes stay enabled. Disable a model's routes with `enabled: false` before deleting its entry.
+
+## Top-level sections
+
+Every section is optional. The gateway rejects unknown top-level keys, so a misspelled section name fails startup instead of being ignored.
+
+| Section | What it controls | Reference |
+| --- | --- | --- |
+| `server` | Listener, log format, OpenTelemetry export, trusted proxies | [`server`](#server) |
+| `database` | libSQL or PostgreSQL connection | [`database`](#database) |
+| `auth` | Bootstrap admin, OIDC and OAuth sign-in providers | [Auth and access settings](/access/access-settings/) |
+| `permissions` | Admin UI pages and actions per group | [Auth and access settings](/access/access-settings/) |
+| `teams`, `users`, `service_accounts` | Declarative identities seeded at startup | [Auth and access settings](/access/access-settings/) |
+| `budgets` | Inherited user budgets and the budget rejection status | [Budget settings](/spend/budget-settings/) |
+| `budget_alerts` | Budget alert email delivery | [Budget settings](/spend/budget-settings/) |
+| `rate_limits` | Platform rate-limit policies and failure mode | [Rate limits](/spend/rate-limits/) |
+| `providers` | Upstream provider connections and credentials | [Providers](/configuration/providers/) |
+| `models` | Gateway models, aliases, and routes | [Models and routes](/configuration/models-and-routes/) |
+| `mcp` | MCP OAuth and registry ownership; `mcp.client_oauth` for MCP client sign-in | [MCP servers](/extensions/mcp-servers/); [MCP client setup](/extensions/mcp-client-setup/#turn-on-oauth-sign-in) |
+| `skills` | Agent Skills storage (disabled by default) | [Agent Skills](/extensions/skills/) |
+| `guardrails` | Request and tool-call guardrail packs | [Gateway guardrails](/operations/gateway-guardrails/) |
+| `request_logging` | Request-log payload capture and purge | [`request_logging`](#request_logging) |
+| `agent_analysis` | Agent session analysis collection and access | [`agent_analysis`](#agent_analysis) |
+
+## Value sources
+
+Fields that hold secrets or deployment values take a reference with a prefix:
+
+| Form | Meaning |
+| --- | --- |
+| `env.NAME` | The value of environment variable `NAME`. The gateway fails if the variable is not set or is not valid UTF-8. |
+| `file./path/to/secret` | The contents of the file, with trailing newlines removed. |
+| `literal.value` | The text after `literal.`, used as is. |
+
+Secret fields (for example `database.url`, `auth.bootstrap_admin.password`, OIDC and OAuth `client_secret`, SMTP `password`, and service-account key `value`) accept only these three forms. A plain value without a prefix is rejected with `unsupported secret reference`. So write `url: literal.postgres://...` or `url: env.POSTGRES_URL`, not a bare URL.
+
+Some non-secret fields, such as the GitHub OAuth `client_id` and file paths for provider credentials, also accept a plain value. Each field reference says which form it takes.
+
+Keep secrets in the environment or a mounted secret file. Don't commit them as `literal.` values.
+
+## Minimal local example
+
+This file runs one OpenAI model on a local libSQL database:
+
+```yaml title="gateway.yaml"
+server:
+  bind: "127.0.0.1:8080"
+
+database:
+  kind: libsql
+  path: "./var/oceans.db"
+
+auth:
+  bootstrap_admin:
+    email: "admin@local"
+    password: "literal.admin"
+    require_password_change: false
+
+providers:
+  - id: openai
+    type: openai_compat
+    base_url: "https://api.openai.com/v1"
+    pricing_provider_id: openai
+    auth:
+      kind: bearer
+      token: env.OPENAI_API_KEY
+
+models:
+  - id: gpt-4o-mini
+    routes:
+      - provider: openai
+        upstream_model: gpt-4o-mini
+```
+
+## Production-shaped example
+
+This file uses PostgreSQL, takes secrets from the environment, forces a password change for the bootstrap admin, and seeds one team, one admin user, and default user budgets:
+
+```yaml title="gateway.yaml"
+server:
+  bind: "0.0.0.0:8080"
+  log_format: json
+
+database:
+  kind: postgres
+  url: env.POSTGRES_URL
+
+auth:
+  bootstrap_admin:
+    email: "admin@local"
+    password: env.GATEWAY_BOOTSTRAP_ADMIN_PASSWORD
+    require_password_change: true
+
+budgets:
+  users:
+    default:
+      cadence: daily
+      amount_usd: "70.0000"
+      hard_limit: true
+      timezone: UTC
+    model_defaults:
+      - model: gemini-2.0-flash
+        budget:
+          cadence: daily
+          amount_usd: "40.0000"
+
+providers:
+  - id: vertex
+    type: gcp_vertex
+    project_id: your-gcp-project
+    location: global
+    auth:
+      mode: service_account
+      credentials_path: env.GCP_SERVICE_ACCOUNT_JSON
+
+teams:
+  - id: platform
+    name: Platform
+
+users:
+  - name: Platform Admin
+    email: ops@example.com
+    auth_mode: password
+    global_role: platform_admin
+    membership:
+      team: platform
+      role: admin
+    budget:
+      cadence: monthly
+      amount_usd: "100.0000"
+
+models:
+  - id: gemini-2.0-flash
+    routes:
+      - provider: vertex
+        upstream_model: google/gemini-2.0-flash
+```
+
+On a new database, the seeded `ops@example.com` platform admin stops the bootstrap admin from being created, and a seeded password user can't sign in until an admin creates their invite link. So leave that user out for the first start, and sign in as the bootstrap admin. Then add the user back, restart, and create their invite link from `/admin`. See [Start up and first access](/setup/first-access/#the-bootstrap-admin).
+
+The checked-in files show fuller setups: [`gateway.yaml`](https://github.com/ahstn/oceans-llm/blob/main/gateway.yaml) (local demo), [`gateway.prod.yaml`](https://github.com/ahstn/oceans-llm/blob/main/gateway.prod.yaml), [`deploy/config/gateway.yaml`](https://github.com/ahstn/oceans-llm/blob/main/deploy/config/gateway.yaml) (container deploys), and [`deploy/selfhost/gateway.yaml`](https://github.com/ahstn/oceans-llm/blob/main/deploy/selfhost/gateway.yaml) (self-hosting with mise). They are opinionated examples, not the full config space.
+
+## Defaults that matter
+
+If a section is absent, the gateway uses these defaults:
+
+| Field | Default |
+| --- | --- |
+| `server.bind` | `0.0.0.0:8080` |
+| `database.kind` | `libsql` (or `postgres` when `url` is set) |
+| `database.path` | `./gateway.db` |
+| `auth.bootstrap_admin` | enabled, `admin@local`, password `literal.admin`, no forced password change |
+| `request_logging.payloads.capture_mode` | `redacted_payloads` |
+| `request_logging.purge.enabled` | `false` |
+| `agent_analysis.enabled` | `true` |
+| `budgets.exceeded_status_code` | `422` |
+| `budget_alerts.email.transport.kind` | `sink` (no email is sent) |
+
+Change the bootstrap admin password before you expose a gateway. [Start up and first access](/setup/first-access/) explains what the bootstrap admin does at startup.
+
+Route defaults (`priority`, `weight`, `enabled`, capability flags) are on [Models and routes](/configuration/models-and-routes/). Permission and budget defaults are on [Auth and access settings](/access/access-settings/) and [Budget settings](/spend/budget-settings/).
+
+## `server`
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `bind` | `0.0.0.0:8080` | Must be a socket address such as `127.0.0.1:8080`. The `PORT` environment variable or `gateway serve --port` overrides the port. |
+| `log_format` | `pretty` | The checked-in deploy configs use `json`. |
+| `otel_endpoint` | unset | OTLP trace endpoint. Must be an absolute `http` or `https` URI with a host. |
+| `otel_metrics_endpoint` | unset | OTLP metrics endpoint. Same rule as `otel_endpoint`. |
+| `otel_trace_sample_ratio` | `1.0` | `0.0` through `1.0` inclusive. |
+| `otel_export_interval_secs` | `30` | Metrics export interval. |
+| `trusted_proxies` | `[]` | IP addresses or CIDR ranges. |
+
+The gateway trusts the `X-Forwarded-For` header only when the connection comes from an address in `trusted_proxies`. It uses the resolved client IP for rate limits and admin audit entries. With an empty list, the socket peer is the client. See [Rate limits](/spend/rate-limits/) for how client IPs affect limits.
+
+For OTLP settings in a deployment, see [Topology and operations](/setup/deploy-and-operations/). For collector and Datadog setup, see [Export traces and metrics](/observability/export-traces-and-metrics/).
+
+## `database`
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `kind` | `libsql` | `libsql` or `postgres`. Any other value fails startup. |
+| `path` | `./gateway.db` | libSQL or SQLite file. Used only for `libsql`. |
+| `url` | unset | PostgreSQL connection URL. A secret field, so use `env.`, `file.` or `literal.`. Required for `postgres`. |
+| `max_connections` | `10` | PostgreSQL pool size. |
+
+If `kind` is absent, the gateway uses `postgres` when `url` is set and `libsql` otherwise. Local development uses libSQL with `path`. The production and deploy configs use PostgreSQL with `url: env.POSTGRES_URL`. For migrations and database operations, see [Topology and operations](/setup/deploy-and-operations/).
+
+## `request_logging`
+
+`request_logging.payloads` controls how much of each chat-completion request and response the gateway stores in request logs. `request_logging.purge` controls automatic deletion of old logs.
+
+```yaml
+request_logging:
+  payloads:
+    capture_mode: redacted_payloads
+    request_max_bytes: 131072
+    response_max_bytes: 65536
+    stream_max_events: 128
+    redaction_paths: []
+  purge:
+    enabled: false
+    retention: 7d
+    schedule: "0 0 * * *"
+```
+
+### Payload fields
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `capture_mode` | `redacted_payloads` | `disabled` stores no request logs for any API. `summary_only` stores summary rows with `has_payload=false` and no payload. `redacted_payloads` stores summaries and sanitised payloads. |
+| `request_max_bytes` | `131072` | Budget for the stored request payload, in uncompressed serialised JSON bytes. `1` through `262144`. |
+| `response_max_bytes` | `65536` | Budget for the stored response payload. Must be greater than `0`. |
+| `stream_max_events` | `128` | Maximum stored stream events. Must be greater than `0`. Usage and error parsing still sees later events. |
+| `redaction_paths` | `[]` | Extra paths to redact, added to the built-in redaction. |
+
+A redaction path is a list of object keys separated by dots, anchored at the payload root. `*` matches one whole segment. The gateway rejects malformed paths such as `body..messages` and indexed paths such as `body.messages[0]` at startup.
+
+### Purge fields
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `enabled` | `false` | When `true`, the gateway runs a recurring purge worker. |
+| `retention` | `7d` | `1d`, `3d` or `7d`. Other values fail startup. |
+| `schedule` | `0 0 * * *` | Five-field cron: minute, hour, day of month, month, day of week. Must not run more than once a day. |
+
+Weekday numbers follow the Rust `cron` crate: `1` is Sunday and `7` is Saturday. The Unix value `0` for Sunday is not accepted. Use names (`SUN`, `MON`, and so on) to avoid confusion.
+
+Redaction behaviour, the manual `gateway purge-request-logs` command, and the admin request-log views are on [Observability and request logs](/observability/).
+
+## `agent_analysis`
+
+`agent_analysis` controls passive analysis of agent sessions, who can see the results, retention, and the scoring inputs. All fields are optional:
+
+```yaml
+agent_analysis:
+  enabled: true
+  shadow_diagnostics_enabled: false
+  calibrated_score_enabled: false
+  calibration_approval_id: null
+  team_admin_enabled: false
+  report_retention_days: 90
+  queue_retention_days: 7
+  context_input_boundary_tokens: 220000
+  context_reserved_output_tokens: 128000
+  context_penalty_points_per_repeated_excess: 2
+  metrics:
+    tokens: true
+    cache: true
+    context: true
+    tools: true
+    skills: true
+    reliability: true
+    outcomes: true
+    finish_reasons: true
+  cache_profiles:
+    - provider_key_contains: anthropic
+      upstream_model_contains: claude-opus
+      minimum_cacheable_tokens: 4096
+      default_ttl: five_minutes
+```
+
+The values above are the defaults, except `cache_profiles`, which defaults to `[]`. Every metric group is on by default.
+
+| Field | Default | Rule |
+| --- | --- | --- |
+| `enabled` | `true` | Turns passive collection on or off. |
+| `shadow_diagnostics_enabled` | `false` | Shows shadow diagnostics to platform admins. |
+| `calibrated_score_enabled` | `false` | Needs `calibration_approval_id`. |
+| `calibration_approval_id` | unset | No leading or trailing spaces, at most 256 bytes. |
+| `team_admin_enabled` | `false` | Needs `calibrated_score_enabled`. |
+| `report_retention_days`, `queue_retention_days` | `90`, `7` | At most `36500`. |
+| `context_input_boundary_tokens` | `220000` | Must be greater than `0`. |
+| `context_reserved_output_tokens` | `128000` | Must be `0` or more. |
+| `context_penalty_points_per_repeated_excess` | `2` | `0` through `255`. |
+
+Each `cache_profiles` entry needs `provider_key_contains`, `upstream_model_contains`, or both, and a `minimum_cacheable_tokens` greater than `0`. `default_ttl` is `five_minutes` (default), `thirty_minutes`, `one_hour` or `unknown`. The gateway places your profiles ahead of its built-in profiles for common Claude and GPT models. Unknown fields anywhere in `agent_analysis` fail startup.
+
+These environment variables override the YAML when set: `AGENT_ANALYSIS_ENABLED`, `AGENT_ANALYSIS_SHADOW_DIAGNOSTICS_ENABLED`, `AGENT_ANALYSIS_CALIBRATED_SCORE_ENABLED`, `AGENT_ANALYSIS_TEAM_ADMIN_ENABLED`, `AGENT_ANALYSIS_CALIBRATION_APPROVAL_ID`, `AGENT_ANALYSIS_REPORT_RETENTION_DAYS` and `AGENT_ANALYSIS_QUEUE_RETENTION_DAYS`. Boolean variables accept `true`/`false`, `1`/`0`, `yes`/`no` and `on`/`off`; any other value fails startup. A retention variable that is not a whole number is ignored. Metric, context and cache-profile settings are YAML only.
+
+After a change to metrics, context or cache profiles, an admin queues retained sessions for analysis again with `gateway recompute-agent-analysis` (`mise run //gateway:recompute-agent-analysis` locally). It processes 100 sessions per run by default, up to 1000 with `--limit`.
+
+For what the analysis shows and who can see it, see [Agent session analysis](/observability/agent-session-analysis/). Team admins also need the `agent_sessions` page in [`permissions`](/access/access-settings/).
+
+## Benchmark catalog
+
+The admin Models page shows the Artificial Analysis Intelligence, Coding and Agentic indices for each model. The scores come from a snapshot in the repository, [`crates/gateway-service/data/model_benchmarks.json`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-service/data/model_benchmarks.json). The gateway makes no benchmark network calls at runtime and needs no API key.
+
+![Admin Models page with an Intelligence Index column beside each model's provider and upstream model](/images/screenshot-models-2.png)
+
+By default, the gateway matches scores from the primary route's `upstream_model`. It normalises provider-specific forms such as `us.anthropic.claude-sonnet-4-6-v1:0` or `claude-sonnet-4-6@20260101` to OpenRouter IDs such as `anthropic/claude-sonnet-4.6`, and uses only exact matches. Set `benchmark_model_id` on a model to choose the OpenRouter ID yourself:
+
+```yaml
+models:
+  - id: scored-model
+    benchmark_model_id: anthropic/claude-sonnet-4.6
+    routes:
+      - provider: bedrock
+        upstream_model: us.anthropic.claude-sonnet-4-6
+```
+
+`benchmark_model_id` must have the form `publisher/model`, with no spaces and no `:` (so no `:variant` suffix). Other values fail startup. An explicit ID wins over the derived match. An alias uses the nearest `benchmark_model_id` along its alias chain. If the ID is not in the snapshot, the model shows no scores.
+
+Scores change only when a release ships a refreshed snapshot. The attribution to Artificial Analysis, retrieved through OpenRouter, is shown wherever scores appear.
+
+## Validation and limits
+
+The gateway validates the whole file before it starts. A failure stops startup (and `config validate`) with the field name in the error. Validation covers:
+
+- YAML syntax and field types, including enum values.
+- Unknown keys at the top level and in `auth`, `permissions`, `budgets`, `agent_analysis`, `models` entries, routes and their `capabilities` and `compatibility`, providers, `teams`, `users` (including `membership`) and `service_accounts`.
+- Duplicate provider and model ids, including across config fragments.
+- `server`, `database`, `request_logging`, `budget_alerts` and `agent_analysis` rules on this page and on [Budget settings](/spend/budget-settings/).
+- Guardrails, permissions, OIDC and OAuth providers, and MCP settings.
+- Provider fields, model and alias references, and route wiring.
+- Budget defaults, rate-limit policies, teams, service accounts and users.
+
+<Aside type="note" title="Some sections ignore unknown keys">
+Some sections do not reject unknown keys: `server`, `database`, `request_logging`, `budget_alerts`, and the entries under `auth.oidc` and `auth.oauth`. A misspelled field there is ignored and its default applies. Check spelling against the field references.
+</Aside>
+
+Some checks happen later. At seed time, the gateway checks that OIDC and OAuth providers referenced by users are enabled, and that a seeded user's auth mode or provider changes only while the user is still invited. At request time, failures come from routing, missing providers, capability mismatches, and missing prices. See [Request lifecycle and failure modes](/reference/request-lifecycle/) for those.
