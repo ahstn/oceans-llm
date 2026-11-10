@@ -198,7 +198,7 @@ Providers charge more for the `priority` and `ultrafast` [service tiers](/config
 
 The spend event stores the requested and the served tier.
 
-The catalog stores a separate rate schedule for each non-default tier, with its own context tiers. The schedules come from LiteLLM `*_priority`, `*_flex` and `*_ultrafast` prices (and `*_above_<N>k_tokens_<tier>`), and from models.dev `experimental.modes` entries that set `service_tier` or `speed: "fast"`. For each tier, the first source in [pricing precedence](#catalog-sources) that has the tier wins. OpenRouter reports the cost of each request, so it needs no tier rates.
+The catalog stores a separate rate schedule for each non-default tier, with its own context tiers. The schedules come from LiteLLM `*_priority`, `*_flex` and `*_ultrafast` prices (and `*_above_<N>k_tokens_<tier>`), and from models.dev `experimental.modes` entries that set `service_tier` or `speed: "fast"`. For each tier, Oceans picks the first source in [pricing precedence](#catalog-sources) whose tier schedule has every context tier of the base schedule. When no source has them all, the first source that has the tier wins. OpenRouter reports the cost of each request, so it needs no tier rates.
 
 Tier pricing fails closed:
 

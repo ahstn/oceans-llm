@@ -148,12 +148,12 @@ Each provider type sends the tier in its own form:
 
 | Provider type | Tiers | Sent as |
 | --- | --- | --- |
-| `openai_compat` | all | `service_tier` in the body |
+| `openai_compat` | all, except Decisions routes | `service_tier` in the body |
 | `anthropic_compat` | `default`, `priority` | `speed: "fast"`, with the fast-mode beta header for Opus 5 and Opus 4.8. `default` sends `service_tier: "standard_only"`. |
 | `gcp_vertex` (Claude) | `default`, `priority` | `speed: "fast"` |
 | `gcp_vertex` (Gemini) | `default`, `flex`, `priority` | `X-Vertex-AI-LLM-Shared-Request-Type` header |
-| `aws_bedrock` | `default`, `flex`, `priority` | `serviceTier` (Converse), `X-Amzn-Bedrock-Service-Tier` (InvokeModel), or `service_tier` (Mantle) |
-| `github_copilot` and others | `default` | nothing |
+| `aws_bedrock` | `default`, `flex`, `priority` | `serviceTier` (Converse), `X-Amzn-Bedrock-Service-Tier` (InvokeModel), or `service_tier` (OpenAI-shaped API styles). Mantle Claude serves `default` only. |
+| `github_copilot`, Decisions | `default` | nothing |
 
 A route serves a non-default tier only when its provider type supports the tier and the gateway can price it. The gateway can price a tier when the provider reports the cost (OpenRouter), when the catalog or `pricing_override` has a rate for the tier, or when the route has no price at all. A request that no route can serve fails with 400.
 

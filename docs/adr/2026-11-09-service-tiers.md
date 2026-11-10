@@ -72,7 +72,7 @@ Catalog schedules gain `service_tiers`: one rate schedule per non-default tier, 
 - **models.dev**: `experimental.modes.<name>.cost`. The mode's `provider.body.service_tier` or `speed: "fast"` gives the tier.
 - **OpenRouter**: no tier rates. OpenRouter reports the cost of each request.
 
-For each tier, the first source in pricing precedence that defines the tier wins.
+For each tier, the first source in pricing precedence whose tier schedule covers every context-tier threshold of the merged base schedule wins. When no source covers them all, the first source that defines the tier wins, and long prompts at that tier fail closed. The coverage rule matches how the base merge prefers complete schedules; without it, models.dev's priority rate for GPT-6 (no 272k tier) would beat LiteLLM's complete schedule and leave every long priority request unpriced.
 
 The gateway fails closed. A request billed at a tier with no rate for a token bucket it used is unpriced, with the reason `service_tier:<tier>`. A premium tier is never billed at the standard rate. The same rule applies when the base schedule has a context tier but the service tier has none for that threshold.
 
