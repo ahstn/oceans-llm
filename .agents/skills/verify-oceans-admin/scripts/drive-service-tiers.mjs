@@ -88,6 +88,8 @@ try {
   await inspectRequestLog(results.downgrade.requestId, "service-tiers-request-log-downgrade");
   proof.pass("request-log-ui", { observed: "tier shown on request detail" });
 
+  await checkModelInfo();
+
   details = {
     models: grantedModels,
     served: Object.fromEntries(
@@ -200,6 +202,45 @@ async function inspectRequestLog(requestId, name) {
   await dialog.getByText(/service tier/i).first().waitFor({ timeout: 15_000 });
   await dialog.getByText(/priority/i).first().waitFor({ timeout: 15_000 });
   await capture(page, name);
+}
+
+// The admin model API and the Model info dialog agree on servable tiers, the allow-list and
+// the route-forced tier.
+async function checkModelInfo() {
+  const catalog = await adminJson(page, "/api/v1/admin/models?page=1&page_size=100&include_aliases=false");
+  const byId = Object.fromEntries(catalog.items.map((model) => [model.id, model]));
+  const tiered = byId[tieredModel];
+  const forced = byId[fastModel];
+  const policy = byId[policyModel];
+  assert(tiered && forced && policy, "admin models API omits a service tier model");
+  for (const tier of ["default", "flex", "priority"]) {
+    assert(tiered.available_service_tiers.includes(tier), `${tieredModel} cannot serve ${tier}`);
+  }
+  assertEqual(JSON.stringify(forced.available_service_tiers), JSON.stringify(["priority"]), "forced model tiers");
+  assertEqual(forced.routes[0]?.service_tier, "priority", "forced route tier");
+  assertEqual(JSON.stringify(policy.service_tiers), JSON.stringify(["flex"]), "allow-list");
+  proof.pass("admin-models-api-tiers", { observed: `${tieredModel}: ${tiered.available_service_tiers.join(",")}` });
+
+  const overview = await openModelInfo(policyModel);
+  await overview.getByText("Callers may request Flex.", { exact: true }).waitFor({ timeout: 15_000 });
+  await page.keyboard.press("Escape");
+  const dialog = await openModelInfo(fastModel);
+  await dialog.getByText("Fast (priority)", { exact: true }).first().waitFor({ timeout: 15_000 });
+  await dialog.getByRole("navigation", { name: "Model info sections" }).getByRole("button", { name: "Routing", exact: true }).click();
+  await dialog.getByRole("button", { name: /^Details for .*, route 1$/ }).click();
+  await dialog.getByText("Fast (priority) on every request", { exact: true }).waitFor({ timeout: 15_000 });
+  await capture(page, "service-tiers-model-info-routing");
+  await page.keyboard.press("Escape");
+  proof.pass("model-info-ui", { observed: "allow-list and forced route tier shown" });
+}
+
+async function openModelInfo(modelId) {
+  await page.goto(`${baseURL}/admin/models`, { waitUntil: "domcontentloaded" });
+  const row = page.getByTestId(`models-desktop-cell-${modelId}`).locator("xpath=ancestor::tr");
+  await row.getByRole("button", { name: "Info" }).click();
+  const dialog = page.getByRole("dialog", { name: "Model info" });
+  await dialog.getByText("Service tiers", { exact: true }).first().waitFor({ timeout: 15_000 });
+  return dialog;
 }
 
 function assertTierRatio(tier, result, baseline) {

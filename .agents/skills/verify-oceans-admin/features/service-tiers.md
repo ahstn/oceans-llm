@@ -32,8 +32,9 @@ Preconditions:
 - **Automated proof.** Run `control-oceans-admin drive service-tiers`. The driver signs in through the real browser route and creates one user-owned key; the raw key stays only in process memory.
 - **Discovery.** `gpt-6-luna` must list `priority` and `flex`, `gpt-6-luna-fast` must list `priority`, and `deepseek-v4.1-flash` must not list `priority`.
 - **Negative checks.** These are free: the gateway rejects each request before any provider call.
-- **A/B checks.** The driver reads `usage.cost_details.upstream_inference_prompt_cost` from OpenRouter's response and divides it by the prompt tokens. Priority must be 1.8–2.2× default, and flex 0.4–0.6×.
+- **A/B checks.** The driver reads OpenRouter's prompt cost split and divides it by the prompt tokens. Chat Completions reports it as `usage.cost_details.upstream_inference_prompt_cost` and Responses as `usage.cost_details.upstream_inference_input_cost`. Priority must be 1.8–2.2× default, and flex 0.4–0.6×.
 - **Request-log proof.** For each paid request, the driver loads the request log by request ID and checks the requested and served tier in `log.metadata`. It opens the detail dialog for the priority and the downgraded request, and captures screenshots with `request-log-payloads` masked.
+- **Model info proof.** The driver checks `available_service_tiers`, `service_tiers` and the route `service_tier` in `/api/v1/admin/models`. In `Model info`, `deepseek-v4.1-flash` reads `Callers may request Flex.`, and the expanded `gpt-6-luna-fast` route reads `Fast (priority) on every request`.
 - **Cleanup.** The driver revokes the temporary key in a `finally` block and confirms that `/v1/models` rejects it. It writes only sanitized metadata to `service-tiers-proof.json`.
 - **Proof.** Run `control-oceans-admin evidence service-tiers` before and after stack cleanup.
 
