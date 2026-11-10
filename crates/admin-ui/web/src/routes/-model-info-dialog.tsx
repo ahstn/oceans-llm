@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { serviceTierLabel } from '@/lib/service-tier'
 import { cn } from '@/lib/utils'
 import { ModelBenchmarks } from '@/routes/-model-benchmarks'
 import { formatCost, formatWindow, providerTypeLabel } from '@/routes/-model-formatting'
@@ -25,6 +26,7 @@ import type { ModelView } from '@/types/api'
 export type ModelInfoSectionKey = 'overview' | 'routing' | 'benchmarks' | 'access'
 type ModelRouteView = NonNullable<ModelView['routes']>[number]
 type ModelPricingTierView = ModelView['pricing_tiers'][number]
+type ModelServiceTierPricingView = ModelView['pricing_service_tiers'][number]
 
 const SECTIONS = [
   {
@@ -206,6 +208,7 @@ function ModelInfoOverview({ model }: { model: ModelView }) {
           value={<CapabilityBadges model={model} />}
           className="pt-5"
         />
+        <ModelInfoRow label="Service tiers" value={<ModelServiceTiers model={model} />} />
         <ModelInfoRow
           label="Tags"
           value={
@@ -341,6 +344,9 @@ function ProviderRoute({ route, position }: { route: ModelRouteView; position: n
             <span className="flex min-w-0 flex-wrap items-center gap-2">
               <span className="break-words">{label}</span>
               <Badge variant={state === 'Enabled' ? 'secondary' : 'outline'}>{state}</Badge>
+              {route.service_tier ? (
+                <Badge variant="outline">{serviceTierLabel(route.service_tier)}</Badge>
+              ) : null}
             </span>
             <span className="text-muted-foreground min-w-0 font-mono text-xs break-all">
               {route.upstream_model}
@@ -360,6 +366,14 @@ function ProviderRoute({ route, position }: { route: ModelRouteView; position: n
         <dl className="min-w-0 divide-y border-t pb-3 pl-9">
           <ModelInfoRow label="Provider key" value={route.provider_key} mono />
           <ModelInfoRow label="Route ID" value={route.id} mono />
+          <ModelInfoRow
+            label="Service tier"
+            value={
+              route.service_tier
+                ? `${serviceTierLabel(route.service_tier)} on every request`
+                : 'The tier the caller requests'
+            }
+          />
         </dl>
       </CollapsibleContent>
     </Collapsible>
@@ -422,6 +436,17 @@ function ModelInfoEconomics({ model }: { model: ModelView }) {
           ))}
         </div>
       ) : null}
+      {model.pricing_service_tiers.length > 0 ? (
+        <div className="flex min-w-0 flex-col gap-6 pt-5" data-testid="model-service-tier-pricing">
+          <p className="text-muted-foreground text-xs leading-relaxed break-words">
+            A request billed at a service tier uses that tier&apos;s rates. A tier without a rate
+            for a token type leaves requests that use it unpriced.
+          </p>
+          {model.pricing_service_tiers.map((tier) => (
+            <ModelServiceTierPricing key={tier.service_tier} tier={tier} />
+          ))}
+        </div>
+      ) : null}
       <dl
         className="grid min-w-0 grid-cols-2 gap-x-6 gap-y-3 pt-5 sm:gap-x-16"
         data-testid="model-pricing-limits"
@@ -465,6 +490,68 @@ function pricingSourceLabel(model: ModelView) {
     default:
       return 'Pricing source unavailable.'
   }
+}
+
+/** The tiers the model serves, then the allow-list when one narrows what callers may ask for. */
+function ModelServiceTiers({ model }: { model: ModelView }) {
+  const allowed = model.service_tiers
+
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      {model.available_service_tiers.some((tier) => tier !== 'default') ? (
+        <div className="flex flex-wrap gap-1.5">
+          {model.available_service_tiers.map((tier) => (
+            <Badge key={tier} variant="outline">
+              {serviceTierLabel(tier)}
+            </Badge>
+          ))}
+        </div>
+      ) : (
+        <span>Default only</span>
+      )}
+      {allowed ? (
+        <span className="text-muted-foreground text-xs">
+          {allowed.length > 0
+            ? `Callers may request ${allowed.map(serviceTierLabel).join(', ')}.`
+            : 'Callers may not request a non-default tier.'}
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
+/** A tier's own rates. Unlike a context tier, an unset rate does not fall back to the base. */
+function ModelServiceTierPricing({ tier }: { tier: ModelServiceTierPricingView }) {
+  const headingId = useId()
+
+  return (
+    <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-3">
+      <h5 id={headingId} className="text-sm font-medium">
+        {serviceTierLabel(tier.service_tier)} tier
+      </h5>
+      <dl className="grid min-w-0 grid-cols-2 gap-x-6 gap-y-3 sm:gap-x-16">
+        <ModelPricingMetric
+          label="Input cost"
+          value={formatCost(tier.input_cost_per_million_tokens_usd_10000)}
+        />
+        <ModelPricingMetric
+          label="Output cost"
+          value={formatCost(tier.output_cost_per_million_tokens_usd_10000)}
+        />
+        <ModelPricingMetric
+          label="Cache read"
+          value={formatCost(tier.cache_read_cost_per_million_tokens_usd_10000)}
+        />
+        <ModelPricingMetric
+          label="Cache write"
+          value={formatCost(tier.cache_write_cost_per_million_tokens_usd_10000)}
+        />
+      </dl>
+      {tier.context_tiers.map((contextTier) => (
+        <ModelPricingTier key={contextTier.above_input_tokens} tier={contextTier} base={tier} />
+      ))}
+    </section>
+  )
 }
 
 /** Billing uses the base rate for any rate that the tier leaves unset, so show that rate too. */

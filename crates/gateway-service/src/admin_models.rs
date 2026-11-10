@@ -13,7 +13,7 @@ use gateway_core::{
     ContextPricingTier, GatewayError, GatewayModel, ModelAllowlistPolicy, ModelRepository,
     ModelRoute, ModelRoutingPolicy, PartialCapabilities, PricingCatalogRepository, PricingLimits,
     PricingModalities, ProviderCapabilities, ProviderConnection, ProviderRepository,
-    ReasoningEffort,
+    ReasoningEffort, ServiceTier, ServiceTierPricing,
 };
 use time::OffsetDateTime;
 
@@ -24,6 +24,9 @@ use routing::summarize_routes;
 #[cfg(test)]
 use crate::effective_route_metadata::provider_capabilities;
 use crate::effective_route_metadata::{effective_provider_route_capabilities, native_api_format};
+use crate::model_metadata::service_tiers::{
+    AdapterServiceTiers, allowed_service_tiers, servable_service_tiers,
+};
 use crate::model_resolution::alias_chain_reasoning_ceiling;
 
 use crate::benchmark_catalog::{
@@ -61,6 +64,12 @@ pub struct AdminModelSummary {
     pub description: Option<String>,
     pub tags: Vec<String>,
     pub allowlist: Option<ModelAllowlistPolicy>,
+    /// Non-default tiers callers may request: the model's own list, else its execution
+    /// model's. `None` allows every tier.
+    pub service_tiers: Option<Vec<ServiceTier>>,
+    /// Every tier a request can be served at, ascending, by the rules routing applies.
+    /// Empty when no route serves chat or the service has no adapter tier source.
+    pub available_service_tiers: Vec<ServiceTier>,
     pub status: AdminModelStatus,
     pub routing: Option<ModelRoutingPolicy>,
     pub routes: Vec<AdminModelRouteSummary>,
@@ -75,6 +84,8 @@ pub struct AdminModelSummary {
     pub cache_write_cost_per_million_tokens_usd_10000: Option<i64>,
     /// Catalog context tiers of the primary route, ascending; empty for an override price.
     pub pricing_tiers: Vec<ContextPricingTier>,
+    /// Non-default service tier rates of the primary route, sorted by tier.
+    pub pricing_service_tiers: Vec<ServiceTierPricing>,
     pub pricing_source: Option<EffectiveMetadataSource>,
     pub pricing_varies_by_route: bool,
     pub context_window_tokens: Option<i64>,
@@ -92,13 +103,15 @@ pub struct AdminModelSummary {
     pub client_configurations: Vec<ClientConfig>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AdminModelsService<R> {
     repo: Arc<R>,
     client_config_gateway_base_url: String,
     benchmark_model_ids: Arc<HashMap<String, String>>,
     /// Catalog hints for unset route capability flags; `None` reads no catalog.
     capability_hints: Option<CatalogCapabilityHints>,
+    /// The tiers each route's adapter can send; `None` treats every route as default-only.
+    adapter_service_tiers: Option<Arc<dyn AdapterServiceTiers>>,
 }
 
 impl<R> AdminModelsService<R>
@@ -112,6 +125,7 @@ where
             client_config_gateway_base_url: DEFAULT_GATEWAY_BASE_URL.to_string(),
             benchmark_model_ids: Arc::default(),
             capability_hints: None,
+            adapter_service_tiers: None,
         }
     }
 
@@ -139,6 +153,43 @@ where
     pub fn with_capability_hints(mut self, capability_hints: CatalogCapabilityHints) -> Self {
         self.capability_hints = Some(capability_hints);
         self
+    }
+
+    /// Read which tiers each route's adapter can send, to list a model's servable tiers.
+    #[must_use]
+    pub fn with_adapter_service_tiers(mut self, adapter: Arc<dyn AdapterServiceTiers>) -> Self {
+        self.adapter_service_tiers = Some(adapter);
+        self
+    }
+
+    /// The tiers a request for `model` can be served at through its eligible chat routes.
+    /// Without an adapter tier source or catalog snapshot, none.
+    fn servable_service_tiers(
+        &self,
+        model: &GatewayModel,
+        execution_model: &GatewayModel,
+        routes: &[ModelRoute],
+        providers_by_key: &HashMap<String, ProviderConnection>,
+    ) -> Vec<ServiceTier> {
+        let (Some(adapter), Some(hints)) = (&self.adapter_service_tiers, &self.capability_hints)
+        else {
+            return Vec::new();
+        };
+        let chat_routes = routes
+            .iter()
+            .filter(|route| route_is_eligible(providers_by_key, route))
+            .filter_map(|route| {
+                let provider = providers_by_key.get(&route.provider_key)?;
+                let capabilities = self.route_capabilities(route, Some(provider));
+                (capabilities.chat_completions || capabilities.responses)
+                    .then_some((route, provider))
+            });
+        servable_service_tiers(
+            chat_routes,
+            allowed_service_tiers(model, execution_model),
+            hints.snapshot(),
+            adapter.as_ref(),
+        )
     }
 
     fn route_capabilities(
@@ -397,6 +448,8 @@ where
                     .into_iter()
                     .chain([execution_model.model_key.as_str(), model.model_key.as_str()]),
             );
+            let available_service_tiers =
+                self.servable_service_tiers(&model, &execution_model, routes, &providers_by_key);
             let client_config_input = primary_route
                 .zip(route_capabilities)
                 .filter(|(route, _)| route_is_eligible(&providers_by_key, route))
@@ -414,6 +467,7 @@ where
                         metadata: primary_metadata,
                         limits: &aggregate.limits,
                         route_capabilities,
+                        service_tiers: &available_service_tiers,
                         gateway_base_url: &self.client_config_gateway_base_url,
                     })
                 });
@@ -438,6 +492,9 @@ where
                     description: model.description.clone(),
                     tags: model.tags.clone(),
                     allowlist: allowlists_by_model.get(&model.id).cloned(),
+                    service_tiers: allowed_service_tiers(&model, &execution_model)
+                        .map(<[ServiceTier]>::to_vec),
+                    available_service_tiers,
                     status,
                     routing: execution_model.routing.clone(),
                     routes: summarize_routes(routes, &providers_by_key),
@@ -462,6 +519,9 @@ where
                         .map(|value| value.as_scaled_i64()),
                     pricing_tiers: primary_pricing
                         .map(|pricing| pricing.context_tiers.clone())
+                        .unwrap_or_default(),
+                    pricing_service_tiers: primary_pricing
+                        .map(|pricing| pricing.service_tiers.clone())
                         .unwrap_or_default(),
                     pricing_source: primary_metadata
                         .and_then(|metadata| metadata.pricing_source.clone()),
@@ -519,6 +579,8 @@ struct ClientConfigContext<'a> {
     limits: &'a PricingLimits,
     /// Effective capabilities of `primary_route` through `primary_provider`.
     route_capabilities: ProviderCapabilities,
+    /// Every tier a request for the model can be served at, ascending.
+    service_tiers: &'a [ServiceTier],
     gateway_base_url: &'a str,
 }
 
@@ -593,6 +655,7 @@ fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientC
         codex_reasoning_effort: None,
         native_api_format: native_api_format(primary_provider, primary_route),
         max_reasoning_effort: context.reasoning_ceiling.map(reasoning_level),
+        service_tiers: context.service_tiers.to_vec(),
     })
 }
 
@@ -788,7 +851,8 @@ mod tests {
         ModelPricingRecord, ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4,
         PartialCapabilities, PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits,
         PricingModalities, PricingProvenance, ProviderCapabilities, ProviderConnection,
-        ProviderRepository, ReasoningEffort, RoutePricingOverride, StoreError,
+        ProviderRepository, ReasoningEffort, RoutePricingOverride, RouteServiceTierPricing,
+        ServiceTier, ServiceTierPricing, StoreError,
     };
     use serde_json::json;
     use time::OffsetDateTime;
@@ -841,6 +905,7 @@ mod tests {
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
             context_tiers: Vec::new(),
+            service_tiers: Vec::new(),
         };
         let route_metadata = vec![
             (
@@ -893,6 +958,7 @@ mod tests {
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
             context_tiers: Vec::new(),
+            service_tiers: Vec::new(),
         };
         let tiered = EffectiveRoutePricing {
             context_tiers: vec![context_tier(200_000, 20_000, 40_000)],
@@ -955,6 +1021,14 @@ mod tests {
             context_tier(500_000, 300_000, 900_000),
             context_tier(272_000, 200_000, 750_000),
         ];
+        tiered.service_tiers = vec![ServiceTierPricing {
+            service_tier: ServiceTier::Priority,
+            input: Some(Money4::from_scaled(200_000)),
+            output: Some(Money4::from_scaled(1_000_000)),
+            cache_read: None,
+            cache_write: None,
+            context_tiers: vec![context_tier(272_000, 400_000, 1_500_000)],
+        }];
         let repo = Arc::new(CountingRepo {
             models: vec![model],
             routes_by_model: HashMap::from([(
@@ -1006,6 +1080,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn forced_tier_catalog_route_bills_that_tier_schedule() {
+        let priority = list_tiered_model(vec![ModelRoute {
+            service_tier: Some(ServiceTier::Priority),
+            ..catalog_route("tiered-upstream", 0, None)
+        }])
+        .await;
+
+        assert_eq!(
+            priority.input_cost_per_million_tokens_usd_10000,
+            Some(200_000)
+        );
+        assert_eq!(
+            priority.pricing_tiers,
+            vec![context_tier(272_000, 400_000, 1_500_000)]
+        );
+        assert_eq!(
+            priority
+                .pricing_service_tiers
+                .iter()
+                .map(|tier| tier.service_tier)
+                .collect::<Vec<_>>(),
+            vec![ServiceTier::Priority]
+        );
+
+        // The catalog has no ultrafast rates, so the route is unpriced, not billed at base.
+        let ultrafast = list_tiered_model(vec![ModelRoute {
+            service_tier: Some(ServiceTier::Ultrafast),
+            ..catalog_route("tiered-upstream", 0, None)
+        }])
+        .await;
+        assert_eq!(ultrafast.input_cost_per_million_tokens_usd_10000, None);
+        assert!(ultrafast.pricing_source.is_none());
+    }
+
+    #[tokio::test]
     async fn override_priced_primary_route_has_no_tiers() {
         let pricing_override = RoutePricingOverride {
             input_cost_per_million_tokens: Money4::from_scaled(100_000),
@@ -1032,6 +1141,59 @@ mod tests {
         );
         // Same base rates; only the catalog route's tiers differ.
         assert!(summary.pricing_varies_by_route);
+    }
+
+    fn route_tier_rates(service_tier: ServiceTier, input: i64) -> RouteServiceTierPricing {
+        RouteServiceTierPricing {
+            service_tier,
+            input_cost_per_million_tokens: Money4::from_scaled(input),
+            output_cost_per_million_tokens: Money4::from_scaled(input * 5),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn forced_tier_override_lists_base_rates_under_the_route_tier() {
+        let pricing_override = RoutePricingOverride {
+            input_cost_per_million_tokens: Money4::from_scaled(200_000),
+            output_cost_per_million_tokens: Money4::from_scaled(1_000_000),
+            cache_read_cost_per_million_tokens: Some(Money4::from_scaled(20_000)),
+            cache_write_cost_per_million_tokens: None,
+            image_output_cost_per_million_tokens: None,
+            // A duplicate of the route's own tier loses to the base rates.
+            service_tiers: vec![
+                route_tier_rates(ServiceTier::Ultrafast, 600_000),
+                route_tier_rates(ServiceTier::Priority, 1),
+                route_tier_rates(ServiceTier::Flex, 50_000),
+            ],
+        };
+        let route = ModelRoute {
+            service_tier: Some(ServiceTier::Priority),
+            ..catalog_route("tiered-upstream", 0, Some(pricing_override))
+        };
+        let summary = list_tiered_model(vec![route]).await;
+
+        let tiers = summary
+            .pricing_service_tiers
+            .iter()
+            .map(|tier| {
+                (
+                    tier.service_tier,
+                    tier.input.map(Money4::as_scaled_i64),
+                    tier.cache_read.map(Money4::as_scaled_i64),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            tiers,
+            vec![
+                (ServiceTier::Flex, Some(50_000), None),
+                (ServiceTier::Priority, Some(200_000), Some(20_000)),
+                (ServiceTier::Ultrafast, Some(600_000), None),
+            ]
+        );
+        assert_eq!(summary.routes[0].service_tier, Some(ServiceTier::Priority));
     }
 
     #[derive(Default)]
@@ -1389,6 +1551,7 @@ mod tests {
                     Some(&provider),
                     PartialCapabilities::default(),
                 ),
+                service_tiers: &[],
                 gateway_base_url: "http://127.0.0.1:3000",
             });
 
@@ -2190,16 +2353,13 @@ mod tests {
                     context_window_tokens: None,
                     pricing_override: None,
                     extra_headers: Default::default(),
-                    extra_body: json!({"service_tier": "priority"})
-                        .as_object()
-                        .cloned()
-                        .expect("object"),
+                    extra_body: Default::default(),
                     capabilities: ProviderCapabilities::with_dimensions(
                         true, false, false, true, false, true, true,
                     )
                     .into(),
                     compatibility: Default::default(),
-                    service_tier: None,
+                    service_tier: Some(ServiceTier::Priority),
                 }],
             )]),
             providers_by_key: HashMap::from([(
@@ -2526,6 +2686,7 @@ mod tests {
                 input: None,
                 output: None,
             },
+            service_tiers: &[],
             gateway_base_url: "https://gateway.example",
         })
         .expect("configured route");

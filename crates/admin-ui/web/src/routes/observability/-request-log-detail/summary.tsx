@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { EMPTY_VALUE, formatCount, formatDuration } from '@/lib/format'
+import { serviceTierLabel } from '@/lib/service-tier'
 import { cn } from '@/lib/utils'
 import type { RequestLogDetailView, RequestLogView } from '@/types/api'
 
@@ -227,6 +228,9 @@ export function RequestFacts({ detail }: { detail: RequestLogDetailView }) {
   const execution: Fact[] = [
     ...(operation ? [{ label: 'Operation', value: operation }] : []),
     { label: 'Stream', value: metadataBoolean(log, 'stream') ? 'Yes' : 'No' },
+    ...(log.service_tier || log.served_service_tier
+      ? [{ label: 'Service tier', value: <ServiceTierFact log={log} /> }]
+      : []),
     {
       label: 'Occurred at',
       value: <span className="whitespace-nowrap">{formatOccurredAt(log.occurred_at)}</span>,
@@ -268,6 +272,50 @@ function FactList({ facts, className }: { facts: Fact[]; className?: string }) {
         </div>
       ))}
     </dl>
+  )
+}
+
+/**
+ * The tier the request asked for and the tier the provider reported serving. A provider can
+ * serve a premium request at default, so a mismatch reads as a warning.
+ */
+function ServiceTierFact({ log }: { log: RequestLogView }) {
+  const requested = log.service_tier
+  const served = log.served_service_tier
+
+  if (requested && requested === served) {
+    return (
+      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <Badge variant="secondary">{serviceTierLabel(requested)}</Badge>
+        <span className="text-muted-foreground text-xs">requested and served</span>
+      </span>
+    )
+  }
+
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+      {requested ? (
+        <>
+          <span className="text-muted-foreground text-xs">Requested</span>
+          <Badge variant="outline">{serviceTierLabel(requested)}</Badge>
+        </>
+      ) : null}
+      <span className="text-muted-foreground text-xs">Served</span>
+      {served ? (
+        <Badge
+          variant={requested ? 'warning' : 'outline'}
+          title={
+            requested
+              ? `Requested ${serviceTierLabel(requested)}, served ${serviceTierLabel(served)}`
+              : undefined
+          }
+        >
+          {serviceTierLabel(served)}
+        </Badge>
+      ) : (
+        <span className="text-muted-foreground text-xs">not reported</span>
+      )}
+    </span>
   )
 }
 
