@@ -42,6 +42,7 @@ mod google_request;
 mod google_tools;
 mod provider;
 mod response;
+mod service_tier;
 mod streaming;
 
 fn context(upstream_model: &str) -> ProviderRequestContext {

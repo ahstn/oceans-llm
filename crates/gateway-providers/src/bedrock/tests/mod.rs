@@ -29,6 +29,7 @@ mod request_content;
 mod request_thinking;
 mod request_tools;
 mod response;
+mod service_tier;
 
 fn message(role: &str, content: &str) -> CoreChatMessage {
     CoreChatMessage {

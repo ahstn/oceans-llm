@@ -14,15 +14,18 @@ use gateway_core::{
 };
 use serde_json::Value;
 
+use crate::service_tier::{DEFAULT_ONLY, checked_service_tier};
+
 /// Translate a core request into the upstream wire format, pin the upstream
 /// model, and merge route `extra_body` overrides. Requests the format cannot
-/// carry (image inputs or `safety_identifier` for System One, for example)
-/// fail as invalid requests before any upstream call.
+/// carry (image inputs or `safety_identifier` for System One, for example, or
+/// any service tier but default) fail as invalid requests before any upstream call.
 pub(crate) fn base_decisions_request_body(
     format: DecisionsWireFormat,
     request: &CoreDecisionsRequest,
     context: &ProviderRequestContext,
 ) -> Result<Value, ProviderError> {
+    checked_service_tier(context, DEFAULT_ONLY)?;
     let mut body = match format {
         DecisionsWireFormat::SystemOne => core_decisions_request_to_system_one(request)
             .map_err(ProviderError::InvalidRequest)
@@ -137,6 +140,7 @@ pub(crate) fn system_one_test_request() -> CoreDecisionsRequest {
 
 #[cfg(test)]
 mod tests {
+    use gateway_core::ServiceTier;
     use serde_json::{Map, json};
 
     use super::*;
@@ -194,6 +198,25 @@ mod tests {
         let openai = base_decisions_request_body(DecisionsWireFormat::OpenAi, &request, &context())
             .expect("OpenAI carries safety_identifier");
         assert_eq!(openai["safety_identifier"], "user-123");
+    }
+
+    #[test]
+    fn decisions_upstreams_serve_only_the_default_tier() {
+        let request = system_one_test_request();
+        let mut context = context();
+        context.service_tier = Some(ServiceTier::Default);
+        let body = base_decisions_request_body(DecisionsWireFormat::OpenAi, &request, &context)
+            .expect("default needs no wire form");
+        assert!(body.get("service_tier").is_none());
+
+        context.service_tier = Some(ServiceTier::Priority);
+        let error = base_decisions_request_body(DecisionsWireFormat::OpenAi, &request, &context)
+            .expect_err("decisions have no premium tier");
+        assert!(
+            matches!(&error, ProviderError::InvalidRequest(message)
+                if message == "provider `decisions` route does not support service tier `priority`"),
+            "{error:?}"
+        );
     }
 
     #[test]

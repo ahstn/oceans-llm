@@ -38,6 +38,7 @@ impl OpenAiCompatProvider {
             &self.config.default_headers,
         )?;
         apply_openrouter_routing_policy(&mut body, context)?;
+        apply_service_tier(&mut body, context);
         let mut builder = self
             .client
             .post(join_base_url(&self.config.base_url, "messages")?)

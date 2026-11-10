@@ -2,9 +2,9 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
 use gateway_core::{
-    BatchCapabilities, CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest,
+    BatchCapabilities, CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, ModelRoute,
     ProviderBatchRequest, ProviderBatchResult, ProviderBatchState, ProviderCapabilities,
-    ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
+    ProviderClient, ProviderError, ProviderRequestContext, ProviderStream, ServiceTier,
 };
 use serde_json::Value;
 use time::OffsetDateTime;
@@ -15,6 +15,7 @@ use crate::{
         normalize_anthropic_response, normalize_anthropic_stream, normalize_count_tokens_response,
     },
     http::{execute_request, map_reqwest_error},
+    service_tier::{DEFAULT_FLEX_PRIORITY, DEFAULT_ONLY, DEFAULT_PRIORITY, checked_service_tier},
     token::{
         AccessTokenSource, AdcTokenSource, CLOUD_PLATFORM_SCOPE, CachedAccessTokenSource,
         ServiceAccountTokenSource, StaticBearerTokenSource,
@@ -49,6 +50,9 @@ use google_stream::normalize_google_stream;
 
 const ANTHROPIC_USAGE_SOURCE: &str = "vertex_anthropic";
 const PROVIDER_NAMESPACE: &str = "gcp_vertex";
+
+/// Selects the shared capacity grade a Gemini request runs on. Standard sends nothing.
+const SHARED_REQUEST_TYPE_HEADER: &str = "X-Vertex-AI-LLM-Shared-Request-Type";
 
 /// Vertex host that serves a location: `global` and the multi-region `us`/`eu` endpoints have
 /// dedicated hosts; every other location is a regional `{region}-aiplatform.googleapis.com`.
@@ -128,12 +132,20 @@ impl VertexProvider {
         context: &ProviderRequestContext,
         family: PublisherFamily,
     ) -> Result<reqwest::Request, ProviderError> {
+        // Claude bodies already carry `speed`; Gemini takes the tier as a header.
+        let service_tier = checked_service_tier(context, family.service_tiers())?;
         let token = self.access_token_source.token().await?;
         let body = body.clone();
         let request = self.client.post(endpoint).bearer_auth(token);
         let request = match family {
             PublisherFamily::Google => {
-                self.apply_request_headers(request.json(&body), context, family)
+                let request = self.apply_request_headers(request.json(&body), context, family);
+                match service_tier {
+                    Some(tier @ (ServiceTier::Flex | ServiceTier::Priority)) => {
+                        request.header(SHARED_REQUEST_TYPE_HEADER, tier.as_str())
+                    }
+                    _ => request,
+                }
             }
             PublisherFamily::Anthropic => {
                 anthropic::prepare_request(request, body, context, &self.config.default_headers)?
@@ -210,6 +222,16 @@ impl VertexProvider {
 enum PublisherFamily {
     Google,
     Anthropic,
+}
+
+impl PublisherFamily {
+    /// Gemini's shared capacity grades, or Claude's standard and fast mode.
+    const fn service_tiers(self) -> &'static [ServiceTier] {
+        match self {
+            Self::Google => DEFAULT_FLEX_PRIORITY,
+            Self::Anthropic => DEFAULT_PRIORITY,
+        }
+    }
 }
 
 fn parse_upstream_model(
@@ -292,6 +314,11 @@ impl ProviderClient for VertexProvider {
 
     fn provider_type(&self) -> &str {
         PROVIDER_NAMESPACE
+    }
+
+    fn service_tiers(&self, route: &ModelRoute) -> &'static [ServiceTier] {
+        parse_upstream_model(&route.upstream_model)
+            .map_or(DEFAULT_ONLY, |(family, _, _)| family.service_tiers())
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
