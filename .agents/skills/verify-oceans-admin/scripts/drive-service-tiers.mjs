@@ -209,10 +209,11 @@ function assertTierRatio(tier, result, baseline) {
 }
 
 // Upstream prompt cost per prompt token, relative to the default request. OpenRouter reports
-// the split in cost_details for BYOK and credit requests alike.
+// the split in cost_details for BYOK and credit requests alike: `upstream_inference_prompt_cost`
+// on Chat Completions and `upstream_inference_input_cost` on Responses.
 function promptRateRatio(result, baseline) {
   const rate = (usage) =>
-    Number(usage.cost_details?.upstream_inference_prompt_cost) /
+    Number(usage.cost_details?.upstream_inference_prompt_cost ?? usage.cost_details?.upstream_inference_input_cost) /
     Number(usage.prompt_tokens ?? usage.input_tokens);
   const value = rate(result.usage) / rate(baseline.usage);
   assert(Number.isFinite(value), "provider usage omits the prompt cost split");
