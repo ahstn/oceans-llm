@@ -1,9 +1,9 @@
 {
   "metadata": {
     "source": "vendored_litellm",
-    "etag": "\"03203793fa4929b34820af4c870ecd07c250383fcf23750fe9077dcbbff143e5\"",
-    "fetched_at": "2026-11-03T22:41:03.063564Z",
-    "checksum": "3b99fcbfbc10941f944c71484563be247f2f095489679a377db1d1eb86764d9c"
+    "etag": "\"a2a9ab2eeb637d23b63903f5518d4fa8d7f77e9ffa352c25c8fac98b1c9f5b9c\"",
+    "fetched_at": "2026-11-10T00:00:42.524967433Z",
+    "checksum": "556c74b30dcb30776ff46c4a42f53ac7b3098d89e474a7fbbef9e066436f2873"
   },
   "providers": {
     "amazon-bedrock": {
@@ -245,7 +245,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "0.5250",
+                "output": "4.3750",
+                "cache_read": "0.1313",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -325,7 +333,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "2.1875",
+                "output": "17.5000",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -517,7 +533,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "4.3750",
+                "output": "21.8750",
+                "cache_read": "1.0938",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -557,7 +581,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.4000",
+                "output": "1.6000",
+                "cache_read": "0.1000",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "1.4000",
+                "output": "5.6000",
+                "cache_read": "0.3500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -1318,6 +1356,46 @@
             ]
           }
         },
+        "anthropic.claude-fable-5-2": {
+          "id": "anthropic.claude-fable-5-2",
+          "display_name": "anthropic.claude-fable-5-2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "anthropic.claude-haiku-4-5": {
           "id": "anthropic.claude-haiku-4-5",
           "display_name": "anthropic.claude-haiku-4-5",
@@ -1543,6 +1621,46 @@
             "output": "50.0000",
             "cache_read": "0.2500",
             "cache_write": "12.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "anthropic.claude-mythos-5-2": {
+          "id": "anthropic.claude-mythos-5-2",
+          "display_name": "anthropic.claude-mythos-5-2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -2390,7 +2508,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.4200",
+                "output": "1.6800",
+                "cache_read": "0.1050",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -3442,6 +3568,74 @@
             ]
           }
         },
+        "claude-haiku-latest": {
+          "id": "claude-haiku-latest",
+          "display_name": "claude-haiku-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
+        "claude-opus-latest": {
+          "id": "claude-opus-latest",
+          "display_name": "claude-opus-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
         "claude-sonnet-4-5-20250929-v1:0": {
           "id": "claude-sonnet-4-5-20250929-v1:0",
           "display_name": "claude-sonnet-4-5-20250929-v1:0",
@@ -3489,6 +3683,40 @@
             "output": [
               "text"
             ]
+          }
+        },
+        "claude-sonnet-latest": {
+          "id": "claude-sonnet-latest",
+          "display_name": "claude-sonnet-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
           }
         },
         "cohere.command-light-text-v14": {
@@ -3817,7 +4045,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.2900",
+                "output": "0.8400",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "1.0150",
+                "output": "2.9400",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -3853,7 +4095,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.3100",
+                "output": "0.9250",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "1.0850",
+                "output": "3.2375",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -4047,7 +4303,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.5250",
+                "output": "2.1000",
+                "cache_read": "0.1313",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -4340,6 +4604,46 @@
             ]
           }
         },
+        "eu.anthropic.claude-fable-5-2": {
+          "id": "eu.anthropic.claude-fable-5-2",
+          "display_name": "eu.anthropic.claude-fable-5-2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.8000",
+            "output": "44.0000",
+            "cache_read": "0.2200",
+            "cache_write": "11.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "eu.anthropic.claude-haiku-4-5-20251001-v1:0": {
           "id": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
           "display_name": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
@@ -4412,6 +4716,46 @@
                 "cache_write": "0.6875"
               }
             ]
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "eu.anthropic.claude-mythos-5-2": {
+          "id": "eu.anthropic.claude-mythos-5-2",
+          "display_name": "eu.anthropic.claude-mythos-5-2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.8000",
+            "output": "44.0000",
+            "cache_read": "0.2200",
+            "cache_write": "11.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
           },
           "limit": {
             "context": null,
@@ -4989,7 +5333,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.3700",
+                "output": "1.1100",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -5251,7 +5603,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "0.5250",
+                "output": "4.3750",
+                "cache_read": "0.1313",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -5329,6 +5689,46 @@
             "output": "50.0000",
             "cache_read": "0.2500",
             "cache_write": "12.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "global.anthropic.claude-fable-5-2": {
+          "id": "global.anthropic.claude-fable-5-2",
+          "display_name": "global.anthropic.claude-fable-5-2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -5458,6 +5858,46 @@
             "output": "50.0000",
             "cache_read": "0.2500",
             "cache_write": "12.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "global.anthropic.claude-mythos-5-2": {
+          "id": "global.anthropic.claude-mythos-5-2",
+          "display_name": "global.anthropic.claude-mythos-5-2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -5998,11 +6438,78 @@
             "cache_write": "3.7500",
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "1.5000",
+                "output": "7.5000",
+                "cache_read": "0.1500",
+                "cache_write": "1.8750"
+              },
+              "priority": {
+                "input": "5.2500",
+                "output": "26.2500",
+                "cache_read": "0.5250",
+                "cache_write": "6.5625"
+              }
+            }
           },
           "limit": {
             "context": null,
             "input": 1000000,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "global.moonshotai.kimi-k3.1": {
+          "id": "global.moonshotai.kimi-k3.1",
+          "display_name": "global.moonshotai.kimi-k3.1",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "4.0000",
+            "output": "20.0000",
+            "cache_read": "0.2000",
+            "cache_write": "5.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "2.0000",
+                "output": "10.0000",
+                "cache_read": "0.1000",
+                "cache_write": "2.5000"
+              },
+              "priority": {
+                "input": "7.0000",
+                "output": "35.0000",
+                "cache_read": "0.3500",
+                "cache_write": "8.7500"
+              }
+            }
+          },
+          "limit": {
+            "context": null,
+            "input": 868928,
             "output": 131072
           },
           "modalities": {
@@ -6322,7 +6829,24 @@
                 "cache_read": "2.0000",
                 "cache_write": "25.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "ultrafast": {
+                "input": "60.0000",
+                "output": "300.0000",
+                "cache_read": "6.0000",
+                "cache_write": "75.0000",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "120.0000",
+                    "output": "450.0000",
+                    "cache_read": "12.0000",
+                    "cache_write": "150.0000"
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -6484,7 +7008,24 @@
                 "cache_read": "0.2000",
                 "cache_write": "5.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "ultrafast": {
+                "input": "12.0000",
+                "output": "60.0000",
+                "cache_read": "0.6000",
+                "cache_write": "15.0000",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "24.0000",
+                    "output": "90.0000",
+                    "cache_read": "1.2000",
+                    "cache_write": "30.0000"
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -6655,7 +7196,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "1.0000",
+                "output": "3.0000",
+                "cache_read": "0.2500",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "3.5000",
+                "output": "10.5000",
+                "cache_read": "0.8750",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -6700,7 +7255,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "1.0000",
+                "output": "3.0000",
+                "cache_read": "0.2500",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "3.5000",
+                "output": "10.5000",
+                "cache_read": "0.8750",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -6739,7 +7308,21 @@
             "cache_write": "2.1000",
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.8400",
+                "output": "2.6400",
+                "cache_read": "0.1560",
+                "cache_write": "1.0500"
+              },
+              "priority": {
+                "input": "2.9400",
+                "output": "9.2400",
+                "cache_read": "0.5460",
+                "cache_write": "3.6750"
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -6777,7 +7360,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0500",
+                "output": "0.1500",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.1600",
+                "output": "0.5100",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -6816,7 +7413,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1200",
+                "output": "0.1900",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.4000",
+                "output": "0.6700",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -6855,7 +7466,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0200",
+                "output": "0.0400",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.0700",
+                "output": "0.1400",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -6900,7 +7525,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0650",
+                "output": "0.2000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.2275",
+                "output": "0.7000",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -6945,7 +7584,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0700",
+                "output": "0.2000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.2450",
+                "output": "0.7000",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -6990,7 +7643,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0200",
+                "output": "0.0400",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.0700",
+                "output": "0.1400",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -7005,6 +7672,176 @@
             "output": [
               "text"
             ]
+          }
+        },
+        "gpt-astra-latest": {
+          "id": "gpt-astra-latest",
+          "display_name": "gpt-astra-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
+        "gpt-luna-latest": {
+          "id": "gpt-luna-latest",
+          "display_name": "gpt-luna-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
+        "gpt-sol-latest": {
+          "id": "gpt-sol-latest",
+          "display_name": "gpt-sol-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
+        "gpt-terra-latest": {
+          "id": "gpt-terra-latest",
+          "display_name": "gpt-terra-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
+        "grok-latest": {
+          "id": "grok-latest",
+          "display_name": "grok-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
           }
         },
         "in.moonshotai.kimi-k3": {
@@ -7029,11 +7866,78 @@
             "cache_write": "4.1250",
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "1.6500",
+                "output": "8.2500",
+                "cache_read": "0.1650",
+                "cache_write": "2.0625"
+              },
+              "priority": {
+                "input": "5.7750",
+                "output": "28.8750",
+                "cache_read": "0.5775",
+                "cache_write": "7.2188"
+              }
+            }
           },
           "limit": {
             "context": null,
             "input": 1000000,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "in.moonshotai.kimi-k3.1": {
+          "id": "in.moonshotai.kimi-k3.1",
+          "display_name": "in.moonshotai.kimi-k3.1",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "4.4000",
+            "output": "22.0000",
+            "cache_read": "0.2200",
+            "cache_write": "5.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "2.2000",
+                "output": "11.0000",
+                "cache_read": "0.1100",
+                "cache_write": "2.7500"
+              },
+              "priority": {
+                "input": "7.7000",
+                "output": "38.5000",
+                "cache_read": "0.3850",
+                "cache_write": "9.6250"
+              }
+            }
+          },
+          "limit": {
+            "context": null,
+            "input": 868928,
             "output": 131072
           },
           "modalities": {
@@ -7068,7 +7972,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1980",
+                "output": "1.6555",
+                "cache_read": "0.0495",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.6930",
+                "output": "5.7943",
+                "cache_read": "0.1733",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -8044,7 +8962,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1500",
+                "output": "0.6000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.5200",
+                "output": "2.1000",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -8082,7 +9014,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1500",
+                "output": "0.6000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.5250",
+                "output": "2.1000",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -8120,7 +9066,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1500",
+                "output": "0.6000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.5250",
+                "output": "2.1000",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -8158,7 +9118,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.2000",
+                "output": "1.0000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.7000",
+                "output": "3.5000",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -8196,7 +9170,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.2500",
+                "output": "0.7500",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.8800",
+                "output": "2.6300",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -8235,7 +9223,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1000",
+                "output": "0.1000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.3500",
+                "output": "0.3500",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -8274,7 +9276,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0500",
+                "output": "0.0500",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.1700",
+                "output": "0.1700",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -8313,7 +9329,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0700",
+                "output": "0.0700",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.2600",
+                "output": "0.2600",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -8460,7 +9490,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.2500",
+                "output": "0.7500",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.8800",
+                "output": "2.6300",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -8607,7 +9651,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0200",
+                "output": "0.0200",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.0700",
+                "output": "0.0700",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -8643,7 +9701,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0500",
+                "output": "0.1500",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.1700",
+                "output": "0.5200",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -8679,7 +9751,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "1.0500",
+                "output": "4.3800",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -8723,7 +9803,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.3000",
+                "output": "1.2500",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "1.0500",
+                "output": "4.3800",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -8759,7 +9853,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.3000",
+                "output": "1.5000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "1.0500",
+                "output": "5.2500",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -8798,11 +9906,78 @@
             "cache_write": "4.1250",
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "1.6500",
+                "output": "8.2500",
+                "cache_read": "0.1650",
+                "cache_write": "2.0625"
+              },
+              "priority": {
+                "input": "5.7750",
+                "output": "28.8750",
+                "cache_read": "0.5775",
+                "cache_write": "7.2188"
+              }
+            }
           },
           "limit": {
             "context": null,
             "input": 1000000,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "moonshotai.kimi-k3.1": {
+          "id": "moonshotai.kimi-k3.1",
+          "display_name": "moonshotai.kimi-k3.1",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "4.4000",
+            "output": "22.0000",
+            "cache_read": "0.2200",
+            "cache_write": "5.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "2.2000",
+                "output": "11.0000",
+                "cache_read": "0.1100",
+                "cache_write": "2.7500"
+              },
+              "priority": {
+                "input": "7.7000",
+                "output": "38.5000",
+                "cache_read": "0.3850",
+                "cache_write": "9.6250"
+              }
+            }
+          },
+          "limit": {
+            "context": null,
+            "input": 868928,
             "output": 131072
           },
           "modalities": {
@@ -8837,7 +10012,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1000",
+                "output": "0.3000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.3500",
+                "output": "1.0500",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -8876,7 +10065,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0300",
+                "output": "0.1200",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.1100",
+                "output": "0.4200",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -8914,7 +10117,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0300",
+                "output": "0.1200",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.1100",
+                "output": "0.4000",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -8952,7 +10169,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0750",
+                "output": "0.3250",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.2625",
+                "output": "1.1375",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -9320,7 +10551,24 @@
                 "cache_read": "2.2000",
                 "cache_write": "27.5000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "ultrafast": {
+                "input": "66.0000",
+                "output": "330.0000",
+                "cache_read": "6.6000",
+                "cache_write": "82.5000",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "132.0000",
+                    "output": "495.0000",
+                    "cache_read": "13.2000",
+                    "cache_write": "165.0000"
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -9470,7 +10718,24 @@
                 "cache_read": "0.2200",
                 "cache_write": "5.5000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "ultrafast": {
+                "input": "13.2000",
+                "output": "66.0000",
+                "cache_read": "0.6600",
+                "cache_write": "16.5000",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "26.4000",
+                    "output": "99.0000",
+                    "cache_read": "1.3200",
+                    "cache_write": "33.0000"
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -9623,7 +10888,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0750",
+                "output": "0.3000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.2625",
+                "output": "1.0500",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -9667,7 +10946,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0750",
+                "output": "0.3000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.2625",
+                "output": "1.0500",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -9711,7 +11004,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0350",
+                "output": "0.1500",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.1225",
+                "output": "0.5250",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -9755,7 +11062,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0350",
+                "output": "0.1500",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.1225",
+                "output": "0.5250",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -9793,7 +11114,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0700",
+                "output": "0.3000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.2600",
+                "output": "1.0500",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -9831,7 +11166,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0300",
+                "output": "0.1000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.1200",
+                "output": "0.3500",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -9875,7 +11224,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1100",
+                "output": "0.4400",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.3850",
+                "output": "1.5400",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -9911,7 +11274,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1100",
+                "output": "0.4400",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -9953,7 +11324,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0750",
+                "output": "0.3000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.2625",
+                "output": "1.0500",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -9989,7 +11374,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0750",
+                "output": "0.3000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.2625",
+                "output": "1.0500",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -10031,7 +11430,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0750",
+                "output": "0.3000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.2625",
+                "output": "1.0500",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -10067,7 +11480,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "0.2625",
+                "output": "1.0500",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -10109,7 +11530,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.2250",
+                "output": "0.9000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.7875",
+                "output": "3.1500",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -10181,7 +11616,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.2500",
+                "output": "0.6000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.8750",
+                "output": "2.1000",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -10219,7 +11668,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0700",
+                "output": "0.6000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.2600",
+                "output": "2.1000",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -10263,7 +11726,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0700",
+                "output": "0.6000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.2600",
+                "output": "2.1000",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -10299,7 +11776,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "0.9300",
+                "output": "4.6600",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -10344,7 +11829,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.2600",
+                "output": "1.3300",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.9300",
+                "output": "4.6600",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -11233,6 +12732,239 @@
             ]
           }
         },
+        "us-gov-east-1/nvidia.nemotron-nano-12b-v2": {
+          "id": "us-gov-east-1/nvidia.nemotron-nano-12b-v2",
+          "display_name": "us-gov-east-1/nvidia.nemotron-nano-12b-v2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.2400",
+            "output": "0.7200",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1200",
+                "output": "0.3600",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.4200",
+                "output": "1.2600",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
+          },
+          "limit": {
+            "context": null,
+            "input": 128000,
+            "output": 8192
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov-east-1/nvidia.nemotron-nano-3-30b": {
+          "id": "us-gov-east-1/nvidia.nemotron-nano-3-30b",
+          "display_name": "us-gov-east-1/nvidia.nemotron-nano-3-30b",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0720",
+            "output": "0.2880",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0360",
+                "output": "0.1440",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.1320",
+                "output": "0.5040",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
+          },
+          "limit": {
+            "context": null,
+            "input": 262144,
+            "output": 8192
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov-east-1/nvidia.nemotron-nano-9b-v2": {
+          "id": "us-gov-east-1/nvidia.nemotron-nano-9b-v2",
+          "display_name": "us-gov-east-1/nvidia.nemotron-nano-9b-v2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0720",
+            "output": "0.2760",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0360",
+                "output": "0.1440",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.1320",
+                "output": "0.4800",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
+          },
+          "limit": {
+            "context": null,
+            "input": 128000,
+            "output": 8192
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov-east-1/nvidia.nemotron-super-3-120b": {
+          "id": "us-gov-east-1/nvidia.nemotron-super-3-120b",
+          "display_name": "us-gov-east-1/nvidia.nemotron-super-3-120b",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.1800",
+            "output": "0.7800",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0900",
+                "output": "0.3900",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.3150",
+                "output": "1.3650",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
+          },
+          "limit": {
+            "context": null,
+            "input": 256000,
+            "output": 32768
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "us-gov-east-1/openai.gpt-5.4": {
           "id": "us-gov-east-1/openai.gpt-5.4",
           "display_name": "us-gov-east-1/openai.gpt-5.4",
@@ -11306,7 +13038,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0900",
+                "output": "0.3600",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.3150",
+                "output": "1.2600",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -11350,7 +13096,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0420",
+                "output": "0.1800",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.1470",
+                "output": "0.6300",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -11394,12 +13154,85 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "1.3200",
+                "output": "3.9600",
+                "cache_read": "0.3300",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "4.6200",
+                "output": "13.8600",
+                "cache_read": "1.1550",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
             "input": 500000,
             "output": 500000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov-east-1/xai.grok-4.7": {
+          "id": "us-gov-east-1/xai.grok-4.7",
+          "display_name": "us-gov-east-1/xai.grok-4.7",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": true,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "2.6400",
+            "output": "7.9200",
+            "cache_read": "0.6600",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "1.3200",
+                "output": "3.9600",
+                "cache_read": "0.3300",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "4.6200",
+                "output": "13.8600",
+                "cache_read": "1.1550",
+                "cache_write": null
+              }
+            }
+          },
+          "limit": {
+            "context": null,
+            "input": 524288,
+            "output": 524288
           },
           "modalities": {
             "input": [
@@ -11568,7 +13401,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0780",
+                "output": "0.2400",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.2730",
+                "output": "0.8400",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -11613,7 +13460,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0840",
+                "output": "0.2400",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.2940",
+                "output": "0.8400",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -11658,7 +13519,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0240",
+                "output": "0.0480",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.0840",
+                "output": "0.1680",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -11669,6 +13544,239 @@
             "input": [
               "text",
               "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov-west-1/nvidia.nemotron-nano-12b-v2": {
+          "id": "us-gov-west-1/nvidia.nemotron-nano-12b-v2",
+          "display_name": "us-gov-west-1/nvidia.nemotron-nano-12b-v2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.2400",
+            "output": "0.7200",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1200",
+                "output": "0.3600",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.4200",
+                "output": "1.2600",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
+          },
+          "limit": {
+            "context": null,
+            "input": 128000,
+            "output": 8192
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov-west-1/nvidia.nemotron-nano-3-30b": {
+          "id": "us-gov-west-1/nvidia.nemotron-nano-3-30b",
+          "display_name": "us-gov-west-1/nvidia.nemotron-nano-3-30b",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0720",
+            "output": "0.2880",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0360",
+                "output": "0.1440",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.1320",
+                "output": "0.5040",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
+          },
+          "limit": {
+            "context": null,
+            "input": 262144,
+            "output": 8192
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov-west-1/nvidia.nemotron-nano-9b-v2": {
+          "id": "us-gov-west-1/nvidia.nemotron-nano-9b-v2",
+          "display_name": "us-gov-west-1/nvidia.nemotron-nano-9b-v2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0720",
+            "output": "0.2760",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0360",
+                "output": "0.1440",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.1320",
+                "output": "0.4800",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
+          },
+          "limit": {
+            "context": null,
+            "input": 128000,
+            "output": 8192
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov-west-1/nvidia.nemotron-super-3-120b": {
+          "id": "us-gov-west-1/nvidia.nemotron-super-3-120b",
+          "display_name": "us-gov-west-1/nvidia.nemotron-super-3-120b",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.1800",
+            "output": "0.7800",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0900",
+                "output": "0.3900",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.3150",
+                "output": "1.3650",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
+          },
+          "limit": {
+            "context": null,
+            "input": 256000,
+            "output": 32768
+          },
+          "modalities": {
+            "input": [
+              "text"
             ],
             "output": [
               "text"
@@ -11697,9 +13805,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "3.3750",
-            "output": "20.2500",
-            "cache_read": "0.3375",
+            "input": "3.3000",
+            "output": "19.8000",
+            "cache_read": "0.3300",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -11742,22 +13850,54 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2700",
-            "output": "1.6200",
-            "cache_read": "0.0270",
-            "cache_write": "0.3375",
+            "input": "0.2640",
+            "output": "1.5840",
+            "cache_read": "0.0264",
+            "cache_write": "0.3300",
             "input_audio": null,
             "output_audio": null,
             "output_image": null,
             "tiers": [
               {
                 "above_input_tokens": 272000,
-                "input": "0.5400",
-                "output": "2.4300",
-                "cache_read": "0.0540",
-                "cache_write": "0.6750"
+                "input": "0.5280",
+                "output": "2.3760",
+                "cache_read": "0.0528",
+                "cache_write": "0.6600"
               }
-            ]
+            ],
+            "service_tiers": {
+              "flex": {
+                "input": "0.1320",
+                "output": "0.7920",
+                "cache_read": "0.0132",
+                "cache_write": "0.1650",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "0.2640",
+                    "output": "1.1880",
+                    "cache_read": "0.0264",
+                    "cache_write": "0.3300"
+                  }
+                ]
+              },
+              "priority": {
+                "input": "0.5280",
+                "output": "3.1680",
+                "cache_read": "0.0528",
+                "cache_write": "0.6600",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "1.0560",
+                    "output": "4.7520",
+                    "cache_read": "0.1056",
+                    "cache_write": "1.3200"
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -11796,22 +13936,54 @@
           },
           "cost": {
             "conditions": {},
-            "input": "2.7000",
-            "output": "16.2000",
-            "cache_read": "0.2700",
-            "cache_write": "3.3750",
+            "input": "2.6400",
+            "output": "15.8400",
+            "cache_read": "0.2640",
+            "cache_write": "3.3000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null,
             "tiers": [
               {
                 "above_input_tokens": 272000,
-                "input": "5.4000",
-                "output": "24.3000",
-                "cache_read": "0.5400",
-                "cache_write": "6.7500"
+                "input": "5.2800",
+                "output": "23.7600",
+                "cache_read": "0.5280",
+                "cache_write": "6.6000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "flex": {
+                "input": "1.3200",
+                "output": "7.9200",
+                "cache_read": "0.1320",
+                "cache_write": "1.6500",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "2.6400",
+                    "output": "11.8800",
+                    "cache_read": "0.2640",
+                    "cache_write": "3.3000"
+                  }
+                ]
+              },
+              "priority": {
+                "input": "5.2800",
+                "output": "31.6800",
+                "cache_read": "0.5280",
+                "cache_write": "6.6000",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "10.5600",
+                    "output": "47.5200",
+                    "cache_read": "1.0560",
+                    "cache_write": "13.2000"
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -11856,7 +14028,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0900",
+                "output": "0.3600",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.3150",
+                "output": "1.2600",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -11900,7 +14086,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0420",
+                "output": "0.1800",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.1470",
+                "output": "0.6300",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -11944,7 +14144,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.7500",
+                "output": "1.5000",
+                "cache_read": "0.1200",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "2.6250",
+                "output": "5.2500",
+                "cache_read": "0.4200",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -11989,12 +14203,85 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "1.3200",
+                "output": "3.9600",
+                "cache_read": "0.3300",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "4.6200",
+                "output": "13.8600",
+                "cache_read": "1.1550",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
             "input": 500000,
             "output": 500000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov-west-1/xai.grok-4.7": {
+          "id": "us-gov-west-1/xai.grok-4.7",
+          "display_name": "us-gov-west-1/xai.grok-4.7",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": true,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "2.6400",
+            "output": "7.9200",
+            "cache_read": "0.6600",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "1.3200",
+                "output": "3.9600",
+                "cache_read": "0.3300",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "4.6200",
+                "output": "13.8600",
+                "cache_read": "1.1550",
+                "cache_write": null
+              }
+            }
+          },
+          "limit": {
+            "context": null,
+            "input": 524288,
+            "output": 524288
           },
           "modalities": {
             "input": [
@@ -12026,6 +14313,46 @@
             "output": "60.0000",
             "cache_read": "0.3000",
             "cache_write": "15.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov.anthropic.claude-fable-5-2": {
+          "id": "us-gov.anthropic.claude-fable-5-2",
+          "display_name": "us-gov.anthropic.claude-fable-5-2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "9.6000",
+            "output": "48.0000",
+            "cache_read": "0.2400",
+            "cache_write": "12.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -12078,6 +14405,46 @@
                 "cache_write": "0.7500"
               }
             ]
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov.anthropic.claude-mythos-5-2": {
+          "id": "us-gov.anthropic.claude-mythos-5-2",
+          "display_name": "us-gov.anthropic.claude-mythos-5-2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "9.6000",
+            "output": "48.0000",
+            "cache_read": "0.2400",
+            "cache_write": "12.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
           },
           "limit": {
             "context": null,
@@ -12630,6 +14997,65 @@
             ]
           }
         },
+        "us-gov.xai.grok-4.7": {
+          "id": "us-gov.xai.grok-4.7",
+          "display_name": "us-gov.xai.grok-4.7",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "2.6400",
+            "output": "7.9200",
+            "cache_read": "0.6600",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "1.3200",
+                "output": "3.9600",
+                "cache_read": "0.3300",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "4.6200",
+                "output": "13.8600",
+                "cache_read": "1.1550",
+                "cache_write": null
+              }
+            }
+          },
+          "limit": {
+            "context": null,
+            "input": 524288,
+            "output": 524288
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "us.amazon.nova-2-lite-v1:0": {
           "id": "us.amazon.nova-2-lite-v1:0",
           "display_name": "us.amazon.nova-2-lite-v1:0",
@@ -12652,7 +15078,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1650",
+                "output": "1.3750",
+                "cache_read": "0.0413",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.5775",
+                "output": "4.8125",
+                "cache_read": "0.1444",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -12692,7 +15132,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "2.4063",
+                "output": "19.2500",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -12850,7 +15298,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.4000",
+                "output": "1.6000",
+                "cache_read": "0.1000",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "1.4000",
+                "output": "5.6000",
+                "cache_read": "0.3500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -13143,6 +15605,46 @@
             ]
           }
         },
+        "us.anthropic.claude-fable-5-2": {
+          "id": "us.anthropic.claude-fable-5-2",
+          "display_name": "us.anthropic.claude-fable-5-2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.8000",
+            "output": "44.0000",
+            "cache_read": "0.2200",
+            "cache_write": "11.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "us.anthropic.claude-haiku-4-5-20251001-v1:0": {
           "id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
           "display_name": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
@@ -13292,6 +15794,46 @@
             "output": "55.0000",
             "cache_read": "0.2750",
             "cache_write": "13.7500",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us.anthropic.claude-mythos-5-2": {
+          "id": "us.anthropic.claude-mythos-5-2",
+          "display_name": "us.anthropic.claude-mythos-5-2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.8000",
+            "output": "44.0000",
+            "cache_read": "0.2200",
+            "cache_write": "11.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -13987,7 +16529,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.3100",
+                "output": "0.9250",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "1.0850",
+                "output": "3.2375",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -14435,11 +16991,78 @@
             "cache_write": "4.1250",
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "1.6500",
+                "output": "8.2500",
+                "cache_read": "0.1650",
+                "cache_write": "2.0625"
+              },
+              "priority": {
+                "input": "5.7750",
+                "output": "28.8750",
+                "cache_read": "0.5775",
+                "cache_write": "7.2188"
+              }
+            }
           },
           "limit": {
             "context": null,
             "input": 1000000,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us.moonshotai.kimi-k3.1": {
+          "id": "us.moonshotai.kimi-k3.1",
+          "display_name": "us.moonshotai.kimi-k3.1",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "4.4000",
+            "output": "22.0000",
+            "cache_read": "0.2200",
+            "cache_write": "5.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "2.2000",
+                "output": "11.0000",
+                "cache_read": "0.1100",
+                "cache_write": "2.7500"
+              },
+              "priority": {
+                "input": "7.7000",
+                "output": "38.5000",
+                "cache_read": "0.3850",
+                "cache_write": "9.6250"
+              }
+            }
+          },
+          "limit": {
+            "context": null,
+            "input": 868928,
             "output": 131072
           },
           "modalities": {
@@ -14759,7 +17382,24 @@
                 "cache_read": "2.2000",
                 "cache_write": "27.5000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "ultrafast": {
+                "input": "66.0000",
+                "output": "330.0000",
+                "cache_read": "6.6000",
+                "cache_write": "82.5000",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "132.0000",
+                    "output": "495.0000",
+                    "cache_read": "13.2000",
+                    "cache_write": "165.0000"
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -14921,7 +17561,24 @@
                 "cache_read": "0.2200",
                 "cache_write": "5.5000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "ultrafast": {
+                "input": "13.2000",
+                "output": "66.0000",
+                "cache_read": "0.6600",
+                "cache_write": "16.5000",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "26.4000",
+                    "output": "99.0000",
+                    "cache_read": "1.3200",
+                    "cache_write": "33.0000"
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -15712,7 +18369,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "1.1000",
+                "output": "3.3000",
+                "cache_read": "0.2750",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "3.8500",
+                "output": "11.5500",
+                "cache_read": "0.9625",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -15757,7 +18428,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "1.1000",
+                "output": "3.3000",
+                "cache_read": "0.2750",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "3.8500",
+                "output": "11.5500",
+                "cache_read": "0.9625",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -15796,7 +18481,21 @@
             "cache_write": "2.3100",
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.9240",
+                "output": "2.9040",
+                "cache_read": "0.1716",
+                "cache_write": "1.1550"
+              },
+              "priority": {
+                "input": "3.2340",
+                "output": "10.1640",
+                "cache_read": "0.6006",
+                "cache_write": "4.0425"
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -15834,7 +18533,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0750",
+                "output": "0.3000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.2625",
+                "output": "1.0500",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -15951,7 +18664,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.6250",
+                "output": "1.2500",
+                "cache_read": "0.1000",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "2.1875",
+                "output": "4.3750",
+                "cache_read": "0.3500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -15996,12 +18723,85 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "1.1000",
+                "output": "3.3000",
+                "cache_read": "0.2750",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "3.8500",
+                "output": "11.5500",
+                "cache_read": "0.9625",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
             "input": 500000,
             "output": 500000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "xai.grok-4.7": {
+          "id": "xai.grok-4.7",
+          "display_name": "xai.grok-4.7",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": true,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "2.2000",
+            "output": "6.6000",
+            "cache_read": "0.5500",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "1.1000",
+                "output": "3.3000",
+                "cache_read": "0.2750",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "3.8500",
+                "output": "11.5500",
+                "cache_read": "0.9625",
+                "cache_write": null
+              }
+            }
+          },
+          "limit": {
+            "context": null,
+            "input": 524288,
+            "output": 524288
           },
           "modalities": {
             "input": [
@@ -16035,7 +18835,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.3000",
+                "output": "1.1000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "1.0500",
+                "output": "3.8500",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -16073,7 +18887,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0350",
+                "output": "0.2000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.1225",
+                "output": "0.7000",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -16111,7 +18939,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "1.7500",
+                "output": "5.6000",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -16222,6 +19058,40 @@
             ]
           }
         },
+        "claude-fable-latest": {
+          "id": "claude-fable-latest",
+          "display_name": "claude-fable-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
         "claude-haiku-4.5": {
           "id": "claude-haiku-4.5",
           "display_name": "claude-haiku-4.5",
@@ -16319,6 +19189,40 @@
             "output": [
               "text"
             ]
+          }
+        },
+        "claude-haiku-latest": {
+          "id": "claude-haiku-latest",
+          "display_name": "claude-haiku-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
           }
         },
         "claude-opus-4.8": {
@@ -16501,6 +19405,40 @@
             ]
           }
         },
+        "claude-opus-latest": {
+          "id": "claude-opus-latest",
+          "display_name": "claude-opus-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
         "claude-sonnet-4.6": {
           "id": "claude-sonnet-4.6",
           "display_name": "claude-sonnet-4.6",
@@ -16634,6 +19572,40 @@
             "output": [
               "text"
             ]
+          }
+        },
+        "claude-sonnet-latest": {
+          "id": "claude-sonnet-latest",
+          "display_name": "claude-sonnet-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
           }
         },
         "gemini-3.7-flash": {
@@ -18004,6 +20976,142 @@
             ]
           }
         },
+        "gpt-astra-latest": {
+          "id": "gpt-astra-latest",
+          "display_name": "gpt-astra-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
+        "gpt-luna-latest": {
+          "id": "gpt-luna-latest",
+          "display_name": "gpt-luna-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
+        "gpt-sol-latest": {
+          "id": "gpt-sol-latest",
+          "display_name": "gpt-sol-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
+        "gpt-terra-latest": {
+          "id": "gpt-terra-latest",
+          "display_name": "gpt-terra-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
         "grok-4.5": {
           "id": "grok-4.5",
           "display_name": "grok-4.5",
@@ -18166,6 +21274,40 @@
             ]
           }
         },
+        "grok-latest": {
+          "id": "grok-latest",
+          "display_name": "grok-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
         "kimi-k3": {
           "id": "kimi-k3",
           "display_name": "kimi-k3",
@@ -18209,6 +21351,40 @@
             "output": [
               "text"
             ]
+          }
+        },
+        "kimi-latest": {
+          "id": "kimi-latest",
+          "display_name": "kimi-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
           }
         },
         "mai-code-1.1-flash": {
@@ -19006,7 +22182,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": "30.0000"
+            "output_image": "30.0000",
+            "service_tiers": {
+              "flex": {
+                "input": "0.1500",
+                "output": "1.2500",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -19196,7 +22380,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.2500",
+                "output": "1.5000",
+                "cache_read": null,
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.9000",
+                "output": "5.4000",
+                "cache_read": "0.0900",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -19252,7 +22450,30 @@
                 "cache_read": "0.4000",
                 "cache_write": null
               }
-            ]
+            ],
+            "service_tiers": {
+              "flex": {
+                "input": "1.0000",
+                "output": "6.0000",
+                "cache_read": "0.1000",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "3.6000",
+                "output": "21.6000",
+                "cache_read": "0.3600",
+                "cache_write": null,
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 200000,
+                    "input": "7.2000",
+                    "output": "32.4000",
+                    "cache_read": "0.7200",
+                    "cache_write": null
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -19303,7 +22524,24 @@
                 "cache_read": "0.4000",
                 "cache_write": null
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "3.6000",
+                "output": "21.6000",
+                "cache_read": "0.3600",
+                "cache_write": null,
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 200000,
+                    "input": "7.2000",
+                    "output": "32.4000",
+                    "cache_read": "0.7200",
+                    "cache_write": null
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -19352,9 +22590,26 @@
                 "input": "4.0000",
                 "output": "18.0000",
                 "cache_read": "0.4000",
-                "cache_write": "0.2500"
+                "cache_write": null
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "3.6000",
+                "output": "21.6000",
+                "cache_read": "0.3600",
+                "cache_write": null,
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 200000,
+                    "input": "7.2000",
+                    "output": "32.4000",
+                    "cache_read": "0.7200",
+                    "cache_write": null
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -19401,7 +22656,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": "60.0000"
+            "output_image": "60.0000",
+            "service_tiers": {
+              "flex": {
+                "input": "0.2500",
+                "output": "1.5000",
+                "cache_read": "0.0250",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.9000",
+                "output": "5.4000",
+                "cache_read": "0.0900",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -19485,7 +22754,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1250",
+                "output": "0.7500",
+                "cache_read": "0.0125",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.4500",
+                "output": "2.7000",
+                "cache_read": "0.0450",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -19532,7 +22815,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": "30.0000"
+            "output_image": "30.0000",
+            "service_tiers": {
+              "flex": {
+                "input": "0.1250",
+                "output": "0.7500",
+                "cache_read": "0.0125",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.4500",
+                "output": "2.7000",
+                "cache_read": "0.0450",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -19669,9 +22966,41 @@
                 "input": "4.0000",
                 "output": "18.0000",
                 "cache_read": "0.4000",
-                "cache_write": "0.2500"
+                "cache_write": null
               }
-            ]
+            ],
+            "service_tiers": {
+              "flex": {
+                "input": "1.0000",
+                "output": "6.0000",
+                "cache_read": null,
+                "cache_write": null,
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 200000,
+                    "input": "2.0000",
+                    "output": "9.0000",
+                    "cache_read": null,
+                    "cache_write": null
+                  }
+                ]
+              },
+              "priority": {
+                "input": "3.6000",
+                "output": "21.6000",
+                "cache_read": "0.3600",
+                "cache_write": null,
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 200000,
+                    "input": "7.2000",
+                    "output": "32.4000",
+                    "cache_read": "0.7200",
+                    "cache_write": null
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -19725,9 +23054,26 @@
                 "input": "4.0000",
                 "output": "18.0000",
                 "cache_read": "0.4000",
-                "cache_write": "0.2500"
+                "cache_write": null
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "3.6000",
+                "output": "21.6000",
+                "cache_read": "0.3600",
+                "cache_write": null,
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 200000,
+                    "input": "7.2000",
+                    "output": "32.4000",
+                    "cache_read": "0.7200",
+                    "cache_write": null
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -19774,7 +23120,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.7500",
+                "output": "4.5000",
+                "cache_read": "0.0750",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "2.7000",
+                "output": "16.2000",
+                "cache_read": "0.2700",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -19821,7 +23181,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1500",
+                "output": "1.2500",
+                "cache_read": "0.0150",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.5400",
+                "output": "4.5000",
+                "cache_read": "0.0540",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -20074,7 +23448,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.3750",
+                "output": "1.8750",
+                "cache_read": "0.0375",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "1.3500",
+                "output": "6.7500",
+                "cache_read": "0.1350",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -20121,7 +23509,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.3750",
+                "output": "1.8750",
+                "cache_read": "0.0375",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "1.3500",
+                "output": "6.7500",
+                "cache_read": "0.1350",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -20168,7 +23570,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.3750",
+                "output": "1.8750",
+                "cache_read": "0.0375",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "1.3500",
+                "output": "6.7500",
+                "cache_read": "0.1350",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -20215,7 +23631,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.7500",
+                "output": "3.7500",
+                "cache_read": "0.0750",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "2.7000",
+                "output": "13.5000",
+                "cache_read": "0.2700",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -20394,7 +23824,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "1.0000",
+                "output": "5.0000",
+                "cache_read": "0.0500",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "3.6000",
+                "output": "18.0000",
+                "cache_read": "0.1800",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -20441,7 +23885,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "2.0000",
+                "output": "10.0000",
+                "cache_read": "0.1000",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "7.2000",
+                "output": "36.0000",
+                "cache_read": "0.3600",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -20568,7 +24026,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": "30.0000"
+            "output_image": "30.0000",
+            "service_tiers": {
+              "priority": {
+                "input": "2.7000",
+                "output": "13.5000",
+                "cache_read": "0.2700",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -20657,6 +24123,53 @@
             "context": null,
             "input": 131072,
             "output": 57920
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video"
+            ],
+            "output": [
+              "text",
+              "video"
+            ]
+          }
+        },
+        "gemini-omni-1.2-flash": {
+          "id": "gemini-omni-1.2-flash",
+          "display_name": "gemini-omni-1.2-flash",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": false,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "1.5000",
+            "output": "9.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 131072,
+            "output": 260640
           },
           "modalities": {
             "input": [
@@ -23723,84 +27236,6 @@
             ]
           }
         },
-        "claude-3-opus@20240229": {
-          "id": "claude-3-opus@20240229",
-          "display_name": "claude-3-opus@20240229",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": null,
-            "tool_call": true,
-            "structured_output": null,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "15.0000",
-            "output": "75.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": null,
-            "input": 200000,
-            "output": 4096
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "claude-3-opus@default": {
-          "id": "claude-3-opus@default",
-          "display_name": "claude-3-opus@default",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": null,
-            "tool_call": true,
-            "structured_output": null,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "15.0000",
-            "output": "75.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": null,
-            "input": 200000,
-            "output": 4096
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "claude-3-sonnet@20240229": {
           "id": "claude-3-sonnet@20240229",
           "display_name": "claude-3-sonnet@20240229",
@@ -23902,6 +27337,54 @@
             "input_audio": null,
             "output_audio": null,
             "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "claude-fable-5-2@default": {
+          "id": "claude-fable-5-2@default",
+          "display_name": "claude-fable-5-2@default",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "16.0000",
+                "output": "80.0000",
+                "cache_read": "0.4000",
+                "cache_write": "20.0000"
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -24270,7 +27753,15 @@
             "cache_write": "6.2500",
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "10.0000",
+                "output": "50.0000",
+                "cache_read": "1.0000",
+                "cache_write": "12.5000"
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -24310,7 +27801,15 @@
             "cache_write": "5.0000",
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "8.0000",
+                "output": "40.0000",
+                "cache_read": "0.4000",
+                "cache_write": "10.0000"
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -24350,7 +27849,15 @@
             "cache_write": "6.2500",
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "10.0000",
+                "output": "50.0000",
+                "cache_read": "1.0000",
+                "cache_write": "12.5000"
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -24863,7 +28370,7 @@
           },
           "limit": {
             "context": null,
-            "input": 400000,
+            "input": 272000,
             "output": 128000
           },
           "modalities": {
@@ -25672,7 +29179,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "3.5000",
+                "output": "14.0000",
+                "cache_read": "0.8750",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -25717,7 +29232,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "3.5000",
+                "output": "14.0000",
+                "cache_read": "0.8750",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -25762,7 +29285,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "0.7000",
+                "output": "2.8000",
+                "cache_read": "0.1750",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -25807,7 +29338,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "0.7000",
+                "output": "2.8000",
+                "cache_read": "0.1750",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -25852,7 +29391,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "0.2000",
+                "output": "0.8000",
+                "cache_read": "0.0500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -25897,7 +29444,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "0.2000",
+                "output": "0.8000",
+                "cache_read": "0.0500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -25936,7 +29491,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "4.2500",
+                "output": "17.0000",
+                "cache_read": "2.1250",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -25976,7 +29539,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "8.7500",
+                "output": "26.2500",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -26016,7 +29587,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "4.2500",
+                "output": "17.0000",
+                "cache_read": "2.1250",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -26056,7 +29635,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "4.2500",
+                "output": "17.0000",
+                "cache_read": "2.1250",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -26168,7 +29755,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "0.2500",
+                "output": "1.0000",
+                "cache_read": "0.1250",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -26208,7 +29803,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "0.2500",
+                "output": "1.0000",
+                "cache_read": "0.1250",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -26829,7 +30432,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.6250",
+                "output": "5.0000",
+                "cache_read": "0.0625",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "2.5000",
+                "output": "20.0000",
+                "cache_read": "0.2500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -26874,7 +30491,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.6250",
+                "output": "5.0000",
+                "cache_read": "0.0625",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "2.5000",
+                "output": "20.0000",
+                "cache_read": "0.2500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -27054,7 +30685,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1250",
+                "output": "1.0000",
+                "cache_read": "0.0125",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.4500",
+                "output": "3.6000",
+                "cache_read": "0.0450",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -27099,7 +30744,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1250",
+                "output": "1.0000",
+                "cache_read": "0.0125",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.4500",
+                "output": "3.6000",
+                "cache_read": "0.0450",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -27144,7 +30803,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0250",
+                "output": "0.2000",
+                "cache_read": "0.0025",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -27189,7 +30856,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0250",
+                "output": "0.2000",
+                "cache_read": "0.0025",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -27404,7 +31079,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.6250",
+                "output": "5.0000",
+                "cache_read": "0.0625",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "2.5000",
+                "output": "20.0000",
+                "cache_read": "0.2500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -27450,7 +31139,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.6250",
+                "output": "5.0000",
+                "cache_read": "0.0625",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "2.5000",
+                "output": "20.0000",
+                "cache_read": "0.2500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -27676,7 +31379,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.8750",
+                "output": "7.0000",
+                "cache_read": "0.0875",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "3.5000",
+                "output": "28.0000",
+                "cache_read": "0.3500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -27722,7 +31439,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.8750",
+                "output": "7.0000",
+                "cache_read": "0.0875",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "3.5000",
+                "output": "28.0000",
+                "cache_read": "0.3500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -27993,7 +31724,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "3.5000",
+                "output": "28.0000",
+                "cache_read": "0.3500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -28047,7 +31786,30 @@
                 "cache_read": "0.5000",
                 "cache_write": null
               }
-            ]
+            ],
+            "service_tiers": {
+              "flex": {
+                "input": "1.2500",
+                "output": "7.5000",
+                "cache_read": "0.1300",
+                "cache_write": null,
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "2.5000",
+                    "output": "11.2500",
+                    "cache_read": "0.2500",
+                    "cache_write": null
+                  }
+                ]
+              },
+              "priority": {
+                "input": "5.0000",
+                "output": "30.0000",
+                "cache_read": "0.5000",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -28101,7 +31863,30 @@
                 "cache_read": "0.5000",
                 "cache_write": null
               }
-            ]
+            ],
+            "service_tiers": {
+              "flex": {
+                "input": "1.2500",
+                "output": "7.5000",
+                "cache_read": "0.1300",
+                "cache_write": null,
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "2.5000",
+                    "output": "11.2500",
+                    "cache_read": "0.2500",
+                    "cache_write": null
+                  }
+                ]
+              },
+              "priority": {
+                "input": "5.0000",
+                "output": "30.0000",
+                "cache_read": "0.5000",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -28146,7 +31931,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.3750",
+                "output": "2.2500",
+                "cache_read": "0.0375",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "1.5000",
+                "output": "9.0000",
+                "cache_read": "0.1500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -28191,7 +31990,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.3750",
+                "output": "2.2500",
+                "cache_read": "0.0375",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "1.5000",
+                "output": "9.0000",
+                "cache_read": "0.1500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -28236,7 +32049,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1000",
+                "output": "0.6250",
+                "cache_read": "0.0100",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -28281,7 +32102,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1000",
+                "output": "0.6250",
+                "cache_read": "0.0100",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -28335,7 +32164,24 @@
                 "cache_read": null,
                 "cache_write": null
               }
-            ]
+            ],
+            "service_tiers": {
+              "flex": {
+                "input": "15.0000",
+                "output": "90.0000",
+                "cache_read": null,
+                "cache_write": null,
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "30.0000",
+                    "output": "135.0000",
+                    "cache_read": null,
+                    "cache_write": null
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -28389,7 +32235,24 @@
                 "cache_read": null,
                 "cache_write": null
               }
-            ]
+            ],
+            "service_tiers": {
+              "flex": {
+                "input": "15.0000",
+                "output": "90.0000",
+                "cache_read": null,
+                "cache_write": null,
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "30.0000",
+                    "output": "135.0000",
+                    "cache_read": null,
+                    "cache_write": null
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -28443,7 +32306,30 @@
                 "cache_read": "1.0000",
                 "cache_write": null
               }
-            ]
+            ],
+            "service_tiers": {
+              "flex": {
+                "input": "2.5000",
+                "output": "15.0000",
+                "cache_read": "0.2500",
+                "cache_write": null,
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "5.0000",
+                    "output": "22.5000",
+                    "cache_read": "0.5000",
+                    "cache_write": null
+                  }
+                ]
+              },
+              "priority": {
+                "input": "12.5000",
+                "output": "75.0000",
+                "cache_read": "1.2500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -28497,7 +32383,30 @@
                 "cache_read": "1.0000",
                 "cache_write": null
               }
-            ]
+            ],
+            "service_tiers": {
+              "flex": {
+                "input": "2.5000",
+                "output": "15.0000",
+                "cache_read": "0.2500",
+                "cache_write": null,
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "5.0000",
+                    "output": "22.5000",
+                    "cache_read": "0.5000",
+                    "cache_write": null
+                  }
+                ]
+              },
+              "priority": {
+                "input": "12.5000",
+                "output": "75.0000",
+                "cache_read": "1.2500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -28623,7 +32532,15 @@
                 "cache_read": null,
                 "cache_write": null
               }
-            ]
+            ],
+            "service_tiers": {
+              "flex": {
+                "input": "15.0000",
+                "output": "90.0000",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -28677,7 +32594,15 @@
                 "cache_read": null,
                 "cache_write": null
               }
-            ]
+            ],
+            "service_tiers": {
+              "flex": {
+                "input": "15.0000",
+                "output": "90.0000",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -28731,7 +32656,39 @@
                 "cache_read": "0.8000",
                 "cache_write": "10.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "flex": {
+                "input": "2.0000",
+                "output": "10.0000",
+                "cache_read": "0.2000",
+                "cache_write": "2.5000",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "4.0000",
+                    "output": "15.0000",
+                    "cache_read": "0.4000",
+                    "cache_write": "5.0000"
+                  }
+                ]
+              },
+              "priority": {
+                "input": "8.0000",
+                "output": "40.0000",
+                "cache_read": "0.8000",
+                "cache_write": "10.0000",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "16.0000",
+                    "output": "60.0000",
+                    "cache_read": "1.6000",
+                    "cache_write": "20.0000"
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -28789,7 +32746,7 @@
           },
           "limit": {
             "context": null,
-            "input": 400000,
+            "input": 272000,
             "output": 128000
           },
           "modalities": {
@@ -28839,7 +32796,39 @@
                 "cache_read": "0.0400",
                 "cache_write": "0.5000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "flex": {
+                "input": "0.1000",
+                "output": "0.6000",
+                "cache_read": "0.0100",
+                "cache_write": "0.1250",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "0.2000",
+                    "output": "0.9000",
+                    "cache_read": "0.0200",
+                    "cache_write": "0.2500"
+                  }
+                ]
+              },
+              "priority": {
+                "input": "0.4000",
+                "output": "2.4000",
+                "cache_read": "0.0400",
+                "cache_write": "0.5000",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "0.8000",
+                    "output": "3.6000",
+                    "cache_read": "0.0800",
+                    "cache_write": "1.0000"
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -28893,7 +32882,39 @@
                 "cache_read": "0.8000",
                 "cache_write": "10.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "flex": {
+                "input": "2.0000",
+                "output": "10.0000",
+                "cache_read": "0.2000",
+                "cache_write": "2.5000",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "4.0000",
+                    "output": "15.0000",
+                    "cache_read": "0.4000",
+                    "cache_write": "5.0000"
+                  }
+                ]
+              },
+              "priority": {
+                "input": "8.0000",
+                "output": "40.0000",
+                "cache_read": "0.8000",
+                "cache_write": "10.0000",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "16.0000",
+                    "output": "60.0000",
+                    "cache_read": "1.6000",
+                    "cache_write": "20.0000"
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -28947,7 +32968,39 @@
                 "cache_read": "0.4000",
                 "cache_write": "5.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "flex": {
+                "input": "1.0000",
+                "output": "6.0000",
+                "cache_read": "0.1000",
+                "cache_write": "1.2500",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "2.0000",
+                    "output": "9.0000",
+                    "cache_read": "0.2000",
+                    "cache_write": "2.5000"
+                  }
+                ]
+              },
+              "priority": {
+                "input": "4.0000",
+                "output": "24.0000",
+                "cache_read": "0.4000",
+                "cache_write": "5.0000",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "8.0000",
+                    "output": "36.0000",
+                    "cache_read": "0.8000",
+                    "cache_write": "10.0000"
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -29001,7 +33054,54 @@
                 "cache_read": "2.0000",
                 "cache_write": "25.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "flex": {
+                "input": "5.0000",
+                "output": "25.0000",
+                "cache_read": "0.5000",
+                "cache_write": "6.2500",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "10.0000",
+                    "output": "37.5000",
+                    "cache_read": "1.0000",
+                    "cache_write": "12.5000"
+                  }
+                ]
+              },
+              "priority": {
+                "input": "20.0000",
+                "output": "100.0000",
+                "cache_read": "2.0000",
+                "cache_write": "25.0000",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "40.0000",
+                    "output": "150.0000",
+                    "cache_read": "4.0000",
+                    "cache_write": "50.0000"
+                  }
+                ]
+              },
+              "ultrafast": {
+                "input": "60.0000",
+                "output": "300.0000",
+                "cache_read": "6.0000",
+                "cache_write": "75.0000",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "120.0000",
+                    "output": "450.0000",
+                    "cache_read": "12.0000",
+                    "cache_write": "150.0000"
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -29063,6 +33163,51 @@
             ]
           }
         },
+        "gpt-6-cyber": {
+          "id": "gpt-6-cyber",
+          "display_name": "gpt-6-cyber",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": true,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "20.0000",
+            "output": "100.0000",
+            "cache_read": "2.0000",
+            "cache_write": "25.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 922000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "gpt-6-luna": {
           "id": "gpt-6-luna",
           "display_name": "gpt-6-luna",
@@ -29100,7 +33245,39 @@
                 "cache_read": "0.0200",
                 "cache_write": "0.2500"
               }
-            ]
+            ],
+            "service_tiers": {
+              "flex": {
+                "input": "0.0500",
+                "output": "0.2500",
+                "cache_read": "0.0050",
+                "cache_write": "0.0625",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "0.1000",
+                    "output": "0.3750",
+                    "cache_read": "0.0100",
+                    "cache_write": "0.1250"
+                  }
+                ]
+              },
+              "priority": {
+                "input": "0.2000",
+                "output": "1.0000",
+                "cache_read": "0.0200",
+                "cache_write": "0.2500",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "0.4000",
+                    "output": "1.5000",
+                    "cache_read": "0.0400",
+                    "cache_write": "0.5000"
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -29203,7 +33380,39 @@
                 "cache_read": "0.4000",
                 "cache_write": "5.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "flex": {
+                "input": "1.0000",
+                "output": "5.0000",
+                "cache_read": "0.1000",
+                "cache_write": "1.2500",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "2.0000",
+                    "output": "7.5000",
+                    "cache_read": "0.2000",
+                    "cache_write": "2.5000"
+                  }
+                ]
+              },
+              "priority": {
+                "input": "4.0000",
+                "output": "20.0000",
+                "cache_read": "0.4000",
+                "cache_write": "5.0000",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "8.0000",
+                    "output": "30.0000",
+                    "cache_read": "0.8000",
+                    "cache_write": "10.0000"
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -29257,7 +33466,54 @@
                 "cache_read": "0.2000",
                 "cache_write": "5.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "flex": {
+                "input": "1.0000",
+                "output": "5.0000",
+                "cache_read": "0.0500",
+                "cache_write": "1.2500",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "2.0000",
+                    "output": "7.5000",
+                    "cache_read": "0.1000",
+                    "cache_write": "2.5000"
+                  }
+                ]
+              },
+              "priority": {
+                "input": "4.0000",
+                "output": "20.0000",
+                "cache_read": "0.2000",
+                "cache_write": "5.0000",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "8.0000",
+                    "output": "30.0000",
+                    "cache_read": "0.4000",
+                    "cache_write": "10.0000"
+                  }
+                ]
+              },
+              "ultrafast": {
+                "input": "12.0000",
+                "output": "60.0000",
+                "cache_read": "0.6000",
+                "cache_write": "15.0000",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "24.0000",
+                    "output": "90.0000",
+                    "cache_read": "1.2000",
+                    "cache_write": "30.0000"
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -29311,7 +33567,39 @@
                 "cache_read": "0.1000",
                 "cache_write": "2.5000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "flex": {
+                "input": "0.5000",
+                "output": "2.5000",
+                "cache_read": "0.0250",
+                "cache_write": "0.6250",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "1.0000",
+                    "output": "3.7500",
+                    "cache_read": "0.0500",
+                    "cache_write": "1.2500"
+                  }
+                ]
+              },
+              "priority": {
+                "input": "2.0000",
+                "output": "10.0000",
+                "cache_read": "0.1000",
+                "cache_write": "2.5000",
+                "context_tiers": [
+                  {
+                    "above_input_tokens": 272000,
+                    "input": "4.0000",
+                    "output": "15.0000",
+                    "cache_read": "0.2000",
+                    "cache_write": "5.0000"
+                  }
+                ]
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -29699,7 +33987,7 @@
           },
           "limit": {
             "context": null,
-            "input": 400000,
+            "input": 272000,
             "output": 128000
           },
           "modalities": {
@@ -30121,6 +34409,98 @@
         "gpt-image-2.5-sunburst-2026-09-08": {
           "id": "gpt-image-2.5-sunburst-2026-09-08",
           "display_name": "gpt-image-2.5-sunburst-2026-09-08",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": false,
+              "responses": false,
+              "embeddings": false,
+              "images": true
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "5.0000",
+            "output": null,
+            "cache_read": "1.2500",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": "30.0000"
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "image"
+            ]
+          }
+        },
+        "gpt-image-2.6-flare": {
+          "id": "gpt-image-2.6-flare",
+          "display_name": "gpt-image-2.6-flare",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": false,
+              "responses": false,
+              "embeddings": false,
+              "images": true
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "5.0000",
+            "output": null,
+            "cache_read": "1.2500",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": "30.0000"
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "image"
+            ]
+          }
+        },
+        "gpt-image-2.6-sunburst": {
+          "id": "gpt-image-2.6-sunburst",
+          "display_name": "gpt-image-2.6-sunburst",
           "release_date": "",
           "last_updated": "",
           "metadata": {
@@ -31023,7 +35403,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "1.0000",
+                "output": "4.0000",
+                "cache_read": "0.2500",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "3.5000",
+                "output": "14.0000",
+                "cache_read": "0.8750",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -31068,7 +35462,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "1.0000",
+                "output": "4.0000",
+                "cache_read": "0.2500",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "3.5000",
+                "output": "14.0000",
+                "cache_read": "0.8750",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -31363,7 +35771,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.5500",
+                "output": "2.2000",
+                "cache_read": "0.1380",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "2.0000",
+                "output": "8.0000",
+                "cache_read": "0.5000",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -31403,7 +35825,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.5500",
+                "output": "2.2000",
+                "cache_read": "0.1380",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "2.0000",
+                "output": "8.0000",
+                "cache_read": "0.5000",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": null,

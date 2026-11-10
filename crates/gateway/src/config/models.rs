@@ -2,12 +2,14 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, bail};
 use gateway_core::{
-    ModelAllowlistPolicy, ModelRoutingPolicy, ReasoningEffort, enforce_reasoning_effort_map,
+    ModelAllowlistPolicy, ModelRoutingPolicy, ReasoningEffort, ServiceTier,
+    enforce_reasoning_effort_map,
 };
 use serde::Deserialize;
 use uuid::Uuid;
 
 use super::normalization::{normalize_config_email, normalize_config_team_key};
+use super::service_tiers::{deserialize_optional_service_tiers, validate_model_service_tiers};
 use super::{providers::ProviderConfig, routes::ModelRouteConfig};
 
 pub(super) fn normalize_model_allowlist(
@@ -87,6 +89,10 @@ pub struct ModelConfig {
     #[serde(default)]
     pub routes: Vec<ModelRouteConfig>,
     pub allowlist: Option<ModelAllowlistConfig>,
+    /// The non-default tiers callers may request; omitted allows every tier. On an
+    /// alias, replaces the target model's list.
+    #[serde(default, deserialize_with = "deserialize_optional_service_tiers")]
+    pub service_tiers: Option<Vec<ServiceTier>>,
 }
 
 fn is_valid_benchmark_model_id(value: &str) -> bool {
@@ -161,6 +167,7 @@ pub(super) fn validate_models(
                 .map_err(|error| anyhow::anyhow!("model `{}` {error}", model.id))?;
         }
         validate_route_ids(model)?;
+        validate_model_service_tiers(&model.id, model.service_tiers.as_deref())?;
 
         if let Some(alias_target) = model.alias_of.as_deref() {
             if alias_target == model.id {

@@ -8,7 +8,7 @@ use axum::http::HeaderMap;
 
 use gateway_core::{
     AuthenticatedApiKey, CoreRequestRequirements, GatewayError, ModelRoute, PartialCapabilities,
-    ProviderCapabilities, ProviderClient, ProviderUserCredentialRepository,
+    ProviderCapabilities, ProviderClient, ProviderUserCredentialRepository, ServiceTier,
     effective_route_capabilities, vertex_route_capabilities_for_upstream_model,
 };
 
@@ -20,6 +20,7 @@ use gateway_service::{
 use serde_json::Value;
 
 use super::AppState;
+use super::service_tier::routes_serving_service_tier;
 
 pub(super) struct SelectedProviderRoute {
     pub route: gateway_core::ModelRoute,
@@ -28,15 +29,19 @@ pub(super) struct SelectedProviderRoute {
     pub expected_provider_credential_id: Option<uuid::Uuid>,
 }
 
+/// Chooses the route for a request that asks for `service_tier`. Returns the number of
+/// eligible routes and the chosen route, or the 400 that explains why none qualified.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn select_provider_route(
     state: &AppState,
     resolved: &ResolvedGatewayRequest,
     requirements: CoreRequestRequirements,
+    service_tier: Option<ServiceTier>,
     headers: &HeaderMap,
     extra: &BTreeMap<String, Value>,
     request_headers: &BTreeMap<String, String>,
     endpoint: RoutingEndpoint,
-) -> Result<(usize, Option<SelectedProviderRoute>), GatewayError> {
+) -> Result<(usize, Result<SelectedProviderRoute, GatewayError>), GatewayError> {
     let policy = resolved.selection.execution_model.routing.as_ref();
     if policy.is_some_and(|policy| policy.affinity.is_some())
         && matches!(
@@ -48,23 +53,19 @@ pub(super) async fn select_provider_route(
     {
         validate_session_headers(headers)?;
     }
-    let mut eligible = eligible_routes(
+    let capable = eligible_routes(
         &state.providers,
         &resolved.routes,
         &resolved.capability_hints,
         requirements,
     );
+    let mut eligible =
+        match routes_serving_service_tier(&state.providers, resolved, capable, service_tier) {
+            Ok(routes) => routes,
+            Err(error) => return Ok((0, Err(error))),
+        };
     let provider_identities = if policy.is_some() {
-        let mut identities = BTreeMap::new();
-        // Shared policies can reference a local legacy provider whose account is unscoped.
-        eligible.retain(|route| {
-            let Some(identity) = state.providers.routing_identity(&route.provider_key) else {
-                return false;
-            };
-            identities.insert(route.provider_key.clone(), identity.to_string());
-            true
-        });
-        identities
+        retain_routing_identities(state, &mut eligible)
     } else {
         BTreeMap::new()
     };
@@ -89,33 +90,52 @@ pub(super) async fn select_provider_route(
         },
     )
     .await?;
-    let selected = selected
-        .map(|selected| {
-            let expected_provider_credential_id = credential_versions
-                .get(&selected.route.provider_key)
-                .map(|version| uuid::Uuid::parse_str(version))
-                .transpose()
-                .map_err(|error| {
-                    GatewayError::Internal(format!(
-                        "invalid provider credential generation: {error}"
-                    ))
-                })?;
-            tracing::debug!(route_id = %selected.route.id, affinity_reused = selected.reused,
-            "provider route selected");
-            // Eligibility was checked against this immutable request's provider registry.
-            let provider = state
-                .providers
-                .get(&selected.route.provider_key)
-                .expect("selected route has a registered provider");
-            Ok::<_, GatewayError>(SelectedProviderRoute {
-                route: selected.route,
-                provider,
-                receipt: selected.receipt,
-                expected_provider_credential_id,
-            })
-        })
-        .transpose()?;
-    Ok((eligible_route_count, selected))
+    let Some(selected) = selected else {
+        return Ok((
+            eligible_route_count,
+            Err(no_compatible_route_error(requirements)),
+        ));
+    };
+    let expected_provider_credential_id = credential_versions
+        .get(&selected.route.provider_key)
+        .map(|version| uuid::Uuid::parse_str(version))
+        .transpose()
+        .map_err(|error| {
+            GatewayError::Internal(format!("invalid provider credential generation: {error}"))
+        })?;
+    tracing::debug!(route_id = %selected.route.id, affinity_reused = selected.reused,
+    "provider route selected");
+    // Eligibility was checked against this immutable request's provider registry.
+    let provider = state
+        .providers
+        .get(&selected.route.provider_key)
+        .expect("selected route has a registered provider");
+    Ok((
+        eligible_route_count,
+        Ok(SelectedProviderRoute {
+            route: selected.route,
+            provider,
+            receipt: selected.receipt,
+            expected_provider_credential_id,
+        }),
+    ))
+}
+
+/// Drops routes without a routing identity and returns each kept provider's identity.
+/// Shared policies can reference a local legacy provider whose account is unscoped.
+fn retain_routing_identities(
+    state: &AppState,
+    routes: &mut Vec<ModelRoute>,
+) -> BTreeMap<String, String> {
+    let mut identities = BTreeMap::new();
+    routes.retain(|route| {
+        let Some(identity) = state.providers.routing_identity(&route.provider_key) else {
+            return false;
+        };
+        identities.insert(route.provider_key.clone(), identity.to_string());
+        true
+    });
+    identities
 }
 
 /// Checks each per-user provider once, including missing credentials, within this request.

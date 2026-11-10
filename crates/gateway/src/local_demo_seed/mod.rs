@@ -337,7 +337,8 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
                 value: fixture.bespoke_value.to_string(),
             }],
         };
-        let metadata = Map::from_iter([
+        let service_tiers = usage::demo_service_tiers(fixture);
+        let mut metadata = Map::from_iter([
             (
                 "operation".to_string(),
                 Value::String("chat_completions".to_string()),
@@ -356,6 +357,7 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
                 Value::String(fixture.api_key_public_id.to_string()),
             ),
         ]);
+        metadata.extend(usage::demo_service_tier_metadata(service_tiers));
         let payload = demo_payload_record(fixture, request_log_id, total_tokens);
         let log = RequestLogRecord {
             request_log_id,
@@ -484,8 +486,8 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
             pricing_tier_above_input_tokens: None,
             computed_cost_usd: Money4::from_scaled(fixture.cost_scaled),
             occurred_at,
-            requested_service_tier: None,
-            served_service_tier: None,
+            requested_service_tier: service_tiers.requested,
+            served_service_tier: service_tiers.served,
         };
         store
             .insert_usage_ledger_if_absent(&ledger)

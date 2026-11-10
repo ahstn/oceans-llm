@@ -21,7 +21,7 @@ pub(super) use axum::{
 pub(super) use gateway_core::{
     GatewayError, ModelPricingRecord, ModelPricingSyncChanges, ModelRoute, Money4,
     PricingCatalogCacheRecord, PricingCatalogRepository, PricingResolution, PricingUnpricedReason,
-    ProviderCapabilities, ProviderConnection, StoreError,
+    ProviderCapabilities, ProviderConnection, ServiceTier, ServiceTierPricing, StoreError,
 };
 pub(super) use serde_json::{Value, json};
 pub(super) use time::OffsetDateTime;
@@ -32,9 +32,10 @@ pub(super) use super::super::{
     PricingCatalog, PricingCatalogContextTier, PricingCatalogCostDocument, PricingCatalogDocument,
     PricingCatalogLimitDocument, PricingCatalogModalitiesDocument, PricingCatalogModelDocument,
     PricingCatalogProviderDocument, PricingCatalogRefreshError, PricingCatalogRefreshOutcome,
-    PricingCatalogSnapshot, PricingCatalogSnapshotFile, PricingCatalogSnapshotMetadata,
-    PricingTarget, build_model_pricing_record, canonical_document_json, catalog_model_id_fallback,
-    normalize_bedrock_pricing_model_id, pricing_target_for_route, projected_snapshot,
+    PricingCatalogServiceTierCost, PricingCatalogSnapshot, PricingCatalogSnapshotFile,
+    PricingCatalogSnapshotMetadata, PricingTarget, build_model_pricing_record,
+    canonical_document_json, catalog_model_id_fallback, normalize_bedrock_pricing_model_id,
+    pricing_target_for_route, projected_snapshot,
     reconcile::reconcile_model_pricing,
     refresh::{CatalogSource, RefreshMode, next_catalog_generation_at},
     snapshot_to_pretty_json,
@@ -436,6 +437,7 @@ fn fallback_providers() -> Providers {
                                 output_audio: None,
                                 output_image: None,
                                 tiers: Vec::new(),
+                                service_tiers: BTreeMap::new(),
                             },
                             limit: PricingCatalogLimitDocument {
                                 context: Some(1_000_000),
@@ -470,6 +472,7 @@ fn fallback_providers() -> Providers {
                                 output_audio: None,
                                 output_image: None,
                                 tiers: Vec::new(),
+                                service_tiers: BTreeMap::new(),
                             },
                             limit: PricingCatalogLimitDocument {
                                 context: Some(128_000),
@@ -507,6 +510,7 @@ fn fallback_providers() -> Providers {
                             output_audio: None,
                             output_image: None,
                             tiers: Vec::new(),
+                            service_tiers: BTreeMap::new(),
                         },
                         limit: PricingCatalogLimitDocument {
                             context: Some(400_000),
@@ -543,6 +547,7 @@ fn fallback_providers() -> Providers {
                             output_audio: None,
                             output_image: None,
                             tiers: Vec::new(),
+                            service_tiers: BTreeMap::new(),
                         },
                         limit: PricingCatalogLimitDocument {
                             context: Some(128_000),
@@ -580,6 +585,7 @@ fn fallback_providers() -> Providers {
                                 output_audio: None,
                                 output_image: None,
                                 tiers: Vec::new(),
+                                service_tiers: BTreeMap::new(),
                             },
                             limit: PricingCatalogLimitDocument {
                                 context: Some(1_048_576),
@@ -616,6 +622,7 @@ fn fallback_providers() -> Providers {
                                 output_audio: None,
                                 output_image: None,
                                 tiers: Vec::new(),
+                                service_tiers: BTreeMap::new(),
                             },
                             limit: PricingCatalogLimitDocument {
                                 context: Some(2_048),
@@ -653,6 +660,7 @@ fn fallback_providers() -> Providers {
                             output_audio: None,
                             output_image: None,
                             tiers: Vec::new(),
+                            service_tiers: BTreeMap::new(),
                         },
                         limit: PricingCatalogLimitDocument {
                             context: Some(200_000),
@@ -690,6 +698,7 @@ fn fallback_providers() -> Providers {
                                 output_audio: None,
                                 output_image: None,
                                 tiers: Vec::new(),
+                                service_tiers: BTreeMap::new(),
                             },
                             limit: PricingCatalogLimitDocument {
                                 context: Some(1_000_000),
@@ -724,6 +733,7 @@ fn fallback_providers() -> Providers {
                                 output_audio: None,
                                 output_image: None,
                                 tiers: Vec::new(),
+                                service_tiers: BTreeMap::new(),
                             },
                             limit: PricingCatalogLimitDocument {
                                 context: Some(1_000_000),

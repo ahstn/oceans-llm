@@ -3,12 +3,14 @@
 //! same limits and capabilities.
 use gateway_core::{
     GatewayError, GatewayModel, ModelRepository, ProviderCapabilities, ProviderRepository,
+    ServiceTier,
 };
 use serde::Serialize;
 
 use super::{
     listing::{MODEL_OWNER, ModelView},
     load_routes,
+    service_tiers::AdapterServiceTiers,
 };
 use crate::{
     ModelIconKey,
@@ -78,6 +80,7 @@ pub(crate) async fn list_model_groups<R>(
     repo: &R,
     models: Vec<GatewayModel>,
     snapshot: &PricingCatalogSnapshot,
+    adapter: &dyn AdapterServiceTiers,
 ) -> Result<ModelGroupInfoResponse, GatewayError>
 where
     R: ModelRepository + ProviderRepository,
@@ -86,7 +89,9 @@ where
     let data = models
         .iter()
         .enumerate()
-        .map(|(index, model)| model_group_info(&ModelView::build(&loaded, index, model, snapshot)))
+        .map(|(index, model)| {
+            model_group_info(&ModelView::build(&loaded, index, model, snapshot, adapter))
+        })
         .collect();
     Ok(ModelGroupInfoResponse { data })
 }
@@ -219,6 +224,14 @@ fn supported_openai_params(view: &ModelView<'_>) -> Vec<&'static str> {
     }
     if features.structured_output {
         params.push("response_format");
+    }
+    if view
+        .summary
+        .service_tiers
+        .iter()
+        .any(|&tier| tier != ServiceTier::Default)
+    {
+        params.push("service_tier");
     }
     params
 }

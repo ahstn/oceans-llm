@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use anyhow::Context;
 use gateway_core::{
     GatewayError, ModelPricingRecord, ModelRoute, PricingCatalogRepository, PricingResolution,
-    PricingUnpricedReason, ProviderConnection, ResolvedModelPricing, StoreError,
+    PricingUnpricedReason, ProviderConnection, ResolvedModelPricing, ServiceTier, StoreError,
 };
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,7 @@ pub(crate) mod merge;
 pub mod metadata;
 mod reconcile;
 mod refresh;
+mod service_tiers;
 pub(crate) mod sources;
 mod target;
 
@@ -30,6 +31,7 @@ use refresh::{CatalogSource, RefreshMode};
 pub use refresh::{
     PricingCatalogRefreshError, PricingCatalogRefreshOutcome, PricingCatalogSourceRefresh,
 };
+pub(crate) use service_tiers::billable_service_tiers;
 use sources::{CatalogSourceId, Providers};
 #[cfg(test)]
 use target::normalize_bedrock_pricing_model_id;
@@ -37,7 +39,7 @@ use target::{PricingTarget, pricing_target_for_route};
 pub use target::{SUPPORTED_PRICING_PROVIDER_IDS, is_supported_pricing_provider_id};
 pub(crate) use target::{
     catalog_metadata_target_for_route, catalog_model_id_fallback,
-    catalog_pricing_supported_for_route,
+    catalog_pricing_location_supported,
 };
 
 /// The pricing and discovery catalog merged from models.dev, OpenRouter and LiteLLM.
@@ -282,6 +284,7 @@ fn resolved_model_pricing(record: &ModelPricingRecord) -> ResolvedModelPricing {
         output_audio_cost_per_million_tokens: record.output_audio_cost_per_million_tokens,
         output_image_usd_per_million: record.output_image_usd_per_million,
         context_tiers: record.context_tiers.clone(),
+        service_tiers: record.service_tiers.clone(),
         release_date: record.release_date.clone(),
         last_updated: record.last_updated.clone(),
         effective_start_at: record.effective_start_at,
@@ -289,7 +292,6 @@ fn resolved_model_pricing(record: &ModelPricingRecord) -> ResolvedModelPricing {
         limits: record.limits.clone(),
         modalities: record.modalities.clone(),
         provenance: record.provenance.clone(),
-        service_tiers: Vec::new(),
     }
 }
 
@@ -499,6 +501,10 @@ pub struct PricingCatalogCostDocument {
     /// Sorted ascending by `above_input_tokens`, thresholds unique.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tiers: Vec<PricingCatalogContextTier>,
+    /// Schedules of the non-default service tiers a source prices. Each replaces the base
+    /// schedule for a request billed at its tier.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub service_tiers: BTreeMap<ServiceTier, PricingCatalogServiceTierCost>,
 }
 
 /// Rates that replace the base schedule for a whole request above a context size.
@@ -512,6 +518,20 @@ pub struct PricingCatalogContextTier {
     pub output: Option<String>,
     pub cache_read: Option<String>,
     pub cache_write: Option<String>,
+}
+
+/// One service tier's schedule, in USD per million tokens at 4 dp like the base fields.
+/// An unset rate does not fall back to the base: the tier has no rate for that bucket.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PricingCatalogServiceTierCost {
+    pub input: Option<String>,
+    pub output: Option<String>,
+    pub cache_read: Option<String>,
+    pub cache_write: Option<String>,
+    /// Context tiers within the service tier; an unset rate inherits the service tier's.
+    /// Sorted ascending by `above_input_tokens`, thresholds unique.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub context_tiers: Vec<PricingCatalogContextTier>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

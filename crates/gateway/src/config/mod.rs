@@ -30,6 +30,7 @@ mod routes;
 mod runtime;
 mod seeding;
 mod server;
+mod service_tiers;
 mod skills;
 
 pub use agent_analysis::{
@@ -67,6 +68,7 @@ pub use routes::{
     RouteCapabilitiesConfig, RouteCompatibilityConfig, RoutePricingOverrideConfig,
 };
 pub use server::ServerConfig;
+pub use service_tiers::RouteServiceTierPricingConfig;
 pub use skills::{SkillStorageConfig, SkillsConfig};
 
 pub(crate) use references::resolve_secret_reference;

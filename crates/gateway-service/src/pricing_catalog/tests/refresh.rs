@@ -441,6 +441,7 @@ async fn remote_failure_falls_back_to_store_then_vendored_snapshot() {
                         output_audio: None,
                         output_image: None,
                         tiers: Vec::new(),
+                        service_tiers: BTreeMap::new(),
                     },
                     limit: PricingCatalogLimitDocument::default(),
                     modalities: PricingCatalogModalitiesDocument::default(),

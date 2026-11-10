@@ -1,3 +1,5 @@
+use gateway_core::ContextPricingTier;
+
 use super::support::*;
 
 fn tier(above_input_tokens: i64, input: &str, output: &str) -> PricingCatalogContextTier {
@@ -525,6 +527,66 @@ fn pricing_record_carries_context_tiers_and_image_rate() {
             ),
             (272_000, Some(Money4::from_scaled(50_000)), None),
         ]
+    );
+}
+
+#[test]
+fn pricing_record_carries_service_tier_schedules_with_unset_rates_left_unset() {
+    let snapshot = fallback_snapshot();
+    let mut document = snapshot.providers["openai"].models["gpt-5"].clone();
+    document.cost.cache_read = Some("0.1250".to_string());
+    document.cost.service_tiers = BTreeMap::from([
+        (
+            ServiceTier::Flex,
+            PricingCatalogServiceTierCost {
+                input: Some("0.6250".to_string()),
+                output: Some("5.0000".to_string()),
+                ..PricingCatalogServiceTierCost::default()
+            },
+        ),
+        (
+            ServiceTier::Priority,
+            PricingCatalogServiceTierCost {
+                input: Some("2.5000".to_string()),
+                output: Some("20.0000".to_string()),
+                cache_read: Some("0.2500".to_string()),
+                cache_write: None,
+                context_tiers: vec![tier(272_000, "5.0000", "30.0000")],
+            },
+        ),
+    ]);
+
+    let record = build_model_pricing_record(&snapshot.metadata, "openai", "gpt-5", &document)
+        .expect("pricing record");
+
+    let money = |scaled| Some(Money4::from_scaled(scaled));
+    assert_eq!(
+        record.service_tiers,
+        vec![
+            ServiceTierPricing {
+                service_tier: ServiceTier::Flex,
+                input: money(6_250),
+                output: money(50_000),
+                cache_read: None,
+                cache_write: None,
+                context_tiers: Vec::new(),
+            },
+            ServiceTierPricing {
+                service_tier: ServiceTier::Priority,
+                input: money(25_000),
+                output: money(200_000),
+                cache_read: money(2_500),
+                cache_write: None,
+                context_tiers: vec![ContextPricingTier {
+                    above_input_tokens: 272_000,
+                    input: money(50_000),
+                    output: money(300_000),
+                    cache_read: None,
+                    cache_write: None,
+                }],
+            },
+        ],
+        "flex has no cache read rate of its own though the base has one"
     );
 }
 

@@ -49,7 +49,7 @@ async fn group_info_with(
         routes,
         provider,
     };
-    let listed = list_model_groups(&repo, vec![model], snapshot)
+    let listed = list_model_groups(&repo, vec![model], snapshot, &DEFAULT_ONLY)
         .await
         .unwrap();
     serde_json::to_value(&listed.data[0]).unwrap()
@@ -395,10 +395,13 @@ async fn model_group_info_lists_the_same_models_as_v1_models() {
     let snapshot = crate::pricing_catalog::load_vendored_fallback_snapshot();
     let visible = vec![target, alias];
 
-    let cards = super::super::listing::list_models(&repo, visible.clone(), &snapshot)
+    let cards =
+        super::super::listing::list_models(&repo, visible.clone(), &snapshot, &DEFAULT_ONLY)
+            .await
+            .unwrap();
+    let groups = list_model_groups(&repo, visible, &snapshot, &DEFAULT_ONLY)
         .await
         .unwrap();
-    let groups = list_model_groups(&repo, visible, &snapshot).await.unwrap();
 
     let card_ids = cards
         .data

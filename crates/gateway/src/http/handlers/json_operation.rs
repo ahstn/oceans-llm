@@ -158,6 +158,7 @@ async fn dispatch_json_operation<O: JsonOperation>(
         state,
         &resolved,
         requirements,
+        None,
         headers,
         request.extra(),
         &request_headers,
@@ -175,15 +176,12 @@ async fn dispatch_json_operation<O: JsonOperation>(
         O::OPERATION
     );
 
-    let Some(SelectedProviderRoute {
+    let SelectedProviderRoute {
         route,
         provider,
         receipt: _,
         expected_provider_credential_id,
-    }) = selected
-    else {
-        return Err(AppError(no_compatible_route_error(requirements)));
-    };
+    } = selected?;
     *selected_provider = Some(route.provider_key.clone());
     record_provider_execution_span_fields(
         &request_span,
@@ -219,6 +217,7 @@ async fn dispatch_json_operation<O: JsonOperation>(
         request_id: &request_id,
         labels: labels.clone(),
         operation: O::OPERATION,
+        service_tiers: gateway_core::ServiceTierOutcome::default(),
     };
     let route_key = model_route_key(
         &resolved.selection.execution_model.model_key,

@@ -8,6 +8,18 @@ use serde_json::json;
 use uuid::Uuid;
 
 mod model_group_info;
+mod service_tiers;
+
+/// Every route's adapter sends exactly `.0`.
+struct Adapters(&'static [ServiceTier]);
+
+impl AdapterServiceTiers for Adapters {
+    fn adapter_service_tiers(&self, _: &ModelRoute) -> &'static [ServiceTier] {
+        self.0
+    }
+}
+
+const DEFAULT_ONLY: Adapters = Adapters(&[ServiceTier::Default]);
 
 fn route() -> ModelRoute {
     ModelRoute {
@@ -53,12 +65,12 @@ fn multiple_routes_keep_unknown_limits_and_intersect_capabilities() {
     unknown_route.upstream_model = "unlisted".into();
     unknown_route.capabilities.tools = Some(false);
     let unknown = route_metadata(&unknown_route, Some(&provider()), &snapshot);
-    let combined = summarize("public-model".into(), vec![known, unknown]);
+    let combined = summarize("public-model".into(), vec![known, unknown], Vec::new());
     assert_eq!(combined.enabled_route_count, 2);
     assert_eq!(combined.limits.context, None);
     assert_eq!(combined.capabilities.tools, Some(false));
     assert_eq!(combined.capabilities.reasoning, None);
-    let empty = summarize("unroutable".into(), vec![]);
+    let empty = summarize("unroutable".into(), vec![], Vec::new());
     assert_eq!(empty.capabilities.tools, None);
 }
 
@@ -66,9 +78,8 @@ fn multiple_routes_keep_unknown_limits_and_intersect_capabilities() {
 fn billing_modifiers_suppress_catalog_prices_but_preserve_explicit_overrides() {
     let snapshot = crate::pricing_catalog::load_vendored_fallback_snapshot();
     let mut route = route();
-    route
-        .extra_body
-        .insert("service_tier".into(), json!("priority"));
+    // A forced tier the catalog has no schedule for is unpriced, never billed at base rates.
+    route.service_tier = Some(ServiceTier::Ultrafast);
     let unsupported = route_metadata(&route, Some(&provider()), &snapshot);
     assert!(unsupported.pricing.is_none());
     route.pricing_override = Some(RoutePricingOverride {
@@ -77,11 +88,23 @@ fn billing_modifiers_suppress_catalog_prices_but_preserve_explicit_overrides() {
         cache_read_cost_per_million_tokens: None,
         cache_write_cost_per_million_tokens: None,
         image_output_cost_per_million_tokens: None,
-        service_tiers: Vec::new(),
+        service_tiers: vec![gateway_core::RouteServiceTierPricing {
+            service_tier: ServiceTier::Priority,
+            input_cost_per_million_tokens: Money4::from_scaled(20_000),
+            output_cost_per_million_tokens: Money4::from_scaled(40_000),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+        }],
     });
     let configured = route_metadata(&route, Some(&provider()), &snapshot);
     assert_eq!(configured.pricing_source, Some("configured_override"));
-    assert_eq!(configured.pricing.unwrap().input.as_deref(), Some("0.0000"));
+    let pricing = serde_json::to_value(configured.pricing.unwrap()).unwrap();
+    assert_eq!(pricing["input"], json!("0.0000"));
+    // Override tier rates are flat and set no cache rate the admin left out.
+    assert_eq!(
+        pricing["service_tiers"]["priority"],
+        json!({"input": "2.0000", "output": "4.0000", "cache_read": null, "cache_write": null})
+    );
 }
 
 #[test]
@@ -201,7 +224,9 @@ async fn litellm_only_models_are_described_with_litellm_provenance() {
         provider: provider(),
     };
 
-    let response = list_metadata(&repo, vec![model], &snapshot).await.unwrap();
+    let response = list_metadata(&repo, vec![model], &snapshot, &DEFAULT_ONLY)
+        .await
+        .unwrap();
     let response = serde_json::to_value(response).unwrap();
 
     assert_eq!(response["schema_version"], json!(2));
@@ -386,6 +411,7 @@ async fn aliases_use_batched_target_routes_without_exposing_ungranted_model_ids(
         &repo,
         vec![alias],
         &crate::pricing_catalog::load_vendored_fallback_snapshot(),
+        &DEFAULT_ONLY,
     )
     .await
     .unwrap();
@@ -396,7 +422,9 @@ async fn aliases_use_batched_target_routes_without_exposing_ungranted_model_ids(
     let snapshot = crate::pricing_catalog::load_vendored_fallback_snapshot();
     // All-model grants already contain the target; direct-model grants need no alias lookup.
     for visible in [repo.models.clone(), vec![repo.models[0].clone()]] {
-        let listed = list_metadata(&repo, visible, &snapshot).await.unwrap();
+        let listed = list_metadata(&repo, visible, &snapshot, &DEFAULT_ONLY)
+            .await
+            .unwrap();
         assert!(!listed.data.is_empty());
     }
     assert_eq!(
@@ -620,6 +648,7 @@ async fn models_list_describes_claude_routes_from_catalog_and_provider_type() {
         &repo,
         vec![target, alias],
         &crate::pricing_catalog::load_vendored_fallback_snapshot(),
+        &DEFAULT_ONLY,
     )
     .await
     .unwrap();
@@ -721,6 +750,7 @@ async fn decision_models_report_the_openrouter_decisions_output_modality() {
         &repo,
         vec![model],
         &crate::pricing_catalog::load_vendored_fallback_snapshot(),
+        &DEFAULT_ONLY,
     )
     .await
     .unwrap();
@@ -777,6 +807,7 @@ async fn listing_card(model: GatewayModel, repo: ListingRepo) -> serde_json::Val
         &repo,
         vec![model],
         &crate::pricing_catalog::load_vendored_fallback_snapshot(),
+        &DEFAULT_ONLY,
     )
     .await
     .unwrap();
@@ -909,6 +940,7 @@ async fn models_list_holds_aliases_to_the_strictest_ceiling_in_their_chain() {
         &repo,
         vec![alias],
         &crate::pricing_catalog::load_vendored_fallback_snapshot(),
+        &DEFAULT_ONLY,
     )
     .await
     .unwrap();
@@ -955,6 +987,7 @@ async fn anthropic_request_features_are_only_advertised_for_messages_native_rout
         &repo,
         vec![model],
         &crate::pricing_catalog::load_vendored_fallback_snapshot(),
+        &DEFAULT_ONLY,
     )
     .await
     .unwrap();
@@ -1015,6 +1048,7 @@ async fn anthropic_request_features_require_every_fallback_route_to_be_messages_
                 &repo,
                 vec![model],
                 &crate::pricing_catalog::load_vendored_fallback_snapshot(),
+                &DEFAULT_ONLY,
             )
             .await
             .unwrap();

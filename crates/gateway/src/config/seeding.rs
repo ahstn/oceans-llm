@@ -356,10 +356,13 @@ impl GatewayConfig {
                                     .pricing_override
                                     .as_ref()
                                     .map(|pricing| {
-                                        pricing.resolve(&format!(
-                                            "model `{}` route `{}` pricing_override",
-                                            model.id, route.upstream_model
-                                        ))
+                                        pricing.resolve(
+                                            &format!(
+                                                "model `{}` route `{}` pricing_override",
+                                                model.id, route.upstream_model
+                                            ),
+                                            route.service_tier,
+                                        )
                                     })
                                     .transpose()?,
                                 extra_headers: route
@@ -370,7 +373,7 @@ impl GatewayConfig {
                                 extra_body: route.extra_body.clone(),
                                 capabilities: route.capabilities.into_partial(),
                                 compatibility: route.compatibility.clone().into_compatibility(),
-                                service_tier: None,
+                                service_tier: route.service_tier,
                             })
                         })
                         .collect::<anyhow::Result<Vec<_>>>()?,
@@ -379,7 +382,7 @@ impl GatewayConfig {
                         .as_ref()
                         .map(|allowlist| normalize_model_allowlist(&model.id, allowlist))
                         .transpose()?,
-                    service_tiers: None,
+                    service_tiers: model.service_tiers.clone(),
                 })
             })
             .collect::<anyhow::Result<Vec<_>>>()?;

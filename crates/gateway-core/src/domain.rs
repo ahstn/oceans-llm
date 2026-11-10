@@ -2855,7 +2855,6 @@ pub enum PricingUnpricedReason {
     UnsupportedPricingProviderId(String),
     UnsupportedVertexPublisher(String),
     UnsupportedVertexLocation(String),
-    UnsupportedBillingModifier(String),
     ModelNotFound,
 }
 

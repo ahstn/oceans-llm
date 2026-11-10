@@ -1,9 +1,9 @@
 {
   "metadata": {
     "source": "vendored_models_dev",
-    "etag": "\"437ea2c1a8d1708c9f68846a32030ec8\"",
-    "fetched_at": "2026-10-31T23:00:05.064513Z",
-    "checksum": "0776b9a27a22778cc58562856b8984adddd6a79eea25670d7064aca6ddd5079b"
+    "etag": "\"131c1fabdb87fdacc9f3365a125fd5ea\"",
+    "fetched_at": "2026-11-10T00:00:41.997843915Z",
+    "checksum": "bf2e836473ad63f4986139dd2676acf0c835afcdb2d5b78b2d5e52f630e56c8b"
   },
   "providers": {
     "amazon-bedrock": {
@@ -264,6 +264,57 @@
             "output": "50.0000",
             "cache_read": "0.2500",
             "cache_write": "12.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1000000,
+            "input": null,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "anthropic.claude-fable-5-2": {
+          "id": "anthropic.claude-fable-5-2",
+          "display_name": "Claude Fable 5.2",
+          "release_date": "2026-11-09",
+          "last_updated": "2026-11-09",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": "2026-06",
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -3014,6 +3065,57 @@
             ]
           }
         },
+        "global.anthropic.claude-fable-5-2": {
+          "id": "global.anthropic.claude-fable-5-2",
+          "display_name": "Claude Fable 5.2 (Global)",
+          "release_date": "2026-11-09",
+          "last_updated": "2026-11-09",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": "2026-06",
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1000000,
+            "input": null,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "global.anthropic.claude-haiku-4-5-20251001-v1:0": {
           "id": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
           "display_name": "Claude Haiku 4.5 (Global)",
@@ -3748,6 +3850,57 @@
             ]
           }
         },
+        "global.moonshotai.kimi-k3.1": {
+          "id": "global.moonshotai.kimi-k3.1",
+          "display_name": "Kimi K3.1 Pro Highspeed (Global)",
+          "release_date": "2026-10-23",
+          "last_updated": "2026-10-23",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "none",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "4.0000",
+            "output": "20.0000",
+            "cache_read": "0.2000",
+            "cache_write": "5.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 1048576
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "global.openai.gpt-5.6-luna": {
           "id": "global.openai.gpt-5.6-luna",
           "display_name": "GPT-5.6 Luna (Global)",
@@ -3970,7 +4123,15 @@
                 "cache_read": "2.0000",
                 "cache_write": "25.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "ultrafast": {
+                "input": "60.0000",
+                "output": "300.0000",
+                "cache_read": "6.0000",
+                "cache_write": "75.0000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -4149,7 +4310,15 @@
                 "cache_read": "0.2000",
                 "cache_write": "5.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "ultrafast": {
+                "input": "12.0000",
+                "output": "60.0000",
+                "cache_read": "0.6000",
+                "cache_write": "15.0000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -6667,7 +6836,15 @@
                 "cache_read": "2.2000",
                 "cache_write": "27.5000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "ultrafast": {
+                "input": "66.0000",
+                "output": "330.0000",
+                "cache_read": "6.6000",
+                "cache_write": "82.5000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -6849,7 +7026,15 @@
                 "cache_read": "0.2200",
                 "cache_write": "5.5000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "ultrafast": {
+                "input": "13.2000",
+                "output": "66.0000",
+                "cache_read": "0.6600",
+                "cache_write": "16.5000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -7871,6 +8056,57 @@
             "output": "55.0000",
             "cache_read": "0.2750",
             "cache_write": "13.7500",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1000000,
+            "input": null,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us.anthropic.claude-fable-5-2": {
+          "id": "us.anthropic.claude-fable-5-2",
+          "display_name": "Claude Fable 5.2 (US)",
+          "release_date": "2026-11-09",
+          "last_updated": "2026-11-09",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": "2026-06",
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.8000",
+            "output": "44.0000",
+            "cache_read": "0.2200",
+            "cache_write": "11.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -8942,6 +9178,57 @@
             ]
           }
         },
+        "us.moonshotai.kimi-k3.1": {
+          "id": "us.moonshotai.kimi-k3.1",
+          "display_name": "Kimi K3.1 Pro Highspeed (US)",
+          "release_date": "2026-10-23",
+          "last_updated": "2026-10-23",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "none",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "4.4000",
+            "output": "22.0000",
+            "cache_read": "0.2200",
+            "cache_write": "5.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 1048576
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "us.openai.gpt-5.6-luna": {
           "id": "us.openai.gpt-5.6-luna",
           "display_name": "GPT-5.6 Luna (US)",
@@ -9164,7 +9451,15 @@
                 "cache_read": "2.2000",
                 "cache_write": "27.5000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "ultrafast": {
+                "input": "66.0000",
+                "output": "330.0000",
+                "cache_read": "6.6000",
+                "cache_write": "82.5000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -9343,7 +9638,15 @@
                 "cache_read": "0.2200",
                 "cache_write": "5.5000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "ultrafast": {
+                "input": "13.2000",
+                "output": "66.0000",
+                "cache_read": "0.6600",
+                "cache_write": "16.5000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -10190,7 +10493,15 @@
             "cache_write": "6.2500",
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "30.0000",
+                "output": "150.0000",
+                "cache_read": "3.0000",
+                "cache_write": "37.5000"
+              }
+            }
           },
           "limit": {
             "context": 200000,
@@ -10241,7 +10552,15 @@
             "cache_write": "6.2500",
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "10.0000",
+                "output": "50.0000",
+                "cache_read": "1.0000",
+                "cache_write": "12.5000"
+              }
+            }
           },
           "limit": {
             "context": 200000,
@@ -11928,6 +12247,65 @@
             "input_audio": null,
             "output_audio": null,
             "output_image": null
+          },
+          "limit": {
+            "context": 1000000,
+            "input": null,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "claude-fable-5-2@default": {
+          "id": "claude-fable-5-2@default",
+          "display_name": "Claude Fable 5.2",
+          "release_date": "2026-11-09",
+          "last_updated": "2026-11-09",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": "2026-06",
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "16.0000",
+                "output": "80.0000",
+                "cache_read": "0.4000",
+                "cache_write": "20.0000"
+              }
+            }
           },
           "limit": {
             "context": 1000000,
@@ -14836,6 +15214,65 @@
             ]
           }
         },
+        "claude-fable-5-2@default": {
+          "id": "claude-fable-5-2@default",
+          "display_name": "Claude Fable 5.2",
+          "release_date": "2026-11-09",
+          "last_updated": "2026-11-09",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": "2026-06",
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "16.0000",
+                "output": "80.0000",
+                "cache_read": "0.4000",
+                "cache_write": "20.0000"
+              }
+            }
+          },
+          "limit": {
+            "context": 1000000,
+            "input": null,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "claude-fable-5@default": {
           "id": "claude-fable-5@default",
           "display_name": "Claude Fable 5",
@@ -15827,7 +16264,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "3.5000",
+                "output": "14.0000",
+                "cache_read": "0.8750",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 1047576,
@@ -15867,7 +16312,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "0.7000",
+                "output": "2.8000",
+                "cache_read": "0.1750",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 1047576,
@@ -15907,7 +16360,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "0.2000",
+                "output": "0.8000",
+                "cache_read": "0.0500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 1047576,
@@ -15946,7 +16407,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "4.2500",
+                "output": "17.0000",
+                "cache_read": "2.1250",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 128000,
@@ -15986,7 +16455,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "8.7500",
+                "output": "26.2500",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 128000,
@@ -16103,7 +16580,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "0.2500",
+                "output": "1.0000",
+                "cache_read": "0.1250",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 128000,
@@ -16153,7 +16638,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.6250",
+                "output": "5.0000",
+                "cache_read": "0.0625",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "2.5000",
+                "output": "20.0000",
+                "cache_read": "0.2500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 400000,
@@ -16202,7 +16701,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1250",
+                "output": "1.0000",
+                "cache_read": "0.0125",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.4500",
+                "output": "3.6000",
+                "cache_read": "0.0450",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 400000,
@@ -16251,7 +16764,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0250",
+                "output": "0.2000",
+                "cache_read": "0.0025",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 400000,
@@ -16346,7 +16867,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.6250",
+                "output": "5.0000",
+                "cache_read": "0.0625",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "2.5000",
+                "output": "20.0000",
+                "cache_read": "0.2500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 400000,
@@ -16396,7 +16931,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.8750",
+                "output": "7.0000",
+                "cache_read": "0.0875",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "3.5000",
+                "output": "28.0000",
+                "cache_read": "0.3500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 400000,
@@ -16494,7 +17043,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "3.5000",
+                "output": "28.0000",
+                "cache_read": "0.3500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 400000,
@@ -16605,7 +17162,15 @@
                 "cache_read": "0.5000",
                 "cache_write": null
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "5.0000",
+                "output": "30.0000",
+                "cache_read": "0.5000",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -16656,7 +17221,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.3750",
+                "output": "2.2500",
+                "cache_read": "0.0375",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "1.5000",
+                "output": "9.0000",
+                "cache_read": "0.1500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 400000,
@@ -16706,7 +17285,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1000",
+                "output": "0.6250",
+                "cache_read": "0.0100",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 400000,
@@ -16822,7 +17409,15 @@
                 "cache_read": "1.0000",
                 "cache_write": null
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "12.5000",
+                "output": "75.0000",
+                "cache_read": "1.2500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -16941,7 +17536,15 @@
                 "cache_read": "0.8000",
                 "cache_write": "10.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "8.0000",
+                "output": "40.0000",
+                "cache_read": "0.8000",
+                "cache_write": "10.0000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -17002,7 +17605,15 @@
                 "cache_read": "0.0400",
                 "cache_write": "0.5000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "0.4000",
+                "output": "2.4000",
+                "cache_read": "0.0400",
+                "cache_write": "0.5000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -17063,7 +17674,15 @@
                 "cache_read": "0.8000",
                 "cache_write": "10.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "8.0000",
+                "output": "40.0000",
+                "cache_read": "0.8000",
+                "cache_write": "10.0000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -17124,7 +17743,15 @@
                 "cache_read": "0.4000",
                 "cache_write": "5.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "4.0000",
+                "output": "24.0000",
+                "cache_read": "0.4000",
+                "cache_write": "5.0000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -17184,7 +17811,21 @@
                 "cache_read": "2.0000",
                 "cache_write": "25.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "20.0000",
+                "output": "100.0000",
+                "cache_read": "2.0000",
+                "cache_write": "25.0000"
+              },
+              "ultrafast": {
+                "input": "60.0000",
+                "output": "300.0000",
+                "cache_read": "6.0000",
+                "cache_write": "75.0000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -17245,7 +17886,15 @@
                 "cache_read": "0.0200",
                 "cache_write": "0.2500"
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "0.2000",
+                "output": "1.0000",
+                "cache_read": "0.0200",
+                "cache_write": "0.2500"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -17306,7 +17955,15 @@
                 "cache_read": "0.4000",
                 "cache_write": "5.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "4.0000",
+                "output": "20.0000",
+                "cache_read": "0.4000",
+                "cache_write": "5.0000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -17366,7 +18023,21 @@
                 "cache_read": "0.2000",
                 "cache_write": "5.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "4.0000",
+                "output": "20.0000",
+                "cache_read": "0.2000",
+                "cache_write": "5.0000"
+              },
+              "ultrafast": {
+                "input": "12.0000",
+                "output": "60.0000",
+                "cache_read": "0.6000",
+                "cache_write": "15.0000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -17427,7 +18098,15 @@
                 "cache_read": "0.1000",
                 "cache_write": "2.5000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "2.0000",
+                "output": "10.0000",
+                "cache_read": "0.1000",
+                "cache_write": "2.5000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -17856,7 +18535,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "1.0000",
+                "output": "4.0000",
+                "cache_read": "0.2500",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "3.5000",
+                "output": "14.0000",
+                "cache_read": "0.8750",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 200000,
@@ -18000,7 +18693,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.5500",
+                "output": "2.2000",
+                "cache_read": "0.1375",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "2.0000",
+                "output": "8.0000",
+                "cache_read": "0.5000",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 200000,
@@ -18394,6 +19101,57 @@
             "output": "50.0000",
             "cache_read": "0.2500",
             "cache_write": "12.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1000000,
+            "input": null,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "claude-fable-5-2": {
+          "id": "claude-fable-5-2",
+          "display_name": "Claude Fable 5.2",
+          "release_date": "2026-11-09",
+          "last_updated": "2026-11-09",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": null,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": "2026-06",
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -19120,7 +19878,7 @@
             "conditions": {},
             "input": "2.0000",
             "output": "10.0000",
-            "cache_read": "0.2000",
+            "cache_read": "0.1000",
             "cache_write": "2.5000",
             "input_audio": null,
             "output_audio": null,
@@ -19135,6 +19893,59 @@
             "input": [
               "text",
               "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "crouton-alpha-free": {
+          "id": "crouton-alpha-free",
+          "display_name": "Crouton Alpha Free",
+          "release_date": "2026-11-03",
+          "last_updated": "2026-11-03",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "minimal",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": "0.0000",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 270000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video",
               "pdf"
             ],
             "output": [
@@ -19885,11 +20696,11 @@
           },
           "cost": {
             "conditions": {},
-            "input": "1.5000",
-            "output": "7.5000",
-            "cache_read": "0.1500",
+            "input": "0.7500",
+            "output": "3.7500",
+            "cache_read": "0.0750",
             "cache_write": null,
-            "input_audio": "1.5000",
+            "input_audio": "0.7500",
             "output_audio": null,
             "output_image": null
           },
@@ -19936,11 +20747,11 @@
           },
           "cost": {
             "conditions": {},
-            "input": "1.5000",
-            "output": "7.5000",
-            "cache_read": "0.1500",
+            "input": "0.7500",
+            "output": "3.7500",
+            "cache_read": "0.0750",
             "cache_write": null,
-            "input_audio": "1.5000",
+            "input_audio": "0.7500",
             "output_audio": null,
             "output_image": null
           },
@@ -19987,11 +20798,11 @@
           },
           "cost": {
             "conditions": {},
-            "input": "1.5000",
-            "output": "7.5000",
-            "cache_read": "0.1500",
+            "input": "0.7500",
+            "output": "3.7500",
+            "cache_read": "0.0750",
             "cache_write": null,
-            "input_audio": "1.5000",
+            "input_audio": "0.7500",
             "output_audio": null,
             "output_image": null
           },
@@ -22131,6 +22942,95 @@
             ]
           }
         },
+        "iceman-free": {
+          "id": "iceman-free",
+          "display_name": "Iceman Free",
+          "release_date": "2026-11-06",
+          "last_updated": "2026-11-06",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": null,
+            "attachment": false,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": "0.0000",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "inkling-2-small-free": {
+          "id": "inkling-2-small-free",
+          "display_name": "Inkling 2 Small Free",
+          "release_date": "2026-11-05",
+          "last_updated": "2026-11-05",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": null,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "none",
+                  "minimal",
+                  "low",
+                  "medium",
+                  "high",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": "0.0000",
+            "cache_write": "0.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "kimi-k2": {
           "id": "kimi-k2",
           "display_name": "Kimi K2",
@@ -22776,6 +23676,49 @@
             ]
           }
         },
+        "longcat-2.5-free": {
+          "id": "longcat-2.5-free",
+          "display_name": "LongCat 2.5 Free",
+          "release_date": "2026-11-02",
+          "last_updated": "2026-11-02",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": null,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "toggle"
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": "0.0000",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1000000,
+            "input": null,
+            "output": 262144
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "longcat-2.5-preview-free": {
           "id": "longcat-2.5-preview-free",
           "display_name": "LongCat 2.5 Preview Free",
@@ -23394,6 +24337,59 @@
             ]
           }
         },
+        "muse-ember-1.0": {
+          "id": "muse-ember-1.0",
+          "display_name": "Muse Ember 1.0",
+          "release_date": "2026-11-09",
+          "last_updated": "2026-11-09",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "minimal",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.1000",
+            "output": "0.5000",
+            "cache_read": "0.0040",
+            "cache_write": "0.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 270000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "muse-spark-1.2": {
           "id": "muse-spark-1.2",
           "display_name": "Muse Spark 1.2",
@@ -23865,6 +24861,54 @@
           "modalities": {
             "input": [
               "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "pulse-alpha-free": {
+          "id": "pulse-alpha-free",
+          "display_name": "Pulse Alpha Free",
+          "release_date": "2026-11-02",
+          "last_updated": "2026-11-02",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": null,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "high",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": "0.0000",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
             ],
             "output": [
               "text"
@@ -24854,7 +25898,7 @@
             "conditions": {},
             "input": "2.5000",
             "output": "5.0000",
-            "cache_read": null,
+            "cache_read": "2.5000",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -24956,6 +26000,57 @@
             "output": "50.0000",
             "cache_read": "0.2500",
             "cache_write": "12.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1000000,
+            "input": null,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "anthropic/claude-fable-5.2": {
+          "id": "anthropic/claude-fable-5.2",
+          "display_name": "Claude Fable 5.2",
+          "release_date": "2026-11-09",
+          "last_updated": "2026-11-09",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": "2026-06",
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -26077,7 +27172,7 @@
           "last_updated": "2025-03-13",
           "metadata": {
             "reasoning": false,
-            "tool_call": false,
+            "tool_call": true,
             "structured_output": true,
             "attachment": false,
             "temperature": true,
@@ -26234,7 +27329,7 @@
           "last_updated": "2024-12-13",
           "metadata": {
             "reasoning": false,
-            "tool_call": false,
+            "tool_call": true,
             "structured_output": true,
             "attachment": false,
             "temperature": true,
@@ -26323,8 +27418,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2574",
-            "output": "1.0287",
+            "input": "0.3200",
+            "output": "0.8900",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -26334,7 +27429,7 @@
           "limit": {
             "context": 163840,
             "input": null,
-            "output": 16000
+            "output": 16384
           },
           "modalities": {
             "input": [
@@ -26662,9 +27757,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1190",
-            "output": "0.2380",
-            "cache_read": "0.0238",
+            "input": "0.0434",
+            "output": "0.3000",
+            "cache_read": "0.0350",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26710,9 +27805,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2156",
-            "output": "0.6468",
-            "cache_read": "0.0069",
+            "input": "0.4400",
+            "output": "1.3200",
+            "cache_read": "0.0140",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26721,7 +27816,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 262144
+            "output": 943717
           },
           "modalities": {
             "input": [
@@ -26758,9 +27853,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "1.6000",
-            "output": "3.2000",
-            "cache_read": "0.1350",
+            "input": "0.8754",
+            "output": "1.7508",
+            "cache_read": "0.0730",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26769,7 +27864,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 393216
+            "output": 384000
           },
           "modalities": {
             "input": [
@@ -26806,9 +27901,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1150",
-            "output": "4.0000",
-            "cache_read": "0.1100",
+            "input": "0.1110",
+            "output": "4.4400",
+            "cache_read": "0.0970",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26854,9 +27949,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0450",
-            "output": "0.5000",
-            "cache_read": "0.0060",
+            "input": "0.0510",
+            "output": "0.5670",
+            "cache_read": "0.0180",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26903,9 +27998,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1500",
-            "output": "0.6000",
-            "cache_read": "0.0030",
+            "input": "0.0060",
+            "output": "0.5000",
+            "cache_read": "0.0050",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26914,7 +28009,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 393216
+            "output": 943718
           },
           "modalities": {
             "input": [
@@ -28205,6 +29300,104 @@
             ]
           }
         },
+        "google/gemini-omni-1.1-flash": {
+          "id": "google/gemini-omni-1.1-flash",
+          "display_name": "Gemini Omni 1.1 Flash",
+          "release_date": "2026-08-27",
+          "last_updated": "2026-08-27",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "high"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "1.5000",
+            "output": "9.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 131072,
+            "input": null,
+            "output": 65536
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video"
+            ],
+            "output": [
+              "text",
+              "video"
+            ]
+          }
+        },
+        "google/gemini-omni-1.2-flash": {
+          "id": "google/gemini-omni-1.2-flash",
+          "display_name": "Gemini Omni 1.2 Flash",
+          "release_date": "2026-11-05",
+          "last_updated": "2026-11-05",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "high"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "1.5000",
+            "output": "9.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 131072,
+            "input": null,
+            "output": 65536
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video"
+            ],
+            "output": [
+              "text",
+              "video"
+            ]
+          }
+        },
         "google/gemma-2-27b-it": {
           "id": "google/gemma-2-27b-it",
           "display_name": "Gemma 2 27B",
@@ -28380,9 +29573,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0675",
-            "output": "0.2250",
-            "cache_read": "0.0375",
+            "input": "0.0765",
+            "output": "0.2550",
+            "cache_read": "0.0425",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -28680,7 +29873,7 @@
           "cost": {
             "conditions": {},
             "input": "0.0600",
-            "output": "0.1500",
+            "output": "0.2500",
             "cache_read": "0.0150",
             "cache_write": null,
             "input_audio": null,
@@ -28691,150 +29884,6 @@
             "context": 131072,
             "input": null,
             "output": 117964
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "inception/mercury-2": {
-          "id": "inception/mercury-2",
-          "display_name": "Mercury 2",
-          "release_date": "2026-02-24",
-          "last_updated": "2026-02-24",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": false,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": [
-              {
-                "type": "effort",
-                "values": [
-                  "none",
-                  "low",
-                  "medium",
-                  "high"
-                ]
-              }
-            ]
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.2500",
-            "output": "0.7500",
-            "cache_read": "0.0250",
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 128000,
-            "input": null,
-            "output": 50000
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "inception/mercury-2.5": {
-          "id": "inception/mercury-2.5",
-          "display_name": "Mercury 2.5",
-          "release_date": "2026-09-08",
-          "last_updated": "2026-09-08",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": false,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": [
-              {
-                "type": "effort",
-                "values": [
-                  "none",
-                  "low",
-                  "medium",
-                  "high"
-                ]
-              }
-            ]
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0400",
-            "output": "0.1500",
-            "cache_read": "0.0040",
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 260000,
-            "input": null,
-            "output": 65536
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "inception/mercury-3": {
-          "id": "inception/mercury-3",
-          "display_name": "Mercury 3",
-          "release_date": "2026-10-16",
-          "last_updated": "2026-10-16",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": false,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": [
-              {
-                "type": "effort",
-                "values": [
-                  "none",
-                  "low",
-                  "medium",
-                  "high"
-                ]
-              }
-            ]
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.1000",
-            "output": "0.3500",
-            "cache_read": "0.0100",
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 1000000,
-            "input": null,
-            "output": 131072
           },
           "modalities": {
             "input": [
@@ -28931,11 +29980,11 @@
             ]
           }
         },
-        "inclusionai/ling-3.1-flash": {
-          "id": "inclusionai/ling-3.1-flash",
-          "display_name": "Ling 3.1 Flash",
-          "release_date": "2026-09-29",
-          "last_updated": "2026-09-29",
+        "inclusionai/ling-3.0-tiny": {
+          "id": "inclusionai/ling-3.0-tiny",
+          "display_name": "Ling 3.0 Tiny",
+          "release_date": "2026-08-06",
+          "last_updated": "2026-08-06",
           "metadata": {
             "reasoning": true,
             "tool_call": true,
@@ -28951,9 +30000,51 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0750",
-            "output": "0.2250",
-            "cache_read": "0.0150",
+            "input": "0.0150",
+            "output": "0.0450",
+            "cache_read": "0.0030",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 250000
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "inclusionai/ling-3.1-flash": {
+          "id": "inclusionai/ling-3.1-flash",
+          "display_name": "Ling 3.1 Flash",
+          "release_date": "2026-09-29",
+          "last_updated": "2026-09-29",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": false,
+            "attachment": false,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "toggle"
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0450",
+            "output": "0.1350",
+            "cache_read": "0.0090",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -29000,7 +30091,7 @@
           "limit": {
             "context": 128000,
             "input": null,
-            "output": 4096
+            "output": 8192
           },
           "modalities": {
             "input": [
@@ -29163,6 +30254,82 @@
             ]
           }
         },
+        "liquid/lfm-3-1.7b": {
+          "id": "liquid/lfm-3-1.7b",
+          "display_name": "LFM3-1.7B",
+          "release_date": "2026-11-06",
+          "last_updated": "2026-11-06",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": false,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0800",
+            "output": "0.2000",
+            "cache_read": "0.0200",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 8192
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "liquid/lfm-3-1.7b:free": {
+          "id": "liquid/lfm-3-1.7b:free",
+          "display_name": "LFM3-1.7B (free)",
+          "release_date": "2026-11-06",
+          "last_updated": "2026-11-06",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": false,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 8192
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "mancer/weaver": {
           "id": "mancer/weaver",
           "display_name": "Weaver (alpha)",
@@ -29181,7 +30348,7 @@
             "conditions": {},
             "input": "0.4000",
             "output": "0.7500",
-            "cache_read": null,
+            "cache_read": "0.4000",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -29253,8 +30420,8 @@
           "last_updated": "2024-07-23",
           "metadata": {
             "reasoning": false,
-            "tool_call": true,
-            "structured_output": true,
+            "tool_call": false,
+            "structured_output": false,
             "attachment": false,
             "temperature": true,
             "knowledge": "2023-12",
@@ -29262,8 +30429,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.4000",
-            "output": "0.4000",
+            "input": "0.7200",
+            "output": "0.7200",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -29273,7 +30440,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 16384
+            "output": 8192
           },
           "modalities": {
             "input": [
@@ -29300,9 +30467,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0500",
-            "output": "0.0800",
-            "cache_read": "0.0250",
+            "input": "0.0200",
+            "output": "0.0400",
+            "cache_read": null,
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -29311,7 +30478,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 117964
+            "output": 16384
           },
           "modalities": {
             "input": [
@@ -29414,9 +30581,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1000",
-            "output": "0.3200",
-            "cache_read": null,
+            "input": "0.5900",
+            "output": "0.7900",
+            "cache_read": "0.2950",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -29425,7 +30592,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 16384
+            "output": 32768
           },
           "modalities": {
             "input": [
@@ -29452,9 +30619,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1875",
-            "output": "0.6525",
-            "cache_read": "0.0500",
+            "input": "0.3500",
+            "output": "1.0000",
+            "cache_read": "0.1700",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -29463,7 +30630,7 @@
           "limit": {
             "context": 524288,
             "input": null,
-            "output": 16384
+            "output": 32768
           },
           "modalities": {
             "input": [
@@ -29547,6 +30714,60 @@
             "input": [
               "text",
               "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "meta/muse-ember": {
+          "id": "meta/muse-ember",
+          "display_name": "Muse Ember",
+          "release_date": "2026-11-09",
+          "last_updated": "2026-11-09",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "minimal",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.1000",
+            "output": "0.5000",
+            "cache_read": "0.0040",
+            "cache_write": "0.1250",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 943718
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video",
+              "pdf",
+              "audio"
             ],
             "output": [
               "text"
@@ -30008,201 +31229,6 @@
             ]
           }
         },
-        "minimax/minimax-01": {
-          "id": "minimax/minimax-01",
-          "display_name": "MiniMax-01",
-          "release_date": "2025-01-15",
-          "last_updated": "2025-01-15",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": false,
-            "structured_output": false,
-            "attachment": true,
-            "temperature": true,
-            "knowledge": "2024-03-31",
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.2000",
-            "output": "1.1000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 1000192,
-            "input": null,
-            "output": 40000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "minimax/minimax-m1": {
-          "id": "minimax/minimax-m1",
-          "display_name": "MiniMax M1",
-          "release_date": "2025-06-17",
-          "last_updated": "2025-06-17",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": false,
-            "attachment": false,
-            "temperature": true,
-            "knowledge": "2024-06-30",
-            "reasoning_options": [
-              {
-                "type": "toggle"
-              }
-            ]
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.5500",
-            "output": "2.2000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 1000000,
-            "input": null,
-            "output": 40000
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "minimax/minimax-m2": {
-          "id": "minimax/minimax-m2",
-          "display_name": "MiniMax-M2",
-          "release_date": "2025-10-27",
-          "last_updated": "2025-10-27",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": false,
-            "attachment": false,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.2550",
-            "output": "1.0200",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 204800,
-            "input": null,
-            "output": 131072
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "minimax/minimax-m2-her": {
-          "id": "minimax/minimax-m2-her",
-          "display_name": "MiniMax-M2 Her",
-          "release_date": "2026-01-23",
-          "last_updated": "2026-01-23",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": false,
-            "structured_output": false,
-            "attachment": false,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.3000",
-            "output": "1.2000",
-            "cache_read": "0.0300",
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 65536,
-            "input": null,
-            "output": 2048
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "minimax/minimax-m2.1": {
-          "id": "minimax/minimax-m2.1",
-          "display_name": "MiniMax-M2.1",
-          "release_date": "2025-12-23",
-          "last_updated": "2025-12-23",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": false,
-            "attachment": false,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.3000",
-            "output": "1.2000",
-            "cache_read": "0.0300",
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 204800,
-            "input": null,
-            "output": 131072
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "minimax/minimax-m2.5": {
           "id": "minimax/minimax-m2.5",
           "display_name": "MiniMax-M2.5",
@@ -30219,18 +31245,18 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2700",
-            "output": "0.9500",
-            "cache_read": "0.0300",
+            "input": "0.3000",
+            "output": "1.2000",
+            "cache_read": "0.0600",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
             "output_image": null
           },
           "limit": {
-            "context": 204800,
+            "context": 200000,
             "input": null,
-            "output": 32768
+            "output": 58982
           },
           "modalities": {
             "input": [
@@ -30257,18 +31283,18 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.3000",
-            "output": "1.2000",
-            "cache_read": "0.0600",
+            "input": "0.2100",
+            "output": "0.8400",
+            "cache_read": "0.0420",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
             "output_image": null
           },
           "limit": {
-            "context": 204800,
+            "context": 196608,
             "input": null,
-            "output": 131072
+            "output": 176947
           },
           "modalities": {
             "input": [
@@ -30703,7 +31729,8 @@
               {
                 "type": "effort",
                 "values": [
-                  "none",
+                  "low",
+                  "medium",
                   "high"
                 ]
               }
@@ -31079,9 +32106,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0750",
-            "output": "0.2000",
-            "cache_read": null,
+            "input": "0.1000",
+            "output": "0.3000",
+            "cache_read": "0.0100",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -31090,7 +32117,7 @@
           "limit": {
             "context": 256000,
             "input": null,
-            "output": 16384
+            "output": 26214
           },
           "modalities": {
             "input": [
@@ -31401,9 +32428,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.5000",
-            "output": "2.5000",
-            "cache_read": "0.1500",
+            "input": "0.5320",
+            "output": "3.3250",
+            "cache_read": "0.2090",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -31412,7 +32439,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 235929
+            "output": 65536
           },
           "modalities": {
             "input": [
@@ -31485,7 +32512,7 @@
             "conditions": {},
             "input": "0.6000",
             "output": "3.5000",
-            "cache_read": "0.1500",
+            "cache_read": "0.1600",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -31533,7 +32560,7 @@
           "cost": {
             "conditions": {},
             "input": "0.1920",
-            "output": "15.0000",
+            "output": "16.0000",
             "cache_read": "0.1820",
             "cache_write": null,
             "input_audio": null,
@@ -31566,7 +32593,7 @@
             "tool_call": true,
             "structured_output": true,
             "attachment": true,
-            "temperature": false,
+            "temperature": true,
             "knowledge": null,
             "reasoning_options": [
               {
@@ -31778,82 +32805,6 @@
             ]
           }
         },
-        "nousresearch/hermes-3-llama-3.1-405b": {
-          "id": "nousresearch/hermes-3-llama-3.1-405b",
-          "display_name": "Hermes 3 405B Instruct",
-          "release_date": "2024-08-16",
-          "last_updated": "2024-08-16",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": false,
-            "structured_output": true,
-            "attachment": false,
-            "temperature": true,
-            "knowledge": "2023-12-31",
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "1.0000",
-            "output": "1.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 131072,
-            "input": null,
-            "output": 16384
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "nousresearch/hermes-3-llama-3.1-70b": {
-          "id": "nousresearch/hermes-3-llama-3.1-70b",
-          "display_name": "Hermes 3 70B Instruct",
-          "release_date": "2024-08-18",
-          "last_updated": "2024-08-18",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": false,
-            "structured_output": true,
-            "attachment": false,
-            "temperature": true,
-            "knowledge": "2023-12-31",
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.7000",
-            "output": "0.7000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 131072,
-            "input": null,
-            "output": 16384
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "nousresearch/hermes-4-405b": {
           "id": "nousresearch/hermes-4-405b",
           "display_name": "Hermes 4 405B",
@@ -32014,9 +32965,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.3000",
-            "output": "2.4000",
-            "cache_read": "0.1500",
+            "input": "0.0750",
+            "output": "0.4000",
+            "cache_read": null,
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -32025,7 +32976,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 262144
+            "output": 16384
           },
           "modalities": {
             "input": [
@@ -32179,49 +33130,6 @@
             ]
           }
         },
-        "nvidia/nemotron-3.5-content-safety:free": {
-          "id": "nvidia/nemotron-3.5-content-safety:free",
-          "display_name": "Nemotron 3.5 Content Safety (free)",
-          "release_date": "2026-06-02",
-          "last_updated": "2026-06-02",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": false,
-            "structured_output": false,
-            "attachment": true,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": [
-              {
-                "type": "toggle"
-              }
-            ]
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0000",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 128000,
-            "input": null,
-            "output": 8192
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "nvidia/nemotron-3.5-lightning": {
           "id": "nvidia/nemotron-3.5-lightning",
           "display_name": "Nemotron 3.5 Lightning 30B A3B",
@@ -32327,7 +33235,7 @@
           "cost": {
             "conditions": {},
             "input": "0.1500",
-            "output": "0.5000",
+            "output": "0.4700",
             "cache_read": "0.0200",
             "cache_write": null,
             "input_audio": null,
@@ -32337,7 +33245,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 235929
+            "output": 943718
           },
           "modalities": {
             "input": [
@@ -35095,9 +36003,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0180",
-            "output": "0.0900",
-            "cache_read": "0.0090",
+            "input": "0.0300",
+            "output": "0.1300",
+            "cache_read": "0.0300",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -35106,7 +36014,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 32768
+            "output": 117964
           },
           "modalities": {
             "input": [
@@ -36149,9 +37057,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0900",
-            "output": "0.5500",
-            "cache_read": null,
+            "input": "0.1400",
+            "output": "0.8000",
+            "cache_read": "0.0500",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -36160,7 +37068,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 16384
+            "output": 117964
           },
           "modalities": {
             "input": [
@@ -36385,8 +37293,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0700",
-            "output": "0.2800",
+            "input": "0.1500",
+            "output": "0.6000",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -36845,9 +37753,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.5000",
+            "input": "0.6000",
             "output": "3.6000",
-            "cache_read": "0.3000",
+            "cache_read": "0.1200",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -36856,7 +37764,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 235929
+            "output": 64000
           },
           "modalities": {
             "input": [
@@ -37083,8 +37991,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.4500",
-            "output": "2.7000",
+            "input": "0.3200",
+            "output": "3.2000",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -37094,7 +38002,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 65536
+            "output": 81920
           },
           "modalities": {
             "input": [
@@ -37487,16 +38395,16 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0400",
-            "output": "2.3000",
-            "cache_read": "0.0200",
+            "input": "0.1500",
+            "output": "1.8750",
+            "cache_read": "0.0375",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
             "output_image": null
           },
           "limit": {
-            "context": 1000000,
+            "context": 1024000,
             "input": null,
             "output": 235929
           },
@@ -37773,9 +38681,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2500",
+            "input": "0.3000",
             "output": "1.0000",
-            "cache_read": "0.0500",
+            "cache_read": "0.0400",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -37784,7 +38692,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 131072
+            "output": 943718
           },
           "modalities": {
             "input": [
@@ -37939,6 +38847,48 @@
             "context": 256000,
             "input": null,
             "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "ricursiveai/ripple-65b-preview": {
+          "id": "ricursiveai/ripple-65b-preview",
+          "display_name": "Ripple 65B Preview",
+          "release_date": "2026-11-04",
+          "last_updated": "2026-11-04",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": false,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "toggle"
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.2000",
+            "output": "0.6000",
+            "cache_read": "0.0500",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 131072
           },
           "modalities": {
             "input": [
@@ -38438,7 +39388,7 @@
             "output_image": null
           },
           "limit": {
-            "context": 1048576,
+            "context": 1000000,
             "input": 1000000,
             "output": 64000
           },
@@ -38703,6 +39653,54 @@
             ]
           }
         },
+        "tencent/hy4": {
+          "id": "tencent/hy4",
+          "display_name": "Hy4",
+          "release_date": "2026-11-04",
+          "last_updated": "2026-11-04",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "none",
+                  "low",
+                  "high"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.4170",
+            "output": "1.2505",
+            "cache_read": "0.0210",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": 983010,
+            "output": 65536
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "tencent/hy4-preview": {
           "id": "tencent/hy4-preview",
           "display_name": "Hy4 preview",
@@ -38916,6 +39914,56 @@
             ]
           }
         },
+        "thinkingmachines/inkling-2-small:free": {
+          "id": "thinkingmachines/inkling-2-small:free",
+          "display_name": "Inkling 2 Small (free)",
+          "release_date": "2026-11-05",
+          "last_updated": "2026-11-05",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": false,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "minimal",
+                  "low",
+                  "medium",
+                  "high",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "thinkingmachines/inkling-small": {
           "id": "thinkingmachines/inkling-small",
           "display_name": "Inkling Small",
@@ -38954,110 +40002,6 @@
           },
           "limit": {
             "context": 524288,
-            "input": null,
-            "output": 262144
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "audio"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "thinkingmachines/inkling-small:free": {
-          "id": "thinkingmachines/inkling-small:free",
-          "display_name": "Inkling Small (free)",
-          "release_date": "2026-07-30",
-          "last_updated": "2026-07-30",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": false,
-            "attachment": true,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": [
-              {
-                "type": "effort",
-                "values": [
-                  "none",
-                  "minimal",
-                  "low",
-                  "medium",
-                  "high",
-                  "max"
-                ]
-              }
-            ]
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0000",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 1048576,
-            "input": null,
-            "output": 262144
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "audio"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "thinkingmachines/inkling:free": {
-          "id": "thinkingmachines/inkling:free",
-          "display_name": "Inkling (free)",
-          "release_date": "2026-07-15",
-          "last_updated": "2026-07-15",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": false,
-            "attachment": true,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": [
-              {
-                "type": "effort",
-                "values": [
-                  "none",
-                  "minimal",
-                  "low",
-                  "medium",
-                  "high",
-                  "max"
-                ]
-              }
-            ]
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0000",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 1048576,
             "input": null,
             "output": 262144
           },
@@ -39168,7 +40112,7 @@
             "conditions": {},
             "input": "0.3500",
             "output": "0.6500",
-            "cache_read": null,
+            "cache_read": "0.3500",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -39753,7 +40697,7 @@
             "output_image": null
           },
           "limit": {
-            "context": 1050000,
+            "context": 1000000,
             "input": null,
             "output": 65536
           },
@@ -39798,7 +40742,7 @@
             "output_image": null
           },
           "limit": {
-            "context": 1050000,
+            "context": 1024000,
             "input": null,
             "output": 235929
           },
@@ -40050,9 +40994,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1300",
-            "output": "0.8500",
-            "cache_read": "0.0250",
+            "input": "0.2000",
+            "output": "1.1000",
+            "cache_read": "0.0300",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -40530,9 +41474,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0149",
-            "output": "0.1543",
-            "cache_read": "0.0149",
+            "input": "0.1500",
+            "output": "0.5000",
+            "cache_read": "0.0300",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -40541,7 +41485,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 131072
+            "output": 943717
           },
           "modalities": {
             "input": [
@@ -40581,7 +41525,56 @@
             "conditions": {},
             "input": "0.3700",
             "output": "1.2500",
-            "cache_read": "0.0900",
+            "cache_read": "0.0750",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "z-ai/glm-5.3-flashx-legal": {
+          "id": "z-ai/glm-5.3-flashx-legal",
+          "display_name": "GLM 5.3 FlashX Legal",
+          "release_date": "2026-11-02",
+          "last_updated": "2026-11-02",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "high",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.3700",
+            "output": "1.2500",
+            "cache_read": "0.0750",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -40721,10 +41714,10 @@
           },
           "cost": {
             "conditions": {},
-            "input": "10.0000",
-            "output": "50.0000",
-            "cache_read": "0.2500",
-            "cache_write": "12.5000",
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -40934,9 +41927,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0141",
-            "output": "0.1100",
-            "cache_read": "0.0130",
+            "input": "0.0060",
+            "output": "0.5000",
+            "cache_read": "0.0050",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -40983,9 +41976,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1035",
+            "input": "0.0999",
             "output": "8.0000",
-            "cache_read": "0.1000",
+            "cache_read": "0.0999",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -41031,7 +42024,7 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0448",
+            "input": "0.0434",
             "output": "0.3000",
             "cache_read": "0.0350",
             "cache_write": null,
@@ -41194,9 +42187,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1495",
-            "output": "7.1500",
-            "cache_read": "0.0748",
+            "input": "0.1624",
+            "output": "9.3388",
+            "cache_read": "0.1600",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -41579,7 +42572,7 @@
             "input": "2.0000",
             "output": "6.0000",
             "cache_read": "0.5000",
-            "cache_write": null,
+            "cache_write": "0.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null,
@@ -41589,7 +42582,7 @@
                 "input": "4.0000",
                 "output": "12.0000",
                 "cache_read": "1.0000",
-                "cache_write": null
+                "cache_write": "0.0000"
               }
             ]
           },
@@ -41634,9 +42627,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0149",
-            "output": "0.1543",
-            "cache_read": "0.0149",
+            "input": "0.0335",
+            "output": "0.0830",
+            "cache_read": "0.0300",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,

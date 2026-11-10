@@ -302,6 +302,7 @@ async fn dispatch_decisions(
         state,
         &resolved,
         requirements,
+        None,
         headers,
         &core_request.extra,
         &request_headers,
@@ -324,12 +325,7 @@ async fn dispatch_decisions(
         provider,
         receipt: _,
         expected_provider_credential_id,
-    } = match selected {
-        Some(selection) => selection,
-        None => {
-            return Err(AppError(no_compatible_route_error(requirements)));
-        }
-    };
+    } = selected?;
     *selected_provider = Some(route.provider_key.clone());
     record_provider_execution_span_fields(
         &request_span,
@@ -434,6 +430,7 @@ async fn dispatch_decisions(
                         request_id: &request_id,
                         labels: labels.clone(),
                         operation: "decisions",
+                        service_tiers: gateway_core::ServiceTierOutcome::default(),
                     },
                     provider_usage,
                 )
@@ -483,6 +480,7 @@ async fn dispatch_decisions(
             request_id: &request_id,
             labels: labels.clone(),
             operation: "decisions",
+            service_tiers: gateway_core::ServiceTierOutcome::default(),
         },
         usage_value_from_response(&provider_response.body),
     )
