@@ -2,7 +2,7 @@
 // temporary gateway built from this checkout) and records one proof check per test.
 import { execFileSync, spawn } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readFile, rm } from 'node:fs/promises'
 import path from 'node:path'
 
 import { createProofRecorder, repoRoot } from './proof.mjs'
@@ -25,9 +25,18 @@ const details = { suite: 'tests/harness-integration', log: path.basename(logFile
 try {
   const apiKey = openRouterKey()
   if (apiKey) {
+    // A suite that dies before writing its report must not leave an older report to read.
+    await rm(path.join(evidenceDir, RESULTS), { force: true })
     const { exitCode, stdout } = await runSuite(apiKey)
     details.exitCode = exitCode
     details.live = stdout.split('\n').flatMap(liveRequest)
+    // A failed teardown or a signal (exit code null) can leave a report of passed tests.
+    proof.add({
+      id: 'harness-suite-exit',
+      status: exitCode === 0 ? 'pass' : 'fail',
+      observed: `exit ${exitCode}`,
+      expected: 'exit 0',
+    })
     const report = JSON.parse(await readFile(path.join(evidenceDir, RESULTS), 'utf8'))
     proof.artifact(RESULTS)
     recordTests(report)
