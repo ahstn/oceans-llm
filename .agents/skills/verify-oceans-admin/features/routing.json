@@ -278,6 +278,7 @@
         "crates/gateway/src/http/admin_auth.rs",
         "crates/gateway/src/http/handlers/auth.rs",
         "crates/gateway-service/src/authenticator.rs",
+        "crates/gateway-service/src/password_auth.rs",
         "crates/gateway-store/src/libsql_store/identity.rs",
         "crates/gateway/src/local_demo_seed/users.rs"
       ]
