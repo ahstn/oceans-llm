@@ -436,7 +436,8 @@ pub struct AdminModelView {
     /// Non-default service tiers callers may request. Null allows every tier.
     pub service_tiers: Option<Vec<ServiceTierView>>,
     /// Every tier a request can be served at, ascending: the tiers the routes' adapters can
-    /// send, the allow-list permits, and routing can bill. Empty when no route serves chat.
+    /// send and routing can bill, limited to the allow-list except for a tier a route forces.
+    /// Empty when no route serves chat.
     pub available_service_tiers: Vec<ServiceTierView>,
     /// Configured policy. Only visible to platform admins.
     pub routing: Option<AdminModelRoutingPolicyView>,

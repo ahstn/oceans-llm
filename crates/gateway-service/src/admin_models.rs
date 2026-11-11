@@ -25,7 +25,7 @@ use routing::summarize_routes;
 use crate::effective_route_metadata::provider_capabilities;
 use crate::effective_route_metadata::{effective_provider_route_capabilities, native_api_format};
 use crate::model_metadata::service_tiers::{
-    AdapterServiceTiers, allowed_service_tiers, servable_service_tiers,
+    AdapterServiceTiers, allowed_service_tiers, selectable_service_tiers, servable_service_tiers,
 };
 use crate::model_resolution::alias_chain_reasoning_ceiling;
 
@@ -579,7 +579,8 @@ struct ClientConfigContext<'a> {
     limits: &'a PricingLimits,
     /// Effective capabilities of `primary_route` through `primary_provider`.
     route_capabilities: ProviderCapabilities,
-    /// Every tier a request for the model can be served at, ascending.
+    /// Every tier a request for the model can be served at, ascending. The configs offer
+    /// only those the model's allow-list lets a caller request.
     service_tiers: &'a [ServiceTier],
     gateway_base_url: &'a str,
 }
@@ -655,7 +656,10 @@ fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientC
         codex_reasoning_effort: None,
         native_api_format: native_api_format(primary_provider, primary_route),
         max_reasoning_effort: context.reasoning_ceiling.map(reasoning_level),
-        service_tiers: context.service_tiers.to_vec(),
+        service_tiers: selectable_service_tiers(
+            context.service_tiers,
+            allowed_service_tiers(context.model, context.execution_model),
+        ),
     })
 }
 
@@ -1561,6 +1565,79 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn generated_opencode_variants_offer_only_tiers_a_caller_may_request() {
+        let provider = ProviderConnection {
+            provider_key: "openrouter".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: serde_json::json!({"pricing_provider_id": "openrouter"}),
+            secrets: None,
+        };
+        let route = model_route("openai/gpt-5", ProviderCapabilities::all_enabled());
+        let limits = PricingLimits {
+            context: Some(128_000),
+            input: None,
+            output: None,
+        };
+        // A route forcing Priority serves it whatever the allow-list says.
+        let servable = [
+            ServiceTier::Default,
+            ServiceTier::Flex,
+            ServiceTier::Priority,
+        ];
+        let tier_variants = |allowed: Option<Vec<ServiceTier>>| {
+            let model = GatewayModel {
+                id: Uuid::new_v4(),
+                model_key: "gpt-house".to_string(),
+                alias_target_model_key: None,
+                max_reasoning_effort: None,
+                routing: None,
+                description: None,
+                tags: Vec::new(),
+                rank: 1,
+                service_tiers: allowed,
+            };
+            let input = super::build_client_config_input(super::ClientConfigContext {
+                model: &model,
+                execution_model: &model,
+                reasoning_ceiling: None,
+                primary_route: Some(&route),
+                primary_provider: Some(&provider),
+                provider_display: None,
+                metadata: None,
+                limits: &limits,
+                route_capabilities: effective_provider_route_capabilities(
+                    &route,
+                    Some(&provider),
+                    PartialCapabilities::default(),
+                ),
+                service_tiers: &servable,
+                gateway_base_url: "http://127.0.0.1:3000",
+            })
+            .expect("chat model gets client configs");
+            let configs = gateway_client_config::render_default_configs(&input);
+            let opencode = configs
+                .iter()
+                .find(|config| config.key == "opencode")
+                .expect("opencode config");
+            let value: serde_json::Value =
+                serde_json::from_str(&opencode.blocks[0].content).expect("opencode json");
+            value["providers"]["oceans-llm"]["models"]["gpt-house"]["variants"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|variant| variant["id"].as_str().map(str::to_string))
+                .filter(|id| ["flex", "fast", "ultrafast"].contains(&id.as_str()))
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(tier_variants(None), ["flex", "fast"]);
+        // An explicit Priority request fails the `[flex]` allow-list with 403.
+        assert_eq!(tier_variants(Some(vec![ServiceTier::Flex])), ["flex"]);
+        assert!(tier_variants(Some(Vec::new())).is_empty());
+    }
+
     #[test]
     fn copilot_provider_uses_upstream_evidence_and_operator_policy() {
         let provider = provider_connection("github_copilot");

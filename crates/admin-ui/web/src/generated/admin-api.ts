@@ -2295,7 +2295,8 @@ export interface components {
             allowlist?: null | components["schemas"]["AdminModelAllowlistView"];
             /**
              * @description Every tier a request can be served at, ascending: the tiers the routes' adapters can
-             *     send, the allow-list permits, and routing can bill. Empty when no route serves chat.
+             *     send and routing can bill, limited to the allow-list except for a tier a route forces.
+             *     Empty when no route serves chat.
              */
             available_service_tiers: components["schemas"]["ServiceTierView"][];
             benchmark_scores: components["schemas"]["AdminModelBenchmarkScoreView"][];

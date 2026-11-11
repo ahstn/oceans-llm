@@ -18,7 +18,7 @@ use super::{
     LoadedRoutes, ModelMetadata, RouteMetadata, load_routes, route_metadata,
     service_tiers::{
         AdapterServiceTiers, advertised_service_tiers, allowed_service_tiers,
-        servable_service_tiers,
+        selectable_service_tiers, servable_service_tiers,
     },
     summarize,
 };
@@ -78,8 +78,10 @@ pub struct ModelCard {
     /// accepted format. omp should use `discovery.type: litellm`, which reads
     /// `/model_group/info` instead of this list.
     pub supported_endpoint_types: Vec<&'static str>,
-    /// Every tier a request can be served at, including `default` when it can; absent when
-    /// default is the only one. omp reads this list to offer Fast and the other tiers.
+    /// Every tier a request can be served at, including `default` when it can and a tier a
+    /// route forces; absent when default is the only one. omp reads this list to offer
+    /// Ultrafast. Callers may request only the tiers the allow-list permits, so the variants
+    /// in `client_hints` can offer fewer.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_tiers: Option<Vec<ServiceTier>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -181,6 +183,8 @@ pub(super) struct ModelView<'a> {
     pub(super) model: &'a GatewayModel,
     /// The strictest ceiling along the alias chain, as enforced at request time.
     pub(super) reasoning_ceiling: Option<ReasoningEffort>,
+    /// The tier allow-list a caller's requested tier must satisfy; `None` allows every tier.
+    pub(super) allowed_service_tiers: Option<&'a [ServiceTier]>,
     /// Union of the APIs the eligible routes serve.
     pub(super) transport: ProviderCapabilities,
     /// Every chat-capable route speaks Anthropic Messages upstream.
@@ -277,17 +281,19 @@ impl<'a> ModelView<'a> {
             route_thinking_policy(model, execution, route, provider, Some(&display))
         });
         let chat_features = chat_features(&chat_routes);
+        let allowed = allowed_service_tiers(model, execution);
         let service_tiers = servable_service_tiers(
             chat_routes
                 .iter()
                 .map(|((route, provider, _), _)| (*route, *provider)),
-            allowed_service_tiers(model, execution),
+            allowed,
             snapshot,
             adapter,
         );
         Self {
             model,
             reasoning_ceiling,
+            allowed_service_tiers: allowed,
             transport: served_apis(&eligible),
             messages_native: every_chat_route(
                 &eligible,
@@ -491,7 +497,7 @@ fn model_card(view: &ModelView<'_>) -> ModelCard {
         thinking_policy,
         native_api_format: primary.and_then(|(route, provider)| native_api_format(provider, route)),
         max_reasoning_effort: reasoning_ceiling.map(reasoning_level),
-        service_tiers: summary.service_tiers.clone(),
+        service_tiers: selectable_service_tiers(&summary.service_tiers, view.allowed_service_tiers),
         ..ClientConfigInput::default()
     });
 

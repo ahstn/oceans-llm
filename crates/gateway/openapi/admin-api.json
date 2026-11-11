@@ -8655,7 +8655,7 @@
             "items": {
               "$ref": "#/components/schemas/ServiceTierView"
             },
-            "description": "Every tier a request can be served at, ascending: the tiers the routes' adapters can\nsend, the allow-list permits, and routing can bill. Empty when no route serves chat."
+            "description": "Every tier a request can be served at, ascending: the tiers the routes' adapters can\nsend and routing can bill, limited to the allow-list except for a tier a route forces.\nEmpty when no route serves chat."
           },
           "benchmark_scores": {
             "type": "array",

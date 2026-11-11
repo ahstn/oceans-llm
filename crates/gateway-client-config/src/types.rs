@@ -159,9 +159,10 @@ pub struct ClientConfigInput {
     /// clamped so harnesses never offer a level the gateway rejects.
     #[serde(default)]
     pub max_reasoning_effort: Option<ReasoningLevel>,
-    /// Every tier a request can be served at, ascending. Harness configs offer a variant
-    /// for each non-default tier only when `default` is among them: without it the
-    /// gateway fixes the tier and there is nothing to choose.
+    /// The tiers a request can be served at that a caller may also ask for, ascending: a
+    /// tier only a forced route serves, outside the model's allow-list, is left out. Harness
+    /// configs offer a variant for each non-default tier only when `default` is among them:
+    /// without it the gateway fixes the tier and there is nothing to choose.
     #[serde(default)]
     pub service_tiers: Vec<ServiceTier>,
 }

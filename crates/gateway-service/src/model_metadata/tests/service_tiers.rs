@@ -222,6 +222,30 @@ async fn discovery_lists_the_tiers_a_model_serves() {
 }
 
 #[tokio::test]
+async fn variants_offer_only_tiers_the_allow_list_lets_a_caller_request() {
+    let openrouter = openrouter();
+    // Requests can land on the Priority route, so discovery lists Priority. An explicit
+    // Priority request still fails the `[flex]` allow-list with 403, so no variant asks for it.
+    let (card, group, metadata) = listings(
+        tiered_model(Some(vec![Flex])),
+        vec![
+            route_on(&openrouter, None),
+            route_on(&openrouter, Some(Priority)),
+        ],
+        openrouter,
+    )
+    .await;
+    let served = json!(["default", "flex", "priority"]);
+    assert_eq!(card["service_tiers"], served);
+    assert_eq!(metadata["service_tiers"], served);
+    assert!(offers_service_tier(&group));
+    assert_eq!(
+        card["client_hints"]["harnesses"]["opencode"]["variants"],
+        json!([{"id": "flex", "settings": {"serviceTier": "flex"}}])
+    );
+}
+
+#[tokio::test]
 async fn default_only_models_advertise_no_tiers() {
     let copilot = copilot();
     let (card, group, metadata) =

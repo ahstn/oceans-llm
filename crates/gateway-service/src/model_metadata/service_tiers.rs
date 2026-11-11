@@ -1,5 +1,5 @@
 //! The service tiers discovery advertises: the tiers a request for a model can be served at,
-//! by the same rules routing applies.
+//! by the same rules routing applies, and the subset a caller may ask for.
 use std::collections::BTreeSet;
 
 use gateway_core::{GatewayModel, ModelRoute, ProviderConnection, ProviderRegistry, ServiceTier};
@@ -35,6 +35,12 @@ pub(crate) fn allowed_service_tiers<'a>(
         .or(execution.service_tiers.as_deref())
 }
 
+/// Whether the allow-list lets a caller ask for `tier`, as `enforce_service_tier_policy`
+/// decides: `default` always, another tier when `allowed` is `None` or lists it.
+fn may_request(allowed: Option<&[ServiceTier]>, tier: ServiceTier) -> bool {
+    tier == ServiceTier::Default || allowed.is_none_or(|allowed| allowed.contains(&tier))
+}
+
 /// The union of the tiers each route serves, ascending. A route serves its forced tier, or
 /// else default plus the tiers `allowed` permits; in both cases only tiers its adapter can
 /// send, and non-default tiers only when routing can bill them (a catalog or override rate,
@@ -50,10 +56,7 @@ pub(crate) fn servable_service_tiers<'a>(
         let sendable = adapter.adapter_service_tiers(route);
         let requestable = |tier: ServiceTier| match route.service_tier {
             Some(forced) => tier == forced,
-            None => {
-                tier == ServiceTier::Default
-                    || allowed.is_none_or(|allowed| allowed.contains(&tier))
-            }
+            None => may_request(allowed, tier),
         };
         let candidates = ServiceTier::ALL
             .into_iter()
@@ -71,6 +74,20 @@ pub(crate) fn servable_service_tiers<'a>(
         );
     }
     servable.into_iter().collect()
+}
+
+/// The `servable` tiers a caller may ask for, ascending. A tier outside the allow-list is
+/// servable only through a route that forces it, and an explicit request for it fails with
+/// 403, so harness variants must not offer it.
+pub(crate) fn selectable_service_tiers(
+    servable: &[ServiceTier],
+    allowed: Option<&[ServiceTier]>,
+) -> Vec<ServiceTier> {
+    servable
+        .iter()
+        .copied()
+        .filter(|&tier| may_request(allowed, tier))
+        .collect()
 }
 
 /// The tiers worth advertising: `None` when a request can only be served at default.
