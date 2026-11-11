@@ -84,7 +84,7 @@ test("packed Oceans plugin discovers authorized models, native protocols, limits
       expect(model!.cost[0]?.input).toBeCloseTo(rates!.input_cost_per_token * 1_000_000, 8);
       expect(model!.cost[0]?.output).toBeCloseTo(rates!.output_cost_per_token * 1_000_000, 8);
       expect(model!.variants.map((variant) => variant.id)).toEqual(
-        expect.arrayContaining(["low", "high"]),
+        expect.arrayContaining(["low", "high", "fast"]),
       );
       expect(model!.package).toBe(
         id === runtime.pluginModels.openai
@@ -103,19 +103,29 @@ test("packed Oceans plugin discovers authorized models, native protocols, limits
       input: ["text"],
       output: ["text"],
     });
-    expect(restricted?.variants.map((variant) => variant.id)).toEqual(["low", "medium"]);
+    // The effort ceiling stops at `medium`; service-tier variants are independent of it.
+    expect(restricted?.variants.map((variant) => variant.id)).toEqual([
+      "low",
+      "medium",
+      "flex",
+      "fast",
+      "ultrafast",
+    ]);
   });
 });
 
 const cases = [
   { family: "openai", model: runtime.pluginModels.openai, variant: "low" },
   { family: "openai", model: runtime.pluginModels.openai, variant: "high" },
+  { family: "openai", model: runtime.pluginModels.openai, variant: "fast" },
   { family: "anthropic", model: runtime.pluginModels.anthropic, variant: "low" },
   { family: "anthropic", model: runtime.pluginModels.anthropic, variant: "high" },
+  { family: "anthropic", model: runtime.pluginModels.anthropic, variant: "fast" },
 ];
 test.each(cases)(
-  "packed Oceans plugin: $family $variant sends native reasoning and attachments and records live usage",
+  "packed Oceans plugin: $family $variant sends native variant settings and attachments and records live usage",
   async ({ family, model, variant }) => {
+    const fast = variant === "fast";
     const requestTag = randomUUID();
     const admin = new GatewayAdminClient({ ...runtime, model });
     await admin.login();
@@ -184,22 +194,29 @@ test.each(cases)(
         if (family === "anthropic") {
           expect(request.path).toBe("/v1/messages");
           expect(request.body.thinking).toMatchObject({ type: "adaptive" });
-          expect(request.body.output_config).toMatchObject({ effort: variant });
+          if (fast) expect(request.body.speed).toBe("fast");
+          else expect(request.body.output_config).toMatchObject({ effort: variant });
           expect(request.body.max_tokens).toBe(2048);
         } else {
           expect(request.path).toBe("/v1/responses");
-          expect(request.body.reasoning).toMatchObject({ effort: variant });
+          if (fast) expect(request.body.service_tier).toBe("priority");
+          else expect(request.body.reasoning).toMatchObject({ effort: variant });
           expect(request.body.max_output_tokens).toBe(2048);
         }
+        expect(log.service_tier).toBe(fast ? "priority" : null);
         const tokens = assistant.tokens!;
         expect(tokens.input + tokens.cache.read + tokens.cache.write).toBe(log.prompt_tokens);
         expect(tokens.output + tokens.reasoning).toBe(log.completion_tokens);
         expect(log.cost_usd_10000).not.toBeNull();
-        expect(Math.abs(assistant.cost! - log.cost_usd_10000! / 10_000)).toBeLessThanOrEqual(
-          0.0001,
-        );
+        // OpenCode prices every variant at the standard rate; Oceans bills the served tier.
+        if (log.served_service_tier === "priority")
+          expect(log.cost_usd_10000! / 10_000).toBeGreaterThan(assistant.cost!);
+        else
+          expect(Math.abs(assistant.cost! - log.cost_usd_10000! / 10_000)).toBeLessThanOrEqual(
+            0.0001,
+          );
         console.info(
-          `Live plugin pass: ${family}/${variant}; ${request.path}; request ${log.request_log_id}; session $${assistant.cost}`,
+          `Live plugin pass: ${family}/${variant}; ${request.path}; request ${log.request_log_id}; tier ${log.service_tier ?? "none"} -> ${log.served_service_tier ?? "unreported"}; tokens ${log.prompt_tokens}/${log.completion_tokens}; session $${assistant.cost}; oceans $${log.cost_usd_10000! / 10_000}`,
         );
       } finally {
         await client.session.remove({ sessionID: session.id });
