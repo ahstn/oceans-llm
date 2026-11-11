@@ -155,16 +155,21 @@ function capabilities(
 }
 
 type EffortVariant = { id: string; effort: string }
+/**
+ * Effort presets in the gateway's OpenCode hint. The hint also lists service-tier variants,
+ * so a hint with no effort preset says nothing about effort and the catalog still decides.
+ */
 function hintedVariants(listing: Entry): EffortVariant[] | undefined {
   const hints = record(record(record(listing.client_hints).harnesses).opencode)
   if (hints.variants === undefined) return undefined
   const entries = Array.isArray(hints.variants)
     ? hints.variants.map((variant) => [text(record(variant).id), record(variant).settings] as const)
     : Object.entries(record(hints.variants))
-  return entries.flatMap(([id, settings]) => {
+  const efforts = entries.flatMap(([id, settings]) => {
     const effort = text(record(settings).effort) ?? text(record(settings).reasoningEffort) ?? id
     return id && effort && effortNames.has(id) && effortNames.has(effort) ? [{ id, effort }] : []
   })
+  return efforts.length ? efforts : undefined
 }
 
 function effortsFor(

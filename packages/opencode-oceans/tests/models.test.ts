@@ -304,4 +304,29 @@ describe('service tiers', () => {
         }).variants,
       ).toEqual([])
   })
+  test('tier-only hints keep the catalog effort ladder', () => {
+    const reference = {
+      ...Model.Info.default(provider, Model.ID.make('gpt')),
+      variants: ['low', 'high'].map((id) => ({
+        id: Model.VariantID.make(id),
+        settings: { reasoningEffort: id },
+      })),
+    }
+    const model = toModel(
+      provider,
+      'gpt',
+      { supports_reasoning: true, supported_openai_params: ['reasoning_effort', 'service_tier'] },
+      reference,
+      undefined,
+      undefined,
+      {
+        ...hints('openai-responses', [{ id: 'fast', settings: { serviceTier: 'priority' } }]),
+        service_tiers: ['default', 'priority'],
+      },
+    )
+    assert.deepEqual(
+      model.variants.map((variant) => variant.id),
+      ['low', 'high', 'fast'],
+    )
+  })
 })
