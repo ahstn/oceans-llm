@@ -532,17 +532,20 @@ doctor() {
 
 # The harness suite builds and starts its own gateway, so it needs no launched stack.
 # Its source snapshot is taken here, right before the suite builds from this checkout.
+# `mise activate` would revert variables an outer mise shell set, OPENROUTER_API_KEY
+# included, so this calls `mise exec` and `mise run` directly.
 drive_harness_integration() {
-  local sources_file="$run_dir/harness-sources.json" version
-  activate_mise
+  local sources_file="$run_dir/harness-sources.json" version mise_bin
+  mise_bin="$(resolve_mise)"
   mkdir -p "$evidence_dir"
-  (cd "$repo_root" && OCEANS_VERIFY_EVIDENCE_DIR="$evidence_dir" mise exec -- node "$proof_script" snapshot-sources "$sources_file")
-  version="$(awk '/^\[workspace.package\]/ { section = 1; next } /^\[/ { section = 0 } section && /^version/ { gsub(/"/, "", $3); print $3 }' "$repo_root/Cargo.toml")"
-  mise run //harness:install
+  (cd "$repo_root" && OCEANS_VERIFY_EVIDENCE_DIR="$evidence_dir" "$mise_bin" exec -- node "$proof_script" snapshot-sources "$sources_file")
+  version="$(awk '/^version = / { gsub(/"/, "", $3); print $3; exit }' "$repo_root/crates/gateway/Cargo.toml")"
+  (cd "$repo_root" && "$mise_bin" run //harness:install)
+  cd "$repo_root"
   OCEANS_VERIFY_EVIDENCE_DIR="$evidence_dir" \
     OCEANS_VERIFY_LAUNCH_SOURCES="$sources_file" \
     OCEANS_VERIFY_GATEWAY_VERSION="$version" \
-    mise exec -- node "$repo_root/.agents/skills/verify-oceans-admin/scripts/drive-harness-integration.mjs"
+    "$mise_bin" exec -- node "$repo_root/.agents/skills/verify-oceans-admin/scripts/drive-harness-integration.mjs"
 }
 
 drive() {

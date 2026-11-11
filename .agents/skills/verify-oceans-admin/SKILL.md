@@ -312,4 +312,4 @@ mise exec -- node --test .agents/skills/verify-oceans-admin/scripts/*.test.mjs
 
 Call the drivers through `control-oceans-admin` so they receive the recorded URL, evidence path, credentials, and gateway version.
 
-[scripts/drive-harness-integration.mjs](./scripts/drive-harness-integration.mjs) runs the client suite instead of a browser. `control-oceans-admin` gives it the evidence path, a source snapshot taken before the suite builds the gateway, and the workspace version.
+[scripts/drive-harness-integration.mjs](./scripts/drive-harness-integration.mjs) runs the client suite instead of a browser. `control-oceans-admin` gives it the evidence path, a source snapshot taken before the suite builds the gateway, and the `gateway` crate version.
