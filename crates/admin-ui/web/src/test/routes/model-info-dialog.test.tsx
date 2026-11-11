@@ -468,6 +468,14 @@ describe('ModelInfoDialog service tiers', () => {
     ).toBeVisible()
   })
 
+  it('does not claim the default tier when no route serves chat', () => {
+    renderDialog({ ...model, available_service_tiers: [] }, { initialSection: 'overview' })
+
+    const dialog = screen.getByRole('dialog', { name: 'Model info' })
+    expect(within(dialog).getByText('No available service tiers')).toBeVisible()
+    expect(within(dialog).queryByText('Default only')).toBeNull()
+  })
+
   it('marks a route that forces a tier', () => {
     renderDialog({
       ...model,

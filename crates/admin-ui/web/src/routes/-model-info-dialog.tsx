@@ -495,12 +495,16 @@ function pricingSourceLabel(model: ModelView) {
 /** The tiers the model serves, then the allow-list when one narrows what callers may ask for. */
 function ModelServiceTiers({ model }: { model: ModelView }) {
   const allowed = model.service_tiers
+  const available = model.available_service_tiers
 
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      {model.available_service_tiers.some((tier) => tier !== 'default') ? (
+      {available.length === 0 ? (
+        // No route serves chat, so no tier is servable, not even the default.
+        <span>No available service tiers</span>
+      ) : available.some((tier) => tier !== 'default') ? (
         <div className="flex flex-wrap gap-1.5">
-          {model.available_service_tiers.map((tier) => (
+          {available.map((tier) => (
             <Badge key={tier} variant="outline">
               {serviceTierLabel(tier)}
             </Badge>

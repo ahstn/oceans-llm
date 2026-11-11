@@ -84,9 +84,17 @@ try {
   proof.pass("stream-priority", { observed: "served priority in stream" });
 
   const logs = await checkRequestLogs();
-  await inspectRequestLog(results.priority.requestId, "service-tiers-request-log-priority");
-  await inspectRequestLog(results.downgrade.requestId, "service-tiers-request-log-downgrade");
-  proof.pass("request-log-ui", { observed: "tier shown on request detail" });
+  await inspectRequestLog(
+    results.priority.requestId,
+    "service-tiers-request-log-priority",
+    "Fast (priority) requested and served",
+  );
+  await inspectRequestLog(
+    results.downgrade.requestId,
+    "service-tiers-request-log-downgrade",
+    "Requested Fast (priority) Served Standard (default)",
+  );
+  proof.pass("request-log-ui", { observed: "requested and served tier shown on request detail" });
 
   await checkModelInfo();
 
@@ -96,7 +104,10 @@ try {
       Object.entries(results).map(([name, result]) => [name, result.servedTier ?? result.body.service_tier ?? result.body.usage?.speed]),
     ),
     requestLogs: Object.fromEntries(
-      Object.entries(logs).map(([name, log]) => [name, { id: log.request_log_id, ...tierMetadata(log) }]),
+      Object.entries(logs).map(([name, log]) => [
+        name,
+        { id: log.request_log_id, requested: log.service_tier ?? null, served: log.served_service_tier ?? null },
+      ]),
     ),
   };
 } catch (error) {
@@ -188,9 +199,11 @@ async function checkRequestLogs() {
       return value.items.length === 1 ? value.items[0] : null;
     }, `${name} request log`);
     const detail = await adminJson(page, `/api/v1/admin/observability/request-logs/${log.request_log_id}`);
-    const tiers = tierMetadata(detail.log);
-    assertEqual(tiers.requested, requested, `${name} logged requested tier`);
-    assertEqual(tiers.served, served, `${name} logged served tier`);
+    assertEqual(detail.log.metadata?.service_tier ?? null, requested, `${name} logged requested tier`);
+    assertEqual(detail.log.metadata?.served_service_tier ?? null, served, `${name} logged served tier`);
+    // The detail dialog renders these columns, not the metadata copy.
+    assertEqual(detail.log.service_tier ?? null, requested, `${name} requested tier column`);
+    assertEqual(detail.log.served_service_tier ?? null, served, `${name} served tier column`);
     assertEqual(detail.log.status_code, 200, `${name} logged status`);
     logs[name] = detail.log;
   }
@@ -198,23 +211,22 @@ async function checkRequestLogs() {
   return logs;
 }
 
-function tierMetadata(log) {
-  return {
-    requested: log.metadata?.service_tier ?? null,
-    served: log.metadata?.served_service_tier ?? null,
-  };
-}
-
-// Opens the request detail from the filtered list and requires the tier facts on screen.
-async function inspectRequestLog(requestId, name) {
+// Opens the request detail from the filtered list and requires the exact `Service tier` fact.
+async function inspectRequestLog(requestId, name, expected) {
   await page.goto(
     `${baseURL}/admin/observability/request-logs?request_id=${encodeURIComponent(requestId)}`,
     { waitUntil: "domcontentloaded" },
   );
   await page.getByRole("button", { name: "Inspect" }).first().click();
-  const dialog = page.getByRole("dialog");
-  await dialog.getByText(/service tier/i).first().waitFor({ timeout: 15_000 });
-  await dialog.getByText(/priority/i).first().waitFor({ timeout: 15_000 });
+  const fact = page
+    .getByRole("dialog")
+    .getByTestId("request-log-facts")
+    .locator("div")
+    .filter({ has: page.locator("dt", { hasText: /^Service tier$/ }) })
+    .locator("dd");
+  await fact.waitFor({ timeout: 15_000 });
+  const shown = (await fact.locator(":scope > span > *").allInnerTexts()).join(" ");
+  assertEqual(shown, expected, `${name} Service tier fact`);
   await capture(page, name);
 }
 
