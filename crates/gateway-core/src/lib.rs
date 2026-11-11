@@ -205,8 +205,8 @@ pub use rate_limits::{
     RateLimitPolicyRecord, RateLimitPolicyShape, RateLimitScopeKind, RateLimitWindow,
 };
 pub use reasoning_policy::{
-    enforce_chat_reasoning_effort, enforce_reasoning_effort_map, enforce_reasoning_effort_value,
-    enforce_responses_reasoning_effort,
+    ReasoningEffortRejection, enforce_chat_reasoning_effort, enforce_reasoning_effort_map,
+    enforce_reasoning_effort_value, enforce_responses_reasoning_effort,
 };
 pub use route_capabilities::{
     PartialCapabilities, effective_route_capabilities, infer_compatibility_capabilities,
