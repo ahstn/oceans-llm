@@ -109,6 +109,14 @@ Prove service tiers through OpenRouter:
 
 The Service Tiers driver creates a temporary key for the tier canary models, checks tier discovery and four free rejections (unknown tier, conflicting fields, policy-blocked tier, no route for the tier), then sends six short paid requests: default, priority and flex A/B on `gpt-6-luna`, the route-forced `gpt-6-luna-fast`, Anthropic `speed: "fast"` on `claude-haiku-5.5`, and a streamed priority request. It compares OpenRouter's per-token prompt cost across tiers, checks the requested and served tier in each request log, screenshots the request detail, and revokes the key. Use [features/service-tiers.md](./features/service-tiers.md) for the exact contract.
 
+Prove the inference endpoints and the OpenCode plugin in real clients:
+
+```bash
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin drive harness-integration
+```
+
+The plan selects this proof for changes to the chat, Responses and Messages handlers, model discovery, generated client configs, and `packages/opencode-oceans`. The driver needs a run ID and `OPENROUTER_API_KEY`, but no launched stack: `tests/harness-integration` builds the gateway from this checkout and starts a temporary one. It runs the Pi and OpenCode contracts and the packed-plugin suite, including six short paid plugin requests, and records one check per test. Use [features/harness-integration.md](./features/harness-integration.md) for the exact contract.
+
 Prove the MCP registry, Tool Sets workbench, grants, and live tool routing:
 
 ```bash
@@ -230,6 +238,12 @@ The Service Tiers proof produces:
 - `service-tiers-proof.json` with checks for key creation, discovery, each rejection, each paid request, request-log tiers, the request detail, and key revocation; `details` holds the served tier per request and the request-log ID with its requested and served tier.
 - No prompt, response, gateway key, provider credential, or authorization header.
 
+The Harness Integration proof produces:
+
+- `harness-integration-results.json`, the vitest JSON report.
+- `harness-integration-proof.json` with one check per test and `plugin-live-usage`; `details` holds each live plugin request with its request-log ID, requested and served tier, tokens, and OpenCode and Oceans cost. A skipped test is an optional `blocked` check.
+- `harness-integration.log` beside the evidence directory, with the suite and temporary gateway output. It holds no gateway key or provider credential.
+
 The MCP proof produces:
 
 - Screenshots and ARIA snapshots for sign-in, discovery, the failed-discovery overview and toast, the menu disable and enable, saved membership, independent drafts, client configuration, mobile layout, grants, and filtered invocation lists.
@@ -278,6 +292,7 @@ control-oceans-admin drive models
 control-oceans-admin drive observability
 control-oceans-admin drive backend-gateway
 control-oceans-admin drive service-tiers
+control-oceans-admin drive harness-integration
 control-oceans-admin drive mcp
 control-oceans-admin drive profile
 control-oceans-admin drive skills
@@ -296,3 +311,5 @@ mise exec -- node --test .agents/skills/verify-oceans-admin/scripts/*.test.mjs
 ```
 
 Call the drivers through `control-oceans-admin` so they receive the recorded URL, evidence path, credentials, and gateway version.
+
+[scripts/drive-harness-integration.mjs](./scripts/drive-harness-integration.mjs) runs the client suite instead of a browser. `control-oceans-admin` gives it the evidence path, a source snapshot taken before the suite builds the gateway, and the workspace version.
