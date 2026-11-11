@@ -126,6 +126,10 @@ fn default_bootstrap_admin_password() -> String {
     String::new()
 }
 
+const fn default_bootstrap_admin_require_password_change() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct AuthConfig {
@@ -539,7 +543,7 @@ pub struct BootstrapAdminConfig {
     pub email: String,
     #[serde(default = "default_bootstrap_admin_password")]
     pub password: String,
-    #[serde(default)]
+    #[serde(default = "default_bootstrap_admin_require_password_change")]
     pub require_password_change: bool,
 }
 
@@ -549,7 +553,7 @@ impl Default for BootstrapAdminConfig {
             enabled: default_bootstrap_admin_enabled(),
             email: default_bootstrap_admin_email(),
             password: default_bootstrap_admin_password(),
-            require_password_change: true,
+            require_password_change: default_bootstrap_admin_require_password_change(),
         }
     }
 }

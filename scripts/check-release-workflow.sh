@@ -97,4 +97,12 @@ for workflow in "$release" "$release_cli" "$release_product"; do
   fi
 done
 
+# Releases run on main pushes, so the event ref is `main`, not the release tag.
+for workflow in "$release_cli" "$release_product"; do
+  if rg --quiet --regexp 'github\.ref_name|GITHUB_REF_NAME|github\.ref\b|GITHUB_REF\b' "$workflow"; then
+    echo "$workflow must take the release version from the verified plan, not the event ref" >&2
+    exit 1
+  fi
+done
+
 echo "Release workflow provenance gate is enforced"

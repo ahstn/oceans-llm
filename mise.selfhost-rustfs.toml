@@ -40,7 +40,7 @@ exec fnox --non-interactive exec --redact \
   --only GATEWAY_API_KEY \
   --only GATEWAY_PUBLIC_BASE_URL \
   --only OPENROUTER_API_KEY \
-  -- "$CARGO_TARGET_DIR/release/gateway" serve
+  -- "$CARGO_TARGET_DIR/release/gateway" serve --bootstrap-admin=true
 '''
 port = 8080
 ready_http = "http://127.0.0.1:8080/readyz"

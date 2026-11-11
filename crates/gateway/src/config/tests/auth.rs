@@ -36,6 +36,27 @@ fn built_in_defaults_do_not_enable_bootstrap_admin() {
 }
 
 #[test]
+fn omitted_bootstrap_password_change_defaults_to_required() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(
+        &config_path,
+        r#"
+server:
+  bind: 127.0.0.1:8080
+auth:
+  bootstrap_admin:
+    enabled: true
+    password: literal.admin
+"#,
+    );
+
+    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+
+    assert!(config.auth.bootstrap_admin.require_password_change);
+}
+
+#[test]
 fn rejects_literal_bootstrap_secret_on_non_loopback_listener() {
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");
