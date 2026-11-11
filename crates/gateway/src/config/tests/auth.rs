@@ -5,12 +5,17 @@ use serial_test::serial;
 #[test]
 #[serial]
 fn production_config_requires_bootstrap_password_change() {
-    let _environment = TestEnvironment::capture(&["POSTGRES_URL"]);
+    let _environment =
+        TestEnvironment::capture(&["POSTGRES_URL", "GATEWAY_BOOTSTRAP_ADMIN_PASSWORD"]);
     let config_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../gateway.prod.yaml");
     unsafe {
         env::set_var(
             "POSTGRES_URL",
             "postgres://postgres:postgres@localhost/test",
+        );
+        env::set_var(
+            "GATEWAY_BOOTSTRAP_ADMIN_PASSWORD",
+            "test-only-strong-bootstrap-password",
         );
     }
 
@@ -19,6 +24,160 @@ fn production_config_requires_bootstrap_password_change() {
     assert!(config.auth.bootstrap_admin.enabled);
     assert_eq!(config.auth.bootstrap_admin.email, "admin@local");
     assert!(config.auth.bootstrap_admin.require_password_change);
+}
+
+#[test]
+fn built_in_defaults_do_not_enable_bootstrap_admin() {
+    let config = GatewayConfig::default();
+
+    assert!(!config.auth.bootstrap_admin.enabled);
+    assert!(config.auth.bootstrap_admin.password.is_empty());
+    assert!(config.auth.bootstrap_admin.require_password_change);
+}
+
+#[test]
+fn rejects_literal_bootstrap_secret_on_non_loopback_listener() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(
+        &config_path,
+        r#"
+server:
+  bind: 0.0.0.0:8080
+auth:
+  bootstrap_admin:
+    enabled: true
+    password: literal.this-is-not-an-external-secret
+    require_password_change: true
+"#,
+    );
+
+    let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    assert!(
+        format!("{error:#}").contains("must use an env.* or file.* secret reference"),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[test]
+fn rejects_weak_external_bootstrap_secret_on_non_loopback_listener() {
+    let tmp = tempdir().expect("tempdir");
+    let secret_path = tmp.path().join("bootstrap-password");
+    std::fs::write(&secret_path, "admin\n").expect("write password");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(
+        &config_path,
+        &format!(
+            r#"
+server:
+  bind: 0.0.0.0:8080
+auth:
+  bootstrap_admin:
+    enabled: true
+    password: file.{}
+    require_password_change: true
+"#,
+            secret_path.display()
+        ),
+    );
+
+    let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    assert!(
+        format!("{error:#}").contains("must contain at least 16 characters"),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[test]
+fn requires_password_rotation_for_non_loopback_bootstrap_admin() {
+    let tmp = tempdir().expect("tempdir");
+    let secret_path = tmp.path().join("bootstrap-password");
+    std::fs::write(&secret_path, "test-only-strong-bootstrap-password\n").expect("write password");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(
+        &config_path,
+        &format!(
+            r#"
+server:
+  bind: 0.0.0.0:8080
+auth:
+  bootstrap_admin:
+    enabled: true
+    password: file.{}
+    require_password_change: false
+"#,
+            secret_path.display()
+        ),
+    );
+
+    let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    assert!(
+        format!("{error:#}").contains("require_password_change must be true"),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[test]
+fn accepts_strong_external_bootstrap_secret_on_non_loopback_listener() {
+    let tmp = tempdir().expect("tempdir");
+    let secret_path = tmp.path().join("bootstrap-password");
+    std::fs::write(&secret_path, "test-only-strong-bootstrap-password\n").expect("write password");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(
+        &config_path,
+        &format!(
+            r#"
+server:
+  bind: 0.0.0.0:8080
+auth:
+  bootstrap_admin:
+    enabled: true
+    password: file.{}
+    require_password_change: true
+"#,
+            secret_path.display()
+        ),
+    );
+
+    GatewayConfig::from_path(&config_path).expect("config should parse");
+}
+
+#[test]
+fn disabled_bootstrap_admin_does_not_require_a_secret() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(
+        &config_path,
+        r#"
+server:
+  bind: 0.0.0.0:8080
+auth:
+  bootstrap_admin:
+    enabled: false
+"#,
+    );
+
+    GatewayConfig::from_path(&config_path).expect("disabled bootstrap should parse");
+}
+
+#[test]
+fn loopback_listener_allows_explicit_development_bootstrap_secret() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(
+        &config_path,
+        r#"
+server:
+  bind: 127.0.0.1:8080
+auth:
+  bootstrap_admin:
+    enabled: true
+    password: literal.admin
+    require_password_change: false
+"#,
+    );
+
+    GatewayConfig::from_path(&config_path).expect("loopback development config should parse");
 }
 
 #[test]

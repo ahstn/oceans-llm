@@ -56,37 +56,23 @@ mise install
 
 `.miserc.local.toml` selects the `selfhost` environment for this checkout, and git ignores it. Plain `mise` commands, `ssh hogwarts 'cd ~/oceans-llm && mise run deploy'`, and the daemon supervisor all pick it up without a shell profile. `MISE_ENV` and `-E` still override it. Run `mise config` to check that `mise.selfhost.toml` is loaded.
 
-### Create the secrets file
+### Configure encrypted secrets
 
-Secrets live in `mise.selfhost.local.toml`, which git ignores. mise loads it after `mise.selfhost.toml`, which marks each value below as required, so a missing one stops mise before any daemon starts.
+Self-host secrets resolve through [fnox](https://fnox.jdx.dev/) only when the gateway configuration is validated or the gateway daemon starts. They do not enter the activated shell, `mise env`, unrelated tasks, or the admin UI daemon. Keep `mise.selfhost.local.toml` for non-secret machine overrides only.
+
+Copy the local fnox template, add the self-host keys below as references to your secret manager, and cache them with the machine's age identity for unattended restarts:
 
 ```sh
 umask 077
-cat > mise.selfhost.local.toml <<EOF
-[env]
-OCEANS_API_KEY_SECRET_ENCRYPTION_KEY = "$(openssl rand -base64 32)"
-GATEWAY_IDENTITY_TOKEN_SECRET = "$(openssl rand -base64 32)"
-GATEWAY_BOOTSTRAP_ADMIN_PASSWORD = "$(openssl rand -base64 18)"
-GATEWAY_API_KEY = "gwk_hogwarts.$(openssl rand -hex 24)"
-GATEWAY_PUBLIC_BASE_URL = "https://hogwarts.<tailnet>.ts.net"
-OPENROUTER_API_KEY = "<key>"
-EOF
+cp fnox.local.toml.example fnox.local.toml
+$EDITOR fnox.local.toml
+mise run secrets-sync
+mise run selfhost-config-validate
 ```
 
-Replace `<tailnet>` with your tailnet's name, and `<key>` with an [OpenRouter API key](https://openrouter.ai/settings/keys).
+Set `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY`, `GATEWAY_IDENTITY_TOKEN_SECRET`, `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD`, `GATEWAY_API_KEY`, `GATEWAY_PUBLIC_BASE_URL`, and `OPENROUTER_API_KEY`. Point their template item references at the values for this machine, and remove unrelated template entries that the host does not use. Store the public URL, such as `https://hogwarts.<tailnet>.ts.net`, as `GATEWAY_PUBLIC_BASE_URL`. `GATEWAY_IDENTITY_TOKEN_SECRET` signs sessions and invite links; without it the gateway falls back to a development value. If you lose `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY`, stored API keys cannot be decrypted.
 
-`GATEWAY_IDENTITY_TOKEN_SECRET` isn't required by mise, but set it anyway. It signs sessions and invite links, and without it the gateway uses a built-in development secret that anyone can read in the source.
-
-Back up this file somewhere safe. If you lose `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY`, the stored API keys can't be decrypted.
-
-mise masks the key, password, and provider values in task output, but that doesn't encrypt the file, and `mise env` still prints them in full. If a plain file isn't enough, mise has other options:
-
-| Option | Notes |
-| --- | --- |
-| `[env] _.file = "/path/secrets.env"` | A dotenv, JSON, YAML, or TOML file, or a list of them. Supports `redact = true`. Use it for a file outside the checkout. |
-| [sops](https://mise.jdx.dev/environments/secrets/sops.html) (experimental) | Commit an encrypted file and load it with `_.file`. Needs a decryption identity on the machine. |
-| [age values](https://mise.jdx.dev/environments/secrets/age.html) (experimental) | Encrypted values inside a mise config file. Needs an age or SSH identity. |
-| [fnox](https://mise.jdx.dev/environments/secrets/) | mise's recommended secret manager. Run `fnox exec -- mise run deploy`. |
+`fnox.local.toml` is gitignored and may contain secret-manager references plus an encrypted cache, never plaintext values. Keep the age identity outside the checkout and include both the identity and the source credentials in your recovery plan.
 
 ### Write your gateway config
 
@@ -98,15 +84,15 @@ It also sets a few defaults to review before real traffic:
 - Guardrails run in `audit` mode: they record matches but don't block anything.
 - Request logging keeps redacted request and response payloads.
 
-Don't edit the file in place. It's tracked by git, so `deploy` refuses to run while it has local changes, and checks out the release's copy anyway. Copy it outside the checkout and point the gateway at your copy in `mise.selfhost.local.toml`:
+Don't edit the file in place. It's tracked by git, so `deploy` refuses to run while it has local changes, and checks out the release's copy anyway. Copy it outside the checkout and point the gateway at your copy with a non-secret local override:
 
 ```sh
 mkdir -p ~/.config/oceans-llm
 cp deploy/selfhost/gateway.yaml ~/.config/oceans-llm/gateway.yaml
-printf 'GATEWAY_CONFIG = "%s"\n' "$HOME/.config/oceans-llm/gateway.yaml" >> mise.selfhost.local.toml
+printf '[env]\nGATEWAY_CONFIG = "%s"\n' "$HOME/.config/oceans-llm/gateway.yaml" > mise.selfhost.local.toml
 ```
 
-If your config refers to a new secret with `env.*`, add its value to `mise.selfhost.local.toml` too.
+If your config refers to a new secret with `env.*`, add it to fnox and grant only the validation task and gateway daemon access to it.
 
 ### Let your user manage Tailscale
 
@@ -250,7 +236,7 @@ To restore, restore the database and the objects from the same backup set. Start
 
 - There's no inbound path from CI. The machine only pulls from `origin` when you run `deploy`.
 - Deploying a tag pins the version, but `deploy` doesn't check signatures. If you sign your tags, add `git verify-tag "$ref"` to the task.
-- `mise.selfhost.local.toml` holds plain secrets. Keep it at mode `600`, and out of any backup that leaves the machine unencrypted.
+- `fnox.local.toml` holds references and age-encrypted values. Keep its decryption identity outside source snapshots, and rotate any credential that previously appeared in a plaintext checkout or backup.
 - PostgreSQL uses the mise preset's `trust` authentication on `127.0.0.1`, so any local user on the machine can connect. That's fine for a single-user machine. If it isn't single-user, use a custom daemon with a password.
 - Backups stay on the same disk. Copy `.local/backups/` elsewhere if you need to recover from losing the machine.
 - mise daemons are experimental upstream. Pin mise's version on the machine, and test upgrades before you rely on them.

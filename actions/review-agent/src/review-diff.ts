@@ -10,6 +10,27 @@ export interface ReviewDiff {
   anchors: Map<string, Set<number>>
 }
 
+export interface SerializedReviewDiff {
+  additions: number
+  deletions: number
+  filesChanged: number
+  anchors: [string, number[]][]
+}
+
+export function serializeReviewDiff(diff: ReviewDiff): SerializedReviewDiff {
+  return {
+    ...diff,
+    anchors: [...diff.anchors].map(([path, lines]) => [path, [...lines]]),
+  }
+}
+
+export function deserializeReviewDiff(diff: SerializedReviewDiff): ReviewDiff {
+  return {
+    ...diff,
+    anchors: new Map(diff.anchors.map(([path, lines]) => [path, new Set(lines)])),
+  }
+}
+
 export async function loadReviewDiff(
   workspace: string,
   context: PullRequestContext,

@@ -3,7 +3,13 @@ import { execFileSync } from 'node:child_process'
 import { chmodSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadReviewDiff, parseDiffAnchors } from './review-diff'
+import {
+  deserializeReviewDiff,
+  loadReviewDiff,
+  parseDiffAnchors,
+  serializeReviewDiff,
+  type ReviewDiff,
+} from './review-diff'
 import type { PullRequestContext } from './types'
 
 test('counts deletions, binary changes and mode changes separately from anchors; streams large diffs', async () => {
@@ -78,4 +84,18 @@ test('reads Git-quoted paths and ignores header-like added content', () => {
   } finally {
     rmSync(workspace, { recursive: true, force: true })
   }
+})
+
+test('preserves review metrics and anchors across the worker boundary', () => {
+  const diff: ReviewDiff = {
+    additions: 3,
+    deletions: 2,
+    filesChanged: 2,
+    anchors: new Map([
+      ['src/first.ts', new Set([1, 3])],
+      ['src/second.ts', new Set([8])],
+    ]),
+  }
+
+  expect(deserializeReviewDiff(serializeReviewDiff(diff))).toEqual(diff)
 })

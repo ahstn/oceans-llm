@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import { loadReviewDiff, serializeReviewDiff, type SerializedReviewDiff } from './review-diff'
 import { readReviewResult } from './result-artifact'
 import { sandboxCommand } from './worker-sandbox'
 import type { EffectiveConfig, PullRequestContext, ReviewResult } from './types'
@@ -25,6 +26,10 @@ export interface PiReviewRequest {
   effectiveConfig: EffectiveConfig
   workspace: string
   oceansUrl: string
+}
+
+export interface PiWorkerRequest extends PiReviewRequest {
+  reviewDiff: SerializedReviewDiff
 }
 
 // Provider credentials are opt-in workflow environment variables. The GitHub and
@@ -70,8 +75,13 @@ export async function invokePi(
   const tempDir = mkdtempSync(join(tmpdir(), 'oceans-review-agent-'))
   const requestPath = join(tempDir, 'request.json')
   const resultPath = join(tempDir, 'result.json')
-  writeFileSync(requestPath, JSON.stringify(request), { mode: 0o600 })
   try {
+    const diffPath = join(tempDir, 'review.diff')
+    const reviewDiff = serializeReviewDiff(
+      await loadReviewDiff(request.workspace, request.context, diffPath),
+    )
+    const workerRequest: PiWorkerRequest = { ...request, reviewDiff }
+    writeFileSync(requestPath, JSON.stringify(workerRequest), { mode: 0o600 })
     const workerArgs = [
       '--import',
       fileURLToPath(import.meta.resolve('tsx')),

@@ -8,6 +8,10 @@ use serde::Deserialize;
 use super::identity::TeamConfig;
 use super::normalization::normalize_config_team_key;
 use super::references::{resolve_path_reference, resolve_secret_reference};
+use super::server::ServerConfig;
+
+const MIN_EXTERNAL_BOOTSTRAP_PASSWORD_CHARACTERS: usize = 16;
+const MIN_EXTERNAL_BOOTSTRAP_PASSWORD_DISTINCT_CHARACTERS: usize = 8;
 
 pub(super) fn normalize_config_auth_provider_key(provider_key: &str) -> anyhow::Result<String> {
     let normalized = provider_key.trim().to_string();
@@ -111,7 +115,7 @@ const fn default_user_global_role() -> GlobalRole {
 }
 
 const fn default_bootstrap_admin_enabled() -> bool {
-    true
+    false
 }
 
 fn default_bootstrap_admin_email() -> String {
@@ -119,7 +123,7 @@ fn default_bootstrap_admin_email() -> String {
 }
 
 fn default_bootstrap_admin_password() -> String {
-    "literal.admin".to_string()
+    String::new()
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -545,12 +549,54 @@ impl Default for BootstrapAdminConfig {
             enabled: default_bootstrap_admin_enabled(),
             email: default_bootstrap_admin_email(),
             password: default_bootstrap_admin_password(),
-            require_password_change: false,
+            require_password_change: true,
         }
     }
 }
 
 impl BootstrapAdminConfig {
+    pub(super) fn validate(&self, server: &ServerConfig) -> anyhow::Result<()> {
+        if !self.enabled {
+            return Ok(());
+        }
+
+        let bind_address = server.bind_address()?;
+        if bind_address.ip().is_loopback() {
+            self.resolved_password()
+                .context("auth.bootstrap_admin.password")?;
+            return Ok(());
+        }
+
+        if !self.password.starts_with("env.") && !self.password.starts_with("file.") {
+            bail!(
+                "auth.bootstrap_admin.password must use an env.* or file.* secret reference when server.bind is not loopback"
+            );
+        }
+
+        let password = self
+            .resolved_password()
+            .context("auth.bootstrap_admin.password")?;
+        let character_count = password.chars().count();
+        let distinct_character_count = password
+            .chars()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len();
+        if character_count < MIN_EXTERNAL_BOOTSTRAP_PASSWORD_CHARACTERS
+            || distinct_character_count < MIN_EXTERNAL_BOOTSTRAP_PASSWORD_DISTINCT_CHARACTERS
+        {
+            bail!(
+                "auth.bootstrap_admin.password must contain at least {MIN_EXTERNAL_BOOTSTRAP_PASSWORD_CHARACTERS} characters and {MIN_EXTERNAL_BOOTSTRAP_PASSWORD_DISTINCT_CHARACTERS} distinct characters when server.bind is not loopback"
+            );
+        }
+        if !self.require_password_change {
+            bail!(
+                "auth.bootstrap_admin.require_password_change must be true when server.bind is not loopback"
+            );
+        }
+
+        Ok(())
+    }
+
     pub fn resolved_password(&self) -> anyhow::Result<String> {
         resolve_secret_reference(&self.password)
     }

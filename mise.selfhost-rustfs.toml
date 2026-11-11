@@ -28,7 +28,20 @@ oneshot = true
 proxy = false
 
 [daemons.gateway]
-run = 'exec "$CARGO_TARGET_DIR/release/gateway" serve'
+run = '''
+unset EXA_API_KEY GATEWAY_ADMIN_PASSWORD GATEWAY_API_KEY GATEWAY_BOOTSTRAP_ADMIN_PASSWORD
+unset GATEWAY_IDENTITY_TOKEN_SECRET GATEWAY_PUBLIC_BASE_URL OCEANS_API_KEY_SECRET_ENCRYPTION_KEY
+unset OCEANS_API_PERSONAL_KEY OCEANS_MCP_DISCOVERY_EXA OCEANS_MCP_DISCOVERY_REUI
+unset OPENAI_API_KEY OPENROUTER_API_KEY REUI_LICENSE_KEY
+exec fnox --non-interactive exec --redact \
+  --only OCEANS_API_KEY_SECRET_ENCRYPTION_KEY \
+  --only GATEWAY_IDENTITY_TOKEN_SECRET \
+  --only GATEWAY_BOOTSTRAP_ADMIN_PASSWORD \
+  --only GATEWAY_API_KEY \
+  --only GATEWAY_PUBLIC_BASE_URL \
+  --only OPENROUTER_API_KEY \
+  -- "$CARGO_TARGET_DIR/release/gateway" serve
+'''
 port = 8080
 ready_http = "http://127.0.0.1:8080/readyz"
 depends = ["db", "rustfs-bucket"]

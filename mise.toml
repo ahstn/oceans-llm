@@ -92,6 +92,8 @@ OCEANS_LOCAL_PUBLIC_BASE_URL = "${OCEANS_LOCAL_PUBLIC_BASE_URL:-http://127.0.0.1
 [task_templates.gateway-prod.env]
 GATEWAY_CONFIG = "gateway.prod.yaml"
 POSTGRES_URL = { required = true }
+GATEWAY_BOOTSTRAP_ADMIN = "true"
+GATEWAY_BOOTSTRAP_ADMIN_PASSWORD = { required = true }
 
 [tasks.install]
 description = "Install or update tool versions from mise.toml"
@@ -182,7 +184,10 @@ run = "lychee --no-progress ."
 
 [tasks.actions-audit]
 description = "Audit GitHub Actions workflows and Dependabot config; set GH_TOKEN for online audits"
-run = "zizmor --quiet --no-progress --strict-collection ."
+run = [
+  "zizmor --quiet --no-progress --strict-collection .",
+  "scripts/check-ci-trust-boundaries.sh",
+]
 
 [tasks.typos]
 description = "Check spelling in source, docs, and config; allowed words live in _typos.toml"
@@ -349,16 +354,18 @@ git push --atomic origin main "$(git describe --tags --exact-match)"
 
 [tasks.dist-generate]
 description = "Regenerate the cargo-dist release workflow"
-run = "dist generate"
+run = "mise exec cargo-dist@0.33.0 -- dist generate"
 
 [tasks.dist-check]
 description = "Check generated release CI and lint release workflows"
 run = [
-  "dist generate --check",
+  "mise exec cargo-dist@0.33.0 -- dist generate --check",
   # Check generated shell commands without applying repository shell style rules.
   "actionlint -shellcheck= .github/workflows/release.yml",
   "actionlint .github/workflows/release-product.yml .github/workflows/release-cli-check.yml",
-  "shellcheck scripts/check-cli-release.sh scripts/release.sh",
+  "shellcheck scripts/check-cli-release.sh scripts/check-release-provenance.test.sh scripts/check-release-workflow.sh scripts/release.sh",
+  "scripts/check-release-workflow.sh",
+  "scripts/check-release-provenance.test.sh",
 ]
 
 [tasks.dist-plan]

@@ -93,7 +93,7 @@ fn validate_otel_endpoint(field: &str, endpoint: Option<&str>) -> anyhow::Result
 }
 
 fn default_bind() -> String {
-    "0.0.0.0:8080".to_string()
+    "127.0.0.1:8080".to_string()
 }
 
 fn default_log_format() -> String {
@@ -111,6 +111,15 @@ const fn default_otel_trace_sample_ratio() -> f64 {
 #[cfg(test)]
 mod tests {
     use super::ServerConfig;
+
+    #[test]
+    fn default_listener_is_loopback_only() {
+        let address = ServerConfig::default()
+            .bind_address()
+            .expect("default listener address");
+
+        assert!(address.ip().is_loopback(), "default listener: {address}");
+    }
 
     #[test]
     fn telemetry_endpoints_require_absolute_http_uris() {

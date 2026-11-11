@@ -8,7 +8,7 @@ pub struct AdminUiConfig {
     pub upstream: String,
     pub connect_timeout_ms: u64,
     pub request_timeout_ms: u64,
-    /// Archive limit plus multipart framing overhead, enforced before proxy buffering.
+    /// Maximum proxied request body size, sized for the archive limit plus multipart overhead.
     pub max_multipart_body_bytes: usize,
     /// Key that signs the browser's address into `x-oceans-client-ip`. Without it the
     /// proxy forwards no client address and audit entries record the direct peer.

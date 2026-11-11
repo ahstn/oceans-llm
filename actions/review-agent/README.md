@@ -10,12 +10,12 @@ The `submit_review` tool validates each finding against changed RIGHT-side lines
 
 ## Use from another repository
 
-Replace `ACTION_COMMIT_SHA` with a reviewed commit of this repository that contains the source action. The target checkout must match the PR head and include the base history. Drafts and forks are skipped.
+Replace `ACTION_COMMIT_SHA` with a reviewed commit of this repository that contains the source action. The review-data checkout must match the PR head and include the base history. Drafts and forks are skipped.
 
 ```yaml
 name: Oceans review
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
 permissions:
   contents: read
@@ -25,13 +25,21 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout trusted base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - name: Checkout PR as review data
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          path: .review-source
           fetch-depth: 0
           persist-credentials: false
       - uses: ahstn/oceans-llm/actions/review-agent@ACTION_COMMIT_SHA
         with:
+          review-workspace: ${{ github.workspace }}/.review-source
           oceans-url: ${{ vars.OCEANS_URL }}
           oceans-api-key: ${{ secrets.OCEANS_REVIEW_API_KEY }}
           github-token: ${{ github.token }}
@@ -132,7 +140,7 @@ The action check installs from the lockfile, typechecks, runs unit tests, applie
 
 The SDK smoke checks extension tool registration, resolved bearer credentials, provider error reporting, valid and invalid result handling, and foreground delegation. A separate search smoke exercises the installed package's quota fallback from anonymous Exa to Parallel MCP and verifies that authentication errors remain visible. Both checks are deterministic and do not prove live model quality or external MCP/search connectivity. The manual self-hosted smoke exercises the action lifecycle against a mock Oceans API with GitHub publishing disabled.
 
-The repository's `oceans-review-agent.yml` workflow uses `pull_request` for same-repository PR creation, updates, reopening, and transition to ready. Fork PRs are skipped, so the job receives secrets without `pull_request_target`. It runs the PR's own workflow and action code and keeps a separate PR-head checkout as review data. A new update cancels an in-progress review for the same PR. SIGINT and SIGTERM trigger a best-effort cancelled run report. Forced runner termination cannot guarantee a final report. Drafts are skipped by both the action and backend. It builds a temporary real gateway, creates a service account with an explicit `openai/gpt-5.6-luna` grant and a $2 daily hard budget, and routes Pi through Oceans to OpenRouter using the repository's `OPENROUTER_API_KEY` secret. It posts a managed summary and up to ten inline findings. Each job has a new database and budget; these limits are not a repository-wide spending cap.
+The repository's `oceans-review-agent.yml` workflow uses `pull_request_target` for same-repository PR creation, updates, reopening, and transition to ready. The workflow definition, action, build, and gateway scripts come from the immutable base SHA; the PR head is a separate review-data checkout and is never used for tasks, dependencies, or local actions. Fork PRs and Dependabot are skipped. A new update cancels an in-progress review for the same PR. SIGINT and SIGTERM trigger a best-effort cancelled run report. Forced runner termination cannot guarantee a final report. Drafts are skipped by both the action and backend. It builds a temporary real gateway, creates a service account with an explicit `openai/gpt-5.6-luna` grant and a $2 daily hard budget, and routes Pi through Oceans to OpenRouter using the repository's `OPENROUTER_API_KEY` secret. It posts a managed summary and up to ten inline findings. Each job has a new database and budget; these limits are not a repository-wide spending cap.
 
 The workflow verifies the persisted review status, reviewed commit, published comment ID, successful OpenRouter requests, and returned token usage. It uploads only sanitized evidence, then removes the temporary database and credentials. The gateway is temporary because this repository has no configured external Oceans instance; review summaries remain on GitHub, while full control-plane history does not persist between jobs.
 

@@ -5,7 +5,9 @@ use gateway_core::{
     SeedModel, SeedModelRoute, SeedProvider, SeedServiceAccount, SeedTeam, hash_gateway_key_secret,
 };
 use gateway_guardrails::{GuardrailConfig, GuardrailEngine};
-use gateway_service::{GatewayService, McpOauthRuntime, WeightedRoutePlanner};
+use gateway_service::{
+    GatewayService, McpOauthRuntime, PasswordAuthProtection, WeightedRoutePlanner,
+};
 use gateway_store::{AnyStore, GatewayStore, StoreConnectionOptions, run_migrations_with_options};
 use serde_json::json;
 
@@ -47,6 +49,7 @@ pub async fn app_state() -> (tempfile::TempDir, AppState) {
             store.clone(),
             crate::http::mcp_gateway::stream_reach::STREAM_REACH_RECHECK_INTERVAL,
         ),
+        password_auth: Arc::new(PasswordAuthProtection::default()),
         identity_token_secret: Arc::new("test-secret".to_string()),
         oidc_public_base_url: Arc::new(None),
         oauth_public_base_url: Arc::new(None),

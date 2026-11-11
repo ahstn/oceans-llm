@@ -963,10 +963,11 @@ jobs:
     if: ${{{{ github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false }}}}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{{{ github.event.pull_request.head.sha }}}}
           fetch-depth: 0
+          persist-credentials: false
       - uses: ahstn/oceans-llm/actions/review-agent@{action_ref}
         with:
           oceans-url: {oceans_url}
@@ -1019,8 +1020,12 @@ mod tests {
         assert!(yaml.contains("permissions:"));
         assert!(yaml.contains("pull-requests: write"));
         assert!(yaml.contains("issues: write"));
-        assert!(yaml.contains("actions/checkout@v4"));
+        assert!(
+            yaml.contains("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1")
+        );
+        assert!(!yaml.contains("actions/checkout@v"));
         assert!(yaml.contains("ref: ${{ github.event.pull_request.head.sha }}"));
+        assert!(yaml.contains("persist-credentials: false"));
         assert!(yaml.contains("ahstn/oceans-llm/actions/review-agent@main"));
         assert!(yaml.contains("${{ secrets.OCEANS_REVIEW_AGENT_API_KEY }}"));
     }

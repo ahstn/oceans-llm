@@ -801,29 +801,71 @@ pub async fn login_with_password(
 ) -> Result<Response, AppError> {
     let invalid_credentials = || AppError(GatewayError::Auth(AuthError::InvalidCredentials));
     let email_normalized = normalize_email(&request.email)?;
-    let user = state
+    let source = meta.request_ip.as_deref().unwrap_or("unknown");
+    let attempt = match state.password_auth.admit_login(source, &email_normalized) {
+        Ok(attempt) => attempt,
+        Err(scope) => {
+            state.metrics.record_password_login(scope.metric_outcome());
+            tracing::warn!(scope = scope.as_str(), "password login throttled");
+            return Err(AppError(GatewayError::RateLimited(
+                "too many password login attempts; retry later".to_string(),
+            )));
+        }
+    };
+
+    let user = match state
         .store
         .get_user_by_email_normalized(&email_normalized)
-        .await?
-        .ok_or_else(invalid_credentials)?;
-    if user.auth_mode != AuthMode::Password {
+        .await
+    {
+        Ok(user) => user,
+        Err(error) => {
+            attempt.release();
+            return Err(error.into());
+        }
+    };
+    let password_auth = if let Some(user) = user
+        .as_ref()
+        .filter(|user| user.auth_mode == AuthMode::Password)
+    {
+        match state.store.get_user_password_auth(user.user_id).await {
+            Ok(password_auth) => password_auth,
+            Err(error) => {
+                attempt.release();
+                return Err(error.into());
+            }
+        }
+    } else {
+        None
+    };
+    let has_password_auth = password_auth.is_some();
+    let expected_hash = password_auth.map(|auth| auth.password_hash);
+    let password_ok = match state
+        .password_auth
+        .verify_password(request.password, expected_hash)
+        .await
+    {
+        Ok(password_ok) => password_ok,
+        Err(error) => {
+            attempt.release();
+            if matches!(&error, GatewayError::RateLimited(_)) {
+                state.metrics.record_password_login("argon2_busy");
+            }
+            return Err(AppError(error));
+        }
+    };
+    let Some(user) = user.filter(|user| {
+        user.auth_mode == AuthMode::Password
+            && has_password_auth
+            && password_ok
+            && user.status == UserStatus::Active
+    }) else {
+        attempt.complete_failure();
+        state.metrics.record_password_login("invalid_credentials");
         return Err(invalid_credentials());
-    }
-    let password_auth = state
-        .store
-        .get_user_password_auth(user.user_id)
-        .await?
-        .ok_or_else(invalid_credentials)?;
-
-    let password_ok =
-        gateway_service::verify_gateway_key_secret(&request.password, &password_auth.password_hash)
-            .map_err(|error| AppError(GatewayError::Internal(error.to_string())))?;
-    if !password_ok {
-        return Err(invalid_credentials());
-    }
-    if user.status != UserStatus::Active {
-        return Err(invalid_credentials());
-    }
+    };
+    attempt.complete_success();
+    state.metrics.record_password_login("authenticated");
     let session_view = build_auth_session_view(&state, user.clone()).await?;
 
     let now = OffsetDateTime::now_utc();
@@ -935,18 +977,21 @@ pub async fn change_password(
         .get_user_password_auth(user.user_id)
         .await?
         .ok_or(AppError(GatewayError::Auth(AuthError::InvalidCredentials)))?;
-    let current_password_ok = gateway_service::verify_gateway_key_secret(
-        &request.current_password,
-        &password_auth.password_hash,
-    )
-    .map_err(|error| AppError(GatewayError::Internal(error.to_string())))?;
+    let current_password_ok = state
+        .password_auth
+        .verify_password(request.current_password, Some(password_auth.password_hash))
+        .await
+        .map_err(AppError)?;
     if !current_password_ok {
         return Err(AppError(GatewayError::Auth(AuthError::InvalidCredentials)));
     }
 
     let now = OffsetDateTime::now_utc();
-    let new_password_hash = gateway_service::hash_gateway_key_secret(&request.new_password)
-        .map_err(|error| AppError(GatewayError::Internal(error.to_string())))?;
+    let new_password_hash = state
+        .password_auth
+        .hash_password(request.new_password)
+        .await
+        .map_err(AppError)?;
     let progress = AuditProgress::default();
     let change = async {
         state
@@ -1742,8 +1787,11 @@ pub async fn complete_password_invitation(
     }
 
     let invitation = load_valid_invitation(&state, &token).await?;
-    let password_hash = gateway_service::hash_gateway_key_secret(&request.password)
-        .map_err(|error| AppError(GatewayError::Internal(error.to_string())))?;
+    let password_hash = state
+        .password_auth
+        .hash_password(request.password)
+        .await
+        .map_err(AppError)?;
     let now = OffsetDateTime::now_utc();
 
     // Holding the invite token proves the user, so the entry is attributed to them.

@@ -1,5 +1,5 @@
-import { existsSync, realpathSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { existsSync, lstatSync, realpathSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 
 // The root starts empty. In particular, never mount procfs: its environ files
 // would expose model credentials to read/fetch tools, even in a PID namespace.
@@ -37,6 +37,16 @@ export function sandboxCommand(
   for (const path of new Set([actionRoot, workspace, dirname(process.execPath)])) {
     const resolved = realpathSync(path)
     args.push('--ro-bind', resolved, path)
+  }
+  // Diff preparation finishes before the worker starts, so model tools never need Git metadata.
+  const gitMetadata = join(workspace, '.git')
+  const gitMetadataType = lstatSync(gitMetadata)
+  if (gitMetadataType.isDirectory()) {
+    args.push('--tmpfs', gitMetadata)
+  } else if (gitMetadataType.isFile()) {
+    args.push('--ro-bind', '/dev/null', gitMetadata)
+  } else {
+    throw new Error('The review workspace .git metadata must be a file or directory')
   }
   args.push(
     '--dev',

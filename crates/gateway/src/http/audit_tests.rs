@@ -879,6 +879,202 @@ async fn password_sign_in_and_sign_out_are_audited_without_the_password() {
 }
 
 #[tokio::test]
+async fn password_sign_in_backs_off_repeated_account_failures() {
+    const ACCOUNT_FAILURE_LIMIT: u32 = 5;
+
+    let harness = Harness::new().await;
+    let (user_id, _) = harness.user(GlobalRole::User).await;
+    let user = harness
+        .state
+        .store
+        .get_user_by_id(user_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let hash = gateway_service::hash_gateway_key_secret("correct password").unwrap();
+    harness
+        .state
+        .store
+        .store_user_password(user_id, &hash, OffsetDateTime::now_utc())
+        .await
+        .unwrap();
+
+    let mut anonymous = HeaderMap::new();
+    anonymous.insert(CLIENT_IP_HEADER, harness.signed_client_ip());
+    for _ in 0..ACCOUNT_FAILURE_LIMIT {
+        let (status, _) = harness
+            .send(
+                Method::POST,
+                "/api/v1/auth/login/password",
+                &anonymous,
+                Some(json!({ "email": user.email, "password": "wrong password" })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    let (status, body) = harness
+        .send(
+            Method::POST,
+            "/api/v1/auth/login/password",
+            &anonymous,
+            Some(json!({ "email": user.email, "password": "another wrong password" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
+    assert_eq!(body["error"]["code"], "rate_limited");
+}
+
+#[tokio::test]
+async fn password_sign_in_rejects_an_account_burst_before_verification() {
+    let harness = Harness::new().await;
+    let email = "bounded-account@example.test";
+    let attempts: Vec<_> = (0..5)
+        .map(|index| {
+            harness
+                .state
+                .password_auth
+                .admit_login(&format!("source-{index}"), email)
+                .unwrap()
+        })
+        .collect();
+    let mut anonymous = HeaderMap::new();
+    anonymous.insert(CLIENT_IP_HEADER, harness.signed_client_ip());
+
+    let (status, body) = harness
+        .send(
+            Method::POST,
+            "/api/v1/auth/login/password",
+            &anonymous,
+            Some(json!({
+                "email": email.to_uppercase(),
+                "password": "wrong password"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
+    assert_eq!(body["error"]["code"], "rate_limited");
+
+    for attempt in attempts {
+        attempt.release();
+    }
+    let (status, body) = harness
+        .send(
+            Method::POST,
+            "/api/v1/auth/login/password",
+            &anonymous,
+            Some(json!({ "email": email, "password": "wrong password" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
+}
+
+#[tokio::test]
+async fn password_sign_in_counts_cancelled_source_reservations() {
+    let harness = Harness::new().await;
+    let mut attempts: Vec<_> = (0..20)
+        .map(|index| {
+            harness
+                .state
+                .password_auth
+                .admit_login(CLIENT_IP, &format!("account-{index}@example.test"))
+                .unwrap()
+        })
+        .collect();
+    // Cancellation consumes the reserved attempt instead of freeing an extra
+    // slot while the other nineteen requests remain in flight.
+    drop(attempts.pop().unwrap());
+    let mut anonymous = HeaderMap::new();
+    anonymous.insert(CLIENT_IP_HEADER, harness.signed_client_ip());
+    let (status, body) = harness
+        .send(
+            Method::POST,
+            "/api/v1/auth/login/password",
+            &anonymous,
+            Some(json!({
+                "email": "new-account@example.test",
+                "password": "wrong password"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
+    assert_eq!(body["error"]["code"], "rate_limited");
+    for attempt in attempts {
+        attempt.release();
+    }
+}
+
+#[tokio::test]
+async fn password_sign_in_success_preserves_other_in_flight_attempts() {
+    let harness = Harness::new().await;
+    let (user_id, _) = harness.user(GlobalRole::User).await;
+    let user = harness
+        .state
+        .store
+        .get_user_by_id(user_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let password = "correct password";
+    let hash = gateway_service::hash_gateway_key_secret(password).unwrap();
+    harness
+        .state
+        .store
+        .store_user_password(user_id, &hash, OffsetDateTime::now_utc())
+        .await
+        .unwrap();
+    harness
+        .state
+        .password_auth
+        .admit_login("prior-source", &user.email)
+        .unwrap()
+        .complete_failure();
+    let mut attempts: Vec<_> = (0..3)
+        .map(|index| {
+            harness
+                .state
+                .password_auth
+                .admit_login(&format!("overlapping-{index}"), &user.email)
+                .unwrap()
+        })
+        .collect();
+    let mut anonymous = HeaderMap::new();
+    anonymous.insert(CLIENT_IP_HEADER, harness.signed_client_ip());
+    let (status, body) = harness
+        .send(
+            Method::POST,
+            "/api/v1/auth/login/password",
+            &anonymous,
+            Some(json!({ "email": user.email, "password": password })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // Success clears the old failure, leaving exactly two free account slots.
+    for index in 0..2 {
+        attempts.push(
+            harness
+                .state
+                .password_auth
+                .admit_login(&format!("after-success-{index}"), &user.email)
+                .unwrap(),
+        );
+    }
+    let (status, body) = harness
+        .send(
+            Method::POST,
+            "/api/v1/auth/login/password",
+            &anonymous,
+            Some(json!({ "email": user.email, "password": "wrong password" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
+    for attempt in attempts {
+        attempt.release();
+    }
+}
+
+#[tokio::test]
 async fn forged_client_addresses_are_not_recorded() {
     let harness = Harness::new().await;
     let mut headers = harness.admin.clone();

@@ -130,10 +130,6 @@ pub struct GatewayConfig {
 
 impl GatewayConfig {
     pub fn from_path(path: &Path) -> anyhow::Result<Self> {
-        if !path.exists() {
-            return Ok(Self::default());
-        }
-
         let raw = fs::read_to_string(path)
             .with_context(|| format!("failed reading config file `{}`", path.display()))?;
         let parsed: Self = serde_yaml::from_str(&raw)
@@ -148,6 +144,7 @@ impl GatewayConfig {
 
     fn validate(&self) -> anyhow::Result<()> {
         self.server.validate()?;
+        self.auth.bootstrap_admin.validate(&self.server)?;
         self.database.connection_options()?;
         self.skills.validate()?;
         self.budget_alerts.validate()?;
