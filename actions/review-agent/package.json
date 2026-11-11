@@ -15,20 +15,20 @@
   "dependencies": {
     "@actions/core": "3.0.1",
     "@actions/github": "9.1.1",
-    "@earendil-works/pi-ai": "1.4.0",
-    "@earendil-works/pi-coding-agent": "1.4.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-coding-agent": "1.5.0",
     "pi-intercom": "0.18.1",
-    "pi-subagents": "0.84.0",
-    "pi-web-access": "0.46.0",
+    "pi-subagents": "0.87.0",
+    "pi-web-access": "0.47.0",
     "tsx": "4.23.15",
-    "typebox": "1.4.3"
+    "typebox": "1.4.5"
   },
   "devDependencies": {
     "@types/node": "26.6.6",
     "bun-types": "1.4.4",
     "typescript": "7.0.2",
-    "oxlint": "1.90.0",
-    "oxfmt": "0.75.0",
-    "oxlint-tsgolint": "7.0.2005"
+    "oxlint": "1.92.0",
+    "oxfmt": "0.77.0",
+    "oxlint-tsgolint": "7.0.2006"
   }
 }

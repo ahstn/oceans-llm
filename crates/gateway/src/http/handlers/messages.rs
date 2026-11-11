@@ -43,7 +43,13 @@ pub(super) async fn v1_messages_inner(
         request_started_at,
     )
     .await?;
-    enforce_chat_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)?;
+    enforce_chat_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)
+        .inspect_err(|rejection| {
+            resolved
+                .selection
+                .log_reasoning_effort_rejection(Some(&request_id), rejection);
+        })
+        .map_err(GatewayError::from)?;
     enforce_requested_service_tier(&resolved, requested_service_tier)?;
 
     let request_headers = extract_request_headers(&headers);

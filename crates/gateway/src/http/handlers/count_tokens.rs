@@ -154,7 +154,13 @@ async fn count_tokens_inner(
         RateLimitOperation::CountTokens,
     )
     .await?;
-    enforce_chat_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)?;
+    enforce_chat_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)
+        .inspect_err(|rejection| {
+            resolved
+                .selection
+                .log_reasoning_effort_rejection(Some(&request_id), rejection);
+        })
+        .map_err(GatewayError::from)?;
 
     let request_headers = extract_request_headers(&headers);
     let request_span = Span::current();

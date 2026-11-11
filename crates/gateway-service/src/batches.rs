@@ -301,12 +301,11 @@ where
     let resolved = service.resolve_request(auth, &input.model).await?;
     for item in &input.items {
         enforce_reasoning_effort_value(&item.body, resolved.selection.max_reasoning_effort)
-            .map_err(|error| match error {
-                GatewayError::InvalidRequest(message) => GatewayError::InvalidRequest(format!(
-                    "batch item `{}` {message}",
-                    item.custom_id
-                )),
-                error => error,
+            .map_err(|rejection| {
+                resolved
+                    .selection
+                    .log_reasoning_effort_rejection(None, &rejection);
+                GatewayError::InvalidRequest(format!("batch item `{}` {rejection}", item.custom_id))
             })?;
     }
     for item in &mut input.items {
