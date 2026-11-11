@@ -153,6 +153,20 @@ async function checkNegativeRequests() {
     }
     proof.pass(id, { observed: `${response.status} ${body.error?.code ?? ""}`.trim() });
   }
+  // Batches run at the batch rate, so a tiered item rejects the batch before it is stored.
+  const batch = await gatewayFetch(
+    "/api/v1/batches",
+    {
+      endpoint: "chat_completions",
+      model: tieredModel,
+      items: [{ custom_id: "tiered", body: chatBody({ service_tier: "priority" }) }],
+    },
+    { authorization: `Bearer ${rawKey}`, "idempotency-key": `service-tiers-${Date.now()}` },
+  );
+  const batchBody = await batch.json();
+  assertEqual(batch.status, 400, "batch tier status");
+  assert(/cannot select a service tier/.test(batchBody.error?.message ?? ""), "batch tier message");
+  proof.pass("batch-item-tier-400", { observed: `${batch.status} ${batchBody.error?.code ?? ""}`.trim() });
 }
 
 async function checkRequestLogs() {
@@ -235,7 +249,10 @@ async function checkModelInfo() {
 }
 
 async function openModelInfo(modelId) {
-  await page.goto(`${baseURL}/admin/models`, { waitUntil: "domcontentloaded" });
+  // Search and the largest page keep the row on page 1 however many models are configured.
+  await page.goto(`${baseURL}/admin/models?q=${encodeURIComponent(modelId)}&page_size=100`, {
+    waitUntil: "domcontentloaded",
+  });
   const row = page.getByTestId(`models-desktop-cell-${modelId}`).locator("xpath=ancestor::tr");
   await row.getByRole("button", { name: "Info" }).click();
   const dialog = page.getByRole("dialog", { name: "Model info" });

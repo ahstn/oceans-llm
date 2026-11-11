@@ -187,8 +187,17 @@ fn mode_service_tier_cost(
 /// selects no tier or sets any other field.
 fn mode_service_tier(mut body: BTreeMap<String, Value>) -> Option<ServiceTier> {
     let tier = take_requested_service_tier(&mut body).ok()?;
+    // A nested body that sets any other field disqualifies the whole mode, so it must not
+    // read the same as one that selects no tier.
     let nested_tier = match body.remove(BEDROCK_MODEL_REQUEST_FIELDS) {
-        Some(Value::Object(fields)) => mode_service_tier(fields.into_iter().collect()),
+        Some(Value::Object(fields)) => {
+            let mut fields = fields.into_iter().collect::<BTreeMap<_, _>>();
+            let nested = take_requested_service_tier(&mut fields).ok()?;
+            if !fields.is_empty() {
+                return None;
+            }
+            nested
+        }
         Some(_) => return None,
         None => None,
     };
@@ -548,6 +557,20 @@ mod tests {
             "pro_fast": mode(
                 json!({"input": 30, "output": 60}),
                 json!({"service_tier": "priority", "reasoning": {"mode": "pro"}}),
+            ),
+            "bedrock_pro_fast": mode(
+                json!({"input": 40, "output": 80}),
+                json!({
+                    "service_tier": "priority",
+                    "additionalModelRequestFields": {"reasoning": {"mode": "pro"}}
+                }),
+            ),
+            "bedrock_flex_spelled_twice": mode(
+                json!({"input": 0.1, "output": 0.2}),
+                json!({
+                    "service_tier": "flex",
+                    "additionalModelRequestFields": {"service_tier": "priority"}
+                }),
             ),
         }));
 

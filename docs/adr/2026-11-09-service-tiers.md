@@ -94,6 +94,8 @@ A model's optional `service_tiers` lists the non-default tiers callers may reque
 
 There is no per-key or per-team tier policy. Model grants already control access to a `-fast` model key, and that covers the per-key case.
 
+Batches bill at the provider's batch rate, and batch adapters send no tier. Batch creation strips a `default` tier from each item and rejects any other tier with 400, so no spelling reaches a batch provider unpriced. Batch route selection skips a route that forces a non-default tier.
+
 ### 7. Records
 
 `usage_cost_events` gains `requested_service_tier` and `served_service_tier`. The request log stores both in its metadata. The admin UI shows them on the request detail page.

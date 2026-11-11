@@ -380,6 +380,8 @@ The response reports the tier the provider served: `service_tier` in Chat Comple
 
 A different tier uses a different provider cache. Changing the tier in the middle of a session loses prompt cache hits.
 
+Batch items can't select a tier, because a batch runs at the provider's batch rate. `POST /api/v1/batches` removes a `default` tier from item bodies and rejects the whole batch with 400 when an item asks for any other tier. Batch route selection skips routes whose `service_tier` forces a non-default tier, so a model with only `-fast` routes can't run batches.
+
 ### Chat Completions
 
 `POST /v1/chat/completions` uses the shared path for authentication, model resolution, route planning, budgets, logging and accounting. Compatibility transforms apply after route selection and before the provider request.

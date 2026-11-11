@@ -124,7 +124,7 @@ When native effort support is present but per-level flags are missing, the plugi
 Models whose `/v1/models` row lists `service_tiers` with `default` and another tier get one variant
 per optional tier: `fast` (priority), `flex`, and `ultrafast`, as in `oceans/gpt-6-luna#fast`. Anthropic
 Messages variants send `speed: fast`; others send `serviceTier`. A tier variant keeps the default
-effort. A model that lists only `priority` is a fixed fast model, so it gets no tier variant. OpenCode
+effort. A model that lists only `priority` always runs fast, so it gets no tier variant. OpenCode
 prices every variant at the model's standard rate; Oceans bills and records the tier that served the
 request.
 

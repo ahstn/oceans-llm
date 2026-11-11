@@ -5,7 +5,7 @@ Service tier verification proves that callers can ask for a provider capacity ti
 ## Sub-features
 
 - `tier-discovery` confirms that `/v1/models` lists `service_tiers` for each model and that `/model_group/info` lists `service_tier` in `supported_openai_params`.
-- `tier-negative` confirms the free rejections: an unknown value (400), `service_tier` and `speed` that ask for different tiers (400), a tier outside the model's `service_tiers` allow-list (403 `service_tier_not_allowed`), and a tier that no route of the model can serve (400).
+- `tier-negative` confirms the free rejections: an unknown value (400), `service_tier` and `speed` that ask for different tiers (400), a tier outside the model's `service_tiers` allow-list (403 `service_tier_not_allowed`), a tier that no route of the model can serve (400), and a batch item that asks for a non-default tier (400 from `POST /api/v1/batches`, before the batch is stored).
 - `tier-ab` sends the same prompt through `gpt-6-luna` at the default, priority (`service_tier: "fast"`) and flex tiers. The upstream prompt cost per token must be about 2× and 0.5× of default.
 - `tier-forced-route` sends `service_tier: "default"` to `gpt-6-luna-fast`. The route forces priority, so the provider serves priority.
 - `tier-messages-downgrade` sends Anthropic `speed: "fast"` to `claude-haiku-5.5`. Haiku has no fast mode, so the provider serves standard. The request log shows requested `priority` and served `default`.
