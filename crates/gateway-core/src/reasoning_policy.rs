@@ -476,4 +476,34 @@ mod tests {
 
         assert!(enforce_responses_reasoning_effort(&request, Some(ReasoningEffort::Max)).is_err());
     }
+
+    #[test]
+    fn responses_input_effort_updates_are_held_to_the_ceiling() {
+        let request = |effort: &str| CoreResponsesRequest {
+            model: "reasoning".to_string(),
+            input: json!([
+                {"role": "user", "content": "Plan the change."},
+                {"type": "configuration_update", "reasoning": {"effort": "low"}},
+                {"role": "system", "content": "", "configuration_update": {"reasoning": {"effort": effort}}},
+            ]),
+            stream: false,
+            instructions: None,
+            tools: None,
+            tool_choice: None,
+            reasoning: Some(json!({"effort": "high"})),
+            text: None,
+            extra: BTreeMap::new(),
+        };
+
+        enforce_responses_reasoning_effort(&request("high"), Some(ReasoningEffort::High))
+            .expect("updates at or below the ceiling should pass");
+
+        let rejection =
+            enforce_responses_reasoning_effort(&request("max"), Some(ReasoningEffort::High))
+                .expect_err("an input update above the ceiling should fail");
+        assert_eq!(
+            rejection.field_path,
+            "input[2].configuration_update.reasoning.effort"
+        );
+    }
 }

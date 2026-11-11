@@ -238,7 +238,11 @@ pub async fn v1_chat_completions(
     )
     .await?;
     enforce_chat_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)
-        .inspect_err(|rejection| resolved.selection.log_reasoning_effort_rejection(rejection))
+        .inspect_err(|rejection| {
+            resolved
+                .selection
+                .log_reasoning_effort_rejection(Some(&request_id), rejection);
+        })
         .map_err(GatewayError::from)?;
 
     let request_headers = extract_request_headers(&headers);
@@ -429,7 +433,11 @@ pub async fn v1_responses(
     )
     .await?;
     enforce_responses_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)
-        .inspect_err(|rejection| resolved.selection.log_reasoning_effort_rejection(rejection))
+        .inspect_err(|rejection| {
+            resolved
+                .selection
+                .log_reasoning_effort_rejection(Some(&request_id), rejection);
+        })
         .map_err(GatewayError::from)?;
 
     let request_headers = extract_request_headers(&headers);

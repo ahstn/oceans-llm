@@ -98,7 +98,7 @@ The gateway applies these rules while a ceiling is active:
 - A known value above the ceiling returns `invalid_request`. The gateway doesn't clamp or change it.
 - Unknown strings and non-string effort values also return `invalid_request`, so a new provider value can't bypass policy.
 - Omitted fields and explicit `null` pass.
-- A rejection message names the field path, such as `messages[2].configuration_update.reasoning.effort`. The gateway also logs a `reasoning effort rejected` warning with the requested and resolved model, the field path, the requested effort and the ceiling. The log holds no prompt content, and an unknown or malformed value is logged as `invalid`.
+- A rejection message names the field path, such as `messages[2].configuration_update.reasoning.effort`. The gateway also logs a `reasoning effort rejected` warning with the request ID, the requested and resolved model, the field path, the requested effort and the ceiling. Batch creation logs no request ID. The log holds no prompt content, and an unknown or malformed value is logged as `invalid`.
 
 The ceiling applies only to categorical values. It doesn't cap numeric budgets such as `thinking.budget_tokens`, and it doesn't override a default effort the provider picks when no value is sent. Provider mapping still resolves conflicts between two explicit effort fields, but every field must pass the ceiling first.
 

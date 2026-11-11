@@ -107,8 +107,16 @@ pub struct ResolvedModelSelection {
 
 impl ResolvedModelSelection {
     /// Records a request refused by the reasoning ceiling. The fields hold no prompt content.
-    pub fn log_reasoning_effort_rejection(&self, rejection: &ReasoningEffortRejection) {
+    ///
+    /// Pass the request ID when there is one, because the request span can be filtered out at the
+    /// warning level.
+    pub fn log_reasoning_effort_rejection(
+        &self,
+        request_id: Option<&str>,
+        rejection: &ReasoningEffortRejection,
+    ) {
         tracing::warn!(
+            request_id,
             requested_model = %self.requested_model.model_key,
             resolved_model = %self.execution_model.model_key,
             field_path = %rejection.field_path,

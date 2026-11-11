@@ -302,7 +302,7 @@ where
             .map_err(|rejection| {
                 resolved
                     .selection
-                    .log_reasoning_effort_rejection(&rejection);
+                    .log_reasoning_effort_rejection(None, &rejection);
                 GatewayError::InvalidRequest(format!("batch item `{}` {rejection}", item.custom_id))
             })?;
     }
