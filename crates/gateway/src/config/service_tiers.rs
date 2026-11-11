@@ -5,7 +5,9 @@
 use std::collections::BTreeMap;
 
 use anyhow::bail;
-use gateway_core::{RouteServiceTierPricing, SERVICE_TIER_REQUEST_FIELDS, ServiceTier};
+use gateway_core::{
+    RouteServiceTierPricing, ServiceTier, ServiceTierPassthrough, find_service_tier_header,
+};
 use serde::{Deserialize, Deserializer, de};
 use serde_json::{Map, Value};
 
@@ -13,12 +15,6 @@ use super::routes::{
     deserialize_optional_yaml_string, deserialize_yaml_string, parse_non_negative_rate,
     parse_optional_non_negative_rate,
 };
-
-/// Provider headers that select a tier, lowercase. Routes set `service_tier` instead.
-const SERVICE_TIER_HEADERS: [&str; 2] = [
-    "x-vertex-ai-llm-shared-request-type",
-    "x-amzn-bedrock-service-tier",
-];
 
 fn parse_service_tier<E: de::Error>(value: &str) -> Result<ServiceTier, E> {
     ServiceTier::parse(value).ok_or_else(|| {
@@ -95,21 +91,22 @@ pub(super) fn validate_route_tier_passthrough(
     extra_body: &Map<String, Value>,
     extra_headers: &BTreeMap<String, String>,
 ) -> anyhow::Result<()> {
-    if let Some(field) = SERVICE_TIER_REQUEST_FIELDS
-        .iter()
-        .find(|field| extra_body.contains_key(**field))
-    {
-        bail!(
-            "{route_label} extra_body cannot set `{field}`; set the route's `service_tier` instead"
-        );
+    if let Some(passthrough) = ServiceTierPassthrough::find(extra_body, extra_headers.keys()) {
+        bail!("{route_label} {passthrough}; set the route's `service_tier` instead");
     }
-    if let Some(header) = extra_headers.keys().find(|name| {
-        SERVICE_TIER_HEADERS
-            .iter()
-            .any(|tier_header| name.eq_ignore_ascii_case(tier_header))
-    }) {
+    Ok(())
+}
+
+/// Rejects a provider `default_headers` entry that selects a tier. The header would put
+/// every request on the provider's routes on that tier, outside the routing, pricing and
+/// recording the typed route `service_tier` gets.
+pub(super) fn validate_provider_tier_headers(
+    provider_id: &str,
+    default_headers: &BTreeMap<String, String>,
+) -> anyhow::Result<()> {
+    if let Some(header) = find_service_tier_header(default_headers.keys()) {
         bail!(
-            "{route_label} extra_headers cannot set `{header}`; set the route's `service_tier` instead"
+            "provider `{provider_id}` default_headers cannot set `{header}`; set `service_tier` on its routes instead"
         );
     }
     Ok(())

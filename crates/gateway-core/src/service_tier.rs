@@ -11,13 +11,20 @@
 use std::{collections::BTreeMap, fmt};
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::GatewayError;
 
 /// Request fields that select a tier. [`take_requested_service_tier`] removes all of
 /// them so no spelling reaches a provider unpriced.
 pub const SERVICE_TIER_REQUEST_FIELDS: [&str; 3] = ["service_tier", "serviceTier", "speed"];
+
+/// Provider headers that select a tier, lowercase: Vertex's shared request type and
+/// Bedrock's InvokeModel tier. Routes set `service_tier` instead.
+pub const SERVICE_TIER_HEADERS: [&str; 2] = [
+    "x-vertex-ai-llm-shared-request-type",
+    "x-amzn-bedrock-service-tier",
+];
 
 /// A provider capacity grade. `Priority` is the tier OpenAI calls Fast, Anthropic serves
 /// as `speed: "fast"`, and OpenRouter accepts as `priority` or `fast`.
@@ -234,6 +241,54 @@ pub fn enforce_service_tier_policy(
     })
 }
 
+/// A raw route setting that selects a tier around the typed `service_tier`, which is
+/// the only form the gateway routes, prices and records.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServiceTierPassthrough<'a> {
+    /// An `extra_body` field among [`SERVICE_TIER_REQUEST_FIELDS`].
+    BodyField(&'static str),
+    /// An `extra_headers` name among [`SERVICE_TIER_HEADERS`], as configured.
+    Header(&'a str),
+}
+
+impl<'a> ServiceTierPassthrough<'a> {
+    /// The first tier field of `extra_body`, else the first tier header among
+    /// `extra_header_names`.
+    #[must_use]
+    pub fn find(
+        extra_body: &Map<String, Value>,
+        extra_header_names: impl IntoIterator<Item = &'a String>,
+    ) -> Option<Self> {
+        SERVICE_TIER_REQUEST_FIELDS
+            .into_iter()
+            .find(|field| extra_body.contains_key(*field))
+            .map(Self::BodyField)
+            .or_else(|| find_service_tier_header(extra_header_names).map(Self::Header))
+    }
+}
+
+impl fmt::Display for ServiceTierPassthrough<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::BodyField(field) => write!(f, "extra_body cannot set `{field}`"),
+            Self::Header(header) => write!(f, "extra_headers cannot set `{header}`"),
+        }
+    }
+}
+
+/// The first of `names` that is one of [`SERVICE_TIER_HEADERS`], compared
+/// case-insensitively like any HTTP header name.
+#[must_use]
+pub fn find_service_tier_header<'a>(
+    names: impl IntoIterator<Item = &'a String>,
+) -> Option<&'a str> {
+    names.into_iter().map(String::as_str).find(|name| {
+        SERVICE_TIER_HEADERS
+            .iter()
+            .any(|header| name.eq_ignore_ascii_case(header))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -374,5 +429,51 @@ mod tests {
             .expect_err("priority is not allowed");
         assert_eq!(error.http_status_code(), 403);
         assert_eq!(error.error_code(), "service_tier_not_allowed");
+    }
+
+    #[test]
+    fn passthrough_finds_tier_fields_before_tier_headers_in_any_case() {
+        use ServiceTierPassthrough::{BodyField, Header};
+        fn body(value: Value) -> Map<String, Value> {
+            serde_json::from_value(value).expect("object")
+        }
+        fn headers(names: &[&str]) -> Vec<String> {
+            names.iter().map(ToString::to_string).collect()
+        }
+        let tier_header = headers(&["OpenAI-Project", "X-Amzn-Bedrock-Service-Tier"]);
+        let cases = [
+            (
+                json!({"speed": "fast"}),
+                &tier_header,
+                Some(BodyField("speed")),
+            ),
+            (
+                json!({"serviceTier": {"type": "flex"}}),
+                &headers(&[]),
+                Some(BodyField("serviceTier")),
+            ),
+            (
+                json!({"temperature": 0}),
+                &tier_header,
+                Some(Header("X-Amzn-Bedrock-Service-Tier")),
+            ),
+            (
+                json!({}),
+                &headers(&["x-vertex-ai-llm-shared-request-type"]),
+                Some(Header("x-vertex-ai-llm-shared-request-type")),
+            ),
+            (
+                json!({"temperature": 0}),
+                &headers(&["OpenAI-Project"]),
+                None,
+            ),
+        ];
+        for (extra_body, extra_headers, want) in cases {
+            assert_eq!(
+                ServiceTierPassthrough::find(&body(extra_body.clone()), extra_headers),
+                want,
+                "{extra_body} {extra_headers:?}"
+            );
+        }
     }
 }

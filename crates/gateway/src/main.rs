@@ -226,6 +226,10 @@ async fn run_serve_with_store(
         agent_analysis.policy.clone(),
     )?;
     service
+        .validate_route_tier_passthrough()
+        .await
+        .context("invalid stored route service tier")?;
+    service
         .refresh_pricing_catalog_if_stale()
         .await
         .context("failed to initialize pricing catalog")?;

@@ -45,11 +45,11 @@ pub(super) use super::super::{
 pub(super) use crate::admin_audit::AuditProgress;
 
 /// models.dev's cache key and provenance sources.
-pub(super) const MODELS_DEV_CACHE_KEY: &str = "models_dev_supported_v4";
+pub(super) const MODELS_DEV_CACHE_KEY: &str = "models_dev_supported_v5";
 pub(super) const MODELS_DEV_REMOTE_SOURCE: &str = "models_dev_api";
 pub(super) const MODELS_DEV_VENDORED_SOURCE: &str = "vendored_models_dev";
 pub(super) const OPENROUTER_CACHE_KEY: &str = "openrouter_v1";
-pub(super) const LITELLM_CACHE_KEY: &str = "litellm_v2";
+pub(super) const LITELLM_CACHE_KEY: &str = "litellm_v3";
 /// A URL that refuses connections, so a refresh of it fails at once.
 pub(super) const UNREACHABLE_URL: &str = "http://127.0.0.1:9/api.json";
 /// The paths [`source_urls`] serves each source from, in [`CatalogSourceId::ALL`] order.

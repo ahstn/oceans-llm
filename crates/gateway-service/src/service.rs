@@ -39,6 +39,7 @@ use crate::{
 };
 
 mod reported_usage_cost;
+mod route_tier_passthrough;
 mod tier_pricing;
 
 use reported_usage_cost::{apply_provider_reported_cost, provider_reported_cost};
@@ -3376,5 +3377,6 @@ mod tests {
 
     mod context_tier_pricing;
     mod reported_cost_and_image_usage;
+    mod route_tier_passthrough;
     mod service_tier_pricing;
 }

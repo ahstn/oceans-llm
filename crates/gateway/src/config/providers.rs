@@ -6,6 +6,7 @@ use gateway_service::{ProviderIconKey, is_supported_pricing_provider_id};
 use serde::{Deserialize, Serialize};
 
 use super::references::{resolve_copilot_private_key, resolve_secret_reference};
+use super::service_tiers::validate_provider_tier_headers;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -34,6 +35,18 @@ impl ProviderConfig {
             Self::AwsBedrock(provider) => &provider.id,
             Self::GitHubCopilot(provider) => &provider.id,
             Self::TypeSafe(provider) => &provider.id,
+        }
+    }
+
+    fn default_headers(&self) -> &BTreeMap<String, String> {
+        match self {
+            Self::OpenAiCompat(provider) => &provider.default_headers,
+            Self::GcpCloudRunOpenAiCompat(provider) => &provider.default_headers,
+            Self::AnthropicCompat(provider) => &provider.default_headers,
+            Self::GcpVertex(provider) => &provider.default_headers,
+            Self::AwsBedrock(provider) => &provider.default_headers,
+            Self::GitHubCopilot(provider) => &provider.default_headers,
+            Self::TypeSafe(provider) => &provider.default_headers,
         }
     }
 
@@ -391,6 +404,7 @@ pub(super) fn validate_providers(providers: &[ProviderConfig]) -> anyhow::Result
             ProviderConfig::GitHubCopilot(provider) => provider.validate()?,
             ProviderConfig::TypeSafe(provider) => provider.validate()?,
         }
+        validate_provider_tier_headers(provider.id(), provider.default_headers())?;
     }
     Ok(())
 }

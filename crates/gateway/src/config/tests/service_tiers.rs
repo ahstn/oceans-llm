@@ -133,6 +133,39 @@ fn rejects_tier_selection_through_route_passthrough() {
 }
 
 #[test]
+fn rejects_tier_selection_through_provider_default_headers() {
+    for (provider, header) in [
+        (
+            "type: gcp_vertex\n    project_id: test-proj\n    auth:\n      mode: adc",
+            "X-Vertex-AI-LLM-Shared-Request-Type",
+        ),
+        (
+            "type: aws_bedrock\n    region: us-east-1\n    endpoint_kind: bedrock_runtime",
+            "x-amzn-bedrock-service-tier",
+        ),
+    ] {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(
+            &config_path,
+            &format!(
+                "providers:\n  - id: tiered\n    {provider}\n    default_headers:\n      {header}: priority\n"
+            ),
+        );
+        let error = format!(
+            "{:#}",
+            GatewayConfig::from_path(&config_path).expect_err("config should fail")
+        );
+        assert!(
+            error.contains(&format!(
+                "provider `tiered` default_headers cannot set `{header}`"
+            )),
+            "unexpected error for `{header}`: {error}"
+        );
+    }
+}
+
+#[test]
 fn rejects_pricing_tiers_that_repeat_a_priced_tier() {
     for (route_tier, listed, expected) in [
         (
