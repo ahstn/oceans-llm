@@ -1,9 +1,9 @@
 {
   "metadata": {
     "source": "vendored_litellm",
-    "etag": "\"03203793fa4929b34820af4c870ecd07c250383fcf23750fe9077dcbbff143e5\"",
-    "fetched_at": "2026-11-03T22:41:03.063564Z",
-    "checksum": "3b99fcbfbc10941f944c71484563be247f2f095489679a377db1d1eb86764d9c"
+    "etag": "\"364e740791de9b67c3190d7bd4de13d985398b444d201efbfc2199cb5ebfdaca\"",
+    "fetched_at": "2026-11-11T09:48:49.369684Z",
+    "checksum": "0c626ba135531919b045559fdd78102f188abf2a6a9d686b4436209bcecd550e"
   },
   "providers": {
     "amazon-bedrock": {
@@ -1318,6 +1318,46 @@
             ]
           }
         },
+        "anthropic.claude-fable-5-2": {
+          "id": "anthropic.claude-fable-5-2",
+          "display_name": "anthropic.claude-fable-5-2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "anthropic.claude-haiku-4-5": {
           "id": "anthropic.claude-haiku-4-5",
           "display_name": "anthropic.claude-haiku-4-5",
@@ -1543,6 +1583,46 @@
             "output": "50.0000",
             "cache_read": "0.2500",
             "cache_write": "12.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "anthropic.claude-mythos-5-2": {
+          "id": "anthropic.claude-mythos-5-2",
+          "display_name": "anthropic.claude-mythos-5-2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -3442,6 +3522,74 @@
             ]
           }
         },
+        "claude-haiku-latest": {
+          "id": "claude-haiku-latest",
+          "display_name": "claude-haiku-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
+        "claude-opus-latest": {
+          "id": "claude-opus-latest",
+          "display_name": "claude-opus-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
         "claude-sonnet-4-5-20250929-v1:0": {
           "id": "claude-sonnet-4-5-20250929-v1:0",
           "display_name": "claude-sonnet-4-5-20250929-v1:0",
@@ -3489,6 +3637,40 @@
             "output": [
               "text"
             ]
+          }
+        },
+        "claude-sonnet-latest": {
+          "id": "claude-sonnet-latest",
+          "display_name": "claude-sonnet-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
           }
         },
         "cohere.command-light-text-v14": {
@@ -4340,6 +4522,46 @@
             ]
           }
         },
+        "eu.anthropic.claude-fable-5-2": {
+          "id": "eu.anthropic.claude-fable-5-2",
+          "display_name": "eu.anthropic.claude-fable-5-2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.8000",
+            "output": "44.0000",
+            "cache_read": "0.2200",
+            "cache_write": "11.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "eu.anthropic.claude-haiku-4-5-20251001-v1:0": {
           "id": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
           "display_name": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
@@ -4412,6 +4634,46 @@
                 "cache_write": "0.6875"
               }
             ]
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "eu.anthropic.claude-mythos-5-2": {
+          "id": "eu.anthropic.claude-mythos-5-2",
+          "display_name": "eu.anthropic.claude-mythos-5-2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.8000",
+            "output": "44.0000",
+            "cache_read": "0.2200",
+            "cache_write": "11.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
           },
           "limit": {
             "context": null,
@@ -5349,6 +5611,46 @@
             ]
           }
         },
+        "global.anthropic.claude-fable-5-2": {
+          "id": "global.anthropic.claude-fable-5-2",
+          "display_name": "global.anthropic.claude-fable-5-2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "global.anthropic.claude-haiku-4-5-20251001-v1:0": {
           "id": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
           "display_name": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
@@ -5458,6 +5760,46 @@
             "output": "50.0000",
             "cache_read": "0.2500",
             "cache_write": "12.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "global.anthropic.claude-mythos-5-2": {
+          "id": "global.anthropic.claude-mythos-5-2",
+          "display_name": "global.anthropic.claude-mythos-5-2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -6003,6 +6345,45 @@
           "limit": {
             "context": null,
             "input": 1000000,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "global.moonshotai.kimi-k3.1": {
+          "id": "global.moonshotai.kimi-k3.1",
+          "display_name": "global.moonshotai.kimi-k3.1",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "4.0000",
+            "output": "20.0000",
+            "cache_read": "0.2000",
+            "cache_write": "5.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 868928,
             "output": 131072
           },
           "modalities": {
@@ -7007,6 +7388,176 @@
             ]
           }
         },
+        "gpt-astra-latest": {
+          "id": "gpt-astra-latest",
+          "display_name": "gpt-astra-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
+        "gpt-luna-latest": {
+          "id": "gpt-luna-latest",
+          "display_name": "gpt-luna-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
+        "gpt-sol-latest": {
+          "id": "gpt-sol-latest",
+          "display_name": "gpt-sol-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
+        "gpt-terra-latest": {
+          "id": "gpt-terra-latest",
+          "display_name": "gpt-terra-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
+        "grok-latest": {
+          "id": "grok-latest",
+          "display_name": "grok-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
         "in.moonshotai.kimi-k3": {
           "id": "in.moonshotai.kimi-k3",
           "display_name": "in.moonshotai.kimi-k3",
@@ -7034,6 +7585,45 @@
           "limit": {
             "context": null,
             "input": 1000000,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "in.moonshotai.kimi-k3.1": {
+          "id": "in.moonshotai.kimi-k3.1",
+          "display_name": "in.moonshotai.kimi-k3.1",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "4.4000",
+            "output": "22.0000",
+            "cache_read": "0.2200",
+            "cache_write": "5.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 868928,
             "output": 131072
           },
           "modalities": {
@@ -8815,6 +9405,45 @@
             ]
           }
         },
+        "moonshotai.kimi-k3.1": {
+          "id": "moonshotai.kimi-k3.1",
+          "display_name": "moonshotai.kimi-k3.1",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "4.4000",
+            "output": "22.0000",
+            "cache_read": "0.2200",
+            "cache_write": "5.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 868928,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "nvidia.nemotron-nano-12b-v2": {
           "id": "nvidia.nemotron-nano-12b-v2",
           "display_name": "nvidia.nemotron-nano-12b-v2",
@@ -9582,7 +10211,7 @@
           },
           "limit": {
             "context": null,
-            "input": 1050000,
+            "input": 922000,
             "output": 128000
           },
           "modalities": {
@@ -11233,6 +11862,183 @@
             ]
           }
         },
+        "us-gov-east-1/nvidia.nemotron-nano-12b-v2": {
+          "id": "us-gov-east-1/nvidia.nemotron-nano-12b-v2",
+          "display_name": "us-gov-east-1/nvidia.nemotron-nano-12b-v2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.2400",
+            "output": "0.7200",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 128000,
+            "output": 8192
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov-east-1/nvidia.nemotron-nano-3-30b": {
+          "id": "us-gov-east-1/nvidia.nemotron-nano-3-30b",
+          "display_name": "us-gov-east-1/nvidia.nemotron-nano-3-30b",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0720",
+            "output": "0.2880",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 262144,
+            "output": 8192
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov-east-1/nvidia.nemotron-nano-9b-v2": {
+          "id": "us-gov-east-1/nvidia.nemotron-nano-9b-v2",
+          "display_name": "us-gov-east-1/nvidia.nemotron-nano-9b-v2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0720",
+            "output": "0.2760",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 128000,
+            "output": 8192
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov-east-1/nvidia.nemotron-super-3-120b": {
+          "id": "us-gov-east-1/nvidia.nemotron-super-3-120b",
+          "display_name": "us-gov-east-1/nvidia.nemotron-super-3-120b",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.1800",
+            "output": "0.7800",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 256000,
+            "output": 32768
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "us-gov-east-1/openai.gpt-5.4": {
           "id": "us-gov-east-1/openai.gpt-5.4",
           "display_name": "us-gov-east-1/openai.gpt-5.4",
@@ -11259,6 +12065,51 @@
             "output": "19.8000",
             "cache_read": "0.3300",
             "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 922000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov-east-1/openai.gpt-5.6-cyber": {
+          "id": "us-gov-east-1/openai.gpt-5.6-cyber",
+          "display_name": "us-gov-east-1/openai.gpt-5.6-cyber",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": true,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "16.8750",
+            "output": "101.2500",
+            "cache_read": "1.6875",
+            "cache_write": "21.0938",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -11400,6 +12251,51 @@
             "context": null,
             "input": 500000,
             "output": 500000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov-east-1/xai.grok-4.7": {
+          "id": "us-gov-east-1/xai.grok-4.7",
+          "display_name": "us-gov-east-1/xai.grok-4.7",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": true,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "2.6400",
+            "output": "7.9200",
+            "cache_read": "0.6600",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 524288,
+            "output": 524288
           },
           "modalities": {
             "input": [
@@ -11675,6 +12571,183 @@
             ]
           }
         },
+        "us-gov-west-1/nvidia.nemotron-nano-12b-v2": {
+          "id": "us-gov-west-1/nvidia.nemotron-nano-12b-v2",
+          "display_name": "us-gov-west-1/nvidia.nemotron-nano-12b-v2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.2400",
+            "output": "0.7200",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 128000,
+            "output": 8192
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov-west-1/nvidia.nemotron-nano-3-30b": {
+          "id": "us-gov-west-1/nvidia.nemotron-nano-3-30b",
+          "display_name": "us-gov-west-1/nvidia.nemotron-nano-3-30b",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0720",
+            "output": "0.2880",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 262144,
+            "output": 8192
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov-west-1/nvidia.nemotron-nano-9b-v2": {
+          "id": "us-gov-west-1/nvidia.nemotron-nano-9b-v2",
+          "display_name": "us-gov-west-1/nvidia.nemotron-nano-9b-v2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0720",
+            "output": "0.2760",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 128000,
+            "output": 8192
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov-west-1/nvidia.nemotron-super-3-120b": {
+          "id": "us-gov-west-1/nvidia.nemotron-super-3-120b",
+          "display_name": "us-gov-west-1/nvidia.nemotron-super-3-120b",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.1800",
+            "output": "0.7800",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 256000,
+            "output": 32768
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "us-gov-west-1/openai.gpt-5.4": {
           "id": "us-gov-west-1/openai.gpt-5.4",
           "display_name": "us-gov-west-1/openai.gpt-5.4",
@@ -11697,9 +12770,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "3.3750",
-            "output": "20.2500",
-            "cache_read": "0.3375",
+            "input": "3.3000",
+            "output": "19.8000",
+            "cache_read": "0.3300",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -11742,20 +12815,20 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2700",
-            "output": "1.6200",
-            "cache_read": "0.0270",
-            "cache_write": "0.3375",
+            "input": "0.2640",
+            "output": "1.5840",
+            "cache_read": "0.0264",
+            "cache_write": "0.3300",
             "input_audio": null,
             "output_audio": null,
             "output_image": null,
             "tiers": [
               {
                 "above_input_tokens": 272000,
-                "input": "0.5400",
-                "output": "2.4300",
-                "cache_read": "0.0540",
-                "cache_write": "0.6750"
+                "input": "0.5280",
+                "output": "2.3760",
+                "cache_read": "0.0528",
+                "cache_write": "0.6600"
               }
             ]
           },
@@ -11796,20 +12869,20 @@
           },
           "cost": {
             "conditions": {},
-            "input": "2.7000",
-            "output": "16.2000",
-            "cache_read": "0.2700",
-            "cache_write": "3.3750",
+            "input": "2.6400",
+            "output": "15.8400",
+            "cache_read": "0.2640",
+            "cache_write": "3.3000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null,
             "tiers": [
               {
                 "above_input_tokens": 272000,
-                "input": "5.4000",
-                "output": "24.3000",
-                "cache_read": "0.5400",
-                "cache_write": "6.7500"
+                "input": "5.2800",
+                "output": "23.7600",
+                "cache_read": "0.5280",
+                "cache_write": "6.6000"
               }
             ]
           },
@@ -12006,6 +13079,51 @@
             ]
           }
         },
+        "us-gov-west-1/xai.grok-4.7": {
+          "id": "us-gov-west-1/xai.grok-4.7",
+          "display_name": "us-gov-west-1/xai.grok-4.7",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": true,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "2.6400",
+            "output": "7.9200",
+            "cache_read": "0.6600",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 524288,
+            "output": 524288
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "us-gov.anthropic.claude-fable-5-1": {
           "id": "us-gov.anthropic.claude-fable-5-1",
           "display_name": "us-gov.anthropic.claude-fable-5-1",
@@ -12026,6 +13144,46 @@
             "output": "60.0000",
             "cache_read": "0.3000",
             "cache_write": "15.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov.anthropic.claude-fable-5-2": {
+          "id": "us-gov.anthropic.claude-fable-5-2",
+          "display_name": "us-gov.anthropic.claude-fable-5-2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "9.6000",
+            "output": "48.0000",
+            "cache_read": "0.2400",
+            "cache_write": "12.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -12078,6 +13236,46 @@
                 "cache_write": "0.7500"
               }
             ]
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov.anthropic.claude-mythos-5-2": {
+          "id": "us-gov.anthropic.claude-mythos-5-2",
+          "display_name": "us-gov.anthropic.claude-mythos-5-2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "9.6000",
+            "output": "48.0000",
+            "cache_read": "0.2400",
+            "cache_write": "12.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
           },
           "limit": {
             "context": null,
@@ -12630,6 +13828,51 @@
             ]
           }
         },
+        "us-gov.xai.grok-4.7": {
+          "id": "us-gov.xai.grok-4.7",
+          "display_name": "us-gov.xai.grok-4.7",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "2.6400",
+            "output": "7.9200",
+            "cache_read": "0.6600",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 524288,
+            "output": 524288
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "us.amazon.nova-2-lite-v1:0": {
           "id": "us.amazon.nova-2-lite-v1:0",
           "display_name": "us.amazon.nova-2-lite-v1:0",
@@ -13143,6 +14386,46 @@
             ]
           }
         },
+        "us.anthropic.claude-fable-5-2": {
+          "id": "us.anthropic.claude-fable-5-2",
+          "display_name": "us.anthropic.claude-fable-5-2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.8000",
+            "output": "44.0000",
+            "cache_read": "0.2200",
+            "cache_write": "11.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "us.anthropic.claude-haiku-4-5-20251001-v1:0": {
           "id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
           "display_name": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
@@ -13292,6 +14575,46 @@
             "output": "55.0000",
             "cache_read": "0.2750",
             "cache_write": "13.7500",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us.anthropic.claude-mythos-5-2": {
+          "id": "us.anthropic.claude-mythos-5-2",
+          "display_name": "us.anthropic.claude-mythos-5-2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.8000",
+            "output": "44.0000",
+            "cache_read": "0.2200",
+            "cache_write": "11.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -14440,6 +15763,45 @@
           "limit": {
             "context": null,
             "input": 1000000,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us.moonshotai.kimi-k3.1": {
+          "id": "us.moonshotai.kimi-k3.1",
+          "display_name": "us.moonshotai.kimi-k3.1",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "4.4000",
+            "output": "22.0000",
+            "cache_read": "0.2200",
+            "cache_write": "5.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 868928,
             "output": 131072
           },
           "modalities": {
@@ -16013,6 +17375,51 @@
             ]
           }
         },
+        "xai.grok-4.7": {
+          "id": "xai.grok-4.7",
+          "display_name": "xai.grok-4.7",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": true,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "2.2000",
+            "output": "6.6000",
+            "cache_read": "0.5500",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 524288,
+            "output": 524288
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "zai.glm-4.7": {
           "id": "zai.glm-4.7",
           "display_name": "zai.glm-4.7",
@@ -16222,6 +17629,85 @@
             ]
           }
         },
+        "claude-fable-5.2": {
+          "id": "claude-fable-5.2",
+          "display_name": "claude-fable-5.2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 200000,
+            "output": 64000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "claude-fable-latest": {
+          "id": "claude-fable-latest",
+          "display_name": "claude-fable-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
         "claude-haiku-4.5": {
           "id": "claude-haiku-4.5",
           "display_name": "claude-haiku-4.5",
@@ -16319,6 +17805,40 @@
             "output": [
               "text"
             ]
+          }
+        },
+        "claude-haiku-latest": {
+          "id": "claude-haiku-latest",
+          "display_name": "claude-haiku-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
           }
         },
         "claude-opus-4.8": {
@@ -16501,6 +18021,40 @@
             ]
           }
         },
+        "claude-opus-latest": {
+          "id": "claude-opus-latest",
+          "display_name": "claude-opus-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
         "claude-sonnet-4.6": {
           "id": "claude-sonnet-4.6",
           "display_name": "claude-sonnet-4.6",
@@ -16636,6 +18190,40 @@
             ]
           }
         },
+        "claude-sonnet-latest": {
+          "id": "claude-sonnet-latest",
+          "display_name": "claude-sonnet-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
         "gemini-3.7-flash": {
           "id": "gemini-3.7-flash",
           "display_name": "gemini-3.7-flash",
@@ -16729,6 +18317,51 @@
         "gemini-4-argon": {
           "id": "gemini-4-argon",
           "display_name": "gemini-4-argon",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "2.0000",
+            "output": "10.0000",
+            "cache_read": "0.1000",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 200000,
+            "output": 65536
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gemini-4-carbon": {
+          "id": "gemini-4-carbon",
+          "display_name": "gemini-4-carbon",
           "release_date": "",
           "last_updated": "",
           "metadata": {
@@ -18004,6 +19637,142 @@
             ]
           }
         },
+        "gpt-astra-latest": {
+          "id": "gpt-astra-latest",
+          "display_name": "gpt-astra-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
+        "gpt-luna-latest": {
+          "id": "gpt-luna-latest",
+          "display_name": "gpt-luna-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
+        "gpt-sol-latest": {
+          "id": "gpt-sol-latest",
+          "display_name": "gpt-sol-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
+        "gpt-terra-latest": {
+          "id": "gpt-terra-latest",
+          "display_name": "gpt-terra-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
         "grok-4.5": {
           "id": "grok-4.5",
           "display_name": "grok-4.5",
@@ -18166,6 +19935,40 @@
             ]
           }
         },
+        "grok-latest": {
+          "id": "grok-latest",
+          "display_name": "grok-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
         "kimi-k3": {
           "id": "kimi-k3",
           "display_name": "kimi-k3",
@@ -18209,6 +20012,40 @@
             "output": [
               "text"
             ]
+          }
+        },
+        "kimi-latest": {
+          "id": "kimi-latest",
+          "display_name": "kimi-latest",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [],
+            "output": []
           }
         },
         "mai-code-1.1-flash": {
@@ -19352,7 +21189,7 @@
                 "input": "4.0000",
                 "output": "18.0000",
                 "cache_read": "0.4000",
-                "cache_write": "0.2500"
+                "cache_write": null
               }
             ]
           },
@@ -19669,7 +21506,7 @@
                 "input": "4.0000",
                 "output": "18.0000",
                 "cache_read": "0.4000",
-                "cache_write": "0.2500"
+                "cache_write": null
               }
             ]
           },
@@ -19725,7 +21562,7 @@
                 "input": "4.0000",
                 "output": "18.0000",
                 "cache_read": "0.4000",
-                "cache_write": "0.2500"
+                "cache_write": null
               }
             ]
           },
@@ -20460,6 +22297,100 @@
             ]
           }
         },
+        "gemini-4-carbon": {
+          "id": "gemini-4-carbon",
+          "display_name": "gemini-4-carbon",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "2.0000",
+            "output": "10.0000",
+            "cache_read": "0.1000",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 1048576,
+            "output": 1048576
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "audio",
+              "video"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gemini-4-carbon-cyber-permissive": {
+          "id": "gemini-4-carbon-cyber-permissive",
+          "display_name": "gemini-4-carbon-cyber-permissive",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "4.0000",
+            "output": "20.0000",
+            "cache_read": "0.2000",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 1048576,
+            "output": 1048576
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "audio",
+              "video"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "gemini-embedding-2": {
           "id": "gemini-embedding-2",
           "display_name": "gemini-embedding-2",
@@ -20657,6 +22588,53 @@
             "context": null,
             "input": 131072,
             "output": 57920
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video"
+            ],
+            "output": [
+              "text",
+              "video"
+            ]
+          }
+        },
+        "gemini-omni-1.2-flash": {
+          "id": "gemini-omni-1.2-flash",
+          "display_name": "gemini-omni-1.2-flash",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": false,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "1.5000",
+            "output": "9.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 131072,
+            "output": 260640
           },
           "modalities": {
             "input": [
@@ -23723,84 +25701,6 @@
             ]
           }
         },
-        "claude-3-opus@20240229": {
-          "id": "claude-3-opus@20240229",
-          "display_name": "claude-3-opus@20240229",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": null,
-            "tool_call": true,
-            "structured_output": null,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "15.0000",
-            "output": "75.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": null,
-            "input": 200000,
-            "output": 4096
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "claude-3-opus@default": {
-          "id": "claude-3-opus@default",
-          "display_name": "claude-3-opus@default",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": null,
-            "tool_call": true,
-            "structured_output": null,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "15.0000",
-            "output": "75.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": null,
-            "input": 200000,
-            "output": 4096
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "claude-3-sonnet@20240229": {
           "id": "claude-3-sonnet@20240229",
           "display_name": "claude-3-sonnet@20240229",
@@ -23899,6 +25799,46 @@
             "output": "50.0000",
             "cache_read": "0.2500",
             "cache_write": "12.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "claude-fable-5-2@default": {
+          "id": "claude-fable-5-2@default",
+          "display_name": "claude-fable-5-2@default",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -24071,6 +26011,46 @@
                 "cache_write": "0.6250"
               }
             ]
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "claude-mythos-5-2@default": {
+          "id": "claude-mythos-5-2@default",
+          "display_name": "claude-mythos-5-2@default",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
           },
           "limit": {
             "context": null,
@@ -24863,7 +26843,7 @@
           },
           "limit": {
             "context": null,
-            "input": 400000,
+            "input": 272000,
             "output": 128000
           },
           "modalities": {
@@ -28789,7 +30769,7 @@
           },
           "limit": {
             "context": null,
-            "input": 400000,
+            "input": 272000,
             "output": 128000
           },
           "modalities": {
@@ -29047,6 +31027,60 @@
             "input_audio": null,
             "output_audio": null,
             "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 922000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gpt-6-cyber": {
+          "id": "gpt-6-cyber",
+          "display_name": "gpt-6-cyber",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": true,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "20.0000",
+            "output": "100.0000",
+            "cache_read": "2.0000",
+            "cache_write": "25.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "tiers": [
+              {
+                "above_input_tokens": 272000,
+                "input": "40.0000",
+                "output": "150.0000",
+                "cache_read": "4.0000",
+                "cache_write": null
+              }
+            ]
           },
           "limit": {
             "context": null,
@@ -29699,7 +31733,7 @@
           },
           "limit": {
             "context": null,
-            "input": 400000,
+            "input": 272000,
             "output": 128000
           },
           "modalities": {
@@ -30121,6 +32155,98 @@
         "gpt-image-2.5-sunburst-2026-09-08": {
           "id": "gpt-image-2.5-sunburst-2026-09-08",
           "display_name": "gpt-image-2.5-sunburst-2026-09-08",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": false,
+              "responses": false,
+              "embeddings": false,
+              "images": true
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "5.0000",
+            "output": null,
+            "cache_read": "1.2500",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": "30.0000"
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "image"
+            ]
+          }
+        },
+        "gpt-image-2.6-flare": {
+          "id": "gpt-image-2.6-flare",
+          "display_name": "gpt-image-2.6-flare",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": false,
+              "responses": false,
+              "embeddings": false,
+              "images": true
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "5.0000",
+            "output": null,
+            "cache_read": "1.2500",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": "30.0000"
+          },
+          "limit": {
+            "context": null,
+            "input": null,
+            "output": null
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "image"
+            ]
+          }
+        },
+        "gpt-image-2.6-sunburst": {
+          "id": "gpt-image-2.6-sunburst",
+          "display_name": "gpt-image-2.6-sunburst",
           "release_date": "",
           "last_updated": "",
           "metadata": {

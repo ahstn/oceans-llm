@@ -1,9 +1,9 @@
 {
   "metadata": {
     "source": "vendored_models_dev",
-    "etag": "\"437ea2c1a8d1708c9f68846a32030ec8\"",
-    "fetched_at": "2026-10-31T23:00:05.064513Z",
-    "checksum": "0776b9a27a22778cc58562856b8984adddd6a79eea25670d7064aca6ddd5079b"
+    "etag": "\"1ef5d9546bd3b32bd4123d226f4a422d\"",
+    "fetched_at": "2026-11-11T09:48:45.871739Z",
+    "checksum": "a841d7947700266c96c50bfac157af4acf4c50d5874ba287c1496a1e8f9b33d0"
   },
   "providers": {
     "amazon-bedrock": {
@@ -264,6 +264,57 @@
             "output": "50.0000",
             "cache_read": "0.2500",
             "cache_write": "12.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1000000,
+            "input": null,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "anthropic.claude-fable-5-2": {
+          "id": "anthropic.claude-fable-5-2",
+          "display_name": "Claude Fable 5.2",
+          "release_date": "2026-11-09",
+          "last_updated": "2026-11-09",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": "2026-06",
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -3014,6 +3065,57 @@
             ]
           }
         },
+        "global.anthropic.claude-fable-5-2": {
+          "id": "global.anthropic.claude-fable-5-2",
+          "display_name": "Claude Fable 5.2 (Global)",
+          "release_date": "2026-11-09",
+          "last_updated": "2026-11-09",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": "2026-06",
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1000000,
+            "input": null,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "global.anthropic.claude-haiku-4-5-20251001-v1:0": {
           "id": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
           "display_name": "Claude Haiku 4.5 (Global)",
@@ -3737,6 +3839,57 @@
             "context": 1048576,
             "input": null,
             "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "global.moonshotai.kimi-k3.1": {
+          "id": "global.moonshotai.kimi-k3.1",
+          "display_name": "Kimi K3.1 Pro Highspeed (Global)",
+          "release_date": "2026-10-23",
+          "last_updated": "2026-10-23",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "none",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "4.0000",
+            "output": "20.0000",
+            "cache_read": "0.2000",
+            "cache_write": "5.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 1048576
           },
           "modalities": {
             "input": [
@@ -7891,6 +8044,57 @@
             ]
           }
         },
+        "us.anthropic.claude-fable-5-2": {
+          "id": "us.anthropic.claude-fable-5-2",
+          "display_name": "Claude Fable 5.2 (US)",
+          "release_date": "2026-11-09",
+          "last_updated": "2026-11-09",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": "2026-06",
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.8000",
+            "output": "44.0000",
+            "cache_read": "0.2200",
+            "cache_write": "11.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1000000,
+            "input": null,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "us.anthropic.claude-haiku-4-5-20251001-v1:0": {
           "id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
           "display_name": "Claude Haiku 4.5 (US)",
@@ -8931,6 +9135,57 @@
             "context": 1048576,
             "input": null,
             "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us.moonshotai.kimi-k3.1": {
+          "id": "us.moonshotai.kimi-k3.1",
+          "display_name": "Kimi K3.1 Pro Highspeed (US)",
+          "release_date": "2026-10-23",
+          "last_updated": "2026-10-23",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "none",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "4.4000",
+            "output": "22.0000",
+            "cache_read": "0.2200",
+            "cache_write": "5.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 1048576
           },
           "modalities": {
             "input": [
@@ -10051,6 +10306,57 @@
             ]
           }
         },
+        "claude-fable-5.2": {
+          "id": "claude-fable-5.2",
+          "display_name": "Claude Fable 5.2",
+          "release_date": "2026-11-09",
+          "last_updated": "2026-11-09",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": "2026-06",
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1000000,
+            "input": null,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "claude-haiku-4.5": {
           "id": "claude-haiku-4.5",
           "display_name": "Claude Haiku 4.5 (latest)",
@@ -10732,6 +11038,55 @@
           "display_name": "Gemini 4 Argon",
           "release_date": "2026-10-13",
           "last_updated": "2026-10-13",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": "2026-03",
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "2.0000",
+            "output": "10.0000",
+            "cache_read": "0.1000",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 65536
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gemini-4-carbon": {
+          "id": "gemini-4-carbon",
+          "display_name": "Gemini 4 Carbon",
+          "release_date": "2026-11-10",
+          "last_updated": "2026-11-10",
           "metadata": {
             "reasoning": true,
             "tool_call": true,
@@ -11925,6 +12280,57 @@
             "output": "50.0000",
             "cache_read": "0.2500",
             "cache_write": "12.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1000000,
+            "input": null,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "claude-fable-5-2@default": {
+          "id": "claude-fable-5-2@default",
+          "display_name": "Claude Fable 5.2",
+          "release_date": "2026-11-09",
+          "last_updated": "2026-11-09",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": "2026-06",
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -13826,6 +14232,57 @@
             ]
           }
         },
+        "gemini-4-carbon": {
+          "id": "gemini-4-carbon",
+          "display_name": "Gemini 4 Carbon",
+          "release_date": "2026-11-10",
+          "last_updated": "2026-11-10",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": "2026-03",
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "2.0000",
+            "output": "10.0000",
+            "cache_read": "0.1000",
+            "cache_write": null,
+            "input_audio": "2.0000",
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 65536
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video",
+              "audio",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "gemini-embedding-001": {
           "id": "gemini-embedding-001",
           "display_name": "Gemini Embedding 001",
@@ -14816,6 +15273,57 @@
             "output": "50.0000",
             "cache_read": "0.2500",
             "cache_write": "12.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1000000,
+            "input": null,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "claude-fable-5-2@default": {
+          "id": "claude-fable-5-2@default",
+          "display_name": "Claude Fable 5.2",
+          "release_date": "2026-11-09",
+          "last_updated": "2026-11-09",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": "2026-06",
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -18414,6 +18922,57 @@
             ]
           }
         },
+        "claude-fable-5-2": {
+          "id": "claude-fable-5-2",
+          "display_name": "Claude Fable 5.2",
+          "release_date": "2026-11-09",
+          "last_updated": "2026-11-09",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": null,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": "2026-06",
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1000000,
+            "input": null,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "claude-haiku-4-5": {
           "id": "claude-haiku-4-5",
           "display_name": "Claude Haiku 4.5",
@@ -19120,7 +19679,7 @@
             "conditions": {},
             "input": "2.0000",
             "output": "10.0000",
-            "cache_read": "0.2000",
+            "cache_read": "0.1000",
             "cache_write": "2.5000",
             "input_audio": null,
             "output_audio": null,
@@ -19135,6 +19694,59 @@
             "input": [
               "text",
               "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "crouton-alpha-free": {
+          "id": "crouton-alpha-free",
+          "display_name": "Crouton Alpha Free",
+          "release_date": "2026-11-03",
+          "last_updated": "2026-11-03",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "minimal",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": "0.0000",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 270000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video",
               "pdf"
             ],
             "output": [
@@ -19341,9 +19953,9 @@
         },
         "deepseek-v4.1-flash": {
           "id": "deepseek-v4.1-flash",
-          "display_name": "DeepSeek V4.1 Flash",
-          "release_date": "2026-09-10",
-          "last_updated": "2026-09-10",
+          "display_name": "DeepSeek V4.1 Flash 1017",
+          "release_date": "2026-10-17",
+          "last_updated": "2026-10-17",
           "metadata": {
             "reasoning": true,
             "tool_call": true,
@@ -19393,8 +20005,8 @@
         "deepseek-v4.1-flash-free": {
           "id": "deepseek-v4.1-flash-free",
           "display_name": "DeepSeek V4.1 Flash Free",
-          "release_date": "2026-09-10",
-          "last_updated": "2026-09-10",
+          "release_date": "2026-10-17",
+          "last_updated": "2026-10-17",
           "metadata": {
             "reasoning": true,
             "tool_call": true,
@@ -19885,11 +20497,11 @@
           },
           "cost": {
             "conditions": {},
-            "input": "1.5000",
-            "output": "7.5000",
-            "cache_read": "0.1500",
+            "input": "0.7500",
+            "output": "3.7500",
+            "cache_read": "0.0750",
             "cache_write": null,
-            "input_audio": "1.5000",
+            "input_audio": "0.7500",
             "output_audio": null,
             "output_image": null
           },
@@ -19936,11 +20548,11 @@
           },
           "cost": {
             "conditions": {},
-            "input": "1.5000",
-            "output": "7.5000",
-            "cache_read": "0.1500",
+            "input": "0.7500",
+            "output": "3.7500",
+            "cache_read": "0.0750",
             "cache_write": null,
-            "input_audio": "1.5000",
+            "input_audio": "0.7500",
             "output_audio": null,
             "output_image": null
           },
@@ -19987,11 +20599,11 @@
           },
           "cost": {
             "conditions": {},
-            "input": "1.5000",
-            "output": "7.5000",
-            "cache_read": "0.1500",
+            "input": "0.7500",
+            "output": "3.7500",
+            "cache_read": "0.0750",
             "cache_write": null,
-            "input_audio": "1.5000",
+            "input_audio": "0.7500",
             "output_audio": null,
             "output_image": null
           },
@@ -20018,6 +20630,57 @@
           "display_name": "Gemini 4 Argon",
           "release_date": "2026-10-13",
           "last_updated": "2026-10-13",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": "2026-03",
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "2.0000",
+            "output": "10.0000",
+            "cache_read": "0.1000",
+            "cache_write": null,
+            "input_audio": "2.0000",
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 65536
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video",
+              "audio",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gemini-4-carbon": {
+          "id": "gemini-4-carbon",
+          "display_name": "Gemini 4 Carbon",
+          "release_date": "2026-11-10",
+          "last_updated": "2026-11-10",
           "metadata": {
             "reasoning": true,
             "tool_call": true,
@@ -22131,6 +22794,95 @@
             ]
           }
         },
+        "iceman-free": {
+          "id": "iceman-free",
+          "display_name": "Iceman Free",
+          "release_date": "2026-11-06",
+          "last_updated": "2026-11-06",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": null,
+            "attachment": false,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": "0.0000",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "inkling-2-small-free": {
+          "id": "inkling-2-small-free",
+          "display_name": "Inkling 2 Small Free",
+          "release_date": "2026-11-05",
+          "last_updated": "2026-11-05",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": null,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "none",
+                  "minimal",
+                  "low",
+                  "medium",
+                  "high",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": "0.0000",
+            "cache_write": "0.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "kimi-k2": {
           "id": "kimi-k2",
           "display_name": "Kimi K2",
@@ -22776,6 +23528,49 @@
             ]
           }
         },
+        "longcat-2.5-free": {
+          "id": "longcat-2.5-free",
+          "display_name": "LongCat 2.5 Free",
+          "release_date": "2026-11-02",
+          "last_updated": "2026-11-02",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": null,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "toggle"
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": "0.0000",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1000000,
+            "input": null,
+            "output": 262144
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "longcat-2.5-preview-free": {
           "id": "longcat-2.5-preview-free",
           "display_name": "LongCat 2.5 Preview Free",
@@ -23394,6 +24189,68 @@
             ]
           }
         },
+        "muse-ember-1.0": {
+          "id": "muse-ember-1.0",
+          "display_name": "Muse Ember 1.0",
+          "release_date": "2026-11-09",
+          "last_updated": "2026-11-09",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "minimal",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.1000",
+            "output": "0.5000",
+            "cache_read": "0.0040",
+            "cache_write": "0.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "tiers": [
+              {
+                "above_input_tokens": 200000,
+                "input": "0.3000",
+                "output": "1.5000",
+                "cache_read": "0.0120",
+                "cache_write": "0.0000"
+              }
+            ]
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 270000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "muse-spark-1.2": {
           "id": "muse-spark-1.2",
           "display_name": "Muse Spark 1.2",
@@ -23865,6 +24722,54 @@
           "modalities": {
             "input": [
               "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "pulse-alpha-free": {
+          "id": "pulse-alpha-free",
+          "display_name": "Pulse Alpha Free",
+          "release_date": "2026-11-02",
+          "last_updated": "2026-11-02",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": null,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "high",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": "0.0000",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
             ],
             "output": [
               "text"
@@ -24854,7 +25759,7 @@
             "conditions": {},
             "input": "2.5000",
             "output": "5.0000",
-            "cache_read": null,
+            "cache_read": "2.5000",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -24956,6 +25861,57 @@
             "output": "50.0000",
             "cache_read": "0.2500",
             "cache_write": "12.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1000000,
+            "input": null,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "anthropic/claude-fable-5.2": {
+          "id": "anthropic/claude-fable-5.2",
+          "display_name": "Claude Fable 5.2",
+          "release_date": "2026-11-09",
+          "last_updated": "2026-11-09",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": false,
+            "knowledge": "2026-06",
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -25664,6 +26620,99 @@
             ]
           }
         },
+        "baidu/ernie-5.5-flash-preview": {
+          "id": "baidu/ernie-5.5-flash-preview",
+          "display_name": "ERNIE-5.5-Flash-Preview",
+          "release_date": "2026-11-10",
+          "last_updated": "2026-11-10",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": false,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "high"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.2800",
+            "output": "1.1300",
+            "cache_read": "0.0280",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1024000,
+            "input": null,
+            "output": 921600
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "baidu/ernie-light-dt-1.0-intl": {
+          "id": "baidu/ernie-light-dt-1.0-intl",
+          "display_name": "ERNIE-Light-DT-1.0",
+          "release_date": "2026-11-10",
+          "last_updated": "2026-11-10",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": false,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "none",
+                  "low",
+                  "high",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "1.1300",
+            "output": "3.9400",
+            "cache_read": "0.1130",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1024000,
+            "input": null,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "bytedance-seed/seed-1.6": {
           "id": "bytedance-seed/seed-1.6",
           "display_name": "Seed 1.6",
@@ -26077,7 +27126,7 @@
           "last_updated": "2025-03-13",
           "metadata": {
             "reasoning": false,
-            "tool_call": false,
+            "tool_call": true,
             "structured_output": true,
             "attachment": false,
             "temperature": true,
@@ -26234,7 +27283,7 @@
           "last_updated": "2024-12-13",
           "metadata": {
             "reasoning": false,
-            "tool_call": false,
+            "tool_call": true,
             "structured_output": true,
             "attachment": false,
             "temperature": true,
@@ -26323,8 +27372,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2574",
-            "output": "1.0287",
+            "input": "0.3200",
+            "output": "0.8900",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -26334,7 +27383,7 @@
           "limit": {
             "context": 163840,
             "input": null,
-            "output": 16000
+            "output": 16384
           },
           "modalities": {
             "input": [
@@ -26614,9 +27663,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0910",
-            "output": "0.1820",
-            "cache_read": "0.0182",
+            "input": "0.0900",
+            "output": "0.1800",
+            "cache_read": "0.0180",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26625,7 +27674,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 943717
+            "output": 393216
           },
           "modalities": {
             "input": [
@@ -26662,9 +27711,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1190",
-            "output": "0.2380",
-            "cache_read": "0.0238",
+            "input": "0.0434",
+            "output": "0.3000",
+            "cache_read": "0.0350",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26710,9 +27759,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2156",
-            "output": "0.6468",
-            "cache_read": "0.0069",
+            "input": "0.4400",
+            "output": "1.3200",
+            "cache_read": "0.0140",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26721,7 +27770,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 262144
+            "output": 943717
           },
           "modalities": {
             "input": [
@@ -26758,9 +27807,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "1.6000",
-            "output": "3.2000",
-            "cache_read": "0.1350",
+            "input": "0.9553",
+            "output": "1.9105",
+            "cache_read": "0.0796",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26769,7 +27818,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 393216
+            "output": 384000
           },
           "modalities": {
             "input": [
@@ -26806,9 +27855,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1150",
-            "output": "4.0000",
-            "cache_read": "0.1100",
+            "input": "0.1110",
+            "output": "4.4400",
+            "cache_read": "0.0970",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26854,9 +27903,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0450",
-            "output": "0.5000",
-            "cache_read": "0.0060",
+            "input": "0.0510",
+            "output": "0.5670",
+            "cache_read": "0.0180",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26903,9 +27952,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1500",
-            "output": "0.6000",
-            "cache_read": "0.0030",
+            "input": "0.0060",
+            "output": "0.5000",
+            "cache_read": "0.0050",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26914,7 +27963,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 393216
+            "output": 943718
           },
           "modalities": {
             "input": [
@@ -28156,6 +29205,59 @@
             ]
           }
         },
+        "google/gemini-4-carbon": {
+          "id": "google/gemini-4-carbon",
+          "display_name": "Gemini 4 Carbon",
+          "release_date": "2026-11-10",
+          "last_updated": "2026-11-10",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": "2026-03",
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {
+              "reasoning": 10
+            },
+            "input": "2.0000",
+            "output": "10.0000",
+            "cache_read": "0.1000",
+            "cache_write": "0.1875",
+            "input_audio": "2.0000",
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 943718
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video",
+              "audio",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "google/gemini-nano-banana-2.1": {
           "id": "google/gemini-nano-banana-2.1",
           "display_name": "Nano Banana 2.1",
@@ -28202,6 +29304,104 @@
             "output": [
               "text",
               "image"
+            ]
+          }
+        },
+        "google/gemini-omni-1.1-flash": {
+          "id": "google/gemini-omni-1.1-flash",
+          "display_name": "Gemini Omni 1.1 Flash",
+          "release_date": "2026-08-27",
+          "last_updated": "2026-08-27",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "high"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "1.5000",
+            "output": "9.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 131072,
+            "input": null,
+            "output": 65536
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video"
+            ],
+            "output": [
+              "text",
+              "video"
+            ]
+          }
+        },
+        "google/gemini-omni-1.2-flash": {
+          "id": "google/gemini-omni-1.2-flash",
+          "display_name": "Gemini Omni 1.2 Flash",
+          "release_date": "2026-11-05",
+          "last_updated": "2026-11-05",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "high"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "1.5000",
+            "output": "9.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 131072,
+            "input": null,
+            "output": 65536
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video"
+            ],
+            "output": [
+              "text",
+              "video"
             ]
           }
         },
@@ -28299,7 +29499,7 @@
           "cost": {
             "conditions": {},
             "input": "0.0800",
-            "output": "0.3500",
+            "output": "0.4500",
             "cache_read": "0.0400",
             "cache_write": null,
             "input_audio": null,
@@ -28380,9 +29580,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0675",
-            "output": "0.2250",
-            "cache_read": "0.0375",
+            "input": "0.0800",
+            "output": "0.1000",
+            "cache_read": "0.0460",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -28391,7 +29591,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 235929
+            "output": 128000
           },
           "modalities": {
             "input": [
@@ -28680,7 +29880,7 @@
           "cost": {
             "conditions": {},
             "input": "0.0600",
-            "output": "0.1500",
+            "output": "0.2500",
             "cache_read": "0.0150",
             "cache_write": null,
             "input_audio": null,
@@ -28691,150 +29891,6 @@
             "context": 131072,
             "input": null,
             "output": 117964
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "inception/mercury-2": {
-          "id": "inception/mercury-2",
-          "display_name": "Mercury 2",
-          "release_date": "2026-02-24",
-          "last_updated": "2026-02-24",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": false,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": [
-              {
-                "type": "effort",
-                "values": [
-                  "none",
-                  "low",
-                  "medium",
-                  "high"
-                ]
-              }
-            ]
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.2500",
-            "output": "0.7500",
-            "cache_read": "0.0250",
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 128000,
-            "input": null,
-            "output": 50000
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "inception/mercury-2.5": {
-          "id": "inception/mercury-2.5",
-          "display_name": "Mercury 2.5",
-          "release_date": "2026-09-08",
-          "last_updated": "2026-09-08",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": false,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": [
-              {
-                "type": "effort",
-                "values": [
-                  "none",
-                  "low",
-                  "medium",
-                  "high"
-                ]
-              }
-            ]
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0400",
-            "output": "0.1500",
-            "cache_read": "0.0040",
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 260000,
-            "input": null,
-            "output": 65536
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "inception/mercury-3": {
-          "id": "inception/mercury-3",
-          "display_name": "Mercury 3",
-          "release_date": "2026-10-16",
-          "last_updated": "2026-10-16",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": false,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": [
-              {
-                "type": "effort",
-                "values": [
-                  "none",
-                  "low",
-                  "medium",
-                  "high"
-                ]
-              }
-            ]
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.1000",
-            "output": "0.3500",
-            "cache_read": "0.0100",
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 1000000,
-            "input": null,
-            "output": 131072
           },
           "modalities": {
             "input": [
@@ -28931,6 +29987,48 @@
             ]
           }
         },
+        "inclusionai/ling-3.0-tiny": {
+          "id": "inclusionai/ling-3.0-tiny",
+          "display_name": "Ling 3.0 Tiny",
+          "release_date": "2026-08-06",
+          "last_updated": "2026-08-06",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": false,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "toggle"
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0150",
+            "output": "0.0450",
+            "cache_read": "0.0030",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 250000
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "inclusionai/ling-3.1-flash": {
           "id": "inclusionai/ling-3.1-flash",
           "display_name": "Ling 3.1 Flash",
@@ -28951,9 +30049,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0750",
-            "output": "0.2250",
-            "cache_read": "0.0150",
+            "input": "0.0450",
+            "output": "0.1350",
+            "cache_read": "0.0090",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -29000,7 +30098,7 @@
           "limit": {
             "context": 128000,
             "input": null,
-            "output": 4096
+            "output": 8192
           },
           "modalities": {
             "input": [
@@ -29039,6 +30137,48 @@
             "context": 128000,
             "input": null,
             "output": 8192
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "kt/midm-k-3.0-pro": {
+          "id": "kt/midm-k-3.0-pro",
+          "display_name": "Mi:dm K 3.0 Pro",
+          "release_date": "2026-11-05",
+          "last_updated": "2026-11-05",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": false,
+            "structured_output": true,
+            "attachment": false,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "toggle"
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.2000",
+            "output": "0.8000",
+            "cache_read": "0.0400",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 261795,
+            "input": null,
+            "output": 235615
           },
           "modalities": {
             "input": [
@@ -29163,6 +30303,82 @@
             ]
           }
         },
+        "liquid/lfm-3-1.7b": {
+          "id": "liquid/lfm-3-1.7b",
+          "display_name": "LFM3-1.7B",
+          "release_date": "2026-11-06",
+          "last_updated": "2026-11-06",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": false,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0800",
+            "output": "0.2000",
+            "cache_read": "0.0200",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 8192
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "liquid/lfm-3-1.7b:free": {
+          "id": "liquid/lfm-3-1.7b:free",
+          "display_name": "LFM3-1.7B (free)",
+          "release_date": "2026-11-06",
+          "last_updated": "2026-11-06",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": false,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 8192
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "mancer/weaver": {
           "id": "mancer/weaver",
           "display_name": "Weaver (alpha)",
@@ -29179,9 +30395,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.4000",
-            "output": "0.7500",
-            "cache_read": null,
+            "input": "0.3000",
+            "output": "0.5000",
+            "cache_read": "0.3000",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -29253,8 +30469,8 @@
           "last_updated": "2024-07-23",
           "metadata": {
             "reasoning": false,
-            "tool_call": true,
-            "structured_output": true,
+            "tool_call": false,
+            "structured_output": false,
             "attachment": false,
             "temperature": true,
             "knowledge": "2023-12",
@@ -29262,8 +30478,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.4000",
-            "output": "0.4000",
+            "input": "0.7200",
+            "output": "0.7200",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -29273,7 +30489,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 16384
+            "output": 8192
           },
           "modalities": {
             "input": [
@@ -29300,9 +30516,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0500",
-            "output": "0.0800",
-            "cache_read": "0.0250",
+            "input": "0.0200",
+            "output": "0.0400",
+            "cache_read": null,
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -29311,7 +30527,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 117964
+            "output": 16384
           },
           "modalities": {
             "input": [
@@ -29414,9 +30630,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1000",
-            "output": "0.3200",
-            "cache_read": null,
+            "input": "0.7100",
+            "output": "0.7100",
+            "cache_read": "0.7100",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -29425,7 +30641,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 16384
+            "output": 115200
           },
           "modalities": {
             "input": [
@@ -29452,9 +30668,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1875",
-            "output": "0.6525",
-            "cache_read": "0.0500",
+            "input": "0.3500",
+            "output": "1.0000",
+            "cache_read": "0.1700",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -29463,7 +30679,7 @@
           "limit": {
             "context": 524288,
             "input": null,
-            "output": 16384
+            "output": 32768
           },
           "modalities": {
             "input": [
@@ -29547,6 +30763,60 @@
             "input": [
               "text",
               "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "meta/muse-ember": {
+          "id": "meta/muse-ember",
+          "display_name": "Muse Ember",
+          "release_date": "2026-11-09",
+          "last_updated": "2026-11-09",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "minimal",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.1000",
+            "output": "0.5000",
+            "cache_read": "0.0040",
+            "cache_write": "0.1250",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 943718
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video",
+              "pdf",
+              "audio"
             ],
             "output": [
               "text"
@@ -29901,7 +31171,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 131072
+            "output": 262144
           },
           "modalities": {
             "input": [
@@ -30008,201 +31278,6 @@
             ]
           }
         },
-        "minimax/minimax-01": {
-          "id": "minimax/minimax-01",
-          "display_name": "MiniMax-01",
-          "release_date": "2025-01-15",
-          "last_updated": "2025-01-15",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": false,
-            "structured_output": false,
-            "attachment": true,
-            "temperature": true,
-            "knowledge": "2024-03-31",
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.2000",
-            "output": "1.1000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 1000192,
-            "input": null,
-            "output": 40000
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "minimax/minimax-m1": {
-          "id": "minimax/minimax-m1",
-          "display_name": "MiniMax M1",
-          "release_date": "2025-06-17",
-          "last_updated": "2025-06-17",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": false,
-            "attachment": false,
-            "temperature": true,
-            "knowledge": "2024-06-30",
-            "reasoning_options": [
-              {
-                "type": "toggle"
-              }
-            ]
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.5500",
-            "output": "2.2000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 1000000,
-            "input": null,
-            "output": 40000
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "minimax/minimax-m2": {
-          "id": "minimax/minimax-m2",
-          "display_name": "MiniMax-M2",
-          "release_date": "2025-10-27",
-          "last_updated": "2025-10-27",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": false,
-            "attachment": false,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.2550",
-            "output": "1.0200",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 204800,
-            "input": null,
-            "output": 131072
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "minimax/minimax-m2-her": {
-          "id": "minimax/minimax-m2-her",
-          "display_name": "MiniMax-M2 Her",
-          "release_date": "2026-01-23",
-          "last_updated": "2026-01-23",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": false,
-            "structured_output": false,
-            "attachment": false,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.3000",
-            "output": "1.2000",
-            "cache_read": "0.0300",
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 65536,
-            "input": null,
-            "output": 2048
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "minimax/minimax-m2.1": {
-          "id": "minimax/minimax-m2.1",
-          "display_name": "MiniMax-M2.1",
-          "release_date": "2025-12-23",
-          "last_updated": "2025-12-23",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": false,
-            "attachment": false,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.3000",
-            "output": "1.2000",
-            "cache_read": "0.0300",
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 204800,
-            "input": null,
-            "output": 131072
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "minimax/minimax-m2.5": {
           "id": "minimax/minimax-m2.5",
           "display_name": "MiniMax-M2.5",
@@ -30219,18 +31294,18 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2700",
-            "output": "0.9500",
-            "cache_read": "0.0300",
+            "input": "0.3000",
+            "output": "1.2000",
+            "cache_read": "0.0600",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
             "output_image": null
           },
           "limit": {
-            "context": 204800,
+            "context": 200000,
             "input": null,
-            "output": 32768
+            "output": 58982
           },
           "modalities": {
             "input": [
@@ -30257,18 +31332,18 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.3000",
-            "output": "1.2000",
-            "cache_read": "0.0600",
+            "input": "0.2100",
+            "output": "0.8400",
+            "cache_read": "0.0420",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
             "output_image": null
           },
           "limit": {
-            "context": 204800,
+            "context": 196608,
             "input": null,
-            "output": 131072
+            "output": 176947
           },
           "modalities": {
             "input": [
@@ -30350,9 +31425,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0750",
-            "output": "0.3000",
-            "cache_read": "0.0075",
+            "input": "0.1500",
+            "output": "0.6000",
+            "cache_read": "0.0150",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -30703,7 +31778,8 @@
               {
                 "type": "effort",
                 "values": [
-                  "none",
+                  "low",
+                  "medium",
                   "high"
                 ]
               }
@@ -31079,9 +32155,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0750",
-            "output": "0.2000",
-            "cache_read": null,
+            "input": "0.1000",
+            "output": "0.3000",
+            "cache_read": "0.0100",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -31090,7 +32166,7 @@
           "limit": {
             "context": 256000,
             "input": null,
-            "output": 16384
+            "output": 26214
           },
           "modalities": {
             "input": [
@@ -31401,9 +32477,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.5000",
-            "output": "2.5000",
-            "cache_read": "0.1500",
+            "input": "0.5320",
+            "output": "3.3250",
+            "cache_read": "0.2090",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -31412,7 +32488,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 235929
+            "output": 65536
           },
           "modalities": {
             "input": [
@@ -31485,7 +32561,7 @@
             "conditions": {},
             "input": "0.6000",
             "output": "3.5000",
-            "cache_read": "0.1500",
+            "cache_read": "0.1600",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -31533,7 +32609,7 @@
           "cost": {
             "conditions": {},
             "input": "0.1920",
-            "output": "15.0000",
+            "output": "16.0000",
             "cache_read": "0.1820",
             "cache_write": null,
             "input_audio": null,
@@ -31566,7 +32642,7 @@
             "tool_call": true,
             "structured_output": true,
             "attachment": true,
-            "temperature": false,
+            "temperature": true,
             "knowledge": null,
             "reasoning_options": [
               {
@@ -31682,6 +32758,48 @@
             ]
           }
         },
+        "motif-technologies/motif-3": {
+          "id": "motif-technologies/motif-3",
+          "display_name": "Motif 3",
+          "release_date": "2026-11-02",
+          "last_updated": "2026-11-02",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": false,
+            "structured_output": true,
+            "attachment": false,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "toggle"
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.3000",
+            "output": "1.2000",
+            "cache_read": "0.0600",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 235929
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "nex-agi/nex-n2.5-mini": {
           "id": "nex-agi/nex-n2.5-mini",
           "display_name": "Nex-N2.5-Mini",
@@ -31778,76 +32896,47 @@
             ]
           }
         },
-        "nousresearch/hermes-3-llama-3.1-405b": {
-          "id": "nousresearch/hermes-3-llama-3.1-405b",
-          "display_name": "Hermes 3 405B Instruct",
-          "release_date": "2024-08-16",
-          "last_updated": "2024-08-16",
+        "nex-agi/nex-n2.6": {
+          "id": "nex-agi/nex-n2.6",
+          "display_name": "Nex-N2.6",
+          "release_date": "2026-11-10",
+          "last_updated": "2026-11-10",
           "metadata": {
-            "reasoning": false,
-            "tool_call": false,
+            "reasoning": true,
+            "tool_call": true,
             "structured_output": true,
-            "attachment": false,
+            "attachment": true,
             "temperature": true,
-            "knowledge": "2023-12-31",
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "1.0000",
-            "output": "1.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 131072,
-            "input": null,
-            "output": 16384
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "medium",
+                  "high"
+                ]
+              }
             ]
-          }
-        },
-        "nousresearch/hermes-3-llama-3.1-70b": {
-          "id": "nousresearch/hermes-3-llama-3.1-70b",
-          "display_name": "Hermes 3 70B Instruct",
-          "release_date": "2024-08-18",
-          "last_updated": "2024-08-18",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": false,
-            "structured_output": true,
-            "attachment": false,
-            "temperature": true,
-            "knowledge": "2023-12-31",
-            "reasoning_options": []
           },
           "cost": {
             "conditions": {},
-            "input": "0.7000",
-            "output": "0.7000",
-            "cache_read": null,
+            "input": "0.1200",
+            "output": "0.4000",
+            "cache_read": "0.0240",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
             "output_image": null
           },
           "limit": {
-            "context": 131072,
+            "context": 262144,
             "input": null,
-            "output": 16384
+            "output": 235929
           },
           "modalities": {
             "input": [
-              "text"
+              "text",
+              "image"
             ],
             "output": [
               "text"
@@ -32014,9 +33103,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.3000",
-            "output": "2.4000",
-            "cache_read": "0.1500",
+            "input": "0.0750",
+            "output": "0.4000",
+            "cache_read": null,
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -32025,7 +33114,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 262144
+            "output": 16384
           },
           "modalities": {
             "input": [
@@ -32179,49 +33268,6 @@
             ]
           }
         },
-        "nvidia/nemotron-3.5-content-safety:free": {
-          "id": "nvidia/nemotron-3.5-content-safety:free",
-          "display_name": "Nemotron 3.5 Content Safety (free)",
-          "release_date": "2026-06-02",
-          "last_updated": "2026-06-02",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": false,
-            "structured_output": false,
-            "attachment": true,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": [
-              {
-                "type": "toggle"
-              }
-            ]
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0000",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 128000,
-            "input": null,
-            "output": 8192
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "nvidia/nemotron-3.5-lightning": {
           "id": "nvidia/nemotron-3.5-lightning",
           "display_name": "Nemotron 3.5 Lightning 30B A3B",
@@ -32327,7 +33373,7 @@
           "cost": {
             "conditions": {},
             "input": "0.1500",
-            "output": "0.5000",
+            "output": "0.4700",
             "cache_read": "0.0200",
             "cache_write": null,
             "input_audio": null,
@@ -32337,7 +33383,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 235929
+            "output": 943718
           },
           "modalities": {
             "input": [
@@ -35095,9 +36141,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0180",
-            "output": "0.0900",
-            "cache_read": "0.0090",
+            "input": "0.0300",
+            "output": "0.1300",
+            "cache_read": "0.0300",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -35106,7 +36152,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 32768
+            "output": 117964
           },
           "modalities": {
             "input": [
@@ -35929,44 +36975,6 @@
             ]
           }
         },
-        "qwen/qwen-2.5-7b-instruct": {
-          "id": "qwen/qwen-2.5-7b-instruct",
-          "display_name": "Qwen2.5 7B Instruct",
-          "release_date": "2024-10-16",
-          "last_updated": "2024-10-16",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": false,
-            "temperature": true,
-            "knowledge": "2024-06-30",
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.1000",
-            "output": "0.2000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 32768,
-            "input": null,
-            "output": 29491
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "qwen/qwen-2.5-coder-32b-instruct": {
           "id": "qwen/qwen-2.5-coder-32b-instruct",
           "display_name": "Qwen2.5-Coder-32B-Instruct",
@@ -36111,8 +37119,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1200",
-            "output": "0.2400",
+            "input": "0.1000",
+            "output": "0.2200",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -36122,7 +37130,7 @@
           "limit": {
             "context": 40960,
             "input": null,
-            "output": 16384
+            "output": 36864
           },
           "modalities": {
             "input": [
@@ -36149,9 +37157,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0900",
-            "output": "0.5500",
-            "cache_read": null,
+            "input": "0.1400",
+            "output": "0.8000",
+            "cache_read": "0.0500",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -36160,7 +37168,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 16384
+            "output": 117964
           },
           "modalities": {
             "input": [
@@ -36385,8 +37393,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0700",
-            "output": "0.2800",
+            "input": "0.1500",
+            "output": "0.6000",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -36845,9 +37853,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.5000",
+            "input": "0.6000",
             "output": "3.6000",
-            "cache_read": "0.3000",
+            "cache_read": "0.1200",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -36856,7 +37864,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 235929
+            "output": 64000
           },
           "modalities": {
             "input": [
@@ -37083,8 +38091,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.4500",
-            "output": "2.7000",
+            "input": "0.3200",
+            "output": "3.2000",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -37094,7 +38102,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 65536
+            "output": 81920
           },
           "modalities": {
             "input": [
@@ -37487,16 +38495,16 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0400",
-            "output": "2.3000",
-            "cache_read": "0.0200",
+            "input": "0.1500",
+            "output": "1.8750",
+            "cache_read": "0.0375",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
             "output_image": null
           },
           "limit": {
-            "context": 1000000,
+            "context": 1048575,
             "input": null,
             "output": 235929
           },
@@ -37773,9 +38781,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2500",
+            "input": "0.3000",
             "output": "1.0000",
-            "cache_read": "0.0500",
+            "cache_read": "0.0400",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -37784,7 +38792,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 131072
+            "output": 943718
           },
           "modalities": {
             "input": [
@@ -37939,6 +38947,48 @@
             "context": 256000,
             "input": null,
             "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "ricursiveai/ripple-65b-preview": {
+          "id": "ricursiveai/ripple-65b-preview",
+          "display_name": "Ripple 65B Preview",
+          "release_date": "2026-11-04",
+          "last_updated": "2026-11-04",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": false,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "toggle"
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.2000",
+            "output": "0.6000",
+            "cache_read": "0.0500",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 131072
           },
           "modalities": {
             "input": [
@@ -38438,7 +39488,7 @@
             "output_image": null
           },
           "limit": {
-            "context": 1048576,
+            "context": 1000000,
             "input": 1000000,
             "output": 64000
           },
@@ -38634,9 +39684,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0825",
-            "output": "0.3300",
-            "cache_read": "0.0206",
+            "input": "0.1320",
+            "output": "0.5280",
+            "cache_read": "0.0330",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -38703,6 +39753,54 @@
             ]
           }
         },
+        "tencent/hy4": {
+          "id": "tencent/hy4",
+          "display_name": "Hy4",
+          "release_date": "2026-11-04",
+          "last_updated": "2026-11-04",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "none",
+                  "low",
+                  "high"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.4170",
+            "output": "1.2505",
+            "cache_read": "0.0210",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": 983010,
+            "output": 65536
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "tencent/hy4-preview": {
           "id": "tencent/hy4-preview",
           "display_name": "Hy4 preview",
@@ -38728,9 +39826,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.7506",
-            "output": "2.2509",
-            "cache_read": "0.0378",
+            "input": "0.8340",
+            "output": "2.5010",
+            "cache_read": "0.0420",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -38916,6 +40014,56 @@
             ]
           }
         },
+        "thinkingmachines/inkling-2-small:free": {
+          "id": "thinkingmachines/inkling-2-small:free",
+          "display_name": "Inkling 2 Small (free)",
+          "release_date": "2026-11-05",
+          "last_updated": "2026-11-05",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": false,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "minimal",
+                  "low",
+                  "medium",
+                  "high",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "thinkingmachines/inkling-small": {
           "id": "thinkingmachines/inkling-small",
           "display_name": "Inkling Small",
@@ -38954,110 +40102,6 @@
           },
           "limit": {
             "context": 524288,
-            "input": null,
-            "output": 262144
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "audio"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "thinkingmachines/inkling-small:free": {
-          "id": "thinkingmachines/inkling-small:free",
-          "display_name": "Inkling Small (free)",
-          "release_date": "2026-07-30",
-          "last_updated": "2026-07-30",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": false,
-            "attachment": true,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": [
-              {
-                "type": "effort",
-                "values": [
-                  "none",
-                  "minimal",
-                  "low",
-                  "medium",
-                  "high",
-                  "max"
-                ]
-              }
-            ]
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0000",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 1048576,
-            "input": null,
-            "output": 262144
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "audio"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "thinkingmachines/inkling:free": {
-          "id": "thinkingmachines/inkling:free",
-          "display_name": "Inkling (free)",
-          "release_date": "2026-07-15",
-          "last_updated": "2026-07-15",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": false,
-            "attachment": true,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": [
-              {
-                "type": "effort",
-                "values": [
-                  "none",
-                  "minimal",
-                  "low",
-                  "medium",
-                  "high",
-                  "max"
-                ]
-              }
-            ]
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0000",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 1048576,
             "input": null,
             "output": 262144
           },
@@ -39166,9 +40210,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.3500",
-            "output": "0.6500",
-            "cache_read": null,
+            "input": "0.3000",
+            "output": "0.5000",
+            "cache_read": "0.2000",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -39753,7 +40797,7 @@
             "output_image": null
           },
           "limit": {
-            "context": 1050000,
+            "context": 1000000,
             "input": null,
             "output": 65536
           },
@@ -39798,7 +40842,7 @@
             "output_image": null
           },
           "limit": {
-            "context": 1050000,
+            "context": 1024000,
             "input": null,
             "output": 235929
           },
@@ -39946,48 +40990,6 @@
             ]
           }
         },
-        "xingchen-agi/xing4.0-29b-a4b:free": {
-          "id": "xingchen-agi/xing4.0-29b-a4b:free",
-          "display_name": "Xing4.0 29B A4B (free)",
-          "release_date": "2026-10-16",
-          "last_updated": "2026-10-16",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": false,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": [
-              {
-                "type": "toggle"
-              }
-            ]
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0000",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 262144,
-            "input": null,
-            "output": 235929
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "z-ai/glm-4.5": {
           "id": "z-ai/glm-4.5",
           "display_name": "GLM-4.5",
@@ -40050,9 +41052,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1300",
-            "output": "0.8500",
-            "cache_read": "0.0250",
+            "input": "0.2000",
+            "output": "1.1000",
+            "cache_read": "0.0300",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -40389,9 +41391,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "1.4000",
-            "output": "4.4000",
-            "cache_read": "0.2600",
+            "input": "1.3300",
+            "output": "4.1800",
+            "cache_read": "0.2470",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -40436,9 +41438,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0060",
+            "input": "0.0070",
             "output": "6.8000",
-            "cache_read": "0.0050",
+            "cache_read": "0.0060",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -40530,9 +41532,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0149",
-            "output": "0.1543",
-            "cache_read": "0.0149",
+            "input": "0.0399",
+            "output": "0.0784",
+            "cache_read": "0.0300",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -40581,7 +41583,56 @@
             "conditions": {},
             "input": "0.3700",
             "output": "1.2500",
-            "cache_read": "0.0900",
+            "cache_read": "0.0750",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "z-ai/glm-5.3-flashx-legal": {
+          "id": "z-ai/glm-5.3-flashx-legal",
+          "display_name": "GLM 5.3 FlashX Legal",
+          "release_date": "2026-11-02",
+          "last_updated": "2026-11-02",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "low",
+                  "high",
+                  "max"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.3700",
+            "output": "1.2500",
+            "cache_read": "0.0750",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -40721,10 +41772,10 @@
           },
           "cost": {
             "conditions": {},
-            "input": "10.0000",
-            "output": "50.0000",
-            "cache_read": "0.2500",
-            "cache_write": "12.5000",
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -40934,9 +41985,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0141",
-            "output": "0.1100",
-            "cache_read": "0.0130",
+            "input": "0.0060",
+            "output": "0.5000",
+            "cache_read": "0.0050",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -40983,9 +42034,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1035",
+            "input": "0.0999",
             "output": "8.0000",
-            "cache_read": "0.1000",
+            "cache_read": "0.0999",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -41031,7 +42082,7 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0448",
+            "input": "0.0434",
             "output": "0.3000",
             "cache_read": "0.0350",
             "cache_write": null,
@@ -41194,9 +42245,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1495",
-            "output": "7.1500",
-            "cache_read": "0.0748",
+            "input": "0.1824",
+            "output": "11.0055",
+            "cache_read": "0.1800",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -41579,7 +42630,7 @@
             "input": "2.0000",
             "output": "6.0000",
             "cache_read": "0.5000",
-            "cache_write": null,
+            "cache_write": "0.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null,
@@ -41589,7 +42640,7 @@
                 "input": "4.0000",
                 "output": "12.0000",
                 "cache_read": "1.0000",
-                "cache_write": null
+                "cache_write": "0.0000"
               }
             ]
           },
@@ -41634,9 +42685,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0149",
-            "output": "0.1543",
-            "cache_read": "0.0149",
+            "input": "0.0399",
+            "output": "0.0784",
+            "cache_read": "0.0300",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
