@@ -42,7 +42,9 @@ pub(super) async fn v1_messages_inner(
         request_started_at,
     )
     .await?;
-    enforce_chat_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)?;
+    enforce_chat_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)
+        .inspect_err(|rejection| resolved.selection.log_reasoning_effort_rejection(rejection))
+        .map_err(GatewayError::from)?;
 
     let request_headers = extract_request_headers(&headers);
     let request_tags = extract_request_tags(&headers)?;

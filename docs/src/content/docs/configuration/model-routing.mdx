@@ -85,7 +85,7 @@ The effort order is `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. The gate
 
 | Request | Effort paths checked |
 | --- | --- |
-| Chat Completions and Anthropic Messages | Top level: `reasoning_effort`, `reasoning.effort`, `output_config.effort`, `thinking.effort`, the Bedrock paths, the Gemini paths, `chat_template_kwargs.reasoning_effort`, `chat_template_args.reasoning_effort`. Each message: `reasoning.effort`, `output_config.effort`, `thinking.effort`. |
+| Chat Completions and Anthropic Messages | Top level: `reasoning_effort`, `reasoning.effort`, `output_config.effort`, `thinking.effort`, the Bedrock paths, the Gemini paths, `chat_template_kwargs.reasoning_effort`, `chat_template_args.reasoning_effort`. Each message: `reasoning.effort`, `output_config.effort`, `thinking.effort`, and the same three under `configuration_update`. |
 | Responses | Top level: `reasoning.effort`, `reasoning_effort`, `output_config.effort`, `thinking.effort` and the Bedrock paths. Items in an array `input` are inspected recursively for every path in this table. |
 | Batch items and route `extra_body` | Every path in this table, recursively, including nested `messages` and `input` items |
 
@@ -98,6 +98,7 @@ The gateway applies these rules while a ceiling is active:
 - A known value above the ceiling returns `invalid_request`. The gateway doesn't clamp or change it.
 - Unknown strings and non-string effort values also return `invalid_request`, so a new provider value can't bypass policy.
 - Omitted fields and explicit `null` pass.
+- A rejection message names the field path, such as `messages[2].configuration_update.reasoning.effort`. The gateway also logs a `reasoning effort rejected` warning with the requested and resolved model, the field path, the requested effort and the ceiling. The log holds no prompt content, and an unknown or malformed value is logged as `invalid`.
 
 The ceiling applies only to categorical values. It doesn't cap numeric budgets such as `thinking.budget_tokens`, and it doesn't override a default effort the provider picks when no value is sent. Provider mapping still resolves conflicts between two explicit effort fields, but every field must pass the ceiling first.
 
