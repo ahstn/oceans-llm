@@ -22,10 +22,11 @@ pub(super) async fn v1_messages_inner(
     headers: HeaderMap,
     policy: RequestPolicyContext,
     auth: AuthenticatedApiKey,
-    request: AnthropicMessagesRequest,
+    mut request: AnthropicMessagesRequest,
 ) -> Result<Response, AppError> {
     let request_started_at = Instant::now();
     let request_id = canonical_request_id(request_id)?;
+    let requested_service_tier = take_requested_service_tier(&mut request.extra)?;
     let mut core_request = anthropic_messages_request_to_core(&request);
     let log_request = core_chat_request_to_openai(&core_request);
     let requirements = core_request.requirements();
@@ -49,6 +50,7 @@ pub(super) async fn v1_messages_inner(
                 .log_reasoning_effort_rejection(Some(&request_id), rejection);
         })
         .map_err(GatewayError::from)?;
+    enforce_requested_service_tier(&resolved, requested_service_tier)?;
 
     let request_headers = extract_request_headers(&headers);
     let request_tags = extract_request_tags(&headers)?;
@@ -71,6 +73,7 @@ pub(super) async fn v1_messages_inner(
         &state,
         &resolved,
         requirements,
+        requested_service_tier,
         &headers,
         &request.extra,
         &request_headers,
@@ -97,19 +100,13 @@ pub(super) async fn v1_messages_inner(
         request_started_at,
         stream: core_request.stream,
         endpoint: RoutingEndpoint::Messages,
+        requested_service_tier,
         request_log_context,
     }
-    .prepare(selected, requirements, &mut core_request)
+    .prepare(selected, &mut core_request)
     .await?;
-    let mut context = build_provider_context(
-        &request_id,
-        &resolved.selection.requested_model.model_key,
-        &execution.route,
-        &auth,
-        request_headers,
-    );
+    let mut context = execution.provider_context(request_headers);
     context.chat_protocol = gateway_core::ChatRequestProtocol::AnthropicMessages;
-    context.expected_provider_credential_id = execution.expected_provider_credential_id;
     let native_messages = execution.provider.supports_native_messages(&context);
     if !native_messages && let Some(system) = core_request.extra.remove("system") {
         core_request.messages.insert(

@@ -1,4 +1,4 @@
-use gateway_core::ProviderRequestContext;
+use gateway_core::{ProviderRequestContext, ServiceTier};
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -7,6 +7,7 @@ use super::{
     error::VertexAdapterError,
     google_replay::{CandidateParts, THOUGHT_SIGNATURE_FIELD, native_parts_metadata},
 };
+use crate::service_tier::report_served_tier;
 
 /// Missing terminal state is permitted only while streaming. Failure and unknown reasons are
 /// upstream errors, never successful stops (even if the candidate also includes function calls).
@@ -212,7 +213,19 @@ pub(super) fn normalize_google_response(
     if let Some(usage) = map_google_usage(value) {
         completion.insert("usage".to_string(), usage);
     }
-    Ok(Value::Object(completion))
+    let mut completion = Value::Object(completion);
+    report_served_tier(&mut completion, google_served_tier(value));
+    Ok(completion)
+}
+
+/// The capacity grade `usageMetadata.trafficType` reports: `ON_DEMAND`, `ON_DEMAND_FLEX`, or
+/// `ON_DEMAND_PRIORITY`. Provisioned Throughput bills outside per-token rates and reads as none.
+pub(super) fn google_served_tier(value: &Value) -> Option<ServiceTier> {
+    value
+        .get("usageMetadata")?
+        .get("trafficType")?
+        .as_str()
+        .and_then(ServiceTier::from_served)
 }
 
 /// Maps `usageMetadata` to OpenAI usage. Gemini's `candidatesTokenCount` excludes thinking

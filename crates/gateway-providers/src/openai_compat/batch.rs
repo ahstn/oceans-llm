@@ -719,6 +719,7 @@ mod tests {
                     }),
                     ..Default::default()
                 },
+                service_tier: None,
             },
         };
 

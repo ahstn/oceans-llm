@@ -105,6 +105,7 @@ pub(super) fn context(kind: &str) -> ProviderRequestContext {
             }),
             ..Default::default()
         },
+        service_tier: None,
     }
 }
 

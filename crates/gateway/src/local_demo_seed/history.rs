@@ -330,6 +330,8 @@ pub(super) async fn insert_history_request(
         pricing_tier_above_input_tokens: None,
         computed_cost_usd: Money4::from_scaled(request.cost_scaled),
         occurred_at: request.occurred_at,
+        requested_service_tier: None,
+        served_service_tier: None,
     };
     store.insert_usage_ledger_if_absent(&ledger).await?;
     Ok(())

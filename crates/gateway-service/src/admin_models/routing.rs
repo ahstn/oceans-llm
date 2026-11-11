@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use gateway_core::{ModelRoute, ProviderConnection};
+use gateway_core::{ModelRoute, ProviderConnection, ServiceTier};
 
 use crate::{ProviderIconKey, resolve_provider_display};
 
@@ -17,6 +17,8 @@ pub struct AdminModelRouteSummary {
     pub enabled: bool,
     /// The provider has a stored connection; this does not report runtime health.
     pub provider_configured: bool,
+    /// The tier this route forces on every request, overriding the caller's.
+    pub service_tier: Option<ServiceTier>,
 }
 
 pub(super) fn summarize_routes(
@@ -40,6 +42,7 @@ pub(super) fn summarize_routes(
                 weight: route.weight,
                 enabled: route.enabled,
                 provider_configured: provider.is_some(),
+                service_tier: route.service_tier,
             }
         })
         .collect()

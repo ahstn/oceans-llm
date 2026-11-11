@@ -6,9 +6,9 @@ use gateway_core::{
     GatewayError, IdentityRepository, McpToolInvocationRepository, ModelRepository, ModelRoute,
     Money4, NewBatchItem, NewBatchJob, PartialCapabilities, PricingCatalogRepository,
     PricingResolution, ProviderCapabilities, ProviderRegistry, ProviderRepository,
-    ProviderRequestContext, RequestLogRepository, RoutePlanner, StoreHealth,
-    effective_route_capabilities, enforce_reasoning_effort_value,
-    is_supported_vertex_google_chat_upstream_model,
+    ProviderRequestContext, RequestLogRepository, RoutePlanner, SERVICE_TIER_REQUEST_FIELDS,
+    ServiceTier, StoreHealth, effective_route_capabilities, enforce_reasoning_effort_value,
+    is_supported_vertex_google_chat_upstream_model, take_requested_service_tier,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -261,7 +261,7 @@ pub async fn create_batch<S, P>(
     service: &GatewayService<S, P>,
     providers: &ProviderRegistry,
     auth: &AuthenticatedApiKey,
-    input: CreateBatchInput,
+    mut input: CreateBatchInput,
 ) -> Result<BatchJobRecord, GatewayError>
 where
     S: gateway_core::ApiKeyRepository
@@ -281,6 +281,8 @@ where
     P: RoutePlanner + Send + Sync + 'static,
 {
     validate_input(&input)?;
+    // The hash covers the caller's input as sent, so stripping tier fields below keeps
+    // idempotent replays stable.
     let request_hash = request_hash(&input)?;
     if let Some(existing) = service
         .store()
@@ -305,6 +307,9 @@ where
                     .log_reasoning_effort_rejection(None, &rejection);
                 GatewayError::InvalidRequest(format!("batch item `{}` {rejection}", item.custom_id))
             })?;
+    }
+    for item in &mut input.items {
+        take_batch_item_service_tier(item)?;
     }
     let (route, provider) = resolved
         .routes
@@ -360,6 +365,7 @@ where
         extra_body: route.extra_body.clone(),
         request_headers: BTreeMap::new(),
         compatibility: route.compatibility.clone(),
+        service_tier: None,
     };
     let batch_id = Uuid::new_v4();
     let idempotency_key = input.idempotency_key.clone();
@@ -441,6 +447,13 @@ fn route_supports_batch(
     provider: &dyn gateway_core::ProviderClient,
     endpoint: BatchEndpoint,
 ) -> bool {
+    // Batch adapters send no service tier, so a route that forces one cannot run batches.
+    if route
+        .service_tier
+        .is_some_and(|tier| tier != ServiceTier::Default)
+    {
+        return false;
+    }
     // `batch_capabilities` is the batch adapter ceiling, so the route chain needs no other cap.
     if !provider.batch_capabilities().supports(endpoint) {
         return false;
@@ -501,6 +514,31 @@ fn validate_input(input: &CreateBatchInput) -> Result<(), GatewayError> {
     Ok(())
 }
 
+/// Removes every tier-selecting field from a batch item body. Batches bill at the batch
+/// rate and their adapters send no tier, so only an explicit default is accepted; any other
+/// tier is rejected rather than forwarded upstream unpriced.
+fn take_batch_item_service_tier(item: &mut CreateBatchItemInput) -> Result<(), GatewayError> {
+    let Some(body) = item.body.as_object_mut() else {
+        return Ok(());
+    };
+    let mut fields = SERVICE_TIER_REQUEST_FIELDS
+        .into_iter()
+        .filter_map(|field| body.remove(field).map(|value| (field.to_string(), value)))
+        .collect::<BTreeMap<_, _>>();
+    match take_requested_service_tier(&mut fields) {
+        Ok(None | Some(ServiceTier::Default)) => Ok(()),
+        Ok(Some(tier)) => Err(GatewayError::InvalidRequest(format!(
+            "batch item `{}` asks for service tier `{tier}`; batch requests run at the batch rate and cannot select a service tier",
+            item.custom_id
+        ))),
+        Err(GatewayError::InvalidRequest(message)) => Err(GatewayError::InvalidRequest(format!(
+            "batch item `{}` {message}",
+            item.custom_id
+        ))),
+        Err(error) => Err(error),
+    }
+}
+
 fn request_hash(input: &CreateBatchInput) -> Result<String, GatewayError> {
     let bytes = serde_json::to_vec(&(input.endpoint, &input.model, &input.items))
         .map_err(|error| GatewayError::Internal(error.to_string()))?;
@@ -512,7 +550,62 @@ mod tests {
     use gateway_core::{BatchPricingSnapshot, ContextPricingTier, Money4};
     use serde_json::json;
 
-    use super::{BatchPricer, BatchPricingPolicy, BatchRates, MAX_BATCH_ITEMS};
+    use super::{
+        BatchPricer, BatchPricingPolicy, BatchRates, CreateBatchItemInput, MAX_BATCH_ITEMS,
+        take_batch_item_service_tier,
+    };
+
+    fn item(body: serde_json::Value) -> CreateBatchItemInput {
+        CreateBatchItemInput {
+            custom_id: "row-1".to_string(),
+            body,
+        }
+    }
+
+    #[test]
+    fn batch_items_drop_default_tier_fields_before_they_reach_a_provider() {
+        for body in [
+            json!({"messages": [], "service_tier": "default"}),
+            json!({"messages": [], "service_tier": "auto", "speed": "standard"}),
+            json!({"messages": [], "serviceTier": {"type": "default"}}),
+            json!({"messages": [], "service_tier": null}),
+        ] {
+            let mut item = item(body.clone());
+            take_batch_item_service_tier(&mut item)
+                .unwrap_or_else(|error| panic!("{body}: {error}"));
+            assert_eq!(item.body, json!({"messages": []}), "{body}");
+        }
+    }
+
+    #[test]
+    fn batch_items_reject_non_default_and_invalid_tiers() {
+        for (body, expected) in [
+            (
+                json!({"service_tier": "priority"}),
+                "asks for service tier `priority`",
+            ),
+            (json!({"speed": "fast"}), "asks for service tier `priority`"),
+            (
+                json!({"serviceTier": "flex"}),
+                "asks for service tier `flex`",
+            ),
+            (
+                json!({"service_tier": "turbo"}),
+                "unsupported `service_tier` value",
+            ),
+            (
+                json!({"service_tier": "flex", "speed": "fast"}),
+                "asks for `priority`",
+            ),
+        ] {
+            let error =
+                take_batch_item_service_tier(&mut item(body.clone())).expect_err(&body.to_string());
+            assert_eq!(error.http_status_code(), 400, "{body}");
+            let message = error.to_string();
+            assert!(message.contains("batch item `row-1`"), "{message}");
+            assert!(message.contains(expected), "{message}");
+        }
+    }
 
     #[test]
     fn local_batch_cost_rounds_once_after_aggregating_items() {

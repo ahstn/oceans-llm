@@ -4,6 +4,8 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use super::converse_replay::extract_bedrock_reasoning_blocks;
+use super::service_tier::converse_served_tier;
+use crate::service_tier::report_served_tier;
 
 pub(super) fn normalize_converse_response(
     value: &Value,
@@ -98,7 +100,9 @@ pub(super) fn normalize_converse_response(
         completion.insert("usage".to_string(), usage);
     }
 
-    Ok(Value::Object(completion))
+    let mut completion = Value::Object(completion);
+    report_served_tier(&mut completion, converse_served_tier(value));
+    Ok(completion)
 }
 
 pub(crate) fn normalize_anthropic_messages_response(

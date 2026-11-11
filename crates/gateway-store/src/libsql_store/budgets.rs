@@ -1,6 +1,6 @@
 use super::*;
 use crate::shared::{parse_uuid, unix_to_datetime};
-use gateway_core::ManualBudgetSave;
+use gateway_core::{ManualBudgetSave, ServiceTier};
 
 #[async_trait]
 impl BudgetRepository for LibsqlStore {
@@ -375,7 +375,7 @@ impl BudgetRepository for LibsqlStore {
                     cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
                     uncached_input_tokens, cache_read_tokens, cache_write_tokens,
                     image_output_tokens, image_output_cost_per_million_tokens_10000,
-                    pricing_tier_above_input_tokens
+                    pricing_tier_above_input_tokens, requested_service_tier, served_service_tier
                 FROM usage_cost_events
                 WHERE request_id = ?1
                   AND ownership_scope_key = ?2
@@ -420,7 +420,7 @@ impl BudgetRepository for LibsqlStore {
                     cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
                     uncached_input_tokens, cache_read_tokens, cache_write_tokens,
                     image_output_tokens, image_output_cost_per_million_tokens_10000,
-                    pricing_tier_above_input_tokens
+                    pricing_tier_above_input_tokens, requested_service_tier, served_service_tier
                 FROM usage_cost_events
                 WHERE request_id IN (SELECT value FROM json_each(?1))
                   AND ownership_scope_key = ?2
@@ -462,7 +462,7 @@ impl BudgetRepository for LibsqlStore {
                     cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
                     uncached_input_tokens, cache_read_tokens, cache_write_tokens,
                     image_output_tokens, image_output_cost_per_million_tokens_10000,
-                    pricing_tier_above_input_tokens
+                    pricing_tier_above_input_tokens, requested_service_tier, served_service_tier
                 FROM usage_cost_events AS ledger
                 WHERE ledger.request_id IN (SELECT value FROM json_each(?1))
                   AND (
@@ -1552,11 +1552,11 @@ impl BudgetRepository for LibsqlStore {
                     cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
                     uncached_input_tokens, cache_read_tokens, cache_write_tokens,
                     image_output_tokens, image_output_cost_per_million_tokens_10000,
-                    pricing_tier_above_input_tokens
+                    pricing_tier_above_input_tokens, requested_service_tier, served_service_tier
                 ) VALUES (
                     ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
                     ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28,
-                    ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37
+                    ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39
                 )
                 ON CONFLICT(request_id, ownership_scope_key) DO NOTHING
                 "#,
@@ -1609,7 +1609,9 @@ impl BudgetRepository for LibsqlStore {
                     event
                         .image_output_cost_per_million_tokens
                         .map(Money4::as_scaled_i64),
-                    event.pricing_tier_above_input_tokens
+                    event.pricing_tier_above_input_tokens,
+                    event.requested_service_tier.map(ServiceTier::as_str),
+                    event.served_service_tier.map(ServiceTier::as_str)
                 ],
             )
             .await

@@ -260,3 +260,79 @@ describe('cost units', () => {
     )
   })
 })
+
+describe('service tiers', () => {
+  test('hinted tiers become variants spelled for the package', () => {
+    const openai = toModel(
+      provider,
+      'gpt',
+      { supported_openai_params: ['service_tier'] },
+      undefined,
+      undefined,
+      undefined,
+      hints('openai-chat-completions', [
+        { id: 'flex', settings: { serviceTier: 'flex' } },
+        { id: 'fast', settings: { serviceTier: 'priority' } },
+        { id: 'ultrafast', settings: { serviceTier: 'ultrafast' } },
+      ]),
+    )
+    assert.deepEqual(openai.variants, [
+      { id: 'flex', settings: { serviceTier: 'flex' } },
+      { id: 'fast', settings: { serviceTier: 'priority' } },
+      { id: 'ultrafast', settings: { serviceTier: 'ultrafast' } },
+    ])
+
+    // Anthropic sends Fast as `speed`, after the effort presets and with the default thinking.
+    const claude = toModel(provider, 'claude', {}, undefined, undefined, undefined, {
+      ...hints('anthropic-messages', [
+        { id: 'high', settings: { effort: 'high' } },
+        { id: 'fast', settings: { speed: 'fast' } },
+      ]),
+      capabilities: {
+        thinking: { supported: true, types: { adaptive: { supported: true } } },
+        effort: { supported: true },
+      },
+    })
+    assert.deepEqual(claude.variants, [
+      { id: 'high', settings: { thinking: { type: 'adaptive' }, effort: 'high' } },
+      { id: 'fast', settings: { thinking: { type: 'adaptive' }, speed: 'fast' } },
+    ])
+  })
+  test('only the tiers the hint offers become variants', () => {
+    // A forced route serves Priority, so the listing shows it; the allow-list permits only Flex.
+    const model = toModel(provider, 'gpt', {}, undefined, undefined, undefined, {
+      ...hints('openai-chat-completions', [{ id: 'flex', settings: { serviceTier: 'flex' } }]),
+      service_tiers: ['default', 'flex', 'priority'],
+    })
+    assert.deepEqual(model.variants, [{ id: 'flex', settings: { serviceTier: 'flex' } }])
+    for (const listing of [
+      { ...hints('openai-chat-completions'), service_tiers: ['default', 'priority'] },
+      hints('openai-chat-completions', [{ id: 'scale', settings: { serviceTier: 'scale' } }]),
+    ])
+      expect(
+        toModel(provider, 'gpt', {}, undefined, undefined, undefined, listing).variants,
+      ).toEqual([])
+  })
+  test('tier-only hints keep the catalog effort ladder', () => {
+    const reference = {
+      ...Model.Info.default(provider, Model.ID.make('gpt')),
+      variants: ['low', 'high'].map((id) => ({
+        id: Model.VariantID.make(id),
+        settings: { reasoningEffort: id },
+      })),
+    }
+    const model = toModel(
+      provider,
+      'gpt',
+      { supports_reasoning: true, supported_openai_params: ['reasoning_effort', 'service_tier'] },
+      reference,
+      undefined,
+      undefined,
+      hints('openai-responses', [{ id: 'fast', settings: { serviceTier: 'priority' } }]),
+    )
+    assert.deepEqual(
+      model.variants.map((variant) => variant.id),
+      ['low', 'high', 'fast'],
+    )
+  })
+})

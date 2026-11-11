@@ -73,44 +73,67 @@ pub async fn app_state() -> (tempfile::TempDir, AppState) {
 /// Seeds the `fast` model on a `vertex` route, reachable with the
 /// `gwk_streamtest.cancel-secret` API key.
 pub async fn seed_stream_cancellation_test(store: &AnyStore) {
+    seed_test_models(
+        store,
+        &["vertex"],
+        vec![test_model("fast", "vertex", "fast-upstream")],
+    )
+    .await;
+}
+
+/// A model with one enabled route on `provider_key`.
+pub fn test_model(model_key: &str, provider_key: &str, upstream_model: &str) -> SeedModel {
+    SeedModel {
+        model_key: model_key.to_string(),
+        alias_target_model_key: None,
+        max_reasoning_effort: None,
+        routing: None,
+        description: None,
+        tags: Vec::new(),
+        rank: 0,
+        routes: vec![SeedModelRoute {
+            route_key: None,
+            provider_key: provider_key.to_string(),
+            upstream_model: upstream_model.to_string(),
+            priority: 0,
+            weight: 1.0,
+            enabled: true,
+            context_window_tokens: None,
+            pricing_override: None,
+            extra_headers: Default::default(),
+            extra_body: Default::default(),
+            capabilities: ProviderCapabilities::all_enabled().into(),
+            compatibility: RouteCompatibility::default(),
+            service_tier: None,
+        }],
+        allowlist: None,
+        service_tiers: None,
+    }
+}
+
+/// Seeds `models` on `openai_compat` providers named `provider_keys`, all reachable with
+/// the `gwk_streamtest.cancel-secret` API key.
+pub async fn seed_test_models(store: &AnyStore, provider_keys: &[&str], models: Vec<SeedModel>) {
+    let providers: Vec<SeedProvider> = provider_keys
+        .iter()
+        .map(|provider_key| SeedProvider {
+            provider_key: (*provider_key).to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: json!({}),
+            secrets: None,
+        })
+        .collect();
+    let allowed_models = models.iter().map(|model| model.model_key.clone()).collect();
     store
         .seed_from_inputs(
-            &[SeedProvider {
-                provider_key: "vertex".to_string(),
-                provider_type: "openai_compat".to_string(),
-                config: json!({}),
-                secrets: None,
-            }],
-            &[SeedModel {
-                model_key: "fast".to_string(),
-                alias_target_model_key: None,
-                max_reasoning_effort: None,
-                routing: None,
-                description: None,
-                tags: Vec::new(),
-                rank: 0,
-                routes: vec![SeedModelRoute {
-                    route_key: None,
-                    provider_key: "vertex".to_string(),
-                    upstream_model: "fast-upstream".to_string(),
-                    priority: 0,
-                    weight: 1.0,
-                    enabled: true,
-                    context_window_tokens: None,
-                    pricing_override: None,
-                    extra_headers: Default::default(),
-                    extra_body: Default::default(),
-                    capabilities: ProviderCapabilities::all_enabled().into(),
-                    compatibility: RouteCompatibility::default(),
-                }],
-                allowlist: None,
-            }],
+            &providers,
+            &models,
             &[SeedApiKey {
                 name: "Stream Test Key".to_string(),
                 public_id: "streamtest".to_string(),
                 secret_hash: hash_gateway_key_secret("cancel-secret").expect("hash test key"),
                 service_account_key: "stream-test".to_string(),
-                allowed_models: vec!["fast".to_string()],
+                allowed_models,
             }],
             &[SeedServiceAccount {
                 service_account_key: "stream-test".to_string(),
@@ -135,7 +158,7 @@ pub async fn seed_stream_cancellation_test(store: &AnyStore) {
             &[],
         )
         .await
-        .expect("seed cancellation test");
+        .expect("seed test models");
 }
 
 /// A clock the rate limiter reads, so tests can step across windows.

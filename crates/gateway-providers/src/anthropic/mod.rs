@@ -17,6 +17,9 @@ pub mod request;
 #[cfg(test)]
 mod request_tests;
 pub mod response;
+pub(crate) mod service_tier;
+#[cfg(test)]
+mod service_tier_tests;
 pub mod streaming;
 #[cfg(test)]
 mod tests;

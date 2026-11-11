@@ -32,9 +32,9 @@ The guardrail plugin is a V2 plugin. It checks each `shell` tool call with Ocean
 
 `src/opencode-plugin.test.ts` packs `packages/opencode-oceans` with Bun and loads that archive in a real private OpenCode server. The discovery config supplies only the gateway URL and the name of the Oceans key environment variable. A provider overlay adds request tags and output limits. It does not supply static models, API overrides, or capability overrides.
 
-The suite checks authorized model discovery, hidden-model exclusion, native SDK packages, context and output limits, per-million-token prices, reasoning variants, and a route that disables images, PDF files, and tools. Its Anthropic routes also cap reasoning at `high` and `medium`, which checks that discovery does not offer unsupported effort levels.
+The suite checks authorized model discovery, hidden-model exclusion, native SDK packages, context and output limits, per-million-token prices, reasoning and service-tier variants, and a route that disables images, PDF files, and tools. Its Anthropic routes also cap reasoning at `high` and `medium`, which checks that discovery does not offer unsupported effort levels.
 
-Four live requests use `low` and `high` reasoning for both `openai/gpt-6-luna` and `anthropic/claude-haiku-5.5`. Each request includes a small image and a valid PDF. The answer must identify content from both files. A passive HTTP hook checks the native Responses or Messages request and the selected effort without changing the request or saving authorization headers. This is needed because Oceans normalizes Messages request logs to its Chat representation. The suite compares OpenCode's token and cost totals with the correlated Oceans request log. Each request has a 2,048-token output limit; the temporary service account has a hard daily budget of $5. These tests make paid calls on each normal suite run.
+Six live requests use the `low`, `high` and `fast` variants for both `openai/gpt-6-luna` and `anthropic/claude-haiku-5.5`. Each request includes a small image and a valid PDF. The answer must identify content from both files. A passive HTTP hook checks the native Responses or Messages request without changing the request or saving authorization headers. It checks the selected effort, or for `fast`, `service_tier: "priority"` on Responses and `speed: "fast"` on Messages. This is needed because Oceans normalizes Messages request logs to its Chat representation. The suite compares OpenCode's token and cost totals with the correlated Oceans request log, and checks that the log records the `priority` tier for `fast`. OpenCode prices every variant at the standard rate. When the provider serves `priority`, the Oceans cost must be higher than OpenCode's. Each request has a 2,048-token output limit; the temporary service account has a hard daily budget of $5. These tests make paid calls on each normal suite run.
 
 Managed-mode model overrides:
 
@@ -74,7 +74,7 @@ From the repository root:
 mise install
 mise run //harness:typecheck
 mise run //harness:test
-# Only the packed discovery plugin suite (four paid inference calls):
+# Only the packed discovery plugin suite (six paid inference calls):
 mise run //harness:plugin-test
 ```
 

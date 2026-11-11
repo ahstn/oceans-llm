@@ -1,3 +1,4 @@
+use gateway_core::ServiceTier;
 use serde_json::Value;
 use toml::Value as TomlValue;
 
@@ -533,6 +534,7 @@ fn pi_fable_5_1_config_matches_expected_shape() {
         codex_reasoning_effort: None,
         native_api_format: None,
         max_reasoning_effort: None,
+        service_tiers: Vec::new(),
     };
 
     let rendered = PiConfigTemplate.render(&input);
@@ -1471,4 +1473,53 @@ fn responses_native_routes_prefer_responses_when_chat_is_also_served() {
     );
     assert_eq!(hints.harnesses.pi.api, "openai-responses");
     assert_eq!(hints.harnesses.pi.compat, None);
+}
+
+#[test]
+fn opencode_offers_a_variant_per_optional_service_tier() {
+    let mut openai = non_anthropic_input();
+    openai.service_tiers = ServiceTier::ALL.to_vec();
+    let hints = client_hints(&openai).expect("hints");
+    assert_eq!(
+        hints.harnesses.opencode.variants,
+        Some(serde_json::json!([
+            {"id": "flex", "settings": {"serviceTier": "flex"}},
+            {"id": "fast", "settings": {"serviceTier": "priority"}},
+            {"id": "ultrafast", "settings": {"serviceTier": "ultrafast"}}
+        ]))
+    );
+
+    // Anthropic packages carry Fast as `speed`, after the effort presets.
+    let mut claude = input(Some(ThinkingPolicy::AnthropicSafeEffort));
+    claude.service_tiers = vec![ServiceTier::Default, ServiceTier::Priority];
+    let rendered = OpenCodeConfigTemplate.render(&claude);
+    let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
+    let variants = &value["providers"]["oceans-llm"]["models"]["claude-sonnet"]["variants"];
+    assert_eq!(
+        variants
+            .as_array()
+            .expect("variants")
+            .iter()
+            .map(|variant| variant["id"].as_str().expect("id"))
+            .collect::<Vec<_>>(),
+        ["high", "max", "fast"]
+    );
+    assert_eq!(
+        variants[2]["settings"],
+        serde_json::json!({"speed": "fast"})
+    );
+}
+
+#[test]
+fn opencode_offers_no_tier_variants_when_the_gateway_fixes_the_tier() {
+    for service_tiers in [
+        vec![ServiceTier::Priority],
+        vec![ServiceTier::Default],
+        Vec::new(),
+    ] {
+        let mut input = non_anthropic_input();
+        input.service_tiers = service_tiers;
+        let hints = client_hints(&input).expect("hints");
+        assert_eq!(hints.harnesses.opencode.variants, None);
+    }
 }

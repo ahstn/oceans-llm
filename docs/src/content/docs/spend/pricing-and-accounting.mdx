@@ -76,6 +76,8 @@ After any source changes, Oceans rebuilds the merged catalog and reconciles the 
 
 The gateway ships a vendored snapshot of each source, so a new environment can start when the remote catalogs are down. Before the gateway serves requests, it refreshes stale sources. It then builds pricing rows from each source's cached snapshot, or from the vendored snapshot when no cached one exists. A source that can't be reached doesn't stop startup.
 
+A release that changes how the gateway reads a source caches that source under a new key. After the upgrade, the source starts from its vendored snapshot and is fetched in full, so an unchanged remote catalog can't keep a snapshot read the old way.
+
 The vendored snapshots are a safety net, not a substitute for refreshing in a deployed environment. Maintainers update them with `mise run //crates/gateway:sync-pricing-catalog`.
 
 ## Pricing provider IDs
@@ -106,7 +108,7 @@ Anthropic-on-Vertex pricing works only for `location=global`. Other locations ar
 
 The catalog lists most of these models under a versioned id, such as `claude-fable-5-1@default` or `claude-haiku-4-5@20251001`. Oceans looks up the exact upstream model first. If an unversioned id such as `anthropic/claude-fable-5-1` has no exact entry, it tries `<model>@default`. Dated releases without a `@default` entry, such as `claude-sonnet-4-5`, must name the dated id (`anthropic/claude-sonnet-4-5@20250929`) or use a pricing override.
 
-When a route changes provider, upstream model, location or a billing modifier such as `service_tier`, an admin should check that its traffic is still priced before relying on budgets for it.
+When a route changes provider, upstream model, location or `service_tier`, an admin should check that its traffic is still priced before relying on budgets for it.
 
 ## Route pricing overrides
 
@@ -179,14 +181,36 @@ Oceans applies tiers with these rules:
 - When more than one tier applies, the one with the highest threshold wins.
 - The tier's rates apply to the whole request, not only the tokens above the threshold.
 - When a tier leaves a rate unset, such as cache read, the base rate for that bucket is used.
-- A provider-reported cost or a route override wins over the catalog, tiers included. Overrides have no tiers.
+- A provider-reported cost or a route override wins over the catalog, tiers included. Overrides have no context tiers.
 - In a batch, each item picks its tier from its own prompt tokens.
 
 The spend event stores the tier threshold in `pricing_tier_above_input_tokens`. It's empty for base rates, overrides and provider-reported cost.
 
-Tiers come from models.dev `tiers` entries of type `context`, and from LiteLLM `*_above_<N>k_tokens` prices. Oceans doesn't build a tier from the models.dev `context_over_200k` condition, because its threshold is often wrong. Other price dimensions, such as priority, flex and batch tiers, aren't billed.
+Tiers come from models.dev `tiers` entries of type `context`, and from LiteLLM `*_above_<N>k_tokens` prices. Oceans doesn't build a tier from the models.dev `context_over_200k` condition, because its threshold is often wrong. Batch prices aren't billed this way.
 
 On the Models page, a model with tiers shows its base input and output rates as `from $X`. The model info dialog shows the base rates and an **Above N tokens** block for each tier.
+
+## Service tier pricing
+
+Providers charge more for the `priority` and `ultrafast` [service tiers](/configuration/models-and-routes/#service-tiers) and less for `flex`. Oceans bills each request at one tier:
+
+1. the tier the provider reports it served, else
+2. the tier the caller or the route requested, else
+3. `default`.
+
+The spend event stores the requested and the served tier.
+
+The catalog stores a separate rate schedule for each non-default tier, with its own context tiers. The schedules come from LiteLLM `*_priority`, `*_flex` and `*_ultrafast` prices (and `*_above_<N>k_tokens_<tier>`), and from models.dev `experimental.modes` entries that set `service_tier` or `speed: "fast"`. For each tier, Oceans picks the first source in [pricing precedence](#catalog-sources) whose tier schedule has every context tier of the base schedule. When no source has them all, the first source that has the tier wins. OpenRouter reports the cost of each request, so it needs no tier rates.
+
+Tier pricing fails closed:
+
+- A request billed at a tier with no schedule is `unpriced` with the reason `service_tier:<tier>`.
+- A tier schedule doesn't borrow a rate from the base schedule. A bucket that the request used and the tier schedule leaves out makes the request unpriced.
+- When a base context tier applies but the tier schedule has no context tier at that threshold, the request is unpriced.
+
+For a route `pricing_override`, the base rates price the route's own tier and `service_tiers` prices the others. See [Route metadata overrides](/configuration/models-and-routes/#route-metadata-overrides).
+
+A route only serves a non-default tier it can price, so most tier requests that can't be priced fail with 400 before the provider call. A tier the provider served but nobody requested, such as a downgrade to `default` on a `priority` route, can still be unpriced.
 
 ## Cache-token accounting
 
@@ -214,6 +238,7 @@ The catalog and provider responses carry more billing signals than Oceans charge
 | Prompt and input tokens | Charged at the input rate |
 | Completion and output tokens | Charged at the output rate |
 | Context tiers | Whole request charged at the tier rates above the threshold |
+| Service tiers | Whole request charged at the served tier's rates |
 | Total tokens | Stored for reporting and checks |
 | Cache-read and cache-write tokens | Charged at the cache rates for each bucket with tokens |
 | Image output tokens | Charged at the image rate when one exists, else at the output rate |
@@ -230,7 +255,7 @@ A successful provider response can still be `unpriced`. The usual causes are:
 - no pricing source for the provider, or a missing or unsupported `pricing_provider_id`
 - a pricing model id the catalog doesn't know
 - an unsupported Vertex publisher or location
-- a billing modifier such as `service_tier` (or `serviceTier`) in the route's `extra_body`
+- a service tier with no rates (reason `service_tier:<tier>`)
 - a missing input, output or cache rate for tokens the request used
 
 `usage_missing` is different: Oceans couldn't read usable usage from the response at all. For example, a provider might return a successful response without final token counts.

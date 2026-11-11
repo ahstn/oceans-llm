@@ -11,6 +11,8 @@ use uuid::Uuid;
 use super::converse_replay::{ConverseReplayStream, normalize_bedrock_reasoning_content};
 use super::eventstream::{BedrockEvent, BedrockEventStreamDecoder};
 use super::response::{bedrock_reasoning_metadata, map_stop_reason, map_usage};
+use super::service_tier::converse_served_tier;
+use crate::service_tier::report_served_tier;
 use crate::streaming::{done_sse_chunk, openai_sse_error_chunk, render_sse_event_chunk};
 
 #[derive(Debug)]
@@ -252,7 +254,9 @@ impl BedrockConverseStreamNormalizer {
             }
             "metadata" => {
                 if let Some(usage) = map_usage(&payload) {
-                    actions.push(BedrockStreamAction::Chunk(self.usage_chunk(usage)));
+                    let mut chunk = self.usage_chunk(usage);
+                    report_served_tier(&mut chunk, converse_served_tier(&payload));
+                    actions.push(BedrockStreamAction::Chunk(chunk));
                 }
             }
             other => {

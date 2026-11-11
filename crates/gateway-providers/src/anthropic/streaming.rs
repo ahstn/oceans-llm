@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use async_stream::stream;
 use bytes::Bytes;
 use futures_util::StreamExt;
-use gateway_core::{ProviderStream, SseEventParser};
+use gateway_core::{ProviderStream, SseEventParser, served_service_tier};
 use serde_json::{Map, Value, json};
 
 use super::replay::{AnthropicReplayStream, ReplayError};
@@ -11,6 +11,7 @@ use super::response::{
     anthropic_usage_total, attach_owned_anthropic_terminal_replay, map_anthropic_finish_reason,
     map_anthropic_stream_usage, preserve_anthropic_message_metadata,
 };
+use crate::service_tier::report_served_tier;
 use crate::streaming::{done_sse_chunk, openai_sse_error_chunk};
 
 pub fn normalize_anthropic_stream<S>(
@@ -33,6 +34,8 @@ where
         let mut tool_block_indexes = BTreeMap::<i64, i64>::new();
         let mut tool_initial_arguments = BTreeMap::<i64, String>::new();
         let mut latest_usage = None;
+        // `message_start` reports `usage.speed` on the message, `message_delta` on its usage.
+        let mut served_tier = None;
         let mut replay = AnthropicReplayStream::default();
         let mut replay_error = None;
         let mut incomplete_terminal = false;
@@ -84,6 +87,7 @@ where
                     .and_then(Value::as_str)
                     .or(event.event.as_deref())
                     .unwrap_or_default();
+                served_tier = served_service_tier(&payload).or(served_tier);
 
                 if replay_error.is_none()
                     && let Err(error) = replay.observe(&payload)
@@ -119,12 +123,13 @@ where
                         );
                         if let Some(usage) = usage {
                             chunk["usage"] = usage;
+                            report_served_tier(&mut chunk, served_tier);
                         }
                         yield Ok(openai_sse_chunk(&chunk));
                     } else if let Some(usage) = usage {
-                        yield Ok(openai_sse_chunk(&openai_usage_chunk(
-                            &stream_id, created, &model, usage,
-                        )));
+                        let mut chunk = openai_usage_chunk(&stream_id, created, &model, usage);
+                        report_served_tier(&mut chunk, served_tier);
+                        yield Ok(openai_sse_chunk(&chunk));
                     }
                     if kind == "message_stop" {
                         saw_message_stop = true;
@@ -168,6 +173,7 @@ where
                             let usage = merge_openai_stream_usage(&mut latest_usage, &usage);
                             delta["usage"] = usage;
                         }
+                        report_served_tier(&mut delta, served_tier);
                         yield Ok(openai_sse_chunk(&delta));
                         role_emitted = true;
                     }
@@ -323,16 +329,14 @@ where
                             );
                             if let Some(usage) = usage {
                                 finish["usage"] = usage;
+                                report_served_tier(&mut finish, served_tier);
                             }
                             yield Ok(openai_sse_chunk(&finish));
                             finish_emitted = true;
                         } else if let Some(usage) = usage {
-                            yield Ok(openai_sse_chunk(&openai_usage_chunk(
-                                &stream_id,
-                                created,
-                                &model,
-                                usage,
-                            )));
+                            let mut chunk = openai_usage_chunk(&stream_id, created, &model, usage);
+                            report_served_tier(&mut chunk, served_tier);
+                            yield Ok(openai_sse_chunk(&chunk));
                         }
                     }
                     "message_stop" => {

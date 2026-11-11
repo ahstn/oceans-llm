@@ -4,7 +4,7 @@ use async_stream::stream;
 use axum::body::Bytes;
 use futures_util::StreamExt;
 use gateway_core::{
-    ProviderStream, SseEventParser,
+    ProviderStream, ServiceTier, SseEventParser,
     protocol::anthropic::{
         anthropic_message_metadata, anthropic_reasoning_blocks, openai_finish_reason_to_anthropic,
     },
@@ -19,6 +19,8 @@ struct AnthropicStreamState {
     text_block_index: Option<i64>,
     tool_block_indexes: BTreeMap<i64, i64>,
     latest_usage: Option<Value>,
+    /// The tier the upstream chunks report serving; written into each emitted usage.
+    served_service_tier: Option<ServiceTier>,
     pending_stop_reason: Option<String>,
     pending_message_fields: serde_json::Map<String, Value>,
 }
@@ -100,6 +102,9 @@ fn anthropic_events_from_openai_chunk(
     state: &mut AnthropicStreamState,
 ) -> Vec<Bytes> {
     let mut events = Vec::new();
+    if let Some(tier) = gateway_core::served_service_tier(value) {
+        state.served_service_tier = Some(tier);
+    }
     let usage = anthropic_stream_usage_from_openai(value.get("usage"));
     if let Some(usage) = usage.as_ref() {
         merge_anthropic_stream_usage(&mut state.latest_usage, usage);
@@ -235,14 +240,30 @@ fn append_anthropic_usage_delta(
     if state.pending_stop_reason.is_some() {
         return;
     }
+    let mut usage = usage_with_known_fields(usage, state.latest_usage.as_ref());
+    insert_anthropic_service_tier(&mut usage, state.served_service_tier);
     events.push(anthropic_sse_chunk(
         "message_delta",
         json!({
             "type": "message_delta",
             "delta": {},
-            "usage": usage_with_known_fields(usage, state.latest_usage.as_ref())
+            "usage": usage
         }),
     ));
+}
+
+/// Writes the served tier where Anthropic reports it, `usage.service_tier`, so Messages
+/// clients and the request log see it. The default tier takes Anthropic's name,
+/// `standard`; tiers Anthropic has no name for keep the gateway's.
+pub(super) fn insert_anthropic_service_tier(usage: &mut Value, tier: Option<ServiceTier>) {
+    let (Some(tier), Some(usage)) = (tier, usage.as_object_mut()) else {
+        return;
+    };
+    let name = match tier {
+        ServiceTier::Default => "standard",
+        tier => tier.as_str(),
+    };
+    usage.insert("service_tier".to_string(), Value::String(name.to_string()));
 }
 
 /// OpenRouter billing fields that usage accounting reads as the provider-reported cost.
@@ -323,13 +344,18 @@ fn pending_anthropic_message_delta(state: &mut AnthropicStreamState) -> Option<B
     if stop_reason.is_none() && state.pending_message_fields.is_empty() {
         return None;
     }
+    let mut usage = state
+        .latest_usage
+        .clone()
+        .unwrap_or_else(fallback_anthropic_stream_usage);
+    insert_anthropic_service_tier(&mut usage, state.served_service_tier);
     let mut message_delta = json!({
         "type":"message_delta",
         "delta": {
             "stop_reason": stop_reason,
             "stop_sequence": null
         },
-        "usage": state.latest_usage.clone().unwrap_or_else(fallback_anthropic_stream_usage)
+        "usage": usage
     });
     if let Some(Value::Object(fields)) = state.pending_message_fields.remove("delta") {
         message_delta["delta"]
@@ -524,6 +550,7 @@ mod tests {
     use axum::body::Bytes;
     use futures_util::{StreamExt, stream};
     use gateway_core::ProviderStream;
+    use gateway_core::ServiceTier;
     use gateway_service::StreamResponseCollector;
     use serde_json::json;
 
@@ -735,6 +762,31 @@ mod tests {
                 }
             }))
         );
+    }
+
+    #[tokio::test]
+    async fn anthropic_messages_stream_adapter_reports_served_tier_for_collector() {
+        // OpenAI repeats the tier on every chunk; the final usage chunk has no choices.
+        let upstream: ProviderStream = Box::pin(stream::iter(vec![Ok(Bytes::from(concat!(
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}],\"service_tier\":\"priority\"}\n\n",
+            "data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"service_tier\":\"priority\"}\n\n",
+            "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":1},\"service_tier\":\"priority\"}\n\n",
+            "data: [DONE]\n\n"
+        )))]));
+
+        let rendered = render_stream(upstream).await;
+        let mut collector = StreamResponseCollector::default();
+        collector.observe_chunk(rendered.as_bytes());
+
+        assert_eq!(collector.served_service_tier(), Some(ServiceTier::Priority));
+        assert_eq!(
+            rendered.matches("\"service_tier\":\"priority\"").count(),
+            1,
+            "only the final message_delta reports the tier: {rendered}"
+        );
+        assert!(rendered.contains(
+            "\"usage\":{\"input_tokens\":3,\"output_tokens\":1,\"service_tier\":\"priority\"}"
+        ));
     }
 
     #[tokio::test]

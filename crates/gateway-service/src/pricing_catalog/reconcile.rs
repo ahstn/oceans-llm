@@ -11,15 +11,15 @@ use std::collections::BTreeMap;
 use gateway_core::{
     ContextPricingTier, GatewayError, ModelPricingProvenanceUpdate, ModelPricingRecord,
     ModelPricingSyncChanges, Money4, PricingCatalogRepository, PricingLimits, PricingModalities,
-    PricingProvenance,
+    PricingProvenance, ServiceTier, ServiceTierPricing,
 };
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 use super::{
     PricingCatalogContextTier, PricingCatalogDocument, PricingCatalogModelDocument,
-    PricingCatalogSnapshot, PricingCatalogSnapshotMetadata, merge::MergedModelReport,
-    sources::CatalogSourceId,
+    PricingCatalogServiceTierCost, PricingCatalogSnapshot, PricingCatalogSnapshotMetadata,
+    merge::MergedModelReport, sources::CatalogSourceId,
 };
 
 type PricingTargetKey = (String, String);
@@ -224,6 +224,13 @@ fn pricing_record_at(
             .iter()
             .map(context_pricing_tier)
             .collect::<Result<_, _>>()?,
+        service_tiers: document
+            .cost
+            .service_tiers
+            .iter()
+            .filter(|(tier, _)| **tier != ServiceTier::Default)
+            .map(|(tier, cost)| service_tier_pricing(*tier, cost))
+            .collect::<Result<_, _>>()?,
         release_date: document.release_date.clone(),
         last_updated: document.last_updated.clone(),
         effective_start_at: effective_at,
@@ -259,6 +266,24 @@ fn context_pricing_tier(
     })
 }
 
+fn service_tier_pricing(
+    service_tier: ServiceTier,
+    cost: &PricingCatalogServiceTierCost,
+) -> Result<ServiceTierPricing, GatewayError> {
+    Ok(ServiceTierPricing {
+        service_tier,
+        input: parse_money(cost.input.as_deref())?,
+        output: parse_money(cost.output.as_deref())?,
+        cache_read: parse_money(cost.cache_read.as_deref())?,
+        cache_write: parse_money(cost.cache_write.as_deref())?,
+        context_tiers: cost
+            .context_tiers
+            .iter()
+            .map(context_pricing_tier)
+            .collect::<Result<_, _>>()?,
+    })
+}
+
 fn pricing_record_matches(existing: &ModelPricingRecord, desired: &ModelPricingRecord) -> bool {
     existing.display_name == desired.display_name
         && existing.input_cost_per_million_tokens == desired.input_cost_per_million_tokens
@@ -272,6 +297,7 @@ fn pricing_record_matches(existing: &ModelPricingRecord, desired: &ModelPricingR
             == desired.output_audio_cost_per_million_tokens
         && existing.output_image_usd_per_million == desired.output_image_usd_per_million
         && existing.context_tiers == desired.context_tiers
+        && existing.service_tiers == desired.service_tiers
         && existing.release_date == desired.release_date
         && existing.last_updated == desired.last_updated
         && existing.limits == desired.limits

@@ -14,6 +14,7 @@ fn image_model_route(image_output_rate: Option<Money4>) -> ModelRoute {
         cache_read_cost_per_million_tokens: None,
         cache_write_cost_per_million_tokens: None,
         image_output_cost_per_million_tokens: image_output_rate,
+        service_tiers: Vec::new(),
     });
     route
 }
@@ -28,6 +29,7 @@ async fn recorded_usage_event(route: &ModelRoute, provider_usage: Value) -> Usag
             route,
             "req_image_usage",
             Some(provider_usage),
+            gateway_core::ServiceTierOutcome::default(),
             OffsetDateTime::now_utc(),
         )
         .await

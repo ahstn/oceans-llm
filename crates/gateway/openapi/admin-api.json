@@ -8541,6 +8541,17 @@
           "provider_label": {
             "type": "string"
           },
+          "service_tier": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ServiceTierView",
+                "description": "The tier this route forces on every request, overriding the caller's. Null serves\nthe tier the caller asks for."
+              }
+            ]
+          },
           "upstream_model": {
             "type": "string"
           },
@@ -8607,8 +8618,10 @@
           "resolved_model_key",
           "aliases",
           "tags",
+          "available_service_tiers",
           "status",
           "pricing_tiers",
+          "pricing_service_tiers",
           "pricing_varies_by_route",
           "benchmark_scores",
           "client_configurations"
@@ -8636,6 +8649,13 @@
                 "$ref": "#/components/schemas/AdminModelAllowlistView"
               }
             ]
+          },
+          "available_service_tiers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceTierView"
+            },
+            "description": "Every tier a request can be served at, ascending: the tiers the routes' adapters can\nsend and routing can bill, limited to the allow-list except for a tier a route forces.\nEmpty when no route serves chat."
           },
           "benchmark_scores": {
             "type": "array",
@@ -8730,6 +8750,13 @@
             ],
             "format": "int64"
           },
+          "pricing_service_tiers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminServiceTierPricingView"
+            },
+            "description": "Rates for non-default service tiers on the same primary route, sorted by tier. A\nrequest billed at a tier with no rate for a token bucket it used is unpriced."
+          },
           "pricing_source": {
             "oneOf": [
               {
@@ -8795,6 +8822,16 @@
                 "description": "Configured policy. Only visible to platform admins."
               }
             ]
+          },
+          "service_tiers": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ServiceTierView"
+            },
+            "description": "Non-default service tiers callers may request. Null allows every tier."
           },
           "status": {
             "$ref": "#/components/schemas/AdminModelStatusView"
@@ -9155,6 +9192,54 @@
             "items": {
               "$ref": "#/components/schemas/AdminTeamView"
             }
+          }
+        }
+      },
+      "AdminServiceTierPricingView": {
+        "type": "object",
+        "description": "Rates that replace the base prices for a request billed at `service_tier`. Unlike a\ncontext tier, a null rate does not inherit the base rate: the tier has no rate for\nthat bucket.",
+        "required": [
+          "service_tier",
+          "context_tiers"
+        ],
+        "properties": {
+          "cache_read_cost_per_million_tokens_usd_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "cache_write_cost_per_million_tokens_usd_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "context_tiers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminPricingTierView"
+            },
+            "description": "Context tiers within this service tier, ascending by threshold."
+          },
+          "input_cost_per_million_tokens_usd_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "output_cost_per_million_tokens_usd_10000": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "service_tier": {
+            "$ref": "#/components/schemas/ServiceTierView"
           }
         }
       },
@@ -19507,6 +19592,17 @@
           "response_payload_truncated": {
             "type": "boolean"
           },
+          "served_service_tier": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ServiceTierView",
+                "description": "The tier the provider reported serving. Null when the provider reported none."
+              }
+            ]
+          },
           "service_account_id": {
             "type": [
               "string",
@@ -19517,6 +19613,17 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "service_tier": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ServiceTierView",
+                "description": "The effective tier the request asked for: the route's forced tier, else the\ncaller's. Null when neither set one."
+              }
             ]
           },
           "status_code": {
@@ -20246,6 +20353,16 @@
             ]
           }
         }
+      },
+      "ServiceTierView": {
+        "type": "string",
+        "description": "A provider capacity grade. `priority` is the tier providers call Fast.",
+        "enum": [
+          "default",
+          "flex",
+          "priority",
+          "ultrafast"
+        ]
       },
       "SetDefaultVersionRequest": {
         "type": "object",

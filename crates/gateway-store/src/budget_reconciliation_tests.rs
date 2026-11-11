@@ -75,6 +75,7 @@ async fn exercise_human_budget_defaults<S: GatewayStore + ?Sized>(store: &S) {
         rank: 10,
         routes: Vec::new(),
         allowlist: None,
+        service_tiers: None,
     }];
 
     store

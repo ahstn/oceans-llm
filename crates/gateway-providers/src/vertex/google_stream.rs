@@ -1,21 +1,22 @@
 use async_stream::stream;
 use bytes::Bytes;
 use futures_util::StreamExt;
-use gateway_core::{ProviderStream, SseEventParser};
+use gateway_core::{ProviderStream, ServiceTier, SseEventParser};
 use serde_json::{Map, Value, json};
 
 use super::{
     error::VertexAdapterError,
     google_replay::{CandidateParts, THOUGHT_SIGNATURE_FIELD, native_parts_metadata},
     google_response::{
-        candidate_finish_reason, inline_error, map_google_logprobs, map_google_usage,
-        prompt_block_reason,
+        candidate_finish_reason, google_served_tier, inline_error, map_google_logprobs,
+        map_google_usage, prompt_block_reason,
     },
 };
 use crate::{
     anthropic::streaming::{
         merge_openai_stream_usage, openai_chunk, openai_delta_chunk, openai_sse_chunk,
     },
+    service_tier::report_served_tier,
     streaming::done_sse_chunk,
 };
 
@@ -31,6 +32,7 @@ pub(super) struct GoogleStreamState {
     next_tool_call_index: usize,
     finish_reason: Option<&'static str>,
     latest_usage: Option<Value>,
+    served_tier: Option<ServiceTier>,
     native_parts: Vec<Value>,
     tool_call_ids: Vec<Value>,
     thought_signature: Option<Value>,
@@ -49,6 +51,7 @@ impl GoogleStreamState {
             next_tool_call_index: 0,
             finish_reason: None,
             latest_usage: None,
+            served_tier: None,
             native_parts: Vec::new(),
             tool_call_ids: Vec::new(),
             thought_signature: None,
@@ -63,6 +66,7 @@ impl GoogleStreamState {
         if let Some(usage) = map_google_usage(object) {
             merge_openai_stream_usage(&mut self.latest_usage, &usage);
         }
+        self.served_tier = google_served_tier(object).or(self.served_tier);
         // A failed generation can be followed by a usage-only frame. Keep consuming accounting
         // information, but never emit subsequent content or reinterpret the failure as success.
         if self.terminal_error.is_some() {
@@ -159,6 +163,7 @@ impl GoogleStreamState {
         finish["choices"][0]["delta"]["provider_metadata"] = self.replay_metadata();
         if let Some(usage) = &self.latest_usage {
             finish["usage"] = usage.clone();
+            report_served_tier(&mut finish, self.served_tier);
         }
         Ok(finish)
     }
@@ -184,6 +189,7 @@ impl GoogleStreamState {
         });
         if let Some(usage) = &self.latest_usage {
             error["usage"] = usage.clone();
+            report_served_tier(&mut error, self.served_tier);
         }
         if !self.native_parts.is_empty() {
             let metadata = openai_delta_chunk(

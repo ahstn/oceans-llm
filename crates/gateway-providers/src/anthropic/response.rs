@@ -1,7 +1,9 @@
-use gateway_core::ProviderRequestContext;
+use gateway_core::{ProviderRequestContext, served_service_tier};
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use uuid::Uuid;
+
+use crate::service_tier::report_served_tier;
 
 pub fn normalize_anthropic_response(
     value: &Value,
@@ -77,7 +79,11 @@ pub fn normalize_anthropic_response(
         completion.insert("usage".to_string(), usage);
     }
 
-    Value::Object(completion)
+    // `usage.speed` and `usage.service_tier` stay under `provider_usage`; the translated
+    // response reports the served tier at the top level like OpenAI.
+    let mut completion = Value::Object(completion);
+    report_served_tier(&mut completion, served_service_tier(value));
+    completion
 }
 
 const ANTHROPIC_MESSAGE_FIELDS: [&str; 3] = ["stop_reason", "stop_sequence", "safeguard_results"];

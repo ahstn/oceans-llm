@@ -437,6 +437,53 @@
       ]
     },
     {
+      "id": "service-tiers",
+      "file": "service-tiers.md",
+      "proof": {
+        "drive": "service-tiers"
+      },
+      "paid": true,
+      "paths": [
+        "crates/gateway-core/src/service_tier.rs",
+        "crates/gateway-core/src/provider.rs",
+        "crates/gateway/src/http/handlers/routing.rs",
+        "crates/gateway/src/http/handlers/service_tier*.rs",
+        "crates/gateway/src/config/service_tiers.rs",
+        "crates/gateway-service/src/pricing_catalog/service_tiers.rs",
+        "crates/gateway-service/src/model_metadata/service_tiers.rs",
+        "crates/gateway-service/src/service/tier_pricing.rs",
+        "crates/gateway-service/src/batches.rs",
+        "crates/gateway-providers/src/service_tier.rs",
+        "crates/gateway-providers/src/**/service_tier*.rs",
+        "crates/admin-ui/web/src/lib/service-tier.ts",
+        "crates/gateway-store/migrations/V77__*.sql",
+        "crates/gateway-store/migrations/postgres/V77__*.sql",
+        ".agents/skills/verify-oceans-admin/scripts/drive-service-tiers.mjs"
+      ]
+    },
+    {
+      "id": "harness-integration",
+      "file": "harness-integration.md",
+      "proof": {
+        "drive": "harness-integration"
+      },
+      "paid": true,
+      "paths": [
+        "packages/opencode-oceans/**",
+        "crates/gateway/src/http/handlers.rs",
+        "crates/gateway/src/http/handlers/{auth,inference,messages,native_messages,routing,service_tier,count_tokens}.rs",
+        "crates/gateway/src/http/{models,anthropic_stream,request_body,inference_guardrails}.rs",
+        "crates/gateway/src/http/request_body/**",
+        "crates/gateway-core/src/protocol/**",
+        "crates/gateway-core/src/streaming.rs",
+        "crates/gateway-service/src/model_metadata.rs",
+        "crates/gateway-service/src/model_metadata/**",
+        "crates/gateway-service/src/{capability_hints,effective_route_metadata}.rs",
+        "crates/gateway-client-config/**",
+        ".agents/skills/verify-oceans-admin/scripts/drive-harness-integration.mjs"
+      ]
+    },
+    {
       "id": "mcp",
       "file": "mcp.md",
       "proof": {

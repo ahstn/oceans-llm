@@ -22,6 +22,7 @@ use crate::openai_compat::{
     apply_openai_compat_empty_tools_profile, apply_openai_compat_request_profile,
     normalize_anthropic_messages_for_openai,
 };
+use crate::service_tier::{DEFAULT_ONLY, checked_service_tier};
 use crate::streaming::{normalize_openai_compat_responses_stream, normalize_openai_compat_stream};
 use crate::token::CachedAccessTokenSource;
 
@@ -358,6 +359,7 @@ impl CopilotProvider {
         chat_api: GitHubCopilotChatApi,
         stream: bool,
     ) -> Result<reqwest::Request, ProviderError> {
+        checked_service_tier(context, DEFAULT_ONLY)?;
         let endpoint_suffix = Self::chat_endpoint_suffix(chat_api);
         if stream
             && !context
@@ -454,6 +456,7 @@ impl CopilotProvider {
         context: &ProviderRequestContext,
         stream: bool,
     ) -> Result<reqwest::Request, ProviderError> {
+        checked_service_tier(context, DEFAULT_ONLY)?;
         if !context
             .compatibility
             .github_copilot

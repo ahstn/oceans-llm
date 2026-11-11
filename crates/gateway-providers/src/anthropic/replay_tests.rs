@@ -26,6 +26,7 @@ fn context() -> ProviderRequestContext {
         extra_body: Default::default(),
         request_headers: Default::default(),
         compatibility: Default::default(),
+        service_tier: None,
     }
 }
 

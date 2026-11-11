@@ -10,9 +10,9 @@ use gateway_core::{
     McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, PricingCatalogRepository,
     PricingResolution, PricingUnpricedReason, ProviderBatchResult, ProviderRepository,
     RequestLogDetail, RequestLogPage, RequestLogPurgeResult, RequestLogQuery, RequestLogRecord,
-    RequestLogRepository, RequestLogRetentionWindow, RequestTags, ResolvedModelPricing,
-    ResponsesRequest, RouteError, RoutePlanner, RoutePricingOverride, StoreHealth,
-    UsageLedgerRecord, UsagePricingStatus,
+    RequestLogRepository, RequestLogRetentionWindow, RequestTags, ResponsesRequest, RouteError,
+    RoutePlanner, ServiceTier, ServiceTierOutcome, StoreHealth, UsageLedgerRecord,
+    UsagePricingStatus,
 };
 use serde_json::{Value, json};
 use time::{Duration, OffsetDateTime};
@@ -39,8 +39,11 @@ use crate::{
 };
 
 mod reported_usage_cost;
+mod route_tier_passthrough;
+mod tier_pricing;
 
 use reported_usage_cost::{apply_provider_reported_cost, provider_reported_cost};
+use tier_pricing::{RateSchedule, apply_configured_pricing, apply_exact_pricing};
 
 const AGENT_ANALYSIS_MAX_IN_FLIGHT_INGESTIONS: usize = 64;
 const AGENT_ANALYSIS_QUEUE_RETENTION: Duration = Duration::days(7);
@@ -308,20 +311,23 @@ where
     pub async fn model_metadata_for_api_key(
         &self,
         auth: &AuthenticatedApiKey,
+        adapter: &dyn crate::model_metadata::AdapterServiceTiers,
     ) -> Result<crate::model_metadata::ModelMetadataResponse, GatewayError> {
         let models = self.model_access.list_models_for_api_key(auth).await?;
         let snapshot = self.pricing_catalog.metadata_snapshot().await?;
-        crate::model_metadata::list_metadata(self.store.as_ref(), models, &snapshot).await
+        crate::model_metadata::list_metadata(self.store.as_ref(), models, &snapshot, adapter).await
     }
 
     /// The `/v1/models` listing: OpenAI and Anthropic list shapes plus harness hints.
     pub async fn models_list_for_api_key(
         &self,
         auth: &AuthenticatedApiKey,
+        adapter: &dyn crate::model_metadata::AdapterServiceTiers,
     ) -> Result<crate::model_metadata::ModelsListResponse, GatewayError> {
         let models = self.model_access.list_models_for_api_key(auth).await?;
         let snapshot = self.pricing_catalog.metadata_snapshot().await?;
-        crate::model_metadata::listing::list_models(self.store.as_ref(), models, &snapshot).await
+        crate::model_metadata::listing::list_models(self.store.as_ref(), models, &snapshot, adapter)
+            .await
     }
 
     /// The LiteLLM `/model_group/info` listing: the same models as `/v1/models`, with
@@ -329,11 +335,17 @@ where
     pub async fn model_group_info_for_api_key(
         &self,
         auth: &AuthenticatedApiKey,
+        adapter: &dyn crate::model_metadata::AdapterServiceTiers,
     ) -> Result<crate::model_metadata::ModelGroupInfoResponse, GatewayError> {
         let models = self.model_access.list_models_for_api_key(auth).await?;
         let snapshot = self.pricing_catalog.metadata_snapshot().await?;
-        crate::model_metadata::litellm::list_model_groups(self.store.as_ref(), models, &snapshot)
-            .await
+        crate::model_metadata::litellm::list_model_groups(
+            self.store.as_ref(),
+            models,
+            &snapshot,
+            adapter,
+        )
+        .await
     }
 
     pub async fn list_models_for_api_key(
@@ -381,6 +393,7 @@ where
         let mut viable_routes = Vec::new();
         let mut provider_connections = std::collections::HashMap::new();
         let mut capability_hints = std::collections::HashMap::new();
+        let mut billable_service_tiers = std::collections::HashMap::new();
         for route in planned_routes {
             if let Some(provider) = self.store.get_provider_by_key(&route.provider_key).await? {
                 provider_connections
@@ -391,6 +404,11 @@ where
                 let hints = crate::capability_hints::hints_for_route(&catalog, &provider, &route);
                 if hints != gateway_core::PartialCapabilities::default() {
                     capability_hints.insert(route.id, hints);
+                }
+                let tiers =
+                    crate::pricing_catalog::billable_service_tiers(&catalog, &provider, &route);
+                if !tiers.is_empty() {
+                    billable_service_tiers.insert(route.id, tiers);
                 }
                 viable_routes.push(route);
             } else {
@@ -415,6 +433,7 @@ where
             routes: viable_routes,
             provider_connections,
             capability_hints,
+            billable_service_tiers,
         })
     }
 
@@ -1028,6 +1047,7 @@ where
             gateway.usage.cost_usd = tracing::field::Empty,
         )
     )]
+    #[allow(clippy::too_many_arguments)]
     pub async fn record_chat_usage(
         &self,
         auth: &AuthenticatedApiKey,
@@ -1035,6 +1055,7 @@ where
         route: &ModelRoute,
         request_id: &str,
         provider_usage: Option<Value>,
+        service_tiers: ServiceTierOutcome,
         occurred_at: OffsetDateTime,
     ) -> Result<RecordedChatUsage, GatewayError> {
         let ownership_scope_key = usage_ownership_scope_key(auth)?;
@@ -1079,6 +1100,8 @@ where
             pricing_tier_above_input_tokens: None,
             computed_cost_usd: Money4::ZERO,
             occurred_at,
+            requested_service_tier: service_tiers.requested,
+            served_service_tier: service_tiers.served,
         };
         self.price_usage(&mut record, &usage_summary, model, route, occurred_at)
             .await?;
@@ -1161,9 +1184,12 @@ where
             PricingResolution::Exact { pricing } => {
                 apply_exact_pricing(record, &pricing, cache_usage)
             }
-            PricingResolution::ConfiguredOverride { pricing } => {
-                apply_configured_pricing(record, &pricing, cache_usage)
-            }
+            PricingResolution::ConfiguredOverride { pricing } => apply_configured_pricing(
+                record,
+                &pricing,
+                route.service_tier.unwrap_or(ServiceTier::Default),
+                cache_usage,
+            ),
             PricingResolution::Unpriced { reason } => {
                 record.pricing_status = UsagePricingStatus::Unpriced;
                 let pricing_reason = unpriced_reason_string(&reason);
@@ -1288,6 +1314,8 @@ where
             pricing_tier_above_input_tokens: None,
             computed_cost_usd: cost_usd,
             occurred_at,
+            requested_service_tier: None,
+            served_service_tier: None,
         };
         match self.budget_guard.record_incurred_usage(auth, &record).await {
             Ok(overruns) => {
@@ -1435,43 +1463,6 @@ fn money_to_f64(value: Money4) -> Option<f64> {
     }
 }
 
-/// Catalog pricing for one request. The context tier its normalized prompt tokens select
-/// replaces the base rates for the whole request, a tier rate that is unset inheriting the
-/// base; the ledger records the rates actually billed and the tier threshold.
-fn apply_exact_pricing(
-    record: &mut UsageLedgerRecord,
-    pricing: &ResolvedModelPricing,
-    cache_usage: &CacheUsageNormalization,
-) -> Result<(), GatewayError> {
-    record.pricing_row_id = Some(pricing.model_pricing_id);
-    record.pricing_provider_id = Some(pricing.pricing_provider_id.clone());
-    record.pricing_model_id = Some(pricing.model_id.clone());
-    record.pricing_source = Some(pricing.provenance.source.clone());
-    record.pricing_source_etag = pricing.provenance.etag.clone();
-    record.pricing_source_fetched_at = Some(pricing.provenance.fetched_at);
-    record.pricing_last_updated = Some(pricing.last_updated.clone());
-
-    let tier = select_context_tier(&pricing.context_tiers, record.prompt_tokens);
-    let input_rate = tier
-        .and_then(|tier| tier.input)
-        .or(pricing.input_cost_per_million_tokens);
-    let output_rate = tier
-        .and_then(|tier| tier.output)
-        .or(pricing.output_cost_per_million_tokens);
-    record.input_cost_per_million_tokens = input_rate;
-    record.output_cost_per_million_tokens = output_rate;
-    record.cache_read_cost_per_million_tokens = tier
-        .and_then(|tier| tier.cache_read)
-        .or(pricing.cache_read_cost_per_million_tokens);
-    record.cache_write_cost_per_million_tokens = tier
-        .and_then(|tier| tier.cache_write)
-        .or(pricing.cache_write_cost_per_million_tokens);
-    record.image_output_cost_per_million_tokens = pricing.output_image_usd_per_million;
-    record.pricing_tier_above_input_tokens = tier.map(|tier| tier.above_input_tokens);
-
-    apply_token_rates(record, input_rate, output_rate, cache_usage)
-}
-
 /// The context tier billing a whole request: the one with the greatest threshold strictly
 /// below its normalized prompt tokens (cache included). A request of exactly a threshold,
 /// or with unknown prompt tokens, stays on the lower schedule.
@@ -1486,30 +1477,13 @@ pub(crate) fn select_context_tier(
         .max_by_key(|tier| tier.above_input_tokens)
 }
 
-fn apply_configured_pricing(
-    record: &mut UsageLedgerRecord,
-    pricing: &RoutePricingOverride,
-    cache_usage: &CacheUsageNormalization,
-) -> Result<(), GatewayError> {
-    record.pricing_source = Some("configured_override".to_string());
-    record.input_cost_per_million_tokens = Some(pricing.input_cost_per_million_tokens);
-    record.output_cost_per_million_tokens = Some(pricing.output_cost_per_million_tokens);
-    record.cache_read_cost_per_million_tokens = pricing.cache_read_cost_per_million_tokens;
-    record.cache_write_cost_per_million_tokens = pricing.cache_write_cost_per_million_tokens;
-    record.image_output_cost_per_million_tokens = pricing.image_output_cost_per_million_tokens;
-
-    apply_token_rates(
-        record,
-        Some(pricing.input_cost_per_million_tokens),
-        Some(pricing.output_cost_per_million_tokens),
-        cache_usage,
-    )
-}
-
+/// Prices `record` at the given rates, the cache rates already on it. A used token
+/// bucket without a rate leaves it unpriced with `schedule`'s reason.
 fn apply_token_rates(
     record: &mut UsageLedgerRecord,
     input_rate: Option<Money4>,
     output_rate: Option<Money4>,
+    schedule: RateSchedule,
     cache_usage: &CacheUsageNormalization,
 ) -> Result<(), GatewayError> {
     if matches!(cache_usage, CacheUsageNormalization::Unsupported { .. }) {
@@ -1534,26 +1508,26 @@ fn apply_token_rates(
         .unwrap_or_else(|| record.prompt_tokens.unwrap_or_default());
     if input_tokens_requiring_standard_rate > 0 && input_rate.is_none() {
         record.pricing_status = UsagePricingStatus::Unpriced;
-        record.unpriced_reason = Some("missing_input_rate".to_string());
+        record.unpriced_reason = Some(schedule.missing_rate_reason("input"));
         return Ok(());
     }
     if text_output_tokens(record) > 0 && output_rate.is_none() {
         record.pricing_status = UsagePricingStatus::Unpriced;
-        record.unpriced_reason = Some("missing_output_rate".to_string());
+        record.unpriced_reason = Some(schedule.missing_rate_reason("output"));
         return Ok(());
     }
     if record.cache_read_tokens.unwrap_or_default() > 0
         && record.cache_read_cost_per_million_tokens.is_none()
     {
         record.pricing_status = UsagePricingStatus::Unpriced;
-        record.unpriced_reason = Some("missing_cache_read_rate".to_string());
+        record.unpriced_reason = Some(schedule.missing_rate_reason("cache_read"));
         return Ok(());
     }
     if record.cache_write_tokens.unwrap_or_default() > 0
         && record.cache_write_cost_per_million_tokens.is_none()
     {
         record.pricing_status = UsagePricingStatus::Unpriced;
-        record.unpriced_reason = Some("missing_cache_write_rate".to_string());
+        record.unpriced_reason = Some(schedule.missing_rate_reason("cache_write"));
         return Ok(());
     }
 
@@ -1677,9 +1651,6 @@ fn unpriced_reason_string(reason: &PricingUnpricedReason) -> String {
         }
         PricingUnpricedReason::UnsupportedVertexLocation(value) => {
             format!("unsupported_vertex_location:{value}")
-        }
-        PricingUnpricedReason::UnsupportedBillingModifier(value) => {
-            format!("unsupported_billing_modifier:{value}")
         }
         PricingUnpricedReason::ModelNotFound => "model_not_found".to_string(),
     }
@@ -1929,6 +1900,7 @@ mod tests {
                 extra_body: Map::new(),
                 request_headers: Default::default(),
                 compatibility: Default::default(),
+                service_tier: None,
             },
             pricing_snapshot: None,
         };
@@ -1990,6 +1962,7 @@ mod tests {
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
+            service_tiers: Vec::new(),
         });
         let occurred_at = OffsetDateTime::now_utc();
         let scope = BudgetScope::User {
@@ -2027,6 +2000,7 @@ mod tests {
                     "completion_tokens": 500_000,
                     "total_tokens": 1_500_000
                 })),
+                gateway_core::ServiceTierOutcome::default(),
                 occurred_at,
             )
             .await
@@ -2527,6 +2501,7 @@ mod tests {
             description: None,
             tags: Vec::new(),
             rank: 0,
+            service_tiers: None,
         }
     }
 
@@ -2545,6 +2520,7 @@ mod tests {
             extra_body: Map::new(),
             capabilities: ProviderCapabilities::all_enabled().into(),
             compatibility: Default::default(),
+            service_tier: None,
         }
     }
 
@@ -2592,6 +2568,7 @@ mod tests {
             },
             created_at: now,
             updated_at: now,
+            service_tiers: Vec::new(),
         }
     }
 
@@ -2668,6 +2645,7 @@ mod tests {
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
+            service_tiers: Vec::new(),
         });
         let provider = openai_provider(&route.provider_key);
         let service = GatewayService::new(
@@ -2716,15 +2694,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn startup_context_validation_uses_catalog_limits_for_modified_pricing_routes() {
+    async fn startup_context_validation_uses_catalog_limits_for_forced_tier_routes() {
         let model_id = Uuid::new_v4();
         let model = model(model_id);
         let mut route = vertex_embedding_route(model_id);
         route.upstream_model = "gpt-5".to_string();
         route.context_window_tokens = Some(128_000);
-        route
-            .extra_body
-            .insert("service_tier".to_string(), json!("priority"));
+        route.service_tier = Some(gateway_core::ServiceTier::Priority);
         let provider = openai_provider(&route.provider_key);
         let repo = Arc::new(UsageAccountingRepo {
             models: vec![model],
@@ -2738,7 +2714,7 @@ mod tests {
         let error = service
             .validate_route_context_overrides()
             .await
-            .expect_err("billing modifiers must not hide catalog context");
+            .expect_err("a forced tier must not hide catalog context");
         assert!(
             error
                 .to_string()
@@ -2750,19 +2726,20 @@ mod tests {
             .resolve_route_pricing(&route, OffsetDateTime::now_utc())
             .await
             .expect("pricing resolution");
-        assert!(matches!(
-            pricing,
-            gateway_core::PricingResolution::Unpriced {
-                reason: gateway_core::PricingUnpricedReason::UnsupportedBillingModifier(_)
-            }
-        ));
+        assert!(
+            matches!(pricing, gateway_core::PricingResolution::Exact { .. }),
+            "billing reads the tier's schedule from the catalog row: {pricing:?}"
+        );
 
         let metadata = service
             .resolve_route_metadata(&route, OffsetDateTime::now_utc())
             .await
             .expect("effective metadata");
         assert_eq!(metadata.limits.context, Some(64_000));
-        assert_eq!(metadata.pricing, None);
+        assert_eq!(
+            metadata.pricing, None,
+            "the catalog row has no priority schedule"
+        );
         assert_eq!(metadata.pricing_source, None);
     }
 
@@ -2858,6 +2835,7 @@ mod tests {
                 &route,
                 "req_missing_embedding_usage",
                 Some(json!({"statistics": {"billable_character_count": 999}})),
+                gateway_core::ServiceTierOutcome::default(),
                 OffsetDateTime::now_utc(),
             )
             .await
@@ -2894,6 +2872,7 @@ mod tests {
             cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
             cache_write_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
+            service_tiers: Vec::new(),
         });
         let provider = openai_provider(&route.provider_key);
         let mut conflicting_catalog_pricing = pricing_record(Some(256_000));
@@ -2940,6 +2919,7 @@ mod tests {
                     "completion_tokens": 500_000,
                     "total_tokens": 1_500_000
                 })),
+                gateway_core::ServiceTierOutcome::default(),
                 occurred_at,
             )
             .await
@@ -3005,6 +2985,7 @@ mod tests {
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: Some(Money4::from_scaled(15_000)),
             image_output_cost_per_million_tokens: None,
+            service_tiers: Vec::new(),
         });
         let service = GatewayService::new(
             Arc::new(UsageAccountingRepo::default()),
@@ -3042,6 +3023,7 @@ mod tests {
             cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
             cache_write_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
+            service_tiers: Vec::new(),
         });
         let repo = Arc::new(UsageAccountingRepo::default());
         let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
@@ -3059,6 +3041,7 @@ mod tests {
                     "output_tokens_details": {"reasoning_tokens": 1_500},
                     "total_tokens": 122_000
                 })),
+                gateway_core::ServiceTierOutcome::default(),
                 OffsetDateTime::now_utc(),
             )
             .await
@@ -3093,6 +3076,7 @@ mod tests {
             cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
             cache_write_cost_per_million_tokens: Some(Money4::from_scaled(12_500)),
             image_output_cost_per_million_tokens: None,
+            service_tiers: Vec::new(),
         });
         let repo = Arc::new(UsageAccountingRepo::default());
         let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
@@ -3113,6 +3097,7 @@ mod tests {
                     },
                     "output_tokens_details": {"reasoning_tokens": 95}
                 })),
+                gateway_core::ServiceTierOutcome::default(),
                 OffsetDateTime::now_utc(),
             )
             .await
@@ -3269,6 +3254,7 @@ mod tests {
             cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
             cache_write_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
+            service_tiers: Vec::new(),
         });
         let repo = Arc::new(UsageAccountingRepo::default());
         let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
@@ -3287,6 +3273,7 @@ mod tests {
                         "cache_write_tokens": 500
                     }
                 })),
+                gateway_core::ServiceTierOutcome::default(),
                 OffsetDateTime::now_utc(),
             )
             .await
@@ -3313,6 +3300,7 @@ mod tests {
             cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_000)),
             cache_write_cost_per_million_tokens: Some(Money4::from_scaled(12_500)),
             image_output_cost_per_million_tokens: None,
+            service_tiers: Vec::new(),
         });
         let repo = Arc::new(UsageAccountingRepo::default());
         let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
@@ -3331,6 +3319,7 @@ mod tests {
                         "cache_write_tokens": 20_000
                     }
                 })),
+                gateway_core::ServiceTierOutcome::default(),
                 OffsetDateTime::now_utc(),
             )
             .await
@@ -3371,6 +3360,7 @@ mod tests {
                         "cache_write_tokens": 20
                     }
                 })),
+                gateway_core::ServiceTierOutcome::default(),
                 OffsetDateTime::now_utc(),
             )
             .await
@@ -3387,4 +3377,6 @@ mod tests {
 
     mod context_tier_pricing;
     mod reported_cost_and_image_usage;
+    mod route_tier_passthrough;
+    mod service_tier_pricing;
 }

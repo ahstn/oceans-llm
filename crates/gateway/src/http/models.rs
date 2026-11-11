@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use axum::{
     Json,
@@ -235,7 +235,8 @@ async fn admin_models_service(
 ) -> Result<AdminModelsService<gateway_store::AnyStore>, gateway_core::GatewayError> {
     let service = AdminModelsService::new(state.store.clone())
         .with_benchmark_model_ids(state.benchmark_model_ids.clone())
-        .with_capability_hints(state.service.catalog_capability_hints().await?);
+        .with_capability_hints(state.service.catalog_capability_hints().await?)
+        .with_adapter_service_tiers(Arc::new(state.providers.clone()));
     Ok(
         match state.client_config_gateway_base_url.as_ref().as_deref() {
             Some(gateway_base_url) => {
@@ -265,6 +266,14 @@ fn map_model_summary(model: AdminModelSummary, include_admin_details: bool) -> A
         description: model.description,
         tags: model.tags,
         allowlist,
+        service_tiers: model
+            .service_tiers
+            .map(|tiers| tiers.into_iter().map(Into::into).collect()),
+        available_service_tiers: model
+            .available_service_tiers
+            .into_iter()
+            .map(Into::into)
+            .collect(),
         routing: if include_admin_details {
             model.routing.map(Into::into)
         } else {
@@ -285,6 +294,11 @@ fn map_model_summary(model: AdminModelSummary, include_admin_details: bool) -> A
         cache_write_cost_per_million_tokens_usd_10000: model
             .cache_write_cost_per_million_tokens_usd_10000,
         pricing_tiers: model.pricing_tiers.into_iter().map(Into::into).collect(),
+        pricing_service_tiers: model
+            .pricing_service_tiers
+            .into_iter()
+            .map(Into::into)
+            .collect(),
         pricing_source: model.pricing_source.map(map_metadata_source),
         pricing_varies_by_route: model.pricing_varies_by_route,
         context_window_tokens: model.context_window_tokens,
@@ -331,6 +345,7 @@ fn map_model_route(route: AdminModelRouteSummary) -> AdminModelRouteView {
         weight: route.weight,
         enabled: route.enabled,
         provider_configured: route.provider_configured,
+        service_tier: route.service_tier.map(Into::into),
     }
 }
 
@@ -373,6 +388,8 @@ mod tests {
                 users: vec!["allowed-user".to_string()],
                 teams: Vec::new(),
             }),
+            service_tiers: None,
+            available_service_tiers: Vec::new(),
             routing: Some(ModelRoutingPolicy {
                 strategy: RoutingStrategy::RoundRobin,
                 affinity: Some(SessionAffinityPolicy::default()),
@@ -388,6 +405,7 @@ mod tests {
                     weight: 2.0,
                     enabled: true,
                     provider_configured: true,
+                    service_tier: None,
                 },
                 AdminModelRouteSummary {
                     id: "route-openrouter".to_string(),
@@ -399,6 +417,7 @@ mod tests {
                     weight: 1.0,
                     enabled: false,
                     provider_configured: false,
+                    service_tier: Some(gateway_core::ServiceTier::Priority),
                 },
             ],
             status: AdminModelStatus::Healthy,
@@ -412,6 +431,7 @@ mod tests {
             cache_read_cost_per_million_tokens_usd_10000: None,
             cache_write_cost_per_million_tokens_usd_10000: None,
             pricing_tiers: Vec::new(),
+            pricing_service_tiers: Vec::new(),
             pricing_source: None,
             pricing_varies_by_route: true,
             context_window_tokens: None,
@@ -704,7 +724,8 @@ mod tests {
                     "priority": 0,
                     "weight": 2.0,
                     "enabled": true,
-                    "provider_configured": true
+                    "provider_configured": true,
+                    "service_tier": null
                 },
                 {
                     "id": "route-openrouter",
@@ -715,7 +736,8 @@ mod tests {
                     "priority": 10,
                     "weight": 1.0,
                     "enabled": false,
-                    "provider_configured": false
+                    "provider_configured": false,
+                    "service_tier": "priority"
                 }
             ])
         );

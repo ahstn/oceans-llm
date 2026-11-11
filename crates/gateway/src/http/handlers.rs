@@ -24,6 +24,9 @@ mod route_tests;
 mod routing;
 #[cfg(test)]
 mod routing_tests;
+mod service_tier;
+#[cfg(test)]
+mod service_tier_tests;
 
 use auth::InferenceAuth;
 pub use count_tokens::{CountTokensLimiter, v1_messages_count_tokens};
@@ -33,6 +36,7 @@ use gateway_service::routing::{RoutingEndpoint, RoutingReceipt};
 pub use images::v1_images;
 pub use messages::v1_messages;
 use routing::{SelectedProviderRoute, no_compatible_route_error, select_provider_route};
+use service_tier::{enforce_requested_service_tier, service_tier_outcome};
 
 use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
@@ -55,6 +59,7 @@ use gateway_core::{
     anthropic_messages_request_to_core, core_chat_request_to_openai, enforce_chat_reasoning_effort,
     enforce_responses_reasoning_effort, openai_chat_request_to_core,
     openai_responses_request_to_core, protocol::anthropic::anthropic_message_from_openai_chat,
+    take_requested_service_tier,
 };
 use gateway_service::{
     McpAccess, McpTokenOverhead, McpTokenOverheadInput, RateLimitSubject, RequestLogContext,
@@ -158,7 +163,12 @@ pub async fn v1_model_metadata(
             gateway_core::SCOPE_INFERENCE,
         )
         .await?;
-    Ok(Json(state.service.model_metadata_for_api_key(&auth).await?))
+    Ok(Json(
+        state
+            .service
+            .model_metadata_for_api_key(&auth, &state.providers)
+            .await?,
+    ))
 }
 
 pub async fn v1_models(
@@ -172,7 +182,12 @@ pub async fn v1_models(
             gateway_core::SCOPE_INFERENCE,
         )
         .await?;
-    Ok(Json(state.service.models_list_for_api_key(&auth).await?))
+    Ok(Json(
+        state
+            .service
+            .models_list_for_api_key(&auth, &state.providers)
+            .await?,
+    ))
 }
 
 /// LiteLLM's `GET /model_group/info`, so LiteLLM-aware clients can discover
@@ -189,7 +204,10 @@ pub async fn v1_model_group_info(
         )
         .await?;
     Ok(Json(
-        state.service.model_group_info_for_api_key(&auth).await?,
+        state
+            .service
+            .model_group_info_for_api_key(&auth, &state.providers)
+            .await?,
     ))
 }
 
@@ -218,10 +236,11 @@ pub async fn v1_chat_completions(
     headers: HeaderMap,
     policy: RequestPolicyContext,
     InferenceAuth(auth): InferenceAuth,
-    Json(request): Json<ChatCompletionsRequest>,
+    Json(mut request): Json<ChatCompletionsRequest>,
 ) -> Result<Response, AppError> {
     let request_started_at = Instant::now();
     let request_id = canonical_request_id(request_id)?;
+    let requested_service_tier = take_requested_service_tier(&mut request.extra)?;
     let mut core_request = openai_chat_request_to_core(&request);
     let requirements = core_request.requirements();
     let resolved = state
@@ -244,6 +263,7 @@ pub async fn v1_chat_completions(
                 .log_reasoning_effort_rejection(Some(&request_id), rejection);
         })
         .map_err(GatewayError::from)?;
+    enforce_requested_service_tier(&resolved, requested_service_tier)?;
 
     let request_headers = extract_request_headers(&headers);
     let request_tags = extract_request_tags(&headers)?;
@@ -267,6 +287,7 @@ pub async fn v1_chat_completions(
         &state,
         &resolved,
         requirements,
+        requested_service_tier,
         &headers,
         &request.extra,
         &request_headers,
@@ -293,23 +314,16 @@ pub async fn v1_chat_completions(
         request_started_at,
         stream: core_request.stream,
         endpoint: RoutingEndpoint::ChatCompletions,
+        requested_service_tier,
         request_log_context,
     }
-    .prepare(selected, requirements, &mut core_request)
+    .prepare(selected, &mut core_request)
     .await?;
     let route = &execution.route;
     let provider = &execution.provider;
     let guard_context = &execution.guard_context;
     let request_log_context = &execution.request.request_log_context;
-
-    let mut context = build_provider_context(
-        &request_id,
-        &resolved.selection.requested_model.model_key,
-        route,
-        &auth,
-        request_headers,
-    );
-    context.expected_provider_credential_id = execution.expected_provider_credential_id;
+    let context = execution.provider_context(request_headers);
 
     if core_request.stream {
         let stream_started_at = Instant::now();
@@ -413,10 +427,11 @@ pub async fn v1_responses(
     headers: HeaderMap,
     policy: RequestPolicyContext,
     InferenceAuth(auth): InferenceAuth,
-    Json(request): Json<ResponsesRequest>,
+    Json(mut request): Json<ResponsesRequest>,
 ) -> Result<Response, AppError> {
     let request_started_at = Instant::now();
     let request_id = canonical_request_id(request_id)?;
+    let requested_service_tier = take_requested_service_tier(&mut request.extra)?;
     let mut core_request = openai_responses_request_to_core(&request);
     let requirements = core_request.requirements();
     let resolved = state
@@ -439,6 +454,7 @@ pub async fn v1_responses(
                 .log_reasoning_effort_rejection(Some(&request_id), rejection);
         })
         .map_err(GatewayError::from)?;
+    enforce_requested_service_tier(&resolved, requested_service_tier)?;
 
     let request_headers = extract_request_headers(&headers);
     let request_tags = extract_request_tags(&headers)?;
@@ -462,6 +478,7 @@ pub async fn v1_responses(
         &state,
         &resolved,
         requirements,
+        requested_service_tier,
         &headers,
         &request.extra,
         &request_headers,
@@ -488,23 +505,16 @@ pub async fn v1_responses(
         request_started_at,
         stream: core_request.stream,
         endpoint: RoutingEndpoint::Responses,
+        requested_service_tier,
         request_log_context,
     }
-    .prepare(selected, requirements, &mut core_request)
+    .prepare(selected, &mut core_request)
     .await?;
     let route = &execution.route;
     let provider = &execution.provider;
     let guard_context = &execution.guard_context;
     let request_log_context = &execution.request.request_log_context;
-
-    let mut context = build_provider_context(
-        &request_id,
-        &resolved.selection.requested_model.model_key,
-        route,
-        &auth,
-        request_headers,
-    );
-    context.expected_provider_credential_id = execution.expected_provider_credential_id;
+    let context = execution.provider_context(request_headers);
 
     if core_request.stream {
         let stream_started_at = Instant::now();
@@ -789,6 +799,7 @@ fn build_provider_context(
         extra_body: route.extra_body.clone(),
         request_headers,
         compatibility: route.compatibility.clone(),
+        service_tier: None,
     }
 }
 
@@ -953,6 +964,7 @@ struct UsageAccountingContext<'a> {
     request_id: &'a str,
     labels: ChatMetricLabels<'a>,
     operation: &'static str,
+    service_tiers: gateway_core::ServiceTierOutcome,
 }
 
 /// Records a request rejected after routing but before any provider call, such as a
@@ -1063,6 +1075,10 @@ async fn record_guarded_stream_failure(
             request_id: &request_log_context.request_id,
             labels: labels.clone(),
             operation: request_log_context.operation,
+            service_tiers: service_tier_outcome(
+                request_log_context,
+                collector.served_service_tier(),
+            ),
         },
         collector.usage().cloned(),
     )
@@ -1399,6 +1415,10 @@ async fn account_stream_usage(state: &mut LoggingBodyStreamState) {
             request_id: &state.request_log_context.request_id,
             labels,
             operation: state.request_log_context.operation,
+            service_tiers: service_tier_outcome(
+                &state.request_log_context,
+                state.collector.served_service_tier(),
+            ),
         },
         state.collector.usage().cloned(),
     )
@@ -1856,6 +1876,7 @@ async fn finalize_successful_usage_accounting_from_parts(
             context.route,
             context.request_id,
             provider_usage,
+            context.service_tiers,
             OffsetDateTime::now_utc(),
         )
         .await
@@ -2506,6 +2527,7 @@ mod tests {
             extra_body: Default::default(),
             capabilities: PartialCapabilities::from_capabilities(capabilities),
             compatibility: Default::default(),
+            service_tier: None,
         }
     }
 

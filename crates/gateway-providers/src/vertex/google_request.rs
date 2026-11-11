@@ -33,9 +33,9 @@ pub(super) fn map_google_request(
         match key.as_str() {
             // OpenAI-only fields with no Vertex equivalent; the official compat layer ignores them.
             "model" | "messages" | "stream" | "stream_options" | "user" | "store" | "metadata"
-            | "service_tier" | "logit_bias" | "prompt_cache_key" | "safety_identifier"
-            | "modalities" | "audio" | "prediction" | "verbosity" | "web_search_options"
-            | "functions" | "function_call" => {}
+            | "logit_bias" | "prompt_cache_key" | "safety_identifier" | "modalities" | "audio"
+            | "prediction" | "verbosity" | "web_search_options" | "functions" | "function_call" => {
+            }
             "temperature" => insert_config(&mut generation_config, "temperature", value),
             "top_p" => insert_config(&mut generation_config, "topP", value),
             "top_k" => insert_config(&mut generation_config, "topK", value),

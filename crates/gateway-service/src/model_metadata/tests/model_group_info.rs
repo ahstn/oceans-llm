@@ -19,6 +19,7 @@ fn model(key: &str) -> GatewayModel {
         description: None,
         tags: vec![],
         rank: 0,
+        service_tiers: None,
     }
 }
 
@@ -48,7 +49,7 @@ async fn group_info_with(
         routes,
         provider,
     };
-    let listed = list_model_groups(&repo, vec![model], snapshot)
+    let listed = list_model_groups(&repo, vec![model], snapshot, &DEFAULT_ONLY)
         .await
         .unwrap();
     serde_json::to_value(&listed.data[0]).unwrap()
@@ -100,6 +101,7 @@ async fn model_group_info_converts_per_million_prices_to_per_token_costs() {
         cache_read_cost_per_million_tokens: Some(Money4::from_scaled(2_000)),
         cache_write_cost_per_million_tokens: Some(Money4::from_scaled(50_000)),
         image_output_cost_per_million_tokens: None,
+        service_tiers: Vec::new(),
     });
     let configured = group_info(model("gpt"), vec![priced], provider()).await;
     assert_costs(&configured, &[4e-6, 20e-6, 0.2e-6, 5e-6]);
@@ -129,6 +131,7 @@ async fn model_group_info_keeps_known_prices_when_a_cache_rate_is_missing() {
         cache_read_cost_per_million_tokens: None,
         cache_write_cost_per_million_tokens: None,
         image_output_cost_per_million_tokens: None,
+        service_tiers: Vec::new(),
     });
     let configured = group_info(model("gpt"), vec![partial], provider()).await;
     assert_costs(&configured, &[1e-6, 2e-6]);
@@ -392,10 +395,13 @@ async fn model_group_info_lists_the_same_models_as_v1_models() {
     let snapshot = crate::pricing_catalog::load_vendored_fallback_snapshot();
     let visible = vec![target, alias];
 
-    let cards = super::super::listing::list_models(&repo, visible.clone(), &snapshot)
+    let cards =
+        super::super::listing::list_models(&repo, visible.clone(), &snapshot, &DEFAULT_ONLY)
+            .await
+            .unwrap();
+    let groups = list_model_groups(&repo, visible, &snapshot, &DEFAULT_ONLY)
         .await
         .unwrap();
-    let groups = list_model_groups(&repo, visible, &snapshot).await.unwrap();
 
     let card_ids = cards
         .data

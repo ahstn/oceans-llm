@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gateway_core::{CoreChatRequest, ProviderError, ProviderRequestContext};
+use gateway_core::{CoreChatRequest, ProviderError, ProviderRequestContext, ServiceTier};
 use serde_json::{Map, Value};
 
 use crate::anthropic::{
@@ -56,6 +56,8 @@ pub(super) fn request_headers(
 ///
 /// Betas are collected in an internal body array, then moved into one `anthropic-beta`
 /// header by the HTTP transport. Vertex reads only the first occurrence of that header.
+/// Priority is fast mode, `speed: "fast"`, which Vertex serves without a beta; standard
+/// sends nothing.
 pub(super) fn map_vertex_anthropic_request(
     request: &CoreChatRequest,
     context: &ProviderRequestContext,
@@ -72,6 +74,9 @@ pub(super) fn map_vertex_anthropic_request(
     let mut body = map_anthropic_request(request, context, stream, &options)?;
     if let Some(object) = body.as_object_mut() {
         apply_body_betas(object, context, default_headers)?;
+        if context.service_tier == Some(ServiceTier::Priority) {
+            object.insert("speed".to_string(), Value::from("fast"));
+        }
     }
     Ok(body)
 }

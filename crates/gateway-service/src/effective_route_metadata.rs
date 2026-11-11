@@ -1,14 +1,15 @@
 use gateway_client_config::ApiFormat;
 use gateway_core::{
-    AwsBedrockApiStyle, ContextPricingTier, GatewayError, GitHubCopilotChatApi, ModelRoute, Money4,
-    PartialCapabilities, PricingCatalogRepository, PricingLimits, PricingModalities,
-    PricingProvenance, ProviderCapabilities, ProviderConnection, effective_route_capabilities,
+    AwsBedrockApiStyle, ContextPricingTier, GatewayError, GitHubCopilotChatApi, ModelPricingRecord,
+    ModelRoute, Money4, PartialCapabilities, PricingCatalogRepository, PricingLimits,
+    PricingModalities, PricingProvenance, ProviderCapabilities, ProviderConnection,
+    RoutePricingOverride, ServiceTier, ServiceTierPricing, effective_route_capabilities,
     github_copilot_route_capabilities, vertex_route_capabilities_for_upstream_model,
 };
 use time::OffsetDateTime;
 
 use crate::pricing_catalog::{
-    catalog_metadata_target_for_route, catalog_pricing_supported_for_route,
+    catalog_metadata_target_for_route, catalog_pricing_location_supported,
     resolve_catalog_pricing_record,
 };
 
@@ -68,6 +69,10 @@ pub struct EffectiveRoutePricing {
     /// Catalog context tiers, ascending by threshold. Empty for a route
     /// `pricing_override`, which replaces the whole catalog schedule.
     pub context_tiers: Vec<ContextPricingTier>,
+    /// Rates for non-default service tiers, sorted by tier, tiers unique. A catalog price
+    /// lists the catalog's tier schedules. An override lists its base rates under the
+    /// route's own non-default tier, then its flat `service_tiers` rates.
+    pub service_tiers: Vec<ServiceTierPricing>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,11 +95,11 @@ pub async fn resolve_effective_route_metadata<R>(
 where
     R: PricingCatalogRepository + Send + Sync + 'static,
 {
-    let (catalog_record, catalog_pricing_supported) =
+    let (catalog_record, catalog_location_supported) =
         match provider.and_then(|provider| catalog_metadata_target_for_route(provider, route)) {
             Some((pricing_provider_id, pricing_model_id)) => {
-                let pricing_supported = provider.is_some_and(|provider| {
-                    catalog_pricing_supported_for_route(provider, route, &pricing_provider_id)
+                let location_supported = provider.is_some_and(|provider| {
+                    catalog_pricing_location_supported(provider, &pricing_provider_id)
                 });
                 (
                     resolve_catalog_pricing_record(
@@ -104,7 +109,7 @@ where
                         occurred_at,
                     )
                     .await?,
-                    pricing_supported,
+                    location_supported,
                 )
             }
             None => (None, false),
@@ -114,31 +119,17 @@ where
         .as_ref()
         .map(|record| EffectiveMetadataSource::catalog(&record.provenance));
     let pricing = if let Some(pricing) = &route.pricing_override {
-        Some(EffectiveRoutePricing {
-            input_cost_per_million_tokens: Some(pricing.input_cost_per_million_tokens),
-            output_cost_per_million_tokens: Some(pricing.output_cost_per_million_tokens),
-            cache_read_cost_per_million_tokens: pricing.cache_read_cost_per_million_tokens,
-            cache_write_cost_per_million_tokens: pricing.cache_write_cost_per_million_tokens,
-            context_tiers: Vec::new(),
-        })
-    } else if catalog_pricing_supported {
-        catalog_record.as_ref().map(|record| {
-            let mut context_tiers = record.context_tiers.clone();
-            context_tiers.sort_by_key(|tier| tier.above_input_tokens);
-            EffectiveRoutePricing {
-                input_cost_per_million_tokens: record.input_cost_per_million_tokens,
-                output_cost_per_million_tokens: record.output_cost_per_million_tokens,
-                cache_read_cost_per_million_tokens: record.cache_read_cost_per_million_tokens,
-                cache_write_cost_per_million_tokens: record.cache_write_cost_per_million_tokens,
-                context_tiers,
-            }
-        })
+        Some(override_pricing(pricing, route.service_tier))
+    } else if catalog_location_supported {
+        catalog_record
+            .as_ref()
+            .and_then(|record| catalog_pricing(record, route.service_tier))
     } else {
         None
     };
     let pricing_source = if route.pricing_override.is_some() {
         Some(EffectiveMetadataSource::configured_override())
-    } else if catalog_pricing_supported {
+    } else if pricing.is_some() {
         catalog_source.clone()
     } else {
         None
@@ -168,6 +159,83 @@ where
             .as_ref()
             .map(|record| record.modalities.clone()),
     })
+}
+
+/// The catalog schedule the route bills: the base schedule, or the schedule of the
+/// non-default tier the route forces. A forced tier the catalog has no rates for is
+/// unpriced, never billed at the base rates.
+fn catalog_pricing(
+    record: &ModelPricingRecord,
+    route_tier: Option<ServiceTier>,
+) -> Option<EffectiveRoutePricing> {
+    let mut pricing = match route_tier.filter(|tier| *tier != ServiceTier::Default) {
+        None => EffectiveRoutePricing {
+            input_cost_per_million_tokens: record.input_cost_per_million_tokens,
+            output_cost_per_million_tokens: record.output_cost_per_million_tokens,
+            cache_read_cost_per_million_tokens: record.cache_read_cost_per_million_tokens,
+            cache_write_cost_per_million_tokens: record.cache_write_cost_per_million_tokens,
+            context_tiers: record.context_tiers.clone(),
+            service_tiers: record.service_tiers.clone(),
+        },
+        Some(forced) => {
+            let schedule = record
+                .service_tiers
+                .iter()
+                .find(|schedule| schedule.service_tier == forced)?;
+            EffectiveRoutePricing {
+                input_cost_per_million_tokens: schedule.input,
+                output_cost_per_million_tokens: schedule.output,
+                cache_read_cost_per_million_tokens: schedule.cache_read,
+                cache_write_cost_per_million_tokens: schedule.cache_write,
+                context_tiers: schedule.context_tiers.clone(),
+                service_tiers: record.service_tiers.clone(),
+            }
+        }
+    };
+    pricing
+        .context_tiers
+        .sort_by_key(|tier| tier.above_input_tokens);
+    Some(pricing)
+}
+
+/// An override's base rates price the tier the route serves by default, so a route that
+/// forces a non-default tier lists them under that tier as well.
+fn override_pricing(
+    pricing: &RoutePricingOverride,
+    route_tier: Option<ServiceTier>,
+) -> EffectiveRoutePricing {
+    let own_tier = route_tier
+        .filter(|tier| *tier != ServiceTier::Default)
+        .map(|service_tier| ServiceTierPricing {
+            service_tier,
+            input: Some(pricing.input_cost_per_million_tokens),
+            output: Some(pricing.output_cost_per_million_tokens),
+            cache_read: pricing.cache_read_cost_per_million_tokens,
+            cache_write: pricing.cache_write_cost_per_million_tokens,
+            context_tiers: Vec::new(),
+        });
+    let mut service_tiers = own_tier
+        .into_iter()
+        .chain(pricing.service_tiers.iter().map(|tier| ServiceTierPricing {
+            service_tier: tier.service_tier,
+            input: Some(tier.input_cost_per_million_tokens),
+            output: Some(tier.output_cost_per_million_tokens),
+            cache_read: tier.cache_read_cost_per_million_tokens,
+            cache_write: tier.cache_write_cost_per_million_tokens,
+            context_tiers: Vec::new(),
+        }))
+        .collect::<Vec<_>>();
+    // Stable sort, so the route's own tier wins a duplicate.
+    service_tiers.sort_by_key(|tier| tier.service_tier);
+    service_tiers.dedup_by_key(|tier| tier.service_tier);
+    EffectiveRoutePricing {
+        input_cost_per_million_tokens: Some(pricing.input_cost_per_million_tokens),
+        output_cost_per_million_tokens: Some(pricing.output_cost_per_million_tokens),
+        cache_read_cost_per_million_tokens: pricing.cache_read_cost_per_million_tokens,
+        cache_write_cost_per_million_tokens: pricing.cache_write_cost_per_million_tokens,
+        context_tiers: Vec::new(),
+        service_tiers,
+    }
 }
 
 fn effective_limits(
@@ -352,6 +420,7 @@ mod tests {
             extra_body: Default::default(),
             capabilities: Default::default(),
             compatibility: Default::default(),
+            service_tier: None,
         };
         for model in ["~anthropic/claude-opus-latest", "anthropic/claude-opus-5.5"] {
             route.upstream_model = model.into();
@@ -506,6 +575,7 @@ mod tests {
             extra_body: Default::default(),
             capabilities: PartialCapabilities::default(),
             compatibility: Default::default(),
+            service_tier: None,
         };
         assert_eq!(super::native_api_format(&provider, &route), None);
 

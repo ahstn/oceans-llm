@@ -65,6 +65,11 @@ impl CatalogCapabilityHints {
         Self { snapshot }
     }
 
+    /// The catalog snapshot the hints are read from.
+    pub(crate) fn snapshot(&self) -> &PricingCatalogSnapshot {
+        &self.snapshot
+    }
+
     /// Hints for `route`; a route whose provider is not stored has no catalog identity.
     pub(crate) fn for_route(
         &self,
@@ -137,6 +142,7 @@ mod tests {
             extra_body: Default::default(),
             capabilities,
             compatibility: Default::default(),
+            service_tier: None,
         }
     }
 

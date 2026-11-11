@@ -151,6 +151,7 @@ mod tests {
             extra_body: serde_json::Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let value = provider(format!("http://{addr}"))

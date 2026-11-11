@@ -1,9 +1,9 @@
 {
   "metadata": {
     "source": "vendored_models_dev",
-    "etag": "\"1ef5d9546bd3b32bd4123d226f4a422d\"",
-    "fetched_at": "2026-11-11T09:48:45.871739Z",
-    "checksum": "a841d7947700266c96c50bfac157af4acf4c50d5874ba287c1496a1e8f9b33d0"
+    "etag": "\"5a4aee967f0a0586ca3bd638129ff4e3\"",
+    "fetched_at": "2026-11-11T19:39:33.685267701Z",
+    "checksum": "8f5c602e640c6d4fd689efa33ec146ed3d758a06ea322ff45de47f411e64545b"
   },
   "providers": {
     "amazon-bedrock": {
@@ -4123,7 +4123,15 @@
                 "cache_read": "2.0000",
                 "cache_write": "25.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "ultrafast": {
+                "input": "60.0000",
+                "output": "300.0000",
+                "cache_read": "6.0000",
+                "cache_write": "75.0000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -4302,7 +4310,15 @@
                 "cache_read": "0.2000",
                 "cache_write": "5.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "ultrafast": {
+                "input": "12.0000",
+                "output": "60.0000",
+                "cache_read": "0.6000",
+                "cache_write": "15.0000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -6820,7 +6836,15 @@
                 "cache_read": "2.2000",
                 "cache_write": "27.5000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "ultrafast": {
+                "input": "66.0000",
+                "output": "330.0000",
+                "cache_read": "6.6000",
+                "cache_write": "82.5000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -7002,7 +7026,15 @@
                 "cache_read": "0.2200",
                 "cache_write": "5.5000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "ultrafast": {
+                "input": "13.2000",
+                "output": "66.0000",
+                "cache_read": "0.6600",
+                "cache_write": "16.5000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -9419,7 +9451,15 @@
                 "cache_read": "2.2000",
                 "cache_write": "27.5000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "ultrafast": {
+                "input": "66.0000",
+                "output": "330.0000",
+                "cache_read": "6.6000",
+                "cache_write": "82.5000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -9598,7 +9638,15 @@
                 "cache_read": "0.2200",
                 "cache_write": "5.5000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "ultrafast": {
+                "input": "13.2000",
+                "output": "66.0000",
+                "cache_read": "0.6600",
+                "cache_write": "16.5000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -10496,7 +10544,15 @@
             "cache_write": "6.2500",
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "30.0000",
+                "output": "150.0000",
+                "cache_read": "3.0000",
+                "cache_write": "37.5000"
+              }
+            }
           },
           "limit": {
             "context": 200000,
@@ -10547,7 +10603,15 @@
             "cache_write": "6.2500",
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "10.0000",
+                "output": "50.0000",
+                "cache_read": "1.0000",
+                "cache_write": "12.5000"
+              }
+            }
           },
           "limit": {
             "context": 200000,
@@ -12333,7 +12397,15 @@
             "cache_write": "10.0000",
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "16.0000",
+                "output": "80.0000",
+                "cache_read": "0.4000",
+                "cache_write": "20.0000"
+              }
+            }
           },
           "limit": {
             "context": 1000000,
@@ -15326,7 +15398,15 @@
             "cache_write": "10.0000",
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "16.0000",
+                "output": "80.0000",
+                "cache_read": "0.4000",
+                "cache_write": "20.0000"
+              }
+            }
           },
           "limit": {
             "context": 1000000,
@@ -16335,7 +16415,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "3.5000",
+                "output": "14.0000",
+                "cache_read": "0.8750",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 1047576,
@@ -16375,7 +16463,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "0.7000",
+                "output": "2.8000",
+                "cache_read": "0.1750",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 1047576,
@@ -16415,7 +16511,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "0.2000",
+                "output": "0.8000",
+                "cache_read": "0.0500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 1047576,
@@ -16454,7 +16558,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "4.2500",
+                "output": "17.0000",
+                "cache_read": "2.1250",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 128000,
@@ -16494,7 +16606,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "8.7500",
+                "output": "26.2500",
+                "cache_read": null,
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 128000,
@@ -16611,7 +16731,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "0.2500",
+                "output": "1.0000",
+                "cache_read": "0.1250",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 128000,
@@ -16661,7 +16789,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.6250",
+                "output": "5.0000",
+                "cache_read": "0.0625",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "2.5000",
+                "output": "20.0000",
+                "cache_read": "0.2500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 400000,
@@ -16710,7 +16852,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1250",
+                "output": "1.0000",
+                "cache_read": "0.0125",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "0.4500",
+                "output": "3.6000",
+                "cache_read": "0.0450",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 400000,
@@ -16759,7 +16915,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.0250",
+                "output": "0.2000",
+                "cache_read": "0.0025",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 400000,
@@ -16854,7 +17018,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.6250",
+                "output": "5.0000",
+                "cache_read": "0.0625",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "2.5000",
+                "output": "20.0000",
+                "cache_read": "0.2500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 400000,
@@ -16904,7 +17082,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.8750",
+                "output": "7.0000",
+                "cache_read": "0.0875",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "3.5000",
+                "output": "28.0000",
+                "cache_read": "0.3500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 400000,
@@ -17002,7 +17194,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "3.5000",
+                "output": "28.0000",
+                "cache_read": "0.3500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 400000,
@@ -17113,7 +17313,15 @@
                 "cache_read": "0.5000",
                 "cache_write": null
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "5.0000",
+                "output": "30.0000",
+                "cache_read": "0.5000",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -17164,7 +17372,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.3750",
+                "output": "2.2500",
+                "cache_read": "0.0375",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "1.5000",
+                "output": "9.0000",
+                "cache_read": "0.1500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 400000,
@@ -17214,7 +17436,15 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.1000",
+                "output": "0.6250",
+                "cache_read": "0.0100",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 400000,
@@ -17330,7 +17560,15 @@
                 "cache_read": "1.0000",
                 "cache_write": null
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "12.5000",
+                "output": "75.0000",
+                "cache_read": "1.2500",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -17449,7 +17687,15 @@
                 "cache_read": "0.8000",
                 "cache_write": "10.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "8.0000",
+                "output": "40.0000",
+                "cache_read": "0.8000",
+                "cache_write": "10.0000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -17510,7 +17756,15 @@
                 "cache_read": "0.0400",
                 "cache_write": "0.5000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "0.4000",
+                "output": "2.4000",
+                "cache_read": "0.0400",
+                "cache_write": "0.5000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -17571,7 +17825,15 @@
                 "cache_read": "0.8000",
                 "cache_write": "10.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "8.0000",
+                "output": "40.0000",
+                "cache_read": "0.8000",
+                "cache_write": "10.0000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -17632,7 +17894,15 @@
                 "cache_read": "0.4000",
                 "cache_write": "5.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "4.0000",
+                "output": "24.0000",
+                "cache_read": "0.4000",
+                "cache_write": "5.0000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -17692,7 +17962,21 @@
                 "cache_read": "2.0000",
                 "cache_write": "25.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "20.0000",
+                "output": "100.0000",
+                "cache_read": "2.0000",
+                "cache_write": "25.0000"
+              },
+              "ultrafast": {
+                "input": "60.0000",
+                "output": "300.0000",
+                "cache_read": "6.0000",
+                "cache_write": "75.0000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -17753,7 +18037,15 @@
                 "cache_read": "0.0200",
                 "cache_write": "0.2500"
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "0.2000",
+                "output": "1.0000",
+                "cache_read": "0.0200",
+                "cache_write": "0.2500"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -17814,7 +18106,15 @@
                 "cache_read": "0.4000",
                 "cache_write": "5.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "4.0000",
+                "output": "20.0000",
+                "cache_read": "0.4000",
+                "cache_write": "5.0000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -17874,7 +18174,21 @@
                 "cache_read": "0.2000",
                 "cache_write": "5.0000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "4.0000",
+                "output": "20.0000",
+                "cache_read": "0.2000",
+                "cache_write": "5.0000"
+              },
+              "ultrafast": {
+                "input": "12.0000",
+                "output": "60.0000",
+                "cache_read": "0.6000",
+                "cache_write": "15.0000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -17935,7 +18249,15 @@
                 "cache_read": "0.1000",
                 "cache_write": "2.5000"
               }
-            ]
+            ],
+            "service_tiers": {
+              "priority": {
+                "input": "2.0000",
+                "output": "10.0000",
+                "cache_read": "0.1000",
+                "cache_write": "2.5000"
+              }
+            }
           },
           "limit": {
             "context": 1050000,
@@ -18364,7 +18686,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "1.0000",
+                "output": "4.0000",
+                "cache_read": "0.2500",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "3.5000",
+                "output": "14.0000",
+                "cache_read": "0.8750",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 200000,
@@ -18508,7 +18844,21 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "service_tiers": {
+              "flex": {
+                "input": "0.5500",
+                "output": "2.2000",
+                "cache_read": "0.1375",
+                "cache_write": null
+              },
+              "priority": {
+                "input": "2.0000",
+                "output": "8.0000",
+                "cache_read": "0.5000",
+                "cache_write": null
+              }
+            }
           },
           "limit": {
             "context": 200000,
@@ -26620,9 +26970,9 @@
             ]
           }
         },
-        "baidu/ernie-5.5-flash-preview": {
-          "id": "baidu/ernie-5.5-flash-preview",
-          "display_name": "ERNIE-5.5-Flash-Preview",
+        "baidu/ernie-5.5-flash-preview:free": {
+          "id": "baidu/ernie-5.5-flash-preview:free",
+          "display_name": "ERNIE-5.5-Flash-Preview (free)",
           "release_date": "2026-11-10",
           "last_updated": "2026-11-10",
           "metadata": {
@@ -26643,9 +26993,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2800",
-            "output": "1.1300",
-            "cache_read": "0.0280",
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": null,
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26713,112 +27063,6 @@
             ]
           }
         },
-        "bytedance-seed/seed-1.6": {
-          "id": "bytedance-seed/seed-1.6",
-          "display_name": "Seed 1.6",
-          "release_date": "2025-10-15",
-          "last_updated": "2025-10-15",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": true,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": [
-              {
-                "type": "toggle"
-              }
-            ]
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.2500",
-            "output": "2.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null,
-            "tiers": [
-              {
-                "above_input_tokens": 128000,
-                "input": "0.5000",
-                "output": "4.0000",
-                "cache_read": null,
-                "cache_write": null
-              }
-            ]
-          },
-          "limit": {
-            "context": 262144,
-            "input": null,
-            "output": 32768
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "video"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "bytedance-seed/seed-1.6-flash": {
-          "id": "bytedance-seed/seed-1.6-flash",
-          "display_name": "Seed 1.6 Flash",
-          "release_date": "2025-08-28",
-          "last_updated": "2025-08-28",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": true,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": [
-              {
-                "type": "toggle"
-              }
-            ]
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0750",
-            "output": "0.3000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null,
-            "tiers": [
-              {
-                "above_input_tokens": 128000,
-                "input": "0.1000",
-                "output": "0.8000",
-                "cache_read": null,
-                "cache_write": null
-              }
-            ]
-          },
-          "limit": {
-            "context": 262144,
-            "input": null,
-            "output": 32768
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "video"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "bytedance-seed/seed-2-1-turbo": {
           "id": "bytedance-seed/seed-2-1-turbo",
           "display_name": "Seed 2.1 Turbo",
@@ -26851,65 +27095,6 @@
             "context": 262144,
             "input": null,
             "output": 235929
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "video"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "bytedance-seed/seed-2.0-code": {
-          "id": "bytedance-seed/seed-2.0-code",
-          "display_name": "Seed 2.0 Code",
-          "release_date": "2026-02-14",
-          "last_updated": "2026-02-14",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": true,
-            "temperature": true,
-            "knowledge": null,
-            "reasoning_options": [
-              {
-                "type": "effort",
-                "values": [
-                  "none",
-                  "low",
-                  "medium",
-                  "high"
-                ]
-              }
-            ]
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.5000",
-            "output": "3.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null,
-            "tiers": [
-              {
-                "above_input_tokens": 128000,
-                "input": "1.0000",
-                "output": "6.0000",
-                "cache_read": null,
-                "cache_write": null
-              }
-            ]
-          },
-          "limit": {
-            "context": 262144,
-            "input": null,
-            "output": 131072
           },
           "modalities": {
             "input": [
@@ -27807,9 +27992,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.9553",
-            "output": "1.9105",
-            "cache_read": "0.0796",
+            "input": "0.8804",
+            "output": "1.7609",
+            "cache_read": "0.0734",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -29499,7 +29684,7 @@
           "cost": {
             "conditions": {},
             "input": "0.0800",
-            "output": "0.4500",
+            "output": "0.3500",
             "cache_read": "0.0400",
             "cache_write": null,
             "input_audio": null,
@@ -30037,7 +30222,7 @@
           "metadata": {
             "reasoning": true,
             "tool_call": true,
-            "structured_output": true,
+            "structured_output": false,
             "attachment": false,
             "temperature": true,
             "knowledge": null,
@@ -31294,9 +31479,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.3000",
-            "output": "1.2000",
-            "cache_read": "0.0600",
+            "input": "0.2700",
+            "output": "1.0800",
+            "cache_read": "0.0270",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -31305,7 +31490,7 @@
           "limit": {
             "context": 200000,
             "input": null,
-            "output": 58982
+            "output": 128000
           },
           "modalities": {
             "input": [
@@ -31425,9 +31610,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1500",
-            "output": "0.6000",
-            "cache_read": "0.0150",
+            "input": "0.0750",
+            "output": "0.3000",
+            "cache_read": "0.0075",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -33112,7 +33297,7 @@
             "output_image": null
           },
           "limit": {
-            "context": 1048576,
+            "context": 262144,
             "input": null,
             "output": 16384
           },
@@ -39684,9 +39869,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1320",
-            "output": "0.5280",
-            "cache_read": "0.0330",
+            "input": "0.0825",
+            "output": "0.3300",
+            "cache_read": "0.0206",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -39826,9 +40011,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.8340",
-            "output": "2.5010",
-            "cache_read": "0.0420",
+            "input": "0.7506",
+            "output": "2.2509",
+            "cache_read": "0.0378",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,

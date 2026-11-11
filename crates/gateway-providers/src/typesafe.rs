@@ -232,6 +232,7 @@ mod tests {
             extra_body: Map::from_iter([("trace".to_string(), json!(true))]),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
         let http_request = provider
             .build_decisions_request(&request, &context)
@@ -309,6 +310,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
         let response = provider
             .decisions(&request, &context)

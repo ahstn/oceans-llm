@@ -6,6 +6,7 @@ use std::{
 use gateway_core::{
     AuthenticatedApiKey, GatewayError, GatewayModel, ModelRepository, ModelRoute,
     PartialCapabilities, ProviderConnection, ReasoningEffort, ReasoningEffortRejection, RouteError,
+    ServiceTier,
 };
 use serde_json::Value;
 use uuid::Uuid;
@@ -155,6 +156,9 @@ pub struct ResolvedGatewayRequest {
     pub provider_connections: HashMap<String, ResolvedProviderConnection>,
     /// Catalog capability hints by route id, read from one catalog snapshot at resolution.
     pub capability_hints: HashMap<Uuid, PartialCapabilities>,
+    /// Non-default tiers each route can bill, by route id, read from the same snapshot:
+    /// every tier for unpriced and provider-costed routes, else the tiers with rates.
+    pub billable_service_tiers: HashMap<Uuid, Vec<ServiceTier>>,
 }
 
 impl ResolvedGatewayRequest {
@@ -165,6 +169,17 @@ impl ResolvedGatewayRequest {
             .get(&route.id)
             .copied()
             .unwrap_or_default()
+    }
+
+    /// Whether `route` can bill `tier`. Default always bills; another tier bills only
+    /// when resolution found a way to price it, so a premium tier never bills standard.
+    #[must_use]
+    pub fn route_bills_service_tier(&self, route: &ModelRoute, tier: ServiceTier) -> bool {
+        tier == ServiceTier::Default
+            || self
+                .billable_service_tiers
+                .get(&route.id)
+                .is_some_and(|tiers| tiers.contains(&tier))
     }
 }
 

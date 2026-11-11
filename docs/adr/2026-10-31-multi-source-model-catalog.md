@@ -35,6 +35,8 @@ The gateway reads three sources. Each source has its own cache row in `pricing_c
 | OpenRouter | `https://openrouter.ai/api/v1/models?output_modalities=all` | `openrouter_v1` | 16 MiB | Content checksum | `openrouter_catalog_fallback.json` |
 | LiteLLM | `https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json` | `litellm_v2` | 16 MiB | ETag | `litellm_catalog_fallback.json` |
 
+[Service tiers](2026-11-09-service-tiers.md) later moved the models.dev key to `models_dev_supported_v5` and the LiteLLM key to `litellm_v3`.
+
 The vendored files are in `crates/gateway-service/data/`. `mise run //crates/gateway:sync-pricing-catalog` refreshes all three, and the release task runs it.
 
 Each source projects into the same document: gateway catalog provider ID, then model ID, then one model document. The provider IDs are `openai`, `openrouter`, `amazon-bedrock`, `google-vertex`, `google-vertex-anthropic`, `opencode`, and `github-copilot`. Sources match exact model IDs only. There is no fuzzy matching.

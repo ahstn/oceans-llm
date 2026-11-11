@@ -588,6 +588,8 @@ mod tests {
             pricing_tier_above_input_tokens: None,
             computed_cost_usd,
             occurred_at,
+            requested_service_tier: None,
+            served_service_tier: None,
         }
     }
 

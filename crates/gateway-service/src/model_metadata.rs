@@ -2,6 +2,7 @@
 mod catalog;
 pub(crate) mod listing;
 pub(crate) mod litellm;
+pub(crate) mod service_tiers;
 pub use crate::pricing_catalog::{
     merge::{
         FieldConflict, LimitProvenance, MergedModelProvenance, MergedModelReport,
@@ -15,14 +16,16 @@ pub use listing::{
     ThinkingCapability, ThinkingTypes,
 };
 pub use litellm::{ModelGroupInfo, ModelGroupInfoResponse, ModelGroupMode};
+pub use service_tiers::AdapterServiceTiers;
 use std::collections::{BTreeSet, HashMap};
 
 use crate::model_resolution::{
     alias_chain_reasoning_ceiling, execution_model_from_snapshot, load_missing_alias_targets,
 };
 use gateway_core::{
-    GatewayError, GatewayModel, ModelRepository, ModelRoute, ProviderCapabilities,
-    ProviderConnection, ProviderRepository, ReasoningEffort, infer_route_capabilities,
+    GatewayError, GatewayModel, ModelRepository, ModelRoute, Money4, ProviderCapabilities,
+    ProviderConnection, ProviderRepository, ReasoningEffort, RoutePricingOverride, ServiceTier,
+    infer_route_capabilities,
 };
 use serde::Serialize;
 use time::OffsetDateTime;
@@ -30,8 +33,8 @@ use uuid::Uuid;
 
 use crate::pricing_catalog::{
     PricingCatalogCostDocument, PricingCatalogLimitDocument, PricingCatalogModalitiesDocument,
-    PricingCatalogSnapshot, catalog_metadata_target_for_route, catalog_pricing_supported_for_route,
-    metadata::CatalogModelMetadata,
+    PricingCatalogServiceTierCost, PricingCatalogSnapshot, catalog_metadata_target_for_route,
+    catalog_pricing_location_supported, metadata::CatalogModelMetadata,
 };
 
 /// The `/v1/model-metadata` response shape version; bump it on breaking shape changes.
@@ -64,6 +67,8 @@ pub struct ModelMetadata {
     pub enabled_route_count: usize,
     pub limits: PricingCatalogLimitDocument,
     pub capabilities: ModelCapabilities,
+    /// Every tier a request can be served at, ascending; empty when no route serves chat.
+    pub service_tiers: Vec<ServiceTier>,
     /// Each entry describes one enabled route. This is not a health probe.
     pub routes: Vec<RouteMetadata>,
 }
@@ -85,6 +90,8 @@ pub struct RouteMetadata {
     pub capabilities: ModelCapabilities,
     pub catalog_metadata: Option<CatalogModelMetadata>,
     pub modalities: Option<PricingCatalogModalitiesDocument>,
+    /// The tier the route forces on every request, whatever the caller asks for.
+    pub service_tier: Option<ServiceTier>,
     /// USD per million tokens. Null means unknown or unsupported billing conditions.
     pub pricing: Option<PricingCatalogCostDocument>,
     pub pricing_source: Option<&'static str>,
@@ -98,6 +105,7 @@ pub(crate) async fn list_metadata<R>(
     repo: &R,
     models: Vec<GatewayModel>,
     snapshot: &PricingCatalogSnapshot,
+    adapter: &dyn AdapterServiceTiers,
 ) -> Result<ModelMetadataResponse, GatewayError>
 where
     R: ModelRepository + ProviderRepository,
@@ -107,13 +115,7 @@ where
         .iter()
         .enumerate()
         .map(|(index, model)| {
-            let details = loaded
-                .enabled_routes(index)
-                .map(|route| {
-                    route_metadata(route, loaded.providers.get(&route.provider_key), snapshot)
-                })
-                .collect::<Vec<_>>();
-            summarize(model.model_key.clone(), details)
+            listing::ModelView::build(&loaded, index, model, snapshot, adapter).summary
         })
         .collect();
     Ok(ModelMetadataResponse {
@@ -255,28 +257,15 @@ fn route_metadata(
         ),
     };
     let (pricing, pricing_source) = if let Some(pricing) = &route.pricing_override {
-        (
-            Some(PricingCatalogCostDocument {
-                input: Some(pricing.input_cost_per_million_tokens.format_4dp()),
-                output: Some(pricing.output_cost_per_million_tokens.format_4dp()),
-                cache_read: pricing
-                    .cache_read_cost_per_million_tokens
-                    .map(|value| value.format_4dp()),
-                cache_write: pricing
-                    .cache_write_cost_per_million_tokens
-                    .map(|value| value.format_4dp()),
-                ..Default::default()
-            }),
-            Some("configured_override"),
-        )
-    } else if provider
-        .zip(target.as_ref())
-        .is_some_and(|(provider, (id, _))| catalog_pricing_supported_for_route(provider, route, id))
-    {
-        let source = catalog.pricing.as_ref().map(|_| "catalog");
-        (catalog.pricing, source)
+        (Some(override_cost(pricing)), Some("configured_override"))
     } else {
-        (None, None)
+        let pricing = provider
+            .zip(target.as_ref())
+            .and_then(|(provider, (id, _))| {
+                catalog_route_cost(provider, route, id, catalog.pricing)
+            });
+        let source = pricing.as_ref().map(|_| "catalog");
+        (pricing, source)
     };
     RouteMetadata {
         limits,
@@ -284,11 +273,67 @@ fn route_metadata(
         catalog_metadata: catalog.metadata,
         merge_report: catalog.merge_report,
         modalities: with_image_generation(catalog.modalities, transport),
+        service_tier: route.service_tier,
         pricing,
         pricing_source,
         display_name: catalog.display_name,
         release_date: catalog.release_date,
     }
+}
+
+/// A route override's rates: the base fields price the tier the route serves (its forced
+/// tier, else default), and `service_tiers` carries the flat rates it sets for other tiers.
+fn override_cost(pricing: &RoutePricingOverride) -> PricingCatalogCostDocument {
+    let rate = |value: Money4| value.format_4dp();
+    PricingCatalogCostDocument {
+        input: Some(rate(pricing.input_cost_per_million_tokens)),
+        output: Some(rate(pricing.output_cost_per_million_tokens)),
+        cache_read: pricing.cache_read_cost_per_million_tokens.map(rate),
+        cache_write: pricing.cache_write_cost_per_million_tokens.map(rate),
+        service_tiers: pricing
+            .service_tiers
+            .iter()
+            .map(|tier| {
+                let cost = PricingCatalogServiceTierCost {
+                    input: Some(rate(tier.input_cost_per_million_tokens)),
+                    output: Some(rate(tier.output_cost_per_million_tokens)),
+                    cache_read: tier.cache_read_cost_per_million_tokens.map(rate),
+                    cache_write: tier.cache_write_cost_per_million_tokens.map(rate),
+                    context_tiers: Vec::new(),
+                };
+                (tier.service_tier, cost)
+            })
+            .collect(),
+        ..Default::default()
+    }
+}
+
+/// The catalog rates `route` bills. A route forcing a non-default tier bills that tier's
+/// catalog schedule, reported as the route's base rates; with no schedule it has no price.
+fn catalog_route_cost(
+    provider: &ProviderConnection,
+    route: &ModelRoute,
+    pricing_provider_id: &str,
+    pricing: Option<PricingCatalogCostDocument>,
+) -> Option<PricingCatalogCostDocument> {
+    if !catalog_pricing_location_supported(provider, pricing_provider_id) {
+        return None;
+    }
+    let Some(tier) = route
+        .service_tier
+        .filter(|tier| *tier != ServiceTier::Default)
+    else {
+        return pricing;
+    };
+    let schedule = pricing?.service_tiers.remove(&tier)?;
+    Some(PricingCatalogCostDocument {
+        input: schedule.input,
+        output: schedule.output,
+        cache_read: schedule.cache_read,
+        cache_write: schedule.cache_write,
+        tiers: schedule.context_tiers,
+        ..Default::default()
+    })
 }
 
 /// `Some(false)` when the route cannot serve the feature, `Some(true)` when the route declares
@@ -326,7 +371,11 @@ fn with_image_generation(
     Some(modalities)
 }
 
-fn summarize(id: String, routes: Vec<RouteMetadata>) -> ModelMetadata {
+fn summarize(
+    id: String,
+    routes: Vec<RouteMetadata>,
+    service_tiers: Vec<ServiceTier>,
+) -> ModelMetadata {
     let limits = PricingCatalogLimitDocument {
         context: minimum(routes.iter().map(|route| route.limits.context)),
         input: minimum(routes.iter().map(|route| route.limits.input)),
@@ -347,6 +396,7 @@ fn summarize(id: String, routes: Vec<RouteMetadata>) -> ModelMetadata {
         enabled_route_count: routes.len(),
         limits,
         capabilities,
+        service_tiers,
         routes,
     }
 }

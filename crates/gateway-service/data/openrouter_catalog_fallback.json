@@ -2,8 +2,8 @@
   "metadata": {
     "source": "vendored_openrouter",
     "etag": null,
-    "fetched_at": "2026-11-11T09:48:50.359596Z",
-    "checksum": "65255698f13f6f4bcaba2b0f667631ecfd03af8096a84389839e44fc2a6a4ff1"
+    "fetched_at": "2026-11-11T19:39:34.697769742Z",
+    "checksum": "ebebbab897068c2d42693cfebe7b66f7004a39b3f896da38ec9f79ceebf4c0fd"
   },
   "providers": {
     "openrouter": {
@@ -2913,86 +2913,6 @@
             ]
           }
         },
-        "bytedance-seed/seed-1.6": {
-          "id": "bytedance-seed/seed-1.6",
-          "display_name": "ByteDance Seed: Seed 1.6",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.2500",
-            "output": "2.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 262144,
-            "input": null,
-            "output": 32768
-          },
-          "modalities": {
-            "input": [
-              "image",
-              "text",
-              "video"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "bytedance-seed/seed-1.6-flash": {
-          "id": "bytedance-seed/seed-1.6-flash",
-          "display_name": "ByteDance Seed: Seed 1.6 Flash",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0750",
-            "output": "0.3000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 262144,
-            "input": null,
-            "output": 32768
-          },
-          "modalities": {
-            "input": [
-              "image",
-              "text",
-              "video"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "bytedance-seed/seed-2-1-turbo": {
           "id": "bytedance-seed/seed-2-1-turbo",
           "display_name": "ByteDance Seed: Seed 2.1 Turbo",
@@ -3021,46 +2941,6 @@
             "context": 262144,
             "input": null,
             "output": 235929
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "video"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "bytedance-seed/seed-2.0-code": {
-          "id": "bytedance-seed/seed-2.0-code",
-          "display_name": "ByteDance Seed: Seed-2.0-Code",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.5000",
-            "output": "3.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 262144,
-            "input": null,
-            "output": 131072
           },
           "modalities": {
             "input": [
@@ -4854,9 +4734,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.9553",
-            "output": "1.9105",
-            "cache_read": "0.0796",
+            "input": "0.8804",
+            "output": "1.7609",
+            "cache_read": "0.0734",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -7393,6 +7273,48 @@
             ]
           }
         },
+        "google/gemini-decision-1": {
+          "id": "google/gemini-decision-1",
+          "display_name": "Google: Gemini Decision 1",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.1000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 235929
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "audio",
+              "video",
+              "pdf"
+            ],
+            "output": [
+              "decisions"
+            ]
+          }
+        },
         "google/gemini-embedding-001": {
           "id": "google/gemini-embedding-001",
           "display_name": "Google: Gemini Embedding 001",
@@ -7811,7 +7733,7 @@
           "cost": {
             "conditions": {},
             "input": "0.0800",
-            "output": "0.4500",
+            "output": "0.3500",
             "cache_read": "0.0400",
             "cache_write": null,
             "input_audio": null,
@@ -8662,7 +8584,7 @@
           "metadata": {
             "reasoning": true,
             "tool_call": true,
-            "structured_output": true,
+            "structured_output": false,
             "attachment": null,
             "temperature": null,
             "knowledge": null,
@@ -11184,9 +11106,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.3000",
-            "output": "1.2000",
-            "cache_read": "0.0600",
+            "input": "0.2700",
+            "output": "1.0800",
+            "cache_read": "0.0270",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -11195,7 +11117,7 @@
           "limit": {
             "context": 200000,
             "input": null,
-            "output": 58982
+            "output": 128000
           },
           "modalities": {
             "input": [
@@ -11300,9 +11222,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1500",
-            "output": "0.6000",
-            "cache_read": "0.0150",
+            "input": "0.0750",
+            "output": "0.3000",
+            "cache_read": "0.0075",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -24866,9 +24788,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1320",
-            "output": "0.5280",
-            "cache_read": "0.0330",
+            "input": "0.0825",
+            "output": "0.3300",
+            "cache_read": "0.0206",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -24981,9 +24903,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.8340",
-            "output": "2.5010",
-            "cache_read": "0.0420",
+            "input": "0.7506",
+            "output": "2.2509",
+            "cache_read": "0.0378",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,

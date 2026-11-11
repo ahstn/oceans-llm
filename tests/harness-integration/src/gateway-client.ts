@@ -11,6 +11,8 @@ const RequestLogSchema = z.object({
   prompt_tokens: z.number().nullable(),
   completion_tokens: z.number().nullable(),
   cost_usd_10000: z.number().nullable(),
+  service_tier: z.string().nullable(),
+  served_service_tier: z.string().nullable(),
 });
 
 const RequestLogPageSchema = z.object({
