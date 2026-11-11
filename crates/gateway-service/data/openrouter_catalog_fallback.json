@@ -2,8 +2,8 @@
   "metadata": {
     "source": "vendored_openrouter",
     "etag": null,
-    "fetched_at": "2026-11-10T00:00:43.078809641Z",
-    "checksum": "4366b883b8a092effc2795fefa5c16a92c8fd71f16d9b6473b9455195fffae0b"
+    "fetched_at": "2026-11-11T19:39:34.697769742Z",
+    "checksum": "ebebbab897068c2d42693cfebe7b66f7004a39b3f896da38ec9f79ceebf4c0fd"
   },
   "providers": {
     "openrouter": {
@@ -2332,6 +2332,82 @@
             ]
           }
         },
+        "baidu/ernie-5.5-flash-preview:free": {
+          "id": "baidu/ernie-5.5-flash-preview:free",
+          "display_name": "Baidu: ERNIE-5.5-Flash-Preview (free)",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1024000,
+            "input": null,
+            "output": 921600
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "baidu/ernie-light-dt-1.0-intl": {
+          "id": "baidu/ernie-light-dt-1.0-intl",
+          "display_name": "Baidu: ERNIE-Light-DT-1.0",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "1.1300",
+            "output": "3.9400",
+            "cache_read": "0.1130",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1024000,
+            "input": null,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "baseten/elephant-1": {
           "id": "baseten/elephant-1",
           "display_name": "Baseten: Elephant 1",
@@ -2837,86 +2913,6 @@
             ]
           }
         },
-        "bytedance-seed/seed-1.6": {
-          "id": "bytedance-seed/seed-1.6",
-          "display_name": "ByteDance Seed: Seed 1.6",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.2500",
-            "output": "2.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 262144,
-            "input": null,
-            "output": 32768
-          },
-          "modalities": {
-            "input": [
-              "image",
-              "text",
-              "video"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "bytedance-seed/seed-1.6-flash": {
-          "id": "bytedance-seed/seed-1.6-flash",
-          "display_name": "ByteDance Seed: Seed 1.6 Flash",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0750",
-            "output": "0.3000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 262144,
-            "input": null,
-            "output": 32768
-          },
-          "modalities": {
-            "input": [
-              "image",
-              "text",
-              "video"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "bytedance-seed/seed-2-1-turbo": {
           "id": "bytedance-seed/seed-2-1-turbo",
           "display_name": "ByteDance Seed: Seed 2.1 Turbo",
@@ -2945,46 +2941,6 @@
             "context": 262144,
             "input": null,
             "output": 235929
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "video"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "bytedance-seed/seed-2.0-code": {
-          "id": "bytedance-seed/seed-2.0-code",
-          "display_name": "ByteDance Seed: Seed-2.0-Code",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.5000",
-            "output": "3.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 262144,
-            "input": null,
-            "output": 131072
           },
           "modalities": {
             "input": [
@@ -3295,45 +3251,6 @@
             ]
           }
         },
-        "bytedance/seedance-1-5-pro": {
-          "id": "bytedance/seedance-1-5-pro",
-          "display_name": "ByteDance: Seedance 1.5 Pro",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": false,
-            "structured_output": false,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0000",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 0,
-            "input": null,
-            "output": 0
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "video"
-            ]
-          }
-        },
         "bytedance/seedance-2.0": {
           "id": "bytedance/seedance-2.0",
           "display_name": "ByteDance: Seedance 2.0",
@@ -3630,7 +3547,7 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2400",
+            "input": "0.1920",
             "output": "0.0000",
             "cache_read": null,
             "cache_write": null,
@@ -3641,7 +3558,7 @@
           "limit": {
             "context": 65537,
             "input": null,
-            "output": 58982
+            "output": 58983
           },
           "modalities": {
             "input": [
@@ -4664,9 +4581,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0910",
-            "output": "0.1820",
-            "cache_read": "0.0182",
+            "input": "0.0900",
+            "output": "0.1800",
+            "cache_read": "0.0180",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -4675,7 +4592,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 943717
+            "output": 393216
           },
           "modalities": {
             "input": [
@@ -4817,9 +4734,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.9553",
-            "output": "1.9105",
-            "cache_read": "0.0796",
+            "input": "0.8804",
+            "output": "1.7609",
+            "cache_read": "0.0734",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -5585,7 +5502,7 @@
           },
           "cost": {
             "conditions": {},
-            "input": "2.0000",
+            "input": "10.0000",
             "output": "0.0000",
             "cache_read": null,
             "cache_write": null,
@@ -7272,6 +7189,132 @@
             ]
           }
         },
+        "google/gemini-4-carbon": {
+          "id": "google/gemini-4-carbon",
+          "display_name": "Google: Gemini 4 Carbon",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "2.0000",
+            "output": "10.0000",
+            "cache_read": "0.1000",
+            "cache_write": "0.1875",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 943718
+          },
+          "modalities": {
+            "input": [
+              "audio",
+              "pdf",
+              "image",
+              "text",
+              "video"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "google/gemini-4-carbon:batch": {
+          "id": "google/gemini-4-carbon:batch",
+          "display_name": "Google: Gemini 4 Carbon (batch)",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "1.0000",
+            "output": "5.0000",
+            "cache_read": "0.0500",
+            "cache_write": "0.1875",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 943718
+          },
+          "modalities": {
+            "input": [
+              "audio",
+              "pdf",
+              "image",
+              "text",
+              "video"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "google/gemini-decision-1": {
+          "id": "google/gemini-decision-1",
+          "display_name": "Google: Gemini Decision 1",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.1000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 235929
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "audio",
+              "video",
+              "pdf"
+            ],
+            "output": [
+              "decisions"
+            ]
+          }
+        },
         "google/gemini-embedding-001": {
           "id": "google/gemini-embedding-001",
           "display_name": "Google: Gemini Embedding 001",
@@ -7767,9 +7810,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0765",
-            "output": "0.2550",
-            "cache_read": "0.0425",
+            "input": "0.0800",
+            "output": "0.1000",
+            "cache_read": "0.0460",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -7778,7 +7821,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 235929
+            "output": 128000
           },
           "modalities": {
             "input": [
@@ -8541,7 +8584,7 @@
           "metadata": {
             "reasoning": true,
             "tool_call": true,
-            "structured_output": true,
+            "structured_output": false,
             "attachment": null,
             "temperature": null,
             "knowledge": null,
@@ -8827,7 +8870,7 @@
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": "7.1856"
+            "output_image": "14.3713"
           },
           "limit": {
             "context": 65536,
@@ -8976,6 +9019,44 @@
             ],
             "output": [
               "image"
+            ]
+          }
+        },
+        "kt/midm-k-3.0-pro": {
+          "id": "kt/midm-k-3.0-pro",
+          "display_name": "KT: Mi:dm K 3.0 Pro",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": false,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.2000",
+            "output": "0.8000",
+            "cache_read": "0.0400",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 261795,
+            "input": null,
+            "output": 235615
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
             ]
           }
         },
@@ -9457,9 +9538,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.4000",
-            "output": "0.7500",
-            "cache_read": "0.4000",
+            "input": "0.3000",
+            "output": "0.5000",
+            "cache_read": "0.3000",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -9685,9 +9766,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.5900",
-            "output": "0.7900",
-            "cache_read": "0.2950",
+            "input": "0.7100",
+            "output": "0.7100",
+            "cache_read": "0.7100",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -9696,7 +9777,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 32768
+            "output": 115200
           },
           "modalities": {
             "input": [
@@ -10221,7 +10302,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 131072
+            "output": 262144
           },
           "modalities": {
             "input": [
@@ -10919,6 +11000,96 @@
             ]
           }
         },
+        "minimax/minimax-h3-image": {
+          "id": "minimax/minimax-h3-image",
+          "display_name": "MiniMax: MiniMax H3 Image",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": false,
+              "responses": false,
+              "embeddings": false,
+              "images": true
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "2.3000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": "3.8000"
+          },
+          "limit": {
+            "context": 4096,
+            "input": null,
+            "output": 3686
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "image"
+            ]
+          }
+        },
+        "minimax/minimax-h3-image-highspeed": {
+          "id": "minimax/minimax-h3-image-highspeed",
+          "display_name": "MiniMax: MiniMax H3 Image Highspeed",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": false,
+              "responses": false,
+              "embeddings": false,
+              "images": true
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "2.3000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": "7.6000"
+          },
+          "limit": {
+            "context": 4096,
+            "input": null,
+            "output": 3686
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "image"
+            ]
+          }
+        },
         "minimax/minimax-m2.5": {
           "id": "minimax/minimax-m2.5",
           "display_name": "MiniMax: MiniMax M2.5",
@@ -10935,9 +11106,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.3000",
-            "output": "1.2000",
-            "cache_read": "0.0600",
+            "input": "0.2700",
+            "output": "1.0800",
+            "cache_read": "0.0270",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -10946,7 +11117,7 @@
           "limit": {
             "context": 200000,
             "input": null,
-            "output": 58982
+            "output": 128000
           },
           "modalities": {
             "input": [
@@ -13336,7 +13507,7 @@
             "conditions": {},
             "input": "0.0420",
             "output": "0.0000",
-            "cache_read": "0.0080",
+            "cache_read": "0.0020",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -13357,9 +13528,86 @@
             ]
           }
         },
+        "motif-technologies/motif-3": {
+          "id": "motif-technologies/motif-3",
+          "display_name": "Motif Technologies: Motif 3",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": false,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.3000",
+            "output": "1.2000",
+            "cache_read": "0.0600",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 235929
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "nace-ai/drex-max": {
           "id": "nace-ai/drex-max",
           "display_name": "Nace.AI: Drex Max",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0600",
+            "output": "0.0000",
+            "cache_read": "0.0600",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 235929
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "decisions"
+            ]
+          }
+        },
+        "nace-ai/drex-max-finance": {
+          "id": "nace-ai/drex-max-finance",
+          "display_name": "Nace.AI: Drex Max Finance",
           "release_date": "",
           "last_updated": "",
           "metadata": {
@@ -13530,6 +13778,45 @@
             "input": "0.0750",
             "output": "0.2500",
             "cache_read": "0.0150",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 235929
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "nex-agi/nex-n2.6": {
+          "id": "nex-agi/nex-n2.6",
+          "display_name": "Nex AGI: Nex-N2.6",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.1200",
+            "output": "0.4000",
+            "cache_read": "0.0240",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -13808,7 +14095,7 @@
             "output_image": null
           },
           "limit": {
-            "context": 1048576,
+            "context": 262144,
             "input": null,
             "output": 16384
           },
@@ -19976,44 +20263,6 @@
             ]
           }
         },
-        "qwen/qwen-2.5-7b-instruct": {
-          "id": "qwen/qwen-2.5-7b-instruct",
-          "display_name": "Qwen: Qwen2.5 7B Instruct",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.1000",
-            "output": "0.2000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 32768,
-            "input": null,
-            "output": 29491
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "qwen/qwen-2.5-coder-32b-instruct": {
           "id": "qwen/qwen-2.5-coder-32b-instruct",
           "display_name": "Qwen2.5 Coder 32B Instruct",
@@ -20401,8 +20650,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1200",
-            "output": "0.2400",
+            "input": "0.1000",
+            "output": "0.2200",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -20412,7 +20661,7 @@
           "limit": {
             "context": 40960,
             "input": null,
-            "output": 16384
+            "output": 36864
           },
           "modalities": {
             "input": [
@@ -20952,6 +21201,44 @@
             ],
             "output": [
               "text"
+            ]
+          }
+        },
+        "qwen/qwen3-reranker-0.6b": {
+          "id": "qwen/qwen3-reranker-0.6b",
+          "display_name": "Qwen3 Reranker 0.6B",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 32768,
+            "input": null,
+            "output": 0
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "rerank"
             ]
           }
         },
@@ -21848,7 +22135,7 @@
             "output_image": null
           },
           "limit": {
-            "context": 1024000,
+            "context": 1048575,
             "input": null,
             "output": 235929
           },
@@ -25239,9 +25526,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.3500",
-            "output": "0.6500",
-            "cache_read": "0.3500",
+            "input": "0.3000",
+            "output": "0.5000",
+            "cache_read": "0.2000",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26051,6 +26338,44 @@
             ]
           }
         },
+        "x-ai/grok-stt-2.0": {
+          "id": "x-ai/grok-stt-2.0",
+          "display_name": "SpaceXAI: Grok STT 2.0",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "27.7778",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 0,
+            "input": null,
+            "output": 0
+          },
+          "modalities": {
+            "input": [
+              "audio"
+            ],
+            "output": [
+              "transcription"
+            ]
+          }
+        },
         "x-ai/grok-voice-tts-1.0": {
           "id": "x-ai/grok-voice-tts-1.0",
           "display_name": "SpaceXAI: Grok Voice TTS 1.0",
@@ -26285,44 +26610,6 @@
               "image",
               "video",
               "audio"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "xingchen-agi/xing4.0-29b-a4b:free": {
-          "id": "xingchen-agi/xing4.0-29b-a4b:free",
-          "display_name": "XingChen: Xing4.0 29B A4B (free)",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0000",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 262144,
-            "input": null,
-            "output": 235929
-          },
-          "modalities": {
-            "input": [
-              "text"
             ],
             "output": [
               "text"
@@ -26690,9 +26977,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "1.4000",
-            "output": "4.4000",
-            "cache_read": "0.2600",
+            "input": "1.3300",
+            "output": "4.1800",
+            "cache_read": "0.2470",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26728,9 +27015,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0060",
+            "input": "0.0070",
             "output": "6.8000",
-            "cache_read": "0.0050",
+            "cache_read": "0.0060",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26766,9 +27053,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.6230",
-            "output": "1.2710",
-            "cache_read": "0.2100",
+            "input": "0.5270",
+            "output": "1.0750",
+            "cache_read": "0.1780",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26842,8 +27129,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1500",
-            "output": "0.5000",
+            "input": "0.0399",
+            "output": "0.0784",
             "cache_read": "0.0300",
             "cache_write": null,
             "input_audio": null,
@@ -26853,7 +27140,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 943717
+            "output": 131072
           },
           "modalities": {
             "input": [
@@ -26882,9 +27169,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0300",
+            "input": "0.0470",
             "output": "0.0610",
-            "cache_read": "0.0130",
+            "cache_read": "0.0200",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -27556,7 +27843,7 @@
           "cost": {
             "conditions": {},
             "input": "0.1824",
-            "output": "10.5572",
+            "output": "11.0055",
             "cache_read": "0.1800",
             "cache_write": null,
             "input_audio": null,
@@ -27834,7 +28121,7 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0200",
+            "input": "0.0190",
             "output": "0.0000",
             "cache_read": null,
             "cache_write": null,
@@ -27991,8 +28278,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0335",
-            "output": "0.0830",
+            "input": "0.0399",
+            "output": "0.0784",
             "cache_read": "0.0300",
             "cache_write": null,
             "input_audio": null,

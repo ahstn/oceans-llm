@@ -1,9 +1,9 @@
 {
   "metadata": {
     "source": "vendored_litellm",
-    "etag": "\"a2a9ab2eeb637d23b63903f5518d4fa8d7f77e9ffa352c25c8fac98b1c9f5b9c\"",
-    "fetched_at": "2026-11-10T00:00:42.524967433Z",
-    "checksum": "556c74b30dcb30776ff46c4a42f53ac7b3098d89e474a7fbbef9e066436f2873"
+    "etag": "\"a6d1459b29c13e2fcacd6ed3b86dc961244d2e0e29922b410e5251cb3c6c879a\"",
+    "fetched_at": "2026-11-11T19:39:34.292862991Z",
+    "checksum": "2b9df4bc6136e1b3d0535dd9fe1a458ad50203a023bef37fc31ba47f98bf2c50"
   },
   "providers": {
     "amazon-bedrock": {
@@ -10847,7 +10847,7 @@
           },
           "limit": {
             "context": null,
-            "input": 1050000,
+            "input": 922000,
             "output": 128000
           },
           "modalities": {
@@ -12991,6 +12991,51 @@
             "output": "19.8000",
             "cache_read": "0.3300",
             "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 922000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "us-gov-east-1/openai.gpt-5.6-cyber": {
+          "id": "us-gov-east-1/openai.gpt-5.6-cyber",
+          "display_name": "us-gov-east-1/openai.gpt-5.6-cyber",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": true,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "16.8750",
+            "output": "101.2500",
+            "cache_read": "1.6875",
+            "cache_write": "21.0938",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -18941,6 +18986,12 @@
             "output_audio": null,
             "output_image": null,
             "service_tiers": {
+              "flex": {
+                "input": "0.5000",
+                "output": "1.6000",
+                "cache_read": null,
+                "cache_write": null
+              },
               "priority": {
                 "input": "1.7500",
                 "output": "5.6000",
@@ -19039,6 +19090,51 @@
             "output": "50.0000",
             "cache_read": "0.2500",
             "cache_write": "12.5000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 200000,
+            "output": 64000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "claude-fable-5.2": {
+          "id": "claude-fable-5.2",
+          "display_name": "claude-fable-5.2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -19701,6 +19797,51 @@
         "gemini-4-argon": {
           "id": "gemini-4-argon",
           "display_name": "gemini-4-argon",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "2.0000",
+            "output": "10.0000",
+            "cache_read": "0.1000",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 200000,
+            "output": 65536
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gemini-4-carbon": {
+          "id": "gemini-4-carbon",
+          "display_name": "gemini-4-carbon",
           "release_date": "",
           "last_updated": "",
           "metadata": {
@@ -22399,7 +22540,7 @@
           "limit": {
             "context": null,
             "input": 1048576,
-            "output": 65535
+            "output": 65536
           },
           "modalities": {
             "input": [
@@ -22674,7 +22815,7 @@
           },
           "limit": {
             "context": null,
-            "input": 65536,
+            "input": 131072,
             "output": 32768
           },
           "modalities": {
@@ -23139,7 +23280,7 @@
           "limit": {
             "context": null,
             "input": 1048576,
-            "output": 65535
+            "output": 65536
           },
           "modalities": {
             "input": [
@@ -23893,6 +24034,116 @@
                 "cache_read": "0.1000",
                 "cache_write": null
               },
+              "priority": {
+                "input": "7.2000",
+                "output": "36.0000",
+                "cache_read": "0.3600",
+                "cache_write": null
+              }
+            }
+          },
+          "limit": {
+            "context": null,
+            "input": 1048576,
+            "output": 1048576
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "audio",
+              "video"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gemini-4-carbon": {
+          "id": "gemini-4-carbon",
+          "display_name": "gemini-4-carbon",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "2.0000",
+            "output": "10.0000",
+            "cache_read": "0.1000",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "3.6000",
+                "output": "18.0000",
+                "cache_read": "0.1800",
+                "cache_write": null
+              }
+            }
+          },
+          "limit": {
+            "context": null,
+            "input": 1048576,
+            "output": 1048576
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "audio",
+              "video"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gemini-4-carbon-cyber-permissive": {
+          "id": "gemini-4-carbon-cyber-permissive",
+          "display_name": "gemini-4-carbon-cyber-permissive",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": true,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "4.0000",
+            "output": "20.0000",
+            "cache_read": "0.2000",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
               "priority": {
                 "input": "7.2000",
                 "output": "36.0000",
@@ -27554,6 +27805,54 @@
                 "cache_write": "0.6250"
               }
             ]
+          },
+          "limit": {
+            "context": null,
+            "input": 1000000,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "claude-mythos-5-2@default": {
+          "id": "claude-mythos-5-2@default",
+          "display_name": "claude-mythos-5-2@default",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null,
+            "service_tiers": {
+              "priority": {
+                "input": "16.0000",
+                "output": "80.0000",
+                "cache_read": "0.4000",
+                "cache_write": "20.0000"
+              }
+            }
           },
           "limit": {
             "context": null,
@@ -33191,7 +33490,16 @@
             "cache_write": "25.0000",
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": null,
+            "tiers": [
+              {
+                "above_input_tokens": 272000,
+                "input": "40.0000",
+                "output": "150.0000",
+                "cache_read": "4.0000",
+                "cache_write": null
+              }
+            ]
           },
           "limit": {
             "context": null,
