@@ -12,14 +12,19 @@ use axum::{
     response::Response,
 };
 use gateway_core::{
-    BudgetRepository, CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, ModelRoute,
-    ProviderCapabilities, ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
-    RequestLogDetail, RequestLogQuery, SERVICE_TIER_REQUEST_FIELDS, ServiceTier,
+    AuthenticatedApiKey, BudgetRepository, CoreChatRequest, CoreDecisionsRequest,
+    CoreEmbeddingsRequest, CoreResponsesRequest, DecisionsWireFormat, ImagesRequest, ModelRoute,
+    ProviderCapabilities, ProviderClient, ProviderDecisionsResponse, ProviderError,
+    ProviderRequestContext, ProviderStream, RequestLogDetail, RequestLogQuery,
+    SERVICE_TIER_REQUEST_FIELDS, ServiceTier,
 };
 use serde_json::{Value, json};
 use tower_http::request_id::RequestId;
 
-use super::{AppError, messages::v1_messages_inner, v1_chat_completions, v1_responses};
+use super::{
+    AppError, messages::v1_messages_inner, v1_chat_completions, v1_decisions, v1_embeddings,
+    v1_images, v1_responses,
+};
 use crate::http::{
     state::AppState,
     test_support::{app_state, seed_test_models, test_model},
@@ -32,9 +37,15 @@ enum Endpoint {
     Chat,
     Responses,
     Messages,
+    Embeddings,
+    Images,
+    Decisions,
 }
 
 impl Endpoint {
+    /// The operations that run only at the default tier.
+    const DEFAULT_TIER_ONLY: [Self; 3] = [Self::Embeddings, Self::Images, Self::Decisions];
+
     /// A minimal request for `model` with `tier_fields` merged in.
     fn body(self, model: &str, stream: bool, tier_fields: Value) -> Value {
         let mut body = match self {
@@ -46,6 +57,12 @@ impl Endpoint {
             Self::Messages => json!({
                 "model": model, "max_tokens": 16, "stream": stream,
                 "messages": [{"role": "user", "content": "hello"}],
+            }),
+            Self::Embeddings => json!({"model": model, "input": "hello"}),
+            Self::Images => json!({"model": model, "prompt": "a lighthouse at dusk"}),
+            Self::Decisions => json!({
+                "model": model, "state": "refund request",
+                "questions": {"approve": {"type": "noul", "instructions": "Approve?"}},
             }),
         };
         let Value::Object(tier_fields) = tier_fields else {
@@ -61,17 +78,7 @@ impl Endpoint {
         request_id: &str,
         body: Value,
     ) -> Result<Response, AppError> {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            "authorization",
-            "Bearer gwk_streamtest.cancel-secret".parse().unwrap(),
-        );
-        let request_id = Some(Extension(RequestId::new(request_id.parse().unwrap())));
-        let auth = state
-            .service
-            .authenticate(Some("Bearer gwk_streamtest.cancel-secret"))
-            .await
-            .unwrap();
+        let (request_id, headers, auth) = authenticated_call(state, request_id).await;
         let state = state.clone();
         match self {
             Self::Chat => {
@@ -107,8 +114,60 @@ impl Endpoint {
                 )
                 .await
             }
+            Self::Embeddings => {
+                v1_embeddings(
+                    State(state),
+                    request_id,
+                    headers,
+                    Default::default(),
+                    super::InferenceAuth(auth),
+                    Json(serde_json::from_value(body).unwrap()),
+                )
+                .await
+            }
+            Self::Images => {
+                v1_images(
+                    State(state),
+                    request_id,
+                    headers,
+                    Default::default(),
+                    super::InferenceAuth(auth),
+                    Json(serde_json::from_value(body).unwrap()),
+                )
+                .await
+            }
+            Self::Decisions => {
+                v1_decisions(
+                    State(state),
+                    request_id,
+                    headers,
+                    Default::default(),
+                    super::InferenceAuth(auth),
+                    Json(body),
+                )
+                .await
+            }
         }
     }
+}
+
+/// The request ID extension, headers and API key authentication of a test call.
+async fn authenticated_call(
+    state: &AppState,
+    request_id: &str,
+) -> (Option<Extension<RequestId>>, HeaderMap, AuthenticatedApiKey) {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "authorization",
+        "Bearer gwk_streamtest.cancel-secret".parse().unwrap(),
+    );
+    let request_id = Some(Extension(RequestId::new(request_id.parse().unwrap())));
+    let auth = state
+        .service
+        .authenticate(Some("Bearer gwk_streamtest.cancel-secret"))
+        .await
+        .unwrap();
+    (request_id, headers, auth)
 }
 
 type RecordedCall = (Option<ServiceTier>, BTreeMap<String, Value>);
@@ -218,20 +277,64 @@ impl ProviderClient for TierProvider {
 
     async fn embeddings(
         &self,
-        _request: &CoreEmbeddingsRequest,
-        _context: &ProviderRequestContext,
+        request: &CoreEmbeddingsRequest,
+        context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
-        panic!("tier tests do not request embeddings")
+        self.record(context, &request.extra);
+        Ok(json!({
+            "object": "list", "model": context.upstream_model,
+            "data": [{"object": "embedding", "index": 0, "embedding": [0.5]}],
+            "usage": {"prompt_tokens": 2, "total_tokens": 2},
+        }))
+    }
+
+    async fn images(
+        &self,
+        request: &ImagesRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<Value, ProviderError> {
+        self.record(context, &request.extra);
+        Ok(json!({
+            "created": 1, "data": [{"b64_json": "aGk=", "media_type": "image/png"}],
+            "usage": {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3},
+        }))
+    }
+
+    async fn decisions(
+        &self,
+        request: &CoreDecisionsRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<ProviderDecisionsResponse, ProviderError> {
+        self.record(context, &request.extra);
+        let body = json!({
+            "model": context.upstream_model,
+            "answers": {"approve": {"type": "noul", "noul": 0.8}},
+            "usage": {"input_tokens": 4, "output_tokens": 1},
+        });
+        let parsed = DecisionsWireFormat::SystemOne
+            .parse_response(&body, request)
+            .expect("valid upstream answers");
+        Ok(ProviderDecisionsResponse {
+            format: DecisionsWireFormat::SystemOne,
+            body,
+            parsed,
+        })
     }
 }
 
-/// Seeds `luna` (any tier), `luna-fast` (route forced to priority), `flex-only` (allows
-/// only flex) on the `tiers` provider, and `plain` on a provider that sends only the
-/// default tier. Both providers report `served`.
+/// Seeds `luna` (any tier), `luna-fast` (route forced to priority), `luna-mixed` (a
+/// priority route to `luna-upstream` ahead of a default route to `luna-standard`),
+/// `flex-only` (allows only flex) on the `tiers` provider, and `plain` on a provider that
+/// sends only the default tier. Both providers report `served`.
 async fn setup(served: Option<&'static str>) -> (tempfile::TempDir, AppState, Arc<TierProvider>) {
     let (directory, mut state) = app_state().await;
     let mut forced = test_model("luna-fast", "tiers", "luna-upstream");
     forced.routes[0].service_tier = Some(ServiceTier::Priority);
+    let mut mixed = test_model("luna-mixed", "tiers", "luna-upstream");
+    mixed.routes[0].service_tier = Some(ServiceTier::Priority);
+    let mut standard_route = test_model("luna-mixed", "tiers", "luna-standard").routes;
+    standard_route[0].priority = 1;
+    mixed.routes.append(&mut standard_route);
     let mut flex_only = test_model("flex-only", "tiers", "luna-upstream");
     flex_only.service_tiers = Some(vec![ServiceTier::Flex]);
     seed_test_models(
@@ -240,6 +343,7 @@ async fn setup(served: Option<&'static str>) -> (tempfile::TempDir, AppState, Ar
         vec![
             test_model("luna", "tiers", "luna-upstream"),
             forced,
+            mixed,
             flex_only,
             test_model("plain", "plain", "plain-upstream"),
         ],
@@ -479,6 +583,97 @@ async fn records_the_requested_and_served_tiers() {
             ledger_tiers(&state, &detail).await,
             (Some(ServiceTier::Priority), Some(ServiceTier::Default)),
             "{case}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn default_tier_operations_strip_a_default_tier_and_reject_others() {
+    let accepted = [
+        json!({"service_tier": "default"}),
+        json!({"service_tier": "auto", "speed": "standard"}),
+        json!({"serviceTier": {"type": "default"}, "service_tier": null}),
+    ];
+    let rejected = [
+        json!({"service_tier": "priority"}),
+        json!({"speed": "fast"}),
+        json!({"serviceTier": {"type": "flex"}}),
+        json!({"service_tier": "turbo"}),
+    ];
+    for endpoint in Endpoint::DEFAULT_TIER_ONLY {
+        let (_directory, state, provider) = setup(None).await;
+        for (index, tier_fields) in accepted.iter().enumerate() {
+            endpoint
+                .call(
+                    &state,
+                    &format!("accepted-{index}"),
+                    endpoint.body("luna", false, tier_fields.clone()),
+                )
+                .await
+                .unwrap_or_else(|error| panic!("{endpoint:?} {tier_fields}: {}", error.0));
+        }
+        let calls = provider.calls();
+        assert_eq!(calls.len(), accepted.len(), "{endpoint:?}");
+        for (tier, extra) in calls {
+            assert_eq!(tier, None, "{endpoint:?}");
+            assert!(
+                SERVICE_TIER_REQUEST_FIELDS
+                    .iter()
+                    .all(|field| !extra.contains_key(*field)),
+                "{endpoint:?} forwarded tier fields upstream: {extra:?}"
+            );
+        }
+
+        for (index, tier_fields) in rejected.iter().enumerate() {
+            let error = endpoint
+                .call(
+                    &state,
+                    &format!("rejected-{index}"),
+                    endpoint.body("luna", false, tier_fields.clone()),
+                )
+                .await
+                .unwrap_err();
+            let case = format!("{endpoint:?} {tier_fields}");
+            assert_eq!(error.0.http_status_code(), 400, "{case}");
+            assert_eq!(error.0.error_code(), "invalid_request", "{case}");
+        }
+        assert_eq!(provider.calls().len(), accepted.len(), "{endpoint:?}");
+    }
+}
+
+#[tokio::test]
+async fn default_tier_operations_skip_routes_that_force_a_tier() {
+    for endpoint in Endpoint::DEFAULT_TIER_ONLY {
+        let (_directory, state, provider) = setup(None).await;
+        let error = endpoint
+            .call(
+                &state,
+                "forced-only",
+                endpoint.body("luna-fast", false, json!({})),
+            )
+            .await
+            .unwrap_err();
+        let message = error.0.to_string();
+        assert_eq!(error.0.http_status_code(), 400, "{endpoint:?}");
+        assert!(
+            message.contains("force service tier `priority`"),
+            "{endpoint:?}: {message}"
+        );
+        assert!(provider.calls().is_empty(), "{endpoint:?}");
+
+        endpoint
+            .call(
+                &state,
+                REQUEST_ID,
+                endpoint.body("luna-mixed", false, json!({})),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{endpoint:?} failed: {}", error.0));
+        assert_eq!(provider.calls()[0].0, None, "{endpoint:?}");
+        let detail = request_detail(&state, REQUEST_ID).await;
+        assert_eq!(
+            detail.attempts[0].upstream_model, "luna-standard",
+            "{endpoint:?} used the route that forces priority"
         );
     }
 }

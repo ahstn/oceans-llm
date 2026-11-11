@@ -3,9 +3,10 @@
 //! against the budget and sent to one provider; its usage is then accounted
 //! and its request log written. Each operation records its own
 //! `gateway.<operation>.requests` metric rather than the chat request metric:
-//! neither streams nor carries tools.
+//! neither streams nor carries tools. Both run at the default service tier.
 use gateway_core::RequestTags;
 
+use super::service_tier::{retain_default_tier_routes, take_default_service_tier};
 use super::*;
 use crate::observability::{GatewayMetrics, OperationRequestMetric};
 
@@ -26,6 +27,9 @@ pub(super) trait JsonOperation: Serialize + DeserializeOwned + Send + Sync {
 
     /// The untyped body fields, which route selection reads.
     fn extra(&self) -> &BTreeMap<String, Value>;
+
+    /// The untyped body fields, from which the caller's tier fields are removed.
+    fn extra_mut(&mut self) -> &mut BTreeMap<String, Value>;
 
     fn begin_request_log(
         &self,
@@ -56,10 +60,11 @@ pub(super) async fn execute_json_operation<O: JsonOperation>(
     headers: HeaderMap,
     policy: RequestPolicyContext,
     auth: AuthenticatedApiKey,
-    request: O,
+    mut request: O,
 ) -> Result<Response, AppError> {
     let request_started_at = Instant::now();
     let request_id = canonical_request_id(request_id)?;
+    take_default_service_tier(O::OPERATION, request.extra_mut())?;
     let resolved = state
         .service
         .resolve_request(&auth, request.model())
@@ -140,11 +145,13 @@ async fn dispatch_json_operation<O: JsonOperation>(
         request_started_at,
         rate_limit_team,
         mut request,
-        resolved,
+        mut resolved,
     } = request;
     let request_span = Span::current();
     let requirements = request.route_requirements();
+    let route_count = resolved.routes.len();
     record_request_span_fields(&request_span, auth, &resolved, false, O::ROUTE_PATH);
+    retain_default_tier_routes(&mut resolved, O::OPERATION)?;
     let request_headers = extract_request_headers(headers);
     let request_tags = extract_request_tags(headers)?;
     let mut request_log_context = request.begin_request_log(
@@ -169,7 +176,7 @@ async fn dispatch_json_operation<O: JsonOperation>(
     tracing::info!(
         request_model = %request.model(),
         resolved_model = %resolved.selection.execution_model.model_key,
-        route_count = resolved.routes.len(),
+        route_count,
         eligible_route_count,
         required_capabilities = ?requirements.required_capability_names(),
         "{} request resolved",

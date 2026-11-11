@@ -1,11 +1,15 @@
 //! Service tiers on inference requests. The caller's tier must be on the model's
 //! allow-list. Each route then serves its forced tier, else the caller's, and stays
 //! eligible only when its adapter can send that tier and its pricing can bill it.
+//! Embeddings, images and Decisions run at the default tier only.
+use std::collections::BTreeMap;
+
 use gateway_core::{
     GatewayError, ModelRoute, ProviderRegistry, ServiceTier, ServiceTierOutcome,
-    enforce_service_tier_policy,
+    enforce_service_tier_policy, take_requested_service_tier,
 };
 use gateway_service::{RequestLogContext, ResolvedGatewayRequest};
+use serde_json::Value;
 
 /// Applies the requested model's tier allow-list to the caller's tier. An alias with
 /// its own `service_tiers` uses that list; otherwise the execution model's applies.
@@ -86,4 +90,51 @@ fn route_serves_service_tier(
         .get(&route.provider_key)
         .is_some_and(|provider| provider.service_tiers(route).contains(&tier))
         && resolved.route_bills_service_tier(route, tier)
+}
+
+/// Removes every tier field from a request to an `operation` that runs only at the
+/// default tier (embeddings, images, Decisions): providers sell tiers on chat APIs, and
+/// these adapters send none. An explicit default asks for nothing; any other tier is
+/// rejected rather than forwarded upstream unpriced, as batch items are.
+pub(super) fn take_default_service_tier(
+    operation: &str,
+    fields: &mut BTreeMap<String, Value>,
+) -> Result<(), GatewayError> {
+    match take_requested_service_tier(fields)? {
+        None | Some(ServiceTier::Default) => Ok(()),
+        Some(tier) => Err(GatewayError::InvalidRequest(format!(
+            "{operation} requests cannot select service tier `{tier}`; they run at the \
+             default tier"
+        ))),
+    }
+}
+
+/// Drops the routes that force a non-default tier from a request to an `operation` that
+/// runs only at the default tier. Its adapter sends no tier, so such a route would serve
+/// and bill the request at default despite the tier an admin fixed. Fails with a 400 that
+/// names a forced tier when no route remains.
+pub(super) fn retain_default_tier_routes(
+    resolved: &mut ResolvedGatewayRequest,
+    operation: &str,
+) -> Result<(), GatewayError> {
+    let Some(forced) = resolved.routes.iter().find_map(forced_non_default_tier) else {
+        return Ok(());
+    };
+    resolved
+        .routes
+        .retain(|route| forced_non_default_tier(route).is_none());
+    if resolved.routes.is_empty() {
+        return Err(GatewayError::InvalidRequest(format!(
+            "no configured route for model `{}` serves {operation} requests at the default \
+             service tier; its routes force service tier `{forced}`",
+            resolved.selection.requested_model.model_key
+        )));
+    }
+    Ok(())
+}
+
+fn forced_non_default_tier(route: &ModelRoute) -> Option<ServiceTier> {
+    route
+        .service_tier
+        .filter(|tier| *tier != ServiceTier::Default)
 }

@@ -10,6 +10,7 @@ use gateway_core::{
 };
 use serde::Deserialize;
 
+use super::service_tier::{retain_default_tier_routes, take_default_service_tier};
 use super::*;
 use crate::observability::DecisionsRequestMetric;
 
@@ -97,6 +98,8 @@ fn detect_decisions_format(body: &Value) -> Result<DecisionsWireFormat, GatewayE
     }
 }
 
+/// Parses and validates a caller's body. Decisions runs at the default tier, so its tier
+/// fields are removed, and a tier other than default is rejected.
 fn parse_decisions_request(
     body: &Value,
     format: DecisionsWireFormat,
@@ -107,7 +110,7 @@ fn parse_decisions_request(
             format.as_str()
         ))
     };
-    let request = match format {
+    let mut request = match format {
         DecisionsWireFormat::SystemOne => SystemOneDecisionsRequest::deserialize(body)
             .map(|request| system_one_decisions_request_to_core(&request))
             .map_err(invalid)?,
@@ -120,6 +123,7 @@ fn parse_decisions_request(
     if let Some(message) = request.validation_error() {
         return Err(GatewayError::InvalidRequest(message));
     }
+    take_default_service_tier("decisions", &mut request.extra)?;
     Ok(request)
 }
 
@@ -286,6 +290,7 @@ async fn dispatch_decisions(
     let request_span = Span::current();
     let requirements = core_request.requirements();
     let route_count = resolved.routes.len();
+    retain_default_tier_routes(&mut resolved, "decisions").map_err(AppError)?;
     retain_representable_routes(&mut resolved.routes, &core_request).map_err(AppError)?;
     record_request_span_fields(&request_span, auth, &resolved, false, call.route_path);
     let request_headers = extract_request_headers(headers);
@@ -577,6 +582,28 @@ mod tests {
                 .contains("invalid OpenAI decisions request"),
             "{error}"
         );
+    }
+
+    #[test]
+    fn parse_removes_a_default_tier_and_rejects_others() {
+        for (body, format) in [
+            (system_one_body(), DecisionsWireFormat::SystemOne),
+            (openai_body(), DecisionsWireFormat::OpenAi),
+        ] {
+            let mut tiered = body.clone();
+            tiered["service_tier"] = json!("default");
+            tiered["speed"] = json!("standard");
+            let extra = parse_decisions_request(&tiered, format).unwrap().extra;
+            assert!(
+                !extra.contains_key("service_tier") && !extra.contains_key("speed"),
+                "{format:?}: {extra:?}"
+            );
+
+            let mut priority = body;
+            priority["service_tier"] = json!("priority");
+            let error = parse_decisions_request(&priority, format).unwrap_err();
+            assert_eq!(error.http_status_code(), 400, "{format:?}");
+        }
     }
 
     #[test]
