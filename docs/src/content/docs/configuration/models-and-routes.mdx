@@ -157,6 +157,8 @@ Each provider type sends the tier in its own form:
 
 A route serves a non-default tier only when its provider type supports the tier and the gateway can price it. The gateway can price a tier when the provider reports the cost (OpenRouter), when the catalog or `pricing_override` has a rate for the tier, or when the route has no price at all. A request that no route can serve fails with 400.
 
+Embeddings, image generation, Decisions and batches run at the default tier, so they skip routes that force another tier. A model whose routes all force one can't serve them.
+
 The model may not match the tier you choose. For example, OpenRouter's `claude-haiku-5.5` has no fast mode, so a fast request is served at standard speed. The request log shows the tier the caller requested and the tier the provider served. Usage is billed at the served tier.
 
 The design and its trade-offs are in the [service tiers ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-11-09-service-tiers.md).
@@ -220,7 +222,9 @@ Keep route `id` stable when you change priority, weight, or YAML order. Changing
 
 `extra_body` is for additive provider-specific fields. Don't use it for compatibility transforms. When a typed compatibility profile conflicts with `extra_body`, the profile wins.
 
-Set a tier with the route's `service_tier`, not with `extra_body` or `extra_headers`. Config loading fails when `extra_body` has `service_tier`, `serviceTier` or `speed`, or when `extra_headers` has `X-Vertex-AI-LLM-Shared-Request-Type` or `X-Amzn-Bedrock-Service-Tier`.
+Set a tier with the route's `service_tier`, not with `extra_body`, `extra_headers` or the provider's `default_headers`. Config loading fails when `extra_body` has `service_tier`, `serviceTier` or `speed`, or when `extra_headers` or `default_headers` has `X-Vertex-AI-LLM-Shared-Request-Type` or `X-Amzn-Bedrock-Service-Tier`.
+
+An enabled route seeded by an earlier release can still hold one of these fields. The gateway then refuses to start, and the error names the model and the route. Seed the corrected config to replace the stored routes: restart the gateway with config seeding on (the default), or run `gateway seed-config`.
 
 ### Route metadata overrides
 

@@ -76,6 +76,8 @@ After any source changes, Oceans rebuilds the merged catalog and reconciles the 
 
 The gateway ships a vendored snapshot of each source, so a new environment can start when the remote catalogs are down. Before the gateway serves requests, it refreshes stale sources. It then builds pricing rows from each source's cached snapshot, or from the vendored snapshot when no cached one exists. A source that can't be reached doesn't stop startup.
 
+A release that changes how the gateway reads a source caches that source under a new key. After the upgrade, the source starts from its vendored snapshot and is fetched in full, so an unchanged remote catalog can't keep a snapshot read the old way.
+
 The vendored snapshots are a safety net, not a substitute for refreshing in a deployed environment. Maintainers update them with `mise run //crates/gateway:sync-pricing-catalog`.
 
 ## Pricing provider IDs

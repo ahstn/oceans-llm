@@ -111,7 +111,7 @@ The plugin leaves out levels above the model's reasoning ceiling, so every varia
 
 ### Choose a service tier
 
-When a model can run at more than one [service tier](/configuration/model-routing/#service-tiers), the plugin adds a variant for each extra tier: `fast` (priority), `flex` and `ultrafast`. It takes the tiers from `service_tiers` in `/v1/models`, so it shows only tiers the gateway allows and can serve:
+When a model can run at more than one [service tier](/configuration/model-routing/#service-tiers), the plugin adds a variant for each extra tier you can request: `fast` (priority), `flex` and `ultrafast`. It takes the variants from the gateway's OpenCode hints in `/v1/models`, which offer only tiers the model can serve and your admin allows:
 
 ```sh
 opencode run --model oceans/gpt-6-luna#fast "Review this diff"
@@ -247,6 +247,6 @@ Each model states its `capabilities`, so OpenCode doesn't apply its own defaults
 
 Reasoning models also get explicit effort `variants`. Anthropic Messages variants set `effort` with adaptive thinking. OpenAI-compatible variants set `reasoningEffort`. Claude models with adaptive effort get `high` and `max` variants, and the `max` variant sends effort `xhigh`. Gemini models get the levels they support from `minimal`, `low`, `medium` and `high`. Variants above the model's reasoning ceiling are left out.
 
-Models that can serve more than one service tier also get `fast`, `flex` and `ultrafast` variants for the tiers they serve. Anthropic Messages `fast` sends `speed: "fast"`. Other variants send `serviceTier`, which OpenCode sends as `service_tier`.
+Models that can serve more than one service tier also get `fast`, `flex` and `ultrafast` variants for the tiers they serve and callers may request. Anthropic Messages `fast` sends `speed: "fast"`. Other variants send `serviceTier`, which OpenCode sends as `service_tier`.
 
 For prices and limits in the snippet, see [Model data in snippets](/harnesses/#model-data-in-snippets).

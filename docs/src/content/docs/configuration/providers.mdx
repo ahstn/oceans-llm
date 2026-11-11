@@ -36,7 +36,7 @@ Only `gcp_cloud_run_openai_compat` rejects unknown provider fields. For every ot
 | Field | Default | Notes |
 | --- | --- | --- |
 | `id` | required | Unique across `providers`. It can't be empty. |
-| `default_headers` | `{}` | Headers sent with every upstream request. |
+| `default_headers` | `{}` | Headers sent with every upstream request. They can't set a [service tier](/configuration/models-and-routes/#service-tiers) header. |
 | `timeouts.total_ms` | `300000` | Total deadline per upstream request, including consumption of a streaming body. |
 | `display.label` | none | Admin UI label. It can't be empty when set. |
 | `display.icon_key` | none | Admin UI icon. One of `openai`, `openrouter`, `anthropic`, `aws`, `typesafe`, `vertexai` (case-insensitive). |

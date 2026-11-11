@@ -281,7 +281,7 @@ The context value is metadata only. The gateway doesn't tokenise every request o
 | `architecture` | Input and output modalities shared by the routes that have modality data, plus outputs the model serves (see below) |
 | `capabilities` | Anthropic `ModelCapabilities` shape |
 | `supported_endpoint_types` | new-api endpoint types, preferred first |
-| `service_tiers` | Tiers the model can serve, such as `["default", "flex", "priority"]`; omitted when only `default` (see [Service tiers](#service-tiers)) |
+| `service_tiers` | Tiers the model can serve, such as `["default", "flex", "priority"]`, including a tier a route forces; omitted when only `default`. The tier variants in `client_hints` offer only tiers callers may request (see [Service tiers](#service-tiers)) |
 | `client_hints` | Harness settings for chat-shaped models |
 | `has_more`, `first_id`, `last_id` | The list isn't paginated, so `has_more` is always `false`; the IDs are `null` for an empty list |
 
@@ -382,6 +382,8 @@ A different tier uses a different provider cache. Changing the tier in the middl
 
 Batch items can't select a tier, because a batch runs at the provider's batch rate. `POST /api/v1/batches` removes a `default` tier from item bodies and rejects the whole batch with 400 when an item asks for any other tier. Batch route selection skips routes whose `service_tier` forces a non-default tier, so a model with only `-fast` routes can't run batches.
 
+Embeddings, image generation and Decisions also run at the default tier, because their adapters send no tier. The gateway removes a `default` tier from these requests and returns 400 before model resolution for any other tier. Their route selection skips routes whose `service_tier` forces a non-default tier, and returns 400 when the model has no other route.
+
 ### Chat Completions
 
 `POST /v1/chat/completions` uses the shared path for authentication, model resolution, route planning, budgets, logging and accounting. Compatibility transforms apply after route selection and before the provider request.
@@ -444,7 +446,7 @@ See [TypeSafe](/providers/typesafe/) for the System One shape and [Provider API 
 
 ### Images
 
-`POST /v1/images` and `POST /v1/images/generations` generate images through the OpenAI Images API and need the `images` capability. A request needs `model` and `prompt`. Other fields, such as `n`, `size` or `quality`, pass through unchanged. The gateway sets `model` to the upstream model (route `extra_body` can override it) and sends the request to `/images` under `base_url`.
+`POST /v1/images` and `POST /v1/images/generations` generate images through the OpenAI Images API and need the `images` capability. A request needs `model` and `prompt`. Other fields, such as `n`, `size` or `quality`, pass through unchanged, except tier fields (see [Service tiers](#service-tiers)). The gateway sets `model` to the upstream model (route `extra_body` can override it) and sends the request to `/images` under `base_url`.
 
 The response is the provider's body (`created`, `data[]` and `usage`). If the provider adds a `model` field, the gateway replaces it with the gateway model name.
 

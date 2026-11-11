@@ -39,6 +39,8 @@ The handlers for Chat Completions, Responses, and Messages remove every tier fie
 
 An unknown value, a value of the wrong type, or two fields that ask for different tiers return 400. `auto` never becomes priority.
 
+The embeddings, images, and Decisions handlers remove the same fields but accept only the default tier (see section 6).
+
 ### 2. Effective tier and the adapter contract
 
 The effective tier is the route's `service_tier` when the route sets one, else the requested tier. The route wins because an admin publishes a route such as `gpt-6-luna-fast` to fix its tier and price.
@@ -72,6 +74,8 @@ Catalog schedules gain `service_tiers`: one rate schedule per non-default tier, 
 - **models.dev**: `experimental.modes.<name>.cost`. The mode's `provider.body.service_tier` or `speed: "fast"` gives the tier.
 - **OpenRouter**: no tier rates. OpenRouter reports the cost of each request.
 
+The models.dev and LiteLLM cache keys move to `models_dev_supported_v5` and `litellm_v3`. A row cached before tiers has no `service_tiers`, and its source answers the row's ETag with 304 until the catalog changes. Under the old keys an upgraded gateway would keep that row and leave every non-default tier without a catalog rate. Under the new keys each source starts from its vendored snapshot and is fetched in full. OpenRouter's projection does not change, so it keeps `openrouter_v1`.
+
 For each tier, the first source in pricing precedence whose tier schedule covers every context-tier threshold of the merged base schedule wins. When no source covers them all, the first source that defines the tier wins, and long prompts at that tier fail closed. The coverage rule matches how the base merge prefers complete schedules; without it, models.dev's priority rate for GPT-6 (no 272k tier) would beat LiteLLM's complete schedule and leave every long priority request unpriced.
 
 The gateway fails closed. A request billed at a tier with no rate for a token bucket it used is unpriced, with the reason `service_tier:<tier>`. A premium tier is never billed at the standard rate. The same rule applies when the base schedule has a context tier but the service tier has none for that threshold.
@@ -96,19 +100,23 @@ There is no per-key or per-team tier policy. Model grants already control access
 
 Batches bill at the provider's batch rate, and batch adapters send no tier. Batch creation strips a `default` tier from each item and rejects any other tier with 400, so no spelling reaches a batch provider unpriced. Batch route selection skips a route that forces a non-default tier.
 
+Embeddings, images, and Decisions also run at the default tier, because their adapters send no tier. OpenAI's [Fast mode guide](https://developers.openai.com/api/docs/guides/fast-mode) excludes embeddings, and its [Images](https://developers.openai.com/api/reference/resources/images/methods/generate.md) and [Decisions](https://developers.openai.com/api/reference/resources/decisions/methods/create.md) references take no tier. Other hosts differ: [DeepInfra embeddings](https://docs.deepinfra.com/api-reference/embeddings/openai-embeddings) take `service_tier` and treat `auto` as priority, so forwarding the caller's field would buy a premium tier billed at the default rate. These handlers strip a `default` tier and reject any other tier with 400 before model resolution. Their route selection skips a route that forces a non-default tier, because that route would serve and bill the request at default, and returns 400 when no other route remains.
+
 ### 7. Records
 
 `usage_cost_events` gains `requested_service_tier` and `served_service_tier`. The request log stores both in its metadata. The admin UI shows them on the request detail page.
 
 ### 8. Discovery
 
-- `/v1/models` lists `service_tiers` for each model. OMP reads this field.
+- `/v1/models` lists `service_tiers` for each model: every tier a request can be served at, including a tier a route forces. OMP reads this field.
 - `/model_group/info` adds `service_tier` to `supported_openai_params` when a route supports a non-default tier.
-- The OpenCode plugin adds a variant for each non-default tier.
+- Harness variants offer only the tiers a caller may request: the listed tiers the model's allow-list permits, and none unless `default` is among them. A tier outside the allow-list that only a forced route serves stays in `service_tiers` but gets no variant, because an explicit request for it returns 403. The OpenCode hints in `/v1/models`, the generated OpenCode configs, and the OpenCode plugin, which reads its tier variants from those hints, follow this rule.
 
 ### 9. Configuration cutover
 
-Routes set `service_tier` as a typed field. Route `extra_body` cannot set `service_tier`, `serviceTier`, or `speed`, and `extra_headers` cannot set `X-Vertex-AI-LLM-Shared-Request-Type` or `X-Amzn-Bedrock-Service-Tier`. Config load fails with a message that names the typed field.
+Routes set `service_tier` as a typed field. Route `extra_body` cannot set `service_tier`, `serviceTier`, or `speed`, and route `extra_headers` cannot set `X-Vertex-AI-LLM-Shared-Request-Type` or `X-Amzn-Bedrock-Service-Tier`. A provider's `default_headers` cannot set either header, whatever the provider type, because the header would apply the tier to every route on the provider. Config load fails with a message that names the typed field.
+
+Routes seeded by an earlier release keep their `extra_body` and `extra_headers` in the database until the config is seeded again. Serving startup fails while an enabled route with a positive weight still selects a tier that way, and the message names the model and the route. Seeding the corrected config replaces the routes of every configured model. There is no migration: parsing tier fields in SQL would repeat `take_requested_service_tier` in two dialects, and a migration that rejects rows would also stop `gateway seed-config`, which applies migrations before it seeds.
 
 ## Trade-offs
 
