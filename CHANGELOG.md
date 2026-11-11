@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.49.0](https://github.com/ahstn/oceans-llm/compare/v0.48.0...v0.49.0) - 2026-11-11
+
+### :rocket: New features
+- *(catalog)* Merge models.dev, OpenRouter and LiteLLM catalogs with tiered billing and inferred capabilities by @ahstn in [#601](https://github.com/ahstn/oceans-llm/pull/601)
+- *(opencode)* Add Oceans discovery plugin and live harness coverage by @ahstn in [#622](https://github.com/ahstn/oceans-llm/pull/622)
+
+### :bug: Bug fixes
+- *(deps)* Patch Seroval and Rust TLS advisories by @ahstn in [#602](https://github.com/ahstn/oceans-llm/pull/602)
+- *(messages)* Preserve native Claude transports and rolling aliases by @ahstn in [#611](https://github.com/ahstn/oceans-llm/pull/611)
+
+### Changed
+- *(deps)* Bump the pi group in /actions/review-agent with 2 updates by @dependabot[bot] in [#605](https://github.com/ahstn/oceans-llm/pull/605)
+- *(deps-dev)* Bump the review-agent-tooling group in /actions/review-agent with 3 updates by @dependabot[bot] in [#606](https://github.com/ahstn/oceans-llm/pull/606)
+- *(deps)* Bump aws-sdk-s3 from 1.156.0 to 1.157.0 in the aws-sdk group by @dependabot[bot] in [#607](https://github.com/ahstn/oceans-llm/pull/607)
+- *(deps)* Bump zip from 9.1.3 to 9.2.2 by @dependabot[bot] in [#610](https://github.com/ahstn/oceans-llm/pull/610)
+- *(deps-dev)* Bump @hugeicons/core-free-icons from 4.3.5 to 4.4.0 in /docs in the ui-components-and-assets group across 1 directory by @dependabot[bot] in [#604](https://github.com/ahstn/oceans-llm/pull/604)
+- *(deps)* Bump openidconnect from 4.0.1 to 4.1.0 in the auth-and-crypto group by @dependabot[bot] in [#608](https://github.com/ahstn/oceans-llm/pull/608)
+- *(deps)* Bump @lobehub/icons-static-svg from 1.101.0 to 1.102.0 in /crates/admin-ui/web in the ui-components-and-assets group across 1 directory by @dependabot[bot] in [#613](https://github.com/ahstn/oceans-llm/pull/613)
+- *(deps)* Bump jdx/mise-action from 5.2.2 to 5.2.4 by @dependabot[bot] in [#620](https://github.com/ahstn/oceans-llm/pull/620)
+- *(deps)* Bump docker/login-action from 4.6.0 to 4.7.0 in the docker-actions group across 1 directory by @dependabot[bot] in [#619](https://github.com/ahstn/oceans-llm/pull/619)
+- *(deps-dev)* Bump @vitejs/plugin-react from 6.1.2 to 6.2.1 in /crates/admin-ui/web in the build-tools group across 1 directory by @dependabot[bot] in [#616](https://github.com/ahstn/oceans-llm/pull/616)
+- *(deps-dev)* Bump the styling group across 1 directory with 2 updates by @dependabot[bot] in [#614](https://github.com/ahstn/oceans-llm/pull/614)
+- *(deps)* Bump shiki from 4.5.0 to 4.6.0 in /crates/admin-ui/web in the content-and-formatting group across 1 directory by @dependabot[bot] in [#615](https://github.com/ahstn/oceans-llm/pull/615)
+- *(deps)* Bump the tanstack group across 1 directory with 3 updates by @dependabot[bot] in [#612](https://github.com/ahstn/oceans-llm/pull/612)
+- *(deps)* Bump zip from 9.3.0 to 9.4.1 by @dependabot[bot] in [#621](https://github.com/ahstn/oceans-llm/pull/621)
+- *(nimbus)* Trial Nimbus docs site with all user-facing pages by @ahstn in [#618](https://github.com/ahstn/oceans-llm/pull/618)
+
 ## [0.48.0](https://github.com/ahstn/oceans-llm/compare/v0.47.0...v0.48.0) - 2026-10-31
 
 ### :rocket: New features

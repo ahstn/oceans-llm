@@ -5,7 +5,7 @@ use std::{
 
 use gateway_core::{
     AuthenticatedApiKey, GatewayError, GatewayModel, ModelRepository, ModelRoute,
-    PartialCapabilities, ProviderConnection, ReasoningEffort, RouteError,
+    PartialCapabilities, ProviderConnection, ReasoningEffort, ReasoningEffortRejection, RouteError,
 };
 use serde_json::Value;
 use uuid::Uuid;
@@ -103,6 +103,28 @@ pub struct ResolvedModelSelection {
     pub execution_model: GatewayModel,
     pub alias_chain: Vec<String>,
     pub max_reasoning_effort: Option<ReasoningEffort>,
+}
+
+impl ResolvedModelSelection {
+    /// Records a request refused by the reasoning ceiling. The fields hold no prompt content.
+    ///
+    /// Pass the request ID when there is one, because the request span can be filtered out at the
+    /// warning level.
+    pub fn log_reasoning_effort_rejection(
+        &self,
+        request_id: Option<&str>,
+        rejection: &ReasoningEffortRejection,
+    ) {
+        tracing::warn!(
+            request_id,
+            requested_model = %self.requested_model.model_key,
+            resolved_model = %self.execution_model.model_key,
+            field_path = %rejection.field_path,
+            requested_effort = rejection.requested.map_or("invalid", ReasoningEffort::as_str),
+            ceiling = rejection.ceiling.as_str(),
+            "reasoning effort rejected"
+        );
+    }
 }
 
 #[derive(Debug, Clone)]
