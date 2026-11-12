@@ -231,6 +231,7 @@ impl InferenceExecution<'_> {
                     labels: labels.clone(),
                     operation: self.request.accounting_operation(),
                     service_tiers: service_tier_outcome(request_log_context, None),
+                    usage_estimate: gateway_service::UsageEstimateInput::default(),
                 },
                 provider_usage,
             )
@@ -455,6 +456,8 @@ impl InferenceExecution<'_> {
                 labels: labels.clone(),
                 operation: self.request.accounting_operation(),
                 service_tiers: service_tier_outcome(request_log_context, served_service_tier),
+                usage_estimate: request_log_context
+                    .usage_estimate(Some(gateway_service::response_text_bytes(&value))),
             },
             usage_value_from_response(&value),
         )

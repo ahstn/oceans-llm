@@ -649,6 +649,7 @@ mod tests {
                         output: Some(Money4::from_scaled(80_000)),
                         cache_read: None,
                         cache_write: None,
+                        cache_write_1h: None,
                         image_output: None,
                     }),
                     context_tiers: Vec::new(),

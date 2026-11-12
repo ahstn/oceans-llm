@@ -5,7 +5,7 @@ sidebar:
   order: 4
 ---
 
-Oceans LLM charges a request only when it knows the cost exactly. It uses a cost the provider reports, or provider token usage plus an exact price for the route. When it can't do either, the request still shows in reports and request logs, but it doesn't consume budget. This page explains where prices come from, how Oceans picks one, and what admins should check when prices look stale or missing.
+Oceans LLM charges a request at the cost the provider reports, or at its token usage times the route's rates. When a rate or the usage is missing, it charges an estimate and records why. When it can't price a request at all, the request still shows in reports and request logs, but it doesn't consume budget. This page explains where prices come from, how Oceans picks one, and what admins should check when prices look stale or missing.
 
 ## Ledger states
 
@@ -13,17 +13,26 @@ Every spend event has one of four pricing states. Only two of them count toward 
 
 | State | Meaning | Counts toward spend and budgets |
 | --- | --- | --- |
-| `priced` | Oceans had a provider-reported cost, or usage plus an exact rate. | Yes |
-| `legacy_estimated` | Oceans priced the request with a fallback (see below). | Yes |
-| `unpriced` | Usage exists, but Oceans couldn't resolve an exact price safely. | No |
-| `usage_missing` | The provider response had no usable usage counters. | No |
+| `priced` | Oceans had a provider-reported cost, or usage plus a rate for every token bucket it used. | Yes |
+| `legacy_estimated` | Oceans charged an estimate (see below). | Yes |
+| `unpriced` | Usage exists, but Oceans has no rates that can price or estimate it. | No |
+| `usage_missing` | The provider response had no usable usage counters, and Oceans couldn't estimate them. | No |
 
-Oceans doesn't guess a price for `unpriced` or `usage_missing` events. This is deliberate: approximate charges would make budget enforcement and audits misleading, so Oceans records the gap instead.
+An estimate counts toward spend, so traffic with a gap in its rates or usage still uses budget. Each estimate records its reason on the spend event. A cost the provider reports always wins over an estimate.
 
-Oceans sets `legacy_estimated` in two cases:
+Oceans sets `legacy_estimated` in these cases:
 
-- The cache counters in the usage are malformed. Oceans charges aggregate input and output tokens at the standard rates and records an `invalid_cache_token_usage` reason.
-- A batch job is only partly priced. The reason is `batch_partially_priced`.
+| Case | Estimate | Reason |
+| --- | --- | --- |
+| The cache counters in the usage are malformed | Aggregate input and output tokens at the standard rates | `invalid_cache_token_usage` |
+| A batch job is only partly priced | The cost of the items Oceans could price | `batch_partially_priced` |
+| Cache-read tokens without a cache-read rate | Reads at the input rate | `estimated_missing_cache_read_rate` |
+| 5-minute cache writes without a cache-write rate | Writes at 1.25 times the input rate | `estimated_missing_cache_write_rate` |
+| A service tier without rates for the request | The base rates (see [Service tier pricing](#service-tier-pricing)) | `estimated_service_tier:<tier>` |
+| Anthropic on Vertex outside `location=global` | The global rates plus 10% (see [Anthropic on Vertex](#anthropic-on-vertex)) | `estimated_regional_vertex_rate:<location>` |
+| A successful response without usage | One token per 4 bytes of request body and of generated text, at the route's rates | `estimated_usage_missing` |
+
+When an event has more than one reason, Oceans joins them with `;`. A response without usage stays `usage_missing` when the route has no rates to price the estimate.
 
 For budget setup, alerts and precedence, see [Budgets](/spend/budgets/).
 
@@ -104,7 +113,7 @@ For Bedrock, Oceans takes the model ID from the end of an ARN, maps `gpt-oss-120
 
 ### Anthropic on Vertex
 
-Anthropic-on-Vertex pricing works only for `location=global`. Other locations are unpriced.
+The catalog prices Anthropic on Vertex only at `location=global`. For a route in another location, Oceans charges the global rates plus 10% as an estimate, with the reason `estimated_regional_vertex_rate:<location>`. Anthropic [charges this premium](https://platform.claude.com/docs/en/about-claude/pricing) on regional and multi-region endpoints for Claude Sonnet 4.5 and later models, so for older models the estimate is 10% too high. Set a route `pricing_override` to charge an exact rate.
 
 The catalog lists most of these models under a versioned id, such as `claude-fable-5-1@default` or `claude-haiku-4-5@20251001`. Oceans looks up the exact upstream model first. If an unversioned id such as `anthropic/claude-fable-5-1` has no exact entry, it tries `<model>@default`. Dated releases without a `@default` entry, such as `claude-sonnet-4-5`, must name the dated id (`anthropic/claude-sonnet-4-5@20250929`) or use a pricing override.
 
@@ -125,6 +134,7 @@ models:
           output_usd_per_million_tokens: "5.0000"
           cache_read_usd_per_million_tokens: "0.1250"
           cache_write_usd_per_million_tokens: "1.5000"
+          cache_write_1h_usd_per_million_tokens: "2.5000"
 ```
 
 | Field | Required | Notes |
@@ -132,14 +142,15 @@ models:
 | `input_usd_per_million_tokens` | Yes | USD per million input tokens |
 | `output_usd_per_million_tokens` | Yes | USD per million output tokens |
 | `cache_read_usd_per_million_tokens` | No | Cache-read tokens |
-| `cache_write_usd_per_million_tokens` | No | Cache-write tokens |
+| `cache_write_usd_per_million_tokens` | No | Cache-write tokens other than 1-hour writes |
+| `cache_write_1h_usd_per_million_tokens` | No | 1-hour cache-write tokens. Without it, they cost twice the input rate |
 | `image_output_usd_per_million_tokens` | No | See [Image output rate](#image-output-rate) |
 
 Rules for the values:
 
 - Each rate is a quoted, non-negative decimal string with at most 4 decimal places. `"0"` and `"0.0000"` are valid prices.
 - Unquoted numbers, including whole numbers such as `30`, are rejected at config load. This stops float conversion from changing an admin-authored rate.
-- An omitted optional rate stays absent. It doesn't inherit the catalog value.
+- An omitted optional rate stays absent. It doesn't inherit the catalog value. A cache bucket without a rate is charged from the input rate (see [Cache-token accounting](#cache-token-accounting)).
 
 Oceans calculates each token subtotal with integer fixed-point arithmetic, rounds it half up to the nearest `$0.0001`, and adds it to the request cost.
 
@@ -173,7 +184,7 @@ A reported cost is charged even when the usage has no token counts. Oceans ignor
 
 ## Context tiers
 
-Some models charge more for long prompts, for example above 272,000 tokens. The catalog stores these as context tiers. Each tier has a threshold and its own input, output, cache-read and cache-write rates.
+Some models charge more for long prompts, for example above 272,000 tokens. The catalog stores these as context tiers. Each tier has a threshold and its own input, output, cache-read, cache-write and 1-hour cache-write rates.
 
 Oceans applies tiers with these rules:
 
@@ -202,15 +213,16 @@ The spend event stores the requested and the served tier.
 
 The catalog stores a separate rate schedule for each non-default tier, with its own context tiers. The schedules come from LiteLLM `*_priority`, `*_flex` and `*_ultrafast` prices (and `*_above_<N>k_tokens_<tier>`), and from models.dev `experimental.modes` entries that set `service_tier` or `speed: "fast"`. For each tier, Oceans picks the first source in [pricing precedence](#catalog-sources) whose tier schedule has every context tier of the base schedule. When no source has them all, the first source that has the tier wins. OpenRouter reports the cost of each request, so it needs no tier rates.
 
-Tier pricing fails closed:
+When a tier's rates can't price a request, Oceans charges an estimate:
 
-- A request billed at a tier with no schedule is `unpriced` with the reason `service_tier:<tier>`.
-- A tier schedule doesn't borrow a rate from the base schedule. A bucket that the request used and the tier schedule leaves out makes the request unpriced.
-- When a base context tier applies but the tier schedule has no context tier at that threshold, the request is unpriced.
+- A request billed at a tier with no schedule, or whose schedule lacks an input or output rate the request needs, is charged at the base rates. The reason is `estimated_service_tier:<tier>`. For a premium tier, this charges less than the provider does.
+- A tier schedule doesn't borrow single rates from the base schedule. A cache bucket that the tier schedule leaves out is charged from the tier's input rate.
+- When a base context tier applies but the tier schedule has no context tier at that threshold, the base context tier prices the request as an estimate.
+- When the base rates can't price the request either, it's `unpriced` with the reason `service_tier:<tier>`.
 
-For a route `pricing_override`, the base rates price the route's own tier and `service_tiers` prices the others. See [Route metadata overrides](/configuration/models-and-routes/#route-metadata-overrides).
+For catalog pricing, the base rates are the default tier's. For a route `pricing_override`, the base rates price the route's own tier and `service_tiers` prices the others. See [Route metadata overrides](/configuration/models-and-routes/#route-metadata-overrides).
 
-A route only serves a non-default tier it can price, so most tier requests that can't be priced fail with 400 before the provider call. A tier the provider served but nobody requested, such as a downgrade to `default` on a `priority` route, can still be unpriced.
+A route only serves a non-default tier it can price, so most tier requests that can't be priced fail with 400 before the provider call. A tier the provider served but nobody requested, such as a downgrade to `default` on a `priority` route, can still lack rates. Oceans then charges an estimate as above.
 
 ## Cache-token accounting
 
@@ -223,11 +235,11 @@ Providers count these differently:
 
 Missing cache evidence stays `NULL`. Reports show the cache aggregate as unavailable if any included row lacks all three buckets.
 
-To price cached traffic, Oceans needs the input and output rates, plus a cache-read or cache-write rate for each bucket that has tokens. If a needed rate is missing, the request is `unpriced` with a reason such as `missing_cache_read_rate` or `missing_cache_write_rate`. Malformed cache counters fall back to `legacy_estimated` (see [Ledger states](#ledger-states)).
+To price cached traffic, Oceans needs the input and output rates, plus a rate for each cache bucket that has tokens. When a cache rate is missing, Oceans charges reads at the input rate and 5-minute writes at 1.25 times it, as an estimate (see [Ledger states](#ledger-states)). Without an input or output rate, the request is `unpriced` with a reason such as `missing_input_rate`. Malformed cache counters also fall back to `legacy_estimated`.
 
-Valid usage with mixed cache TTLs still counts in full: its uncached, cache-read and cache-write tokens go into prompt totals, rate limits and ledger buckets. Only the price is limited. Mixed 5-minute and 1-hour cache writes stay `unpriced` unless the provider reports a valid request cost, because one cache-write rate can't price both without loss. A single TTL uses the generic cache-write rate. Oceans doesn't infer a separate 1-hour rate.
+Anthropic and Bedrock report 5-minute and 1-hour cache writes apart. The spend event counts all cache writes in `cache_write_tokens` and the 1-hour share of them in `cache_write_1h_tokens`. Every cache write counts toward prompt totals and rate limits. Oceans charges 1-hour writes at the 1-hour cache-write rate and the other writes at the cache-write rate. When the catalog or override has no 1-hour rate, 1-hour writes cost twice the input rate, which is [Anthropic's 1-hour cache-write price](https://platform.claude.com/docs/en/about-claude/pricing). This isn't an estimate. The catalog takes the 1-hour rate from LiteLLM `cache_creation_input_token_cost_above_1hr` prices.
 
-Bedrock Anthropic Claude responses keep the raw Anthropic usage under `usage.provider_usage`, including `cache_read_input_tokens` and `cache_creation_input_tokens`. Native Messages usage has the same counters at the root, and Bedrock Converse `cacheDetails` follows the same rules. Oceans normalises valid aggregate counts in each shape, including mixed TTLs. TTL-specific cache writes are tracked in [issue #92](https://github.com/ahstn/oceans-llm/issues/92).
+Bedrock Anthropic Claude responses keep the raw Anthropic usage under `usage.provider_usage`, including `cache_read_input_tokens` and `cache_creation_input_tokens`. Native Messages usage has the same counters at the root. Oceans reads the 1-hour share from `cache_creation.ephemeral_1h_input_tokens`, or from the Bedrock Converse `cacheDetails` entries with `ttl: "1h"`. A 1-hour share larger than all cache writes makes the cache counters malformed.
 
 ## What Oceans charges
 
@@ -240,7 +252,7 @@ The catalog and provider responses carry more billing signals than Oceans charge
 | Context tiers | Whole request charged at the tier rates above the threshold |
 | Service tiers | Whole request charged at the served tier's rates |
 | Total tokens | Stored for reporting and checks |
-| Cache-read and cache-write tokens | Charged at the cache rates for each bucket with tokens |
+| Cache-read and cache-write tokens | Charged at the cache rates for each bucket with tokens, with 1-hour writes at their own rate |
 | Image output tokens | Charged at the image rate when one exists, else at the output rate |
 | Provider-reported cost | Charged as the request cost, ahead of overrides and catalog rates |
 | Reasoning tokens and traces | Not charged separately; reasoning tokens stay inside completion tokens |
@@ -254,11 +266,11 @@ A successful provider response can still be `unpriced`. The usual causes are:
 
 - no pricing source for the provider, or a missing or unsupported `pricing_provider_id`
 - a pricing model id the catalog doesn't know
-- an unsupported Vertex publisher or location
-- a service tier with no rates (reason `service_tier:<tier>`)
-- a missing input, output or cache rate for tokens the request used
+- an unsupported Vertex publisher, or a regional Anthropic-on-Vertex model without a global catalog price
+- a service tier that neither its own rates nor the base rates can price (reason `service_tier:<tier>`)
+- a missing input or output rate for tokens the request used
 
-`usage_missing` is different: Oceans couldn't read usable usage from the response at all. For example, a provider might return a successful response without final token counts.
+`usage_missing` is different: Oceans couldn't read usable usage from the response, and the route has no rates to price an estimate. A successful response without final token counts is otherwise charged an estimate (see [Ledger states](#ledger-states)).
 
 Neither state counts toward spend totals or budget windows. Both stay visible in reports and request logs. To make such traffic chargeable, an admin fixes the provider's `pricing_provider_id` or adds a route `pricing_override`.
 
@@ -266,7 +278,7 @@ Neither state counts toward spend totals or budget windows. Both stay visible in
 
 OpenAI-compatible providers usually return usage on a stream only when the request includes `stream_options.include_usage = true`. Oceans adds it to every streaming Chat Completions request, so callers that leave it out are still billed. A route opts out with `compatibility.openai_compat.supports_stream_usage: false` when its upstream rejects `stream_options`.
 
-This improves usage capture but doesn't guarantee billing. A provider may still omit final usage, or send counters Oceans can't use, so a request can still end up `usage_missing` or `unpriced`. The option applies to Chat Completions streams. Responses streams read usage from the completed response event.
+This improves usage capture but doesn't guarantee exact billing. A provider may still omit final usage. Oceans then estimates the tokens from the request size and the streamed text, or records `usage_missing` when the route has no rates. The option applies to Chat Completions streams. Responses streams read usage from the completed response event.
 
 ## Decisions usage
 
@@ -298,12 +310,12 @@ Native Vertex text embeddings use the same exact lookup as other Vertex traffic:
 
 The request is priced only if the catalog has an entry for the pricing model. The vendored snapshots include `gemini-embedding-001` and `gemini-embedding-2` but not the other two, so those need a current remote catalog entry or a route override.
 
-Oceans charges only from real provider token counts:
+Oceans reads the token counts the provider reports:
 
 - `:predict` models report `predictions[].embeddings.statistics.token_count`.
 - `google/gemini-embedding-2` reports `usageMetadata.promptTokenCount` on `:embedContent`.
 
-For array input, Oceans adds the counts and records them as input tokens. If any item has no count, no total is recorded. Oceans never estimates embedding tokens from characters, bytes, vector dimensions or input count.
+For array input, Oceans adds the counts and records them as input tokens. If any item has no count, no total is recorded, and Oceans estimates the input tokens from the request body size, like any other successful response without usage (see [Ledger states](#ledger-states)).
 
 Embedding pricing uses input tokens only. `dimensions` (and its `output_dimensionality` or `outputDimensionality` aliases) changes the request and the vectors, but not the pricing key. For `:predict` models, `task_type`, `input_type`, `title` and `auto_truncate` shape the request only.
 

@@ -2,12 +2,20 @@ use gateway_core::GatewayError;
 use serde_json::Value;
 use tracing::warn;
 
+mod estimate;
+
+pub(crate) use estimate::stream_event_text_bytes;
+pub use estimate::{UsageEstimateInput, response_text_bytes};
+
 #[derive(Debug, Clone, Default)]
 pub(crate) struct UsageSummary {
     pub(crate) prompt_tokens: Option<i64>,
     pub(crate) uncached_input_tokens: Option<i64>,
     pub(crate) cache_read_tokens: Option<i64>,
+    /// All cache writes, 5-minute and 1-hour.
     pub(crate) cache_write_tokens: Option<i64>,
+    /// The 1-hour-TTL share of `cache_write_tokens`.
+    pub(crate) cache_write_1h_tokens: Option<i64>,
     pub(crate) completion_tokens: Option<i64>,
     /// Image tokens within `completion_tokens`; never more than them.
     pub(crate) image_output_tokens: Option<i64>,
@@ -70,14 +78,17 @@ pub(crate) fn usage_summary_from_value(
     } else {
         total_tokens
     };
-    let (uncached_input_tokens, cache_read_tokens, cache_write_tokens) =
-        cache_usage.tokens().map_or((None, None, None), |tokens| {
-            (
-                Some(tokens.uncached_input_tokens),
-                Some(tokens.cache_read_tokens),
-                Some(tokens.cache_write_tokens),
-            )
-        });
+    let (uncached_input_tokens, cache_read_tokens, cache_write_tokens, cache_write_1h_tokens) =
+        cache_usage
+            .tokens()
+            .map_or((None, None, None, None), |tokens| {
+                (
+                    Some(tokens.uncached_input_tokens),
+                    Some(tokens.cache_read_tokens),
+                    Some(tokens.cache_write_tokens),
+                    Some(tokens.cache_write_1h_tokens),
+                )
+            });
     let image_output_tokens = image_output_tokens_within_completion(usage, completion_tokens);
 
     Ok(UsageSummary {
@@ -85,6 +96,7 @@ pub(crate) fn usage_summary_from_value(
         uncached_input_tokens,
         cache_read_tokens,
         cache_write_tokens,
+        cache_write_1h_tokens,
         completion_tokens,
         image_output_tokens,
         total_tokens,
@@ -131,16 +143,12 @@ pub(crate) enum CacheUsageNormalization {
     Unavailable,
     Valid(CacheTokenSummary),
     Invalid(String),
-    Unsupported {
-        tokens: CacheTokenSummary,
-        reason: String,
-    },
 }
 
 impl CacheUsageNormalization {
     fn tokens(&self) -> Option<&CacheTokenSummary> {
         match self {
-            Self::Valid(tokens) | Self::Unsupported { tokens, .. } => Some(tokens),
+            Self::Valid(tokens) => Some(tokens),
             Self::Unavailable | Self::Invalid(_) => None,
         }
     }
@@ -148,9 +156,6 @@ impl CacheUsageNormalization {
     pub(crate) fn reason(&self) -> Option<String> {
         match self {
             Self::Invalid(reason) => Some(format!("invalid_cache_token_usage:{reason}")),
-            Self::Unsupported { reason, .. } => {
-                Some(format!("unsupported_cache_token_usage:{reason}"))
-            }
             Self::Unavailable | Self::Valid(_) => None,
         }
     }
@@ -162,6 +167,8 @@ pub(crate) struct CacheTokenSummary {
     uncached_input_tokens: i64,
     cache_read_tokens: i64,
     cache_write_tokens: i64,
+    /// The 1-hour share of `cache_write_tokens`; never more than them.
+    cache_write_1h_tokens: i64,
 }
 
 fn normalize_cache_tokens(
@@ -212,7 +219,7 @@ fn normalize_cache_tokens(
                 prompt_tokens,
                 "cacheReadInputTokens",
                 "cacheWriteInputTokens",
-                has_mixed_bedrock_ttl_cache_writes(provider_usage),
+                bedrock_1h_cache_write_tokens(provider_usage),
             );
         }
         if provider_usage.contains_key("cache_read_input_tokens")
@@ -223,7 +230,7 @@ fn normalize_cache_tokens(
                 prompt_tokens,
                 "cache_read_input_tokens",
                 "cache_creation_input_tokens",
-                has_mixed_ttl_cache_writes(provider_usage),
+                anthropic_1h_cache_write_tokens(provider_usage),
             );
         }
     }
@@ -303,15 +310,18 @@ fn normalize_inclusive_cache_tokens(
         uncached_input_tokens: prompt_tokens - cached_input_tokens,
         cache_read_tokens,
         cache_write_tokens,
+        cache_write_1h_tokens: 0,
     })
 }
 
+/// Normalizes native counters that report uncached input apart from cache reads and
+/// writes. `cache_write_1h_tokens` is the 1-hour share of the writes, or why it is invalid.
 fn normalize_exclusive_cache_tokens(
     fields: &serde_json::Map<String, Value>,
     uncached_input_tokens: Option<i64>,
     read_field: &str,
     write_field: &str,
-    mixed_ttl_cache_writes: bool,
+    cache_write_1h_tokens: Result<i64, String>,
 ) -> CacheUsageNormalization {
     let Some(uncached_input_tokens) = uncached_input_tokens else {
         return CacheUsageNormalization::Invalid(
@@ -331,57 +341,58 @@ fn normalize_exclusive_cache_tokens(
         Ok(tokens) => tokens,
         Err(reason) => return CacheUsageNormalization::Invalid(reason),
     };
+    let cache_write_1h_tokens = match cache_write_1h_tokens {
+        Ok(tokens) if tokens <= cache_write_tokens => tokens,
+        Ok(_) => {
+            return CacheUsageNormalization::Invalid(
+                "1-hour cache writes exceed total cache writes".to_string(),
+            );
+        }
+        Err(reason) => return CacheUsageNormalization::Invalid(reason),
+    };
     let Some(total_input_tokens) = uncached_input_tokens
         .checked_add(cache_read_tokens)
         .and_then(|total| total.checked_add(cache_write_tokens))
     else {
         return CacheUsageNormalization::Invalid("cache token total overflow".to_string());
     };
-    let tokens = CacheTokenSummary {
+    CacheUsageNormalization::Valid(CacheTokenSummary {
         total_input_tokens,
         uncached_input_tokens,
         cache_read_tokens,
         cache_write_tokens,
-    };
-    if mixed_ttl_cache_writes {
-        // A missing price dimension must not discard valid token counts.
-        CacheUsageNormalization::Unsupported {
-            tokens,
-            reason: "mixed_ttl_cache_write_classes".to_string(),
-        }
-    } else {
-        CacheUsageNormalization::Valid(tokens)
-    }
+        cache_write_1h_tokens,
+    })
 }
 
-fn has_mixed_ttl_cache_writes(fields: &serde_json::Map<String, Value>) -> bool {
+/// Anthropic's 1-hour cache writes, `cache_creation.ephemeral_1h_input_tokens`, a share of
+/// `cache_creation_input_tokens`. An absent or null count is none.
+fn anthropic_1h_cache_write_tokens(fields: &serde_json::Map<String, Value>) -> Result<i64, String> {
     let Some(classes) = fields.get("cache_creation").and_then(Value::as_object) else {
-        return false;
+        return Ok(0);
     };
-    classes
-        .values()
-        .filter_map(Value::as_i64)
-        .filter(|tokens| *tokens > 0)
-        .count()
-        > 1
+    match classes.get("ephemeral_1h_input_tokens") {
+        None | Some(Value::Null) => Ok(0),
+        Some(_) => cache_token_field(classes, "ephemeral_1h_input_tokens"),
+    }
 }
 
-fn has_mixed_bedrock_ttl_cache_writes(fields: &serde_json::Map<String, Value>) -> bool {
+/// Bedrock's 1-hour cache writes: the `cacheDetails` entries whose `ttl` is `1h`, a share
+/// of `cacheWriteInputTokens`.
+fn bedrock_1h_cache_write_tokens(fields: &serde_json::Map<String, Value>) -> Result<i64, String> {
     let Some(details) = fields.get("cacheDetails").and_then(Value::as_array) else {
-        return false;
+        return Ok(0);
     };
-    let mut positive_ttls = Vec::new();
-    for detail in details.iter().filter_map(Value::as_object) {
-        let tokens = detail.get("inputTokens").and_then(Value::as_i64);
-        let ttl = detail.get("ttl").and_then(Value::as_str);
-        if tokens.is_some_and(|tokens| tokens > 0)
-            && let Some(ttl) = ttl
-            && !positive_ttls.contains(&ttl)
-        {
-            positive_ttls.push(ttl);
-        }
-    }
-    positive_ttls.len() > 1
+    details
+        .iter()
+        .filter_map(Value::as_object)
+        .filter(|detail| detail.get("ttl").and_then(Value::as_str) == Some("1h"))
+        .try_fold(0_i64, |total, detail| {
+            let tokens = cache_token_field(detail, "inputTokens")?;
+            total
+                .checked_add(tokens)
+                .ok_or_else(|| "cache token total overflow".to_string())
+        })
 }
 
 fn cache_token_field(details: &serde_json::Map<String, Value>, field: &str) -> Result<i64, String> {

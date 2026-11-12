@@ -571,12 +571,12 @@ Ordinary Chat usage that has `prompt_tokens` also accepts root `cached_tokens` a
 - Selected DeepSeek hit and miss counts must be non-negative integers whose checked sum equals the prompt total. Misses aren't cache writes.
 - Invalid buckets keep their diagnostics and the existing legacy estimate. The gateway doesn't invent cache discounts.
 
-These root aliases don't reinterpret Responses or native cache-exclusive inputs. Raw provider usage stays unchanged. A valid provider-reported cost wins over token-rate pricing. Valid mixed-TTL counts stay available to the ledger and token limits. TTL-specific pricing that isn't supported stays unpriced unless the provider supplies a valid cost.
+These root aliases don't reinterpret Responses or native cache-exclusive inputs. Raw provider usage stays unchanged. A valid provider-reported cost wins over token-rate pricing. Valid mixed-TTL counts stay available to the ledger and token limits, and 1-hour cache writes are priced at their own rate.
 
 - Responses usage comes from `usage.input_tokens`, `usage.output_tokens` and `usage.total_tokens`. Streaming Responses read it from the completed event's `response.usage`.
-- Vertex text embeddings read real token counts: `predictions[].embeddings.statistics.token_count` on `:predict` models, and `usageMetadata.promptTokenCount` on `gemini-embedding-2`. The gateway never infers tokens from characters or bytes.
+- Vertex text embeddings read the token counts Vertex reports: `predictions[].embeddings.statistics.token_count` on `:predict` models, and `usageMetadata.promptTokenCount` on `gemini-embedding-2`.
 
-A successful request with no usable token counts is marked `usage_missing`. One whose model has no exact pricing entry is marked `unpriced`. Neither consumes budget.
+A successful request with no usable token counts is charged an estimate from its request and response sizes, or marked `usage_missing` when the route has no rates. One whose model has no pricing entry is marked `unpriced`. Neither `usage_missing` nor `unpriced` consumes budget.
 
 ## Open work
 

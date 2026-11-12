@@ -104,6 +104,7 @@ fn project_cost_document(
         output: project_cost(cost.output.as_ref())?,
         cache_read: project_cost(cost.cache_read.as_ref())?,
         cache_write: project_cost(cost.cache_write.as_ref())?,
+        cache_write_1h: None,
         input_audio: project_cost(cost.input_audio.as_ref())?,
         output_audio: project_cost(cost.output_audio.as_ref())?,
         output_image: None,
@@ -221,6 +222,7 @@ fn project_service_tier_cost(
         output: project_cost(cost.output.as_ref())?,
         cache_read: project_cost(cost.cache_read.as_ref())?,
         cache_write: project_cost(cost.cache_write.as_ref())?,
+        cache_write_1h: None,
         context_tiers: take_context_tiers(provider_id, model_id, &mut conditions)?,
     })
 }
@@ -286,6 +288,7 @@ fn project_context_tier(tier: &TierDocument) -> Result<PricingCatalogContextTier
         output: project_cost(tier.output.as_ref())?,
         cache_read: project_cost(tier.cache_read.as_ref())?,
         cache_write: project_cost(tier.cache_write.as_ref())?,
+        cache_write_1h: None,
     })
 }
 
@@ -451,6 +454,7 @@ mod tests {
             output: Some(output.to_string()),
             cache_read: None,
             cache_write: None,
+            cache_write_1h: None,
         }
     }
 

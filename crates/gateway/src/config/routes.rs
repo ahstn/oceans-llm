@@ -169,6 +169,9 @@ pub struct RoutePricingOverrideConfig {
     pub cache_read_usd_per_million_tokens: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_yaml_string")]
     pub cache_write_usd_per_million_tokens: Option<String>,
+    /// 1-hour cache writes; without it they bill at twice the input rate.
+    #[serde(default, deserialize_with = "deserialize_optional_yaml_string")]
+    pub cache_write_1h_usd_per_million_tokens: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_yaml_string")]
     pub image_output_usd_per_million_tokens: Option<String>,
     /// Flat rates for tiers other than the one the route serves.
@@ -224,6 +227,11 @@ impl RoutePricingOverrideConfig {
                 self.cache_write_usd_per_million_tokens.as_deref(),
                 label,
                 "cache_write_usd_per_million_tokens",
+            )?,
+            cache_write_1h_cost_per_million_tokens: parse_optional_non_negative_rate(
+                self.cache_write_1h_usd_per_million_tokens.as_deref(),
+                label,
+                "cache_write_1h_usd_per_million_tokens",
             )?,
             image_output_cost_per_million_tokens: parse_optional_non_negative_rate(
                 self.image_output_usd_per_million_tokens.as_deref(),

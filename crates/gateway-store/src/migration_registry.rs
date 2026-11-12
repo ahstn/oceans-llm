@@ -488,6 +488,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V77__service_tiers.sql"),
         postgres_sql: include_str!("../migrations/postgres/V77__service_tiers.sql"),
     },
+    MigrationManifest {
+        version: 78,
+        name: "cache_write_1h",
+        checksum: "V78__cache_write_1h.sql",
+        libsql_sql: include_str!("../migrations/V78__cache_write_1h.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V78__cache_write_1h.sql"),
+    },
 ];
 
 #[cfg(test)]

@@ -951,6 +951,7 @@ mod tests {
             output: Some(Money4::from_scaled(output)),
             cache_read: None,
             cache_write: None,
+            cache_write_1h: None,
         }
     }
 
@@ -1031,6 +1032,7 @@ mod tests {
             output: Some(Money4::from_scaled(1_000_000)),
             cache_read: None,
             cache_write: None,
+            cache_write_1h: None,
             context_tiers: vec![context_tier(272_000, 400_000, 1_500_000)],
         }];
         let repo = Arc::new(CountingRepo {
@@ -1125,6 +1127,7 @@ mod tests {
             output_cost_per_million_tokens: Money4::from_scaled(500_000),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            cache_write_1h_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
             service_tiers: Vec::new(),
         };
@@ -1154,6 +1157,7 @@ mod tests {
             output_cost_per_million_tokens: Money4::from_scaled(input * 5),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            cache_write_1h_cost_per_million_tokens: None,
         }
     }
 
@@ -1164,6 +1168,7 @@ mod tests {
             output_cost_per_million_tokens: Money4::from_scaled(1_000_000),
             cache_read_cost_per_million_tokens: Some(Money4::from_scaled(20_000)),
             cache_write_cost_per_million_tokens: None,
+            cache_write_1h_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
             // A duplicate of the route's own tier loses to the base rates.
             service_tiers: vec![
@@ -1405,6 +1410,7 @@ mod tests {
             ),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            cache_write_1h_cost_per_million_tokens: None,
             input_audio_cost_per_million_tokens: None,
             output_audio_cost_per_million_tokens: None,
             output_image_usd_per_million: None,

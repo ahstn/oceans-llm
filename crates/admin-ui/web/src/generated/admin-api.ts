@@ -2322,7 +2322,7 @@ export interface components {
             output_window_tokens?: number | null;
             /**
              * @description Rates for non-default service tiers on the same primary route, sorted by tier. A
-             *     request billed at a tier with no rate for a token bucket it used is unpriced.
+             *     request these rates can't price is estimated at the default tier's rates.
              */
             pricing_service_tiers: components["schemas"]["AdminServiceTierPricingView"][];
             pricing_source?: null | components["schemas"]["EffectiveMetadataSourceView"];

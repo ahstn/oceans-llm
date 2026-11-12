@@ -212,6 +212,7 @@ fn override_pricing(
             output: Some(pricing.output_cost_per_million_tokens),
             cache_read: pricing.cache_read_cost_per_million_tokens,
             cache_write: pricing.cache_write_cost_per_million_tokens,
+            cache_write_1h: pricing.cache_write_1h_cost_per_million_tokens,
             context_tiers: Vec::new(),
         });
     let mut service_tiers = own_tier
@@ -222,6 +223,7 @@ fn override_pricing(
             output: Some(tier.output_cost_per_million_tokens),
             cache_read: tier.cache_read_cost_per_million_tokens,
             cache_write: tier.cache_write_cost_per_million_tokens,
+            cache_write_1h: tier.cache_write_1h_cost_per_million_tokens,
             context_tiers: Vec::new(),
         }))
         .collect::<Vec<_>>();

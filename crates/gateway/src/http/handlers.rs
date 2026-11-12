@@ -965,6 +965,8 @@ struct UsageAccountingContext<'a> {
     labels: ChatMetricLabels<'a>,
     operation: &'static str,
     service_tiers: gateway_core::ServiceTierOutcome,
+    /// Sizes that estimate the request's tokens when the provider reports none.
+    usage_estimate: gateway_service::UsageEstimateInput,
 }
 
 /// Records a request rejected after routing but before any provider call, such as a
@@ -1079,6 +1081,7 @@ async fn record_guarded_stream_failure(
                 request_log_context,
                 collector.served_service_tier(),
             ),
+            usage_estimate: request_log_context.usage_estimate(Some(collector.output_text_bytes())),
         },
         collector.usage().cloned(),
     )
@@ -1419,6 +1422,9 @@ async fn account_stream_usage(state: &mut LoggingBodyStreamState) {
                 &state.request_log_context,
                 state.collector.served_service_tier(),
             ),
+            usage_estimate: state
+                .request_log_context
+                .usage_estimate(Some(state.collector.output_text_bytes())),
         },
         state.collector.usage().cloned(),
     )
@@ -1877,6 +1883,7 @@ async fn finalize_successful_usage_accounting_from_parts(
             context.request_id,
             provider_usage,
             context.service_tiers,
+            context.usage_estimate,
             OffsetDateTime::now_utc(),
         )
         .await

@@ -494,9 +494,7 @@ impl OpenAiCompatProvider {
         }
         // The gateway serves images only as one JSON response, so neither the
         // caller nor a route `extra_body` may ask the upstream for a stream.
-        if images
-            && let Some(object) = body.as_object_mut()
-        {
+        if images && let Some(object) = body.as_object_mut() {
             object.remove("stream");
         }
         if let Some(object) = body.as_object_mut()
@@ -1452,7 +1450,10 @@ mod tests {
                 .expect("stream");
             let rendered = render_provider_stream(stream).await;
 
-            assert!(rendered.contains("\"total_tokens\":3"), "{extra}: {rendered}");
+            assert!(
+                rendered.contains("\"total_tokens\":3"),
+                "{extra}: {rendered}"
+            );
             assert_eq!(
                 rendered.contains("\"choices\":[]"),
                 forwards_usage_chunk,
@@ -1703,7 +1704,8 @@ mod tests {
             stream: false,
             extra: BTreeMap::new(),
         };
-        let openrouter_policy = context_with_openrouter_policy(OpenRouterProviderRouting::default());
+        let openrouter_policy =
+            context_with_openrouter_policy(OpenRouterProviderRouting::default());
         for (base_url, context, expected) in [
             (
                 "https://api.openai.com/v1",

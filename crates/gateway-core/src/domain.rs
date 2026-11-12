@@ -1150,6 +1150,9 @@ pub struct UsageLedgerRecord {
     pub cache_read_tokens: Option<i64>,
     #[serde(default)]
     pub cache_write_tokens: Option<i64>,
+    /// The 1-hour-TTL share of `cache_write_tokens`; the rest are 5-minute writes.
+    #[serde(default)]
+    pub cache_write_1h_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
     /// Image tokens the provider reported within `completion_tokens`.
     #[serde(default)]
@@ -1171,6 +1174,9 @@ pub struct UsageLedgerRecord {
     pub cache_read_cost_per_million_tokens: Option<Money4>,
     #[serde(default)]
     pub cache_write_cost_per_million_tokens: Option<Money4>,
+    /// Rate that priced `cache_write_1h_tokens`.
+    #[serde(default)]
+    pub cache_write_1h_cost_per_million_tokens: Option<Money4>,
     #[serde(default)]
     pub image_output_cost_per_million_tokens: Option<Money4>,
     /// Context tier threshold that priced this event; `None` for the base
@@ -2766,12 +2772,16 @@ pub struct RoutePricingOverride {
     pub output_cost_per_million_tokens: Money4,
     pub cache_read_cost_per_million_tokens: Option<Money4>,
     pub cache_write_cost_per_million_tokens: Option<Money4>,
+    /// Rate for 1-hour cache writes. Without it, they bill at twice the input rate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_1h_cost_per_million_tokens: Option<Money4>,
     /// Rate for image output tokens. Without it, image tokens bill at the output rate.
     /// Overrides persisted before this field existed deserialize without it.
     #[serde(default)]
     pub image_output_cost_per_million_tokens: Option<Money4>,
     /// Flat rates for other tiers callers may request on this route. A request billed at
-    /// a tier with no rates here is unpriced. Sorted by tier, tiers unique.
+    /// a tier with no rates here is estimated at the base rates. Sorted by tier, tiers
+    /// unique.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub service_tiers: Vec<RouteServiceTierPricing>,
 }
@@ -2784,6 +2794,8 @@ pub struct RouteServiceTierPricing {
     pub output_cost_per_million_tokens: Money4,
     pub cache_read_cost_per_million_tokens: Option<Money4>,
     pub cache_write_cost_per_million_tokens: Option<Money4>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_1h_cost_per_million_tokens: Option<Money4>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -2816,11 +2828,13 @@ pub struct ContextPricingTier {
     pub output: Option<Money4>,
     pub cache_read: Option<Money4>,
     pub cache_write: Option<Money4>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_1h: Option<Money4>,
 }
 
 /// Catalog rates for one non-default service tier. They replace the base schedule for a
 /// request billed at that tier. Unlike a context tier, a `None` rate does not inherit the
-/// base: the tier has no rate for that bucket, and a request that uses it is unpriced.
+/// base: the tier has no rate for that bucket, and a request that uses it is estimated.
 /// `context_tiers` apply within the service tier the same way base context tiers do.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ServiceTierPricing {
@@ -2829,6 +2843,8 @@ pub struct ServiceTierPricing {
     pub output: Option<Money4>,
     pub cache_read: Option<Money4>,
     pub cache_write: Option<Money4>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_1h: Option<Money4>,
     /// Sorted ascending by `above_input_tokens`, thresholds unique.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub context_tiers: Vec<ContextPricingTier>,
@@ -2844,6 +2860,9 @@ pub struct ResolvedModelPricing {
     pub output_cost_per_million_tokens: Option<Money4>,
     pub cache_read_cost_per_million_tokens: Option<Money4>,
     pub cache_write_cost_per_million_tokens: Option<Money4>,
+    /// Rate for 1-hour cache writes; `None` bills them at twice the input rate.
+    #[serde(default)]
+    pub cache_write_1h_cost_per_million_tokens: Option<Money4>,
     pub input_audio_cost_per_million_tokens: Option<Money4>,
     pub output_audio_cost_per_million_tokens: Option<Money4>,
     #[serde(default)]
@@ -2873,6 +2892,8 @@ pub struct ModelPricingRecord {
     pub output_cost_per_million_tokens: Option<Money4>,
     pub cache_read_cost_per_million_tokens: Option<Money4>,
     pub cache_write_cost_per_million_tokens: Option<Money4>,
+    #[serde(default)]
+    pub cache_write_1h_cost_per_million_tokens: Option<Money4>,
     pub input_audio_cost_per_million_tokens: Option<Money4>,
     pub output_audio_cost_per_million_tokens: Option<Money4>,
     #[serde(default)]
@@ -4009,7 +4030,11 @@ mod tests {
             ("1e-60", 0),
             (" 0.0042 ", 42),
         ] {
-            assert_eq!(parse(text), Ok(super::Money4::from_scaled(scaled)), "{text}");
+            assert_eq!(
+                parse(text),
+                Ok(super::Money4::from_scaled(scaled)),
+                "{text}"
+            );
         }
         for text in ["-0.0001", "", ".5", "1.", "abc", "1e", "1.2.3"] {
             assert!(parse(text).is_err(), "{text}");

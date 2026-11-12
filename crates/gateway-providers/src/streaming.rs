@@ -804,7 +804,9 @@ mod tests {
         ))
         .await;
 
-        let finish = rendered.find("\"finish_reason\":\"stop\"").expect("final chunk");
+        let finish = rendered
+            .find("\"finish_reason\":\"stop\"")
+            .expect("final chunk");
         let error = rendered
             .find("openai_compat_payload_parse_error")
             .expect("error chunk");
