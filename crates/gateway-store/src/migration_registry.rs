@@ -488,6 +488,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V77__service_tiers.sql"),
         postgres_sql: include_str!("../migrations/postgres/V77__service_tiers.sql"),
     },
+    MigrationManifest {
+        version: 78,
+        name: "git_ai_attribution",
+        checksum: "V78__git_ai_attribution.sql",
+        libsql_sql: include_str!("../migrations/V78__git_ai_attribution.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V78__git_ai_attribution.sql"),
+    },
 ];
 
 #[cfg(test)]

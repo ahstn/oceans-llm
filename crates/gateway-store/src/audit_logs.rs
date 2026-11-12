@@ -6,7 +6,7 @@ use gateway_core::{
 };
 use serde_json::Value;
 
-use crate::shared::datetime_to_unix_millis;
+use crate::shared::{datetime_to_unix_millis, lower_bound_millis};
 
 /// Reads the stored API-key actor. Rows written before V61 could hold any text
 /// here, so an id that is not a UUID is kept readable in the label instead of
@@ -141,17 +141,6 @@ impl AuditLogFilter {
             page_size: page_size as usize,
             fetch_limit: i64::from(page_size) + 1,
         })
-    }
-}
-
-/// Stored timestamps are whole milliseconds, so an inclusive lower bound with a
-/// sub-millisecond fraction rounds up; rounding down would admit earlier entries.
-fn lower_bound_millis(value: time::OffsetDateTime) -> Result<i64, StoreError> {
-    let millis = datetime_to_unix_millis(value)?;
-    if value.unix_timestamp_nanos() % 1_000_000 == 0 {
-        Ok(millis)
-    } else {
-        Ok(millis + 1)
     }
 }
 

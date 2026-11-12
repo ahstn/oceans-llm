@@ -50,7 +50,7 @@ The value is a base64-encoded 32-byte key. If it changes, the gateway can't decr
 
 ### Store a Copilot token with the CLI (users)
 
-A user stores their own GitHub token with the Oceans CLI. Install it as described in [Use the Oceans CLI](/extensions/skills/#use-the-oceans-cli). Set `OCEANS_URL` to your gateway, and put one of your own Oceans API keys in `OCEANS_API_KEY`. That key authenticates you to Oceans. The GitHub token is a separate credential.
+A user stores their own GitHub token with the Oceans CLI. Install it and connect it to your gateway as described in [Oceans CLI](/harnesses/oceans-cli/), with one of your own Oceans API keys in `OCEANS_API_KEY` or the CLI's config file. That key authenticates you to Oceans. The GitHub token is a separate credential.
 
 The API key must be owned by you and have **Full access**. A key with limited scopes, a service-account key or a key of a disabled user can't store a token.
 

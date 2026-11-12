@@ -232,6 +232,54 @@ fn lineage_candidates_are_hashed_before_persistence() {
         hash_lineage_candidate("user:a", "claude_code", "raw-thread")
     );
 }
+
+#[test]
+fn stored_hashes_use_the_session_and_adapter_namespaces() {
+    let headers = |canonical: Option<&str>| {
+        let mut headers = BTreeMap::from([
+            (
+                "x-claude-code-session-id".to_string(),
+                "session-a".to_string(),
+            ),
+            ("x-claude-code-agent-id".to_string(), "agent-a".to_string()),
+        ]);
+        if let Some(canonical) = canonical {
+            headers.insert("x-oceans-session-id".to_string(), canonical.to_string());
+        }
+        headers
+    };
+    let canonical =
+        extract_request_metadata(&json!({}), &headers(Some("session-a")), true, "claude_cli");
+    assert_eq!(
+        canonical.normalized_session_id("user:a"),
+        Some(hash_lineage_candidate("user:a", "oceans", "session-a"))
+    );
+    assert_eq!(
+        canonical.hashed_lineage("user:a"),
+        (
+            Some(hash_lineage_candidate("user:a", "claude_code", "agent-a")),
+            None
+        )
+    );
+
+    let harness = extract_request_metadata(&json!({}), &headers(None), true, "claude_cli");
+    assert_eq!(
+        harness.normalized_session_id("user:a"),
+        Some(hash_lineage_candidate("user:a", "claude_code", "session-a"))
+    );
+
+    let unknown = extract_request_metadata(
+        &json!({}),
+        &BTreeMap::from([("x-oceans-session-id".to_string(), "session-a".to_string())]),
+        false,
+        "unknown",
+    );
+    assert_eq!(
+        unknown.normalized_session_id("user:a"),
+        canonical.normalized_session_id("user:a")
+    );
+    assert_eq!(unknown.hashed_lineage("user:a"), (None, None));
+}
 #[test]
 fn file_identifiers_are_owner_scoped_before_persistence() {
     let observation = || InferredObservation {
@@ -311,6 +359,26 @@ fn metadata_accepts_each_verified_session_alias_with_exact_provenance() {
                 "known-session".to_string(),
             )]),
             "header:x-claude-code-session-id",
+        ),
+        (
+            "claude cli session header",
+            "claude_cli",
+            json!({}),
+            BTreeMap::from([(
+                "x-claude-code-session-id".to_string(),
+                "known-session".to_string(),
+            )]),
+            "header:x-claude-code-session-id",
+        ),
+        (
+            "canonical header without a harness adapter",
+            "unknown",
+            json!({}),
+            BTreeMap::from([(
+                "X-Oceans-Session-Id".to_string(),
+                "known-session".to_string(),
+            )]),
+            "header:x-oceans-session-id",
         ),
         (
             "codex session header",
@@ -603,12 +671,25 @@ fn conflicting_session_aliases_decline_correlation_explicitly() {
             json!({"session_id": "session-b"}),
             BTreeMap::from([("session_id".to_string(), "session-a".to_string())]),
         ),
+        (
+            "canonical header and harness ID",
+            "oh_my_pi",
+            json!({}),
+            BTreeMap::from([
+                ("x-oceans-session-id".to_string(), "session-a".to_string()),
+                (
+                    "x-claude-code-session-id".to_string(),
+                    "session-b".to_string(),
+                ),
+            ]),
+        ),
     ];
 
     for (name, harness, body, headers) in fixtures {
         let metadata = extract_request_metadata(&body, &headers, true, harness);
         assert_eq!(metadata.external_session_id, None, "{name}");
         assert_eq!(metadata.session_source, None, "{name}");
+        assert_eq!(metadata.session_namespace, None, "{name}");
         assert_eq!(
             metadata.session_limitation,
             Some(SessionCorrelationLimitation::ConflictingAliases),
@@ -858,10 +939,12 @@ fn with_passive_record(
         harness_label: "Test",
         metadata: &PassiveRequestMetadata {
             external_session_id: None,
+            session_namespace: None,
             session_source: None,
             session_limitation: None,
             execution_id: None,
             parent_execution_id: None,
+            lineage_namespace: None,
             body_inspected: false,
             message_count: None,
             prompt_bytes: None,

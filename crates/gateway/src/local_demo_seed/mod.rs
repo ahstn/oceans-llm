@@ -18,6 +18,7 @@ use uuid::Uuid;
 mod agent_analysis;
 mod agent_session_fixtures;
 mod api_keys;
+mod attribution;
 mod budget_pressure;
 mod history;
 mod models;
@@ -535,6 +536,9 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
         .get("locdemoalice1")
         .ok_or_else(|| anyhow::anyhow!("missing Alice demo API key for batch seed"))?;
     seed_demo_batches(store, user_batch_key, now).await?;
+
+    // After the agent sessions, whose requests the attribution commits join.
+    attribution::seed_demo_attribution(store, &user_ids, now).await?;
 
     // Last, so the top-ups account for every other row in the current budget window.
     budget_pressure::seed_demo_budget_pressure(store, &api_keys, &user_team_ids, &model_ids, now)
@@ -1066,6 +1070,34 @@ mod tests {
         }
     }
 
+    /// A migrated store holding the config the demo seed expects, seeded once.
+    pub(super) async fn seeded_demo_store() -> (tempfile::TempDir, AnyStore) {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let options = StoreConnectionOptions::Libsql {
+            path: directory.path().join("gateway.db"),
+        };
+        crate::maybe_run_migrations(&options, true)
+            .await
+            .expect("migrations");
+        let store = AnyStore::connect(&options).await.expect("store");
+        let prerequisites = demo_seed_prerequisites();
+        store
+            .seed_from_inputs(
+                &prerequisites.providers,
+                &prerequisites.models,
+                &prerequisites.api_keys,
+                &prerequisites.service_accounts,
+                &[],
+                &[],
+                &prerequisites.teams,
+                &prerequisites.users,
+            )
+            .await
+            .expect("seed config");
+        seed_local_demo_data(&store).await.expect("seed demo data");
+        (directory, store)
+    }
+
     #[test]
     fn observability_seed_covers_mastra_and_omp_in_seven_days() {
         let seven_day_fixtures = usage::LOCAL_DEMO_REQUESTS
@@ -1167,29 +1199,7 @@ mod tests {
 
     #[tokio::test]
     async fn seeded_jira_session_reports_direct_mcp_calls() {
-        let directory = tempfile::tempdir().expect("tempdir");
-        let options = StoreConnectionOptions::Libsql {
-            path: directory.path().join("gateway.db"),
-        };
-        crate::maybe_run_migrations(&options, true)
-            .await
-            .expect("migrations");
-        let store = AnyStore::connect(&options).await.expect("store");
-        let prerequisites = demo_seed_prerequisites();
-        store
-            .seed_from_inputs(
-                &prerequisites.providers,
-                &prerequisites.models,
-                &prerequisites.api_keys,
-                &prerequisites.service_accounts,
-                &[],
-                &[],
-                &prerequisites.teams,
-                &prerequisites.users,
-            )
-            .await
-            .expect("seed config");
-        seed_local_demo_data(&store).await.expect("seed demo data");
+        let (_directory, store) = seeded_demo_store().await;
         let service = GatewayService::new(
             Arc::new(store.clone()),
             Arc::new(WeightedRoutePlanner::default()),

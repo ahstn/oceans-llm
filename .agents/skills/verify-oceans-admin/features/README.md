@@ -75,6 +75,7 @@ Each feature file starts with an H1 title and one paragraph that describes user-
 - [Service tiers](./service-tiers.md) covers `service_tier` and `speed` requests, the default/priority/flex A/B through OpenRouter, a route-forced fast model, tier policy and routing rejections, tier discovery, and requested and served tiers in Request Logs.
 - [Harness integration](./harness-integration.md) covers the real Pi and OpenCode clients and the packed OpenCode plugin: discovery, native SDK routing, variants, attachments, and token and cost parity with Request Logs.
 - [Usage costs](./usage-costs.md) covers the spend KPIs, the 7- and 30-day windows, the owner filter, breakdowns, FOCUS export, and spend-report API parity.
+- [Attribution](./attribution.md) covers the Git AI attribution KPIs, the 7-, 30-, and 90-day windows, the user and repository filters, the models, pull request, and change tables, the hook-install empty state, and attribution-report API parity.
 - [Spend controls](./spend-controls.md) covers user, service-account, and model budgets, alert history, and a safe model-budget mutation with cleanup.
 - [Rate limits](./rate-limits.md) covers the policy list, creating a per-key limit, enforcement headers and the `429` contract, pausing, deletion, and optional MCP tool-call limits.
 - [Guardrails](./guardrails.md) covers the decision view's tiles, filters, and detail sheet, the policy as the `Guardrail Settings` YAML preview, and a free evaluate-endpoint decision.

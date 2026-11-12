@@ -13,9 +13,17 @@ pub const SCOPE_INFERENCE: &str = "inference";
 pub const SCOPE_MCP_AGGREGATE: &str = "mcp:aggregate";
 /// Allows per-server routes `/mcp/{server_key}`.
 pub const SCOPE_MCP_PROXY: &str = "mcp:proxy";
+/// Allows Git AI attribution ingestion: `GET /api/v1/me/ownership` and
+/// `POST /api/v1/attribution/entries`, for the `oceans` CLI hooks.
+pub const SCOPE_ATTRIBUTION_WRITE: &str = "attribution:write";
 
 /// Scopes an API key may carry, in the order they are stored and shown.
-pub const API_KEY_SCOPES: [&str; 3] = [SCOPE_INFERENCE, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY];
+pub const API_KEY_SCOPES: [&str; 4] = [
+    SCOPE_INFERENCE,
+    SCOPE_MCP_AGGREGATE,
+    SCOPE_MCP_PROXY,
+    SCOPE_ATTRIBUTION_WRITE,
+];
 
 /// What an API key may do beyond its owner's grants.
 ///
@@ -135,7 +143,10 @@ fn normalize_server_keys(keys: Vec<String>) -> Result<Vec<String>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ApiKeyAccess, SCOPE_INFERENCE, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY};
+    use super::{
+        ApiKeyAccess, SCOPE_ATTRIBUTION_WRITE, SCOPE_INFERENCE, SCOPE_MCP_AGGREGATE,
+        SCOPE_MCP_PROXY,
+    };
 
     fn strings(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_string()).collect()
@@ -193,6 +204,38 @@ mod tests {
         assert!(access.is_full_access());
         assert!(access.allows_mcp_server("notes"));
         assert!(!access.allows_mcp_server("github"));
+    }
+
+    #[test]
+    fn attribution_scope_grants_nothing_else() {
+        let access = ApiKeyAccess::new(
+            Some(strings(&[
+                "attribution:write",
+                "inference",
+                "attribution:write",
+            ])),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            access.scopes_column().as_deref(),
+            Some("inference attribution:write")
+        );
+
+        let attribution_only =
+            ApiKeyAccess::new(Some(strings(&[SCOPE_ATTRIBUTION_WRITE])), None).unwrap();
+        assert!(attribution_only.has_scope(SCOPE_ATTRIBUTION_WRITE));
+        assert!(!attribution_only.has_scope(SCOPE_INFERENCE));
+        assert!(!attribution_only.has_scope(SCOPE_MCP_AGGREGATE));
+        assert!(!attribution_only.has_scope(SCOPE_MCP_PROXY));
+        assert!(
+            ApiKeyAccess::new(
+                Some(strings(&[SCOPE_ATTRIBUTION_WRITE])),
+                Some(strings(&["notes"]))
+            )
+            .is_err(),
+            "a server list needs an MCP scope"
+        );
     }
 
     #[test]

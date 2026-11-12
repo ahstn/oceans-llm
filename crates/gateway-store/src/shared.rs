@@ -276,6 +276,17 @@ pub(crate) fn datetime_to_unix_millis(value: OffsetDateTime) -> Result<i64, Stor
         .map_err(|error| StoreError::Serialization(error.to_string()))
 }
 
+/// Stored timestamps are whole milliseconds, so an inclusive lower bound with a
+/// sub-millisecond fraction rounds up; rounding down would admit earlier entries.
+pub(crate) fn lower_bound_millis(value: OffsetDateTime) -> Result<i64, StoreError> {
+    let millis = datetime_to_unix_millis(value)?;
+    if value.unix_timestamp_nanos() % 1_000_000 == 0 {
+        Ok(millis)
+    } else {
+        Ok(millis + 1)
+    }
+}
+
 pub(crate) fn unix_millis_to_datetime(ts: i64) -> Result<OffsetDateTime, StoreError> {
     OffsetDateTime::from_unix_timestamp_nanos(i128::from(ts) * 1_000_000)
         .map_err(|error| StoreError::Serialization(error.to_string()))

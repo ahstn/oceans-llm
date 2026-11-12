@@ -84,6 +84,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/attribution/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_attribution_report"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/audit-logs": {
         parameters: {
             query?: never;
@@ -1244,6 +1260,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/attribution/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_attribution_entries"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/invitations/{token}": {
         parameters: {
             query?: never;
@@ -1680,6 +1712,22 @@ export interface paths {
         put?: never;
         post?: never;
         delete: operations["revoke_my_authorized_mcp_client"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/ownership": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_my_attribution_ownership"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3003,6 +3051,275 @@ export interface components {
         };
         /** @enum {string} */
         ApiKeyModelGrantModeView: "all" | "explicit";
+        AttributionBatchRequest: {
+            /**
+             * @description At most 100 entries. An entry without this shape is rejected on its own as
+             *     `invalid_entry`.
+             */
+            entries: components["schemas"]["AttributionEntryRequest"][];
+            /** @description The `ownership_scope` from `GET /api/v1/me/ownership`. */
+            expected_ownership_scope: string;
+        };
+        AttributionBatchResponse: {
+            ownership_scope: string;
+            /** @description One result per entry, in request order. */
+            results: components["schemas"]["AttributionEntryResultView"][];
+        };
+        AttributionChangeView: components["schemas"]["AttributionRequestTallyView"] & {
+            /** @description git-ai agent tools the note names, such as `claude` or `pi`. */
+            agent_tools: string[];
+            /** Format: int64 */
+            ai_lines: number;
+            attribution_commit_id: string;
+            author?: null | components["schemas"]["AttributionUserRefView"];
+            branch?: string | null;
+            commit_sha: string;
+            /** @description When the first note for this commit was observed. */
+            committed_at: string;
+            /** Format: int64 */
+            human_lines: number;
+            is_default_branch: boolean;
+            /** Format: int64 */
+            joined_session_count: number;
+            /** @description Gateway model keys of the allocated requests. */
+            models: string[];
+            /** @description Models the note names. */
+            note_models: string[];
+            owner: components["schemas"]["AttributionOwnerRefView"];
+            /**
+             * Format: int64
+             * @description The most recently merged window PR listing this commit.
+             */
+            pull_request_number?: number | null;
+            repository: string;
+            /**
+             * Format: int64
+             * @description AI sessions named by the note.
+             */
+            session_count: number;
+            /** Format: int64 */
+            unjoined_session_count: number;
+        };
+        AttributionCoverageView: components["schemas"]["AttributionRequestTallyView"] & {
+            /** @description The 1000-row cap cut commits inside the window. */
+            commits_truncated: boolean;
+            pull_requests_truncated: boolean;
+            /** @description Some requests were left out because a lookup or the report hit its cap. */
+            request_facts_truncated: boolean;
+        };
+        AttributionEntryRequest: {
+            /** @description 1-64 characters of `[A-Za-z0-9._-]`, unique per installation. */
+            entry_id: string;
+            installation_id: string;
+            late_sequenced?: boolean;
+            /** @description RFC 3339. */
+            observed_at: string;
+            payload: components["schemas"]["AttributionPayloadRequest"];
+            /** Format: int64 */
+            sequence: number;
+        };
+        AttributionEntryResultView: {
+            /** @description Empty when the entry had no valid id. */
+            entry_id: string;
+            reason?: null | components["schemas"]["AttributionRejectReasonView"];
+            status: components["schemas"]["AttributionEntryStatusView"];
+        };
+        /**
+         * @description `rejected` entries are quarantined by the client; the others are done.
+         * @enum {string}
+         */
+        AttributionEntryStatusView: "applied" | "duplicate" | "stale" | "rejected";
+        AttributionModelView: components["schemas"]["AttributionRequestTallyView"] & {
+            /**
+             * Format: int64
+             * @description Window commits with at least one request on this model.
+             */
+            commit_count: number;
+            model_key: string;
+            /** Format: int64 */
+            uncommitted_cost_usd_10000: number;
+            /** Format: int64 */
+            uncommitted_request_count: number;
+        };
+        /**
+         * @description Who owns attribution rows: the user or service account of the key that sent them.
+         * @enum {string}
+         */
+        AttributionOwnerKind: "user" | "service_account";
+        AttributionOwnerRefView: {
+            id: string;
+            kind: components["schemas"]["AttributionOwnerKind"];
+            name: string;
+        };
+        AttributionOwnershipView: {
+            owner_id: string;
+            owner_kind: components["schemas"]["AttributionOwnerKind"];
+            /** @description Send back as `expected_ownership_scope` with each batch. */
+            ownership_scope: string;
+        };
+        AttributionPayloadRequest: {
+            branch?: string | null;
+            /** @description 40 or 64 lowercase hex characters. */
+            commit_sha: string;
+            is_default_branch?: boolean;
+            /** @enum {string} */
+            kind: "note";
+            /** @description The raw git-ai note, at most 1 MiB. */
+            note_content: string;
+            /** @description Normalised `host[:port]/owner/repo`, without scheme, userinfo or `.git`. */
+            repository: string;
+        } | {
+            branch?: string | null;
+            event: components["schemas"]["AttributionSessionEventRequest"];
+            /** @description The hook's harness, such as `oh_my_pi`: 1-64 characters of `[a-z0-9_-]`. */
+            harness: string;
+            harness_version?: string | null;
+            head_sha?: string | null;
+            /** @enum {string} */
+            kind: "session";
+            repository?: string | null;
+            /** @description The raw harness session id. Only a hash bound to the key's owner is stored. */
+            session_id: string;
+        } | {
+            /** @enum {string} */
+            kind: "pull_requests";
+            pull_requests: components["schemas"]["AttributionPullRequestRequest"][];
+            repository: string;
+        };
+        AttributionPullRequestCommitRequest: {
+            /** @description Matched to an Oceans user or stored as a hash bound to the key's owner. */
+            author_email?: string | null;
+            /** @description RFC 3339. */
+            authored_at?: string | null;
+            sha: string;
+            subject?: string | null;
+        };
+        AttributionPullRequestRequest: {
+            base_ref?: string | null;
+            commits?: components["schemas"]["AttributionPullRequestCommitRequest"][];
+            head_ref?: string | null;
+            merge_commit_sha?: string | null;
+            /** @description RFC 3339. */
+            merged_at: string;
+            /** Format: int64 */
+            number: number;
+            title: string;
+            url?: string | null;
+        };
+        AttributionPullRequestView: components["schemas"]["AttributionRequestTallyView"] & {
+            /** Format: int64 */
+            ai_lines: number;
+            /**
+             * Format: int64
+             * @description Listed commits with a stored note; the merge commit when none of them has one.
+             */
+            attributed_commit_count: number;
+            author?: null | components["schemas"]["AttributionUserRefView"];
+            base_ref?: string | null;
+            /** Format: int64 */
+            commit_count: number;
+            head_ref?: string | null;
+            /** Format: int64 */
+            human_lines: number;
+            merged_at: string;
+            models: string[];
+            /** Format: int64 */
+            number: number;
+            repository: string;
+            title: string;
+            url?: string | null;
+        };
+        /** @enum {string} */
+        AttributionRejectReasonView: "oversized_note" | "invalid_note" | "unsupported_schema" | "invalid_repository" | "invalid_entry";
+        AttributionReportView: {
+            changes: components["schemas"]["AttributionChangeView"][];
+            coverage: components["schemas"]["AttributionCoverageView"];
+            models: components["schemas"]["AttributionModelView"][];
+            pull_requests: components["schemas"]["AttributionPullRequestView"][];
+            repository?: string | null;
+            totals: components["schemas"]["AttributionTotalsView"];
+            /** @description The user the rows are limited to, if any. */
+            user_id?: string | null;
+            users: components["schemas"]["AttributionUserActivityView"][];
+            /** Format: int32 */
+            window_days: number;
+            window_end: string;
+            window_start: string;
+        };
+        /** @description Request counts and priced cost, split by pricing outcome as in the spend report. */
+        AttributionRequestTallyView: {
+            /** Format: int64 */
+            priced_cost_usd_10000: number;
+            /** Format: int64 */
+            priced_request_count: number;
+            /** Format: int64 */
+            request_count: number;
+            /** Format: int64 */
+            unpriced_request_count: number;
+            /** Format: int64 */
+            usage_missing_request_count: number;
+        };
+        /** @enum {string} */
+        AttributionSessionEventRequest: "start" | "end";
+        AttributionTotalsView: components["schemas"]["AttributionRequestTallyView"] & {
+            /**
+             * Format: int64
+             * @description Harness sessions reported by hook events in the window.
+             */
+            agent_session_count: number;
+            /** Format: int64 */
+            ai_lines: number;
+            /**
+             * Format: int64
+             * @description Distinct AI sessions named by the window's commit notes.
+             */
+            ai_session_count: number;
+            /** Format: int64 */
+            commit_count: number;
+            /** Format: int64 */
+            human_lines: number;
+            /**
+             * Format: int64
+             * @description Those sessions that matched gateway requests.
+             */
+            joined_session_count: number;
+            /** Format: int64 */
+            pull_request_count: number;
+            /** Format: int64 */
+            uncommitted_cost_usd_10000: number;
+            /**
+             * Format: int64
+             * @description Requests after their session's last commit.
+             */
+            uncommitted_request_count: number;
+            /**
+             * Format: int64
+             * @description Window commits whose author is not an Oceans user.
+             */
+            unmatched_author_commit_count: number;
+        };
+        AttributionUserActivityView: components["schemas"]["AttributionRequestTallyView"] & {
+            /** Format: int64 */
+            agent_session_count: number;
+            /** Format: int64 */
+            ai_lines: number;
+            /** Format: int64 */
+            ai_session_count: number;
+            /** Format: int64 */
+            commit_count: number;
+            /** Format: int64 */
+            human_lines: number;
+            last_activity_at?: string | null;
+            /** Format: int64 */
+            merged_pull_request_count: number;
+            /** @description Gateway model keys, most requests first. */
+            models: string[];
+            user: components["schemas"]["AttributionUserRefView"];
+        };
+        AttributionUserRefView: {
+            id: string;
+            name: string;
+        };
         AuditActorView: {
             api_key_id?: string | null;
             /** @description `user`, `api_key` or `system`. */
@@ -3622,6 +3939,24 @@ export interface components {
                 page_size: number;
                 /** Format: int64 */
                 total: number;
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
+        Envelope_AttributionReportView: {
+            data: {
+                changes: components["schemas"]["AttributionChangeView"][];
+                coverage: components["schemas"]["AttributionCoverageView"];
+                models: components["schemas"]["AttributionModelView"][];
+                pull_requests: components["schemas"]["AttributionPullRequestView"][];
+                repository?: string | null;
+                totals: components["schemas"]["AttributionTotalsView"];
+                /** @description The user the rows are limited to, if any. */
+                user_id?: string | null;
+                users: components["schemas"]["AttributionUserActivityView"][];
+                /** Format: int32 */
+                window_days: number;
+                window_end: string;
+                window_start: string;
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -5877,6 +6212,49 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Envelope_RevealApiKeySecretResponse"];
                 };
+            };
+        };
+    };
+    get_attribution_report: {
+        parameters: {
+            query?: {
+                /** @description 7, 30 or 90 whole UTC days ending today. Defaults to 7. */
+                days?: number | null;
+                /**
+                 * @description Platform admins only: the rows one user owns or authored. Other users always get
+                 *     their own.
+                 */
+                user_id?: string | null;
+                /** @description One normalised repository, such as `github.com/acme/widgets`. */
+                repository?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_AttributionReportView"];
+                };
+            };
+            /** @description `days` is not 7, 30 or 90, or `user_id` is not a UUID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No signed-in session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -8398,6 +8776,64 @@ export interface operations {
             };
         };
     };
+    post_attribution_entries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttributionBatchRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttributionBatchResponse"];
+                };
+            };
+            /** @description Not a batch, or more than 100 entries */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid gateway API key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The key has neither `attribution:write` nor full access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `expected_ownership_scope` is not the key's owner; nothing was applied */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request body exceeds 2 MiB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     validate_password_invitation: {
         parameters: {
             query?: never;
@@ -9144,6 +9580,39 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["OpenAiErrorEnvelopeView"];
                 };
+            };
+        };
+    };
+    get_my_attribution_ownership: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttributionOwnershipView"];
+                };
+            };
+            /** @description Missing or invalid gateway API key */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The key has neither `attribution:write` nor full access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

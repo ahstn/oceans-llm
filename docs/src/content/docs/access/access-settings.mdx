@@ -198,6 +198,7 @@ Users can't receive `reveal_api_key` because a personal key secret is shown only
 - Users see `mcp` read-only, limited to the servers they can connect to. Team admins manage only their team's servers. See [MCP servers](/extensions/mcp-servers/).
 - Team admins see `spend_controls` for their own team only.
 - Team admins see `agent_sessions` only when `agent_analysis.team_admin_enabled` is `true`. See [`agent_analysis`](/configuration/#agent_analysis).
+- **Attribution** has no grant of its own. It shows with `usage_costs`, so removing `usage_costs` hides both pages. Users see only the commits their keys reported or that they authored. See [Git AI attribution](/harnesses/git-ai-attribution/).
 
 By default, a user can create, update and revoke only their own keys. A team owner or admin can also create, update, revoke and reveal service-account keys for that team. A platform admin has global key scope. If an admin removes an action, the gateway hides its UI control and the matching API returns `403`. Other admin operations keep their own authorisation rules.
 
