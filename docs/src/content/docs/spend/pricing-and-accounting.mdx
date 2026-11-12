@@ -264,7 +264,7 @@ Neither state counts toward spend totals or budget windows. Both stay visible in
 
 ## Streaming usage
 
-Some OpenAI-compatible providers only return usage on a stream when the request includes `stream_options.include_usage = true`. A route opts in with `compatibility.openai_compat.supports_stream_usage: true`.
+OpenAI-compatible providers usually return usage on a stream only when the request includes `stream_options.include_usage = true`. Oceans adds it to every streaming Chat Completions request, so callers that leave it out are still billed. A route opts out with `compatibility.openai_compat.supports_stream_usage: false` when its upstream rejects `stream_options`.
 
 This improves usage capture but doesn't guarantee billing. A provider may still omit final usage, or send counters Oceans can't use, so a request can still end up `usage_missing` or `unpriced`. The option applies to Chat Completions streams. Responses streams read usage from the completed response event.
 

@@ -304,7 +304,7 @@ For what each adapter does with these settings, see [Provider API compatibility]
 | `max_tokens_field` | `max_completion_tokens` | `max_completion_tokens`, `max_tokens` |
 | `developer_role` | `developer` | `developer`, `system` |
 | `reasoning_effort` | `passthrough` | `passthrough`, `omit`, `reasoning_object` |
-| `supports_stream_usage` | `false` | `true`, `false` |
+| `supports_stream_usage` | `true` | `true`, `false` |
 | `empty_tools` | `preserve` | `preserve`, `omit`, `preserve_with_tool_history` |
 | `decisions_api` | unset | `openai` |
 
@@ -421,9 +421,10 @@ models:
             max_tokens_field: max_tokens
             developer_role: system
             reasoning_effort: omit
-            supports_stream_usage: true
             empty_tools: omit
 ```
+
+Streaming Chat Completions routes request usage by default. Set `supports_stream_usage: false` only for an upstream that rejects `stream_options`. Usage on those streams then depends on the provider sending it unasked.
 
 OpenRouter routes can set upstream provider policy:
 

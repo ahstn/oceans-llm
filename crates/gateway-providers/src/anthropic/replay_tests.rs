@@ -389,6 +389,63 @@ async fn stream_tool_without_argument_deltas_keeps_empty_input_replayable() {
 }
 
 #[tokio::test]
+async fn stream_tool_with_only_empty_argument_delta_streams_and_replays_empty_object() {
+    // Anthropic opens every tool input with an empty `input_json_delta`.
+    let events = vec![
+        json!({"type":"message_start","message":{"role":"assistant","content":[],
+            "usage":{"input_tokens":10,"output_tokens":0}}}),
+        json!({"type":"content_block_start","index":0,"content_block":{
+            "type":"tool_use","id":"empty-call","name":"get_status","input":{}
+        }}),
+        json!({"type":"content_block_delta","index":0,"delta":{
+            "type":"input_json_delta","partial_json":""
+        }}),
+        json!({"type":"content_block_stop","index":0}),
+        json!({"type":"message_delta","delta":{"stop_reason":"tool_use"},
+            "usage":{"output_tokens":5}}),
+        json!({"type":"message_stop"}),
+    ];
+    for bedrock in [false, true] {
+        let (chunks, done) = compaction_chat_chunks(events.clone(), bedrock).await;
+        let mut arguments = String::new();
+        for chunk in &chunks {
+            assert!(chunk.get("error").is_none(), "bedrock={bedrock}: {chunk}");
+            if let Some(part) =
+                chunk["choices"][0]["delta"]["tool_calls"][0]["function"]["arguments"].as_str()
+            {
+                arguments.push_str(part);
+            }
+        }
+        assert!(done, "bedrock={bedrock}");
+        assert_eq!(arguments, "{}", "bedrock={bedrock}");
+
+        let message = json!({"role":"assistant","content":null,"tool_calls":[{
+            "id":"empty-call","type":"function",
+            "function":{"name":"get_status","arguments":arguments}
+        }]});
+        assert_eq!(
+            replay(&message).unwrap()["messages"][0]["content"],
+            json!([{"type":"tool_use","id":"empty-call","name":"get_status","input":{}}]),
+            "bedrock={bedrock}"
+        );
+    }
+}
+
+#[test]
+fn replayed_tool_call_with_blank_arguments_has_empty_input() {
+    for arguments in ["", "  "] {
+        let message = json!({"role":"assistant","content":null,"tool_calls":[{
+            "id":"empty-call","type":"function",
+            "function":{"name":"get_status","arguments":arguments}
+        }]});
+        assert_eq!(
+            replay(&message).unwrap()["messages"][0]["content"],
+            json!([{"type":"tool_use","id":"empty-call","name":"get_status","input":{}}])
+        );
+    }
+}
+
+#[tokio::test]
 async fn unsupported_native_stream_delta_is_error_without_fabricated_replay_or_done() {
     let events = vec![
         json!({"type":"content_block_start","index":0,"content_block":{"type":"future","opaque":true}}),

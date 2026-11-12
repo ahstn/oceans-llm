@@ -15,7 +15,9 @@ use serde_json::{Map, Value, json};
 use crate::http::{
     TracedResponse, execute_json_request, execute_request, join_base_url, map_reqwest_error,
 };
-use crate::streaming::{normalize_openai_compat_responses_stream, normalize_openai_compat_stream};
+use crate::streaming::{
+    normalize_openai_compat_chat_stream, normalize_openai_compat_responses_stream,
+};
 use crate::token::{AdcIdTokenSource, CachedAccessTokenSource, ServiceAccountIdTokenSource};
 
 mod anthropic_messages;
@@ -357,7 +359,21 @@ impl OpenAiCompatProvider {
             );
         }
 
-        self.build_request("images", body, context, false, false, bearer_token)
+        let endpoint_suffix = self.images_endpoint_suffix(context);
+        self.build_request(endpoint_suffix, body, context, false, false, bearer_token)
+    }
+
+    /// OpenRouter serves image generation at `/images`; OpenAI and other
+    /// compatible servers define `POST /images/generations`.
+    fn images_endpoint_suffix(&self, context: &ProviderRequestContext) -> &'static str {
+        let openrouter = context.compatibility.openrouter.is_some()
+            || url::Url::parse(&self.config.base_url)
+                .is_ok_and(|url| url.host_str() == Some("openrouter.ai"));
+        if openrouter {
+            "images"
+        } else {
+            "images/generations"
+        }
     }
 
     fn build_responses_request_with_token(
@@ -470,14 +486,15 @@ impl OpenAiCompatProvider {
         }
         apply_openai_compat_empty_tools_profile(&mut body, context)?;
         if apply_compatibility_profile {
-            apply_openai_compat_request_profile(&mut body, context);
+            apply_openai_compat_chat_profile(&mut body, context)?;
         }
-        if matches!(endpoint_suffix, "chat/completions" | "responses" | "images") {
+        let images = matches!(endpoint_suffix, "images" | "images/generations");
+        if images || matches!(endpoint_suffix, "chat/completions" | "responses") {
             apply_openrouter_routing_policy(&mut body, context)?;
         }
         // The gateway serves images only as one JSON response, so neither the
         // caller nor a route `extra_body` may ask the upstream for a stream.
-        if endpoint_suffix == "images"
+        if images
             && let Some(object) = body.as_object_mut()
         {
             object.remove("stream");
@@ -486,13 +503,7 @@ impl OpenAiCompatProvider {
             && enforce_stream
         {
             object.insert("stream".to_string(), Value::Bool(true));
-            if apply_compatibility_profile
-                && context
-                    .compatibility
-                    .openai_compat
-                    .as_ref()
-                    .is_some_and(|profile| profile.supports_stream_usage)
-            {
+            if apply_compatibility_profile && requests_stream_usage(context) {
                 ensure_stream_usage_requested(object);
             }
         }
@@ -560,6 +571,66 @@ pub(crate) fn apply_openai_compat_request_profile(
         return;
     };
     apply_openai_compat_profile_to_body(body, profile);
+}
+
+/// Chat Completions profile for openai_compat routes. A route without a profile gets the
+/// default `max_completion_tokens` field, so a translated `max_tokens` still reaches OpenAI
+/// reasoning models, which reject `max_tokens`.
+fn apply_openai_compat_chat_profile(
+    body: &mut Value,
+    context: &ProviderRequestContext,
+) -> Result<(), ProviderError> {
+    apply_openai_compat_request_profile(body, context);
+    let max_tokens_field = context
+        .compatibility
+        .openai_compat
+        .as_ref()
+        .map(|profile| profile.max_tokens_field)
+        .unwrap_or_default();
+    match (max_tokens_field, body.as_object_mut()) {
+        (OpenAiCompatMaxTokensField::MaxCompletionTokens, Some(object)) => {
+            move_max_tokens_to_max_completion_tokens(object)
+        }
+        _ => Ok(()),
+    }
+}
+
+fn move_max_tokens_to_max_completion_tokens(
+    object: &mut Map<String, Value>,
+) -> Result<(), ProviderError> {
+    let Some(max_tokens) = object.remove("max_tokens") else {
+        return Ok(());
+    };
+    match object.get("max_completion_tokens") {
+        Some(completion) if *completion != max_tokens => Err(ProviderError::InvalidRequest(
+            "`max_completion_tokens` conflicts with `max_tokens`".to_string(),
+        )),
+        Some(_) => Ok(()),
+        None => {
+            object.insert("max_completion_tokens".to_string(), max_tokens);
+            Ok(())
+        }
+    }
+}
+
+/// Chat streams request usage so the ledger can bill them; a profile opts out with
+/// `supports_stream_usage: false` for upstreams that reject `stream_options`.
+fn requests_stream_usage(context: &ProviderRequestContext) -> bool {
+    context
+        .compatibility
+        .openai_compat
+        .as_ref()
+        .is_none_or(|profile| profile.supports_stream_usage)
+}
+
+/// Whether the caller asked for the usage-only chunk itself, rather than the gateway.
+fn client_requested_stream_usage(request: &CoreChatRequest) -> bool {
+    request
+        .extra
+        .get("stream_options")
+        .and_then(|options| options.get("include_usage"))
+        .and_then(Value::as_bool)
+        == Some(true)
 }
 
 pub(crate) fn apply_openai_compat_empty_tools_profile(
@@ -838,6 +909,7 @@ impl ProviderClient for OpenAiCompatProvider {
         request: &CoreChatRequest,
         context: &ProviderRequestContext,
     ) -> Result<ProviderStream, ProviderError> {
+        let forward_usage_chunk = client_requested_stream_usage(request);
         let request = self
             .build_authenticated_chat_stream_request(request, context)
             .await?;
@@ -853,7 +925,10 @@ impl ProviderClient for OpenAiCompatProvider {
                 "openrouter",
             ))
         } else {
-            Ok(normalize_openai_compat_stream(response.bytes_stream()))
+            Ok(normalize_openai_compat_chat_stream(
+                response.bytes_stream(),
+                forward_usage_chunk,
+            ))
         }
     }
 
@@ -1151,6 +1226,55 @@ mod tests {
         assert!(body_json.get("max_completion_tokens").is_none());
     }
 
+    fn chat_request_with(extra: Value) -> CoreChatRequest {
+        CoreChatRequest {
+            model: "fast".to_string(),
+            messages: vec![],
+            stream: false,
+            extra: serde_json::from_value(extra).expect("extra"),
+        }
+    }
+
+    #[test]
+    fn chat_without_profile_sends_max_tokens_as_max_completion_tokens() {
+        let request = chat_request_with(json!({"max_tokens": 64}));
+
+        let built = provider()
+            .build_chat_request(&request, &default_context())
+            .expect("build request");
+        let body_json = request_body_json(&built);
+
+        assert_eq!(body_json["max_completion_tokens"], json!(64));
+        assert!(body_json.get("max_tokens").is_none());
+    }
+
+    #[test]
+    fn chat_drops_max_tokens_equal_to_max_completion_tokens() {
+        let request = chat_request_with(json!({"max_tokens": 64, "max_completion_tokens": 64}));
+
+        let built = provider()
+            .build_chat_stream_request(&request, &default_context())
+            .expect("build request");
+        let body_json = request_body_json(&built);
+
+        assert_eq!(body_json["max_completion_tokens"], json!(64));
+        assert!(body_json.get("max_tokens").is_none());
+    }
+
+    #[test]
+    fn chat_rejects_conflicting_max_tokens_and_max_completion_tokens() {
+        let request = chat_request_with(json!({"max_tokens": 64, "max_completion_tokens": 128}));
+
+        let error = provider()
+            .build_chat_request(&request, &default_context())
+            .expect_err("conflicting limits");
+
+        assert!(
+            matches!(&error, ProviderError::InvalidRequest(message) if message.contains("max_tokens")),
+            "{error:?}"
+        );
+    }
+
     #[test]
     fn openai_compat_profile_rewrites_developer_messages() {
         let provider = provider();
@@ -1251,6 +1375,90 @@ mod tests {
             body_json["stream_options"]["include_usage"],
             Value::Bool(true)
         );
+    }
+
+    #[test]
+    fn chat_stream_without_profile_requests_usage() {
+        let request = chat_request_with(json!({"stream_options": {"include_obfuscation": false}}));
+
+        let built = provider()
+            .build_chat_stream_request(&request, &default_context())
+            .expect("build request");
+        let body_json = request_body_json(&built);
+
+        assert_eq!(
+            body_json["stream_options"],
+            json!({"include_obfuscation": false, "include_usage": true})
+        );
+    }
+
+    #[test]
+    fn chat_stream_profile_can_opt_out_of_usage() {
+        let request = chat_request_with(json!({}));
+        let context = context_with_profile(OpenAiCompatRouteCompatibility {
+            supports_stream_usage: false,
+            ..Default::default()
+        });
+
+        let built = provider()
+            .build_chat_stream_request(&request, &context)
+            .expect("build request");
+        let body_json = request_body_json(&built);
+
+        assert_eq!(body_json["stream"], Value::Bool(true));
+        assert!(body_json.get("stream_options").is_none(), "{body_json}");
+    }
+
+    async fn usage_chunk_server() -> String {
+        let app = Router::new().route(
+            "/v1/chat/completions",
+            post(|Json(body): Json<Value>| async move {
+                assert_eq!(body["stream_options"]["include_usage"], true);
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("content-type", "text/event-stream")
+                    .body(Body::from(
+                        "data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n\n\
+                         data: {\"id\":\"chatcmpl-1\",\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}\n\n\
+                         data: [DONE]\n\n",
+                    ))
+                    .expect("response")
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve app");
+        });
+        format!("http://{addr}/v1")
+    }
+
+    #[tokio::test]
+    async fn chat_stream_hides_gateway_requested_usage_chunk_from_client() {
+        let provider = provider_with_base_url(usage_chunk_server().await);
+
+        for (extra, forwards_usage_chunk) in [
+            (json!({}), false),
+            (json!({"stream_options": {"include_usage": false}}), false),
+            (json!({"stream_options": {"include_usage": true}}), true),
+        ] {
+            let mut request = chat_request_with(extra.clone());
+            request.stream = true;
+            let stream = provider
+                .chat_completions_stream(&request, &default_context())
+                .await
+                .expect("stream");
+            let rendered = render_provider_stream(stream).await;
+
+            assert!(rendered.contains("\"total_tokens\":3"), "{extra}: {rendered}");
+            assert_eq!(
+                rendered.contains("\"choices\":[]"),
+                forwards_usage_chunk,
+                "{extra}: {rendered}"
+            );
+        }
     }
 
     #[test]
@@ -1485,6 +1693,39 @@ mod tests {
 
         assert!(body.get("stream").is_none(), "{body}");
         assert_eq!(body["quality"], "low");
+    }
+
+    #[test]
+    fn images_post_to_generations_except_on_openrouter() {
+        let request = ImagesRequest {
+            model: "gpt-image".to_string(),
+            prompt: "A small red circle".to_string(),
+            stream: false,
+            extra: BTreeMap::new(),
+        };
+        let openrouter_policy = context_with_openrouter_policy(OpenRouterProviderRouting::default());
+        for (base_url, context, expected) in [
+            (
+                "https://api.openai.com/v1",
+                default_context(),
+                "https://api.openai.com/v1/images/generations",
+            ),
+            (
+                "https://openrouter.ai/api/v1",
+                default_context(),
+                "https://openrouter.ai/api/v1/images",
+            ),
+            (
+                "https://openrouter-proxy.example.test/v1",
+                openrouter_policy,
+                "https://openrouter-proxy.example.test/v1/images",
+            ),
+        ] {
+            let built = provider_with_base_url(base_url.to_string())
+                .build_images_request_with_token(&request, &context, None)
+                .expect("build request");
+            assert_eq!(built.url().as_str(), expected);
+        }
     }
 
     #[test]
@@ -2126,7 +2367,7 @@ mod tests {
         });
         let served = response_body.clone();
         let app = Router::new().route(
-            "/v1/images",
+            "/v1/images/generations",
             post(move |Json(body): Json<Value>| {
                 let served = served.clone();
                 async move {

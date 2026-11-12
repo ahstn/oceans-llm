@@ -45,6 +45,20 @@ pub(crate) fn normalize_openai_compat_stream<S>(upstream: S) -> ProviderStream
 where
     S: futures_util::stream::Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static,
 {
+    normalize_openai_compat_chat_stream(upstream, true)
+}
+
+/// With `forward_usage_chunk` false, the usage-only chunk (`choices: []` plus `usage`) is folded
+/// into the final choice chunk. The gateway requested usage for its own ledger, so a client that
+/// did not ask for `include_usage` gets no extra chunk, while the downstream usage collector
+/// still reads the counts.
+pub(crate) fn normalize_openai_compat_chat_stream<S>(
+    upstream: S,
+    forward_usage_chunk: bool,
+) -> ProviderStream
+where
+    S: futures_util::stream::Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static,
+{
     Box::pin(async_stream::stream! {
         let mut parser = SseEventParser::default();
         let mut saw_payload_event = false;
@@ -53,12 +67,17 @@ where
         let mut stream_failed = false;
         let mut seen_choices = HashSet::new();
         let mut finished_choices = HashSet::new();
+        // The final choice chunk, held back while a usage-only chunk may still fold into it.
+        let mut held: Option<HeldChatChunk> = None;
         futures_util::pin_mut!(upstream);
 
         'upstream: while let Some(chunk) = upstream.next().await {
             let chunk = match chunk {
                 Ok(chunk) => chunk,
                 Err(error) => {
+                    if let Some(final_chunk) = render_held_chat_chunk(&mut held) {
+                        yield Ok(final_chunk);
+                    }
                     yield Ok(openai_sse_error_chunk(
                         "upstream_openai_compat_stream_error",
                         &crate::http::stream_read_error_message(&error),
@@ -71,6 +90,9 @@ where
             let events = match parser.push_bytes(&chunk) {
                 Ok(events) => events,
                 Err(error) => {
+                    if let Some(final_chunk) = render_held_chat_chunk(&mut held) {
+                        yield Ok(final_chunk);
+                    }
                     yield Ok(openai_sse_error_chunk(
                         "openai_compat_sse_parse_error",
                         &error.to_string(),
@@ -94,6 +116,9 @@ where
                 let value = match serde_json::from_str::<Value>(data) {
                     Ok(value) if value.is_object() => value,
                     Ok(_) => {
+                        if let Some(final_chunk) = render_held_chat_chunk(&mut held) {
+                            yield Ok(final_chunk);
+                        }
                         yield Ok(openai_sse_error_chunk(
                             "openai_compat_payload_parse_error",
                             "Chat Completions SSE payload must be a JSON object",
@@ -102,6 +127,9 @@ where
                         break 'upstream;
                     }
                     Err(error) => {
+                        if let Some(final_chunk) = render_held_chat_chunk(&mut held) {
+                            yield Ok(final_chunk);
+                        }
                         yield Ok(openai_sse_error_chunk(
                             "openai_compat_payload_parse_error",
                             &format!("invalid Chat Completions SSE JSON payload: {error}"),
@@ -113,6 +141,9 @@ where
                 let semantics = match chat_sse_semantics(&value) {
                     Ok(semantics) => semantics,
                     Err(error) => {
+                        if let Some(final_chunk) = render_held_chat_chunk(&mut held) {
+                            yield Ok(final_chunk);
+                        }
                         yield Ok(openai_sse_error_chunk(
                             "openai_compat_protocol_error",
                             &error,
@@ -131,6 +162,22 @@ where
                 }
                 saw_terminal_event =
                     !seen_choices.is_empty() && seen_choices.is_subset(&finished_choices);
+                if !forward_usage_chunk {
+                    if !semantics.is_error && is_usage_only_chunk(&value) {
+                        if let Some((_, final_chunk)) = held.as_mut() {
+                            fold_usage_chunk(final_chunk, value);
+                            continue;
+                        }
+                    } else {
+                        if let Some(final_chunk) = render_held_chat_chunk(&mut held) {
+                            yield Ok(final_chunk);
+                        }
+                        if saw_terminal_event && !semantics.is_error {
+                            held = Some((event.event, value));
+                            continue;
+                        }
+                    }
+                }
                 let normalized_data = normalize_openai_compat_chat_sse_data(value);
                 yield Ok(render_sse_event_chunk(event.event.as_deref(), &normalized_data));
 
@@ -139,6 +186,10 @@ where
                     break 'upstream;
                 }
             }
+        }
+
+        if let Some(final_chunk) = render_held_chat_chunk(&mut held) {
+            yield Ok(final_chunk);
         }
 
         if !stream_failed && let Err(error) = parser.finish() {
@@ -198,6 +249,41 @@ struct ChatSseSemantics {
 fn normalize_openai_compat_chat_sse_data(mut value: Value) -> String {
     normalize_openai_compat_chunk_value(&mut value);
     value.to_string()
+}
+
+/// A Chat Completions chunk and its SSE event name.
+type HeldChatChunk = (Option<String>, Value);
+
+fn render_held_chat_chunk(held: &mut Option<HeldChatChunk>) -> Option<Bytes> {
+    held.take().map(|(event, value)| {
+        render_sse_event_chunk(
+            event.as_deref(),
+            &normalize_openai_compat_chat_sse_data(value),
+        )
+    })
+}
+
+/// The chunk `stream_options.include_usage` adds after the last choice chunk.
+fn is_usage_only_chunk(value: &Value) -> bool {
+    value.get("usage").is_some_and(Value::is_object)
+        && value
+            .get("choices")
+            .is_none_or(|choices| choices.as_array().is_some_and(Vec::is_empty))
+}
+
+/// Moves `usage` onto the final choice chunk; other top-level fields such as `service_tier`
+/// fill gaps without overriding what the final chunk already reports.
+fn fold_usage_chunk(final_chunk: &mut Value, usage_chunk: Value) {
+    let (Some(target), Value::Object(source)) = (final_chunk.as_object_mut(), usage_chunk) else {
+        return;
+    };
+    for (key, value) in source {
+        if key == "usage" {
+            target.insert(key, value);
+        } else if key != "choices" {
+            target.entry(key).or_insert(value);
+        }
+    }
 }
 
 pub(crate) fn normalize_openai_compat_responses_stream<S>(upstream: S) -> ProviderStream
@@ -658,6 +744,71 @@ mod tests {
 
         assert!(rendered.contains("\"usage\""));
         assert!(rendered.ends_with("data: [DONE]\n\n"));
+    }
+
+    const GATEWAY_REQUESTED_USAGE_TRANSCRIPT: &str = "data: {\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n\
+         data: {\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n\
+         data: {\"id\":\"c\",\"choices\":[],\"service_tier\":\"default\",\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}\n\n\
+         data: [DONE]\n\n";
+
+    fn rendered_events(rendered: &str) -> Vec<&str> {
+        rendered
+            .split("\n\n")
+            .filter(|event| !event.is_empty())
+            .map(|event| event.strip_prefix("data: ").expect("data event"))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn chat_folds_usage_chunk_into_final_chunk_when_client_did_not_ask() {
+        let rendered = render(normalize_openai_compat_chat_stream(
+            upstream(GATEWAY_REQUESTED_USAGE_TRANSCRIPT),
+            false,
+        ))
+        .await;
+
+        let events = rendered_events(&rendered);
+        assert_eq!(events.len(), 3, "{rendered}");
+        assert!(!rendered.contains("\"choices\":[]"), "{rendered}");
+        let final_chunk: Value = serde_json::from_str(events[1]).expect("final chunk");
+        assert_eq!(final_chunk["choices"][0]["finish_reason"], "stop");
+        assert_eq!(final_chunk["usage"]["total_tokens"], 3);
+        assert_eq!(final_chunk["service_tier"], "default");
+        assert_eq!(events[2], "[DONE]");
+    }
+
+    #[tokio::test]
+    async fn chat_forwards_usage_chunk_when_client_asked() {
+        let rendered = render(normalize_openai_compat_chat_stream(
+            upstream(GATEWAY_REQUESTED_USAGE_TRANSCRIPT),
+            true,
+        ))
+        .await;
+
+        let events = rendered_events(&rendered);
+        assert_eq!(events.len(), 4, "{rendered}");
+        let final_chunk: Value = serde_json::from_str(events[1]).expect("final chunk");
+        assert!(final_chunk.get("usage").is_none(), "{final_chunk}");
+        let usage_chunk: Value = serde_json::from_str(events[2]).expect("usage chunk");
+        assert_eq!(usage_chunk["choices"], json!([]));
+        assert_eq!(usage_chunk["usage"]["total_tokens"], 3);
+    }
+
+    #[tokio::test]
+    async fn chat_flushes_held_final_chunk_before_a_later_error() {
+        let rendered = render(normalize_openai_compat_chat_stream(
+            upstream(
+                "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: not-json\n\n",
+            ),
+            false,
+        ))
+        .await;
+
+        let finish = rendered.find("\"finish_reason\":\"stop\"").expect("final chunk");
+        let error = rendered
+            .find("openai_compat_payload_parse_error")
+            .expect("error chunk");
+        assert!(finish < error, "{rendered}");
     }
 
     #[tokio::test]

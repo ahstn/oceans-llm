@@ -196,7 +196,6 @@ models:
             max_tokens_field: max_tokens
             developer_role: system
             reasoning_effort: omit
-            supports_stream_usage: true
             empty_tools: omit
 ```
 
@@ -207,10 +206,10 @@ These transforms apply to Chat Completions requests unless a field says otherwis
 | Field | Default | Values and effect |
 | --- | --- | --- |
 | `supports_store` | `true` | `false` removes `store` from outbound Chat Completions requests. |
-| `max_tokens_field` | `max_completion_tokens` | `max_tokens` renames `max_completion_tokens` to `max_tokens`. |
+| `max_tokens_field` | `max_completion_tokens` | `max_tokens` renames `max_completion_tokens` to `max_tokens`. On `openai_compat` and `gcp_cloud_run_openai_compat` routes, the default renames `max_tokens` to `max_completion_tokens`, which OpenAI reasoning models require, also on routes without a profile. A request with both fields at different values gets a 400. |
 | `developer_role` | `developer` | `system` rewrites `developer` messages to `system`. |
 | `reasoning_effort` | `passthrough` | `omit` removes `reasoning_effort`. `reasoning_object` rewrites `reasoning_effort: "high"` to `reasoning: { "effort": "high" }`. |
-| `supports_stream_usage` | `false` | `true` adds `stream_options.include_usage: true` to streaming Chat Completions requests. |
+| `supports_stream_usage` | `true` | Streaming Chat Completions requests on `openai_compat` and `gcp_cloud_run_openai_compat` routes get `stream_options.include_usage: true`, also on routes without a profile. `false` leaves `stream_options` as the caller sent it, for upstreams that reject it. |
 | `empty_tools` | `preserve` | See below. |
 | `decisions_api` | unset | `openai` makes the route an OpenAI-format Decisions route. See [Decisions API](#decisions-api). |
 
@@ -219,6 +218,8 @@ These transforms apply to Chat Completions requests unless a field says otherwis
 - `preserve` sends an empty `tools` array as is.
 - `omit` removes an empty `tools` array. It also removes neutral `tool_choice` values (`auto`, `none` or `null`) and `parallel_tool_calls`. A `required` or named `tool_choice` is rejected locally.
 - `preserve_with_tool_history` removes an empty array unless the request has function-tool history. This suits LiteLLM and Anthropic proxies. A kept array keeps its `tool_choice`.
+
+When the gateway adds `include_usage` and the caller didn't ask for it, the client gets no extra usage-only chunk. The gateway moves `usage` onto the final choice chunk, so the stream still ends with that chunk and `[DONE]`.
 
 ## Anthropic Messages on OpenAI-compatible routes
 
@@ -412,7 +413,9 @@ With `auth.mode: default_chain` or `static_credentials`, the gateway signs reque
 - Function tools as Anthropic custom tools with `input_schema`.
 - `tool_choice` mapped from `auto`, `required` and named function choices. See [Forced tool choice](#forced-tool-choice).
 
-The gateway rejects OpenAI-only controls such as penalties, `n`, `seed`, `parallel_tool_calls` and `response_format`. `json_schema` is off for this style. `context_management`, `container` and `metadata` are copied through. Route `extra_body` is applied last, as an admin-controlled override.
+`parallel_tool_calls: false` sets `tool_choice.disable_parallel_tool_use: true` when the request has tools.
+
+The gateway drops OpenAI client hints that Bedrock doesn't use: `stream_options`, `store`, `user`, `safety_identifier`, `prompt_cache_key`, `prompt_cache_retention` and `logit_bias`. It also drops `n: 1`, `logprobs: false` and `null` values. It rejects controls Bedrock can't honour: penalties, `n` above 1, `logprobs: true`, `top_logprobs`, `seed` and `response_format`. `json_schema` is off for this style. `context_management`, `container` and `metadata` are copied through. Route `extra_body` is applied last, as an admin-controlled override.
 
 This style has no streaming path: the gateway rejects streaming requests on it locally. Use `runtime_converse` for ConverseStream, or `mantle_anthropic_messages` for Mantle Messages SSE.
 
@@ -427,6 +430,8 @@ For Converse and ConverseStream, the gateway writes Claude thinking controls to 
 Tool results accept text, JSON, base64 images and Bedrock document formats (`pdf`, `csv`, `doc`, `docx`, `xls`, `xlsx`, `html`, `md` and `txt`). Ordinary user content uses the same conversion. Document names lose their extension and are cleaned to Bedrock's allowed characters. Images must be base64: Bedrock rejects remote image URLs.
 
 Requests can include `requestMetadata`, `performanceConfig`, `guardrailConfig` and `additionalModelResponseFieldPaths` (or their snake_case aliases). The gateway checks AWS limits, enum values, guardrail shapes and RFC 6901 response paths before dispatch. `streamProcessingMode` is accepted for ConverseStream only. Route `extra_body` is merged afterwards.
+
+Converse drops and rejects the same OpenAI-only fields as InvokeModel, and also drops OpenAI `metadata`. ConverseStream reports usage without `stream_options`. On Claude models, `parallel_tool_calls: false` with tools sets `additionalModelRequestFields.tool_choice.disable_parallel_tool_use: true`. Other Converse models have no such switch, so the gateway rejects `parallel_tool_calls: false` for them.
 
 Returned `additionalModelResponseFields` stay under `provider_metadata.aws_bedrock.additionalModelResponseFields`, including in the stream's message-stop metadata. Consecutive tool results share one user turn, but a later ordinary user message isn't merged into it. `malformed_tool_use` and `malformed_model_output` are upstream failures, not successful Chat completions. The gateway keeps their billable usage.
 

@@ -358,7 +358,7 @@ pub struct OpenAiCompatRouteCompatibilityConfig {
     pub developer_role: OpenAiCompatDeveloperRole,
     #[serde(default)]
     pub reasoning_effort: OpenAiCompatReasoningEffort,
-    #[serde(default)]
+    #[serde(default = "default_enabled")]
     pub supports_stream_usage: bool,
     #[serde(default)]
     pub empty_tools: OpenAiCompatEmptyTools,

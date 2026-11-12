@@ -1108,3 +1108,75 @@ async fn github_app_installation_token_source_rejects_wrong_repository_scope() {
             .contains("does not match requested repository `67890`")
     );
 }
+
+#[tokio::test]
+async fn image_requests_carry_the_copilot_vision_header() {
+    let provider = bearer_provider();
+    let chat = dummy_context("gpt-4o");
+    let messages = messages_context("claude-sonnet-4.5");
+    let image_tool_result = json!({"messages": [{"role": "user", "content": [{
+        "type": "tool_result",
+        "tool_use_id": "toolu_1",
+        "content": [{
+            "type": "image",
+            "source": {"type": "base64", "media_type": "image/png", "data": "AAAA"}
+        }]
+    }]}]});
+    let cases = [
+        (
+            "chat/completions",
+            json!({"messages": [{"role": "user", "content": [
+                {"type": "text", "text": "What is this?"},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}
+            ]}]}),
+            &chat,
+            Some(GitHubCopilotChatApi::ChatCompletions),
+            true,
+        ),
+        (
+            "responses",
+            json!({"input": [{"role": "user", "content": [
+                {"type": "input_image", "image_url": "data:image/png;base64,AAAA"}
+            ]}]}),
+            &chat,
+            None,
+            true,
+        ),
+        (
+            "v1/messages",
+            image_tool_result,
+            &messages,
+            Some(GitHubCopilotChatApi::AnthropicMessages),
+            true,
+        ),
+        (
+            "chat/completions",
+            json!({"messages": [{"role": "user", "content": "Describe an image of a cat."}]}),
+            &chat,
+            Some(GitHubCopilotChatApi::ChatCompletions),
+            false,
+        ),
+        (
+            "responses",
+            json!({"input": "Describe an image of a cat."}),
+            &chat,
+            None,
+            false,
+        ),
+    ];
+
+    for (endpoint, body, context, chat_api, vision) in cases {
+        let request = provider
+            .build_copilot_request(endpoint, body, context, chat_api, CopilotInitiator::User)
+            .await
+            .expect("Copilot request");
+        assert_eq!(
+            request
+                .headers()
+                .get("copilot-vision-request")
+                .map(|value| value.to_str().unwrap()),
+            vision.then_some("true"),
+            "{endpoint}"
+        );
+    }
+}

@@ -116,6 +116,70 @@ impl Money4 {
         Ok(Self::from_scaled(scaled))
     }
 
+    /// Parses a provider-reported cost such as `0.000423` or `4.23e-4`,
+    /// rounding half up to four decimal places.
+    ///
+    /// Unlike [`Self::from_decimal_str`], extra fractional digits are rounded
+    /// instead of rejected. Negative costs are rejected.
+    pub fn from_reported_cost_str(value: &str) -> Result<Self, String> {
+        let invalid = || format!("cost `{value}` is not a decimal amount");
+        let text = value.trim();
+        if text.starts_with('-') {
+            return Err(format!("cost `{value}` cannot be negative"));
+        }
+        let (mantissa, exponent) = match text.split_once(['e', 'E']) {
+            Some((mantissa, exponent)) => {
+                (mantissa, exponent.parse::<i32>().map_err(|_| invalid())?)
+            }
+            None => (text, 0),
+        };
+        let (integer, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+        let is_digits = |part: &str| part.bytes().all(|byte| byte.is_ascii_digit());
+        if integer.is_empty()
+            || !is_digits(integer)
+            || !is_digits(fraction)
+            || mantissa.ends_with('.')
+        {
+            return Err(invalid());
+        }
+        let fraction = fraction.trim_end_matches('0');
+        let overflow = || format!("cost `{value}` overflowed");
+        let mut units = 0_i128;
+        for digit in integer.bytes().chain(fraction.bytes()) {
+            units = units
+                .checked_mul(10)
+                .and_then(|units| units.checked_add(i128::from(digit - b'0')))
+                .ok_or_else(overflow)?;
+        }
+        if units == 0 {
+            return Ok(Self::from_scaled(0));
+        }
+        // `units / 10^scale` is the exact amount; Money4 keeps four places.
+        let scale = fraction.len() as i64 - i64::from(exponent);
+        let scaled = if scale <= 4 {
+            u32::try_from(4 - scale)
+                .ok()
+                .and_then(|shift| 10_i128.checked_pow(shift))
+                .and_then(|factor| units.checked_mul(factor))
+                .ok_or_else(overflow)?
+        } else {
+            // A divisor beyond i128 exceeds twice any `units`, so the amount rounds to zero.
+            match u32::try_from(scale - 4)
+                .ok()
+                .and_then(|excess| 10_i128.checked_pow(excess))
+            {
+                Some(divisor) => {
+                    let remainder = units % divisor;
+                    units / divisor + i128::from(remainder >= divisor - remainder)
+                }
+                None => 0,
+            }
+        };
+        i64::try_from(scaled)
+            .map(Self::from_scaled)
+            .map_err(|_| overflow())
+    }
+
     #[must_use]
     pub const fn is_negative(self) -> bool {
         self.amount_10000 < 0
@@ -3310,7 +3374,9 @@ pub struct OpenAiCompatRouteCompatibility {
     pub developer_role: OpenAiCompatDeveloperRole,
     #[serde(default)]
     pub reasoning_effort: OpenAiCompatReasoningEffort,
-    #[serde(default)]
+    /// Streaming Chat Completions request `stream_options.include_usage`. `false` opts out
+    /// for upstreams that reject `stream_options`.
+    #[serde(default = "default_true")]
     pub supports_stream_usage: bool,
     #[serde(default)]
     pub empty_tools: OpenAiCompatEmptyTools,
@@ -3327,7 +3393,7 @@ impl Default for OpenAiCompatRouteCompatibility {
             max_tokens_field: OpenAiCompatMaxTokensField::default(),
             developer_role: OpenAiCompatDeveloperRole::default(),
             reasoning_effort: OpenAiCompatReasoningEffort::default(),
-            supports_stream_usage: false,
+            supports_stream_usage: true,
             empty_tools: OpenAiCompatEmptyTools::default(),
             decisions_api: None,
         }
@@ -3924,6 +3990,33 @@ mod tests {
         is_supported_vertex_google_chat_upstream_model,
         vertex_route_capabilities_for_upstream_model,
     };
+
+    #[test]
+    fn reported_cost_rounds_half_up_to_four_places() {
+        let parse = super::Money4::from_reported_cost_str;
+        for (text, scaled) in [
+            ("0.000423", 4),
+            ("0.00005", 1),
+            ("0.000049", 0),
+            ("0.00015", 2),
+            ("1.23456789", 12_346),
+            ("0.0125", 125),
+            ("2", 20_000),
+            ("4.23e-4", 4),
+            ("5E-5", 1),
+            ("1.5e2", 1_500_000),
+            ("0e9999", 0),
+            ("1e-60", 0),
+            (" 0.0042 ", 42),
+        ] {
+            assert_eq!(parse(text), Ok(super::Money4::from_scaled(scaled)), "{text}");
+        }
+        for text in ["-0.0001", "", ".5", "1.", "abc", "1e", "1.2.3"] {
+            assert!(parse(text).is_err(), "{text}");
+        }
+        // Config amounts stay strict about extra places.
+        assert!(super::Money4::from_decimal_str("0.000423").is_err());
+    }
 
     #[test]
     fn reasoning_effort_order_and_wire_values_match_policy_order() {

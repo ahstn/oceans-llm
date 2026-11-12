@@ -186,11 +186,15 @@ where
                                         ));
                                     }
                                     Some("input_json_delta") => {
-                                        if let Some(block_index) = value.get("index").and_then(Value::as_u64) {
-                                            initial_tool_inputs.remove(&block_index);
-                                        }
                                         let partial_json = delta.get("partial_json")
                                             .and_then(Value::as_str).unwrap_or_default();
+                                        // Anthropic opens tool input with an empty fragment; it must
+                                        // not drop the start block's `input`, emitted on block stop.
+                                        if !partial_json.is_empty()
+                                            && let Some(block_index) = value.get("index").and_then(Value::as_u64)
+                                        {
+                                            initial_tool_inputs.remove(&block_index);
+                                        }
                                         let index = value.get("index").and_then(Value::as_u64)
                                             .and_then(|block_index| tool_block_indexes.get(&block_index).copied())
                                             .unwrap_or(0);
