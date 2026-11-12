@@ -441,3 +441,30 @@ fn a_main_file_inside_the_config_directory_is_read_once() {
     assert_eq!(loaded.config.providers.len(), 1);
     assert_eq!(loaded.config.models.len(), 1);
 }
+
+#[test]
+fn render_keeps_document_order_for_unsorted_list_collections() {
+    let tmp = tempdir().expect("tempdir");
+    write(
+        tmp.path(),
+        "gateway.yaml",
+        "providers:\n  - id: zeta\n    type: openai_compat\n    base_url: https://api.openai.com/v1\n  - id: alpha\n    type: openai_compat\n    base_url: https://api.openai.com/v1\nmodels:\n  - id: z-model\n    routes:\n      - { provider: zeta, upstream_model: gpt-5 }\n  - id: a-model\n    routes:\n      - { provider: alpha, upstream_model: gpt-5 }\n",
+    );
+    write(
+        tmp.path(),
+        "conf.d/more.yaml",
+        "models:\n  - id: m-model\n    route: { provider: alpha, upstream_model: gpt-5-mini }\n  - id: b-model\n    route: { provider: zeta, upstream_model: gpt-5-mini }\n",
+    );
+
+    // Render checks its output against the load, so an order change would fail here.
+    let rendered = render_config(&sources(tmp.path()), false).expect("unsorted lists render");
+    let ids = rendered
+        .lines()
+        .filter(|line| line.starts_with("  ") && !line.starts_with("   ") && line.ends_with(':'))
+        .map(|line| line.trim().trim_end_matches(':'))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        ids,
+        ["zeta", "alpha", "z-model", "a-model", "m-model", "b-model"]
+    );
+}
