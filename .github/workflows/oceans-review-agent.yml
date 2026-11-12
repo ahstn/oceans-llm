@@ -1,9 +1,9 @@
 name: oceans-review-agent
 
-# Fork PRs are skipped below, so pull_request still receives the secrets and
-# token permissions this job needs without pull_request_target.
+# pull_request_target keeps this workflow definition and the executable checkout
+# on the trusted base revision. The PR head is checked out separately as data.
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
@@ -33,9 +33,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout
+      - name: Checkout trusted base
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
 
       - name: Checkout PR as review data

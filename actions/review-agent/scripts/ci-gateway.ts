@@ -129,7 +129,7 @@ async function start(): Promise<void> {
   const log = openSync(join(directory, 'gateway.log'), 'a', 0o600)
   const child = spawn(
     join(required('CARGO_TARGET_DIR'), 'debug/gateway'),
-    ['--config', configPath, 'serve'],
+    ['--config', configPath, 'serve', '--bootstrap-admin=true'],
     {
       detached: true,
       stdio: ['ignore', log, log],

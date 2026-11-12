@@ -46,6 +46,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
 
       - name: Setup mise
         uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
@@ -83,13 +84,13 @@ jobs:
         with:
           images: ghcr.io/ahstn/${{ matrix.image }}
           tags: |
-            type=raw,value=${{ github.ref_name }}
+            type=raw,value=${{ fromJSON(inputs.plan).announcement_tag }}
             type=raw,value=sha-${{ github.sha }}
             type=raw,value=latest,enable=${{ !fromJSON(inputs.plan).announcement_is_prerelease }}
           labels: |
             org.opencontainers.image.title=${{ matrix.title }}
             org.opencontainers.image.description=${{ matrix.description }}
-            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.version=${{ fromJSON(inputs.plan).announcement_tag }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
@@ -131,6 +132,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
 
       - name: Setup mise, Helm, and kubeconform
         uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
@@ -145,16 +147,17 @@ jobs:
       - name: Package and push Helm chart
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ fromJSON(inputs.plan).announcement_tag }}
         run: |
           set -euo pipefail
 
           helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin <<< "$GH_TOKEN"
-          chart_version="${GITHUB_REF_NAME#v}"
+          chart_version="${RELEASE_TAG#v}"
           mkdir -p dist/charts
 
           helm package "$HELM_CHART_DIR" \
             --version "$chart_version" \
-            --app-version "$GITHUB_REF_NAME" \
+            --app-version "$RELEASE_TAG" \
             --destination dist/charts
 
           helm push "dist/charts/${HELM_CHART_NAME}-${chart_version}.tgz" "oci://${HELM_OCI_REGISTRY}"

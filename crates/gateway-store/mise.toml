@@ -52,6 +52,9 @@ env = { POSTGRES_URL = { required = true }, GATEWAY_CONFIG = "../../gateway.prod
 run = """
 gateway="$CARGO_TARGET_DIR/debug/gateway"
 log="${TMPDIR:-/tmp}/gateway-postgres-smoke.log"
+# gateway.prod.yaml requires a bootstrap password from the environment. The smoke never signs
+# in, so a random per-run value avoids a known admin password on a reused database.
+export GATEWAY_BOOTSTRAP_ADMIN_PASSWORD="${GATEWAY_BOOTSTRAP_ADMIN_PASSWORD:-$(openssl rand -hex 16)}"
 
 "$gateway" migrate --apply
 "$gateway" seed-config

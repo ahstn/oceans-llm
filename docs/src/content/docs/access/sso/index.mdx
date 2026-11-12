@@ -127,9 +127,10 @@ When `mcp.client_oauth` is enabled, MCP clients sign users in through the same a
 
 ## Try SSO locally
 
-The repository ships an Authentik identity provider for local testing. The `sso` profile in `compose.local.yaml` starts Authentik with a blueprint that creates the `Oceans LLM` application and a test user:
+The repository ships an Authentik identity provider for local testing. The `sso` profile in `compose.local.yaml` starts Authentik with a blueprint that creates the `Oceans LLM` application and a test user. The local gateway also needs a bootstrap admin password of at least 16 characters:
 
 ```shell
+export GATEWAY_BOOTSTRAP_ADMIN_PASSWORD="$(openssl rand -base64 24)"
 BUN_VERSION="$(mise tool bun --requested)" RUST_VERSION="$(mise tool rust --requested)" docker compose --profile sso -f compose.local.yaml up --build
 ```
 

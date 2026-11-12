@@ -62,7 +62,7 @@ pub struct ServeArgs {
     #[arg(
         long = "bootstrap-admin",
         env = "GATEWAY_BOOTSTRAP_ADMIN",
-        default_value_t = true,
+        default_value_t = false,
         action = ArgAction::Set
     )]
     pub bootstrap_admin: bool,
@@ -192,6 +192,16 @@ mod tests {
         assert!(!args.run_migrations);
         assert!(!args.bootstrap_admin);
         assert!(!args.seed_config);
+    }
+
+    #[test]
+    fn serve_disables_bootstrap_admin_by_default() {
+        let cli = Cli::parse_from(["gateway", "serve"]);
+
+        let Command::Serve(args) = cli.command.expect("command") else {
+            panic!("expected serve command");
+        };
+        assert!(!args.bootstrap_admin);
     }
 
     #[test]

@@ -38,11 +38,13 @@ const runSdk = (request: PiReviewRequest) =>
   invokePi(request, 'local-test-key', 2, { sandbox: isLinux })
 const outside = mkdtempSync(join(tmpdir(), 'review-outside-'))
 const outsideSecret = join(outside, 'secret')
+const checkoutCredential = 'ghs_CHECKOUT_TOKEN_MUST_NOT_REACH_MODEL'
 const forbiddenPaths = [
   '/proc/self/environ',
   '/proc/1/environ',
   outsideSecret,
   join(workspace, 'escape'),
+  join(workspace, '.git/config'),
 ]
 let providerStarted: (() => void) | undefined
 function nextCompletion(input: {
@@ -83,7 +85,7 @@ function nextCompletion(input: {
     scenario === 'boundary'
       ? forbiddenPaths[toolResponses]
       : scenario === 'delegation' && child && toolResponses === 0
-        ? '/proc/self/environ'
+        ? join(workspace, '.git/config')
         : undefined
   const toolDone =
     !boundaryPath &&
@@ -203,6 +205,7 @@ try {
   writeFileSync(join(workspace, 'example.ts'), 'export const value = 2\n')
   git('commit', '-qam', 'head')
   const head = git('rev-parse', 'HEAD')
+  git('remote', 'add', 'origin', `https://x-access-token:${checkoutCredential}@example.test/repo`)
   // These files must stay review data, never runtime configuration.
   writeFileSync(join(workspace, 'tsconfig.json'), 'not valid JSON')
   mkdirSync(join(workspace, '.pi/extensions'), { recursive: true })
@@ -266,6 +269,7 @@ try {
     const visible = JSON.stringify(requests.map((request) => request.messages))
     assert(!visible.includes('HOST_SECRET_MUST_NOT_REACH_MODEL'))
     assert(!visible.includes('local-test-key'))
+    assert(!visible.includes(checkoutCredential))
     assert(
       forbiddenPaths.every((path) => visible.includes(path)),
       'Every forbidden path must be probed',
@@ -300,7 +304,8 @@ try {
     )
     assert(!delegatedMessages.includes('local-test-key'))
     assert(!delegatedMessages.includes('HOST_SECRET_MUST_NOT_REACH_MODEL'))
-    assert(delegatedMessages.includes('/proc/self/environ'))
+    assert(!delegatedMessages.includes(checkoutCredential))
+    assert(delegatedMessages.includes(join(workspace, '.git/config')))
   }
   assert(
     requests.some((r) => JSON.stringify(r.messages).includes('CHILD_REVIEW_VERIFIED')),

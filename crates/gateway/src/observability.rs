@@ -44,6 +44,7 @@ pub struct GatewayMetrics {
     usage_records: Counter<u64>,
     usage_record_failures: Counter<u64>,
     rate_limit_decisions: Counter<u64>,
+    password_login_attempts: Counter<u64>,
     admin_view_cache_requests: Counter<u64>,
     admin_view_cache_load_duration: Histogram<f64>,
     #[cfg(any(test, debug_assertions))]
@@ -265,6 +266,10 @@ impl GatewayMetrics {
                 .u64_counter("gateway.rate_limit.decisions")
                 .with_description("Rate-limit checks by operation and outcome")
                 .build(),
+            password_login_attempts: meter
+                .u64_counter("gateway.auth.password_login.attempts")
+                .with_description("Password login attempts by bounded outcome")
+                .build(),
             admin_view_cache_requests: meter
                 .u64_counter("gateway.admin.view_cache.requests")
                 .with_description("Admin global-view cache requests by result")
@@ -437,6 +442,11 @@ impl GatewayMetrics {
                 KeyValue::new("rate_limit.outcome", outcome.to_string()),
             ],
         );
+    }
+
+    pub fn record_password_login(&self, outcome: &str) {
+        self.password_login_attempts
+            .add(1, &[KeyValue::new("outcome", outcome.to_string())]);
     }
 
     pub fn record_guardrail_decision(

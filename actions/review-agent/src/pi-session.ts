@@ -13,8 +13,8 @@ import {
 } from '@earendil-works/pi-coding-agent'
 import { Type, type Static } from 'typebox'
 import { registerSubagentCapabilityCeiling } from 'pi-subagents/capability-ceiling'
-import type { PiReviewRequest } from './pi'
-import { loadReviewDiff, type ReviewDiff } from './review-diff'
+import type { PiWorkerRequest } from './pi'
+import { deserializeReviewDiff, type ReviewDiff } from './review-diff'
 import { oceansModelLimits } from './model-limits'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -114,7 +114,7 @@ const reviewPolicy: ExtensionFactory = (pi) => {
   })
 }
 
-function writeRuntimeConfig(request: PiReviewRequest, agentDir: string): string {
+function writeRuntimeConfig(request: PiWorkerRequest, agentDir: string): string {
   mkdirSync(agentDir, { recursive: true })
   copyFileSync(join(root, 'config/web-search.json'), join(agentDir, 'web-search.json'))
   mkdirSync(join(agentDir, 'extensions/subagent'), { recursive: true })
@@ -165,7 +165,7 @@ function writeRuntimeConfig(request: PiReviewRequest, agentDir: string): string 
   return `oceans/${config.model_id}`
 }
 
-export async function runPiSession(request: PiReviewRequest, resultPath: string): Promise<void> {
+export async function runPiSession(request: PiWorkerRequest, resultPath: string): Promise<void> {
   const agentDir = process.env.PI_CODING_AGENT_DIR
   if (!agentDir) throw new Error('PI_CODING_AGENT_DIR must point to an isolated run directory')
   const modelName = writeRuntimeConfig(request, agentDir)
@@ -179,7 +179,7 @@ export async function runPiSession(request: PiReviewRequest, resultPath: string)
   const model = runtime.getModel(modelName.slice(0, separator), modelName.slice(separator + 1))
   if (!model) throw new Error(`Pi model is not configured: ${modelName}`)
   const diffPath = join(dirname(resultPath), 'review.diff')
-  const diff = await loadReviewDiff(request.workspace, request.context, diffPath)
+  const diff = deserializeReviewDiff(request.reviewDiff)
   const settings = SettingsManager.inMemory({
     defaultProjectTrust: 'never',
     enableInstallTelemetry: false,

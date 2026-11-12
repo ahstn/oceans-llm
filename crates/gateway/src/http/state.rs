@@ -3,8 +3,8 @@ use std::{collections::HashMap, sync::Arc};
 use gateway_core::{ProviderRegistry, SeedHumanBudgetDefaults, SkillObjectStore};
 use gateway_guardrails::{GuardrailConfig, GuardrailEngine};
 use gateway_service::{
-    GatewayService, McpClientOauthSettings, McpOauthRuntime, McpUpstreamClients, SkillService,
-    WeightedRoutePlanner,
+    GatewayService, McpClientOauthSettings, McpOauthRuntime, McpUpstreamClients,
+    PasswordAuthProtection, SkillService, WeightedRoutePlanner,
 };
 use gateway_store::AnyStore;
 
@@ -43,6 +43,8 @@ pub struct AppState {
     pub oauth_streams: Arc<OauthStreamWatcher>,
     /// Ends MCP event streams when their caller can no longer open them.
     pub mcp_stream_reach: Arc<crate::http::mcp_gateway::stream_reach::McpStreamReachWatcher>,
+    /// Bounds public password authentication work and failed-login backoff.
+    pub password_auth: Arc<PasswordAuthProtection>,
     pub identity_token_secret: Arc<String>,
     pub oidc_public_base_url: Arc<Option<String>>,
     pub oauth_public_base_url: Arc<Option<String>>,

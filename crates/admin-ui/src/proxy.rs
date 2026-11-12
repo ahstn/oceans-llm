@@ -6,7 +6,7 @@ use axum::{
     extract::{ConnectInfo, State},
     http::{
         HeaderMap, HeaderName, HeaderValue, Request, StatusCode, Uri,
-        header::{CONNECTION, HOST, LOCATION},
+        header::{CONNECTION, CONTENT_LENGTH, HOST, LOCATION},
     },
     response::{IntoResponse, Response},
     routing::{any, get},
@@ -23,7 +23,8 @@ struct ProxyState {
     base_path: String,
     upstream: String,
     client: reqwest::Client,
-    max_multipart_body_bytes: usize,
+    max_request_body_bytes: usize,
+    request_timeout: Duration,
     client_ip_signing_key: Option<std::sync::Arc<[u8]>>,
     trusted_proxies: TrustedProxies,
 }
@@ -45,7 +46,8 @@ impl ProxyState {
             base_path,
             upstream,
             client,
-            max_multipart_body_bytes: config.max_multipart_body_bytes,
+            max_request_body_bytes: config.max_multipart_body_bytes,
+            request_timeout: Duration::from_millis(config.request_timeout_ms),
             client_ip_signing_key: config.client_ip_signing_key.clone(),
             trusted_proxies: config.trusted_proxies.clone(),
         }
@@ -111,36 +113,34 @@ async fn proxy_request(State(state): State<ProxyState>, req: Request<Body>) -> R
         .get::<ConnectInfo<SocketAddr>>()
         .map(|ConnectInfo(address)| address.ip());
 
-    let is_multipart = inbound_headers
-        .get("content-type")
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| {
-            value.split(';').next().is_some_and(|media_type| {
-                media_type
-                    .trim()
-                    .eq_ignore_ascii_case("multipart/form-data")
-            })
-        });
-    let body_limit = if is_multipart {
-        state.max_multipart_body_bytes
-    } else {
-        usize::MAX
-    };
-    let body_bytes = match to_bytes(body, body_limit).await {
-        Ok(bytes) => bytes,
-        Err(error) => {
+    if content_length_exceeds(&inbound_headers, state.max_request_body_bytes) {
+        return request_body_too_large_response();
+    }
+
+    let body_bytes = match tokio::time::timeout(
+        state.request_timeout,
+        to_bytes(body, state.max_request_body_bytes),
+    )
+    .await
+    {
+        Ok(Ok(bytes)) => bytes,
+        Ok(Err(error)) => {
             if error
                 .source()
                 .is_some_and(|source| source.is::<http_body_util::LengthLimitError>())
             {
-                return (
-                    StatusCode::PAYLOAD_TOO_LARGE,
-                    "Multipart upload is too large",
-                )
-                    .into_response();
+                return request_body_too_large_response();
             }
             warn!(%error, "failed to read incoming admin UI proxy request body");
             return ui_unavailable_response();
+        }
+        Err(_) => {
+            warn!("timed out reading incoming admin UI proxy request body");
+            return (
+                StatusCode::REQUEST_TIMEOUT,
+                "Admin UI request body timed out",
+            )
+                .into_response();
         }
     };
 
@@ -220,6 +220,14 @@ fn build_target_url(state: &ProxyState, uri: &Uri) -> String {
     format!("{}{}{}", state.upstream, path, query)
 }
 
+fn content_length_exceeds(headers: &HeaderMap, limit: usize) -> bool {
+    headers
+        .get(CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .is_some_and(|length| usize::try_from(length).map_or(true, |length| length > limit))
+}
+
 fn normalize_base_path(raw: &str) -> String {
     let trimmed = raw.trim();
     if trimmed.is_empty() || trimmed == "/" {
@@ -297,17 +305,30 @@ fn ui_unavailable_response() -> Response {
         .into_response()
 }
 
+fn request_body_too_large_response() -> Response {
+    (
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "Admin UI request body is too large",
+    )
+        .into_response()
+}
+
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use std::{
+        convert::Infallible,
+        sync::{Arc, Mutex},
+        time::Duration,
+    };
 
     use axum::{
         Router,
-        body::{Body, to_bytes},
+        body::{Body, Bytes, to_bytes},
         http::{HeaderMap, HeaderValue, Request, StatusCode, header::CONNECTION},
         response::Response,
         routing::any,
     };
+    use futures_util::stream;
     use serde::Serialize;
     use tokio::net::TcpListener;
     use tower::ServiceExt;
@@ -549,6 +570,102 @@ mod tests {
             );
         }
         assert_eq!(captured.lock().expect("capture lock").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn proxy_bounds_non_multipart_before_forwarding_without_content_length() {
+        let app = mount_admin_ui(
+            Router::new(),
+            AdminUiConfig {
+                upstream: "http://127.0.0.1:9".to_string(),
+                max_multipart_body_bytes: 8,
+                ..AdminUiConfig::default()
+            },
+        );
+
+        for (content_type, body, expected) in [
+            (None, "12345678", StatusCode::SERVICE_UNAVAILABLE),
+            (
+                Some("application/json"),
+                "123456789",
+                StatusCode::PAYLOAD_TOO_LARGE,
+            ),
+        ] {
+            let mut request = Request::builder()
+                .uri("/admin/_serverFn/upload")
+                .method("POST");
+            if let Some(content_type) = content_type {
+                request = request.header("content-type", content_type);
+            }
+            let request = request.body(Body::from(body)).expect("request must build");
+            assert_eq!(
+                app.clone()
+                    .oneshot(request)
+                    .await
+                    .expect("response")
+                    .status(),
+                expected
+            );
+        }
+
+        let chunked_body = Body::from_stream(stream::iter([
+            Ok::<_, Infallible>(Bytes::from_static(b"1234")),
+            Ok(Bytes::from_static(b"56789")),
+        ]));
+        let request = Request::builder()
+            .uri("/admin/_serverFn/upload")
+            .method("POST")
+            .body(chunked_body)
+            .expect("request must build");
+        assert_eq!(
+            app.clone()
+                .oneshot(request)
+                .await
+                .expect("response")
+                .status(),
+            StatusCode::PAYLOAD_TOO_LARGE
+        );
+
+        let request = Request::builder()
+            .uri("/admin/_serverFn/upload")
+            .method("POST")
+            .header("content-length", "9")
+            .body(Body::from_stream(stream::pending::<
+                Result<Bytes, Infallible>,
+            >()))
+            .expect("request must build");
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), app.oneshot(request))
+                .await
+                .expect("oversized declared bodies must be rejected before reading")
+                .expect("response")
+                .status(),
+            StatusCode::PAYLOAD_TOO_LARGE
+        );
+    }
+
+    #[tokio::test]
+    async fn proxy_times_out_stalled_request_bodies() {
+        let app = mount_admin_ui(
+            Router::new(),
+            AdminUiConfig {
+                upstream: "http://127.0.0.1:9".to_string(),
+                request_timeout_ms: 10,
+                ..AdminUiConfig::default()
+            },
+        );
+        let stalled_body = Body::from_stream(stream::pending::<Result<Bytes, Infallible>>());
+        let request = Request::builder()
+            .uri("/admin/_serverFn/upload")
+            .method("POST")
+            .body(stalled_body)
+            .expect("request must build");
+
+        let response = tokio::time::timeout(Duration::from_secs(1), app.oneshot(request))
+            .await
+            .expect("proxy must enforce its request body timeout")
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::REQUEST_TIMEOUT);
     }
 
     #[tokio::test]

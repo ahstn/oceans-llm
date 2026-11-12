@@ -82,6 +82,8 @@ function formatOperation(operation: string) {
       return 'Chat Completions'
     case 'responses':
       return 'Responses'
+    case 'messages':
+      return 'Messages'
     case 'embeddings':
       return 'Embeddings'
     case 'decisions':
