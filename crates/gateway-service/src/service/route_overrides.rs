@@ -8,7 +8,7 @@ use gateway_core::{
     BudgetAlertRepository, BudgetRepository, GatewayError, IdentityRepository,
     McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, PricingCatalogRepository,
     ProviderConnection, ProviderRepository, RequestLogRepository, RoutePlanner,
-    RoutePricingOverride, StoreHealth,
+    RoutePricingOverride, ServiceTier, StoreHealth,
 };
 use serde_json::Value;
 use time::OffsetDateTime;
@@ -34,22 +34,26 @@ struct CatalogValue {
     context: Option<i64>,
 }
 
-/// The checks read only catalog values, which depend on the provider, upstream model, and
-/// `extra_body` billing modifiers, so routes sharing those share one lookup, and each provider is
-/// read once.
+/// What one catalog lookup depends on: provider, upstream model, `extra_body` billing modifiers,
+/// and the route's forced service tier, which selects the catalog schedule.
+type CatalogTarget = (String, String, String, Option<ServiceTier>);
+
+/// The checks read only catalog values, which depend on the [`CatalogTarget`], so routes sharing
+/// one share a lookup, and each provider is read once.
 #[derive(Debug, Default)]
 struct CatalogLookups {
     providers: HashMap<String, Option<ProviderConnection>>,
     /// `None` marks a target whose lookup failed, so it is tried and reported once.
-    values: HashMap<(String, String, String), Option<CatalogValue>>,
+    values: HashMap<CatalogTarget, Option<CatalogValue>>,
 }
 
 impl CatalogLookups {
-    fn target(route: &ModelRoute) -> (String, String, String) {
+    fn target(route: &ModelRoute) -> CatalogTarget {
         (
             route.provider_key.clone(),
             route.upstream_model.clone(),
             Value::Object(route.extra_body.clone()).to_string(),
+            route.service_tier,
         )
     }
 

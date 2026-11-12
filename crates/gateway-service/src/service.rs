@@ -2640,12 +2640,16 @@ mod tests {
         let mut other_target = first.clone();
         other_target.id = Uuid::new_v4();
         other_target.upstream_model = "gpt-5-mini".to_string();
+        // A forced tier selects a different catalog schedule, so it is its own target.
+        let mut other_tier = first.clone();
+        other_tier.id = Uuid::new_v4();
+        other_tier.service_tier = Some(gateway_core::ServiceTier::Priority);
         let lookups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let service = GatewayService::new(
             Arc::new(UsageAccountingRepo {
                 models: vec![model(model_id)],
                 provider: Some(openai_provider(&first.provider_key)),
-                routes: vec![first, second, other_target],
+                routes: vec![first, second, other_target, other_tier],
                 pricing: Some(pricing_record(Some(64_000))),
                 pricing_lookups: lookups.clone(),
                 ..Default::default()
@@ -2665,8 +2669,8 @@ mod tests {
         service.warn_on_redundant_route_overrides(routes).await;
         assert_eq!(
             lookups.load(std::sync::atomic::Ordering::SeqCst),
-            2,
-            "the warning pass resolves only the target validation did not"
+            3,
+            "the warning pass resolves only the targets validation did not, one per tier"
         );
     }
 
