@@ -365,7 +365,7 @@ run = [
   # Check generated shell commands without applying repository shell style rules.
   "actionlint -shellcheck= .github/workflows/release.yml",
   "actionlint .github/workflows/release-product.yml .github/workflows/release-cli-check.yml",
-  "shellcheck scripts/check-cli-release.sh scripts/check-release-provenance.test.sh scripts/check-release-workflow.sh scripts/release.sh",
+  "shellcheck scripts/check-cli-release.sh scripts/check-release-provenance.test.sh scripts/check-release-workflow.sh scripts/release.sh scripts/workflow-checkouts.sh",
   "scripts/check-release-workflow.sh",
   "scripts/check-release-provenance.test.sh",
 ]

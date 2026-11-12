@@ -2,6 +2,9 @@
 set -euo pipefail
 
 # Uses only grep, sed and awk, so it runs on hosts without ripgrep.
+# shellcheck source=scripts/workflow-checkouts.sh
+source "$(dirname "${BASH_SOURCE[0]}")/workflow-checkouts.sh"
+
 release=.github/workflows/release.yml
 release_cli=.github/workflows/release-cli-check.yml
 release_product=.github/workflows/release-product.yml
@@ -60,11 +63,7 @@ if [[ $provenance_job == *'secrets:'* ]]; then
   exit 1
 fi
 
-# GitHub expression syntax is literal policy text, not a shell expansion.
-# shellcheck disable=SC2016
-require_fixed "$release" '          ref: ${{ github.sha }}'
 require_fixed "$release" '          fetch-depth: 0'
-require_fixed "$release" '          persist-credentials: false'
 # shellcheck disable=SC2016
 require_fixed "$release" '          RELEASE_COMMIT: ${{ github.sha }}'
 # shellcheck disable=SC2016
@@ -84,18 +83,21 @@ require_fixed "$release" '          RELEASE_TAG: ${{ needs.verify-release-proven
 # shellcheck disable=SC2016
 require_fixed "$release" '          dist host --steps=create --tag="$RELEASE_TAG" --output-format=json'
 
-if grep --quiet --extended-regexp '^[[:space:]]+[A-Za-z-]+:[[:space:]]+write[[:space:]]*$' <<< "$provenance_job"; then
+# The exact job-level block, so quoted or commented scopes, write-all, extra scopes or a
+# missing block (which inherits the workflow permissions) all fail.
+provenance_permissions=$(awk '/^    permissions:/ { block = 1; print; next } block && /^      / { print; next } { block = 0 }' <<< "$provenance_job" | grep -v -E '^[[:space:]]*(#.*)?$' || true)
+if [[ $provenance_permissions != $'    permissions:\n      "contents": "read"' ]]; then
   echo "release provenance gate must remain read-only" >&2
   exit 1
 fi
 
 for workflow in "$release" "$release_cli" "$release_product"; do
-  checkout_count=$(grep --count --fixed-strings 'uses: actions/checkout@' "$workflow")
+  # Each checkout's own inputs, so a pinned ref elsewhere cannot cover an unpinned one.
+  checkouts=$(checkout_steps "$workflow")
   # GitHub expression syntax is literal policy text, not a shell expansion.
   # shellcheck disable=SC2016
-  pinned_ref_count=$(grep --count --fixed-strings 'ref: ${{ github.sha }}' "$workflow")
-  if [[ $checkout_count -ne $pinned_ref_count ]]; then
-    echo "every checkout in $workflow must use the verified immutable event SHA" >&2
+  if [[ -z $checkouts ]] || grep --quiet --invert-match --line-regexp --fixed-strings 'ref=${{ github.sha }} path= persist-credentials=false' <<< "$checkouts"; then
+    echo "every checkout in $workflow must use the verified immutable event SHA without persisted credentials" >&2
     exit 1
   fi
 done

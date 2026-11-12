@@ -2,6 +2,9 @@
 set -euo pipefail
 
 # Uses only grep, sed and awk: CI runs this from repo-lint, which installs no ripgrep.
+# shellcheck source=scripts/workflow-checkouts.sh
+source "$(dirname "${BASH_SOURCE[0]}")/workflow-checkouts.sh"
+
 review=.github/workflows/oceans-review-agent.yml
 release=.github/workflows/release.yml
 release_plan=.github/workflows/release-plan.yml
@@ -20,22 +23,6 @@ reject_regex() {
     echo "unsafe trust-boundary pattern in $file: $pattern" >&2
     exit 1
   fi
-}
-
-# One line per actions/checkout step: its ref, path and persist-credentials inputs.
-checkout_steps() {
-  awk '
-    function flush() {
-      if (checkout) print "ref=" ref " path=" path " persist-credentials=" persist
-      checkout = 0; ref = ""; path = ""; persist = ""
-    }
-    /^      - / { flush() }
-    /^      -? *uses: actions\/checkout@/ { checkout = 1 }
-    /^          ref: / { sub(/^          ref: /, ""); ref = $0 }
-    /^          path: / { sub(/^          path: /, ""); path = $0 }
-    /^          persist-credentials: / { sub(/^          persist-credentials: /, ""); persist = $0 }
-    END { flush() }
-  ' "$1"
 }
 
 require_fixed "$review" '  pull_request_target:'
