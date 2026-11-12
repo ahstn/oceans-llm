@@ -1,0 +1,29 @@
+crates/gateway-service/src/service.rs
+  s_dd118f467446e0::t_855bad5582f360 853-858,874-906,908-910,927,2233,2552-2553,2812-2847
+crates/gateway/src/cli.rs
+  s_dd118f467446e0::t_e7331c4339a11b 39-40
+crates/gateway/src/config/loader.rs
+  s_dd118f467446e0::t_5fcbfbeec8f7fc 295-298,330-332,355-358
+crates/gateway/src/config/tests/fragments.rs
+  s_dd118f467446e0::t_fb83b8e71d7291 250-253,266
+docs/adr/2026-10-15-model-and-provider-config-fragments.md
+  s_dd118f467446e0::t_b43335a44c3178 97
+docs/configuration/configuration-reference.md
+  s_dd118f467446e0::t_cafcec96136313 85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "82b46d7b2a12fbd4b108bc17dd0c1f3f6d35a37b",
+  "prompts": {},
+  "sessions": {
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

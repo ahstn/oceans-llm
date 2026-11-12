@@ -1,0 +1,31 @@
+videos/oceans-showreel/BRIEF.md
+  s_3b32b30557497d::t_f8f09361bafcd1 8,14,17-23,30-35,39-41,53-54,70-78
+videos/oceans-showreel/STORYBOARD.md
+  s_3b32b30557497d::t_2d0e85cc790219 3,5,33,35,38,40,46-52,54,57-65,68-73
+videos/oceans-showreel/compositions/frames/f2-flight.html
+  s_3b32b30557497d::t_04a44bf1098fc4 39,63-66,189-193,391-631,714,716,723-729,731-732,734,773-811,814,816,842,844,855-898,901,903,927-948,961,966,970,991,1009-1010,1016,1026,1029-1030,1033,1054-1058,1060-1061,1063-1064,1080-1094,1097-1649,1651
+videos/oceans-showreel/compositions/frames/f3-lockup.html
+  s_3b32b30557497d::t_b5a48f8f54c987 338
+videos/oceans-showreel/index.html
+  s_3b32b30557497d::t_b90357dd34bfa9 31,34-35,37,40,42-43,45-48,52-58,60-81,86
+videos/oceans-showreel/scripts/capture-admin.mjs
+  s_3b32b30557497d::t_7b9466d6ab7a10 40-41
+videos/oceans-showreel/scripts/score.mjs
+  s_3b32b30557497d::t_4e3aa98019d57c 4-5,9-15,30,33-38,76,89,93-95,97-108,151-152,155,157-158,168-172,179,181-187,191-229,236-240,251-267,269,274-275,277-279,282-289,291,293-296,299-312,315,320,327-329,331,335,338,349-350,353,363,393-395,399,405-406,412,473,481-483
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fe4fe03394042cc13794e947a3a46948b172b11f",
+  "prompts": {},
+  "sessions": {
+    "s_3b32b30557497d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e359a70d-e18a-4bde-907a-1ca2dceb98fc",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

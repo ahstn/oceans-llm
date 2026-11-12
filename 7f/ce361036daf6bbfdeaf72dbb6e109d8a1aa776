@@ -1,0 +1,23 @@
+docs/access/admin-audit-log.md
+  s_af4ccbd37c05c0::t_ccde2a18c71803 40
+crates/gateway/src/http/audit_tests.rs
+  s_af4ccbd37c05c0::t_efb1122c5e1065 522-535
+crates/gateway/src/http/identity.rs
+  s_af4ccbd37c05c0::t_2e2fc4f5ae5882 421-431,435-438
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7fce361036daf6bbfdeaf72dbb6e109d8a1aa776",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

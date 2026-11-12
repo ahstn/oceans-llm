@@ -1,0 +1,43 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_ed44ca1188a34f::t_13e5e5fa9ed7cc 48
+cliff.toml
+  s_ed44ca1188a34f::t_1788cf8b1651db 9-12,15-20,22-25,30-33,44,49-52,54,56-62,64-65,70-72
+docs/adr/2026-03-06-release-versioning-and-ghcr-publishing.md
+  s_ed44ca1188a34f::t_754ce44e8f31cf 6
+docs/adr/2026-10-05-cli-binary-distribution-with-cargo-dist.md
+  s_ed44ca1188a34f::t_710a6564f8b92a 6
+docs/adr/2026-10-18-git-cliff-release-versioning-and-pull-request-changelog.md
+  s_ed44ca1188a34f::t_12e0b46d7ea1d6 1-52
+docs/contributing/reference/release-process.md
+  s_ed44ca1188a34f::t_da935d67649390 3,22-23,32,34-40,44-45,48,57,70-77,94,112,149
+mise.lock
+  s_ed44ca1188a34f::t_363b9bf3dae50f 198,202-204,207-209,212-214,217-219,222-224
+mise.toml
+  s_ae9bc6716ea357::t_e448b6da88c764 44,219-220,234
+scripts/release.sh
+  s_ed44ca1188a34f::t_5921b09dde044e 1-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a1781cfd0760fcf3f5d66497ed97ff404e066844",
+  "prompts": {},
+  "sessions": {
+    "s_ae9bc6716ea357": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aa68e60f816e0022e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_ed44ca1188a34f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "06942484-d87f-4383-a654-eae5a0385298",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

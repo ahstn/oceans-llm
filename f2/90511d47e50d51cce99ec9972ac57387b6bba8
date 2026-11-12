@@ -1,0 +1,53 @@
+crates/gateway-core/src/domain.rs
+  s_009ff6129e63cc::t_747880e3efdb20 2013-2022
+crates/gateway-core/src/lib.rs
+  s_009ff6129e63cc::t_047341b8d092c0 71-72
+crates/gateway-core/src/traits.rs
+  s_009ff6129e63cc::t_2ac46e1fc522a6 36-50,1087,1090-1097
+crates/gateway-service/src/mcp_access.rs
+  s_009ff6129e63cc::t_e60e43222c1f36 6,28,33-47,58
+crates/gateway-store/src/any_store_mcp_access.rs
+  s_009ff6129e63cc::t_7522f308d6d4f8 5,145,150,155,161-171
+crates/gateway-store/src/lib.rs
+  s_009ff6129e63cc::t_a44f5c364dc606 58
+crates/gateway-store/src/libsql_store/mcp_access.rs
+  s_009ff6129e63cc::t_151a20a2260355 3-4,11-13,439,445-461,485-497,604-633,638,642,666,670
+crates/gateway-store/src/postgres_store/mcp_access.rs
+  s_009ff6129e63cc::t_fce2b61b9de388 3-4,11-13,376,382-398,422-434,525-548,553,557,577,581
+crates/gateway-store/src/tests/mcp_access.rs
+  s_1123d94344d2f4::t_c0c4a21ab80706 1-231
+crates/gateway/src/http/handlers.rs
+  s_009ff6129e63cc::t_c42bac7d7cf665 30-31,2167-2170
+crates/gateway/src/http/mcp_gateway.rs
+  s_009ff6129e63cc::t_28f93f97c23ae5 23-24,155-159
+crates/gateway/src/http/mcp_gateway/methods.rs
+  s_009ff6129e63cc::t_6c10cbc7814d20 47-49
+crates/gateway/src/http/mcp_registry.rs
+  s_009ff6129e63cc::t_012a6c973f53fc 17,659
+docs/adr/2026-10-13-govern-every-mcp-method.md
+  s_009ff6129e63cc::t_de73e9ce980ab3 37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f290511d47e50d51cce99ec9972ac57387b6bba8",
+  "prompts": {},
+  "sessions": {
+    "s_009ff6129e63cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dfe89d20-f559-4155-8143-a8e88732a4b1",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_1123d94344d2f4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aec489ee3f1e80d1e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

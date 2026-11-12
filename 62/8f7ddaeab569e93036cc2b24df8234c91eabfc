@@ -1,0 +1,49 @@
+crates/gateway/src/http/handlers/decisions.rs
+  h_2f452a9c375069 14,179-180,190-191,195-264,267-269,279,282,310,323-324,345,350,361-363,365,367,379,388,405,407,430,453,455,467
+  s_13e300ce4bf1eb::t_0ae9ac83a60f2a 358-360,369
+crates/gateway/src/http/handlers/decisions_tests.rs
+  h_2f452a9c375069 1-292
+docs/operations/observability-and-request-logs.md
+  h_2f452a9c375069 65-80
+docs/adr/2026-10-14-decisions-request-metrics.md
+  h_2f452a9c375069 1-39
+docs/configuration/model-routing-and-api-behavior.md
+  h_2f452a9c375069 446
+crates/gateway/src/http/handlers.rs
+  h_2f452a9c375069 3-4
+docs/operations/observability/export-traces-and-metrics.md
+  h_2f452a9c375069 138-139
+crates/gateway/src/observability.rs
+  h_2f452a9c375069 29-30,70-86,108,116-126,149-157,244-272,422-427
+crates/gateway/src/http/handlers/inference_tests.rs
+  s_620321e479b1ec::t_55eabff0cf1d5a 309-321,323-327
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "628f7ddaeab569e93036cc2b24df8234c91eabfc",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  },
+  "sessions": {
+    "s_13e300ce4bf1eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cb0560cd-180f-4e10-b195-fa36950af50e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_620321e479b1ec": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a022a205e352160db",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

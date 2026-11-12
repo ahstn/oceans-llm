@@ -1,0 +1,22 @@
+crates/admin-ui/web/bun.lock
+  h_2f452a9c375069 34,206,514,1478,1800-1801,1858-1861
+crates/admin-ui/web/package.json
+  h_2f452a9c375069 48
+crates/admin-ui/web/src/test/routes/agent-sessions-route.test.tsx
+  h_2f452a9c375069 556-558
+crates/admin-ui/web/src/test/routes/mcp-servers-route.test.tsx
+  h_2f452a9c375069 499-501
+docs/package.json
+  h_2f452a9c375069 11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fe9c3de24626ed268cd7c1050492a2a7d1a0195a",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

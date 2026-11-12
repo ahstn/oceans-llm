@@ -1,0 +1,104 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_6d03b8bf1a1feb::t_2efe16b1d24335 164
+crates/gateway-providers/src/token.rs
+  s_6d03b8bf1a1feb::t_017610b68867a8 526,559,616,641
+docs/operations/observability-and-request-logs.md
+  s_6d03b8bf1a1feb::t_abe8f30c578acc 65-80
+crates/gateway-providers/src/copilot/auth.rs
+  s_6d03b8bf1a1feb::t_2d64d80c7eec2b 189
+mise.toml
+  s_6d03b8bf1a1feb::t_693f4ae54364ad 22,139
+crates/gateway/src/http/test_support.rs
+  s_6d03b8bf1a1feb::t_eedc769d39bd84 4-6,64-82,107
+tests/sdk-compat/package.json
+  s_6d03b8bf1a1feb::t_cd9a7e420ba2a7 1-17
+.pre-commit-config.yaml
+  s_6d03b8bf1a1feb::t_d2c955af2ab8ef 9-10
+.github/workflows/ci.yml
+  s_6d03b8bf1a1feb::t_fe3be88082c831 52,55,79-81
+crates/gateway-providers/src/vertex/mod.rs
+  s_6d03b8bf1a1feb::t_6475654f903286 179,185,325,331,390,406
+tests/sdk-compat/vitest.config.ts
+  s_6d03b8bf1a1feb::t_c03baecb00bbbb 1-7
+crates/gateway/src/http/mcp_gateway/aggregate/execution.rs
+  s_6d03b8bf1a1feb::t_24567aff6c8679 176-181,370-373,375
+crates/gateway/src/http/response_headers/endpoint_tests.rs
+  s_6d03b8bf1a1feb::t_5bc5c584984bca 1-381
+crates/gateway-service/src/mcp_oauth.rs
+  s_6d03b8bf1a1feb::t_180951bd951434 447,509
+tests/sdk-compat/src/sdk-compat.test.ts
+  s_6d03b8bf1a1feb::t_ac911cdfd7c2f0 1-148
+crates/gateway-providers/src/vertex/tests/embeddings.rs
+  s_6d03b8bf1a1feb::t_d174489644d351 702,910
+tests/sdk-compat/python/check_sdk_compat.py
+  s_6d03b8bf1a1feb::t_2f081f5e6c4a25 1-117
+docs/reference/request-lifecycle-and-failure-modes.md
+  s_6d03b8bf1a1feb::t_43a3e0c2563ae2 17,223-264
+tests/sdk-compat/package-lock.json
+  s_6d03b8bf1a1feb::t_bf3a7749677897 1-1371
+crates/gateway-core/src/error.rs
+  s_6d03b8bf1a1feb::t_9d8a41afd8a05b 78,80-84
+crates/gateway-providers/src/bedrock/mod.rs
+  s_6d03b8bf1a1feb::t_ae36a0fd5836fe 599,605,653,660,740,747
+tests/sdk-compat/mise.toml
+  s_6d03b8bf1a1feb::t_65338e7cd160d1 1-29
+tests/sdk-compat/tsconfig.json
+  s_6d03b8bf1a1feb::t_d9a94edb22d439 1-13
+crates/gateway-providers/src/openai_compat.rs
+  s_6d03b8bf1a1feb::t_ce255903a1a7d1 476,482
+crates/gateway/src/http/response_headers.rs
+  s_6d03b8bf1a1feb::t_1dbbc88e115d4e 1-328
+tests/sdk-compat/fixtures/messages.sse
+  s_6d03b8bf1a1feb::t_144d551d88932f 1-17
+  s_6d03b8bf1a1feb::t_21947ba13ef3ab 18
+crates/gateway-providers/Cargo.toml
+  s_6d03b8bf1a1feb::t_164539f7b63978 17
+crates/gateway/src/http/handlers.rs
+  s_6d03b8bf1a1feb::t_2ada59ff5b1b4e 58,455-459,1247,1274,1423-1426,1821-1823,1838-1840,1845-1893,1895-1898,1900-1907,1914-1999,2114,2128,2403,2409-2412,2420,2432-2435,2448,2703-2705,2773,2809-2817,2852-3016,3368,3378
+crates/gateway/src/http/error.rs
+  s_6d03b8bf1a1feb::t_78cb1588ceed7f 3,6,34,38-93
+crates/gateway-providers/src/openai_compat/batch.rs
+  s_6d03b8bf1a1feb::t_4a21225d73be46 402,493,745,750
+tests/sdk-compat/fixtures/responses.sse
+  s_6d03b8bf1a1feb::t_bc14895d4a6ed0 1-22
+  s_6d03b8bf1a1feb::t_481e2edff19402 23
+mise.lock
+  s_6d03b8bf1a1feb::t_c07f49e0b67146 395-428
+crates/gateway-service/src/service.rs
+  s_6d03b8bf1a1feb::t_7ae587b445f33c 53-54,1022
+crates/gateway/src/http/handlers/inference.rs
+  s_6d03b8bf1a1feb::t_04fd6381015d88 306-308
+crates/gateway/src/http/handlers/routing.rs
+  s_6d03b8bf1a1feb::t_d082b03389e1e1 99-102
+Cargo.lock
+  s_6d03b8bf1a1feb::t_5a9eb61cd2a1c7 1970
+crates/gateway-providers/src/anthropic_compat.rs
+  s_6d03b8bf1a1feb::t_3e94c842f4546b 176,183,223,229
+crates/gateway-providers/src/vertex/batch.rs
+  s_6d03b8bf1a1feb::t_a596509ade8aaa 531,863
+crates/gateway/src/http/mod.rs
+  s_6d03b8bf1a1feb::t_2f2a8561d5cfe8 27,73-76
+crates/gateway-providers/src/copilot/mod.rs
+  s_6d03b8bf1a1feb::t_548fe3b210d083 490,496
+tests/sdk-compat/fixtures/chat_completions.sse
+  s_6d03b8bf1a1feb::t_b99965d99a24cb 1-9
+  s_6d03b8bf1a1feb::t_9d38f91ac9aa85 10
+crates/gateway-providers/src/http.rs
+  s_6d03b8bf1a1feb::t_cfb68101110bb9 146,152,158-177,463-494
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1be3cccbe294744eda424489bd8e75ae73881cee",
+  "prompts": {},
+  "sessions": {
+    "s_6d03b8bf1a1feb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0d578d36-3c7a-4481-9004-636e22b39a01",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

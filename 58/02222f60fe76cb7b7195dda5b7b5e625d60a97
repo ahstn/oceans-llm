@@ -1,0 +1,33 @@
+crates/gateway-core/src/rate_limits.rs
+  s_56409892e094a0::t_e1cba8eb91b009 167,193,431-452
+crates/gateway-core/src/traits.rs
+  s_56409892e094a0::t_339aab984ee44f 1360-1369
+crates/gateway-service/src/rate_limits.rs
+  s_56409892e094a0::t_53a8af47d512cd 290-292,294-298,300-303,306-311,315-327,711-712,714,768-769,916,920
+crates/gateway-service/src/rate_limits/tests.rs
+  s_56409892e094a0::t_38bbe0e5dd82c9 717,721,942-998
+crates/gateway-store/src/any_store_rate_limits.rs
+  s_56409892e094a0::t_61b83fc1494c20 19-27
+crates/gateway-store/src/libsql_store/rate_limits.rs
+  s_56409892e094a0::t_50780fe5de1986 87-106
+crates/gateway-store/src/postgres_store/rate_limits.rs
+  s_56409892e094a0::t_f2d6a5737c99e4 67-78
+crates/gateway-store/src/rate_limit_tests.rs
+  s_56409892e094a0::t_607f6da64c1451 191-198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5802222f60fe76cb7b7195dda5b7b5e625d60a97",
+  "prompts": {},
+  "sessions": {
+    "s_56409892e094a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a7dde59-323d-48bd-9209-17a8bd106b80",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

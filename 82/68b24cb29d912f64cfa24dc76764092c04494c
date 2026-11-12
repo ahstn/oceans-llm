@@ -1,0 +1,67 @@
+crates/gateway/src/http/audit.rs
+  s_dd118f467446e0::t_8f4abf6c809ac5 1-337
+crates/gateway/src/http/audit_tests.rs
+  s_dd118f467446e0::t_fb9e3f0ad9eabf 1-607
+crates/gateway/src/http/identity_audit.rs
+  s_af4ccbd37c05c0::t_3cb4e489cac985 1-56
+crates/admin-ui/src/proxy.rs
+  s_dd118f467446e0::t_abedf74fdc20ba 1,6,92-95,151,155-157,237-254,302,310-328
+crates/gateway/openapi/admin-api.json
+  s_dd118f467446e0::t_34fb76025d2f02 188-309,9643-9774,11817-11863
+crates/gateway/src/http/admin_contract.rs
+  s_dd118f467446e0::t_d876d2986048d4 2078
+crates/gateway/src/http/api_keys.rs
+  s_dd118f467446e0::t_7f67dc5d374d51 8,12,15,26,186,189-190,194-207,225,229-230,234,236-252,270,273-274,279-289,306,309-310,315-326,380,389-392,419-458
+crates/gateway/src/http/identity.rs
+  s_dd118f467446e0::t_8d88fdd0da2d33 16-19,55,57-59,335,339,361-375,391,405-406,419,421-433,462,475-476,478-490,519,522,537-538,541,543-556,558,572,576,600,602-615,617,631,635,680-697,699,729,760-768,783,791-792,794-815,838,883-889,912,915,999-1008,1024,1107-1117,1131,1151-1160,1175,1178,1190-1199,1215,1218,1280,1282-1285,1287-1290,1308,1311,1324-1340,1358,1362,1390-1396,1398-1411,1427,1430,1451,1456-1464,1496,1523-1534,1614,1752-1754,1759-1767,1855,2005-2007,2012-2020,3345-3346,3349,3352-3353,3358-3365,3367-3374,3380-3396
+crates/gateway/src/http/mcp_oauth.rs
+  s_dd118f467446e0::t_d72aa9559b451b 16-18,30,276,321-345,365,380-394
+crates/gateway/src/http/mcp_oauth/tests.rs
+  s_dd118f467446e0::t_56ef1e2703aa56 92,115
+crates/gateway/src/http/mcp_registry.rs
+  s_dd118f467446e0::t_e489767df927cf 17-19,22,24,32,138,141,156-164,182,186,188,203-213,230,233,235,237-247,293,297,300,322-334,384,387-393,395-403,420,424-431,433-445,461,464,466-476,520,524-525,527-551,599,602-624,637,640-649,651-661,715,718-719,737-753,766,769,772-786,855-897
+crates/gateway/src/http/mcp_registry/tests.rs
+  s_dd118f467446e0::t_10417a400a59c1 167
+crates/gateway/src/http/mcp_registry/views.rs
+  s_dd118f467446e0::t_0358f6e2d7211f 365-423
+crates/gateway/src/http/mod.rs
+  s_dd118f467446e0::t_cf1af6d1c02d4a 5-7,17,55-57,293
+crates/gateway/src/http/models.rs
+  s_dd118f467446e0::t_8a6167a72be3b4 8-10,22,158,160-169
+crates/gateway/src/http/provider_credentials.rs
+  s_dd118f467446e0::t_75a013b55e3cc0 6-12,24,57,88-94,110,135-136,153-160,177,180,187-194,215,217-232,239-247
+crates/gateway/src/http/review_agent.rs
+  s_dd118f467446e0::t_fd332608b15585 9-10,15,17,27,299,338,341,361-370,385,405,409,411,428-438,451,457,474,480,500,530,698,702,704-738,767,771,777,790
+crates/gateway/src/http/spend.rs
+  s_dd118f467446e0::t_464a52b09e851b 14-17,37,452,455,469,471-486,514,517,533,535-551
+crates/gateway/src/http/spend_budget_increases.rs
+  s_dd118f467446e0::t_40b69fb9f76d4c 12-16,26,47,98-109
+crates/gateway/src/http/spend_budget_increases/handler_tests.rs
+  s_dd118f467446e0::t_36dd70ad59d7e8 139
+crates/gateway/src/main.rs
+  s_dd118f467446e0::t_dbc7932af4744d 332-338
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8268b24cb29d912f64cfa24dc76764092c04494c",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

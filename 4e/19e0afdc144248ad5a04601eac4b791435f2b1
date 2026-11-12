@@ -1,0 +1,19 @@
+crates/admin-ui/web/src/components/shared/admin-table-header.tsx
+  s_ed66ec77873ef1::t_30f391029fd3b4 8-9,11-13,59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4e19e0afdc144248ad5a04601eac4b791435f2b1",
+  "prompts": {},
+  "sessions": {
+    "s_ed66ec77873ef1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5677dbea-fe6a-4c7e-8813-6d123638daa1",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

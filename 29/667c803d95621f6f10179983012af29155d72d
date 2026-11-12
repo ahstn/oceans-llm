@@ -1,0 +1,21 @@
+crates/gateway/openapi/admin-api.json
+  s_3909cf4958a3af::t_e45a22212f2553 7-8
+docs/adr/2026-10-21-repository-lint-and-dependency-scanning.md
+  s_3909cf4958a3af::t_4f6b308cc3bbeb 32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "29667c803d95621f6f10179983012af29155d72d",
+  "prompts": {},
+  "sessions": {
+    "s_3909cf4958a3af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9eabb320-c558-4ce9-b844-b21792d51207",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

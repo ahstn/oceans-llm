@@ -1,0 +1,33 @@
+.github/workflows/helm-ci.yml
+  s_3909cf4958a3af::t_a4c5e8a356f2a0 45
+.github/workflows/release-product.yml
+  s_3909cf4958a3af::t_71489a02314584 130,133
+.github/workflows/repo-lint.yml
+  s_3909cf4958a3af::t_1c437f6de844a5 31,49-50,53-61
+deploy/helm/mise.toml
+  s_3909cf4958a3af::t_b8ee0fee2ba398 30-33,35,37,40-45,48,58
+deploy/helm/oceans-llm/README.md
+  s_3909cf4958a3af::t_53a0fe452d2a2b 138
+docs/adr/2026-10-21-repository-lint-and-dependency-scanning.md
+  s_3909cf4958a3af::t_5717bb7563f39c 41
+docs/setup/kubernetes-and-helm.md
+  s_3909cf4958a3af::t_4a4eb22b6f180d 23
+mise.toml
+  s_3909cf4958a3af::t_305a3861be8fdb 57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cd1c9da360623b5f86f0db34d85eb65d7f8bc96b",
+  "prompts": {},
+  "sessions": {
+    "s_3909cf4958a3af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9eabb320-c558-4ce9-b844-b21792d51207",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

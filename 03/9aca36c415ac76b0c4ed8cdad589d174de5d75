@@ -1,0 +1,99 @@
+.agents/skills/verify-oceans-admin/SKILL.md
+  s_4743c3bdc4d116::t_230a3a24b38045 98,123
+.agents/skills/verify-oceans-admin/features/README.md
+  s_4743c3bdc4d116::t_cec78264a3f7b5 70,73
+.agents/skills/verify-oceans-admin/features/backend-gateway.md
+  s_4743c3bdc4d116::t_780bb6e22e21ae 7,15,17,29,31-32,38
+.agents/skills/verify-oceans-admin/features/guardrails.md
+  s_4743c3bdc4d116::t_2ba5c3376fbb68 3,7-10,12,28-35,39-42
+.agents/skills/verify-oceans-admin/features/live-llm-requests.md
+  s_4743c3bdc4d116::t_509d41cf2676c4 8,18-19,22,31,36-39,42,49-50
+.agents/skills/verify-oceans-admin/features/request-logs.md
+  s_4743c3bdc4d116::t_2e14a53dcd9e88 32
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_4743c3bdc4d116::t_324a3117396ec1 162
+.agents/skills/verify-oceans-admin/scripts/drive-backend-gateway.mjs
+  s_4743c3bdc4d116::t_19d2be5eafe338 19-20,140-142
+.agents/skills/verify-oceans-admin/scripts/mcp-browser.mjs
+  s_4743c3bdc4d116::t_c1b13c09f30c10 180
+.github/workflows/ci.yml
+  s_4743c3bdc4d116::t_1f5219ab43dd9e 84
+.github/workflows/oceans-review-agent.yml
+  s_4743c3bdc4d116::t_dbe7dffc0f8ded 145
+.github/workflows/release-cli-check.yml
+  s_4743c3bdc4d116::t_11ed0b29ef3c81 29
+.github/workflows/release.yml
+  s_4743c3bdc4d116::t_a76029168091b1 69,85,139,166,188,195,213,250,257,271,317
+Cargo.lock
+  s_4743c3bdc4d116::t_ff0e22c65569ac 5121,5233,5235,5806,5808
+actions/review-agent/action.yml
+  s_4743c3bdc4d116::t_acafa936482904 66
+crates/admin-ui/web/bun.lock
+  s_4743c3bdc4d116::t_733c6b0b735d9f 17,22,34,53,56,316,318,320,322,324,326,328,330,332,334,336,338,340,342,344,346,348,350,352,514-515,598,602,606,624,650,1288,1328,1372,1482,1520,1716-1717,1720-1721,1734-1735,1758-1759
+crates/admin-ui/web/package.json
+  s_4743c3bdc4d116::t_d595b1f9d54399 31,36,48,67,70
+crates/gateway-core/src/traits.rs
+  s_4743c3bdc4d116::t_105de47ce81c77 1310-1327
+crates/gateway-service/src/effective_route_metadata.rs
+  s_4743c3bdc4d116::t_f0e0dceefebd99 11,91-103,105-109
+crates/gateway-service/src/model_metadata/catalog.rs
+  s_4743c3bdc4d116::t_438f1c275df7e7 9,80-85
+crates/gateway-service/src/model_metadata/tests.rs
+  s_4743c3bdc4d116::t_ab3f8a22bd53e8 87-105
+crates/gateway-service/src/pricing_catalog.rs
+  s_4743c3bdc4d116::t_ba0d522f592c53 37-38,41-44,249-255,472-500
+crates/gateway-service/src/pricing_catalog/target.rs
+  s_4743c3bdc4d116::t_c2f0b7f239a7b4 141,145-151,154-156
+crates/gateway-service/src/pricing_catalog/tests/resolution.rs
+  s_4743c3bdc4d116::t_d21ce6d711f1d9 253,255-256,259-260,263-264,267-268,271-272,274-284,286-338
+crates/gateway-service/src/pricing_catalog/tests/support.rs
+  s_4743c3bdc4d116::t_1436bcbf6b7e78 36-38
+crates/gateway-store/src/libsql_store/pricing_catalog.rs
+  s_4743c3bdc4d116::t_51334a9d77196e 350-384,403-406,412
+crates/gateway-store/src/postgres_store/pricing_catalog.rs
+  s_4743c3bdc4d116::t_a75addd84ebb86 350-384,401-404,410
+crates/gateway-store/src/pricing_sync.rs
+  s_4743c3bdc4d116::t_074c57c2fe2b7b 421-461,482,523
+crates/gateway-store/src/store.rs
+  s_4743c3bdc4d116::t_440d89e016d44b 1338-1355
+crates/gateway/src/http/handlers.rs
+  s_4743c3bdc4d116::t_fad797a15cdd76 6-8,23,42-46
+crates/gateway/src/http/handlers/embeddings.rs
+  s_4743c3bdc4d116::t_6caa4bf140227a 1-321
+crates/gateway/src/http/handlers/embeddings_tests.rs
+  s_4743c3bdc4d116::t_19ca73fd2b225a 1-233
+crates/gateway/src/http/handlers/inference_tests.rs
+  s_4743c3bdc4d116::t_bc51b3ed74210a 310-346
+crates/gateway/src/observability.rs
+  s_4743c3bdc4d116::t_a663f0fa671486 31-32,89-101,124,135,148-155,185-193,313-342,498-503
+docs/adr/2026-10-14-decisions-request-metrics.md
+  s_4743c3bdc4d116::t_1b01a77a87dd52 39-47
+docs/configuration/pricing-catalog-and-accounting.md
+  s_4743c3bdc4d116::t_93dad6273a8bad 88-89
+docs/operations/observability-and-request-logs.md
+  s_4743c3bdc4d116::t_5c142fc1fbdb8b 81-97
+docs/operations/observability/export-traces-and-metrics.md
+  s_4743c3bdc4d116::t_af1b52814cfd94 140-141
+gateway.yaml
+  s_4743c3bdc4d116::t_d93c0e2838826b 405,407-418
+tests/harness-integration/README.md
+  s_4743c3bdc4d116::t_3cead627fd1409 17
+tests/harness-integration/src/global-setup.ts
+  s_4743c3bdc4d116::t_427fdd789087ba 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "039aca36c415ac76b0c4ed8cdad589d174de5d75",
+  "prompts": {},
+  "sessions": {
+    "s_4743c3bdc4d116": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a047a7f-d4a7-4209-858b-e18a0d0d4346",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

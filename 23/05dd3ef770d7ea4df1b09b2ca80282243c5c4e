@@ -1,0 +1,43 @@
+crates/admin-ui/web/src/routes/-model-benchmarks.tsx
+  s_e88e6cbbab1de0::t_9ca341a38091be 10,14,20
+crates/admin-ui/web/src/routes/models.tsx
+  s_e88e6cbbab1de0::t_8b15e99b8a19ed 430,660,666,731-744
+crates/admin-ui/web/src/server/admin-preview-data.server.ts
+  s_e88e6cbbab1de0::t_cf1b8cc0c84e38 42-43
+crates/admin-ui/web/src/test/routes/models-route.test.tsx
+  s_e88e6cbbab1de0::t_e876a42295619a 141-142,569-570,577-591
+crates/gateway-service/src/admin_models.rs
+  s_e88e6cbbab1de0::t_33c23bf19051d7 219,223,227,238-256,423,1184-1223
+crates/gateway-service/src/benchmark_catalog.rs
+  s_e88e6cbbab1de0::t_29f53c412b9e92 18,95-97,197-201,213-227,241-248,307-310,401-403,420-429,431-438
+crates/gateway-service/src/benchmark_catalog/tests.rs
+  s_e88e6cbbab1de0::t_b3b3c8a379c259 204,275-277
+crates/gateway/src/bin/sync_model_benchmarks.rs
+  s_e88e6cbbab1de0::t_bf714e717f5b92 24-31,37-40,55-60
+crates/gateway/src/config/tests/models.rs
+  s_e88e6cbbab1de0::t_85e7cdad26208d 435-441
+crates/gateway/src/http/models.rs
+  s_e88e6cbbab1de0::t_95582e9dc8276a 17-18
+docs/adr/2026-09-21-artificial-analysis-benchmark-catalogue.md
+  s_e88e6cbbab1de0::t_94f0af1246a943 4,8,10,14-20,22,24,26,28,30,32-34,36,38,40,42,44-48,54-58,62-70
+docs/adr/2026-09-24-openrouter-benchmark-snapshot.md
+  s_e88e6cbbab1de0::t_c70d4011eafafe 1-58
+mise.toml
+  s_e88e6cbbab1de0::t_f290262eebdff7 112,114,116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2305dd3ef770d7ea4df1b09b2ca80282243c5c4e",
+  "prompts": {},
+  "sessions": {
+    "s_e88e6cbbab1de0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "44088f38-237f-4fc3-bd0d-c2f82321db92",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

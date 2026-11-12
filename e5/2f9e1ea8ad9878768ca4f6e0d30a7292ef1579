@@ -1,0 +1,29 @@
+crates/gateway-core/src/mcp_client_oauth.rs
+  s_4743c3bdc4d116::t_e58991e0a8be5d 409-410,412
+crates/gateway-service/src/mcp_client_oauth/token.rs
+  s_4743c3bdc4d116::t_ddf12f93045b03 234-265,280-289,404-412,415,420-434
+crates/gateway-store/src/any_store_gateway_oauth.rs
+  s_4743c3bdc4d116::t_ba9b590bd51953 92,94,96
+crates/gateway-store/src/gateway_oauth_tests.rs
+  s_4743c3bdc4d116::t_5732e2e1de468a 233-250,252-255,257-265
+crates/gateway-store/src/libsql_store/gateway_oauth.rs
+  s_4743c3bdc4d116::t_945a46f5914db7 364,366,368-374,390-391
+crates/gateway-store/src/postgres_store/gateway_oauth.rs
+  s_4743c3bdc4d116::t_30798ef2a548db 340,342,344-362
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e52f9e1ea8ad9878768ca4f6e0d30a7292ef1579",
+  "prompts": {},
+  "sessions": {
+    "s_4743c3bdc4d116": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a047a7f-d4a7-4209-858b-e18a0d0d4346",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

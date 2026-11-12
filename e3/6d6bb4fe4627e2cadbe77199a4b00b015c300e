@@ -1,0 +1,35 @@
+crates/admin-ui/web/doctor.config.json
+  s_eaf7116ccea134::t_d66b2cb32cf497 4-10
+crates/admin-ui/web/src/lib/chart-motion.ts
+  s_eaf7116ccea134::t_dfbc28408df2a6 2-6
+crates/admin-ui/web/src/routes/design-system/-components/actions-inputs.tsx
+  s_eaf7116ccea134::t_c7f18c63395466 49-50
+crates/admin-ui/web/src/routes/design-system/-components/foundations.tsx
+  s_eaf7116ccea134::t_96f65a800adb45 10-11,219-224,301-320,327-338,342,344,348,350-351,390-399
+crates/admin-ui/web/src/routes/design-system/-components/preview-state.ts
+  s_eaf7116ccea134::t_9ef170001863c0 1-11
+crates/admin-ui/web/src/routes/design-system/-components/showcase.tsx
+  s_eaf7116ccea134::t_c7fa0d0cb39d1f 139,144
+crates/admin-ui/web/src/test/chart-motion.test.ts
+  s_eaf7116ccea134::t_6a991de3dcb535 1-18
+scripts/build-shadcn-theme.mjs
+  s_eaf7116ccea134::t_f7765d69264a88 7,19,115-148,151-156,159
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_eaf7116ccea134::t_5777366afd72b2 63-66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e36d6bb4fe4627e2cadbe77199a4b00b015c300e",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

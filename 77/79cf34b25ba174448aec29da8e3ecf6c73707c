@@ -1,0 +1,19 @@
+crates/admin-ui/web/package.json
+  s_1121327246a626::t_767e79b9148ca9 20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7779cf34b25ba174448aec29da8e3ecf6c73707c",
+  "prompts": {},
+  "sessions": {
+    "s_1121327246a626": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4b4ef4b8-4d5e-43e9-9d26-60bb85493277",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

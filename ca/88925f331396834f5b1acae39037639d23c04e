@@ -1,0 +1,27 @@
+crates/admin-ui/web/src/routes/identity/-status-badge.ts
+  s_7a5811202bdfd5::t_1ab89ed2485096 1-4
+crates/admin-ui/web/src/routes/identity/-teams/teams-list.tsx
+  s_7a5811202bdfd5::t_478448459103af 18,148,251,407
+crates/admin-ui/web/src/routes/identity/service-accounts.tsx
+  s_7a5811202bdfd5::t_39f70c26e74bb5 13,279
+crates/admin-ui/web/src/test/routes/service-accounts-route.test.tsx
+  s_7a5811202bdfd5::t_da1f3cb8d63326 139-142
+crates/admin-ui/web/src/test/routes/teams-route.test.tsx
+  s_7a5811202bdfd5::t_e8d74c819d8fae 254-282
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ca88925f331396834f5b1acae39037639d23c04e",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

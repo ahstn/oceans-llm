@@ -1,0 +1,27 @@
+crates/admin-ui/web/e2e/guardrails.e2e.ts
+  s_ee057229033589::t_6e5601b1871f00 188-203
+crates/gateway-guardrails/src/evaluation.rs
+  s_ee057229033589::t_57b5ba29ef155d 157-175,192,194-202,218,305,345,408-413,540-638
+crates/gateway/src/http/inference_guardrails.rs
+  s_ee057229033589::t_5717dc846215db 7-9,12,188-191,216-251,257-267,301-314,801-802,804-805,816-817,1667-1955
+docs/adr/2026-08-22-gateway-guardrails-domain-and-composition.md
+  s_ee057229033589::t_1ce87f68e5eb9b 27,39
+docs/operations/gateway-guardrails.md
+  s_ee057229033589::t_e49004f10603a2 26-27,210-212,235,246
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "96df1ac646544c609d2e6de035460045c4589d48",
+  "prompts": {},
+  "sessions": {
+    "s_ee057229033589": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "250131c4-1d2c-4d6b-a98c-87c1d612ba06",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

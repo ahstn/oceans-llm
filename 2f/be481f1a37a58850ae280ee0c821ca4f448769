@@ -1,0 +1,27 @@
+crates/admin-ui/web/src/components/shared/search-field.tsx
+  s_af4ccbd37c05c0::t_dd5cacca0255d6 1-58
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_af4ccbd37c05c0::t_38ddde6645f643 412-413,439
+crates/admin-ui/web/src/components/audit/audit-log-table.tsx
+  s_af4ccbd37c05c0::t_3172f05025f8f1 4-5
+crates/admin-ui/web/src/components/guardrails/decision-toolbar.tsx
+  s_af4ccbd37c05c0::t_e17e00e89fcccc 2
+crates/admin-ui/web/src/components/guardrails/guardrails-dashboard.tsx
+  s_af4ccbd37c05c0::t_284470e5bd337f 39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2fbe481f1a37a58850ae280ee0c821ca4f448769",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

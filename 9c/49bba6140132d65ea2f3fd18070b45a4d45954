@@ -1,0 +1,29 @@
+crates/gateway-core/src/traits.rs
+  s_7a5811202bdfd5::t_9343277463e444 1169-1170,1174-1175,1177
+crates/gateway-service/src/mcp_ownership.rs
+  s_7a5811202bdfd5::t_58354b2aab7a2c 422-423
+crates/gateway-store/src/any_store_mcp_registry.rs
+  s_7a5811202bdfd5::t_12380b70fbdd58 210-211,214-223
+crates/gateway-store/src/lib.rs
+  s_7a5811202bdfd5::t_2eefc66c339d1c 1948,1976-1986,1990
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_7a5811202bdfd5::t_2b956502c3d690 763-764,767,771-778
+crates/gateway-store/src/postgres_store/mcp_registry.rs
+  s_7a5811202bdfd5::t_59a27defbd097d 719-720,723,727-728
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9c49bba6140132d65ea2f3fd18070b45a4d45954",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

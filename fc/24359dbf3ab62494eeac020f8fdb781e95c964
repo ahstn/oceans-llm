@@ -1,0 +1,31 @@
+crates/gateway-service/src/admin_api_keys.rs
+  s_7a5811202bdfd5::t_5f4e0d52b81530 204,267-273,345
+crates/gateway-service/src/admin_api_keys/scopes.rs
+  s_7a5811202bdfd5::t_7b48d18834d94b 116-119,122,128-130
+crates/gateway-service/src/mcp_client_oauth/authorization.rs
+  s_7a5811202bdfd5::t_a7082badb5e41c 207-212,220,222
+crates/gateway/src/http/mcp_client_oauth/consent.rs
+  s_7a5811202bdfd5::t_bfbd847cd0f873 93,99,129,236-270
+crates/gateway/src/http/mcp_client_oauth/flow_tests.rs
+  s_7a5811202bdfd5::t_06a70bb3e13367 867-923
+crates/gateway/src/http/mcp_registry/ownership_tests.rs
+  s_7a5811202bdfd5::t_c191eedb985635 2252-2290
+docs/adr/2026-10-17-delegated-mcp-server-ownership.md
+  s_7a5811202bdfd5::t_8cc0a4a921d082 109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fc24359dbf3ab62494eeac020f8fdb781e95c964",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

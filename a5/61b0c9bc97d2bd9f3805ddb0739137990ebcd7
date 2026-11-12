@@ -1,0 +1,21 @@
+mise.lock
+  s_80be2f6b7622ec::t_9be6b110591213 365
+mise.toml
+  s_80be2f6b7622ec::t_a49f56ed52a0bb 37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a561b0c9bc97d2bd9f3805ddb0739137990ebcd7",
+  "prompts": {},
+  "sessions": {
+    "s_80be2f6b7622ec": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fd50a3-7260-4e1c-bdf2-41488101b953",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+crates/admin-ui/web/e2e/skills.e2e.ts
+  s_b4e6944f6f972c::t_39492bea4366f0 55
+crates/admin-ui/web/src/components/layout/admin-nav.ts
+  s_b4e6944f6f972c::t_c7cf7b2eac5714 65-66
+crates/admin-ui/web/src/components/layout/app-shell.test.tsx
+  s_b4e6944f6f972c::t_b9631d9fd0c5a9 5,60,75-83,112
+crates/admin-ui/web/src/routes/skills/$id.tsx
+  s_b4e6944f6f972c::t_7d08aff0ace59c 114
+crates/admin-ui/web/src/routes/skills/index.tsx
+  s_b4e6944f6f972c::t_fde33e563c71c0 60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2f9c2bfed11e89a64984208400c4f7e6feb91de3",
+  "prompts": {},
+  "sessions": {
+    "s_b4e6944f6f972c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0e97fe76-81c2-411c-9f3c-d2169d3a8e4e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

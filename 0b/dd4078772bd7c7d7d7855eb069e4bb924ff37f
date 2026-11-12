@@ -1,0 +1,14 @@
+.gitignore
+  h_2f452a9c375069 27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0bdd4078772bd7c7d7d7855eb069e4bb924ff37f",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

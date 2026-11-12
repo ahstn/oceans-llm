@@ -1,0 +1,19 @@
+crates/gateway/src/http/mcp_gateway/sse.rs
+  s_327fe9b27426f4::t_d61d5fe0228ced 78-81,86,89-91,93,346-354
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c1d564f10e61043707843a236014713821aecfcd",
+  "prompts": {},
+  "sessions": {
+    "s_327fe9b27426f4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14258-b3f9-7a50-9987-4a60f71f58c8",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

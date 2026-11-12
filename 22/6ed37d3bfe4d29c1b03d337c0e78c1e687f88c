@@ -1,0 +1,25 @@
+crates/admin-ui/web/src/lib/format.ts
+  s_1864c803a90a0e::t_f444eff81d2be0 28,30
+crates/admin-ui/web/src/routes/batches/-components.tsx
+  s_1864c803a90a0e::t_0a621f2f763623 28,81-86,365,370,373
+crates/admin-ui/web/src/routes/observability/leaderboard.tsx
+  s_1864c803a90a0e::t_d1032cbfc7ba8a 22,343
+crates/admin-ui/web/src/test/format.test.ts
+  s_1864c803a90a0e::t_fd87413b65f7ba 36-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "226ed37d3bfe4d29c1b03d337c0e78c1e687f88c",
+  "prompts": {},
+  "sessions": {
+    "s_1864c803a90a0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5822bc90-e33d-49af-9d44-474de0500040",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

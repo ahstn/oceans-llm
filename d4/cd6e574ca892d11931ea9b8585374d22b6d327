@@ -1,0 +1,49 @@
+crates/gateway-core/src/domain.rs
+  s_9afcd1aad99ea7::t_c36537228b8817 2908-2911,2923,2928-2933
+crates/gateway-core/src/protocol/core.rs
+  s_6d03b8bf1a1feb::t_4de378a976e503 365
+crates/gateway-core/src/protocol/mod.rs
+  s_6d03b8bf1a1feb::t_5cc1e68f929b40 3
+crates/gateway-core/src/traits.rs
+  s_6d03b8bf1a1feb::t_0ec94bd756e230 57-60,1396
+crates/gateway-providers/src/openai_compat.rs
+  s_9afcd1aad99ea7::t_042891e1402181 9-10,827-828,833-834
+crates/gateway-providers/src/typesafe.rs
+  s_9afcd1aad99ea7::t_d4ad99f694e336 6-7,13,62,175,184,221,273-277,297,310,314-315
+crates/gateway-store/src/lib.rs
+  s_9afcd1aad99ea7::t_a963734fa9e7bf 3969
+crates/gateway/src/http/handlers/routing.rs
+  s_13e300ce4bf1eb::t_d8dbc0c44d0e66 253,258-262
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d4cd6e574ca892d11931ea9b8585374d22b6d327",
+  "prompts": {},
+  "sessions": {
+    "s_13e300ce4bf1eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cb0560cd-180f-4e10-b195-fa36950af50e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_6d03b8bf1a1feb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0d578d36-3c7a-4481-9004-636e22b39a01",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_9afcd1aad99ea7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6922d2fa-a044-4097-b696-4f2796d370eb",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

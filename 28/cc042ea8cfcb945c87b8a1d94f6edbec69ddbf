@@ -1,0 +1,14 @@
+crates/gateway/src/http/mcp_registry/ownership_tests.rs
+  h_2f452a9c375069 2551-2564
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "28cc042ea8cfcb945c87b8a1d94f6edbec69ddbf",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

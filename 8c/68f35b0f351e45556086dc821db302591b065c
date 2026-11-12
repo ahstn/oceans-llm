@@ -1,0 +1,45 @@
+packages/opencode-oceans/tests/models.test.ts
+  s_1182c76e376f21::t_ea9607a52280f8 39-64,66,68-69
+  s_1182c76e376f21::t_ab17014d5d199e 185-189
+  s_1182c76e376f21::t_01cde7a0fb9e3b 38,70
+  s_1182c76e376f21::t_43b49e72e245df 65,67,71,179-184,190-191,251-260
+.github/workflows/opencode-oceans.yml
+  s_1182c76e376f21::t_87eb8e52650d44 49
+packages/opencode-oceans/scripts/smoke.ts
+  s_1182c76e376f21::t_43b49e72e245df 106-108,113,115-117
+  s_1182c76e376f21::t_ab17014d5d199e 118-189
+  s_1182c76e376f21::t_01cde7a0fb9e3b 109-112,114
+packages/opencode-oceans/src/models.ts
+  s_1182c76e376f21::t_ab17014d5d199e 187-188
+  s_1182c76e376f21::t_87eb8e52650d44 89-94,178-184,186,189-191,290-296
+packages/opencode-oceans/tests/smoke.test.ts
+  s_1182c76e376f21::t_6d525a86e1f543 6
+  s_1182c76e376f21::t_43b49e72e245df 1,3-5,12,17-29,31-32
+  s_1182c76e376f21::t_01cde7a0fb9e3b 2,7-11,13-16,30
+packages/opencode-oceans/README.md
+  s_1182c76e376f21::t_7c3b5e08a6ac6b 111-112,143-144,154-155,204
+  s_1182c76e376f21::t_850006ad2fe2e1 205
+packages/opencode-oceans/tests/discovery.test.ts
+  s_1182c76e376f21::t_ab17014d5d199e 125-131,133-148,150-153,166-168,172-174,187-196,198-206
+  s_1182c76e376f21::t_6d4d662d7c17f4 132
+  s_1182c76e376f21::t_43b49e72e245df 124,149,154-165,169-171,175-186,197,207-221
+packages/opencode-oceans/src/discovery.ts
+  s_1182c76e376f21::t_87eb8e52650d44 14-15,17-19,63-67,78,80-82,99
+  s_1182c76e376f21::t_ab17014d5d199e 16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8c68f35b0f351e45556086dc821db302591b065c",
+  "prompts": {},
+  "sessions": {
+    "s_1182c76e376f21": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1b5e8-949a-70b6-96f0-1d6c0049857c",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

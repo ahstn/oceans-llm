@@ -1,0 +1,29 @@
+crates/admin-ui/web/src/routes/mcp/-tag-rules.tsx
+  s_e88dc7cf2999d1::t_d1f977f1846290 142-143
+crates/admin-ui/web/src/test/routes/mcp-access-route.test.tsx
+  s_e88dc7cf2999d1::t_d4f2c396104431 66
+crates/admin-ui/web/src/test/routes/mcp-servers-route.test.tsx
+  s_e88dc7cf2999d1::t_63922943140580 80
+crates/admin-ui/web/src/test/routes/mcp-tool-policy.test.tsx
+  s_e88dc7cf2999d1::t_a6df44c7a41537 36-38
+crates/admin-ui/web/src/test/routes/mcp-toolsets-route.test.tsx
+  s_e88dc7cf2999d1::t_dad3ae335c4525 62
+docs/mcp/mcp-tool-access.md
+  s_e88dc7cf2999d1::t_022198f0d5a14b 234-235,241
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "193f748d3ce50bfb4e92b008a1817f9e5635a1b7",
+  "prompts": {},
+  "sessions": {
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

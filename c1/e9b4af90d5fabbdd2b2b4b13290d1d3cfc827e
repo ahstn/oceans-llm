@@ -1,0 +1,31 @@
+crates/gateway-store/src/libsql_store/mod.rs
+  s_ee057229033589::t_8b8fa099d8500a 107,113-114,124,131,182,188-191,194-202
+crates/gateway-store/src/libsql_store/transaction_tests.rs
+  s_af4ccbd37c05c0::t_78dbf5b9dba919 226-254
+docs/adr/2026-10-15-libsql-transaction-connections.md
+  s_ee057229033589::t_8d1003a65a0ec8 20-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c1e9b4af90d5fabbdd2b2b4b13290d1d3cfc827e",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_ee057229033589": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "250131c4-1d2c-4d6b-a98c-87c1d612ba06",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,29 @@
+crates/gateway/src/http/audit.rs
+  s_1c39eca6a8bf5f::t_448b28cfc0d14e 67-69
+crates/gateway-service/src/admin_audit.rs
+  s_af4ccbd37c05c0::t_0d19c53da6b09a 371-374,391-394,826-839,1319-1357
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dd00800e596826f6cc7c3cbbcb2da837b8067cf1",
+  "prompts": {},
+  "sessions": {
+    "s_1c39eca6a8bf5f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e39a-93c5-7f21-b398-3a83ab99f84f",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

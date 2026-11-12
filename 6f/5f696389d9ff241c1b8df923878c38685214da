@@ -1,0 +1,19 @@
+crates/gateway/src/http/identity_views.rs
+  s_6be340fbf0a8f5::t_80320dc139b072 1-3,97,164-171,175-179,184-234,239-243,245-249,275-565
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6f5f696389d9ff241c1b8df923878c38685214da",
+  "prompts": {},
+  "sessions": {
+    "s_6be340fbf0a8f5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fb1509e8-43e8-4d55-a2e5-9312c36ee993",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

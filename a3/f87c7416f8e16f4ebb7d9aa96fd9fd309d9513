@@ -1,0 +1,47 @@
+.agents/skills/verify-oceans-admin/SKILL.md
+  s_0b69ca48aa3844::t_7ac02e46c68605 81,112-158,168,176,185,191,194,211-212,215,229-231,235,241-243
+.agents/skills/verify-oceans-admin/features/README.md
+  s_0b69ca48aa3844::t_344bb0f02fa1da 44-45
+.agents/skills/verify-oceans-admin/features/live-llm-requests.md
+  s_0b69ca48aa3844::t_0c897da730c14b 33
+.agents/skills/verify-oceans-admin/features/mcp.md
+  s_0b69ca48aa3844::t_b76ab81f311f37 59
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_0b69ca48aa3844::t_7d0edc705c4f19 52,55
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin
+  s_0b69ca48aa3844::t_a611d8ce02a3e5 305-310,317,320
+.agents/skills/verify-oceans-admin/scripts/drive-backend-gateway.mjs
+  s_0b69ca48aa3844::t_d18f3a1328572b 8-9,16,30-36,76,98,157,169,197,203,221-222,244,246-248,254-255,306
+.agents/skills/verify-oceans-admin/scripts/drive-mcp.mjs
+  s_0b69ca48aa3844::t_652069a9f5952f 9,29-30,58-64,69,74,80-97,99-101,107,109-111,160
+.agents/skills/verify-oceans-admin/scripts/drive-models.mjs
+  s_0b69ca48aa3844::t_0be450ee1f58d4 6-7,14,18,56,66,86,99,112,124,138,141,151,158,204
+.agents/skills/verify-oceans-admin/scripts/drive-observability.mjs
+  s_0b69ca48aa3844::t_2ead7633687a60 6-7,14,18-22,58,66,81,90,111-112,131,138,151,156-158,423
+.agents/skills/verify-oceans-admin/scripts/plan-verification.mjs
+  s_0b69ca48aa3844::t_ca58b10465a068 95,102
+.agents/skills/verify-oceans-admin/scripts/proof-cli.mjs
+  s_0b69ca48aa3844::t_41233e0bcb6517 1-171
+.agents/skills/verify-oceans-admin/scripts/proof.mjs
+  s_0b69ca48aa3844::t_08467ed04f6678 1-162
+.agents/skills/verify-oceans-admin/scripts/proof.test.mjs
+  s_0b69ca48aa3844::t_5b520203c34348 1-101
+AGENTS.md
+  s_0b69ca48aa3844::t_e06c5ad1c22f1a 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a3f87c7416f8e16f4ebb7d9aa96fd9fd309d9513",
+  "prompts": {},
+  "sessions": {
+    "s_0b69ca48aa3844": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a58ba52-6ef4-465b-9e35-b9e7eeacb85b",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

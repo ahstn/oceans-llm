@@ -1,0 +1,38 @@
+crates/admin-ui/web/src/generated/admin-api.ts
+  h_2f452a9c375069 3790-3793,3795-3796,4405-4408,4410-4411
+crates/admin-ui/web/src/routes/mcp/-tag-rules.tsx
+  h_2f452a9c375069 22-27,74,122,255-257,259
+crates/gateway-service/src/lib.rs
+  h_2f452a9c375069 121-123
+crates/gateway-service/src/mcp_access.rs
+  h_2f452a9c375069 4-6,92-171
+crates/gateway-service/src/mcp_token_overhead.rs
+  h_2f452a9c375069 6,163-168,181,192,256-270
+crates/gateway-service/src/mcp_tool_policy.rs
+  h_2f452a9c375069 9-12,23-34,131-132,137-147,178,186-194,203,206-209,211-216,218-221,224
+crates/gateway-store/src/libsql_store/mcp_access.rs
+  h_2f452a9c375069 1,511-512,522-523,525,529,557-560,737-798,803-815,817,819-831,833-834,839-848,851,854-857,859,862-865,877,880-884,886,888-894,896
+crates/gateway-store/src/postgres_store/mcp_access.rs
+  h_2f452a9c375069 1,464-465,475-476,478,482,509-512,658-719,724-725,727-746,750-751,754,757-759,761,764,773,776-778,780,783
+crates/gateway/openapi/admin-api.json
+  h_2f452a9c375069 14475-14476,14484-14488,17014-17015,17023-17027
+crates/gateway/src/http/audit_tests/mcp_tool_policy.rs
+  h_2f452a9c375069 377-485
+crates/gateway/src/http/mcp_registry.rs
+  h_2f452a9c375069 920-921,927-931
+crates/gateway/src/http/mcp_registry/tool_policy.rs
+  h_2f452a9c375069 110-111,113-114,389,393-394,398
+docs/mcp/mcp-tool-access.md
+  h_2f452a9c375069 147-149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "604596b86a23f39835ddde57816d147463a08f29",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

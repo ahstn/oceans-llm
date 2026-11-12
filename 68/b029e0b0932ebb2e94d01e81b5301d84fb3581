@@ -1,0 +1,19 @@
+.pre-commit-config.yaml
+  s_945fb39c9a6adc::t_b35ab0e4940592 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "68b029e0b0932ebb2e94d01e81b5301d84fb3581",
+  "prompts": {},
+  "sessions": {
+    "s_945fb39c9a6adc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c8c5ea47-24b1-4f15-8bef-26a4962acdc2",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

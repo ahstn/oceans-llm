@@ -1,0 +1,33 @@
+.github/workflows/helm-ci.yml
+  s_3909cf4958a3af::t_b460e01c3acdd0 40,43,47-49
+.github/workflows/repo-lint.yml
+  s_3909cf4958a3af::t_5ebce6d7776223 31-33,39,50-54
+.squawk.toml
+  s_3909cf4958a3af::t_0a4cf23c4d6f2e 1-2,6-8
+crates/gateway-store/mise.toml
+  s_3909cf4958a3af::t_55e6bbdb1b7af3 67-68,70,73-88
+deploy/helm/mise.toml
+  s_3909cf4958a3af::t_ca3970fba44eeb 40-41,43
+docs/adr/2026-10-21-repository-lint-and-dependency-scanning.md
+  s_3909cf4958a3af::t_bee3f0eed2489c 14,23-24,40-41,53
+docs/contributing/reference/migration-authoring.md
+  s_3909cf4958a3af::t_20fb9958dcb1c7 33-39,53-60
+mise.toml
+  s_3909cf4958a3af::t_31220e5c7bd135 57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "da574fa551e411e2ef8428ca090fc4bad03388e7",
+  "prompts": {},
+  "sessions": {
+    "s_3909cf4958a3af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9eabb320-c558-4ce9-b844-b21792d51207",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,85 @@
+crates/admin-ui/web/mise.toml
+  s_eaf7116ccea134::t_69174e66034dda 32-36,43,46
+crates/admin-ui/web/package.json
+  s_eaf7116ccea134::t_f500ba12f080f7 15
+crates/admin-ui/web/src/components/guardrails/settings/model.ts
+  s_eaf7116ccea134::t_8f76b0b5a27214 1,21
+crates/admin-ui/web/src/components/icons/app-icon.test.tsx
+  s_eaf7116ccea134::t_052ca0e64a4586 14,24
+crates/admin-ui/web/src/components/icons/app-icon.tsx
+  s_eaf7116ccea134::t_1040997de19d05 1,3,5-6
+crates/admin-ui/web/src/components/layout/admin-nav.ts
+  s_eaf7116ccea134::t_4d8c996d9fabb3 1,31,36
+crates/admin-ui/web/src/routes/api-keys.tsx
+  s_eaf7116ccea134::t_7164c8431af853 39-40,97
+crates/admin-ui/web/src/routes/batches/-components.tsx
+  s_eaf7116ccea134::t_c48ea6d80237b4 154-156,246-248
+crates/admin-ui/web/src/routes/change-password.tsx
+  s_eaf7116ccea134::t_d4041509e3ee73 2,14
+crates/admin-ui/web/src/routes/identity/-entity-tag-utils.ts
+  s_eaf7116ccea134::t_f030b25d92d47c 6,8
+crates/admin-ui/web/src/routes/identity/-entity-tags.tsx
+  s_eaf7116ccea134::t_1efe165bef2848 13,16,18,25,42,51-52,58
+crates/admin-ui/web/src/routes/identity/-read-only-directory.tsx
+  s_eaf7116ccea134::t_2a76f9c19207dd 126
+crates/admin-ui/web/src/routes/identity/service-accounts.tsx
+  s_eaf7116ccea134::t_ee1591fdb6bf07 286
+crates/admin-ui/web/src/routes/login.tsx
+  s_eaf7116ccea134::t_45ef88b193f9e6 5,27
+crates/admin-ui/web/src/routes/mcp/-shell.tsx
+  s_eaf7116ccea134::t_174f90aa51fdf8 1,20
+crates/admin-ui/web/src/routes/observability/-request-log-filters.tsx
+  s_eaf7116ccea134::t_c1549ca0ce35a0 1,64
+crates/admin-ui/web/src/routes/observability/agent-sessions.tsx
+  s_eaf7116ccea134::t_5e25038ba4a206 75,225
+crates/admin-ui/web/src/routes/observability/leaderboard.tsx
+  s_eaf7116ccea134::t_9fd80bb2827958 94
+crates/admin-ui/web/src/routes/observability/mcp-invocations.tsx
+  s_eaf7116ccea134::t_b794007634a660 632-633
+crates/admin-ui/web/src/routes/review-agent.tsx
+  s_eaf7116ccea134::t_544b645ae89ff6 17,93-95
+crates/admin-ui/web/src/routes/skills/-skills.test.tsx
+  s_eaf7116ccea134::t_4fbb21515689bc 155-165
+crates/admin-ui/web/src/server/admin-data.server.test.ts
+  s_eaf7116ccea134::t_e449fd74ea6032 1007-1010
+crates/admin-ui/web/src/server/admin-data.server.ts
+  s_eaf7116ccea134::t_6b9e66e09766a8 411,416-418
+crates/admin-ui/web/src/server/admin-preview-data.server.ts
+  s_eaf7116ccea134::t_e266723928380b 1,3,18-20,59-61,92-94
+crates/admin-ui/web/src/server/gateway-client.server.ts
+  s_eaf7116ccea134::t_6c14c14ce44ce4 4,202,204-205
+crates/admin-ui/web/src/styles/globals.css
+  s_eaf7116ccea134::t_e8e80317f67338 6-8
+crates/admin-ui/web/src/test/routes/api-keys-route.test.tsx
+  s_eaf7116ccea134::t_19c8dfa94652a3 466,490
+crates/admin-ui/web/src/test/routes/mcp-invocations-route.test.tsx
+  s_eaf7116ccea134::t_92fecda495a30d 33
+crates/admin-ui/web/src/test/routes/models-route.test.tsx
+  s_eaf7116ccea134::t_5e49b07672d126 151-152,193-194,292-293,1322
+crates/admin-ui/web/src/test/routes/review-agent-route.test.tsx
+  s_eaf7116ccea134::t_4b605b12a3a1e2 139
+crates/admin-ui/web/src/test/routes/service-accounts-route.test.tsx
+  s_eaf7116ccea134::t_8328a80be9b49d 74-75
+crates/admin-ui/web/src/test/routes/teams-route.test.tsx
+  s_eaf7116ccea134::t_34387ee6c12a21 58,246
+crates/admin-ui/web/src/test/routes/users-route.test.tsx
+  s_eaf7116ccea134::t_a6d3f5fc29cfde 755-756
+crates/admin-ui/web/src/types/live-api.ts
+  s_eaf7116ccea134::t_a2d5e17972313a 6-26,28,46,102-103,152,162-166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b23ff3594a91c5a67ee6aaf17dab988c73c7013e",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,33 @@
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_e88e6cbbab1de0::t_4880b3a024121a 1572-1573,1577
+crates/admin-ui/web/src/routes/-model-benchmarks.tsx
+  s_e88e6cbbab1de0::t_e3d7f217a8fb28 9-11
+crates/gateway-service/src/benchmark_catalog.rs
+  s_e88e6cbbab1de0::t_7b2e39e4ad2055 110-116,119,155,160,165,171,173
+crates/gateway-service/src/benchmark_catalog/tests.rs
+  s_e88e6cbbab1de0::t_9019e3e137e9de 295-296
+crates/gateway-service/src/lib.rs
+  s_e88e6cbbab1de0::t_d02b59b31edb77 52-54
+crates/gateway/openapi/admin-api.json
+  s_e88e6cbbab1de0::t_4d1509afb97ece 5828-5835,5856
+crates/gateway/src/http/admin_contract.rs
+  s_e88e6cbbab1de0::t_c2d365be391dda 5,380,390-407
+crates/gateway/src/http/models.rs
+  s_e88e6cbbab1de0::t_5cf0e3e44bac62 170
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0fc8ddee6847b4e4ee92803968bdec37d14a78ec",
+  "prompts": {},
+  "sessions": {
+    "s_e88e6cbbab1de0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "44088f38-237f-4fc3-bd0d-c2f82321db92",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+docs/access/budgets.md
+  s_13e300ce4bf1eb::t_1c244e456ef89f 51
+docs/adr/2026-10-14-budget-exceeded-status-code.md
+  s_13e300ce4bf1eb::t_feacb89513808d 15,67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b3cee0f6e01e5993af40846da26107db173394e9",
+  "prompts": {},
+  "sessions": {
+    "s_13e300ce4bf1eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cb0560cd-180f-4e10-b195-fa36950af50e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

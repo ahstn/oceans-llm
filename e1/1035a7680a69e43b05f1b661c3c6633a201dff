@@ -1,0 +1,21 @@
+crates/gateway-service/src/mcp_catalog.rs
+  s_7a4bb25ea2fe49::t_3441d36cdf962b 212-214,225-245,247
+docs/adr/2026-10-17-scoped-api-keys.md
+  s_7a4bb25ea2fe49::t_ba4918d4b81698 74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e11035a7680a69e43b05f1b661c3c6633a201dff",
+  "prompts": {},
+  "sessions": {
+    "s_7a4bb25ea2fe49": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab2457af-0345-474d-8ba0-be4b2bb49200",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

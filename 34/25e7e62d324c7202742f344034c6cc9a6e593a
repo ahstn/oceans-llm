@@ -1,0 +1,33 @@
+crates/gateway-core/src/rate_limits.rs
+  s_b8e52ffc321bb1::t_c476a6dad7b5e0 331-343
+crates/gateway-service/src/lib.rs
+  s_b8e52ffc321bb1::t_ac885e92457858 155
+crates/gateway-service/src/rate_limits.rs
+  s_b8e52ffc321bb1::t_5eaaced44aa33b 90-94,430-452,455-457,504-505,519-587,618,703-705,712-722,796-823,846,893-894
+crates/gateway-service/src/rate_limits/tests.rs
+  s_b8e52ffc321bb1::t_702db10bff33f4 301-302,1301-1417
+crates/gateway/src/http/mcp_gateway/tests.rs
+  s_b8e52ffc321bb1::t_5da70267bcb6a6 1678-1679
+crates/gateway/src/http/rate_limit_tests.rs
+  s_b8e52ffc321bb1::t_4d61d2b9ad02a1 281-283
+crates/gateway/src/http/test_support.rs
+  s_b8e52ffc321bb1::t_f0379287081897 170
+crates/gateway/src/main.rs
+  s_b8e52ffc321bb1::t_67db10219e5750 772-775
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3425e7e62d324c7202742f344034c6cc9a6e593a",
+  "prompts": {},
+  "sessions": {
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

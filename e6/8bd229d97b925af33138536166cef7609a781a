@@ -1,0 +1,282 @@
+docs/adr/2026-10-01-self-hosting-with-mise-daemons.md
+  s_397b5a20224eaa::t_a9fc11927933e8 9
+deploy/selfhost/gateway.yaml
+  s_7a37711a01670d::t_e74c91e31c636e 3,70-71
+docs/adr/2026-03-31-chat-observability-hardening-and-stream-parse-contract.md
+  s_397b5a20224eaa::t_a9fc11927933e8 15-16,152-153
+docs/adr/2026-10-14-budget-exceeded-status-code.md
+  s_397b5a20224eaa::t_a9fc11927933e8 9-11
+docs/adr/2026-10-13-mcp-tool-metadata-and-schema-hash.md
+  s_397b5a20224eaa::t_a9fc11927933e8 8-9
+docs/contributing/interviews/2026-05-27-mcp-gateway-auth-alignment.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3
+docs/adr/2026-10-13-govern-every-mcp-method.md
+  s_397b5a20224eaa::t_a9fc11927933e8 8
+docs/CLAUDE.md
+  s_397b5a20224eaa::t_ddd11b903a1154 4-5
+docs/adr/2026-05-15-local-sso-compose-fixture-and-browser-origin.md
+  s_397b5a20224eaa::t_a9fc11927933e8 11
+docs/adr/2026-08-05-configurable-admin-page-permissions.md
+  s_397b5a20224eaa::t_a9fc11927933e8 8-10
+docs/wrangler.jsonc
+  s_397b5a20224eaa::t_fb2c7f0c976919 3-9
+docs/internal/2026-10-04-multi-provider-routing-research.md
+  s_397b5a20224eaa::t_a9fc11927933e8 22
+docs/adr/2026-03-28-generated-admin-api-contract-and-typed-same-origin-client.md
+  s_397b5a20224eaa::t_a9fc11927933e8 17,151-152
+lychee.toml
+  s_397b5a20224eaa::t_3b8a41bf904030 14
+registry.json
+  s_397b5a20224eaa::t_a9fc11927933e8 4
+docs/adr/2026-10-04-shared-model-routing-and-session-affinity.md
+  s_397b5a20224eaa::t_a9fc11927933e8 82
+deploy/config/gateway.yaml
+  s_7a37711a01670d::t_e74c91e31c636e 184
+docs/adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md
+  s_397b5a20224eaa::t_a9fc11927933e8 14-15,212-213
+docs/adr/2026-03-15-otlp-observability-and-request-log-payloads.md
+  s_397b5a20224eaa::t_a9fc11927933e8 9-10,14-15
+docs/adr/2026-03-31-declarative-config-seeded-identity-and-budget-reconciliation.md
+  s_397b5a20224eaa::t_a9fc11927933e8 19-20,22,194-195,197-198
+docs/adr/2026-04-21-observability-usage-leaderboard.md
+  s_397b5a20224eaa::t_a9fc11927933e8 16-17
+docs/adr/2026-10-17-scoped-api-keys.md
+  s_397b5a20224eaa::t_a9fc11927933e8 9-10
+docs/adr/2026-10-21-litellm-model-group-info.md
+  s_397b5a20224eaa::t_a9fc11927933e8 9-10
+docs/contributing/reference/model-benchmark-snapshot.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3
+docs/astro.config.ts
+  s_397b5a20224eaa::t_8dbd6eda2903b0 9-12
+docs/adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md
+  s_397b5a20224eaa::t_a9fc11927933e8 9-10
+docs/adr/2026-10-15-gateway-rate-limits-and-quotas.md
+  s_397b5a20224eaa::t_a9fc11927933e8 8-10
+docs/adr/2026-10-17-ssrf-safe-outbound-fetch.md
+  s_397b5a20224eaa::t_a9fc11927933e8 9-10
+docs/adr/2026-04-27-cloudflare-pages-docs-hosting.md
+  s_397b5a20224eaa::t_63d2fa4d1ea98b 6
+docs/adr/2026-10-04-copilot-token-cli.md
+  s_397b5a20224eaa::t_a9fc11927933e8 36
+docs/contributing/reference/agent-session-analysis.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3,5
+docs/contributing/superpowers/specs/2026-04-24-request-id-and-request-attempt-observability-design.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3
+README.md
+  s_397b5a20224eaa::t_92294595e326ec 30-32,131,133,135
+  s_7a37711a01670d::t_58a4fa86993c61 119
+  s_397b5a20224eaa::t_c65336d1d58632 33-35
+  s_397b5a20224eaa::t_13c6573c9ee703 136
+  s_397b5a20224eaa::t_3701902c894ddb 36-40,121,123,125,127,129,138,140,143,146,152,155
+DESIGN.md
+  s_397b5a20224eaa::t_c1fa641ab4222d 359-360
+docs/package.json
+  s_397b5a20224eaa::t_3c0a94c31771ec 13-14
+  s_26f8dfa8b81e6a::t_87b731a4f06d7d 3,5,7-12,16-17,20-38
+.github/workflows/docs-ci.yml
+  s_397b5a20224eaa::t_c3fa23218fe684 35,38,40-43
+docs/adr/2026-10-26-image-generation-models.md
+  s_397b5a20224eaa::t_a9fc11927933e8 9-11
+docs/plans/2026-07-05-issue-213-model-allowlists.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3,245-251
+docs/adr/2026-06-14-cloud-run-openai-compatible-provider.md
+  s_397b5a20224eaa::t_a9fc11927933e8 44
+docs/src/content/docs/introduction.mdx
+  s_397b5a20224eaa::t_9baf5201f555c0 36
+docs/src/content/docs/access/sso/index.mdx
+  s_397b5a20224eaa::t_9baf5201f555c0 138
+docs/adr/2026-03-15-v1-runtime-simplification.md
+  s_397b5a20224eaa::t_a9fc11927933e8 9-10,14-15
+docs/AGENTS.md
+  s_397b5a20224eaa::t_fda20bb6d8728d 1-2,16-21
+_typos.toml
+  s_397b5a20224eaa::t_f34abd4f4edde0 9-10
+  s_397b5a20224eaa::t_72ad18061440a8 30-31
+docs/adr/2026-08-14-github-copilot-provider.md
+  s_397b5a20224eaa::t_a9fc11927933e8 9
+docs/adr/2026-08-16-github-copilot-compatibility-and-acceptance.md
+  s_397b5a20224eaa::t_71a96eb55f8627 38
+  s_397b5a20224eaa::t_a9fc11927933e8 5
+docs/plans/2026-07-20-agent-session-analysis-and-efficiency.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3,986,997-1002,1017-1018
+docs/adr/2026-10-03-authenticated-agent-skills.md
+  s_397b5a20224eaa::t_a9fc11927933e8 8-9
+docs/adr/2026-10-12-temporary-budget-increases.md
+  s_397b5a20224eaa::t_a9fc11927933e8 8-9
+docs/adr/2026-11-08-nimbus-docs-site-at-oceans-llm-com.md
+  s_397b5a20224eaa::t_fb73bd19116794 1-32,34-46
+  s_397b5a20224eaa::t_17f79fde18dcd1 33
+docs/adr/2026-04-23-admin-current-session-logout.md
+  s_397b5a20224eaa::t_a9fc11927933e8 24-25
+gateway.yaml
+  s_7a37711a01670d::t_e74c91e31c636e 78
+docs/contributing/reference/migration-authoring.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3,78,85
+docs/contributing/interviews/2026-04-24-request-id-and-request-attempt-observability.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3
+docs/adr/2026-09-26-profile-landing-page.md
+  s_397b5a20224eaa::t_a9fc11927933e8 8-9
+docs/interviews/2026-07-20-agent-task-analysis-and-efficiency.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3,521
+docs/contributing/mcp/mcp-registry-and-discovery.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3,7,162
+docs/internal/anthropic-thinking-compatibility.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3,64
+docs/interviews/2026-07-16-route-pricing-and-context-overrides.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3
+docs/adr/2026-10-31-multi-source-model-catalog.md
+  s_397b5a20224eaa::t_a9fc11927933e8 10,13
+  s_397b5a20224eaa::t_71a96eb55f8627 11-12
+crates/admin-ui/web/src/test/routes/models-route.test.tsx
+  s_26f8dfa8b81e6a::t_92b8f423da20a0 946
+CONTRIBUTING.md
+  s_7a37711a01670d::t_58a4fa86993c61 41
+  s_7a37711a01670d::t_b49c306cc443f3 127,146,165,175,177,179,181,183,185,189,191
+  s_7a37711a01670d::t_f4fae095512e9d 4,95-96,98
+docs/contributing/operations/budgets-and-spending.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3,5
+docs/contributing/reference/release-process.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3
+docs/adr/2026-10-17-delegated-mcp-server-ownership.md
+  s_397b5a20224eaa::t_a9fc11927933e8 10-11
+docs/adr/2026-03-17-post-success-accounting-and-strict-request-log-lookups.md
+  s_397b5a20224eaa::t_a9fc11927933e8 8-9
+docs/README.md
+  s_397b5a20224eaa::t_30711bf74943d2 3,5-8,10-12,14,26-28,30,34-38
+docs/adr/2026-03-15-openai-compat-streaming-and-embeddings-runtime-parity.md
+  s_397b5a20224eaa::t_a9fc11927933e8 8-10
+docs/internal/github-oauth-direct-sso-plan.md
+  s_397b5a20224eaa::t_a9fc11927933e8 256
+docs/adr/2026-10-13-mcp-credential-connect-url.md
+  s_397b5a20224eaa::t_a9fc11927933e8 8
+docs/adr/2026-10-15-mcp-client-oauth-authorization.md
+  s_397b5a20224eaa::t_a9fc11927933e8 10-11
+docs/contributing/reference/e2e-contract-tests.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3
+docs/adr/2026-08-22-gateway-guardrails-domain-and-composition.md
+  s_397b5a20224eaa::t_a9fc11927933e8 9,65
+docs/plans/2026-07-05-vertex-gemini-embeddings.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3,29,69,281,418,465,472,478,483,487,492,501,503,507,510
+docs/contributing/reference/data-relationships.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3,241,254,263
+docs/src/styles/globals.css
+  s_397b5a20224eaa::t_c1fa641ab4222d 11-14
+docs/adr/2026-10-15-admin-audit-log.md
+  s_397b5a20224eaa::t_a9fc11927933e8 9
+docs/adr/2026-07-16-route-level-effective-model-metadata-overrides.md
+  s_397b5a20224eaa::t_71a96eb55f8627 8
+  s_397b5a20224eaa::t_a9fc11927933e8 9-11
+mise.selfhost.toml
+  s_7a37711a01670d::t_e74c91e31c636e 6
+docs/mise.toml
+  s_397b5a20224eaa::t_4935a2c1545dfe 3-5,8-9,12,14,17,19,21-22,24,26-27,29,31-33,35
+docs/adr/2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md
+  s_397b5a20224eaa::t_a9fc11927933e8 11,16
+docs/contributing/implementation-plans/2026-09-22-guardrail-secret-redaction.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3,6,22,232
+scripts/build-shadcn-theme.mjs
+  s_397b5a20224eaa::t_41dad13dcff308 11,115,230-232
+  s_397b5a20224eaa::t_8d5ffb67a75381 164-168,170-187,189-193,207
+docs/contributing/reference/admin-api-contract-workflow.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3,109,117
+docs/contributing/implementation-plans/issue-206-service-account-config.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3
+crates/admin-ui/web/src/routes/models.tsx
+  s_397b5a20224eaa::t_8fbf2266d69479 65
+docs/public/r/registry.json
+  s_397b5a20224eaa::t_a9fc11927933e8 4
+docs/adr/2026-03-17-migration-atomicity-and-local-postgres-ops-hardening.md
+  s_397b5a20224eaa::t_a9fc11927933e8 8-10
+docs/contributing/reference/screenshots.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3
+docs/adr/2026-09-03-vertex-gemini-3-thinking-and-adapter-restructure.md
+  s_397b5a20224eaa::t_a9fc11927933e8 34,44,59
+docs/contributing/implementation-plans/2026-08-05-configurable-admin-page-permissions.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3,47,349-351
+docs/adr/2026-09-03-anthropic-compatible-provider-and-opencode-zen.md
+  s_397b5a20224eaa::t_a9fc11927933e8 37,46
+docs/contributing/development/authentication-testing.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3
+docs/AGENT.md
+  s_397b5a20224eaa::t_7dc4ec1900ea63 45-191
+crates/admin-ui/web/src/components/guardrails/settings/model.ts
+  s_26f8dfa8b81e6a::t_92b8f423da20a0 85,90
+docs/adr/2026-03-29-live-admin-api-key-management-and-contract-coverage.md
+  s_397b5a20224eaa::t_a9fc11927933e8 15,282,284
+docs/adr/2026-03-31-pre-v1-migration-rebaseline.md
+  s_397b5a20224eaa::t_a9fc11927933e8 16-17
+docs/adr/2026-07-02-service-account-config-and-managed-api-key-secrets.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3
+docs/plans/2026-07-06-issue-227-budget-default-policies.md
+  s_397b5a20224eaa::t_a9fc11927933e8 3,353,362
+docs/adr/2026-03-26-request-log-caller-tags.md
+  s_397b5a20224eaa::t_a9fc11927933e8 12
+docs/adr/2026-10-15-generic-upstream-mcp-oauth.md
+  s_397b5a20224eaa::t_a9fc11927933e8 10-11
+docs/adr/2026-10-14-decisions-request-metrics.md
+  s_397b5a20224eaa::t_a9fc11927933e8 8-9,39
+.agents/skills/verify-oceans-admin/features/anthropic-messages.md
+  s_397b5a20224eaa::t_99dfd463558813 27
+bundled-skills/README.md
+  s_397b5a20224eaa::t_dc02cb68fff014 5
+deploy/README.md
+  s_397b5a20224eaa::t_c93853a5015c08 4-5,48,129,131,133,135,137,139
+deploy/helm/oceans-llm/README.md
+  s_397b5a20224eaa::t_2eb026680f715d 17,61
+docs/adr/2026-03-05-identity-foundation.md
+  s_397b5a20224eaa::t_e05ee1dd35d6ca 10,12,16-17
+docs/adr/2026-03-05-vertex-first-provider-foundation.md
+  s_397b5a20224eaa::t_a9490e380602ed 8-10
+docs/adr/2026-03-06-hybrid-pricing-catalog.md
+  s_397b5a20224eaa::t_0ab6ef9e476a8f 10,12,18,118
+docs/adr/2026-03-06-release-versioning-and-ghcr-publishing.md
+  s_397b5a20224eaa::t_da6e5e11e657a5 11,18
+docs/adr/2026-03-08-admin-team-management-flow.md
+  s_397b5a20224eaa::t_00860b39edc7fb 9-10,14-15
+docs/adr/2026-03-09-runtime-database-policy.md
+  s_397b5a20224eaa::t_f191f4cd24d764 8-9
+docs/adr/2026-03-10-model-aliases-and-provider-route-config.md
+  s_397b5a20224eaa::t_6bd73b2d76176c 9,14-16
+docs/adr/2026-03-12-durable-usage-ledger-accounting.md
+  s_397b5a20224eaa::t_f338679aa515a8 8
+docs/adr/2026-03-13-capability-aware-route-gating.md
+  s_397b5a20224eaa::t_40822e2ebb1633 9,13-14
+docs/adr/2026-03-13-protocol-neutral-core-request-boundary.md
+  s_397b5a20224eaa::t_fabad7745fd498 8-9
+docs/bun.lock
+  s_26f8dfa8b81e6a::t_7e177fa2e2695e 6
+docs/public/_redirects
+  s_397b5a20224eaa::t_726f8aa0f732d9 1-129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e68bd229d97b925af33138536166cef7609a781a",
+  "prompts": {},
+  "sessions": {
+    "s_26f8dfa8b81e6a": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1bd30-297c-7068-9cc8-0fffc41eabdf",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_397b5a20224eaa": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1aae3-a475-75cb-9430-4462f4b0f4ad",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_7a37711a01670d": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1bd30-296a-7410-948b-b735e2c9ec9a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

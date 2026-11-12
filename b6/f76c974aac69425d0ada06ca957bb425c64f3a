@@ -1,0 +1,19 @@
+crates/admin-ui/web/src/test/routes/request-logs-route.test.tsx
+  s_235a013029136b::t_24e8a38b45f8ed 131-134,136,527-529,549,594-596,609
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b6f76c974aac69425d0ada06ca957bb425c64f3a",
+  "prompts": {},
+  "sessions": {
+    "s_235a013029136b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "14c73258-8521-4aba-ac41-81eeace58dcc",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

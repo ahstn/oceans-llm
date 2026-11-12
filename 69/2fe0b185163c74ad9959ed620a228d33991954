@@ -1,0 +1,27 @@
+crates/gateway-store/migrations/V72__mcp_discovery_run_started_ms.sql
+  s_b8e52ffc321bb1::t_f6c0230bd1e560 12-15
+crates/gateway-store/migrations/postgres/V72__mcp_discovery_run_started_ms.sql
+  s_b8e52ffc321bb1::t_1e3a32d8bb00c0 12-15
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_b8e52ffc321bb1::t_abd7fc7ce644e3 352,1405,1506-1545
+crates/gateway-store/src/shared.rs
+  s_b8e52ffc321bb1::t_92ec68a7952f97 19-20,30-38,40-47
+docs/adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md
+  s_b8e52ffc321bb1::t_0cb116dc5cc119 114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "692fe0b185163c74ad9959ed620a228d33991954",
+  "prompts": {},
+  "sessions": {
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

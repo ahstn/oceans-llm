@@ -1,0 +1,16 @@
+crates/gateway/src/http/mcp_client_oauth.rs
+  h_2f452a9c375069 19,99-100
+crates/gateway/src/http/mcp_client_oauth/metadata_document_tests.rs
+  h_2f452a9c375069 685-692
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2a693b2d0cb46555378ddb9ea03859e83888d4d8",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

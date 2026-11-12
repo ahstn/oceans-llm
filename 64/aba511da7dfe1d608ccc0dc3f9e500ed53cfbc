@@ -1,0 +1,21 @@
+crates/gateway-store/src/libsql_store/seed.rs
+  s_dd118f467446e0::t_bf03c947adbe8e 265-269,279
+crates/gateway/src/config/loader.rs
+  s_dd118f467446e0::t_8679a5d82e1449 57-59,75-79,106,123,138-140,146,150-153,286-292,294-298,465-467,470
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "64aba511da7dfe1d608ccc0dc3f9e500ed53cfbc",
+  "prompts": {},
+  "sessions": {
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

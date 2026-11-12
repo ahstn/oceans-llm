@@ -1,0 +1,47 @@
+crates/oceans-cli/src/skills.rs
+  s_3364883fc2ce42::t_3c93c2d1e7a649 131-135,137,140,277-283
+crates/gateway/src/http/skills/tests.rs
+  s_3364883fc2ce42::t_3d842402010163 38
+crates/gateway-service/src/skills/tests.rs
+  s_3364883fc2ce42::t_8f8d4e2402ba44 1,145,192,223-230,249-291,296
+  s_3364883fc2ce42::t_a2c5ebd28d2b6c 53-125,130-144,146-154,156,158-191,193-222,231-239,244-248,297-308,313-345,350-370,374
+  s_3364883fc2ce42::t_84bd96a357ee7e 16,155,157,240-243
+  s_3364883fc2ce42::t_43031dbecea011 126-129,292-295,309-312,346-349,371-373
+crates/gateway/src/config/skills.rs
+  s_3364883fc2ce42::t_3d842402010163 64,86
+crates/gateway-service/src/skills.rs
+  s_3364883fc2ce42::t_cf89b441df2fb7 113,141,177,188-199,213-232,234
+crates/gateway-store/src/skill_objects/tests.rs
+  s_3364883fc2ce42::t_af13c7ee4d3836 28,102-107,154,159,161,167-168,173,180,184-212
+  s_3364883fc2ce42::t_6aae209ce734c6 213-214
+crates/gateway-store/tests/skill_objects_s3.rs
+  s_3364883fc2ce42::t_af13c7ee4d3836 10,13,18,23,25-34,37,42,44-50,67-68,70
+  s_3364883fc2ce42::t_89d23a61445eb5 56-59,63-66
+crates/gateway/src/config/tests/skills.rs
+  s_3364883fc2ce42::t_3d842402010163 67
+crates/gateway-core/src/skills.rs
+  s_3364883fc2ce42::t_3d842402010163 116-118
+crates/gateway-store/src/skill_objects.rs
+  s_3364883fc2ce42::t_3d842402010163 23,33,68,86,104-108,110,118,141,143-144,147,187,249
+docs/setup/skills.md
+  s_3364883fc2ce42::t_d8c5c582458b8a 78-79
+crates/oceans-cli/src/skills_tests.rs
+  s_3364883fc2ce42::t_42398c77fa50d4 279-309
+  s_3364883fc2ce42::t_59b2a213763042 204-212,214-216,220-228,246,255-278,310-351
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "177e5eb2d9a857880402fd7b4d17e1ac840f5868",
+  "prompts": {},
+  "sessions": {
+    "s_3364883fc2ce42": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1030b-a73e-7ee0-ba99-c3e2b528cb13",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

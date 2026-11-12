@@ -1,0 +1,65 @@
+.agents/skills/verify-oceans-admin/features/mcp.md
+  s_009ff6129e63cc::t_fb3bb67d728d50 13,71
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_009ff6129e63cc::t_bbb51ddbc62697 3794-3798,6054-6055
+crates/admin-ui/web/src/routes/observability/mcp-invocations.tsx
+  s_009ff6129e63cc::t_06054ce83cacee 51,179-188,324,331,337,361,447,662
+crates/admin-ui/web/src/server/admin-data.server.test.ts
+  s_009ff6129e63cc::t_6c259c098e052b 628,669
+crates/admin-ui/web/src/test/routes/mcp-invocations-route.test.tsx
+  s_009ff6129e63cc::t_59a2e776e7a8d0 39,98,110
+crates/gateway-core/src/domain.rs
+  s_009ff6129e63cc::t_f022944019c1f0 2149-2152,2156-2159,2185
+crates/gateway-service/src/mcp_invocation_logging.rs
+  s_009ff6129e63cc::t_be82e8eac5b52a 70-71,146
+crates/gateway-store/migrations/V57__mcp_invocation_method.sql
+  s_009ff6129e63cc::t_40df2a61b33031 1-16
+crates/gateway-store/migrations/postgres/V57__mcp_invocation_method.sql
+  s_009ff6129e63cc::t_918f7e50725f06 1-16
+crates/gateway-store/src/lib.rs
+  s_009ff6129e63cc::t_25d772ce6b11ef 1241,1327,1357,1378-1390
+crates/gateway-store/src/libsql_store/mcp_tool_invocations.rs
+  s_009ff6129e63cc::t_a9885c7389b844 31,64,90-91,118,181,196,217,231,233,248,288,310-311
+crates/gateway-store/src/migration_registry.rs
+  s_009ff6129e63cc::t_63f4a47a12a5c9 324-330
+crates/gateway-store/src/postgres_store/mcp_tool_invocations.rs
+  s_009ff6129e63cc::t_db0ea4260a5cfe 29,62,84-85,128,183,198,211,225,227,242,273,292-293
+crates/gateway/openapi/admin-api.json
+  s_009ff6129e63cc::t_93975683462374 2708-2719,14736,14776-14779
+crates/gateway/src/http/admin_contract.rs
+  s_009ff6129e63cc::t_29a610c648f3a3 1316-1317,1343-1345
+crates/gateway/src/http/mcp_gateway.rs
+  s_009ff6129e63cc::t_2b115d4fd7503e 4,14,20-21,23,30-33,105-146,149,152,164,172-173,183,201-205,212-213,215,217-247,253,264,276,293-294,319,355,405,436,439,466-498,535,558
+crates/gateway/src/http/mcp_gateway/aggregate/execution.rs
+  s_009ff6129e63cc::t_35ead4994a5d09 333
+crates/gateway/src/http/mcp_gateway/json_rpc.rs
+  s_009ff6129e63cc::t_59b46d15818a49 4,11-18,28-58,61-118,120-126,137-148,169-188,192-195
+crates/gateway/src/http/mcp_gateway/methods.rs
+  s_009ff6129e63cc::t_31d631c24c70f2 1-254
+crates/gateway/src/http/mcp_gateway/tests.rs
+  s_009ff6129e63cc::t_32bc3d580e78b6 3,72-608
+crates/gateway/src/http/observability.rs
+  s_009ff6129e63cc::t_e7797cf6b044fe 422,523
+crates/gateway/src/local_demo_seed/agent_analysis.rs
+  s_009ff6129e63cc::t_46db7a846cdc8e 281
+docs/adr/2026-10-13-govern-every-mcp-method.md
+  s_009ff6129e63cc::t_71b0e3c22bbd97 1-57
+docs/mcp/mcp-tool-access.md
+  s_009ff6129e63cc::t_5195ac65cfe652 80-100,125-126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ac9f32c695e3dc6ad2aab64f3ca7781fff99bd45",
+  "prompts": {},
+  "sessions": {
+    "s_009ff6129e63cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dfe89d20-f559-4155-8143-a8e88732a4b1",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

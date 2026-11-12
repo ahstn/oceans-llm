@@ -1,0 +1,23 @@
+crates/admin-ui/web/src/routes/observability/-request-log-filters.tsx
+  s_ae1604a44e2b1a::t_0f1b0e4cf8c356 104-105,127-128,131,150,164,166-167,175,244-249,265-266,411-421,423-444
+crates/admin-ui/web/src/routes/observability/request-logs.tsx
+  s_ae1604a44e2b1a::t_29582d6a772f5c 51,70-123,126-127,132-133,138-139,149,151,156,165,168-169,172-178,180,182-188,190-198,200-210,213-235,237-238,240-245,247-269,271-296,298-487
+crates/admin-ui/web/src/test/routes/request-logs-route.test.tsx
+  s_ae1604a44e2b1a::t_e3888225080d53 109-113,115-131,235-238,329-332,411-414,444,447-449,466-482,484-495,497-500,513,516-533
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b958a87d6f0351cb0b3f786557d1a02942e1e082",
+  "prompts": {},
+  "sessions": {
+    "s_ae1604a44e2b1a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "33c1a7e4-971a-4028-aceb-69bf987f7f82",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

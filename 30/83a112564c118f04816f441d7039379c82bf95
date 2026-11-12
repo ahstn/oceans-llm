@@ -1,0 +1,23 @@
+crates/gateway-store/src/audit_logs.rs
+  s_af4ccbd37c05c0::t_2a78d9e6f606db 11-26
+crates/gateway-store/src/libsql_store/audit_logs.rs
+  s_af4ccbd37c05c0::t_25ff7ef7ab8f83 21-24,33-34,192-219
+crates/gateway-store/src/postgres_store/audit_logs.rs
+  s_af4ccbd37c05c0::t_bc518d679aba24 22-25,34-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3083a112564c118f04816f441d7039379c82bf95",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

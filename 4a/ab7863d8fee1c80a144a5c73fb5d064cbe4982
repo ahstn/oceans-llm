@@ -1,0 +1,45 @@
+crates/gateway-client-config/src/tests.rs
+  s_cd9d806c1e358d::t_ea4fb53d12a3cd 311-313,317-318,321-324
+crates/gateway-client-config/src/thinking.rs
+  s_cd9d806c1e358d::t_f568a3c94981f4 14-15
+crates/gateway-providers/src/anthropic/error.rs
+  s_cd9d806c1e358d::t_aa09288df0e4b8 127,130-133
+crates/gateway-providers/src/anthropic/mod.rs
+  s_cd9d806c1e358d::t_318da4ce7dda2e 27-29
+crates/gateway-providers/src/anthropic/model.rs
+  s_cd9d806c1e358d::t_550c473269f6a0 31,33-68,72-97,114-116,125-129,151-156,189-218
+crates/gateway-providers/src/anthropic/tests.rs
+  s_cd9d806c1e358d::t_a4e27656d6ee15 324-444
+crates/gateway-providers/src/anthropic/thinking.rs
+  s_cd9d806c1e358d::t_e7c65cdbf74f07 6-7,42-47,73-104,302-312
+crates/gateway-providers/src/bedrock/request/thinking.rs
+  s_cd9d806c1e358d::t_d526585a5e7d74 2-4,20-34,87-116
+crates/gateway-providers/src/bedrock/tests/request_thinking.rs
+  s_cd9d806c1e358d::t_224cb43538cf95 33-126
+docs/configuration/client-harness-configuration.md
+  s_cd9d806c1e358d::t_41b4439d6ebd32 69-74
+docs/configuration/model-routing-and-api-behavior.md
+  s_cd9d806c1e358d::t_bcf234cdfef6fd 404-418
+docs/providers/aws-bedrock.md
+  s_cd9d806c1e358d::t_5b470ff9b1e043 152
+docs/providers/gcp-vertex.md
+  s_cd9d806c1e358d::t_8f3bb715471564 175
+docs/reference/provider-api-compatibility.md
+  s_cd9d806c1e358d::t_c6d5f99d457424 205,288
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4aab7863d8fee1c80a144a5c73fb5d064cbe4982",
+  "prompts": {},
+  "sessions": {
+    "s_cd9d806c1e358d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d07410f0-3795-44b0-89cc-2a0af6501c56",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

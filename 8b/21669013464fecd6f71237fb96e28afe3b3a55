@@ -1,0 +1,16 @@
+crates/gateway/src/config/routes.rs
+  h_2f452a9c375069 396,401-404,408
+crates/gateway/src/config/tests/openrouter.rs
+  h_2f452a9c375069 291-342
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8b21669013464fecd6f71237fb96e28afe3b3a55",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

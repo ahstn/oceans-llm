@@ -1,0 +1,19 @@
+crates/gateway-store/src/tests/mcp_token_overhead.rs
+  s_b8e52ffc321bb1::t_879d4a2f881517 37,66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "903f572dee598087c98ba753afa574a6b337da8b",
+  "prompts": {},
+  "sessions": {
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

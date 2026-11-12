@@ -1,0 +1,21 @@
+crates/admin-ui/web/src/routes/profile/-components/profile-heatmap.tsx
+  s_a1d1a900c88650::t_00eb919a243016 68-73,128-131
+crates/admin-ui/web/src/test/routes/profile-route.test.tsx
+  s_a1d1a900c88650::t_242e7b30168d73 72-76,78-86,102-146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bb6217ca030644780715a7c0acb7be7c03f6fcd7",
+  "prompts": {},
+  "sessions": {
+    "s_a1d1a900c88650": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8dcd7694-4d09-4ee2-9f4c-af8095b9a53e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

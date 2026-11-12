@@ -1,0 +1,25 @@
+crates/admin-ui/web/src/routes/profile/-components/profile-data.ts
+  s_a1d1a900c88650::t_196f635fea12f1 46-48
+crates/admin-ui/web/src/routes/profile/-components/profile-headlines.tsx
+  s_a1d1a900c88650::t_88415c1d31f143 79-82,85,89,93-124
+crates/admin-ui/web/src/routes/profile/index.tsx
+  s_a1d1a900c88650::t_a00acad7fb225a 23,54-57,86-90
+crates/admin-ui/web/src/test/routes/profile-route.test.tsx
+  s_a1d1a900c88650::t_51e35bd47ea51b 100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "03b372c8023cc6a73c5a7edb3e10d9046907325b",
+  "prompts": {},
+  "sessions": {
+    "s_a1d1a900c88650": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8dcd7694-4d09-4ee2-9f4c-af8095b9a53e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

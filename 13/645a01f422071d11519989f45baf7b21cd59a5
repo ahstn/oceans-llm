@@ -1,0 +1,27 @@
+crates/gateway-core/src/protocol/decisions/mod.rs
+  s_13e300ce4bf1eb::t_57aeed8cf1d279 454-470
+crates/gateway/src/http/handlers/decisions.rs
+  s_13e300ce4bf1eb::t_d8e2cfcd5a2bc2 129-140
+crates/gateway-core/src/protocol/decisions/openai.rs
+  s_13e300ce4bf1eb::t_0c74db04d481ce 13-14,97-98,103,108,115,122,127-135,497,531,896-913,1096-1107,1117-1118
+crates/gateway-core/src/protocol/decisions/system_one.rs
+  s_13e300ce4bf1eb::t_385464693d39ef 12,295-299,324,359,651-652,668,672-681
+docs/adr/2026-09-21-system-one-decisions-api.md
+  s_13e300ce4bf1eb::t_bd16e48c2e24dd 94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "13645a01f422071d11519989f45baf7b21cd59a5",
+  "prompts": {},
+  "sessions": {
+    "s_13e300ce4bf1eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cb0560cd-180f-4e10-b195-fa36950af50e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

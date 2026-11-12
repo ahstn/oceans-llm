@@ -1,0 +1,99 @@
+.editorconfig
+  s_3909cf4958a3af::t_e8b3f5c7fa4cbc 1-19
+.editorconfig-checker.json
+  s_3909cf4958a3af::t_edf0fd46f34573 1-6
+.github/dependabot.yml
+  s_3909cf4958a3af::t_56eb0e0e6e555c 197-198,214-215
+.github/workflows/ci.yml
+  s_3909cf4958a3af::t_95975368b0b6b2 52,55,66-68
+.github/workflows/osv-scanner.yml
+  s_3909cf4958a3af::t_5b19db1b4636bb 1-42
+.github/workflows/repo-lint.yml
+  s_3909cf4958a3af::t_587a25b97e04c1 1-55
+.github/zizmor.yml
+  s_3909cf4958a3af::t_0673fae675de60 1-26
+.pre-commit-config.yaml
+  s_3909cf4958a3af::t_6c49cb09eb2aa6 34-68
+.taplo.toml
+  s_3909cf4958a3af::t_58505a6df7dd8f 1-7
+.vale.ini
+  s_3909cf4958a3af::t_70063e3c51f250 12
+AGENTS.md
+  s_3909cf4958a3af::t_1c1795fa279a41 6
+Cargo.toml
+  s_3909cf4958a3af::t_905cb5419f658a 39-43,71-72,95,101
+_typos.toml
+  s_3909cf4958a3af::t_5b617b76503d36 1-40
+crates/admin-ui/Cargo.toml
+  s_3909cf4958a3af::t_7a269a5733399a 5
+crates/agent-session-analysis/Cargo.toml
+  s_3909cf4958a3af::t_69c6b3dce162d9 5
+crates/gateway-client-config/Cargo.toml
+  s_3909cf4958a3af::t_1d589eb2e86c90 5
+crates/gateway-client-ip/Cargo.toml
+  s_3909cf4958a3af::t_8166a35133bc2b 5
+crates/gateway-core/Cargo.toml
+  s_3909cf4958a3af::t_436d774a6baed7 5
+crates/gateway-guardrails/Cargo.toml
+  s_3909cf4958a3af::t_edbdcd6eba516f 5
+crates/gateway-mcp/Cargo.toml
+  s_3909cf4958a3af::t_277ef1361c0a3f 5
+crates/gateway-providers/Cargo.toml
+  s_3909cf4958a3af::t_a50cf9df87b9e6 5
+crates/gateway-service/Cargo.toml
+  s_3909cf4958a3af::t_0f0bb458bc6b9a 5
+crates/gateway-skills/Cargo.toml
+  s_3909cf4958a3af::t_dc150e7a4deaa4 5
+crates/gateway-store/Cargo.toml
+  s_3909cf4958a3af::t_9c22c43548175c 5
+crates/gateway/Cargo.toml
+  s_3909cf4958a3af::t_be0a2d1919fcfa 5
+deny.toml
+  s_3909cf4958a3af::t_5328070e9ed0a0 1-68
+docs/README.md
+  s_3909cf4958a3af::t_e5c2b7b67a6406 18
+docs/adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md
+  s_3909cf4958a3af::t_de817fe12c762a 245
+docs/adr/2026-03-31-declarative-config-seeded-identity-and-budget-reconciliation.md
+  s_3909cf4958a3af::t_da18757d394fd7 61,128
+docs/adr/2026-07-16-route-level-effective-model-metadata-overrides.md
+  s_3909cf4958a3af::t_e07a3352432a16 9
+docs/adr/2026-08-14-github-copilot-provider.md
+  s_3909cf4958a3af::t_67c457c848258c 9
+docs/adr/2026-08-16-github-copilot-compatibility-and-acceptance.md
+  s_3909cf4958a3af::t_dc87cf5006b83e 5
+docs/adr/2026-10-05-cli-binary-distribution-with-cargo-dist.md
+  s_3909cf4958a3af::t_2776b764d4c2b5 29
+docs/configuration/configuration-reference.md
+  s_3909cf4958a3af::t_0fdda8bfba1337 175,177
+docs/internal/2026-02-26-front-end-stacks.md
+  s_3909cf4958a3af::t_8af2cfa3602418 21,60,66,73,75,81,86,92,103,116,142,146,157,165,171,184,188,233-240,258,276,288,300,315,319,333,335,337,355,360,376,378,402,404,425,566,598,600,602,606,608,610,615,618,621,636,640
+docs/interviews/2026-07-20-agent-task-analysis-and-efficiency.md
+  s_3909cf4958a3af::t_066c78a26cdef2 192
+docs/operations/operator-runbooks.md
+  s_3909cf4958a3af::t_49bc8538cdb49d 5
+docs/overview-features.md
+  s_3909cf4958a3af::t_38ae99c40e3de7 17
+lychee.toml
+  s_3909cf4958a3af::t_25535a8bb073b6 1-9
+mise.lock
+  s_3909cf4958a3af::t_1cda2bd9d66315 95-123,192-225,313-341,370-398,487-574
+mise.toml
+  s_3909cf4958a3af::t_a12a54b80fdac6 50-56,144-197,203,205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f3286a7490b7ffbc85a7bc11db1ac280255a9327",
+  "prompts": {},
+  "sessions": {
+    "s_3909cf4958a3af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9eabb320-c558-4ce9-b844-b21792d51207",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

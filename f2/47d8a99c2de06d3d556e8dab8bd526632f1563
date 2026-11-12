@@ -1,0 +1,21 @@
+crates/gateway-store/src/api_key_scope_tests.rs
+  s_7a5811202bdfd5::t_f5a7ec421efa40 1-139
+crates/gateway-store/src/lib.rs
+  s_7a5811202bdfd5::t_37d8b0248812ff 58-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f247d8a99c2de06d3d556e8dab8bd526632f1563",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

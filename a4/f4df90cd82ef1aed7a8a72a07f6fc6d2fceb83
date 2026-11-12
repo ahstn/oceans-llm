@@ -1,0 +1,25 @@
+crates/admin-ui/web/src/routes/observability/-request-log-filters.tsx
+  s_367ef5265227f7::t_6b27295c45f5fa 1-405
+crates/gateway-store/migrations/V54__request_log_request_tool_count.sql
+  s_367ef5265227f7::t_f73d17df401df2 1-2
+crates/gateway-store/migrations/postgres/V54__request_log_request_tool_count.sql
+  s_367ef5265227f7::t_17439de24a97ea 1-2
+crates/gateway-store/src/tests/request_log_list.rs
+  s_367ef5265227f7::t_380cbd11789ad7 1-336
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a4f4df90cd82ef1aed7a8a72a07f6fc6d2fceb83",
+  "prompts": {},
+  "sessions": {
+    "s_367ef5265227f7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a5ec6542c1cb11408",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

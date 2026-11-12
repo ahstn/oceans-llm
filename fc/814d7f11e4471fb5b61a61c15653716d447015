@@ -1,0 +1,23 @@
+crates/admin-ui/web/src/components/data/compact-count.tsx
+  s_1864c803a90a0e::t_8b62bd3f649949 2,9
+crates/admin-ui/web/src/lib/format.ts
+  s_1864c803a90a0e::t_ab870b79f9c2b8 66-70,76,92-94
+crates/admin-ui/web/src/test/format.test.ts
+  s_1864c803a90a0e::t_c404d6ce792286 7,21-23,30-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fc814d7f11e4471fb5b61a61c15653716d447015",
+  "prompts": {},
+  "sessions": {
+    "s_1864c803a90a0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5822bc90-e33d-49af-9d44-474de0500040",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,113 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_59759a0c269480::t_ca71e6839f600c 435-441
+.agents/skills/verify-oceans-admin/features/spend-controls.md
+  s_59759a0c269480::t_cce9594bfaf825 3,14-15,20,28-29,39-41,49
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_59759a0c269480::t_a2926560edc15d 887-902,2656-2668,2781-2796,3051-3063,4388,6432-6454
+crates/admin-ui/web/src/routes/spend-controls.tsx
+  s_59759a0c269480::t_71cd7abafa4f2b 1,41,48,51-56,87,92-93,97-98,105,117-121,130-131,153-158,163-166,174,176-186,192-204,207,281-292,324-328,341-342,345,348-353,399,464-465,468-469,498,548-550,552-553,572,576,592-597,604,607,609-611,613-615,617-623,627-641
+crates/admin-ui/web/src/routes/spend-controls/-budget-increase-model.ts
+  s_59759a0c269480::t_70fc00784de038 1-111
+crates/admin-ui/web/src/routes/spend-controls/-budget-increase.tsx
+  s_59759a0c269480::t_0f87d4297378fe 1-231
+crates/admin-ui/web/src/routes/spend-controls/-budget-model.ts
+  s_59759a0c269480::t_9ab16cc824fddf 22-23,46-50,53-63
+crates/admin-ui/web/src/routes/spend-controls/-usage.tsx
+  s_59759a0c269480::t_8216618f35e60d 5,28-29,39,43,59-60
+crates/admin-ui/web/src/server/admin-data.functions.ts
+  s_59759a0c269480::t_faed0a1f1608a2 16,402-407
+crates/admin-ui/web/src/server/admin-data.server.ts
+  s_59759a0c269480::t_907fb63a423aa3 25-26,324-334
+crates/admin-ui/web/src/test/routes/spend-controls-route.test.tsx
+  s_59759a0c269480::t_66adb63bc6e525 4-11,19-20,22-23,25,47,68,187-191,194,197-240,273,275,463-598
+crates/admin-ui/web/src/types/live-api.ts
+  s_59759a0c269480::t_e89cb5c737cb9c 64-67
+crates/gateway-core/src/budgets.rs
+  s_59759a0c269480::t_580003b3d2a011 340-360
+crates/gateway-core/src/lib.rs
+  s_59759a0c269480::t_85ad23e5b1019d 46-48
+crates/gateway-core/src/traits.rs
+  s_59759a0c269480::t_d72d244756785b 22-25,461-490
+crates/gateway-service/src/budget_alerts.rs
+  s_59759a0c269480::t_2b73dad9ce24ab 14,123-124,129,147,152
+crates/gateway-service/src/budget_guard.rs
+  s_59759a0c269480::t_014a26583d3771 10-12,139-140,144,167-168,172,201-203,218,230-248,307-318,623-656
+crates/gateway-service/src/budget_scopes.rs
+  s_59759a0c269480::t_351b70af8027a0 2-3,5,8-27
+crates/gateway-store/migrations/V56__budget_increases.sql
+  s_59759a0c269480::t_5352dc8283ae6d 1-24
+crates/gateway-store/migrations/postgres/V56__budget_increases.sql
+  s_59759a0c269480::t_808d45717f4fd8 1-24
+crates/gateway-store/src/budget_increase_tests.rs
+  s_59759a0c269480::t_2e5a3626a4356a 1-135
+crates/gateway-store/src/budget_increases.rs
+  s_59759a0c269480::t_bbb822e1e84b18 1-15
+crates/gateway-store/src/lib.rs
+  s_59759a0c269480::t_6af8b3ea5f143d 19,47-49
+crates/gateway-store/src/libsql_store/budget_increases.rs
+  s_59759a0c269480::t_afa22f03b62074 1-105
+crates/gateway-store/src/libsql_store/budgets.rs
+  s_59759a0c269480::t_fabe35fa550adb 37-58
+crates/gateway-store/src/libsql_store/mod.rs
+  s_59759a0c269480::t_c1bc0bd26a7b05 6
+crates/gateway-store/src/migration_registry.rs
+  s_59759a0c269480::t_5b3dcec8977ca7 317-323
+crates/gateway-store/src/postgres_store/budget_increases.rs
+  s_59759a0c269480::t_a1321c6fb3d0b2 1-97
+crates/gateway-store/src/postgres_store/budgets.rs
+  s_59759a0c269480::t_eb77e6b9aa702e 37-58
+crates/gateway-store/src/postgres_store/mod.rs
+  s_59759a0c269480::t_82a800d0d30034 6
+crates/gateway-store/src/store.rs
+  s_59759a0c269480::t_442711e696f52a 864-885
+crates/gateway/openapi/admin-api.json
+  s_59759a0c269480::t_b49b0f60f5bf96 3563-3597,10054-10089,10506-10558,11674-11718,16944-16954
+crates/gateway/src/config/permissions.rs
+  s_59759a0c269480::t_43a6da8478114c 255,267-269
+crates/gateway/src/config/tests/permissions.rs
+  s_59759a0c269480::t_7a207448acd3a6 13-18,145-152
+crates/gateway/src/http/admin_auth.rs
+  s_59759a0c269480::t_7186861d67ae1a 6,40-70
+crates/gateway/src/http/admin_contract.rs
+  s_59759a0c269480::t_58ecd49747294f 1047-1049,1054-1062,1247-1273,2043
+crates/gateway/src/http/mod.rs
+  s_59759a0c269480::t_7a93e5416dd2ad 29,51,239-242
+crates/gateway/src/http/spend.rs
+  s_59759a0c269480::t_b4f8aed645a3c3 18-20,427,430,669,955,979
+crates/gateway/src/http/spend_budget_increases.rs
+  s_59759a0c269480::t_7fcb2dfe7746ad 1-222
+crates/gateway/src/http/spend_budget_increases/handler_tests.rs
+  s_59759a0c269480::t_b534adf833649d 1-284
+crates/gateway/src/http/spend_budget_listing.rs
+  s_59759a0c269480::t_c6ee636a4e8cee 1-2,5-6,12,18,20-21,24,27,33,35-50,63,98,106,129-132,159-161,306
+crates/gateway/src/local_demo_seed/budget_pressure.rs
+  s_59759a0c269480::t_ec0e68462d64e8 1-122
+crates/gateway/src/local_demo_seed/history.rs
+  s_59759a0c269480::t_0465394b39b989 97-106,217
+crates/gateway/src/local_demo_seed/mod.rs
+  s_59759a0c269480::t_33056a7e0418ee 21,255,531-534,951-954,1112-1185
+docs/access/budgets.md
+  s_59759a0c269480::t_653a2e891d8da5 81,83-85,87,89,91,93,95-99,101-103,321-354
+docs/adr/2026-10-12-temporary-budget-increases.md
+  s_59759a0c269480::t_225887328af029 1-78
+docs/configuration/configuration-reference.md
+  s_59759a0c269480::t_836e05de32ad5a 319
+gateway.yaml
+  s_59759a0c269480::t_fdc9d78ee7213b 34-35,192-196,213-217,258-262,271-275,292-296
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a53e8031c68526732f89ea220e2c9f999fa8a6cb",
+  "prompts": {},
+  "sessions": {
+    "s_59759a0c269480": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6967a834-972f-4dfe-99a6-760e1e3d2dc7",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

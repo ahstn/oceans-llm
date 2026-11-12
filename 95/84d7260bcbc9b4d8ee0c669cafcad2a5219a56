@@ -1,0 +1,19 @@
+crates/admin-ui/web/src/routes/mcp/-tool-reviews.tsx
+  s_e88dc7cf2999d1::t_bd0f9f3019debc 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9584d7260bcbc9b4d8ee0c669cafcad2a5219a56",
+  "prompts": {},
+  "sessions": {
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

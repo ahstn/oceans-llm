@@ -1,0 +1,21 @@
+crates/gateway-store/src/libsql_store/mcp_access.rs
+  s_1c39eca6a8bf5f::t_187d68cd46127b 247-256,267-271
+crates/gateway-store/src/postgres_store/mcp_access.rs
+  s_1c39eca6a8bf5f::t_30c75190f70fa5 205-207,210-211,217,220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "741bfc0c572edaa84cda3c896407ca2de45a612a",
+  "prompts": {},
+  "sessions": {
+    "s_1c39eca6a8bf5f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e39a-93c5-7f21-b398-3a83ab99f84f",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

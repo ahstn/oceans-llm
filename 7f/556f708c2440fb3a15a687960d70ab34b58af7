@@ -1,0 +1,83 @@
+.agents/skills/verify-oceans-admin/features/live-llm-requests.md
+  s_13e300ce4bf1eb::t_46e4a785f2dcde 9,18,35,45-48
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_9afcd1aad99ea7::t_4bb9f5f563b4cd 336
+crates/gateway-core/src/traits.rs
+  s_13e300ce4bf1eb::t_3d1af6eef10105 1389-1404
+crates/gateway-providers/src/anthropic/count_tokens.rs
+  s_13e300ce4bf1eb::t_ef2394cf0146a9 1-203
+crates/gateway-providers/src/anthropic/mod.rs
+  s_13e300ce4bf1eb::t_69a1506426b548 2,14-16
+crates/gateway-providers/src/anthropic_compat.rs
+  s_13e300ce4bf1eb::t_bb8b15db605a98 13-15,71-78,88,90,92,100-108,259-298
+crates/gateway-providers/src/bedrock/mod.rs
+  s_009ff6129e63cc::t_a03a3d4c5ac199 12,28,276-331,669-683,752-781
+crates/gateway-providers/src/bedrock/tests/count_tokens.rs
+  s_13e300ce4bf1eb::t_30ca4423074c6b 1-149
+crates/gateway-providers/src/bedrock/tests/mod.rs
+  s_13e300ce4bf1eb::t_4389e180e983d1 22
+crates/gateway-providers/src/vertex/anthropic.rs
+  s_009ff6129e63cc::t_a59bd1622e3e3f 6-8,39-63
+crates/gateway-providers/src/vertex/mod.rs
+  s_13e300ce4bf1eb::t_257cd8f0f4cb26 14-16,36,295-316
+crates/gateway-providers/src/vertex/tests/count_tokens.rs
+  s_13e300ce4bf1eb::t_11b3138c29bfe3 1-71
+crates/gateway-providers/src/vertex/tests/mod.rs
+  s_13e300ce4bf1eb::t_ce9f63255ac6d0 37
+crates/gateway/src/http/handlers.rs
+  s_13e300ce4bf1eb::t_52b4cad8550ce9 2,8-9,15
+crates/gateway/src/http/handlers/auth.rs
+  s_13e300ce4bf1eb::t_beb4862ff69cab 22-25
+crates/gateway/src/http/handlers/count_tokens.rs
+  s_13e300ce4bf1eb::t_658c446ca19e53 1-163
+crates/gateway/src/http/handlers/route_tests.rs
+  s_e31a0edd2795db::t_1df1d06e26c601 1-362
+crates/gateway/src/http/mod.rs
+  s_13e300ce4bf1eb::t_e6d9ac54e969bc 66-72,400
+docs/configuration/client-harness-configuration.md
+  s_13e300ce4bf1eb::t_8be130f169c87e 24,67
+docs/configuration/model-routing-and-api-behavior.md
+  s_13e300ce4bf1eb::t_7e2cee6cedda69 20-21,24-25,403-421
+docs/reference/provider-api-compatibility.md
+  s_009ff6129e63cc::t_6497f9e457175e 16-17,25-26,55-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7f556f708c2440fb3a15a687960d70ab34b58af7",
+  "prompts": {},
+  "sessions": {
+    "s_009ff6129e63cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dfe89d20-f559-4155-8143-a8e88732a4b1",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_13e300ce4bf1eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cb0560cd-180f-4e10-b195-fa36950af50e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_9afcd1aad99ea7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6922d2fa-a044-4097-b696-4f2796d370eb",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e31a0edd2795db": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a1054dbbf1c0f1cc2",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

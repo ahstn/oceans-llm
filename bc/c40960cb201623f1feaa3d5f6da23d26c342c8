@@ -1,0 +1,25 @@
+crates/admin-ui/web/src/lib/format.ts
+  s_59759a0c269480::t_5d02a0a1a85d8f 24-34
+crates/admin-ui/web/src/routes/profile/-components/profile-budget.tsx
+  s_59759a0c269480::t_e06a7d5391968d 5
+crates/admin-ui/web/src/routes/spend-controls.tsx
+  s_59759a0c269480::t_08999bffe5a0ac 38,52
+crates/admin-ui/web/src/routes/spend-controls/-budget-increase.tsx
+  s_59759a0c269480::t_97813ffaa3898b 21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bcc40960cb201623f1feaa3d5f6da23d26c342c8",
+  "prompts": {},
+  "sessions": {
+    "s_59759a0c269480": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6967a834-972f-4dfe-99a6-760e1e3d2dc7",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

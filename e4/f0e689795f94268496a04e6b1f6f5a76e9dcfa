@@ -1,0 +1,29 @@
+crates/admin-ui/web/e2e/admin-page-permissions.e2e.ts
+  s_59759a0c269480::t_7bd37a970b70c3 20-35,343
+crates/admin-ui/web/src/routes/spend-controls.tsx
+  s_59759a0c269480::t_6ad33033d24eee 51-52
+crates/admin-ui/web/src/routes/spend-controls/-budget-increase-model.ts
+  s_59759a0c269480::t_91b3bc4d6eb18c 112-122
+crates/admin-ui/web/src/routes/spend-controls/-budget-increase.tsx
+  s_59759a0c269480::t_7c11ce3455d2b2 28
+crates/admin-ui/web/src/server/admin-data.functions.ts
+  s_59759a0c269480::t_422a20eeb27cdb 402-426,428
+docs/configuration/configuration-reference.md
+  s_59759a0c269480::t_d6a41a496da0d9 351-353,380,384
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e4f0e689795f94268496a04e6b1f6f5a76e9dcfa",
+  "prompts": {},
+  "sessions": {
+    "s_59759a0c269480": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6967a834-972f-4dfe-99a6-760e1e3d2dc7",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

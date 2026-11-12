@@ -1,0 +1,39 @@
+Cargo.lock
+  s_af4ccbd37c05c0::t_63004cdb996886 12
+crates/admin-ui/Cargo.toml
+  s_af4ccbd37c05c0::t_0cdeecf1a1e42e 10
+crates/admin-ui/src/client_ip.rs
+  s_af4ccbd37c05c0::t_2d9056fb04f07f 1,3-13,15-18,20,22,33-87,137-138,172-247
+crates/admin-ui/src/lib.rs
+  s_af4ccbd37c05c0::t_8e1385132b5d5d 17-18,30
+crates/admin-ui/src/proxy.rs
+  s_af4ccbd37c05c0::t_04bca505f87791 19,29,51,163-164,246-249,255,364-412
+crates/gateway/src/http/client_ip.rs
+  s_af4ccbd37c05c0::t_69e024a55d72b2 3-4,6
+crates/gateway/src/http/mod.rs
+  s_af4ccbd37c05c0::t_e0374f671afa0e 85-86,88
+docs/access/admin-audit-log.md
+  s_af4ccbd37c05c0::t_a39bcce73d465b 74
+docs/adr/2026-10-15-admin-audit-log.md
+  s_af4ccbd37c05c0::t_d5fc93eb3fa1d8 62,64,66,68,71
+docs/configuration/configuration-reference.md
+  s_af4ccbd37c05c0::t_780e47d85d7416 405
+docs/configuration/rate-limits.md
+  s_af4ccbd37c05c0::t_8ac6d08738104d 160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "780d3c3ba8f3129f60e8d2d8c11c2512e385499a",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

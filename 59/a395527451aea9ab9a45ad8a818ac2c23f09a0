@@ -1,0 +1,25 @@
+.github/dependabot.yml
+  s_33a445762572a1::t_15525f7c844813 205-209
+dist-workspace.toml
+  s_33a445762572a1::t_c3f968b8e04e95 53-54
+docs/adr/2026-10-05-cli-binary-distribution-with-cargo-dist.md
+  s_33a445762572a1::t_88d496e2933eb8 32-33
+docs/contributing/reference/release-process.md
+  s_33a445762572a1::t_9acf4c1109cf28 115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "59a395527451aea9ab9a45ad8a818ac2c23f09a0",
+  "prompts": {},
+  "sessions": {
+    "s_33a445762572a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36ca25e3-0a90-4ab4-92a6-a7d14a91c43d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

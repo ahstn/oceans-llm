@@ -1,0 +1,21 @@
+crates/gateway-providers/src/bedrock/request/thinking.rs
+  s_cd9d806c1e358d::t_f5a131ae5c2a9c 539-540,546-555,557-559,561-562,564,566
+crates/gateway-providers/src/bedrock/tests/request_thinking.rs
+  s_cd9d806c1e358d::t_1c2ab6d5751408 333-342
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "47c5c0acc466adc8963c822ef7242a541994ff5f",
+  "prompts": {},
+  "sessions": {
+    "s_cd9d806c1e358d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d07410f0-3795-44b0-89cc-2a0af6501c56",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

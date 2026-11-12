@@ -1,0 +1,45 @@
+crates/gateway-service/src/admin_audit.rs
+  s_af4ccbd37c05c0::t_4e555aa856fffd 10,75-101,104-119,121,123-124,126-127,129-132,134-136,138-140,142-146,148-151,153-154,156-158,160,162-169,171-173,176,312-313,315,317-318,972,1008,1025,1049,1075,1097,1114,1234,1292,1341-1345,1353,1371,1396,1410
+crates/gateway-service/src/lib.rs
+  s_af4ccbd37c05c0::t_885cadc869c4dc 47-48
+crates/gateway/src/http/api_keys.rs
+  s_af4ccbd37c05c0::t_390d69a329e803 12-14,372,483,487,494-495
+crates/gateway/src/http/identity.rs
+  s_af4ccbd37c05c0::t_c8eedf2700f1e0 16,566,646,749,870,1087,1505,1573,3760,3834
+crates/gateway/src/http/identity_audit.rs
+  s_af4ccbd37c05c0::t_1ec2e4c3e59d6f 7,12-16,22-23,37-38,64,68
+crates/gateway/src/http/mcp_oauth.rs
+  s_af4ccbd37c05c0::t_0e8e3902a9843d 17,353-365,474-479
+crates/gateway/src/http/mcp_registry.rs
+  s_af4ccbd37c05c0::t_d9c8902c9cdd5c 22,24,404-409,427-430,643,716,758,849-860,896-899,972-973,978-979
+crates/gateway/src/http/models.rs
+  s_af4ccbd37c05c0::t_5b28bf7d284524 9,168,171
+crates/gateway/src/http/provider_credentials.rs
+  s_af4ccbd37c05c0::t_c4aa8a4e800e00 10-11,239-240
+crates/gateway/src/http/rate_limit_policies.rs
+  s_af4ccbd37c05c0::t_864aaa659ed538 19,285-286
+crates/gateway/src/http/review_agent.rs
+  s_af4ccbd37c05c0::t_bfb4d6aa357359 15-17,745-746
+crates/gateway/src/http/spend.rs
+  s_af4ccbd37c05c0::t_29ff19be82d0c9 14,479,543
+crates/gateway/src/http/spend_budget_increases.rs
+  s_af4ccbd37c05c0::t_733f6aa3ef635d 12,99
+docs/adr/2026-10-15-admin-audit-log.md
+  s_af4ccbd37c05c0::t_18c225fc368929 28-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d86da9743f4053b7df343f2f25fa18fddcc189dd",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

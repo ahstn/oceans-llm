@@ -1,0 +1,89 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_6ff66569c6a522::t_9843351a5abbf5 89
+crates/admin-ui/web/e2e/guardrails.e2e.ts
+  s_6ff66569c6a522::t_2f813f9a1eb524 18-33,56-103,302,315,455-538
+crates/gateway-guardrails/src/evaluation.rs
+  s_6ff66569c6a522::t_5bb45950075695 67-68,85
+crates/gateway-store/src/agent_analysis_tests.rs
+  s_6ff66569c6a522::t_b25f4339fcb88d 275-276
+crates/gateway-store/src/libsql_store/agent_analysis/queue.rs
+  s_6ff66569c6a522::t_236d2e7461ae3c 22
+crates/gateway-store/src/libsql_store/agent_analysis/sessions.rs
+  s_6ff66569c6a522::t_24a073fbcbd18a 164,338
+crates/gateway-store/src/libsql_store/api_keys.rs
+  s_6ff66569c6a522::t_b3eadc9e27dde0 230
+crates/gateway-store/src/libsql_store/batches.rs
+  s_6ff66569c6a522::t_3a757cb0ecf139 140,339,460,530
+crates/gateway-store/src/libsql_store/budget_alerts.rs
+  s_6ff66569c6a522::t_a2450ac38e0ca1 137,334
+crates/gateway-store/src/libsql_store/budget_increases.rs
+  s_6ff66569c6a522::t_46b9c22a98a160 69
+crates/gateway-store/src/libsql_store/identity.rs
+  s_6ff66569c6a522::t_6051a03f74d5ca 1003,1098,1217
+crates/gateway-store/src/libsql_store/mcp_access.rs
+  s_6ff66569c6a522::t_aedea3f7331ace 289
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_6ff66569c6a522::t_a3ee20083207e1 245,355,477
+crates/gateway-store/src/libsql_store/mcp_tool_invocations.rs
+  s_6ff66569c6a522::t_2a1daa414e4528 77
+crates/gateway-store/src/libsql_store/mod.rs
+  s_6ff66569c6a522::t_7da3fd59248905 29-30,32,99-101,107,113-114,124,131,135-192,194-202
+crates/gateway-store/src/libsql_store/pricing_catalog.rs
+  s_6ff66569c6a522::t_6deefe41eecda4 205
+crates/gateway-store/src/libsql_store/request_logs.rs
+  s_6ff66569c6a522::t_fd8141e872c5f2 258,716-735,778,792,847
+crates/gateway-store/src/libsql_store/skills.rs
+  s_6ff66569c6a522::t_f10b55c71fb80e 22
+crates/gateway-store/src/libsql_store/transaction_tests.rs
+  s_6ff66569c6a522::t_e3127bac1deadf 1-254
+crates/gateway/src/http/guardrail_events.rs
+  s_6ff66569c6a522::t_067606c9a0cebd 9,30-41
+crates/gateway/src/http/inference_guardrails.rs
+  s_eaf7116ccea134::t_cfb7b5317b7065 15-18,241,2319-2435
+crates/gateway/src/http/mcp_gateway.rs
+  s_6ff66569c6a522::t_acf7c749901df7 497-507
+crates/gateway/src/http/mcp_gateway/guardrails.rs
+  s_6ff66569c6a522::t_8ea2af1882eeb3 4,7-11,13-15,18,25-30,48,79,146,150,153-167,169-179,182,186-188,198,200-201,204,206-215,217-250,252-294,296-364,366-401,403-426
+crates/gateway/src/http/mcp_gateway/guardrails/tests.rs
+  s_6ff66569c6a522::t_7d094e6bb76bcb 2-3,5,33,57-58,77,100-101,177-178,200-459
+crates/gateway/src/http/mcp_gateway/methods.rs
+  s_6ff66569c6a522::t_d6e6b8cb1f08e2 150-160
+docs/adr/2026-08-22-gateway-guardrails-domain-and-composition.md
+  s_6ff66569c6a522::t_a9266a6fc1aed8 54-65
+docs/adr/2026-10-15-libsql-transaction-connections.md
+  s_6ff66569c6a522::t_7bcf390ef8ac8a 1-39
+docs/operations/gateway-guardrails.md
+  s_6ff66569c6a522::t_4cdf769967e531 28,236
+scripts/mock-openai-upstream.mjs
+  s_6ff66569c6a522::t_4f2d82d8fd2a08 50-87,195-197
+scripts/register-e2e-mcp-server.mjs
+  s_6ff66569c6a522::t_de821754d391d6 1-23
+scripts/start-e2e-stack.sh
+  s_6ff66569c6a522::t_5e22c8451b70a2 173-177,306-316
+scripts/start-e2e-stack.test.mjs
+  s_6ff66569c6a522::t_a376ba6a472fc9 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8628df083df8fb9ae7d9fa55a04d883be84aeba1",
+  "prompts": {},
+  "sessions": {
+    "s_6ff66569c6a522": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "479d58ab-d231-4ad8-a31b-aa2339af3a24",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

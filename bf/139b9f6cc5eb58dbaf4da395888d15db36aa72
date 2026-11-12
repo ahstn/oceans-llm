@@ -1,0 +1,28 @@
+.agents/skills/verify-oceans-admin/features/models.md
+  h_2f452a9c375069 36
+crates/admin-ui/web/e2e/gateway-contract.e2e.ts
+  h_2f452a9c375069 164-169
+crates/gateway-service/src/model_metadata/listing.rs
+  h_2f452a9c375069 180-181,186-195,230-239,242,260,267,271-310,506
+crates/gateway-service/src/model_metadata/litellm.rs
+  h_2f452a9c375069 10,43-45,75-76,101-102,115-116,121,126,138-139,197,206-208
+crates/gateway-service/src/model_metadata/tests/model_group_info.rs
+  h_2f452a9c375069 66-68,104,113,117-119,121-122,128,132-135,240-241,244,251,264-282
+crates/gateway/src/http/handlers/model_group_info_tests.rs
+  h_2f452a9c375069 127-132
+docs/adr/2026-10-21-litellm-model-group-info.md
+  h_2f452a9c375069 52,55,57,61-63,84
+docs/configuration/model-routing-and-api-behavior.md
+  h_2f452a9c375069 416,419,423,428,432-433,468
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bf139b9f6cc5eb58dbaf4da395888d15db36aa72",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

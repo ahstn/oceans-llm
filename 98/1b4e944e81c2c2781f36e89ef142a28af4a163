@@ -1,0 +1,18 @@
+crates/admin-ui/web/bun.lock
+  h_2f452a9c375069 34,206,514,1478,1800-1801,1858-1861
+crates/admin-ui/web/package.json
+  h_2f452a9c375069 48
+docs/package.json
+  h_2f452a9c375069 11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "981b4e944e81c2c2781f36e89ef142a28af4a163",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

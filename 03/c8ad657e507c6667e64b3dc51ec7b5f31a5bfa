@@ -1,0 +1,109 @@
+.agents/skills/verify-oceans-admin/features/design-system.md
+  s_ed66ec77873ef1::t_4234c567641975 29
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_ed66ec77873ef1::t_9f1464796645c4 48
+CHANGELOG.md
+  s_ed66ec77873ef1::t_ac16d23e0b51f5 9-36
+Cargo.lock
+  s_ed66ec77873ef1::t_60bd94018b7acd 7,57,1844,1896,1905,1915,1934,1955,1970,2001,2033,2052,3363
+DESIGN.md
+  s_ed66ec77873ef1::t_9e34d0812bae15 119
+cliff.toml
+  s_ed66ec77873ef1::t_63574a14aacfa2 9-12,15-20,22-25,30-33,44,49-52,54,56-63,65-66,71-73
+crates/admin-ui/Cargo.toml
+  s_ed66ec77873ef1::t_da97664ec30319 3
+crates/admin-ui/web/src/components/mcp/server-discovery.test.ts
+  s_ed66ec77873ef1::t_bb9396d37d5bd3 3-4,20-22,24,67
+crates/admin-ui/web/src/components/mcp/server-discovery.ts
+  s_ed66ec77873ef1::t_d24c708c567770 1,43,60,76-78
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_ed66ec77873ef1::t_c340297e5ddadf 3801,4390-4395,4402
+crates/admin-ui/web/src/routes/design-system/-components/actions-inputs.tsx
+  s_ed66ec77873ef1::t_d8bbb7ffd8da90 24,242-245,302-328
+crates/admin-ui/web/src/routes/design-system/-components/feedback.tsx
+  s_ed66ec77873ef1::t_63d89d2b4f60a7 11,37,48,50-54
+crates/admin-ui/web/src/routes/design-system/-components/overlays.tsx
+  s_ed66ec77873ef1::t_03bd7d5071e80f 3-4,11-12,52,59-61,122,150,217-281
+crates/admin-ui/web/src/test/design-system-coverage.test.ts
+  s_ed66ec77873ef1::t_1f29033a078db3 2,6-9,13-19,29-31,34-35,37,39-48,50-51,55-116,118-121,123-132,135,139-141,148-165
+crates/admin-ui/web/src/types/live-api.ts
+  s_ed66ec77873ef1::t_619c775320ab20 191
+crates/agent-session-analysis/Cargo.toml
+  s_ed66ec77873ef1::t_f10caa198cf7e2 3
+crates/gateway-client-config/Cargo.toml
+  s_ed66ec77873ef1::t_3376dc478af8f2 3
+crates/gateway-client-ip/Cargo.toml
+  s_ed66ec77873ef1::t_c0a349728ffc5b 3
+crates/gateway-core/Cargo.toml
+  s_ed66ec77873ef1::t_5916486249ece1 3
+crates/gateway-guardrails/Cargo.toml
+  s_ed66ec77873ef1::t_cf4bcaf9063978 3
+crates/gateway-mcp/Cargo.toml
+  s_ed66ec77873ef1::t_f9eb90542cf182 3
+crates/gateway-providers/Cargo.toml
+  s_ed66ec77873ef1::t_93d490e1d6a4ea 3
+crates/gateway-service/Cargo.toml
+  s_ed66ec77873ef1::t_5c591dea694b9b 3
+crates/gateway-service/data/model_benchmarks.json
+  s_ed66ec77873ef1::t_52d7cebd106117 8,15,19,51-90,95,99,171-180,211-220,231-240,255,259-269,275-277,279,291-300,324-333,339-349,361-370,395,399,425-426,429,441-450,471-490,501-520,541-550,561-570,591-630,681-690,721-760,831-860,865,869-949,1025,1029,1035,1039-1049,1071-1110,1121-1150,1185-1186,1189-1209,1215,1219-1229,1251-1260,1311-1340,1361-1380,1391-1410,1451-1470,1481-1490,1501-1560,1600-1609
+crates/gateway-service/data/pricing_catalog_fallback.json
+  s_ed66ec77873ef1::t_1d628ba49f44f1 4-5,16209-16256,24293-24294,24303,24527-24529,24537,24661-24663,24755-24757,24802-24804,24812,24849-24851,24871-24918,24961-25003,26293,26372-26374,27334-27336,27344,27409-27410,27419,29390,30165-30167,34566,35141,36066-36113,37415-37452,38375-38415,38644-38646,38901,38946-38948,39346-39348,39394-39396,39404,39441-39443,39608-39610,39975-39977,39983,40088-40090,40136,40138,40160
+crates/gateway-service/src/lib.rs
+  s_ed66ec77873ef1::t_243291aa5c47dc 126-128
+crates/gateway-service/src/mcp_registry.rs
+  s_ed66ec77873ef1::t_d9bdf58a891993 114,118-152,589,662,670,676,980,982-990
+crates/gateway-service/src/pricing_catalog.rs
+  s_ed66ec77873ef1::t_0c25b9e140bfe3 548-552
+crates/gateway-service/src/pricing_catalog/tests/refresh.rs
+  s_ed66ec77873ef1::t_bfcc3c06733a5a 14-26
+crates/gateway-service/src/pricing_catalog/tests/support.rs
+  s_ed66ec77873ef1::t_99278884c4bc84 34-38
+crates/gateway-skills/Cargo.toml
+  s_ed66ec77873ef1::t_89e3f71b3ed695 3
+crates/gateway-store/Cargo.toml
+  s_ed66ec77873ef1::t_008fc517daec3a 3
+crates/gateway/Cargo.toml
+  s_ed66ec77873ef1::t_f279a4579cdf9b 3
+crates/gateway/openapi/admin-api.json
+  s_ed66ec77873ef1::t_ec7eef93adbfb6 14573-14581,16989-17004,17023-17031
+crates/gateway/src/http/mcp_gateway/tests.rs
+  s_ed66ec77873ef1::t_91c34a32f1e669 922-925
+crates/gateway/src/http/mcp_registry/tests.rs
+  s_ed66ec77873ef1::t_b0808aaddbc7d0 13,414-433
+crates/gateway/src/http/mcp_registry/views.rs
+  s_ed66ec77873ef1::t_11e5b7d11acd59 11-12,195-196,202-235,759
+crates/oceans-cli/Cargo.toml
+  s_ed66ec77873ef1::t_9ddc22eb999c1c 3
+docs/adr/2026-03-06-release-versioning-and-ghcr-publishing.md
+  s_ed66ec77873ef1::t_ed79a8817093ca 6
+docs/adr/2026-10-05-cli-binary-distribution-with-cargo-dist.md
+  s_ed66ec77873ef1::t_72e07560555507 6
+docs/adr/2026-10-16-admin-ui-design-system-dark-only.md
+  s_ed66ec77873ef1::t_ef807183900a6a 48
+docs/adr/2026-10-18-git-cliff-release-versioning-and-pull-request-changelog.md
+  s_ed66ec77873ef1::t_d92689275e9f5b 1-52
+docs/contributing/reference/release-process.md
+  s_ed66ec77873ef1::t_947eb3fbed5150 3,22-23,32,34-40,44-45,48,57,70-77,94,112,149
+mise.lock
+  s_ed66ec77873ef1::t_9338422028fc73 198,202-204,207-209,212-214,217-219,222-224
+mise.toml
+  s_ed66ec77873ef1::t_a625effc39cab0 44,226-227,230-231,245
+scripts/release.sh
+  s_ed66ec77873ef1::t_df7a27beccd7e4 1-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "03c8ad657e507c6667e64b3dc51ec7b5f31a5bfa",
+  "prompts": {},
+  "sessions": {
+    "s_ed66ec77873ef1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5677dbea-fe6a-4c7e-8813-6d123638daa1",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

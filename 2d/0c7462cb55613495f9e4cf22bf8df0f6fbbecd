@@ -1,0 +1,47 @@
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_4743c3bdc4d116::t_4ca32b065107a5 2764-2766
+crates/gateway-core/src/mcp_client_oauth.rs
+  s_4743c3bdc4d116::t_6d1cccd2958224 473-474,479
+crates/gateway-service/src/lib.rs
+  s_4743c3bdc4d116::t_179fbffbcc8131 87-90
+crates/gateway-service/src/mcp_client_oauth.rs
+  s_4743c3bdc4d116::t_78b34b7cf08790 18
+crates/gateway-service/src/mcp_client_oauth/authorized_clients.rs
+  s_4743c3bdc4d116::t_f28b5137e36bda 14-25,30-31,39-40,42-50,56-57
+crates/gateway-store/src/any_store_gateway_oauth.rs
+  s_4743c3bdc4d116::t_aef9fe89dbef52 153,155-158
+crates/gateway-store/src/gateway_oauth_tests.rs
+  s_4743c3bdc4d116::t_21c47b8dbdae19 577,593-601,616,628,639,650
+crates/gateway-store/src/libsql_store/gateway_oauth.rs
+  s_4743c3bdc4d116::t_11caf0f69857f6 498,504-523,525-527,529
+crates/gateway-store/src/postgres_store/gateway_oauth.rs
+  s_4743c3bdc4d116::t_7023c132c6588c 477,481-500,502-504,509
+crates/gateway/openapi/admin-api.json
+  s_4743c3bdc4d116::t_261cc932d9f24f 10349-10350,10357-10360,10365-10366
+crates/gateway/src/http/mcp_client_oauth/authorized_clients.rs
+  s_4743c3bdc4d116::t_aaf8c76c0f4355 50,52-53,201,204,207-208,215
+crates/admin-ui/web/src/routes/account/-authorized-mcp-clients.tsx
+  s_4743c3bdc4d116::t_6868af0dc75efb 41-43,133-141
+crates/admin-ui/web/src/test/routes/account-connections-route.test.tsx
+  s_4743c3bdc4d116::t_ec2eea046cf6cf 12-16,35-38,79-81,87-89,103-105,128-132,177-180,215-217,225-227
+crates/admin-ui/web/src/test/routes/authorized-mcp-clients.test.tsx
+  s_4743c3bdc4d116::t_275421b7f67d82 49,55,65,91-100,104-106,111-113,122-124
+crates/gateway/src/http/mcp_client_oauth/authorized_clients_tests.rs
+  s_4743c3bdc4d116::t_216e9a488dabba 111,187-190,326-329,340
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2d0c7462cb55613495f9e4cf22bf8df0f6fbbecd",
+  "prompts": {},
+  "sessions": {
+    "s_4743c3bdc4d116": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a047a7f-d4a7-4209-858b-e18a0d0d4346",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

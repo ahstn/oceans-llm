@@ -1,0 +1,389 @@
+.agents/skills/shadcn/SKILL.md
+  s_af4ccbd37c05c0::t_294167ab339a1f 1-295
+.agents/skills/shadcn/agents/openai.yml
+  s_af4ccbd37c05c0::t_ac0821562e3f2a 1-5
+.agents/skills/shadcn/assets/showcase/color-pair.tsx
+  s_af4ccbd37c05c0::t_37b00dc07e90b3 1-126
+.agents/skills/shadcn/assets/showcase/preview-states.css
+  s_af4ccbd37c05c0::t_75fa9da8c9e876 1-14
+.agents/skills/shadcn/assets/showcase/state-matrix.tsx
+  s_af4ccbd37c05c0::t_c19fbe3835bc9b 1-72
+.agents/skills/shadcn/cli.md
+  s_af4ccbd37c05c0::t_f35763c8640eb9 1-290
+.agents/skills/shadcn/customization.md
+  s_af4ccbd37c05c0::t_87c09dc3c321cf 1-211
+.agents/skills/shadcn/design-system-page.md
+  s_af4ccbd37c05c0::t_ef2a04e7182aa9 1-268
+.agents/skills/shadcn/design-system.md
+  s_af4ccbd37c05c0::t_66f29d10fe1061 1-386
+.agents/skills/shadcn/evals/evals.json
+  s_af4ccbd37c05c0::t_3fb91682305257 1-126
+.agents/skills/shadcn/mcp.md
+  s_af4ccbd37c05c0::t_655ae57ec8d7e2 1-105
+.agents/skills/shadcn/registry.md
+  s_af4ccbd37c05c0::t_c9c33abda8bb39 1-277
+.agents/skills/shadcn/rules/base-vs-radix.md
+  s_af4ccbd37c05c0::t_c651510f6b051f 1-306
+.agents/skills/shadcn/rules/chat.md
+  s_af4ccbd37c05c0::t_b4be0e5278a3d4 1-250
+.agents/skills/shadcn/rules/composition.md
+  s_af4ccbd37c05c0::t_c9ff51a5f8eec4 1-213
+.agents/skills/shadcn/rules/forms.md
+  s_af4ccbd37c05c0::t_09807b629b95e4 1-192
+.agents/skills/shadcn/rules/icons.md
+  s_af4ccbd37c05c0::t_90d5f739f41318 1-101
+.agents/skills/shadcn/rules/styling.md
+  s_af4ccbd37c05c0::t_399dc20f1ea66e 1-185
+.agents/skills/shadcn/scripts/showcase-coverage.mjs
+  s_af4ccbd37c05c0::t_de9ca0bc085b69 1-53
+.agents/skills/verify-oceans-admin/SKILL.md
+  s_af4ccbd37c05c0::t_df0f8a68c8dd7e 49-53,107,209
+.agents/skills/verify-oceans-admin/features/backend-gateway.md
+  s_af4ccbd37c05c0::t_701df7e9044ac3 42
+.agents/skills/verify-oceans-admin/features/guardrails.md
+  s_af4ccbd37c05c0::t_85b028a6ec839e 11,17
+.agents/skills/verify-oceans-admin/features/live-llm-requests.md
+  s_af4ccbd37c05c0::t_ec5ee1ed185c48 9-10,19-21,29-30,36,38-39,47-52
+.agents/skills/verify-oceans-admin/features/mcp.md
+  s_af4ccbd37c05c0::t_c7360f6288d421 30-32,59
+.agents/skills/verify-oceans-admin/features/request-logs.md
+  s_af4ccbd37c05c0::t_c74d7ac53ff79d 9,12,33,42,45,49
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_af4ccbd37c05c0::t_7c01223eb7f27a 161,337,403-404
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin
+  s_af4ccbd37c05c0::t_323bfb903f7fab 60,310,322-334,390-392,524
+.agents/skills/verify-oceans-admin/scripts/drive-mcp.mjs
+  s_af4ccbd37c05c0::t_f1c09fa7cc63ef 7,32-35,37,45,63,65-66
+.agents/skills/verify-oceans-admin/scripts/mcp-browser.mjs
+  s_af4ccbd37c05c0::t_78c579861e8dfb 2-3,6-40,42-45,89,148,176,182-183,230-233
+.agents/skills/verify-oceans-admin/scripts/mcp-verification.test.mjs
+  s_af4ccbd37c05c0::t_0bb319ef4c8602 10,115-155
+.claude/skills/shadcn
+  s_af4ccbd37c05c0::t_056908a839ebe9 1
+.github/dependabot.yml
+  s_af4ccbd37c05c0::t_f0700e6c458fa9 78,113,134
+.gitignore
+  s_af4ccbd37c05c0::t_da1ea874588000 31
+CHANGELOG.md
+  s_af4ccbd37c05c0::t_03e19244a5ad8b 9-60,151,1346
+Cargo.lock
+  s_af4ccbd37c05c0::t_35b23763061705 7,56,1843,1893,1902,1921,1942,1957,1988,2017,2036,3347
+crates/admin-ui/Cargo.toml
+  s_af4ccbd37c05c0::t_0e2869f72ae237 3
+crates/admin-ui/web/e2e/gateway-contract.e2e.ts
+  s_af4ccbd37c05c0::t_2830daa46af14c 333,336,340
+crates/admin-ui/web/src/routes/observability/request-logs.tsx
+  s_af4ccbd37c05c0::t_2be9f8d6eea38c 451-455
+crates/admin-ui/web/src/test/routes/request-logs-route.test.tsx
+  s_af4ccbd37c05c0::t_7d24382f53aca2 400-438
+crates/agent-session-analysis/Cargo.toml
+  s_af4ccbd37c05c0::t_048483e9cf972b 3
+crates/gateway-client-config/Cargo.toml
+  s_af4ccbd37c05c0::t_d9a78597b7eae4 3
+crates/gateway-core/Cargo.toml
+  s_af4ccbd37c05c0::t_8771310677d02d 3
+crates/gateway-core/src/budgets.rs
+  s_af4ccbd37c05c0::t_7c02b9740dafb0 34-90,455,509-521
+crates/gateway-core/src/domain.rs
+  s_dd118f467446e0::t_356b0c39dbea3b 8,2800,2852-2883,3066-3069,3081,3086-3091
+crates/gateway-core/src/error.rs
+  s_af4ccbd37c05c0::t_aa1196212ce7eb 4-7,120-121,123-125,129-130,133,147-148,184-185,228,305,319-367,377-385
+crates/gateway-core/src/lib.rs
+  s_af4ccbd37c05c0::t_9f9d7e9de4b0da 46-48,79-85,123,126-148,150,155-156
+crates/gateway-core/src/protocol/core.rs
+  s_af4ccbd37c05c0::t_fdc0d5e9294d39 365
+crates/gateway-core/src/protocol/decisions/mod.rs
+  s_af4ccbd37c05c0::t_9ae1dee222bd5c 1-629
+crates/gateway-core/src/protocol/decisions/openai.rs
+  s_af4ccbd37c05c0::t_198253b2a2eab3 1-1145
+crates/gateway-core/src/protocol/decisions/system_one.rs
+  s_af4ccbd37c05c0::t_4c2c00d5d1a21f 1-728
+crates/gateway-core/src/protocol/mod.rs
+  s_af4ccbd37c05c0::t_1b2ee01c7411fb 3
+crates/gateway-core/src/protocol/translate.rs
+  s_af4ccbd37c05c0::t_d54748069d7492 149,152-153
+crates/gateway-core/src/traits.rs
+  s_af4ccbd37c05c0::t_670c8450b8edcb 58-61,1402-1417,1422
+crates/gateway-guardrails/Cargo.toml
+  s_af4ccbd37c05c0::t_c6bfc0e1a3d12d 3
+crates/gateway-mcp/Cargo.toml
+  s_af4ccbd37c05c0::t_91e402678d9c12 3
+crates/gateway-providers/Cargo.toml
+  s_af4ccbd37c05c0::t_0d8885f2116713 3
+crates/gateway-providers/src/anthropic/count_tokens.rs
+  s_af4ccbd37c05c0::t_7b5d38bf410401 1-213
+crates/gateway-providers/src/anthropic/mod.rs
+  s_af4ccbd37c05c0::t_3f6214f5382491 2,14-16
+crates/gateway-providers/src/anthropic_compat.rs
+  s_af4ccbd37c05c0::t_bf92ed6970e002 13-15,17,71-78,88,90,92,100-108,249-272
+crates/gateway-providers/src/bedrock/mod.rs
+  s_af4ccbd37c05c0::t_4cef5689e21c89 12,28-31,278-333,671-702,761-776
+crates/gateway-providers/src/bedrock/tests/count_tokens.rs
+  s_af4ccbd37c05c0::t_0ec7bffea442e7 1-161
+crates/gateway-providers/src/bedrock/tests/mod.rs
+  s_af4ccbd37c05c0::t_693e3f5d8b0835 22
+crates/gateway-providers/src/decisions.rs
+  s_af4ccbd37c05c0::t_0217bebe4dbbb8 3-7,12-13,17-20,22,26-33,49-52,90-96,98-111,113-125,127-130,133-135,138-156,158-176,179-182,184-190,192-195,198-199,204-205,208-212,214-229
+crates/gateway-providers/src/openai_compat.rs
+  s_af4ccbd37c05c0::t_57f7955973a94f 9-10,827-828,833-834
+crates/gateway-providers/src/openai_compat/decisions.rs
+  s_af4ccbd37c05c0::t_0edb5a939b3275 1-4,10,17,20-22,25,27,32-33,37,42,53-73,75,79-82,86-91,94-99,124-125,134,179-180,195-196,200-223,283,287-288,349-353,383-560
+crates/gateway-providers/src/typesafe.rs
+  s_af4ccbd37c05c0::t_96727de675d62d 6-7,13,62,165,174,211,263-267,287,300,304-305
+crates/gateway-providers/src/vertex/anthropic.rs
+  s_af4ccbd37c05c0::t_6f0e80bcb08212 6-8,39-63
+crates/gateway-providers/src/vertex/mod.rs
+  s_af4ccbd37c05c0::t_08fa6a272b1da0 14-16,36,295-316
+crates/gateway-providers/src/vertex/tests/count_tokens.rs
+  s_af4ccbd37c05c0::t_55d9cd4445bb25 1-71
+crates/gateway-providers/src/vertex/tests/mod.rs
+  s_af4ccbd37c05c0::t_4a4c5cf0a55669 37
+crates/gateway-service/Cargo.toml
+  s_af4ccbd37c05c0::t_b91ffcd51c4d38 3
+crates/gateway-service/data/pricing_catalog_fallback.json
+  s_af4ccbd37c05c0::t_3b2edb0e1876ca 4-5,11641-11690,17940-17989,24456-24458,24466,24603-24605,24652-24654,24701,25876-25927,26149-26151,26235-26237,26654-26656,26662,26685,26697-26699,26829-26865,27773-27774,27783,28673-28674,29033-29035,31653-31656,31660-31663,31671-31674,31723-31726,31730-31733,31741-31744,32602-32604,32612,34702-34704,34712,34745-34747,35035-35037,35045,36124-36201,36512-36514,36604-36606,36940-36944,36956-36958,36964,36978-36982,36994-36996,37002,38292-38294,38302,38340,38342,38432-38434,38442,38836,38886-38888,38896,39104-39106,39455-39492,39584,39586,39632-39634,39642
+crates/gateway-service/src/budget_guard.rs
+  s_af4ccbd37c05c0::t_189a008fb69dd0 4-5,27,36-45,157-158,161,230,680-717
+crates/gateway-service/src/request_logging.rs
+  s_af4ccbd37c05c0::t_7a5a58d4c53610 4-8,261,455-457,459,465,493
+crates/gateway-service/src/request_logging/tests/persistence.rs
+  s_af4ccbd37c05c0::t_15f460bf69dfca 303,308
+crates/gateway-skills/Cargo.toml
+  s_af4ccbd37c05c0::t_7a2e10171e676e 3
+crates/gateway-store/Cargo.toml
+  s_af4ccbd37c05c0::t_2f683c2fca1c43 3
+crates/gateway/Cargo.toml
+  s_af4ccbd37c05c0::t_9e5e9988d11328 3
+crates/gateway/src/config/budgets.rs
+  s_af4ccbd37c05c0::t_ebeceac256bea7 4,23-25
+crates/gateway/src/config/routes.rs
+  s_dd118f467446e0::t_3b8a4b95d73443 6-11,72-80,379-380,392,457-461,464-483,499,501
+crates/gateway/src/config/tests/budgets.rs
+  s_af4ccbd37c05c0::t_eb48a05a01648b 170-232
+crates/gateway/src/config/tests/mod.rs
+  s_af4ccbd37c05c0::t_b13fa3476e8230 5-8
+crates/gateway/src/config/tests/routes.rs
+  s_56409892e094a0::t_d00b2bd250b6e6 476-605
+crates/gateway/src/http/budget_status_tests.rs
+  s_af4ccbd37c05c0::t_41a3620428c228 1-243
+crates/gateway/src/http/handlers.rs
+  s_af4ccbd37c05c0::t_9c987c9602bca3 2-5,11-12,18-19,38-39,43-44,301-311,927,936-950,1341-1342,1354,1360,1942-1967,1970,1975,3075,3078,3081,3088-3090,3092,3095
+crates/gateway/src/http/handlers/auth.rs
+  s_af4ccbd37c05c0::t_020a25be260f2b 22-25
+crates/gateway/src/http/handlers/count_tokens.rs
+  s_af4ccbd37c05c0::t_16da5ec1abed36 1-389
+crates/gateway/src/http/handlers/decisions.rs
+  s_af4ccbd37c05c0::t_bcaafb1b311b99 1-661
+crates/gateway/src/http/handlers/decisions_tests.rs
+  s_af4ccbd37c05c0::t_29468bf280f5b2 1-297
+crates/gateway/src/http/handlers/inference.rs
+  s_af4ccbd37c05c0::t_17f41ad3255a40 122-132
+crates/gateway/src/http/handlers/inference_tests.rs
+  s_af4ccbd37c05c0::t_0017353a6245c9 14-16,26-28,62-84,268-277,300,302-324,326-346
+crates/gateway/src/http/handlers/route_tests.rs
+  s_af4ccbd37c05c0::t_202a4f6aab9fb6 1-507
+crates/gateway/src/http/mod.rs
+  s_af4ccbd37c05c0::t_9f5da93bf532a3 6-7,68-74,79,403
+crates/gateway/src/http/request_body.rs
+  s_af4ccbd37c05c0::t_dc271b5c0fefbf 74-78
+crates/gateway/src/http/request_body/tests.rs
+  s_af4ccbd37c05c0::t_edf82051100373 23-30,40,45
+crates/gateway/src/http/state.rs
+  s_af4ccbd37c05c0::t_b5b74ad00398a4 10,43
+crates/gateway/src/http/test_support.rs
+  s_af4ccbd37c05c0::t_a3592ecf915709 56
+crates/gateway/src/main.rs
+  s_af4ccbd37c05c0::t_663f2b3cd7e309 359,746
+crates/gateway/src/observability.rs
+  s_af4ccbd37c05c0::t_08864d201e297b 29-30,70-86,108,116-128,151-159,246-278,428-433
+crates/oceans-cli/Cargo.toml
+  s_af4ccbd37c05c0::t_885b03f33228c4 3
+docs/access/budgets.md
+  s_af4ccbd37c05c0::t_bcf8c5c04951b0 47,51-57
+docs/adr/2026-03-31-chat-observability-hardening-and-stream-parse-contract.md
+  s_af4ccbd37c05c0::t_0ca67939e17e0f 48-50
+docs/adr/2026-09-21-system-one-decisions-api.md
+  s_af4ccbd37c05c0::t_a89474db1f3132 65-111
+docs/adr/2026-10-14-budget-exceeded-status-code.md
+  s_af4ccbd37c05c0::t_da29445ab3176b 1-85
+docs/adr/2026-10-14-decisions-request-metrics.md
+  s_af4ccbd37c05c0::t_4accbff71bf35d 1-39
+docs/configuration/client-harness-configuration.md
+  s_af4ccbd37c05c0::t_93cd0d0b4cd23e 24,67
+docs/configuration/model-routing-and-api-behavior.md
+  s_56409892e094a0::t_2eea25a8917753 17-18,21-22,25-26,294,303,404-422,429-467,469,471
+docs/configuration/pricing-catalog-and-accounting.md
+  s_af4ccbd37c05c0::t_4fc1852fca63ed 110-121
+docs/contributing/operations/budgets-and-spending.md
+  s_af4ccbd37c05c0::t_7e06645ecdc8ae 108
+docs/operations/gateway-guardrails.md
+  s_af4ccbd37c05c0::t_dbcb1fd6b933f2 20-21
+docs/operations/observability-and-request-logs.md
+  s_af4ccbd37c05c0::t_d48e1ea615ec05 61,65-80,320
+docs/operations/observability/export-traces-and-metrics.md
+  s_af4ccbd37c05c0::t_8d330f056caabc 138-139
+docs/operations/observability/request-logs.md
+  s_af4ccbd37c05c0::t_d6ba595f081bfa 60-62
+docs/providers/aws-bedrock.md
+  s_af4ccbd37c05c0::t_b2eb8765dcce5b 88-105
+docs/providers/typesafe.md
+  s_af4ccbd37c05c0::t_fc2ca1dc82792b 5,100
+docs/reference/provider-api-compatibility.md
+  s_af4ccbd37c05c0::t_516454fd6b03b2 16-17,21,26-27,35,47,56-68,125-134,138-149,151,153
+docs/reference/request-lifecycle-and-failure-modes.md
+  s_af4ccbd37c05c0::t_c0c8a25bb5cd43 41,43,182-185,187
+gateway.yaml
+  s_56409892e094a0::t_64f4e742cb00af 459
+mise.rustfs.toml
+  s_af4ccbd37c05c0::t_4d195f8e204f44 14
+videos/oceans-showreel/.hyperframes/hf-ids-stamped.json
+  s_af4ccbd37c05c0::t_83c27d19a840de 1
+videos/oceans-showreel/.hyperframes/history-id
+  s_af4ccbd37c05c0::t_16326a4bcdff5a 1
+videos/oceans-showreel/.hyperframes/history-turns.json
+  s_af4ccbd37c05c0::t_f62b2738e4fde2 1
+videos/oceans-showreel/.hyperframes/preview/228a3f2aab68aacf46e3cb7237e66927.html
+  s_af4ccbd37c05c0::t_a7b21ad397c25e 1-137
+videos/oceans-showreel/.scratch/audio/analyze.sh
+  s_af4ccbd37c05c0::t_a3842757e5334a 1-27
+videos/oceans-showreel/.scratch/audio/cue-snr.mjs
+  s_af4ccbd37c05c0::t_83c4427be672ca 1-67
+videos/oceans-showreel/.scratch/audio/premix.m4a.graph.txt
+  s_af4ccbd37c05c0::t_63ff7fc331fbbf 1
+videos/oceans-showreel/.scratch/audio/premix.mjs
+  s_af4ccbd37c05c0::t_7f6133cdad2e1f 1-64
+videos/oceans-showreel/.scratch/audio/premix/group-sfx.wav.graph.txt
+  s_af4ccbd37c05c0::t_7d8df543bc6641 1
+videos/oceans-showreel/.scratch/audio/premix/mix.wav.graph.txt
+  s_af4ccbd37c05c0::t_b6c9ed0d2f87b2 1
+videos/oceans-showreel/.scratch/audio/render-check/audio-check.log
+  s_af4ccbd37c05c0::t_364c8e20078292 1-81
+videos/oceans-showreel/.scratch/audio/sfx-env.mjs
+  s_af4ccbd37c05c0::t_479f96c6890b44 1-34
+videos/oceans-showreel/.scratch/build-f1.mjs
+  s_af4ccbd37c05c0::t_c27ddb33c93274 1-390
+videos/oceans-showreel/.scratch/build-f2.mjs
+  s_af4ccbd37c05c0::t_26c8716878d362 1-1852
+videos/oceans-showreel/.scratch/build-f3.mjs
+  s_af4ccbd37c05c0::t_0fd48247cc05bb 1-623
+videos/oceans-showreel/.scratch/check-1.txt
+  s_af4ccbd37c05c0::t_7bed3fde575f04 1-193
+videos/oceans-showreel/.scratch/check-2.txt
+  s_af4ccbd37c05c0::t_eb241bfd13bc7e 1-65
+videos/oceans-showreel/.scratch/check-3.txt
+  s_af4ccbd37c05c0::t_f79c46ea6fcb8b 1-63
+videos/oceans-showreel/.scratch/client-configs.json
+  s_af4ccbd37c05c0::t_efb9236202e526 1-325
+videos/oceans-showreel/.scratch/f2-check.mjs
+  s_af4ccbd37c05c0::t_73f63237b5ae36 1-70
+videos/oceans-showreel/.scratch/f2-geom.mjs
+  s_af4ccbd37c05c0::t_fb52805f58d886 1-183
+videos/oceans-showreel/.scratch/f2-path.mjs
+  s_af4ccbd37c05c0::t_f1b64aba62c2bb 1-131
+videos/oceans-showreel/.scratch/f2-vis.mjs
+  s_af4ccbd37c05c0::t_91fffa65bb34f7 1-160
+videos/oceans-showreel/.scratch/f3-geom.mjs
+  s_af4ccbd37c05c0::t_8c70cd11af06c4 1-168
+videos/oceans-showreel/.scratch/f3-metrics.json
+  s_af4ccbd37c05c0::t_aa703e4676deee 1-7
+videos/oceans-showreel/.scratch/probe-dive.mjs
+  s_af4ccbd37c05c0::t_1e668db37fed49 1-12
+videos/oceans-showreel/.scratch/probe/compositions/components/motion-blur.html
+  s_af4ccbd37c05c0::t_d2b95056be434b 1-767
+videos/oceans-showreel/.scratch/probe/compositions/logo-outro.html
+  s_af4ccbd37c05c0::t_80de2b9460f573 1-227
+videos/oceans-showreel/.scratch/probe/hyperframes.json
+  s_af4ccbd37c05c0::t_daae9e8c649537 1-25
+videos/oceans-showreel/.scratch/probe/hyperframes.lock.json
+  s_af4ccbd37c05c0::t_a0aac8279301e2 1-4
+videos/oceans-showreel/.scratch/seed-skills.mjs
+  s_af4ccbd37c05c0::t_53b54af4e88575 1-174
+videos/oceans-showreel/.scratch/tools/sample-logo.mjs
+  s_af4ccbd37c05c0::t_793a5fed5bd88a 1-27
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_audio_score.wav_2880044-1791893004310.json
+  s_af4ccbd37c05c0::t_49a2d40a2cfcb2 1
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_audio_score.wav_4262444-1791919166259.json
+  s_af4ccbd37c05c0::t_3069a80b9410a4 1
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_audio_score.wav_4262444-1791919656183.json
+  s_af4ccbd37c05c0::t_03922182852cd6 1
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_audio_score.wav_4262444-1791920215071.json
+  s_af4ccbd37c05c0::t_4b95e460d5428b 1
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_audio_score.wav_5107244-1791925806389.json
+  s_af4ccbd37c05c0::t_73ef5d62444558 1
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_sfx_click.mp3_11702-1791893032615.json
+  s_af4ccbd37c05c0::t_1585f679a54e05 1
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_sfx_glitch-3.mp3_99072-1791893032620.json
+  s_af4ccbd37c05c0::t_b4ce9136871fcb 1
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_sfx_pop.mp3_23040-1791893032617.json
+  s_af4ccbd37c05c0::t_df8f60291737f8 1
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_sfx_sparkle.mp3_57678-1791893032623.json
+  s_af4ccbd37c05c0::t_00c3d7f2f0631c 1
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_sfx_whoosh-cinematic.mp3_177408-1791893032613.json
+  s_af4ccbd37c05c0::t_329c69cd63a8ad 1
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_sfx_whoosh-tamed.wav_110422-1791894191652.json
+  s_af4ccbd37c05c0::t_9c1b6925ae2908 1
+videos/oceans-showreel/.waveform-cache/v2_assets_audio_score.wav_2880044-1791893004310.json
+  s_af4ccbd37c05c0::t_e2ed468fd5ed50 1
+videos/oceans-showreel/.waveform-cache/v2_assets_audio_score.wav_4262444-1791919166259.json
+  s_af4ccbd37c05c0::t_aac0971ef16884 1
+videos/oceans-showreel/.waveform-cache/v2_assets_audio_score.wav_4262444-1791919656183.json
+  s_af4ccbd37c05c0::t_e342219a13b412 1
+videos/oceans-showreel/.waveform-cache/v2_assets_audio_score.wav_4262444-1791920215071.json
+  s_af4ccbd37c05c0::t_8fb6ee0c4ec06e 1
+videos/oceans-showreel/.waveform-cache/v2_assets_audio_score.wav_5107244-1791925806389.json
+  s_af4ccbd37c05c0::t_0228ddce37a7d5 1
+videos/oceans-showreel/.waveform-cache/v2_assets_sfx_click.mp3_11702-1791893032615.json
+  s_af4ccbd37c05c0::t_08270215dc97e7 1
+videos/oceans-showreel/.waveform-cache/v2_assets_sfx_glitch-3.mp3_99072-1791893032620.json
+  s_af4ccbd37c05c0::t_8a60e90d63cce8 1
+videos/oceans-showreel/.waveform-cache/v2_assets_sfx_pop.mp3_23040-1791893032617.json
+  s_af4ccbd37c05c0::t_a3c3957b88a189 1
+videos/oceans-showreel/.waveform-cache/v2_assets_sfx_sparkle.mp3_57678-1791893032623.json
+  s_af4ccbd37c05c0::t_ce44267332dcaa 1
+videos/oceans-showreel/.waveform-cache/v2_assets_sfx_whoosh-cinematic.mp3_177408-1791893032613.json
+  s_af4ccbd37c05c0::t_08193087bd0201 1
+videos/oceans-showreel/.waveform-cache/v2_assets_sfx_whoosh-tamed.wav_110422-1791894191652.json
+  s_af4ccbd37c05c0::t_6dda5ef64782d1 1
+videos/oceans-showreel/renders/render-v1-15s.log
+  s_af4ccbd37c05c0::t_ec49e90da137e7 1-256
+videos/oceans-showreel/renders/render.log
+  s_af4ccbd37c05c0::t_d18673395e67cb 1-354
+crates/gateway-service/src/service.rs
+  s_af4ccbd37c05c0::t_9f4a81fefe4041 7-8,209-215,419,485,491,502,507,1833-1840,3100-3156
+crates/gateway-store/src/lib.rs
+  s_af4ccbd37c05c0::t_f879413526181d 4309
+docs/configuration/configuration-reference.md
+  s_af4ccbd37c05c0::t_8dab4514ea4350 145,369,712,716,734,741,1234,1247,1372,1390-1392
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c4654231db6f51ce0186f4583239abc0d3b00963",
+  "prompts": {},
+  "sessions": {
+    "s_56409892e094a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a7dde59-323d-48bd-9209-17a8bd106b80",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+.github/workflows/cli-ci.yml
+  s_d3c80b90c1cc6d::t_c27705a2d8e143 65
+.github/workflows/release-product.yml
+  s_d3c80b90c1cc6d::t_a81c5df3b28185 136-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1925521555ea263d701fe0f8e261c65eb0274c6b",
+  "prompts": {},
+  "sessions": {
+    "s_d3c80b90c1cc6d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1dc1b72e-7118-4e96-b7d7-4f5e3c42a100",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

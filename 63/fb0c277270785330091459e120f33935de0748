@@ -1,0 +1,21 @@
+crates/admin-ui/web/src/server/gateway-client.server.test.ts
+  s_af4ccbd37c05c0::t_bc41c4c7cbba74 121,128,137
+crates/admin-ui/web/src/server/gateway-client.server.ts
+  s_af4ccbd37c05c0::t_a4d4ad2a329af5 118-124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "63fb0c277270785330091459e120f33935de0748",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

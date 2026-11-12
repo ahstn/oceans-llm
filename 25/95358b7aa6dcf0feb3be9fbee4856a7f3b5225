@@ -1,0 +1,19 @@
+crates/admin-ui/web/src/test/components/page-header.test.tsx
+  s_a1d1a900c88650::t_53c80ded0b8249 1-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2595358b7aa6dcf0feb3be9fbee4856a7f3b5225",
+  "prompts": {},
+  "sessions": {
+    "s_a1d1a900c88650": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8dcd7694-4d09-4ee2-9f4c-af8095b9a53e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

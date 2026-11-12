@@ -1,0 +1,18 @@
+crates/gateway-providers/src/decisions.rs
+  h_2f452a9c375069 133-166,174-196,240-251,270-281,289-293
+crates/gateway/src/config/providers.rs
+  h_2f452a9c375069 369-377,505-509
+crates/gateway/src/config/tests/providers.rs
+  h_2f452a9c375069 804-849
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9136d749f09b59f4635473b9b9059768a1ae562f",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

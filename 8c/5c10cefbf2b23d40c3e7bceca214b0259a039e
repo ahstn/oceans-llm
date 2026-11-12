@@ -1,0 +1,35 @@
+docs/adr/2026-10-15-generic-upstream-mcp-oauth.md
+  s_327fe9b27426f4::t_d146faffa34e48 86
+crates/gateway-service/src/mcp_oauth_discovery.rs
+  s_b8e52ffc321bb1::t_aaaf05587d9af3 333-335
+crates/gateway-service/src/mcp_oauth_discovery/tests.rs
+  s_b8e52ffc321bb1::t_7b53ebe860f03b 180-182
+crates/gateway/src/http/mcp_oauth.rs
+  s_b8e52ffc321bb1::t_e278a3ef56fc7f 761-762,771
+crates/gateway/src/http/mcp_oauth/tests/generic.rs
+  s_b8e52ffc321bb1::t_c1e722de5783fc 562-577
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8c5c10cefbf2b23d40c3e7bceca214b0259a039e",
+  "prompts": {},
+  "sessions": {
+    "s_327fe9b27426f4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14258-b3f9-7a50-9987-4a60f71f58c8",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

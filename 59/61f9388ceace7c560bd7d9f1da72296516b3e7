@@ -1,0 +1,21 @@
+crates/gateway/src/http/inference_guardrails.rs
+  s_6ff66569c6a522::t_8501ce33ff246a 221-224,247,252,1950-1957,2018-2022,2071-2075
+docs/operations/gateway-guardrails.md
+  s_6ff66569c6a522::t_fb3aa7d6318777 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5961f9388ceace7c560bd7d9f1da72296516b3e7",
+  "prompts": {},
+  "sessions": {
+    "s_6ff66569c6a522": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "479d58ab-d231-4ad8-a31b-aa2339af3a24",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

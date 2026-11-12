@@ -1,0 +1,19 @@
+.agents/skills/verify-oceans-admin/features/mcp-ownership.md
+  s_7a5811202bdfd5::t_7a04ac84bba3fc 34,49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "767020310fa775e0b417e52d9d962377fa6b5514",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

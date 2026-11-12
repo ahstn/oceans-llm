@@ -1,0 +1,126 @@
+crates/gateway-providers/src/anthropic/compat_stream.rs
+  s_43e66770e5a835::t_7c3a3694c3f9c3 12,27,89-106,319-323,464
+  s_583c88036df9d8::t_925ef577d021aa 461-462
+  s_583c88036df9d8::t_0b77fa841e5ab2 463
+  s_43e66770e5a835::t_340e9bd959780f 465-469
+  s_583c88036df9d8::t_8dd2499880cd83 324-326
+crates/gateway-providers/src/bedrock/tests/replay.rs
+  s_fe713590bc4b79::t_5fe84ba1eb3cee 3-4,390,396-398,405-407,411-438,444-479,482-483,489-500,503-519
+  s_583c88036df9d8::t_925ef577d021aa 439-443,480-481,484-488
+  s_fe713590bc4b79::t_ee39428eaabdcf 391-395,399-404,408-410,501-502
+  s_583c88036df9d8::t_7242b73ed41c00 520-522
+crates/gateway/src/http/handlers/inference.rs
+  s_583c88036df9d8::t_a95af12f960ba4 68-74,293-295
+crates/gateway/src/http/inference_guardrails_regression_tests.rs
+  s_1f37a06cebd384::t_aa8bce065940a8 70-88,96-128,135-144,152-154,157-170,172-196,201,203-234,237,240-250,282-285,288-292,295-306
+  s_1f37a06cebd384::t_dbe380fefc106e 336-401,405-420,426-444,452-465,470-471,477-482,487-488,490,516-518
+  s_1f37a06cebd384::t_6d88048343ea02 308-335
+  s_1f37a06cebd384::t_e7a427bff9d6eb 251-281
+  s_583c88036df9d8::t_925ef577d021aa 89-95,129-134,145-151,155-156,171,197-200,202,235-236,238-239,286-287,293-294
+  s_583c88036df9d8::t_0b77fa841e5ab2 402-404,421-425,445-451,483-486,509-515
+  s_1f37a06cebd384::t_11d392c9187020 307,466-469,472-476,489,491-508
+docs/adr/2026-11-03-native-anthropic-messages-transport.md
+  s_583c88036df9d8::t_00237de3444261 78
+  s_583c88036df9d8::t_187635d6612e8e 77,79,81-82
+  s_583c88036df9d8::t_64565d4434bb42 80
+crates/gateway-service/src/request_logging.rs
+  s_43e66770e5a835::t_62e6c7dc2518a4 742
+crates/gateway-providers/src/bedrock/converse_replay.rs
+  s_583c88036df9d8::t_925ef577d021aa 97-102,104-116
+  s_fe713590bc4b79::t_a00ecb7051b068 1,11,28,103,169-181,200-206
+  s_583c88036df9d8::t_8b994aba2914a9 207-208
+crates/gateway-service/src/request_logging/tests/stream.rs
+  s_43e66770e5a835::t_b4f146faa88ede 31,42-44,46,57-60
+  s_43e66770e5a835::t_a503b5e5a572fe 29,88-113,118-128,133-143,148,152-157
+  s_583c88036df9d8::t_231138015866bc 114-117,129-132,144-147,149-151
+  s_43e66770e5a835::t_3c406b9898eae5 30,32-41,45,47-56
+  s_43e66770e5a835::t_62a5be1c6251ce 61-87
+crates/gateway/src/http/inference_guardrails.rs
+  s_1f37a06cebd384::t_77dd8d80d8f2aa 466
+  s_583c88036df9d8::t_925ef577d021aa 323-334,336,338-360,362-367,369,371-374,463-465
+  s_1f37a06cebd384::t_395907543c8d15 477-481,484-488,490,631,651-656
+  s_583c88036df9d8::t_0b77fa841e5ab2 626,637-640,696-699
+  s_1f37a06cebd384::t_55fd2e743fe79e 361,447,469,482-483,489,628-630,635-636,641-649
+  s_1f37a06cebd384::t_47271da84d5d1d 315,335,457-462,627,632-634,650
+  s_583c88036df9d8::t_31434569b45378 657-658
+crates/gateway-providers/src/bedrock/tests/eventstream.rs
+  s_fe713590bc4b79::t_ee39428eaabdcf 414
+  s_583c88036df9d8::t_925ef577d021aa 415-444,508-514
+  s_fe713590bc4b79::t_5fe84ba1eb3cee 413,445-446,460-472,474-507,515-528
+  s_fe713590bc4b79::t_ef4d57589d4831 447-459,473
+  s_583c88036df9d8::t_4eba43f7937c8b 412
+crates/gateway-providers/src/anthropic/replay_tests.rs
+  s_583c88036df9d8::t_58ed183005dc9c 913,954,1065
+  s_583c88036df9d8::t_925ef577d021aa 910-912,914,939-942,946-953,955,957-970,1005-1008,1013-1016,1018-1031,1034-1037,1062-1064,1066
+  s_43e66770e5a835::t_f7a00394897bf6 853-909,915-938,943-945,956,971-989,991-995,997-1004,1009-1012,1017,1038-1041,1043-1055,1072-1078
+  s_43e66770e5a835::t_7c3a3694c3f9c3 990,996,1032-1033
+  s_43e66770e5a835::t_3c406b9898eae5 1042,1056-1057,1059-1061,1067-1071
+  s_583c88036df9d8::t_0b77fa841e5ab2 1058
+crates/gateway-service/src/usage.rs
+  s_43e66770e5a835::t_62e6c7dc2518a4 67-72
+docs/internal/2026-11-05-provider-harness-comparison.md
+  s_583c88036df9d8::t_b6bc7bdc99a23a 250
+  s_583c88036df9d8::t_62248f554c9939 241-249,251-255,257-259
+  s_583c88036df9d8::t_02b4435f27f35f 260-265
+  s_583c88036df9d8::t_64565d4434bb42 256
+.agents/skills/verify-oceans-admin/scripts/messages-regressions.mjs
+  s_583c88036df9d8::t_187635d6612e8e 27-29,47-48,60-65,94,114-115
+  s_583c88036df9d8::t_00237de3444261 30-32,67-70
+  s_583c88036df9d8::t_58ed183005dc9c 66
+  s_583c88036df9d8::t_64565d4434bb42 33-34
+crates/gateway/src/http/handlers/native_messages.rs
+  s_583c88036df9d8::t_925ef577d021aa 309-310
+  s_583c88036df9d8::t_290aa53da7988e 276-308,311-320
+  s_583c88036df9d8::t_a95af12f960ba4 16,19,22,24-25,27,30-38
+  s_583c88036df9d8::t_bbb08cafe38444 275
+crates/gateway/src/http/handlers/inference_tests.rs
+  s_583c88036df9d8::t_290aa53da7988e 576,580-585,603-620,625-631
+  s_583c88036df9d8::t_925ef577d021aa 621-624
+crates/gateway-providers/src/bedrock/tests/response.rs
+  s_43e66770e5a835::t_7c3a3694c3f9c3 236
+.agents/skills/verify-oceans-admin/features/anthropic-messages.md
+  s_583c88036df9d8::t_00237de3444261 63
+  s_583c88036df9d8::t_187635d6612e8e 61,64,66
+  s_583c88036df9d8::t_64565d4434bb42 73
+  s_583c88036df9d8::t_b6bc7bdc99a23a 59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "88e33dec93f103b052618784d19db656001368fd",
+  "prompts": {},
+  "sessions": {
+    "s_1f37a06cebd384": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1b2b8-73dd-72c0-8904-83064d6ec91b",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_43e66770e5a835": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1b2b8-7420-76b7-9396-603b255721ec",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_583c88036df9d8": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1aac9-1166-77b3-9da2-1112c2a986fe",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_fe713590bc4b79": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1b2b8-73f1-7162-b956-48e6d740b09d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+DESIGN.md
+  s_eaf7116ccea134::t_bdd8e495618490 5-37,41,60-64,79-80,85-86,91-92,97,109-117,119,121,125-126,128-133,137-147,149,151-154,156,158-160,162,164-186,190-194,196,202,208-215,221,225-248,250,252-271,275,277,279,284-287,292-293,298-299,304-306,310-313,317-332,334,338-342,344,348-353
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4cd38f69ac2fbf6cdd45bc807e6b5ddd6b1edde4",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

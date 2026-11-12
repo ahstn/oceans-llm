@@ -1,0 +1,40 @@
+.agents/skills/verify-oceans-admin/SKILL.md
+  h_2f452a9c375069 37
+.agents/skills/verify-oceans-admin/features/skills.md
+  h_2f452a9c375069 34
+crates/gateway-store/mise.toml
+  h_2f452a9c375069 51
+crates/gateway/src/local_demo_seed/mod.rs
+  h_2f452a9c375069 792-793,915
+crates/gateway/src/local_demo_seed/usage.rs
+  h_2f452a9c375069 37,237,737,912
+deploy/README.md
+  h_2f452a9c375069 61
+deploy/config/gateway.local.yaml
+  h_2f452a9c375069 157,163
+deploy/config/gateway.yaml
+  h_2f452a9c375069 179,187
+docs/adr/2026-10-24-local-secrets-with-fnox.md
+  h_2f452a9c375069 24
+docs/configuration/model-routing-and-api-behavior.md
+  h_2f452a9c375069 75-76,97,119,230-231
+fnox.toml
+  h_2f452a9c375069 21
+gateway.prod.yaml
+  h_2f452a9c375069 127
+gateway.yaml
+  h_2f452a9c375069 379
+mise.toml
+  h_2f452a9c375069 296,312
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8f7cf31c695573746bc63d17374a6e193bacf017",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+docs/providers/github-copilot.md
+  s_3364883fc2ce42::t_e6cc53e683aea5 85-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eb4cffa83178ad9cc8cb41e24b810f2713fdcabc",
+  "prompts": {},
+  "sessions": {
+    "s_3364883fc2ce42": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1030b-a73e-7ee0-ba99-c3e2b528cb13",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

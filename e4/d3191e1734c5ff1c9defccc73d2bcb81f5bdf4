@@ -1,0 +1,69 @@
+scripts/import-bundled-skills.mjs
+  s_3364883fc2ce42::t_5ce44cc080b76d 62-64,67-68
+  s_3364883fc2ce42::t_f58cc352a099f4 1-61,65-66,69-90
+.agents/skills/verify-oceans-admin/scripts/drive-skills.mjs
+  s_3364883fc2ce42::t_241397be631a6a 169,175,206,240,254
+  s_3364883fc2ce42::t_0cd4d71860bc40 40,138-143,232-234,243
+  s_3364883fc2ce42::t_30a86bb28ab222 9,65-66,168,170-174,176-205,207-227,235-238
+  s_3364883fc2ce42::t_fdc2ac75d7697b 228-231,239
+crates/oceans-cli/src/skills.rs
+  s_3364883fc2ce42::t_e8872433fbbc01 23-26,189-194,205-226
+bundled-skills/grill-me/LICENSE
+  s_3364883fc2ce42::t_d415311ccacbec 1-21
+bundled-skills/README.md
+  s_3364883fc2ce42::t_2f687617193eb2 5
+  s_3364883fc2ce42::t_4bb252096a0b38 1-4,6-20
+.agents/skills/verify-oceans-admin/SKILL.md
+  s_3364883fc2ce42::t_d3b0e626a8677c 153
+mise.toml
+  s_3364883fc2ce42::t_f58cc352a099f4 219-227
+crates/oceans-cli/src/cli.rs
+  s_3364883fc2ce42::t_e8872433fbbc01 46-51
+  s_3364883fc2ce42::t_e602e6cfcfd0f3 92,101-115
+mise.rustfs.toml
+  s_3364883fc2ce42::t_f58cc352a099f4 81
+docs/setup/skills.md
+  s_3364883fc2ce42::t_c300ea28df5e3d 93-94,96-108,179
+  s_3364883fc2ce42::t_7712f7b85f75a6 95,180
+crates/oceans-cli/src/skills_tests.rs
+  s_3364883fc2ce42::t_e602e6cfcfd0f3 181-256
+  s_3364883fc2ce42::t_e8872433fbbc01 177,379
+crates/admin-ui/web/e2e/skills-cli.e2e.ts
+  s_3364883fc2ce42::t_acce3f3ce01f38 217,223,230,232,236-237
+  s_3364883fc2ce42::t_3a077d6ecee152 158,191,201,215,221,234
+  s_3364883fc2ce42::t_9bec331e3e7dc6 244-246
+  s_3364883fc2ce42::t_162aca0d309de9 155
+  s_3364883fc2ce42::t_e15eea5928951d 157,159-190,192-200,202-204,206-211,248
+  s_3364883fc2ce42::t_9b4575f5cc0763 243,247,249-250
+  s_3364883fc2ce42::t_a47ebae90d420e 147-154,156,205,212-214,216,218-220,222,224-229,231,238-242,251-252
+  s_3364883fc2ce42::t_9d32bda925ae1a 233,235
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin
+  s_3364883fc2ce42::t_30a86bb28ab222 438-440
+crates/admin-ui/web/src/routes/skills/-skills.test.tsx
+  s_3364883fc2ce42::t_997ba09738a81c 99,128-131,145,151
+  s_3364883fc2ce42::t_e3506e0f3d8b2a 127
+crates/admin-ui/web/src/routes/skills/$id.tsx
+  s_3364883fc2ce42::t_997ba09738a81c 25-34,228-229,236-237
+bundled-skills/grill-me/SKILL.md
+  s_3364883fc2ce42::t_d415311ccacbec 1-2,5-6,8-9
+  s_3364883fc2ce42::t_b2bd9fa937ae73 3-4,7,10-14
+.agents/skills/verify-oceans-admin/features/skills.md
+  s_3364883fc2ce42::t_d3b0e626a8677c 7
+  s_3364883fc2ce42::t_0cd4d71860bc40 48,53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e4d3191e1734c5ff1c9defccc73d2bcb81f5bdf4",
+  "prompts": {},
+  "sessions": {
+    "s_3364883fc2ce42": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1030b-a73e-7ee0-ba99-c3e2b528cb13",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

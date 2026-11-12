@@ -1,0 +1,35 @@
+crates/gateway-service/src/admin_api_keys.rs
+  s_af4ccbd37c05c0::t_2a2fbf2a65927a 435-441
+crates/gateway-store/src/libsql_store/api_keys.rs
+  s_af4ccbd37c05c0::t_143272e6fa7fee 103-106,113-115,134-137,140-141
+crates/gateway-store/src/libsql_store/identity.rs
+  s_af4ccbd37c05c0::t_851e2656624f14 3-5,323-328,332-335,347-352
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_af4ccbd37c05c0::t_858ae3c40f45c4 156,225-230,235-237,253-258
+crates/gateway-store/src/libsql_store/review_agent.rs
+  s_af4ccbd37c05c0::t_97bdf485f25ee2 300-304,313-315,338-343
+crates/gateway-store/src/postgres_store/api_keys.rs
+  s_af4ccbd37c05c0::t_eeb5ed93cf9379 75-76,83-85,102,105
+crates/gateway-store/src/postgres_store/identity.rs
+  s_af4ccbd37c05c0::t_88c6f6e8482d76 3-5,278-279,284-287,294,297
+crates/gateway-store/src/postgres_store/mcp_registry.rs
+  s_af4ccbd37c05c0::t_1fa866ad8686f0 12,215-216,222-224,235,238
+crates/gateway-store/src/postgres_store/review_agent.rs
+  s_af4ccbd37c05c0::t_53c80fc5d991ea 261-262,271-273,291,294
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5fba2306465f0ca72c95154d6193b8f9514debe8",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+Cargo.lock
+  s_d29d193e8cbf9b::t_9f5ac6f5edfe25 2231,2675,3713,3948,3950,5306,5308,5319,5324,5326
+crates/admin-ui/web/bun.lock
+  s_d29d193e8cbf9b::t_b6fb3fb2cb026f 1313
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "62e1c3d569712f7a83b02796bd9273baab3273fc",
+  "prompts": {},
+  "sessions": {
+    "s_d29d193e8cbf9b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a198e9-2947-7840-9a6a-e7121e01c0ef",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

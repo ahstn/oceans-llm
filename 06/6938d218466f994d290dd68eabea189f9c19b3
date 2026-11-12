@@ -1,0 +1,39 @@
+crates/gateway-core/src/mcp_tool_policy.rs
+  s_e88dc7cf2999d1::t_980eb605c98d82 412-425
+crates/gateway-store/migrations/V69__mcp_tool_effective_tags.sql
+  s_e88dc7cf2999d1::t_d89117d15b5449 1-49
+crates/gateway-store/migrations/postgres/V69__mcp_tool_effective_tags.sql
+  s_e88dc7cf2999d1::t_534ece27836fe6 1-59
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_e88dc7cf2999d1::t_0fe9c1ab51deb8 740
+crates/gateway-store/src/libsql_store/mcp_registry/tool_versions.rs
+  s_e88dc7cf2999d1::t_a4e6a5abb6860a 4,344-347,487,495-496,517-560
+crates/gateway-store/src/migration_registry.rs
+  s_e88dc7cf2999d1::t_764a8b95c247e9 424-430
+crates/gateway-store/src/postgres_store/mcp_registry.rs
+  s_e88dc7cf2999d1::t_f8543f14872d6b 729
+crates/gateway-store/src/postgres_store/mcp_registry/tool_versions.rs
+  s_e88dc7cf2999d1::t_a6d31364d2d76f 4,297-300,435-436,459-496
+crates/gateway-store/src/tests/mcp_tag_rules.rs
+  s_e88dc7cf2999d1::t_8448d3287dcb5b 1-2,492-546,566-589
+docs/adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md
+  s_e88dc7cf2999d1::t_aecfd13ebabd82 73
+docs/contributing/reference/data-relationships.md
+  s_e88dc7cf2999d1::t_38eca903c50516 174-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "066938d218466f994d290dd68eabea189f9c19b3",
+  "prompts": {},
+  "sessions": {
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

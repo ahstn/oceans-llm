@@ -1,0 +1,19 @@
+crates/gateway-store/mise.toml
+  s_3b32b30557497d::t_b481f2c3ada904 61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "97ee4006550917a15b4c1c02d4fbd437fad32a98",
+  "prompts": {},
+  "sessions": {
+    "s_3b32b30557497d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e359a70d-e18a-4bde-907a-1ca2dceb98fc",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

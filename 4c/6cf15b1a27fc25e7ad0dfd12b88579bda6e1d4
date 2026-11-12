@@ -1,0 +1,39 @@
+crates/gateway/src/config/loader.rs
+  s_56409892e094a0::t_069b57c4ef52cd 296-297,321-322,329-356
+crates/gateway/src/config/routes.rs
+  s_dd118f467446e0::t_8e5ea189cfff44 11,90-101
+crates/gateway/src/config/tests/fragments.rs
+  s_56409892e094a0::t_4bec14c1d719c2 242-249,255-261,267
+crates/gateway/src/config/tests/routes.rs
+  s_56409892e094a0::t_8e028c10074551 606-646
+docs/adr/2026-10-15-model-and-provider-config-fragments.md
+  s_dd118f467446e0::t_c6d2a7e0bbaa13 97
+docs/configuration/configuration-reference.md
+  s_dd118f467446e0::t_f2d8bdbcf54a4f 85,1235-1240
+docs/setup/kubernetes-and-helm.md
+  s_dd118f467446e0::t_2f65c9f2267c29 72-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4c6cf15b1a27fc25e7ad0dfd12b88579bda6e1d4",
+  "prompts": {},
+  "sessions": {
+    "s_56409892e094a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a7dde59-323d-48bd-9209-17a8bd106b80",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

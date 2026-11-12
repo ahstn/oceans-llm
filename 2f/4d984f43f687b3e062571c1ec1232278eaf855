@@ -1,0 +1,144 @@
+.agents/skills/verify-oceans-admin/SKILL.md
+  h_2f452a9c375069 3-4,13-23,26,83,124-171,181,189,198,204,207,212-213,231-232,235,242,251-253,255,257-262,265
+.agents/skills/verify-oceans-admin/features/README.md
+  h_2f452a9c375069 11,15-25,35,46-47,71-78,81-82
+.agents/skills/verify-oceans-admin/features/account-onboarding.md
+  h_2f452a9c375069 1-47
+.agents/skills/verify-oceans-admin/features/agent-harnesses.md
+  h_2f452a9c375069 3,9-10,12-13,22,25,36
+.agents/skills/verify-oceans-admin/features/agent-plugins.md
+  h_2f452a9c375069 1-24
+.agents/skills/verify-oceans-admin/features/agent-sessions.md
+  h_2f452a9c375069 8,10-11,17-18,26,31-32,38,42-44
+.agents/skills/verify-oceans-admin/features/api-keys.md
+  h_2f452a9c375069 10,18,28,30,33-34,39,42-44
+.agents/skills/verify-oceans-admin/features/backend-gateway.md
+  h_2f452a9c375069 31,38,42-43
+.agents/skills/verify-oceans-admin/features/batch-requests.md
+  h_2f452a9c375069 1-45
+.agents/skills/verify-oceans-admin/features/guardrails.md
+  h_2f452a9c375069 1-41
+.agents/skills/verify-oceans-admin/features/identity.md
+  h_2f452a9c375069 1-47
+.agents/skills/verify-oceans-admin/features/leaderboard.md
+  h_2f452a9c375069 3,8-9,11,20,26-28,33
+.agents/skills/verify-oceans-admin/features/live-llm-requests.md
+  h_2f452a9c375069 30,33,40-41
+.agents/skills/verify-oceans-admin/features/mcp.md
+  h_2f452a9c375069 19,23,31-32,59,71
+.agents/skills/verify-oceans-admin/features/models.md
+  h_2f452a9c375069 3,9,11-13,34-35,42-43
+.agents/skills/verify-oceans-admin/features/password-sign-in.md
+  h_2f452a9c375069 11-13,19,26,32,34-35,41-45
+.agents/skills/verify-oceans-admin/features/profile.md
+  h_2f452a9c375069 1-33
+.agents/skills/verify-oceans-admin/features/request-logs.md
+  h_2f452a9c375069 8-9,27,29,31,36-38
+.agents/skills/verify-oceans-admin/features/review-agent.md
+  h_2f452a9c375069 1-43
+.agents/skills/verify-oceans-admin/features/routing.json
+  h_2f452a9c375069 1-550
+.agents/skills/verify-oceans-admin/features/skills.md
+  h_2f452a9c375069 54,56,63-64
+.agents/skills/verify-oceans-admin/features/spend-controls.md
+  h_2f452a9c375069 1-46
+.agents/skills/verify-oceans-admin/features/usage-costs.md
+  h_2f452a9c375069 1-40
+.agents/skills/verify-oceans-admin/features/workspace-connections.md
+  h_2f452a9c375069 1-38
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin
+  h_2f452a9c375069 9-19,22-38,57-58,70-72,191-201,232-235,249,293,356-362,496,503-508,515,518
+.agents/skills/verify-oceans-admin/scripts/drive-backend-gateway.mjs
+  h_2f452a9c375069 8-9,16,26-31,36-37,77,99,140-141,158,170,198,204,222-223,245,247-249,255-256,307
+.agents/skills/verify-oceans-admin/scripts/drive-mcp.mjs
+  h_2f452a9c375069 9,24-25,31,59-65,70,75,81-98,100-102,108,110-112,161
+.agents/skills/verify-oceans-admin/scripts/drive-models.mjs
+  h_2f452a9c375069 6-7,14,19,57,67,78,89,102,121,147-148,161,175,178,189,196,242
+.agents/skills/verify-oceans-admin/scripts/drive-observability.mjs
+  h_2f452a9c375069 6-7,14,18-22,58,66,81,90,111-112,131,138,151,156-158,423
+.agents/skills/verify-oceans-admin/scripts/drive-profile.mjs
+  h_2f452a9c375069 6-7,14,18-19,22-24,28,36,43,45,55,68,78,80,93-95,111,113-114,116-117,120,156-157
+.agents/skills/verify-oceans-admin/scripts/drive-skills.mjs
+  h_2f452a9c375069 10,19,28,43-47,51-55,64,66-67,77-78,84,88-91,110,115,120,123-125,127,132-134,137,141,145,150,158,160,164-166,356,592-593
+.agents/skills/verify-oceans-admin/scripts/mcp-verification.test.mjs
+  h_2f452a9c375069 14,34-36
+.agents/skills/verify-oceans-admin/scripts/plan-verification.mjs
+  h_2f452a9c375069 1-157
+.agents/skills/verify-oceans-admin/scripts/plan-verification.test.mjs
+  h_2f452a9c375069 1-60
+.agents/skills/verify-oceans-admin/scripts/proof-cli.mjs
+  h_2f452a9c375069 1-228
+.agents/skills/verify-oceans-admin/scripts/proof.mjs
+  h_2f452a9c375069 1-206
+.agents/skills/verify-oceans-admin/scripts/proof.test.mjs
+  h_2f452a9c375069 1-183
+.claude/skills/verify-oceans-admin
+  h_2f452a9c375069 1
+.github/dist-build-setup.yml
+  h_2f452a9c375069 2
+.github/workflows/contract-ci.yml
+  h_2f452a9c375069 31
+.github/workflows/docs-ci.yml
+  h_2f452a9c375069 31
+.github/workflows/e2e-ci.yml
+  h_2f452a9c375069 31
+.github/workflows/helm-ci.yml
+  h_2f452a9c375069 43
+.github/workflows/oceans-review-agent.yml
+  h_2f452a9c375069 46
+.github/workflows/release-cli-check.yml
+  h_2f452a9c375069 29
+.github/workflows/release-product.yml
+  h_2f452a9c375069 51,131
+.github/workflows/release.yml
+  h_2f452a9c375069 131
+.github/workflows/review-agent-ci.yml
+  h_2f452a9c375069 31
+.github/workflows/review-agent-self-hosted-smoke.yml
+  h_2f452a9c375069 35
+.github/workflows/rust-ci.yml
+  h_2f452a9c375069 45
+.github/workflows/ui-ci.yml
+  h_2f452a9c375069 31
+.gitignore
+  h_2f452a9c375069 30-32
+AGENTS.md
+  h_2f452a9c375069 11-16
+Cargo.lock
+  h_2f452a9c375069 553,2456,2922,3863,3885,4113,4154,4324,4326,4393,4949,5231,5233,5294,5804,5806
+crates/admin-ui/web/e2e/skills.e2e.ts
+  h_2f452a9c375069 55
+crates/admin-ui/web/src/components/layout/admin-nav.ts
+  h_2f452a9c375069 6,60-68
+crates/admin-ui/web/src/components/layout/app-shell.test.tsx
+  h_2f452a9c375069 5,58-61,75-83,97-98,107-112,114,152
+crates/admin-ui/web/src/routeTree.gen.ts
+  h_2f452a9c375069 14,53-57,202,234,267,301,333,365,398,444-450,646
+crates/admin-ui/web/src/routes/-auth-routing.ts
+  h_2f452a9c375069 20
+crates/admin-ui/web/src/routes/agent-plugins.tsx
+  h_2f452a9c375069 1-40
+crates/admin-ui/web/src/routes/skills/$id.tsx
+  h_2f452a9c375069 114
+crates/admin-ui/web/src/routes/skills/index.tsx
+  h_2f452a9c375069 59-60
+crates/admin-ui/web/src/test/routes/auth-routing.test.ts
+  h_2f452a9c375069 42
+docs/configuration/mcp-servers.md
+  h_2f452a9c375069 5-15
+docs/package-lock.json
+  h_2f452a9c375069 273-275,283-285,293-295,299,309-311,315-316,799-801,1330-1332,1336-1337,1344-1346,1350-1351,1355-1357,1361-1365,1368,1373-1375,1379-1380,1420-1422,1426,1430-1432,1436-1437,1441-1443,1447-1449,1454-1456,1460-1462,1466-1468,2013-2015,2058-2060,2078,2080,2213-2215,2495-2497,2501-2505
+docs/public/images/oceans-mcp-personas.prompt.txt
+  h_2f452a9c375069 1-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2f4d984f43f687b3e062571c1ec1232278eaf855",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

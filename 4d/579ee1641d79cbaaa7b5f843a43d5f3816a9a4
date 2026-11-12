@@ -1,0 +1,18 @@
+crates/gateway/src/http/admin_contract.rs
+  h_2f452a9c375069 2006-2007
+crates/gateway/src/http/observability.rs
+  h_2f452a9c375069 72-76
+crates/gateway/src/http/observability/request_logs.rs
+  h_2f452a9c375069 1-788
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4d579ee1641d79cbaaa7b5f843a43d5f3816a9a4",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

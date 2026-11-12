@@ -1,0 +1,35 @@
+crates/gateway/src/batch_worker.rs
+  s_01674f4e1b5bdc::t_38165283d5320f 21,216,220-226,233-249,685-688,690-703,705,707-711,780-925,927-1041
+crates/gateway/src/http/handlers.rs
+  s_01674f4e1b5bdc::t_a2b5a69d5ca0eb 2416-2420,2424,2438
+crates/gateway/src/http/handlers/inference_tests.rs
+  s_01674f4e1b5bdc::t_2c2ff660b2a285 14-18
+crates/gateway/src/http/handlers/model_metadata_tests.rs
+  s_01674f4e1b5bdc::t_8722bfaff465e4 4-5
+crates/gateway/src/http/inference_guardrails.rs
+  s_01674f4e1b5bdc::t_64c4284cddf8b7 86-99
+crates/gateway/src/http/mod.rs
+  s_01674f4e1b5bdc::t_26edd03a95b534 32
+crates/gateway/src/http/test_support.rs
+  s_01674f4e1b5bdc::t_f2e8e626384431 3-6,9-10,59-74,76-79,81-126
+docs/adr/2026-09-22-guardrail-secret-redaction.md
+  s_01674f4e1b5bdc::t_9670f3f763f65d 19-20
+docs/operations/gateway-guardrails.md
+  s_01674f4e1b5bdc::t_3b6967fede6048 115-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5948607516d91846b4eae9d8fa66925b35cfcb65",
+  "prompts": {},
+  "sessions": {
+    "s_01674f4e1b5bdc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b47-bf04-76f3-8675-5d67766468fd",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

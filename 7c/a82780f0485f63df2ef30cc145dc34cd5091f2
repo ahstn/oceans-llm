@@ -1,0 +1,45 @@
+Cargo.lock
+  s_1864c803a90a0e::t_4702cc81308c82 1865
+crates/gateway/Cargo.toml
+  s_b8e52ffc321bb1::t_503d5da4fddab8 23
+crates/gateway/src/http/mcp_gateway.rs
+  s_b8e52ffc321bb1::t_1a284004e8933d 7-8,42,187-189,191-193,194
+crates/gateway/src/http/mcp_gateway/session.rs
+  s_b8e52ffc321bb1::t_9433ff072264bc 1-228
+crates/gateway/src/http/mcp_gateway/sse.rs
+  s_b8e52ffc321bb1::t_fee4f66827b2ef 1-256
+crates/gateway/src/http/mcp_gateway/tests.rs
+  s_b8e52ffc321bb1::t_91ecd3992ddf4b 899-1118
+crates/gateway/src/http/mcp_gateway/upstream.rs
+  s_b8e52ffc321bb1::t_9526075ff7ae3f 16-19,61-67,89-92
+crates/gateway/src/http/mcp_gateway/upstream/tests.rs
+  s_b8e52ffc321bb1::t_1b120b01aa288c 14-16,275-280
+docs/adr/2026-10-13-govern-every-mcp-method.md
+  s_b8e52ffc321bb1::t_9134eef601225e 51-66,71-72
+docs/mcp/mcp-tool-access.md
+  s_b8e52ffc321bb1::t_36169569986168 311-316
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7ca82780f0485f63df2ef30cc145dc34cd5091f2",
+  "prompts": {},
+  "sessions": {
+    "s_1864c803a90a0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5822bc90-e33d-49af-9d44-474de0500040",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

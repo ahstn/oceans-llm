@@ -1,0 +1,19 @@
+crates/admin-ui/web/src/styles/globals.css
+  s_10a82e9e623548::t_cb5bafd1804352 6-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6f87004cdd04d15b3c18f879bad37f66cb20f43f",
+  "prompts": {},
+  "sessions": {
+    "s_10a82e9e623548": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f37a6951-df40-4639-9d01-c99da63e8d84",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+crates/gateway-providers/src/vertex/batch.rs
+  h_2f452a9c375069 44,196,213,221,321,481-483,493,504-508,514,550-582,586-596,598,602-607,823-825,827-843,879-951
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e759671fd0b245e486dce63abede887dc8100f59",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

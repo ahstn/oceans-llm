@@ -1,0 +1,21 @@
+.agents/skills/verify-oceans-admin/features/skills.md
+  s_e0810ecc789e8a::t_23ded654a622f8 34
+docs/adr/2026-10-24-local-secrets-with-fnox.md
+  s_e0810ecc789e8a::t_032f6e498995d0 22-23,37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ad6706046aa1ccbf89a66842b28cf6c3346980ff",
+  "prompts": {},
+  "sessions": {
+    "s_e0810ecc789e8a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a2dfbd6-2d57-41f1-b4eb-ca1372ddd7cc",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

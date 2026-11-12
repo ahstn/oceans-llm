@@ -1,0 +1,21 @@
+crates/gateway-service/src/budget_alerts.rs
+  s_59759a0c269480::t_a28e1a29d99e14 123-127,434-440,443-447,450-485
+crates/gateway-service/src/budget_guard.rs
+  s_59759a0c269480::t_c6120756fad3bb 139-142,171-173,203,227,321,667-698
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e88739834da601d798961c808413ac17a6ec5634",
+  "prompts": {},
+  "sessions": {
+    "s_59759a0c269480": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6967a834-972f-4dfe-99a6-760e1e3d2dc7",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

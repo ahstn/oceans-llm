@@ -1,0 +1,21 @@
+crates/gateway-store/src/lib.rs
+  s_7a5811202bdfd5::t_f899fe93af82cc 2648-2692
+crates/gateway-store/src/shared.rs
+  s_7a5811202bdfd5::t_9f782f48abcae1 19-20,40,53,76-86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9c14e56ead0d06fae3cd03be074eb7ff33e8f099",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

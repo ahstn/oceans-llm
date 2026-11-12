@@ -1,0 +1,76 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  h_2f452a9c375069 556-558
+crates/admin-ui/web/src/components/layout/app-shell.test.tsx
+  h_2f452a9c375069 11-12,16-17,34,124-145
+crates/admin-ui/web/src/components/layout/app-shell.tsx
+  h_2f452a9c375069 2,33-35,92
+crates/admin-ui/web/src/routes/design-system/-components/color-roles.ts
+  h_2f452a9c375069 2-4,36-50
+crates/admin-ui/web/src/routes/design-system/-components/showcase.tsx
+  h_2f452a9c375069 6,113-126,130,132-134
+crates/admin-ui/web/src/routes/identity/-status-badge.ts
+  h_2f452a9c375069 1-4
+crates/admin-ui/web/src/routes/identity/-teams/add-members-dialog.tsx
+  h_2f452a9c375069 16-17,20
+crates/admin-ui/web/src/routes/identity/-teams/membership-change-dialogs.tsx
+  h_2f452a9c375069 20-21
+crates/admin-ui/web/src/routes/identity/-teams/team-editor-dialog.tsx
+  h_2f452a9c375069 15-17
+crates/admin-ui/web/src/routes/identity/-teams/team-form.ts
+  h_2f452a9c375069 3
+crates/admin-ui/web/src/routes/identity/-teams/teams-list.tsx
+  h_2f452a9c375069 18,148,251,407
+crates/admin-ui/web/src/routes/identity/-teams/use-add-members.ts
+  h_2f452a9c375069 5-6,30,75,95
+crates/admin-ui/web/src/routes/identity/-teams/use-membership-change.ts
+  h_2f452a9c375069 5-6,31,67,88
+crates/admin-ui/web/src/routes/identity/-teams/use-team-editor.ts
+  h_2f452a9c375069 5-6,22,52-54,57,66
+crates/admin-ui/web/src/routes/identity/-use-identity-transition.ts
+  h_2f452a9c375069 5,8-10,12,30,34
+crates/admin-ui/web/src/routes/identity/-users/create-user-dialog.tsx
+  h_2f452a9c375069 16-17,40
+crates/admin-ui/web/src/routes/identity/-users/use-create-user.ts
+  h_2f452a9c375069 10,23,43
+crates/admin-ui/web/src/routes/identity/-users/use-onboarding-reset.ts
+  h_2f452a9c375069 5-8,29,54,58
+crates/admin-ui/web/src/routes/identity/-users/use-provider-credentials.ts
+  h_2f452a9c375069 8,18,53,66
+crates/admin-ui/web/src/routes/identity/-users/use-user-details.ts
+  h_2f452a9c375069 10-11,18,37,81
+crates/admin-ui/web/src/routes/identity/-users/user-auth-section.tsx
+  h_2f452a9c375069 5-6
+crates/admin-ui/web/src/routes/identity/-users/user-details-dialog.tsx
+  h_2f452a9c375069 27,29-33,38,40,56,255
+crates/admin-ui/web/src/routes/identity/service-accounts.tsx
+  h_2f452a9c375069 13,279
+crates/admin-ui/web/src/routes/identity/teams.tsx
+  h_2f452a9c375069 19,23,25-30,85
+crates/admin-ui/web/src/routes/identity/users.tsx
+  h_2f452a9c375069 19,21-24,80
+crates/admin-ui/web/src/routes/observability/-usage-costs/token-series.ts
+  h_2f452a9c375069 19,24-26,35
+crates/admin-ui/web/src/test/design-contrast.test.ts
+  h_2f452a9c375069 9,23,26,29,31
+crates/admin-ui/web/src/test/routes/service-accounts-route.test.tsx
+  h_2f452a9c375069 139-142
+crates/admin-ui/web/src/test/routes/teams-hooks.test.ts
+  h_2f452a9c375069 15-19,221,289-311,327,448
+crates/admin-ui/web/src/test/routes/teams-route.test.tsx
+  h_2f452a9c375069 254-282
+crates/admin-ui/web/src/test/routes/usage-costs-route.test.tsx
+  h_2f452a9c375069 347,355-357
+crates/admin-ui/web/src/test/routes/users-hooks.test.ts
+  h_2f452a9c375069 5-9,90,93,103,117,133,203,282,374
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aa5b3e3b4b83505719ec3a984c06445910ebaaed",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

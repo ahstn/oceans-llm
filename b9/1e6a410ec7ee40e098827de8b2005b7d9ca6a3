@@ -1,0 +1,27 @@
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_a1d1a900c88650::t_9d1c8086d1da76 3603-3605
+crates/admin-ui/web/src/routes/profile/-components/profile-data.ts
+  s_a1d1a900c88650::t_115159c494586d 157-158,161-166,179,312-313,333-334
+crates/admin-ui/web/src/test/profile-data.test.ts
+  s_a1d1a900c88650::t_3f8ff24f1d0231 52-68
+crates/admin-ui/web/src/test/profile-fixtures.ts
+  s_a1d1a900c88650::t_31f62c96a836d0 58-85
+crates/gateway/openapi/admin-api.json
+  s_a1d1a900c88650::t_2b9c3e38e31415 14061,14069-14072,14074-14075
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b91e6a410ec7ee40e098827de8b2005b7d9ca6a3",
+  "prompts": {},
+  "sessions": {
+    "s_a1d1a900c88650": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8dcd7694-4d09-4ee2-9f4c-af8095b9a53e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

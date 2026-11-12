@@ -1,0 +1,25 @@
+crates/gateway/mise.toml
+  s_4743c3bdc4d116::t_c756b88e5f30d4 19,24
+gateway.yaml
+  s_4743c3bdc4d116::t_16bea69b56c78e 74-80
+mise.toml
+  s_4743c3bdc4d116::t_3ba0717e7936fe 69-70
+.agents/skills/verify-oceans-admin/features/mcp-client-oauth.md
+  s_4743c3bdc4d116::t_8eb819fd8d01d5 27,33,37-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "79c87495c9ffda8701aa03537c47d8f4101148ba",
+  "prompts": {},
+  "sessions": {
+    "s_4743c3bdc4d116": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a047a7f-d4a7-4209-858b-e18a0d0d4346",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

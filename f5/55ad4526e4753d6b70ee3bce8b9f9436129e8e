@@ -1,0 +1,22 @@
+crates/admin-ui/web/src/routes/identity/-users/create-user-dialog.tsx
+  h_2f452a9c375069 27-28,54-56
+crates/admin-ui/web/src/routes/identity/-users/use-create-user.ts
+  h_2f452a9c375069 52
+crates/admin-ui/web/src/routes/identity/-users/user-auth-section.tsx
+  h_2f452a9c375069 7,98-99,105-114,152-154
+crates/admin-ui/web/src/test/routes/leaderboard-route.test.tsx
+  h_2f452a9c375069 235,238
+crates/admin-ui/web/src/test/routes/users-route.test.tsx
+  h_2f452a9c375069 232-257,423-444
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f555ad4526e4753d6b70ee3bce8b9f9436129e8e",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

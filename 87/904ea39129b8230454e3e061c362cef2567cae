@@ -1,0 +1,20 @@
+docs/setup/self-hosting-mise-daemons.md
+  h_2f452a9c375069 190-191
+mise.lock
+  h_2f452a9c375069 258
+mise.selfhost.toml
+  h_2f452a9c375069 29-30
+mise.toml
+  h_2f452a9c375069 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "87904ea39129b8230454e3e061c362cef2567cae",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

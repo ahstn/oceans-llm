@@ -1,0 +1,29 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_56409892e094a0::t_d5074a85192805 467-470
+crates/admin-ui/web/src/routes/rate-limits/-policy-dialog.tsx
+  s_56409892e094a0::t_084d60f9e25dfb 37,74-75,77,121,126-130,134-135,137-139
+crates/admin-ui/web/src/routes/rate-limits/-policy-model.ts
+  s_56409892e094a0::t_b7090226534322 112-115,117
+crates/admin-ui/web/src/test/routes/rate-limits-route.test.tsx
+  s_56409892e094a0::t_fe84ebe90a8453 246-260
+crates/gateway-service/src/rate_limits/tests.rs
+  s_56409892e094a0::t_f345a8965184e4 1248-1288
+crates/gateway-service/src/rate_limits.rs
+  s_56409892e094a0::t_c13786f00d52fb 676-682,710-713,715,758-770
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eadc7c4bef901fa85d8fc6696e7a4e736e829e86",
+  "prompts": {},
+  "sessions": {
+    "s_56409892e094a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a7dde59-323d-48bd-9209-17a8bd106b80",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

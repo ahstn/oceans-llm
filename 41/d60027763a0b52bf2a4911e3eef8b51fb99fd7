@@ -1,0 +1,19 @@
+crates/gateway-store/src/lib.rs
+  s_5b57a6bde6f371::t_0d7b69f988b4f4 869-879
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "41d60027763a0b52bf2a4911e3eef8b51fb99fd7",
+  "prompts": {},
+  "sessions": {
+    "s_5b57a6bde6f371": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a193bb-6210-710c-9db8-d80f9ec87693",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

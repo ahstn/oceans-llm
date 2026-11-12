@@ -1,0 +1,19 @@
+docs/adr/2026-10-15-libsql-transaction-connections.md
+  s_ee057229033589::t_b8709873f99bba 1-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a26cb4b35ca25878e41d6f58647383d6af76d627",
+  "prompts": {},
+  "sessions": {
+    "s_ee057229033589": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "250131c4-1d2c-4d6b-a98c-87c1d612ba06",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

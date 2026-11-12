@@ -1,0 +1,25 @@
+CONTRIBUTING.md
+  s_1121327246a626::t_34fc5689dc5a63 57
+crates/admin-ui/web/mise.toml
+  s_1121327246a626::t_c12faaa99edb3e 52-59
+crates/admin-ui/web/package.json
+  s_1121327246a626::t_f099b44903a221 17
+crates/admin-ui/web/scripts/typecheck.mjs
+  s_1121327246a626::t_21c1a6709b9dc6 1-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5c31cbe33e38e7d32c1fc79a8ee464abef17b911",
+  "prompts": {},
+  "sessions": {
+    "s_1121327246a626": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4b4ef4b8-4d5e-43e9-9d26-60bb85493277",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

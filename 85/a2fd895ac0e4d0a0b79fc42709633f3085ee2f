@@ -1,0 +1,21 @@
+crates/gateway-store/migrations/postgres/V76__batch_jobs_route_index.sql
+  s_dd118f467446e0::t_bc3214d911d35e 3-9
+docs/operations/operator-runbooks.md
+  s_dd118f467446e0::t_4d5c3685b5c5b6 144-145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "85a2fd895ac0e4d0a0b79fc42709633f3085ee2f",
+  "prompts": {},
+  "sessions": {
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

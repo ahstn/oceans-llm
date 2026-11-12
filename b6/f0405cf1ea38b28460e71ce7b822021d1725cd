@@ -1,0 +1,31 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_3909cf4958a3af::t_fe98c1c9575dd2 71
+.squawk.toml
+  s_3909cf4958a3af::t_ef861e4340c844 1-4
+crates/gateway-store/mise.toml
+  s_3909cf4958a3af::t_fbf03d659deb4b 66-72
+deploy/helm/mise.toml
+  s_3909cf4958a3af::t_b953d80db0109f 40-54
+docs/adr/2026-10-21-repository-lint-and-dependency-scanning.md
+  s_3909cf4958a3af::t_1d9df8d0498bb7 38-41,52-54
+mise.lock
+  s_3909cf4958a3af::t_3498a1a0cbf6b6 289-317,342-370
+mise.toml
+  s_3909cf4958a3af::t_d1c059e82cdd0a 57-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b6f0405cf1ea38b28460e71ce7b822021d1725cd",
+  "prompts": {},
+  "sessions": {
+    "s_3909cf4958a3af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9eabb320-c558-4ce9-b844-b21792d51207",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

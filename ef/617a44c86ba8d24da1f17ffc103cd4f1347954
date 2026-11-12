@@ -1,0 +1,23 @@
+.github/workflows/repo-lint.yml
+  s_3909cf4958a3af::t_f993d1965fd95d 31-33,36-37
+.gitleaks.toml
+  s_3909cf4958a3af::t_61fc9d1bcbe76a 2-4,10,12,15-18,21,23,26-30
+mise.toml
+  s_3909cf4958a3af::t_c864ffbd79bda3 186,190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ef617a44c86ba8d24da1f17ffc103cd4f1347954",
+  "prompts": {},
+  "sessions": {
+    "s_3909cf4958a3af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9eabb320-c558-4ce9-b844-b21792d51207",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

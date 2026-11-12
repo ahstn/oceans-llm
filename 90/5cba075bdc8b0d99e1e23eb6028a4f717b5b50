@@ -1,0 +1,81 @@
+crates/admin-ui/web/src/components/layout/app-shell.tsx
+  s_eaf7116ccea134::t_0095e6462c6552 88-91
+crates/admin-ui/web/src/components/layout/auth-layout.tsx
+  s_eaf7116ccea134::t_2018b86bf0dd29 38
+crates/admin-ui/web/src/components/ui/alert-dialog.tsx
+  s_eaf7116ccea134::t_944f0a3ad1ef44 29,51
+crates/admin-ui/web/src/components/ui/card.tsx
+  s_eaf7116ccea134::t_594df7288e0945 15
+crates/admin-ui/web/src/components/ui/dialog.tsx
+  s_eaf7116ccea134::t_8fe47c8178546a 33,55
+crates/admin-ui/web/src/components/ui/dropdown-menu.tsx
+  s_eaf7116ccea134::t_735a3afb8157f0 39,227
+crates/admin-ui/web/src/components/ui/popover.tsx
+  s_eaf7116ccea134::t_db2ebe021a87d8 27
+crates/admin-ui/web/src/components/ui/progress.tsx
+  s_eaf7116ccea134::t_6cb718efda7298 23
+crates/admin-ui/web/src/components/ui/select.tsx
+  s_eaf7116ccea134::t_4dff3ec7a86cba 76
+crates/admin-ui/web/src/components/ui/sheet.tsx
+  s_eaf7116ccea134::t_1e4607e7a0d71e 35,60
+crates/admin-ui/web/src/components/ui/sidebar.tsx
+  s_eaf7116ccea134::t_8f4c3dd1ba9105 297,448
+crates/admin-ui/web/src/lib/chart-motion.ts
+  s_eaf7116ccea134::t_ea0fd752cbe274 1-6
+crates/admin-ui/web/src/routes/account/connections.tsx
+  s_eaf7116ccea134::t_3ab7ecce451797 118
+crates/admin-ui/web/src/routes/identity/-provider-configuration.tsx
+  s_eaf7116ccea134::t_884e8556e6da0e 95
+crates/admin-ui/web/src/routes/identity/-read-only-directory.tsx
+  s_eaf7116ccea134::t_56ee8f0513d02a 6-12,38,80
+crates/admin-ui/web/src/routes/identity/users.tsx
+  s_eaf7116ccea134::t_191837d916cbf0 830,915,1013
+crates/admin-ui/web/src/routes/mcp/-components.tsx
+  s_eaf7116ccea134::t_3ec79fb069974d 254,770,778
+crates/admin-ui/web/src/routes/observability/-usage-costs/bar-list.tsx
+  s_eaf7116ccea134::t_6f8d22b878a9f3 15,26
+crates/admin-ui/web/src/routes/observability/-usage-costs/token-charts.tsx
+  s_eaf7116ccea134::t_ee0347d100e57f 3-4,65-71
+crates/admin-ui/web/src/routes/observability/-usage-costs/token-series.ts
+  s_eaf7116ccea134::t_8793980a180b0e 15,24-25
+crates/admin-ui/web/src/routes/observability/agent-harnesses.tsx
+  s_af4ccbd37c05c0::t_1fe3309947d786 28,202
+crates/admin-ui/web/src/routes/observability/leaderboard.tsx
+  s_af4ccbd37c05c0::t_10c1924b4eb1d0 28,204
+crates/admin-ui/web/src/routes/observability/usage-costs.tsx
+  s_eaf7116ccea134::t_f3989ed7b9566b 18,52,109
+crates/admin-ui/web/src/routes/profile/-components/profile-charts.tsx
+  s_eaf7116ccea134::t_0d9c3ee36f33a8 4,82,142-148
+crates/admin-ui/web/src/routes/profile/-components/profile-heatmap.tsx
+  s_eaf7116ccea134::t_240cd1f7bd6792 16,18-22
+crates/admin-ui/web/src/routes/spend-controls/-alert-timeline.tsx
+  s_eaf7116ccea134::t_689e2a3a7327ad 61
+crates/admin-ui/web/src/styles/globals.css
+  s_eaf7116ccea134::t_0b319a26869a48 43-52,54-55,57-86,88,90,94-127,149-150,221-227,263-266,279-298,348-397
+crates/admin-ui/web/src/test/routes/usage-costs-route.test.tsx
+  s_eaf7116ccea134::t_336a5d4fa91ba6 364
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "905cba075bdc8b0d99e1e23eb6028a4f717b5b50",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

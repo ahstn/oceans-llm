@@ -1,0 +1,23 @@
+crates/gateway-providers/src/anthropic/error.rs
+  s_cd9d806c1e358d::t_84e6efb47f369c 134-137
+crates/gateway-providers/src/anthropic/thinking.rs
+  s_cd9d806c1e358d::t_a91d0834027fb6 309-314
+crates/gateway-providers/src/bedrock/request/thinking.rs
+  s_cd9d806c1e358d::t_6f5bdacab63e73 23-24,26-27,34,93,98,100,103,105,108-124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bcf9fd6ee38f0daf408f4cffad9403494d9d1976",
+  "prompts": {},
+  "sessions": {
+    "s_cd9d806c1e358d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d07410f0-3795-44b0-89cc-2a0af6501c56",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

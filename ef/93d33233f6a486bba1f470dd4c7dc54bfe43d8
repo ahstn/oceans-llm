@@ -1,0 +1,14 @@
+.github/dependabot.yml
+  h_2f452a9c375069 9-13,16,21-22,24,49-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ef93d33233f6a486bba1f470dd4c7dc54bfe43d8",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

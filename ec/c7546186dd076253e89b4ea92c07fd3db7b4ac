@@ -1,0 +1,29 @@
+crates/admin-ui/web/src/components/mcp/server-registry.tsx
+  s_33d90a19d63897::t_0a0609e054a119 37,500-507
+crates/admin-ui/web/src/server/admin-data.functions.ts
+  s_7a5811202bdfd5::t_12ab6db961f813 668-703,705
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ecc7546186dd076253e89b4ea92c07fd3db7b4ac",
+  "prompts": {},
+  "sessions": {
+    "s_33d90a19d63897": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ed06c798-8802-41c0-9291-c5fd2a3c7dfa",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

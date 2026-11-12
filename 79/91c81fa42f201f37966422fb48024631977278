@@ -1,0 +1,19 @@
+docs/adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md
+  s_e88dc7cf2999d1::t_f578672793fbaf 141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7991c81fa42f201f37966422fb48024631977278",
+  "prompts": {},
+  "sessions": {
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+crates/admin-ui/web/src/routes/skills/$id.tsx
+  s_3364883fc2ce42::t_8aadb14b756dca 193-199
+  s_3364883fc2ce42::t_10092e3ce7b6aa 235,255-321
+docs/setup/skills.md
+  s_3364883fc2ce42::t_fbe620abc96e47 117-120,128-129,137-138
+crates/admin-ui/web/e2e/skills.e2e.ts
+  s_3364883fc2ce42::t_9043159fb7f16f 67-76,96-101,113-141
+crates/admin-ui/web/src/routes/skills/-skills.test.tsx
+  s_3364883fc2ce42::t_822e9439b94b00 4,7,91-190
+  s_3364883fc2ce42::t_ed5891dc9274c1 191-192
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dcc5f73061f85dd9e87082df8a9b4f09ff68c9af",
+  "prompts": {},
+  "sessions": {
+    "s_3364883fc2ce42": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1030b-a73e-7ee0-ba99-c3e2b528cb13",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

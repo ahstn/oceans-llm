@@ -1,0 +1,23 @@
+crates/gateway-service/src/outbound_fetch.rs
+  s_4394d7bb181c63::t_4874480e049c80 291-292,300-311
+crates/gateway-service/src/outbound_fetch/tests.rs
+  s_4394d7bb181c63::t_3672c6357fa3c2 322-354
+docs/adr/2026-10-17-ssrf-safe-outbound-fetch.md
+  s_4394d7bb181c63::t_5516ddf5f35845 45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7df0aed14614dcd36fc31e6dab203cafd5f11831",
+  "prompts": {},
+  "sessions": {
+    "s_4394d7bb181c63": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5fe6d420-4e7e-4885-8f8a-07723d2ed05e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

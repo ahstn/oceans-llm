@@ -1,0 +1,25 @@
+crates/gateway-service/src/rate_limits.rs
+  s_b8e52ffc321bb1::t_10ee12af849ac5 552-553,558,561,564,568,570-592,594-596,631-642,870,917
+crates/gateway-service/src/rate_limits/tests.rs
+  s_b8e52ffc321bb1::t_b6c80980e4e876 1418-1451
+docs/adr/2026-10-15-gateway-rate-limits-and-quotas.md
+  s_b8e52ffc321bb1::t_eef8ae58d4a2c6 95
+docs/configuration/rate-limits.md
+  s_b8e52ffc321bb1::t_7f34cb7e341f02 21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "06a6426600510e2aed633257809de03daa9d10d4",
+  "prompts": {},
+  "sessions": {
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

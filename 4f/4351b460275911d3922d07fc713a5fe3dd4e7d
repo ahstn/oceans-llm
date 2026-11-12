@@ -1,0 +1,19 @@
+docs/adr/2026-05-15-local-sso-compose-fixture-and-browser-origin.md
+  s_85219a7516ce76::t_67b4b97592d507 15-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4f4351b460275911d3922d07fc713a5fe3dd4e7d",
+  "prompts": {},
+  "sessions": {
+    "s_85219a7516ce76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd4f065d-f5e0-4db2-a846-89e3c6902774",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

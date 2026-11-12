@@ -1,0 +1,25 @@
+docs/public/r/oceans-theme.json
+  s_eaf7116ccea134::t_5ac63b1e0d9660 151-175
+docs/public/r/registry.json
+  s_eaf7116ccea134::t_06d7c9c2e21b90 157-181
+registry.json
+  s_eaf7116ccea134::t_52c1621a2cab01 157-181
+scripts/build-shadcn-theme.mjs
+  s_eaf7116ccea134::t_e5d7409c9bd764 52-53,55,59-62,64-65,95-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bb312cc7f062ef72861e1a3a7b62130e353cc80e",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,91 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_af4ccbd37c05c0::t_7f0d67be205f7f 89
+crates/admin-ui/web/e2e/guardrails.e2e.ts
+  s_af4ccbd37c05c0::t_21ebb2d768cfb9 18-33,56-103,252-267,302,315,455-538
+crates/gateway-guardrails/src/evaluation.rs
+  s_af4ccbd37c05c0::t_e4add7811a3c18 157-175,192,194-202,218,305,345,408-413,540-638
+crates/gateway-store/src/agent_analysis_tests.rs
+  s_af4ccbd37c05c0::t_6427797cb8c82c 275-276
+crates/gateway-store/src/libsql_store/agent_analysis/queue.rs
+  s_af4ccbd37c05c0::t_62eb4b2500f6d2 22
+crates/gateway-store/src/libsql_store/agent_analysis/sessions.rs
+  s_af4ccbd37c05c0::t_66de7983571a5a 164,338
+crates/gateway-store/src/libsql_store/api_keys.rs
+  s_af4ccbd37c05c0::t_396458ad47aa46 241
+crates/gateway-store/src/libsql_store/audit_logs.rs
+  s_af4ccbd37c05c0::t_ad26005b69905a 54
+crates/gateway-store/src/libsql_store/batches.rs
+  s_af4ccbd37c05c0::t_3b9582a11ad99f 140,339,460,530
+crates/gateway-store/src/libsql_store/budget_alerts.rs
+  s_af4ccbd37c05c0::t_80066ebfa07bb2 137,334
+crates/gateway-store/src/libsql_store/budget_increases.rs
+  s_af4ccbd37c05c0::t_b68faa9467fca9 69
+crates/gateway-store/src/libsql_store/budgets.rs
+  s_af4ccbd37c05c0::t_6b26af5f402404 170,299
+crates/gateway-store/src/libsql_store/identity.rs
+  s_af4ccbd37c05c0::t_d9d6d7e50fe6e3 427,1053,1154,1288,1543
+crates/gateway-store/src/libsql_store/mcp_access.rs
+  s_af4ccbd37c05c0::t_3ac8f3011703c4 278,344
+crates/gateway-store/src/libsql_store/mcp_credentials.rs
+  s_af4ccbd37c05c0::t_a5aad233af553c 137
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_af4ccbd37c05c0::t_cb6a5f5fd28e76 268,393,515
+crates/gateway-store/src/libsql_store/mcp_tool_invocations.rs
+  s_af4ccbd37c05c0::t_fd29810d4de5b7 77
+crates/gateway-store/src/libsql_store/mod.rs
+  s_af4ccbd37c05c0::t_9bf051b41816a4 30-31,33,100-102,108,114-115,125,132,136-181,183,189-193,195-203
+crates/gateway-store/src/libsql_store/pricing_catalog.rs
+  s_af4ccbd37c05c0::t_074c4c91cf7b58 205
+crates/gateway-store/src/libsql_store/rate_limits.rs
+  s_af4ccbd37c05c0::t_76a28127e820e4 173
+crates/gateway-store/src/libsql_store/request_logs.rs
+  s_af4ccbd37c05c0::t_25d6a5b9a3a976 258,716-735,778,792,847
+crates/gateway-store/src/libsql_store/review_agent.rs
+  s_af4ccbd37c05c0::t_2d6a6ebaf42035 351,414
+crates/gateway-store/src/libsql_store/skills.rs
+  s_af4ccbd37c05c0::t_0a62a729d378d6 22
+crates/gateway-store/src/libsql_store/transaction_tests.rs
+  s_af4ccbd37c05c0::t_19b7be0dd1ddfd 1-254
+crates/gateway/src/http/guardrail_events.rs
+  s_af4ccbd37c05c0::t_95933b904dd28d 6-7,9,30-55
+crates/gateway/src/http/inference_guardrails.rs
+  s_af4ccbd37c05c0::t_7e96596dc9aa1a 8,13-16,189-192,217-243,249-259,293-306,348-355,369-374,377-384,389,391,464-465,470,473,492,655,660-669,693-696,699-701,709-715,813-819,832-833,835-838,847-852,1662,1697,1702-2107
+crates/gateway/src/http/mcp_gateway.rs
+  s_af4ccbd37c05c0::t_61d4bfcc3aff07 497-507
+crates/gateway/src/http/mcp_gateway/guardrails.rs
+  s_af4ccbd37c05c0::t_61d6c8ae3810a8 4,7-11,13-14,17,24-29,47,78,145,149,152-166,168-178,181,185-187,197,199-200,203,205-214,216-249,251-293,295-361,363-398,400-423
+crates/gateway/src/http/mcp_gateway/guardrails/tests.rs
+  s_af4ccbd37c05c0::t_1fc43cc7233a90 2-3,5-6,32,56-57,76,99-100,176-177,199-458
+crates/gateway/src/http/mcp_gateway/methods.rs
+  s_af4ccbd37c05c0::t_4407f555599a8f 150-160
+docs/adr/2026-08-22-gateway-guardrails-domain-and-composition.md
+  s_af4ccbd37c05c0::t_97c8622fecb84b 52-63
+docs/adr/2026-10-15-libsql-transaction-connections.md
+  s_af4ccbd37c05c0::t_f876fcdad131b7 1-39
+docs/operations/gateway-guardrails.md
+  s_af4ccbd37c05c0::t_958bb923add01d 26-28,210-212,235-236,246
+scripts/mock-openai-upstream.mjs
+  s_af4ccbd37c05c0::t_5d8271f572a348 50-87,195-197
+scripts/register-e2e-mcp-server.mjs
+  s_af4ccbd37c05c0::t_6a71aca4ea92e8 1-23
+scripts/start-e2e-stack.sh
+  s_af4ccbd37c05c0::t_1e223986ddeae0 173-177,306-316
+scripts/start-e2e-stack.test.mjs
+  s_af4ccbd37c05c0::t_18972b999727b6 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cef482aaf7ef695c02704e6f42565923965ebac2",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

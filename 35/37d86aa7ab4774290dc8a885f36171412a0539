@@ -1,0 +1,75 @@
+docs/adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md
+  s_a54d91cfb15fa9::t_ba5bfd1946144a 89,106,108
+docs/mcp/mcp-tool-access.md
+  s_a54d91cfb15fa9::t_8653fe131cfba0 174-177,227-231
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_7a5811202bdfd5::t_f3e4e675e0b4dc 3871-3876,4570-4575,6859-6869,6889-6896
+crates/admin-ui/web/src/routes/mcp/-tool-reviews.tsx
+  s_7a5811202bdfd5::t_1c3baec3187dce 135-141
+crates/admin-ui/web/src/server/mcp-policy-data.functions.ts
+  s_7a5811202bdfd5::t_7190bc8fe3996f 45
+crates/admin-ui/web/src/server/mcp-policy-data.server.ts
+  s_7a5811202bdfd5::t_42d8bd61b61700 62-67,71-76
+crates/admin-ui/web/src/test/routes/mcp-tool-reviews.test.tsx
+  s_e88dc7cf2999d1::t_26054c9e5b0d6b 146-149
+crates/gateway-core/src/lib.rs
+  s_e88dc7cf2999d1::t_7a0c5fcafca6ad 149
+crates/gateway-core/src/mcp_tool_review.rs
+  s_e88dc7cf2999d1::t_76ad55103ad5a3 108-109,114,123,127-128,131-133,143,147-175,503-552
+crates/gateway-core/src/traits.rs
+  s_e88dc7cf2999d1::t_b7d27b10c8a0c1 1097,1101
+crates/gateway-service/src/mcp_gateway.rs
+  s_e88dc7cf2999d1::t_e07b6409f7e005 187
+crates/gateway-service/src/mcp_registry.rs
+  s_e88dc7cf2999d1::t_5e72d8e753574d 783
+crates/gateway-service/src/mcp_tool_policy.rs
+  s_e88dc7cf2999d1::t_0aeab3f434eb44 11-12,92-93,98,101
+crates/gateway-store/src/any_store_mcp_registry.rs
+  s_e88dc7cf2999d1::t_65b0a117fa149c 174,177-178
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_e88dc7cf2999d1::t_72055b817dfbbe 13-14,594,596-615,620,622,850,860,863,1018-1019,1027,1032,1231-1234,1236-1238
+crates/gateway-store/src/mcp_tool_review.rs
+  s_e88dc7cf2999d1::t_fa316905695f58 15,18,27,68-75,163-177
+crates/gateway-store/src/postgres_store/mcp_registry.rs
+  s_7a5811202bdfd5::t_c1fea13eabd17d 13-14,573,575-596,813,824,827,976-977,984,989,1180-1183,1185-1187
+crates/gateway-store/src/tests/mcp_tool_versions.rs
+  s_7a5811202bdfd5::t_03cb166ca61b0d 6-8,21-26,36-48,63,206,402,430,582,588-688,741,755-758,768-791
+crates/gateway/openapi/admin-api.json
+  s_7a5811202bdfd5::t_34eeb69681b962 2339-2377,2391-2400,14824-14831,17625-17632
+crates/gateway/src/http/audit_tests/mcp_tool_policy.rs
+  s_7a5811202bdfd5::t_4e726691e124ae 331-348
+crates/gateway/src/http/mcp_registry/tool_reviews.rs
+  s_7a5811202bdfd5::t_6b1f31c2bdad7e 6,9-12,14,16,54-106,139-140,144,153,156-180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3537d86aa7ab4774290dc8a885f36171412a0539",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_a54d91cfb15fa9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14a11-4d13-7870-85ed-2cb7d2fbf625",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

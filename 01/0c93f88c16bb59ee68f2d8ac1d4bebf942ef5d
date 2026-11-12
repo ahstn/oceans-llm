@@ -1,0 +1,35 @@
+crates/gateway-core/src/traits.rs
+  s_ee057229033589::t_9975b2f900cb22 1219-1220,1225
+crates/gateway-service/src/mcp_credentials.rs
+  s_ee057229033589::t_1341018d18cd4c 307-312,319-320,1076
+crates/gateway-store/src/any_store_mcp_credentials.rs
+  s_ee057229033589::t_f669ad73b3e64f 124
+crates/gateway-store/src/lib.rs
+  s_ee057229033589::t_727fd6608c0f2b 2029-2038
+crates/gateway-store/src/libsql_store/mcp_credentials.rs
+  s_ee057229033589::t_17d3907a428f1b 339-340,342-350,358-362
+crates/gateway-store/src/postgres_store/mcp_credentials.rs
+  s_ee057229033589::t_4b9a151fb41266 303-304,309-318
+crates/gateway/src/http/audit_tests.rs
+  s_ee057229033589::t_a443785dafa846 491-493,495-496,498
+crates/gateway/src/http/mcp_oauth.rs
+  s_ee057229033589::t_69def9b339ba98 461-466
+crates/gateway/src/http/mcp_registry.rs
+  s_ee057229033589::t_fc69e5aaa6f78d 875-883,888-893
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "010c93f88c16bb59ee68f2d8ac1d4bebf942ef5d",
+  "prompts": {},
+  "sessions": {
+    "s_ee057229033589": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "250131c4-1d2c-4d6b-a98c-87c1d612ba06",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

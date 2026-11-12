@@ -1,0 +1,63 @@
+Cargo.lock
+  s_535c406270f54a::t_a7a40eee915188 1851
+crates/gateway-core/src/streaming.rs
+  s_63939a3786d9af::t_2efc1d5f95f389 128-131,133-134,147-149,156-158,184-186,188-200,207-210,214,240,278-312
+crates/gateway-providers/src/openai_compat/batch.rs
+  s_63939a3786d9af::t_25015e4f6c5b8d 17,399,403,487,495,738-757
+crates/gateway-providers/src/vertex/batch.rs
+  s_63939a3786d9af::t_dd5da9fa0e6b2f 12,526,532,1000-1044
+crates/gateway-service/src/request_logging/stream.rs
+  s_535c406270f54a::t_57d034128894ee 367-368,370-374
+crates/gateway-service/src/request_logging/tests/stream.rs
+  s_535c406270f54a::t_b81b11fd0b9173 231-268
+crates/gateway/Cargo.toml
+  s_13e300ce4bf1eb::t_ebea35f7a2dbdf 10
+crates/gateway/src/http/handlers.rs
+  s_d4b52d4e1b695c::t_c52f753405d27c 1425-1427,1827,1921-1923,1986-1989,2778
+crates/gateway/src/http/handlers/inference.rs
+  s_13e300ce4bf1eb::t_ee96460b84572b 307
+crates/gateway/src/http/response_headers.rs
+  s_63939a3786d9af::t_56485047e4ae8e 266-270,506-510
+docs/reference/request-lifecycle-and-failure-modes.md
+  s_63939a3786d9af::t_8ca1daa2d89954 259
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "84a2a94909dc09410c51bdefc569610fa27444a6",
+  "prompts": {},
+  "sessions": {
+    "s_13e300ce4bf1eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cb0560cd-180f-4e10-b195-fa36950af50e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_535c406270f54a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b4ef8af-857d-413a-9316-bcb26801577e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_63939a3786d9af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "78263e42-f835-4433-bb7a-18fc7105602d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_d4b52d4e1b695c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aceec566e0fe1dc21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

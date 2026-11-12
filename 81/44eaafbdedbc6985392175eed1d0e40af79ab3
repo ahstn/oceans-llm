@@ -1,0 +1,58 @@
+.github/workflows/ci.yml
+  h_2f452a9c375069 53
+.github/workflows/cli-ci.yml
+  h_2f452a9c375069 56
+.github/workflows/docs-ci.yml
+  h_2f452a9c375069 36
+.github/workflows/helm-ci.yml
+  h_2f452a9c375069 41
+.github/workflows/oceans-review-agent.yml
+  h_2f452a9c375069 82
+.github/workflows/react-doctor.yml
+  h_2f452a9c375069 31
+.github/workflows/release-product.yml
+  h_2f452a9c375069 51,131
+.github/workflows/release.yml
+  h_2f452a9c375069 131
+.github/workflows/review-agent-ci.yml
+  h_2f452a9c375069 36
+.github/workflows/review-agent-self-hosted-smoke.yml
+  h_2f452a9c375069 44
+.github/workflows/ui-ci.yml
+  h_2f452a9c375069 36
+Cargo.lock
+  h_2f452a9c375069 2720,2722,4627,4629
+actions/review-agent/bun.lock
+  h_2f452a9c375069 15,19-24,95,97,99,101,103,105,107,109,111,113,115,117,119,121,123,125,127,129,131,133,135,137,139,141,143,145,179,181,183,185,187,189,191,193,195,197,199,201,203,205,207,209,211,213,215,217,219,221,223,225,227,229,231,233,235,237,239,241,243,245,247,249,251,253,255,257,259,261,263,265,301,305-344,383,467,693,695,697,801,809,827,835
+actions/review-agent/package.json
+  h_2f452a9c375069 23,27-32
+crates/admin-ui/web/bun.lock
+  h_2f452a9c375069 45,55,710,1366,1368
+crates/admin-ui/web/package.json
+  h_2f452a9c375069 23,25-30,32,34-35,43,49,55,59,66,68-69
+crates/admin-ui/web/src/test/routes/agent-sessions-route.test.tsx
+  h_2f452a9c375069 722-723
+crates/admin-ui/web/src/test/routes/mcp-invocations-route.test.tsx
+  h_2f452a9c375069 142,144,147,172,174
+crates/admin-ui/web/src/test/routes/mcp-servers-route.test.tsx
+  h_2f452a9c375069 439-440
+crates/admin-ui/web/src/test/routes/request-logs-route.test.tsx
+  h_2f452a9c375069 131-139,321,323,326,401,403,526-529,548-549,593-596,608-609
+crates/admin-ui/web/src/test/setup.ts
+  h_2f452a9c375069 2-31
+mise.lock
+  h_2f452a9c375069 71-104,129-152,361-384,449-455
+mise.toml
+  h_2f452a9c375069 37-38,40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8144eaafbdedbc6985392175eed1d0e40af79ab3",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

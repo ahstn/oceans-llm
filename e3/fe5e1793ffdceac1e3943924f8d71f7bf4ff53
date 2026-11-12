@@ -1,0 +1,35 @@
+crates/admin-ui/web/src/components/mcp/server-attention.ts
+  s_eaf7116ccea134::t_6c3a0ad5dd08dd 1-13
+crates/admin-ui/web/src/components/mcp/server-registry.tsx
+  s_eaf7116ccea134::t_359a9834184936 6,476
+crates/admin-ui/web/src/routes/mcp/-components.tsx
+  s_eaf7116ccea134::t_55b58d0c5c9259 19,46,776-791
+crates/admin-ui/web/src/routes/mcp/-servers-tab.tsx
+  s_eaf7116ccea134::t_141adaac90f157 17,588-591
+crates/admin-ui/web/src/test/routes/mcp-servers-route.test.tsx
+  s_eaf7116ccea134::t_3257b11738f500 453-492
+docs/public/r/oceans-theme.json
+  s_eaf7116ccea134::t_a2ba6a9b45e85d 151-175
+docs/public/r/registry.json
+  s_eaf7116ccea134::t_76f19eae30fb4f 157-181
+registry.json
+  s_eaf7116ccea134::t_c5239aeba17faa 157-181
+scripts/build-shadcn-theme.mjs
+  s_eaf7116ccea134::t_f0755e47dcb4c2 52-53,55,59-62,64-65,95-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e3fe5e1793ffdceac1e3943924f8d71f7bf4ff53",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,37 @@
+crates/gateway-core/src/traits.rs
+  s_1f9f91df052d6c::t_77b6563fc6526c 1310-1327
+crates/gateway-service/src/pricing_catalog.rs
+  s_1f9f91df052d6c::t_424ea11982aada 472-473,483-496,498
+crates/gateway-store/src/libsql_store/pricing_catalog.rs
+  s_1f9f91df052d6c::t_730268a52203ab 350-384,403-406,412
+crates/gateway-store/src/postgres_store/pricing_catalog.rs
+  s_1f9f91df052d6c::t_a92e7f3803fc23 350-384,401-404,410
+crates/gateway-store/src/pricing_sync.rs
+  s_01223eddf3bb44::t_7e39e487d7d6fb 421-461,482,523
+crates/gateway-store/src/store.rs
+  s_1f9f91df052d6c::t_0d207732c2e1e6 1338-1355
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4c4b0f98cec69a2bbc8e08584fb170a80598b85a",
+  "prompts": {},
+  "sessions": {
+    "s_01223eddf3bb44": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a8a77f2842f12afc5",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_1f9f91df052d6c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9424644d-27c2-45b8-ad4b-a7bdfe08346d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

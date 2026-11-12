@@ -1,0 +1,61 @@
+crates/admin-ui/web/src/routes/skills/-skills.test.tsx
+  s_3364883fc2ce42::t_746085e2a5576d 166
+  s_3364883fc2ce42::t_2d1b2023453530 156,160,187
+  s_3364883fc2ce42::t_67935c8dfbdafe 113
+crates/admin-ui/web/src/server/skills-data.server.ts
+  s_3364883fc2ce42::t_d05c2e85d042b5 9,12,14
+  s_3364883fc2ce42::t_68ed841e7d691e 13
+crates/gateway-store/src/libsql_store/skills.rs
+  s_3364883fc2ce42::t_b8ea5e96bc95e9 156
+  s_3364883fc2ce42::t_d4526c7ca31c5d 157-176
+crates/admin-ui/web/src/server/skills-data.functions.ts
+  s_3364883fc2ce42::t_d05c2e85d042b5 15
+crates/admin-ui/web/src/routes/skills/index.tsx
+  s_3364883fc2ce42::t_d05c2e85d042b5 2,7,11,26,70-78,80-88,104,117,148
+  s_3364883fc2ce42::t_3c5ebe24f20b65 47,99,112
+  s_3364883fc2ce42::t_7b9446a81dcf9b 3,31,44-46,79
+crates/gateway-core/src/skills.rs
+  s_3364883fc2ce42::t_b8ea5e96bc95e9 46,55
+  s_3364883fc2ce42::t_4f79a1b824f175 44-45
+crates/gateway-store/src/skills_tests.rs
+  s_3364883fc2ce42::t_b8ea5e96bc95e9 209,213-227,229-249,254-323
+  s_3364883fc2ce42::t_4f79a1b824f175 228,250-253
+  s_3364883fc2ce42::t_71ff059eef9ccf 324-325
+crates/gateway/src/http/skills.rs
+  s_3364883fc2ce42::t_4f79a1b824f175 67-68
+  s_3364883fc2ce42::t_b8ea5e96bc95e9 69,126
+.agents/skills/verify-oceans-admin/scripts/drive-skills.mjs
+  s_3364883fc2ce42::t_710dba4964bc6e 305-309,341,343,345
+  s_3364883fc2ce42::t_fe9efe39da1338 75,79,123-124,297-298,300,303-304,310,315,331,339-340,342,344,346-360,412-416
+  s_3364883fc2ce42::t_565f5348c9c4f9 302
+crates/admin-ui/web/src/routes/skills/$id.tsx
+  s_3364883fc2ce42::t_2d1b2023453530 136,241
+crates/gateway-store/src/postgres_store/skills.rs
+  s_3364883fc2ce42::t_b8ea5e96bc95e9 178,192
+  s_3364883fc2ce42::t_4f79a1b824f175 179
+  s_3364883fc2ce42::t_d4526c7ca31c5d 181-188
+docs/setup/skills.md
+  s_3364883fc2ce42::t_4f79a1b824f175 204-205,208
+.agents/skills/verify-oceans-admin/features/skills.md
+  s_3364883fc2ce42::t_fe9efe39da1338 9,13,22,51-52,54
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_3364883fc2ce42::t_eefd08a1afae75 7121-7125
+crates/gateway/openapi/admin-api.json
+  s_3364883fc2ce42::t_e8ba2e9bbe71d5 5045-5056
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "633522e0752f6f75d75cd514d58aa5658e6dab43",
+  "prompts": {},
+  "sessions": {
+    "s_3364883fc2ce42": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1030b-a73e-7ee0-ba99-c3e2b528cb13",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+.agents/skills/verify-oceans-admin/features/design-system.md
+  s_eaf7116ccea134::t_c6716fd7b5923e 27
+DESIGN.md
+  s_eaf7116ccea134::t_9c7b32118ac64e 330
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c5f587efc9164e8edf22d842cb6d2fdef71de3a9",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+.worktreeinclude
+  s_e0810ecc789e8a::t_5d9c3589972fee 2-4,6
+docs/adr/2026-10-24-local-secrets-with-fnox.md
+  s_e0810ecc789e8a::t_30e56f5a0af276 16,18,23,26,32,40-41
+fnox.local.toml.example
+  s_e0810ecc789e8a::t_54af4f1f3fad33 1-7
+fnox.toml
+  s_e0810ecc789e8a::t_64d911a4284649 2-6,9-11,13-15,22-23,25-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "54e07d2f3a44714931babb315bc324ef597792a2",
+  "prompts": {},
+  "sessions": {
+    "s_e0810ecc789e8a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a2dfbd6-2d57-41f1-b4eb-ca1372ddd7cc",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

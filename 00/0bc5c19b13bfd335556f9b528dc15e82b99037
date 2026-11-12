@@ -1,0 +1,16 @@
+crates/admin-ui/web/src/generated/admin-api.ts
+  h_2f452a9c375069 8668-8669,8755-8756
+crates/gateway/openapi/admin-api.json
+  h_2f452a9c375069 5823-5831,5964-5972
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "000bc5c19b13bfd335556f9b528dc15e82b99037",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

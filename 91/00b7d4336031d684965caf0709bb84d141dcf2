@@ -1,0 +1,33 @@
+.agents/skills/verify-oceans-admin/features/mcp.md
+  s_13e300ce4bf1eb::t_1d0037b51df9f3 30
+.agents/skills/verify-oceans-admin/scripts/drive-mcp.mjs
+  s_7334f6fed281d0::t_4d9eb8ac8cd65a 7,34
+.agents/skills/verify-oceans-admin/scripts/mcp-browser.mjs
+  s_7334f6fed281d0::t_ceedbf4dc301a4 18-23
+.agents/skills/verify-oceans-admin/scripts/mcp-verification.test.mjs
+  s_7334f6fed281d0::t_96a5988d23f10c 10,148-155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9100b7d4336031d684965caf0709bb84d141dcf2",
+  "prompts": {},
+  "sessions": {
+    "s_13e300ce4bf1eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cb0560cd-180f-4e10-b195-fa36950af50e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_7334f6fed281d0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4f11e804-9fa0-4aa6-9c92-53590c872573",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

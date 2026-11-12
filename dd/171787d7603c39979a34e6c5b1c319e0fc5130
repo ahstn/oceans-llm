@@ -1,0 +1,27 @@
+.agents/skills/verify-oceans-admin/features/audit-log.md
+  s_af4ccbd37c05c0::t_545b264d8bac1c 7
+crates/admin-ui/web/src/components/audit/audit-entry-sheet.tsx
+  s_af4ccbd37c05c0::t_c352c740d681c3 58
+crates/admin-ui/web/src/components/audit/audit-meta.test.ts
+  s_af4ccbd37c05c0::t_96d7f035f0303a 3,18-24
+crates/admin-ui/web/src/components/audit/audit-meta.ts
+  s_af4ccbd37c05c0::t_ca14063c7f5e04 53-57,61
+docs/access/admin-audit-log.md
+  s_af4ccbd37c05c0::t_a8e869c81971f9 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dd171787d7603c39979a34e6c5b1c319e0fc5130",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

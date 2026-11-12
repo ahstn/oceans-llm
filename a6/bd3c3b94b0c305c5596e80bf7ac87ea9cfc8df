@@ -1,0 +1,20 @@
+.github/dependabot.yml
+  s_aeb1c58119c549::t_4b669034da8a07 151-152
+  s_aeb1c58119c549::t_441692c68a8c81 109-150,153-164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a6bd3c3b94b0c305c5596e80bf7ac87ea9cfc8df",
+  "prompts": {},
+  "sessions": {
+    "s_aeb1c58119c549": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13cf4-cb45-7ef3-ad12-7e1d4d646353",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

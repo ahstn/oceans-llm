@@ -1,0 +1,55 @@
+crates/gateway-core/src/domain.rs
+  s_7a5811202bdfd5::t_8a3260c66411a3 1903-1907
+crates/gateway-service/src/mcp_registry.rs
+  s_e383333b16cafa::t_230f452a3b498a 254-255,396,541
+crates/gateway-store/src/lib.rs
+  s_e383333b16cafa::t_8b7ed78f71b59e 1497,1550,1628,1677-1721,1744,1822
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_e383333b16cafa::t_1a99f4390ce90b 209-227,492-493,563-564
+crates/gateway-store/src/postgres_store/mcp_registry.rs
+  s_e383333b16cafa::t_8d3fa7b866a9fe 204-234,480,567
+crates/gateway-store/src/tests/mcp_access.rs
+  s_e383333b16cafa::t_b7f0529dcc4a39 46
+crates/gateway-store/src/tests/mcp_tag_rules.rs
+  s_e383333b16cafa::t_4068a0d5a804f8 72
+crates/gateway-store/src/tests/mcp_tool_versions.rs
+  s_e383333b16cafa::t_1aabddb9b64688 74
+crates/gateway/src/http/audit_tests/mcp_tool_policy.rs
+  s_e383333b16cafa::t_cc98e8b6834c3e 38,267
+crates/gateway/src/http/mcp_client_oauth/mcp_route_tests.rs
+  s_e383333b16cafa::t_bedfffa1e63731 114
+crates/gateway/src/http/mcp_gateway/aggregate/tests.rs
+  s_e383333b16cafa::t_d2b86d7b25c1a4 792
+crates/gateway/src/http/mcp_gateway/credentials/tests.rs
+  s_e383333b16cafa::t_b0b23d3ef99ac7 106
+crates/gateway/src/http/mcp_gateway/tests.rs
+  s_e383333b16cafa::t_915b4a88a884f1 398
+crates/gateway/src/http/mcp_registry/tests.rs
+  s_e383333b16cafa::t_7fdaaa9238dd98 363
+crates/gateway/src/http/scoped_api_key_tests.rs
+  s_e383333b16cafa::t_4439aebbfb8510 331
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "94319523ebd8f4434557246adcc7329d61f51267",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e383333b16cafa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8774bcf7-be6d-4ada-b0a8-edf8570bb728",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

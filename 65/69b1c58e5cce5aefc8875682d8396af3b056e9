@@ -1,0 +1,25 @@
+actions/review-agent/README.md
+  s_384eec8fbd259b::t_49923ef0ce9583 3
+actions/review-agent/bun.lock
+  s_384eec8fbd259b::t_37de00695baba1 20,417
+actions/review-agent/package.json
+  s_384eec8fbd259b::t_6c1311f086e79e 28
+docs/contributing/development/authentication-testing.md
+  s_384eec8fbd259b::t_2b549849bc0af4 12,61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6569b1c58e5cce5aefc8875682d8396af3b056e9",
+  "prompts": {},
+  "sessions": {
+    "s_384eec8fbd259b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9df36363-7ea9-4853-9ef3-8595130c8e16",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

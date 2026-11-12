@@ -1,0 +1,1141 @@
+.agents/skills/shadcn/SKILL.md
+  s_1864c803a90a0e::t_8bb3346e8071c0 1-295
+.agents/skills/shadcn/agents/openai.yml
+  s_1864c803a90a0e::t_3e5308317b2d78 1-5
+.agents/skills/shadcn/assets/showcase/color-pair.tsx
+  s_1864c803a90a0e::t_371b4b749c512b 1-126
+.agents/skills/shadcn/assets/showcase/preview-states.css
+  s_1864c803a90a0e::t_e996ac95560421 1-14
+.agents/skills/shadcn/assets/showcase/state-matrix.tsx
+  s_1864c803a90a0e::t_00328fee1cdee6 1-72
+.agents/skills/shadcn/cli.md
+  s_1864c803a90a0e::t_c8f0ae46c8b050 1-290
+.agents/skills/shadcn/customization.md
+  s_1864c803a90a0e::t_55619ebea7e448 1-211
+.agents/skills/shadcn/design-system-page.md
+  s_1864c803a90a0e::t_a14c97e02d5510 1-268
+.agents/skills/shadcn/design-system.md
+  s_1864c803a90a0e::t_16af03cd8ef921 1-386
+.agents/skills/shadcn/evals/evals.json
+  s_1864c803a90a0e::t_870d6cbc2ca6d5 1-126
+.agents/skills/shadcn/mcp.md
+  s_1864c803a90a0e::t_2270cbda5b6fdd 1-105
+.agents/skills/shadcn/registry.md
+  s_1864c803a90a0e::t_2f7ae6a7524124 1-277
+.agents/skills/shadcn/rules/base-vs-radix.md
+  s_1864c803a90a0e::t_392a874de162f8 1-306
+.agents/skills/shadcn/rules/chat.md
+  s_1864c803a90a0e::t_b1c9dfba3b7c24 1-250
+.agents/skills/shadcn/rules/composition.md
+  s_1864c803a90a0e::t_3264da685159e2 1-213
+.agents/skills/shadcn/rules/forms.md
+  s_1864c803a90a0e::t_208f0bd028492b 1-192
+.agents/skills/shadcn/rules/icons.md
+  s_1864c803a90a0e::t_65f11e0ed8e159 1-101
+.agents/skills/shadcn/rules/styling.md
+  s_1864c803a90a0e::t_12d25aa36e27a3 1-185
+.agents/skills/shadcn/scripts/showcase-coverage.mjs
+  s_1864c803a90a0e::t_d2887b01ceb92b 1-53
+.agents/skills/verify-oceans-admin/SKILL.md
+  s_1864c803a90a0e::t_9470646ec116a1 49-53,98,107,123,209
+.agents/skills/verify-oceans-admin/features/README.md
+  s_1864c803a90a0e::t_98724e19a2fc8b 70,73-75,81
+.agents/skills/verify-oceans-admin/features/api-keys.md
+  s_1864c803a90a0e::t_588a298acf5d6c 3,11,33-35,50-52
+.agents/skills/verify-oceans-admin/features/audit-log.md
+  s_1864c803a90a0e::t_ba589d475b1ae5 1-45
+.agents/skills/verify-oceans-admin/features/backend-gateway.md
+  s_1864c803a90a0e::t_636247113fc127 7,15,17,29,31-32,38,42
+.agents/skills/verify-oceans-admin/features/guardrails.md
+  s_1864c803a90a0e::t_9bb9851fa027f8 3,7-10,12,18,28-35,39-42
+.agents/skills/verify-oceans-admin/features/live-llm-requests.md
+  s_1864c803a90a0e::t_d8530beedd5ffe 8,10-11,18-19,21-23,31-32,36-40,42-43,49-50,52-57
+.agents/skills/verify-oceans-admin/features/mcp-client-oauth.md
+  s_1864c803a90a0e::t_75d976ee000b55 1-59
+.agents/skills/verify-oceans-admin/features/mcp.md
+  s_1864c803a90a0e::t_0bc088de0a1130 7-8,12-13,16,33-35,49,62,74-76
+.agents/skills/verify-oceans-admin/features/password-sign-in.md
+  s_1864c803a90a0e::t_aab423a16c2cbe 30,45
+.agents/skills/verify-oceans-admin/features/rate-limits.md
+  s_1864c803a90a0e::t_d96cf9e9793668 1-43
+.agents/skills/verify-oceans-admin/features/request-logs.md
+  s_1864c803a90a0e::t_556be025e68150 8-9,12,29-33,42,44-47,49
+.agents/skills/verify-oceans-admin/features/skills.md
+  s_1864c803a90a0e::t_02f25c136cfd20 8,21,51
+.agents/skills/verify-oceans-admin/features/workspace-connections.md
+  s_1864c803a90a0e::t_6e5c00a6ca68a1 3,7,11-15,33-37,42-43,48
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin
+  s_1864c803a90a0e::t_95e1a3f7d72d61 24-26,60,74-75,132,134-137,142-149,310,322-334,390-392,524
+.agents/skills/verify-oceans-admin/scripts/drive-backend-gateway.mjs
+  s_1864c803a90a0e::t_3246787447ef5f 19-20,140-142
+.agents/skills/verify-oceans-admin/scripts/drive-mcp.mjs
+  s_1864c803a90a0e::t_00814d19b9371d 7,32-35,37,45,63,65-66,201
+.agents/skills/verify-oceans-admin/scripts/drive-skills.mjs
+  s_1864c803a90a0e::t_f217f0f4fa0a1d 59,62,75-76,81,284,370-377
+.agents/skills/verify-oceans-admin/scripts/mcp-browser.mjs
+  s_1864c803a90a0e::t_abda125c107209 2-39,42-45,89,148,176,180,182-183,230-233
+.agents/skills/verify-oceans-admin/scripts/mcp-verification.test.mjs
+  s_1864c803a90a0e::t_5ba506d9ab26bf 10,115-155
+.claude/skills/shadcn
+  s_1864c803a90a0e::t_128b037d8d26b8 1
+.github/dependabot.yml
+  s_1864c803a90a0e::t_086b2498ea8b76 78,109-164,169,190,205-209
+.github/workflows/ci.yml
+  s_1864c803a90a0e::t_6fda75280c4ad4 53,84
+.github/workflows/cli-ci.yml
+  s_1864c803a90a0e::t_dfb8857dfded23 56
+.github/workflows/docs-ci.yml
+  s_1864c803a90a0e::t_b1f55def5a2f7d 36
+.github/workflows/helm-ci.yml
+  s_1864c803a90a0e::t_8f8f938ec4e8c5 41
+.github/workflows/oceans-review-agent.yml
+  s_1864c803a90a0e::t_1e2a1944456f2c 82,145
+.github/workflows/react-doctor.yml
+  s_1864c803a90a0e::t_3ff6198b1684ca 31
+.github/workflows/release-cli-check.yml
+  s_1864c803a90a0e::t_d2f986262f0716 29
+.github/workflows/release-product.yml
+  s_1864c803a90a0e::t_605d85b2043f5b 51,131
+.github/workflows/release.yml
+  s_1864c803a90a0e::t_4d619bcc5fef98 69,85,139,166,188,195,213,250,257,271,317
+.github/workflows/review-agent-ci.yml
+  s_1864c803a90a0e::t_fbb8308eb1755d 36
+.github/workflows/review-agent-self-hosted-smoke.yml
+  s_1864c803a90a0e::t_243e775dfde82c 44
+.github/workflows/ui-ci.yml
+  s_1864c803a90a0e::t_2fd1fc198db9cf 36
+.gitignore
+  s_1864c803a90a0e::t_f91529cc5de5fe 31
+.pre-commit-config.yaml
+  s_1864c803a90a0e::t_347f122723c6f2 3-5,19-23
+AGENTS.md
+  s_1864c803a90a0e::t_95a2a47d9e3442 18-21
+CHANGELOG.md
+  s_1864c803a90a0e::t_ef745aacfeac9b 9-285,376,1571-1572
+Cargo.lock
+  s_1864c803a90a0e::t_45bfd7bc71a320 7,10,57,1844,1857,1868,1896,1903-1912,1915,1934,1955,1970,2001,2011,2014,2023,2033,2052,2721,2723,3363,4628,4630,5137,5249,5251,5822,5824
+Cargo.toml
+  s_1864c803a90a0e::t_91cad1e451abfc 6,25,53,77,109
+README.md
+  s_1864c803a90a0e::t_42c8222f4ac713 4
+actions/review-agent/action.yml
+  s_1864c803a90a0e::t_779baddab52dbd 66
+actions/review-agent/bun.lock
+  s_1864c803a90a0e::t_23332258b098b4 15,19-24,95,97,99,101,103,105,107,109,111,113,115,117,119,121,123,125,127,129,131,133,135,137,139,141,143,145,179,181,183,185,187,189,191,193,195,197,199,201,203,205,207,209,211,213,215,217,219,221,223,225,227,229,231,233,235,237,239,241,243,245,247,249,251,253,255,257,259,261,263,265,301,305-344,383,467,693,695,697,801,809,827,835
+actions/review-agent/package.json
+  s_1864c803a90a0e::t_f956e5dcc48f37 23,27-32
+crates/admin-ui/Cargo.toml
+  s_1864c803a90a0e::t_5a2fa1c5ea7b81 3,8
+crates/admin-ui/src/lib.rs
+  s_1864c803a90a0e::t_6564556125ce01 13-17,28-29
+crates/admin-ui/src/proxy.rs
+  s_1864c803a90a0e::t_4ba18d907dfe24 1,6,17-18,27-28,49-50,64-73,86-92,97-98,109-112,168-169,173-176,256-267,315,323-422,633,650-681,683
+crates/admin-ui/web/bun.lock
+  s_1864c803a90a0e::t_efc1deb5fbf342 9,11-18,20-22,29,34-35,41,45,52-56,184,204,206,266,268,270,272,274,276,278,280,282,284,286,288,290,292,294,296,298,300,302,304,306,308,310,312,314,316,318,320,322,324,326,328,330,332,334,336,338,340,342,344,346,348,350,352,356,358,360,362,364,366,368,370,372,374,378,380,382,384,386,388,390,392,394,396,400,402,404,406,408,410,412,414,416,418,420,422,424,426,428,430,432,434,436,438,440,442,444,446,448,450,452,454,458,468,470,512,514,516,518,520,522,524,526-528,596,598,600,602,604,606,608,612,614,616,618,620,622,624,626,628,630,636,640,642,644,646,648,650,710,828,1286,1324,1326,1328,1364,1366,1370,1396,1478,1484,1516,1570,1712-1713,1716-1717,1744-1745,1754-1755,1800-1801,1854-1855,1858-1861
+crates/admin-ui/web/e2e/admin-static-assets.e2e.ts
+  s_1864c803a90a0e::t_399895472a20c5 10-23
+crates/admin-ui/web/e2e/gateway-contract.e2e.ts
+  s_1864c803a90a0e::t_e56734aac84aeb 333,336,340
+crates/admin-ui/web/e2e/guardrails.e2e.ts
+  s_1864c803a90a0e::t_36b17eee6b3019 18-33,56-103,252-267,302,315,455-538
+crates/admin-ui/web/package.json
+  s_1864c803a90a0e::t_0477dd438dab28 23,25-32,34-36,43,48-49,55,59,66-70
+crates/admin-ui/web/src/components/audit/audit-entry-sheet.tsx
+  s_1864c803a90a0e::t_7bbf373f3b9d92 1-156
+crates/admin-ui/web/src/components/audit/audit-log-table.tsx
+  s_1864c803a90a0e::t_e11ebb624683a1 1-297
+crates/admin-ui/web/src/components/audit/audit-meta.test.ts
+  s_1864c803a90a0e::t_e34f27d500ad22 1-25
+crates/admin-ui/web/src/components/audit/audit-meta.ts
+  s_1864c803a90a0e::t_9a721d124fb318 1-62
+crates/admin-ui/web/src/components/guardrails/decision-toolbar.tsx
+  s_1864c803a90a0e::t_d07e2e969433ae 2
+crates/admin-ui/web/src/components/guardrails/guardrails-dashboard.tsx
+  s_1864c803a90a0e::t_8087fa3553e251 39
+crates/admin-ui/web/src/components/layout/admin-nav.ts
+  s_1864c803a90a0e::t_eb86889fdb2bc8 2-3,68-75,160-166
+crates/admin-ui/web/src/components/mcp/server-registry.tsx
+  s_1864c803a90a0e::t_df56f7b07f77c5 468
+crates/admin-ui/web/src/components/shared/search-field.tsx
+  s_1864c803a90a0e::t_d5b87397b5dc75 1-58
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_1864c803a90a0e::t_f173ab664ede83 55-70,87-118,375-406,487-507,604-741,982-1013,1510,1517-1521,1530,1537-1542,1551,1558,1561,1567,1574,1576,1583,1590,1593,1599,1606-1670,1711-1742,2093-2096,2120-2121,2135-2136,2140-2141,2143-2144,2324,2333-2341,2911-2959,2988-3019,3238-3239,3247-3248,3280-3281,3295-3306,3414-3415,3417-3418,3524-3560,3777-3805,3818-3844,3864-3882,3951-3979,4086-4091,4371-4375,4382-4410,4424-4425,4452-4493,4519-4523,4543-4547,4550-4582,4584-4599,4603-4609,4615-4621,4626-4627,4746-4793,4824-4883,5181-5184,5200-5207,5442-5452,5454-5455,5651-5676,5699-5753,6241-6317,6523-6553,6775,6777,6779-6784,6787-6791,6798-6814,6819,6823-6828,6833-7149,7509-7510,7554-7643,7648,7650,7655-7659,7666,7671,7676-7677,7688,7691-7709,7714,8540-8597,8754-8818,8952-9047
+crates/admin-ui/web/src/lib/api-key-scopes.ts
+  s_1864c803a90a0e::t_71bb96087cdad5 1-89
+crates/admin-ui/web/src/routeTree.gen.ts
+  s_1864c803a90a0e::t_c9e4cdc0e1e563 22,35,38,98-102,163-167,180-184,240,251,254,277,288,291,315,326,329,354,365,368,391,402,405,428,439,442,466,477,480,565-571,656-662,677-683,754,765,768
+crates/admin-ui/web/src/routes/-auth-routing.ts
+  s_1864c803a90a0e::t_859b5f86927909 13,56-57,60,81-85,87-89
+crates/admin-ui/web/src/routes/account/-authorized-mcp-clients.tsx
+  s_1864c803a90a0e::t_3aaae1269b6fd6 1-207
+crates/admin-ui/web/src/routes/account/connections.tsx
+  s_1864c803a90a0e::t_49903e14feb2c7 1-2,12,18-19,21-22,25-26,31,34,36-42,49,52,58-59,62-63,65-78,90,116-118,127-128,143-145,155-157,196-197,202-242,248,255,261
+crates/admin-ui/web/src/routes/api-keys.tsx
+  s_1864c803a90a0e::t_e30a21c56ccb09 24,74,77,90,98,101,105,114
+crates/admin-ui/web/src/routes/api-keys/-scope-fields.tsx
+  s_1864c803a90a0e::t_4f921b118c615d 1-186
+crates/admin-ui/web/src/routes/api-keys/-use-api-keys-page.ts
+  s_1864c803a90a0e::t_afe2ce0b80fc52 10,20-28,52-53,74,78,84-90,92-96,101-102,131,150-151,174,183,241-244,289,312,314-322,324-331,336-342,405,423,425
+crates/admin-ui/web/src/routes/mcp/-access-tab.tsx
+  s_1864c803a90a0e::t_8fe4ca1eb72f4d 25,30,66,72,170,190,354-355,396-406
+crates/admin-ui/web/src/routes/mcp/-components.tsx
+  s_1864c803a90a0e::t_7f027cf71402e4 20,32,44-45,50,56-63,132,141,216,236,243,271,306-319,321,342,350-434,839-850,891-893,895-898,903-925
+crates/admin-ui/web/src/routes/mcp/-oauth-discovery.tsx
+  s_1864c803a90a0e::t_a8afe3b3e89d49 1-140
+crates/admin-ui/web/src/routes/mcp/-server-forms.ts
+  s_1864c803a90a0e::t_c31ae032bac53f 19,44,72,85,103,119
+crates/admin-ui/web/src/routes/mcp/-servers-tab.tsx
+  s_1864c803a90a0e::t_2ef20c57666d95 4,77,79,85,465-467,476,501,505-520,652,662-758
+crates/admin-ui/web/src/routes/mcp/-tag-rules.tsx
+  s_1864c803a90a0e::t_6009c2f58fc1de 1-368
+crates/admin-ui/web/src/routes/mcp/-tool-diff.ts
+  s_1864c803a90a0e::t_f114586789eabe 1-117
+crates/admin-ui/web/src/routes/mcp/-tool-policy.tsx
+  s_1864c803a90a0e::t_358a6bd51080ae 1-203
+crates/admin-ui/web/src/routes/mcp/-tool-reviews.tsx
+  s_1864c803a90a0e::t_2cbc961c590738 1-335
+crates/admin-ui/web/src/routes/mcp/-tool-tags.ts
+  s_1864c803a90a0e::t_38b9acb346c65c 1-67
+crates/admin-ui/web/src/routes/mcp/index.tsx
+  s_1864c803a90a0e::t_cf829ecc57a45d 12,33-43,49,95
+crates/admin-ui/web/src/routes/oauth/consent.tsx
+  s_1864c803a90a0e::t_8eb391138dba7f 1-194
+crates/admin-ui/web/src/routes/observability/audit-log.tsx
+  s_1864c803a90a0e::t_8336ec9cb7a706 1-61
+crates/admin-ui/web/src/routes/observability/mcp-invocations.tsx
+  s_1864c803a90a0e::t_c098e1f32b0fbe 1-8,58,148-157,163,201-419,433-441,655
+crates/admin-ui/web/src/routes/rate-limits.tsx
+  s_1864c803a90a0e::t_602dab67bf5ec1 1-299
+crates/admin-ui/web/src/routes/rate-limits/-policy-dialog.tsx
+  s_1864c803a90a0e::t_253b096914d424 1-343
+crates/admin-ui/web/src/routes/rate-limits/-policy-model.ts
+  s_1864c803a90a0e::t_dbec447feea3e1 1-142
+crates/admin-ui/web/src/server/admin-data.functions.ts
+  s_1864c803a90a0e::t_e149226476974e 14-17,43-44,76,79-82,89,192-208,339-370,549-565,601-660,725-743,1067-1149
+crates/admin-ui/web/src/server/admin-data.server.test.ts
+  s_1864c803a90a0e::t_b4647132d47da7 29,629,670,780-795
+crates/admin-ui/web/src/server/admin-data.server.ts
+  s_1864c803a90a0e::t_69ccca2c3064d9 20-22,25-26,46-48,57-60,63,196-208,455-474,585-595,743-785,1097-1132
+crates/admin-ui/web/src/server/gateway-client.server.test.ts
+  s_1864c803a90a0e::t_ca1c6b84ecf3c6 121-139
+crates/admin-ui/web/src/server/gateway-client.server.ts
+  s_1864c803a90a0e::t_8554686d0ecb1c 106-124
+crates/admin-ui/web/src/server/mcp-policy-data.functions.ts
+  s_1864c803a90a0e::t_b5a3329b646556 1-57
+crates/admin-ui/web/src/server/mcp-policy-data.server.ts
+  s_1864c803a90a0e::t_e9d373d22cbfbe 1-104
+crates/admin-ui/web/src/test/auth-routing.test.ts
+  s_1864c803a90a0e::t_e8703c52133c53 76-82
+crates/admin-ui/web/src/test/routes/account-connections-route.test.tsx
+  s_1864c803a90a0e::t_8e45dffdd1e8ae 1-233
+crates/admin-ui/web/src/test/routes/agent-sessions-route.test.tsx
+  s_1864c803a90a0e::t_51c2bb8ee35575 556-558,723-724
+crates/admin-ui/web/src/test/routes/api-keys-route.test.tsx
+  s_1864c803a90a0e::t_9ba4cceb377e28 26,47,110-114,148,235-236,300-301,306-464
+crates/admin-ui/web/src/test/routes/audit-log-route.test.tsx
+  s_1864c803a90a0e::t_5955b4462b8cc4 1-200
+crates/admin-ui/web/src/test/routes/auth-routing.test.ts
+  s_1864c803a90a0e::t_6e911f0c45b076 77-83
+crates/admin-ui/web/src/test/routes/authorized-mcp-clients.test.tsx
+  s_1864c803a90a0e::t_047e78ab3adb6f 1-177
+crates/admin-ui/web/src/test/routes/mcp-access-route.test.tsx
+  s_1864c803a90a0e::t_79ab956c7d2be4 1,4-10,17-19,41-46,66,92-104,116,151-153,160-162,169-171,184-279
+crates/admin-ui/web/src/test/routes/mcp-invocations-route.test.tsx
+  s_1864c803a90a0e::t_75a334249f3c0c 39,98,110,142,144,147,172,174
+crates/admin-ui/web/src/test/routes/mcp-servers-route.test.tsx
+  s_1864c803a90a0e::t_28816cefb6736f 3,16-18,44-45,55-60,80,88,91-114,143,186-192,287-420,536-537,551-626
+crates/admin-ui/web/src/test/routes/mcp-tool-policy.test.tsx
+  s_1864c803a90a0e::t_5d2e123c4fe8f4 1-109
+crates/admin-ui/web/src/test/routes/mcp-tool-reviews.test.tsx
+  s_1864c803a90a0e::t_4f1681eeaf863d 1-237
+crates/admin-ui/web/src/test/routes/mcp-toolsets-route.test.tsx
+  s_1864c803a90a0e::t_ccecef14ebae39 62,95,99-105,108-124
+crates/admin-ui/web/src/test/routes/oauth-consent-route.test.tsx
+  s_1864c803a90a0e::t_aeec59e080ac82 1-175
+crates/admin-ui/web/src/test/routes/rate-limits-route.test.tsx
+  s_1864c803a90a0e::t_ab867f9fc8172c 1-271
+crates/admin-ui/web/src/test/routes/request-logs-route.test.tsx
+  s_1864c803a90a0e::t_f7e1663974f2c0 131-139,328,330,333,409,411,420-458,534-537,556-557,601-604,616-617
+crates/admin-ui/web/src/test/setup.ts
+  s_1864c803a90a0e::t_aa8aeed7e9e085 2-31
+crates/admin-ui/web/src/types/live-api.ts
+  s_1864c803a90a0e::t_9c2a2dfb7e6163 15,22-23,64-70,158-161,177,206-212,246-254
+crates/agent-session-analysis/Cargo.toml
+  s_1864c803a90a0e::t_7ed1b26945f56c 3
+crates/gateway-client-config/Cargo.toml
+  s_1864c803a90a0e::t_305b35fb193318 3
+crates/gateway-client-ip/Cargo.toml
+  s_1864c803a90a0e::t_0b4c399ad8f3d6 1-10
+crates/gateway-client-ip/src/lib.rs
+  s_1864c803a90a0e::t_3640263f00a741 1-248
+crates/gateway-core/Cargo.toml
+  s_1864c803a90a0e::t_0eea2ba665e660 3,20-22
+crates/gateway-core/src/audit.rs
+  s_1864c803a90a0e::t_a120147e124741 1-230
+crates/gateway-core/src/auth.rs
+  s_1864c803a90a0e::t_be4c1b63ab6a04 1,4-5,7,15-32,35-36,45-67,71-137,164-169,172-174,217-226
+crates/gateway-core/src/budgets.rs
+  s_1864c803a90a0e::t_ca7306d690ae57 34-90,397-409,468,522-534
+crates/gateway-core/src/credential_scopes.rs
+  s_1864c803a90a0e::t_fce9607da3cc0c 1-210
+crates/gateway-core/src/domain.rs
+  s_1864c803a90a0e::t_b1155a67ba214e 8-9,458-464,496,502-509,520,722-739,1660-1662,1676-1677,1690,1701-1708,1717-1734,1897,2062-2072,2085-2088,2105-2108,2236-2242,2246-2249,2275,2825-2856,3039-3042,3054,3059-3064
+crates/gateway-core/src/error.rs
+  s_1864c803a90a0e::t_2e00b4d09aeb6e 4-7,41-52,132-133,135-137,141-142,145,159-160,191-194,198-205,248,295-302,333,347-395,405-413
+crates/gateway-core/src/lib.rs
+  s_1864c803a90a0e::t_1a6359883a02c3 2,6,10-12,14,40-44,46-47,58-63,66-74,81-82,85-87,94-100,135-150,154,157-179,181,186-187,190-195,218
+crates/gateway-core/src/mcp_client_oauth.rs
+  s_1864c803a90a0e::t_7ed38cd601d1f1 1-603
+crates/gateway-core/src/mcp_tool_policy.rs
+  s_1864c803a90a0e::t_707843686148a4 1-647
+crates/gateway-core/src/mcp_tool_review.rs
+  s_1864c803a90a0e::t_94788e22d24e97 1-622
+crates/gateway-core/src/protocol/core.rs
+  s_1864c803a90a0e::t_0b99ce4982d956 365
+crates/gateway-core/src/protocol/decisions/mod.rs
+  s_1864c803a90a0e::t_c07dabbe6159b7 1-629
+crates/gateway-core/src/protocol/decisions/openai.rs
+  s_1864c803a90a0e::t_7df31cd538b7bb 1-1145
+crates/gateway-core/src/protocol/decisions/system_one.rs
+  s_1864c803a90a0e::t_2d0e6d63ab73a3 1-728
+crates/gateway-core/src/protocol/mod.rs
+  s_1864c803a90a0e::t_3ce04b57ea3754 3
+crates/gateway-core/src/protocol/translate.rs
+  s_1864c803a90a0e::t_b74d7461c60d38 149,152-153
+crates/gateway-core/src/rate_limits.rs
+  s_1864c803a90a0e::t_8ac4c5ec017ba9 1-542
+crates/gateway-core/src/traits.rs
+  s_1864c803a90a0e::t_bc0a96d7abcbd0 24,34-50,58-65,135-137,143-152,196,200,202-204,210-216,465-473,494-501,1045,1049,1051-1052,1057,1075-1120,1130-1135,1141,1145,1153,1159,1166-1167,1171,1173-1174,1182,1194,1197-1214,1226-1265,1304-1306,1310-1316,1344-1345,1350,1371-1390,1495-1574,1667-1682,1687
+crates/gateway-guardrails/Cargo.toml
+  s_1864c803a90a0e::t_66a3256b0db924 3
+crates/gateway-guardrails/src/evaluation.rs
+  s_1864c803a90a0e::t_55eb4dbc1851b1 8,131,149,157-175,192,194-202,218,254,273,305,323,345,368,377,408-473,479,481,593-719
+crates/gateway-guardrails/src/lib.rs
+  s_1864c803a90a0e::t_aa6aab6b3e8bbd 17
+crates/gateway-mcp/Cargo.toml
+  s_1864c803a90a0e::t_8f12b3b73d0541 3
+crates/gateway-mcp/src/lib.rs
+  s_1864c803a90a0e::t_f2947694178e2d 19-22,165,170-171,175-180,186,189-190,194-235,241,258-259,263-268,294,298-302,347,351-355,401-404,406,664-691,694,697-698,705-738,740-743,749-752,833-852,982,1070-1199,1206,1220,1226
+crates/gateway-mcp/src/server.rs
+  s_1864c803a90a0e::t_22be954cf8990f 270
+crates/gateway-mcp/tests/streamable_http.rs
+  s_1864c803a90a0e::t_1f8c2bbbc34611 1-5,14-16,179-235
+crates/gateway-providers/Cargo.toml
+  s_1864c803a90a0e::t_bdda479766d419 3
+crates/gateway-providers/src/anthropic/count_tokens.rs
+  s_1864c803a90a0e::t_97e758e9d20624 1-213
+crates/gateway-providers/src/anthropic/mod.rs
+  s_1864c803a90a0e::t_ed65127928b666 2,14-16
+crates/gateway-providers/src/anthropic_compat.rs
+  s_1864c803a90a0e::t_3652c0c3fdc173 13-15,17,71-78,88,90,92,100-108,259-282
+crates/gateway-providers/src/bedrock/mod.rs
+  s_1864c803a90a0e::t_d272efad069030 12,28-31,278-333,671-702,771-786
+crates/gateway-providers/src/bedrock/tests/count_tokens.rs
+  s_1864c803a90a0e::t_7370da584a784a 1-161
+crates/gateway-providers/src/bedrock/tests/mod.rs
+  s_1864c803a90a0e::t_42732d65435de3 22
+crates/gateway-providers/src/decisions.rs
+  s_1864c803a90a0e::t_e535474811a916 3-7,12-13,17-20,22,26-33,49-52,90-96,98-111,113-125,127-130,133-135,138-156,158-176,179-182,184-190,192-195,198-199,204-205,208-212,214-229
+crates/gateway-providers/src/openai_compat.rs
+  s_1864c803a90a0e::t_a227081506a4c5 9-10,827-828,833-834
+crates/gateway-providers/src/openai_compat/decisions.rs
+  s_1864c803a90a0e::t_4ebeccbc3fd0de 1-4,10,17,20-22,25,27,32-33,37,42,53-73,75,79-82,86-91,94-99,124-125,134,179-180,195-196,200-223,283,287-288,349-353,383-560
+crates/gateway-providers/src/typesafe.rs
+  s_1864c803a90a0e::t_151c7c914b0dbd 6-7,13,62,175,184,221,273-277,297,310,314-315
+crates/gateway-providers/src/vertex/anthropic.rs
+  s_1864c803a90a0e::t_85279c02bc2b94 6-8,39-63
+crates/gateway-providers/src/vertex/mod.rs
+  s_1864c803a90a0e::t_9f101b7b8e661a 14-16,36,295-316
+crates/gateway-providers/src/vertex/tests/count_tokens.rs
+  s_1864c803a90a0e::t_dff29ea83bd85a 1-71
+crates/gateway-providers/src/vertex/tests/mod.rs
+  s_1864c803a90a0e::t_08762efa18bf38 37
+crates/gateway-service/Cargo.toml
+  s_1864c803a90a0e::t_f0db9d6c61da43 3,13,17,25
+crates/gateway-service/data/pricing_catalog_fallback.json
+  s_1864c803a90a0e::t_bbf159aa871a9c 4-5,11641-11690,16281,17411-17457,17987-18036,18423-18471,20711-20758,21668-21717,22893,23043,23115,23185,23236,23399,23468,23757,23817,23878,24245-24246,24255,24557,24566-24568,24576,24603,24613-24615,24650,24698,24744,24791,24801-24802,24881,25191,25327,25375,25423,25477,25525,25935,25937-25939,25962-26013,26030,26319-26321,26738-26740,26746,26769,26781-26783,26913-26949,27480-27535,27551-27552,27559-27561,27583-27585,27611-27613,27635-27639,27646,27654,27661-27663,27678-27679,27908-27909,27918,28020-28021,28029,28907-28990,29240,29250-29252,29523,29660,29709,29758,29807,30006-30091,31945-31948,31952-31955,31963-31966,32015-32018,32022-32025,32033-32036,34019,34676,34678,34686,34992-34994,35002,35035-35037,35282-35284,35292,35325-35327,35335,35701,35711-35713,36412-36489,36602,36608,37228-37232,38460-38462,38470,38579,38588-38590,38636,38680,38682,38906,39070,39080-39081,39118,39130,39165,39175-39177,39278,39292-39294,39332,39342-39344,39693-39730,39822,39824,39870-39872,39880
+crates/gateway-service/src/admin_api_keys.rs
+  s_1864c803a90a0e::t_25504c63da4c62 7-11,17-24,40-41,60,100-103,112-128,137-139,149,204,338,342-343,347,397-399,424,428,455-461,471-472,478-479,482-484,497-498,500,536-540,547-548,578-579,582-598,600-602,605-618,735,986
+crates/gateway-service/src/admin_api_keys/scopes.rs
+  s_1864c803a90a0e::t_3564dfd716ae2f 1-129
+crates/gateway-service/src/admin_audit.rs
+  s_1864c803a90a0e::t_159b53830a2e04 1-1554
+crates/gateway-service/src/agent_analysis/tests.rs
+  s_1864c803a90a0e::t_315a3b1c69e81b 850-851
+crates/gateway-service/src/authenticator.rs
+  s_1864c803a90a0e::t_cbe82e416c0d3a 8,53,64-112,114
+crates/gateway-service/src/budget_guard.rs
+  s_1864c803a90a0e::t_c62ea15fc3bc01 4-5,27,36-45,157-158,161,230,365-373,403-410,492-493,507-508,701-738
+crates/gateway-service/src/budget_scopes.rs
+  s_1864c803a90a0e::t_2b28f73c9482a6 117-118
+crates/gateway-service/src/effective_route_metadata.rs
+  s_1864c803a90a0e::t_2aa171c4e831f2 12,90-102,104-108,211
+crates/gateway-service/src/lib.rs
+  s_1864c803a90a0e::t_118608605d673a 2,16,21,24,29,33,44-52,88,95-100,110-117,123-125,127-129,144-147
+crates/gateway-service/src/mcp_access.rs
+  s_1864c803a90a0e::t_808e63b751945c 4-7,29,34-48,58-62,91-202,207-215,263-297
+crates/gateway-service/src/mcp_catalog.rs
+  s_1864c803a90a0e::t_68f04c7922ee13 5,9,85-86,88-89,99-100,103-106,183,191,194-195,211-215,221-223,226-248,337,346,348,371
+crates/gateway-service/src/mcp_client_oauth.rs
+  s_1864c803a90a0e::t_e0fcd5b50633b8 1-88
+crates/gateway-service/src/mcp_client_oauth/authorization.rs
+  s_1864c803a90a0e::t_e12f2aa4ce824a 1-488
+crates/gateway-service/src/mcp_client_oauth/authorized_clients.rs
+  s_1864c803a90a0e::t_a5606f45e8608b 1-76
+crates/gateway-service/src/mcp_client_oauth/error.rs
+  s_1864c803a90a0e::t_2d0e2f1d9236cf 1-94
+crates/gateway-service/src/mcp_client_oauth/metadata_document.rs
+  s_1864c803a90a0e::t_450222437bd0ec 1-878
+crates/gateway-service/src/mcp_client_oauth/metadata_document/tests.rs
+  s_1864c803a90a0e::t_46319204f16e39 1-476
+crates/gateway-service/src/mcp_client_oauth/redirect.rs
+  s_1864c803a90a0e::t_a9b749c2d55a2a 1-124
+crates/gateway-service/src/mcp_client_oauth/registration.rs
+  s_1864c803a90a0e::t_ff387f2c6c0a12 1-288
+crates/gateway-service/src/mcp_client_oauth/secrets.rs
+  s_1864c803a90a0e::t_3743686f0cfacd 1-164
+crates/gateway-service/src/mcp_client_oauth/settings.rs
+  s_1864c803a90a0e::t_337e61ae7ddb54 1-304
+crates/gateway-service/src/mcp_client_oauth/token.rs
+  s_1864c803a90a0e::t_3172b5da1b7d67 1-500
+crates/gateway-service/src/mcp_client_oauth/validation.rs
+  s_1864c803a90a0e::t_59c8119316172d 1-70
+crates/gateway-service/src/mcp_credentials.rs
+  s_1864c803a90a0e::t_b5b9ef7942abfb 181-182,186-192,248-252,260-266,291,318-323,330-331,574,578-589,771-772,835-836,882-883,918-919,960-961,1050-1056,1103,1132-1153,1253
+crates/gateway-service/src/mcp_gateway.rs
+  s_1864c803a90a0e::t_486666532a37aa 12-13,15,21-22,55-60,106-111,184-232,264,272,324
+crates/gateway-service/src/mcp_invocation_logging.rs
+  s_1864c803a90a0e::t_f104e130349717 70-71,79-80,128,147-149,212-234
+crates/gateway-service/src/mcp_oauth.rs
+  s_1864c803a90a0e::t_b021089fecd011 7,9-11,19-28,33-37,39-46,49-86,88,91-223,230-233,238-240,246-247,254-255,257-260,274,278-279,284-296,302-307,319-591,607-608,613-633,706-719,721-732,734-736,740,742-743,772-774,778-781,792-799,806-844,943-946,988-991,993-1000,1013-1015,1020,1023,1033-1038,1044-1051,1061,1063-1064,1089-1100,1118
+crates/gateway-service/src/mcp_oauth/tests.rs
+  s_1864c803a90a0e::t_18ab623c582d2a 1-270
+crates/gateway-service/src/mcp_oauth_discovery.rs
+  s_1864c803a90a0e::t_f718c4a029eb4a 1-692
+crates/gateway-service/src/mcp_oauth_discovery/tests.rs
+  s_1864c803a90a0e::t_9bf6e64e8027e5 1-443
+crates/gateway-service/src/mcp_registry.rs
+  s_1864c803a90a0e::t_826bd63a695911 11,23,25-27,62-63,74-75,106-107,109,164,201,207-208,213-214,231-233,239,243,265-275,288,303,309-313,323,348-352,376,393,484,502,755,780-828,860,868
+crates/gateway-service/src/mcp_token_overhead.rs
+  s_1864c803a90a0e::t_590899cbd12096 6,12,163-168,180-181,183,187-198,203-271
+crates/gateway-service/src/mcp_tool_policy.rs
+  s_1864c803a90a0e::t_dddd95dd835529 1-269
+crates/gateway-service/src/mcp_upstream_auth.rs
+  s_1864c803a90a0e::t_7a3a709c2b18dc 7,12-111,115-116,119-120,122-124,135-139,152,160-166,178-233,239,242-243,248-343,411-422,441,464-474,487-576,620-629,661,850-851,893-899,936-1150,1175
+crates/gateway-service/src/model_access.rs
+  s_1864c803a90a0e::t_dd3cb4538be25c 663-664,1084-1085,1103-1104
+crates/gateway-service/src/model_metadata/catalog.rs
+  s_1864c803a90a0e::t_5a3ca412085e7c 9,80-85
+crates/gateway-service/src/model_metadata/tests.rs
+  s_1864c803a90a0e::t_a69dfe81aa3fac 87-105
+crates/gateway-service/src/outbound_fetch.rs
+  s_1864c803a90a0e::t_c9f58ad3954cca 1-561
+crates/gateway-service/src/outbound_fetch/tests.rs
+  s_1864c803a90a0e::t_0b20580b212926 1-354
+crates/gateway-service/src/pricing_catalog.rs
+  s_1864c803a90a0e::t_c57d00e30dd7d2 24-25,39-40,43-46,141-150,154,262-268,485-513
+crates/gateway-service/src/pricing_catalog/target.rs
+  s_1864c803a90a0e::t_51d1fc4d4ce4f7 141,145-151,154-156
+crates/gateway-service/src/pricing_catalog/tests/resolution.rs
+  s_1864c803a90a0e::t_c28b2c88c8b059 253,255-256,259-260,263-264,267-268,271-272,274-284,286-338
+crates/gateway-service/src/pricing_catalog/tests/support.rs
+  s_1864c803a90a0e::t_fad6a33d0e2c08 36-38,74,141
+crates/gateway-service/src/rate_limits.rs
+  s_1864c803a90a0e::t_ec2beb9cabf38d 1-1143
+crates/gateway-service/src/rate_limits/tests.rs
+  s_1864c803a90a0e::t_0eb7ec0143f4e2 1-1299
+crates/gateway-service/src/request_logging.rs
+  s_1864c803a90a0e::t_d456f806387272 4-8,261,455-457,459,465,493
+crates/gateway-service/src/request_logging/tests/mod.rs
+  s_1864c803a90a0e::t_ac4f5a68857ef6 211-212,226-227
+crates/gateway-service/src/request_logging/tests/persistence.rs
+  s_1864c803a90a0e::t_d1396f051eba7a 120-121,305,310,777-778
+crates/gateway-service/src/review_agent.rs
+  s_1864c803a90a0e::t_ff01db317bf81c 89,109-110,115-121
+crates/gateway-service/src/routing/tests.rs
+  s_1864c803a90a0e::t_d0483c35566cee 175-176
+crates/gateway-service/src/service.rs
+  s_1864c803a90a0e::t_9301f0c81d6d90 7-8,23-25,27,108,186,198-216,251-253,258-259,261-275,278,283-284,286-300,454,520,526,537,542,807-819,1234-1246,1855-1862,2275-2283,2316-2323,2635-2636,3141-3197
+crates/gateway-skills/Cargo.toml
+  s_1864c803a90a0e::t_64c84e07ac6511 3
+crates/gateway-store/Cargo.toml
+  s_1864c803a90a0e::t_1dff2254c9f2b0 3
+crates/gateway-store/migrations/V57__mcp_invocation_method.sql
+  s_1864c803a90a0e::t_44ffda7fa8e29b 1-17
+crates/gateway-store/migrations/V58__mcp_tool_metadata.sql
+  s_1864c803a90a0e::t_e034a40516af03 1-8
+crates/gateway-store/migrations/V59__mcp_oauth_clients.sql
+  s_1864c803a90a0e::t_4c96a77ad3df9a 1-19
+crates/gateway-store/migrations/V60__rate_limits.sql
+  s_1864c803a90a0e::t_20026b2be36150 1-42
+crates/gateway-store/migrations/V61__admin_audit_log.sql
+  s_1864c803a90a0e::t_201bac4e47f333 1-44
+crates/gateway-store/migrations/V62__gateway_oauth_authorization.sql
+  s_1864c803a90a0e::t_6cd59b67c2840a 1-89
+crates/gateway-store/migrations/V63__mcp_aggregate_session_oauth_grants.sql
+  s_1864c803a90a0e::t_9da4de0621a27f 1-53
+crates/gateway-store/migrations/V64__gateway_oauth_cleanup_indexes.sql
+  s_1864c803a90a0e::t_3ab1c8187d89d1 1-57
+crates/gateway-store/migrations/V65__api_key_scopes.sql
+  s_1864c803a90a0e::t_d88121d3d574d0 1-5
+crates/gateway-store/migrations/V66__gateway_oauth_metadata_document_clients.sql
+  s_1864c803a90a0e::t_c132f5d7aa02ae 1-53
+crates/gateway-store/migrations/V67__mcp_tool_tag_rules.sql
+  s_1864c803a90a0e::t_4432f0821513b1 1-27
+crates/gateway-store/migrations/V68__mcp_tool_versions.sql
+  s_1864c803a90a0e::t_a93e1e7797b9d7 1-49
+crates/gateway-store/migrations/V69__mcp_tool_effective_tags.sql
+  s_1864c803a90a0e::t_aa29274a7f8f2d 1-49
+crates/gateway-store/migrations/postgres/V57__mcp_invocation_method.sql
+  s_1864c803a90a0e::t_603806dfde7c40 1-17
+crates/gateway-store/migrations/postgres/V58__mcp_tool_metadata.sql
+  s_1864c803a90a0e::t_50d8a3f8b33038 1-8
+crates/gateway-store/migrations/postgres/V59__mcp_oauth_clients.sql
+  s_1864c803a90a0e::t_402264c617be7e 1-19
+crates/gateway-store/migrations/postgres/V60__rate_limits.sql
+  s_1864c803a90a0e::t_d8b3860bf365ab 1-42
+crates/gateway-store/migrations/postgres/V61__admin_audit_log.sql
+  s_1864c803a90a0e::t_0d8e868cce159f 1-44
+crates/gateway-store/migrations/postgres/V62__gateway_oauth_authorization.sql
+  s_1864c803a90a0e::t_304c1b4eef9f53 1-89
+crates/gateway-store/migrations/postgres/V63__mcp_aggregate_session_oauth_grants.sql
+  s_1864c803a90a0e::t_c5eb6c9bce92f0 1-15
+crates/gateway-store/migrations/postgres/V64__gateway_oauth_cleanup_indexes.sql
+  s_1864c803a90a0e::t_2b76d4fe8f6eb5 1-57
+crates/gateway-store/migrations/postgres/V65__api_key_scopes.sql
+  s_1864c803a90a0e::t_20c90c7f551d46 1-5
+crates/gateway-store/migrations/postgres/V66__gateway_oauth_metadata_document_clients.sql
+  s_1864c803a90a0e::t_f0af60839e563d 1-22
+crates/gateway-store/migrations/postgres/V67__mcp_tool_tag_rules.sql
+  s_1864c803a90a0e::t_6bc5776e65a2df 1-27
+crates/gateway-store/migrations/postgres/V68__mcp_tool_versions.sql
+  s_1864c803a90a0e::t_dc8b64857a3830 1-49
+crates/gateway-store/migrations/postgres/V69__mcp_tool_effective_tags.sql
+  s_1864c803a90a0e::t_2607663e592994 1-59
+crates/gateway-store/src/agent_analysis_tests.rs
+  s_1864c803a90a0e::t_26169f77e0d25a 275-276
+crates/gateway-store/src/any_store_audit_logs.rs
+  s_1864c803a90a0e::t_67b3e104e380c0 1-30
+crates/gateway-store/src/any_store_gateway_oauth.rs
+  s_1864c803a90a0e::t_a176d361e20a2d 1-201
+crates/gateway-store/src/any_store_mcp_access.rs
+  s_1864c803a90a0e::t_1fcd193fcfa1ec 5-7,26-35,49,72,100,114,152-171,176,181,186,192-202,240-310
+crates/gateway-store/src/any_store_mcp_credentials.rs
+  s_1864c803a90a0e::t_85e5f55a109d36 3,17-23,130,219-257
+crates/gateway-store/src/any_store_mcp_registry.rs
+  s_1864c803a90a0e::t_364ab912016824 57,68,130-224
+crates/gateway-store/src/any_store_rate_limits.rs
+  s_1864c803a90a0e::t_8f398a4a38d66a 1-98
+crates/gateway-store/src/any_store_review_agent.rs
+  s_1864c803a90a0e::t_8895dd6344d5aa 111,123-129
+crates/gateway-store/src/api_key_scope_tests.rs
+  s_1864c803a90a0e::t_5200c3e499d514 1-139
+crates/gateway-store/src/audit_logs.rs
+  s_1864c803a90a0e::t_b3b33190f43ebf 1-347
+crates/gateway-store/src/budget_reconciliation_tests.rs
+  s_1864c803a90a0e::t_fc57f9324f069e 6,27,48-49,114-120,125-130,546-656
+crates/gateway-store/src/change_report_tests.rs
+  s_1864c803a90a0e::t_355cbd6be9fa71 1-242
+crates/gateway-store/src/gateway_oauth_tests.rs
+  s_1864c803a90a0e::t_01c987d58bbab5 1-1225
+crates/gateway-store/src/lib.rs
+  s_1864c803a90a0e::t_9e31ed6efe4b0e 7,9,17,21,25-26,31,57-64,68-70,76-78,444-455,1038,1046-1055,1284,1286,1371,1401,1422-1434,1463,1488,1491-1492,1521,1533,1575,1609,1612-1613,1650,1654-1663,1675-1846,1867,1990-1991,2111-2120,2180-2181,2220-2221,2276-2281,2365-2433,3107-3216,4410,4948-4971,6199-6200,6203-6204,6234,6238-6239,6310-6322,9180-9236,10422-10458
+crates/gateway-store/src/libsql_store/agent_analysis/queue.rs
+  s_1864c803a90a0e::t_84ee58429124fb 22
+crates/gateway-store/src/libsql_store/agent_analysis/sessions.rs
+  s_1864c803a90a0e::t_16470d5fa26405 164,338
+crates/gateway-store/src/libsql_store/api_keys.rs
+  s_1864c803a90a0e::t_8fcb10114d6b8c 2-8,16-18,21-22,48-50,55-56,80-82,86-87,108-123,137-138,143-146,149-150,247-250,252-293,325-367,403-405,409-410
+crates/gateway-store/src/libsql_store/audit_logs.rs
+  s_1864c803a90a0e::t_e93e26d7430da3 1-339
+crates/gateway-store/src/libsql_store/batches.rs
+  s_1864c803a90a0e::t_e41bb3e053bb31 140,339,460,530
+crates/gateway-store/src/libsql_store/budget_alerts.rs
+  s_1864c803a90a0e::t_ccadccc4bd854a 137,334
+crates/gateway-store/src/libsql_store/budget_increases.rs
+  s_1864c803a90a0e::t_699d961e4e4389 69
+crates/gateway-store/src/libsql_store/budgets.rs
+  s_1864c803a90a0e::t_21b0b3fd4a6abb 3,65,157,159-197,285-295,297-323,1725-1836
+crates/gateway-store/src/libsql_store/gateway_oauth.rs
+  s_1864c803a90a0e::t_c0240916490000 1-781
+crates/gateway-store/src/libsql_store/identity.rs
+  s_1864c803a90a0e::t_f9d0b2f19d8306 3-5,323-328,332-335,347-352,416-418,425,427-429,431-435,437,440-448,452-455,457-473,476-477,482-483,485,490-492,498-502,945-947,954,960,968,970-971,978,984,1052-1053,1100-1102,1108,1110-1118,1120,1128,1130-1131,1138,1144,1147-1148,1153-1154,1172,1204-1225,1227-1229,1236,1241,1244-1245,1250-1253,1256-1258,1260-1261,1264,1269-1275,1278-1279,1287-1288,1308,1315-1341,1343,1403-1405,1413,1424,1461-1463,1476,1535,1538-1544,1550-1552,1554-1558,1562-1592,1621-1643,1649-1651,1658,1668,1784-1795,1803-1805,1817-1829,1919-1921,1929,1939,1942-1944,1951,2041-2043,2051,2061,2064-2066,2073,2076-2078,2085,2092-2094,2105,2112-2114,2125,2380-2388
+crates/gateway-store/src/libsql_store/mcp_access.rs
+  s_1864c803a90a0e::t_58ee7299b9ebf9 1,3-7,9,11-14,17-28,104-105,112,173-176,183,187,190,200-208,212-230,252-258,264-273,284-288,294-311,314,316-331,360-366,391-392,394-397,404,410,412-416,423,436-442,452-455,457,462,474-480,511-530,535,537-546,561-585,591-597,606-615,646,663-691,693-717,719-755,758-774,777-799,803-809
+crates/gateway-store/src/libsql_store/mcp_access/resolution.rs
+  s_1864c803a90a0e::t_8cd24fe7219819 1-439
+crates/gateway-store/src/libsql_store/mcp_aggregate_sessions.rs
+  s_1864c803a90a0e::t_addb9463d2feaa 4,8-9,22-26,77-79,84,92
+crates/gateway-store/src/libsql_store/mcp_credentials.rs
+  s_1864c803a90a0e::t_679def8b5abdd5 61-83,86,98-106,114-120,126-132,135-163,172-174,199-205,207-209,217-219,242-248,380-381,383-391,399-403,475-551
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_1864c803a90a0e::t_930b14e9ddf668 2-9,11-18,72,94-96,106-155,165-176,196,201,207,270-275,278-283,295,300-305,311,313-321,326-327,339,371-372,374-377,384-388,390-398,403-404,406-407,442,466-469,477-481,511,553-746
+crates/gateway-store/src/libsql_store/mcp_registry/tool_versions.rs
+  s_1864c803a90a0e::t_4af7da3b365c2f 1-560
+crates/gateway-store/src/libsql_store/mcp_tool_invocations.rs
+  s_1864c803a90a0e::t_119bea8df5655a 31,64,66,78,87-88,115-116,179,194,215,229,231,246,286,308-309
+crates/gateway-store/src/libsql_store/mod.rs
+  s_1864c803a90a0e::t_e05ccf0b0b052b 3,9,22,31-32,34,55-62,101-103,109,115-116,126,133,137-194,196-204,338,353,446,455,486,495,503,520,531,556,572,602,605-610,627,631-640,692,736,740,784,788,792,800,808,916
+crates/gateway-store/src/libsql_store/pricing_catalog.rs
+  s_1864c803a90a0e::t_0da8339d7a5b41 205,346-380,399-402,408
+crates/gateway-store/src/libsql_store/rate_limits.rs
+  s_1864c803a90a0e::t_1039f638ea382e 1-375
+crates/gateway-store/src/libsql_store/request_logs.rs
+  s_1864c803a90a0e::t_0347c0f38978c2 258,716-735,778,792,847
+crates/gateway-store/src/libsql_store/review_agent.rs
+  s_1864c803a90a0e::t_7eb6581caac0af 3,300-304,313-315,338-343,349,351-358,369-397,405-418,420-428
+crates/gateway-store/src/libsql_store/routing.rs
+  s_1864c803a90a0e::t_5ed7abe9b49740 16-21
+crates/gateway-store/src/libsql_store/seed.rs
+  s_1864c803a90a0e::t_b9eac855392977 911
+crates/gateway-store/src/libsql_store/skills.rs
+  s_1864c803a90a0e::t_170898e5bc074f 22
+crates/gateway-store/src/libsql_store/support.rs
+  s_1864c803a90a0e::t_8a8798b79aa9b5 39-40,67-70
+crates/gateway-store/src/libsql_store/transaction_tests.rs
+  s_1864c803a90a0e::t_7e7d7abbe7a81c 1-256
+crates/gateway-store/src/mcp_tool_policy.rs
+  s_1864c803a90a0e::t_05f82c7af53454 1-67
+crates/gateway-store/src/mcp_tool_review.rs
+  s_1864c803a90a0e::t_38d7e4f29e2569 1-856
+crates/gateway-store/src/migrate.rs
+  s_1864c803a90a0e::t_4a596177e178f1 12,255-261,263-268,270-272,276,293,303-406
+crates/gateway-store/src/migration_registry.rs
+  s_1864c803a90a0e::t_7acd60bc84a8c0 10-14,16-22,336-430
+crates/gateway-store/src/postgres_store/api_keys.rs
+  s_1864c803a90a0e::t_49de088b75ebe2 2-8,13,15,18-19,32,34,39-40,54,56,60-61,74-75,80-84,99-101,104,192,195-232,261-297,330,332,336-337
+crates/gateway-store/src/postgres_store/audit_logs.rs
+  s_1864c803a90a0e::t_a90e93c745676b 1-148
+crates/gateway-store/src/postgres_store/budgets.rs
+  s_1864c803a90a0e::t_1ae18d02435b67 3,162,164-230,314-324,326-351,356-358,364-365,367-369,1680-1760
+crates/gateway-store/src/postgres_store/gateway_oauth.rs
+  s_1864c803a90a0e::t_bd64ce1eb7a4e1 1-773
+crates/gateway-store/src/postgres_store/identity.rs
+  s_1864c803a90a0e::t_71c4c63389d03a 3-5,278-279,284-287,294,297,357-359,366,368-390,394,401,403-405,408-409,414-415,420-422,427,429-432,816-817,823,832,840,842,848,857,926,972,979,990,998,1000,1006,1015,1018-1019,1024,1031,1072-1075,1081,1090-1092,1094-1096,1103-1104,1106,1109-1110,1117-1120,1123,1125-1126,1129,1134,1136-1142,1145-1146,1154,1162,1182,1200-1206,1208,1259-1260,1267,1277,1312-1313,1327,1381,1384-1390,1395-1397,1400,1402-1403,1406-1432,1459-1478,1484-1485,1491,1500,1607-1619,1627-1628,1641-1654,1734-1735,1742,1751,1754-1755,1760,1840-1841,1848,1857,1860-1861,1866,1869-1870,1875,1882-1883,1895,1902-1903,1915,2127-2135
+crates/gateway-store/src/postgres_store/mcp_access.rs
+  s_1864c803a90a0e::t_378d8c393e86d9 1,3-7,9,11-14,17-28,87-88,95,146,153,157-160,167-186,207-213,219-221,224-225,231,234,240-264,268,275,278-291,320,322-336,359-360,362-365,373,379,381-383,390,399,402-405,415-418,423,431,434-440,464-483,488,490-499,514-537,543-549,557-566,597,608-628,630-640,643,646-669,671-674,677-685,687-690,693-706,708-711,713-721
+crates/gateway-store/src/postgres_store/mcp_access/resolution.rs
+  s_1864c803a90a0e::t_eed1da157b7ec3 1-359
+crates/gateway-store/src/postgres_store/mcp_aggregate_sessions.rs
+  s_1864c803a90a0e::t_4b03cd99e62dfc 4,12-13,17-21,69-71,76,84
+crates/gateway-store/src/postgres_store/mcp_credentials.rs
+  s_1864c803a90a0e::t_2059bb6342065a 57-76,79,88-96,109-115,118-134,144-187,209,212-214,325-326,331-340,406-480
+crates/gateway-store/src/postgres_store/mcp_registry.rs
+  s_1864c803a90a0e::t_2f8368a6465978 2-9,11-18,22,27,33,87,109-110,117,121-167,177-188,257-258,262-267,278-279,282,288,291-308,313-314,326,357-363,365-368,375-386,389,392-394,444-456,466-476,478,547-735
+crates/gateway-store/src/postgres_store/mcp_registry/tool_versions.rs
+  s_1864c803a90a0e::t_61fb497f1071f9 1-496
+crates/gateway-store/src/postgres_store/mcp_tool_invocations.rs
+  s_1864c803a90a0e::t_8353736da1ce1f 29,62,64,85-87,130-131,186,201,214,228,230,245,276,295-296
+crates/gateway-store/src/postgres_store/mod.rs
+  s_1864c803a90a0e::t_e213cadd5b45d4 3,9,22,49-56,240,255,348,357,388,397,405,422,433,458,474,504,507-512,529,533-542,594,638,642,686,690,694,702,710,818
+crates/gateway-store/src/postgres_store/pricing_catalog.rs
+  s_1864c803a90a0e::t_b0aef439c9b944 350-384,401-404,410
+crates/gateway-store/src/postgres_store/rate_limits.rs
+  s_1864c803a90a0e::t_c2e0042cdacc7a 1-309
+crates/gateway-store/src/postgres_store/review_agent.rs
+  s_1864c803a90a0e::t_15a3e2b6389500 3,239-240,249-251,269,272,278,280-302,332,335-348,356-386,392,395-402
+crates/gateway-store/src/postgres_store/seed.rs
+  s_1864c803a90a0e::t_acbc082eb8803c 884
+crates/gateway-store/src/postgres_store/support.rs
+  s_1864c803a90a0e::t_83a96a2ce53e47 31-32,59-62
+crates/gateway-store/src/pricing_sync.rs
+  s_1864c803a90a0e::t_8987df4c538037 421-461,482,523
+crates/gateway-store/src/rate_limit_tests.rs
+  s_1864c803a90a0e::t_c36ac9935989da 1-426
+crates/gateway-store/src/rate_limits.rs
+  s_1864c803a90a0e::t_202a440839ffbd 1-69
+crates/gateway-store/src/seed.rs
+  s_1864c803a90a0e::t_b6cf9591e5695d 929-930
+crates/gateway-store/src/seed/budgets.rs
+  s_1864c803a90a0e::t_0c3ab3d28ade2d 32,38,47-48,54,73,82,91,127-132,135-136
+crates/gateway-store/src/seed/budgets/tests.rs
+  s_1864c803a90a0e::t_f5fe83bb941ef5 74-82,109-116
+crates/gateway-store/src/shared.rs
+  s_1864c803a90a0e::t_8478d144b99aea 212-250
+crates/gateway-store/src/store.rs
+  s_1864c803a90a0e::t_4cb2650739061e 6-7,13-17,48,68,126,131,178,184,200,206,211,222,230,245,255,268-271,274-277,284,290-299,332,356-357,381-383,388,393,447,573,580-587,836-844,886-893,1380-1397,1538,1547,1619,1635,1670,1682,1690,1707,1718,1745,1764,1792,1795-1798,1801,1822,1826-1835,1889,1928,1935,1977,1984,1988,1996,2004,2123
+crates/gateway-store/src/tests/mcp_access.rs
+  s_1864c803a90a0e::t_c75c0c43180229 1-241
+crates/gateway-store/src/tests/mcp_tag_rules.rs
+  s_1864c803a90a0e::t_3943c0c1913042 1-592
+crates/gateway-store/src/tests/mcp_tool_versions.rs
+  s_1864c803a90a0e::t_e8c523c91fc4d2 1-1011
+crates/gateway/Cargo.toml
+  s_1864c803a90a0e::t_1fc6ff64b4d0b8 3,16,29
+crates/gateway/mise.toml
+  s_1864c803a90a0e::t_ffdb3aa2f0a418 19,24,48,57
+crates/gateway/openapi/admin-api.json
+  s_1864c803a90a0e::t_3043c0ea9ba5ce 152-197,234-391,1268,1271-1284,1292,1297-1307,1325-1326,1328,1330-1336,1339-1349,1352-1452,1777-1822,2158-2159,2163-2164,2167-2170,2172-2173,2175,2177-2184,2191,2203-2223,2236-2237,2241,2244-2254,2256,2268,2280-2300,2313-2314,2318,2321,2323,2329-2924,3703-3714,4008-4147,4151,5693-5778,6022-6112,6289-6401,6403-6433,7691-7705,7811-7820,7881-7890,7902-7904,7907-7913,7920-7926,8752,8798-8817,11013-11202,11204-11208,11210-11214,11216-11220,11222,11224-11229,11357-11445,12234-12243,12276-12285,12395-12401,12457-12489,12929-12931,12934-12940,12947-12953,13440-13570,14450-14574,14624-14704,14782-14839,15144-15265,15716-15738,16878,16908-16911,16930-17053,17109,17115-17118,17147-17268,17270,17276,17281,17283,17286,17289,17297,17306,17311-17341,17416,17456-17459,17524-17531,17540-17635,17644-17649,17657-17683,17699-17709,17723-17733,17744-17750,18106-18202,18204-18205,18207-18216,18219,18222-18250,18253,18406-18601,19725-19737,19803-19831,20666-20704,20713-20719
+crates/gateway/src/batch_worker.rs
+  s_1864c803a90a0e::t_5f333470dc6cc1 546-547
+crates/gateway/src/config/budgets.rs
+  s_1864c803a90a0e::t_cb29cd7b589f84 4,23-25
+crates/gateway/src/config/mcp.rs
+  s_1864c803a90a0e::t_97303bf4d5f687 2-5,16-17,27-32,39,43-57,73-75,77-78,94-147,149-156,158-210
+crates/gateway/src/config/mcp_client_oauth.rs
+  s_1864c803a90a0e::t_3fac02c1cb8480 1-129
+crates/gateway/src/config/mod.rs
+  s_1864c803a90a0e::t_e079daf19dd752 21,26,58,60,110-111,165,183
+crates/gateway/src/config/permissions.rs
+  s_1864c803a90a0e::t_733a580df14c32 19,61,230,277
+crates/gateway/src/config/rate_limits.rs
+  s_1864c803a90a0e::t_eb7dc16192be2c 1-173
+crates/gateway/src/config/routes.rs
+  s_1864c803a90a0e::t_09fdeba8ba521c 6-10,312-313,325,389-393,396-415,431,433
+crates/gateway/src/config/server.rs
+  s_1864c803a90a0e::t_c50708cf2152ec 1-3,22-25,37,53,57-74
+crates/gateway/src/config/tests/budgets.rs
+  s_1864c803a90a0e::t_8c07e5d623e0af 170-232
+crates/gateway/src/config/tests/mcp.rs
+  s_1864c803a90a0e::t_e7a544a69bd4ea 2,42,61,76-80,85,120,124,136-218
+crates/gateway/src/config/tests/mcp_client_oauth.rs
+  s_1864c803a90a0e::t_683e1a1a37466f 1-308
+crates/gateway/src/config/tests/mod.rs
+  s_1864c803a90a0e::t_a98f9648b8b417 5-8,37,41
+crates/gateway/src/config/tests/rate_limits.rs
+  s_1864c803a90a0e::t_a099d47fd87109 1-183
+crates/gateway/src/config/tests/routes.rs
+  s_1864c803a90a0e::t_30f9f730533fe5 425-549
+crates/gateway/src/http/admin_contract.rs
+  s_1864c803a90a0e::t_54fb959aa4646a 1316-1317,1343-1347,1989,2052-2055,2085-2086,2095,2109-2117,2121-2129,2301-2313
+crates/gateway/src/http/api_keys.rs
+  s_1864c803a90a0e::t_d59150813c1875 7-8,11-13,15,21-27,33,45-48,67-70,93-98,116-121,213,216-217,221-231,239-261,278,282-283,288-324,328,345,348-349,354-373,376,390,393-394,399-412,466,475-478,505-544,666-681,716-717
+crates/gateway/src/http/api_keys/scopes.rs
+  s_1864c803a90a0e::t_794e4626439dcc 1-111
+crates/gateway/src/http/audit.rs
+  s_1864c803a90a0e::t_5744edc72b394f 1-491
+crates/gateway/src/http/audit_tests.rs
+  s_1864c803a90a0e::t_4dc6c59300e667 1-1009
+crates/gateway/src/http/audit_tests/mcp_tool_policy.rs
+  s_1864c803a90a0e::t_c3893c8c310d50 1-589
+crates/gateway/src/http/batches.rs
+  s_1864c803a90a0e::t_b47bf4dad105ed 481,484
+crates/gateway/src/http/budget_status_tests.rs
+  s_1864c803a90a0e::t_b84f980f71209b 1-243
+crates/gateway/src/http/client_ip.rs
+  s_1864c803a90a0e::t_a0f3f132ef8678 1-6
+crates/gateway/src/http/guardrail_events.rs
+  s_1864c803a90a0e::t_9fa29646db7a83 9,30-41
+crates/gateway/src/http/guardrails.rs
+  s_1864c803a90a0e::t_141c0bff77583c 82-86
+crates/gateway/src/http/handlers.rs
+  s_1864c803a90a0e::t_289897ff088dfa 2-8,14-15,21-23,42-43,50-52,67,146-149,160-163,172,176,186,199-207,323-333,384-401,523,535-543,703,715-723,759-762,765-779,784,788-851,855,858,862,865,871-873,876,1092,1096-1135,1207-1208,1220,1226,1808-1833,1836,1841,1888-1893,1895-1898,1909-1919,1968-2003,2134-2144,2171-2197,2216-2263,2580-2629,2780-2781,3132,3135,3138,3145-3147,3149,3152
+crates/gateway/src/http/handlers/auth.rs
+  s_1864c803a90a0e::t_47e6f9cb6438f1 7-8,24-27,35
+crates/gateway/src/http/handlers/count_tokens.rs
+  s_1864c803a90a0e::t_8fd03527e7730e 1-399
+crates/gateway/src/http/handlers/decisions.rs
+  s_1864c803a90a0e::t_a01072f6971e5b 1-680
+crates/gateway/src/http/handlers/decisions_tests.rs
+  s_1864c803a90a0e::t_9fb71078c8d8af 1-313
+crates/gateway/src/http/handlers/embeddings.rs
+  s_1864c803a90a0e::t_5e42f8d23e50d6 1-336
+crates/gateway/src/http/handlers/embeddings_tests.rs
+  s_1864c803a90a0e::t_884c63e50b9a44 1-234
+crates/gateway/src/http/handlers/inference.rs
+  s_1864c803a90a0e::t_bfd3f2b3301f41 122-132,167-168,177-194
+crates/gateway/src/http/handlers/inference_tests.rs
+  s_1864c803a90a0e::t_0abc721291d936 14-16,26-28,53-61,68-123,308-317,340-347,349-389,391-404
+crates/gateway/src/http/handlers/route_tests.rs
+  s_1864c803a90a0e::t_a024e81727ddd9 1-507
+crates/gateway/src/http/handlers/routing.rs
+  s_1864c803a90a0e::t_d7895546ede1d6 252
+crates/gateway/src/http/handlers/routing_tests.rs
+  s_1864c803a90a0e::t_a16d9b21865291 232,252
+crates/gateway/src/http/identity.rs
+  s_1864c803a90a0e::t_983fb7a813a51c 11-14,16,52,54-57,333,337,359-373,389,403-404,417-419,423-437,465,478-482,486-496,524,527,542-550,553,555-576,578,592,596,620,622-665,667,681,685,730-734,737-769,799,830-838,853,861-862,864-890,913,950-962,964-974,998,1001,1040-1042,1044-1051,1053-1054,1057,1059-1076,1079-1083,1085-1110,1128,1195-1230,1232-1258,1274,1288-1313,1315-1333,1349,1352,1363-1364,1366-1380,1396,1399,1422-1478,1480-1486,1488-1513,1532,1535,1548-1564,1582,1586,1614-1620,1622-1636,1652,1655,1676-1677,1682-1702,1734,1749-1750,1752-1775,1777-1783,1864,1957-2002,2005-2009,2021-2067,2077-2092,2097-2105,2193,2298-2343,2346-2350,2362-2408,2418-2434,2439-2447,2709-2710,2717,2747,2798-2799,2806,2836,2925-2934,2962,3246-3255,3261-3263,3271-3282,3297-3303,3309,3314,3403,3409,3411,3416,3421,3423-3426,3430-3431,3433-3435,3447,3497,3505-3507,3509-3520,3526-3532,3539-3545,3551-3560,3568-3579,3587-3598,3602,3643,3649,3741-3742,3748,3751,3753-3756,3861-3862,3865,3868-3869,3874-3881,3883-3890,3896-3983
+crates/gateway/src/http/identity_audit.rs
+  s_1864c803a90a0e::t_e344d1a65000a6 1-73
+crates/gateway/src/http/inference_guardrails.rs
+  s_1864c803a90a0e::t_c200c4233645cf 8-9,12,15-18,191-199,224-249,255-272,306-319,354-368,378-392,396,398,468-473,477-479,482-506,509,528,687-690,695,698-724,750-753,764-769,771-775,869-874,887-888,890-894,903-908,941-950,1728,1763,1768-2460
+crates/gateway/src/http/mcp_client_oauth.rs
+  s_1864c803a90a0e::t_579ec04b91e9de 1-200
+crates/gateway/src/http/mcp_client_oauth/authorize.rs
+  s_1864c803a90a0e::t_c93262c80b6ec5 1-123
+crates/gateway/src/http/mcp_client_oauth/authorized_clients.rs
+  s_1864c803a90a0e::t_9b53640b6ec9ae 1-344
+crates/gateway/src/http/mcp_client_oauth/authorized_clients_tests.rs
+  s_1864c803a90a0e::t_5639c17da3ac5b 1-445
+crates/gateway/src/http/mcp_client_oauth/consent.rs
+  s_1864c803a90a0e::t_0b98ddbee248ca 1-233
+crates/gateway/src/http/mcp_client_oauth/flow_tests.rs
+  s_1864c803a90a0e::t_13c895fb2841ff 1-873
+crates/gateway/src/http/mcp_client_oauth/form.rs
+  s_1864c803a90a0e::t_7f809f4f911ae9 1-104
+crates/gateway/src/http/mcp_client_oauth/lifecycle_tests.rs
+  s_1864c803a90a0e::t_8b375ba8d92c6a 1-347
+crates/gateway/src/http/mcp_client_oauth/mcp_route_tests.rs
+  s_1864c803a90a0e::t_6398ec05d0acca 1-555
+crates/gateway/src/http/mcp_client_oauth/metadata.rs
+  s_1864c803a90a0e::t_d6575c7658d6e9 1-209
+crates/gateway/src/http/mcp_client_oauth/metadata_document_tests.rs
+  s_1864c803a90a0e::t_08fac7e74d91d8 1-704
+crates/gateway/src/http/mcp_client_oauth/registration.rs
+  s_1864c803a90a0e::t_d8959a5378dc2e 1-43
+crates/gateway/src/http/mcp_client_oauth/registration_tests.rs
+  s_1864c803a90a0e::t_0a762ea9557b8a 1-186
+crates/gateway/src/http/mcp_client_oauth/revocation.rs
+  s_1864c803a90a0e::t_f8f60e0d230651 1-42
+crates/gateway/src/http/mcp_client_oauth/stream_lifetime.rs
+  s_1864c803a90a0e::t_4a4d39ed575cc9 1-317
+crates/gateway/src/http/mcp_client_oauth/tests.rs
+  s_1864c803a90a0e::t_7b33f4812f9a56 1-248
+crates/gateway/src/http/mcp_client_oauth/token.rs
+  s_1864c803a90a0e::t_3b9282a9feab02 1-260
+crates/gateway/src/http/mcp_gateway.rs
+  s_1864c803a90a0e::t_dcec516a43ae51 2,5-6,16,21,23-25,27-28,34-37,43-47,56-57,78-82,84,86-92,94,123-168,171,173-179,181,187-227,229,233-235,239-240,243,250,268-272,279-280,283,285-306,308-320,324,335,344,348,350,352-353,370-372,397,419-456,469,472-473,516,519-520,530,535-545,548-579,641-711,715,738,747,771-804,844-889
+crates/gateway/src/http/mcp_gateway/aggregate.rs
+  s_1864c803a90a0e::t_475b57de6a419a 14,33,36-38,62-64,66,88-92,168,198-199,307-308,353,409,464-465,484-485,503,507-512
+crates/gateway/src/http/mcp_gateway/aggregate/execution.rs
+  s_1864c803a90a0e::t_b4a49d6fdfff22 18-20,25-35,44,90,109-111,118,137-144,186-187,283,306-315,317,323-345,393,402
+crates/gateway/src/http/mcp_gateway/aggregate/tests.rs
+  s_1864c803a90a0e::t_28de7cdd02a21d 65-296,335,603,685,728,736-744,769,782,785,809,834-835,838-955
+crates/gateway/src/http/mcp_gateway/credentials.rs
+  s_1864c803a90a0e::t_97d8dbd13470a7 1-102
+crates/gateway/src/http/mcp_gateway/credentials/tests.rs
+  s_1864c803a90a0e::t_1ab40e0e9665f6 1-335
+crates/gateway/src/http/mcp_gateway/guardrails.rs
+  s_1864c803a90a0e::t_0a34d6f8573085 4,7-11,13-15,18,25-30,48,79,146,150,153-168,170-181,184,188-190,200,202-203,206,208-217,219-253,255-298,300-365,367-402,404-427
+crates/gateway/src/http/mcp_gateway/guardrails/tests.rs
+  s_1864c803a90a0e::t_0060677473f914 2-3,5,9,34,58-59,62-63,78,101-102,105-106,178-179,201-533
+crates/gateway/src/http/mcp_gateway/json_rpc.rs
+  s_1864c803a90a0e::t_624a833f0120d5 4,11-18,28-61,64-140,142-157,165-166,169-187,191,196,198-204,211-230,234-237,259-293
+crates/gateway/src/http/mcp_gateway/methods.rs
+  s_1864c803a90a0e::t_343b6d8ca65f00 1-268
+crates/gateway/src/http/mcp_gateway/rate_limits.rs
+  s_1864c803a90a0e::t_5f977168cd78ec 1-100
+crates/gateway/src/http/mcp_gateway/tests.rs
+  s_1864c803a90a0e::t_d381c072f2a53a 3,13,23,37,45,57,69,72-1253
+crates/gateway/src/http/mcp_gateway/upstream.rs
+  s_1864c803a90a0e::t_05d408ff79c261 1,13,18-30,98,102-103,105,114-231,239,241-243,254,263,269-282,284-285,288,322,325,374,390,392-404
+crates/gateway/src/http/mcp_gateway/upstream/tests.rs
+  s_1864c803a90a0e::t_af7ddf4d5e0eff 14-98,135,138,284,297,325,335,339,349-393
+crates/gateway/src/http/mcp_oauth.rs
+  s_1864c803a90a0e::t_7b0a32265da97b 15-18,29,71-73,146,155-162,182-187,193,226-230,234-235,253,272,276-314,321,326,335,342-370,375-432,448,463-466,468-482,487-498,551-578,608-637,639-640,642-648
+crates/gateway/src/http/mcp_oauth/tests.rs
+  s_1864c803a90a0e::t_7b335254bbd237 92,115,225,274-320,331,333,336-338,414-415
+crates/gateway/src/http/mcp_oauth/tests/generic.rs
+  s_1864c803a90a0e::t_09b9fa07fe0929 1-448
+crates/gateway/src/http/mcp_registry.rs
+  s_1864c803a90a0e::t_f41650cd93a096 1-2,19-21,24-26,34,39-40,142,145,158,161-169,187,191,194,204,208-223,240,243,245,247-262,297-351,363,367,370,374-377,395-406,418-428,467,470-476,478-486,503,507-527,542,545,547-557,601,605-614,618-639,686,689-712,725,728-733,736,738,743-758,811,814,816-818,834-858,871,874,877-901,920-921,927-941,943-947,949-972,1012-1043
+crates/gateway/src/http/mcp_registry/tests.rs
+  s_1864c803a90a0e::t_3de66f079d08e8 143,168,346,358
+crates/gateway/src/http/mcp_registry/tool_policy.rs
+  s_1864c803a90a0e::t_dcbdd08c431e16 1-402
+crates/gateway/src/http/mcp_registry/tool_reviews.rs
+  s_1864c803a90a0e::t_88c2e0c689ace9 1-285
+crates/gateway/src/http/mcp_registry/views.rs
+  s_1864c803a90a0e::t_1f0a456722fc8e 1-4,7-8,79-80,103-104,108-128,137-175,361-395,408-410,441,456-562,591-592,600-614,704-706,714,718-725,737,744-846
+crates/gateway/src/http/mod.rs
+  s_1864c803a90a0e::t_4b74a4dcbfd21e 5-7,9-11,18,22,30-32,34,39-40,54,63-80,89-92,99-105,110,112-135,156-159,311-320,357-361,394-425,430-433,484-488,517,521-522,524-525,528-545,547
+crates/gateway/src/http/models.rs
+  s_1864c803a90a0e::t_72a3ecc440d0e4 8-9,21,157,159-175
+crates/gateway/src/http/observability.rs
+  s_1864c803a90a0e::t_2664fdc5d4951e 422,523-524
+crates/gateway/src/http/profile.rs
+  s_1864c803a90a0e::t_1bbaf329fcdc54 472
+crates/gateway/src/http/provider_credentials.rs
+  s_1864c803a90a0e::t_bf1558b9e8c9e4 6-12,24,57,88-94,110,135-136,153-160,177,180,187-194,215,217-231,238-246
+crates/gateway/src/http/provider_credentials/tests.rs
+  s_1864c803a90a0e::t_582869f5e93665 129
+crates/gateway/src/http/rate_limit_policies.rs
+  s_1864c803a90a0e::t_f2953c673606d1 1-520
+crates/gateway/src/http/rate_limit_policies/handler_tests.rs
+  s_1864c803a90a0e::t_039ec846c9488c 1-311
+crates/gateway/src/http/rate_limit_tests.rs
+  s_1864c803a90a0e::t_801c8a94a273fe 1-637
+crates/gateway/src/http/request_body.rs
+  s_1864c803a90a0e::t_a5be182e065fc8 74-78
+crates/gateway/src/http/request_body/tests.rs
+  s_1864c803a90a0e::t_9fc9894d440f33 23-30,40,45,250
+crates/gateway/src/http/request_policy.rs
+  s_1864c803a90a0e::t_5dd542101fd7ff 1-152
+crates/gateway/src/http/review_agent.rs
+  s_1864c803a90a0e::t_9d7c5e0c2b57f9 9-10,15-17,27,299,338,341,361-370,385,405,409,415,428-443,456,462,479,485,505,535,703,707,710,713-771,800,804,810,823,1205-1254
+crates/gateway/src/http/scoped_api_key_tests.rs
+  s_1864c803a90a0e::t_fa8daf5ecfb2a7 1-883
+crates/gateway/src/http/skills/tests.rs
+  s_1864c803a90a0e::t_54945fe2b1429e 208
+crates/gateway/src/http/spend.rs
+  s_1864c803a90a0e::t_5a8a0022997371 14,34,449,452,466-469,471,473-486,513,516,532-533,536,538-549,613-621
+crates/gateway/src/http/spend_budget_increases.rs
+  s_1864c803a90a0e::t_259af93002e55b 12,22,43,94-105
+crates/gateway/src/http/spend_budget_increases/handler_tests.rs
+  s_1864c803a90a0e::t_93f47d8aa4f3d3 118,140
+crates/gateway/src/http/state.rs
+  s_1864c803a90a0e::t_bebf2a18032ba6 5-7,12-14,37-40,51-52
+crates/gateway/src/http/test_support.rs
+  s_1864c803a90a0e::t_4ec8a14c07df50 33,41-45,61-62,134-250
+crates/gateway/src/local_demo_seed/agent_analysis.rs
+  s_1864c803a90a0e::t_508314af5fbd88 281,283
+crates/gateway/src/local_demo_seed/mod.rs
+  s_1864c803a90a0e::t_780d471d701aa1 226
+crates/gateway/src/main.rs
+  s_1864c803a90a0e::t_4ec79dc99fad60 12-13,29-30,236-240,252-259,312-319,345-346,349,358-364,694-725,763-766,774-775,795
+crates/gateway/src/observability.rs
+  s_1864c803a90a0e::t_9048e8277e8a66 29-32,44,73-102,124-125,133-154,177-194,242-245,285-347,390-401,509-520
+crates/oceans-cli/Cargo.toml
+  s_1864c803a90a0e::t_8241e2f4d62775 3
+deploy/config/gateway.local.yaml
+  s_1864c803a90a0e::t_5e5cee51d86da7 81
+deploy/config/gateway.yaml
+  s_1864c803a90a0e::t_0770acd70898f6 81
+dist-workspace.toml
+  s_1864c803a90a0e::t_53613b102ec959 53-54
+docs/.vitepress/config.mts
+  s_1864c803a90a0e::t_863d28026a8631 38,130
+docs/.vitepress/theme/sidebar-icons.ts
+  s_1864c803a90a0e::t_a7a77da3266fdc 72
+docs/access/admin-audit-log.md
+  s_1864c803a90a0e::t_670a86d3b49413 1-81
+docs/access/admin-control-plane.md
+  s_1864c803a90a0e::t_a8692093800a3a 3,170
+docs/access/budgets.md
+  s_1864c803a90a0e::t_65f203e6b55d10 47,51-57
+docs/access/identity-and-access.md
+  s_1864c803a90a0e::t_758c27222d93f5 177-202
+docs/access/oidc-and-sso-status.md
+  s_1864c803a90a0e::t_f070056b00bee4 151-154
+docs/adr/2026-03-31-chat-observability-hardening-and-stream-parse-contract.md
+  s_1864c803a90a0e::t_7134f49b532e11 48-50
+docs/adr/2026-08-04-user-owned-mcp-oauth.md
+  s_1864c803a90a0e::t_a984a84412f048 5,38,43
+docs/adr/2026-08-22-gateway-guardrails-domain-and-composition.md
+  s_1864c803a90a0e::t_53ffd9c8d9aeef 9-10,54-65
+docs/adr/2026-09-21-system-one-decisions-api.md
+  s_1864c803a90a0e::t_d5ce8a376f1516 65-111
+docs/adr/2026-10-05-cli-binary-distribution-with-cargo-dist.md
+  s_1864c803a90a0e::t_65abc74939ccf8 32-33
+docs/adr/2026-10-13-govern-every-mcp-method.md
+  s_1864c803a90a0e::t_926aa9314f0d60 1-62
+docs/adr/2026-10-13-mcp-credential-connect-url.md
+  s_1864c803a90a0e::t_b25e3736233dec 1-57
+docs/adr/2026-10-13-mcp-tool-metadata-and-schema-hash.md
+  s_1864c803a90a0e::t_c2ea39368a2537 1-59
+docs/adr/2026-10-14-budget-exceeded-status-code.md
+  s_1864c803a90a0e::t_d49ab984b652f6 1-85
+docs/adr/2026-10-14-decisions-request-metrics.md
+  s_1864c803a90a0e::t_c5a05090f155dd 1-47
+docs/adr/2026-10-15-admin-audit-log.md
+  s_1864c803a90a0e::t_7964f80d5435ba 1-134
+docs/adr/2026-10-15-gateway-rate-limits-and-quotas.md
+  s_1864c803a90a0e::t_bc23129c720802 1-140
+docs/adr/2026-10-15-generic-upstream-mcp-oauth.md
+  s_1864c803a90a0e::t_2029206c1fba31 1-101
+docs/adr/2026-10-15-libsql-transaction-connections.md
+  s_1864c803a90a0e::t_9ced6dd939e289 1-39
+docs/adr/2026-10-15-mcp-client-oauth-authorization.md
+  s_1864c803a90a0e::t_327355a4ba9396 1-277
+docs/adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md
+  s_1864c803a90a0e::t_1e39886ad60d86 1-148
+docs/adr/2026-10-17-scoped-api-keys.md
+  s_1864c803a90a0e::t_734d21a78769d0 1-114
+docs/adr/2026-10-17-ssrf-safe-outbound-fetch.md
+  s_1864c803a90a0e::t_418a7d06063af8 1-80
+docs/configuration/client-harness-configuration.md
+  s_1864c803a90a0e::t_77bdb5c0657a63 24,67
+docs/configuration/configuration-reference.md
+  s_1864c803a90a0e::t_a3d444002c4963 32,98,317,364,383,387,405,632-633,638-664,691,695,713,720,764-814,1260,1398,1416-1418
+docs/configuration/mcp-servers.md
+  s_1864c803a90a0e::t_407e2bd37d5ca5 48-49,76-78,81,88-95,126,129,185-312,317,326-348,389-390,397-410,416-417
+docs/configuration/model-routing-and-api-behavior.md
+  s_1864c803a90a0e::t_a4208bcd0068b9 17-18,21-22,25-26,294,303,404-422,429-467,469,471
+docs/configuration/pricing-catalog-and-accounting.md
+  s_1864c803a90a0e::t_7f497e8b63e085 88-89,112-123
+docs/configuration/rate-limits.md
+  s_1864c803a90a0e::t_cca1c92fe4c4a9 1-165
+docs/contributing/mcp/mcp-registry-and-discovery.md
+  s_1864c803a90a0e::t_33b7fda675e39e 22,36,124,166
+docs/contributing/operations/budgets-and-spending.md
+  s_1864c803a90a0e::t_f6e1ddf4b9b551 108
+docs/contributing/reference/data-relationships.md
+  s_1864c803a90a0e::t_743c00273f9b1c 27,58,125,127,167-176
+docs/contributing/reference/release-process.md
+  s_1864c803a90a0e::t_6400cf571bc18d 115
+docs/mcp/mcp-client-setup.md
+  s_1864c803a90a0e::t_82a717413185a3 40,63-65,85-170,254-299
+docs/mcp/mcp-invocations.md
+  s_1864c803a90a0e::t_27b59b8dcefba4 15-16,24,40,77,85-86
+docs/mcp/mcp-tool-access.md
+  s_1864c803a90a0e::t_7829a843a75d2f 7,51,67-69,74-238,241,243,247-270,281,283,295-296
+docs/operations/gateway-guardrails.md
+  s_1864c803a90a0e::t_230e8c0847acbd 20-21,26-28,210-212,235-236,246
+docs/operations/observability-and-request-logs.md
+  s_1864c803a90a0e::t_60d597d8373ee9 61,65-97,337
+docs/operations/observability/export-traces-and-metrics.md
+  s_1864c803a90a0e::t_4f1c636f9fc3ad 138-141
+docs/operations/observability/request-logs.md
+  s_1864c803a90a0e::t_d6eb4e826dd402 60-62
+docs/package-lock.json
+  s_1864c803a90a0e::t_4134fbf855723e 10,775-777
+docs/package.json
+  s_1864c803a90a0e::t_04c60976594655 11
+docs/providers/aws-bedrock.md
+  s_1864c803a90a0e::t_92e71979d49993 86-103
+docs/providers/typesafe.md
+  s_1864c803a90a0e::t_ce31cb2b57a4da 5,100
+docs/reference/provider-api-compatibility.md
+  s_1864c803a90a0e::t_f63f6581c9b31f 16-17,21,26-27,35,47,56-68,125-134,138-149,151,153
+docs/reference/request-lifecycle-and-failure-modes.md
+  s_1864c803a90a0e::t_4fc0d42787b6a3 31,42,44,183-186,188-195
+gateway.prod.yaml
+  s_1864c803a90a0e::t_bf374c405e85f7 44
+gateway.yaml
+  s_1864c803a90a0e::t_2b12f12da58a19 44,75-81,432,434-445,507
+mise.lock
+  s_1864c803a90a0e::t_47a425e0ec9cb7 71-104,129-152,361-384,449-455
+mise.rustfs.toml
+  s_1864c803a90a0e::t_552cedbd3271f0 14
+mise.toml
+  s_1864c803a90a0e::t_919e2404803c18 37-38,40,69-70
+scripts/mock-openai-upstream.mjs
+  s_1864c803a90a0e::t_255d8dbfc7da91 50-87,195-197
+scripts/register-e2e-mcp-server.mjs
+  s_1864c803a90a0e::t_f13370f7e0b75a 1-23
+scripts/start-e2e-stack.sh
+  s_1864c803a90a0e::t_d6588f7e684f55 173-177,306-316
+scripts/start-e2e-stack.test.mjs
+  s_1864c803a90a0e::t_332322d7823b1d 19
+scripts/strip-ai-coauthors.sh
+  s_1864c803a90a0e::t_05f325188303fc 1-17
+tests/harness-integration/README.md
+  s_1864c803a90a0e::t_7d1cfcb6b47415 17
+tests/harness-integration/src/global-setup.ts
+  s_1864c803a90a0e::t_6e0fbddf921044 17
+videos/oceans-showreel/.hyperframes/hf-ids-stamped.json
+  s_1864c803a90a0e::t_c6fe636ec38544 1
+videos/oceans-showreel/.hyperframes/history-id
+  s_1864c803a90a0e::t_6dde9f29dfe754 1
+videos/oceans-showreel/.hyperframes/history-turns.json
+  s_1864c803a90a0e::t_05255a7ab96410 1
+videos/oceans-showreel/.hyperframes/preview/228a3f2aab68aacf46e3cb7237e66927.html
+  s_1864c803a90a0e::t_d26660e84de622 1-137
+videos/oceans-showreel/.scratch/audio/analyze.sh
+  s_1864c803a90a0e::t_8e347290032d78 1-27
+videos/oceans-showreel/.scratch/audio/cue-snr.mjs
+  s_1864c803a90a0e::t_d53d71f07e3de1 1-67
+videos/oceans-showreel/.scratch/audio/premix.m4a.graph.txt
+  s_1864c803a90a0e::t_8374991cac4bda 1
+videos/oceans-showreel/.scratch/audio/premix.mjs
+  s_1864c803a90a0e::t_bd1570705eaa93 1-64
+videos/oceans-showreel/.scratch/audio/premix/group-sfx.wav.graph.txt
+  s_1864c803a90a0e::t_32e2d36f444d26 1
+videos/oceans-showreel/.scratch/audio/premix/mix.wav.graph.txt
+  s_1864c803a90a0e::t_ece0b003220a18 1
+videos/oceans-showreel/.scratch/audio/render-check/audio-check.log
+  s_1864c803a90a0e::t_1a095be19873a1 1-81
+videos/oceans-showreel/.scratch/audio/sfx-env.mjs
+  s_1864c803a90a0e::t_d3da47473db2a5 1-34
+videos/oceans-showreel/.scratch/build-f1.mjs
+  s_eaf7116ccea134::t_fce16078a919c9 1-390
+videos/oceans-showreel/.scratch/build-f2.mjs
+  s_eaf7116ccea134::t_0aa79398be8bbc 1-1852
+videos/oceans-showreel/.scratch/build-f3.mjs
+  s_eaf7116ccea134::t_c00fa747c36854 1-623
+videos/oceans-showreel/.scratch/check-1.txt
+  s_eaf7116ccea134::t_ab62cd398c1a80 1-193
+videos/oceans-showreel/.scratch/check-2.txt
+  s_eaf7116ccea134::t_4f8ba41383a2db 1-65
+videos/oceans-showreel/.scratch/check-3.txt
+  s_eaf7116ccea134::t_66d558aad2430b 1-63
+videos/oceans-showreel/.scratch/client-configs.json
+  s_eaf7116ccea134::t_2f1db2fcdaf51d 1-325
+videos/oceans-showreel/.scratch/f2-check.mjs
+  s_eaf7116ccea134::t_307e33919b93a0 1-70
+videos/oceans-showreel/.scratch/f2-geom.mjs
+  s_eaf7116ccea134::t_8e1d2cd4ffc6e2 1-183
+videos/oceans-showreel/.scratch/f2-path.mjs
+  s_eaf7116ccea134::t_1a5e0609e312da 1-131
+videos/oceans-showreel/.scratch/f2-vis.mjs
+  s_eaf7116ccea134::t_1b341357cdc5d3 1-160
+videos/oceans-showreel/.scratch/f3-geom.mjs
+  s_eaf7116ccea134::t_e4cd7bd0e1424c 1-168
+videos/oceans-showreel/.scratch/f3-metrics.json
+  s_eaf7116ccea134::t_f0038244f5a85b 1-7
+videos/oceans-showreel/.scratch/probe-dive.mjs
+  s_eaf7116ccea134::t_61a04a647233ec 1-12
+videos/oceans-showreel/.scratch/probe/compositions/components/motion-blur.html
+  s_eaf7116ccea134::t_031926ab21e9bf 1-767
+videos/oceans-showreel/.scratch/probe/compositions/logo-outro.html
+  s_eaf7116ccea134::t_ad64a6cfd1bbb7 1-227
+videos/oceans-showreel/.scratch/probe/hyperframes.json
+  s_eaf7116ccea134::t_4ed0fa32302294 1-25
+videos/oceans-showreel/.scratch/probe/hyperframes.lock.json
+  s_eaf7116ccea134::t_e7d34c92c88e75 1-4
+videos/oceans-showreel/.scratch/seed-skills.mjs
+  s_eaf7116ccea134::t_fe9561517b2416 1-174
+videos/oceans-showreel/.scratch/tools/sample-logo.mjs
+  s_eaf7116ccea134::t_cd989f8e01b5df 1-27
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_audio_score.wav_2880044-1791893004310.json
+  s_eaf7116ccea134::t_6cefc2b8e05ec8 1
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_audio_score.wav_4262444-1791919166259.json
+  s_eaf7116ccea134::t_2670255b836160 1
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_audio_score.wav_4262444-1791919656183.json
+  s_eaf7116ccea134::t_6a61c77520829a 1
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_audio_score.wav_4262444-1791920215071.json
+  s_eaf7116ccea134::t_5ee5f73836d761 1
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_audio_score.wav_5107244-1791925806389.json
+  s_eaf7116ccea134::t_cd722e940a3eba 1
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_sfx_click.mp3_11702-1791893032615.json
+  s_eaf7116ccea134::t_c3642ce05930e4 1
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_sfx_glitch-3.mp3_99072-1791893032620.json
+  s_eaf7116ccea134::t_7217239ee736cb 1
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_sfx_pop.mp3_23040-1791893032617.json
+  s_eaf7116ccea134::t_e117ecdc05aae6 1
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_sfx_sparkle.mp3_57678-1791893032623.json
+  s_eaf7116ccea134::t_2fff247a7f1b93 1
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_sfx_whoosh-cinematic.mp3_177408-1791893032613.json
+  s_eaf7116ccea134::t_aa562b8c4fbe61 1
+videos/oceans-showreel/.waveform-cache/peaks-v2_assets_sfx_whoosh-tamed.wav_110422-1791894191652.json
+  s_eaf7116ccea134::t_8cba3ad42c8029 1
+videos/oceans-showreel/.waveform-cache/v2_assets_audio_score.wav_2880044-1791893004310.json
+  s_eaf7116ccea134::t_68b6d3fe65f516 1
+videos/oceans-showreel/.waveform-cache/v2_assets_audio_score.wav_4262444-1791919166259.json
+  s_eaf7116ccea134::t_31b60b30fa8212 1
+videos/oceans-showreel/.waveform-cache/v2_assets_audio_score.wav_4262444-1791919656183.json
+  s_eaf7116ccea134::t_c1ba5c22f1db26 1
+videos/oceans-showreel/.waveform-cache/v2_assets_audio_score.wav_4262444-1791920215071.json
+  s_eaf7116ccea134::t_ae65e228c8a84d 1
+videos/oceans-showreel/.waveform-cache/v2_assets_audio_score.wav_5107244-1791925806389.json
+  s_eaf7116ccea134::t_62c4342136b1e2 1
+videos/oceans-showreel/.waveform-cache/v2_assets_sfx_click.mp3_11702-1791893032615.json
+  s_eaf7116ccea134::t_205dcdf6e4c44c 1
+videos/oceans-showreel/.waveform-cache/v2_assets_sfx_glitch-3.mp3_99072-1791893032620.json
+  s_eaf7116ccea134::t_9672646e9862ae 1
+videos/oceans-showreel/.waveform-cache/v2_assets_sfx_pop.mp3_23040-1791893032617.json
+  s_eaf7116ccea134::t_8139d617a4a9f1 1
+videos/oceans-showreel/.waveform-cache/v2_assets_sfx_sparkle.mp3_57678-1791893032623.json
+  s_eaf7116ccea134::t_a56d5286656b5f 1
+videos/oceans-showreel/.waveform-cache/v2_assets_sfx_whoosh-cinematic.mp3_177408-1791893032613.json
+  s_eaf7116ccea134::t_a2c9225321aeb0 1
+videos/oceans-showreel/.waveform-cache/v2_assets_sfx_whoosh-tamed.wav_110422-1791894191652.json
+  s_eaf7116ccea134::t_7884a41c3903b7 1
+videos/oceans-showreel/renders/render-v1-15s.log
+  s_eaf7116ccea134::t_e357483c6567aa 1-256
+videos/oceans-showreel/renders/render.log
+  s_eaf7116ccea134::t_a5f46b398bf13b 1-354
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2d016a6605df1974f21d931e4479d28a6082335f",
+  "prompts": {},
+  "sessions": {
+    "s_1864c803a90a0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5822bc90-e33d-49af-9d44-474de0500040",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

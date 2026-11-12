@@ -1,0 +1,19 @@
+docs/adr/2026-10-15-admin-audit-log.md
+  s_7a5811202bdfd5::t_5467dd792b2137 115,135-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b753d9f277ddaefb444f1a1881282ab9c22cf1a5",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

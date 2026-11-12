@@ -1,0 +1,100 @@
+crates/admin-ui/web/src/test/routes/account-connections-route.test.tsx
+  h_2f452a9c375069 5,7-8,11
+crates/admin-ui/web/src/test/routes/account-ready-route.test.tsx
+  h_2f452a9c375069 3,5-6,8,27
+crates/admin-ui/web/src/test/routes/agent-harnesses-route.test.tsx
+  h_2f452a9c375069 4,8-9,11,123,192
+crates/admin-ui/web/src/test/routes/api-keys-route.test.tsx
+  h_2f452a9c375069 5,7-8,12,152,170,300,340,685
+crates/admin-ui/web/src/test/routes/audit-log-route.test.tsx
+  h_2f452a9c375069 4,7-8,11,69,78-79,91,107,122,137,151,176,187,195,197
+crates/admin-ui/web/src/test/routes/authorized-mcp-clients.test.tsx
+  h_2f452a9c375069 5,48,53,63,68,99
+crates/admin-ui/web/src/test/routes/batches-route.test.tsx
+  h_2f452a9c375069 4-7,16-17,21,192
+crates/admin-ui/web/src/test/routes/guardrail-settings-route.test.tsx
+  h_2f452a9c375069 3-9,12-13,61,72-73,88,105,126,138,151,182
+crates/admin-ui/web/src/test/routes/guardrails-route.test.tsx
+  h_2f452a9c375069 3,7-8,11,68,72-73,87,101,115,128,142,154,166,171,183,195-196
+crates/admin-ui/web/src/test/routes/leaderboard-route.test.tsx
+  h_2f452a9c375069 4,8-9,11,138,187
+crates/admin-ui/web/src/test/routes/login-route.test.tsx
+  h_2f452a9c375069 3-4,6-7,10,44,50,58,88
+crates/admin-ui/web/src/test/routes/mcp-access-route.test.tsx
+  h_2f452a9c375069 11,117,162-163,173,230,242-243,260,283,312
+crates/admin-ui/web/src/test/routes/mcp-invocations-route.test.tsx
+  h_2f452a9c375069 5,10-11,14,69,177
+crates/admin-ui/web/src/test/routes/mcp-navigation.test.tsx
+  h_2f452a9c375069 4-5,25-30,97,113,129,137,164,175
+crates/admin-ui/web/src/test/routes/mcp-servers-route.test.tsx
+  h_2f452a9c375069 9,193,223,275,304,366,413,461,494,518,544,581,602,625,645,661,673,739,785,801,814,864,975,982,993-994,1008,1010,1042,1073,1097,1109-1110,1122,1140,1163,1176,1205,1225,1252,1281-1282,1296,1308
+crates/admin-ui/web/src/test/routes/mcp-tool-policy.test.tsx
+  h_2f452a9c375069 5-6,52
+crates/admin-ui/web/src/test/routes/mcp-tool-reviews.test.tsx
+  h_2f452a9c375069 11,169,183
+crates/admin-ui/web/src/test/routes/mcp-toolsets-route.test.tsx
+  h_2f452a9c375069 7,151,255,268,275,296,304,320,335,386,416,441,457,483,498,520,555,565,584,651,662,674,690,712,736
+crates/admin-ui/web/src/test/routes/oauth-consent-route.test.tsx
+  h_2f452a9c375069 5,7-8,11,64,78,96,146,161
+crates/admin-ui/web/src/test/routes/profile-route.test.tsx
+  h_2f452a9c375069 6,9-10,13,88-89,103-104,113-114,132,136,148-149,160-161,170,174,184,186,196-197,214,216,226,229
+crates/admin-ui/web/src/test/routes/rate-limits-route.test.tsx
+  h_2f452a9c375069 12
+crates/admin-ui/web/src/test/routes/request-logs-route.test.tsx
+  h_2f452a9c375069 8,13-14,18,104,145,148,189,212,220,245,270,316,505,540,581,593,609,645,664,692,708
+crates/admin-ui/web/src/test/routes/review-agent-route.test.tsx
+  h_2f452a9c375069 9,11-12,15,167,180,195
+crates/admin-ui/web/src/test/routes/service-accounts-route.test.tsx
+  h_2f452a9c375069 7,9-10,13,134,153,160,167,179
+crates/admin-ui/web/src/test/routes/teams-route.test.tsx
+  h_2f452a9c375069 12,14-15,18,151,189,203
+crates/admin-ui/web/src/test/routes/usage-costs-route.test.tsx
+  h_2f452a9c375069 11,13-14,17,101,204,237,268
+crates/admin-ui/web/src/test/routes/users-route.test.tsx
+  h_2f452a9c375069 5-6,8-9,13,123,173,232,725
+crates/gateway-mcp/src/server.rs
+  h_2f452a9c375069 13-14,16-17,228-241,246,248-252
+crates/gateway/src/http/mcp_gateway.rs
+  h_2f452a9c375069 3,25,31-32,34-38,324,383,419-427,431-458,462-481,484,486-489,493,495,498-503,507,509,518,525-555,557,559,564,874-880
+crates/gateway/src/http/mcp_gateway/aggregate.rs
+  h_2f452a9c375069 37
+crates/gateway/src/http/mcp_gateway/aggregate/execution.rs
+  h_2f452a9c375069 13-14,19,27-28,35,105-109,129,134-135,137-141,143-144,147-150,153-161,203-225,241,268,285-304,306,311,331-371,373-376,379,384
+crates/gateway/src/http/mcp_gateway/aggregate/tests.rs
+  h_2f452a9c375069 233,274-358,627-630,639
+crates/gateway/src/http/mcp_gateway/credentials.rs
+  h_2f452a9c375069 18-20,23-26,84-90,99-106,112-121
+crates/gateway/src/http/mcp_gateway/credentials/tests.rs
+  h_2f452a9c375069 220-294
+crates/gateway/src/http/mcp_gateway/governance.rs
+  h_2f452a9c375069 1-230
+crates/gateway/src/http/mcp_gateway/guardrails.rs
+  h_2f452a9c375069 17,22,129,132,134,237,299
+crates/gateway/src/http/mcp_gateway/guardrails/tests.rs
+  h_2f452a9c375069 70,114,341
+crates/gateway/src/http/mcp_gateway/json_rpc.rs
+  h_2f452a9c375069 8,239-258,265,275-302
+crates/gateway/src/http/mcp_gateway/methods.rs
+  h_2f452a9c375069 4-6,18,25-31,35,61,65,73,84-91,97,129-141,160,168,254-259
+crates/gateway/src/http/mcp_gateway/rate_limits.rs
+  h_2f452a9c375069 1-5,9,14,18,24,28-29,40-42,44-45,49-59,61-67,75-81
+crates/gateway/src/http/mcp_gateway/session.rs
+  h_2f452a9c375069 26-27
+crates/gateway/src/http/mcp_gateway/tests.rs
+  h_2f452a9c375069 1764-1829
+docs/adr/2026-10-13-govern-every-mcp-method.md
+  h_2f452a9c375069 67-76
+docs/configuration/rate-limits.md
+  h_2f452a9c375069 13,102,139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e9b0d3c1f2dbaee2da7660bb424e84deda398077",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

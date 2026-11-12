@@ -1,0 +1,22 @@
+crates/gateway-service/src/model_metadata/listing.rs
+  h_2f452a9c375069 182-183,198-209,211-212,243-245,247-257,259,261,263,285,307-308,310,312,314,316-319,336-355
+crates/gateway-service/src/model_metadata/litellm.rs
+  h_2f452a9c375069 21,92,112-113,115,146-149,151-153,197,199-201,205,213
+crates/gateway-service/src/model_metadata/tests/model_group_info.rs
+  h_2f452a9c375069 153-159,208-252
+docs/adr/2026-10-21-litellm-model-group-info.md
+  h_2f452a9c375069 48,53-54,56-57,59,63-64
+docs/configuration/model-routing-and-api-behavior.md
+  h_2f452a9c375069 412,417-418,420,425,427,435-436,446-448
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e4deec14c4d7b7da0ea868719c6e7725711eb062",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

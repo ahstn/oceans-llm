@@ -1,0 +1,19 @@
+docs/adr/2026-09-06-source-review-action-with-pi-sdk.md
+  s_85219a7516ce76::t_7cd6f12c6700e4 8-9,17,79-94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5a0fc5ec131db623b498a17618e7ca7e0cc265d7",
+  "prompts": {},
+  "sessions": {
+    "s_85219a7516ce76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd4f065d-f5e0-4db2-a846-89e3c6902774",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

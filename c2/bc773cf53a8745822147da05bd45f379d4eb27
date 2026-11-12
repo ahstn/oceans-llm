@@ -1,0 +1,105 @@
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin
+  s_a1d1a900c88650::t_ce5662137367fe 260,262
+.agents/skills/verify-oceans-admin/scripts/drive-profile.mjs
+  s_a1d1a900c88650::t_508a7d8892f5f0 1-151
+crates/admin-ui/web/src/components/layout/admin-nav.ts
+  s_a1d1a900c88650::t_147cc66c1fa213 10,46-47
+crates/admin-ui/web/src/components/layout/app-shell.test.tsx
+  s_a1d1a900c88650::t_2ef25e63640c34 94
+crates/admin-ui/web/src/components/layout/page-header.tsx
+  s_a1d1a900c88650::t_ec6d2a5dc4a58c 1,8,14-15,17-18,27-60
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_a1d1a900c88650::t_3eebab6ffea22f 1287-1302,2972-2982,3529-3586,6633-6651
+crates/admin-ui/web/src/routeTree.gen.ts
+  s_a1d1a900c88650::t_e1a6cb7f09b814 38,175-179,208,237,267,298,327,356,386,573-579,610
+crates/admin-ui/web/src/routes/-auth-routing.ts
+  s_a1d1a900c88650::t_7246cccc658908 14-24,48-51,53,72
+crates/admin-ui/web/src/routes/api-keys.tsx
+  s_a1d1a900c88650::t_e7db278a581e4e 17,19-20,41,43-45,47
+crates/admin-ui/web/src/routes/api-keys/-components.tsx
+  s_a1d1a900c88650::t_aa174f63181dc6 834,842,850
+crates/admin-ui/web/src/routes/api-keys/-use-api-keys-page.ts
+  s_a1d1a900c88650::t_cb4122ade88c8f 43,47-48,59,90,98-106
+crates/admin-ui/web/src/routes/profile/-components/profile-api-keys.tsx
+  s_a1d1a900c88650::t_44b3405ac76a38 1-179
+crates/admin-ui/web/src/routes/profile/-components/profile-budget.tsx
+  s_a1d1a900c88650::t_73644679bd2fb9 1-127
+crates/admin-ui/web/src/routes/profile/-components/profile-charts.tsx
+  s_a1d1a900c88650::t_83a42ed071e95b 1-200
+crates/admin-ui/web/src/routes/profile/-components/profile-data.ts
+  s_a1d1a900c88650::t_e3b017f6af6bfc 1-352
+crates/admin-ui/web/src/routes/profile/-components/profile-headlines.tsx
+  s_a1d1a900c88650::t_b9a8e508b66032 1-129
+crates/admin-ui/web/src/routes/profile/-components/profile-heatmap.tsx
+  s_a1d1a900c88650::t_eaa4087c183e83 1-190
+crates/admin-ui/web/src/routes/profile/-components/profile-page.ts
+  s_a1d1a900c88650::t_03f1f27be20b5d 1-38
+crates/admin-ui/web/src/routes/profile/-components/range-toggle.tsx
+  s_a1d1a900c88650::t_0d9a5d17add3ec 1-32
+crates/admin-ui/web/src/routes/profile/index.tsx
+  s_a1d1a900c88650::t_93e6de9c5ff7c1 1-155
+crates/admin-ui/web/src/server/admin-data.functions.ts
+  s_a1d1a900c88650::t_00b6ed764b2787 25,334-337
+crates/admin-ui/web/src/server/admin-data.server.ts
+  s_a1d1a900c88650::t_85e29bd234ce67 28,233-237
+crates/admin-ui/web/src/test/auth-routing.test.ts
+  s_a1d1a900c88650::t_0703860b63835a 45,58
+crates/admin-ui/web/src/test/profile-data.test.ts
+  s_a1d1a900c88650::t_8046736f848340 1-115
+crates/admin-ui/web/src/test/profile-fixtures.ts
+  s_a1d1a900c88650::t_549ff1d4802508 1-105
+crates/admin-ui/web/src/test/routes/api-keys-route.test.tsx
+  s_a1d1a900c88650::t_f44e43b0b8bf6f 363-380
+crates/admin-ui/web/src/test/routes/auth-routing.test.ts
+  s_a1d1a900c88650::t_c46868729dc4d8 14-24,56
+crates/admin-ui/web/src/test/routes/profile-route.test.tsx
+  s_a1d1a900c88650::t_463091d6f910e3 1-180
+crates/admin-ui/web/src/types/live-api.ts
+  s_a1d1a900c88650::t_55311106879140 33-37
+crates/gateway-core/src/domain.rs
+  s_a1d1a900c88650::t_13ae0a86396149 1010-1019
+crates/gateway-core/src/lib.rs
+  s_a1d1a900c88650::t_b7c63f12c58d51 59-64
+crates/gateway-core/src/traits.rs
+  s_a1d1a900c88650::t_55e2587865fdca 29-34,730-741
+crates/gateway-store/src/lib.rs
+  s_a1d1a900c88650::t_be3f1f23b05248 4268-4313
+crates/gateway-store/src/libsql_store/request_logs.rs
+  s_a1d1a900c88650::t_078db16e5a4f71 6-8,588-636
+crates/gateway-store/src/postgres_store/request_logs.rs
+  s_a1d1a900c88650::t_86f4e54c0c7829 6-8,534-575
+crates/gateway-store/src/store.rs
+  s_a1d1a900c88650::t_e604685673dd5d 1173-1184
+crates/gateway/openapi/admin-api.json
+  s_a1d1a900c88650::t_3ebe7656fd5cc3 4719-4743,11540-11597,13878-14059
+crates/gateway/src/http/admin_contract.rs
+  s_a1d1a900c88650::t_068710989807c3 1869
+crates/gateway/src/http/mod.rs
+  s_a1d1a900c88650::t_53dc115fb20e69 20,48-49,214
+crates/gateway/src/http/profile.rs
+  s_a1d1a900c88650::t_3b6bb123da6cca 1-275
+crates/gateway/src/local_demo_seed/history.rs
+  s_a1d1a900c88650::t_10866b8c19ebea 1-342
+crates/gateway/src/local_demo_seed/mod.rs
+  s_a1d1a900c88650::t_4b0e9544cfbaee 21,253,509-523
+crates/gateway/src/local_demo_seed/usage.rs
+  s_a1d1a900c88650::t_9d19b404f6267c 1263
+gateway.yaml
+  s_a1d1a900c88650::t_da30f04c88bd96 149-153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c2bc773cf53a8745822147da05bd45f379d4eb27",
+  "prompts": {},
+  "sessions": {
+    "s_a1d1a900c88650": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8dcd7694-4d09-4ee2-9f4c-af8095b9a53e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+crates/gateway-guardrails/src/policy.rs
+  s_729846f802251e::t_9bde9e5445174f 686-707
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0aaeef05805d1a735f6120d1421680f24602b3cb",
+  "prompts": {},
+  "sessions": {
+    "s_729846f802251e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "80e79430-8e4b-4cb7-9452-cc764000ff75",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
