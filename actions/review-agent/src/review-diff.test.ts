@@ -52,6 +52,11 @@ test('counts deletions, binary changes and mode changes separately from anchors;
     expect([...diff.anchors.keys()]).toEqual(['large.txt'])
     expect([...diff.anchors.get('large.txt')!]).toEqual([1])
     expect(statSync(diffPath).size).toBeGreaterThan(8 * 1024 * 1024)
+    // A cancelled job stops diff preparation instead of running Git to completion.
+    const cancelled = await loadReviewDiff(workspace, context, diffPath, {
+      signal: AbortSignal.abort(),
+    }).catch((error: unknown) => error)
+    expect(cancelled).toMatchObject({ name: 'AbortError' })
   } finally {
     rmSync(workspace, { recursive: true, force: true })
   }

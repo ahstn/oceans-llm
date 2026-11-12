@@ -57,7 +57,9 @@ impl LoginThrottleScope {
 ///
 /// Histories retain only fixed-size identifier digests, with a hard entry cap.
 /// Admission reserves both dimensions before any asynchronous work; live
-/// reservations pin their entries until completion or cancellation.
+/// reservations pin their entries until completion or cancellation. A full
+/// history never evicts an identifier at its failure limit, so a flood of new
+/// identifiers cannot erase an active backoff.
 #[derive(Debug)]
 pub struct PasswordAuthProtection {
     attempts: Mutex<LoginAttempts>,
@@ -88,8 +90,8 @@ impl PasswordAuthProtection {
     /// # Errors
     ///
     /// Rejects backoff, exhausted in-flight allowance, or a full history whose
-    /// entries are all pinned by live attempts. Neither dimension is reserved
-    /// when admission fails.
+    /// entries are all pinned by live attempts or at their failure limit.
+    /// Neither dimension is reserved when admission fails.
     pub fn admit_login(
         &self,
         source: &str,
@@ -356,11 +358,22 @@ fn prepare_reservation(
     if entries.len() < settings.max_tracked_identifiers {
         return Ok(None);
     }
+    // Evict only history that throttles nothing: never a live reservation or an
+    // identifier at its failure limit. Prefer expired, then fewer failures, then oldest.
     entries
         .iter()
-        .filter(|(_, entry)| entry.in_flight == 0)
-        .min_by_key(|(_, entry)| entry.last_failure)
-        .map(|(key, _)| Some(*key))
+        .filter_map(|(key, entry)| {
+            let expired =
+                now.saturating_duration_since(entry.last_failure) >= settings.failure_reset_after;
+            let failures = if expired { 0 } else { entry.failures };
+            (entry.in_flight == 0 && failures < failure_limit).then_some((
+                failures,
+                entry.last_failure,
+                *key,
+            ))
+        })
+        .min()
+        .map(|(_, _, key)| Some(key))
         .ok_or(())
 }
 
@@ -594,6 +607,58 @@ mod tests {
         second.release();
         protection
             .admit_login_at("new-source", "new-account", later)
+            .unwrap()
+            .release();
+    }
+
+    #[test]
+    fn full_history_keeps_backoff_and_evicts_the_least_failed_identifier() {
+        let protection = PasswordAuthProtection::new(ProtectionSettings {
+            max_tracked_identifiers: 2,
+            ..settings(100, 2)
+        });
+        let now = Instant::now();
+        let later = now + Duration::from_millis(10);
+        let fail = |account: &str, at: Instant| {
+            protection
+                .admit_login_at("source", account, at)
+                .unwrap()
+                .complete_at(LoginOutcome::Failure, at);
+        };
+        // The throttled entry is also the oldest, which age-only eviction would remove.
+        fail("victim", now);
+        fail("victim", now);
+        fail("idle", later);
+
+        // A new identifier takes the slot of the entry with the fewest failures.
+        fail("flood", later);
+        assert_eq!(
+            protection
+                .admit_login_at("source", "victim", later)
+                .unwrap_err(),
+            LoginThrottleScope::Account,
+            "a full history must not evict an active backoff"
+        );
+        {
+            let attempts = protection.attempts.lock().unwrap();
+            let tracked = |account: &str| {
+                attempts
+                    .accounts
+                    .contains_key(&Identifier::from(Sha256::digest(account.as_bytes())))
+            };
+            assert!(tracked("victim") && tracked("flood") && !tracked("idle"));
+        }
+
+        // With every entry at its limit, new identifiers wait for expiry.
+        fail("flood", later);
+        assert_eq!(
+            protection
+                .admit_login_at("source", "next", later)
+                .unwrap_err(),
+            LoginThrottleScope::Account
+        );
+        protection
+            .admit_login_at("source", "next", later + FAILURE_RESET_AFTER)
             .unwrap()
             .release();
     }

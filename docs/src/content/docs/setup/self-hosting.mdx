@@ -60,6 +60,33 @@ mise install
 
 Self-host secrets resolve through [fnox](https://fnox.jdx.dev/) only when the gateway configuration is validated or the gateway daemon starts. They do not enter the activated shell, `mise env`, unrelated tasks, or the admin UI daemon. Keep `mise.selfhost.local.toml` for non-secret machine overrides only.
 
+#### Set up the fnox providers once per machine
+
+The template's references use an `op` provider, and `mise run secrets-sync` encrypts its cache with a `sync-age` provider. Neither is in the repository: both come from your global `~/.config/fnox/config.toml`. Install `fnox` (for example `mise use -g fnox`), the [1Password CLI](https://developer.1password.com/docs/cli/get-started/) `op`, and `age` (`sudo apt install age`). Then sign in with `op` and create the machine's age identity:
+
+```sh
+umask 077
+mkdir -p ~/.config/fnox
+age-keygen -o ~/.config/fnox/age.txt
+```
+
+`age-keygen` prints the public key, which starts with `age1`. Put it in `~/.config/fnox/config.toml`:
+
+```toml
+[providers.op]
+type = "1password"
+
+[providers.sync-age]
+type = "age"
+recipients = ["age1..."]
+```
+
+Run `fnox provider test op` and `fnox provider test sync-age` to check both. The `sync-age` name matters: `secrets-sync` selects it by name.
+
+The 1Password session is needed only when you sync. After `secrets-sync`, fnox reads each value from the encrypted cache and never calls 1Password, so the daemons start at boot without a signed-in `op`. The gateway daemon runs `fnox --non-interactive`. It decrypts with `~/.config/fnox/age.txt`, the default identity path, as the same user. A passphrase-protected identity, or one that needs a touch or PIN, therefore fails at unattended start.
+
+#### Add the self-host secrets
+
 Copy the local fnox template, add the self-host keys below as references to your secret manager, and cache them with the machine's age identity for unattended restarts:
 
 ```sh

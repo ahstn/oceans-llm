@@ -40,8 +40,8 @@ permissions:
 # will be marked as a prerelease.
 on:
   push:
-    branches:
-      - main
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
 
 jobs:
   verify-release-provenance:
@@ -52,16 +52,17 @@ jobs:
     outputs:
       tag: ${{ steps.provenance.outputs.tag }}
     steps:
-      - name: Checkout the immutable release commit and main history
+      - name: Checkout the immutable release commit, tags and main history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.sha }}
-      - name: Require the release commit and tag to come from main
+      - name: Require the release tag to name a commit on main
         id: provenance
         env:
           RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_TAG: ${{ github.ref_name }}
         shell: bash
         run: |
           set -euo pipefail
@@ -72,10 +73,19 @@ jobs:
             echo "error: release commit must be a full Git object ID" >&2
             exit 1
           fi
+          if ! grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' <<< "$RELEASE_TAG"; then
+            echo "error: release tag must look like vX.Y.Z[-pre][+build]" >&2
+            exit 1
+          fi
 
           release_oid=$(git rev-parse --verify --end-of-options "$RELEASE_COMMIT")
           if [[ $(git cat-file -t "$release_oid") != commit ]]; then
             echo "error: release object $release_oid is not a commit" >&2
+            exit 1
+          fi
+          tag_oid=$(git rev-parse --verify --end-of-options "refs/tags/$RELEASE_TAG^{commit}")
+          if [[ $tag_oid != "$release_oid" ]]; then
+            echo "error: tag $RELEASE_TAG names $tag_oid, not the release commit $release_oid" >&2
             exit 1
           fi
           trusted_oid=$(git rev-parse --verify --end-of-options refs/remotes/origin/main)
@@ -84,30 +94,13 @@ jobs:
             exit 1
           fi
 
-          mapfile -t release_tags < <(
-            git tag --points-at "$release_oid" \
-              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' \
-              || true
-          )
-          if (( ${#release_tags[@]} == 0 )); then
-            echo "No release tag points at approved main commit $release_oid"
-            echo "tag=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if (( ${#release_tags[@]} != 1 )); then
-            echo "error: expected one release tag on $release_oid, found ${#release_tags[@]}" >&2
-            printf '  %s\n' "${release_tags[@]}" >&2
-            exit 1
-          fi
-
-          echo "tag=${release_tags[0]}" >> "$GITHUB_OUTPUT"
-          echo "Release ${release_tags[0]} is approved at main commit $release_oid"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "Release $RELEASE_TAG is approved at main commit $release_oid"
 
   # Run 'dist plan' (or host) to determine what tasks we need to do
   plan:
     needs:
       - verify-release-provenance
-    if: ${{ needs.verify-release-provenance.outputs.tag != '' }}
     runs-on: "ubuntu-22.04"
     outputs:
       val: ${{ steps.plan.outputs.manifest }}

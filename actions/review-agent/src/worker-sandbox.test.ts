@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { sandboxCommand } from './worker-sandbox'
+import { sandboxArguments } from './worker-sandbox'
 
 function sandboxArgs(gitMetadata: 'directory' | 'file'): string[] {
   const root = mkdtempSync(join(tmpdir(), 'review-sandbox-test-'))
@@ -21,7 +21,7 @@ function sandboxArgs(gitMetadata: 'directory' | 'file'): string[] {
   }
 
   try {
-    return sandboxCommand(actionRoot, workspace, workerTemp, ['worker.js']).args
+    return sandboxArguments(actionRoot, workspace, workerTemp, ['worker.js'])
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

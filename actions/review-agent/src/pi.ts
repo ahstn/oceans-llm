@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { loadReviewDiff, serializeReviewDiff, type SerializedReviewDiff } from './review-diff'
+import {
+  loadReviewDiff,
+  remainingMs,
+  serializeReviewDiff,
+  type SerializedReviewDiff,
+} from './review-diff'
 import { readReviewResult } from './result-artifact'
 import { sandboxCommand } from './worker-sandbox'
 import type { EffectiveConfig, PullRequestContext, ReviewResult } from './types'
@@ -72,13 +77,18 @@ export async function invokePi(
   options: { signal?: AbortSignal; sandbox?: boolean } = {},
 ): Promise<ReviewResult> {
   const startedAt = performance.now()
+  // One deadline covers diff preparation and the worker, so neither can outlive the other's budget.
+  const deadline = startedAt + timeoutMinutes * 60_000
   const tempDir = mkdtempSync(join(tmpdir(), 'oceans-review-agent-'))
   const requestPath = join(tempDir, 'request.json')
   const resultPath = join(tempDir, 'result.json')
   try {
     const diffPath = join(tempDir, 'review.diff')
     const reviewDiff = serializeReviewDiff(
-      await loadReviewDiff(request.workspace, request.context, diffPath),
+      await loadReviewDiff(request.workspace, request.context, diffPath, {
+        signal: options.signal,
+        deadline,
+      }),
     )
     const workerRequest: PiWorkerRequest = { ...request, reviewDiff }
     writeFileSync(requestPath, JSON.stringify(workerRequest), { mode: 0o600 })
@@ -98,7 +108,7 @@ export async function invokePi(
     await executeFile(worker.command, worker.args, {
       cwd: tempDir,
       env: reviewEnvironment(tempDir, oceansApiKey),
-      timeout: timeoutMinutes * 60_000,
+      timeout: remainingMs(deadline),
       maxBuffer: 1024 * 1024,
       signal: options.signal,
     })

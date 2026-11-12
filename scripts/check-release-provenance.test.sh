@@ -21,7 +21,7 @@ run_check() {
   : > "$test_root/github-output"
   (
     cd "$test_root"
-    GITHUB_OUTPUT="$test_root/github-output" RELEASE_COMMIT=$1 "$checker"
+    GITHUB_OUTPUT="$test_root/github-output" RELEASE_COMMIT=$1 RELEASE_TAG=$2 "$checker"
   )
 }
 
@@ -48,41 +48,48 @@ git -C "$test_root" commit --quiet --message "unreviewed commit"
 unreviewed_commit=$(git -C "$test_root" rev-parse HEAD)
 git -C "$test_root" tag v9.9.9 "$unreviewed_commit"
 
-# A tagged release from an approved main commit remains valid after main advances.
-run_check "$approved_commit"
-if ! rg --quiet --fixed-strings 'tag=v1.2.3' "$test_root/github-output"; then
+# A tag on an approved main commit remains valid after main advances.
+run_check "$approved_commit" v1.2.3
+if ! grep --quiet --line-regexp --fixed-strings 'tag=v1.2.3' "$test_root/github-output"; then
   echo "error: approved release tag was not selected" >&2
   exit 1
 fi
 
-# An ordinary main push without a release tag remains a successful no-op.
-run_check "$later_main_commit"
-if ! rg --quiet --fixed-strings 'tag=' "$test_root/github-output"; then
-  echo "error: ordinary main push did not produce an empty release tag" >&2
-  exit 1
-fi
-
 # A sibling commit with the same approved parent must not gain release authority.
-if run_check "$unreviewed_commit"; then
+if run_check "$unreviewed_commit" v9.9.9; then
   echo "error: unreviewed commit passed the release provenance check" >&2
   exit 1
 fi
 
-# Ambiguous release authority on one commit must fail closed.
-git -C "$test_root" tag v1.2.4 "$approved_commit"
-if run_check "$approved_commit"; then
-  echo "error: multiple release tags on one commit passed the provenance check" >&2
+# The event commit must be the commit the tag names, as when a tag moves after its push.
+if run_check "$later_main_commit" v1.2.3; then
+  echo "error: a tag naming a different commit passed the provenance check" >&2
+  exit 1
+fi
+
+# Only version tags carry release authority.
+git -C "$test_root" tag v1.2 "$approved_commit"
+for tag in v1.2 main 'v1.2.3;id' missing; do
+  if run_check "$approved_commit" "$tag"; then
+    echo "error: tag name $tag passed the release provenance check" >&2
+    exit 1
+  fi
+done
+
+# A version tag that does not exist must fail closed.
+if run_check "$approved_commit" v7.7.7; then
+  echo "error: a missing release tag passed the provenance check" >&2
   exit 1
 fi
 
 # Invalid and abbreviated object names must fail closed.
-if run_check deadbeef; then
+if run_check deadbeef v1.2.3; then
   echo "error: abbreviated object ID passed the release provenance check" >&2
   exit 1
 fi
 
 blob_oid=$(git -C "$test_root" hash-object approved)
-if run_check "$blob_oid"; then
+if run_check "$blob_oid" v1.2.3; then
   echo "error: non-commit object passed the release provenance check" >&2
   exit 1
 fi

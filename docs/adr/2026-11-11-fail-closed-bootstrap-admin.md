@@ -12,7 +12,7 @@ An enabled bootstrap administrator on a non-loopback listener must use an `env.*
 - `ServerConfig`, `BootstrapAdminConfig`, and `ServeArgs` use fail-closed defaults.
 - Configuration validation enforces the external-secret, password-quality, and rotation requirements before any listener or database bootstrap work begins.
 - Production-shaped mise, Compose, and self-host entry points explicitly opt in to bootstrap and provide the password through an environment reference.
-- The checked-in local demo remains an explicit exception: it binds only to loopback and may use its documented development credential.
+- The checked-in local demo remains an explicit exception: it binds only to loopback and may use its documented development credential. Loopback launchers that write an enabled `bootstrap_admin` block also opt in to bootstrap: the `gateway-local` mise template (`serve` and `dev-stack`), `scripts/start-e2e-stack.sh`, the review-agent CI gateway, and the harness integration setup.
 
 ## Rationale
 

@@ -824,19 +824,18 @@ pub async fn login_with_password(
             return Err(error.into());
         }
     };
-    let password_auth = if let Some(user) = user
-        .as_ref()
-        .filter(|user| user.auth_mode == AuthMode::Password)
-    {
-        match state.store.get_user_password_auth(user.user_id).await {
-            Ok(password_auth) => password_auth,
-            Err(error) => {
-                attempt.release();
-                return Err(error.into());
-            }
+    // Every path pays the same store read, so response time does not reveal
+    // whether the account exists or uses password sign-in.
+    let lookup_user_id = user.as_ref().map_or(Uuid::nil(), |user| user.user_id);
+    let password_auth = match state.store.get_user_password_auth(lookup_user_id).await {
+        Ok(password_auth) => password_auth.filter(|_| {
+            user.as_ref()
+                .is_some_and(|user| user.auth_mode == AuthMode::Password)
+        }),
+        Err(error) => {
+            attempt.release();
+            return Err(error.into());
         }
-    } else {
-        None
     };
     let has_password_auth = password_auth.is_some();
     let expected_hash = password_auth.map(|auth| auth.password_hash);

@@ -88,6 +88,8 @@ options.database = "oceans_llm"
 OCEANS_API_KEY_SECRET_ENCRYPTION_KEY = "${OCEANS_API_KEY_SECRET_ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}"
 # Issuer for MCP client OAuth in gateway.yaml; follows the local gateway port.
 OCEANS_LOCAL_PUBLIC_BASE_URL = "${OCEANS_LOCAL_PUBLIC_BASE_URL:-http://127.0.0.1:${GATEWAY_PORT:-8080}}"
+# `serve` seeds gateway.yaml's local bootstrap admin only when asked to.
+GATEWAY_BOOTSTRAP_ADMIN = "true"
 
 [task_templates.gateway-prod.env]
 GATEWAY_CONFIG = "gateway.prod.yaml"

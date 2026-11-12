@@ -1,8 +1,6 @@
 import { existsSync, lstatSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-// The root starts empty. In particular, never mount procfs: its environ files
-// would expose model credentials to read/fetch tools, even in a PID namespace.
 export function sandboxCommand(
   actionRoot: string,
   workspace: string,
@@ -12,6 +10,21 @@ export function sandboxCommand(
   if (process.platform !== 'linux' || !existsSync('/usr/bin/bwrap')) {
     throw new Error('The review worker requires Linux with /usr/bin/bwrap (bubblewrap) installed')
   }
+  return {
+    command: '/usr/bin/bwrap',
+    args: sandboxArguments(actionRoot, workspace, tempDir, workerArgs),
+  }
+}
+
+// The root starts empty. In particular, never mount procfs: its environ files
+// would expose model credentials to read/fetch tools, even in a PID namespace.
+// Building the arguments needs no bubblewrap, so tests run on any platform.
+export function sandboxArguments(
+  actionRoot: string,
+  workspace: string,
+  tempDir: string,
+  workerArgs: string[],
+): string[] {
   const args = [
     '--unshare-user',
     '--unshare-pid',
@@ -62,5 +75,5 @@ export function sandboxCommand(
     process.execPath,
     ...workerArgs,
   )
-  return { command: '/usr/bin/bwrap', args }
+  return args
 }

@@ -646,6 +646,7 @@
         "crates/admin-ui/web/src/routes/identity/-users/{use-onboarding-reset.ts,user-auth-section.tsx}",
         "crates/admin-ui/web/src/components/layout/auth-layout.tsx",
         "crates/gateway/src/http/{identity,identity_lifecycle}.rs",
+        "crates/gateway-service/src/password_auth.rs",
         "crates/gateway-store/src/libsql_store/identity.rs",
         "crates/gateway/src/email.rs"
       ]
