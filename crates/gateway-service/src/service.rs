@@ -9,10 +9,9 @@ use gateway_core::{
     IdentityRepository, McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationQuery,
     McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, PricingCatalogRepository,
     PricingResolution, PricingUnpricedReason, ProviderBatchResult, ProviderRepository,
-    RequestLogDetail, RequestLogPage, RequestLogPurgeResult, RequestLogQuery, RequestLogRecord,
-    RequestLogRepository, RequestLogRetentionWindow, RequestTags, ResponsesRequest, RouteError,
-    RoutePlanner, ServiceTier, ServiceTierOutcome, StoreHealth, UsageLedgerRecord,
-    UsagePricingStatus,
+    RequestLogDetail, RequestLogPage, RequestLogPurgeResult, RequestLogQuery, RequestLogRepository,
+    RequestLogRetentionWindow, RequestTags, ResponsesRequest, RouteError, RoutePlanner,
+    ServiceTier, ServiceTierOutcome, StoreHealth, UsageLedgerRecord, UsagePricingStatus,
 };
 use serde_json::{Value, json};
 use time::{Duration, OffsetDateTime};
@@ -813,19 +812,6 @@ where
             .purge_expired_agent_analysis(now, now - self.agent_analysis_queue_retention)
             .await
             .map_err(Into::into)
-    }
-
-    pub async fn log_request_if_enabled(
-        &self,
-        auth: &AuthenticatedApiKey,
-        log: RequestLogRecord,
-    ) -> Result<(), GatewayError> {
-        if !self.request_logging.should_log_request(auth).await? {
-            return Ok(());
-        }
-
-        self.store.insert_request_log(&log, None).await?;
-        Ok(())
     }
 
     pub async fn list_request_logs(
