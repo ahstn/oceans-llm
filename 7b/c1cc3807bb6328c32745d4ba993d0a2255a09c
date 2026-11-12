@@ -1,0 +1,14 @@
+scripts/workflow-checkouts.sh
+  h_2f452a9c375069 4-9,14-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "7bc1cc3807bb6328c32745d4ba993d0a2255a09c",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
