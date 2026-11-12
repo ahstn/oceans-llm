@@ -3107,10 +3107,10 @@ fn narrow_for_route_profile(
             compatibility.and_then(|compatibility| compatibility.github_copilot.as_ref()),
         ),
         // A Decisions profile (OpenRouter `api: decisions` or `openai_compat.decisions_api`)
-        // serves only Decisions, whatever the provider's baseline.
-        "openai_compat" | "gcp_cloud_run_openai_compat"
-            if compatibility.is_some_and(RouteCompatibility::selects_decisions_api) =>
-        {
+        // serves only Decisions, whatever the provider's baseline. Only `openai_compat` takes
+        // these profiles, matching `infer_compatibility_capabilities`; config validation rejects
+        // them on every other provider type.
+        "openai_compat" if compatibility.is_some_and(RouteCompatibility::selects_decisions_api) => {
             ProviderCapabilities::decisions_only()
         }
         // Only Bedrock providers use api_style; other providers ignore the block.
@@ -4107,6 +4107,22 @@ mod tests {
             );
             assert_eq!(seeded, ProviderCapabilities::decisions_only());
             assert_eq!(runtime, seeded);
+            // The ceiling and inference agree that Cloud Run is not a Decisions transport.
+            assert_eq!(
+                route_capability_ceiling(
+                    "gcp_cloud_run_openai_compat",
+                    "model",
+                    &route.compatibility
+                ),
+                ProviderCapabilities::openai_compat_baseline()
+            );
+            assert_eq!(
+                crate::infer_compatibility_capabilities(
+                    &route.compatibility,
+                    "gcp_cloud_run_openai_compat"
+                ),
+                crate::PartialCapabilities::default()
+            );
         }
         assert_eq!(
             route_capability_ceiling("typesafe", "jev", &RouteCompatibility::default()),
