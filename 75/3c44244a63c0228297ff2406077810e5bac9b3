@@ -1,0 +1,54 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  h_2f452a9c375069 649
+.github/workflows/release.yml
+  h_2f452a9c375069 43-44,55,61,65,76-79,86-90,97-98
+.github/zizmor.yml
+  h_2f452a9c375069 4-5,20-26,29-30,33-34
+actions/review-agent/scripts/ci-gateway.ts
+  h_2f452a9c375069 132
+actions/review-agent/src/pi.ts
+  h_2f452a9c375069 7-12,80-81,88-91,111
+actions/review-agent/src/review-diff.test.ts
+  h_2f452a9c375069 55-59
+actions/review-agent/src/review-diff.ts
+  h_2f452a9c375069 1-2,5,8-9,38-75,80,88,102-104,110,113-119
+actions/review-agent/src/worker-sandbox.test.ts
+  h_2f452a9c375069 5,24
+actions/review-agent/src/worker-sandbox.ts
+  h_2f452a9c375069 13-27,78
+crates/gateway-service/src/password_auth.rs
+  h_2f452a9c375069 60-62,93-94,361-362,365-376,614-665
+crates/gateway/src/http/identity.rs
+  h_2f452a9c375069 827-837
+docs/adr/2026-11-11-fail-closed-bootstrap-admin.md
+  h_2f452a9c375069 15
+docs/adr/2026-11-11-privileged-pr-workflow-trust-boundaries.md
+  h_2f452a9c375069 16-17,19,31,37
+docs/contributing/reference/release-process.md
+  h_2f452a9c375069 83,85,101
+docs/src/content/docs/setup/self-hosting.mdx
+  h_2f452a9c375069 63-89
+mise.toml
+  h_2f452a9c375069 91-92
+scripts/check-ci-trust-boundaries.sh
+  h_2f452a9c375069 4,11,19,25-40,46-57
+scripts/check-release-provenance.test.sh
+  h_2f452a9c375069 24,51-53,58-60,64-66,70-81,86,92
+scripts/check-release-workflow.sh
+  h_2f452a9c375069 4,12,21-25,51,71-72,75,77-79,81,87,93,96,103,105
+scripts/start-e2e-stack.sh
+  h_2f452a9c375069 308
+tests/harness-integration/src/global-setup.ts
+  h_2f452a9c375069 199-200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "753c44244a63c0228297ff2406077810e5bac9b3",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
