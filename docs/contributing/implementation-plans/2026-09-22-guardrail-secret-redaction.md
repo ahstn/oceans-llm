@@ -1,9 +1,9 @@
 # Guardrail Secret Redaction For Outbound Prompts
 
-`See also`: [Gateway Guardrails](../../operations/gateway-guardrails.md), [ADR: Gateway Guardrails Domain and Composition](../../adr/2026-08-22-gateway-guardrails-domain-and-composition.md), [PR #305](https://github.com/ahstn/oceans-llm/pull/305)
+`See also`: [Gateway Guardrails](https://oceans-llm.com/operations/gateway-guardrails/), [ADR: Gateway Guardrails Domain and Composition](../../adr/2026-08-22-gateway-guardrails-domain-and-composition.md), [PR #305](https://github.com/ahstn/oceans-llm/pull/305)
 
 - Date: 2026-09-22
-- Status: Implemented. See [ADR: Guardrail Secret Redaction](../../adr/2026-09-22-guardrail-secret-redaction.md) and [Gateway Guardrails](../../operations/gateway-guardrails.md#secret-redaction).
+- Status: Implemented. See [ADR: Guardrail Secret Redaction](../../adr/2026-09-22-guardrail-secret-redaction.md) and [Gateway Guardrails](https://oceans-llm.com/operations/gateway-guardrails/#secret-redaction).
 - Primary target: detect API keys and credentials in inference requests and replace them with `[REDACTED:<rule_id>]` before the request leaves Oceans LLM for a provider or a managed guardrail service
 
 ## Final decisions
@@ -19,7 +19,7 @@ The implementation differs from the draft below in these ways:
 - CRC32 checksum validation was dropped. Prefix anchoring and entropy were precise enough, and it avoided a dependency.
 - Module layout is `redaction/{mod,rules,scanner,tests}.rs`.
 - Overrides merge `secret_redaction` field by field, like every other policy field. The request-log aggregate includes MCP-server overrides.
-- Only inline base64 media is skipped, not every `data` field. See the skip rules in `docs/operations/gateway-guardrails.md`.
+- Only inline base64 media is skipped, not every `data` field. See the skip rules in [Gateway guardrails](https://oceans-llm.com/operations/gateway-guardrails/).
 
 ## Summary
 
@@ -229,7 +229,7 @@ The provider boundary is the primary target, but request logs currently persist 
 5. Gateway wiring: build redactors in `config/guardrails.rs`, broad pointer collector and redaction pass in `inference_guardrails.rs`, test stub in `http/test_support.rs`.
 6. Request log payload redaction.
 7. Admin API and UI: expose `secret_redaction` in the policies endpoint (`crates/gateway/src/http/guardrails.rs:237`), regenerate `admin-api.ts`, and show redaction decisions (the `transformed` filter already exists).
-8. Docs: new section in `docs/operations/gateway-guardrails.md`, configuration reference entry, and an ADR recording the in-process deterministic transform decision and rule provenance.
+8. Docs: new section in [Gateway guardrails](https://oceans-llm.com/operations/gateway-guardrails/), configuration reference entry, and an ADR recording the in-process deterministic transform decision and rule provenance.
 
 ## Tests
 

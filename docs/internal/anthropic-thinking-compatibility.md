@@ -1,6 +1,6 @@
 # Anthropic thinking compatibility research
 
-Reviewed 2026-10-21 using Exa against Anthropic's API documentation and official Python SDK types. This is maintainer research, not a claim that every Claude Code workflow has been verified. The gateway's published contract is [Provider API Compatibility](../reference/provider-api-compatibility.md).
+Reviewed 2026-10-21 using Exa against Anthropic's API documentation and official Python SDK types. This is maintainer research, not a claim that every Claude Code workflow has been verified. The gateway's published contract is [Provider API Compatibility](https://oceans-llm.com/reference/provider-api-compatibility/).
 
 The reported request is valid for Claude Opus 5.5:
 
@@ -61,7 +61,7 @@ Native Messages fields and OpenAI-shaped aliases have different responsibilities
 - An invalid display value should report a display validation error. A budget error requires an actual manual budget or unsupported manual configuration.
 - The gateway retains its model-specific thinking-off rules: always-on models reject disabling, Sonnet 5.5 maps `disabled` to `between_tools`, and models with a thinking-off effort ceiling reject `xhigh` and `max` in that mode. Other upstream model and beta restrictions remain authoritative; omitted effort never acquires another model's defaults.
 
-The owning implementation is [Anthropic thinking compatibility](../../crates/gateway-providers/src/anthropic/thinking.rs). The [routing contract](../configuration/model-routing-and-api-behavior.md#enforce-reasoning-effort-ceilings) owns model and alias ceilings.
+The owning implementation is [Anthropic thinking compatibility](../../crates/gateway-providers/src/anthropic/thinking.rs). The [routing contract](https://oceans-llm.com/configuration/model-routing/#reasoning-effort-ceilings) owns model and alias ceilings.
 
 ## Thinking output and beta extensions
 

@@ -30,6 +30,7 @@ fn test_context(upstream_model: &str) -> ProviderRequestContext {
         extra_body: serde_json::Map::new(),
         request_headers: BTreeMap::new(),
         compatibility: Default::default(),
+        service_tier: None,
     }
 }
 
@@ -822,69 +823,6 @@ fn response_normalization_includes_usage_cache_and_thinking() {
 }
 
 #[tokio::test]
-async fn stream_normalization_converts_sse_events_and_preserves_thinking_and_usage() {
-    let sse_chunks = vec![
-        Ok(Bytes::from(
-            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_stream_1\",\"model\":\"claude-fable-5-1\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":10,\"output_tokens\":0,\"cache_read_input_tokens\":5}}}\n\n",
-        )),
-        Ok(Bytes::from(
-            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}\n\n",
-        )),
-        Ok(Bytes::from(
-            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"Reasoning delta 1.\"}}\n\n",
-        )),
-        Ok(Bytes::from(
-            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"sig_stream_xyz\"}}\n\n",
-        )),
-        Ok(Bytes::from(
-            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
-        )),
-        Ok(Bytes::from(
-            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
-        )),
-        Ok(Bytes::from(
-            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello \"}}\n\n",
-        )),
-        Ok(Bytes::from(
-            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"world!\"}}\n\n",
-        )),
-        Ok(Bytes::from(
-            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":15}}\n\n",
-        )),
-        Ok(Bytes::from(
-            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
-        )),
-    ];
-
-    let stream = futures_util::stream::iter(sse_chunks);
-    let mut provider_stream = normalize_anthropic_stream(
-        stream,
-        "chatcmpl-stream-test".to_string(),
-        1700000000,
-        "claude-fable-5-1".to_string(),
-        "anthropic_compat",
-        "anthropic_compat",
-    );
-
-    let mut chunks = Vec::new();
-    while let Some(item) = provider_stream.next().await {
-        let bytes = item.expect("valid chunk");
-        let text = String::from_utf8(bytes.to_vec()).expect("utf-8");
-        chunks.push(text);
-    }
-
-    let all_text = chunks.join("");
-    assert!(all_text.contains("\"role\":\"assistant\""));
-    assert!(all_text.contains("Reasoning delta 1."));
-    assert!(all_text.contains("sig_stream_xyz"));
-    assert!(all_text.contains("\"anthropic_compat\""));
-    assert!(all_text.contains("Hello "));
-    assert!(all_text.contains("world!"));
-    assert!(all_text.contains("\"finish_reason\":\"stop\""));
-    assert!(all_text.contains("data: [DONE]\n\n"));
-}
-
-#[tokio::test]
 async fn stream_normalization_yields_error_and_halts_on_corrupt_sse_json() {
     let sse_chunks = vec![
         Ok(Bytes::from(
@@ -1144,6 +1082,7 @@ fn anthropic_compat_default_headers_preserve_context_management_beta() {
         anthropic_version_body: None,
         default_max_tokens: Some(4096),
         default_headers: Some(&default_headers),
+        allow_remote_images: false,
     };
 
     let body = map_anthropic_request(&request, &context, false, &options).expect("map request");

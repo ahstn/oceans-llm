@@ -12,8 +12,8 @@ use serde_json::{Value, json};
 use tower_http::request_id::RequestId;
 
 use super::{
-    AppError, v1_chat_completions, v1_decisions, v1_embeddings, v1_images, v1_messages_inner,
-    v1_responses,
+    AppError, messages::v1_messages_inner, v1_chat_completions, v1_decisions, v1_embeddings,
+    v1_images, v1_responses,
 };
 use crate::http::{
     state::AppState,
@@ -147,10 +147,68 @@ impl Endpoint {
 struct RecordingProvider {
     calls: Mutex<Vec<(Endpoint, bool)>>,
     chat_protocols: Mutex<Vec<gateway_core::ChatRequestProtocol>>,
+    native_messages: bool,
+    truncate_native_stream: bool,
 }
 
 #[async_trait]
 impl ProviderClient for RecordingProvider {
+    fn supports_native_messages(&self, _context: &ProviderRequestContext) -> bool {
+        self.native_messages
+    }
+
+    async fn messages(
+        &self,
+        _request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<gateway_core::NativeMessagesResponse<Value>, ProviderError> {
+        assert_eq!(
+            context.chat_protocol,
+            gateway_core::ChatRequestProtocol::AnthropicMessages
+        );
+        self.calls.lock().unwrap().push((Endpoint::Messages, false));
+        Ok(gateway_core::NativeMessagesResponse {
+            body: native_message(),
+            headers: native_headers(),
+        })
+    }
+
+    async fn messages_stream(
+        &self,
+        _request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<gateway_core::NativeMessagesResponse<ProviderStream>, ProviderError> {
+        assert_eq!(
+            context.chat_protocol,
+            gateway_core::ChatRequestProtocol::AnthropicMessages
+        );
+        self.calls.lock().unwrap().push((Endpoint::Messages, true));
+        let frames = [
+            json!({"type":"message_start","message":{"model":"upstream-model","usage":{"input_tokens":2,"cache_read_input_tokens":8}}}),
+            json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
+            json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}),
+            json!({"type":"content_block_stop","index":0}),
+            json!({"type":"future_event","opaque":true}),
+            json!({"type":"message_delta","delta":{"stop_reason":"pause_turn"},"usage":{"output_tokens":1}}),
+            json!({"type":"message_stop"}),
+        ];
+        let frame_count = if self.truncate_native_stream {
+            3
+        } else {
+            frames.len()
+        };
+        let bytes = frames.into_iter().take(frame_count).map(|frame| {
+            Ok(axum::body::Bytes::from(format!(
+                "event: {}\ndata: {frame}\n\n",
+                frame["type"].as_str().unwrap()
+            )))
+        });
+        Ok(gateway_core::NativeMessagesResponse {
+            body: Box::pin(futures_util::stream::iter(bytes)),
+            headers: native_headers(),
+        })
+    }
+
     fn provider_key(&self) -> &str {
         "vertex"
     }
@@ -235,6 +293,179 @@ impl ProviderClient for RecordingProvider {
     ) -> Result<Value, ProviderError> {
         panic!("inference endpoints must not dispatch images")
     }
+}
+
+fn native_headers() -> std::collections::BTreeMap<String, String> {
+    [
+        ("anthropic-future-header".into(), "opaque".into()),
+        ("x-should-retry".into(), "false".into()),
+    ]
+    .into()
+}
+
+fn native_message() -> Value {
+    json!({"id":"msg_native", "type":"message", "model":"upstream-model", "role":"assistant",
+        "content":[
+            {"type":"text","text":"Before"},
+            {"type":"thinking","thinking":"","signature":"signed"},
+            {"type":"tool_use","id":"toolu_exact","name":"lookup","input":{"value":"synthetic"}},
+            {"type":"server_tool_use","id":"srvtoolu_exact","name":"web_search","input":{"query":"synthetic"}},
+            {"type":"future_block","opaque":true}
+        ],
+        "stop_reason":"pause_turn", "stop_sequence":null, "future_message":true,
+        "usage":{"input_tokens":2,"cache_read_input_tokens":8,"output_tokens":1,"future_usage":true}
+    })
+}
+
+#[tokio::test]
+async fn native_messages_handlers_preserve_protocol_and_account_for_cached_usage() {
+    for streaming in [false, true] {
+        let (_directory, mut state) = app_state().await;
+        seed_stream_cancellation_test(&state.store).await;
+        let provider = Arc::new(RecordingProvider {
+            native_messages: true,
+            ..Default::default()
+        });
+        state.providers.register(provider.clone());
+        let response = Endpoint::Messages
+            .call(state.clone(), streaming)
+            .await
+            .unwrap_or_else(|error| panic!("native Messages failed: {}", error.0));
+        assert_eq!(response.headers()["x-request-id"], "inference-test");
+        assert_eq!(response.headers()["anthropic-future-header"], "opaque");
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        if streaming {
+            let mut parser = gateway_core::SseEventParser::default();
+            let events = parser.push_bytes(&body).unwrap();
+            let events: Vec<Value> = events
+                .into_iter()
+                .map(|event| serde_json::from_str(&event.data).unwrap())
+                .collect();
+            assert_eq!(events[0]["message"]["model"], "fast");
+            assert!(events.iter().any(|event| event["type"] == "future_event"));
+            assert_eq!(
+                events[events.len() - 2]["delta"]["stop_reason"],
+                "pause_turn"
+            );
+            assert_eq!(events.last().unwrap()["type"], "message_stop");
+        } else {
+            let body: Value = serde_json::from_slice(&body).unwrap();
+            let mut expected = native_message();
+            expected["model"] = json!("fast");
+            assert_eq!(body, expected);
+        }
+        assert_eq!(
+            *provider.calls.lock().unwrap(),
+            [(Endpoint::Messages, streaming)]
+        );
+        let detail = request_detail(&state).await;
+        assert_eq!(detail.attempts[0].status, RequestAttemptStatus::Success);
+        assert_eq!(detail.log.prompt_tokens, Some(10));
+        assert_eq!(detail.log.total_tokens, Some(11));
+        let scope = format!("service_account:{}", detail.log.service_account_id.unwrap());
+        let ledger = state
+            .store
+            .get_usage_ledger_by_request_and_scope("inference-test", &scope)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(ledger.prompt_tokens, Some(10));
+        assert_eq!(ledger.cache_read_tokens, Some(8));
+        assert_eq!(ledger.completion_tokens, Some(1));
+        assert_eq!(ledger.total_tokens, Some(11));
+    }
+}
+
+#[tokio::test]
+async fn native_messages_truncated_stream_fails_and_accounts_for_observed_usage() {
+    let (_directory, mut state) = app_state().await;
+    seed_stream_cancellation_test(&state.store).await;
+    state.providers.register(Arc::new(RecordingProvider {
+        native_messages: true,
+        truncate_native_stream: true,
+        ..Default::default()
+    }));
+    let response = Endpoint::Messages
+        .call(state.clone(), true)
+        .await
+        .unwrap_or_else(|error| panic!("native Messages failed: {}", error.0));
+    let error = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("message_stop"));
+    let detail = request_detail(&state).await;
+    assert_eq!(detail.attempts[0].status, RequestAttemptStatus::StreamError);
+    assert_eq!(
+        detail.attempts[0].error_code.as_deref(),
+        Some("upstream_transport")
+    );
+    let scope = format!("service_account:{}", detail.log.service_account_id.unwrap());
+    let ledger = state
+        .store
+        .get_usage_ledger_by_request_and_scope("inference-test", &scope)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(ledger.prompt_tokens, Some(10));
+    assert_eq!(ledger.cache_read_tokens, Some(8));
+}
+
+#[tokio::test]
+async fn native_messages_generated_tools_still_pass_through_guardrails() {
+    use gateway_guardrails::{
+        GuardPhase, GuardrailEngine, ManagedCheckConfig, ManagedCheckKind, ManagedEvaluator,
+        ManagedOutcome, ManagedService, PolicyMode, ReasonCode, test_utils::StubManagedEvaluator,
+    };
+    let (_directory, mut state) = app_state().await;
+    seed_stream_cancellation_test(&state.store).await;
+    state.providers.register(Arc::new(RecordingProvider {
+        native_messages: true,
+        ..Default::default()
+    }));
+    let stub = Arc::new(StubManagedEvaluator::new(
+        "deny-tools",
+        ManagedService::AmazonBedrock,
+        [Ok(ManagedOutcome::Intervention {
+            reason_code: ReasonCode::new("test.denied").unwrap(),
+            metadata: Default::default(),
+        })],
+    ));
+    state.guardrail_engine = Arc::new(GuardrailEngine::new(
+        Vec::new(),
+        [("deny-tools".into(), stub as Arc<dyn ManagedEvaluator>)].into(),
+    ));
+    let config = Arc::make_mut(&mut state.guardrail_config);
+    config.default.enabled = true;
+    config.default.mode = PolicyMode::Deny;
+    config.default.managed_checks = vec!["deny-tools".into()];
+    config.managed_checks.insert(
+        "deny-tools".into(),
+        ManagedCheckConfig {
+            kind: ManagedCheckKind::AmazonBedrock,
+            phases: [GuardPhase::GeneratedToolCall].into(),
+            timeout_ms: 1000,
+            failure_disposition: Default::default(),
+            max_content_bytes: 1 << 20,
+            bedrock: None,
+            model_armor: None,
+        },
+    );
+    let error = Endpoint::Messages
+        .call(state.clone(), false)
+        .await
+        .unwrap_err();
+    assert_eq!(error.0.error_code(), "guardrail_policy_denied");
+    let detail = request_detail(&state).await;
+    let scope = format!("service_account:{}", detail.log.service_account_id.unwrap());
+    assert!(
+        state
+            .store
+            .get_usage_ledger_by_request_and_scope("inference-test", &scope)
+            .await
+            .unwrap()
+            .is_some(),
+        "upstream usage is charged even when a response guardrail denies it"
+    );
 }
 
 async fn setup() -> (tempfile::TempDir, AppState, Arc<RecordingProvider>) {
@@ -342,11 +573,16 @@ async fn inference_endpoints_normalize_models_and_account_for_success() {
 
 #[tokio::test]
 async fn inference_endpoints_log_stream_start_failure_without_charging() {
-    for endpoint in [Endpoint::Chat, Endpoint::Responses] {
+    for endpoint in [Endpoint::Chat, Endpoint::Responses, Endpoint::Messages] {
         let (_directory, state, provider) = setup().await;
         let error = endpoint.call(state.clone(), true).await.unwrap_err();
         assert_eq!(error.0.error_code(), "upstream_transport");
-        assert_eq!(*provider.calls.lock().unwrap(), [(endpoint, true)]);
+        let upstream_endpoint = if endpoint == Endpoint::Messages {
+            Endpoint::Chat
+        } else {
+            endpoint
+        };
+        assert_eq!(*provider.calls.lock().unwrap(), [(upstream_endpoint, true)]);
         let detail = request_detail(&state).await;
         assert_eq!(detail.log.error_code.as_deref(), Some("upstream_transport"));
         assert_eq!(detail.attempts.len(), 1);
@@ -364,6 +600,50 @@ async fn inference_endpoints_log_stream_start_failure_without_charging() {
                 .is_none()
         );
         assert_eq!(state.metrics.test_snapshot().requests, 1);
+        assert_eq!(
+            state
+                .metrics
+                .test_snapshot()
+                .request_outcomes
+                .get(error.0.error_type()),
+            Some(&1)
+        );
+    }
+}
+
+#[tokio::test]
+async fn inference_endpoints_count_no_compatible_route_failures() {
+    for endpoint in [Endpoint::Chat, Endpoint::Responses, Endpoint::Messages] {
+        for stream in [false, true] {
+            let (_directory, state) = app_state().await;
+            seed_stream_cancellation_test(&state.store).await;
+            let auth = state
+                .service
+                .authenticate(Some("Bearer gwk_streamtest.cancel-secret"))
+                .await
+                .unwrap();
+            let scope = format!("service_account:{}", auth.owner_service_account_id.unwrap());
+            let error = endpoint.call(state.clone(), stream).await.unwrap_err();
+            assert!(matches!(
+                error.0,
+                gateway_core::GatewayError::InvalidRequest(_)
+            ));
+            assert!(
+                state
+                    .store
+                    .get_usage_ledger_by_request_and_scope("inference-test", &scope)
+                    .await
+                    .unwrap()
+                    .is_none(),
+                "{endpoint:?}, stream={stream}: rejected request charged usage"
+            );
+            let snapshot = state.metrics.test_snapshot();
+            assert_eq!(snapshot.requests, 1, "{endpoint:?}, stream={stream}");
+            assert_eq!(
+                snapshot.request_outcomes.get(error.0.error_type()),
+                Some(&1)
+            );
+        }
     }
 }
 

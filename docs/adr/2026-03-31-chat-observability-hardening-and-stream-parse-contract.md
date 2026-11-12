@@ -12,8 +12,8 @@
 
 ## Current state
 
-- [../operations/observability-and-request-logs.md](../operations/observability-and-request-logs.md)
-- [../reference/request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
+- [Observability and request logs](https://oceans-llm.com/observability/)
+- [Request lifecycle and failure modes](https://oceans-llm.com/reference/request-lifecycle/)
 - [../operations/budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
 
 ## Context
@@ -149,8 +149,8 @@ The canonical pages now describe:
 
 Canonical docs:
 
-- [../operations/observability-and-request-logs.md](../operations/observability-and-request-logs.md)
-- [../reference/request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
+- [Observability and request logs](https://oceans-llm.com/observability/)
+- [Request lifecycle and failure modes](https://oceans-llm.com/reference/request-lifecycle/)
 - [../operations/budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
 
 We want future readers to learn the real contract from the docs, not from spelunking tests or reconstructing intent from issue threads.

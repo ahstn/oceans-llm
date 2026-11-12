@@ -16,6 +16,12 @@ use serde_json::{Map, Value, json};
 pub(crate) fn normalize_anthropic_messages_for_openai(
     body: &mut Map<String, Value>,
 ) -> Result<(), ProviderError> {
+    if let Some(system) = body.remove("system") {
+        let messages = body.entry("messages").or_insert_with(|| json!([]));
+        if let Some(messages) = messages.as_array_mut() {
+            messages.insert(0, json!({"role": "system", "content": system}));
+        }
+    }
     if let Some(tools) = body.get_mut("tools").and_then(Value::as_array_mut) {
         for tool in tools {
             normalize_tool(tool);
@@ -52,7 +58,7 @@ fn normalize_tool(tool: &mut Value) {
     if object.contains_key("type") || !object.contains_key("input_schema") {
         return;
     }
-    let Some(name) = object.get("name").cloned() else {
+    let Some(name) = object.remove("name") else {
         return;
     };
     let mut function = Map::from_iter([
@@ -60,13 +66,15 @@ fn normalize_tool(tool: &mut Value) {
         (
             "parameters".to_string(),
             object
-                .get("input_schema")
-                .cloned()
+                .remove("input_schema")
                 .unwrap_or_else(|| json!({"type":"object","properties":{}})),
         ),
     ]);
-    if let Some(description) = object.get("description").cloned() {
+    if let Some(description) = object.remove("description") {
         function.insert("description".to_string(), description);
+    }
+    if let Some(strict) = object.remove("strict") {
+        function.insert("strict".to_string(), strict);
     }
     *tool = json!({
         "type": "function",
@@ -357,6 +365,32 @@ mod tests {
 
     fn messages(messages: Value) -> Value {
         normalize(json!({ "messages": messages }))["messages"].clone()
+    }
+
+    #[test]
+    fn native_tool_strict_constraints_survive_chat_translation() {
+        let schema = json!({
+            "type": "object", "properties": {"city": {"type": "string"}},
+            "required": ["city"], "additionalProperties": false
+        });
+        for strict in [Some(true), Some(false), None] {
+            let mut tool = json!({
+                "name": "lookup", "description": "Look up a city", "input_schema": schema
+            });
+            let mut function = json!({
+                "name": "lookup", "description": "Look up a city", "parameters": schema
+            });
+            if let Some(strict) = strict {
+                tool["strict"] = json!(strict);
+                function["strict"] = json!(strict);
+            }
+            let translated = normalize(json!({"tools": [tool]}));
+            assert_eq!(
+                translated["tools"],
+                json!([{"type": "function", "function": function}]),
+                "strict={strict:?}"
+            );
+        }
     }
 
     #[test]

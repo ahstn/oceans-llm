@@ -1,0 +1,28 @@
+# Copy to ~/.config/opencode/gateways.yml (or $XDG_CONFIG_HOME/opencode/gateways.yml).
+providers:
+  oceans:
+    name: Oceans gateway
+    baseUrl: https://gateway.example.com
+    # Environment variable names, never raw API keys. The first nonempty value wins.
+    apiKey: [OCEANS_API_KEY, LITELLM_API_KEY]
+    # Fallback only when discovery provides no routing metadata.
+    api: openai-completions
+    discovery:
+      type: litellm
+
+    # Overrides are not required; discovery normally supplies these settings.
+    # Use model IDs and capabilities exposed by your gateway.
+    modelOverrides:
+      gpt-6-luna:
+        api: openai-responses
+        input: [text, image, pdf]
+        thinking:
+          efforts: [low, medium, high]
+          defaultLevel: medium
+      claude-haiku-5.5:
+        api: anthropic-messages
+        input: [text, image, pdf]
+        thinking:
+          mode: anthropic-adaptive
+          efforts: [low, medium, high]
+          defaultLevel: medium

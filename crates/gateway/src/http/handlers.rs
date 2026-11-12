@@ -13,15 +13,20 @@ mod inference;
 #[cfg(test)]
 mod inference_tests;
 mod json_operation;
+mod messages;
 #[cfg(test)]
 mod model_group_info_tests;
 #[cfg(test)]
 mod model_metadata_tests;
+mod native_messages;
 #[cfg(test)]
 mod route_tests;
 mod routing;
 #[cfg(test)]
 mod routing_tests;
+mod service_tier;
+#[cfg(test)]
+mod service_tier_tests;
 
 use auth::InferenceAuth;
 pub use count_tokens::{CountTokensLimiter, v1_messages_count_tokens};
@@ -29,7 +34,9 @@ pub use decisions::{v1_decisions, v1_systemone};
 pub use embeddings::v1_embeddings;
 use gateway_service::routing::{RoutingEndpoint, RoutingReceipt};
 pub use images::v1_images;
+pub use messages::v1_messages;
 use routing::{SelectedProviderRoute, no_compatible_route_error, select_provider_route};
+use service_tier::{enforce_requested_service_tier, service_tier_outcome};
 
 use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
@@ -52,6 +59,7 @@ use gateway_core::{
     anthropic_messages_request_to_core, core_chat_request_to_openai, enforce_chat_reasoning_effort,
     enforce_responses_reasoning_effort, openai_chat_request_to_core,
     openai_responses_request_to_core, protocol::anthropic::anthropic_message_from_openai_chat,
+    take_requested_service_tier,
 };
 use gateway_service::{
     McpAccess, McpTokenOverhead, McpTokenOverheadInput, RateLimitSubject, RequestLogContext,
@@ -155,7 +163,12 @@ pub async fn v1_model_metadata(
             gateway_core::SCOPE_INFERENCE,
         )
         .await?;
-    Ok(Json(state.service.model_metadata_for_api_key(&auth).await?))
+    Ok(Json(
+        state
+            .service
+            .model_metadata_for_api_key(&auth, &state.providers)
+            .await?,
+    ))
 }
 
 pub async fn v1_models(
@@ -169,7 +182,12 @@ pub async fn v1_models(
             gateway_core::SCOPE_INFERENCE,
         )
         .await?;
-    Ok(Json(state.service.models_list_for_api_key(&auth).await?))
+    Ok(Json(
+        state
+            .service
+            .models_list_for_api_key(&auth, &state.providers)
+            .await?,
+    ))
 }
 
 /// LiteLLM's `GET /model_group/info`, so LiteLLM-aware clients can discover
@@ -186,350 +204,17 @@ pub async fn v1_model_group_info(
         )
         .await?;
     Ok(Json(
-        state.service.model_group_info_for_api_key(&auth).await?,
+        state
+            .service
+            .model_group_info_for_api_key(&auth, &state.providers)
+            .await?,
     ))
 }
 
-pub async fn v1_messages(
-    State(state): State<AppState>,
-    request_id: Option<Extension<RequestId>>,
-    headers: HeaderMap,
-    policy: RequestPolicyContext,
-    InferenceAuth(auth): InferenceAuth,
-    Json(request): Json<AnthropicMessagesRequest>,
-) -> Response {
-    match v1_messages_inner(state, request_id, headers, policy, auth, request).await {
-        Ok(response) => response,
-        Err(error) => anthropic_error_response(error.0),
-    }
-}
-
-async fn v1_messages_inner(
-    state: AppState,
-    request_id: Option<Extension<RequestId>>,
-    headers: HeaderMap,
-    policy: RequestPolicyContext,
-    auth: AuthenticatedApiKey,
-    request: AnthropicMessagesRequest,
-) -> Result<Response, AppError> {
-    let request_started_at = Instant::now();
-    let request_id = canonical_request_id(request_id)?;
-    let mut core_request = anthropic_messages_request_to_core(&request);
-    let log_request = core_chat_request_to_openai(&core_request);
-    let requirements = core_request.requirements();
-    let resolved = state
-        .service
-        .resolve_request(&auth, &core_request.model)
-        .await?;
-    let rate_limit_team = enforce_chat_rate_limits(
-        &state,
-        &policy,
-        &auth,
-        &resolved,
-        core_request.stream,
-        request_started_at,
-    )
-    .await?;
-    enforce_chat_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)?;
-
-    let request_headers = extract_request_headers(&headers);
-    let request_tags = extract_request_tags(&headers)?;
-    let mut request_log_context = state.service.begin_chat_request_log(
-        &request_id,
-        &resolved.selection.requested_model.model_key,
-        &resolved.selection.execution_model.model_key,
-        &log_request,
-        &request_headers,
-        request_tags,
-    );
-    let request_span = Span::current();
-    record_request_span_fields(
-        &request_span,
-        &auth,
-        &resolved,
-        core_request.stream,
-        "/v1/messages",
-    );
-    let (eligible_route_count, selected) = select_provider_route(
-        &state,
-        &resolved,
-        requirements,
-        &headers,
-        &request.extra,
-        &request_headers,
-        RoutingEndpoint::Messages,
-    )
-    .await?;
-
-    tracing::info!(
-        request_model = %core_request.model,
-        resolved_model = %resolved.selection.execution_model.model_key,
-        route_count = resolved.routes.len(),
-        eligible_route_count,
-        stream = core_request.stream,
-        required_capabilities = ?requirements.required_capability_names(),
-        "anthropic messages request resolved"
-    );
-
-    let SelectedProviderRoute {
-        route,
-        provider,
-        receipt,
-        expected_provider_credential_id,
-    } = match selected {
-        Some(selection) => selection,
-        None => {
-            let error = no_compatible_route_error(requirements);
-            return Err(AppError(error));
-        }
-    };
-
-    let icon_metadata = request_log_icon_metadata(
-        &route,
-        resolved.provider_connections.get(&route.provider_key),
-        &resolved.selection.execution_model.model_key,
-        &resolved.selection.requested_model.model_key,
-    );
-    best_effort_record_mcp_request_telemetry(
-        &state,
-        &auth,
-        &mut request_log_context,
-        &route,
-        resolved.provider_connections.get(&route.provider_key),
-    )
-    .await;
-    let labels = ChatMetricLabels {
-        requested_model: &resolved.selection.requested_model.model_key,
-        resolved_model: &resolved.selection.execution_model.model_key,
-        provider_key: &route.provider_key,
-        stream: core_request.stream,
-    };
-    record_provider_execution_span_fields(
-        &request_span,
-        &route.provider_key,
-        provider.provider_type(),
-    );
-
-    let route_key = model_route_key(
-        &resolved.selection.execution_model.model_key,
-        &route.provider_key,
-        &route.upstream_model,
-    );
-    let guard_context =
-        match guard_typed_request(&state, &request_id, route_key, &mut core_request).await {
-            Ok(context) => context,
-            Err(AppError(error)) => {
-                record_guarded_pre_provider_failure(
-                    &state,
-                    &auth,
-                    &request_log_context,
-                    &route,
-                    icon_metadata,
-                    request_started_at,
-                    &labels,
-                    &error,
-                )
-                .await;
-                return Err(AppError(error));
-            }
-        };
-
-    if let Err(error) = state
-        .service
-        .enforce_pre_provider_budget(
-            &auth,
-            &request_id,
-            Some(resolved.selection.execution_model.id),
-            Some(route.upstream_model.as_str()),
-            OffsetDateTime::now_utc(),
-        )
-        .await
-    {
-        record_guarded_pre_provider_failure(
-            &state,
-            &auth,
-            &request_log_context,
-            &route,
-            icon_metadata,
-            request_started_at,
-            &labels,
-            &error,
-        )
-        .await;
-        return Err(AppError(error));
-    }
-
-    let mut context = build_provider_context(
-        &request_id,
-        &resolved.selection.requested_model.model_key,
-        &route,
-        &auth,
-        request_headers,
-    );
-    context.chat_protocol = gateway_core::ChatRequestProtocol::AnthropicMessages;
-    context.expected_provider_credential_id = expected_provider_credential_id;
-
-    if core_request.stream {
-        return anthropic_messages_stream_response(
-            &state,
-            &auth,
-            rate_limit_team,
-            request_started_at,
-            &request_id,
-            &resolved,
-            &request_log_context,
-            &route,
-            provider,
-            &core_request,
-            &context,
-            icon_metadata,
-            requirements,
-            &guard_context,
-            receipt.as_ref(),
-        )
-        .await;
-    }
-
-    let provider_execution_span = provider_operation_span(
-        &request_id,
-        "chat",
-        &auth,
-        &resolved,
-        &route,
-        provider.as_ref(),
-        false,
-    );
-    let attempt_started_at = gateway_service::offset_now();
-    let mut openai_value = match trace_provider_operation(
-        provider_execution_span,
-        provider.chat_completions(&core_request, &context),
-    )
-    .await
-    {
-        Ok(value) => normalize_response_model(value, &resolved.selection.requested_model.model_key),
-        Err(error) => {
-            // Usage the provider reported before failing still counts, as on
-            // the decisions and embeddings paths.
-            let (error, partial_provider_usage) = split_partial_provider_error(error);
-            if let Some(provider_usage) = partial_provider_usage {
-                finalize_successful_usage_accounting(
-                    &state,
-                    UsageAccountingContext {
-                        auth: &auth,
-                        rate_limit_team,
-                        model: &resolved.selection.execution_model,
-                        route: &route,
-                        request_id: &request_id,
-                        labels: labels.clone(),
-                        operation: "anthropic_messages",
-                    },
-                    provider_usage,
-                )
-                .await;
-            }
-            let (error, attempt) = guarded_provider_error_attempt(
-                &state,
-                &guard_context,
-                &request_log_context,
-                &route,
-                RequestAttemptStatus::ProviderError,
-                false,
-                attempt_started_at,
-                error,
-                requirements,
-            )
-            .await;
-            best_effort_log_non_stream_failure(
-                &state.service,
-                &auth,
-                &request_log_context,
-                &route.provider_key,
-                icon_metadata.clone(),
-                latency_ms_since(request_started_at),
-                &error,
-                vec![attempt],
-            )
-            .await;
-            state.metrics.record_chat_request(&ChatRequestMetric {
-                labels: labels.clone(),
-                status_code: i64::from(error.http_status_code()),
-                outcome: error.error_type(),
-                latency_seconds: latency_seconds_since(request_started_at),
-            });
-            return Err(AppError(error));
-        }
-    };
-    finalize_successful_usage_accounting(
-        &state,
-        UsageAccountingContext {
-            auth: &auth,
-            rate_limit_team,
-            model: &resolved.selection.execution_model,
-            route: &route,
-            request_id: &request_id,
-            labels: labels.clone(),
-            operation: "anthropic_messages",
-        },
-        usage_value_from_response(&openai_value),
-    )
-    .await;
-    let completion = async {
-        guard_model_response(&state, &guard_context, &mut openai_value).await?;
-        if let Some(receipt) = &receipt {
-            receipt.complete(state.store.as_ref(), None).await?;
-        }
-        Ok::<(), GatewayError>(())
-    }
-    .await;
-    if let Err(error) = completion {
-        record_post_provider_failure(
-            &state,
-            &auth,
-            &request_log_context,
-            &route,
-            icon_metadata.clone(),
-            request_started_at,
-            attempt_started_at,
-            &labels,
-            &error,
-        )
-        .await;
-        return Err(AppError(error));
-    }
-    let value = anthropic_message_from_openai_chat(
-        &openai_value,
-        &resolved.selection.requested_model.model_key,
-    );
-    let attempt = success_attempt(&request_log_context, &route, false, attempt_started_at);
-    let tool_cardinality = tool_cardinality_with_invoked(&request_log_context, &openai_value);
-    best_effort_log_non_stream_success(
-        &state.service,
-        &auth,
-        &request_log_context,
-        &route.provider_key,
-        icon_metadata,
-        latency_ms_since(request_started_at),
-        tool_cardinality.invoked_tool_count.unwrap_or(0),
-        &openai_value,
-        vec![attempt],
-    )
-    .await;
-    state.metrics.record_chat_request(&ChatRequestMetric {
-        labels,
-        status_code: 200,
-        outcome: "success",
-        latency_seconds: latency_seconds_since(request_started_at),
-    });
-    let mut response = Json(value).into_response();
-    if let Ok(request_id_header) = HeaderValue::from_str(&request_id) {
-        response
-            .headers_mut()
-            .insert("x-request-id", request_id_header);
-    }
-    Ok(response)
-}
-
 fn anthropic_error_response(error: GatewayError) -> Response {
+    if let Some(response) = native_messages::upstream_error_response(&error) {
+        return response;
+    }
     let status =
         StatusCode::from_u16(error.http_status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let mut response = Json(json!({
@@ -551,10 +236,11 @@ pub async fn v1_chat_completions(
     headers: HeaderMap,
     policy: RequestPolicyContext,
     InferenceAuth(auth): InferenceAuth,
-    Json(request): Json<ChatCompletionsRequest>,
+    Json(mut request): Json<ChatCompletionsRequest>,
 ) -> Result<Response, AppError> {
     let request_started_at = Instant::now();
     let request_id = canonical_request_id(request_id)?;
+    let requested_service_tier = take_requested_service_tier(&mut request.extra)?;
     let mut core_request = openai_chat_request_to_core(&request);
     let requirements = core_request.requirements();
     let resolved = state
@@ -570,7 +256,14 @@ pub async fn v1_chat_completions(
         request_started_at,
     )
     .await?;
-    enforce_chat_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)?;
+    enforce_chat_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)
+        .inspect_err(|rejection| {
+            resolved
+                .selection
+                .log_reasoning_effort_rejection(Some(&request_id), rejection);
+        })
+        .map_err(GatewayError::from)?;
+    enforce_requested_service_tier(&resolved, requested_service_tier)?;
 
     let request_headers = extract_request_headers(&headers);
     let request_tags = extract_request_tags(&headers)?;
@@ -594,6 +287,7 @@ pub async fn v1_chat_completions(
         &state,
         &resolved,
         requirements,
+        requested_service_tier,
         &headers,
         &request.extra,
         &request_headers,
@@ -619,23 +313,17 @@ pub async fn v1_chat_completions(
         request_id: &request_id,
         request_started_at,
         stream: core_request.stream,
+        endpoint: RoutingEndpoint::ChatCompletions,
+        requested_service_tier,
         request_log_context,
     }
-    .prepare(selected, requirements, &mut core_request)
+    .prepare(selected, &mut core_request)
     .await?;
     let route = &execution.route;
     let provider = &execution.provider;
     let guard_context = &execution.guard_context;
     let request_log_context = &execution.request.request_log_context;
-
-    let mut context = build_provider_context(
-        &request_id,
-        &resolved.selection.requested_model.model_key,
-        route,
-        &auth,
-        request_headers,
-    );
-    context.expected_provider_credential_id = execution.expected_provider_credential_id;
+    let context = execution.provider_context(request_headers);
 
     if core_request.stream {
         let stream_started_at = Instant::now();
@@ -696,6 +384,7 @@ pub async fn v1_chat_completions(
                 attempt_started_at,
                 stream_trace,
                 "failed to build streaming response",
+                inference::InferenceResponseFormat::OpenAi,
             )
             .await;
     }
@@ -723,7 +412,13 @@ pub async fn v1_chat_completions(
                 .await);
         }
     };
-    execution.complete_response(value, attempt_started_at).await
+    execution
+        .complete_response(
+            value,
+            attempt_started_at,
+            inference::InferenceResponseFormat::OpenAi,
+        )
+        .await
 }
 
 pub async fn v1_responses(
@@ -732,10 +427,11 @@ pub async fn v1_responses(
     headers: HeaderMap,
     policy: RequestPolicyContext,
     InferenceAuth(auth): InferenceAuth,
-    Json(request): Json<ResponsesRequest>,
+    Json(mut request): Json<ResponsesRequest>,
 ) -> Result<Response, AppError> {
     let request_started_at = Instant::now();
     let request_id = canonical_request_id(request_id)?;
+    let requested_service_tier = take_requested_service_tier(&mut request.extra)?;
     let mut core_request = openai_responses_request_to_core(&request);
     let requirements = core_request.requirements();
     let resolved = state
@@ -751,7 +447,14 @@ pub async fn v1_responses(
         request_started_at,
     )
     .await?;
-    enforce_responses_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)?;
+    enforce_responses_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)
+        .inspect_err(|rejection| {
+            resolved
+                .selection
+                .log_reasoning_effort_rejection(Some(&request_id), rejection);
+        })
+        .map_err(GatewayError::from)?;
+    enforce_requested_service_tier(&resolved, requested_service_tier)?;
 
     let request_headers = extract_request_headers(&headers);
     let request_tags = extract_request_tags(&headers)?;
@@ -775,6 +478,7 @@ pub async fn v1_responses(
         &state,
         &resolved,
         requirements,
+        requested_service_tier,
         &headers,
         &request.extra,
         &request_headers,
@@ -800,23 +504,17 @@ pub async fn v1_responses(
         request_id: &request_id,
         request_started_at,
         stream: core_request.stream,
+        endpoint: RoutingEndpoint::Responses,
+        requested_service_tier,
         request_log_context,
     }
-    .prepare(selected, requirements, &mut core_request)
+    .prepare(selected, &mut core_request)
     .await?;
     let route = &execution.route;
     let provider = &execution.provider;
     let guard_context = &execution.guard_context;
     let request_log_context = &execution.request.request_log_context;
-
-    let mut context = build_provider_context(
-        &request_id,
-        &resolved.selection.requested_model.model_key,
-        route,
-        &auth,
-        request_headers,
-    );
-    context.expected_provider_credential_id = execution.expected_provider_credential_id;
+    let context = execution.provider_context(request_headers);
 
     if core_request.stream {
         let stream_started_at = Instant::now();
@@ -877,6 +575,7 @@ pub async fn v1_responses(
                 attempt_started_at,
                 stream_trace,
                 "failed to build responses streaming response",
+                inference::InferenceResponseFormat::OpenAi,
             )
             .await;
     }
@@ -904,7 +603,13 @@ pub async fn v1_responses(
                 .await);
         }
     };
-    execution.complete_response(value, attempt_started_at).await
+    execution
+        .complete_response(
+            value,
+            attempt_started_at,
+            inference::InferenceResponseFormat::OpenAi,
+        )
+        .await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -919,10 +624,19 @@ async fn guarded_provider_error_attempt(
     error: ProviderError,
     requirements: CoreRequestRequirements,
 ) -> (GatewayError, RequestAttemptRecord) {
+    let native_headers = match &error {
+        ProviderError::NativeMessagesHttp { headers, .. } => Some(headers.clone()),
+        _ => None,
+    };
     let error = match error {
         ProviderError::UpstreamHttp {
             status: http_status,
             body,
+        }
+        | ProviderError::NativeMessagesHttp {
+            status: http_status,
+            body,
+            ..
         } if guard_context.enabled => {
             let mut payload = json!({ "text": body });
             if let Err(error) = guard_model_response(state, guard_context, &mut payload).await {
@@ -942,13 +656,22 @@ async fn guarded_provider_error_attempt(
                 );
                 return (error, attempt);
             }
-            ProviderError::UpstreamHttp {
-                status: http_status,
-                body: payload
-                    .get("text")
-                    .and_then(Value::as_str)
-                    .unwrap_or("upstream request failed")
-                    .to_string(),
+            let body = payload
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or("upstream request failed")
+                .to_string();
+            if let Some(headers) = native_headers {
+                ProviderError::NativeMessagesHttp {
+                    status: http_status,
+                    body,
+                    headers,
+                }
+            } else {
+                ProviderError::UpstreamHttp {
+                    status: http_status,
+                    body,
+                }
             }
         }
         error => error,
@@ -1076,6 +799,7 @@ fn build_provider_context(
         extra_body: route.extra_body.clone(),
         request_headers,
         compatibility: route.compatibility.clone(),
+        service_tier: None,
     }
 }
 
@@ -1098,6 +822,7 @@ struct LoggingBodyStreamState {
     attempt_started_at: OffsetDateTime,
     finished: bool,
     saw_terminal_event: bool,
+    requires_message_stop: bool,
     collector: gateway_service::StreamResponseCollector,
     stream_trace: StreamTrace,
 }
@@ -1239,6 +964,7 @@ struct UsageAccountingContext<'a> {
     request_id: &'a str,
     labels: ChatMetricLabels<'a>,
     operation: &'static str,
+    service_tiers: gateway_core::ServiceTierOutcome,
 }
 
 /// Records a request rejected after routing but before any provider call, such as a
@@ -1349,6 +1075,10 @@ async fn record_guarded_stream_failure(
             request_id: &request_log_context.request_id,
             labels: labels.clone(),
             operation: request_log_context.operation,
+            service_tiers: service_tier_outcome(
+                request_log_context,
+                collector.served_service_tier(),
+            ),
         },
         collector.usage().cloned(),
     )
@@ -1430,136 +1160,6 @@ async fn enforce_guarded_stream_after_provider(
             Err(AppError(error))
         }
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn anthropic_messages_stream_response(
-    state: &AppState,
-    auth: &AuthenticatedApiKey,
-    rate_limit_team: RateLimitMemberTeam,
-    request_started_at: Instant,
-    request_id: &str,
-    resolved: &gateway_service::ResolvedGatewayRequest,
-    request_log_context: &RequestLogContext,
-    route: &gateway_core::ModelRoute,
-    provider: Arc<dyn ProviderClient>,
-    core_request: &CoreChatRequest,
-    context: &ProviderRequestContext,
-    icon_metadata: RequestLogIconMetadata,
-    requirements: CoreRequestRequirements,
-    guard_context: &InferenceGuardContext,
-    routing_receipt: Option<&RoutingReceipt>,
-) -> Result<Response, AppError> {
-    let stream_started_at = Instant::now();
-    let mut stream_trace = StreamTrace::new(
-        "chat",
-        request_id,
-        route,
-        provider.as_ref(),
-        stream_started_at,
-    );
-    let provider_execution_span = provider_operation_span(
-        request_id,
-        "chat",
-        auth,
-        resolved,
-        route,
-        provider.as_ref(),
-        true,
-    );
-    let attempt_started_at = gateway_service::offset_now();
-    let stream = match trace_provider_operation(
-        provider_execution_span,
-        provider.chat_completions_stream(core_request, context),
-    )
-    .await
-    {
-        Ok(stream) => stream,
-        Err(error) => {
-            stream_trace.finish("stream_start_error", Some("stream_start_error"));
-            let (gateway_error, attempt) = guarded_provider_error_attempt(
-                state,
-                guard_context,
-                request_log_context,
-                route,
-                RequestAttemptStatus::StreamStartError,
-                true,
-                attempt_started_at,
-                error,
-                requirements,
-            )
-            .await;
-            best_effort_log_stream_result(
-                &state.service,
-                auth,
-                request_log_context,
-                gateway_service::StreamLogResultInput {
-                    provider_key: route.provider_key.clone(),
-                    icon_metadata,
-                    latency_ms: latency_ms_since(request_started_at),
-                    collector: state.service.new_stream_response_collector(),
-                    failure: Some(gateway_service::StreamFailureSummary {
-                        status_code: gateway_error.http_status_code().into(),
-                        error_code: gateway_error.error_code().to_string(),
-                    }),
-                    attempts: vec![attempt],
-                },
-            )
-            .await;
-            return Err(AppError(gateway_error));
-        }
-    };
-    let stream = enforce_guarded_stream_after_provider(
-        state,
-        auth,
-        rate_limit_team,
-        resolved,
-        request_log_context,
-        route,
-        icon_metadata.clone(),
-        request_started_at,
-        attempt_started_at,
-        guard_context,
-        stream,
-    )
-    .await?;
-    let stream = anthropic_messages_stream_from_openai(
-        stream,
-        resolved.selection.requested_model.model_key.clone(),
-    );
-
-    let body_stream = wrap_stream_with_request_logging(LoggingBodyStreamState {
-        upstream: stream,
-        service: state.service.clone(),
-        metrics: state.metrics.clone(),
-        auth: auth.clone(),
-        rate_limit_team,
-        request_log_context: request_log_context.clone(),
-        requested_model_key: resolved.selection.requested_model.model_key.clone(),
-        resolved_model_key: resolved.selection.execution_model.model_key.clone(),
-        execution_model: resolved.selection.execution_model.clone(),
-        route: route.clone(),
-        routing_receipt: routing_receipt.cloned(),
-        provider_key: route.provider_key.clone(),
-        icon_metadata,
-        started_at: request_started_at,
-        attempt_started_at,
-        finished: false,
-        saw_terminal_event: false,
-        collector: state.service.new_stream_response_collector(),
-        stream_trace,
-    });
-
-    Response::builder()
-        .status(axum::http::StatusCode::OK)
-        .header(CONTENT_TYPE, "text/event-stream; charset=utf-8")
-        .header(CACHE_CONTROL, "no-cache")
-        .body(Body::from_stream(body_stream))
-        .map_err(|error| {
-            AppError(GatewayError::Internal(format!(
-                "failed to build anthropic messages streaming response: {error}"
-            )))
-        })
 }
 
 fn wrap_stream_with_request_logging(
@@ -1685,6 +1285,21 @@ async fn finalize_stream(
     state.finished = true;
     state.collector.finish();
     let mut failure = state.collector.failure().cloned();
+    let completion_error = (state.requires_message_stop
+        && !state.saw_terminal_event
+        && failure.is_none()
+        && origin_error.is_none())
+    .then(|| {
+        GatewayError::Provider(ProviderError::Transport(
+            "upstream Anthropic stream ended prematurely before message_stop event".to_string(),
+        ))
+    });
+    if let Some(error) = &completion_error {
+        failure = Some(gateway_service::StreamFailureSummary {
+            status_code: error.http_status_code().into(),
+            error_code: error.error_code().to_string(),
+        });
+    }
     // Failed streams can still report billable usage, but must not refresh affinity.
     if failure.is_none() || state.collector.usage().is_some() {
         account_stream_usage(state).await;
@@ -1779,7 +1394,7 @@ async fn finalize_stream(
         state.request_log_context.operation,
         &tool_cardinality,
     );
-    match routing_error {
+    match routing_error.or(completion_error) {
         Some(error) => Err(error),
         None => Ok(()),
     }
@@ -1800,6 +1415,10 @@ async fn account_stream_usage(state: &mut LoggingBodyStreamState) {
             request_id: &state.request_log_context.request_id,
             labels,
             operation: state.request_log_context.operation,
+            service_tiers: service_tier_outcome(
+                &state.request_log_context,
+                state.collector.served_service_tier(),
+            ),
         },
         state.collector.usage().cloned(),
     )
@@ -2257,6 +1876,7 @@ async fn finalize_successful_usage_accounting_from_parts(
             context.route,
             context.request_id,
             provider_usage,
+            context.service_tiers,
             OffsetDateTime::now_utc(),
         )
         .await
@@ -2417,7 +2037,7 @@ fn extract_request_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
 #[cfg(test)]
 mod tests {
     use std::{
-        collections::BTreeMap,
+        collections::{BTreeMap, HashMap},
         sync::Arc,
         time::{Duration, Instant},
     };
@@ -2433,8 +2053,9 @@ mod tests {
         ChatCompletionsRequest, CoreChatMessage, CoreChatRequest, CoreEmbeddingsRequest,
         CoreRequestRequirements, CoreResponsesRequest, GatewayError, GitHubCopilotChatApi,
         GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports, ModelRoute,
-        ProviderCapabilities, ProviderClient, ProviderError, ProviderRegistry,
+        PartialCapabilities, ProviderCapabilities, ProviderClient, ProviderError, ProviderRegistry,
         ProviderRequestContext, ProviderStream, RequestAttemptStatus, RequestTags,
+        effective_route_capabilities,
     };
     use gateway_service::{GatewayService, WeightedRoutePlanner};
     use gateway_store::{AnyStore, StoreConnectionOptions, run_migrations_with_options};
@@ -2647,6 +2268,7 @@ mod tests {
                 attempt_started_at: gateway_service::offset_now(),
                 finished: false,
                 saw_terminal_event: false,
+                requires_message_stop: false,
                 collector: self.service.new_stream_response_collector(),
                 stream_trace: StreamTrace::new(
                     "chat",
@@ -2903,9 +2525,23 @@ mod tests {
             pricing_override: None,
             extra_headers: Default::default(),
             extra_body: Default::default(),
-            capabilities,
+            capabilities: PartialCapabilities::from_capabilities(capabilities),
             compatibility: Default::default(),
+            service_tier: None,
         }
+    }
+
+    /// What routing reads for `route` when no request-specific restriction applies.
+    fn effective_capabilities(
+        provider: &StaticProvider,
+        route: &ModelRoute,
+    ) -> ProviderCapabilities {
+        effective_route_capabilities(
+            route,
+            provider.provider_type(),
+            PartialCapabilities::default(),
+            route_effective_provider_capabilities(provider, route),
+        )
     }
 
     fn authenticated_key(
@@ -2960,9 +2596,7 @@ mod tests {
             "google/gemini-embedding-001",
             ProviderCapabilities::all_enabled(),
         );
-        let embedding_capabilities =
-            route_effective_provider_capabilities(&provider, &embedding_route)
-                .intersect(embedding_route.capabilities);
+        let embedding_capabilities = effective_capabilities(&provider, &embedding_route);
         assert!(embedding_capabilities.embeddings);
         assert!(!embedding_capabilities.chat_completions);
         assert!(!embedding_capabilities.responses);
@@ -2973,8 +2607,7 @@ mod tests {
             "google/gemini-2.0-flash",
             ProviderCapabilities::all_enabled(),
         );
-        let chat_capabilities = route_effective_provider_capabilities(&provider, &chat_route)
-            .intersect(chat_route.capabilities);
+        let chat_capabilities = effective_capabilities(&provider, &chat_route);
         assert!(chat_capabilities.chat_completions);
         assert!(chat_capabilities.stream);
         assert!(!chat_capabilities.embeddings);
@@ -2984,9 +2617,7 @@ mod tests {
             "anthropic/claude-sonnet-4-6",
             ProviderCapabilities::all_enabled(),
         );
-        let anthropic_capabilities =
-            route_effective_provider_capabilities(&provider, &anthropic_route)
-                .intersect(anthropic_route.capabilities);
+        let anthropic_capabilities = effective_capabilities(&provider, &anthropic_route);
         assert!(anthropic_capabilities.chat_completions);
         assert!(!anthropic_capabilities.embeddings);
         assert!(anthropic_capabilities.tools);
@@ -3012,16 +2643,14 @@ mod tests {
                 ..Default::default()
             },
         });
-        let capabilities = route_effective_provider_capabilities(&provider, &claude_route)
-            .intersect(claude_route.capabilities);
+        let capabilities = effective_capabilities(&provider, &claude_route);
 
         assert!(!capabilities.json_schema);
         assert!(capabilities.chat_completions);
         assert!(capabilities.tools);
 
         let unknown_route = route("unknown", ProviderCapabilities::all_enabled());
-        let unknown_capabilities = route_effective_provider_capabilities(&provider, &unknown_route)
-            .intersect(unknown_route.capabilities);
+        let unknown_capabilities = effective_capabilities(&provider, &unknown_route);
         assert!(!unknown_capabilities.chat_completions);
         assert!(!unknown_capabilities.responses);
         assert!(!unknown_capabilities.embeddings);
@@ -3036,9 +2665,7 @@ mod tests {
                 ..Default::default()
             },
         });
-        let responses_capabilities =
-            route_effective_provider_capabilities(&provider, &responses_route)
-                .intersect(responses_route.capabilities);
+        let responses_capabilities = effective_capabilities(&provider, &responses_route);
         assert!(!responses_capabilities.chat_completions);
         assert!(responses_capabilities.responses);
 
@@ -3098,6 +2725,7 @@ mod tests {
         let (eligible_route_count, selected) = select_first_eligible_route(
             &providers,
             &routes,
+            &HashMap::new(),
             CoreRequestRequirements {
                 embeddings: true,
                 ..Default::default()
@@ -3147,13 +2775,77 @@ mod tests {
             extra: Default::default(),
         };
 
-        let (eligible_route_count, selected) =
-            select_first_eligible_route(&providers, &routes, request.requirements());
+        let (eligible_route_count, selected) = select_first_eligible_route(
+            &providers,
+            &routes,
+            &HashMap::new(),
+            request.requirements(),
+        );
 
         assert_eq!(eligible_route_count, 1);
         assert_eq!(
             selected.expect("vision-capable route").route.upstream_model,
             "document-capable"
+        );
+    }
+
+    #[test]
+    fn image_only_catalog_hints_drop_chat_unless_the_route_declares_it() {
+        let provider = Arc::new(StaticProvider {
+            provider_type: "openai_compat",
+            capabilities: ProviderCapabilities::all_enabled(),
+        });
+        let mut providers = ProviderRegistry::new();
+        providers.register(provider);
+        let mut hinted_only = route("image-model", ProviderCapabilities::all_enabled());
+        hinted_only.capabilities = PartialCapabilities::default();
+        let mut explicit_chat = route("image-model", ProviderCapabilities::all_enabled());
+        explicit_chat.capabilities = PartialCapabilities {
+            chat_completions: Some(true),
+            ..Default::default()
+        };
+        // What the catalog says for a model whose `api_endpoints` list only images.
+        let images_only = PartialCapabilities {
+            chat_completions: Some(false),
+            responses: Some(false),
+            embeddings: Some(false),
+            images: Some(true),
+            ..Default::default()
+        };
+        let hints = HashMap::from([
+            (hinted_only.id, images_only),
+            (explicit_chat.id, images_only),
+        ]);
+        let explicit_chat_id = explicit_chat.id;
+        let routes = vec![hinted_only, explicit_chat];
+
+        let (eligible_route_count, selected) = select_first_eligible_route(
+            &providers,
+            &routes,
+            &hints,
+            CoreRequestRequirements {
+                chat_completions: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(eligible_route_count, 1);
+        assert_eq!(
+            selected.expect("explicit chat route").route.id,
+            explicit_chat_id
+        );
+
+        let (eligible_route_count, _) = select_first_eligible_route(
+            &providers,
+            &routes,
+            &hints,
+            CoreRequestRequirements {
+                images: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            eligible_route_count, 2,
+            "hints turn on the unset images flag"
         );
     }
 

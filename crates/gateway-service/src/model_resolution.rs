@@ -4,10 +4,12 @@ use std::{
 };
 
 use gateway_core::{
-    AuthenticatedApiKey, GatewayError, GatewayModel, ModelRepository, ProviderConnection,
-    ReasoningEffort, RouteError,
+    AuthenticatedApiKey, GatewayError, GatewayModel, ModelRepository, ModelRoute,
+    PartialCapabilities, ProviderConnection, ReasoningEffort, ReasoningEffortRejection, RouteError,
+    ServiceTier,
 };
 use serde_json::Value;
+use uuid::Uuid;
 
 use crate::redaction::mask_secret_leaf_values;
 
@@ -104,6 +106,28 @@ pub struct ResolvedModelSelection {
     pub max_reasoning_effort: Option<ReasoningEffort>,
 }
 
+impl ResolvedModelSelection {
+    /// Records a request refused by the reasoning ceiling. The fields hold no prompt content.
+    ///
+    /// Pass the request ID when there is one, because the request span can be filtered out at the
+    /// warning level.
+    pub fn log_reasoning_effort_rejection(
+        &self,
+        request_id: Option<&str>,
+        rejection: &ReasoningEffortRejection,
+    ) {
+        tracing::warn!(
+            request_id,
+            requested_model = %self.requested_model.model_key,
+            resolved_model = %self.execution_model.model_key,
+            field_path = %rejection.field_path,
+            requested_effort = rejection.requested.map_or("invalid", ReasoningEffort::as_str),
+            ceiling = rejection.ceiling.as_str(),
+            "reasoning effort rejected"
+        );
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ResolvedProviderConnection {
     pub provider_key: String,
@@ -128,8 +152,35 @@ impl ResolvedProviderConnection {
 pub struct ResolvedGatewayRequest {
     pub auth: AuthenticatedApiKey,
     pub selection: ResolvedModelSelection,
-    pub routes: Vec<gateway_core::ModelRoute>,
+    pub routes: Vec<ModelRoute>,
     pub provider_connections: HashMap<String, ResolvedProviderConnection>,
+    /// Catalog capability hints by route id, read from one catalog snapshot at resolution.
+    pub capability_hints: HashMap<Uuid, PartialCapabilities>,
+    /// Non-default tiers each route can bill, by route id, read from the same snapshot:
+    /// every tier for unpriced and provider-costed routes, else the tiers with rates.
+    pub billable_service_tiers: HashMap<Uuid, Vec<ServiceTier>>,
+}
+
+impl ResolvedGatewayRequest {
+    /// Catalog hints for one of [`Self::routes`]; empty when the catalog says nothing.
+    #[must_use]
+    pub fn capability_hints_for(&self, route: &ModelRoute) -> PartialCapabilities {
+        self.capability_hints
+            .get(&route.id)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    /// Whether `route` can bill `tier`. Default always bills; another tier bills only
+    /// when resolution found a way to price it, so a premium tier never bills standard.
+    #[must_use]
+    pub fn route_bills_service_tier(&self, route: &ModelRoute, tier: ServiceTier) -> bool {
+        tier == ServiceTier::Default
+            || self
+                .billable_service_tiers
+                .get(&route.id)
+                .is_some_and(|tiers| tiers.contains(&tier))
+    }
 }
 
 #[derive(Clone)]

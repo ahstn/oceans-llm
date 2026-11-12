@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gateway_core::{CoreChatRequest, ProviderError, ProviderRequestContext};
+use gateway_core::{CoreChatRequest, ProviderError, ProviderRequestContext, ServiceTier};
 use serde_json::{Map, Value};
 
 use crate::anthropic::{
@@ -14,10 +14,50 @@ const VERTEX_ANTHROPIC_VERSION: &str = "vertex-2023-10-16";
 /// Beta the ManualWithEffort Claude policy (Opus 4.5) needs before `output_config.effort` works.
 const EFFORT_BETA: &str = "effort-2025-11-24";
 
+pub(super) fn prepare_request(
+    request: reqwest::RequestBuilder,
+    mut body: Value,
+    context: &ProviderRequestContext,
+    default_headers: &BTreeMap<String, String>,
+) -> Result<reqwest::RequestBuilder, ProviderError> {
+    let betas = crate::anthropic::beta::take_request_betas(&mut body, context, default_headers)?;
+    let mut request = request_headers(request.json(&body), context, default_headers);
+    if !betas.is_empty() {
+        request = request.header("anthropic-beta", betas.join(","));
+    }
+    Ok(request)
+}
+
+pub(super) fn request_headers(
+    mut request: reqwest::RequestBuilder,
+    context: &ProviderRequestContext,
+    default_headers: &BTreeMap<String, String>,
+) -> reqwest::RequestBuilder {
+    request = request.header("x-request-id", &context.request_id);
+    for (name, value) in default_headers {
+        if name.eq_ignore_ascii_case("anthropic-beta") {
+            continue;
+        }
+        request = request.header(name, value);
+    }
+    request = crate::anthropic::native::request_headers(request, context);
+    for (name, value) in &context.extra_headers {
+        if name.eq_ignore_ascii_case("anthropic-beta") {
+            continue;
+        }
+        if let Some(value) = value.as_str() {
+            request = request.header(name, value);
+        }
+    }
+    request
+}
+
 /// Maps a chat request to the Anthropic Messages body Vertex `rawPredict` accepts.
 ///
 /// Betas are collected in an internal body array, then moved into one `anthropic-beta`
 /// header by the HTTP transport. Vertex reads only the first occurrence of that header.
+/// Priority is fast mode, `speed: "fast"`, which Vertex serves without a beta; standard
+/// sends nothing.
 pub(super) fn map_vertex_anthropic_request(
     request: &CoreChatRequest,
     context: &ProviderRequestContext,
@@ -29,10 +69,14 @@ pub(super) fn map_vertex_anthropic_request(
         anthropic_version_body: Some(VERTEX_ANTHROPIC_VERSION),
         default_max_tokens: Some(4096),
         default_headers: Some(default_headers),
+        allow_remote_images: false,
     };
     let mut body = map_anthropic_request(request, context, stream, &options)?;
     if let Some(object) = body.as_object_mut() {
         apply_body_betas(object, context, default_headers)?;
+        if context.service_tier == Some(ServiceTier::Priority) {
+            object.insert("speed".to_string(), Value::from("fast"));
+        }
     }
     Ok(body)
 }

@@ -2,9 +2,9 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
 use gateway_core::{
-    BatchCapabilities, CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest,
+    BatchCapabilities, CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, ModelRoute,
     ProviderBatchRequest, ProviderBatchResult, ProviderBatchState, ProviderCapabilities,
-    ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
+    ProviderClient, ProviderError, ProviderRequestContext, ProviderStream, ServiceTier,
 };
 use serde_json::Value;
 use time::OffsetDateTime;
@@ -15,6 +15,7 @@ use crate::{
         normalize_anthropic_response, normalize_anthropic_stream, normalize_count_tokens_response,
     },
     http::{execute_request, map_reqwest_error},
+    service_tier::{DEFAULT_FLEX_PRIORITY, DEFAULT_ONLY, DEFAULT_PRIORITY, checked_service_tier},
     token::{
         AccessTokenSource, AdcTokenSource, CLOUD_PLATFORM_SCOPE, CachedAccessTokenSource,
         ServiceAccountTokenSource, StaticBearerTokenSource,
@@ -26,6 +27,9 @@ mod batch;
 mod embeddings;
 mod error;
 mod gemini;
+mod google_content;
+mod google_conversation;
+mod google_replay;
 mod google_request;
 mod google_response;
 mod google_stream;
@@ -46,6 +50,9 @@ use google_stream::normalize_google_stream;
 
 const ANTHROPIC_USAGE_SOURCE: &str = "vertex_anthropic";
 const PROVIDER_NAMESPACE: &str = "gcp_vertex";
+
+/// Selects the shared capacity grade a Gemini request runs on. Standard sends nothing.
+const SHARED_REQUEST_TYPE_HEADER: &str = "X-Vertex-AI-LLM-Shared-Request-Type";
 
 /// Vertex host that serves a location: `global` and the multi-region `us`/`eu` endpoints have
 /// dedicated hosts; every other location is a regional `{region}-aiplatform.googleapis.com`.
@@ -123,23 +130,27 @@ impl VertexProvider {
         endpoint: &str,
         body: &Value,
         context: &ProviderRequestContext,
+        family: PublisherFamily,
     ) -> Result<reqwest::Request, ProviderError> {
+        // Claude bodies already carry `speed`; Gemini takes the tier as a header.
+        let service_tier = checked_service_tier(context, family.service_tiers())?;
         let token = self.access_token_source.token().await?;
-        let mut body = body.clone();
-        let betas = if context.upstream_model.starts_with("anthropic/") {
-            crate::anthropic::beta::take_request_betas(
-                &mut body,
-                context,
-                &self.config.default_headers,
-            )?
-        } else {
-            Vec::new()
+        let body = body.clone();
+        let request = self.client.post(endpoint).bearer_auth(token);
+        let request = match family {
+            PublisherFamily::Google => {
+                let request = self.apply_request_headers(request.json(&body), context, family);
+                match service_tier {
+                    Some(tier @ (ServiceTier::Flex | ServiceTier::Priority)) => {
+                        request.header(SHARED_REQUEST_TYPE_HEADER, tier.as_str())
+                    }
+                    _ => request,
+                }
+            }
+            PublisherFamily::Anthropic => {
+                anthropic::prepare_request(request, body, context, &self.config.default_headers)?
+            }
         };
-        let request = self.client.post(endpoint).bearer_auth(token).json(&body);
-        let mut request = self.apply_request_headers(request, context);
-        if !betas.is_empty() {
-            request = request.header("anthropic-beta", betas.join(","));
-        }
         request.build().map_err(map_reqwest_error)
     }
 
@@ -147,22 +158,16 @@ impl VertexProvider {
         &self,
         mut request: reqwest::RequestBuilder,
         context: &ProviderRequestContext,
+        family: PublisherFamily,
     ) -> reqwest::RequestBuilder {
+        if family == PublisherFamily::Anthropic {
+            return anthropic::request_headers(request, context, &self.config.default_headers);
+        }
         request = request.header("x-request-id", &context.request_id);
         for (name, value) in &self.config.default_headers {
-            if context.upstream_model.starts_with("anthropic/")
-                && name.eq_ignore_ascii_case("anthropic-beta")
-            {
-                continue;
-            }
             request = request.header(name, value);
         }
         for (name, value) in &context.extra_headers {
-            if context.upstream_model.starts_with("anthropic/")
-                && name.eq_ignore_ascii_case("anthropic-beta")
-            {
-                continue;
-            }
             if let Some(value) = value.as_str() {
                 request = request.header(name, value);
             }
@@ -189,8 +194,9 @@ impl VertexProvider {
         endpoint: &str,
         body: &Value,
         context: &ProviderRequestContext,
+        family: PublisherFamily,
     ) -> Result<Value, ProviderError> {
-        let request = self.build_request(endpoint, body, context).await?;
+        let request = self.build_request(endpoint, body, context, family).await?;
         let response = execute_request(
             &self.client,
             request,
@@ -218,6 +224,16 @@ enum PublisherFamily {
     Anthropic,
 }
 
+impl PublisherFamily {
+    /// Gemini's shared capacity grades, or Claude's standard and fast mode.
+    const fn service_tiers(self) -> &'static [ServiceTier] {
+        match self {
+            Self::Google => DEFAULT_FLEX_PRIORITY,
+            Self::Anthropic => DEFAULT_PRIORITY,
+        }
+    }
+}
+
 fn parse_upstream_model(
     upstream_model: &str,
 ) -> Result<(PublisherFamily, &str, &str), VertexAdapterError> {
@@ -235,12 +251,74 @@ fn parse_upstream_model(
 
 #[async_trait]
 impl ProviderClient for VertexProvider {
+    fn supports_native_messages(&self, context: &ProviderRequestContext) -> bool {
+        parse_upstream_model(&context.upstream_model)
+            .is_ok_and(|(family, _, _)| matches!(family, PublisherFamily::Anthropic))
+    }
+
+    async fn messages(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<gateway_core::NativeMessagesResponse<Value>, ProviderError> {
+        let (family, publisher, model_id) = parse_upstream_model(&context.upstream_model)?;
+        let body =
+            map_vertex_anthropic_request(request, context, false, &self.config.default_headers)?;
+        let request = self
+            .build_request(
+                &self.model_endpoint(publisher, model_id, "rawPredict"),
+                &body,
+                context,
+                family,
+            )
+            .await?;
+        let response = crate::anthropic::native::execute_request(
+            &self.client,
+            request,
+            PROVIDER_NAMESPACE,
+            &self.config.provider_key,
+        )
+        .await?;
+        crate::anthropic::native::json_response(response).await
+    }
+
+    async fn messages_stream(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<gateway_core::NativeMessagesResponse<ProviderStream>, ProviderError> {
+        let (family, publisher, model_id) = parse_upstream_model(&context.upstream_model)?;
+        let body =
+            map_vertex_anthropic_request(request, context, true, &self.config.default_headers)?;
+        let request = self
+            .build_request(
+                &self.model_endpoint(publisher, model_id, "streamRawPredict"),
+                &body,
+                context,
+                family,
+            )
+            .await?;
+        let response = crate::anthropic::native::execute_request(
+            &self.client,
+            request,
+            PROVIDER_NAMESPACE,
+            &self.config.provider_key,
+        )
+        .await?;
+        Ok(crate::anthropic::native::stream_response(response))
+    }
+
     fn provider_key(&self) -> &str {
         &self.config.provider_key
     }
 
     fn provider_type(&self) -> &str {
         PROVIDER_NAMESPACE
+    }
+
+    fn service_tiers(&self, route: &ModelRoute) -> &'static [ServiceTier] {
+        parse_upstream_model(&route.upstream_model)
+            .map_or(DEFAULT_ONLY, |(family, _, _)| family.service_tiers())
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
@@ -292,8 +370,13 @@ impl ProviderClient for VertexProvider {
             PublisherFamily::Google => {
                 let body = map_google_request(request, context, model_id, false)?;
                 let endpoint = self.model_endpoint(publisher, model_id, "generateContent");
-                let value = self.post_json(&endpoint, &body, context).await?;
-                Ok(normalize_google_response(&value, context)?)
+                let value = self.post_json(&endpoint, &body, context, family).await?;
+                normalize_google_response(&value, context).map_err(|error| {
+                    ProviderError::PartialUsage {
+                        source: Box::new(error.into()),
+                        provider_usage: google_response::map_google_usage(&value),
+                    }
+                })
             }
             PublisherFamily::Anthropic => {
                 let body = map_vertex_anthropic_request(
@@ -303,7 +386,7 @@ impl ProviderClient for VertexProvider {
                     &self.config.default_headers,
                 )?;
                 let endpoint = self.model_endpoint(publisher, model_id, "rawPredict");
-                let value = self.post_json(&endpoint, &body, context).await?;
+                let value = self.post_json(&endpoint, &body, context, family).await?;
                 Ok(normalize_anthropic_response(
                     &value,
                     context,
@@ -332,7 +415,7 @@ impl ProviderClient for VertexProvider {
             &self.config.default_headers,
         )?;
         let endpoint = self.model_endpoint(publisher, "count-tokens", "rawPredict");
-        let value = self.post_json(&endpoint, &body, context).await?;
+        let value = self.post_json(&endpoint, &body, context, family).await?;
         normalize_count_tokens_response(&value, "input_tokens", PROVIDER_NAMESPACE)
     }
 
@@ -356,7 +439,9 @@ impl ProviderClient for VertexProvider {
             ),
         };
 
-        let request = self.build_request(&endpoint, &body, context).await?;
+        let request = self
+            .build_request(&endpoint, &body, context, family)
+            .await?;
         let response = execute_request(
             &self.client,
             request,
@@ -410,7 +495,7 @@ impl ProviderClient for VertexProvider {
         let endpoint = self.model_endpoint(publisher, model_id, vertex_embedding_method(model_id));
         let mut outputs: Vec<GoogleEmbeddingOutput> = Vec::with_capacity(mapped.input_count);
         for (body, expected) in mapped.bodies.iter().zip(&mapped.batch_sizes) {
-            let request = self.build_request(&endpoint, body, context).await?;
+            let request = self.build_request(&endpoint, body, context, family).await?;
             let response = match execute_request(
                 &self.client,
                 request,

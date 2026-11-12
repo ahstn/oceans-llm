@@ -1,5 +1,5 @@
 use gateway_core::{
-    ModelRoutingPolicy, ProviderCapabilities, SeedModel, SeedModelRoute, SeedProvider,
+    ModelRoutingPolicy, PartialCapabilities, SeedModel, SeedModelRoute, SeedProvider, ServiceTier,
 };
 use serde_json::{Map, json};
 use serial_test::serial;
@@ -14,10 +14,26 @@ use crate::{
 
 #[test]
 fn explicit_route_identity_ignores_order_and_priority_but_tracks_its_target() {
-    let route_id = route_uuid("pooled", Some("primary"), "provider", "upstream", 10, 0);
+    let route_id = route_uuid(
+        "pooled",
+        Some("primary"),
+        "provider",
+        "upstream",
+        None,
+        10,
+        0,
+    );
     assert_eq!(
         route_id,
-        route_uuid("pooled", Some("primary"), "provider", "upstream", 20, 1)
+        route_uuid(
+            "pooled",
+            Some("primary"),
+            "provider",
+            "upstream",
+            None,
+            20,
+            1
+        )
     );
     for (model, route, provider, upstream) in [
         ("other", "primary", "provider", "upstream"),
@@ -27,19 +43,80 @@ fn explicit_route_identity_ignores_order_and_priority_but_tracks_its_target() {
     ] {
         assert_ne!(
             route_id,
-            route_uuid(model, Some(route), provider, upstream, 10, 0)
+            route_uuid(model, Some(route), provider, upstream, None, 10, 0)
         );
     }
     assert_ne!(
-        route_uuid("pooled", Some("primary"), "a:b", "c", 10, 0),
-        route_uuid("pooled", Some("primary"), "a", "b:c", 10, 0)
+        route_uuid("pooled", Some("primary"), "a:b", "c", None, 10, 0),
+        route_uuid("pooled", Some("primary"), "a", "b:c", None, 10, 0)
+    );
+}
+
+#[test]
+fn route_identity_tracks_the_forced_service_tier() {
+    let fast = route_uuid(
+        "pooled",
+        Some("primary"),
+        "provider",
+        "upstream",
+        Some(ServiceTier::Priority),
+        10,
+        0,
+    );
+    assert_ne!(
+        fast,
+        route_uuid(
+            "pooled",
+            Some("primary"),
+            "provider",
+            "upstream",
+            None,
+            10,
+            0
+        )
+    );
+    assert_ne!(
+        fast,
+        route_uuid(
+            "pooled",
+            Some("primary"),
+            "provider",
+            "upstream",
+            Some(ServiceTier::Flex),
+            10,
+            0
+        )
+    );
+    assert_eq!(
+        fast,
+        route_uuid(
+            "pooled",
+            Some("primary"),
+            "provider",
+            "upstream",
+            Some(ServiceTier::Priority),
+            20,
+            1
+        )
+    );
+    assert_ne!(
+        route_uuid("pooled", None, "provider", "upstream", None, 10, 0),
+        route_uuid(
+            "pooled",
+            None,
+            "provider",
+            "upstream",
+            Some(ServiceTier::Priority),
+            10,
+            0
+        )
     );
 }
 
 #[test]
 fn routes_without_explicit_keys_keep_the_legacy_identity() {
     assert_eq!(
-        route_uuid("pooled", None, "provider", "upstream", 10, 0),
+        route_uuid("pooled", None, "provider", "upstream", None, 10, 0),
         Uuid::new_v5(&Uuid::NAMESPACE_OID, b"route:pooled:provider:upstream:10:0")
     );
 }
@@ -75,11 +152,13 @@ async fn exercise_route_identity<S: GatewayStore + Sync>(store: &S) {
                 pricing_override: None,
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
-                capabilities: ProviderCapabilities::all_enabled(),
+                capabilities: PartialCapabilities::default(),
                 compatibility: Default::default(),
+                service_tier: None,
             })
             .collect(),
         allowlist: None,
+        service_tiers: None,
     };
     seed_model(store, &providers, &model).await;
     let model_id = store
@@ -122,6 +201,45 @@ async fn exercise_route_identity<S: GatewayStore + Sync>(store: &S) {
             .iter()
             .all(|route| original.iter().all(|prior| prior.id != route.id))
     );
+
+    // A forced tier is part of the route's target: the fast route is a new identity
+    // and both the route tier and the model's tier allow-list round-trip.
+    model.routes[0].service_tier = Some(ServiceTier::Priority);
+    model.service_tiers = Some(vec![ServiceTier::Flex, ServiceTier::Priority]);
+    seed_model(store, &providers, &model).await;
+    let tiered = store.list_routes_for_model(model_id).await.expect("routes");
+    let fast = tiered
+        .iter()
+        .find(|route| route.service_tier == Some(ServiceTier::Priority))
+        .expect("fast route");
+    assert!(replaced.iter().all(|prior| prior.id != fast.id));
+    assert_eq!(
+        tiered
+            .iter()
+            .filter(|route| route.service_tier.is_none())
+            .count(),
+        1
+    );
+    let stored_model = store
+        .get_model_by_key("pooled")
+        .await
+        .expect("load model")
+        .expect("model");
+    assert_eq!(
+        stored_model.service_tiers,
+        Some(vec![ServiceTier::Flex, ServiceTier::Priority])
+    );
+    let listed = store.list_models().await.expect("list models");
+    assert_eq!(listed[0].service_tiers, stored_model.service_tiers);
+
+    model.service_tiers = None;
+    seed_model(store, &providers, &model).await;
+    let cleared = store
+        .get_model_by_key("pooled")
+        .await
+        .expect("load model")
+        .expect("model");
+    assert_eq!(cleared.service_tiers, None);
 }
 
 async fn seed_model<S: GatewayStore + Sync>(

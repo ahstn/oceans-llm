@@ -1,0 +1,499 @@
+---
+title: Model routing and APIs
+description: How the public API surface behaves and how a caller request becomes one provider request.
+sidebar:
+  order: 1
+---
+
+Callers send stable gateway model names. Admins decide which providers, upstream models, capabilities and compatibility settings sit behind each name. This page explains how an authenticated API request becomes one provider request, and how behaviour differs across the public API families.
+
+Field-by-field YAML lives in [Models and routes](/configuration/models-and-routes/) and [Providers](/configuration/providers/). Per-provider request and response quirks live in [Provider API compatibility](/reference/provider-api-compatibility/).
+
+## Public API surface
+
+The gateway exposes these authenticated endpoints for callers:
+
+| Endpoint | API family | Route requirement |
+| --- | --- | --- |
+| `GET /v1/models` | OpenAI- and Anthropic-compatible model discovery | Model is visible to the caller |
+| `GET /v1/model-metadata` | Route-level model metadata | Model is visible to the caller |
+| `GET /model_group/info` | LiteLLM-compatible model metadata | Model is visible to the caller |
+| `POST /v1/chat/completions` | OpenAI Chat Completions | `chat_completions` capability |
+| `POST /v1/responses` | OpenAI Responses | `responses` capability |
+| `POST /v1/embeddings` | OpenAI Embeddings | `embeddings` capability |
+| `POST /v1/images` | OpenAI Images generation (OpenRouter path) | `images` capability |
+| `POST /v1/images/generations` | OpenAI Images generation (OpenAI SDK path) | `images` capability |
+| `POST /v1/decisions` | Decisions, System One or OpenAI format | `decisions` capability |
+| `POST /v1/systemone` | Decisions, System One format only | `decisions` capability |
+| `POST /v1/messages` | Anthropic Messages | Chat-capable route with provider support |
+| `POST /v1/messages/count_tokens` | Anthropic Messages token counting | Chat-capable route whose provider has an upstream count API |
+| `POST /api/v1/batches` | Durable batch admission for Chat Completions, Responses or Embeddings items | Capability that matches the batch `endpoint` |
+
+Clients whose base URL stops at the gateway root can drop the `/v1` prefix. These unversioned aliases use the same handler, authentication and body limit as their `/v1` endpoint:
+
+- `POST /chat/completions`, `POST /responses`, `POST /embeddings`
+- `POST /images`, `POST /images/generations`, `POST /decisions`
+- `POST /messages`, `POST /messages/count_tokens`
+- `GET /models`
+
+The aliases don't overlap the admin UI (served under `/admin` by default) or the `/api/*` admin and batch routes. `/v1/model-metadata`, `/v1/systemone` and `/api/v1/batches` have no unversioned alias. `/model_group/info` has no `/v1` form, because LiteLLM serves it at the root. The full route table is in [`crates/gateway/src/http/mod.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway/src/http/mod.rs).
+
+Provider support varies by API family. A provider that supports Chat Completions doesn't necessarily support Responses, embeddings, image generation, Anthropic Messages, or every hosted tool. [Provider API compatibility](/reference/provider-api-compatibility/) is the current support matrix.
+
+## Follow the request path
+
+A model request passes through these stages in order:
+
+```text
+requested model
+  -> caller access and model grants
+  -> tag selection, when requested
+  -> alias resolution and effective model policy
+  -> explicit reasoning-effort validation
+  -> enabled routes with positive weights
+  -> API and feature capability checks
+  -> continuation origin, session binding, or routing policy
+  -> one eligible route
+  -> provider compatibility transforms
+  -> upstream provider request
+```
+
+The gateway records the requested model, resolved model, selected provider and provider attempt in request observability. This keeps the caller-facing name separate from the route that ran the request. For what happens after route selection, see [Request lifecycle and failure modes](/reference/request-lifecycle/).
+
+## Requested and resolved models
+
+The gateway keeps two model identities for each request:
+
+| Identity | Meaning |
+| --- | --- |
+| Requested model | The model name, or the model a tag selector chose, that the caller asked for |
+| Resolved model | The canonical provider-backed model after alias resolution |
+
+Both identities are written to request logs. This matters when an alias gives clients a stable name while its target changes over time.
+
+### Aliases
+
+An alias is a gateway model that points to another gateway model with `alias_of`. A model can't define both `alias_of` and `routes`. Startup rejects missing alias targets and cycles. Request resolution follows at most 8 alias hops ([`model_resolution.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-service/src/model_resolution.rs)).
+
+Aliases are separate authorisation keys. Access to an alias doesn't grant access to its target, and access to the target doesn't grant access to the alias. Grant the name that callers will request. Aliases can't define their own `routing` block; they use the resolved target's policy.
+
+### Reasoning effort ceilings
+
+When any model in an alias chain sets `max_reasoning_effort`, the gateway uses the strictest value across the whole chain. For example, an alias capped at `medium` that targets a model capped at `high` has an effective ceiling of `medium`. An uncapped chain member doesn't weaken a cap set elsewhere.
+
+The effort order is `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. The gateway checks every explicit, non-null effort value in the request on its own:
+
+| Request | Effort paths checked |
+| --- | --- |
+| Chat Completions and Anthropic Messages | Top level: `reasoning_effort`, `reasoning.effort`, `output_config.effort`, `thinking.effort`, the Bedrock paths, the Gemini paths, `chat_template_kwargs.reasoning_effort`, `chat_template_args.reasoning_effort`. Each message: `reasoning.effort`, `output_config.effort`, `thinking.effort`, and the same three under `configuration_update`. |
+| Responses | Top level: `reasoning.effort`, `reasoning_effort`, `output_config.effort`, `thinking.effort` and the Bedrock paths. Items in an array `input` are inspected recursively for every path in this table. |
+| Batch items and route `extra_body` | Every path in this table, recursively, including nested `messages` and `input` items |
+
+The Bedrock paths are `effort` under `additionalModelRequestFields.reasoning`, `.output_config` or `.thinking`, plus the snake-case `additional_model_request_fields` form. The Gemini paths are `generationConfig.thinkingConfig.thinkingLevel` and `generation_config.thinking_config.thinking_level`. The checks are in [`reasoning_policy.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-core/src/reasoning_policy.rs).
+
+The gateway applies these rules while a ceiling is active:
+
+- Known values at or below the ceiling pass unchanged. Matching is case-insensitive.
+- `none` and `off` pass as lower than `minimal`. Provider compatibility still decides whether a field accepts either spelling.
+- A known value above the ceiling returns `invalid_request`. The gateway doesn't clamp or change it.
+- Unknown strings and non-string effort values also return `invalid_request`, so a new provider value can't bypass policy.
+- Omitted fields and explicit `null` pass.
+- A rejection message names the field path, such as `messages[2].configuration_update.reasoning.effort`. The gateway also logs a `reasoning effort rejected` warning with the request ID, the requested and resolved model, the field path, the requested effort and the ceiling. Batch creation logs no request ID. The log holds no prompt content, and an unknown or malformed value is logged as `invalid`.
+
+The ceiling applies only to categorical values. It doesn't cap numeric budgets such as `thinking.budget_tokens`, and it doesn't override a default effort the provider picks when no value is sent. Provider mapping still resolves conflicts between two explicit effort fields, but every field must pass the ceiling first.
+
+Validation runs after alias resolution and before route selection, provider transforms and budget enforcement. Route `extra_body` values are checked at startup against the target model and every alias that resolves to it. See [Models and routes](/configuration/models-and-routes/) for the field.
+
+### Tag selectors
+
+A caller can send a concrete model ID or a tag selector such as `"model": "tag:chat,fast"`. Tag selectors use AND semantics: the chosen model must have every requested tag and must be in the caller's effective model set.
+
+The gateway applies API key grants, principal restrictions and model allowlists before it picks a tag candidate. It then orders eligible models by ascending `rank`, then model ID. A blocked model is skipped, not selected and rejected later.
+
+Use tags for policy choices such as `fast`, `coding` or `low-cost`. Use a concrete model ID when the caller needs a specific gateway contract.
+
+## Route selection
+
+Each provider-backed model can have several routes. Each route names a configured provider and the `upstream_model` that provider expects. Admins declare routes and routing policy in YAML and apply them through the normal config-seeding workflow. Routing policy isn't editable in the admin UI. Route fields are listed in [Models and routes](/configuration/models-and-routes/).
+
+A route is a selection candidate only when it's enabled, has a positive `weight`, and passes the API and feature capability checks for the request. A route that needs the caller's linked Copilot connection also needs that connection. The gateway treats routes in one model as equivalent targets.
+
+### Routing strategies
+
+The optional model-level `routing` block picks a strategy. The code is in [`crates/gateway-core/src/routing.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-core/src/routing.rs).
+
+| `routing.strategy` | Selection for a new placement |
+| --- | --- |
+| `weighted_random` | Weighted random choice among eligible routes at the lowest priority value. This is the default. |
+| `preferred` | The eligible route with the lowest priority value. Equal-priority ties break by stable internal route ID. |
+| `round_robin` | Rotate among eligible routes at the lowest priority value, ordered by stable internal route ID. The cursor is stored in the database for each resolved model and eligible route set. |
+
+Lower `priority` values are considered first. If no route in a priority tier is eligible, the gateway uses the next tier. YAML list order doesn't set preference, so use different priority values when one provider should win.
+
+Under `round_robin`, `weight` has no effect. Round robin counts new placements, not requests inside an active session. Requests without session affinity count as new placements. Callers with different eligible route sets use separate cursors, so a restricted caller can't use up another set's turns. Round robin doesn't balance tokens, cost or concurrent work.
+
+If `routing` is omitted, the gateway uses weighted selection on every request with no session affinity. `routing: {}` also selects `weighted_random` without affinity, but every route then needs an explicit `id`.
+
+### Route identity
+
+Every route needs a stable `id` when the model defines `routing`. Keep the ID when changing a route's priority, weight or YAML position. These edits keep the route's identity and don't break a valid session binding. Changing the provider, upstream model or `service_tier` creates a new route identity.
+
+Each binding also stores an execution fingerprint. It covers the initialised provider's endpoint, authentication and headers, the request-affecting route settings, and the caller's linked provider credential ID. A change to any of these invalidates the binding. Display, pricing, timeout and batch settings don't affect it. Normal token refresh doesn't change it.
+
+Providers using AWS `default_chain` or GCP `adc` or `service_account` authentication need a `routing_account_scope` when a routing pool uses them. This label names the underlying account or principal. Change it and restart the gateway when that identity changes. The gateway trusts the label: it can't detect a wrong label or an unreported ambient identity change. See [Providers](/configuration/providers/) for syntax.
+
+### Session affinity
+
+`routing.affinity: {}` turns on session affinity with the default idle timeout of 3,600 seconds. Set `idle_timeout_seconds` to another positive integer if needed. Omit `affinity` to turn it off.
+
+Callers send a conversation ID in `x-oceans-session-id`. The gateway also reads the session identifiers that Claude Code, Codex, OpenCode, Pi and Oh My Pi already send, when harness detection identifies the client. A session ID must be 1 to 256 ASCII letters, digits, `.`, `_`, `:` or `-`. When affinity is on, the gateway rejects malformed, repeated or conflicting values: if the canonical header and a harness session ID are both present, they must match. Without affinity, session IDs don't affect routing. Prompt cache keys and prompt content don't identify sessions.
+
+The affinity key includes the API key, the requested gateway model and the session namespace. Two callers with the same session string don't share a binding. Two aliases that resolve to one target keep separate bindings. Callers should keep the same API key, model name and session source across requests.
+
+For a new session, the gateway picks a route and stores the binding atomically in PostgreSQL or libSQL. Replicas that share the database share bindings, so concurrent first requests for one session use one route.
+
+- Successful responses extend the idle deadline. Streams extend it only after a clean finish.
+- Errors and cancelled streams don't extend it.
+- If a database error blocks the refresh, the gateway still returns the successful response and logs a warning. The binding can then expire sooner.
+
+An active binding wins over the routing strategy while its route stays eligible. Adding a more preferred route doesn't move active sessions. After the idle deadline, or when the bound route is disabled, removed, changed or no longer eligible, the next request uses the strategy again. A late completion from an old binding can't refresh its replacement.
+
+Affinity applies to Chat Completions, Responses and Anthropic Messages. The API family is part of the fingerprint, so switching API family inside a session can create a new binding. The routing strategy also applies to embeddings, images and decisions, which don't use affinity. Batch admission keeps its own route selection and stored route lifecycle.
+
+The idle timeout controls gateway routing state only. It doesn't set provider cache retention or prove a cache hit. Keep OpenRouter's own provider policy stable when cache reuse depends on its upstream choice.
+
+### Responses continuations
+
+For a model with a `routing` policy, a `previous_response_id` is bound to the route that created it. The gateway stores caller-scoped response ownership for 30 days, separate from the session idle timeout. The origin wins over normal placement and session affinity.
+
+The gateway must store the origin before it completes a successful Responses result. If that write fails, the request or stream reports an error.
+
+The gateway rejects a continuation when its origin is unknown, expired, changed or unavailable for that caller. It never sends the identifier to another provider. With affinity on and a session ID present, a known continuation binds the session to its origin without moving the round-robin cursor.
+
+Responses created before origin tracking can't continue through a routing pool unless their origin is known. Opaque `conversation` references aren't supported in routing pools. Send full history when a new placement is needed.
+
+### No failover
+
+The gateway runs one selected route. It doesn't retry another route after an upstream error and doesn't fan a request out to several providers. Session affinity doesn't add failover. Weights of `3` and `1` at one priority mean weighted first choice, not "try the first provider three times". Make each selectable route a valid target and monitor provider failures on their own.
+
+## Capability gating
+
+Capabilities remove routes that can't serve the request before any provider call:
+
+| Capability | Needed when the request uses |
+| --- | --- |
+| `chat_completions` | Chat Completions, or Anthropic Messages (translated onto the chat path) |
+| `responses` | Responses |
+| `embeddings` | Embeddings |
+| `images` | `/v1/images` or `/v1/images/generations` |
+| `decisions` | `/v1/decisions` or `/v1/systemone` |
+| `stream` | Streaming output |
+| `tools` | Function, custom, MCP or other supported tools |
+| `vision` | Image or supported multimodal input to Chat Completions, Responses or Messages (Decisions needs only `decisions`) |
+| `json_schema` | Structured output with JSON Schema |
+| `developer_role` | A developer-role message |
+
+### How the gateway finds each flag
+
+Each flag can be `true`, `false` or unset. Leave a flag unset to let the gateway find its value. The first source with a value wins:
+
+1. Route config: a flag set in the route's `capabilities`.
+2. Compatibility: facts guaranteed by the route's `compatibility` settings and provider type.
+3. Catalog hints: facts from the [pricing catalog](/spend/pricing-and-accounting/) entry for the upstream model.
+4. Defaults: `images` and `decisions` are `false`. All other flags are `true`.
+
+The provider adapter then caps the result. A route can turn off a feature the provider supports, but can't turn on one it doesn't support. Enabling a flag never makes an unsupported upstream feature work.
+
+Compatibility infers these flags:
+
+| Route | Inferred flags |
+| --- | --- |
+| Bedrock `runtime_converse`, `runtime_openai_chat`, `mantle_openai_chat`, `mantle_anthropic_messages` | `chat_completions` and `stream` on; `responses`, `json_schema`, `embeddings`, `images`, `decisions` off |
+| Bedrock `runtime_anthropic_invoke` | `chat_completions` on; `responses`, `stream`, `json_schema`, `embeddings`, `images`, `decisions` off |
+| Bedrock `mantle_openai_responses` | `responses` and `stream` on; `chat_completions`, `embeddings`, `images`, `decisions` off; `tools`, `vision`, `json_schema` depend on the model |
+| GitHub Copilot with `compatibility.github_copilot` | Every flag, from the Copilot route evidence |
+| Native TypeSafe, `compatibility.openai_compat.decisions_api`, or `compatibility.openrouter.api: decisions` | `decisions` on; every other flag off |
+| Any other route | None |
+
+Catalog hints fill flags that config and compatibility leave unset:
+
+| Flag | Catalog hint |
+| --- | --- |
+| `chat_completions`, `responses`, `embeddings`, `images` | The model's API endpoints, when the catalog source lists them. OpenRouter hints only image-only models (output modalities exactly `image`). |
+| `tools` | The model supports tool calls |
+| `json_schema` | The model supports structured output |
+| `vision` | Input modalities include `image` |
+| `stream`, `developer_role`, `decisions` | Never hinted |
+
+A hint can set an unset flag to `false`, but never changes a flag you set. A catalog refresh can change a hinted flag, so set the flag explicitly when a route must not change.
+
+Startup validation checks route config, compatibility and defaults, not hints. It rejects specific contradictions, such as `stream: true` on a `runtime_anthropic_invoke` route or `chat_completions: true` on a Decisions route. It doesn't catch every contradiction; the adapter cap still stops an unsupported flag from taking effect. Route selection, batches, the admin Models page, `GET /v1/models` and `GET /v1/model-metadata` share this resolution, but results can differ: batches apply the batch adapter's own cap, and metadata can report a flag as unknown.
+
+### Decisions and image routes
+
+Decisions routes are native TypeSafe, `openai_compat` routes with `compatibility.openai_compat.decisions_api: openai`, and the alpha route with `compatibility.openrouter.api: decisions`. Compatibility turns `decisions` on and every other flag off, so these routes need no `capabilities` block.
+
+`images` defaults to `false`, so a route serves image generation only when its config or a catalog hint turns it on. Only `openai_compat` and `gcp_cloud_run_openai_compat` providers serve it. Enabling it in config on another provider type, or on a Decisions route, fails startup. The OpenRouter catalog marks image-only models, so their routes get `images` on and the other API families off from hints. Set the flags explicitly when the catalog doesn't list the model, or to keep the route stable. Examples are in [Models and routes](/configuration/models-and-routes/).
+
+When the catalog doesn't describe an embedding model, an embedding-only route should turn off unrelated capabilities.
+
+## Compatibility profiles
+
+Capabilities and compatibility do different jobs:
+
+- `capabilities` decides whether a route may run a request.
+- `compatibility` adjusts the provider request after route selection.
+
+OpenAI-compatible Chat Completions profiles can remove unsupported `store` fields, rename token-limit fields, rewrite the `developer` role, handle `reasoning_effort`, control stream-usage requests, and omit empty tool lists. Responses has its own typed request and streaming path; Chat Completions transforms aren't used as Responses shims.
+
+Provider-specific profiles also cover Amazon Bedrock API styles and OpenRouter provider policy. OpenRouter's `order`, `only`, `ignore`, zero-data-retention, latency and price settings pick the upstream inside the chosen OpenRouter route. They don't change Oceans route priority, weight or single-route execution.
+
+Put extra provider request fields that aren't compatibility behaviour in route `extra_body` or `extra_headers`. Supported profiles are listed in [Provider API compatibility](/reference/provider-api-compatibility/).
+
+## Route metadata
+
+`context_window_tokens` sets a deployment-specific context cap for one route. When the pricing catalog also knows the model limit, the gateway uses the smaller value. A cap above a known catalog limit fails startup.
+
+Model-level metadata is conservative across selectable routes:
+
+- Each token-limit dimension is the minimum known value.
+- A dimension is unknown when any selectable route lacks it.
+- Context provenance is `configured_override`, `catalog` or `mixed`.
+- Pricing uses the primary route and reports when pricing varies by route. The primary route's catalog context tiers appear in the model info dialog.
+
+The admin Models API, generated client configurations and `GET /v1/models` use these conservative limits. Route-level detail, pricing and source provenance are in `GET /v1/model-metadata`.
+
+The context value is metadata only. The gateway doesn't tokenise every request or reject an oversized prompt before provider execution.
+
+## API-specific behaviour
+
+### Model discovery
+
+`GET /v1/models` returns the gateway models visible to the authenticated API key. One response serves OpenAI and Anthropic clients (Claude Code calls it through `ANTHROPIC_BASE_URL`), because the two list shapes use different keys.
+
+| Field | Source |
+| --- | --- |
+| `id`, `owned_by` | Gateway model key; `owned_by` is always `oceans-llm` |
+| `object`, `type` | Always `model` |
+| `created`, `created_at` | Catalog release date of the first enabled route that has a valid one, else the Unix epoch |
+| `display_name`, `name` | Catalog display name of the first enabled route that has one, else the model key |
+| `description`, `alias_of` | Gateway model configuration |
+| `context_length`, `max_input_tokens`, `max_tokens` | Conservative limits across enabled routes; `max_input_tokens` falls back to the context length |
+| `architecture` | Input and output modalities shared by the routes that have modality data, plus outputs the model serves (see below) |
+| `capabilities` | Anthropic `ModelCapabilities` shape |
+| `supported_endpoint_types` | new-api endpoint types, preferred first |
+| `service_tiers` | Tiers the model can serve, such as `["default", "flex", "priority"]`, including a tier a route forces; omitted when only `default`. The tier variants in `client_hints` offer only tiers callers may request (see [Service tiers](#service-tiers)) |
+| `client_hints` | Harness settings for chat-shaped models |
+| `has_more`, `first_id`, `last_id` | The list isn't paginated, so `has_more` is always `false`; the IDs are `null` for an empty list |
+
+`capabilities` follows the Anthropic SDK types and describes what `POST /v1/messages` can accept for the model:
+
+- `batch`, `citations`, `code_execution` and `context_management` are always unsupported.
+- `effort`, `thinking`, `image_input`, `pdf_input` and `structured_outputs` are reported only when the model has at least one eligible Chat Completions route and every such route speaks Anthropic Messages upstream. That means `anthropic_compat`, Vertex `anthropic/*`, GitHub Copilot with `chat_api: anthropic_messages`, or Bedrock with an Anthropic `api_style`. One eligible non-Anthropic Chat Completions route turns them off, because selection can reach any tier. Responses-only routes don't count.
+- Effort levels come from the primary route's thinking policy, clamped to the effective reasoning ceiling.
+- `thinking.types.adaptive` is set for Claude families that accept only adaptive thinking. `enabled` means manual budgets are accepted.
+
+`client_hints` lists the chat-shaped APIs (Chat Completions, Responses, Anthropic Messages) that can serve the model, based on route capabilities, not the model name. It has `api_formats`, `preferred_api_format` and a `harnesses` block with settings for OpenCode and Pi, and for Claude Code and Codex when they apply:
+
+- `anthropic-messages` is listed whenever the model serves Chat Completions, because `/v1/messages` is translated onto the chat pipeline. A Responses-only model doesn't list it.
+- `preferred_api_format` comes from the primary route. `anthropic_compat` and Vertex `anthropic/*` prefer Anthropic Messages, GitHub Copilot follows `chat_api`, and Bedrock follows `api_style`. A route whose upstream speaks Responses prefers it. Other provider types fall back to model-name matching.
+- OpenCode presets above the reasoning ceiling are dropped. Pi levels above it map to the strongest effort allowed, or `null` if there's none.
+- Harness blocks match the snippets in [Client harness configuration](/harnesses/). They never contain a base URL or API key.
+- Models that serve neither Chat Completions nor Responses omit `client_hints`.
+
+`supported_endpoint_types` uses the new-api vocabulary (`anthropic`, `openai`, `openai-response`) so proxy-style clients can pick a wire format per model. The preferred format comes first. Proxy-style clients choose Anthropic Messages whenever `anthropic` is listed, so the gateway lists `anthropic` only when `preferred_api_format` is `anthropic-messages`. Use `client_hints.api_formats` for the full list. Oh-My-Pi (OMP) reads [LiteLLM model metadata](#litellm-model-metadata) instead. See [Oh-My-Pi (OMP)](/harnesses/omp/).
+
+Models with an eligible Decisions route report `decisions` in `architecture.output_modalities`. Models with an eligible `images` route report `image`, plus `text` output when any eligible route serves Chat Completions or Responses. With no catalog modality data, an image route reports `text` input and `image` output. A model that serves only Decisions or only images has an empty `supported_endpoint_types`, and proxy clients that ignore output modalities may list it as a chat model. Image and PDF inputs are removed from `architecture` unless every route guarantees `vision`.
+
+A visible model isn't guaranteed to run every API family. All its routes can be disabled, not viable, or incompatible with the operation.
+
+### LiteLLM model metadata
+
+`GET /model_group/info` returns model metadata in the LiteLLM proxy format. omp with `discovery.type: litellm` uses it to pick the API and reasoning effort for each model and to calculate cost. The endpoint uses the same authentication and visibility as `GET /v1/models`, with the key in `Authorization: Bearer` or `x-api-key`:
+
+- No key returns `401`.
+- A key without the `inference` scope returns `403` with code `insufficient_scope`.
+- The response is `{ "data": [...] }` with one row per model visible to the key.
+
+| Field | Source and rule |
+| --- | --- |
+| `model_group` | Gateway model key, equal to `id` in `/v1/models` |
+| `providers` | One lowercase vendor (see below) |
+| `mode` | `embedding` or `image_generation` when the model serves only that; otherwise `chat` (including Decisions-only models) |
+| `max_input_tokens` | Conservative input limit, else the context window; `null` when unknown |
+| `max_output_tokens` | Conservative output limit; `null` when unknown |
+| `input_cost_per_token`, `output_cost_per_token`, `cache_read_input_token_cost`, `cache_creation_input_token_cost` | Primary route price in USD per token. Input and output appear together or not at all. A cache cost appears only when known. |
+| `supports_function_calling`, `supports_vision`, `supports_response_schema` | Capabilities of the routes that serve the feature (see below) |
+| `supports_reasoning` | Catalog reasoning flag or thinking policy of every eligible Chat Completions or Responses route |
+| `supported_openai_params` | Derived from the fields above |
+
+The gateway stores prices per million tokens and divides by 1,000,000 here. For example, 4 USD per million input tokens gives `"input_cost_per_token": 0.000004`. When input or output price is unknown, the row has no cost fields.
+
+`supported_openai_params` always has `max_tokens` and `max_completion_tokens`. It adds:
+
+- `stream` and `stream_options` when an eligible chat route can stream.
+- `tools` and `tool_choice` when the model supports tools.
+- `reasoning_effort` when the eligible chat routes share at least one effort level after the reasoning ceiling applies. A model can have `supports_reasoning: true` without it, for example a Claude model that needs a manual thinking budget.
+- `response_format` when the model supports structured output.
+- `service_tier` when the model can serve a tier other than `default`.
+- `temperature`, unless the catalog sets `temperature: false` for any enabled route.
+
+Reasoning uses every eligible chat route, because route selection doesn't check reasoning and a request can land on any of them. Tools, vision and JSON schemas are different: selection checks them, so a feature is `true` when at least one eligible chat route serves it and every serving route has it. A route's explicit or inferred `true` capability counts; otherwise the catalog decides. Streaming has no catalog flag, so one streaming route is enough.
+
+The vendor in `providers` is found in this order: the model family in the upstream name (`anthropic`, `openai`, `google`, `deepseek`, `qwen`, `typesafe`), then the prefix before `/` in the upstream model, then the primary route's provider type, then `oceans-llm`. Host names such as OpenRouter and Vertex aren't model families, but one can still appear through the prefix or provider-type fallback. Two overrides apply:
+
+- If the vendor is `openai` but an eligible chat route doesn't serve Responses, the gateway sends the primary route's provider type instead (or `oceans-llm` if that is empty or `openai`).
+- If no eligible route serves Chat Completions but one serves Responses, the gateway sends `["openai"]` for any vendor.
+
+These rules exist because omp sends `providers: ["openai"]` models to `/v1/responses` and all others to the configured `api`. No field selects Anthropic Messages; omp sends Claude models to `/v1/chat/completions` by default and the gateway translates them. To set up omp with this endpoint, see [Oh-My-Pi (OMP)](/harnesses/omp/).
+
+The gateway doesn't register `/model/info`, `/v1/model/info`, `/v2/model/info` or `/v1/model_group/info`. omp may call them during a model list refresh and falls back to the `/model_group/info` rows when they fail. With the admin UI mounted at `/`, those paths reach the UI proxy instead of a gateway 404.
+
+### Service tiers
+
+Chat Completions, Responses and Anthropic Messages accept a tier for one request:
+
+| Field | Values | Meaning |
+| --- | --- | --- |
+| `service_tier` | `default`, `flex`, `priority`, `ultrafast`; aliases `fast`, `standard`, `standard_only` | OpenAI and OpenRouter spelling |
+| `speed` | `fast`, `standard` | Anthropic fast mode. `fast` is `priority`. |
+| `serviceTier` | a tier, or `{"type": "<tier>"}` | Gemini and Bedrock spelling |
+
+`service_tier: "auto"` and `null` ask for no tier. The gateway never turns `auto` into `priority`.
+
+```json
+{
+  "model": "gpt-6-luna",
+  "service_tier": "fast",
+  "messages": [{ "role": "user", "content": "Hello" }]
+}
+```
+
+The gateway removes these fields from the request and sends the tier in the form the selected provider expects. See [Service tiers](/configuration/models-and-routes/#service-tiers) for the forms and for the admin settings. When the route sets `service_tier`, the route's tier wins over the caller's.
+
+| Response | Cause |
+| --- | --- |
+| 400 `invalid_request` | Unknown value, a value that isn't a string, or two fields that ask for different tiers |
+| 403 `service_tier_not_allowed` | The model's `service_tiers` doesn't list the tier |
+| 400 `invalid_request`, "no configured route … supports service tier" | No route of the model can send and price the tier |
+
+The response reports the tier the provider served: `service_tier` in Chat Completions and Responses, and `usage.speed` and `usage.service_tier` in Anthropic Messages. A provider can serve a lower tier than requested. For example, OpenAI can serve a priority request at `default` when it is busy. The request log keeps both tiers, and usage is billed at the served tier. When the provider doesn't report a tier, usage is billed at the requested tier.
+
+A different tier uses a different provider cache. Changing the tier in the middle of a session loses prompt cache hits.
+
+Batch items can't select a tier, because a batch runs at the provider's batch rate. `POST /api/v1/batches` removes a `default` tier from item bodies and rejects the whole batch with 400 when an item asks for any other tier. Batch route selection skips routes whose `service_tier` forces a non-default tier, so a model with only `-fast` routes can't run batches.
+
+Embeddings, image generation and Decisions also run at the default tier, because their adapters send no tier. The gateway removes a `default` tier from these requests and returns 400 before model resolution for any other tier. Their route selection skips routes whose `service_tier` forces a non-default tier, and returns 400 when the model has no other route.
+
+### Chat Completions
+
+`POST /v1/chat/completions` uses the shared path for authentication, model resolution, route planning, budgets, logging and accounting. Compatibility transforms apply after route selection and before the provider request.
+
+### Responses
+
+`POST /v1/responses` needs the `responses` capability and calls the provider's Responses implementation. Streaming keeps `response.*` event names instead of converting them to Chat Completions chunks. Usage is normalised from Responses token fields.
+
+### Anthropic Messages
+
+`POST /v1/messages` and `POST /messages` accept Anthropic Messages requests. The gateway accepts Anthropic-style `x-api-key` authentication and returns Anthropic-compatible JSON or server-sent events. Support still depends on the selected route, so turn off unsupported tools, vision or other features to make requests fail before provider execution.
+
+Newer Claude models accept only adaptive thinking, and each treats a request to turn thinking off differently. Claude Code sends `thinking: { "type": "disabled" }` on background work such as session titles. On `anthropic_compat`, Vertex `anthropic/*` and Bedrock Anthropic Messages routes, the gateway keeps that request in a form the model accepts. Bedrock Converse routes apply the same rules to `additionalModelRequestFields.thinking`.
+
+| Upstream model | `thinking.type: "disabled"` |
+| --- | --- |
+| Claude Opus 4.7, Opus 4.8, Sonnet 5 | Forwarded at effort `low` to `max` |
+| Claude Opus 5, Haiku 5.5 | Forwarded at effort `low` to `high`; rejected with `xhigh` or `max` |
+| Claude Sonnet 5.5 | Rewritten to `thinking: { "type": "between_tools" }`; rejected with `xhigh` or `max` |
+| Claude Opus 5.5, Fable 5, Fable 5.1, Mythos Preview | Rejected with `400`, because these models always think |
+
+These models reject `minimal`, `none`, `off` and unknown effort values. The gateway rebuilds the thinking object with only `type`, so other `thinking` fields are dropped. With thinking off, the gateway adds no adaptive thinking or default effort. A caller effort in `reasoning_effort`, `reasoning.effort` or `output_config.effort` is forwarded as `output_config.effort`. Bedrock Converse also moves `thinking.effort` there; other Messages routes drop it. Other models reject `between_tools`.
+
+For Chat Completions on `anthropic_compat` and Vertex `anthropic/*` routes, adaptive-only models get adaptive thinking when `thinking` is omitted, with `output_config.effort: high` unless the caller set a supported effort. Bedrock Chat Completions adds adaptive thinking only when the request sets an effort. Native Messages requests keep omitted thinking and effort omitted.
+
+To keep Claude Code background work on a model that can turn thinking off, see [Client harness configuration](/harnesses/).
+
+### Anthropic token counting
+
+`POST /v1/messages/count_tokens` and `POST /messages/count_tokens` accept a Messages body and return `{"input_tokens": N}`. They use the same authentication, model resolution, grants, reasoning ceiling and route selection as Messages. Errors use the Anthropic error envelope.
+
+The gateway sends the prompt-defining fields (`messages`, `system`, `tools`, `tool_choice`, `thinking` and related prompt settings) to the selected route's upstream count API. It drops generation controls such as `temperature`, `stop_sequences` and `store`, and replaces `max_tokens` with an internal value (at least 4,096 and above any thinking budget). `anthropic_compat` and Vertex send only the count fields upstream, so that value reaches only Bedrock. Prompt guardrails run as they do for Messages: secrets are redacted and a prompt Messages would deny is denied here.
+
+| Selected route | Upstream count API |
+| --- | --- |
+| `anthropic_compat` | `POST /v1/messages/count_tokens` on the provider base URL |
+| `gcp_vertex` with an `anthropic/*` model | `count-tokens:rawPredict` on the Anthropic publisher |
+| `aws_bedrock` with `api_style: runtime_anthropic_invoke` or `runtime_converse` | Bedrock Runtime `CountTokens`, which needs the `bedrock:CountTokens` IAM action and supports only some models and Regions ([AWS Bedrock](/providers/aws-bedrock/#token-counting-permissions)) |
+| Any other route | None; returns `501 not_implemented_error` naming the provider key, type and upstream model |
+
+The gateway never estimates a count. Counts aren't billed or logged as requests: no usage-ledger row, no budget check, no request log, no request metrics. They appear in traces as the `count_tokens` provider operation and as an `anthropic count_tokens request completed` log event.
+
+Each API key can have at most 8 counts in flight on each gateway instance ([`count_tokens.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway/src/http/handlers/count_tokens.rs)). A further concurrent count gets `429 rate_limit_error` before route selection. To cap volume across replicas, add a `count_tokens` limit in [Rate limits](/spend/rate-limits/).
+
+A count doesn't refresh session affinity. With `round_robin`, a count still advances the rotation, so the next Messages request can land on a different route.
+
+### Decisions
+
+`POST /v1/decisions` accepts two formats. The System One format sends a `state` value and named `noul`, `choice` or `score` questions. The OpenAI format sends `input` (text, or user messages with text and image parts) and an ordered list of `predicate`, `choice` or `score` questions. The gateway detects the format from the `input` or `state` key and replies in the same format. `POST /v1/systemone` accepts System One only. Decisions isn't translated through Chat Completions or Responses.
+
+Each route speaks one format. Native TypeSafe routes send System One to `/v1/systemone`. The alpha OpenRouter route sends System One to `/api/alpha/decisions`. `openai_compat` routes with `decisions_api: openai` send the OpenAI format to `/decisions` under `base_url`, unless the provider sets `decisions_url`.
+
+The gateway selects only routes whose format can carry the request, and returns `400` before the upstream call when none can. `safety_identifier` works only on OpenAI-format routes, and System One routes reject image inputs. Decisions routes don't stream and skip prompt and model-response guardrails, though secrets are still redacted. They still use authentication, grants, budgets, request logs, provider attempts and usage accounting, with their own request metrics ([Observability and request logs](/observability/#decisions-embeddings-and-images)).
+
+See [TypeSafe](/providers/typesafe/) for the System One shape and [Provider API compatibility](/reference/provider-api-compatibility/) for translation rules.
+
+### Embeddings
+
+`POST /v1/embeddings` needs the `embeddings` capability. OpenAI-compatible routes use the provider's embeddings endpoint. Native Vertex text embeddings need a supported Google embedding model and text input. The Vertex mapper rejects token arrays, nested arrays, non-string values, empty input, multimodal payloads and `encoding_format: "base64"` before provider execution.
+
+### Images
+
+`POST /v1/images` and `POST /v1/images/generations` generate images through the OpenAI Images API and need the `images` capability. A request needs `model` and `prompt`. Other fields, such as `n`, `size` or `quality`, pass through unchanged, except tier fields (see [Service tiers](#service-tiers)). The gateway sets `model` to the upstream model (route `extra_body` can override it) and sends the request to `/images` under `base_url`.
+
+The response is the provider's body (`created`, `data[]` and `usage`). If the provider adds a `model` field, the gateway replaces it with the gateway model name.
+
+Image generation doesn't stream. A request with `stream: true` gets `400` before model resolution, with no request log. Prompt guardrails inspect the request; model-response guardrails don't run on images. Image requests use authentication, grants, rate limits, budgets, request logs and usage accounting, are covered by the `inference` scope, and have their own request metrics ([Observability and request logs](/observability/#decisions-embeddings-and-images)).
+
+### Batch admission
+
+`POST /api/v1/batches` resolves the outer `model` and checks every item body against that model's policy. Chat Completions and Responses items use the same effort paths and fail-closed rules as synchronous requests. One violating item rejects the whole batch before the job or any item is stored. Embeddings items have no effort field.
+
+## Diagnose routing failures
+
+Start with the returned error and the request log:
+
+| Symptom | Meaning | Check |
+| --- | --- | --- |
+| Model not found | The model doesn't exist, isn't granted, or no tag candidate is accessible | Requested model, tags, API key grants, allowlists |
+| `invalid_request` | Model policy, session identity, continuation origin or capability checks rejected the request | Effort fields, session IDs, response origin, API family, feature flags |
+| `service_tier_not_allowed` | The model's `service_tiers` doesn't allow the requested tier | Model `service_tiers`, or use a `-fast` model the key is granted |
+| `no_routes_available` | No enabled, positively weighted, viable route remained | Route state, provider config, weight |
+| Provider error | The selected route reached the provider and the upstream request failed | Provider attempt, credentials, compatibility profile, upstream response |
+| Visible model can't run | Discovery works but no route supports this request | Route capabilities, provider support |
+
+Use the request ID to match the response with **Observability > Request Logs** and exported traces. Request logs keep the requested and resolved models, the selected provider and the provider attempt.
+
+## Verify a routing change
+
+<Steps>
+<Step title="Apply the config">
+An admin restarts or reseeds the gateway as the deployment method needs. Editing YAML doesn't change an already seeded deployment.
+</Step>
+<Step title="Check discovery">
+Call `GET /v1/models` with the intended API key and confirm the model is visible.
+</Step>
+<Step title="Exercise each API family">
+Send one request for each enabled API family. Exercise streaming, tools, vision or structured output where the route supports them. Confirm the request log shows the expected requested model, resolved model, provider and outcome.
+</Step>
+<Step title="Test a rejection">
+Send one unsupported capability and confirm it fails before provider execution.
+</Step>
+<Step title="Exercise the strategy">
+Send requests with distinct sessions or no session ID. Weighted selection has no fixed sequence; round robin rotates new placements.
+</Step>
+<Step title="Check affinity">
+Repeat one session and confirm the same provider is used. Test expiry with a short idle timeout in a test deployment, then restore the intended value. With several replicas, send concurrent first requests for one session and confirm they use one route.
+</Step>
+<Step title="Check continuations">
+For Responses, confirm a known `previous_response_id` reaches its origin and an unknown one fails before provider execution.
+</Step>
+</Steps>

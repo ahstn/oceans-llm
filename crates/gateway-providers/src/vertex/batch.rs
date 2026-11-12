@@ -8,7 +8,10 @@ use gateway_core::{
 use serde_json::{Value, json};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
-use super::{VertexProvider, map_google_request, normalize_google_response, parse_upstream_model};
+use super::{
+    PublisherFamily, VertexProvider, map_google_request, normalize_google_response,
+    parse_upstream_model,
+};
 use crate::http::map_reqwest_error;
 
 impl VertexProvider {
@@ -516,8 +519,15 @@ impl VertexProvider {
         context: &ProviderRequestContext,
     ) -> Result<Value, ProviderError> {
         let token = self.access_token_source.token().await?;
-        let mut builder = self
-            .apply_request_headers(self.client.request(method, url).bearer_auth(token), context);
+        let family = match context.upstream_model.split_once('/') {
+            Some(("anthropic", _)) => PublisherFamily::Anthropic,
+            _ => PublisherFamily::Google,
+        };
+        let mut builder = self.apply_request_headers(
+            self.client.request(method, url).bearer_auth(token),
+            context,
+            family,
+        );
         if let Some(body) = body {
             builder = builder.json(&body);
         }
@@ -787,7 +797,12 @@ fn parse_bigquery_results(
                 provider_usage: normalized
                     .as_ref()
                     .and_then(|response| response.get("usage"))
-                    .cloned(),
+                    .cloned()
+                    .or_else(|| {
+                        response
+                            .as_ref()
+                            .and_then(super::google_response::map_google_usage)
+                    }),
                 response_body: normalized,
                 error,
                 provider_request_id: None,
@@ -978,6 +993,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: RouteCompatibility::default(),
+            service_tier: None,
         };
 
         let error = provider
@@ -1010,6 +1026,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: RouteCompatibility::default(),
+            service_tier: None,
         };
         let results = parse_bigquery_results(
             &json!({"rows": [{"f": [
@@ -1039,12 +1056,13 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: RouteCompatibility::default(),
+            service_tier: None,
         };
         let results = parse_bigquery_results(
             &json!({"rows": [
                 {"f": [
                     {"v": "bad"},
-                    {"v": "{\"candidates\":[{\"finishReason\":\"MALFORMED_FUNCTION_CALL\",\"finishMessage\":\"unparseable\"}]}"},
+                    {"v": "{\"candidates\":[{\"finishReason\":\"MALFORMED_FUNCTION_CALL\",\"finishMessage\":\"unparseable\"}],\"usageMetadata\":{\"promptTokenCount\":4,\"candidatesTokenCount\":1,\"thoughtsTokenCount\":2,\"totalTokenCount\":7}}"},
                     {"v": null}
                 ]},
                 {"f": [
@@ -1060,6 +1078,14 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].custom_id, "bad");
         assert!(results[0].response_body.is_none());
+        let usage = results[0]
+            .provider_usage
+            .as_ref()
+            .expect("failed row preserves billable usage");
+        assert_eq!(usage["prompt_tokens"], 4);
+        assert_eq!(usage["completion_tokens"], 3);
+        assert_eq!(usage["completion_tokens_details"]["reasoning_tokens"], 2);
+        assert_eq!(usage["total_tokens"], 7);
         let error = results[0].error.as_ref().expect("row error");
         assert!(
             error["message"]

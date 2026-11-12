@@ -5,7 +5,7 @@ use gateway_core::{
     GatewayError, IdentityRepository, ImagesRequest, OpenAiErrorEnvelope, RequestAttemptRecord,
     RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult,
     RequestLogQuery, RequestLogRecord, RequestLogRepository, RequestLogRetentionWindow,
-    RequestTags, RequestToolCardinality, ResponsesRequest,
+    RequestTags, RequestToolCardinality, ResponsesRequest, ServiceTier,
 };
 
 use crate::{REQUEST_LOG_MODEL_ICON_KEY, REQUEST_LOG_PROVIDER_ICON_KEY, RequestLogIconMetadata};
@@ -58,6 +58,9 @@ pub struct RequestLogContext {
     pub user_agent_raw: Option<String>,
     pub agent_harness_key: String,
     pub agent_harness_label: String,
+    /// The tier the request asked the provider for: the route's forced tier, else the
+    /// caller's. Set once a route is chosen; recorded as `metadata.service_tier`.
+    pub service_tier: Option<ServiceTier>,
     payload_policy: RequestLogPayloadPolicy,
     pub tool_cardinality: RequestToolCardinality,
     request_json: Option<Value>,
@@ -92,6 +95,8 @@ struct RequestLogSummary {
     latency_ms: i64,
     usage: UsageSummary,
     invoked_tools: InvokedToolCounts,
+    /// The tier the provider reported serving; recorded as `metadata.served_service_tier`.
+    served_service_tier: Option<ServiceTier>,
 }
 
 impl RequestLogSummary {
@@ -112,6 +117,7 @@ impl RequestLogSummary {
             latency_ms,
             usage,
             invoked_tools,
+            served_service_tier: None,
         }
     }
 
@@ -133,6 +139,14 @@ impl RequestLogSummary {
             latency_ms,
             usage: UsageSummary::default(),
             invoked_tools,
+            served_service_tier: None,
+        }
+    }
+
+    fn served_at(self, served_service_tier: Option<ServiceTier>) -> Self {
+        Self {
+            served_service_tier,
+            ..self
         }
     }
 }
@@ -320,6 +334,7 @@ where
             user_agent_raw,
             agent_harness_key: harness.key.to_string(),
             agent_harness_label: harness.label.to_string(),
+            service_tier: None,
             payload_policy: self.payload_policy.clone(),
             // `exposed_tool_count` starts as the request-body count and may later be replaced by
             // the MCP grant inventory; `request_tool_count` keeps the request-body count.
@@ -465,7 +480,8 @@ where
                     calls: invoked_tool_count,
                     ..InvokedToolCounts::from_response_body(response_body)
                 },
-            ),
+            )
+            .served_at(gateway_core::served_service_tier(response_body)),
             response_json,
             response_payload_truncated,
             attempts,
@@ -542,6 +558,7 @@ where
         let failure = failure.or_else(|| collector.failure().cloned());
         let usage = usage_summary_from_value(collector.usage());
         let invoked_tools = collector.invoked_tool_counts();
+        let served_service_tier = collector.served_service_tier();
         let (response_json, response_payload_truncated) =
             if self.payload_policy.should_capture_payloads() {
                 let (response_json, response_payload_truncated) =
@@ -573,7 +590,7 @@ where
         self.persist_chat_log(
             api_key,
             context,
-            summary,
+            summary.served_at(served_service_tier),
             response_json,
             response_payload_truncated,
             attempts,
@@ -642,12 +659,7 @@ where
             });
         }
 
-        let metadata = request_log_metadata(
-            context.operation,
-            summary.stream,
-            &summary.icon_metadata,
-            &self.payload_policy,
-        );
+        let metadata = request_log_metadata(context, &summary, &self.payload_policy);
         let has_payload = self.payload_policy.should_capture_payloads()
             && context.request_json.is_some()
             && response_json.is_some();
@@ -717,6 +729,17 @@ pub fn usage_summary_from_value(value: Option<&Value>) -> UsageSummary {
     let Some(usage) = value.and_then(Value::as_object) else {
         return UsageSummary::default();
     };
+    if usage.contains_key("input_tokens")
+        && (usage.contains_key("cache_read_input_tokens")
+            || usage.contains_key("cache_creation_input_tokens"))
+        && let Ok(summary) = crate::usage::usage_summary_from_value(value)
+    {
+        return UsageSummary {
+            prompt_tokens: summary.prompt_tokens,
+            completion_tokens: summary.completion_tokens,
+            total_tokens: summary.total_tokens,
+        };
+    }
 
     let prompt_tokens = usage
         .get("prompt_tokens")
@@ -728,6 +751,7 @@ pub fn usage_summary_from_value(value: Option<&Value>) -> UsageSummary {
         .and_then(Value::as_i64);
     let total_tokens = match usage.get("total_tokens").and_then(Value::as_i64) {
         some @ Some(_) => some,
+        None if usage.get("total_tokens").is_some_and(Value::is_null) => None,
         None => match (prompt_tokens, completion_tokens) {
             (Some(prompt), Some(completion)) => prompt.checked_add(completion),
             _ => None,
@@ -742,21 +766,21 @@ pub fn usage_summary_from_value(value: Option<&Value>) -> UsageSummary {
 }
 
 fn request_log_metadata(
-    operation: &'static str,
-    stream: bool,
-    icon_metadata: &RequestLogIconMetadata,
+    context: &RequestLogContext,
+    summary: &RequestLogSummary,
     payload_policy: &RequestLogPayloadPolicy,
 ) -> Map<String, Value> {
     let mut metadata = Map::new();
     metadata.insert(
         "operation".to_string(),
-        Value::String(operation.to_string()),
+        Value::String(context.operation.to_string()),
     );
-    metadata.insert("stream".to_string(), Value::Bool(stream));
+    metadata.insert("stream".to_string(), Value::Bool(summary.stream));
     metadata.insert(
         "payload_policy".to_string(),
         payload_policy.metadata_value(),
     );
+    let icon_metadata = &summary.icon_metadata;
     metadata.insert(
         REQUEST_LOG_PROVIDER_ICON_KEY.to_string(),
         Value::String(icon_metadata.provider_icon_key.as_str().to_string()),
@@ -766,6 +790,15 @@ fn request_log_metadata(
             REQUEST_LOG_MODEL_ICON_KEY.to_string(),
             Value::String(model_icon_key.as_str().to_string()),
         );
+    }
+    let tiers = [
+        ("service_tier", context.service_tier),
+        ("served_service_tier", summary.served_service_tier),
+    ];
+    for (key, tier) in tiers {
+        if let Some(tier) = tier {
+            metadata.insert(key.to_string(), Value::String(tier.as_str().to_string()));
+        }
     }
     metadata
 }

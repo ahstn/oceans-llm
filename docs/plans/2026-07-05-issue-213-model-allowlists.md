@@ -1,6 +1,6 @@
 # Issue 213: Model-level allowlists for users and teams
 
-`See also`: [Configuration Reference](../configuration/configuration-reference.md), [Identity and Access](../access/identity-and-access.md), [Model Routing and APIs](../configuration/model-routing-and-api-behavior.md), [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md), [Data Relationships](../contributing/reference/data-relationships.md), [Budgets](../access/budgets.md)
+`See also`: [Configuration Reference](https://oceans-llm.com/configuration/), [Identity and Access](https://oceans-llm.com/access/identity-and-access/), [Model Routing and APIs](https://oceans-llm.com/configuration/model-routing/), [Request Lifecycle and Failure Modes](https://oceans-llm.com/reference/request-lifecycle/), [Data Relationships](../contributing/reference/data-relationships.md), [Budgets](https://oceans-llm.com/spend/budgets/)
 
 ## Goal
 
@@ -242,13 +242,13 @@ mise run admin-contract-check
 
 User-facing docs:
 
-- `docs/configuration/configuration-reference.md`: YAML shape, normalization, unknown refs, omitted-vs-empty, seed semantics, alias behavior, `tag:` behavior, service-account v1 denial.
-- `docs/access/identity-and-access.md`: distinguish API-key grants, principal-centric restrictions, and model-centric allowlists.
-- `docs/configuration/model-routing-and-api-behavior.md`: `tag:` effective model filtering and alias independence.
-- `docs/reference/request-lifecycle-and-failure-modes.md`: allowlist gate happens before route planning and budgets.
-- `docs/access/service-accounts.md`: service-account v1 caveat for allowlisted models.
-- `docs/access/admin-control-plane.md`: Models page displays allowlist read-only.
-- `docs/access/budgets.md`: user-facing budget taxonomy and setup guidance; explain budgets are spend controls, not model authorization.
+- [Configuration reference](https://oceans-llm.com/configuration/): YAML shape, normalization, unknown refs, omitted-vs-empty, seed semantics, alias behavior, `tag:` behavior, service-account v1 denial.
+- [Identity and access](https://oceans-llm.com/access/identity-and-access/): distinguish API-key grants, principal-centric restrictions, and model-centric allowlists.
+- [Model routing and APIs](https://oceans-llm.com/configuration/model-routing/): `tag:` effective model filtering and alias independence.
+- [Request lifecycle and failure modes](https://oceans-llm.com/reference/request-lifecycle/): allowlist gate happens before route planning and budgets.
+- [Service accounts](https://oceans-llm.com/access/service-accounts/): service-account v1 caveat for allowlisted models.
+- [Admin control plane](https://oceans-llm.com/access/admin-control-plane/): Models page displays allowlist read-only.
+- [Budgets](https://oceans-llm.com/spend/budgets/): user-facing budget taxonomy and setup guidance; explain budgets are spend controls, not model authorization.
 
 Developer/contributor docs:
 

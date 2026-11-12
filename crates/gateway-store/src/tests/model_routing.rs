@@ -24,6 +24,7 @@ async fn exercise_model_routing_policy<S: GatewayStore + Sync>(store: &S) {
         routing: None,
         routes: Vec::new(),
         allowlist: None,
+        service_tiers: None,
     };
     let api_keys = [SeedApiKey {
         name: "routing test".to_string(),

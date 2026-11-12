@@ -3,35 +3,41 @@
 lockfile_version = 3
 
 [[tools.aws-cli]]
-version = "2.27.49"
+version = "2.39.5"
 backend = "aqua:aws/aws-cli"
-specifiers = ["2.27.49"]
+specifiers = ["2.39.5"]
 
 [tools.aws-cli."platforms.linux-arm64"]
-url = "https://awscli.amazonaws.com/awscli-exe-linux-aarch64-2.27.49.zip"
+checksum = "sha256:ce7b03ebceed1dc6a0a8f27134a41a9a3b5671f09c57ab2e7fc6d43710dbaef3"
+url = "https://awscli.amazonaws.com/awscli-exe-linux-aarch64-2.39.5.zip"
 
 [tools.aws-cli."platforms.linux-x64"]
-url = "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-2.27.49.zip"
+checksum = "blake3:a96636087e0d25a485710eadefcc18300e9eefe1193c31fae45248ea619b569c"
+url = "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-2.39.5.zip"
 
 [tools.aws-cli."platforms.macos-arm64"]
-url = "https://awscli.amazonaws.com/AWSCLIV2-2.27.49.pkg"
+checksum = "sha256:f89c9288dbd9bd0579914ea3a72acc14bca1ae3d3112e92bcb29ff5a48b88131"
+url = "https://awscli.amazonaws.com/AWSCLIV2-2.39.5.pkg"
 
 [[tools.rustfs]]
-version = "1.0.1"
+version = "1.0.4"
 backend = "github:rustfs/rustfs"
-specifiers = ["1.0.1"]
+specifiers = ["1.0.4"]
 
 [tools.rustfs."platforms.linux-arm64"]
-checksum = "sha256:1dcfb6ae59702b8e90394157e57450ed219515a1cc63525f730d4e120e9be7b9"
-url = "https://github.com/rustfs/rustfs/releases/download/1.0.1/rustfs-linux-aarch64-gnu-v1.0.1.zip"
-url_api = "https://api.github.com/repos/rustfs/rustfs/releases/assets/607172152"
+checksum = "sha256:5c2d4dad2685f41635441b685dc4dead225f84bce2a9a365d87f8151ec88a049"
+checksum_source = "mise-versions"
+url = "https://github.com/rustfs/rustfs/releases/download/1.0.4/rustfs-linux-aarch64-gnu-v1.0.4.zip"
+url_api = "https://api.github.com/repos/rustfs/rustfs/releases/assets/675521975"
 
 [tools.rustfs."platforms.linux-x64"]
-checksum = "sha256:9742e183cb0dfb0d48fa909797af572fe47b7f827569036baa4156e0d3958ee5"
-url = "https://github.com/rustfs/rustfs/releases/download/1.0.1/rustfs-linux-x86_64-gnu-v1.0.1.zip"
-url_api = "https://api.github.com/repos/rustfs/rustfs/releases/assets/607172574"
+checksum = "sha256:4a25e48f5b5ae610a679b5324206962c6fb0eb20a9fa7ab6cb20e178cf6c534b"
+checksum_source = "mise-versions"
+url = "https://github.com/rustfs/rustfs/releases/download/1.0.4/rustfs-linux-x86_64-gnu-v1.0.4.zip"
+url_api = "https://api.github.com/repos/rustfs/rustfs/releases/assets/675522651"
 
 [tools.rustfs."platforms.macos-arm64"]
-checksum = "sha256:18aac7101c3484b98f93de64a0609aaa8e02aba072ba7927172c4b2eae7d4843"
-url = "https://github.com/rustfs/rustfs/releases/download/1.0.1/rustfs-macos-aarch64-v1.0.1.zip"
-url_api = "https://api.github.com/repos/rustfs/rustfs/releases/assets/607172938"
+checksum = "sha256:49057482769d7904ef95dc40457d71122f48cbb8e9e0725a0817a3ec6daf8270"
+checksum_source = "mise-versions"
+url = "https://github.com/rustfs/rustfs/releases/download/1.0.4/rustfs-macos-aarch64-v1.0.4.zip"
+url_api = "https://api.github.com/repos/rustfs/rustfs/releases/assets/675523423"

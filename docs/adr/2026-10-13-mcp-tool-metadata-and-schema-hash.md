@@ -5,8 +5,8 @@
 
 ## Current state
 
-- [MCP Servers: Discovery](../configuration/mcp-servers.md#discovery)
-- [MCP Tool Access: Runtime Behavior](../mcp/mcp-tool-access.md#runtime-behavior)
+- [MCP Servers: Discovery](https://oceans-llm.com/extensions/mcp-servers/#discovery)
+- [MCP Tool Access: Runtime Behavior](https://oceans-llm.com/extensions/mcp-tool-access/#what-clients-can-see)
 
 ## Context
 

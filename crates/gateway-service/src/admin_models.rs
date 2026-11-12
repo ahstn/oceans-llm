@@ -10,9 +10,10 @@ use gateway_client_config::{
     render_default_configs_for_models,
 };
 use gateway_core::{
-    GatewayError, GatewayModel, ModelAllowlistPolicy, ModelRepository, ModelRoute,
-    ModelRoutingPolicy, PricingCatalogRepository, PricingLimits, PricingModalities,
-    ProviderCapabilities, ProviderConnection, ProviderRepository, ReasoningEffort,
+    ContextPricingTier, GatewayError, GatewayModel, ModelAllowlistPolicy, ModelRepository,
+    ModelRoute, ModelRoutingPolicy, PartialCapabilities, PricingCatalogRepository, PricingLimits,
+    PricingModalities, ProviderCapabilities, ProviderConnection, ProviderRepository,
+    ReasoningEffort, ServiceTier, ServiceTierPricing,
 };
 use time::OffsetDateTime;
 
@@ -23,14 +24,18 @@ use routing::summarize_routes;
 #[cfg(test)]
 use crate::effective_route_metadata::provider_capabilities;
 use crate::effective_route_metadata::{effective_provider_route_capabilities, native_api_format};
+use crate::model_metadata::service_tiers::{
+    AdapterServiceTiers, allowed_service_tiers, selectable_service_tiers, servable_service_tiers,
+};
 use crate::model_resolution::alias_chain_reasoning_ceiling;
 
 use crate::benchmark_catalog::{
     BenchmarkMatchKind, ModelBenchmarkScore, benchmark_scores_for, derive_benchmark_model_id,
 };
 use crate::{
-    EffectiveMetadataSource, EffectiveRouteMetadata, ModelIconKey, ProviderIconKey,
-    resolve_effective_route_metadata, resolve_model_icon_key, resolve_provider_display,
+    CatalogCapabilityHints, EffectiveMetadataSource, EffectiveRouteMetadata, ModelIconKey,
+    ProviderIconKey, resolve_effective_route_metadata, resolve_model_icon_key,
+    resolve_provider_display,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,6 +64,12 @@ pub struct AdminModelSummary {
     pub description: Option<String>,
     pub tags: Vec<String>,
     pub allowlist: Option<ModelAllowlistPolicy>,
+    /// Non-default tiers callers may request: the model's own list, else its execution
+    /// model's. `None` allows every tier.
+    pub service_tiers: Option<Vec<ServiceTier>>,
+    /// Every tier a request can be served at, ascending, by the rules routing applies.
+    /// Empty when no route serves chat or the service has no adapter tier source.
+    pub available_service_tiers: Vec<ServiceTier>,
     pub status: AdminModelStatus,
     pub routing: Option<ModelRoutingPolicy>,
     pub routes: Vec<AdminModelRouteSummary>,
@@ -71,6 +82,10 @@ pub struct AdminModelSummary {
     pub output_cost_per_million_tokens_usd_10000: Option<i64>,
     pub cache_read_cost_per_million_tokens_usd_10000: Option<i64>,
     pub cache_write_cost_per_million_tokens_usd_10000: Option<i64>,
+    /// Catalog context tiers of the primary route, ascending; empty for an override price.
+    pub pricing_tiers: Vec<ContextPricingTier>,
+    /// Non-default service tier rates of the primary route, sorted by tier.
+    pub pricing_service_tiers: Vec<ServiceTierPricing>,
     pub pricing_source: Option<EffectiveMetadataSource>,
     pub pricing_varies_by_route: bool,
     pub context_window_tokens: Option<i64>,
@@ -88,11 +103,15 @@ pub struct AdminModelSummary {
     pub client_configurations: Vec<ClientConfig>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AdminModelsService<R> {
     repo: Arc<R>,
     client_config_gateway_base_url: String,
     benchmark_model_ids: Arc<HashMap<String, String>>,
+    /// Catalog hints for unset route capability flags; `None` reads no catalog.
+    capability_hints: Option<CatalogCapabilityHints>,
+    /// The tiers each route's adapter can send; `None` treats every route as default-only.
+    adapter_service_tiers: Option<Arc<dyn AdapterServiceTiers>>,
 }
 
 impl<R> AdminModelsService<R>
@@ -105,6 +124,8 @@ where
             repo,
             client_config_gateway_base_url: DEFAULT_GATEWAY_BASE_URL.to_string(),
             benchmark_model_ids: Arc::default(),
+            capability_hints: None,
+            adapter_service_tiers: None,
         }
     }
 
@@ -125,6 +146,64 @@ where
     ) -> Self {
         self.client_config_gateway_base_url = gateway_base_url.into();
         self
+    }
+
+    /// Fill unset route capability flags from this catalog view.
+    #[must_use]
+    pub fn with_capability_hints(mut self, capability_hints: CatalogCapabilityHints) -> Self {
+        self.capability_hints = Some(capability_hints);
+        self
+    }
+
+    /// Read which tiers each route's adapter can send, to list a model's servable tiers.
+    #[must_use]
+    pub fn with_adapter_service_tiers(mut self, adapter: Arc<dyn AdapterServiceTiers>) -> Self {
+        self.adapter_service_tiers = Some(adapter);
+        self
+    }
+
+    /// The tiers a request for `model` can be served at through its eligible chat routes.
+    /// Without an adapter tier source or catalog snapshot, none.
+    fn servable_service_tiers(
+        &self,
+        model: &GatewayModel,
+        execution_model: &GatewayModel,
+        routes: &[ModelRoute],
+        providers_by_key: &HashMap<String, ProviderConnection>,
+    ) -> Vec<ServiceTier> {
+        let (Some(adapter), Some(hints)) = (&self.adapter_service_tiers, &self.capability_hints)
+        else {
+            return Vec::new();
+        };
+        let chat_routes = routes
+            .iter()
+            .filter(|route| route_is_eligible(providers_by_key, route))
+            .filter_map(|route| {
+                let provider = providers_by_key.get(&route.provider_key)?;
+                let capabilities = self.route_capabilities(route, Some(provider));
+                (capabilities.chat_completions || capabilities.responses)
+                    .then_some((route, provider))
+            });
+        servable_service_tiers(
+            chat_routes,
+            allowed_service_tiers(model, execution_model),
+            hints.snapshot(),
+            adapter.as_ref(),
+        )
+    }
+
+    fn route_capabilities(
+        &self,
+        route: &ModelRoute,
+        provider: Option<&ProviderConnection>,
+    ) -> ProviderCapabilities {
+        let hints = self
+            .capability_hints
+            .as_ref()
+            .map_or_else(PartialCapabilities::default, |hints| {
+                hints.for_route(provider, route)
+            });
+        effective_provider_route_capabilities(route, provider, hints)
     }
 
     pub async fn list_models(&self) -> Result<Vec<AdminModelSummary>, GatewayError> {
@@ -322,7 +401,8 @@ where
             let provider_display = primary_route.map(|route| {
                 resolve_provider_display(route.provider_key.as_str(), primary_provider)
             });
-            let route_capabilities = primary_route.map(|route| route.capabilities);
+            let route_capabilities =
+                primary_route.map(|route| self.route_capabilities(route, primary_provider));
             let primary_metadata = match primary_route {
                 Some(route) => Some(
                     resolve_effective_route_metadata(
@@ -368,9 +448,12 @@ where
                     .into_iter()
                     .chain([execution_model.model_key.as_str(), model.model_key.as_str()]),
             );
+            let available_service_tiers =
+                self.servable_service_tiers(&model, &execution_model, routes, &providers_by_key);
             let client_config_input = primary_route
-                .filter(|route| route_is_eligible(&providers_by_key, route))
-                .and_then(|primary_route| {
+                .zip(route_capabilities)
+                .filter(|(route, _)| route_is_eligible(&providers_by_key, route))
+                .and_then(|(primary_route, route_capabilities)| {
                     build_client_config_input(ClientConfigContext {
                         model: &model,
                         execution_model: &execution_model,
@@ -384,6 +467,7 @@ where
                         metadata: primary_metadata,
                         limits: &aggregate.limits,
                         route_capabilities,
+                        service_tiers: &available_service_tiers,
                         gateway_base_url: &self.client_config_gateway_base_url,
                     })
                 });
@@ -408,6 +492,9 @@ where
                     description: model.description.clone(),
                     tags: model.tags.clone(),
                     allowlist: allowlists_by_model.get(&model.id).cloned(),
+                    service_tiers: allowed_service_tiers(&model, &execution_model)
+                        .map(<[ServiceTier]>::to_vec),
+                    available_service_tiers,
                     status,
                     routing: execution_model.routing.clone(),
                     routes: summarize_routes(routes, &providers_by_key),
@@ -430,6 +517,12 @@ where
                     cache_write_cost_per_million_tokens_usd_10000: primary_pricing
                         .and_then(|pricing| pricing.cache_write_cost_per_million_tokens)
                         .map(|value| value.as_scaled_i64()),
+                    pricing_tiers: primary_pricing
+                        .map(|pricing| pricing.context_tiers.clone())
+                        .unwrap_or_default(),
+                    pricing_service_tiers: primary_pricing
+                        .map(|pricing| pricing.service_tiers.clone())
+                        .unwrap_or_default(),
                     pricing_source: primary_metadata
                         .and_then(|metadata| metadata.pricing_source.clone()),
                     pricing_varies_by_route: aggregate.pricing_varies_by_route,
@@ -450,8 +543,13 @@ where
                     supports_image_generation: route_capabilities.map(|caps| {
                         caps.images
                             || routes.iter().any(|route| {
-                                route.capabilities.images
-                                    && route_is_eligible(&providers_by_key, route)
+                                route_is_eligible(&providers_by_key, route)
+                                    && self
+                                        .route_capabilities(
+                                            route,
+                                            providers_by_key.get(&route.provider_key),
+                                        )
+                                        .images
                             })
                     }),
                     client_configurations,
@@ -479,7 +577,11 @@ struct ClientConfigContext<'a> {
     provider_display: Option<&'a crate::ProviderDisplayIdentity>,
     metadata: Option<&'a EffectiveRouteMetadata>,
     limits: &'a PricingLimits,
-    route_capabilities: Option<ProviderCapabilities>,
+    /// Effective capabilities of `primary_route` through `primary_provider`.
+    route_capabilities: ProviderCapabilities,
+    /// Every tier a request for the model can be served at, ascending. The configs offer
+    /// only those the model's allow-list lets a caller request.
+    service_tiers: &'a [ServiceTier],
     gateway_base_url: &'a str,
 }
 
@@ -493,11 +595,7 @@ fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientC
         primary_provider,
         context.provider_display,
     );
-    let capabilities = effective_provider_route_capabilities(
-        context.route_capabilities,
-        context.primary_provider,
-        Some(primary_route),
-    );
+    let capabilities = context.route_capabilities;
     if !capabilities.chat_completions && !capabilities.responses {
         // OpenCode/Pi/Claude/Codex snippets target chat-shaped clients; a
         // decisions-only or image-only model cannot use them, so emit no
@@ -558,6 +656,10 @@ fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientC
         codex_reasoning_effort: None,
         native_api_format: native_api_format(primary_provider, primary_route),
         max_reasoning_effort: context.reasoning_ceiling.map(reasoning_level),
+        service_tiers: selectable_service_tiers(
+            context.service_tiers,
+            allowed_service_tiers(context.model, context.execution_model),
+        ),
     })
 }
 
@@ -748,11 +850,13 @@ mod tests {
 
     use async_trait::async_trait;
     use gateway_core::{
-        GatewayError, GatewayModel, GitHubCopilotChatApi, GitHubCopilotRouteCompatibility,
-        GitHubCopilotUpstreamSupports, ModelAllowlistPolicy, ModelPricingRecord,
-        ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4, PricingCatalogCacheRecord,
-        PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
-        ProviderCapabilities, ProviderConnection, ProviderRepository, ReasoningEffort, StoreError,
+        ContextPricingTier, GatewayError, GatewayModel, GitHubCopilotChatApi,
+        GitHubCopilotRouteCompatibility, GitHubCopilotUpstreamSupports, ModelAllowlistPolicy,
+        ModelPricingRecord, ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4,
+        PartialCapabilities, PricingCatalogCacheRecord, PricingCatalogRepository, PricingLimits,
+        PricingModalities, PricingProvenance, ProviderCapabilities, ProviderConnection,
+        ProviderRepository, ReasoningEffort, RoutePricingOverride, RouteServiceTierPricing,
+        ServiceTier, ServiceTierPricing, StoreError,
     };
     use serde_json::json;
     use time::OffsetDateTime;
@@ -804,6 +908,8 @@ mod tests {
             output_cost_per_million_tokens: Some(Money4::from_scaled(20_000)),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            context_tiers: Vec::new(),
+            service_tiers: Vec::new(),
         };
         let route_metadata = vec![
             (
@@ -836,6 +942,262 @@ mod tests {
         assert_eq!(aggregate.limits.input, Some(80_000));
         assert_eq!(aggregate.limits.output, Some(16_000));
         assert!(aggregate.pricing_varies_by_route);
+    }
+
+    fn context_tier(above_input_tokens: i64, input: i64, output: i64) -> ContextPricingTier {
+        ContextPricingTier {
+            above_input_tokens,
+            input: Some(Money4::from_scaled(input)),
+            output: Some(Money4::from_scaled(output)),
+            cache_read: None,
+            cache_write: None,
+        }
+    }
+
+    #[test]
+    fn pricing_varies_by_route_when_routes_differ_only_in_tiers() {
+        let base = EffectiveRoutePricing {
+            input_cost_per_million_tokens: Some(Money4::from_scaled(10_000)),
+            output_cost_per_million_tokens: Some(Money4::from_scaled(20_000)),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+            context_tiers: Vec::new(),
+            service_tiers: Vec::new(),
+        };
+        let tiered = EffectiveRoutePricing {
+            context_tiers: vec![context_tier(200_000, 20_000, 40_000)],
+            ..base.clone()
+        };
+        let limits = PricingLimits {
+            context: Some(128_000),
+            input: None,
+            output: None,
+        };
+        let route_metadata = vec![
+            (
+                Uuid::new_v4(),
+                effective_metadata(limits.clone(), Some(base)),
+            ),
+            (Uuid::new_v4(), effective_metadata(limits, Some(tiered))),
+        ];
+
+        assert!(aggregate_model_metadata(&route_metadata).pricing_varies_by_route);
+    }
+
+    /// One `openai` route priced from the catalog row for `upstream_model` unless
+    /// `pricing_override` is set. [`list_tiered_model`] assigns the model id.
+    fn catalog_route(
+        upstream_model: &str,
+        priority: i32,
+        pricing_override: Option<RoutePricingOverride>,
+    ) -> ModelRoute {
+        ModelRoute {
+            id: Uuid::new_v4(),
+            model_id: Uuid::nil(),
+            provider_key: "openai".to_string(),
+            upstream_model: upstream_model.to_string(),
+            priority,
+            weight: 1.0,
+            enabled: true,
+            context_window_tokens: None,
+            pricing_override,
+            extra_headers: Default::default(),
+            extra_body: Default::default(),
+            capabilities: ProviderCapabilities::all_enabled().into(),
+            compatibility: Default::default(),
+            service_tier: None,
+        }
+    }
+
+    async fn list_tiered_model(routes: Vec<ModelRoute>) -> super::AdminModelSummary {
+        let model = plain_model("tiered", None);
+        let model_id = model.id;
+        let mut tiered = pricing_record(
+            "openai",
+            "tiered-upstream",
+            "10.0000",
+            "50.0000",
+            (Some(1_000_000), None, Some(128_000)),
+            &["text"],
+        );
+        // Stored out of order: the summary still lists tiers ascending.
+        tiered.context_tiers = vec![
+            context_tier(500_000, 300_000, 900_000),
+            context_tier(272_000, 200_000, 750_000),
+        ];
+        tiered.service_tiers = vec![ServiceTierPricing {
+            service_tier: ServiceTier::Priority,
+            input: Some(Money4::from_scaled(200_000)),
+            output: Some(Money4::from_scaled(1_000_000)),
+            cache_read: None,
+            cache_write: None,
+            context_tiers: vec![context_tier(272_000, 400_000, 1_500_000)],
+        }];
+        let repo = Arc::new(CountingRepo {
+            models: vec![model],
+            routes_by_model: HashMap::from([(
+                model_id,
+                routes
+                    .into_iter()
+                    .map(|route| ModelRoute { model_id, ..route })
+                    .collect(),
+            )]),
+            providers_by_key: HashMap::from([(
+                "openai".to_string(),
+                ProviderConnection {
+                    provider_key: "openai".to_string(),
+                    provider_type: "openai_compat".to_string(),
+                    config: json!({"pricing_provider_id": "openai"}),
+                    secrets: None,
+                },
+            )]),
+            pricing_by_key: HashMap::from([(
+                ("openai".to_string(), "tiered-upstream".to_string()),
+                tiered,
+            )]),
+            ..Default::default()
+        });
+
+        AdminModelsService::new(repo)
+            .list_models()
+            .await
+            .expect("admin models")
+            .remove(0)
+    }
+
+    #[tokio::test]
+    async fn catalog_priced_primary_route_lists_tiers_ascending() {
+        let summary = list_tiered_model(vec![catalog_route("tiered-upstream", 0, None)]).await;
+
+        assert_eq!(
+            summary.input_cost_per_million_tokens_usd_10000,
+            Some(100_000)
+        );
+        assert_eq!(
+            summary.pricing_tiers,
+            vec![
+                context_tier(272_000, 200_000, 750_000),
+                context_tier(500_000, 300_000, 900_000),
+            ]
+        );
+        assert!(!summary.pricing_varies_by_route);
+    }
+
+    #[tokio::test]
+    async fn forced_tier_catalog_route_bills_that_tier_schedule() {
+        let priority = list_tiered_model(vec![ModelRoute {
+            service_tier: Some(ServiceTier::Priority),
+            ..catalog_route("tiered-upstream", 0, None)
+        }])
+        .await;
+
+        assert_eq!(
+            priority.input_cost_per_million_tokens_usd_10000,
+            Some(200_000)
+        );
+        assert_eq!(
+            priority.pricing_tiers,
+            vec![context_tier(272_000, 400_000, 1_500_000)]
+        );
+        assert_eq!(
+            priority
+                .pricing_service_tiers
+                .iter()
+                .map(|tier| tier.service_tier)
+                .collect::<Vec<_>>(),
+            vec![ServiceTier::Priority]
+        );
+
+        // The catalog has no ultrafast rates, so the route is unpriced, not billed at base.
+        let ultrafast = list_tiered_model(vec![ModelRoute {
+            service_tier: Some(ServiceTier::Ultrafast),
+            ..catalog_route("tiered-upstream", 0, None)
+        }])
+        .await;
+        assert_eq!(ultrafast.input_cost_per_million_tokens_usd_10000, None);
+        assert!(ultrafast.pricing_source.is_none());
+    }
+
+    #[tokio::test]
+    async fn override_priced_primary_route_has_no_tiers() {
+        let pricing_override = RoutePricingOverride {
+            input_cost_per_million_tokens: Money4::from_scaled(100_000),
+            output_cost_per_million_tokens: Money4::from_scaled(500_000),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+            image_output_cost_per_million_tokens: None,
+            service_tiers: Vec::new(),
+        };
+        let summary = list_tiered_model(vec![
+            catalog_route("tiered-upstream", 0, Some(pricing_override)),
+            catalog_route("tiered-upstream", 1, None),
+        ])
+        .await;
+
+        assert_eq!(
+            summary.input_cost_per_million_tokens_usd_10000,
+            Some(100_000)
+        );
+        assert!(summary.pricing_tiers.is_empty());
+        assert_eq!(
+            summary.pricing_source.as_ref().map(|source| source.kind),
+            Some(crate::EffectiveMetadataSourceKind::ConfiguredOverride)
+        );
+        // Same base rates; only the catalog route's tiers differ.
+        assert!(summary.pricing_varies_by_route);
+    }
+
+    fn route_tier_rates(service_tier: ServiceTier, input: i64) -> RouteServiceTierPricing {
+        RouteServiceTierPricing {
+            service_tier,
+            input_cost_per_million_tokens: Money4::from_scaled(input),
+            output_cost_per_million_tokens: Money4::from_scaled(input * 5),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn forced_tier_override_lists_base_rates_under_the_route_tier() {
+        let pricing_override = RoutePricingOverride {
+            input_cost_per_million_tokens: Money4::from_scaled(200_000),
+            output_cost_per_million_tokens: Money4::from_scaled(1_000_000),
+            cache_read_cost_per_million_tokens: Some(Money4::from_scaled(20_000)),
+            cache_write_cost_per_million_tokens: None,
+            image_output_cost_per_million_tokens: None,
+            // A duplicate of the route's own tier loses to the base rates.
+            service_tiers: vec![
+                route_tier_rates(ServiceTier::Ultrafast, 600_000),
+                route_tier_rates(ServiceTier::Priority, 1),
+                route_tier_rates(ServiceTier::Flex, 50_000),
+            ],
+        };
+        let route = ModelRoute {
+            service_tier: Some(ServiceTier::Priority),
+            ..catalog_route("tiered-upstream", 0, Some(pricing_override))
+        };
+        let summary = list_tiered_model(vec![route]).await;
+
+        let tiers = summary
+            .pricing_service_tiers
+            .iter()
+            .map(|tier| {
+                (
+                    tier.service_tier,
+                    tier.input.map(Money4::as_scaled_i64),
+                    tier.cache_read.map(Money4::as_scaled_i64),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            tiers,
+            vec![
+                (ServiceTier::Flex, Some(50_000), None),
+                (ServiceTier::Priority, Some(200_000), Some(20_000)),
+                (ServiceTier::Ultrafast, Some(600_000), None),
+            ]
+        );
+        assert_eq!(summary.routes[0].service_tier, Some(ServiceTier::Priority));
     }
 
     #[derive(Default)]
@@ -1045,6 +1407,8 @@ mod tests {
             cache_write_cost_per_million_tokens: None,
             input_audio_cost_per_million_tokens: None,
             output_audio_cost_per_million_tokens: None,
+            output_image_usd_per_million: None,
+            context_tiers: Vec::new(),
             release_date: "2025-01-01".to_string(),
             last_updated: "2025-01-01".to_string(),
             effective_start_at: now,
@@ -1068,6 +1432,7 @@ mod tests {
             },
             created_at: now,
             updated_at: now,
+            service_tiers: Vec::new(),
         }
     }
 
@@ -1093,8 +1458,9 @@ mod tests {
             pricing_override: None,
             extra_headers: Default::default(),
             extra_body: Default::default(),
-            capabilities,
+            capabilities: capabilities.into(),
             compatibility: Default::default(),
+            service_tier: None,
         }
     }
 
@@ -1144,6 +1510,7 @@ mod tests {
             description: None,
             tags: Vec::new(),
             rank: 1,
+            service_tiers: None,
         };
         let provider = ProviderConnection {
             provider_key: "openrouter".to_string(),
@@ -1183,7 +1550,12 @@ mod tests {
                 provider_display: None,
                 metadata: None,
                 limits: &limits,
-                route_capabilities: Some(route.capabilities),
+                route_capabilities: effective_provider_route_capabilities(
+                    &route,
+                    Some(&provider),
+                    PartialCapabilities::default(),
+                ),
+                service_tiers: &[],
                 gateway_base_url: "http://127.0.0.1:3000",
             });
 
@@ -1193,6 +1565,79 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn generated_opencode_variants_offer_only_tiers_a_caller_may_request() {
+        let provider = ProviderConnection {
+            provider_key: "openrouter".to_string(),
+            provider_type: "openai_compat".to_string(),
+            config: serde_json::json!({"pricing_provider_id": "openrouter"}),
+            secrets: None,
+        };
+        let route = model_route("openai/gpt-5", ProviderCapabilities::all_enabled());
+        let limits = PricingLimits {
+            context: Some(128_000),
+            input: None,
+            output: None,
+        };
+        // A route forcing Priority serves it whatever the allow-list says.
+        let servable = [
+            ServiceTier::Default,
+            ServiceTier::Flex,
+            ServiceTier::Priority,
+        ];
+        let tier_variants = |allowed: Option<Vec<ServiceTier>>| {
+            let model = GatewayModel {
+                id: Uuid::new_v4(),
+                model_key: "gpt-house".to_string(),
+                alias_target_model_key: None,
+                max_reasoning_effort: None,
+                routing: None,
+                description: None,
+                tags: Vec::new(),
+                rank: 1,
+                service_tiers: allowed,
+            };
+            let input = super::build_client_config_input(super::ClientConfigContext {
+                model: &model,
+                execution_model: &model,
+                reasoning_ceiling: None,
+                primary_route: Some(&route),
+                primary_provider: Some(&provider),
+                provider_display: None,
+                metadata: None,
+                limits: &limits,
+                route_capabilities: effective_provider_route_capabilities(
+                    &route,
+                    Some(&provider),
+                    PartialCapabilities::default(),
+                ),
+                service_tiers: &servable,
+                gateway_base_url: "http://127.0.0.1:3000",
+            })
+            .expect("chat model gets client configs");
+            let configs = gateway_client_config::render_default_configs(&input);
+            let opencode = configs
+                .iter()
+                .find(|config| config.key == "opencode")
+                .expect("opencode config");
+            let value: serde_json::Value =
+                serde_json::from_str(&opencode.blocks[0].content).expect("opencode json");
+            value["providers"]["oceans-llm"]["models"]["gpt-house"]["variants"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|variant| variant["id"].as_str().map(str::to_string))
+                .filter(|id| ["flex", "fast", "ultrafast"].contains(&id.as_str()))
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(tier_variants(None), ["flex", "fast"]);
+        // An explicit Priority request fails the `[flex]` allow-list with 403.
+        assert_eq!(tier_variants(Some(vec![ServiceTier::Flex])), ["flex"]);
+        assert!(tier_variants(Some(Vec::new())).is_empty());
+    }
+
     #[test]
     fn copilot_provider_uses_upstream_evidence_and_operator_policy() {
         let provider = provider_connection("github_copilot");
@@ -1223,9 +1668,9 @@ mod tests {
         assert!(!claude_capabilities.developer_role);
 
         let effective = effective_provider_route_capabilities(
-            Some(claude_route.capabilities),
+            &claude_route,
             Some(&provider),
-            Some(&claude_route),
+            PartialCapabilities::default(),
         );
         assert!(!effective.tools);
         assert!(effective.vision);
@@ -1249,9 +1694,9 @@ mod tests {
         );
 
         let capabilities = effective_provider_route_capabilities(
-            Some(route.capabilities),
+            &route,
             Some(&provider),
-            Some(&route),
+            PartialCapabilities::default(),
         );
 
         assert!(!capabilities.embeddings);
@@ -1269,6 +1714,7 @@ mod tests {
             description: None,
             tags: Vec::new(),
             rank: 0,
+            service_tiers: None,
         }
     }
 
@@ -1366,6 +1812,7 @@ mod tests {
                     description: Some("alias".to_string()),
                     tags: vec!["alias".to_string()],
                     rank: 1,
+                    service_tiers: None,
                 },
                 GatewayModel {
                     id: execution_model_id,
@@ -1376,6 +1823,7 @@ mod tests {
                     description: Some("base".to_string()),
                     tags: vec!["base".to_string()],
                     rank: 2,
+                    service_tiers: None,
                 },
             ],
             routes_by_model: HashMap::from([(
@@ -1395,6 +1843,7 @@ mod tests {
                         extra_body: Default::default(),
                         capabilities: Default::default(),
                         compatibility: Default::default(),
+                        service_tier: None,
                     },
                     ModelRoute {
                         id: disabled_route_id,
@@ -1510,8 +1959,9 @@ mod tests {
         assert_eq!(alias.supports_tool_calling, Some(true));
         assert_eq!(alias.supports_structured_output, Some(true));
         assert_eq!(alias.supports_attachments, Some(true));
-        assert_eq!(alias.supports_decisions, Some(true));
-        assert_eq!(alias.supports_image_generation, Some(true));
+        // Unset route flags resolve to the defaults, capped by the openai_compat adapter.
+        assert_eq!(alias.supports_decisions, Some(false));
+        assert_eq!(alias.supports_image_generation, Some(false));
         assert_eq!(
             alias
                 .allowlist
@@ -1581,6 +2031,7 @@ mod tests {
                 description: None,
                 tags: Vec::new(),
                 rank: 1,
+                service_tiers: None,
             }],
             routes_by_model: HashMap::from([(
                 model_id,
@@ -1598,6 +2049,7 @@ mod tests {
                     extra_body: Default::default(),
                     capabilities: Default::default(),
                     compatibility: Default::default(),
+                    service_tier: None,
                 }],
             )]),
             ..Default::default()
@@ -1635,8 +2087,9 @@ mod tests {
             pricing_override: None,
             extra_headers: Default::default(),
             extra_body: Default::default(),
-            capabilities: ProviderCapabilities::all_enabled(),
+            capabilities: ProviderCapabilities::all_enabled().into(),
             compatibility: Default::default(),
+            service_tier: None,
         };
         let provider = ProviderConnection {
             provider_key: route.provider_key.clone(),
@@ -1662,6 +2115,7 @@ mod tests {
                 description: None,
                 tags: Vec::new(),
                 rank: 1,
+                service_tiers: None,
             }],
             routes_by_model: HashMap::from([(model_id, vec![route])]),
             providers_by_key: HashMap::from([("openai".to_string(), provider)]),
@@ -1703,6 +2157,7 @@ mod tests {
                 description: None,
                 tags: Vec::new(),
                 rank: 1,
+                service_tiers: None,
             }],
             routes_by_model: HashMap::from([(
                 model_id,
@@ -1721,6 +2176,7 @@ mod tests {
                         extra_body: Default::default(),
                         capabilities: Default::default(),
                         compatibility: Default::default(),
+                        service_tier: None,
                     },
                     ModelRoute {
                         id: healthy_route_id,
@@ -1736,8 +2192,10 @@ mod tests {
                         extra_body: Default::default(),
                         capabilities: ProviderCapabilities::with_dimensions(
                             true, true, false, false, false, true, true,
-                        ),
+                        )
+                        .into(),
                         compatibility: Default::default(),
+                        service_tier: None,
                     },
                 ],
             )]),
@@ -1850,6 +2308,73 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn catalog_hints_fill_unset_route_flags_with_false() {
+        use crate::pricing_catalog::{
+            PricingCatalogModalitiesDocument, PricingCatalogModelDocument,
+            load_vendored_fallback_snapshot, metadata::CatalogModelMetadata,
+        };
+
+        let mut snapshot = load_vendored_fallback_snapshot();
+        snapshot
+            .document
+            .providers
+            .get_mut("openai")
+            .expect("vendored catalog has openai")
+            .models
+            .insert(
+                "no-tools-upstream".to_string(),
+                PricingCatalogModelDocument {
+                    id: "no-tools-upstream".to_string(),
+                    display_name: "No tools".to_string(),
+                    release_date: String::new(),
+                    last_updated: String::new(),
+                    metadata: CatalogModelMetadata {
+                        tool_call: Some(false),
+                        ..Default::default()
+                    },
+                    cost: Default::default(),
+                    limit: Default::default(),
+                    modalities: PricingCatalogModalitiesDocument::default(),
+                },
+            );
+        let model = plain_model("hinted", None);
+        let model_id = model.id;
+        let route = ModelRoute {
+            model_id,
+            provider_key: "openai".to_string(),
+            capabilities: PartialCapabilities::default(),
+            ..model_route("no-tools-upstream", ProviderCapabilities::none())
+        };
+        let repo = Arc::new(CountingRepo {
+            models: vec![model],
+            routes_by_model: HashMap::from([(model_id, vec![route])]),
+            providers_by_key: HashMap::from([(
+                "openai".to_string(),
+                ProviderConnection {
+                    provider_key: "openai".to_string(),
+                    provider_type: "openai_compat".to_string(),
+                    config: json!({"pricing_provider_id": "openai"}),
+                    secrets: None,
+                },
+            )]),
+            ..Default::default()
+        });
+
+        let without_hints = AdminModelsService::new(repo.clone())
+            .list_models()
+            .await
+            .expect("admin models");
+        assert_eq!(without_hints[0].supports_tool_calling, Some(true));
+
+        let items = AdminModelsService::new(repo)
+            .with_capability_hints(crate::CatalogCapabilityHints::new(Arc::new(snapshot)))
+            .list_models()
+            .await
+            .expect("admin models");
+        assert_eq!(items[0].supports_tool_calling, Some(false));
+    }
+
+    #[tokio::test]
     async fn list_models_does_not_reconcile_pricing() {
         let model_id = Uuid::new_v4();
         let repo = Arc::new(CountingRepo {
@@ -1862,6 +2387,7 @@ mod tests {
                 description: None,
                 tags: Vec::new(),
                 rank: 1,
+                service_tiers: None,
             }],
             fail_pricing_sync: AtomicBool::new(true),
             ..Default::default()
@@ -1889,6 +2415,7 @@ mod tests {
                 description: None,
                 tags: Vec::new(),
                 rank: 1,
+                service_tiers: None,
             }],
             routes_by_model: HashMap::from([(
                 model_id,
@@ -1903,14 +2430,13 @@ mod tests {
                     context_window_tokens: None,
                     pricing_override: None,
                     extra_headers: Default::default(),
-                    extra_body: json!({"service_tier": "priority"})
-                        .as_object()
-                        .cloned()
-                        .expect("object"),
+                    extra_body: Default::default(),
                     capabilities: ProviderCapabilities::with_dimensions(
                         true, false, false, true, false, true, true,
-                    ),
+                    )
+                    .into(),
                     compatibility: Default::default(),
+                    service_tier: Some(ServiceTier::Priority),
                 }],
             )]),
             providers_by_key: HashMap::from([(
@@ -1976,6 +2502,7 @@ mod tests {
                     description: Some("Claude Sonnet".to_string()),
                     tags: vec!["anthropic".to_string()],
                     rank: 1,
+                    service_tiers: None,
                 }],
                 routes_by_model: HashMap::from([(
                     model_id,
@@ -1991,8 +2518,9 @@ mod tests {
                         pricing_override: None,
                         extra_headers: Default::default(),
                         extra_body: Default::default(),
-                        capabilities,
+                        capabilities: capabilities.into(),
                         compatibility: Default::default(),
+                        service_tier: None,
                     }],
                 )]),
                 providers_by_key: HashMap::from([(
@@ -2188,6 +2716,7 @@ mod tests {
             description: None,
             tags: vec![],
             rank: 0,
+            service_tiers: None,
         };
         let provider = ProviderConnection {
             provider_key: "mantle".into(),
@@ -2211,8 +2740,10 @@ mod tests {
                 chat_completions: false,
                 responses: true,
                 ..ProviderCapabilities::openai_compat_baseline()
-            },
+            }
+            .into(),
             compatibility: Default::default(),
+            service_tier: None,
         };
         let input = super::build_client_config_input(super::ClientConfigContext {
             model: &model,
@@ -2221,13 +2752,18 @@ mod tests {
             primary_route: Some(&route),
             primary_provider: Some(&provider),
             provider_display: None,
-            route_capabilities: Some(route.capabilities),
+            route_capabilities: effective_provider_route_capabilities(
+                &route,
+                Some(&provider),
+                PartialCapabilities::default(),
+            ),
             metadata: None,
             limits: &PricingLimits {
                 context: None,
                 input: None,
                 output: None,
             },
+            service_tiers: &[],
             gateway_base_url: "https://gateway.example",
         })
         .expect("configured route");
@@ -2259,8 +2795,9 @@ mod tests {
             pricing_override: None,
             extra_headers: Default::default(),
             extra_body: Default::default(),
-            capabilities: ProviderCapabilities::all_enabled(),
+            capabilities: ProviderCapabilities::all_enabled().into(),
             compatibility: Default::default(),
+            service_tier: None,
         };
         let mut google_route = anthropic_route.clone();
         google_route.upstream_model = "google/gemini-2.0-flash".to_string();
@@ -2288,7 +2825,7 @@ mod tests {
         assert_eq!(fable_doc.limit.context, Some(1_000_000));
 
         let pricing_record = crate::pricing_catalog::build_model_pricing_record(
-            &snapshot.metadata,
+            &snapshot.sources[&crate::CatalogSourceId::ModelsDev],
             "opencode",
             "claude-fable-5-1",
             fable_doc,
@@ -2307,6 +2844,7 @@ mod tests {
                 description: Some("Claude Fable 5.1".to_string()),
                 tags: vec!["anthropic".to_string()],
                 rank: 1,
+                service_tiers: None,
             }],
             routes_by_model: HashMap::from([(
                 model_id,
@@ -2322,8 +2860,9 @@ mod tests {
                     pricing_override: None,
                     extra_headers: Default::default(),
                     extra_body: Default::default(),
-                    capabilities: ProviderCapabilities::all_enabled(),
+                    capabilities: ProviderCapabilities::all_enabled().into(),
                     compatibility: Default::default(),
+                    service_tier: None,
                 }],
             )]),
             providers_by_key: HashMap::from([(

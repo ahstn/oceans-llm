@@ -7,8 +7,8 @@
 
 ## Current state
 
-- [MCP Servers: OAuth for Any MCP Server](../configuration/mcp-servers.md#oauth-for-any-mcp-server)
-- [MCP Servers: Gateway-Managed Upstream Credentials](../configuration/mcp-servers.md#gateway-managed-upstream-credentials)
+- [MCP Servers: OAuth for Any MCP Server](https://oceans-llm.com/extensions/mcp-servers/#oauth-for-any-mcp-server)
+- [MCP Servers: Gateway-Managed Upstream Credentials](https://oceans-llm.com/extensions/mcp-servers/#gateway-managed-upstream-credentials)
 
 ## Context
 

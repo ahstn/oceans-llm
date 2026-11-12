@@ -1,6 +1,5 @@
 use std::{collections::BTreeMap, sync::Arc, time::SystemTime};
 
-use async_stream::stream;
 use async_trait::async_trait;
 use aws_config::{Region, default_provider::credentials::DefaultCredentialsChain};
 use aws_credential_types::Credentials;
@@ -10,29 +9,25 @@ use aws_sigv4::{
 };
 use aws_smithy_runtime_api::client::identity::Identity;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use bytes::{Buf, Bytes};
-use futures_util::StreamExt;
 use gateway_core::{
     AwsBedrockApiStyle, AwsBedrockRouteCompatibility, CoreChatRequest, CoreEmbeddingsRequest,
-    CoreResponsesRequest, ProviderCapabilities, ProviderClient, ProviderError,
-    ProviderRequestContext, ProviderStream, SseEventParser, core_chat_request_to_openai,
+    CoreResponsesRequest, ModelRoute, ProviderCapabilities, ProviderClient, ProviderError,
+    ProviderRequestContext, ProviderStream, ServiceTier, core_chat_request_to_openai,
     core_responses_request_to_openai,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-use time::OffsetDateTime;
 use tokio::sync::OnceCell;
 use url::Url;
-use uuid::Uuid;
 
-use crate::anthropic::{normalize_count_tokens_response, retain_count_tokens_fields};
+use crate::anthropic::{
+    normalize_anthropic_messages_stream, normalize_count_tokens_response,
+    retain_count_tokens_fields,
+};
 use crate::http::{
     TracedResponse, execute_json_request, execute_request, join_base_url, map_reqwest_error,
 };
-use crate::streaming::{
-    done_sse_chunk, normalize_openai_compat_responses_stream, normalize_openai_compat_stream,
-    openai_sse_error_chunk, render_sse_event_chunk,
-};
+use crate::streaming::{normalize_openai_compat_responses_stream, normalize_openai_compat_stream};
 
 #[derive(Debug, Clone)]
 pub enum BedrockAuthConfig {
@@ -451,7 +446,7 @@ impl BedrockProvider {
         mut body: Value,
         context: &ProviderRequestContext,
         accept: &'static str,
-        extra_headers: Vec<(&'static str, &'static str)>,
+        mut extra_headers: Vec<(&'static str, &'static str)>,
         api_style: AwsBedrockApiStyle,
     ) -> Result<reqwest::Request, ProviderError> {
         let anthropic = matches!(
@@ -473,6 +468,12 @@ impl BedrockProvider {
                 crate::anthropic::beta::put_body_betas(object, std::mem::take(&mut betas));
             }
         }
+        // Only generation runs on a service tier, so token counting sends none.
+        if !url.ends_with("/count-tokens")
+            && let Some(tier) = service_tier::apply_service_tier(&mut body, context, api_style)?
+        {
+            extra_headers.push((service_tier::SERVICE_TIER_HEADER, tier));
+        }
         let body = serde_json::to_vec(&body).map_err(|error| {
             ProviderError::InvalidRequest(format!(
                 "failed to serialize aws_bedrock request: {error}"
@@ -489,6 +490,9 @@ impl BedrockProvider {
             request = request.header(name, value);
         }
 
+        if api_style == AwsBedrockApiStyle::MantleAnthropicMessages {
+            request = crate::anthropic::native::request_headers(request, context);
+        }
         for (name, value) in &context.extra_headers {
             if anthropic && name.eq_ignore_ascii_case("anthropic-beta") {
                 continue;
@@ -504,12 +508,16 @@ impl BedrockProvider {
 
         request = request.header("x-request-id", &context.request_id);
 
+        let mut request = request.build().map_err(map_reqwest_error)?;
         for (name, value) in extra_headers {
-            request = request.header(name, value);
+            // Platform-pinned headers replace every caller/default value, not append.
+            request.headers_mut().insert(
+                reqwest::header::HeaderName::from_static(name),
+                reqwest::header::HeaderValue::from_static(value),
+            );
         }
 
-        self.apply_auth(request.build().map_err(map_reqwest_error)?, api_style)
-            .await
+        self.apply_auth(request, api_style).await
     }
 
     #[tracing::instrument(name = "gateway.provider.credentials", skip_all)]
@@ -739,12 +747,65 @@ fn count_tokens_model_id(upstream_model: &str) -> &str {
 
 #[async_trait]
 impl ProviderClient for BedrockProvider {
+    fn supports_native_messages(&self, context: &ProviderRequestContext) -> bool {
+        matches!(
+            self.api_style(context),
+            Ok(AwsBedrockApiStyle::RuntimeAnthropicInvoke
+                | AwsBedrockApiStyle::MantleAnthropicMessages)
+        )
+    }
+
+    async fn messages(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<gateway_core::NativeMessagesResponse<Value>, ProviderError> {
+        let request = self.build_chat_request(request, context).await?;
+        let response = crate::anthropic::native::execute_request(
+            &self.client,
+            request,
+            "aws_bedrock",
+            &self.config.provider_key,
+        )
+        .await?;
+        let served_tier = service_tier::invoke_served_tier(response.headers());
+        let mut native = crate::anthropic::native::json_response(response).await?;
+        service_tier::report_native_served_tier(&mut native.body, served_tier);
+        Ok(native)
+    }
+
+    async fn messages_stream(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<gateway_core::NativeMessagesResponse<ProviderStream>, ProviderError> {
+        let request = self.build_chat_stream_request(request, context).await?;
+        let response = crate::anthropic::native::execute_request(
+            &self.client,
+            request,
+            "aws_bedrock",
+            &self.config.provider_key,
+        )
+        .await?;
+        Ok(crate::anthropic::native::stream_response(response))
+    }
+
     fn provider_key(&self) -> &str {
         &self.config.provider_key
     }
 
     fn provider_type(&self) -> &str {
         "aws_bedrock"
+    }
+
+    fn service_tiers(&self, route: &ModelRoute) -> &'static [ServiceTier] {
+        route
+            .compatibility
+            .aws_bedrock
+            .as_ref()
+            .map_or(crate::service_tier::DEFAULT_ONLY, |compatibility| {
+                service_tier::api_style_service_tiers(compatibility.api_style)
+            })
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
@@ -778,6 +839,7 @@ impl ProviderClient for BedrockProvider {
         .await
         .map_err(map_reqwest_error)?;
         let status = response.status();
+        let invoke_tier = service_tier::invoke_served_tier(response.headers());
         let text = response.text().await.map_err(map_reqwest_error)?;
 
         if !status.is_success() {
@@ -791,11 +853,14 @@ impl ProviderClient for BedrockProvider {
             ProviderError::Transport(format!("invalid JSON from aws_bedrock chat: {error}"))
         })?;
         match api_style {
-            AwsBedrockApiStyle::RuntimeConverse => Ok(normalize_converse_response(&value, context)),
+            AwsBedrockApiStyle::RuntimeConverse => normalize_converse_response(&value, context),
             AwsBedrockApiStyle::RuntimeAnthropicInvoke
-            | AwsBedrockApiStyle::MantleAnthropicMessages => Ok(
-                normalize_anthropic_messages_response(&value, context, "aws_bedrock"),
-            ),
+            | AwsBedrockApiStyle::MantleAnthropicMessages => {
+                let mut completion =
+                    normalize_anthropic_messages_response(&value, context, "aws_bedrock");
+                crate::service_tier::report_served_tier(&mut completion, invoke_tier);
+                Ok(completion)
+            }
             AwsBedrockApiStyle::RuntimeOpenaiChat | AwsBedrockApiStyle::MantleOpenaiChat => {
                 Ok(value)
             }
@@ -918,20 +983,21 @@ fn encode_bedrock_model_id(model_id: &str) -> String {
     }
 }
 
+mod converse_replay;
+mod converse_stream;
 mod credentials;
 mod eventstream;
 mod request;
 mod response;
+mod service_tier;
 
-use eventstream::*;
+use converse_stream::normalize_bedrock_converse_stream;
 use request::*;
 pub(crate) use request::{
     AnthropicMessagesTarget, map_chat_request_to_anthropic_messages, merge_object_overrides,
 };
+pub(crate) use response::normalize_anthropic_messages_response;
 use response::*;
-pub(crate) use response::{
-    normalize_anthropic_messages_response, normalize_anthropic_messages_stream,
-};
 
 #[cfg(test)]
 mod tests;

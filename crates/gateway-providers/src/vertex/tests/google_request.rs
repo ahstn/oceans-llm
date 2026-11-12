@@ -505,7 +505,6 @@ fn drops_openai_only_fields_and_passes_unknown_fields_to_body_root() {
             ("store", json!(true)),
             ("logit_bias", json!({"50256": -100})),
             ("metadata", json!({"trace": "abc"})),
-            ("service_tier", json!("default")),
             ("prompt_cache_key", json!("cache-1")),
             ("safety_identifier", json!("safe-1")),
             (
@@ -527,7 +526,6 @@ fn drops_openai_only_fields_and_passes_unknown_fields_to_body_root() {
         "logit_bias",
         "50256",
         "\"metadata\"",
-        "service_tier",
         "prompt_cache_key",
         "safety_identifier",
     ] {
@@ -946,7 +944,7 @@ fn maps_response_format_json_schema() {
             "response_format",
             json!({
                 "type": "json_schema",
-                "json_schema": {"name": "answer", "strict": true, "schema": schema}
+                "json_schema": {"name": "answer", "schema": schema}
             }),
         )],
     )
@@ -955,6 +953,28 @@ fn maps_response_format_json_schema() {
     assert_eq!(config["responseMimeType"], "application/json");
     assert_eq!(config["responseJsonSchema"], schema);
     assert!(config.get("responseSchema").is_none());
+}
+
+#[test]
+fn strict_response_schema_is_rejected_even_with_native_response_controls() {
+    let error = generation_config(
+        "gemini-2.5-flash",
+        &[
+            (
+                "response_format",
+                json!({ "type": "json_schema", "json_schema": {
+                "name": "answer", "strict": true,
+                "schema": { "type": "object", "properties": { "answer": { "const": "yes" } } }
+            } }),
+            ),
+            (
+                "generationConfig",
+                json!({ "responseMimeType": "application/json" }),
+            ),
+        ],
+    )
+    .expect_err("native JSON output does not prove strict guarantees");
+    assert_invalid_request(error, "`strict: true` is not supported");
 }
 
 #[test]

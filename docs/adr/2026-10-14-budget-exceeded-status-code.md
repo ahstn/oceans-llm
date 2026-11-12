@@ -6,9 +6,9 @@
 
 ## Current state
 
-- [Budgets](../access/budgets.md#hard-and-soft-limits)
-- [Request Lifecycle and Failure Modes](../reference/request-lifecycle-and-failure-modes.md#budget_exceeded)
-- [Configuration Reference](../configuration/configuration-reference.md#budgets)
+- [Budgets](https://oceans-llm.com/spend/budgets/#hard-and-soft-budgets)
+- [Request Lifecycle and Failure Modes](https://oceans-llm.com/reference/request-lifecycle/#budget-exceeded)
+- [Budget settings](https://oceans-llm.com/spend/budget-settings/#budgets)
 
 ## Context
 

@@ -12,9 +12,12 @@ pub mod mcp_client_oauth;
 pub mod mcp_tool_policy;
 pub mod mcp_tool_review;
 pub mod protocol;
+pub mod provider;
 pub mod rate_limits;
 pub mod reasoning_policy;
+pub mod route_capabilities;
 pub mod routing;
+pub mod service_tier;
 pub mod skills;
 pub mod streaming;
 pub mod traits;
@@ -69,7 +72,7 @@ pub use domain::{
     AwsBedrockApiStyle, AwsBedrockRouteCompatibility, BudgetAlertChannel,
     BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus, BudgetAlertDispatchTask,
     BudgetAlertHistoryPage, BudgetAlertHistoryQuery, BudgetAlertHistoryRecord, BudgetAlertRecord,
-    BudgetCadence, BudgetWindow, CacheUsageAggregateRecord, ChatRequestProtocol,
+    BudgetCadence, BudgetWindow, CacheUsageAggregateRecord, ContextPricingTier,
     ExternalMcpAuthMode, ExternalMcpDiscoveryRunRecord, ExternalMcpDiscoveryStatus,
     ExternalMcpServerRecord, ExternalMcpServerStatus, ExternalMcpServerUpdate,
     ExternalMcpToolRecord, ExternalMcpTransport, FocusExportAggregateRecord,
@@ -100,20 +103,20 @@ pub use domain::{
     OpenRouterPercentilePreference, OpenRouterProviderRouting, OpenRouterRouteApi,
     OpenRouterRouteCompatibility, PasswordInvitationRecord, PricingCatalogCacheRecord,
     PricingLimits, PricingModalities, PricingProvenance, PricingResolution, PricingUnpricedReason,
-    ProviderCapabilities, ProviderConnection, ProviderRequestContext, ProviderUserCredentialRecord,
-    ProviderUserCredentialStatusRecord, ReasoningEffort, RefreshMcpOauthCredentialBindingRecord,
-    RequestAttemptRecord, RequestAttemptStatus, RequestLogDetail, RequestLogPage,
-    RequestLogPayloadRecord, RequestLogPurgeResult, RequestLogQuery, RequestLogRecord,
-    RequestLogRetentionWindow, RequestMcpTokenOverheadRecord, RequestTag, RequestTags,
-    RequestToolCardinality, RequestToolCardinalityAverages, ResolvedModelPricing,
-    ReviewAgentProvider, ReviewAgentPullRequestRecord, ReviewAgentPullRequestState,
-    ReviewAgentRepositoryRecord, ReviewAgentRepositoryStatus, ReviewAgentRunRecord,
-    ReviewAgentRunStatus, ReviewAgentSettings, RouteCompatibility, RoutePricingOverride,
+    ProviderConnection, ProviderUserCredentialRecord, ProviderUserCredentialStatusRecord,
+    ReasoningEffort, RefreshMcpOauthCredentialBindingRecord, RequestAttemptRecord,
+    RequestAttemptStatus, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
+    RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestLogRetentionWindow,
+    RequestMcpTokenOverheadRecord, RequestTag, RequestTags, RequestToolCardinality,
+    RequestToolCardinalityAverages, ResolvedModelPricing, ReviewAgentProvider,
+    ReviewAgentPullRequestRecord, ReviewAgentPullRequestState, ReviewAgentRepositoryRecord,
+    ReviewAgentRepositoryStatus, ReviewAgentRunRecord, ReviewAgentRunStatus, ReviewAgentSettings,
+    RouteCompatibility, RoutePricingOverride, RouteServiceTierPricing,
     SYSTEM_BOOTSTRAP_ADMIN_EMAIL, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SeedApiKey,
     SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey,
     SeedModel, SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider,
     SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership, SeedUserModelBudgetDefault,
-    ServiceAccountRecord, ServiceAccountStatus, SpendDailyAggregateRecord,
+    ServiceAccountRecord, ServiceAccountStatus, ServiceTierPricing, SpendDailyAggregateRecord,
     SpendModelAggregateRecord, SpendModelTokenDailyRecord, SpendOwnerAggregateRecord,
     SpendOwnerTokenDailyRecord, TeamMembershipRecord, TeamRecord, TokenUsageBuckets,
     TransferExternalMcpServerOwnershipRecord, UpdateExternalMcpServerRecord,
@@ -129,7 +132,7 @@ pub use domain::{
     validate_entity_tags, validate_tag_key, validate_tag_value,
     vertex_route_capabilities_for_upstream_model, vertex_text_embedding_capabilities,
 };
-pub use error::{AuthError, GatewayError, ProviderError, RouteError, StoreError};
+pub use error::{AuthError, GatewayError, RouteError, StoreError};
 pub use gateway_keys::{
     EncryptedSecret, GATEWAY_API_KEY_SECRET_KEY_ENV, GATEWAY_API_KEY_SECRET_KEY_ID,
     decrypt_gateway_api_key_secret, decrypt_secret_with_key, decrypt_secret_with_key_and_aad,
@@ -192,6 +195,11 @@ pub use protocol::translate::{
     openai_chat_request_to_core, openai_embeddings_request_to_core,
     openai_responses_request_to_core,
 };
+pub use provider::{
+    ChatRequestProtocol, NativeMessagesResponse, ProviderCapabilities, ProviderClient,
+    ProviderError, ProviderRegistry, ProviderRequestContext, ProviderStream,
+    ProviderUserTokenResolver,
+};
 pub use rate_limits::{
     MAX_ENABLED_RATE_LIMIT_POLICIES_PER_OPERATION, MAX_RATE_LIMIT_POLICY_NAME_LEN,
     RateLimitConsumeResult, RateLimitCounterCharge, RateLimitCounterIncrement,
@@ -199,13 +207,22 @@ pub use rate_limits::{
     RateLimitPolicyRecord, RateLimitPolicyShape, RateLimitScopeKind, RateLimitWindow,
 };
 pub use reasoning_policy::{
-    enforce_chat_reasoning_effort, enforce_reasoning_effort_map, enforce_reasoning_effort_value,
-    enforce_responses_reasoning_effort,
+    ReasoningEffortRejection, enforce_chat_reasoning_effort, enforce_reasoning_effort_map,
+    enforce_reasoning_effort_value, enforce_responses_reasoning_effort,
+};
+pub use route_capabilities::{
+    PartialCapabilities, effective_route_capabilities, infer_compatibility_capabilities,
+    infer_route_capabilities,
 };
 pub use routing::{
     ModelRoutingPolicy, ResponseRouteOrigin, RouteBindingReceipt, RouteSelection,
     RouteSelectionMode, RouteSelectionRequest, RoutingCandidate, RoutingRepository,
     RoutingStrategy, SessionAffinityPolicy,
+};
+pub use service_tier::{
+    SERVICE_TIER_HEADERS, SERVICE_TIER_REQUEST_FIELDS, ServiceTier, ServiceTierOutcome,
+    ServiceTierPassthrough, billed_service_tier, enforce_service_tier_policy,
+    find_service_tier_header, served_service_tier, take_requested_service_tier,
 };
 pub use skills::{
     SkillDetail, SkillListQuery, SkillNamespaceRecord, SkillObjectStore, SkillRecord,
@@ -218,8 +235,7 @@ pub use traits::{
     BudgetAlertRepository, BudgetRepository, GuardrailDecisionRepository, IdentityRepository,
     McpAccessRepository, McpAggregateSessionRepository, McpRegistryRepository,
     McpTokenOverheadRepository, McpToolInvocationRepository, McpUpstreamCredentialRepository,
-    ModelRepository, PricingCatalogRepository, ProviderClient, ProviderRegistry,
-    ProviderRepository, ProviderStream, ProviderUserCredentialRepository,
-    ProviderUserTokenResolver, RateLimitRepository, RequestAttemptRepository, RequestLogRepository,
-    ReviewAgentRepository, RoutePlanner, StoreHealth,
+    ModelRepository, PricingCatalogRepository, ProviderRepository,
+    ProviderUserCredentialRepository, RateLimitRepository, RequestAttemptRepository,
+    RequestLogRepository, ReviewAgentRepository, RoutePlanner, StoreHealth,
 };

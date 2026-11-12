@@ -6,11 +6,15 @@
 # Check .agents/ and .github/ too; .gitignore still applies.
 ignore-hidden = false
 extend-exclude = [
+  # ignore-hidden = false would otherwise scan git objects and Git AI's working logs.
+  ".git/",
   "videos/",
   "gha-research/",
   "*.lock",
   # Generated from upstream provider catalogs; product names are not ours to fix.
   "crates/gateway-service/data/pricing_catalog_fallback.json",
+  "crates/gateway-service/data/litellm_catalog_fallback.json",
+  "crates/gateway-service/data/openrouter_catalog_fallback.json",
 ]
 
 [default]
@@ -23,6 +27,8 @@ extend-ignore-re = [
   "\\b[A-Z]{3,}s\\b",
   # Placeholder-shaped secret fixtures, such as `EXAMPLEq7pK9mT4zQ2`.
   "\\bEXAMPLE[a-z0-9]\\w*",
+  # CSS @font-face unicode-range values, such as `U+0100-02BA`.
+  "\\bU\\+[0-9A-Fa-f?]+(?:-[0-9A-Fa-f]+)?",
 ]
 
 [default.extend-words]

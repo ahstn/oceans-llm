@@ -75,7 +75,7 @@ guardrails:
 
 mcp:
   # OAuth sign-in for MCP clients. The local mise tasks point the issuer at the
-  # gateway port; see docs/mcp/mcp-client-setup.md#oauth-sign-in.
+  # gateway port; see https://oceans-llm.com/extensions/mcp-client-setup/#sign-in-with-oauth.
   client_oauth:
     enabled: true
     public_base_url: env.OCEANS_LOCAL_PUBLIC_BASE_URL
@@ -332,7 +332,7 @@ providers:
 
   - id: github-copilot-user
     type: github_copilot
-    pricing_provider_id: openai
+    pricing_provider_id: github-copilot
     auth:
       mode: github_user
     display:
@@ -394,16 +394,6 @@ models:
     routes:
       - provider: github-copilot-user
         upstream_model: gpt-5.6-luna
-        context_window_tokens: 1050000
-        capabilities:
-          chat_completions: false
-          responses: true
-          stream: true
-          embeddings: false
-          tools: true
-          vision: true
-          json_schema: true
-          developer_role: false
         compatibility:
           github_copilot:
             supports_responses: true
@@ -420,9 +410,23 @@ models:
 
   - id: deepseek-v4.1-flash
     description: Low-cost OpenRouter model for generic live request verification
+    service_tiers: [flex]
     routes:
       - provider: openrouter
         upstream_model: deepseek/deepseek-v4.1-flash
+
+  - id: gpt-6-luna
+    description: GPT-6 Luna through OpenRouter; callers may request the flex or priority (fast) service tier
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-6-luna
+
+  - id: gpt-6-luna-fast
+    description: GPT-6 Luna through OpenRouter, always on the priority service tier
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-6-luna
+        service_tier: priority
 
   - id: claude-haiku-5.5
     description: Claude Haiku 5.5 through OpenRouter for Anthropic Messages verification
@@ -436,12 +440,12 @@ models:
       - provider: openrouter
         upstream_model: openai/gpt-image-2.5-flare
         capabilities:
+          images: true
           chat_completions: false
           responses: false
-          stream: false
           embeddings: false
-          images: true
           tools: false
+          stream: false
           vision: false
           json_schema: false
           developer_role: false
@@ -480,16 +484,6 @@ models:
         pricing_override:
           input_usd_per_million_tokens: "0.0420"
           output_usd_per_million_tokens: "0.0000"
-        capabilities:
-          chat_completions: false
-          responses: false
-          stream: false
-          embeddings: false
-          decisions: true
-          tools: false
-          vision: false
-          json_schema: false
-          developer_role: false
         compatibility:
           openrouter:
             api: decisions
@@ -522,10 +516,6 @@ models:
     routes:
       - provider: bedrock-us-east-1
         upstream_model: us.anthropic.claude-sonnet-4-6
-        capabilities:
-          responses: false
-          stream: false
-          json_schema: false
         compatibility:
           aws_bedrock:
             api_style: runtime_anthropic_invoke
@@ -543,9 +533,6 @@ models:
     routes:
       - provider: bedrock-us-east-1
         upstream_model: openai.gpt-oss-120b-1:0
-        capabilities:
-          responses: false
-          json_schema: false
         compatibility:
           aws_bedrock:
             api_style: runtime_openai_chat
@@ -560,12 +547,6 @@ models:
           input_usd_per_million_tokens: "0.1500"
           output_usd_per_million_tokens: "0.6000"
         capabilities:
-          chat_completions: false
-          responses: true
-          stream: true
-          embeddings: false
-          tools: true
-          vision: false
           json_schema: false
         compatibility:
           aws_bedrock:

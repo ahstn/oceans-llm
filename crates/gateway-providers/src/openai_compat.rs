@@ -3,12 +3,12 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use async_trait::async_trait;
 use gateway_core::{
     BatchCapabilities, CoreChatRequest, CoreDecisionsRequest, CoreEmbeddingsRequest,
-    CoreResponsesRequest, ImagesRequest, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
-    OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
-    ProviderBatchRequest, ProviderBatchResult, ProviderBatchState, ProviderCapabilities,
-    ProviderClient, ProviderDecisionsResponse, ProviderError, ProviderRequestContext,
-    ProviderStream, core_chat_request_to_openai, core_embeddings_request_to_openai,
-    core_responses_request_to_openai,
+    CoreResponsesRequest, ImagesRequest, ModelRoute, OpenAiCompatDeveloperRole,
+    OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
+    OpenAiCompatRouteCompatibility, ProviderBatchRequest, ProviderBatchResult, ProviderBatchState,
+    ProviderCapabilities, ProviderClient, ProviderDecisionsResponse, ProviderError,
+    ProviderRequestContext, ProviderStream, ServiceTier, core_chat_request_to_openai,
+    core_embeddings_request_to_openai, core_responses_request_to_openai,
 };
 use serde_json::{Map, Value, json};
 
@@ -21,6 +21,9 @@ use crate::token::{AdcIdTokenSource, CachedAccessTokenSource, ServiceAccountIdTo
 mod anthropic_messages;
 mod batch;
 mod decisions;
+mod native_messages;
+#[cfg(test)]
+mod service_tier_tests;
 
 pub(crate) use anthropic_messages::normalize_anthropic_messages_for_openai;
 
@@ -278,6 +281,9 @@ impl OpenAiCompatProvider {
         context: &ProviderRequestContext,
         bearer_token: Option<&str>,
     ) -> Result<reqwest::Request, ProviderError> {
+        if self.uses_native_messages(context) {
+            return self.build_native_messages_request(request, context, false, bearer_token);
+        }
         let wire_request = core_chat_request_to_openai(request);
         let mut body = serde_json::to_value(wire_request)
             .map_err(|error| ProviderError::Transport(error.to_string()))?;
@@ -298,6 +304,9 @@ impl OpenAiCompatProvider {
         context: &ProviderRequestContext,
         bearer_token: Option<&str>,
     ) -> Result<reqwest::Request, ProviderError> {
+        if self.uses_native_messages(context) {
+            return self.build_native_messages_request(request, context, true, bearer_token);
+        }
         let wire_request = core_chat_request_to_openai(request);
         let mut body = serde_json::to_value(wire_request)
             .map_err(|error| ProviderError::Transport(error.to_string()))?;
@@ -409,13 +418,17 @@ impl OpenAiCompatProvider {
         apply_compatibility_profile: bool,
         bearer_token: Option<&str>,
     ) -> Result<reqwest::Request, ProviderError> {
-        let body = self.prepare_request_body(
+        let mut body = self.prepare_request_body(
             endpoint_suffix,
             body,
             context,
             enforce_stream,
             apply_compatibility_profile,
         )?;
+        // Batch items share `prepare_request_body` but run outside the live service tiers.
+        if matches!(endpoint_suffix, "chat/completions" | "responses") {
+            apply_service_tier(&mut body, context);
+        }
 
         let url = join_base_url(&self.config.base_url, endpoint_suffix)?;
 
@@ -638,6 +651,14 @@ pub(super) fn apply_openrouter_routing_policy(
     Ok(())
 }
 
+/// OpenAI and OpenRouter take the effective tier as body `service_tier` on Chat Completions,
+/// Responses, and OpenRouter Messages alike. An explicit default sends `default`.
+fn apply_service_tier(body: &mut Value, context: &ProviderRequestContext) {
+    if let (Some(tier), Some(object)) = (context.service_tier, body.as_object_mut()) {
+        object.insert("service_tier".to_string(), Value::from(tier.as_str()));
+    }
+}
+
 fn apply_openai_compat_profile_to_body(body: &mut Value, profile: &OpenAiCompatRouteCompatibility) {
     let Some(object) = body.as_object_mut() else {
         return;
@@ -696,12 +717,60 @@ fn ensure_stream_usage_requested(object: &mut Map<String, Value>) {
 
 #[async_trait]
 impl ProviderClient for OpenAiCompatProvider {
+    fn supports_native_messages(&self, context: &ProviderRequestContext) -> bool {
+        self.uses_native_messages(context)
+    }
+
+    async fn messages(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<gateway_core::NativeMessagesResponse<Value>, ProviderError> {
+        let token = self.auth_token().await?;
+        let request =
+            self.build_native_messages_request(request, context, false, token.as_deref())?;
+        let response = crate::anthropic::native::execute_request(
+            &self.client,
+            request,
+            &self.config.provider_type,
+            &self.config.provider_key,
+        )
+        .await?;
+        crate::anthropic::native::json_response(response).await
+    }
+
+    async fn messages_stream(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<gateway_core::NativeMessagesResponse<ProviderStream>, ProviderError> {
+        let token = self.auth_token().await?;
+        let request =
+            self.build_native_messages_request(request, context, true, token.as_deref())?;
+        let response = crate::anthropic::native::execute_request(
+            &self.client,
+            request,
+            &self.config.provider_type,
+            &self.config.provider_key,
+        )
+        .await?;
+        Ok(crate::anthropic::native::stream_response(response))
+    }
+
     fn provider_key(&self) -> &str {
         &self.config.provider_key
     }
 
     fn provider_type(&self) -> &str {
         &self.config.provider_type
+    }
+
+    fn service_tiers(&self, route: &ModelRoute) -> &'static [ServiceTier] {
+        if route.compatibility.selects_decisions_api() {
+            crate::service_tier::DEFAULT_ONLY
+        } else {
+            &ServiceTier::ALL
+        }
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
@@ -751,7 +820,17 @@ impl ProviderClient for OpenAiCompatProvider {
         let request = self
             .build_authenticated_chat_request(request, context)
             .await?;
-        self.execute_json_request(request).await
+        let value = self.execute_json_request(request).await?;
+        if self.uses_native_messages(context) {
+            Ok(crate::anthropic::normalize_anthropic_response(
+                &value,
+                context,
+                "anthropic_compat",
+                "openrouter",
+            ))
+        } else {
+            Ok(value)
+        }
     }
 
     async fn chat_completions_stream(
@@ -764,7 +843,18 @@ impl ProviderClient for OpenAiCompatProvider {
             .await?;
         let response = self.execute_stream_request(request).await?;
 
-        Ok(normalize_openai_compat_stream(response.bytes_stream()))
+        if self.uses_native_messages(context) {
+            Ok(crate::anthropic::normalize_anthropic_stream(
+                response.bytes_stream(),
+                format!("chatcmpl-{}", uuid::Uuid::new_v4().simple()),
+                time::OffsetDateTime::now_utc().unix_timestamp(),
+                context.model_key.clone(),
+                "anthropic_compat",
+                "openrouter",
+            ))
+        } else {
+            Ok(normalize_openai_compat_stream(response.bytes_stream()))
+        }
     }
 
     async fn embeddings(
@@ -898,6 +988,7 @@ mod tests {
                 openai_compat: Some(profile),
                 ..Default::default()
             },
+            service_tier: None,
         }
     }
 
@@ -954,6 +1045,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         }
     }
 
@@ -1205,6 +1297,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let built = provider
@@ -1486,6 +1579,7 @@ mod tests {
             extra_body,
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let built = provider
@@ -1898,6 +1992,7 @@ mod tests {
                 }),
                 ..Default::default()
             },
+            service_tier: None,
         };
 
         let built = provider
@@ -2008,6 +2103,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let error = provider
@@ -2095,6 +2191,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let response = provider
@@ -2161,6 +2258,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider
@@ -2244,6 +2342,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let rendered = render_provider_stream(
@@ -2315,6 +2414,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider
@@ -2390,6 +2490,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider
@@ -2464,6 +2565,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider
@@ -2538,6 +2640,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider
@@ -2607,6 +2710,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let error = match provider.chat_completions_stream(&request, &context).await {
@@ -2681,6 +2785,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider
@@ -2751,6 +2856,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let error = match provider.chat_completions_stream(&request, &context).await {
@@ -2821,6 +2927,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider
@@ -2891,6 +2998,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider

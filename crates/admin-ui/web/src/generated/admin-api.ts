@@ -2271,6 +2271,7 @@ export interface components {
             provider_icon_key: components["schemas"]["ProviderIconKeyView"];
             provider_key: string;
             provider_label: string;
+            service_tier?: null | components["schemas"]["ServiceTierView"];
             upstream_model: string;
             /** Format: double */
             weight: number;
@@ -2292,6 +2293,12 @@ export interface components {
             /** @description Other model IDs resolving to the same execution model, excluding this model ID. */
             aliases: string[];
             allowlist?: null | components["schemas"]["AdminModelAllowlistView"];
+            /**
+             * @description Every tier a request can be served at, ascending: the tiers the routes' adapters can
+             *     send and routing can bill, limited to the allow-list except for a tier a route forces.
+             *     Empty when no route serves chat.
+             */
+            available_service_tiers: components["schemas"]["ServiceTierView"][];
             benchmark_scores: components["schemas"]["AdminModelBenchmarkScoreView"][];
             /** Format: int64 */
             cache_read_cost_per_million_tokens_usd_10000?: number | null;
@@ -2313,7 +2320,17 @@ export interface components {
             output_cost_per_million_tokens_usd_10000?: number | null;
             /** Format: int64 */
             output_window_tokens?: number | null;
+            /**
+             * @description Rates for non-default service tiers on the same primary route, sorted by tier. A
+             *     request billed at a tier with no rate for a token bucket it used is unpriced.
+             */
+            pricing_service_tiers: components["schemas"]["AdminServiceTierPricingView"][];
             pricing_source?: null | components["schemas"]["EffectiveMetadataSourceView"];
+            /**
+             * @description Catalog context tiers for the same primary route as the base prices, ascending by
+             *     threshold. Empty when the price comes from a route pricing override.
+             */
+            pricing_tiers: components["schemas"]["AdminPricingTierView"][];
             pricing_varies_by_route: boolean;
             provider_icon_key?: null | components["schemas"]["ProviderIconKeyView"];
             provider_key?: string | null;
@@ -2322,6 +2339,8 @@ export interface components {
             /** @description Configured routes, including disabled routes. Only visible to platform admins. */
             routes?: components["schemas"]["AdminModelRouteView"][] | null;
             routing?: null | components["schemas"]["AdminModelRoutingPolicyView"];
+            /** @description Non-default service tiers callers may request. Null allows every tier. */
+            service_tiers?: components["schemas"]["ServiceTierView"][] | null;
             status: components["schemas"]["AdminModelStatusView"];
             supports_attachments?: boolean | null;
             supports_decisions?: boolean | null;
@@ -2366,6 +2385,22 @@ export interface components {
         AdminPage: "api_keys" | "models" | "mcp" | "review_agent" | "usage_costs" | "spend_controls" | "rate_limits" | "leaderboard" | "agent_harnesses" | "agent_sessions" | "request_logs" | "mcp_invocations" | "teams" | "users" | "service_accounts";
         /** @enum {string} */
         AdminPermissionGroup: "platform_admins" | "team_admins" | "users";
+        /**
+         * @description Rates that replace the base prices for a whole request whose prompt tokens (cache
+         *     included) exceed `above_input_tokens`. A null rate inherits the base rate.
+         */
+        AdminPricingTierView: {
+            /** Format: int64 */
+            above_input_tokens: number;
+            /** Format: int64 */
+            cache_read_cost_per_million_tokens_usd_10000?: number | null;
+            /** Format: int64 */
+            cache_write_cost_per_million_tokens_usd_10000?: number | null;
+            /** Format: int64 */
+            input_cost_per_million_tokens_usd_10000?: number | null;
+            /** Format: int64 */
+            output_cost_per_million_tokens_usd_10000?: number | null;
+        };
         AdminProviderCredentialStatusView: {
             configured: boolean;
             last_used_at?: string | null;
@@ -2394,6 +2429,24 @@ export interface components {
         AdminServiceAccountsPayload: {
             service_accounts: components["schemas"]["AdminServiceAccountView"][];
             teams: components["schemas"]["AdminTeamView"][];
+        };
+        /**
+         * @description Rates that replace the base prices for a request billed at `service_tier`. Unlike a
+         *     context tier, a null rate does not inherit the base rate: the tier has no rate for
+         *     that bucket.
+         */
+        AdminServiceTierPricingView: {
+            /** Format: int64 */
+            cache_read_cost_per_million_tokens_usd_10000?: number | null;
+            /** Format: int64 */
+            cache_write_cost_per_million_tokens_usd_10000?: number | null;
+            /** @description Context tiers within this service tier, ascending by threshold. */
+            context_tiers: components["schemas"]["AdminPricingTierView"][];
+            /** Format: int64 */
+            input_cost_per_million_tokens_usd_10000?: number | null;
+            /** Format: int64 */
+            output_cost_per_million_tokens_usd_10000?: number | null;
+            service_tier: components["schemas"]["ServiceTierView"];
         };
         AdminTeamAdminView: {
             email: string;
@@ -4045,7 +4098,8 @@ export interface components {
         };
         Envelope_RefreshModelPricingCatalogResponse: {
             data: {
-                refreshed: boolean;
+                /** @description One entry per catalog source, in the order models_dev, openrouter, litellm. */
+                sources: components["schemas"]["PricingCatalogSourceRefreshView"][];
             };
             meta: components["schemas"]["ResponseMeta"];
         };
@@ -4889,6 +4943,18 @@ export interface components {
             password: string;
         };
         /** @enum {string} */
+        PricingCatalogRefreshOutcomeView: "updated" | "unchanged" | "failed";
+        PricingCatalogSourceRefreshView: {
+            /** @description Stable error code of a failed refresh; never upstream response text. */
+            error?: string | null;
+            /** @description RFC 3339 generation of the source snapshot now in use, cached or vendored. */
+            fetched_at?: string | null;
+            outcome: components["schemas"]["PricingCatalogRefreshOutcomeView"];
+            source: components["schemas"]["PricingCatalogSourceView"];
+        };
+        /** @enum {string} */
+        PricingCatalogSourceView: "models_dev" | "openrouter" | "litellm";
+        /** @enum {string} */
         ProviderIconKeyView: "anthropic" | "aws" | "openai" | "openrouter" | "typesafe" | "vertexai";
         PublicOauthProviderView: {
             key: string;
@@ -4981,7 +5047,8 @@ export interface components {
             items: components["schemas"]["RecommendedMcpServerView"][];
         };
         RefreshModelPricingCatalogResponse: {
-            refreshed: boolean;
+            /** @description One entry per catalog source, in the order models_dev, openrouter, litellm. */
+            sources: components["schemas"]["PricingCatalogSourceRefreshView"][];
         };
         ReplaceMcpToolsetToolsRequest: {
             tool_ids: string[];
@@ -5084,8 +5151,10 @@ export interface components {
             request_tags: components["schemas"]["RequestTagsView"];
             resolved_model_key: string;
             response_payload_truncated: boolean;
+            served_service_tier?: null | components["schemas"]["ServiceTierView"];
             service_account_id?: string | null;
             service_account_name?: string | null;
+            service_tier?: null | components["schemas"]["ServiceTierView"];
             /** Format: int64 */
             status_code?: number | null;
             team_id?: string | null;
@@ -5282,6 +5351,11 @@ export interface components {
             provider_key: string;
             updated_at?: string | null;
         };
+        /**
+         * @description A provider capacity grade. `priority` is the tier providers call Fast.
+         * @enum {string}
+         */
+        ServiceTierView: "default" | "flex" | "priority" | "ultrafast";
         SetDefaultVersionRequest: {
             /** Format: int32 */
             version: number;

@@ -1,5 +1,7 @@
 use serde_json::json;
 
+use gateway_core::ServiceTier;
+
 use crate::redaction::{RequestLogPayloadCaptureMode, RequestLogPayloadPolicy};
 
 use super::super::{
@@ -24,6 +26,135 @@ fn collector_reassembles_split_frames_and_keeps_latest_usage() {
             "total_tokens": 9
         }))
     );
+}
+
+#[test]
+fn collector_explicit_null_total_clears_stale_total_and_preserves_overflow_evidence() {
+    let mut collector = StreamResponseCollector::default();
+    let start = json!({"usage":{
+        "prompt_tokens":i64::MAX,"completion_tokens":0,"total_tokens":i64::MAX,
+        "provider_usage":{"input_tokens":i64::MAX,"output_tokens":0}
+    }});
+    let late = json!({"usage":{
+        "completion_tokens":1,"total_tokens":null,"provider_usage":{"output_tokens":1}
+    }});
+    collector.observe_chunk(format!("data: {start}\n\n").as_bytes());
+    assert_eq!(collector.usage().unwrap()["total_tokens"], i64::MAX);
+    collector.observe_chunk(format!("data: {late}\n\n").as_bytes());
+    collector.finish();
+
+    let usage = collector.usage().unwrap();
+    assert_eq!(usage.get("total_tokens"), Some(&serde_json::Value::Null));
+    assert_eq!(
+        usage["provider_usage"],
+        json!({"input_tokens":i64::MAX,"output_tokens":1})
+    );
+    let summary = usage_summary_from_value(Some(usage));
+    assert_eq!(summary.prompt_tokens, Some(i64::MAX));
+    assert_eq!(summary.completion_tokens, Some(1));
+    assert_eq!(summary.total_tokens, None);
+    assert!(
+        crate::usage::usage_summary_from_value(Some(usage)).is_err(),
+        "billing must reject overflow, not accept a stale explicit total"
+    );
+}
+
+#[test]
+fn collector_preserves_totals_for_unchanged_metadata_and_explicit_totals() {
+    let mut collector = StreamResponseCollector::default();
+    collector.observe_chunk(
+        b"data: {\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":1,\"total_tokens\":8,\"provider_usage\":{\"input_tokens\":3,\"output_tokens\":1,\"cache_read_input_tokens\":2,\"cache_creation_input_tokens\":2}}}\n\n",
+    );
+    for incoming in [
+        json!({"usage_source":"late","provider_usage":{"future_usage":{"opaque":true}}}),
+        json!({"prompt_tokens":3,"completion_tokens":1,"provider_usage":{
+            "input_tokens":3,"output_tokens":1,"cache_read_input_tokens":2,
+            "cache_creation_input_tokens":2}}),
+    ] {
+        let event = json!({"usage":incoming});
+        collector.observe_chunk(format!("data: {event}\n\n").as_bytes());
+        assert_eq!(collector.usage().unwrap()["total_tokens"], 8);
+    }
+    collector.observe_chunk(
+        b"data: {\"usage\":{\"completion_tokens\":2,\"total_tokens\":99,\"provider_usage\":{\"output_tokens\":2}}}\n\n",
+    );
+    collector.finish();
+    assert_eq!(collector.usage().unwrap()["total_tokens"], 99);
+    assert_eq!(
+        usage_summary_from_value(collector.usage()).total_tokens,
+        Some(99)
+    );
+}
+
+#[test]
+fn collector_cache_overflow_keeps_explicit_total_unknown_in_log_and_billing_summaries() {
+    for cache_counter in ["cache_read_input_tokens", "cache_creation_input_tokens"] {
+        let mut collector = StreamResponseCollector::default();
+        let start = json!({"usage":{
+            "prompt_tokens":1,"completion_tokens":1,"total_tokens":2,
+            "provider_usage":{"input_tokens":1,"output_tokens":1,cache_counter:0}
+        }});
+        let late = json!({"usage":{
+            "total_tokens":null,"provider_usage":{cache_counter:i64::MAX}
+        }});
+        collector.observe_chunk(format!("data: {start}\n\n").as_bytes());
+        collector.observe_chunk(format!("data: {late}\n\n").as_bytes());
+        collector.finish();
+
+        let usage = collector.usage().unwrap();
+        assert_eq!(usage.get("total_tokens"), Some(&serde_json::Value::Null));
+        assert_eq!(
+            usage["provider_usage"],
+            json!({"input_tokens":1,"output_tokens":1,cache_counter:i64::MAX})
+        );
+        let log_summary = usage_summary_from_value(Some(usage));
+        assert_eq!(log_summary.prompt_tokens, Some(1));
+        assert_eq!(log_summary.completion_tokens, Some(1));
+        assert_eq!(log_summary.total_tokens, None);
+        let billing_summary = crate::usage::usage_summary_from_value(Some(usage)).unwrap();
+        assert_eq!(billing_summary.total_tokens, None);
+        assert!(matches!(
+            &billing_summary.cache_usage,
+            crate::usage::CacheUsageNormalization::Invalid(_)
+        ));
+        assert_eq!(
+            billing_summary.cache_usage.reason().as_deref(),
+            Some("invalid_cache_token_usage:cache token total overflow")
+        );
+    }
+}
+
+#[test]
+fn collector_summaries_distinguish_explicit_unknown_from_missing_total() {
+    for (initial, expected) in [
+        (json!({"prompt_tokens":3,"completion_tokens":2}), 5),
+        (
+            json!({"input_tokens":3,"output_tokens":2,"cache_read_input_tokens":1}),
+            6,
+        ),
+    ] {
+        for unknown in [false, true] {
+            let mut usage = initial.clone();
+            if unknown {
+                usage["total_tokens"] = serde_json::Value::Null;
+            }
+            let event = json!({"usage":usage});
+            let mut collector = StreamResponseCollector::default();
+            collector.observe_chunk(format!("data: {event}\n\n").as_bytes());
+            collector.finish();
+            let expected = (!unknown).then_some(expected);
+            assert_eq!(
+                usage_summary_from_value(collector.usage()).total_tokens,
+                expected
+            );
+            assert_eq!(
+                crate::usage::usage_summary_from_value(collector.usage())
+                    .unwrap()
+                    .total_tokens,
+                expected
+            );
+        }
+    }
 }
 
 #[test]
@@ -62,9 +193,11 @@ data: {"type":"error","error":{"code":"upstream_failed"}}
     assert_eq!(
         usage_summary_from_value(collector.usage()),
         UsageSummary {
-            prompt_tokens: Some(30),
+            // Anthropic reports 30 uncached + 20 cache reads + 10 cache writes.
+            // Logs and billing use the same inclusive prompt total, retaining raw usage above.
+            prompt_tokens: Some(60),
             completion_tokens: Some(7),
-            total_tokens: Some(37),
+            total_tokens: Some(67),
         }
     );
 }
@@ -452,4 +585,54 @@ data: {"type":"response.completed","response":{"output":[{"type":"mcp_call","id"
     assert_eq!(collector.invoked_tool_count(), 2);
     assert_eq!(collector.invoked_distinct_tool_count(), 2);
     assert_eq!(collector.invoked_tool_counts().mcp_calls, 1);
+}
+
+#[test]
+fn collector_reports_the_served_service_tier_of_each_protocol() {
+    let cases: [(&[u8], Option<ServiceTier>); 4] = [
+        // Chat repeats the tier on every chunk, including the final usage chunk.
+        (
+            br#"data: {"choices":[{"delta":{"content":"ok"}}],"service_tier":"priority"}
+
+data: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":1},"service_tier":"priority"}
+
+data: [DONE]
+
+"#,
+            Some(ServiceTier::Priority),
+        ),
+        // Responses echoes the requested `auto` first; completion names the served tier.
+        (
+            br#"event: response.created
+data: {"type":"response.created","response":{"id":"resp_1","service_tier":"auto"}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_1","service_tier":"flex"}}
+
+"#,
+            Some(ServiceTier::Flex),
+        ),
+        // Anthropic reports the speed it served in the message usage.
+        (
+            br#"event: message_start
+data: {"type":"message_start","message":{"usage":{"input_tokens":3,"speed":"standard"}}}
+
+"#,
+            Some(ServiceTier::Default),
+        ),
+        (
+            b"data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n",
+            None,
+        ),
+    ];
+    for (stream, expected) in cases {
+        let mut collector = StreamResponseCollector::default();
+        collector.observe_chunk(stream);
+        assert_eq!(
+            collector.served_service_tier(),
+            expected,
+            "{}",
+            String::from_utf8_lossy(stream)
+        );
+    }
 }

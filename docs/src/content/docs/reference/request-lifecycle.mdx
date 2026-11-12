@@ -1,0 +1,161 @@
+---
+title: Request lifecycle and failure modes
+description: How one inference request moves through the gateway, where it can fail, and what each failure writes to request logs and the usage ledger.
+sidebar:
+  order: 2
+---
+
+This page follows one inference request from the HTTP edge to the usage ledger. It shows the order of the checks, the error each check returns, and whether the gateway writes a request log row or a ledger row for that outcome. Other pages own the policy for each step. This page links to them instead of repeating them.
+
+The short version: the gateway checks access, rate limits and request shape first, and those failures return before any request log row exists. Guardrail and budget rejections happen after a route is chosen, so they write a summary row with no provider attempts. Anything that reaches the provider writes a request log row with one attempt. Usage accounting writes a ledger row after the provider returns.
+
+## Request path
+
+The gateway runs these steps in order for `/v1/chat/completions`, `/v1/responses` and `/v1/messages`. The unversioned aliases (`/chat/completions`, `/responses`, `/messages`) use the same handlers. `/v1/embeddings`, `/v1/images` and `/v1/decisions` follow the same order with small differences, listed under [Endpoint differences](#endpoint-differences).
+
+1. **Request id.** Middleware takes the `x-request-id` header, or generates a UUID when it's absent. The gateway echoes the id on the response and uses it for request logs and the ledger.
+2. **Body limit.** Inference bodies over 64 MiB fail with `413 request_body_too_large`.
+3. **Authentication.** The gateway checks the API key and that it carries the inference scope. A service-account key also needs an active service-account budget. See [Authentication failures](#authentication-failures).
+4. **Model access.** The gateway resolves the requested model and checks it against the key's grants, the owner's allowlist and any model-level allowlist. A `tag:` selector picks the lowest-`rank` model that the key can use and that has every listed tag. Access is checked on the requested model only. An alias then resolves to its execution model, and the target's own allowlist is not applied. Model-level allowlists never admit service-account keys. The policy is in [Identity and access](/access/identity-and-access/).
+5. **Route planning.** The gateway loads the execution model's routes, drops disabled routes, routes with a weight of `0` or less, and routes whose provider doesn't exist. It orders the rest by `priority` (lower first), with `weight` used for a random order inside one priority. If nothing survives, the request fails with `no_routes_available`.
+6. **Rate limits.** The gateway checks the matching [rate limits](/spend/rate-limits/) for the key, user, team and model. A rejection returns `429 rate_limited` before guardrails, budgets or any provider call.
+7. **Reasoning effort.** The gateway takes the strictest `max_reasoning_effort` across the alias chain and checks every explicit effort field in the request. Omitted fields and `null` pass. Values above the ceiling, unknown values and malformed values fail with `400 invalid_request`.
+8. **Request tags.** The gateway reads request tag headers. Invalid tags fail with `400 invalid_request`.
+9. **Route selection.** The gateway removes routes that can't serve the request's API family and features (for example, `/v1/responses` needs `responses`, and a request with tools needs `tools`). Models with a routing policy can also apply session affinity and per-user provider credentials. The first remaining route is used. If no route fits, the request fails with `400 invalid_request` and the message lists the required capabilities. [Model routing and APIs](/configuration/model-routing/) owns this behaviour.
+10. **Guardrails.** Prompt guardrails run on the selected route. A block returns `403 guardrail_policy_denied`. Redaction rules can rewrite the prompt before it goes upstream. See [Gateway guardrails](/operations/gateway-guardrails/).
+11. **Budget gate.** The gateway checks hard budget limits for the request's owner and model. A rejection returns `422 budget_exceeded` by default. No provider call happens. See [Budgets](/spend/budgets/).
+12. **Provider execution.** The provider adapter applies the route's compatibility transforms and calls the upstream. There's one attempt. The gateway doesn't retry or fall back to another route ([issue #118](https://github.com/ahstn/oceans-llm/issues/118)). Upstream failures map to the errors in [Provider failures](#provider-failures).
+13. **Usage accounting.** After the provider returns, the gateway normalises usage, prices it, applies it to budget windows and writes one ledger row. It also charges token-based rate limits. This happens before the response guardrail runs, so a response that a guardrail blocks is still charged.
+14. **Response guardrails.** Response guardrails run on the provider output. A block returns an error to the caller after the charge in step 13.
+15. **Request log.** The gateway writes the request log row for the outcome the caller saw, with one attempt record.
+
+Compatibility transforms change the outbound provider request only. They don't change the public model name, alias resolution, grants or request log attribution. [Provider API compatibility](/reference/provider-api-compatibility/) lists the transforms.
+
+### Endpoint differences
+
+- `/v1/embeddings` and `/v1/images` run the same steps. The reasoning-effort check doesn't apply.
+- `/v1/decisions` has no guardrail step. Its budget rejection writes a summary row in the same way.
+- `/v1/messages/count_tokens` resolves the model, checks rate limits, selects a route and runs prompt guardrails. It has no budget gate, and it writes no request log row or ledger row. An API key can have at most 8 token counts in flight on one instance. The ninth returns `429 rate_limited`.
+- Batch creation (`/api/v1/batches`) enforces the same pre-provider budget, but writes no request log row for any outcome.
+
+## Streaming requests
+
+A streamed response starts with `200` and `text/event-stream`. After that, the status can't change, so later failures reach the caller as an error event or a cut stream.
+
+| Stream outcome | Request log | Ledger |
+| --- | --- | --- |
+| The provider fails before the stream starts | Row with the error status and a `stream_start_error` attempt | No row |
+| The stream completes | Row with status `200` and a success attempt | Row from the last usage snapshot, or `usage_missing` |
+| The provider sends an error event | Row with the failure status and code | Row only if the stream had reported usage |
+| The upstream transport fails mid-stream | Row with a `stream_error` attempt | Row only if the stream had reported usage |
+| The client disconnects | Row recorded in the background | No row. Reported tokens still count against token rate limits |
+
+The stream logger parses SSE across UTF-8 and frame boundaries. It keeps the latest usage snapshot it sees. Chat Completions streams usually report usage at the top level of a chunk. Responses streams report it on the completed event as `response.usage`. Bedrock streams are converted to OpenAI-compatible SSE before this step (see [AWS Bedrock](/providers/aws-bedrock/)). Payload policy can cap the stored stream events without affecting usage or error parsing.
+
+## Failure modes
+
+Every error body carries `type` and `code`. `/v1/messages` uses the Anthropic error envelope and the other inference routes use the OpenAI envelope. "Before logging" in this table means the gateway returns before a request log row can exist.
+
+| Failure | Status | `type` / `code` | Request log | Ledger |
+| --- | --- | --- | --- | --- |
+| Body too large | `413` | `invalid_request_error` / `request_body_too_large` | Before logging | No |
+| Authentication fails | `401`, `403` or `500` | `authentication_error` / see below | Before logging | No |
+| Model not found | `404` | `not_found_error` / `model_not_found` | Before logging | No |
+| Model not granted | `403` | `authentication_error` / `model_not_granted` | Before logging | No |
+| No viable route | `503` | `routing_error` / `no_routes_available` | Before logging | No |
+| Alias cycle or depth | `500` | `routing_error` / `routing_policy_error` | Before logging | No |
+| Rate limit | `429` | `rate_limit_error` / `rate_limited` | Before logging | No |
+| Bad reasoning effort or tags | `400` | `invalid_request_error` / `invalid_request` | Before logging | No |
+| No route supports the request | `400` | `invalid_request_error` / `invalid_request` | Before logging | No |
+| Prompt guardrail block | `403` | `policy_error` / `guardrail_policy_denied` | Summary row, no attempts | No |
+| Budget exceeded | `422` (default) | `budget_error` / `budget_exceeded` | Summary row, no attempts | No |
+| Provider error | upstream status, `502` or `504` | `upstream_error` / see below | Row with one attempt | Only if usage was reported |
+| Response guardrail block | `403` | `policy_error` / `guardrail_policy_denied` | Row with one attempt | Yes (already charged) |
+
+A summary row or attempt row is only written when request logging applies to the caller. Service-account keys are always logged. A user's key is logged only when that user has request logging turned on. Payload storage follows the [payload policy](/observability/request-logs/#payload-policy).
+
+### Authentication failures
+
+Missing or invalid credentials return `401` with codes such as `missing_authorization_header`, `missing_bearer_token`, `invalid_api_key_format`, `api_key_not_found`, `api_key_revoked` and `api_key_secret_mismatch`. A key without the inference scope returns `403 insufficient_scope`. A service-account key whose account has no active budget returns `403 service_account_budget_required`. A service-account key whose account is inactive or in the wrong team returns `500 api_key_owner_invalid`.
+
+### Rate limits
+
+`429 rate_limited` means a matching policy was exhausted. `Retry-After` gives the seconds until the request would fit. `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset` describe the tightest matching policy, and they're also set on admitted responses. Inference rejections write no request log row, and the `gateway.rate_limit.decisions` metric counts them. MCP requests get a JSON-RPC error with code `-32029` and are recorded as MCP invocations with error code `rate_limited`. [Rate limits](/spend/rate-limits/) owns the policy.
+
+### Budget exceeded
+
+The default status is `422`. Admins can set `budgets.exceeded_status_code` to `402`, `422` or `429` (see [Budget settings](/spend/budget-settings/)). The body has `type: budget_error` and `code: budget_exceeded` in both envelopes, so a client can tell it apart from a validation `422`. The message names the budget cadence and scope kind (`user`, `service account` or `user+model`), the spend and the limit. It says that a retry won't succeed until the window resets or an admin raises the limit. It doesn't include budget ids or other principals' data.
+
+The default is `422` because the OpenAI and Anthropic Python SDKs retry `429` but not `422` ([ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-14-budget-exceeded-status-code.md)). Check your clients before you choose `429`.
+
+### Provider failures
+
+| Upstream outcome | Status | `code` |
+| --- | --- | --- |
+| Upstream returns an HTTP error | Upstream status | `upstream_http_error` |
+| Upstream times out | `504` | `upstream_timeout` |
+| Transport failure | `502` | `upstream_transport` |
+| Adapter rejects the request locally | `400` | `invalid_request` |
+| Adapter doesn't implement the operation | `501` | `provider_not_implemented` |
+
+If the provider reported usage before it failed, the gateway still writes a ledger row and charges that usage.
+
+## Pricing states
+
+Each ledger row in `usage_cost_events` has a `pricing_status`. A provider-reported cost wins over route and catalog pricing.
+
+| `pricing_status` | Meaning | Adds to spend |
+| --- | --- | --- |
+| `priced` | Exact pricing or a provider-reported cost | Yes |
+| `legacy_estimated` | Estimated cost, because cache usage data was invalid or a batch was only partly priced (reason `batch_partially_priced`) | Yes |
+| `unpriced` | Usage exists but no exact rate matched | No (cost is zero) |
+| `usage_missing` | The provider reported no usable usage | No (cost is zero) |
+
+`unpriced` and `usage_missing` rows stay visible in reports. Common `unpriced` causes are an unsupported `pricing_provider_id`, an unsupported Vertex publisher or location, a service tier with no rates (reason `service_tier:<tier>`), and missing rates. [Pricing catalog and accounting](/spend/pricing-and-accounting/) owns the rules.
+
+If the ledger write itself fails, the gateway logs a warning and the caller still gets the successful response.
+
+## Model visibility and execution
+
+A model can appear in `/v1/models` and still fail at runtime. `/v1/models` lists the models the key can see. It doesn't check that a route is executable now. Execution still depends on the provider existing, the route being enabled with a positive weight, and the route supporting the request. That's why a listed model can fail with `no_routes_available` or `invalid_request`.
+
+`GET /v1/model-metadata` applies the same access rules and adds route limits, capabilities and prices from the cached catalog. [Model routing and APIs](/configuration/model-routing/) describes the response.
+
+## Worked example
+
+A service account `growth-indexer` sends `POST /v1/responses` with model `tag:fast`.
+
+- **Access.** The key grants `gpt-4o-mini` and `claude-3-5-haiku`. The team allowlist is unrestricted.
+- **Resolution.** `tag:fast` matches `gpt-4o-mini`, which is an alias of `openai-gpt-4o-mini`.
+- **Planning.** `openai-gpt-4o-mini` has route A at priority `50` and route B at priority `100`. Route A comes first, so weight doesn't matter.
+- **Selection.** The request needs the Responses API, with no tools or vision. Route A supports it.
+- **Execution.** The Responses adapter sends the request to route A's provider and upstream model.
+- **Logging.** `request_logs.model_key` is `gpt-4o-mini`, `request_logs.resolved_model_key` is `openai-gpt-4o-mini`, and `request_logs.provider_key` is route A's provider.
+- **Accounting.** Usage is normalised and priced exactly. The ledger row is `priced` and the service-account budget window includes the charge.
+
+## Vertex embeddings example
+
+A caller sends `POST /v1/embeddings` with model `gemini-embedding` and input `["query text", "document text"]`. The route uses provider `vertex-global` and `upstream_model: google/gemini-embedding-001`, with `embeddings: true`.
+
+The Vertex adapter checks that the input is text only and that the parameters are supported. It calls `:predict` for `gemini-embedding-001` and the older text-embedding models, and `:embedContent` for `google/gemini-embedding-2`. It fans out array input when needed and keeps the output indexes. The request log records `operation: embeddings` and one Vertex attempt. The adapter adds up the token counts (`statistics.token_count` for `:predict`, `usageMetadata.promptTokenCount` for `:embedContent`) as input tokens. Exact Vertex pricing then gives a `priced` ledger row.
+
+| Failure | Where | Outcome |
+| --- | --- | --- |
+| The route has `embeddings: false` | Route selection | The route is removed. With no other route, `400 invalid_request`. |
+| The upstream model isn't a supported embedding model | Adapter validation | `400 invalid_request`. Not every `google/*` model is treated as an embedding model. |
+| `input` is a token array, nested array, non-string, empty array or empty string | Adapter validation | `400 invalid_request` before the upstream call |
+| `encoding_format: "base64"` | Adapter validation | `400 invalid_request`. Native Vertex embeddings return float vectors only. |
+| Any output has no token count | Accounting | The request succeeds with a `usage_missing` ledger row |
+| No exact embedding rate | Accounting | The request succeeds with an `unpriced` ledger row |
+
+## Logs and ledger
+
+Request logs and ledger rows are separate records for separate jobs.
+
+- `request_logs` holds the outcome the caller saw.
+- `request_log_payloads` holds sanitised request and response bodies, when payload policy stores them.
+- `request_log_attempts` holds the provider attempt metadata.
+- MCP invocation records hold per-tool status, policy result, latency and sanitised metadata. See [MCP invocations](/extensions/mcp-invocations/).
+- `usage_cost_events` holds spend for budgets and reports.
+
+Because they're separate, a request can have a log row and an `unpriced` ledger row, or a log row and no ledger row (a cancelled stream), or a ledger row and no log row (a user with request logging turned off). Payload policy, redaction and retention are owned by [Observability and request logs](/observability/).

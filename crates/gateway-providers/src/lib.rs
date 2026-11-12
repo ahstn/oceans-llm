@@ -7,6 +7,7 @@ mod http;
 mod media;
 mod openai_compat;
 mod replay_id;
+mod service_tier;
 mod streaming;
 mod token;
 mod typesafe;

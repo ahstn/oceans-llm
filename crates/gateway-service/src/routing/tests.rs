@@ -124,6 +124,7 @@ impl TestRequest {
             tags: Vec::new(),
             rank: 10,
             routing: policy,
+            service_tiers: None,
         };
         let routes: Vec<_> = [2, 1]
             .into_iter()
@@ -139,8 +140,9 @@ impl TestRequest {
                 pricing_override: None,
                 extra_headers: Map::new(),
                 extra_body: Map::new(),
-                capabilities: ProviderCapabilities::all_enabled(),
+                capabilities: ProviderCapabilities::all_enabled().into(),
                 compatibility: Default::default(),
+                service_tier: None,
             })
             .collect();
         let provider_connections = routes
@@ -189,6 +191,8 @@ impl TestRequest {
                 },
                 routes,
                 provider_connections,
+                capability_hints: Default::default(),
+                billable_service_tiers: std::collections::HashMap::new(),
             },
             extra: BTreeMap::new(),
             headers: BTreeMap::new(),

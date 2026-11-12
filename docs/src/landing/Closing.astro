@@ -1,0 +1,45 @@
+---
+/** The closing call to action, on the same ocean as the hero. */
+import { Image } from "astro:assets";
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import { LinkButton } from "@/components/ui/link-button";
+import heroWave from "@/assets/landing/hero-wave.webp";
+import { closing, hero } from "./content";
+---
+
+<section aria-labelledby="lp-closing" class="lp-container lp-section pb-16 md:pb-24">
+  <div data-mode="dark" class="lp-closing">
+    <div class="lp-closing-art" aria-hidden="true">
+      <Image
+        src={heroWave}
+        alt=""
+        widths={[960, 1600, 2400]}
+        sizes="(min-width: 1216px) 76rem, 100vw"
+        format="webp"
+        quality={80}
+        class="size-full -scale-x-100 object-cover"
+      />
+    </div>
+    <div class="relative mx-auto max-w-[40rem] text-center">
+      <h2 id="lp-closing" class="lp-title text-balance">{closing.title}</h2>
+      <p class="lp-lede mx-auto mt-5">{closing.lede}</p>
+      <div class="mt-9 flex flex-wrap justify-center gap-3">
+        <LinkButton href={closing.primary.href} size="lg" icon>{closing.primary.label}</LinkButton>
+        <LinkButton href={closing.secondary.href} variant="secondary" size="lg" target="_blank" rel="noopener">
+          <Icon name="ph:github-logo" class="size-[1.125rem]" />
+          {closing.secondary.label}
+        </LinkButton>
+      </div>
+      <div class="mt-8 inline-flex">
+        <div class="lp-command">
+          <span class="select-none text-[#b5dde5]/50" aria-hidden="true">$</span>
+          <code>{hero.command}</code>
+          <button type="button" class="lp-copy" data-lp-copy={hero.command} aria-label="Copy command">
+            <Icon name="ph:copy" class="lp-copy-idle size-4" />
+            <Icon name="ph:check" class="lp-copy-done size-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

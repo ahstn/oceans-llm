@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted for implementation. Production use of GitHub App authentication requires the live installation-token canary in [GitHub Copilot Installation-Token Canary](../providers/github-copilot.md#run-the-installation-token-canary).
+Accepted for implementation. Production use of GitHub App authentication requires the live installation-token canary in [GitHub Copilot Installation-Token Canary](https://oceans-llm.com/providers/github-copilot/#run-the-installation-token-canary).
 
 This decision supersedes the model-family routing, fixed request-header profile, and direct-token production-acceptance parts of [GitHub Copilot Gateway Provider Architecture](2026-08-14-github-copilot-provider.md).
 
@@ -35,7 +35,7 @@ The profile values are stored in one checked-in compatibility contract that is t
 
 GitHub App mode requests repository-scoped installation tokens with `copilot_requests: write`. The direct installation-token contract remains a production gate until the live canary passes for the target organization. GitHub documents attribution to the App installation owner. The public billing API supplies an organization and day aggregate, not request-level or installation-level attribution.
 
-The canonical provider and route syntax is in [Configuration Reference](../configuration/configuration-reference.md#github-copilot-provider-and-route-evidence).
+The canonical provider and route syntax is in [Providers](https://oceans-llm.com/configuration/providers/#github_copilot).
 
 ## Trade-Offs
 

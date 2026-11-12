@@ -6,12 +6,12 @@
 ## Implemented By
 
 - Canonical docs:
-  - [../model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)
+  - [Model routing and APIs](https://oceans-llm.com/configuration/model-routing/)
 
 ## Current state
 
-- [../model-routing-and-api-behavior.md](../configuration/model-routing-and-api-behavior.md)
-- [../request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
+- [Model routing and APIs](https://oceans-llm.com/configuration/model-routing/)
+- [Request lifecycle and failure modes](https://oceans-llm.com/reference/request-lifecycle/)
 
 ## Context
 

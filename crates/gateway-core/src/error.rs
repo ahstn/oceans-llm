@@ -1,9 +1,9 @@
-use serde_json::Value;
 use thiserror::Error;
 
 use crate::{
     budgets::{BudgetExceededStatus, BudgetScopeKind},
     domain::{BudgetCadence, Money4},
+    provider::ProviderError,
 };
 
 #[derive(Debug, Error)]
@@ -83,43 +83,6 @@ pub enum RouteError {
 }
 
 #[derive(Debug, Error)]
-pub enum ProviderError {
-    #[error("invalid request for provider: {0}")]
-    InvalidRequest(String),
-    #[error("upstream provider timed out")]
-    Timeout,
-    #[error("upstream provider transport failure: {0}")]
-    Transport(String),
-    #[error("upstream provider returned {status}: {body}")]
-    UpstreamHttp { status: u16, body: String },
-    #[error("provider call failed after billable upstream usage: {source}")]
-    PartialUsage {
-        source: Box<ProviderError>,
-        provider_usage: Option<Value>,
-    },
-    #[error("provider is not implemented: {0}")]
-    NotImplemented(String),
-}
-
-impl ProviderError {
-    #[must_use]
-    pub fn is_retryable(&self) -> bool {
-        match self {
-            Self::PartialUsage { source, .. } => source.is_retryable(),
-            _ => matches!(
-                self,
-                Self::Timeout
-                    | Self::Transport(_)
-                    | Self::UpstreamHttp {
-                        status: 408 | 429 | 500..=599,
-                        ..
-                    }
-            ),
-        }
-    }
-}
-
-#[derive(Debug, Error)]
 pub enum GatewayError {
     #[error(transparent)]
     Auth(#[from] AuthError),
@@ -171,6 +134,11 @@ pub enum GatewayError {
     McpCredentialRequired { server_key: String },
     #[error("MCP credential for server `{server_key}` is expired")]
     McpCredentialExpired { server_key: String },
+    #[error("service tier `{service_tier}` is not allowed for model `{model_key}`")]
+    ServiceTierNotAllowed {
+        model_key: String,
+        service_tier: crate::service_tier::ServiceTier,
+    },
     #[error("internal error: {0}")]
     Internal(String),
 }
@@ -209,6 +177,7 @@ impl GatewayError {
             Self::UnprocessableEntity(_) => 422,
             Self::PayloadTooLarge { .. } => 413,
             Self::GuardrailDenied { .. } => 403,
+            Self::ServiceTierNotAllowed { .. } => 403,
             Self::Store(StoreError::NotFound(_)) => 404,
             Self::Store(
                 StoreError::Conflict(_)
@@ -222,13 +191,17 @@ impl GatewayError {
             | Self::McpCredentialExpired { .. } => 403,
             Self::Provider(ProviderError::PartialUsage { source, .. }) => match source.as_ref() {
                 ProviderError::InvalidRequest(_) => 400,
-                ProviderError::UpstreamHttp { status, .. } => *status,
+                ProviderError::UpstreamHttp { status, .. }
+                | ProviderError::NativeMessagesHttp { status, .. } => *status,
                 ProviderError::Timeout => 504,
                 ProviderError::Transport(_) | ProviderError::PartialUsage { .. } => 502,
                 ProviderError::NotImplemented(_) => 501,
             },
             Self::Provider(ProviderError::InvalidRequest(_)) => 400,
-            Self::Provider(ProviderError::UpstreamHttp { status, .. }) => *status,
+            Self::Provider(
+                ProviderError::UpstreamHttp { status, .. }
+                | ProviderError::NativeMessagesHttp { status, .. },
+            ) => *status,
             Self::Provider(ProviderError::Timeout) => 504,
             Self::Provider(ProviderError::Transport(_)) => 502,
             Self::Route(RouteError::NoRoutesAvailable(_)) => 503,
@@ -251,7 +224,7 @@ impl GatewayError {
             | Self::UnprocessableEntity(_)
             | Self::DuplicateUsageRecord { .. } => "invalid_request_error",
             Self::BatchUsageConflict { .. } => "internal_error",
-            Self::GuardrailDenied { .. } => "policy_error",
+            Self::GuardrailDenied { .. } | Self::ServiceTierNotAllowed { .. } => "policy_error",
             Self::Route(RouteError::ModelNotFound(_)) => "not_found_error",
             Self::Route(_) => "routing_error",
             Self::Store(StoreError::NotFound(_)) => "not_found_error",
@@ -317,13 +290,17 @@ impl GatewayError {
                 ProviderError::Transport(_) | ProviderError::PartialUsage { .. } => {
                     "upstream_transport"
                 }
-                ProviderError::UpstreamHttp { .. } => "upstream_http_error",
+                ProviderError::UpstreamHttp { .. } | ProviderError::NativeMessagesHttp { .. } => {
+                    "upstream_http_error"
+                }
                 ProviderError::NotImplemented(_) => "provider_not_implemented",
                 ProviderError::InvalidRequest(_) => "invalid_request",
             },
             Self::Provider(ProviderError::Timeout) => "upstream_timeout",
             Self::Provider(ProviderError::Transport(_)) => "upstream_transport",
-            Self::Provider(ProviderError::UpstreamHttp { .. }) => "upstream_http_error",
+            Self::Provider(
+                ProviderError::UpstreamHttp { .. } | ProviderError::NativeMessagesHttp { .. },
+            ) => "upstream_http_error",
             Self::Provider(ProviderError::NotImplemented(_)) => "provider_not_implemented",
             Self::Provider(ProviderError::InvalidRequest(_)) => "invalid_request",
             Self::InvalidRequest(_) | Self::DuplicateUsageRecord { .. } => "invalid_request",
@@ -332,6 +309,7 @@ impl GatewayError {
             Self::PayloadTooLarge { .. } => "request_body_too_large",
             Self::RateLimited(_) => "rate_limited",
             Self::GuardrailDenied { .. } => "guardrail_policy_denied",
+            Self::ServiceTierNotAllowed { .. } => "service_tier_not_allowed",
             Self::NotImplemented(_) => "not_implemented",
             Self::McpUpstreamAuthRequired { .. } => "mcp_upstream_auth_required",
             Self::McpCredentialRequired { .. } => "credential_required",

@@ -1,6 +1,6 @@
 # Release Process
 
-`See also`: [Contributing](../../../CONTRIBUTING.md), [Deploy and Operations](../../setup/deploy-and-operations.md), [Admin Runbooks](../../operations/operator-runbooks.md), [ADR: Cocogitto Releases, git-cliff Changelogs, and GHCR Image Publishing](../../adr/2026-03-06-release-versioning-and-ghcr-publishing.md), [ADR: git-cliff Owns Release Versioning and a Pull-Request Changelog](../../adr/2026-10-18-git-cliff-release-versioning-and-pull-request-changelog.md)
+`See also`: [Contributing](../../../CONTRIBUTING.md), [Topology and operations](https://oceans-llm.com/setup/deploy-and-operations/), [Admin Runbooks](https://oceans-llm.com/operations/admin-runbooks/), [ADR: Cocogitto Releases, git-cliff Changelogs, and GHCR Image Publishing](../../adr/2026-03-06-release-versioning-and-ghcr-publishing.md), [ADR: git-cliff Owns Release Versioning and a Pull-Request Changelog](../../adr/2026-10-18-git-cliff-release-versioning-and-pull-request-changelog.md)
 
 This runbook explains how maintainers publish an Oceans LLM release.
 
@@ -67,8 +67,8 @@ mise run release
 
 The command completes these steps:
 
-1. Refresh the vendored pricing catalog and the Artificial Analysis intelligence, coding, and agentic indexes. These run as `mise` dependencies of the release task.
-2. Check that `main` matches `origin/main` and has no tracked changes other than those two snapshots.
+1. Refresh the vendored models.dev, OpenRouter, and LiteLLM catalog snapshots and the Artificial Analysis intelligence, coding, and agentic indexes. These run as `mise` dependencies of the release task.
+2. Check that `main` matches `origin/main` and has no tracked changes other than those snapshots.
 3. Ask git-cliff to calculate the next version from the merged pull requests.
 4. Update workspace Cargo versions.
 5. Add the new section to the top of `CHANGELOG.md`.

@@ -2,37 +2,63 @@
 mod catalog;
 pub(crate) mod listing;
 pub(crate) mod litellm;
-pub use catalog::{FieldConflict, MergeReport, SupplementProvenance};
+pub(crate) mod service_tiers;
+pub use crate::pricing_catalog::{
+    merge::{
+        FieldConflict, LimitProvenance, MergedModelProvenance, MergedModelReport,
+        MetadataProvenance, SourceValue,
+    },
+    sources::CatalogSourceId,
+};
 pub use listing::{
     CapabilitySupport, ContextManagementCapability, EffortCapability, ModelArchitecture,
     ModelCapabilities as AnthropicModelCapabilities, ModelCard, ModelsListResponse,
     ThinkingCapability, ThinkingTypes,
 };
 pub use litellm::{ModelGroupInfo, ModelGroupInfoResponse, ModelGroupMode};
+pub use service_tiers::AdapterServiceTiers;
 use std::collections::{BTreeSet, HashMap};
 
 use crate::model_resolution::{
     alias_chain_reasoning_ceiling, execution_model_from_snapshot, load_missing_alias_targets,
 };
 use gateway_core::{
-    GatewayError, GatewayModel, ModelRepository, ModelRoute, ProviderCapabilities,
-    ProviderConnection, ProviderRepository, ReasoningEffort,
+    GatewayError, GatewayModel, ModelRepository, ModelRoute, Money4, ProviderCapabilities,
+    ProviderConnection, ProviderRepository, ReasoningEffort, RoutePricingOverride, ServiceTier,
+    infer_route_capabilities,
 };
 use serde::Serialize;
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::pricing_catalog::{
     PricingCatalogCostDocument, PricingCatalogLimitDocument, PricingCatalogModalitiesDocument,
-    PricingCatalogSnapshot, PricingCatalogSnapshotMetadata, catalog_metadata_target_for_route,
-    catalog_pricing_supported_for_route, metadata::CatalogModelMetadata,
+    PricingCatalogServiceTierCost, PricingCatalogSnapshot, catalog_metadata_target_for_route,
+    catalog_pricing_location_supported, metadata::CatalogModelMetadata,
 };
+
+/// The `/v1/model-metadata` response shape version; bump it on breaking shape changes.
+const MODEL_METADATA_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Serialize)]
 pub struct ModelMetadataResponse {
     pub schema_version: u32,
-    pub catalog: PricingCatalogSnapshotMetadata,
-    pub supplement: SupplementProvenance,
+    /// The snapshot each catalog source contributed to the merged catalog, in precedence
+    /// order.
+    pub sources: Vec<CatalogSourceProvenance>,
     pub data: Vec<ModelMetadata>,
+}
+
+/// Provenance of the snapshot one catalog source contributed.
+#[derive(Debug, Serialize)]
+pub struct CatalogSourceProvenance {
+    pub source: CatalogSourceId,
+    /// Where the snapshot came from, such as `models_dev` or `vendored_litellm`.
+    pub origin: String,
+    pub etag: Option<String>,
+    pub checksum: Option<String>,
+    #[serde(with = "time::serde::rfc3339")]
+    pub fetched_at: OffsetDateTime,
 }
 
 #[derive(Debug, Serialize)]
@@ -41,6 +67,8 @@ pub struct ModelMetadata {
     pub enabled_route_count: usize,
     pub limits: PricingCatalogLimitDocument,
     pub capabilities: ModelCapabilities,
+    /// Every tier a request can be served at, ascending; empty when no route serves chat.
+    pub service_tiers: Vec<ServiceTier>,
     /// Each entry describes one enabled route. This is not a health probe.
     pub routes: Vec<RouteMetadata>,
 }
@@ -55,12 +83,15 @@ pub struct ModelCapabilities {
 
 #[derive(Debug, Serialize)]
 pub struct RouteMetadata {
-    pub merge_report: MergeReport,
-    pub deprecated_date: Option<String>,
+    /// Which catalog source supplied each field and where sources disagreed. Null when the
+    /// route has no catalog entry.
+    pub merge_report: Option<MergedModelReport>,
     pub limits: PricingCatalogLimitDocument,
     pub capabilities: ModelCapabilities,
     pub catalog_metadata: Option<CatalogModelMetadata>,
     pub modalities: Option<PricingCatalogModalitiesDocument>,
+    /// The tier the route forces on every request, whatever the caller asks for.
+    pub service_tier: Option<ServiceTier>,
     /// USD per million tokens. Null means unknown or unsupported billing conditions.
     pub pricing: Option<PricingCatalogCostDocument>,
     pub pricing_source: Option<&'static str>,
@@ -74,6 +105,7 @@ pub(crate) async fn list_metadata<R>(
     repo: &R,
     models: Vec<GatewayModel>,
     snapshot: &PricingCatalogSnapshot,
+    adapter: &dyn AdapterServiceTiers,
 ) -> Result<ModelMetadataResponse, GatewayError>
 where
     R: ModelRepository + ProviderRepository,
@@ -83,19 +115,22 @@ where
         .iter()
         .enumerate()
         .map(|(index, model)| {
-            let details = loaded
-                .enabled_routes(index)
-                .map(|route| {
-                    route_metadata(route, loaded.providers.get(&route.provider_key), snapshot)
-                })
-                .collect::<Vec<_>>();
-            summarize(model.model_key.clone(), details)
+            listing::ModelView::build(&loaded, index, model, snapshot, adapter).summary
         })
         .collect();
     Ok(ModelMetadataResponse {
-        schema_version: 1,
-        catalog: snapshot.metadata.clone(),
-        supplement: catalog::snapshot().provenance.clone(),
+        schema_version: MODEL_METADATA_SCHEMA_VERSION,
+        sources: snapshot
+            .sources
+            .iter()
+            .map(|(&source, metadata)| CatalogSourceProvenance {
+                source,
+                origin: metadata.source.clone(),
+                etag: metadata.etag.clone(),
+                checksum: metadata.checksum.clone(),
+                fetched_at: metadata.fetched_at,
+            })
+            .collect(),
         data,
     })
 }
@@ -187,24 +222,34 @@ fn route_metadata(
         limits.input = limits.input.map(|value| value.min(context));
         limits.output = limits.output.map(|value| value.min(context));
     }
+    let hints = provider
+        .map(|provider| crate::capability_hints::hints_for_route(snapshot, provider, route))
+        .unwrap_or_default();
     let transport = crate::effective_route_metadata::effective_provider_route_capabilities(
-        Some(route.capabilities),
-        provider,
-        Some(route),
+        route, provider, hints,
     );
+    // Explicit and inferred route settings: a declared `true` is final, so catalog flags only
+    // decide fields the route leaves open.
+    let declared = route.capabilities.or(infer_route_capabilities(
+        route,
+        provider.map_or("", |provider| provider.provider_type.as_str()),
+    ));
     let metadata = catalog.metadata.as_ref();
     let capabilities = ModelCapabilities {
         reasoning: metadata.and_then(|metadata| metadata.reasoning),
         tools: gated(
             transport.tools && provider.is_some(),
+            declared.tools,
             metadata.and_then(|metadata| metadata.tool_call),
         ),
         structured_output: gated(
             transport.json_schema && provider.is_some(),
+            declared.json_schema,
             metadata.and_then(|metadata| metadata.structured_output),
         ),
         vision: gated(
             transport.vision && provider.is_some(),
+            declared.vision,
             catalog.modalities.as_ref().and_then(|modalities| {
                 (!modalities.input.is_empty())
                     .then(|| modalities.input.iter().any(|value| value == "image"))
@@ -212,36 +257,23 @@ fn route_metadata(
         ),
     };
     let (pricing, pricing_source) = if let Some(pricing) = &route.pricing_override {
-        (
-            Some(PricingCatalogCostDocument {
-                input: Some(pricing.input_cost_per_million_tokens.format_4dp()),
-                output: Some(pricing.output_cost_per_million_tokens.format_4dp()),
-                cache_read: pricing
-                    .cache_read_cost_per_million_tokens
-                    .map(|value| value.format_4dp()),
-                cache_write: pricing
-                    .cache_write_cost_per_million_tokens
-                    .map(|value| value.format_4dp()),
-                ..Default::default()
-            }),
-            Some("configured_override"),
-        )
-    } else if provider
-        .zip(target.as_ref())
-        .is_some_and(|(provider, (id, _))| catalog_pricing_supported_for_route(provider, route, id))
-    {
-        let source = catalog.pricing.as_ref().map(|_| "catalog");
-        (catalog.pricing, source)
+        (Some(override_cost(pricing)), Some("configured_override"))
     } else {
-        (None, None)
+        let pricing = provider
+            .zip(target.as_ref())
+            .and_then(|(provider, (id, _))| {
+                catalog_route_cost(provider, route, id, catalog.pricing)
+            });
+        let source = pricing.as_ref().map(|_| "catalog");
+        (pricing, source)
     };
     RouteMetadata {
         limits,
         capabilities,
         catalog_metadata: catalog.metadata,
         merge_report: catalog.merge_report,
-        deprecated_date: catalog.deprecated_date,
         modalities: with_image_generation(catalog.modalities, transport),
+        service_tier: route.service_tier,
         pricing,
         pricing_source,
         display_name: catalog.display_name,
@@ -249,13 +281,76 @@ fn route_metadata(
     }
 }
 
-fn gated(transport: bool, catalog: Option<bool>) -> Option<bool> {
-    if transport { catalog } else { Some(false) }
+/// A route override's rates: the base fields price the tier the route serves (its forced
+/// tier, else default), and `service_tiers` carries the flat rates it sets for other tiers.
+fn override_cost(pricing: &RoutePricingOverride) -> PricingCatalogCostDocument {
+    let rate = |value: Money4| value.format_4dp();
+    PricingCatalogCostDocument {
+        input: Some(rate(pricing.input_cost_per_million_tokens)),
+        output: Some(rate(pricing.output_cost_per_million_tokens)),
+        cache_read: pricing.cache_read_cost_per_million_tokens.map(rate),
+        cache_write: pricing.cache_write_cost_per_million_tokens.map(rate),
+        service_tiers: pricing
+            .service_tiers
+            .iter()
+            .map(|tier| {
+                let cost = PricingCatalogServiceTierCost {
+                    input: Some(rate(tier.input_cost_per_million_tokens)),
+                    output: Some(rate(tier.output_cost_per_million_tokens)),
+                    cache_read: tier.cache_read_cost_per_million_tokens.map(rate),
+                    cache_write: tier.cache_write_cost_per_million_tokens.map(rate),
+                    context_tiers: Vec::new(),
+                };
+                (tier.service_tier, cost)
+            })
+            .collect(),
+        ..Default::default()
+    }
 }
 
-/// A route opted into `/v1/images` outputs images even when the catalog (models.dev has no
-/// image-only models such as `openai/gpt-image-*`) lacks modality data. The images prompt is
-/// text, and only a chat-capable transport also answers with text.
+/// The catalog rates `route` bills. A route forcing a non-default tier bills that tier's
+/// catalog schedule, reported as the route's base rates; with no schedule it has no price.
+fn catalog_route_cost(
+    provider: &ProviderConnection,
+    route: &ModelRoute,
+    pricing_provider_id: &str,
+    pricing: Option<PricingCatalogCostDocument>,
+) -> Option<PricingCatalogCostDocument> {
+    if !catalog_pricing_location_supported(provider, pricing_provider_id) {
+        return None;
+    }
+    let Some(tier) = route
+        .service_tier
+        .filter(|tier| *tier != ServiceTier::Default)
+    else {
+        return pricing;
+    };
+    let schedule = pricing?.service_tiers.remove(&tier)?;
+    Some(PricingCatalogCostDocument {
+        input: schedule.input,
+        output: schedule.output,
+        cache_read: schedule.cache_read,
+        cache_write: schedule.cache_write,
+        tiers: schedule.context_tiers,
+        ..Default::default()
+    })
+}
+
+/// `Some(false)` when the route cannot serve the feature, `Some(true)` when the route declares
+/// it, and otherwise the catalog's answer.
+fn gated(transport: bool, declared: Option<bool>, catalog: Option<bool>) -> Option<bool> {
+    if !transport {
+        Some(false)
+    } else if declared == Some(true) {
+        Some(true)
+    } else {
+        catalog
+    }
+}
+
+/// A route opted into `/v1/images` outputs images even when the catalog lacks modality data
+/// for its model. The images prompt is text, and only a chat-capable transport also answers
+/// with text.
 fn with_image_generation(
     modalities: Option<PricingCatalogModalitiesDocument>,
     transport: ProviderCapabilities,
@@ -276,7 +371,11 @@ fn with_image_generation(
     Some(modalities)
 }
 
-fn summarize(id: String, routes: Vec<RouteMetadata>) -> ModelMetadata {
+fn summarize(
+    id: String,
+    routes: Vec<RouteMetadata>,
+    service_tiers: Vec<ServiceTier>,
+) -> ModelMetadata {
     let limits = PricingCatalogLimitDocument {
         context: minimum(routes.iter().map(|route| route.limits.context)),
         input: minimum(routes.iter().map(|route| route.limits.input)),
@@ -297,6 +396,7 @@ fn summarize(id: String, routes: Vec<RouteMetadata>) -> ModelMetadata {
         enabled_route_count: routes.len(),
         limits,
         capabilities,
+        service_tiers,
         routes,
     }
 }

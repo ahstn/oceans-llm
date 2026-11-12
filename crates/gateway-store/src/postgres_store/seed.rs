@@ -6,6 +6,7 @@ use crate::seed::{
     upsert_unless_manually_overridden, validate_seed_service_account_team_references,
 };
 use crate::shared::{parse_uuid, serialize_json, serialize_optional_json};
+use gateway_core::ServiceTier;
 
 impl PostgresStore {
     pub async fn seed_update_identity_user_profile(
@@ -262,13 +263,15 @@ impl PostgresStore {
                 routing.validate().map_err(StoreError::Serialization)?;
             }
             let routing_policy_json = serialize_optional_json(model.routing.as_ref())?;
+            let service_tiers_json = serialize_optional_json(model.service_tiers.as_ref())?;
 
             sqlx::query(
                 r#"
                 INSERT INTO gateway_models (
                     id, model_key, alias_target_model_id, max_reasoning_effort, description,
-                    tags_json, rank, created_at, updated_at, routing_policy_json
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9)
+                    tags_json, rank, created_at, updated_at, routing_policy_json,
+                    service_tiers_json
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9, $10)
                 ON CONFLICT(model_key) DO UPDATE SET
                     alias_target_model_id = excluded.alias_target_model_id,
                     max_reasoning_effort = excluded.max_reasoning_effort,
@@ -276,6 +279,7 @@ impl PostgresStore {
                     tags_json = excluded.tags_json,
                     rank = excluded.rank,
                     routing_policy_json = excluded.routing_policy_json,
+                    service_tiers_json = excluded.service_tiers_json,
                     updated_at = excluded.updated_at
                 "#,
             )
@@ -288,6 +292,7 @@ impl PostgresStore {
             .bind(model.rank)
             .bind(now_unix)
             .bind(routing_policy_json)
+            .bind(service_tiers_json)
             .execute(&self.pool)
             .await
             .map_err(to_query_error)?;
@@ -350,6 +355,7 @@ impl PostgresStore {
                     route.route_key.as_deref(),
                     &route.provider_key,
                     &route.upstream_model,
+                    route.service_tier,
                     route.priority,
                     route_index,
                 );
@@ -369,9 +375,9 @@ impl PostgresStore {
                         id, model_id, provider_key, upstream_model, priority, weight, enabled,
                         context_window_tokens, pricing_override_json, extra_headers_json,
                         extra_body_json, capabilities_json, compatibility_json, created_at,
-                        updated_at
+                        updated_at, service_tier
                     ) VALUES (
-                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $14
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $14, $15
                     )
                     ON CONFLICT(id) DO UPDATE SET
                         priority = excluded.priority,
@@ -383,6 +389,7 @@ impl PostgresStore {
                         extra_body_json = excluded.extra_body_json,
                         capabilities_json = excluded.capabilities_json,
                         compatibility_json = excluded.compatibility_json,
+                        service_tier = excluded.service_tier,
                         updated_at = excluded.updated_at
                     "#,
                 )
@@ -400,6 +407,7 @@ impl PostgresStore {
                 .bind(capabilities_json)
                 .bind(compatibility_json)
                 .bind(now_unix)
+                .bind(route.service_tier.map(ServiceTier::as_str))
                 .execute(&self.pool)
                 .await
                 .map_err(to_query_error)?;

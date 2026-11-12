@@ -5,8 +5,8 @@
 
 ## Current state
 
-- [../deploy-and-operations.md](../setup/deploy-and-operations.md)
-- [../runtime-bootstrap-and-access.md](../setup/runtime-bootstrap-and-access.md)
+- [Topology and operations](https://oceans-llm.com/setup/deploy-and-operations/)
+- [Start up and first access](https://oceans-llm.com/setup/first-access/)
 
 ## Context
 

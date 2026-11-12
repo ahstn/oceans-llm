@@ -175,6 +175,7 @@ impl RoutingHarness {
             }),
             routes: provider_keys.into_iter().map(seed_route).collect(),
             allowlist: None,
+            service_tiers: None,
         };
         state
             .store
@@ -269,8 +270,9 @@ fn seed_route(provider_key: &str) -> SeedModelRoute {
         pricing_override: None,
         extra_headers: Default::default(),
         extra_body: Default::default(),
-        capabilities: ProviderCapabilities::all_enabled(),
+        capabilities: ProviderCapabilities::all_enabled().into(),
         compatibility: Default::default(),
+        service_tier: None,
     }
 }
 

@@ -1,6 +1,6 @@
 use gateway_core::claude_models::{
     ClaudeThinkingOff, claude_thinking_off, contains_exact_claude_model_marker,
-    normalize_claude_model,
+    is_rolling_claude_alias, normalize_claude_model,
 };
 
 use crate::types::ThinkingPolicy;
@@ -50,9 +50,10 @@ pub fn infer_thinking_policy(
 
 fn classify_model_family(value: &str) -> Option<ThinkingPolicy> {
     let claude = normalize_claude_model(value);
-    if SAFE_EFFORT_MODEL_MARKERS
-        .iter()
-        .any(|marker| claude.contains(marker))
+    if is_rolling_claude_alias(value)
+        || SAFE_EFFORT_MODEL_MARKERS
+            .iter()
+            .any(|marker| claude.contains(marker))
         || SAFE_EFFORT_EXACT_MODEL_MARKERS
             .iter()
             .any(|marker| contains_exact_claude_model_marker(&claude, marker))

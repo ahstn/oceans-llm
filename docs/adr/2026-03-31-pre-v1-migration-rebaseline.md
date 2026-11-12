@@ -13,8 +13,8 @@
   - [../../crates/gateway-store/migrations/V17__baseline.sql](../../crates/gateway-store/migrations/V17__baseline.sql)
   - [../../crates/gateway-store/migrations/postgres/V17__baseline.sql](../../crates/gateway-store/migrations/postgres/V17__baseline.sql)
 - Canonical operator docs:
-  - [../setup/deploy-and-operations.md](../setup/deploy-and-operations.md)
-  - [../operations/operator-runbooks.md](../operations/operator-runbooks.md)
+  - [Topology and operations](https://oceans-llm.com/setup/deploy-and-operations/)
+  - [Admin runbooks](https://oceans-llm.com/operations/admin-runbooks/)
 
 ## Context
 

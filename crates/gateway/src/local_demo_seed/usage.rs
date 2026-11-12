@@ -1,3 +1,6 @@
+use gateway_core::{ServiceTier, ServiceTierOutcome};
+use serde_json::Value;
+
 use super::{DemoPayloadProfile, LocalDemoRequestFixture, agent_session_fixtures};
 
 pub(super) const LOCAL_DEMO_REQUESTS: &[LocalDemoRequestFixture] = &[
@@ -1278,6 +1281,34 @@ pub(super) fn demo_cache_split(fixture: &LocalDemoRequestFixture) -> Option<(i64
         cache_read_tokens,
         cache_write_tokens,
     ))
+}
+
+/// The tiers a few OpenAI demo requests asked for and were served: an interactive priority
+/// request, a flex nightly job, and a priority request the provider served at default.
+/// Other requests name no tier.
+pub(super) fn demo_service_tiers(fixture: &LocalDemoRequestFixture) -> ServiceTierOutcome {
+    let (requested, served) = match fixture.request_id {
+        "demo-req-001" => (ServiceTier::Priority, ServiceTier::Priority),
+        "demo-req-002" => (ServiceTier::Flex, ServiceTier::Flex),
+        "demo-req-005" => (ServiceTier::Priority, ServiceTier::Default),
+        _ => return ServiceTierOutcome::default(),
+    };
+    ServiceTierOutcome {
+        requested: Some(requested),
+        served: Some(served),
+    }
+}
+
+/// The request-log metadata the gateway records for `tiers`.
+pub(super) fn demo_service_tier_metadata(
+    tiers: ServiceTierOutcome,
+) -> impl Iterator<Item = (String, Value)> {
+    [
+        ("service_tier", tiers.requested),
+        ("served_service_tier", tiers.served),
+    ]
+    .into_iter()
+    .filter_map(|(key, tier)| Some((key.to_string(), Value::String(tier?.as_str().to_string()))))
 }
 
 /// FNV-1a, so demo splits stay identical across runs and platforms.

@@ -1,0 +1,43 @@
+---
+/** The landing page footer: the brand, the licence, and the main doc links. */
+import Logo from "@/components/Logo.astro";
+import { footerColumns, LICENSE_URL } from "./content";
+
+const external = (href: string) => /^https?:\/\//.test(href);
+---
+
+<footer class="border-t border-border">
+  <div class="lp-container grid gap-12 py-14 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+    <div>
+      <a href="/" class="inline-flex text-foreground no-underline">
+        <Logo />
+      </a>
+      <p class="mt-4 max-w-[22rem] text-sm leading-6 text-muted-foreground">
+        One gateway for your organisation's AI traffic. Open source under{" "}
+        <a href={LICENSE_URL} target="_blank" rel="noopener" class="lp-link-inline">AGPL-3.0</a>.
+      </p>
+    </div>
+    <nav aria-label="Footer" class="grid grid-cols-2 gap-8 sm:grid-cols-3">
+      {
+        footerColumns.map((column) => (
+          <div>
+            <h2 class="text-xs font-medium text-foreground">{column.title}</h2>
+            <ul class="mt-4 grid gap-2.5">
+              {column.links.map((link) => (
+                <li>
+                  <a
+                    href={link.href}
+                    class="text-sm text-muted-foreground no-underline transition-colors hover:text-foreground"
+                    {...(external(link.href) ? { target: "_blank", rel: "noopener" } : {})}
+                  >
+                    {link.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
+      }
+    </nav>
+  </div>
+</footer>

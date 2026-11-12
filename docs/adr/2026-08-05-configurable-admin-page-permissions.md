@@ -5,9 +5,9 @@
 
 ## Current state
 
-- [Configuration Reference](../configuration/configuration-reference.md#permissions)
-- [Identity and Access](../access/identity-and-access.md#admin-page-permission-groups)
-- [Admin Control Plane](../access/admin-control-plane.md#admin-auth-and-session-behavior)
+- [Auth and access settings](https://oceans-llm.com/access/access-settings/#permissions)
+- [Identity and Access](https://oceans-llm.com/access/identity-and-access/#admin-ui-access)
+- [Admin Control Plane](https://oceans-llm.com/access/admin-control-plane/#sign-in-and-sessions)
 
 ## Context
 

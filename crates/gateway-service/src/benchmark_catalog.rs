@@ -7,13 +7,13 @@
 use std::{
     collections::{BTreeMap, HashMap},
     sync::LazyLock,
-    time::Duration,
 };
 
 use anyhow::Context;
-use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
+
+use crate::catalog_fetch::{CatalogFetch, catalog_http_client, fetch_bounded};
 
 pub const BENCHMARK_ATTRIBUTION: &str = "Benchmark scores by Artificial Analysis (artificialanalysis.ai), retrieved via OpenRouter (openrouter.ai).";
 pub const DEFAULT_BENCHMARK_SOURCE_URL: &str =
@@ -405,39 +405,16 @@ const MAX_BENCHMARK_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 pub async fn fetch_openrouter_benchmark_models(
     source_url: &str,
 ) -> anyhow::Result<Vec<OpenRouterBenchmarkModel>> {
-    let response = Client::builder()
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(30))
-        .build()
-        .context("failed building benchmark HTTP client")?
-        .get(source_url)
-        .send()
+    let request = catalog_http_client().get(source_url);
+    let fetched = fetch_bounded(request, MAX_BENCHMARK_RESPONSE_BYTES)
         .await
         .with_context(|| format!("failed fetching benchmarks from `{source_url}`"))?;
-    let status = response.status();
-    if status != StatusCode::OK {
-        anyhow::bail!("benchmark fetch returned HTTP {}", status.as_u16());
-    }
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_BENCHMARK_RESPONSE_BYTES as u64)
-    {
-        anyhow::bail!("benchmark response exceeds {MAX_BENCHMARK_RESPONSE_BYTES} bytes");
-    }
-    let mut response = response;
-    let mut body = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .context("failed reading benchmark response")?
-    {
-        if body.len() + chunk.len() > MAX_BENCHMARK_RESPONSE_BYTES {
-            anyhow::bail!("benchmark response exceeds {MAX_BENCHMARK_RESPONSE_BYTES} bytes");
-        }
-        body.extend_from_slice(&chunk);
-    }
-    let body = String::from_utf8(body).context("benchmark response is not UTF-8")?;
-    parse_openrouter_models(&body)
+    // No `If-None-Match` is sent, so a 304 is a misbehaving server.
+    let CatalogFetch::Fetched(fetched) = fetched else {
+        anyhow::bail!("benchmark fetch returned HTTP 304 to an unconditional request");
+    };
+    let body = std::str::from_utf8(&fetched.bytes).context("benchmark response is not UTF-8")?;
+    parse_openrouter_models(body)
 }
 
 fn parse_openrouter_models(body: &str) -> anyhow::Result<Vec<OpenRouterBenchmarkModel>> {

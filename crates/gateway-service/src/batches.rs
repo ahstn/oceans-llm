@@ -4,10 +4,11 @@ use gateway_core::{
     AuthenticatedApiKey, BatchEndpoint, BatchJobRecord, BatchPricingSnapshot, BatchPricingStatus,
     BatchRepository, BatchStatus, BatchTokenRates, BudgetAlertRepository, BudgetRepository,
     GatewayError, IdentityRepository, McpToolInvocationRepository, ModelRepository, ModelRoute,
-    Money4, NewBatchItem, NewBatchJob, PricingCatalogRepository, PricingResolution,
-    ProviderRegistry, ProviderRepository, ProviderRequestContext, RequestLogRepository,
-    RoutePlanner, StoreHealth, enforce_reasoning_effort_value,
-    is_supported_vertex_google_chat_upstream_model,
+    Money4, NewBatchItem, NewBatchJob, PartialCapabilities, PricingCatalogRepository,
+    PricingResolution, ProviderCapabilities, ProviderRegistry, ProviderRepository,
+    ProviderRequestContext, RequestLogRepository, RoutePlanner, SERVICE_TIER_REQUEST_FIELDS,
+    ServiceTier, StoreHealth, effective_route_capabilities, enforce_reasoning_effort_value,
+    is_supported_vertex_google_chat_upstream_model, take_requested_service_tier,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -17,47 +18,44 @@ use uuid::Uuid;
 
 use crate::{
     GatewayService,
-    service::{CacheUsageNormalization, UsageSummary, usage_summary_from_value},
+    service::select_context_tier,
+    usage::{CacheUsageNormalization, UsageSummary, usage_summary_from_value},
 };
 
 pub const MAX_BATCH_ITEMS: usize = 50_000;
 
 pub use gateway_core::BatchPricingPolicy;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct BatchPricer {
-    rates: Option<BatchRates>,
-    policy: BatchPricingPolicy,
+    snapshot: BatchPricingSnapshot,
 }
 
 impl BatchPricer {
     #[must_use]
     pub const fn from_snapshot(snapshot: BatchPricingSnapshot) -> Self {
-        Self {
-            rates: snapshot.rates,
-            policy: snapshot.policy,
-        }
+        Self { snapshot }
     }
 
     pub fn price_usage(
         &self,
         provider_usage: Option<&Value>,
     ) -> Result<Option<Money4>, GatewayError> {
-        let Some(rates) = self.rates else {
+        let Some(base) = self.snapshot.rates else {
             return Ok(None);
         };
         let usage = usage_summary_from_value(provider_usage)?;
         if !usage.has_usage() {
             return Ok(None);
         }
-        compute_batch_usage_cost(&usage, rates, self.policy)
+        compute_batch_usage_cost(&usage, self.item_rates(base, &usage), self.snapshot.policy)
     }
 
     pub fn price_usages<'a>(
         &self,
         provider_usages: impl IntoIterator<Item = Option<&'a Value>>,
     ) -> Result<Option<Money4>, GatewayError> {
-        let Some(rates) = self.rates else {
+        let Some(base) = self.snapshot.rates else {
             return Ok(None);
         };
         let mut total_numerator = 0_i128;
@@ -67,7 +65,9 @@ impl BatchPricer {
             if !usage.has_usage() {
                 return Ok(None);
             }
-            let Some(numerator) = batch_usage_cost_numerator(&usage, rates, self.policy)? else {
+            let rates = self.item_rates(base, &usage);
+            let Some(numerator) = batch_usage_cost_numerator(&usage, rates, self.snapshot.policy)?
+            else {
                 return Ok(None);
             };
             total_numerator = total_numerator
@@ -79,6 +79,15 @@ impl BatchPricer {
             return Ok(None);
         }
         money4_from_batch_numerator(total_numerator).map(Some)
+    }
+
+    /// The rates billing one item: `base`, or the context tier the item's own normalized
+    /// prompt tokens select.
+    fn item_rates(&self, base: BatchRates, usage: &UsageSummary) -> BatchRates {
+        match select_context_tier(&self.snapshot.context_tiers, usage.prompt_tokens) {
+            Some(tier) => base.with_context_tier(tier),
+            None => base,
+        }
     }
 }
 
@@ -119,24 +128,35 @@ where
         policy: BatchPricingPolicy,
         occurred_at: OffsetDateTime,
     ) -> Result<BatchPricingSnapshot, GatewayError> {
-        let rates = match self.resolve_route_pricing(route, occurred_at).await? {
-            PricingResolution::Exact { pricing } => Some(BatchRates {
-                input: pricing.input_cost_per_million_tokens,
-                output: pricing.output_cost_per_million_tokens,
-                cache_read: pricing.cache_read_cost_per_million_tokens,
-                cache_write: pricing.cache_write_cost_per_million_tokens,
-                image_output: None,
-            }),
-            PricingResolution::ConfiguredOverride { pricing } => Some(BatchRates {
-                input: Some(pricing.input_cost_per_million_tokens),
-                output: Some(pricing.output_cost_per_million_tokens),
-                cache_read: pricing.cache_read_cost_per_million_tokens,
-                cache_write: pricing.cache_write_cost_per_million_tokens,
-                image_output: pricing.image_output_cost_per_million_tokens,
-            }),
-            PricingResolution::Unpriced { .. } => None,
+        let (rates, context_tiers) = match self.resolve_route_pricing(route, occurred_at).await? {
+            PricingResolution::Exact { pricing } => {
+                let pricing = *pricing;
+                let rates = BatchRates {
+                    input: pricing.input_cost_per_million_tokens,
+                    output: pricing.output_cost_per_million_tokens,
+                    cache_read: pricing.cache_read_cost_per_million_tokens,
+                    cache_write: pricing.cache_write_cost_per_million_tokens,
+                    image_output: pricing.output_image_usd_per_million,
+                };
+                (Some(rates), pricing.context_tiers)
+            }
+            PricingResolution::ConfiguredOverride { pricing } => {
+                let rates = BatchRates {
+                    input: Some(pricing.input_cost_per_million_tokens),
+                    output: Some(pricing.output_cost_per_million_tokens),
+                    cache_read: pricing.cache_read_cost_per_million_tokens,
+                    cache_write: pricing.cache_write_cost_per_million_tokens,
+                    image_output: pricing.image_output_cost_per_million_tokens,
+                };
+                (Some(rates), Vec::new())
+            }
+            PricingResolution::Unpriced { .. } => (None, Vec::new()),
         };
-        Ok(BatchPricingSnapshot { rates, policy })
+        Ok(BatchPricingSnapshot {
+            rates,
+            context_tiers,
+            policy,
+        })
     }
 }
 
@@ -169,7 +189,7 @@ fn batch_usage_cost_numerator(
         CacheUsageNormalization::Unavailable | CacheUsageNormalization::Invalid(_) => {
             components.push((usage.prompt_tokens, rates.input, true));
         }
-        CacheUsageNormalization::Unsupported(_) => return Ok(None),
+        CacheUsageNormalization::Unsupported { .. } => return Ok(None),
     }
     // Image tokens are part of the completion tokens; with an image rate they
     // are charged at it and the rest at the output rate, as in usage pricing.
@@ -241,7 +261,7 @@ pub async fn create_batch<S, P>(
     service: &GatewayService<S, P>,
     providers: &ProviderRegistry,
     auth: &AuthenticatedApiKey,
-    input: CreateBatchInput,
+    mut input: CreateBatchInput,
 ) -> Result<BatchJobRecord, GatewayError>
 where
     S: gateway_core::ApiKeyRepository
@@ -261,6 +281,8 @@ where
     P: RoutePlanner + Send + Sync + 'static,
 {
     validate_input(&input)?;
+    // The hash covers the caller's input as sent, so stripping tier fields below keeps
+    // idempotent replays stable.
     let request_hash = request_hash(&input)?;
     if let Some(existing) = service
         .store()
@@ -279,13 +301,15 @@ where
     let resolved = service.resolve_request(auth, &input.model).await?;
     for item in &input.items {
         enforce_reasoning_effort_value(&item.body, resolved.selection.max_reasoning_effort)
-            .map_err(|error| match error {
-                GatewayError::InvalidRequest(message) => GatewayError::InvalidRequest(format!(
-                    "batch item `{}` {message}",
-                    item.custom_id
-                )),
-                error => error,
+            .map_err(|rejection| {
+                resolved
+                    .selection
+                    .log_reasoning_effort_rejection(None, &rejection);
+                GatewayError::InvalidRequest(format!("batch item `{}` {rejection}", item.custom_id))
             })?;
+    }
+    for item in &mut input.items {
+        take_batch_item_service_tier(item)?;
     }
     let (route, provider) = resolved
         .routes
@@ -295,7 +319,14 @@ where
                 .get(&route.provider_key)
                 .map(|provider| (route, provider))
         })
-        .find(|(route, provider)| route_supports_batch(route, provider.as_ref(), input.endpoint))
+        .find(|(route, provider)| {
+            route_supports_batch(
+                route,
+                resolved.capability_hints_for(route),
+                provider.as_ref(),
+                input.endpoint,
+            )
+        })
         .ok_or_else(|| {
             GatewayError::InvalidRequest(format!(
                 "no configured route supports {:?} batch requests",
@@ -334,6 +365,7 @@ where
         extra_body: route.extra_body.clone(),
         request_headers: BTreeMap::new(),
         compatibility: route.compatibility.clone(),
+        service_tier: None,
     };
     let batch_id = Uuid::new_v4();
     let idempotency_key = input.idempotency_key.clone();
@@ -411,16 +443,31 @@ where
 
 fn route_supports_batch(
     route: &ModelRoute,
+    hints: PartialCapabilities,
     provider: &dyn gateway_core::ProviderClient,
     endpoint: BatchEndpoint,
 ) -> bool {
+    // Batch adapters send no service tier, so a route that forces one cannot run batches.
+    if route
+        .service_tier
+        .is_some_and(|tier| tier != ServiceTier::Default)
+    {
+        return false;
+    }
+    // `batch_capabilities` is the batch adapter ceiling, so the route chain needs no other cap.
     if !provider.batch_capabilities().supports(endpoint) {
         return false;
     }
+    let capabilities = effective_route_capabilities(
+        route,
+        provider.provider_type(),
+        hints,
+        ProviderCapabilities::all_enabled(),
+    );
     let route_supports_endpoint = match endpoint {
-        BatchEndpoint::ChatCompletions => route.capabilities.chat_completions,
-        BatchEndpoint::Responses => route.capabilities.responses,
-        BatchEndpoint::Embeddings => route.capabilities.embeddings,
+        BatchEndpoint::ChatCompletions => capabilities.chat_completions,
+        BatchEndpoint::Responses => capabilities.responses,
+        BatchEndpoint::Embeddings => capabilities.embeddings,
     };
     route_supports_endpoint
         && (provider.provider_type() != "gcp_vertex"
@@ -467,6 +514,31 @@ fn validate_input(input: &CreateBatchInput) -> Result<(), GatewayError> {
     Ok(())
 }
 
+/// Removes every tier-selecting field from a batch item body. Batches bill at the batch
+/// rate and their adapters send no tier, so only an explicit default is accepted; any other
+/// tier is rejected rather than forwarded upstream unpriced.
+fn take_batch_item_service_tier(item: &mut CreateBatchItemInput) -> Result<(), GatewayError> {
+    let Some(body) = item.body.as_object_mut() else {
+        return Ok(());
+    };
+    let mut fields = SERVICE_TIER_REQUEST_FIELDS
+        .into_iter()
+        .filter_map(|field| body.remove(field).map(|value| (field.to_string(), value)))
+        .collect::<BTreeMap<_, _>>();
+    match take_requested_service_tier(&mut fields) {
+        Ok(None | Some(ServiceTier::Default)) => Ok(()),
+        Ok(Some(tier)) => Err(GatewayError::InvalidRequest(format!(
+            "batch item `{}` asks for service tier `{tier}`; batch requests run at the batch rate and cannot select a service tier",
+            item.custom_id
+        ))),
+        Err(GatewayError::InvalidRequest(message)) => Err(GatewayError::InvalidRequest(format!(
+            "batch item `{}` {message}",
+            item.custom_id
+        ))),
+        Err(error) => Err(error),
+    }
+}
+
 fn request_hash(input: &CreateBatchInput) -> Result<String, GatewayError> {
     let bytes = serde_json::to_vec(&(input.endpoint, &input.model, &input.items))
         .map_err(|error| GatewayError::Internal(error.to_string()))?;
@@ -475,10 +547,65 @@ fn request_hash(input: &CreateBatchInput) -> Result<String, GatewayError> {
 
 #[cfg(test)]
 mod tests {
-    use gateway_core::Money4;
+    use gateway_core::{BatchPricingSnapshot, ContextPricingTier, Money4};
     use serde_json::json;
 
-    use super::{BatchPricer, BatchPricingPolicy, BatchRates, MAX_BATCH_ITEMS};
+    use super::{
+        BatchPricer, BatchPricingPolicy, BatchRates, CreateBatchItemInput, MAX_BATCH_ITEMS,
+        take_batch_item_service_tier,
+    };
+
+    fn item(body: serde_json::Value) -> CreateBatchItemInput {
+        CreateBatchItemInput {
+            custom_id: "row-1".to_string(),
+            body,
+        }
+    }
+
+    #[test]
+    fn batch_items_drop_default_tier_fields_before_they_reach_a_provider() {
+        for body in [
+            json!({"messages": [], "service_tier": "default"}),
+            json!({"messages": [], "service_tier": "auto", "speed": "standard"}),
+            json!({"messages": [], "serviceTier": {"type": "default"}}),
+            json!({"messages": [], "service_tier": null}),
+        ] {
+            let mut item = item(body.clone());
+            take_batch_item_service_tier(&mut item)
+                .unwrap_or_else(|error| panic!("{body}: {error}"));
+            assert_eq!(item.body, json!({"messages": []}), "{body}");
+        }
+    }
+
+    #[test]
+    fn batch_items_reject_non_default_and_invalid_tiers() {
+        for (body, expected) in [
+            (
+                json!({"service_tier": "priority"}),
+                "asks for service tier `priority`",
+            ),
+            (json!({"speed": "fast"}), "asks for service tier `priority`"),
+            (
+                json!({"serviceTier": "flex"}),
+                "asks for service tier `flex`",
+            ),
+            (
+                json!({"service_tier": "turbo"}),
+                "unsupported `service_tier` value",
+            ),
+            (
+                json!({"service_tier": "flex", "speed": "fast"}),
+                "asks for `priority`",
+            ),
+        ] {
+            let error =
+                take_batch_item_service_tier(&mut item(body.clone())).expect_err(&body.to_string());
+            assert_eq!(error.http_status_code(), 400, "{body}");
+            let message = error.to_string();
+            assert!(message.contains("batch item `row-1`"), "{message}");
+            assert!(message.contains(expected), "{message}");
+        }
+    }
 
     #[test]
     fn local_batch_cost_rounds_once_after_aggregating_items() {
@@ -487,7 +614,7 @@ mod tests {
             "completion_tokens": 0,
             "total_tokens": 50
         });
-        let pricer = BatchPricer {
+        let pricer = BatchPricer::from_snapshot(BatchPricingSnapshot {
             rates: Some(BatchRates {
                 input: Some(Money4::from_scaled(10_000)),
                 output: Some(Money4::ZERO),
@@ -495,8 +622,9 @@ mod tests {
                 cache_write: None,
                 image_output: None,
             }),
+            context_tiers: Vec::new(),
             policy: BatchPricingPolicy::HalfAllTokenRates,
-        };
+        });
 
         assert_eq!(
             pricer.price_usage(Some(&usage)).expect("item price"),
@@ -507,6 +635,66 @@ mod tests {
                 .price_usages((0..MAX_BATCH_ITEMS).map(|_| Some(&usage)))
                 .expect("batch price"),
             Some(Money4::from_scaled(12_500))
+        );
+    }
+
+    #[test]
+    fn batch_items_pick_their_own_context_tier_before_the_batch_discount() {
+        // $1 / $2 base, $3 input above 1,000 prompt tokens; output inherits the base.
+        let pricer = BatchPricer::from_snapshot(BatchPricingSnapshot {
+            rates: Some(BatchRates {
+                input: Some(Money4::from_scaled(10_000)),
+                output: Some(Money4::from_scaled(20_000)),
+                cache_read: None,
+                cache_write: None,
+                image_output: None,
+            }),
+            context_tiers: vec![ContextPricingTier {
+                above_input_tokens: 1_000,
+                input: Some(Money4::from_scaled(30_000)),
+                output: None,
+                cache_read: None,
+                cache_write: None,
+            }],
+            policy: BatchPricingPolicy::HalfAllTokenRates,
+        });
+        let at_threshold = json!({"prompt_tokens": 1_000, "completion_tokens": 100});
+        let above_threshold = json!({"prompt_tokens": 1_001, "completion_tokens": 100});
+
+        // (1,000 * $1 + 100 * $2) / 1M, halved: $0.0006.
+        assert_eq!(
+            pricer.price_usage(Some(&at_threshold)).expect("base item"),
+            Some(Money4::from_scaled(6))
+        );
+        // (1,001 * $3 + 100 * $2) / 1M, halved: $0.0016015 rounds to $0.0016.
+        assert_eq!(
+            pricer
+                .price_usage(Some(&above_threshold))
+                .expect("tier item"),
+            Some(Money4::from_scaled(16))
+        );
+        // ($0.0012 + $0.003203) halved is $0.0022015, rounded once: $0.0022.
+        assert_eq!(
+            pricer
+                .price_usages([Some(&at_threshold), Some(&above_threshold)])
+                .expect("batch price"),
+            Some(Money4::from_scaled(22))
+        );
+    }
+
+    #[test]
+    fn batch_snapshots_without_context_tiers_still_deserialize() {
+        let snapshot: BatchPricingSnapshot = serde_json::from_value(json!({
+            "rates": {"input": 10_000, "output": 20_000, "cache_read": null, "cache_write": null},
+            "policy": "half_all_token_rates"
+        }))
+        .expect("legacy snapshot");
+
+        assert!(snapshot.context_tiers.is_empty());
+        assert_eq!(
+            snapshot.rates.and_then(|rates| rates.image_output),
+            None,
+            "legacy snapshots also predate image rates"
         );
     }
 }

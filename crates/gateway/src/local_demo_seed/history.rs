@@ -327,8 +327,11 @@ pub(super) async fn insert_history_request(
         cache_read_cost_per_million_tokens: Some(Money4::from_scaled(3_000)),
         cache_write_cost_per_million_tokens: None,
         image_output_cost_per_million_tokens: None,
+        pricing_tier_above_input_tokens: None,
         computed_cost_usd: Money4::from_scaled(request.cost_scaled),
         occurred_at: request.occurred_at,
+        requested_service_tier: None,
+        served_service_tier: None,
     };
     store.insert_usage_ledger_if_absent(&ledger).await?;
     Ok(())

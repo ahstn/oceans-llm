@@ -1,7 +1,9 @@
-use gateway_core::ProviderRequestContext;
+use gateway_core::{ProviderRequestContext, served_service_tier};
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use uuid::Uuid;
+
+use crate::service_tier::report_served_tier;
 
 pub fn normalize_anthropic_response(
     value: &Value,
@@ -77,10 +79,16 @@ pub fn normalize_anthropic_response(
         completion.insert("usage".to_string(), usage);
     }
 
-    Value::Object(completion)
+    // `usage.speed` and `usage.service_tier` stay under `provider_usage`; the translated
+    // response reports the served tier at the top level like OpenAI.
+    let mut completion = Value::Object(completion);
+    report_served_tier(&mut completion, served_service_tier(value));
+    completion
 }
 
-/// Keep opaque classifier verdicts through the common chat representation.
+const ANTHROPIC_MESSAGE_FIELDS: [&str; 3] = ["stop_reason", "stop_sequence", "safeguard_results"];
+
+/// Keep native continuation state and opaque blocks through the common chat representation.
 pub(crate) fn preserve_anthropic_message_metadata(
     message: &mut Map<String, Value>,
     source: &Value,
@@ -88,8 +96,10 @@ pub(crate) fn preserve_anthropic_message_metadata(
     event: &str,
 ) {
     let mut fields = Map::new();
-    if let Some(results) = source.get("safeguard_results") {
-        fields.insert("safeguard_results".to_string(), results.clone());
+    for field in ANTHROPIC_MESSAGE_FIELDS {
+        if let Some(value) = source.get(field) {
+            fields.insert(field.to_string(), value.clone());
+        }
     }
     if event == "message_delta"
         && let Some(results) = source
@@ -98,13 +108,59 @@ pub(crate) fn preserve_anthropic_message_metadata(
     {
         fields.insert("delta".to_string(), json!({"safeguard_results": results}));
     }
-    if fields.is_empty() {
+    // A message_start body is not a completed continuation snapshot.
+    let blocks = (event != "message_start")
+        .then(|| source.get("content").and_then(Value::as_array))
+        .flatten();
+    if fields.is_empty() && blocks.is_none() {
         return;
     }
     let metadata = message
         .entry("provider_metadata")
         .or_insert_with(|| json!({}));
-    metadata[provider_namespace][event] = Value::Object(fields);
+    if !fields.is_empty() {
+        let field = if event == "message_start" {
+            "message"
+        } else {
+            event
+        };
+        metadata[provider_namespace][field] = Value::Object(fields);
+    }
+    if let Some(blocks) = blocks {
+        metadata[provider_namespace]["native_content"] =
+            json!({"source": "anthropic_messages", "blocks": blocks});
+    }
+}
+
+/// Move the completed replay snapshot into terminal metadata. The inline continuation
+/// contract requires retaining one complete block sequence, not another full copy.
+pub(crate) fn attach_owned_anthropic_terminal_replay(
+    message: &mut Map<String, Value>,
+    source: Value,
+    provider_namespace: &str,
+) {
+    let Value::Object(mut source) = source else {
+        return;
+    };
+    let blocks = source.remove("content").filter(Value::is_array);
+    let fields: Map<String, Value> = ANTHROPIC_MESSAGE_FIELDS
+        .into_iter()
+        .filter_map(|field| source.remove_entry(field))
+        .collect();
+    if fields.is_empty() && blocks.is_none() {
+        return;
+    }
+    let metadata = message
+        .entry("provider_metadata")
+        .or_insert_with(|| json!({}));
+    if !fields.is_empty() {
+        metadata[provider_namespace]["message"] = Value::Object(fields);
+    }
+    if let Some(blocks) = blocks {
+        let mut native_content = json!({"source": "anthropic_messages"});
+        native_content["blocks"] = blocks;
+        metadata[provider_namespace]["native_content"] = native_content;
+    }
 }
 
 pub fn extract_anthropic_thinking_blocks(blocks: &[Value]) -> Vec<Value> {
@@ -171,7 +227,7 @@ pub fn extract_anthropic_tool_calls(blocks: &[Value]) -> Vec<Value> {
 pub fn map_anthropic_finish_reason(reason: &str) -> &'static str {
     match reason {
         "end_turn" | "stop_sequence" => "stop",
-        "max_tokens" => "length",
+        "max_tokens" | "model_context_window_exceeded" => "length",
         "tool_use" => "tool_calls",
         "refusal" => "content_filter",
         _ => "stop",
@@ -216,6 +272,13 @@ pub fn map_anthropic_stream_usage(value: &Value, usage_source: &str) -> Option<V
 
 fn map_anthropic_usage_object(usage: &Map<String, Value>, usage_source: &str) -> Option<Value> {
     let mut mapped = Map::new();
+    // OpenRouter bills native Messages too. Keep its authoritative cost at the shared
+    // accounting boundary when translating a native response for Chat Completions clients.
+    for field in ["cost", "is_byok", "cost_details"] {
+        if let Some(value) = usage.get(field) {
+            mapped.insert(field.to_string(), value.clone());
+        }
+    }
     if let Some(input) = usage.get("input_tokens") {
         mapped.insert("prompt_tokens".to_string(), input.clone());
     }

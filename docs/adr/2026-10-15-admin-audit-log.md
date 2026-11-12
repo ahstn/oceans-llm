@@ -6,7 +6,7 @@
 
 ## Current state
 
-- [Admin Audit Log](../access/admin-audit-log.md) describes what is audited and how to read it.
+- [Admin Audit Log](https://oceans-llm.com/access/admin-audit-log/) describes what is audited and how to read it.
 - [Data Relationships](../contributing/reference/data-relationships.md) lists the `audit_logs` columns.
 
 ## Context

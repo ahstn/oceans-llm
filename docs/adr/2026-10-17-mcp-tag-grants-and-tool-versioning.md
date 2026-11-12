@@ -6,8 +6,8 @@
 
 ## Current state
 
-- [MCP Tool Access: Tag rules](../mcp/mcp-tool-access.md#tag-rules)
-- [MCP Tool Access: Tool versions and approval](../mcp/mcp-tool-access.md#tool-versions-and-approval)
+- [MCP Tool Access: Tag rules](https://oceans-llm.com/extensions/mcp-tool-access/#tag-rules)
+- [MCP Tool Access: Tool versions and approval](https://oceans-llm.com/extensions/mcp-tool-access/#tool-versions-and-approval)
 
 ## Context
 

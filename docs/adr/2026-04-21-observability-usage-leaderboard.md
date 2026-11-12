@@ -13,8 +13,8 @@
 ## Current state
 
 - [../operations/budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
-- [../operations/observability-and-request-logs.md](../operations/observability-and-request-logs.md)
-- [../access/admin-control-plane.md](../access/admin-control-plane.md)
+- [Observability and request logs](https://oceans-llm.com/observability/)
+- [Admin control plane](https://oceans-llm.com/access/admin-control-plane/)
 
 ## Context
 

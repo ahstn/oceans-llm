@@ -5,8 +5,8 @@
 
 ## Current state
 
-- [Configuration Reference](../configuration/configuration-reference.md#permissions)
-- [Identity and Access](../access/identity-and-access.md#admin-page-permission-groups)
+- [Auth and access settings](https://oceans-llm.com/access/access-settings/#permissions)
+- [Identity and Access](https://oceans-llm.com/access/identity-and-access/#admin-ui-access)
 - Amends [Configurable Admin Page Permissions](2026-08-05-configurable-admin-page-permissions.md)
 
 ## Context

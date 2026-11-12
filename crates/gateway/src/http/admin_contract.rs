@@ -1,7 +1,9 @@
 use std::{fs, path::Path};
 
 use anyhow::Context;
-use gateway_core::{ModelRoutingPolicy, RoutingStrategy};
+use gateway_core::{
+    ContextPricingTier, ModelRoutingPolicy, RoutingStrategy, ServiceTier, ServiceTierPricing,
+};
 use gateway_service::{
     AdminModelStatus as ServiceAdminModelStatus, BenchmarkMatchKind, BenchmarkMetric,
     ModelIconKey as ServiceModelIconKey, ProviderIconKey as ServiceProviderIconKey,
@@ -378,6 +380,30 @@ pub struct AdminModelRouteView {
     pub weight: f64,
     pub enabled: bool,
     pub provider_configured: bool,
+    /// The tier this route forces on every request, overriding the caller's. Null serves
+    /// the tier the caller asks for.
+    pub service_tier: Option<ServiceTierView>,
+}
+
+/// A provider capacity grade. `priority` is the tier providers call Fast.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ServiceTierView {
+    Default,
+    Flex,
+    Priority,
+    Ultrafast,
+}
+
+impl From<ServiceTier> for ServiceTierView {
+    fn from(tier: ServiceTier) -> Self {
+        match tier {
+            ServiceTier::Default => Self::Default,
+            ServiceTier::Flex => Self::Flex,
+            ServiceTier::Priority => Self::Priority,
+            ServiceTier::Ultrafast => Self::Ultrafast,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, ToSchema)]
@@ -407,6 +433,12 @@ pub struct AdminModelView {
     pub description: Option<String>,
     pub tags: Vec<String>,
     pub allowlist: Option<AdminModelAllowlistView>,
+    /// Non-default service tiers callers may request. Null allows every tier.
+    pub service_tiers: Option<Vec<ServiceTierView>>,
+    /// Every tier a request can be served at, ascending: the tiers the routes' adapters can
+    /// send and routing can bill, limited to the allow-list except for a tier a route forces.
+    /// Empty when no route serves chat.
+    pub available_service_tiers: Vec<ServiceTierView>,
     /// Configured policy. Only visible to platform admins.
     pub routing: Option<AdminModelRoutingPolicyView>,
     /// Configured routes, including disabled routes. Only visible to platform admins.
@@ -421,6 +453,12 @@ pub struct AdminModelView {
     pub output_cost_per_million_tokens_usd_10000: Option<i64>,
     pub cache_read_cost_per_million_tokens_usd_10000: Option<i64>,
     pub cache_write_cost_per_million_tokens_usd_10000: Option<i64>,
+    /// Catalog context tiers for the same primary route as the base prices, ascending by
+    /// threshold. Empty when the price comes from a route pricing override.
+    pub pricing_tiers: Vec<AdminPricingTierView>,
+    /// Rates for non-default service tiers on the same primary route, sorted by tier. A
+    /// request billed at a tier with no rate for a token bucket it used is unpriced.
+    pub pricing_service_tiers: Vec<AdminServiceTierPricingView>,
     pub pricing_source: Option<EffectiveMetadataSourceView>,
     pub pricing_varies_by_route: bool,
     pub context_window_tokens: Option<i64>,
@@ -436,6 +474,68 @@ pub struct AdminModelView {
     pub supports_decisions: Option<bool>,
     pub supports_image_generation: Option<bool>,
     pub client_configurations: Vec<AdminModelClientConfigView>,
+}
+
+/// Rates that replace the base prices for a whole request whose prompt tokens (cache
+/// included) exceed `above_input_tokens`. A null rate inherits the base rate.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminPricingTierView {
+    pub above_input_tokens: i64,
+    pub input_cost_per_million_tokens_usd_10000: Option<i64>,
+    pub output_cost_per_million_tokens_usd_10000: Option<i64>,
+    pub cache_read_cost_per_million_tokens_usd_10000: Option<i64>,
+    pub cache_write_cost_per_million_tokens_usd_10000: Option<i64>,
+}
+
+impl From<ContextPricingTier> for AdminPricingTierView {
+    fn from(tier: ContextPricingTier) -> Self {
+        Self {
+            above_input_tokens: tier.above_input_tokens,
+            input_cost_per_million_tokens_usd_10000: tier.input.map(|value| value.as_scaled_i64()),
+            output_cost_per_million_tokens_usd_10000: tier
+                .output
+                .map(|value| value.as_scaled_i64()),
+            cache_read_cost_per_million_tokens_usd_10000: tier
+                .cache_read
+                .map(|value| value.as_scaled_i64()),
+            cache_write_cost_per_million_tokens_usd_10000: tier
+                .cache_write
+                .map(|value| value.as_scaled_i64()),
+        }
+    }
+}
+
+/// Rates that replace the base prices for a request billed at `service_tier`. Unlike a
+/// context tier, a null rate does not inherit the base rate: the tier has no rate for
+/// that bucket.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminServiceTierPricingView {
+    pub service_tier: ServiceTierView,
+    pub input_cost_per_million_tokens_usd_10000: Option<i64>,
+    pub output_cost_per_million_tokens_usd_10000: Option<i64>,
+    pub cache_read_cost_per_million_tokens_usd_10000: Option<i64>,
+    pub cache_write_cost_per_million_tokens_usd_10000: Option<i64>,
+    /// Context tiers within this service tier, ascending by threshold.
+    pub context_tiers: Vec<AdminPricingTierView>,
+}
+
+impl From<ServiceTierPricing> for AdminServiceTierPricingView {
+    fn from(tier: ServiceTierPricing) -> Self {
+        Self {
+            service_tier: tier.service_tier.into(),
+            input_cost_per_million_tokens_usd_10000: tier.input.map(|value| value.as_scaled_i64()),
+            output_cost_per_million_tokens_usd_10000: tier
+                .output
+                .map(|value| value.as_scaled_i64()),
+            cache_read_cost_per_million_tokens_usd_10000: tier
+                .cache_read
+                .map(|value| value.as_scaled_i64()),
+            cache_write_cost_per_million_tokens_usd_10000: tier
+                .cache_write
+                .map(|value| value.as_scaled_i64()),
+            context_tiers: tier.context_tiers.into_iter().map(Into::into).collect(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -549,7 +649,34 @@ pub struct GenerateModelClientConfigsResponse {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct RefreshModelPricingCatalogResponse {
-    pub refreshed: bool,
+    /// One entry per catalog source, in the order models_dev, openrouter, litellm.
+    pub sources: Vec<PricingCatalogSourceRefreshView>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PricingCatalogSourceRefreshView {
+    pub source: PricingCatalogSourceView,
+    pub outcome: PricingCatalogRefreshOutcomeView,
+    /// RFC 3339 generation of the source snapshot now in use, cached or vendored.
+    pub fetched_at: Option<String>,
+    /// Stable error code of a failed refresh; never upstream response text.
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PricingCatalogSourceView {
+    ModelsDev,
+    Openrouter,
+    Litellm,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PricingCatalogRefreshOutcomeView {
+    Updated,
+    Unchanged,
+    Failed,
 }
 
 #[derive(Debug, Deserialize, Default, IntoParams)]
@@ -1407,6 +1534,11 @@ pub struct RequestLogSummaryView {
     /// Computed request cost in USD scaled by 10,000. Null when no usage was recorded or the
     /// request could not be priced.
     pub cost_usd_10000: Option<i64>,
+    /// The effective tier the request asked for: the route's forced tier, else the
+    /// caller's. Null when neither set one.
+    pub service_tier: Option<ServiceTierView>,
+    /// The tier the provider reported serving. Null when the provider reported none.
+    pub served_service_tier: Option<ServiceTierView>,
     pub error_code: Option<String>,
     pub has_payload: bool,
     pub request_payload_truncated: bool,

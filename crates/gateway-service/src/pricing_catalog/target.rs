@@ -1,17 +1,19 @@
 use gateway_core::{ModelRoute, PricingUnpricedReason, ProviderConnection};
 use serde_json::Value;
 
-const AMAZON_BEDROCK_PRICING_PROVIDER_ID: &str = "amazon-bedrock";
-const GOOGLE_VERTEX_PRICING_PROVIDER_ID: &str = "google-vertex";
-const GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID: &str = "google-vertex-anthropic";
-const OPENAI_PRICING_PROVIDER_ID: &str = "openai";
-const OPENROUTER_PRICING_PROVIDER_ID: &str = "openrouter";
+pub(super) const AMAZON_BEDROCK_PRICING_PROVIDER_ID: &str = "amazon-bedrock";
+pub(super) const GITHUB_COPILOT_PRICING_PROVIDER_ID: &str = "github-copilot";
+pub(super) const GOOGLE_VERTEX_PRICING_PROVIDER_ID: &str = "google-vertex";
+pub(super) const GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID: &str = "google-vertex-anthropic";
+pub(super) const OPENAI_PRICING_PROVIDER_ID: &str = "openai";
+pub(super) const OPENROUTER_PRICING_PROVIDER_ID: &str = "openrouter";
 const OPENCODE_PRICING_PROVIDER_ID: &str = "opencode";
 const BEDROCK_GPT_OSS_120B_PRICING_MODEL_ID: &str = "openai.gpt-oss-120b-1:0";
 const BEDROCK_GPT_OSS_20B_PRICING_MODEL_ID: &str = "openai.gpt-oss-20b-1:0";
 
-pub const SUPPORTED_PRICING_PROVIDER_IDS: [&str; 6] = [
+pub const SUPPORTED_PRICING_PROVIDER_IDS: [&str; 7] = [
     AMAZON_BEDROCK_PRICING_PROVIDER_ID,
+    GITHUB_COPILOT_PRICING_PROVIDER_ID,
     GOOGLE_VERTEX_PRICING_PROVIDER_ID,
     GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID,
     OPENAI_PRICING_PROVIDER_ID,
@@ -37,15 +39,24 @@ pub(super) fn pricing_target_for_route(
     provider: &ProviderConnection,
     route: &ModelRoute,
 ) -> PricingTarget {
-    if let Some(reason) = unsupported_billing_modifier(route) {
-        return PricingTarget::Unpriced(reason);
-    }
-
     let target = catalog_identity_for_route(provider, route);
     if let Some(reason) = unsupported_vertex_location(provider, &target) {
         return PricingTarget::Unpriced(reason);
     }
     target
+}
+
+/// Whether the provider bills each request itself and reports the cost in its usage
+/// object (OpenRouter's `usage.cost`), so no catalog rate is needed at any service tier.
+pub(super) fn route_reports_request_cost(
+    provider: &ProviderConnection,
+    route: &ModelRoute,
+) -> bool {
+    matches!(
+        catalog_identity_for_route(provider, route),
+        PricingTarget::Exact { pricing_provider_id, .. }
+            if pricing_provider_id == OPENROUTER_PRICING_PROVIDER_ID
+    )
 }
 
 pub(crate) fn catalog_metadata_target_for_route(
@@ -61,14 +72,13 @@ pub(crate) fn catalog_metadata_target_for_route(
     }
 }
 
-pub(crate) fn catalog_pricing_supported_for_route(
+/// Whether the catalog prices `pricing_provider_id` in `provider`'s location: Vertex
+/// Anthropic is priced only in the global location.
+pub(crate) fn catalog_pricing_location_supported(
     provider: &ProviderConnection,
-    route: &ModelRoute,
     pricing_provider_id: &str,
 ) -> bool {
-    unsupported_billing_modifier(route).is_none()
-        && unsupported_vertex_location_for_pricing_provider_id(provider, pricing_provider_id)
-            .is_none()
+    unsupported_vertex_location_for_pricing_provider_id(provider, pricing_provider_id).is_none()
 }
 
 fn catalog_identity_for_route(provider: &ProviderConnection, route: &ModelRoute) -> PricingTarget {
@@ -214,19 +224,4 @@ fn unsupported_vertex_location_for_pricing_provider_id(
         .unwrap_or("global");
     (location != "global")
         .then(|| PricingUnpricedReason::UnsupportedVertexLocation(location.to_string()))
-}
-
-fn unsupported_billing_modifier(route: &ModelRoute) -> Option<PricingUnpricedReason> {
-    if route.extra_body.contains_key("service_tier") {
-        return Some(PricingUnpricedReason::UnsupportedBillingModifier(
-            "service_tier".to_string(),
-        ));
-    }
-    if route.extra_body.contains_key("serviceTier") {
-        return Some(PricingUnpricedReason::UnsupportedBillingModifier(
-            "serviceTier".to_string(),
-        ));
-    }
-
-    None
 }

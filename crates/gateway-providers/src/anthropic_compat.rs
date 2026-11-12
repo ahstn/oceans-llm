@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use async_trait::async_trait;
 use gateway_core::{
-    CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, ProviderCapabilities,
-    ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
+    CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, ModelRoute, ProviderCapabilities,
+    ProviderClient, ProviderError, ProviderRequestContext, ProviderStream, ServiceTier,
 };
 use serde_json::Value;
 use time::OffsetDateTime;
@@ -15,6 +15,7 @@ use crate::anthropic::{
     retain_count_tokens_fields,
 };
 use crate::http::{execute_json_request, execute_request, join_base_url, map_reqwest_error};
+use crate::service_tier::DEFAULT_PRIORITY;
 
 const DEFAULT_ANTHROPIC_VERSION: &str = "2023-06-01";
 
@@ -92,11 +93,14 @@ impl AnthropicCompatProvider {
         join_base_url(base, &endpoint)
     }
 
+    /// Builds a Messages call. Token counting uses [`Self::build_request_to`] and carries no
+    /// tier, since only generation is served at a speed.
     pub(crate) fn build_request(
         &self,
-        body: Value,
+        mut body: Value,
         context: &ProviderRequestContext,
     ) -> Result<reqwest::Request, ProviderError> {
+        crate::anthropic::service_tier::apply_claude_api_service_tier(&mut body, context)?;
         self.build_request_to(self.messages_endpoint_url()?, body, context)
     }
 
@@ -138,6 +142,7 @@ impl AnthropicCompatProvider {
             }
         }
 
+        request = crate::anthropic::native::request_headers(request, context);
         for (header_name, value) in &context.extra_headers {
             if header_name.eq_ignore_ascii_case("anthropic-beta") {
                 continue;
@@ -159,12 +164,69 @@ impl AnthropicCompatProvider {
 
 #[async_trait]
 impl ProviderClient for AnthropicCompatProvider {
+    fn supports_native_messages(&self, _context: &ProviderRequestContext) -> bool {
+        true
+    }
+
+    async fn messages(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<gateway_core::NativeMessagesResponse<Value>, ProviderError> {
+        let body = map_anthropic_request(
+            request,
+            context,
+            false,
+            &AnthropicRequestOptions {
+                default_headers: Some(&self.config.default_headers),
+                ..Default::default()
+            },
+        )?;
+        let req = self.build_request(body, context)?;
+        let response = crate::anthropic::native::execute_request(
+            &self.client,
+            req,
+            &self.config.provider_type,
+            &self.config.provider_key,
+        )
+        .await?;
+        crate::anthropic::native::json_response(response).await
+    }
+
+    async fn messages_stream(
+        &self,
+        request: &CoreChatRequest,
+        context: &ProviderRequestContext,
+    ) -> Result<gateway_core::NativeMessagesResponse<ProviderStream>, ProviderError> {
+        let body = map_anthropic_request(
+            request,
+            context,
+            true,
+            &AnthropicRequestOptions {
+                default_headers: Some(&self.config.default_headers),
+                ..Default::default()
+            },
+        )?;
+        let response = crate::anthropic::native::execute_request(
+            &self.client,
+            self.build_request(body, context)?,
+            &self.config.provider_type,
+            &self.config.provider_key,
+        )
+        .await?;
+        Ok(crate::anthropic::native::stream_response(response))
+    }
+
     fn provider_key(&self) -> &str {
         &self.config.provider_key
     }
 
     fn provider_type(&self) -> &str {
         &self.config.provider_type
+    }
+
+    fn service_tiers(&self, _route: &ModelRoute) -> &'static [ServiceTier] {
+        DEFAULT_PRIORITY
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
@@ -192,6 +254,7 @@ impl ProviderClient for AnthropicCompatProvider {
             anthropic_version_body: None,
             default_max_tokens: Some(4096),
             default_headers: Some(&self.config.default_headers),
+            allow_remote_images: false,
         };
         let body = map_anthropic_request(request, context, false, &options)?;
         let req = self.build_request(body, context)?;
@@ -237,6 +300,7 @@ impl ProviderClient for AnthropicCompatProvider {
             anthropic_version_body: None,
             default_max_tokens: Some(4096),
             default_headers: Some(&self.config.default_headers),
+            allow_remote_images: false,
         };
         let body = map_anthropic_request(request, context, true, &options)?;
         let req = self.build_request(body, context)?;
@@ -282,6 +346,7 @@ impl ProviderClient for AnthropicCompatProvider {
             anthropic_version_body: None,
             default_max_tokens: Some(4096),
             default_headers: Some(&self.config.default_headers),
+            allow_remote_images: false,
         };
         let body = map_anthropic_request(request, context, false, &options)?;
         // Keep legacy body beta inputs until build_request_to promotes them to the header.

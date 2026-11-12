@@ -1,0 +1,15 @@
+---
+/* The site's brand: the Oceans mark (public/brand/oceans-mark.png, a 96 px copy
+   of docs/public/images/oceans-logo-rounded-square.png) and the site title as
+   a wordmark. The social cards draw the same pair in src/pages/og/_card.ts. */
+import { config } from "virtual:nimbus/config";
+import { withBase } from "@cloudflare/nimbus-docs/runtime";
+
+interface Props { class?: string }
+const { class: cls } = Astro.props;
+const mark = withBase("/brand/oceans-mark.png", import.meta.env.BASE_URL);
+---
+<span class:list={["flex items-center gap-2", cls]}>
+  <img src={mark} alt="" width="24" height="24" class="size-6 shrink-0" />
+  <span class="text-sm font-semibold tracking-tight whitespace-nowrap">{config.title}</span>
+</span>

@@ -5,7 +5,7 @@
 
 ## Current state
 
-- [MCP Client Setup: Connecting from an error](../mcp/mcp-client-setup.md#connecting-from-an-error)
+- [MCP Client Setup: Connecting from an error](https://oceans-llm.com/extensions/mcp-client-setup/#connect-from-an-error)
 
 ## Context
 

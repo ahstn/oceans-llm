@@ -1,5 +1,13 @@
-//! Shared request preparation and accounting for OpenAI inference endpoints.
+//! Shared request preparation, completion and accounting for inference endpoints.
+use super::service_tier::effective_service_tier;
 use super::*;
+use crate::http::anthropic_stream::insert_anthropic_service_tier;
+
+pub(super) enum InferenceResponseFormat {
+    OpenAi,
+    NativeMessages(std::collections::BTreeMap<String, String>),
+    TranslatedMessages,
+}
 
 pub(super) struct InferenceRequest<'a> {
     pub state: &'a AppState,
@@ -10,6 +18,9 @@ pub(super) struct InferenceRequest<'a> {
     pub request_id: &'a str,
     pub request_started_at: Instant,
     pub stream: bool,
+    pub endpoint: RoutingEndpoint,
+    /// The tier the caller asked for, already checked against the model's allow-list.
+    pub requested_service_tier: Option<gateway_core::ServiceTier>,
     pub request_log_context: RequestLogContext,
 }
 
@@ -24,10 +35,16 @@ pub(super) struct InferenceExecution<'a> {
 }
 
 impl<'a> InferenceRequest<'a> {
+    fn accounting_operation(&self) -> &'static str {
+        match self.endpoint {
+            RoutingEndpoint::Messages => "anthropic_messages",
+            _ => self.request_log_context.operation,
+        }
+    }
+
     pub async fn prepare<T: Serialize + DeserializeOwned>(
         mut self,
-        selected: Option<SelectedProviderRoute>,
-        requirements: CoreRequestRequirements,
+        selected: Result<SelectedProviderRoute, GatewayError>,
         request: &mut T,
     ) -> Result<InferenceExecution<'a>, AppError> {
         let SelectedProviderRoute {
@@ -36,9 +53,8 @@ impl<'a> InferenceRequest<'a> {
             receipt,
             expected_provider_credential_id,
         } = match selected {
-            Some(selection) => selection,
-            None => {
-                let error = no_compatible_route_error(requirements);
+            Ok(selection) => selection,
+            Err(error) => {
                 let labels = ChatMetricLabels {
                     requested_model: &self.resolved.selection.requested_model.model_key,
                     resolved_model: &self.resolved.selection.execution_model.model_key,
@@ -51,14 +67,18 @@ impl<'a> InferenceRequest<'a> {
                     outcome: error.error_type(),
                     latency_seconds: latency_seconds_since(self.request_started_at),
                 });
-                self.state.metrics.record_tool_cardinality(
-                    &labels,
-                    self.request_log_context.operation,
-                    &self.request_log_context.tool_cardinality,
-                );
+                if !matches!(self.endpoint, RoutingEndpoint::Messages) {
+                    self.state.metrics.record_tool_cardinality(
+                        &labels,
+                        self.request_log_context.operation,
+                        &self.request_log_context.tool_cardinality,
+                    );
+                }
                 return Err(AppError(error));
             }
         };
+        self.request_log_context.service_tier =
+            effective_service_tier(&route, self.requested_service_tier);
         let icon_metadata = request_log_icon_metadata(
             &route,
             self.resolved.provider_connections.get(&route.provider_key),
@@ -157,6 +177,25 @@ impl InferenceExecution<'_> {
         }
     }
 
+    /// The provider context for the chosen route, with its credential generation and
+    /// the request's service tier.
+    pub fn provider_context(
+        &self,
+        request_headers: BTreeMap<String, String>,
+    ) -> ProviderRequestContext {
+        let request = &self.request;
+        let mut context = build_provider_context(
+            request.request_id,
+            &request.resolved.selection.requested_model.model_key,
+            &self.route,
+            request.auth,
+            request_headers,
+        );
+        context.expected_provider_credential_id = self.expected_provider_credential_id;
+        context.service_tier = request.request_log_context.service_tier;
+        context
+    }
+
     pub async fn non_stream_provider_failure(
         &self,
         error: ProviderError,
@@ -190,7 +229,8 @@ impl InferenceExecution<'_> {
                     route,
                     request_id,
                     labels: labels.clone(),
-                    operation: request_log_context.operation,
+                    operation: self.request.accounting_operation(),
+                    service_tiers: service_tier_outcome(request_log_context, None),
                 },
                 provider_usage,
             )
@@ -225,11 +265,13 @@ impl InferenceExecution<'_> {
             outcome: error.error_type(),
             latency_seconds: latency_seconds_since(request_started_at),
         });
-        state.metrics.record_tool_cardinality(
-            &labels,
-            request_log_context.operation,
-            &request_log_context.tool_cardinality,
-        );
+        if !matches!(self.request.endpoint, RoutingEndpoint::Messages) {
+            state.metrics.record_tool_cardinality(
+                &labels,
+                request_log_context.operation,
+                &request_log_context.tool_cardinality,
+            );
+        }
         AppError(error)
     }
 
@@ -272,6 +314,9 @@ impl InferenceExecution<'_> {
             outcome: gateway_error.error_type(),
             latency_seconds: latency_seconds_since(request_started_at),
         });
+        if matches!(self.request.endpoint, RoutingEndpoint::Messages) {
+            return;
+        }
         state.metrics.record_tool_cardinality(
             &ChatMetricLabels {
                 stream: tool_metric_stream,
@@ -288,6 +333,7 @@ impl InferenceExecution<'_> {
         attempt_started_at: OffsetDateTime,
         stream_trace: StreamTrace,
         error_context: &str,
+        format: InferenceResponseFormat,
     ) -> Result<Response, AppError> {
         let &InferenceRequest {
             state,
@@ -315,6 +361,24 @@ impl InferenceExecution<'_> {
             stream,
         )
         .await?;
+        let requires_message_stop = matches!(format, InferenceResponseFormat::NativeMessages(_));
+        let (stream, upstream_headers) = match format {
+            InferenceResponseFormat::OpenAi => (stream, None),
+            InferenceResponseFormat::NativeMessages(headers) => (
+                native_messages::stream_with_model(
+                    stream,
+                    resolved.selection.requested_model.model_key.clone(),
+                ),
+                Some(headers),
+            ),
+            InferenceResponseFormat::TranslatedMessages => (
+                anthropic_messages_stream_from_openai(
+                    stream,
+                    resolved.selection.requested_model.model_key.clone(),
+                ),
+                None,
+            ),
+        };
         let body_stream = wrap_stream_with_request_logging(LoggingBodyStreamState {
             upstream: stream,
             service: state.service.clone(),
@@ -333,11 +397,12 @@ impl InferenceExecution<'_> {
             attempt_started_at,
             finished: false,
             saw_terminal_event: false,
+            requires_message_stop,
             collector: state.service.new_stream_response_collector(),
             stream_trace,
         });
 
-        let response = Response::builder()
+        let mut response = Response::builder()
             .status(axum::http::StatusCode::OK)
             .header(CONTENT_TYPE, "text/event-stream; charset=utf-8")
             .header(CACHE_CONTROL, "no-cache")
@@ -346,6 +411,14 @@ impl InferenceExecution<'_> {
                 AppError(GatewayError::Internal(format!("{error_context}: {error}")))
             })?;
 
+        if let Some(headers) = upstream_headers {
+            native_messages::apply_headers(&mut response, &headers);
+        }
+        if matches!(self.request.endpoint, RoutingEndpoint::Messages)
+            && let Ok(request_id) = HeaderValue::from_str(self.request.request_id)
+        {
+            response.headers_mut().insert("x-request-id", request_id);
+        }
         Ok(response)
     }
 
@@ -353,6 +426,7 @@ impl InferenceExecution<'_> {
         &self,
         mut value: Value,
         attempt_started_at: OffsetDateTime,
+        format: InferenceResponseFormat,
     ) -> Result<Response, AppError> {
         let &InferenceRequest {
             state,
@@ -368,6 +442,8 @@ impl InferenceExecution<'_> {
         let guard_context = &self.guard_context;
         let icon_metadata = &self.icon_metadata;
         let labels = self.labels();
+        // Read before the response guard and any Messages translation rewrite the body.
+        let served_service_tier = gateway_core::served_service_tier(&value);
         finalize_successful_usage_accounting(
             state,
             UsageAccountingContext {
@@ -377,7 +453,8 @@ impl InferenceExecution<'_> {
                 route,
                 request_id,
                 labels: labels.clone(),
-                operation: request_log_context.operation,
+                operation: self.request.accounting_operation(),
+                service_tiers: service_tier_outcome(request_log_context, served_service_tier),
             },
             usage_value_from_response(&value),
         )
@@ -385,12 +462,11 @@ impl InferenceExecution<'_> {
         let completion = async {
             guard_model_response(state, guard_context, &mut value).await?;
             if let Some(receipt) = &self.routing_receipt {
-                receipt
-                    .complete(
-                        state.store.as_ref(),
-                        value.get("id").and_then(Value::as_str),
-                    )
-                    .await?;
+                let response_id = match self.request.endpoint {
+                    RoutingEndpoint::Messages => None,
+                    _ => value.get("id").and_then(Value::as_str),
+                };
+                receipt.complete(state.store.as_ref(), response_id).await?;
             }
             Ok::<(), GatewayError>(())
         }
@@ -430,17 +506,36 @@ impl InferenceExecution<'_> {
             outcome: "success",
             latency_seconds: latency_seconds_since(request_started_at),
         });
-        state.metrics.record_tool_cardinality(
-            &ChatMetricLabels {
-                requested_model: &resolved.selection.requested_model.model_key,
-                resolved_model: &resolved.selection.execution_model.model_key,
-                provider_key: &route.provider_key,
-                stream: false,
-            },
-            request_log_context.operation,
-            &tool_cardinality,
-        );
+        if !matches!(self.request.endpoint, RoutingEndpoint::Messages) {
+            state.metrics.record_tool_cardinality(
+                &ChatMetricLabels {
+                    requested_model: &resolved.selection.requested_model.model_key,
+                    resolved_model: &resolved.selection.execution_model.model_key,
+                    provider_key: &route.provider_key,
+                    stream: false,
+                },
+                request_log_context.operation,
+                &tool_cardinality,
+            );
+        }
+        let (value, upstream_headers) = match format {
+            InferenceResponseFormat::OpenAi => (value, None),
+            InferenceResponseFormat::NativeMessages(headers) => (value, Some(headers)),
+            InferenceResponseFormat::TranslatedMessages => {
+                let mut message = anthropic_message_from_openai_chat(
+                    &value,
+                    &resolved.selection.requested_model.model_key,
+                );
+                if let Some(usage) = message.get_mut("usage") {
+                    insert_anthropic_service_tier(usage, served_service_tier);
+                }
+                (message, None)
+            }
+        };
         let mut response = Json(value).into_response();
+        if let Some(headers) = upstream_headers {
+            native_messages::apply_headers(&mut response, &headers);
+        }
         if let Ok(request_id_header) = HeaderValue::from_str(request_id) {
             response
                 .headers_mut()

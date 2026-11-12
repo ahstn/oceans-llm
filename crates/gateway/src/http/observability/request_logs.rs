@@ -285,6 +285,14 @@ fn summary_view(
         cost_usd_10000: usage
             .filter(|record| record.pricing_status.counts_toward_spend())
             .map(|record| record.computed_cost_usd.as_scaled_i64()),
+        service_tier: usage
+            .and_then(|record| record.requested_service_tier)
+            .or_else(|| metadata_service_tier(&log.metadata, "service_tier"))
+            .map(Into::into),
+        served_service_tier: usage
+            .and_then(|record| record.served_service_tier)
+            .or_else(|| metadata_service_tier(&log.metadata, "served_service_tier"))
+            .map(Into::into),
         error_code: log.error_code.clone(),
         has_payload: log.has_payload,
         request_payload_truncated: log.request_payload_truncated,
@@ -305,6 +313,18 @@ fn summary_view(
         metadata: log.metadata.clone(),
         occurred_at: format_timestamp(log.occurred_at),
     })
+}
+
+/// A tier the request log metadata recorded. The ledger wins when the request was billed;
+/// a request that failed before usage was recorded still shows its tiers here.
+fn metadata_service_tier(
+    metadata: &Map<String, Value>,
+    field: &str,
+) -> Option<gateway_core::ServiceTier> {
+    metadata
+        .get(field)
+        .and_then(Value::as_str)
+        .and_then(gateway_core::ServiceTier::parse)
 }
 
 fn payload_policy_view(
@@ -703,6 +723,41 @@ mod tests {
         assert_eq!(without_usage.cache_read_tokens, None);
     }
 
+    #[test]
+    fn summary_view_reads_tiers_from_ledger_then_metadata() {
+        use crate::http::admin_contract::ServiceTierView;
+        use gateway_core::ServiceTier;
+
+        let mut metadata = payload_policy_metadata();
+        metadata.insert("service_tier".to_string(), json!("priority"));
+        metadata.insert("served_service_tier".to_string(), json!("default"));
+        let log = request_log_record(metadata);
+
+        let unbilled = summary_view(
+            &log,
+            None,
+            &RequestCallerDirectory::default(),
+            &RequestUsageDirectory::default(),
+        )
+        .unwrap_or_else(|error| panic!("summary should succeed: {}", error.0));
+        assert_eq!(unbilled.service_tier, Some(ServiceTierView::Priority));
+        assert_eq!(unbilled.served_service_tier, Some(ServiceTierView::Default));
+
+        let mut usage = RequestUsageDirectory::default();
+        usage.by_request_id.insert(
+            log.request_id.clone(),
+            vec![UsageLedgerRecord {
+                requested_service_tier: Some(ServiceTier::Flex),
+                served_service_tier: Some(ServiceTier::Flex),
+                ..usage_ledger_record(&log)
+            }],
+        );
+        let billed = summary_view(&log, None, &RequestCallerDirectory::default(), &usage)
+            .unwrap_or_else(|error| panic!("summary should succeed: {}", error.0));
+        assert_eq!(billed.service_tier, Some(ServiceTierView::Flex));
+        assert_eq!(billed.served_service_tier, Some(ServiceTierView::Flex));
+    }
+
     fn usage_ledger_record(log: &RequestLogRecord) -> UsageLedgerRecord {
         UsageLedgerRecord {
             usage_event_id: Uuid::new_v4(),
@@ -739,8 +794,11 @@ mod tests {
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
+            pricing_tier_above_input_tokens: None,
             computed_cost_usd: gateway_core::Money4::from_scaled(1_234),
             occurred_at: log.occurred_at,
+            requested_service_tier: None,
+            served_service_tier: None,
         }
     }
 

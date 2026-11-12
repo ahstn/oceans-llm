@@ -99,7 +99,7 @@
         ".mcp.json",
         ".impeccable/**",
         "scripts/check-*.sh",
-        "scripts/*sync-model-metadata.py",
+        "scripts/sync-model-metadata.py",
         "scripts/copilot-*",
         "scripts/mock-openai-upstream.mjs",
         "scripts/register-e2e-mcp-server.mjs",
@@ -175,9 +175,10 @@
       ],
       "paths": [
         "crates/gateway-core/**",
-        "crates/gateway-service/src/{service,route_planner,model_resolution,model_access,authenticator}.rs",
+        "crates/gateway-service/src/{service,usage,route_planner,model_resolution,model_access,authenticator}.rs",
         "crates/gateway/src/http/handlers.rs",
         "crates/gateway/src/http/handlers/inference.rs",
+        "crates/gateway/src/http/handlers/messages.rs",
         "crates/gateway/src/http/handlers/decisions.rs",
         "crates/gateway/src/http/handlers/embeddings.rs",
         "crates/gateway/src/http/handlers/json_operation.rs",
@@ -213,10 +214,12 @@
         "crates/gateway/src/http/handlers.rs",
         "crates/gateway-service/src/admin_models.rs",
         "crates/gateway-service/src/effective_route_metadata.rs",
+        "crates/gateway-core/src/{claude_models,route_capabilities}.rs",
         "crates/gateway-service/src/model_metadata.rs",
         "crates/gateway-service/src/model_metadata/**",
         "crates/gateway-service/src/pricing_catalog.rs",
         "crates/gateway-service/src/pricing_catalog/**",
+        "crates/gateway-service/src/{capability_hints,catalog_fetch}.rs",
         "crates/gateway-service/src/icon_identity.rs",
         "crates/gateway-store/src/libsql_store/{models,providers,pricing_catalog}.rs",
         "crates/gateway-store/src/pricing_sync.rs",
@@ -226,7 +229,7 @@
         "crates/admin-ui/web/src/routes/-model-*.{ts,tsx}",
         "crates/gateway-service/src/admin_models/**",
         "crates/gateway-service/src/benchmark_catalog.rs",
-        "crates/gateway-service/data/{model_benchmarks,model_metadata_supplement,pricing_catalog_fallback}.json",
+        "crates/gateway-service/data/{model_benchmarks,model_metadata_supplement,pricing_catalog_fallback,litellm_catalog_fallback,openrouter_catalog_fallback}.json",
         "crates/gateway/src/bin/{sync_model_benchmarks,sync_pricing_catalog}.rs"
       ]
     },
@@ -329,6 +332,7 @@
       "paths": [
         "crates/admin-ui/web/src/routes/observability/request-logs.tsx",
         "crates/gateway/src/http/observability.rs",
+        "crates/gateway/src/http/handlers/native_messages.rs",
         "crates/gateway/src/http/request_tags.rs",
         "crates/gateway/src/request_log_purge.rs",
         "crates/gateway-service/src/request_logging.rs",
@@ -356,6 +360,7 @@
       "paid": true,
       "paths": [
         "crates/gateway-providers/**",
+        "crates/gateway-core/src/route_capabilities.rs",
         "crates/gateway/src/http/anthropic_stream.rs",
         "crates/gateway/src/http/request_body/**",
         "crates/gateway/src/http/provider_credentials.rs",
@@ -364,7 +369,8 @@
         "crates/gateway-store/src/any_store_provider_user_credentials.rs",
         "crates/gateway/src/http/handlers/routing.rs",
         "crates/gateway/src/http/handlers/count_tokens.rs",
-        "crates/gateway-service/src/{routing,client_session}.rs",
+        "crates/gateway/src/http/handlers/native_messages.rs",
+        "crates/gateway-service/src/{routing,client_session,capability_hints}.rs",
         "crates/gateway-store/src/{routing,any_store_routing}.rs",
         "crates/gateway-store/src/libsql_store/routing.rs",
         "crates/gateway/src/provider_routing_identity.rs"
@@ -381,6 +387,7 @@
         "crates/gateway/src/http/handlers/images.rs",
         "crates/gateway-service/src/redaction/large_fields.rs",
         "crates/gateway-service/src/model_metadata/listing.rs",
+        "crates/gateway-service/src/capability_hints.rs",
         "crates/gateway-service/src/service/reported_usage_cost.rs"
       ]
     },
@@ -393,18 +400,23 @@
       "paid": true,
       "paths": [
         "crates/gateway/src/http/{mod,handlers,anthropic_stream,request_body}.rs",
+        "crates/gateway/src/http/inference_guardrails.rs",
         "crates/gateway/src/http/request_body/**",
-        "crates/gateway/src/http/handlers/{auth,inference,count_tokens}.rs",
+        "crates/gateway/src/http/handlers/{auth,inference,messages,count_tokens,native_messages}.rs",
         "crates/gateway-core/src/protocol/{anthropic,translate}.rs",
-        "crates/gateway-core/src/{claude_models,domain,reasoning_policy}.rs",
+        "crates/gateway-core/src/{claude_models,domain,error,lib,provider,reasoning_policy,route_capabilities,streaming,traits}.rs",
+        "crates/gateway-client-config/src/thinking.rs",
+        "crates/gateway-service/src/effective_route_metadata.rs",
+        "crates/gateway-service/src/{request_logging,service,usage}.rs",
         "crates/gateway-providers/src/anthropic/**",
         "crates/gateway-providers/src/anthropic_compat.rs",
-        "crates/gateway-providers/src/vertex/{anthropic,mod}.rs",
-        "crates/gateway-providers/src/bedrock/{mod,response}.rs",
+        "crates/gateway-providers/src/http.rs",
+        "crates/gateway-providers/src/vertex/{anthropic,mod,google_*,batch,error}.rs",
+        "crates/gateway-providers/src/bedrock/{mod,response,eventstream,converse_stream,converse_replay}.rs",
         "crates/gateway-providers/src/bedrock/request/**",
         "crates/gateway-providers/src/copilot/mod.rs",
         "crates/gateway-providers/src/openai_compat.rs",
-        "crates/gateway-providers/src/openai_compat/anthropic_messages.rs",
+        "crates/gateway-providers/src/openai_compat/{anthropic_messages,native_messages}.rs",
         ".agents/skills/verify-oceans-admin/scripts/{check-messages,messages-regressions}.mjs"
       ]
     },
@@ -422,6 +434,53 @@
         "crates/gateway/src/http/guardrails.rs",
         "crates/gateway/src/http/handlers/inference.rs",
         ".agents/skills/verify-oceans-admin/scripts/drive-backend-gateway.mjs"
+      ]
+    },
+    {
+      "id": "service-tiers",
+      "file": "service-tiers.md",
+      "proof": {
+        "drive": "service-tiers"
+      },
+      "paid": true,
+      "paths": [
+        "crates/gateway-core/src/service_tier.rs",
+        "crates/gateway-core/src/provider.rs",
+        "crates/gateway/src/http/handlers/routing.rs",
+        "crates/gateway/src/http/handlers/service_tier*.rs",
+        "crates/gateway/src/config/service_tiers.rs",
+        "crates/gateway-service/src/pricing_catalog/service_tiers.rs",
+        "crates/gateway-service/src/model_metadata/service_tiers.rs",
+        "crates/gateway-service/src/service/tier_pricing.rs",
+        "crates/gateway-service/src/batches.rs",
+        "crates/gateway-providers/src/service_tier.rs",
+        "crates/gateway-providers/src/**/service_tier*.rs",
+        "crates/admin-ui/web/src/lib/service-tier.ts",
+        "crates/gateway-store/migrations/V77__*.sql",
+        "crates/gateway-store/migrations/postgres/V77__*.sql",
+        ".agents/skills/verify-oceans-admin/scripts/drive-service-tiers.mjs"
+      ]
+    },
+    {
+      "id": "harness-integration",
+      "file": "harness-integration.md",
+      "proof": {
+        "drive": "harness-integration"
+      },
+      "paid": true,
+      "paths": [
+        "packages/opencode-oceans/**",
+        "crates/gateway/src/http/handlers.rs",
+        "crates/gateway/src/http/handlers/{auth,inference,messages,native_messages,routing,service_tier,count_tokens}.rs",
+        "crates/gateway/src/http/{models,anthropic_stream,request_body,inference_guardrails}.rs",
+        "crates/gateway/src/http/request_body/**",
+        "crates/gateway-core/src/protocol/**",
+        "crates/gateway-core/src/streaming.rs",
+        "crates/gateway-service/src/model_metadata.rs",
+        "crates/gateway-service/src/model_metadata/**",
+        "crates/gateway-service/src/{capability_hints,effective_route_metadata}.rs",
+        "crates/gateway-client-config/**",
+        ".agents/skills/verify-oceans-admin/scripts/drive-harness-integration.mjs"
       ]
     },
     {
@@ -543,6 +602,7 @@
         "crates/gateway/src/http/batches.rs",
         "crates/gateway/src/batch_worker.rs",
         "crates/gateway-service/src/batches.rs",
+        "crates/gateway-service/src/usage.rs",
         "crates/gateway-store/src/libsql_store/batches.rs",
         "crates/gateway-store/src/any_store_batches.rs",
         "crates/gateway-store/src/seed.rs",
@@ -588,10 +648,10 @@
         "crates/gateway/src/main.rs",
         "crates/gateway/src/http/mod.rs",
         "crates/gateway/src/config/rate_limits.rs",
-        "crates/gateway-service/src/service.rs",
+        "crates/gateway-service/src/{service,usage}.rs",
         "crates/gateway/src/http/mcp_gateway/rate_limits.rs",
         "crates/gateway/src/http/handlers.rs",
-        "crates/gateway/src/http/handlers/{inference,embeddings,decisions,count_tokens}.rs",
+        "crates/gateway/src/http/handlers/{inference,messages,embeddings,decisions,count_tokens}.rs",
         "crates/gateway/src/http/mcp_gateway.rs",
         "crates/gateway/src/http/mcp_gateway/aggregate.rs",
         "crates/gateway/src/http/mcp_gateway/aggregate/execution.rs",

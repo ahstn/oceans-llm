@@ -1,6 +1,6 @@
 # Testing Authentication Locally
 
-`See also`: [OIDC and SSO](../../access/oidc-and-sso-status.md), [Identity and Access](../../access/identity-and-access.md), [Runtime Bootstrap and Access](../../setup/runtime-bootstrap-and-access.md), [ADR: Local SSO Compose Fixture and Browser Origin](../../adr/2026-05-15-local-sso-compose-fixture-and-browser-origin.md)
+`See also`: [OIDC and SSO](https://oceans-llm.com/access/sso/), [Identity and Access](https://oceans-llm.com/access/identity-and-access/), [Start up and first access](https://oceans-llm.com/setup/first-access/), [ADR: Local SSO Compose Fixture and Browser Origin](../../adr/2026-05-15-local-sso-compose-fixture-and-browser-origin.md)
 
 This page is for maintainers testing admin authentication from the source-built Docker Compose stack.
 

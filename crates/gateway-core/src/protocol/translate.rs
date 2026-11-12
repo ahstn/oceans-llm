@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use crate::protocol::{anthropic, core, openai};
 
 #[must_use]
@@ -7,14 +5,6 @@ pub fn anthropic_messages_request_to_core(
     request: &anthropic::AnthropicMessagesRequest,
 ) -> core::ChatRequest {
     let mut messages = Vec::new();
-    if let Some(system) = &request.system {
-        messages.push(core::ChatMessage {
-            role: "system".to_string(),
-            content: system.clone(),
-            name: None,
-            extra: BTreeMap::new(),
-        });
-    }
     messages.extend(request.messages.iter().map(|message| core::ChatMessage {
         role: message.role.clone(),
         content: message.content.clone(),
@@ -23,6 +13,11 @@ pub fn anthropic_messages_request_to_core(
     }));
 
     let mut extra = request.extra.clone();
+    // Top-level instructions and in-sequence system messages are distinct in Messages.
+    // Keep the original shape so native transports never hoist or merge signed history.
+    if let Some(system) = &request.system {
+        extra.insert("system".to_string(), system.clone());
+    }
     if let Some(max_tokens) = &request.max_tokens {
         extra.insert("max_tokens".to_string(), max_tokens.clone());
     }
@@ -214,7 +209,8 @@ mod tests {
         let core = anthropic_messages_request_to_core(&request);
         let requirements = core.requirements();
 
-        assert_eq!(core.messages[0].role, "system");
+        assert_eq!(core.messages[0].role, "user");
+        assert_eq!(core.extra["system"], "be terse");
         assert_eq!(core.extra["max_tokens"], json!(64));
         assert!(requirements.chat_completions);
         assert!(requirements.stream);

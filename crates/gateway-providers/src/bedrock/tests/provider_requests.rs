@@ -979,7 +979,11 @@ async fn builds_mantle_openai_chat_request() {
 
 #[tokio::test]
 async fn builds_mantle_anthropic_messages_request_with_authoritative_envelope() {
-    let provider = mantle_bearer_provider();
+    let mut provider = mantle_bearer_provider();
+    provider
+        .config
+        .default_headers
+        .insert("Anthropic-Version".into(), "provider-version".into());
     let request = CoreChatRequest {
         model: "claude".to_string(),
         messages: vec![message("user", "Hello")],
@@ -995,6 +999,18 @@ async fn builds_mantle_anthropic_messages_request_with_authoritative_envelope() 
         "x-api-key".to_string(),
         Value::String("route-should-not-win".to_string()),
     );
+    context
+        .request_headers
+        .insert("anthropic-version".into(), "caller-version".into());
+    context
+        .request_headers
+        .insert("anthropic-future-capability".into(), "opaque".into());
+    context
+        .request_headers
+        .insert("anthropic-beta".into(), "future-beta".into());
+    context
+        .extra_headers
+        .insert("ANTHROPIC-VERSION".into(), json!("route-version"));
     context
         .extra_body
         .insert("model".to_string(), json!("route-override"));
@@ -1019,6 +1035,18 @@ async fn builds_mantle_anthropic_messages_request_with_authoritative_envelope() 
     assert_eq!(
         built.headers().get("anthropic-version").unwrap(),
         "2023-06-01"
+    );
+    assert_eq!(
+        built.headers().get_all("anthropic-version").iter().count(),
+        1
+    );
+    assert_eq!(
+        built.headers().get("anthropic-future-capability").unwrap(),
+        "opaque"
+    );
+    assert_eq!(
+        built.headers().get("anthropic-beta").unwrap(),
+        "future-beta"
     );
     assert_eq!(body["model"], "anthropic.claude-sonnet-4-5");
     assert!(body.get("anthropic_version").is_none());

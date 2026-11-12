@@ -7,7 +7,10 @@ use uuid::Uuid;
 
 use crate::credential_scopes::ApiKeyAccess;
 use crate::protocol::decisions::DecisionsWireFormat;
+use crate::provider::ProviderCapabilities;
+use crate::route_capabilities::PartialCapabilities;
 use crate::routing::ModelRoutingPolicy;
+use crate::service_tier::ServiceTier;
 
 pub const SYSTEM_BOOTSTRAP_ADMIN_USER_ID: &str = "00000000-0000-0000-0000-000000000002";
 pub const SYSTEM_BOOTSTRAP_ADMIN_EMAIL: &str = "admin@local";
@@ -1106,6 +1109,16 @@ pub struct UsageLedgerRecord {
     pub cache_write_cost_per_million_tokens: Option<Money4>,
     #[serde(default)]
     pub image_output_cost_per_million_tokens: Option<Money4>,
+    /// Context tier threshold that priced this event; `None` for the base
+    /// rate, route overrides, and provider-reported cost.
+    #[serde(default)]
+    pub pricing_tier_above_input_tokens: Option<i64>,
+    /// Tier the caller asked for, after route and policy; `None` when none was asked.
+    #[serde(default)]
+    pub requested_service_tier: Option<ServiceTier>,
+    /// Tier the provider reported serving; `None` when the response did not say.
+    #[serde(default)]
+    pub served_service_tier: Option<ServiceTier>,
     pub computed_cost_usd: Money4,
     pub occurred_at: OffsetDateTime,
 }
@@ -2684,6 +2697,7 @@ pub struct PricingCatalogCacheRecord {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RoutePricingOverride {
+    /// Rates for the tier the route serves by default: its `service_tier`, else default.
     pub input_cost_per_million_tokens: Money4,
     pub output_cost_per_million_tokens: Money4,
     pub cache_read_cost_per_million_tokens: Option<Money4>,
@@ -2692,6 +2706,20 @@ pub struct RoutePricingOverride {
     /// Overrides persisted before this field existed deserialize without it.
     #[serde(default)]
     pub image_output_cost_per_million_tokens: Option<Money4>,
+    /// Flat rates for other tiers callers may request on this route. A request billed at
+    /// a tier with no rates here is unpriced. Sorted by tier, tiers unique.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub service_tiers: Vec<RouteServiceTierPricing>,
+}
+
+/// One tier's flat rates in a route pricing override.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RouteServiceTierPricing {
+    pub service_tier: ServiceTier,
+    pub input_cost_per_million_tokens: Money4,
+    pub output_cost_per_million_tokens: Money4,
+    pub cache_read_cost_per_million_tokens: Option<Money4>,
+    pub cache_write_cost_per_million_tokens: Option<Money4>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -2714,6 +2742,34 @@ pub struct PricingProvenance {
     pub fetched_at: OffsetDateTime,
 }
 
+/// Catalog rates that replace the base schedule for a whole request whose
+/// normalized prompt tokens (cache included) exceed `above_input_tokens`.
+/// A `None` rate inherits the base rate for that bucket.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ContextPricingTier {
+    pub above_input_tokens: i64,
+    pub input: Option<Money4>,
+    pub output: Option<Money4>,
+    pub cache_read: Option<Money4>,
+    pub cache_write: Option<Money4>,
+}
+
+/// Catalog rates for one non-default service tier. They replace the base schedule for a
+/// request billed at that tier. Unlike a context tier, a `None` rate does not inherit the
+/// base: the tier has no rate for that bucket, and a request that uses it is unpriced.
+/// `context_tiers` apply within the service tier the same way base context tiers do.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ServiceTierPricing {
+    pub service_tier: ServiceTier,
+    pub input: Option<Money4>,
+    pub output: Option<Money4>,
+    pub cache_read: Option<Money4>,
+    pub cache_write: Option<Money4>,
+    /// Sorted ascending by `above_input_tokens`, thresholds unique.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub context_tiers: Vec<ContextPricingTier>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ResolvedModelPricing {
     pub model_pricing_id: Uuid,
@@ -2726,6 +2782,14 @@ pub struct ResolvedModelPricing {
     pub cache_write_cost_per_million_tokens: Option<Money4>,
     pub input_audio_cost_per_million_tokens: Option<Money4>,
     pub output_audio_cost_per_million_tokens: Option<Money4>,
+    #[serde(default)]
+    pub output_image_usd_per_million: Option<Money4>,
+    /// Sorted ascending by `above_input_tokens`, thresholds unique.
+    #[serde(default)]
+    pub context_tiers: Vec<ContextPricingTier>,
+    /// Non-default service tier schedules, sorted by tier, tiers unique.
+    #[serde(default)]
+    pub service_tiers: Vec<ServiceTierPricing>,
     pub release_date: String,
     pub last_updated: String,
     pub effective_start_at: OffsetDateTime,
@@ -2747,6 +2811,14 @@ pub struct ModelPricingRecord {
     pub cache_write_cost_per_million_tokens: Option<Money4>,
     pub input_audio_cost_per_million_tokens: Option<Money4>,
     pub output_audio_cost_per_million_tokens: Option<Money4>,
+    #[serde(default)]
+    pub output_image_usd_per_million: Option<Money4>,
+    /// Sorted ascending by `above_input_tokens`, thresholds unique.
+    #[serde(default)]
+    pub context_tiers: Vec<ContextPricingTier>,
+    /// Non-default service tier schedules, sorted by tier, tiers unique.
+    #[serde(default)]
+    pub service_tiers: Vec<ServiceTierPricing>,
     pub release_date: String,
     pub last_updated: String,
     pub effective_start_at: OffsetDateTime,
@@ -2770,6 +2842,10 @@ pub struct ModelPricingSyncChanges {
     pub close_model_pricing_ids: Vec<Uuid>,
     pub update_provenance: Vec<ModelPricingProvenanceUpdate>,
     pub insert_model_pricing: Vec<ModelPricingRecord>,
+    /// The `fetched_at` of each `pricing_catalog_cache` row the changes were computed
+    /// from, keyed by `catalog_key`. The store applies the changes only while each row is
+    /// absent (the source used its vendored snapshot) or still has this `fetched_at`.
+    pub catalog_cache_fetched_at: BTreeMap<String, OffsetDateTime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -2779,7 +2855,6 @@ pub enum PricingUnpricedReason {
     UnsupportedPricingProviderId(String),
     UnsupportedVertexPublisher(String),
     UnsupportedVertexLocation(String),
-    UnsupportedBillingModifier(String),
     ModelNotFound,
 }
 
@@ -2842,6 +2917,9 @@ pub struct GatewayModel {
     pub rank: i32,
     #[serde(default)]
     pub routing: Option<ModelRoutingPolicy>,
+    /// Non-default tiers callers may request; `None` allows every tier.
+    #[serde(default)]
+    pub service_tiers: Option<Vec<ServiceTier>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -2867,8 +2945,13 @@ pub struct ModelRoute {
     pub extra_headers: Map<String, Value>,
     #[serde(default)]
     pub extra_body: Map<String, Value>,
-    #[serde(default = "ProviderCapabilities::all_enabled")]
-    pub capabilities: ProviderCapabilities,
+    /// Tier every request on this route uses, whatever the caller asks for.
+    #[serde(default)]
+    pub service_tier: Option<ServiceTier>,
+    /// Explicit route settings only. Use `effective_route_capabilities` to read what the
+    /// route serves.
+    #[serde(default)]
+    pub capabilities: PartialCapabilities,
     #[serde(default)]
     pub compatibility: RouteCompatibility,
 }
@@ -2879,40 +2962,6 @@ pub struct ProviderConnection {
     pub provider_type: String,
     pub config: Value,
     pub secrets: Option<Value>,
-}
-
-/// Public API contract used when dispatching through the common chat execution path.
-/// This is trusted endpoint metadata, never inferred from a caller's JSON fields.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum ChatRequestProtocol {
-    #[default]
-    ChatCompletions,
-    AnthropicMessages,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProviderRequestContext {
-    pub request_id: String,
-    pub model_key: String,
-    pub provider_key: String,
-    pub upstream_model: String,
-    /// Trusted user identity derived from the authenticated gateway API key.
-    #[serde(default)]
-    pub owner_user_id: Option<Uuid>,
-    /// Credential generation selected during routing, if the provider uses user credentials.
-    #[serde(default)]
-    pub expected_provider_credential_id: Option<Uuid>,
-    /// Only relevant to chat execution; skipped so callers cannot override the endpoint contract.
-    #[serde(skip)]
-    pub chat_protocol: ChatRequestProtocol,
-    #[serde(default)]
-    pub extra_headers: Map<String, Value>,
-    #[serde(default)]
-    pub extra_body: Map<String, Value>,
-    #[serde(default)]
-    pub request_headers: BTreeMap<String, String>,
-    #[serde(default)]
-    pub compatibility: RouteCompatibility,
 }
 
 #[derive(Clone)]
@@ -2944,146 +2993,6 @@ pub struct UpsertProviderUserCredentialRecord {
     pub secret_nonce: String,
     pub secret_key_id: String,
     pub updated_at: OffsetDateTime,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ProviderCapabilities {
-    #[serde(default = "default_true")]
-    pub chat_completions: bool,
-    #[serde(default = "default_true")]
-    pub responses: bool,
-    #[serde(default = "default_true")]
-    pub stream: bool,
-    #[serde(default = "default_true")]
-    pub embeddings: bool,
-    /// Images API generation (`POST /v1/images`). Opt-in per route: only
-    /// image models serve it.
-    #[serde(default)]
-    pub images: bool,
-    #[serde(default)]
-    pub decisions: bool,
-    #[serde(default = "default_true")]
-    pub tools: bool,
-    #[serde(default = "default_true")]
-    pub vision: bool,
-    #[serde(default = "default_true")]
-    pub json_schema: bool,
-    #[serde(default = "default_true")]
-    pub developer_role: bool,
-}
-
-impl ProviderCapabilities {
-    #[must_use]
-    pub const fn none() -> Self {
-        Self {
-            chat_completions: false,
-            responses: false,
-            stream: false,
-            embeddings: false,
-            images: false,
-            decisions: false,
-            tools: false,
-            vision: false,
-            json_schema: false,
-            developer_role: false,
-        }
-    }
-
-    #[must_use]
-    pub const fn new(chat_completions: bool, stream: bool, embeddings: bool) -> Self {
-        Self::with_dimensions(
-            chat_completions,
-            stream,
-            embeddings,
-            false,
-            false,
-            false,
-            false,
-        )
-    }
-
-    #[must_use]
-    pub const fn with_dimensions(
-        chat_completions: bool,
-        stream: bool,
-        embeddings: bool,
-        tools: bool,
-        vision: bool,
-        json_schema: bool,
-        developer_role: bool,
-    ) -> Self {
-        Self {
-            chat_completions,
-            responses: false,
-            stream,
-            embeddings,
-            images: false,
-            decisions: false,
-            tools,
-            vision,
-            json_schema,
-            developer_role,
-        }
-    }
-
-    #[must_use]
-    pub const fn chat_only_streaming() -> Self {
-        Self::with_dimensions(true, true, false, false, true, false, true)
-    }
-
-    #[must_use]
-    pub const fn openai_compat_baseline() -> Self {
-        Self {
-            chat_completions: true,
-            responses: true,
-            stream: true,
-            embeddings: true,
-            images: true,
-            decisions: false,
-            tools: true,
-            vision: true,
-            json_schema: true,
-            developer_role: true,
-        }
-    }
-
-    #[must_use]
-    pub const fn all_enabled() -> Self {
-        Self {
-            chat_completions: true,
-            responses: true,
-            stream: true,
-            embeddings: true,
-            images: true,
-            decisions: true,
-            tools: true,
-            vision: true,
-            json_schema: true,
-            developer_role: true,
-        }
-    }
-
-    #[must_use]
-    pub const fn intersect(self, other: Self) -> Self {
-        Self {
-            chat_completions: self.chat_completions && other.chat_completions,
-            responses: self.responses && other.responses,
-            stream: self.stream && other.stream,
-            embeddings: self.embeddings && other.embeddings,
-            images: self.images && other.images,
-            decisions: self.decisions && other.decisions,
-            tools: self.tools && other.tools,
-            vision: self.vision && other.vision,
-            json_schema: self.json_schema && other.json_schema,
-            developer_role: self.developer_role && other.developer_role,
-        }
-    }
-}
-
-impl Default for ProviderCapabilities {
-    fn default() -> Self {
-        Self::all_enabled()
-    }
 }
 
 pub const VERTEX_TEXT_EMBEDDING_MODEL_IDS: &[&str] = &[
@@ -3490,8 +3399,11 @@ pub struct SeedModelRoute {
     pub extra_headers: Map<String, Value>,
     #[serde(default)]
     pub extra_body: Map<String, Value>,
-    #[serde(default = "ProviderCapabilities::all_enabled")]
-    pub capabilities: ProviderCapabilities,
+    #[serde(default)]
+    pub service_tier: Option<ServiceTier>,
+    /// Explicit route settings only; unset fields are inferred at read time.
+    #[serde(default)]
+    pub capabilities: PartialCapabilities,
     #[serde(default)]
     pub compatibility: RouteCompatibility,
 }
@@ -3509,6 +3421,8 @@ pub struct SeedModel {
     pub rank: i32,
     #[serde(default)]
     pub routing: Option<ModelRoutingPolicy>,
+    #[serde(default)]
+    pub service_tiers: Option<Vec<ServiceTier>>,
     #[serde(default)]
     pub routes: Vec<SeedModelRoute>,
     pub allowlist: Option<ModelAllowlistPolicy>,

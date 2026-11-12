@@ -12,7 +12,7 @@
 
 ## Current state
 
-- [../admin-control-plane.md](../access/admin-control-plane.md)
+- [Admin control plane](https://oceans-llm.com/access/admin-control-plane/)
 - [../admin-api-contract-workflow.md](../contributing/reference/admin-api-contract-workflow.md)
 
 ## Context
@@ -279,9 +279,9 @@ The important contract now covered is:
 Canonical docs were updated in:
 
 - [../README.md](../README.md)
-- [../admin-control-plane.md](../access/admin-control-plane.md)
+- [Admin control plane](https://oceans-llm.com/access/admin-control-plane/)
 - [../e2e-contract-tests.md](../contributing/reference/e2e-contract-tests.md)
-- [../observability-and-request-logs.md](../operations/observability-and-request-logs.md)
+- [Observability and request logs](https://oceans-llm.com/observability/)
 
 The observability update is not directly about API keys, but this work intentionally fixed the stale request-log-detail wording at the same time because the runtime had already moved to strict `404` semantics.
 

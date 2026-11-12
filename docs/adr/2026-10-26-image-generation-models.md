@@ -6,9 +6,9 @@
 
 ## Current state
 
-- [Model Routing and API Behavior](../configuration/model-routing-and-api-behavior.md), for the Images API routes and the `images` route capability
-- [Pricing Catalog and Accounting](../configuration/pricing-catalog-and-accounting.md), for provider-reported cost and `image_output_usd_per_million_tokens`
-- [Observability and Request Logs](../operations/observability-and-request-logs.md), for the image and reasoning large-field paths
+- [Model Routing and API Behavior](https://oceans-llm.com/configuration/model-routing/), for the Images API routes and the `images` route capability
+- [Pricing Catalog and Accounting](https://oceans-llm.com/spend/pricing-and-accounting/), for provider-reported cost and `image_output_usd_per_million_tokens`
+- [Observability and Request Logs](https://oceans-llm.com/observability/), for the image and reasoning large-field paths
 - [Verification recipe: Image generation](../../.agents/skills/verify-oceans-admin/features/image-generation.md)
 
 ## Context
@@ -69,6 +69,7 @@ New large-field paths cover chat `choices[].message.images[].image_url.url`, str
 ## Follow-ups
 
 - Add an image-output rate to the pricing catalog when a source publishes one, for example OpenRouter's public `/models` `image_output` field.
+  - Done in [ADR: Multi-Source Model Catalog and Tri-State Route Capabilities](2026-10-31-multi-source-model-catalog.md): OpenRouter and LiteLLM image output rates now price catalog-priced image tokens.
 - Support Images API streaming.
 - Support native OpenAI `/images/generations` and native Vertex or Bedrock image models.
 - Translate chat `images` into `/v1/messages` and Responses API outputs.

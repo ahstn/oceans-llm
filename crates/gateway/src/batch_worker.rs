@@ -641,7 +641,7 @@ async fn price_results(
         }
         return Ok(BatchPricingStatus::ProviderReported);
     }
-    let pricer = if let Some(snapshot) = job.pricing_snapshot {
+    let pricer = if let Some(snapshot) = job.pricing_snapshot.clone() {
         BatchPricer::from_snapshot(snapshot)
     } else {
         let route = service
@@ -1032,6 +1032,7 @@ mod tests {
                 extra_body: Default::default(),
                 request_headers: BTreeMap::new(),
                 compatibility: route.compatibility.clone(),
+                service_tier: None,
             },
             pricing_snapshot: None,
         };

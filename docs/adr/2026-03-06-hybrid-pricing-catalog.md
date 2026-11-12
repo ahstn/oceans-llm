@@ -3,17 +3,19 @@
 - Date: 2026-03-06
 - Status: Accepted
 
+> **Amended by** [ADR: Multi-Source Model Catalog and Tri-State Route Capabilities](2026-10-31-multi-source-model-catalog.md) (2026-10-31). The catalog now merges models.dev, OpenRouter, and LiteLLM. Each source refreshes every 6 hours with an ETag or checksum. `github-copilot` is a supported pricing provider ID, and context tiers are billed.
+
 ## Current state
 
-- [../pricing-catalog-and-accounting.md](../configuration/pricing-catalog-and-accounting.md)
+- [Pricing catalog and accounting](https://oceans-llm.com/spend/pricing-and-accounting/)
 - [../budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
-- [../request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
+- [Request lifecycle and failure modes](https://oceans-llm.com/reference/request-lifecycle/)
 
 ## Context
 
 Implemented by:
 
-- [../pricing-catalog-and-accounting.md](../configuration/pricing-catalog-and-accounting.md)
+- [Pricing catalog and accounting](https://oceans-llm.com/spend/pricing-and-accounting/)
 - [../budgets-and-spending.md](../contributing/operations/budgets-and-spending.md)
 
 We added budget and spend-accounting schema groundwork (`user_budgets`, `usage_cost_events`), but the gateway still lacked a reliable pricing source for live enforcement. Provider `/v1/models` endpoints were not sufficient because they do not expose stable billing data, and provider pricing pages are documented separately and can change independently of model discovery APIs.
@@ -113,7 +115,7 @@ This ADR reflects the initial pricing-catalog slice. The live system has moved b
 - `usage_cost_events` writes are live
 - pricing coverage still remains intentionally exact-only
 
-Treat [../pricing-catalog-and-accounting.md](../configuration/pricing-catalog-and-accounting.md) and [../budgets-and-spending.md](../contributing/operations/budgets-and-spending.md) as the canonical current-state docs.
+Treat [Pricing catalog and accounting](https://oceans-llm.com/spend/pricing-and-accounting/) and [../budgets-and-spending.md](../contributing/operations/budgets-and-spending.md) as the canonical current-state docs.
 
 ## Consequences
 
@@ -124,7 +126,7 @@ Positive:
 - future spend-ledger work can reuse the normalized catalog and cache table.
 
 Tradeoffs:
-- pricing freshness is bounded by the 15-minute refresh interval and remote availability,
+- pricing freshness is bounded by the refresh interval (now 6 hours) and remote availability,
 - unsupported billing modifiers intentionally remain unpriced,
 - vendored snapshot maintenance now requires an explicit sync step.
 

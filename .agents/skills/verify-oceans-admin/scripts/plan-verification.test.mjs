@@ -77,6 +77,8 @@ test('Messages production boundaries select the dedicated compatibility recipe',
     'crates/gateway-providers/src/bedrock/response.rs',
     'crates/gateway-providers/src/copilot/mod.rs',
     'crates/gateway-providers/src/openai_compat/anthropic_messages.rs',
+    'crates/gateway-service/src/request_logging.rs',
+    'crates/gateway-service/src/service.rs',
     '.agents/skills/verify-oceans-admin/scripts/check-messages.mjs',
   ]) {
     const feature = planFor([file], routing).proofs.find((proof) => proof.id === 'anthropic-messages')
@@ -88,7 +90,11 @@ test('Messages production boundaries select the dedicated compatibility recipe',
 })
 
 test('Messages routing preserves separate live/log coverage and skips unrelated paths', () => {
-  for (const file of ['crates/gateway-core/src/protocol/anthropic.rs', 'crates/gateway-core/src/domain.rs']) {
+  for (const file of [
+    'crates/gateway-core/src/protocol/anthropic.rs',
+    'crates/gateway-core/src/domain.rs',
+    'crates/gateway/src/http/handlers/native_messages.rs',
+  ]) {
     const shared = planFor([file], routing)
     for (const id of ['anthropic-messages', 'live-llm-requests', 'request-logs']) {
       assert.ok(shared.proofs.some((proof) => proof.id === id), `${file}: ${id}`)
@@ -103,4 +109,30 @@ test('Messages routing preserves separate live/log coverage and skips unrelated 
   ], routing)
   assert.ok(!unrelated.proofs.some((proof) => proof.id === 'anthropic-messages'))
   assert.equal(unrelated.skipped.length, 3)
+})
+
+test('inference endpoint and OpenCode plugin changes select the paid harness trials', () => {
+  for (const file of [
+    'packages/opencode-oceans/src/models.ts',
+    'packages/opencode-oceans/package.json',
+    'crates/gateway/src/http/handlers.rs',
+    'crates/gateway/src/http/handlers/inference.rs',
+    'crates/gateway/src/http/handlers/native_messages.rs',
+    'crates/gateway/src/http/models.rs',
+    'crates/gateway/src/http/request_body/mod.rs',
+    'crates/gateway-core/src/protocol/translate.rs',
+    'crates/gateway-service/src/model_metadata/listing.rs',
+    'crates/gateway-client-config/src/templates/opencode.rs',
+  ]) {
+    const feature = planFor([file], routing).proofs.find((proof) => proof.id === 'harness-integration')
+    assert.ok(feature, file)
+    assert.deepEqual(feature.proof, { drive: 'harness-integration' })
+    assert.equal(feature.paid, true)
+  }
+  const unrelated = planFor([
+    'packages/opencode-oceans/tests/models.test.ts',
+    'crates/gateway/src/http/handlers/embeddings.rs',
+    'crates/admin-ui/web/src/routes/models.tsx',
+  ], routing)
+  assert.ok(!unrelated.proofs.some((proof) => proof.id === 'harness-integration'))
 })

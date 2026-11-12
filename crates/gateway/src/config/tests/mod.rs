@@ -41,5 +41,6 @@ mod providers;
 mod rate_limits;
 mod routes;
 mod routing_account_scope;
+mod service_tiers;
 mod skills;
 mod validation_order;

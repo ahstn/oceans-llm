@@ -1,6 +1,7 @@
 use super::*;
 use crate::shared::{
-    json_object_from_str, parse_model_routing_policy, parse_uuid, unix_to_datetime,
+    json_object_from_str, parse_model_routing_policy, parse_stored_service_tier,
+    parse_stored_service_tiers, parse_uuid, unix_to_datetime,
 };
 
 pub(super) async fn list_allowed_model_keys(
@@ -102,6 +103,7 @@ pub(super) fn decode_gateway_model(row: &PgRow) -> Result<GatewayModel, StoreErr
         })
         .transpose()?;
     let tags_json: String = row.try_get(5).map_err(to_query_error)?;
+    let service_tiers_json: Option<String> = row.try_get(8).map_err(to_query_error)?;
     Ok(GatewayModel {
         id: parse_uuid(&row.try_get::<String, _>(0).map_err(to_query_error)?)?,
         model_key: row.try_get(1).map_err(to_query_error)?,
@@ -112,6 +114,7 @@ pub(super) fn decode_gateway_model(row: &PgRow) -> Result<GatewayModel, StoreErr
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
         rank: row.try_get(6).map_err(to_query_error)?,
         routing: parse_model_routing_policy(routing_policy_json.as_deref())?,
+        service_tiers: parse_stored_service_tiers(service_tiers_json.as_deref())?,
     })
 }
 
@@ -123,6 +126,7 @@ pub(super) fn decode_model_route(row: &PgRow) -> Result<ModelRoute, StoreError> 
     let extra_body_json: String = row.try_get(10).map_err(to_query_error)?;
     let capabilities_json: String = row.try_get(11).map_err(to_query_error)?;
     let compatibility_json: String = row.try_get(12).map_err(to_query_error)?;
+    let service_tier: Option<String> = row.try_get(13).map_err(to_query_error)?;
     let pricing_override = pricing_override_json
         .as_deref()
         .map(serde_json::from_str)
@@ -147,6 +151,7 @@ pub(super) fn decode_model_route(row: &PgRow) -> Result<ModelRoute, StoreError> 
         extra_body: json_object_from_str(&extra_body_json)?,
         capabilities,
         compatibility,
+        service_tier: parse_stored_service_tier(service_tier.as_deref())?,
     })
 }
 
@@ -663,6 +668,9 @@ pub(super) fn decode_usage_ledger_record(row: &PgRow) -> Result<UsageLedgerRecor
     let image_output_tokens: Option<i64> = row.try_get(34).map_err(to_query_error)?;
     let image_output_cost_per_million_tokens_10000: Option<i64> =
         row.try_get(35).map_err(to_query_error)?;
+    let pricing_tier_above_input_tokens: Option<i64> = row.try_get(36).map_err(to_query_error)?;
+    let requested_service_tier: Option<String> = row.try_get(37).map_err(to_query_error)?;
+    let served_service_tier: Option<String> = row.try_get(38).map_err(to_query_error)?;
 
     Ok(UsageLedgerRecord {
         usage_event_id: parse_uuid(&usage_event_id)?,
@@ -708,8 +716,11 @@ pub(super) fn decode_usage_ledger_record(row: &PgRow) -> Result<UsageLedgerRecor
             .map(Money4::from_scaled),
         image_output_cost_per_million_tokens: image_output_cost_per_million_tokens_10000
             .map(Money4::from_scaled),
+        pricing_tier_above_input_tokens,
         computed_cost_usd: Money4::from_scaled(computed_cost_10000),
         occurred_at: unix_to_datetime(occurred_at)?,
+        requested_service_tier: parse_stored_service_tier(requested_service_tier.as_deref())?,
+        served_service_tier: parse_stored_service_tier(served_service_tier.as_deref())?,
     })
 }
 
@@ -734,6 +745,10 @@ pub(super) fn decode_model_pricing_record(row: &PgRow) -> Result<ModelPricingRec
     let provenance_fetched_at: i64 = row.try_get(18).map_err(to_query_error)?;
     let created_at: i64 = row.try_get(19).map_err(to_query_error)?;
     let updated_at: i64 = row.try_get(20).map_err(to_query_error)?;
+    let output_image_cost_per_million_tokens_10000: Option<i64> =
+        row.try_get(21).map_err(to_query_error)?;
+    let context_tiers_json: String = row.try_get(22).map_err(to_query_error)?;
+    let service_tiers_json: String = row.try_get(23).map_err(to_query_error)?;
 
     Ok(ModelPricingRecord {
         model_pricing_id: parse_uuid(&model_pricing_id)?,
@@ -751,6 +766,10 @@ pub(super) fn decode_model_pricing_record(row: &PgRow) -> Result<ModelPricingRec
             .map(Money4::from_scaled),
         output_audio_cost_per_million_tokens: output_audio_cost_per_million_tokens_10000
             .map(Money4::from_scaled),
+        output_image_usd_per_million: output_image_cost_per_million_tokens_10000
+            .map(Money4::from_scaled),
+        context_tiers: serde_json::from_str(&context_tiers_json)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
         release_date: row.try_get(10).map_err(to_query_error)?,
         last_updated: row.try_get(11).map_err(to_query_error)?,
         effective_start_at: unix_to_datetime(effective_start_at)?,
@@ -766,6 +785,8 @@ pub(super) fn decode_model_pricing_record(row: &PgRow) -> Result<ModelPricingRec
         },
         created_at: unix_to_datetime(created_at)?,
         updated_at: unix_to_datetime(updated_at)?,
+        service_tiers: serde_json::from_str(&service_tiers_json)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
     })
 }
 

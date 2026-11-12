@@ -9,16 +9,24 @@ use gateway_client_config::{
 };
 use gateway_core::{
     GatewayError, GatewayModel, ModelRepository, ModelRoute, ProviderCapabilities,
-    ProviderConnection, ProviderRepository, ReasoningEffort,
+    ProviderConnection, ProviderRepository, ReasoningEffort, ServiceTier,
 };
 use serde::Serialize;
 use time::{Date, Month, OffsetDateTime, format_description::well_known::Rfc3339};
 
-use super::{LoadedRoutes, ModelMetadata, RouteMetadata, load_routes, route_metadata, summarize};
+use super::{
+    LoadedRoutes, ModelMetadata, RouteMetadata, load_routes, route_metadata,
+    service_tiers::{
+        AdapterServiceTiers, advertised_service_tiers, allowed_service_tiers,
+        selectable_service_tiers, servable_service_tiers,
+    },
+    summarize,
+};
 use crate::{
     admin_models::{
         reasoning_level, route_is_eligible, route_thinking_policy, select_display_route,
     },
+    capability_hints::hints_for_route,
     effective_route_metadata::{effective_provider_route_capabilities, native_api_format},
     pricing_catalog::PricingCatalogSnapshot,
     resolve_provider_display,
@@ -70,6 +78,12 @@ pub struct ModelCard {
     /// accepted format. omp should use `discovery.type: litellm`, which reads
     /// `/model_group/info` instead of this list.
     pub supported_endpoint_types: Vec<&'static str>,
+    /// Every tier a request can be served at, including `default` when it can and a tier a
+    /// route forces; absent when default is the only one. omp reads this list to offer
+    /// Ultrafast. Callers may request only the tiers the allow-list permits, so the variants
+    /// in `client_hints` can offer fewer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub service_tiers: Option<Vec<ServiceTier>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_hints: Option<ClientHints>,
 }
@@ -141,6 +155,7 @@ pub(crate) async fn list_models<R>(
     repo: &R,
     models: Vec<GatewayModel>,
     snapshot: &PricingCatalogSnapshot,
+    adapter: &dyn AdapterServiceTiers,
 ) -> Result<ModelsListResponse, GatewayError>
 where
     R: ModelRepository + ProviderRepository,
@@ -149,7 +164,9 @@ where
     let data = models
         .iter()
         .enumerate()
-        .map(|(index, model)| model_card(&ModelView::build(&loaded, index, model, snapshot)))
+        .map(|(index, model)| {
+            model_card(&ModelView::build(&loaded, index, model, snapshot, adapter))
+        })
         .collect::<Vec<_>>();
     Ok(ModelsListResponse {
         object: "list",
@@ -166,6 +183,8 @@ pub(super) struct ModelView<'a> {
     pub(super) model: &'a GatewayModel,
     /// The strictest ceiling along the alias chain, as enforced at request time.
     pub(super) reasoning_ceiling: Option<ReasoningEffort>,
+    /// The tier allow-list a caller's requested tier must satisfy; `None` allows every tier.
+    pub(super) allowed_service_tiers: Option<&'a [ServiceTier]>,
     /// Union of the APIs the eligible routes serve.
     pub(super) transport: ProviderCapabilities,
     /// Every chat-capable route speaks Anthropic Messages upstream.
@@ -181,7 +200,7 @@ pub(super) struct ModelView<'a> {
     pub(super) chat_reasoning: ChatReasoning,
     /// Request features a chat request can rely on, after routing filters on them.
     pub(super) chat_features: ChatFeatures,
-    /// Limits and capabilities summarised across the enabled routes.
+    /// Limits, capabilities, and servable tiers summarised across the enabled routes.
     pub(super) summary: ModelMetadata,
 }
 
@@ -217,6 +236,7 @@ impl<'a> ModelView<'a> {
         index: usize,
         model: &'a GatewayModel,
         snapshot: &PricingCatalogSnapshot,
+        adapter: &dyn AdapterServiceTiers,
     ) -> Self {
         let enabled = loaded.enabled_routes(index).collect::<Vec<_>>();
         let details = enabled
@@ -243,7 +263,7 @@ impl<'a> ModelView<'a> {
         // priority tier and falls back to later tiers. Served APIs are therefore the union.
         // Features routing filters on need only the routes that pass the filter; others,
         // such as reasoning, need every chat-capable route to honour them.
-        let eligible = eligible_routes(loaded, routes);
+        let eligible = eligible_routes(loaded, routes, snapshot);
         let chat_routes = eligible
             .iter()
             .filter(|(_, _, caps)| caps.chat_completions || caps.responses)
@@ -261,9 +281,19 @@ impl<'a> ModelView<'a> {
             route_thinking_policy(model, execution, route, provider, Some(&display))
         });
         let chat_features = chat_features(&chat_routes);
+        let allowed = allowed_service_tiers(model, execution);
+        let service_tiers = servable_service_tiers(
+            chat_routes
+                .iter()
+                .map(|((route, provider, _), _)| (*route, *provider)),
+            allowed,
+            snapshot,
+            adapter,
+        );
         Self {
             model,
             reasoning_ceiling,
+            allowed_service_tiers: allowed,
             transport: served_apis(&eligible),
             messages_native: every_chat_route(
                 &eligible,
@@ -283,7 +313,7 @@ impl<'a> ModelView<'a> {
             thinking_policy,
             chat_reasoning,
             chat_features,
-            summary: summarize(model.model_key.clone(), details),
+            summary: summarize(model.model_key.clone(), details, service_tiers),
         }
     }
 
@@ -356,6 +386,7 @@ fn chat_features(chat_routes: &[ChatRoute<'_, '_>]) -> ChatFeatures {
 fn eligible_routes<'a>(
     loaded: &'a LoadedRoutes,
     routes: &'a [ModelRoute],
+    snapshot: &PricingCatalogSnapshot,
 ) -> Vec<EligibleRoute<'a>> {
     routes
         .iter()
@@ -363,9 +394,9 @@ fn eligible_routes<'a>(
         .filter_map(|route| {
             let provider = loaded.providers.get(&route.provider_key)?;
             let capabilities = effective_provider_route_capabilities(
-                Some(route.capabilities),
+                route,
                 Some(provider),
-                Some(route),
+                hints_for_route(snapshot, provider, route),
             );
             Some((route, provider, capabilities))
         })
@@ -466,6 +497,7 @@ fn model_card(view: &ModelView<'_>) -> ModelCard {
         thinking_policy,
         native_api_format: primary.and_then(|(route, provider)| native_api_format(provider, route)),
         max_reasoning_effort: reasoning_ceiling.map(reasoning_level),
+        service_tiers: selectable_service_tiers(&summary.service_tiers, view.allowed_service_tiers),
         ..ClientConfigInput::default()
     });
 
@@ -527,6 +559,7 @@ fn model_card(view: &ModelView<'_>) -> ModelCard {
             transport,
             hints.as_ref().map(|hints| hints.preferred_api_format),
         ),
+        service_tiers: advertised_service_tiers(&summary.service_tiers),
         client_hints: hints,
     }
 }

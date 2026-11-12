@@ -6,13 +6,13 @@
 ## Implemented By
 
 - Canonical docs:
-  - [../observability-and-request-logs.md](../operations/observability-and-request-logs.md)
-  - [../admin-control-plane.md](../access/admin-control-plane.md)
+  - [Observability and request logs](https://oceans-llm.com/observability/)
+  - [Admin control plane](https://oceans-llm.com/access/admin-control-plane/)
 
 ## Current state
 
-- [../observability-and-request-logs.md](../operations/observability-and-request-logs.md)
-- [../request-lifecycle-and-failure-modes.md](../reference/request-lifecycle-and-failure-modes.md)
+- [Observability and request logs](https://oceans-llm.com/observability/)
+- [Request lifecycle and failure modes](https://oceans-llm.com/reference/request-lifecycle/)
 
 ## Context
 

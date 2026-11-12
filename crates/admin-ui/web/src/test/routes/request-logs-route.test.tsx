@@ -365,6 +365,35 @@ describe('RequestLogsPage detail', () => {
     expect(screen.queryByText('Payload Policy')).not.toBeInTheDocument()
     expect(screen.queryByText('n/a')).not.toBeInTheDocument()
     expect(body.getAllByText('—').length).toBeGreaterThan(0)
+    expect(facts.queryByText('Service tier')).not.toBeInTheDocument()
+  })
+
+  it('shows the requested and served service tier, warning when they differ', async () => {
+    const body = await openDetail({
+      log: { ...items[0], service_tier: 'priority', served_service_tier: 'default' },
+      user_agent_raw: null,
+      payload: null,
+      attempts: [successAttempt],
+    })
+
+    const facts = within(body.getByTestId('request-log-facts'))
+    expect(facts.getByText('Service tier')).toBeInTheDocument()
+    expect(facts.getByText('Fast (priority)')).toBeInTheDocument()
+    const served = facts.getByText('Standard (default)')
+    expect(served).toHaveAttribute('title', 'Requested Fast (priority), served Standard (default)')
+  })
+
+  it('shows one tier when the provider served the tier the request asked for', async () => {
+    const body = await openDetail({
+      log: { ...items[0], service_tier: 'priority', served_service_tier: 'priority' },
+      user_agent_raw: null,
+      payload: null,
+      attempts: [successAttempt],
+    })
+
+    const facts = within(body.getByTestId('request-log-facts'))
+    expect(facts.getByText('Fast (priority)')).toBeInTheDocument()
+    expect(facts.getByText('requested and served')).toBeInTheDocument()
   })
 
   it('renders tool counts, provider attempts and the payload view toggle', async () => {

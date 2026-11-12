@@ -10,6 +10,7 @@ use gateway_core::{
 };
 use serde::Deserialize;
 
+use super::service_tier::{retain_default_tier_routes, take_default_service_tier};
 use super::*;
 use crate::observability::DecisionsRequestMetric;
 
@@ -97,6 +98,8 @@ fn detect_decisions_format(body: &Value) -> Result<DecisionsWireFormat, GatewayE
     }
 }
 
+/// Parses and validates a caller's body. Decisions runs at the default tier, so its tier
+/// fields are removed, and a tier other than default is rejected.
 fn parse_decisions_request(
     body: &Value,
     format: DecisionsWireFormat,
@@ -107,7 +110,7 @@ fn parse_decisions_request(
             format.as_str()
         ))
     };
-    let request = match format {
+    let mut request = match format {
         DecisionsWireFormat::SystemOne => SystemOneDecisionsRequest::deserialize(body)
             .map(|request| system_one_decisions_request_to_core(&request))
             .map_err(invalid)?,
@@ -120,6 +123,7 @@ fn parse_decisions_request(
     if let Some(message) = request.validation_error() {
         return Err(GatewayError::InvalidRequest(message));
     }
+    take_default_service_tier("decisions", &mut request.extra)?;
     Ok(request)
 }
 
@@ -286,6 +290,7 @@ async fn dispatch_decisions(
     let request_span = Span::current();
     let requirements = core_request.requirements();
     let route_count = resolved.routes.len();
+    retain_default_tier_routes(&mut resolved, "decisions").map_err(AppError)?;
     retain_representable_routes(&mut resolved.routes, &core_request).map_err(AppError)?;
     record_request_span_fields(&request_span, auth, &resolved, false, call.route_path);
     let request_headers = extract_request_headers(headers);
@@ -302,6 +307,7 @@ async fn dispatch_decisions(
         state,
         &resolved,
         requirements,
+        None,
         headers,
         &core_request.extra,
         &request_headers,
@@ -324,12 +330,7 @@ async fn dispatch_decisions(
         provider,
         receipt: _,
         expected_provider_credential_id,
-    } = match selected {
-        Some(selection) => selection,
-        None => {
-            return Err(AppError(no_compatible_route_error(requirements)));
-        }
-    };
+    } = selected?;
     *selected_provider = Some(route.provider_key.clone());
     record_provider_execution_span_fields(
         &request_span,
@@ -434,6 +435,7 @@ async fn dispatch_decisions(
                         request_id: &request_id,
                         labels: labels.clone(),
                         operation: "decisions",
+                        service_tiers: gateway_core::ServiceTierOutcome::default(),
                     },
                     provider_usage,
                 )
@@ -483,6 +485,7 @@ async fn dispatch_decisions(
             request_id: &request_id,
             labels: labels.clone(),
             operation: "decisions",
+            service_tiers: gateway_core::ServiceTierOutcome::default(),
         },
         usage_value_from_response(&provider_response.body),
     )
@@ -582,6 +585,28 @@ mod tests {
     }
 
     #[test]
+    fn parse_removes_a_default_tier_and_rejects_others() {
+        for (body, format) in [
+            (system_one_body(), DecisionsWireFormat::SystemOne),
+            (openai_body(), DecisionsWireFormat::OpenAi),
+        ] {
+            let mut tiered = body.clone();
+            tiered["service_tier"] = json!("default");
+            tiered["speed"] = json!("standard");
+            let extra = parse_decisions_request(&tiered, format).unwrap().extra;
+            assert!(
+                !extra.contains_key("service_tier") && !extra.contains_key("speed"),
+                "{format:?}: {extra:?}"
+            );
+
+            let mut priority = body;
+            priority["service_tier"] = json!("priority");
+            let error = parse_decisions_request(&priority, format).unwrap_err();
+            assert_eq!(error.http_status_code(), 400, "{format:?}");
+        }
+    }
+
+    #[test]
     fn same_format_passes_through_and_cross_format_renders() {
         let upstream = json!({
             "model": "jev-1.13.0",
@@ -638,8 +663,9 @@ mod tests {
             extra_body: Default::default(),
             context_window_tokens: None,
             pricing_override: None,
-            capabilities: gateway_core::ProviderCapabilities::all_enabled(),
+            capabilities: gateway_core::ProviderCapabilities::all_enabled().into(),
             compatibility: Default::default(),
+            service_tier: None,
         };
         if openai {
             route.compatibility.openai_compat =

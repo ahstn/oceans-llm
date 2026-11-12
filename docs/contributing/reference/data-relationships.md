@@ -1,6 +1,6 @@
 # Data Relationships
 
-`See also`: [Identity and Access](../../access/identity-and-access.md), [Service Accounts](../../access/service-accounts.md), [Model Routing and APIs](../../configuration/model-routing-and-api-behavior.md), [Provider API Compatibility](../../reference/provider-api-compatibility.md), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](../../operations/observability-and-request-logs.md), [Request Logs](../../operations/observability/request-logs.md), [MCP Invocations](../../mcp/mcp-invocations.md), [MCP Registry and Discovery](../mcp/mcp-registry-and-discovery.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../../adr/2026-05-10-team-service-accounts.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../../adr/2026-03-05-identity-foundation.md), [ADR: Route-Level Provider API Compatibility Profiles](../../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../../adr/2026-04-28-mcp-tool-cardinality-observability.md), [ADR: External MCP Registry and Discovery Boundary](../../adr/2026-05-26-external-mcp-registry-and-discovery.md)
+`See also`: [Identity and Access](https://oceans-llm.com/access/identity-and-access/), [Service Accounts](https://oceans-llm.com/access/service-accounts/), [Model Routing and APIs](https://oceans-llm.com/configuration/model-routing/), [Provider API Compatibility](https://oceans-llm.com/reference/provider-api-compatibility/), [Budgets and Spending](../operations/budgets-and-spending.md), [Observability and Request Logs](https://oceans-llm.com/observability/), [Request Logs](https://oceans-llm.com/observability/request-logs/), [MCP Invocations](https://oceans-llm.com/extensions/mcp-invocations/), [MCP Registry and Discovery](../mcp/mcp-registry-and-discovery.md), [ADR: Team Service Accounts for Non-Human Gateway Access](../../adr/2026-05-10-team-service-accounts.md), [ADR: Identity Foundation for Users, Teams, and API Key Ownership](../../adr/2026-03-05-identity-foundation.md), [ADR: Route-Level Provider API Compatibility Profiles](../../adr/2026-04-23-route-level-provider-api-compatibility-profiles.md), [ADR: MCP Tool Cardinality Observability](../../adr/2026-04-28-mcp-tool-cardinality-observability.md), [ADR: External MCP Registry and Discovery Boundary](../../adr/2026-05-26-external-mcp-registry-and-discovery.md)
 
 This document is schema-oriented. It describes the persistent relationships that are hard to infer from a single file, but it does not try to restate every runtime rule owned by neighboring docs.
 
@@ -59,7 +59,7 @@ This document is schema-oriented. It describes the persistent relationships that
 
 `model_routes` stores two distinct route execution metadata documents:
 
-- `capabilities_json` controls whether the route may execute a request
+- `capabilities_json` stores the explicit route capability flags; omitted flags are absent and are filled at runtime from compatibility inference, catalog hints, and defaults (`gateway_core::effective_route_capabilities`)
 - `compatibility_json` controls declared provider API compatibility transforms after route selection
 
 `capabilities_json` includes API-family gates such as `chat_completions`, `responses`, and `embeddings`.
@@ -184,10 +184,10 @@ Request-log purge treats `request_logs` as the parent retention boundary. Purgin
 
 - `pricing_catalog_cache`
   - Key columns: `catalog_key`, `source`, `etag`, `fetched_at`, `snapshot_json`
-  - Notes: runtime uses the cached snapshot together with the vendored fallback in the repo
+  - Notes: one row per catalog source (`models_dev_supported_v5`, `openrouter_v1`, `litellm_v3`), each with its own ETag, fetch time, and a content checksum inside `snapshot_json`. Runtime merges the three cached snapshots, using each source's vendored fallback in the repo when its row is missing. A key's version advances whenever that source's projection changes, because a 304 would otherwise keep a row projected the old way
 - `model_pricing`
-  - Key columns: `model_pricing_id`, `pricing_provider_id`, `pricing_model_id`, `effective_start_at`, `effective_end_at`
-  - Notes: effective-dated pricing rows are the durable historical charging source
+  - Key columns: `model_pricing_id`, `pricing_provider_id`, `pricing_model_id`, `context_tiers_json`, `output_image_cost_per_million_tokens_10000`, `effective_start_at`, `effective_end_at`
+  - Notes: effective-dated pricing rows are the durable historical charging source. One reconciliation writes all rows of a merged catalog generation; each row's provenance is the source that supplied its pricing
 - `usage_cost_event_duplicates_archive`
   - Purpose: preserves duplicate-ledger rows during pricing/ledger migration cleanup and audit backfill flows
 
@@ -214,10 +214,12 @@ Model-level allowlist refs have no user/team foreign keys, so unknown emails and
 ## Budget and Pricing Notes
 
 - Pricing lookup comes from the internal pricing catalog layer, not from provider `/v1/models` responses
-- Supported pricing source ids in this slice are `openai`, `google-vertex`, and `google-vertex-anthropic`
-- `openai_compat` providers must declare `pricing_provider_id`
+- Supported pricing provider ids are `amazon-bedrock`, `github-copilot`, `google-vertex`, `google-vertex-anthropic`, `openai`, `openrouter`, and `opencode`
+- `openai_compat`, `anthropic_compat`, `gcp_cloud_run_openai_compat`, and `typesafe` providers must declare `pricing_provider_id`; `github_copilot` providers may declare it
 - `gcp_vertex` derives pricing source from the `upstream_model` publisher prefix
+- `aws_bedrock` routes use `amazon-bedrock` with the normalized upstream model id
 - Pricing is exact-only in this slice; unsupported billing modifiers, unsupported publisher/location combinations, and unknown model ids resolve as `unpriced`
+- Catalog context tiers bill the whole request when the normalized prompt tokens are strictly greater than the tier threshold; `usage_cost_events.pricing_tier_above_input_tokens` records the tier used
 - Chargeable requests write usage ledger rows and participate in budget enforcement
 - Unpriced requests are not charged and must not be budget-blocked
 - Supported budget cadence values are `daily|weekly|monthly`
@@ -236,7 +238,7 @@ Model-level allowlist refs have no user/team foreign keys, so unknown emails and
 - `request_logs.model_key` stores the requested gateway model
 - `request_logs.resolved_model_key` stores the canonical execution model after alias resolution
 
-This distinction matters for admin-facing observability and historical debugging. See [model-routing-and-api-behavior.md](../../configuration/model-routing-and-api-behavior.md).
+This distinction matters for admin-facing observability and historical debugging. See [Model routing and APIs](https://oceans-llm.com/configuration/model-routing/).
 
 ## Route Viability Note
 
@@ -249,7 +251,7 @@ Operational viability also depends on:
 - positive route weights
 - capability filtering
 
-Those rules are owned by [configuration-reference.md](../../configuration/configuration-reference.md) and [model-routing-and-api-behavior.md](../../configuration/model-routing-and-api-behavior.md).
+Those rules are owned by [Configuration reference](https://oceans-llm.com/configuration/) and [Model routing and APIs](https://oceans-llm.com/configuration/model-routing/).
 
 ## Ownership Notes
 
@@ -258,7 +260,7 @@ Those rules are owned by [configuration-reference.md](../../configuration/config
 - Direct team-owned runtime API keys are removed from the schema contract
 - There is no reserved `system-legacy` ownership path
 
-That ownership model is explained operationally in [identity-and-access.md](../../access/identity-and-access.md), [service-accounts.md](../../access/service-accounts.md), and [budgets-and-spending.md](../operations/budgets-and-spending.md).
+That ownership model is explained operationally in [Identity and access](https://oceans-llm.com/access/identity-and-access/), [Service accounts](https://oceans-llm.com/access/service-accounts/), and [budgets-and-spending.md](../operations/budgets-and-spending.md).
 
 ## PostgreSQL and libsql Parity
 

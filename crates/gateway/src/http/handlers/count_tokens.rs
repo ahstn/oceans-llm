@@ -28,7 +28,6 @@ const GENERATION_FIELDS: &[&str] = &[
     "store",
     "stream_options",
     "metadata",
-    "service_tier",
     "user",
     "seed",
     "n",
@@ -155,7 +154,13 @@ async fn count_tokens_inner(
         RateLimitOperation::CountTokens,
     )
     .await?;
-    enforce_chat_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)?;
+    enforce_chat_reasoning_effort(&core_request, resolved.selection.max_reasoning_effort)
+        .inspect_err(|rejection| {
+            resolved
+                .selection
+                .log_reasoning_effort_rejection(Some(&request_id), rejection);
+        })
+        .map_err(GatewayError::from)?;
 
     let request_headers = extract_request_headers(&headers);
     let request_span = Span::current();
@@ -164,6 +169,7 @@ async fn count_tokens_inner(
         &state,
         &resolved,
         requirements,
+        None,
         &headers,
         &request.extra,
         &request_headers,
@@ -172,15 +178,12 @@ async fn count_tokens_inner(
     .await?;
     // The receipt is dropped: a count is not a completed response, so it must not
     // refresh session affinity or record a response origin.
-    let Some(SelectedProviderRoute {
+    let SelectedProviderRoute {
         route,
         provider,
         expected_provider_credential_id,
         ..
-    }) = selected
-    else {
-        return Err(AppError(no_compatible_route_error(requirements)));
-    };
+    } = selected?;
     record_provider_execution_span_fields(
         &request_span,
         &route.provider_key,
@@ -245,13 +248,15 @@ async fn count_tokens_inner(
 /// Shapes a Messages request so every count mapper accepts it.
 ///
 /// A count never streams, so a stray `stream: true` must not narrow eligibility.
-/// Generation controls are dropped, and the caller's output limit is replaced: a
-/// limit cannot change the count, but Bedrock validates it, so `0` or a value below
-/// a manual thinking budget would fail. The replacement leaves room for that budget.
+/// Generation controls and service tier fields are dropped, since a count never
+/// bills a tier, and the caller's output limit is replaced: a limit cannot change
+/// the count, but Bedrock validates it, so `0` or a value below a manual thinking
+/// budget would fail. The replacement leaves room for that budget.
 fn prepare_count_request(request: &mut CoreChatRequest) {
     request.stream = false;
     for field in GENERATION_FIELDS
         .iter()
+        .chain(&gateway_core::SERVICE_TIER_REQUEST_FIELDS)
         .chain(&["max_tokens", "max_completion_tokens"])
     {
         request.extra.remove(*field);
@@ -374,6 +379,9 @@ mod tests {
             "top_logprobs": 3,
             "parallel_tool_calls": false,
             "response_format": {"type": "json_object"},
+            "service_tier": "priority",
+            "serviceTier": "flex",
+            "speed": "fast",
         }));
         prepare_count_request(&mut request);
         assert_eq!(

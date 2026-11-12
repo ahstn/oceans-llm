@@ -8,7 +8,7 @@
 //                                                or the docs site's dark theme stops mirroring the tokens
 //
 // Consumers install it with `npx shadcn@latest add ahstn/oceans-llm/oceans-theme`, or from the
-// built item the docs site serves at https://docs.oceans-llm.com/r/oceans-theme.json.
+// built item the docs site serves at https://oceans-llm.com/r/oceans-theme.json.
 import { spawnSync } from 'node:child_process'
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -39,7 +39,9 @@ function block(source, selector, from = 0) {
 function declarations(body) {
   const withoutComments = body.replace(/\/\*[\s\S]*?\*\//g, '')
   const flat = withoutComments.replace(/@keyframes[\s\S]*?\{[\s\S]*?\}\s*\}/g, '')
-  return [...flat.matchAll(/--([\w-]+):\s*([^;]+);/g)].map(([, name, value]) => [name, value.trim().replace(/\s+/g, ' ')])
+  // Formatters wrap long values such as color-mix() across lines; emit them on one line.
+  const oneLine = (value) => value.trim().replace(/\s+/g, ' ').replace(/\(\s+/g, '(').replace(/\s+\)/g, ')')
+  return [...flat.matchAll(/--([\w-]+):\s*([^;]+);/g)].map(([, name, value]) => [name, oneLine(value)])
 }
 
 function rules(body) {
@@ -112,7 +114,7 @@ for (const match of css.matchAll(/@utility (type-[\w-]+) \{/g)) {
 const registry = {
   $schema: 'https://ui.shadcn.com/schema/registry.json',
   name: 'oceans',
-  homepage: 'https://docs.oceans-llm.com',
+  homepage: 'https://oceans-llm.com',
   items: [
     {
       name: 'oceans-theme',
@@ -161,41 +163,36 @@ function sameData(text, expected) {
   }
 }
 
-// The docs site's dark theme repeats these admin tokens by hand (VitePress variable: admin token).
-// Its light theme, and dark values with no admin counterpart (text-2, text-3, the -2 hover steps and
-// the hero gradient), are tuned for the docs and aren't checked.
-const docsCssPath = 'docs/.vitepress/theme/custom.css'
+// The docs site's dark theme repeats these admin tokens by hand (Nimbus variable: admin token).
+// Its light theme, and dark values with no admin counterpart (the hover mixes, the brand wash, the
+// code tint and the API method palette), are tuned for the docs and aren't checked.
+const docsCssPath = 'docs/src/styles/globals.css'
+const docsDarkSelector = '\n[data-mode="dark"]'
 const docsDarkMirrors = {
-  'vp-c-bg': 'background',
-  'vp-c-bg-alt': 'sidebar',
-  'vp-c-bg-soft': 'card',
-  'vp-c-bg-elv': 'popover',
-  'vp-c-gutter': 'sidebar',
-  'vp-c-text-1': 'foreground',
-  'vp-c-divider': 'border',
-  'vp-c-border': 'input',
-  'vp-c-brand-1': 'primary',
-  'vp-c-brand-3': 'primary',
-  'vp-home-hero-name-color': 'primary',
-  'vp-button-brand-text': 'primary-foreground',
-  'vp-button-brand-hover-text': 'primary-foreground',
-  'vp-button-brand-active-text': 'primary-foreground',
-  'vp-c-green-1': 'success',
-  'vp-c-green-3': 'success',
-  'vp-c-red-1': 'destructive',
-  'vp-c-red-3': 'destructive',
-  'vp-c-yellow-1': 'warning',
-  'vp-c-yellow-3': 'warning',
-  'vp-c-indigo-1': 'chart-1',
-  'vp-c-indigo-3': 'chart-1',
+  'nb-background': 'background',
+  'nb-card': 'card',
+  'nb-muted': 'muted',
+  'nb-accent': 'accent',
+  'nb-selected': 'secondary',
+  'nb-foreground': 'foreground',
+  'nb-muted-foreground': 'muted-foreground',
+  'nb-primary': 'primary',
+  'nb-primary-foreground': 'primary-foreground',
+  'nb-brand': 'primary',
+  'nb-border': 'border',
+  'nb-border-strong': 'input',
+  'nb-info': 'chart-1',
+  'nb-success': 'success',
+  'nb-warning': 'warning',
+  'nb-danger': 'destructive',
 }
-// Each soft tint is its colour at a low alpha, so it must keep that colour's channels.
+// Each muted tint (and the focus ring) is its colour at a low alpha, so it must keep that colour's channels.
 const docsDarkTints = {
-  'vp-c-brand-soft': 'primary',
-  'vp-c-green-soft': 'success',
-  'vp-c-red-soft': 'destructive',
-  'vp-c-yellow-soft': 'warning',
-  'vp-c-indigo-soft': 'chart-1',
+  'nb-ring': 'primary',
+  'nb-info-muted': 'chart-1',
+  'nb-success-muted': 'success',
+  'nb-warning-muted': 'warning',
+  'nb-danger-muted': 'destructive',
 }
 
 // #rrggbb or rgb(r g b / alpha), with alpha as a fraction or a percentage, to [r, g, b, alpha].
@@ -209,7 +206,7 @@ function rgba(value = '') {
 }
 
 function docsThemeDrift() {
-  const docsDark = Object.fromEntries(declarations(block(readText(join(root, docsCssPath)), '\n.dark').body))
+  const docsDark = Object.fromEntries(declarations(block(readText(join(root, docsCssPath)), docsDarkSelector).body))
   const drift = []
   for (const [variable, token] of Object.entries(docsDarkMirrors)) {
     const [docs, admin] = [rgba(docsDark[variable]), rgba(dark[token])]
@@ -232,7 +229,9 @@ if (process.argv.includes('--check')) {
   }
   const drift = docsThemeDrift()
   if (stale.length > 0) console.error(`${stale.join(', ')} out of date with globals.css. Run: mise run shadcn-theme`)
-  if (drift.length > 0) console.error(`${docsCssPath} .dark no longer mirrors globals.css:\n  ${drift.join('\n  ')}`)
+  if (drift.length > 0) {
+    console.error(`${docsCssPath} [data-mode="dark"] no longer mirrors the admin UI's globals.css:\n  ${drift.join('\n  ')}`)
+  }
   if (stale.length > 0 || drift.length > 0) process.exit(1)
   console.log('registry.json, docs/public/r and the docs dark theme match globals.css')
 } else {
