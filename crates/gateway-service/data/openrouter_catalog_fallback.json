@@ -2,8 +2,8 @@
   "metadata": {
     "source": "vendored_openrouter",
     "etag": null,
-    "fetched_at": "2026-10-31T23:00:05.940543Z",
-    "checksum": "f72cb9e0da85989c274fca6dcee27dcfc099080ffb2fd4f593d258abe1dca6c2"
+    "fetched_at": "2026-11-11T19:39:34.697769742Z",
+    "checksum": "ebebbab897068c2d42693cfebe7b66f7004a39b3f896da38ec9f79ceebf4c0fd"
   },
   "providers": {
     "openrouter": {
@@ -804,7 +804,7 @@
             "conditions": {},
             "input": "2.5000",
             "output": "5.0000",
-            "cache_read": null,
+            "cache_read": "2.5000",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -924,6 +924,86 @@
             "output": "25.0000",
             "cache_read": "0.1250",
             "cache_write": "6.2500",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1000000,
+            "input": null,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "anthropic/claude-fable-5.2": {
+          "id": "anthropic/claude-fable-5.2",
+          "display_name": "Anthropic: Claude Fable 5.2",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1000000,
+            "input": null,
+            "output": 128000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "anthropic/claude-fable-5.2:batch": {
+          "id": "anthropic/claude-fable-5.2:batch",
+          "display_name": "Anthropic: Claude Fable 5.2 (batch)",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "4.0000",
+            "output": "20.0000",
+            "cache_read": "0.1000",
+            "cache_write": "5.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -2252,6 +2332,82 @@
             ]
           }
         },
+        "baidu/ernie-5.5-flash-preview:free": {
+          "id": "baidu/ernie-5.5-flash-preview:free",
+          "display_name": "Baidu: ERNIE-5.5-Flash-Preview (free)",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1024000,
+            "input": null,
+            "output": 921600
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "baidu/ernie-light-dt-1.0-intl": {
+          "id": "baidu/ernie-light-dt-1.0-intl",
+          "display_name": "Baidu: ERNIE-Light-DT-1.0",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "1.1300",
+            "output": "3.9400",
+            "cache_read": "0.1130",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1024000,
+            "input": null,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "baseten/elephant-1": {
           "id": "baseten/elephant-1",
           "display_name": "Baseten: Elephant 1",
@@ -2757,86 +2913,6 @@
             ]
           }
         },
-        "bytedance-seed/seed-1.6": {
-          "id": "bytedance-seed/seed-1.6",
-          "display_name": "ByteDance Seed: Seed 1.6",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.2500",
-            "output": "2.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 262144,
-            "input": null,
-            "output": 32768
-          },
-          "modalities": {
-            "input": [
-              "image",
-              "text",
-              "video"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "bytedance-seed/seed-1.6-flash": {
-          "id": "bytedance-seed/seed-1.6-flash",
-          "display_name": "ByteDance Seed: Seed 1.6 Flash",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0750",
-            "output": "0.3000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 262144,
-            "input": null,
-            "output": 32768
-          },
-          "modalities": {
-            "input": [
-              "image",
-              "text",
-              "video"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "bytedance-seed/seed-2-1-turbo": {
           "id": "bytedance-seed/seed-2-1-turbo",
           "display_name": "ByteDance Seed: Seed 2.1 Turbo",
@@ -2865,46 +2941,6 @@
             "context": 262144,
             "input": null,
             "output": 235929
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "video"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "bytedance-seed/seed-2.0-code": {
-          "id": "bytedance-seed/seed-2.0-code",
-          "display_name": "ByteDance Seed: Seed-2.0-Code",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.5000",
-            "output": "3.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 262144,
-            "input": null,
-            "output": 131072
           },
           "modalities": {
             "input": [
@@ -3215,45 +3251,6 @@
             ]
           }
         },
-        "bytedance/seedance-1-5-pro": {
-          "id": "bytedance/seedance-1-5-pro",
-          "display_name": "ByteDance: Seedance 1.5 Pro",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": false,
-            "structured_output": false,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0000",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 0,
-            "input": null,
-            "output": 0
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "video"
-            ]
-          }
-        },
         "bytedance/seedance-2.0": {
           "id": "bytedance/seedance-2.0",
           "display_name": "ByteDance: Seedance 2.0",
@@ -3495,6 +3492,45 @@
             ]
           }
         },
+        "cloudflare/clairic": {
+          "id": "cloudflare/clairic",
+          "display_name": "Cloudflare: Clairic",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.1000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 65536,
+            "input": null,
+            "output": 58982
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "decisions"
+            ]
+          }
+        },
         "cloudflare/clef": {
           "id": "cloudflare/clef",
           "display_name": "Cloudflare: Clef",
@@ -3511,7 +3547,7 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2400",
+            "input": "0.1920",
             "output": "0.0000",
             "cache_read": null,
             "cache_write": null,
@@ -3522,7 +3558,7 @@
           "limit": {
             "context": 65537,
             "input": null,
-            "output": 58982
+            "output": 58983
           },
           "modalities": {
             "input": [
@@ -3659,7 +3695,7 @@
           "last_updated": "",
           "metadata": {
             "reasoning": false,
-            "tool_call": false,
+            "tool_call": true,
             "structured_output": true,
             "attachment": null,
             "temperature": null,
@@ -3812,7 +3848,7 @@
           "last_updated": "",
           "metadata": {
             "reasoning": false,
-            "tool_call": false,
+            "tool_call": true,
             "structured_output": true,
             "attachment": null,
             "temperature": null,
@@ -3840,6 +3876,84 @@
             ],
             "output": [
               "text"
+            ]
+          }
+        },
+        "cohere/embed-5-fast": {
+          "id": "cohere/embed-5-fast",
+          "display_name": "Cohere: Embed 5 Fast",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0800",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 128000,
+            "input": null,
+            "output": 115200
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "embeddings"
+            ]
+          }
+        },
+        "cohere/embed-5-pro": {
+          "id": "cohere/embed-5-pro",
+          "display_name": "Cohere: Embed 5 Pro",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.1200",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 128000,
+            "input": null,
+            "output": 115200
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "embeddings"
             ]
           }
         },
@@ -3922,6 +4036,82 @@
         "cohere/rerank-4-pro": {
           "id": "cohere/rerank-4-pro",
           "display_name": "Cohere: Rerank 4 Pro",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 32768,
+            "input": null,
+            "output": 29491
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "rerank"
+            ]
+          }
+        },
+        "cohere/rerank-5-fast": {
+          "id": "cohere/rerank-5-fast",
+          "display_name": "Cohere: Rerank 5 Fast",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 32768,
+            "input": null,
+            "output": 29491
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "rerank"
+            ]
+          }
+        },
+        "cohere/rerank-5-pro": {
+          "id": "cohere/rerank-5-pro",
+          "display_name": "Cohere: Rerank 5 Pro",
           "release_date": "",
           "last_updated": "",
           "metadata": {
@@ -4125,8 +4315,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2574",
-            "output": "1.0287",
+            "input": "0.3200",
+            "output": "0.8900",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -4136,7 +4326,7 @@
           "limit": {
             "context": 163840,
             "input": null,
-            "output": 16000
+            "output": 16384
           },
           "modalities": {
             "input": [
@@ -4391,9 +4581,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0910",
-            "output": "0.1820",
-            "cache_read": "0.0182",
+            "input": "0.0900",
+            "output": "0.1800",
+            "cache_read": "0.0180",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -4402,7 +4592,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 943717
+            "output": 393216
           },
           "modalities": {
             "input": [
@@ -4429,9 +4619,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1190",
-            "output": "0.2380",
-            "cache_read": "0.0238",
+            "input": "0.0434",
+            "output": "0.3000",
+            "cache_read": "0.0350",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -4441,6 +4631,44 @@
             "context": 1048576,
             "input": null,
             "output": 943718
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "deepseek/deepseek-v4-flash-0731:batch": {
+          "id": "deepseek/deepseek-v4-flash-0731:batch",
+          "display_name": "DeepSeek: DeepSeek V4 Flash 0731 (batch)",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0480",
+            "output": "0.1440",
+            "cache_read": "0.0120",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 384000
           },
           "modalities": {
             "input": [
@@ -4467,9 +4695,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2156",
-            "output": "0.6468",
-            "cache_read": "0.0069",
+            "input": "0.4400",
+            "output": "1.3200",
+            "cache_read": "0.0140",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -4478,7 +4706,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 262144
+            "output": 943717
           },
           "modalities": {
             "input": [
@@ -4506,9 +4734,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "1.6000",
-            "output": "3.2000",
-            "cache_read": "0.1350",
+            "input": "0.8804",
+            "output": "1.7609",
+            "cache_read": "0.0734",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -4517,7 +4745,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 393216
+            "output": 384000
           },
           "modalities": {
             "input": [
@@ -4544,9 +4772,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1150",
-            "output": "4.0000",
-            "cache_read": "0.1100",
+            "input": "0.1110",
+            "output": "4.4400",
+            "cache_read": "0.0970",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -4582,9 +4810,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0450",
-            "output": "0.5000",
-            "cache_read": "0.0060",
+            "input": "0.0510",
+            "output": "0.5670",
+            "cache_read": "0.0180",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -4621,9 +4849,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1500",
-            "output": "0.6000",
-            "cache_read": "0.0030",
+            "input": "0.0060",
+            "output": "0.5000",
+            "cache_read": "0.0050",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -4632,7 +4860,46 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 393216
+            "output": 943718
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "deepseek/deepseek-v4.1-flash-1017:batch": {
+          "id": "deepseek/deepseek-v4.1-flash-1017:batch",
+          "display_name": "DeepSeek: DeepSeek V4.1 Flash 1017 (batch)",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0110",
+            "output": "0.2000",
+            "cache_read": "0.0020",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 943718
           },
           "modalities": {
             "input": [
@@ -4660,9 +4927,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0500",
-            "output": "0.1500",
-            "cache_read": "0.0040",
+            "input": "0.1120",
+            "output": "0.3360",
+            "cache_read": "0.0034",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -4671,7 +4938,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 384000
+            "output": 131072
           },
           "modalities": {
             "input": [
@@ -5235,7 +5502,7 @@
           },
           "cost": {
             "conditions": {},
-            "input": "2.0000",
+            "input": "10.0000",
             "output": "0.0000",
             "cache_read": null,
             "cache_write": null,
@@ -6922,6 +7189,132 @@
             ]
           }
         },
+        "google/gemini-4-carbon": {
+          "id": "google/gemini-4-carbon",
+          "display_name": "Google: Gemini 4 Carbon",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "2.0000",
+            "output": "10.0000",
+            "cache_read": "0.1000",
+            "cache_write": "0.1875",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 943718
+          },
+          "modalities": {
+            "input": [
+              "audio",
+              "pdf",
+              "image",
+              "text",
+              "video"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "google/gemini-4-carbon:batch": {
+          "id": "google/gemini-4-carbon:batch",
+          "display_name": "Google: Gemini 4 Carbon (batch)",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "1.0000",
+            "output": "5.0000",
+            "cache_read": "0.0500",
+            "cache_write": "0.1875",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 943718
+          },
+          "modalities": {
+            "input": [
+              "audio",
+              "pdf",
+              "image",
+              "text",
+              "video"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "google/gemini-decision-1": {
+          "id": "google/gemini-decision-1",
+          "display_name": "Google: Gemini Decision 1",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.1000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 235929
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "audio",
+              "video",
+              "pdf"
+            ],
+            "output": [
+              "decisions"
+            ]
+          }
+        },
         "google/gemini-embedding-001": {
           "id": "google/gemini-embedding-001",
           "display_name": "Google: Gemini Embedding 001",
@@ -6939,6 +7332,44 @@
           "cost": {
             "conditions": {},
             "input": "0.1500",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 20000,
+            "input": null,
+            "output": 18000
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "embeddings"
+            ]
+          }
+        },
+        "google/gemini-embedding-001:batch": {
+          "id": "google/gemini-embedding-001:batch",
+          "display_name": "Google: Gemini Embedding 001 (batch)",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0750",
             "output": "0.0000",
             "cache_read": null,
             "cache_write": null,
@@ -7126,6 +7557,88 @@
             ]
           }
         },
+        "google/gemini-omni-1.1-flash": {
+          "id": "google/gemini-omni-1.1-flash",
+          "display_name": "Google: Gemini Omni 1.1 Flash",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "1.5000",
+            "output": "9.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 131072,
+            "input": null,
+            "output": 65536
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video"
+            ],
+            "output": [
+              "text",
+              "video"
+            ]
+          }
+        },
+        "google/gemini-omni-1.2-flash": {
+          "id": "google/gemini-omni-1.2-flash",
+          "display_name": "Google: Gemini Omni 1.2 Flash",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "1.5000",
+            "output": "9.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 131072,
+            "input": null,
+            "output": 65536
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video"
+            ],
+            "output": [
+              "text",
+              "video"
+            ]
+          }
+        },
         "google/gemma-2-27b-it": {
           "id": "google/gemma-2-27b-it",
           "display_name": "Google: Gemma 2 27B",
@@ -7297,9 +7810,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0675",
-            "output": "0.2250",
-            "cache_read": "0.0375",
+            "input": "0.0800",
+            "output": "0.1000",
+            "cache_read": "0.0460",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -7308,7 +7821,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 235929
+            "output": 128000
           },
           "modalities": {
             "input": [
@@ -7926,7 +8439,7 @@
           "cost": {
             "conditions": {},
             "input": "0.0600",
-            "output": "0.1500",
+            "output": "0.2500",
             "cache_read": "0.0150",
             "cache_write": null,
             "input_audio": null,
@@ -7944,159 +8457,6 @@
             ],
             "output": [
               "text"
-            ]
-          }
-        },
-        "inception/mercury-2": {
-          "id": "inception/mercury-2",
-          "display_name": "Inception: Mercury 2",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.2500",
-            "output": "0.7500",
-            "cache_read": "0.0250",
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 128000,
-            "input": null,
-            "output": 50000
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "inception/mercury-2.5": {
-          "id": "inception/mercury-2.5",
-          "display_name": "Inception: Mercury 2.5",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0400",
-            "output": "0.1500",
-            "cache_read": "0.0040",
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 260000,
-            "input": null,
-            "output": 65536
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "inception/mercury-3": {
-          "id": "inception/mercury-3",
-          "display_name": "Inception: Mercury 3",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.1000",
-            "output": "0.3500",
-            "cache_read": "0.0100",
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 1000000,
-            "input": null,
-            "output": 131072
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "inception/mercury-decide": {
-          "id": "inception/mercury-decide",
-          "display_name": "Inception: Mercury Decide",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": false,
-            "structured_output": false,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0200",
-            "output": "0.0000",
-            "cache_read": "0.0000",
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 65536,
-            "input": null,
-            "output": 58982
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "decisions"
             ]
           }
         },
@@ -8178,9 +8538,9 @@
             ]
           }
         },
-        "inclusionai/ling-3.1-flash": {
-          "id": "inclusionai/ling-3.1-flash",
-          "display_name": "inclusionAI: Ling 3.1 Flash",
+        "inclusionai/ling-3.0-tiny": {
+          "id": "inclusionai/ling-3.0-tiny",
+          "display_name": "inclusionAI: Ling 3.0 Tiny",
           "release_date": "",
           "last_updated": "",
           "metadata": {
@@ -8194,9 +8554,47 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0750",
-            "output": "0.2250",
-            "cache_read": "0.0150",
+            "input": "0.0150",
+            "output": "0.0450",
+            "cache_read": "0.0030",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 250000
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "inclusionai/ling-3.1-flash": {
+          "id": "inclusionai/ling-3.1-flash",
+          "display_name": "inclusionAI: Ling 3.1 Flash",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0450",
+            "output": "0.1350",
+            "cache_read": "0.0090",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -8243,7 +8641,7 @@
           "limit": {
             "context": 128000,
             "input": null,
-            "output": 4096
+            "output": 8192
           },
           "modalities": {
             "input": [
@@ -8621,6 +9019,44 @@
             ],
             "output": [
               "image"
+            ]
+          }
+        },
+        "kt/midm-k-3.0-pro": {
+          "id": "kt/midm-k-3.0-pro",
+          "display_name": "KT: Mi:dm K 3.0 Pro",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": false,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.2000",
+            "output": "0.8000",
+            "cache_read": "0.0400",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 261795,
+            "input": null,
+            "output": 235615
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
             ]
           }
         },
@@ -9010,6 +9446,82 @@
             ]
           }
         },
+        "liquid/lfm-3-1.7b": {
+          "id": "liquid/lfm-3-1.7b",
+          "display_name": "LiquidAI: LFM3-1.7B",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0800",
+            "output": "0.2000",
+            "cache_read": "0.0200",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 8192
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "liquid/lfm-3-1.7b:free": {
+          "id": "liquid/lfm-3-1.7b:free",
+          "display_name": "LiquidAI: LFM3-1.7B (free)",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 8192
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "mancer/weaver": {
           "id": "mancer/weaver",
           "display_name": "Mancer: Weaver (alpha)",
@@ -9026,9 +9538,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.4000",
-            "output": "0.7500",
-            "cache_read": null,
+            "input": "0.3000",
+            "output": "0.5000",
+            "cache_read": "0.3000",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -9093,8 +9605,8 @@
           "last_updated": "",
           "metadata": {
             "reasoning": false,
-            "tool_call": true,
-            "structured_output": true,
+            "tool_call": false,
+            "structured_output": false,
             "attachment": null,
             "temperature": null,
             "knowledge": null,
@@ -9102,8 +9614,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.4000",
-            "output": "0.4000",
+            "input": "0.7200",
+            "output": "0.7200",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -9113,7 +9625,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 16384
+            "output": 8192
           },
           "modalities": {
             "input": [
@@ -9140,9 +9652,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0500",
-            "output": "0.0800",
-            "cache_read": "0.0250",
+            "input": "0.0200",
+            "output": "0.0400",
+            "cache_read": null,
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -9151,7 +9663,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 117964
+            "output": 16384
           },
           "modalities": {
             "input": [
@@ -9254,9 +9766,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1000",
-            "output": "0.3200",
-            "cache_read": null,
+            "input": "0.7100",
+            "output": "0.7100",
+            "cache_read": "0.7100",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -9265,7 +9777,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 16384
+            "output": 115200
           },
           "modalities": {
             "input": [
@@ -9292,9 +9804,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1875",
-            "output": "0.6525",
-            "cache_read": "0.0500",
+            "input": "0.3500",
+            "output": "1.0000",
+            "cache_read": "0.1700",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -9303,7 +9815,7 @@
           "limit": {
             "context": 524288,
             "input": null,
-            "output": 16384
+            "output": 32768
           },
           "modalities": {
             "input": [
@@ -9393,6 +9905,48 @@
             ]
           }
         },
+        "meta/muse-ember": {
+          "id": "meta/muse-ember",
+          "display_name": "Meta: Muse Ember",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.1000",
+            "output": "0.5000",
+            "cache_read": "0.0040",
+            "cache_write": "0.1250",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 943718
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video",
+              "pdf",
+              "audio"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "meta/muse-glimmer-30b": {
           "id": "meta/muse-glimmer-30b",
           "display_name": "Meta: Muse Glimmer 30B",
@@ -9412,6 +9966,45 @@
             "input": "0.3000",
             "output": "1.2000",
             "cache_read": "0.0400",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 131072,
+            "input": null,
+            "output": 16384
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "meta/muse-glimmer-30b:batch": {
+          "id": "meta/muse-glimmer-30b:batch",
+          "display_name": "Meta: Muse Glimmer 30B (batch)",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.2400",
+            "output": "0.9600",
+            "cache_read": "0.0320",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -9709,7 +10302,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 131072
+            "output": 262144
           },
           "modalities": {
             "input": [
@@ -10407,9 +11000,9 @@
             ]
           }
         },
-        "minimax/minimax-01": {
-          "id": "minimax/minimax-01",
-          "display_name": "MiniMax: MiniMax-01",
+        "minimax/minimax-h3-image": {
+          "id": "minimax/minimax-h3-image",
+          "display_name": "MiniMax: MiniMax H3 Image",
           "release_date": "",
           "last_updated": "",
           "metadata": {
@@ -10419,22 +11012,28 @@
             "attachment": null,
             "temperature": null,
             "knowledge": null,
-            "reasoning_options": []
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": false,
+              "responses": false,
+              "embeddings": false,
+              "images": true
+            }
           },
           "cost": {
             "conditions": {},
-            "input": "0.2000",
-            "output": "1.1000",
+            "input": "2.3000",
+            "output": "0.0000",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": "3.8000"
           },
           "limit": {
-            "context": 1000192,
+            "context": 4096,
             "input": null,
-            "output": 900172
+            "output": 3686
           },
           "modalities": {
             "input": [
@@ -10442,89 +11041,13 @@
               "image"
             ],
             "output": [
-              "text"
+              "image"
             ]
           }
         },
-        "minimax/minimax-m1": {
-          "id": "minimax/minimax-m1",
-          "display_name": "MiniMax: MiniMax M1",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": false,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.5500",
-            "output": "2.2000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 1000000,
-            "input": null,
-            "output": 40000
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "minimax/minimax-m2": {
-          "id": "minimax/minimax-m2",
-          "display_name": "MiniMax: MiniMax M2",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": false,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.2550",
-            "output": "1.0200",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 204800,
-            "input": null,
-            "output": 131072
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "minimax/minimax-m2-her": {
-          "id": "minimax/minimax-m2-her",
-          "display_name": "MiniMax: MiniMax M2-her",
+        "minimax/minimax-h3-image-highspeed": {
+          "id": "minimax/minimax-h3-image-highspeed",
+          "display_name": "MiniMax: MiniMax H3 Image Highspeed",
           "release_date": "",
           "last_updated": "",
           "metadata": {
@@ -10534,67 +11057,36 @@
             "attachment": null,
             "temperature": null,
             "knowledge": null,
-            "reasoning_options": []
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": false,
+              "responses": false,
+              "embeddings": false,
+              "images": true
+            }
           },
           "cost": {
             "conditions": {},
-            "input": "0.3000",
-            "output": "1.2000",
-            "cache_read": "0.0300",
+            "input": "2.3000",
+            "output": "0.0000",
+            "cache_read": null,
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
-            "output_image": null
+            "output_image": "7.6000"
           },
           "limit": {
-            "context": 65536,
+            "context": 4096,
             "input": null,
-            "output": 2048
+            "output": 3686
           },
           "modalities": {
             "input": [
-              "text"
+              "text",
+              "image"
             ],
             "output": [
-              "text"
-            ]
-          }
-        },
-        "minimax/minimax-m2.1": {
-          "id": "minimax/minimax-m2.1",
-          "display_name": "MiniMax: MiniMax M2.1",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": false,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.3000",
-            "output": "1.2000",
-            "cache_read": "0.0300",
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 204800,
-            "input": null,
-            "output": 131072
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
+              "image"
             ]
           }
         },
@@ -10615,17 +11107,17 @@
           "cost": {
             "conditions": {},
             "input": "0.2700",
-            "output": "0.9500",
-            "cache_read": "0.0300",
+            "output": "1.0800",
+            "cache_read": "0.0270",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
             "output_image": null
           },
           "limit": {
-            "context": 204800,
+            "context": 200000,
             "input": null,
-            "output": 32768
+            "output": 128000
           },
           "modalities": {
             "input": [
@@ -10652,18 +11144,18 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.3000",
-            "output": "1.2000",
-            "cache_read": "0.0600",
+            "input": "0.2100",
+            "output": "0.8400",
+            "cache_read": "0.0420",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
             "output_image": null
           },
           "limit": {
-            "context": 204800,
+            "context": 196608,
             "input": null,
-            "output": 131072
+            "output": 176947
           },
           "modalities": {
             "input": [
@@ -10742,6 +11234,46 @@
             "context": 1048576,
             "input": null,
             "output": 524288
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "minimax/minimax-m3:batch": {
+          "id": "minimax/minimax-m3:batch",
+          "display_name": "MiniMax: MiniMax M3 (batch)",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.2240",
+            "output": "0.8800",
+            "cache_read": "0.0448",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 524288,
+            "input": null,
+            "output": 512000
           },
           "modalities": {
             "input": [
@@ -11627,9 +12159,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0750",
-            "output": "0.2000",
-            "cache_read": null,
+            "input": "0.1000",
+            "output": "0.3000",
+            "cache_read": "0.0100",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -11638,7 +12170,7 @@
           "limit": {
             "context": 256000,
             "input": null,
-            "output": 16384
+            "output": 26214
           },
           "modalities": {
             "input": [
@@ -11995,6 +12527,349 @@
             ]
           }
         },
+        "mongodb/rerank-2.5": {
+          "id": "mongodb/rerank-2.5",
+          "display_name": "VoyageAI by MongoDB: rerank-2.5",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 32000,
+            "input": null,
+            "output": 28800
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "rerank"
+            ]
+          }
+        },
+        "mongodb/rerank-2.5-lite": {
+          "id": "mongodb/rerank-2.5-lite",
+          "display_name": "VoyageAI by MongoDB: rerank-2.5-lite",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 32000,
+            "input": null,
+            "output": 28800
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "rerank"
+            ]
+          }
+        },
+        "mongodb/rerank-3": {
+          "id": "mongodb/rerank-3",
+          "display_name": "VoyageAI by MongoDB: rerank-3",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 32000,
+            "input": null,
+            "output": 28800
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "rerank"
+            ]
+          }
+        },
+        "mongodb/rerank-3-lite": {
+          "id": "mongodb/rerank-3-lite",
+          "display_name": "VoyageAI by MongoDB: rerank-3-lite",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 32000,
+            "input": null,
+            "output": 28800
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "rerank"
+            ]
+          }
+        },
+        "mongodb/voyage-4": {
+          "id": "mongodb/voyage-4",
+          "display_name": "VoyageAI by MongoDB: voyage-4",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0600",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 32000,
+            "input": null,
+            "output": 28800
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "embeddings"
+            ]
+          }
+        },
+        "mongodb/voyage-4-large": {
+          "id": "mongodb/voyage-4-large",
+          "display_name": "VoyageAI by MongoDB: voyage-4-large",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.1200",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 32000,
+            "input": null,
+            "output": 28800
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "embeddings"
+            ]
+          }
+        },
+        "mongodb/voyage-4-lite": {
+          "id": "mongodb/voyage-4-lite",
+          "display_name": "VoyageAI by MongoDB: voyage-4-lite",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0200",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 32000,
+            "input": null,
+            "output": 28800
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "embeddings"
+            ]
+          }
+        },
+        "mongodb/voyage-code-4": {
+          "id": "mongodb/voyage-code-4",
+          "display_name": "VoyageAI by MongoDB: voyage-code-4",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.1200",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 32000,
+            "input": null,
+            "output": 28800
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "embeddings"
+            ]
+          }
+        },
+        "mongodb/voyage-multimodal-3.5": {
+          "id": "mongodb/voyage-multimodal-3.5",
+          "display_name": "VoyageAI by MongoDB: voyage-multimodal-3.5",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.1200",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 32000,
+            "input": null,
+            "output": 28800
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "embeddings"
+            ]
+          }
+        },
         "moondream/moondream3-preview": {
           "id": "moondream/moondream3-preview",
           "display_name": "Moondream: Moondream 3 Preview",
@@ -12070,6 +12945,44 @@
             ],
             "output": [
               "text"
+            ]
+          }
+        },
+        "moondream/parakeet-ultra": {
+          "id": "moondream/parakeet-ultra",
+          "display_name": "Moondream: Parakeet Ultra",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "16.6667",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 0,
+            "input": null,
+            "output": 0
+          },
+          "modalities": {
+            "input": [
+              "audio"
+            ],
+            "output": [
+              "transcription"
             ]
           }
         },
@@ -12203,9 +13116,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.5000",
-            "output": "2.5000",
-            "cache_read": "0.1500",
+            "input": "0.5320",
+            "output": "3.3250",
+            "cache_read": "0.2090",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -12214,7 +13127,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 235929
+            "output": 65536
           },
           "modalities": {
             "input": [
@@ -12283,7 +13196,7 @@
             "conditions": {},
             "input": "0.6000",
             "output": "3.5000",
-            "cache_read": "0.1500",
+            "cache_read": "0.1600",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -12321,7 +13234,7 @@
           "cost": {
             "conditions": {},
             "input": "0.1920",
-            "output": "15.0000",
+            "output": "16.0000",
             "cache_read": "0.1820",
             "cache_write": null,
             "input_audio": null,
@@ -12462,6 +13375,44 @@
             ]
           }
         },
+        "morph/morph-v3-fast:batch": {
+          "id": "morph/morph-v3-fast:batch",
+          "display_name": "Morph: Morph V3 Fast (batch)",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.4000",
+            "output": "0.6000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 81920,
+            "input": null,
+            "output": 38000
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "morph/morph-v3-large": {
           "id": "morph/morph-v3-large",
           "display_name": "Morph: Morph V3 Large",
@@ -12500,9 +13451,163 @@
             ]
           }
         },
+        "morph/morph-v3-large:batch": {
+          "id": "morph/morph-v3-large:batch",
+          "display_name": "Morph: Morph V3 Large (batch)",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.4500",
+            "output": "0.9500",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "morph/reflex": {
+          "id": "morph/reflex",
+          "display_name": "Morph: Reflex",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0420",
+            "output": "0.0000",
+            "cache_read": "0.0020",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 65536,
+            "input": null,
+            "output": 58982
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "decisions"
+            ]
+          }
+        },
+        "motif-technologies/motif-3": {
+          "id": "motif-technologies/motif-3",
+          "display_name": "Motif Technologies: Motif 3",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": false,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.3000",
+            "output": "1.2000",
+            "cache_read": "0.0600",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 235929
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "nace-ai/drex-max": {
           "id": "nace-ai/drex-max",
           "display_name": "Nace.AI: Drex Max",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0600",
+            "output": "0.0000",
+            "cache_read": "0.0600",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
+            "input": null,
+            "output": 235929
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "decisions"
+            ]
+          }
+        },
+        "nace-ai/drex-max-finance": {
+          "id": "nace-ai/drex-max-finance",
+          "display_name": "Nace.AI: Drex Max Finance",
           "release_date": "",
           "last_updated": "",
           "metadata": {
@@ -12693,14 +13798,14 @@
             ]
           }
         },
-        "nousresearch/hermes-3-llama-3.1-405b": {
-          "id": "nousresearch/hermes-3-llama-3.1-405b",
-          "display_name": "Nous: Hermes 3 405B Instruct",
+        "nex-agi/nex-n2.6": {
+          "id": "nex-agi/nex-n2.6",
+          "display_name": "Nex AGI: Nex-N2.6",
           "release_date": "",
           "last_updated": "",
           "metadata": {
-            "reasoning": false,
-            "tool_call": false,
+            "reasoning": true,
+            "tool_call": true,
             "structured_output": true,
             "attachment": null,
             "temperature": null,
@@ -12709,60 +13814,23 @@
           },
           "cost": {
             "conditions": {},
-            "input": "1.0000",
-            "output": "1.0000",
-            "cache_read": null,
+            "input": "0.1200",
+            "output": "0.4000",
+            "cache_read": "0.0240",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
             "output_image": null
           },
           "limit": {
-            "context": 131072,
+            "context": 262144,
             "input": null,
-            "output": 16384
+            "output": 235929
           },
           "modalities": {
             "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "nousresearch/hermes-3-llama-3.1-70b": {
-          "id": "nousresearch/hermes-3-llama-3.1-70b",
-          "display_name": "Nous: Hermes 3 70B Instruct",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": false,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.7000",
-            "output": "0.7000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 131072,
-            "input": null,
-            "output": 16384
-          },
-          "modalities": {
-            "input": [
-              "text"
+              "text",
+              "image"
             ],
             "output": [
               "text"
@@ -13018,18 +14086,18 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.3000",
-            "output": "2.4000",
-            "cache_read": "0.1500",
+            "input": "0.0750",
+            "output": "0.4000",
+            "cache_read": null,
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
             "output_image": null
           },
           "limit": {
-            "context": 1048576,
+            "context": 262144,
             "input": null,
-            "output": 262144
+            "output": 16384
           },
           "modalities": {
             "input": [
@@ -13182,45 +14250,6 @@
             "context": 131072,
             "input": null,
             "output": 117964
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "nvidia/nemotron-3.5-content-safety:free": {
-          "id": "nvidia/nemotron-3.5-content-safety:free",
-          "display_name": "NVIDIA: Nemotron 3.5 Content Safety (free)",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": false,
-            "structured_output": false,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0000",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 128000,
-            "input": null,
-            "output": 8192
           },
           "modalities": {
             "input": [
@@ -13442,7 +14471,7 @@
           "cost": {
             "conditions": {},
             "input": "0.1500",
-            "output": "0.5000",
+            "output": "0.4700",
             "cache_read": "0.0200",
             "cache_write": null,
             "input_audio": null,
@@ -13452,7 +14481,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 235929
+            "output": 943718
           },
           "modalities": {
             "input": [
@@ -13521,7 +14550,7 @@
           },
           "cost": {
             "conditions": {},
-            "input": "33.3000",
+            "input": "16.6667",
             "output": "0.0000",
             "cache_read": null,
             "cache_write": null,
@@ -13559,7 +14588,7 @@
           },
           "cost": {
             "conditions": {},
-            "input": "25.0000",
+            "input": "16.6667",
             "output": "0.0000",
             "cache_read": null,
             "cache_write": null,
@@ -17471,6 +18500,96 @@
             ]
           }
         },
+        "openai/gpt-image-2.6-flare": {
+          "id": "openai/gpt-image-2.6-flare",
+          "display_name": "OpenAI: GPT Image 2.6 Flare",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": false,
+              "responses": false,
+              "embeddings": false,
+              "images": true
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "8.0000",
+            "cache_read": "2.0000",
+            "cache_write": "10.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": "30.0000"
+          },
+          "limit": {
+            "context": 400000,
+            "input": null,
+            "output": 360000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "image"
+            ]
+          }
+        },
+        "openai/gpt-image-2.6-sunburst": {
+          "id": "openai/gpt-image-2.6-sunburst",
+          "display_name": "OpenAI: GPT Image 2.6 Sunburst",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": false,
+              "responses": false,
+              "embeddings": false,
+              "images": true
+            }
+          },
+          "cost": {
+            "conditions": {},
+            "input": "8.0000",
+            "output": "8.0000",
+            "cache_read": "2.0000",
+            "cache_write": "10.0000",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": "30.0000"
+          },
+          "limit": {
+            "context": 400000,
+            "input": null,
+            "output": 360000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "image"
+            ]
+          }
+        },
         "openai/gpt-oss-120b": {
           "id": "openai/gpt-oss-120b",
           "display_name": "OpenAI: gpt-oss-120b",
@@ -17563,9 +18682,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0180",
-            "output": "0.0900",
-            "cache_read": "0.0090",
+            "input": "0.0300",
+            "output": "0.1300",
+            "cache_read": "0.0300",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -17574,7 +18693,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 32768
+            "output": 117964
           },
           "modalities": {
             "input": [
@@ -18310,7 +19429,50 @@
           "limit": {
             "context": 2000000,
             "input": null,
-            "output": 65536
+            "output": 64000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "audio",
+              "pdf",
+              "video"
+            ],
+            "output": [
+              "text",
+              "image"
+            ]
+          }
+        },
+        "openrouter/auto-code": {
+          "id": "openrouter/auto-code",
+          "display_name": "Auto Code",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": null,
+            "output": null,
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 2000000,
+            "input": null,
+            "output": 64000
           },
           "modalities": {
             "input": [
@@ -18476,6 +19638,44 @@
             ],
             "output": [
               "text"
+            ]
+          }
+        },
+        "parallel/decisions-fast:free": {
+          "id": "parallel/decisions-fast:free",
+          "display_name": "Parallel: Decisions Fast (free)",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 32000,
+            "input": null,
+            "output": 28800
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "decisions"
             ]
           }
         },
@@ -19063,44 +20263,6 @@
             ]
           }
         },
-        "qwen/qwen-2.5-7b-instruct": {
-          "id": "qwen/qwen-2.5-7b-instruct",
-          "display_name": "Qwen: Qwen2.5 7B Instruct",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.1000",
-            "output": "0.2000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 32768,
-            "input": null,
-            "output": 29491
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "qwen/qwen-2.5-coder-32b-instruct": {
           "id": "qwen/qwen-2.5-coder-32b-instruct",
           "display_name": "Qwen2.5 Coder 32B Instruct",
@@ -19488,8 +20650,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1200",
-            "output": "0.2400",
+            "input": "0.1000",
+            "output": "0.2200",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -19499,7 +20661,7 @@
           "limit": {
             "context": 40960,
             "input": null,
-            "output": 16384
+            "output": 36864
           },
           "modalities": {
             "input": [
@@ -19526,9 +20688,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0900",
-            "output": "0.5500",
-            "cache_read": null,
+            "input": "0.1400",
+            "output": "0.8000",
+            "cache_read": "0.0500",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -19537,7 +20699,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 16384
+            "output": 117964
           },
           "modalities": {
             "input": [
@@ -19830,8 +20992,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0700",
-            "output": "0.2800",
+            "input": "0.1500",
+            "output": "0.6000",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -19993,7 +21155,7 @@
           "limit": {
             "context": 40960,
             "input": null,
-            "output": 32000
+            "output": 29491
           },
           "modalities": {
             "input": [
@@ -20039,6 +21201,44 @@
             ],
             "output": [
               "text"
+            ]
+          }
+        },
+        "qwen/qwen3-reranker-0.6b": {
+          "id": "qwen/qwen3-reranker-0.6b",
+          "display_name": "Qwen3 Reranker 0.6B",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 32768,
+            "input": null,
+            "output": 0
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "rerank"
             ]
           }
         },
@@ -20372,9 +21572,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.5000",
+            "input": "0.6000",
             "output": "3.6000",
-            "cache_read": "0.3000",
+            "cache_read": "0.1200",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -20383,7 +21583,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 235929
+            "output": 64000
           },
           "modalities": {
             "input": [
@@ -20572,8 +21772,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.4500",
-            "output": "2.7000",
+            "input": "0.3200",
+            "output": "3.2000",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -20583,7 +21783,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 65536
+            "output": 81920
           },
           "modalities": {
             "input": [
@@ -20926,16 +22126,56 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0400",
-            "output": "2.3000",
-            "cache_read": "0.0200",
+            "input": "0.1500",
+            "output": "1.8750",
+            "cache_read": "0.0375",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
             "output_image": null
           },
           "limit": {
-            "context": 1000000,
+            "context": 1048575,
+            "input": null,
+            "output": 235929
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "qwen/qwen3.8-27b:batch": {
+          "id": "qwen/qwen3.8-27b:batch",
+          "display_name": "Qwen: Qwen3.8 27B (batch)",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.1600",
+            "output": "2.0000",
+            "cache_read": "0.0400",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
             "input": null,
             "output": 235929
           },
@@ -21016,6 +22256,46 @@
           },
           "limit": {
             "context": 1000000,
+            "input": null,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "qwen/qwen3.8-max-0902:batch": {
+          "id": "qwen/qwen3.8-max-0902:batch",
+          "display_name": "Qwen: Qwen3.8 Max (0902) (batch)",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "1.1500",
+            "output": "3.4500",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 262144,
             "input": null,
             "output": 131072
           },
@@ -21884,9 +23164,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2500",
+            "input": "0.3000",
             "output": "1.0000",
-            "cache_read": "0.0500",
+            "cache_read": "0.0400",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -21895,7 +23175,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 131072
+            "output": 943718
           },
           "modalities": {
             "input": [
@@ -22210,6 +23490,44 @@
             ],
             "output": [
               "decisions"
+            ]
+          }
+        },
+        "ricursiveai/ripple-65b-preview": {
+          "id": "ricursiveai/ripple-65b-preview",
+          "display_name": "Ricursive: Ripple 65B Preview",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.2000",
+            "output": "0.6000",
+            "cache_read": "0.0500",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
             ]
           }
         },
@@ -23203,7 +24521,7 @@
             "output_image": null
           },
           "limit": {
-            "context": 1048576,
+            "context": 1000000,
             "input": null,
             "output": 64000
           },
@@ -23530,6 +24848,45 @@
             ]
           }
         },
+        "tencent/hy4": {
+          "id": "tencent/hy4",
+          "display_name": "Tencent: Hy4",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.4170",
+            "output": "1.2505",
+            "cache_read": "0.0210",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 65536
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "tencent/hy4-preview": {
           "id": "tencent/hy4-preview",
           "display_name": "Tencent: Hy4 preview",
@@ -23798,6 +25155,45 @@
             ]
           }
         },
+        "thinkingmachines/inkling-2-small:free": {
+          "id": "thinkingmachines/inkling-2-small:free",
+          "display_name": "Thinking Machines: Inkling 2 Small (free)",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "thinkingmachines/inkling-small": {
           "id": "thinkingmachines/inkling-small",
           "display_name": "Thinking Machines: Inkling Small",
@@ -23838,9 +25234,9 @@
             ]
           }
         },
-        "thinkingmachines/inkling-small:free": {
-          "id": "thinkingmachines/inkling-small:free",
-          "display_name": "Thinking Machines: Inkling Small (free)",
+        "thinkingmachines/inkling-small:batch": {
+          "id": "thinkingmachines/inkling-small:batch",
+          "display_name": "Thinking Machines: Inkling Small (batch)",
           "release_date": "",
           "last_updated": "",
           "metadata": {
@@ -23854,56 +25250,16 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0000",
-            "output": "0.0000",
-            "cache_read": null,
+            "input": "0.3600",
+            "output": "0.9600",
+            "cache_read": "0.0800",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
             "output_image": null
           },
           "limit": {
-            "context": 1048576,
-            "input": null,
-            "output": 262144
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image",
-              "audio"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "thinkingmachines/inkling:free": {
-          "id": "thinkingmachines/inkling:free",
-          "display_name": "Thinking Machines: Inkling (free)",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": false,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0000",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 1048576,
+            "context": 524288,
             "input": null,
             "output": 262144
           },
@@ -24061,7 +25417,7 @@
           "limit": {
             "context": 1000000,
             "input": null,
-            "output": 65536
+            "output": 64000
           },
           "modalities": {
             "input": [
@@ -24170,9 +25526,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.3500",
-            "output": "0.6500",
-            "cache_read": null,
+            "input": "0.3000",
+            "output": "0.5000",
+            "cache_read": "0.2000",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -24341,349 +25697,6 @@
             ],
             "output": [
               "text"
-            ]
-          }
-        },
-        "voyageai/rerank-2.5": {
-          "id": "voyageai/rerank-2.5",
-          "display_name": "VoyageAI by MongoDB: rerank-2.5",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": false,
-            "structured_output": false,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0000",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 32000,
-            "input": null,
-            "output": 28800
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "rerank"
-            ]
-          }
-        },
-        "voyageai/rerank-2.5-lite": {
-          "id": "voyageai/rerank-2.5-lite",
-          "display_name": "VoyageAI by MongoDB: rerank-2.5-lite",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": false,
-            "structured_output": false,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0000",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 32000,
-            "input": null,
-            "output": 28800
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "rerank"
-            ]
-          }
-        },
-        "voyageai/rerank-3": {
-          "id": "voyageai/rerank-3",
-          "display_name": "VoyageAI by MongoDB: rerank-3",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": false,
-            "structured_output": false,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0000",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 32000,
-            "input": null,
-            "output": 28800
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "rerank"
-            ]
-          }
-        },
-        "voyageai/rerank-3-lite": {
-          "id": "voyageai/rerank-3-lite",
-          "display_name": "VoyageAI by MongoDB: rerank-3-lite",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": false,
-            "structured_output": false,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0000",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 32000,
-            "input": null,
-            "output": 28800
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "rerank"
-            ]
-          }
-        },
-        "voyageai/voyage-4": {
-          "id": "voyageai/voyage-4",
-          "display_name": "VoyageAI by MongoDB: voyage-4",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": false,
-            "structured_output": false,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0600",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 32000,
-            "input": null,
-            "output": 28800
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "embeddings"
-            ]
-          }
-        },
-        "voyageai/voyage-4-large": {
-          "id": "voyageai/voyage-4-large",
-          "display_name": "VoyageAI by MongoDB: voyage-4-large",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": false,
-            "structured_output": false,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.1200",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 32000,
-            "input": null,
-            "output": 28800
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "embeddings"
-            ]
-          }
-        },
-        "voyageai/voyage-4-lite": {
-          "id": "voyageai/voyage-4-lite",
-          "display_name": "VoyageAI by MongoDB: voyage-4-lite",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": false,
-            "structured_output": false,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0200",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 32000,
-            "input": null,
-            "output": 28800
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "embeddings"
-            ]
-          }
-        },
-        "voyageai/voyage-code-4": {
-          "id": "voyageai/voyage-code-4",
-          "display_name": "VoyageAI by MongoDB: voyage-code-4",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": false,
-            "structured_output": false,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.1200",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 32000,
-            "input": null,
-            "output": 28800
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "embeddings"
-            ]
-          }
-        },
-        "voyageai/voyage-multimodal-3.5": {
-          "id": "voyageai/voyage-multimodal-3.5",
-          "display_name": "VoyageAI by MongoDB: voyage-multimodal-3.5",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": false,
-            "structured_output": false,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.1200",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 32000,
-            "input": null,
-            "output": 28800
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "embeddings"
             ]
           }
         },
@@ -24965,6 +25978,46 @@
             ]
           }
         },
+        "x-ai/grok-4.6:batch": {
+          "id": "x-ai/grok-4.6:batch",
+          "display_name": "SpaceXAI: Grok 4.6 (batch)",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "1.6000",
+            "output": "4.8000",
+            "cache_read": "0.4000",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 500000,
+            "input": null,
+            "output": 450000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "x-ai/grok-4.7": {
           "id": "x-ai/grok-4.7",
           "display_name": "SpaceXAI: Grok 4.7",
@@ -24984,6 +26037,46 @@
             "input": "2.0000",
             "output": "6.0000",
             "cache_read": "0.5000",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 500000,
+            "input": null,
+            "output": 450000
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "x-ai/grok-4.7:batch": {
+          "id": "x-ai/grok-4.7:batch",
+          "display_name": "SpaceXAI: Grok 4.7 (batch)",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "1.6000",
+            "output": "4.8000",
+            "cache_read": "0.4000",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -25074,51 +26167,6 @@
             "input_audio": null,
             "output_audio": null,
             "output_image": "9.5808"
-          },
-          "limit": {
-            "context": 65536,
-            "input": null,
-            "output": 58982
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "image"
-            ]
-          }
-        },
-        "x-ai/grok-imagine-image-quality": {
-          "id": "x-ai/grok-imagine-image-quality",
-          "display_name": "SpaceXAI: Grok Imagine Image Quality",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": false,
-            "tool_call": false,
-            "structured_output": false,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": [],
-            "api_endpoints": {
-              "chat_completions": false,
-              "responses": false,
-              "embeddings": false,
-              "images": true
-            }
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0000",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": "11.9760"
           },
           "limit": {
             "context": 65536,
@@ -25290,6 +26338,44 @@
             ]
           }
         },
+        "x-ai/grok-stt-2.0": {
+          "id": "x-ai/grok-stt-2.0",
+          "display_name": "SpaceXAI: Grok STT 2.0",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": false,
+            "tool_call": false,
+            "structured_output": false,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "27.7778",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 0,
+            "input": null,
+            "output": 0
+          },
+          "modalities": {
+            "input": [
+              "audio"
+            ],
+            "output": [
+              "transcription"
+            ]
+          }
+        },
         "x-ai/grok-voice-tts-1.0": {
           "id": "x-ai/grok-voice-tts-1.0",
           "display_name": "SpaceXAI: Grok Voice TTS 1.0",
@@ -25353,7 +26439,7 @@
             "output_image": null
           },
           "limit": {
-            "context": 1050000,
+            "context": 1000000,
             "input": null,
             "output": 65536
           },
@@ -25394,7 +26480,7 @@
             "output_image": null
           },
           "limit": {
-            "context": 1050000,
+            "context": 1024000,
             "input": null,
             "output": 235929
           },
@@ -25530,44 +26616,6 @@
             ]
           }
         },
-        "xingchen-agi/xing4.0-29b-a4b:free": {
-          "id": "xingchen-agi/xing4.0-29b-a4b:free",
-          "display_name": "XingChen: Xing4.0 29B A4B (free)",
-          "release_date": "",
-          "last_updated": "",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": null,
-            "temperature": null,
-            "knowledge": null,
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.0000",
-            "output": "0.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 262144,
-            "input": null,
-            "output": 235929
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "z-ai/glm-4.5": {
           "id": "z-ai/glm-4.5",
           "display_name": "Z.ai: GLM 4.5",
@@ -25622,9 +26670,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1300",
-            "output": "0.8500",
-            "cache_read": "0.0250",
+            "input": "0.2000",
+            "output": "1.1000",
+            "cache_read": "0.0300",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -25929,9 +26977,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "1.4000",
-            "output": "4.4000",
-            "cache_read": "0.2600",
+            "input": "1.3300",
+            "output": "4.1800",
+            "cache_read": "0.2470",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -25967,9 +27015,47 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0060",
+            "input": "0.0070",
             "output": "6.8000",
-            "cache_read": "0.0050",
+            "cache_read": "0.0060",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 943718
+          },
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "z-ai/glm-5.2:batch": {
+          "id": "z-ai/glm-5.2:batch",
+          "display_name": "Z.ai: GLM 5.2 (batch)",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.5270",
+            "output": "1.0750",
+            "cache_read": "0.1780",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26043,9 +27129,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0149",
-            "output": "0.1543",
-            "cache_read": "0.0149",
+            "input": "0.0399",
+            "output": "0.0784",
+            "cache_read": "0.0300",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26083,9 +27169,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0500",
-            "output": "0.1800",
-            "cache_read": "0.0100",
+            "input": "0.0470",
+            "output": "0.0610",
+            "cache_read": "0.0200",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26094,7 +27180,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 131072
+            "output": 943718
           },
           "modalities": {
             "input": [
@@ -26125,7 +27211,47 @@
             "conditions": {},
             "input": "0.3700",
             "output": "1.2500",
-            "cache_read": "0.0900",
+            "cache_read": "0.0750",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
+              "video"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "z-ai/glm-5.3-flashx-legal": {
+          "id": "z-ai/glm-5.3-flashx-legal",
+          "display_name": "Z.ai: GLM 5.3 FlashX Legal",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.3700",
+            "output": "1.2500",
+            "cache_read": "0.0750",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26279,10 +27405,10 @@
           },
           "cost": {
             "conditions": {},
-            "input": "10.0000",
-            "output": "50.0000",
-            "cache_read": "0.2500",
-            "cache_write": "12.5000",
+            "input": "8.0000",
+            "output": "40.0000",
+            "cache_read": "0.2000",
+            "cache_write": "10.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -26439,9 +27565,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0141",
-            "output": "0.1100",
-            "cache_read": "0.0130",
+            "input": "0.0060",
+            "output": "0.5000",
+            "cache_read": "0.0050",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26478,9 +27604,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1035",
+            "input": "0.0999",
             "output": "8.0000",
-            "cache_read": "0.1000",
+            "cache_read": "0.0999",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26716,9 +27842,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1495",
-            "output": "7.1500",
-            "cache_read": "0.0748",
+            "input": "0.1824",
+            "output": "11.0055",
+            "cache_read": "0.1800",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -26995,7 +28121,7 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0200",
+            "input": "0.0190",
             "output": "0.0000",
             "cache_read": null,
             "cache_write": null,
@@ -27115,7 +28241,7 @@
             "input": "2.0000",
             "output": "6.0000",
             "cache_read": "0.5000",
-            "cache_write": null,
+            "cache_write": "0.0000",
             "input_audio": null,
             "output_audio": null,
             "output_image": null
@@ -27152,9 +28278,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0149",
-            "output": "0.1543",
-            "cache_read": "0.0149",
+            "input": "0.0399",
+            "output": "0.0784",
+            "cache_read": "0.0300",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,

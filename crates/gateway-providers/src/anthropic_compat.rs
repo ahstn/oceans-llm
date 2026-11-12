@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use async_trait::async_trait;
 use gateway_core::{
-    CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, ProviderCapabilities,
-    ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
+    CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, ModelRoute, ProviderCapabilities,
+    ProviderClient, ProviderError, ProviderRequestContext, ProviderStream, ServiceTier,
 };
 use serde_json::Value;
 use time::OffsetDateTime;
@@ -15,6 +15,7 @@ use crate::anthropic::{
     retain_count_tokens_fields,
 };
 use crate::http::{execute_json_request, execute_request, join_base_url, map_reqwest_error};
+use crate::service_tier::DEFAULT_PRIORITY;
 
 const DEFAULT_ANTHROPIC_VERSION: &str = "2023-06-01";
 
@@ -92,11 +93,14 @@ impl AnthropicCompatProvider {
         join_base_url(base, &endpoint)
     }
 
+    /// Builds a Messages call. Token counting uses [`Self::build_request_to`] and carries no
+    /// tier, since only generation is served at a speed.
     pub(crate) fn build_request(
         &self,
-        body: Value,
+        mut body: Value,
         context: &ProviderRequestContext,
     ) -> Result<reqwest::Request, ProviderError> {
+        crate::anthropic::service_tier::apply_claude_api_service_tier(&mut body, context)?;
         self.build_request_to(self.messages_endpoint_url()?, body, context)
     }
 
@@ -219,6 +223,10 @@ impl ProviderClient for AnthropicCompatProvider {
 
     fn provider_type(&self) -> &str {
         &self.config.provider_type
+    }
+
+    fn service_tiers(&self, _route: &ModelRoute) -> &'static [ServiceTier] {
+        DEFAULT_PRIORITY
     }
 
     fn capabilities(&self) -> ProviderCapabilities {

@@ -25,7 +25,9 @@ pub(crate) type Providers = BTreeMap<String, PricingCatalogProviderDocument>;
 pub(crate) struct SourceDescriptor {
     pub(crate) id: CatalogSourceId,
     pub(crate) url: &'static str,
-    /// The source's `pricing_catalog_cache` row.
+    /// The source's `pricing_catalog_cache` row. Bump its version whenever `project`
+    /// changes: a cached row keeps its old projection while the source answers 304, so
+    /// only a new key makes an upgraded gateway project the source again.
     pub(crate) cache_key: &'static str,
     /// Largest accepted response body, far above the expected payload.
     pub(crate) max_bytes: usize,
@@ -63,7 +65,7 @@ impl SourceDescriptor {
 static MODELS_DEV: SourceDescriptor = SourceDescriptor {
     id: CatalogSourceId::ModelsDev,
     url: "https://models.dev/api.json",
-    cache_key: "models_dev_supported_v4",
+    cache_key: "models_dev_supported_v5",
     // The raw `api.json` is around 6 MB.
     max_bytes: 32 * 1024 * 1024,
     remote_source: "models_dev_api",
@@ -88,7 +90,7 @@ static OPENROUTER: SourceDescriptor = SourceDescriptor {
 static LITELLM: SourceDescriptor = SourceDescriptor {
     id: CatalogSourceId::LiteLlm,
     url: "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
-    cache_key: "litellm_v2",
+    cache_key: "litellm_v3",
     // The model price table is around 3 MB.
     max_bytes: 16 * 1024 * 1024,
     remote_source: "litellm_github",

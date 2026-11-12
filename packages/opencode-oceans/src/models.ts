@@ -9,6 +9,12 @@ export const packages = {
   'anthropic-messages': '@opencode/ai/providers/anthropic-compatible',
 } as const satisfies Record<API, string>
 const effortNames = new Set(['minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+/** Optional service tiers and their variant ids; Priority is the tier vendors sell as Fast. */
+const tierVariantIDs: Record<string, string> = {
+  flex: 'flex',
+  priority: 'fast',
+  ultrafast: 'ultrafast',
+}
 const vendors = [
   'anthropic',
   'openai',
@@ -149,16 +155,25 @@ function capabilities(
 }
 
 type EffortVariant = { id: string; effort: string }
+type HintEntry = readonly [id: string | undefined, settings: unknown]
+/** `[id, settings]` pairs of the variants in the gateway's OpenCode hint; empty without one. */
+function hintEntries(listing: Entry): readonly HintEntry[] {
+  const variants = record(record(record(listing.client_hints).harnesses).opencode).variants
+  return Array.isArray(variants)
+    ? variants.map((variant): HintEntry => [text(record(variant).id), record(variant).settings])
+    : Object.entries(record(variants))
+}
+
+/**
+ * Effort presets in the gateway's OpenCode hint. The hint also lists service-tier variants,
+ * so a hint with no effort preset says nothing about effort and the catalog still decides.
+ */
 function hintedVariants(listing: Entry): EffortVariant[] | undefined {
-  const hints = record(record(record(listing.client_hints).harnesses).opencode)
-  if (hints.variants === undefined) return undefined
-  const entries = Array.isArray(hints.variants)
-    ? hints.variants.map((variant) => [text(record(variant).id), record(variant).settings] as const)
-    : Object.entries(record(hints.variants))
-  return entries.flatMap(([id, settings]) => {
+  const efforts = hintEntries(listing).flatMap(([id, settings]) => {
     const effort = text(record(settings).effort) ?? text(record(settings).reasoningEffort) ?? id
     return id && effort && effortNames.has(id) && effortNames.has(effort) ? [{ id, effort }] : []
   })
+  return efforts.length ? efforts : undefined
 }
 
 function effortsFor(
@@ -271,6 +286,30 @@ function reasoning(
   }
 }
 
+/**
+ * One variant per tier the gateway's OpenCode hint offers: the optional tiers a caller may
+ * request, none when an admin fixed the tier. `service_tiers` can also list a tier only a
+ * forced route serves, and asking for that one fails the model's allow-list with 403.
+ * Anthropic packages carry Fast as `speed`; every package sends `serviceTier` as
+ * `service_tier`. A tier variant keeps the model's default settings, and Oceans records the
+ * cost of the tier that served it.
+ */
+function tierVariants(
+  listing: Entry,
+  api: API,
+  defaults: Model.Settings | undefined,
+): Model.Info['variants'] {
+  const hinted = new Set(hintEntries(listing).map(([id]) => id))
+  return Object.entries(tierVariantIDs).flatMap(([tier, id]) => {
+    if (!hinted.has(id)) return []
+    const settings =
+      api === 'anthropic-messages' && tier === 'priority'
+        ? { speed: 'fast' }
+        : { serviceTier: tier }
+    return [{ id: Model.VariantID.make(id), settings: { ...defaults, ...settings } }]
+  })
+}
+
 export function toModel(
   providerID: Provider.ID,
   id: string,
@@ -300,6 +339,7 @@ export function toModel(
     tokens(listing.max_tokens) ??
     reference?.limit.output ??
     Math.min(context, 32_768)
+  const thinking = reasoning(api, entry, listing, output, reference, override)
   return {
     ...Model.Info.default(providerID, Model.ID.make(id)),
     name: text(listing.display_name) ?? text(listing.name) ?? reference?.name ?? id,
@@ -308,7 +348,8 @@ export function toModel(
     capabilities: capabilities(entry, listing, api, reference, override),
     limit: { context, input, output },
     cost: costs(entry, listing, reference),
-    ...reasoning(api, entry, listing, output, reference, override),
+    settings: thinking.settings,
+    variants: [...thinking.variants, ...tierVariants(listing, api, thinking.settings)],
   }
 }
 

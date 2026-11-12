@@ -85,7 +85,7 @@ The effort order is `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. The gate
 
 | Request | Effort paths checked |
 | --- | --- |
-| Chat Completions and Anthropic Messages | Top level: `reasoning_effort`, `reasoning.effort`, `output_config.effort`, `thinking.effort`, the Bedrock paths, the Gemini paths, `chat_template_kwargs.reasoning_effort`, `chat_template_args.reasoning_effort`. Each message: `reasoning.effort`, `output_config.effort`, `thinking.effort`. |
+| Chat Completions and Anthropic Messages | Top level: `reasoning_effort`, `reasoning.effort`, `output_config.effort`, `thinking.effort`, the Bedrock paths, the Gemini paths, `chat_template_kwargs.reasoning_effort`, `chat_template_args.reasoning_effort`. Each message: `reasoning.effort`, `output_config.effort`, `thinking.effort`, and the same three under `configuration_update`. |
 | Responses | Top level: `reasoning.effort`, `reasoning_effort`, `output_config.effort`, `thinking.effort` and the Bedrock paths. Items in an array `input` are inspected recursively for every path in this table. |
 | Batch items and route `extra_body` | Every path in this table, recursively, including nested `messages` and `input` items |
 
@@ -98,6 +98,7 @@ The gateway applies these rules while a ceiling is active:
 - A known value above the ceiling returns `invalid_request`. The gateway doesn't clamp or change it.
 - Unknown strings and non-string effort values also return `invalid_request`, so a new provider value can't bypass policy.
 - Omitted fields and explicit `null` pass.
+- A rejection message names the field path, such as `messages[2].configuration_update.reasoning.effort`. The gateway also logs a `reasoning effort rejected` warning with the request ID, the requested and resolved model, the field path, the requested effort and the ceiling. Batch creation logs no request ID. The log holds no prompt content, and an unknown or malformed value is logged as `invalid`.
 
 The ceiling applies only to categorical values. It doesn't cap numeric budgets such as `thinking.budget_tokens`, and it doesn't override a default effort the provider picks when no value is sent. Provider mapping still resolves conflicts between two explicit effort fields, but every field must pass the ceiling first.
 
@@ -135,7 +136,7 @@ If `routing` is omitted, the gateway uses weighted selection on every request wi
 
 ### Route identity
 
-Every route needs a stable `id` when the model defines `routing`. A route's `id` defaults to its provider key when that provider appears once in the model; see [Route fields](/configuration/models-and-routes/#route-fields). Keep the ID when changing a route's priority, weight or YAML position. These edits keep the route's identity and don't break a valid session binding. Changing the provider or upstream model creates a new route identity.
+Every route needs a stable `id` when the model defines `routing`. A route's `id` defaults to its provider key when that provider appears once in the model; see [Route fields](/configuration/models-and-routes/#route-fields). Keep the ID when changing a route's priority, weight or YAML position. These edits keep the route's identity and don't break a valid session binding. Changing the provider, upstream model or `service_tier` creates a new route identity.
 
 Each binding also stores an execution fingerprint. It covers the initialised provider's endpoint, authentication and headers, the request-affecting route settings, and the caller's linked provider credential ID. A change to any of these invalidates the binding. Display, pricing, timeout and batch settings don't affect it. Normal token refresh doesn't change it.
 
@@ -281,6 +282,7 @@ The context value is metadata only. The gateway doesn't tokenise every request o
 | `architecture` | Input and output modalities shared by the routes that have modality data, plus outputs the model serves (see below) |
 | `capabilities` | Anthropic `ModelCapabilities` shape |
 | `supported_endpoint_types` | new-api endpoint types, preferred first |
+| `service_tiers` | Tiers the model can serve, such as `["default", "flex", "priority"]`, including a tier a route forces; omitted when only `default`. The tier variants in `client_hints` offer only tiers callers may request (see [Service tiers](#service-tiers)) |
 | `client_hints` | Harness settings for chat-shaped models |
 | `has_more`, `first_id`, `last_id` | The list isn't paginated, so `has_more` is always `false`; the IDs are `null` for an empty list |
 
@@ -333,6 +335,7 @@ The gateway stores prices per million tokens and divides by 1,000,000 here. For 
 - `tools` and `tool_choice` when the model supports tools.
 - `reasoning_effort` when the eligible chat routes share at least one effort level after the reasoning ceiling applies. A model can have `supports_reasoning: true` without it, for example a Claude model that needs a manual thinking budget.
 - `response_format` when the model supports structured output.
+- `service_tier` when the model can serve a tier other than `default`.
 - `temperature`, unless the catalog sets `temperature: false` for any enabled route.
 
 Reasoning uses every eligible chat route, because route selection doesn't check reasoning and a request can land on any of them. Tools, vision and JSON schemas are different: selection checks them, so a feature is `true` when at least one eligible chat route serves it and every serving route has it. A route's explicit or inferred `true` capability counts; otherwise the catalog decides. Streaming has no catalog flag, so one streaming route is enough.
@@ -345,6 +348,42 @@ The vendor in `providers` is found in this order: the model family in the upstre
 These rules exist because omp sends `providers: ["openai"]` models to `/v1/responses` and all others to the configured `api`. No field selects Anthropic Messages; omp sends Claude models to `/v1/chat/completions` by default and the gateway translates them. To set up omp with this endpoint, see [Oh-My-Pi (OMP)](/harnesses/omp/).
 
 The gateway doesn't register `/model/info`, `/v1/model/info`, `/v2/model/info` or `/v1/model_group/info`. omp may call them during a model list refresh and falls back to the `/model_group/info` rows when they fail. With the admin UI mounted at `/`, those paths reach the UI proxy instead of a gateway 404.
+
+### Service tiers
+
+Chat Completions, Responses and Anthropic Messages accept a tier for one request:
+
+| Field | Values | Meaning |
+| --- | --- | --- |
+| `service_tier` | `default`, `flex`, `priority`, `ultrafast`; aliases `fast`, `standard`, `standard_only` | OpenAI and OpenRouter spelling |
+| `speed` | `fast`, `standard` | Anthropic fast mode. `fast` is `priority`. |
+| `serviceTier` | a tier, or `{"type": "<tier>"}` | Gemini and Bedrock spelling |
+
+`service_tier: "auto"` and `null` ask for no tier. The gateway never turns `auto` into `priority`.
+
+```json
+{
+  "model": "gpt-6-luna",
+  "service_tier": "fast",
+  "messages": [{ "role": "user", "content": "Hello" }]
+}
+```
+
+The gateway removes these fields from the request and sends the tier in the form the selected provider expects. See [Service tiers](/configuration/models-and-routes/#service-tiers) for the forms and for the admin settings. When the route sets `service_tier`, the route's tier wins over the caller's.
+
+| Response | Cause |
+| --- | --- |
+| 400 `invalid_request` | Unknown value, a value that isn't a string, or two fields that ask for different tiers |
+| 403 `service_tier_not_allowed` | The model's `service_tiers` doesn't list the tier |
+| 400 `invalid_request`, "no configured route … supports service tier" | No route of the model can send and price the tier |
+
+The response reports the tier the provider served: `service_tier` in Chat Completions and Responses, and `usage.speed` and `usage.service_tier` in Anthropic Messages. A provider can serve a lower tier than requested. For example, OpenAI can serve a priority request at `default` when it is busy. The request log keeps both tiers, and usage is billed at the served tier. When the provider doesn't report a tier, usage is billed at the requested tier.
+
+A different tier uses a different provider cache. Changing the tier in the middle of a session loses prompt cache hits.
+
+Batch items can't select a tier, because a batch runs at the provider's batch rate. `POST /api/v1/batches` removes a `default` tier from item bodies and rejects the whole batch with 400 when an item asks for any other tier. Batch route selection skips routes whose `service_tier` forces a non-default tier, so a model with only `-fast` routes can't run batches.
+
+Embeddings, image generation and Decisions also run at the default tier, because their adapters send no tier. The gateway removes a `default` tier from these requests and returns 400 before model resolution for any other tier. Their route selection skips routes whose `service_tier` forces a non-default tier, and returns 400 when the model has no other route.
 
 ### Chat Completions
 
@@ -408,7 +447,7 @@ See [TypeSafe](/providers/typesafe/) for the System One shape and [Provider API 
 
 ### Images
 
-`POST /v1/images` and `POST /v1/images/generations` generate images through the OpenAI Images API and need the `images` capability. A request needs `model` and `prompt`. Other fields, such as `n`, `size` or `quality`, pass through unchanged. The gateway sets `model` to the upstream model (route `extra_body` can override it) and sends the request to `/images` under `base_url`.
+`POST /v1/images` and `POST /v1/images/generations` generate images through the OpenAI Images API and need the `images` capability. A request needs `model` and `prompt`. Other fields, such as `n`, `size` or `quality`, pass through unchanged, except tier fields (see [Service tiers](#service-tiers)). The gateway sets `model` to the upstream model (route `extra_body` can override it) and sends the request to `/images` under `base_url`.
 
 The response is the provider's body (`created`, `data[]` and `usage`). If the provider adds a `model` field, the gateway replaces it with the gateway model name.
 
@@ -426,6 +465,7 @@ Start with the returned error and the request log:
 | --- | --- | --- |
 | Model not found | The model doesn't exist, isn't granted, or no tag candidate is accessible | Requested model, tags, API key grants, allowlists |
 | `invalid_request` | Model policy, session identity, continuation origin or capability checks rejected the request | Effort fields, session IDs, response origin, API family, feature flags |
+| `service_tier_not_allowed` | The model's `service_tiers` doesn't allow the requested tier | Model `service_tiers`, or use a `-fast` model the key is granted |
 | `no_routes_available` | No enabled, positively weighted, viable route remained | Route state, provider config, weight |
 | Provider error | The selected route reached the provider and the upstream request failed | Provider attempt, credentials, compatibility profile, upstream response |
 | Visible model can't run | Discovery works but no route supports this request | Route capabilities, provider support |

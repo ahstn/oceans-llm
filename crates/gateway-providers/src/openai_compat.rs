@@ -3,12 +3,12 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use async_trait::async_trait;
 use gateway_core::{
     BatchCapabilities, CoreChatRequest, CoreDecisionsRequest, CoreEmbeddingsRequest,
-    CoreResponsesRequest, ImagesRequest, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
-    OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
-    ProviderBatchRequest, ProviderBatchResult, ProviderBatchState, ProviderCapabilities,
-    ProviderClient, ProviderDecisionsResponse, ProviderError, ProviderRequestContext,
-    ProviderStream, core_chat_request_to_openai, core_embeddings_request_to_openai,
-    core_responses_request_to_openai,
+    CoreResponsesRequest, ImagesRequest, ModelRoute, OpenAiCompatDeveloperRole,
+    OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
+    OpenAiCompatRouteCompatibility, ProviderBatchRequest, ProviderBatchResult, ProviderBatchState,
+    ProviderCapabilities, ProviderClient, ProviderDecisionsResponse, ProviderError,
+    ProviderRequestContext, ProviderStream, ServiceTier, core_chat_request_to_openai,
+    core_embeddings_request_to_openai, core_responses_request_to_openai,
 };
 use serde_json::{Map, Value, json};
 
@@ -22,6 +22,8 @@ mod anthropic_messages;
 mod batch;
 mod decisions;
 mod native_messages;
+#[cfg(test)]
+mod service_tier_tests;
 
 pub(crate) use anthropic_messages::normalize_anthropic_messages_for_openai;
 
@@ -416,13 +418,17 @@ impl OpenAiCompatProvider {
         apply_compatibility_profile: bool,
         bearer_token: Option<&str>,
     ) -> Result<reqwest::Request, ProviderError> {
-        let body = self.prepare_request_body(
+        let mut body = self.prepare_request_body(
             endpoint_suffix,
             body,
             context,
             enforce_stream,
             apply_compatibility_profile,
         )?;
+        // Batch items share `prepare_request_body` but run outside the live service tiers.
+        if matches!(endpoint_suffix, "chat/completions" | "responses") {
+            apply_service_tier(&mut body, context);
+        }
 
         let url = join_base_url(&self.config.base_url, endpoint_suffix)?;
 
@@ -645,6 +651,14 @@ pub(super) fn apply_openrouter_routing_policy(
     Ok(())
 }
 
+/// OpenAI and OpenRouter take the effective tier as body `service_tier` on Chat Completions,
+/// Responses, and OpenRouter Messages alike. An explicit default sends `default`.
+fn apply_service_tier(body: &mut Value, context: &ProviderRequestContext) {
+    if let (Some(tier), Some(object)) = (context.service_tier, body.as_object_mut()) {
+        object.insert("service_tier".to_string(), Value::from(tier.as_str()));
+    }
+}
+
 fn apply_openai_compat_profile_to_body(body: &mut Value, profile: &OpenAiCompatRouteCompatibility) {
     let Some(object) = body.as_object_mut() else {
         return;
@@ -749,6 +763,14 @@ impl ProviderClient for OpenAiCompatProvider {
 
     fn provider_type(&self) -> &str {
         &self.config.provider_type
+    }
+
+    fn service_tiers(&self, route: &ModelRoute) -> &'static [ServiceTier] {
+        if route.compatibility.selects_decisions_api() {
+            crate::service_tier::DEFAULT_ONLY
+        } else {
+            &ServiceTier::ALL
+        }
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
@@ -966,6 +988,7 @@ mod tests {
                 openai_compat: Some(profile),
                 ..Default::default()
             },
+            service_tier: None,
         }
     }
 
@@ -1022,6 +1045,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         }
     }
 
@@ -1273,6 +1297,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let built = provider
@@ -1554,6 +1579,7 @@ mod tests {
             extra_body,
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let built = provider
@@ -1966,6 +1992,7 @@ mod tests {
                 }),
                 ..Default::default()
             },
+            service_tier: None,
         };
 
         let built = provider
@@ -2076,6 +2103,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let error = provider
@@ -2163,6 +2191,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let response = provider
@@ -2229,6 +2258,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider
@@ -2312,6 +2342,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let rendered = render_provider_stream(
@@ -2383,6 +2414,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider
@@ -2458,6 +2490,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider
@@ -2532,6 +2565,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider
@@ -2606,6 +2640,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider
@@ -2675,6 +2710,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let error = match provider.chat_completions_stream(&request, &context).await {
@@ -2749,6 +2785,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider
@@ -2819,6 +2856,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let error = match provider.chat_completions_stream(&request, &context).await {
@@ -2889,6 +2927,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider
@@ -2959,6 +2998,7 @@ mod tests {
             extra_body: Map::new(),
             request_headers: BTreeMap::new(),
             compatibility: Default::default(),
+            service_tier: None,
         };
 
         let mut stream = provider

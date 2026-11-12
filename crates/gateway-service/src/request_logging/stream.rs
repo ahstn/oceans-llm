@@ -1,5 +1,5 @@
 use agent_session_analysis::tool_calls::ToolCallTally;
-use gateway_core::{RequestAttemptRecord, SseEventParser};
+use gateway_core::{RequestAttemptRecord, ServiceTier, SseEventParser};
 use serde_json::{Map, Value, json};
 
 use crate::{
@@ -36,6 +36,7 @@ pub struct StreamResponseCollector {
     events: Vec<Value>,
     usage: Option<Value>,
     response_id: Option<String>,
+    served_service_tier: Option<ServiceTier>,
     failure: Option<StreamFailureSummary>,
     tool_calls: ToolCallTally,
     finished: bool,
@@ -107,6 +108,9 @@ impl StreamResponseCollector {
                 {
                     self.response_id = Some(response_id.to_string());
                 }
+                if let Some(tier) = gateway_core::served_service_tier(parsed) {
+                    self.served_service_tier = Some(tier);
+                }
                 self.observe_tool_calls(parsed);
                 observation.has_output |= stream_event_has_output(parsed);
                 observation.has_terminal_event |= stream_event_is_terminal(parsed);
@@ -149,6 +153,12 @@ impl StreamResponseCollector {
     #[must_use]
     pub fn response_id(&self) -> Option<&str> {
         self.response_id.as_deref()
+    }
+
+    /// The tier the provider reported serving, from the last event that named one.
+    #[must_use]
+    pub fn served_service_tier(&self) -> Option<ServiceTier> {
+        self.served_service_tier
     }
 
     #[must_use]

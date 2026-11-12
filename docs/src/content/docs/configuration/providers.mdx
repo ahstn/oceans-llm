@@ -34,7 +34,7 @@ Every provider type rejects unknown fields, so a misspelled key fails config loa
 | Field | Default | Notes |
 | --- | --- | --- |
 | `id` | required | The map key, or `id` in list form. Unique across `providers`, including across fragments. It can't be empty. |
-| `default_headers` | `{}` | Headers sent with every upstream request. |
+| `default_headers` | `{}` | Headers sent with every upstream request. They can't set a [service tier](/configuration/models-and-routes/#service-tiers) header. |
 | `timeouts.total_ms` | `300000` | Total deadline per upstream request, including consumption of a streaming body. |
 | `display.label` | none | Admin UI label. It can't be empty when set. |
 | `display.icon_key` | none (`aws` for `aws_bedrock`) | Admin UI icon. One of `openai`, `openrouter`, `anthropic`, `aws`, `typesafe`, `vertexai` (case-insensitive). |

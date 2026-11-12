@@ -7,7 +7,7 @@ use gateway_core::{
     OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
     OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
     OpenRouterProviderRouting, OpenRouterRouteCompatibility, PartialCapabilities,
-    ProviderCapabilities, ReasoningEffort, RouteCompatibility, RoutePricingOverride,
+    ProviderCapabilities, ReasoningEffort, RouteCompatibility, RoutePricingOverride, ServiceTier,
     enforce_reasoning_effort_map, infer_compatibility_capabilities, route_capability_ceiling,
 };
 use gateway_providers::BedrockEndpointKind;
@@ -16,6 +16,10 @@ use serde_json::{Map, Value};
 
 use super::models::is_valid_route_id;
 use super::providers::{AwsBedrockProviderConfig, ProviderConfig};
+use super::service_tiers::{
+    RouteServiceTierPricingConfig, deserialize_optional_service_tier, resolve_service_tier_pricing,
+    validate_route_tier_passthrough,
+};
 
 const fn default_route_priority() -> i32 {
     100
@@ -54,6 +58,9 @@ pub struct ModelRouteConfig {
     pub capabilities: RouteCapabilitiesConfig,
     #[serde(default)]
     pub compatibility: RouteCompatibilityConfig,
+    /// The tier this route always asks the provider for, whatever the caller requests.
+    #[serde(default, deserialize_with = "deserialize_optional_service_tier")]
+    pub service_tier: Option<ServiceTier>,
 }
 
 impl ModelRouteConfig {
@@ -92,11 +99,19 @@ impl ModelRouteConfig {
             );
         }
         if let Some(pricing_override) = &self.pricing_override {
-            pricing_override.resolve(&format!(
-                "model `{model_id}` route `{}` pricing_override",
-                self.upstream_model
-            ))?;
+            pricing_override.resolve(
+                &format!(
+                    "model `{model_id}` route `{}` pricing_override",
+                    self.upstream_model
+                ),
+                self.service_tier,
+            )?;
         }
+        validate_route_tier_passthrough(
+            &format!("model `{model_id}` route `{}`", self.upstream_model),
+            &self.extra_body,
+            &self.extra_headers,
+        )?;
         enforce_reasoning_effort_map(&self.extra_body, max_reasoning_effort).with_context(
             || {
                 format!(
@@ -196,9 +211,12 @@ pub struct RoutePricingOverrideConfig {
     pub cache_write_usd_per_million_tokens: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_yaml_string")]
     pub image_output_usd_per_million_tokens: Option<String>,
+    /// Flat rates for tiers other than the one the route serves.
+    #[serde(default)]
+    pub service_tiers: Vec<RouteServiceTierPricingConfig>,
 }
 
-fn deserialize_yaml_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+pub(super) fn deserialize_yaml_string<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -208,7 +226,9 @@ where
     }
 }
 
-fn deserialize_optional_yaml_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+pub(super) fn deserialize_optional_yaml_string<'de, D>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -220,7 +240,12 @@ where
 }
 
 impl RoutePricingOverrideConfig {
-    pub(super) fn resolve(&self, label: &str) -> anyhow::Result<RoutePricingOverride> {
+    /// `route_service_tier` is the route's forced tier, which the base rates price.
+    pub(super) fn resolve(
+        &self,
+        label: &str,
+        route_service_tier: Option<ServiceTier>,
+    ) -> anyhow::Result<RoutePricingOverride> {
         Ok(RoutePricingOverride {
             input_cost_per_million_tokens: parse_non_negative_rate(
                 &self.input_usd_per_million_tokens,
@@ -245,11 +270,16 @@ impl RoutePricingOverrideConfig {
                 label,
                 "image_output_usd_per_million_tokens",
             )?,
+            service_tiers: resolve_service_tier_pricing(
+                &self.service_tiers,
+                route_service_tier,
+                label,
+            )?,
         })
     }
 }
 
-fn parse_optional_non_negative_rate(
+pub(super) fn parse_optional_non_negative_rate(
     value: Option<&str>,
     label: &str,
     field: &str,
@@ -259,7 +289,7 @@ fn parse_optional_non_negative_rate(
         .transpose()
 }
 
-fn parse_non_negative_rate(value: &str, label: &str) -> anyhow::Result<Money4> {
+pub(super) fn parse_non_negative_rate(value: &str, label: &str) -> anyhow::Result<Money4> {
     let rate = Money4::from_decimal_str(value)
         .map_err(|error| anyhow::anyhow!("{label} is invalid: {error}"))?;
     if rate.is_negative() {

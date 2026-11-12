@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use gateway_core::{
     BudgetAlertRepository, BudgetRepository, GatewayError, IdentityRepository,
-    McpToolInvocationRepository, ModelRepository, ModelRoute, PricingCatalogRepository,
+    McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, PricingCatalogRepository,
     ProviderConnection, ProviderRepository, RequestLogRepository, RoutePlanner,
     RoutePricingOverride, StoreHealth,
 };
@@ -26,8 +26,13 @@ pub struct OverriddenRoutes {
     lookups: CatalogLookups,
 }
 
-/// Catalog pricing and context window for one lookup target.
-type CatalogValue = (Option<EffectiveRoutePricing>, Option<i64>);
+/// The catalog values the checks compare against, for one lookup target.
+#[derive(Debug, Clone)]
+struct CatalogValue {
+    pricing: Option<EffectiveRoutePricing>,
+    image_output_rate: Option<Money4>,
+    context: Option<i64>,
+}
 
 /// The checks read only catalog values, which depend on the provider, upstream model, and
 /// `extra_body` billing modifiers, so routes sharing those share one lookup, and each provider is
@@ -72,7 +77,11 @@ impl CatalogLookups {
             .get(&route.provider_key)
             .and_then(Option::as_ref);
         let metadata = resolve_effective_route_metadata(store, provider, route, now).await?;
-        let value = (metadata.catalog_pricing, metadata.catalog_limits.context);
+        let value = CatalogValue {
+            pricing: metadata.catalog_pricing,
+            image_output_rate: metadata.catalog_image_output_cost_per_million_tokens,
+            context: metadata.catalog_limits.context,
+        };
         self.values.insert(target, Some(value.clone()));
         Ok(Some(value))
     }
@@ -104,6 +113,7 @@ struct RouteContextOverrideConflict {
 fn pricing_override_matches_catalog(
     configured: &RoutePricingOverride,
     catalog: &EffectiveRoutePricing,
+    catalog_image_output_rate: Option<Money4>,
 ) -> bool {
     catalog.input_cost_per_million_tokens == Some(configured.input_cost_per_million_tokens)
         && catalog.output_cost_per_million_tokens == Some(configured.output_cost_per_million_tokens)
@@ -113,11 +123,16 @@ fn pricing_override_matches_catalog(
             == configured.cache_read_cost_per_million_tokens
         && catalog.cache_write_cost_per_million_tokens
             == configured.cache_write_cost_per_million_tokens
-        // The catalog has no image rate, so it bills image tokens at the output rate. An override
-        // with its own image rate bills them differently.
-        && configured.image_output_cost_per_million_tokens.is_none()
-        // An override replaces the catalog's whole schedule, so it drops any context tiers.
+        // Each side bills image tokens at its own image rate, else at its output rate.
+        && configured
+            .image_output_cost_per_million_tokens
+            .or(Some(configured.output_cost_per_million_tokens))
+            == catalog_image_output_rate.or(catalog.output_cost_per_million_tokens)
+        // An override replaces the catalog's whole schedule, so it drops any context tiers and
+        // the catalog's service tier rates, and its own tier rates have no catalog match.
         && catalog.context_tiers.is_empty()
+        && catalog.service_tiers.is_empty()
+        && configured.service_tiers.is_empty()
 }
 
 impl<S, P> GatewayService<S, P>
@@ -238,8 +253,10 @@ where
             let Some(configured) = route.context_window_tokens else {
                 continue;
             };
-            let Some((_, Some(catalog))) =
-                routes.lookups.get(self.store.as_ref(), route, now).await?
+            let Some(CatalogValue {
+                context: Some(catalog),
+                ..
+            }) = routes.lookups.get(self.store.as_ref(), route, now).await?
             else {
                 continue;
             };
@@ -265,30 +282,29 @@ where
         let now = OffsetDateTime::now_utc();
         let mut redundant = Vec::new();
         for (model_key, route) in &routes.routes {
-            let (catalog_pricing, catalog_context) =
-                match routes.lookups.get(self.store.as_ref(), route, now).await {
-                    Ok(Some(value)) => value,
-                    Ok(None) => continue,
-                    Err(error) => {
-                        warn!(
-                            error = %error,
-                            model_key = %model_key,
-                            provider_key = %route.provider_key,
-                            upstream_model = %route.upstream_model,
-                            "skipping redundant route override check; route metadata lookup failed"
-                        );
-                        routes.lookups.mark_failed(route);
-                        continue;
-                    }
-                };
+            let catalog = match routes.lookups.get(self.store.as_ref(), route, now).await {
+                Ok(Some(value)) => value,
+                Ok(None) => continue,
+                Err(error) => {
+                    warn!(
+                        error = %error,
+                        model_key = %model_key,
+                        provider_key = %route.provider_key,
+                        upstream_model = %route.upstream_model,
+                        "skipping redundant route override check; route metadata lookup failed"
+                    );
+                    routes.lookups.mark_failed(route);
+                    continue;
+                }
+            };
             let pricing = matches!(
-                (route.pricing_override.as_ref(), catalog_pricing.as_ref()),
-                (Some(configured), Some(catalog))
-                    if pricing_override_matches_catalog(configured, catalog)
+                (route.pricing_override.as_ref(), catalog.pricing.as_ref()),
+                (Some(configured), Some(pricing))
+                    if pricing_override_matches_catalog(configured, pricing, catalog.image_output_rate)
             );
             let context_window_tokens = route
                 .context_window_tokens
-                .filter(|configured| Some(*configured) == catalog_context);
+                .filter(|configured| Some(*configured) == catalog.context);
             if pricing || context_window_tokens.is_some() {
                 redundant.push(RedundantRouteOverride {
                     model_key: model_key.clone(),
@@ -305,7 +321,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use gateway_core::{Money4, RoutePricingOverride};
+    use gateway_core::{
+        ContextPricingTier, Money4, RoutePricingOverride, RouteServiceTierPricing, ServiceTier,
+        ServiceTierPricing,
+    };
 
     use super::pricing_override_matches_catalog;
     use crate::EffectiveRoutePricing;
@@ -322,6 +341,7 @@ mod tests {
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
+            service_tiers: Vec::new(),
         };
         let mut catalog = EffectiveRoutePricing {
             input_cost_per_million_tokens: Some(money("0.1500")),
@@ -329,45 +349,73 @@ mod tests {
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
             context_tiers: Vec::new(),
+            service_tiers: Vec::new(),
         };
-        assert!(pricing_override_matches_catalog(&configured, &catalog));
+        let matches = |configured: &RoutePricingOverride,
+                       catalog: &EffectiveRoutePricing,
+                       image: Option<Money4>| {
+            pricing_override_matches_catalog(configured, catalog, image)
+        };
+        assert!(matches(&configured, &catalog, None));
 
         // Removing an override that omits a catalog cache rate would start charging cache tokens.
         catalog.cache_read_cost_per_million_tokens = Some(money("0.01"));
-        assert!(!pricing_override_matches_catalog(&configured, &catalog));
+        assert!(!matches(&configured, &catalog, None));
         catalog.cache_read_cost_per_million_tokens = None;
 
         catalog.output_cost_per_million_tokens = Some(money("0.64"));
-        assert!(!pricing_override_matches_catalog(&configured, &catalog));
+        assert!(!matches(&configured, &catalog, None));
+        catalog.output_cost_per_million_tokens = Some(money("0.60"));
 
         let with_cache = RoutePricingOverride {
             cache_read_cost_per_million_tokens: Some(money("0.02")),
-            ..configured
+            ..configured.clone()
         };
-        catalog.output_cost_per_million_tokens = Some(money("0.60"));
-        assert!(!pricing_override_matches_catalog(&with_cache, &catalog));
+        assert!(!matches(&with_cache, &catalog, None));
 
-        // An image rate changes how image tokens bill, so the override is not redundant.
+        // Each side bills image tokens at its image rate, else its output rate.
         let with_image_rate = RoutePricingOverride {
-            image_output_cost_per_million_tokens: Some(money("0.60")),
-            ..configured
+            image_output_cost_per_million_tokens: Some(money("1.00")),
+            ..configured.clone()
         };
-        assert!(pricing_override_matches_catalog(&configured, &catalog));
-        assert!(!pricing_override_matches_catalog(
-            &with_image_rate,
-            &catalog
-        ));
+        assert!(!matches(&with_image_rate, &catalog, None));
+        assert!(matches(&with_image_rate, &catalog, Some(money("1.00"))));
+        assert!(
+            !matches(&configured, &catalog, Some(money("1.00"))),
+            "the catalog's own image rate would bill differently"
+        );
+
+        // An override replaces the catalog's service tier rates.
+        catalog.service_tiers.push(ServiceTierPricing {
+            service_tier: ServiceTier::Priority,
+            input: Some(money("0.30")),
+            output: Some(money("1.20")),
+            cache_read: None,
+            cache_write: None,
+            context_tiers: Vec::new(),
+        });
+        assert!(!matches(&configured, &catalog, None));
+        catalog.service_tiers.clear();
+        let with_tier = RoutePricingOverride {
+            service_tiers: vec![RouteServiceTierPricing {
+                service_tier: ServiceTier::Priority,
+                input_cost_per_million_tokens: money("0.30"),
+                output_cost_per_million_tokens: money("1.20"),
+                cache_read_cost_per_million_tokens: None,
+                cache_write_cost_per_million_tokens: None,
+            }],
+            ..configured.clone()
+        };
+        assert!(!matches(&with_tier, &catalog, None));
 
         // The override drops the catalog's context tiers, so long prompts would bill differently.
-        catalog
-            .context_tiers
-            .push(gateway_core::ContextPricingTier {
-                above_input_tokens: 200_000,
-                input: Some(money("0.30")),
-                output: Some(money("1.20")),
-                cache_read: None,
-                cache_write: None,
-            });
-        assert!(!pricing_override_matches_catalog(&configured, &catalog));
+        catalog.context_tiers.push(ContextPricingTier {
+            above_input_tokens: 200_000,
+            input: Some(money("0.30")),
+            output: Some(money("1.20")),
+            cache_read: None,
+            cache_write: None,
+        });
+        assert!(!matches(&configured, &catalog, None));
     }
 }

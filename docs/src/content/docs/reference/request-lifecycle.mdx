@@ -111,7 +111,7 @@ Each ledger row in `usage_cost_events` has a `pricing_status`. A provider-report
 | `unpriced` | Usage exists but no exact rate matched | No (cost is zero) |
 | `usage_missing` | The provider reported no usable usage | No (cost is zero) |
 
-`unpriced` and `usage_missing` rows stay visible in reports. Common `unpriced` causes are an unsupported `pricing_provider_id`, an unsupported Vertex publisher or location, unsupported billing modifiers, and missing rates. [Pricing catalog and accounting](/spend/pricing-and-accounting/) owns the rules.
+`unpriced` and `usage_missing` rows stay visible in reports. Common `unpriced` causes are an unsupported `pricing_provider_id`, an unsupported Vertex publisher or location, a service tier with no rates (reason `service_tier:<tier>`), and missing rates. [Pricing catalog and accounting](/spend/pricing-and-accounting/) owns the rules.
 
 If the ledger write itself fails, the gateway logs a warning and the caller still gets the successful response.
 

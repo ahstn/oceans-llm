@@ -483,10 +483,17 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 77,
+        name: "service_tiers",
+        checksum: "V77__service_tiers.sql",
+        libsql_sql: include_str!("../migrations/V77__service_tiers.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V77__service_tiers.sql"),
+    },
+    MigrationManifest {
+        version: 78,
         name: "batch_jobs_route_index",
-        checksum: "V77__batch_jobs_route_index.sql",
-        libsql_sql: include_str!("../migrations/V77__batch_jobs_route_index.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V77__batch_jobs_route_index.sql"),
+        checksum: "V78__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V78__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V78__batch_jobs_route_index.sql"),
     },
 ];
 

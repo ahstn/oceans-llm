@@ -1,6 +1,8 @@
 //! Projection of LiteLLM's `model_prices_and_context_window.json` onto gateway catalog
 //! identities, by exact key only.
 
+mod cost;
+
 use std::{borrow::Cow, collections::BTreeMap};
 
 use gateway_core::GatewayError;
@@ -8,10 +10,10 @@ use serde::Deserialize;
 use serde_json::{Map, Number, Value};
 use tracing::debug;
 
-use super::{Providers, f64_per_token_to_per_million};
+use super::Providers;
 use crate::pricing_catalog::{
-    PricingCatalogContextTier, PricingCatalogCostDocument, PricingCatalogLimitDocument,
-    PricingCatalogModalitiesDocument, PricingCatalogModelDocument, PricingCatalogProviderDocument,
+    PricingCatalogLimitDocument, PricingCatalogModalitiesDocument, PricingCatalogModelDocument,
+    PricingCatalogProviderDocument,
     metadata::{CatalogApiEndpoints, CatalogModelMetadata},
     target::{
         AMAZON_BEDROCK_PRICING_PROVIDER_ID, GITHUB_COPILOT_PRICING_PROVIDER_ID,
@@ -23,23 +25,7 @@ use crate::pricing_catalog::{
 /// The documentation entry at the top of the LiteLLM table; not a model.
 const SAMPLE_SPEC_KEY: &str = "sample_spec";
 const VERTEX_ANTHROPIC_LITELLM_PROVIDER: &str = "vertex_ai-anthropic_models";
-
-/// LiteLLM per-token rate keys and the cost field each fills.
-const RATE_KEYS: [(&str, RateField); 4] = [
-    ("input_cost_per_token", RateField::Input),
-    ("output_cost_per_token", RateField::Output),
-    ("cache_read_input_token_cost", RateField::CacheRead),
-    ("cache_creation_input_token_cost", RateField::CacheWrite),
-];
-const OUTPUT_IMAGE_RATE_KEY: &str = "output_cost_per_image_token";
-
-#[derive(Debug, Clone, Copy)]
-enum RateField {
-    Input,
-    Output,
-    CacheRead,
-    CacheWrite,
-}
+const ANTHROPIC_LITELLM_PROVIDER: &str = "anthropic";
 
 /// Whether a LiteLLM key names a gateway model directly or only when no direct key does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +63,7 @@ pub(crate) fn project(raw: &[u8]) -> Result<Providers, GatewayError> {
     let entries = serde_json::from_slice::<Map<String, Value>>(raw).map_err(|error| {
         GatewayError::Internal(format!("failed parsing LiteLLM catalog: {error}"))
     })?;
+    let anthropic_fast_multipliers = anthropic_fast_multipliers(&entries);
 
     let mut providers = Providers::new();
     let mut fallbacks = Vec::new();
@@ -97,7 +84,10 @@ pub(crate) fn project(raw: &[u8]) -> Result<Providers, GatewayError> {
         let Some((provider_id, model_id, rank)) = gateway_identity(key, &entry) else {
             continue;
         };
-        let document = model_document(&model_id, entry, fields);
+        let fast_multiplier = own_fast_multiplier(fields).or_else(|| {
+            inherited_fast_multiplier(provider_id, &model_id, &anthropic_fast_multipliers)
+        });
+        let document = model_document(&model_id, entry, fields, fast_multiplier);
         match rank {
             IdentityRank::Primary => {
                 provider_models(&mut providers, provider_id)
@@ -112,6 +102,51 @@ pub(crate) fn project(raw: &[u8]) -> Result<Providers, GatewayError> {
             .or_insert(document);
     }
     Ok(providers)
+}
+
+/// Anthropic's fast mode multiplier per model family, from the bare Anthropic keys that
+/// list one. Anthropic itself is not a gateway pricing provider.
+fn anthropic_fast_multipliers(entries: &Map<String, Value>) -> BTreeMap<&str, f64> {
+    entries
+        .iter()
+        .filter(|(key, _)| !key.contains('/'))
+        .filter_map(|(key, value)| {
+            let fields = value.as_object()?;
+            let provider = fields.get("litellm_provider")?.as_str()?;
+            (provider == ANTHROPIC_LITELLM_PROVIDER)
+                .then(|| own_fast_multiplier(fields))
+                .flatten()
+                .map(|multiplier| (key.as_str(), multiplier))
+        })
+        .collect()
+}
+
+/// The fast mode multiplier an entry lists in `provider_specific_entry.fast`: the
+/// priority tier costs that multiple of the base schedule.
+fn own_fast_multiplier(fields: &Map<String, Value>) -> Option<f64> {
+    fields
+        .get("provider_specific_entry")?
+        .get("fast")?
+        .as_f64()
+        .filter(|multiplier| multiplier.is_finite() && *multiplier > 0.0)
+}
+
+/// Anthropic's multiplier for a Vertex Anthropic model of the same family: models.dev
+/// prices Vertex's Claude fast mode at the same multiple as Anthropic's. Bedrock's
+/// priority tier is AWS's own and Copilot serves only the default tier, so neither
+/// inherits it.
+fn inherited_fast_multiplier(
+    provider_id: &str,
+    model_id: &str,
+    anthropic_fast_multipliers: &BTreeMap<&str, f64>,
+) -> Option<f64> {
+    if provider_id != GOOGLE_VERTEX_ANTHROPIC_PRICING_PROVIDER_ID {
+        return None;
+    }
+    let family = model_id
+        .split_once('@')
+        .map_or(model_id, |(family, _)| family);
+    anthropic_fast_multipliers.get(family).copied()
 }
 
 fn provider_models<'doc>(
@@ -194,6 +229,7 @@ fn model_document(
     model_id: &str,
     entry: LiteLlmEntry,
     fields: &Map<String, Value>,
+    fast_multiplier: Option<f64>,
 ) -> PricingCatalogModelDocument {
     let api_endpoints = api_endpoints(entry.supported_endpoints.as_deref(), entry.mode.as_deref());
     let other_input_support = [
@@ -220,7 +256,7 @@ fn model_document(
             api_endpoints,
             ..CatalogModelMetadata::default()
         },
-        cost: cost_document(fields),
+        cost: cost::cost_document(fields, fast_multiplier),
         limit: PricingCatalogLimitDocument {
             context: None,
             input: entry.max_input_tokens.as_ref().and_then(token_limit),
@@ -238,74 +274,6 @@ fn token_limit(number: &Number) -> Option<i64> {
     number.as_i64().or_else(|| {
         let value = number.as_f64()?;
         (value.fract() == 0.0 && value.abs() < MAX_EXACT_FLOAT_INTEGER).then_some(value as i64)
-    })
-}
-
-fn cost_document(fields: &Map<String, Value>) -> PricingCatalogCostDocument {
-    let rate = |key: &str| {
-        fields
-            .get(key)
-            .and_then(Value::as_f64)
-            .and_then(f64_per_token_to_per_million)
-    };
-    let mut cost = PricingCatalogCostDocument {
-        output_image: rate(OUTPUT_IMAGE_RATE_KEY),
-        tiers: context_tiers(fields),
-        ..PricingCatalogCostDocument::default()
-    };
-    for (key, field) in RATE_KEYS {
-        match field {
-            RateField::Input => cost.input = rate(key),
-            RateField::Output => cost.output = rate(key),
-            RateField::CacheRead => cost.cache_read = rate(key),
-            RateField::CacheWrite => cost.cache_write = rate(key),
-        }
-    }
-    cost
-}
-
-/// Tiers from `<rate key>_above_<N>k_tokens` keys, ascending by threshold. Keys with any
-/// further suffix (`_priority`, `_batches`, `_above_1hr...`) are other dimensions.
-fn context_tiers(fields: &Map<String, Value>) -> Vec<PricingCatalogContextTier> {
-    let mut tiers = BTreeMap::<i64, PricingCatalogContextTier>::new();
-    for (key, value) in fields {
-        let Some((field, above_input_tokens)) = parse_tier_key(key) else {
-            continue;
-        };
-        let Some(rate) = value.as_f64().and_then(f64_per_token_to_per_million) else {
-            continue;
-        };
-        let tier = tiers
-            .entry(above_input_tokens)
-            .or_insert_with(|| PricingCatalogContextTier {
-                above_input_tokens,
-                input: None,
-                output: None,
-                cache_read: None,
-                cache_write: None,
-            });
-        let slot = match field {
-            RateField::Input => &mut tier.input,
-            RateField::Output => &mut tier.output,
-            RateField::CacheRead => &mut tier.cache_read,
-            RateField::CacheWrite => &mut tier.cache_write,
-        };
-        *slot = Some(rate);
-    }
-    tiers.into_values().collect()
-}
-
-fn parse_tier_key(key: &str) -> Option<(RateField, i64)> {
-    RATE_KEYS.iter().find_map(|&(base, field)| {
-        let thousands = key
-            .strip_prefix(base)?
-            .strip_prefix("_above_")?
-            .strip_suffix("k_tokens")?;
-        if thousands.is_empty() || !thousands.bytes().all(|byte| byte.is_ascii_digit()) {
-            return None;
-        }
-        let above_input_tokens = thousands.parse::<i64>().ok()?.checked_mul(1000)?;
-        Some((field, above_input_tokens))
     })
 }
 
@@ -366,9 +334,11 @@ fn mode_output_modalities(mode: Option<&str>) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    use gateway_core::ServiceTier;
     use serde_json::json;
 
     use super::*;
+    use crate::pricing_catalog::{PricingCatalogContextTier, PricingCatalogServiceTierCost};
 
     fn project_json(body: &Value) -> Providers {
         project(body.to_string().as_bytes()).expect("project LiteLLM fixture")
@@ -626,5 +596,50 @@ mod tests {
             (vec!["text".to_string(), "audio".to_string()], Some(false))
         );
         assert_eq!(models["gpt-4o"].modalities.output, ["text"]);
+    }
+
+    #[test]
+    fn anthropic_fast_multiplier_prices_vertex_priority_but_not_bedrock() {
+        let rates = json!({"input_cost_per_token": 4e-06, "output_cost_per_token": 2e-05});
+        let entry = |provider: &str| {
+            let mut entry = rates.clone();
+            entry["litellm_provider"] = json!(provider);
+            entry
+        };
+        let mut anthropic = entry("anthropic");
+        anthropic["provider_specific_entry"] = json!({"us": 1.1, "fast": 2});
+        let providers = project_json(&json!({
+            "claude-opus-5-5": anthropic,
+            "vertex_ai/claude-opus-5-5@default": entry("vertex_ai-anthropic_models"),
+            "vertex_ai/claude-sonnet-5-5@default": entry("vertex_ai-anthropic_models"),
+            "anthropic.claude-opus-5-5": entry("bedrock_converse"),
+        }));
+
+        let vertex = &providers["google-vertex-anthropic"].models;
+        assert_eq!(
+            vertex["claude-opus-5-5@default"].cost.service_tiers[&ServiceTier::Priority],
+            PricingCatalogServiceTierCost {
+                input: Some("8.0000".to_string()),
+                output: Some("40.0000".to_string()),
+                ..PricingCatalogServiceTierCost::default()
+            }
+        );
+        assert!(
+            vertex["claude-sonnet-5-5@default"]
+                .cost
+                .service_tiers
+                .is_empty(),
+            "a family without a multiplier gets no tier"
+        );
+        assert!(
+            providers["amazon-bedrock"].models["anthropic.claude-opus-5-5"]
+                .cost
+                .service_tiers
+                .is_empty()
+        );
+        assert!(
+            !providers.contains_key("anthropic"),
+            "Anthropic is not a pricing provider"
+        );
     }
 }

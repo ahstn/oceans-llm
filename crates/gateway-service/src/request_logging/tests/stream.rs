@@ -1,5 +1,7 @@
 use serde_json::json;
 
+use gateway_core::ServiceTier;
+
 use crate::redaction::{RequestLogPayloadCaptureMode, RequestLogPayloadPolicy};
 
 use super::super::{
@@ -583,4 +585,54 @@ data: {"type":"response.completed","response":{"output":[{"type":"mcp_call","id"
     assert_eq!(collector.invoked_tool_count(), 2);
     assert_eq!(collector.invoked_distinct_tool_count(), 2);
     assert_eq!(collector.invoked_tool_counts().mcp_calls, 1);
+}
+
+#[test]
+fn collector_reports_the_served_service_tier_of_each_protocol() {
+    let cases: [(&[u8], Option<ServiceTier>); 4] = [
+        // Chat repeats the tier on every chunk, including the final usage chunk.
+        (
+            br#"data: {"choices":[{"delta":{"content":"ok"}}],"service_tier":"priority"}
+
+data: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":1},"service_tier":"priority"}
+
+data: [DONE]
+
+"#,
+            Some(ServiceTier::Priority),
+        ),
+        // Responses echoes the requested `auto` first; completion names the served tier.
+        (
+            br#"event: response.created
+data: {"type":"response.created","response":{"id":"resp_1","service_tier":"auto"}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_1","service_tier":"flex"}}
+
+"#,
+            Some(ServiceTier::Flex),
+        ),
+        // Anthropic reports the speed it served in the message usage.
+        (
+            br#"event: message_start
+data: {"type":"message_start","message":{"usage":{"input_tokens":3,"speed":"standard"}}}
+
+"#,
+            Some(ServiceTier::Default),
+        ),
+        (
+            b"data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n",
+            None,
+        ),
+    ];
+    for (stream, expected) in cases {
+        let mut collector = StreamResponseCollector::default();
+        collector.observe_chunk(stream);
+        assert_eq!(
+            collector.served_service_tier(),
+            expected,
+            "{}",
+            String::from_utf8_lossy(stream)
+        );
+    }
 }

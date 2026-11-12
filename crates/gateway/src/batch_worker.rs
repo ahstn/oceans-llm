@@ -1032,6 +1032,7 @@ mod tests {
                 extra_body: Default::default(),
                 request_headers: BTreeMap::new(),
                 compatibility: route.compatibility.clone(),
+                service_tier: None,
             },
             pricing_snapshot: None,
         };

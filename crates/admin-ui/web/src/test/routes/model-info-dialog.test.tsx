@@ -30,6 +30,8 @@ const model: ModelView = {
   cache_read_cost_per_million_tokens_usd_10000: 10_000,
   cache_write_cost_per_million_tokens_usd_10000: null,
   pricing_tiers: [],
+  pricing_service_tiers: [],
+  available_service_tiers: ['default'],
   routing: {
     strategy: 'round_robin',
     affinity: { idle_timeout_seconds: 3_600 },
@@ -392,5 +394,97 @@ describe('ModelInfoDialog pricing tiers', () => {
     expect(within(dialog).queryByTestId('model-pricing-tiers')).not.toBeInTheDocument()
     expect(within(dialog).queryByText(/^Above /)).not.toBeInTheDocument()
     expect(within(dialog).queryByText(/whole request/)).not.toBeInTheDocument()
+    expect(within(dialog).queryByTestId('model-service-tier-pricing')).not.toBeInTheDocument()
+  })
+})
+
+describe('ModelInfoDialog service tiers', () => {
+  function metricValue(container: HTMLElement, label: string) {
+    return within(container).getByText(label).closest('div')!.querySelector('dd')!.textContent
+  }
+
+  it('lists service tier rates without falling back to the base rates', () => {
+    renderDialog(
+      {
+        ...model,
+        pricing_service_tiers: [
+          {
+            service_tier: 'priority',
+            input_cost_per_million_tokens_usd_10000: 200_000,
+            output_cost_per_million_tokens_usd_10000: 1_000_000,
+            cache_read_cost_per_million_tokens_usd_10000: null,
+            cache_write_cost_per_million_tokens_usd_10000: null,
+            context_tiers: [
+              {
+                above_input_tokens: 272_000,
+                input_cost_per_million_tokens_usd_10000: 400_000,
+                output_cost_per_million_tokens_usd_10000: null,
+                cache_read_cost_per_million_tokens_usd_10000: null,
+                cache_write_cost_per_million_tokens_usd_10000: null,
+              },
+            ],
+          },
+        ],
+      },
+      { initialSection: 'overview' },
+    )
+
+    const tiers = within(screen.getByRole('dialog', { name: 'Model info' })).getByTestId(
+      'model-service-tier-pricing',
+    )
+    expect(within(tiers).getByText(/leaves requests that use it unpriced/)).toBeVisible()
+    const priority = within(tiers).getByRole('region', { name: 'Fast (priority) tier' })
+    const [input] = within(priority).getAllByText('Input cost')
+    expect(input.closest('div')!.querySelector('dd')!.textContent).toBe('$20.00')
+    // The base schedule has a cache read rate; the tier does not, so it has none.
+    const [cacheRead] = within(priority).getAllByText('Cache read')
+    expect(cacheRead.closest('div')!.querySelector('dd')!.textContent).toBe('—')
+    const longContext = within(priority).getByRole('region', { name: 'Above 272k tokens' })
+    expect(metricValue(longContext, 'Input cost')).toBe('$40.00')
+    expect(metricValue(longContext, 'Output cost')).toBe('$100.00')
+  })
+
+  it('shows the servable tiers and the allow-list that narrows them', () => {
+    renderDialog(
+      {
+        ...model,
+        available_service_tiers: ['default', 'priority'],
+        service_tiers: ['priority'],
+      },
+      { initialSection: 'overview' },
+    )
+
+    const dialog = screen.getByRole('dialog', { name: 'Model info' })
+    expect(within(dialog).getByText('Standard (default)')).toBeVisible()
+    expect(within(dialog).getByText('Fast (priority)')).toBeVisible()
+    expect(within(dialog).getByText('Callers may request Fast (priority).')).toBeVisible()
+  })
+
+  it('reads default only when no route serves another tier', () => {
+    renderDialog(model, { initialSection: 'overview' })
+
+    expect(
+      within(screen.getByRole('dialog', { name: 'Model info' })).getByText('Default only'),
+    ).toBeVisible()
+  })
+
+  it('does not claim the default tier when no route serves chat', () => {
+    renderDialog({ ...model, available_service_tiers: [] }, { initialSection: 'overview' })
+
+    const dialog = screen.getByRole('dialog', { name: 'Model info' })
+    expect(within(dialog).getByText('No available service tiers')).toBeVisible()
+    expect(within(dialog).queryByText('Default only')).toBeNull()
+  })
+
+  it('marks a route that forces a tier', () => {
+    renderDialog({
+      ...model,
+      routes: [{ ...routes[1], service_tier: 'priority' }],
+    })
+
+    const route = screen.getByTestId(`model-route-${routes[1].id}`)
+    expect(within(route).getByText('Fast (priority)')).toBeVisible()
+    fireEvent.click(within(route).getByRole('button', { name: /Details for OpenRouter/ }))
+    expect(within(route).getByText('Fast (priority) on every request')).toBeVisible()
   })
 })

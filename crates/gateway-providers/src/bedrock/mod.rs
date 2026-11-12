@@ -11,8 +11,8 @@ use aws_smithy_runtime_api::client::identity::Identity;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use gateway_core::{
     AwsBedrockApiStyle, AwsBedrockRouteCompatibility, CoreChatRequest, CoreEmbeddingsRequest,
-    CoreResponsesRequest, ProviderCapabilities, ProviderClient, ProviderError,
-    ProviderRequestContext, ProviderStream, core_chat_request_to_openai,
+    CoreResponsesRequest, ModelRoute, ProviderCapabilities, ProviderClient, ProviderError,
+    ProviderRequestContext, ProviderStream, ServiceTier, core_chat_request_to_openai,
     core_responses_request_to_openai,
 };
 use serde::{Deserialize, Serialize};
@@ -446,7 +446,7 @@ impl BedrockProvider {
         mut body: Value,
         context: &ProviderRequestContext,
         accept: &'static str,
-        extra_headers: Vec<(&'static str, &'static str)>,
+        mut extra_headers: Vec<(&'static str, &'static str)>,
         api_style: AwsBedrockApiStyle,
     ) -> Result<reqwest::Request, ProviderError> {
         let anthropic = matches!(
@@ -467,6 +467,12 @@ impl BedrockProvider {
             {
                 crate::anthropic::beta::put_body_betas(object, std::mem::take(&mut betas));
             }
+        }
+        // Only generation runs on a service tier, so token counting sends none.
+        if !url.ends_with("/count-tokens")
+            && let Some(tier) = service_tier::apply_service_tier(&mut body, context, api_style)?
+        {
+            extra_headers.push((service_tier::SERVICE_TIER_HEADER, tier));
         }
         let body = serde_json::to_vec(&body).map_err(|error| {
             ProviderError::InvalidRequest(format!(
@@ -762,7 +768,10 @@ impl ProviderClient for BedrockProvider {
             &self.config.provider_key,
         )
         .await?;
-        crate::anthropic::native::json_response(response).await
+        let served_tier = service_tier::invoke_served_tier(response.headers());
+        let mut native = crate::anthropic::native::json_response(response).await?;
+        service_tier::report_native_served_tier(&mut native.body, served_tier);
+        Ok(native)
     }
 
     async fn messages_stream(
@@ -789,6 +798,16 @@ impl ProviderClient for BedrockProvider {
         "aws_bedrock"
     }
 
+    fn service_tiers(&self, route: &ModelRoute) -> &'static [ServiceTier] {
+        route
+            .compatibility
+            .aws_bedrock
+            .as_ref()
+            .map_or(crate::service_tier::DEFAULT_ONLY, |compatibility| {
+                service_tier::api_style_service_tiers(compatibility.api_style)
+            })
+    }
+
     fn capabilities(&self) -> ProviderCapabilities {
         ProviderCapabilities::aws_bedrock_baseline()
     }
@@ -809,6 +828,7 @@ impl ProviderClient for BedrockProvider {
         .await
         .map_err(map_reqwest_error)?;
         let status = response.status();
+        let invoke_tier = service_tier::invoke_served_tier(response.headers());
         let text = response.text().await.map_err(map_reqwest_error)?;
 
         if !status.is_success() {
@@ -824,9 +844,12 @@ impl ProviderClient for BedrockProvider {
         match api_style {
             AwsBedrockApiStyle::RuntimeConverse => normalize_converse_response(&value, context),
             AwsBedrockApiStyle::RuntimeAnthropicInvoke
-            | AwsBedrockApiStyle::MantleAnthropicMessages => Ok(
-                normalize_anthropic_messages_response(&value, context, "aws_bedrock"),
-            ),
+            | AwsBedrockApiStyle::MantleAnthropicMessages => {
+                let mut completion =
+                    normalize_anthropic_messages_response(&value, context, "aws_bedrock");
+                crate::service_tier::report_served_tier(&mut completion, invoke_tier);
+                Ok(completion)
+            }
             AwsBedrockApiStyle::RuntimeOpenaiChat | AwsBedrockApiStyle::MantleOpenaiChat => {
                 Ok(value)
             }
@@ -955,6 +978,7 @@ mod credentials;
 mod eventstream;
 mod request;
 mod response;
+mod service_tier;
 
 use converse_stream::normalize_bedrock_converse_stream;
 use request::*;

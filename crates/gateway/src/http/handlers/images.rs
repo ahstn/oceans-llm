@@ -43,6 +43,10 @@ impl JsonOperation for ImagesRequest {
         &self.extra
     }
 
+    fn extra_mut(&mut self) -> &mut BTreeMap<String, Value> {
+        &mut self.extra
+    }
+
     fn begin_request_log(
         &self,
         service: &AppGatewayService,

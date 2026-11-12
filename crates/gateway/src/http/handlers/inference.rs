@@ -1,5 +1,7 @@
 //! Shared request preparation, completion and accounting for inference endpoints.
+use super::service_tier::effective_service_tier;
 use super::*;
+use crate::http::anthropic_stream::insert_anthropic_service_tier;
 
 pub(super) enum InferenceResponseFormat {
     OpenAi,
@@ -17,6 +19,8 @@ pub(super) struct InferenceRequest<'a> {
     pub request_started_at: Instant,
     pub stream: bool,
     pub endpoint: RoutingEndpoint,
+    /// The tier the caller asked for, already checked against the model's allow-list.
+    pub requested_service_tier: Option<gateway_core::ServiceTier>,
     pub request_log_context: RequestLogContext,
 }
 
@@ -40,8 +44,7 @@ impl<'a> InferenceRequest<'a> {
 
     pub async fn prepare<T: Serialize + DeserializeOwned>(
         mut self,
-        selected: Option<SelectedProviderRoute>,
-        requirements: CoreRequestRequirements,
+        selected: Result<SelectedProviderRoute, GatewayError>,
         request: &mut T,
     ) -> Result<InferenceExecution<'a>, AppError> {
         let SelectedProviderRoute {
@@ -50,9 +53,8 @@ impl<'a> InferenceRequest<'a> {
             receipt,
             expected_provider_credential_id,
         } = match selected {
-            Some(selection) => selection,
-            None => {
-                let error = no_compatible_route_error(requirements);
+            Ok(selection) => selection,
+            Err(error) => {
                 let labels = ChatMetricLabels {
                     requested_model: &self.resolved.selection.requested_model.model_key,
                     resolved_model: &self.resolved.selection.execution_model.model_key,
@@ -75,6 +77,8 @@ impl<'a> InferenceRequest<'a> {
                 return Err(AppError(error));
             }
         };
+        self.request_log_context.service_tier =
+            effective_service_tier(&route, self.requested_service_tier);
         let icon_metadata = request_log_icon_metadata(
             &route,
             self.resolved.provider_connections.get(&route.provider_key),
@@ -173,6 +177,25 @@ impl InferenceExecution<'_> {
         }
     }
 
+    /// The provider context for the chosen route, with its credential generation and
+    /// the request's service tier.
+    pub fn provider_context(
+        &self,
+        request_headers: BTreeMap<String, String>,
+    ) -> ProviderRequestContext {
+        let request = &self.request;
+        let mut context = build_provider_context(
+            request.request_id,
+            &request.resolved.selection.requested_model.model_key,
+            &self.route,
+            request.auth,
+            request_headers,
+        );
+        context.expected_provider_credential_id = self.expected_provider_credential_id;
+        context.service_tier = request.request_log_context.service_tier;
+        context
+    }
+
     pub async fn non_stream_provider_failure(
         &self,
         error: ProviderError,
@@ -207,6 +230,7 @@ impl InferenceExecution<'_> {
                     request_id,
                     labels: labels.clone(),
                     operation: self.request.accounting_operation(),
+                    service_tiers: service_tier_outcome(request_log_context, None),
                 },
                 provider_usage,
             )
@@ -418,6 +442,8 @@ impl InferenceExecution<'_> {
         let guard_context = &self.guard_context;
         let icon_metadata = &self.icon_metadata;
         let labels = self.labels();
+        // Read before the response guard and any Messages translation rewrite the body.
+        let served_service_tier = gateway_core::served_service_tier(&value);
         finalize_successful_usage_accounting(
             state,
             UsageAccountingContext {
@@ -428,6 +454,7 @@ impl InferenceExecution<'_> {
                 request_id,
                 labels: labels.clone(),
                 operation: self.request.accounting_operation(),
+                service_tiers: service_tier_outcome(request_log_context, served_service_tier),
             },
             usage_value_from_response(&value),
         )
@@ -494,13 +521,16 @@ impl InferenceExecution<'_> {
         let (value, upstream_headers) = match format {
             InferenceResponseFormat::OpenAi => (value, None),
             InferenceResponseFormat::NativeMessages(headers) => (value, Some(headers)),
-            InferenceResponseFormat::TranslatedMessages => (
-                anthropic_message_from_openai_chat(
+            InferenceResponseFormat::TranslatedMessages => {
+                let mut message = anthropic_message_from_openai_chat(
                     &value,
                     &resolved.selection.requested_model.model_key,
-                ),
-                None,
-            ),
+                );
+                if let Some(usage) = message.get_mut("usage") {
+                    insert_anthropic_service_tier(usage, served_service_tier);
+                }
+                (message, None)
+            }
         };
         let mut response = Json(value).into_response();
         if let Some(headers) = upstream_headers {

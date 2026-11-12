@@ -110,3 +110,29 @@ test('Messages routing preserves separate live/log coverage and skips unrelated 
   assert.ok(!unrelated.proofs.some((proof) => proof.id === 'anthropic-messages'))
   assert.equal(unrelated.skipped.length, 3)
 })
+
+test('inference endpoint and OpenCode plugin changes select the paid harness trials', () => {
+  for (const file of [
+    'packages/opencode-oceans/src/models.ts',
+    'packages/opencode-oceans/package.json',
+    'crates/gateway/src/http/handlers.rs',
+    'crates/gateway/src/http/handlers/inference.rs',
+    'crates/gateway/src/http/handlers/native_messages.rs',
+    'crates/gateway/src/http/models.rs',
+    'crates/gateway/src/http/request_body/mod.rs',
+    'crates/gateway-core/src/protocol/translate.rs',
+    'crates/gateway-service/src/model_metadata/listing.rs',
+    'crates/gateway-client-config/src/templates/opencode.rs',
+  ]) {
+    const feature = planFor([file], routing).proofs.find((proof) => proof.id === 'harness-integration')
+    assert.ok(feature, file)
+    assert.deepEqual(feature.proof, { drive: 'harness-integration' })
+    assert.equal(feature.paid, true)
+  }
+  const unrelated = planFor([
+    'packages/opencode-oceans/tests/models.test.ts',
+    'crates/gateway/src/http/handlers/embeddings.rs',
+    'crates/admin-ui/web/src/routes/models.tsx',
+  ], routing)
+  assert.ok(!unrelated.proofs.some((proof) => proof.id === 'harness-integration'))
+})

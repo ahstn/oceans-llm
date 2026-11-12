@@ -505,7 +505,6 @@ fn drops_openai_only_fields_and_passes_unknown_fields_to_body_root() {
             ("store", json!(true)),
             ("logit_bias", json!({"50256": -100})),
             ("metadata", json!({"trace": "abc"})),
-            ("service_tier", json!("default")),
             ("prompt_cache_key", json!("cache-1")),
             ("safety_identifier", json!("safe-1")),
             (
@@ -527,7 +526,6 @@ fn drops_openai_only_fields_and_passes_unknown_fields_to_body_root() {
         "logit_bias",
         "50256",
         "\"metadata\"",
-        "service_tier",
         "prompt_cache_key",
         "safety_identifier",
     ] {

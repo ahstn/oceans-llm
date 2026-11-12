@@ -258,6 +258,7 @@ mod tests {
             pricing_override: None,
             extra_headers: Default::default(),
             extra_body: Default::default(),
+            service_tier: None,
             capabilities,
             compatibility,
         }

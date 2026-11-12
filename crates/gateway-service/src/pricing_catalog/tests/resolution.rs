@@ -474,22 +474,64 @@ async fn vendored_snapshot_prices_openrouter_routes() {
 }
 
 #[tokio::test]
-async fn unsupported_billing_modifiers_resolve_to_unpriced() {
+async fn forced_service_tier_routes_resolve_the_catalog_row_with_its_tier_schedules() {
     let repo = Arc::new(InMemoryRepo::default());
-    let catalog = empty_catalog(repo, "http://127.0.0.1:9/api.json".to_string());
-    let mut service_tier_route = route("openai-prod", "gpt-5");
-    service_tier_route
-        .extra_body
-        .insert("service_tier".to_string(), json!("priority"));
+    let mut snapshot = fallback_snapshot();
+    snapshot
+        .providers
+        .get_mut("openai")
+        .and_then(|provider| provider.models.get_mut("gpt-5"))
+        .expect("gpt-5 model")
+        .cost
+        .service_tiers = BTreeMap::from([(
+        ServiceTier::Priority,
+        PricingCatalogServiceTierCost {
+            input: Some("2.5000".to_string()),
+            output: Some("20.0000".to_string()),
+            ..PricingCatalogServiceTierCost::default()
+        },
+    )]);
+    seed_catalog_snapshot(repo.as_ref(), &snapshot).await;
+    let catalog = empty_catalog(repo, UNREACHABLE_URL.to_string());
+    catalog
+        .refresh_if_stale_and_sync()
+        .await
+        .expect("initialize pricing catalog");
+    let mut forced_route = route("openai-prod", "gpt-5");
+    forced_route.service_tier = Some(ServiceTier::Priority);
 
-    let service_tier = catalog
+    let resolved = catalog
         .resolve_for_provider_connection(
             &openai_provider("openai"),
-            &service_tier_route,
-            test_time(),
+            &forced_route,
+            OffsetDateTime::now_utc(),
         )
         .await
-        .expect("service tier resolve");
+        .expect("forced tier resolve");
+
+    let PricingResolution::Exact { pricing } = resolved else {
+        panic!("unexpected forced tier resolution: {resolved:?}");
+    };
+    assert_eq!(
+        pricing.service_tiers,
+        [ServiceTierPricing {
+            service_tier: ServiceTier::Priority,
+            input: Some(Money4::from_scaled(25_000)),
+            output: Some(Money4::from_scaled(200_000)),
+            cache_read: None,
+            cache_write: None,
+            context_tiers: Vec::new(),
+        }]
+    );
+}
+
+#[tokio::test]
+async fn regional_vertex_anthropic_routes_resolve_to_unpriced() {
+    let catalog = empty_catalog(
+        Arc::new(InMemoryRepo::default()),
+        UNREACHABLE_URL.to_string(),
+    );
+
     let regional_vertex = catalog
         .resolve_for_provider_connection(
             &vertex_provider("us-central1"),
@@ -499,12 +541,6 @@ async fn unsupported_billing_modifiers_resolve_to_unpriced() {
         .await
         .expect("regional vertex resolve");
 
-    assert_eq!(
-        service_tier,
-        PricingResolution::Unpriced {
-            reason: PricingUnpricedReason::UnsupportedBillingModifier("service_tier".to_string(),)
-        }
-    );
     assert_eq!(
         regional_vertex,
         PricingResolution::Unpriced {

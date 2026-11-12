@@ -1060,6 +1060,7 @@ mod tests {
             description: None,
             tags: Vec::new(),
             rank,
+            service_tiers: None,
         }
     }
 

@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use gateway_core::ServiceTier;
 use serde_json::{Map, Value, json};
 
 use crate::{
@@ -177,9 +178,14 @@ fn opencode_input_media(input: &ClientConfigInput) -> Vec<&'static str> {
 }
 
 /// Effort variants for the model's thinking policy, minus any above the gateway ceiling,
-/// spelled in the settings the style's OpenCode package reads.
+/// then one variant per optional service tier, spelled in the settings the style's OpenCode
+/// package reads. A tier variant keeps the model's default effort.
 pub(crate) fn opencode_variants(input: &ClientConfigInput, style: ApiFormat) -> Option<Value> {
-    let variants: Vec<Value> = policy_efforts(input.thinking_policy?)
+    let efforts = input
+        .thinking_policy
+        .map(policy_efforts)
+        .unwrap_or_default();
+    let variants: Vec<Value> = efforts
         .iter()
         .filter(|(_, effort)| {
             input.max_reasoning_effort.is_none_or(|ceiling| {
@@ -187,8 +193,29 @@ pub(crate) fn opencode_variants(input: &ClientConfigInput, style: ApiFormat) -> 
             })
         })
         .map(|(id, effort)| json!({"id": id, "settings": effort_settings(style, effort)}))
+        .chain(input.optional_service_tiers().map(|tier| {
+            json!({"id": service_tier_variant_id(tier), "settings": service_tier_settings(style, tier)})
+        }))
         .collect();
     (!variants.is_empty()).then_some(Value::Array(variants))
+}
+
+/// Priority is the tier OpenAI and Anthropic sell as Fast.
+const fn service_tier_variant_id(tier: ServiceTier) -> &'static str {
+    match tier {
+        ServiceTier::Priority => "fast",
+        tier => tier.as_str(),
+    }
+}
+
+/// OpenCode's Anthropic packages send `speed`, which carries only Fast, and pass
+/// `serviceTier` through as `service_tier`; the OpenAI-compatible packages send
+/// `serviceTier` as `service_tier`. The gateway reads either spelling on every API.
+fn service_tier_settings(style: ApiFormat, tier: ServiceTier) -> Value {
+    match (style, tier) {
+        (ApiFormat::AnthropicMessages, ServiceTier::Priority) => json!({"speed": "fast"}),
+        _ => json!({"serviceTier": tier.as_str()}),
+    }
 }
 
 /// `(variant id, effort level)` pairs offered for a thinking policy.

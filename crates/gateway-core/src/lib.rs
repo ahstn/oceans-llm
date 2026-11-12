@@ -17,6 +17,7 @@ pub mod rate_limits;
 pub mod reasoning_policy;
 pub mod route_capabilities;
 pub mod routing;
+pub mod service_tier;
 pub mod skills;
 pub mod streaming;
 pub mod traits;
@@ -110,14 +111,15 @@ pub use domain::{
     RequestToolCardinalityAverages, ResolvedModelPricing, ReviewAgentProvider,
     ReviewAgentPullRequestRecord, ReviewAgentPullRequestState, ReviewAgentRepositoryRecord,
     ReviewAgentRepositoryStatus, ReviewAgentRunRecord, ReviewAgentRunStatus, ReviewAgentSettings,
-    RouteCompatibility, RoutePricingOverride, SYSTEM_BOOTSTRAP_ADMIN_EMAIL,
-    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SeedApiKey, SeedApiKeySecretMaterial, SeedBudget,
-    SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute,
-    SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
-    SeedUserMembership, SeedUserModelBudgetDefault, ServiceAccountRecord, ServiceAccountStatus,
-    SpendDailyAggregateRecord, SpendModelAggregateRecord, SpendModelTokenDailyRecord,
-    SpendOwnerAggregateRecord, SpendOwnerTokenDailyRecord, TeamMembershipRecord, TeamRecord,
-    TokenUsageBuckets, TransferExternalMcpServerOwnershipRecord, UpdateExternalMcpServerRecord,
+    RouteCompatibility, RoutePricingOverride, RouteServiceTierPricing,
+    SYSTEM_BOOTSTRAP_ADMIN_EMAIL, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SeedApiKey,
+    SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey,
+    SeedModel, SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider,
+    SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership, SeedUserModelBudgetDefault,
+    ServiceAccountRecord, ServiceAccountStatus, ServiceTierPricing, SpendDailyAggregateRecord,
+    SpendModelAggregateRecord, SpendModelTokenDailyRecord, SpendOwnerAggregateRecord,
+    SpendOwnerTokenDailyRecord, TeamMembershipRecord, TeamRecord, TokenUsageBuckets,
+    TransferExternalMcpServerOwnershipRecord, UpdateExternalMcpServerRecord,
     UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord, UpdateReviewAgentRunRecord,
     UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
     UpsertMcpUpstreamCredentialBindingRecord, UpsertProviderUserCredentialRecord,
@@ -206,8 +208,8 @@ pub use rate_limits::{
     RateLimitPolicyRecord, RateLimitPolicyShape, RateLimitScopeKind, RateLimitWindow,
 };
 pub use reasoning_policy::{
-    enforce_chat_reasoning_effort, enforce_reasoning_effort_map, enforce_reasoning_effort_value,
-    enforce_responses_reasoning_effort,
+    ReasoningEffortRejection, enforce_chat_reasoning_effort, enforce_reasoning_effort_map,
+    enforce_reasoning_effort_value, enforce_responses_reasoning_effort,
 };
 pub use route_capabilities::{
     PartialCapabilities, effective_route_capabilities, infer_compatibility_capabilities,
@@ -217,6 +219,11 @@ pub use routing::{
     ModelRoutingPolicy, ResponseRouteOrigin, RouteBindingReceipt, RouteSelection,
     RouteSelectionMode, RouteSelectionRequest, RoutingCandidate, RoutingRepository,
     RoutingStrategy, SessionAffinityPolicy,
+};
+pub use service_tier::{
+    SERVICE_TIER_HEADERS, SERVICE_TIER_REQUEST_FIELDS, ServiceTier, ServiceTierOutcome,
+    ServiceTierPassthrough, billed_service_tier, enforce_service_tier_policy,
+    find_service_tier_header, served_service_tier, take_requested_service_tier,
 };
 pub use skills::{
     SkillDetail, SkillListQuery, SkillNamespaceRecord, SkillObjectStore, SkillRecord,

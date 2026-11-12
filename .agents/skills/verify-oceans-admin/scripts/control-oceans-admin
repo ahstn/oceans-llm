@@ -530,17 +530,40 @@ doctor() {
   echo "doctor ok: gateway $version at $base_url, gateway PID $recorded_gateway, UI PID $recorded_ui"
 }
 
+# The harness suite builds and starts its own gateway, so it needs no launched stack.
+# Its source snapshot is taken here, right before the suite builds from this checkout.
+# `mise activate` would revert variables an outer mise shell set, OPENROUTER_API_KEY
+# included, so this calls `mise exec` and `mise run` directly.
+drive_harness_integration() {
+  local sources_file="$run_dir/harness-sources.json" version mise_bin
+  mise_bin="$(resolve_mise)"
+  mkdir -p "$evidence_dir"
+  (cd "$repo_root" && OCEANS_VERIFY_EVIDENCE_DIR="$evidence_dir" "$mise_bin" exec -- node "$proof_script" snapshot-sources "$sources_file")
+  version="$(awk '/^version = / { gsub(/"/, "", $3); print $3; exit }' "$repo_root/crates/gateway/Cargo.toml")"
+  (cd "$repo_root" && "$mise_bin" run //harness:install)
+  cd "$repo_root"
+  OCEANS_VERIFY_EVIDENCE_DIR="$evidence_dir" \
+    OCEANS_VERIFY_LAUNCH_SOURCES="$sources_file" \
+    OCEANS_VERIFY_GATEWAY_VERSION="$version" \
+    "$mise_bin" exec -- node "$repo_root/.agents/skills/verify-oceans-admin/scripts/drive-harness-integration.mjs"
+}
+
 drive() {
   local target="${1:-}" driver
   case "$target" in
     models) driver="drive-models.mjs" ;;
     observability) driver="drive-observability.mjs" ;;
     backend-gateway) driver="drive-backend-gateway.mjs" ;;
+    service-tiers) driver="drive-service-tiers.mjs" ;;
+    harness-integration)
+      drive_harness_integration
+      return
+      ;;
     mcp) driver="drive-mcp.mjs" ;;
     profile) driver="drive-profile.mjs" ;;
     skills) driver="drive-skills.mjs" ;;
     *)
-      echo "Supported drive targets: models, observability, backend-gateway, mcp, profile, skills" >&2
+      echo "Supported drive targets: models, observability, backend-gateway, service-tiers, harness-integration, mcp, profile, skills" >&2
       exit 2
       ;;
   esac
@@ -585,7 +608,7 @@ case "${1:-}" in
   evidence | record | report) proof_cli "$@" ;;
   cleanup) cleanup ;;
   *)
-    echo "Usage: $0 {plan [base-ref] [--json]|launch|doctor|drive {models|observability|backend-gateway|mcp|profile|skills}|evidence [feature...] [--require-current]|record <feature> --check id=status[:note] --artifact file|report [--plan [base-ref]]|cleanup}" >&2
+    echo "Usage: $0 {plan [base-ref] [--json]|launch|doctor|drive {models|observability|backend-gateway|service-tiers|harness-integration|mcp|profile|skills}|evidence [feature...] [--require-current]|record <feature> --check id=status[:note] --artifact file|report [--plan [base-ref]]|cleanup}" >&2
     exit 2
     ;;
 esac

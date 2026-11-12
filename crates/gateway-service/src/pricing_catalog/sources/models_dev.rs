@@ -1,18 +1,19 @@
 //! models.dev `api.json` projected into the gateway's providers document: the supported
-//! providers only, with typed context tiers and 4 dp money strings.
+//! providers only, with typed context tiers, service tier schedules, and 4 dp money
+//! strings.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, btree_map::Entry};
 
-use gateway_core::{GatewayError, Money4};
+use gateway_core::{GatewayError, Money4, ServiceTier, take_requested_service_tier};
 use serde::Deserialize;
-use serde_json::Number;
-use tracing::warn;
+use serde_json::{Number, Value};
+use tracing::{debug, warn};
 
 use super::Providers;
 use crate::pricing_catalog::{
     PricingCatalogContextTier, PricingCatalogCostDocument, PricingCatalogLimitDocument,
     PricingCatalogModalitiesDocument, PricingCatalogModelDocument, PricingCatalogProviderDocument,
-    SUPPORTED_PRICING_PROVIDER_IDS, metadata::CatalogModelMetadata,
+    PricingCatalogServiceTierCost, SUPPORTED_PRICING_PROVIDER_IDS, metadata::CatalogModelMetadata,
 };
 
 /// models.dev cost condition holding tiered rates, `[{input, output, .., tier: {type, size}}]`.
@@ -21,13 +22,15 @@ const TIERS_CONDITION: &str = "tiers";
 const CONTEXT_TIER_TYPE: &str = "context";
 /// models.dev cost condition duplicating the first context tier.
 const CONTEXT_OVER_200K_CONDITION: &str = "context_over_200k";
+/// Bedrock's request field nesting model-specific fields, such as a mode's `service_tier`.
+const BEDROCK_MODEL_REQUEST_FIELDS: &str = "additionalModelRequestFields";
 
 /// Project the models.dev `api.json` body into the supported providers.
 ///
 /// # Errors
 ///
 /// Fails when the body is not a models.dev providers object or a cost does not
-/// normalize to money.
+/// normalize to money. An experimental mode that does not parse is skipped instead.
 pub(crate) fn project(raw: &[u8]) -> Result<Providers, GatewayError> {
     let providers =
         serde_json::from_slice::<BTreeMap<String, ProviderDocument>>(raw).map_err(|error| {
@@ -47,7 +50,7 @@ pub(crate) fn project(raw: &[u8]) -> Result<Providers, GatewayError> {
             } else {
                 model.id.clone()
             };
-            let cost = project_cost_document(supported_provider_id, &model_id, &model.cost)?;
+            let cost = project_cost_document(supported_provider_id, &model_id, model)?;
             projected_models.insert(
                 model_id.clone(),
                 PricingCatalogModelDocument {
@@ -90,8 +93,9 @@ fn project_cost(value: Option<&Number>) -> Result<Option<String>, GatewayError> 
 fn project_cost_document(
     provider_id: &str,
     model_id: &str,
-    cost: &CostDocument,
+    model: &ModelDocument,
 ) -> Result<PricingCatalogCostDocument, GatewayError> {
+    let cost = &model.cost;
     let mut conditions = cost.conditions.clone();
     let tiers = take_context_tiers(provider_id, model_id, &mut conditions)?;
     Ok(PricingCatalogCostDocument {
@@ -104,6 +108,120 @@ fn project_cost_document(
         output_audio: project_cost(cost.output_audio.as_ref())?,
         output_image: None,
         tiers,
+        service_tiers: service_tier_costs(provider_id, model_id, model.experimental.as_ref()),
+    })
+}
+
+/// The schedules of the experimental modes that select a non-default service tier and
+/// price it. Two modes pricing one tier differently leave the tier unpriced.
+fn service_tier_costs(
+    provider_id: &str,
+    model_id: &str,
+    experimental: Option<&Value>,
+) -> BTreeMap<ServiceTier, PricingCatalogServiceTierCost> {
+    let Some(modes) = experimental
+        .and_then(|experimental| experimental.get("modes"))
+        .and_then(Value::as_object)
+    else {
+        return BTreeMap::new();
+    };
+    let mut costs = BTreeMap::new();
+    let mut conflicting = Vec::new();
+    for (mode_name, mode) in modes {
+        let Some((tier, cost)) = mode_service_tier_cost(provider_id, model_id, mode_name, mode)
+        else {
+            continue;
+        };
+        match costs.entry(tier) {
+            Entry::Vacant(slot) => {
+                slot.insert(cost);
+            }
+            Entry::Occupied(existing) if *existing.get() != cost => conflicting.push(tier),
+            Entry::Occupied(_) => {}
+        }
+    }
+    for tier in conflicting {
+        if costs.remove(&tier).is_some() {
+            warn!(
+                provider_id,
+                model_id,
+                %tier,
+                "models.dev modes price one service tier differently; ignoring the tier"
+            );
+        }
+    }
+    costs
+}
+
+/// The tier a mode selects and its schedule; `None` for a mode without rates or one that
+/// changes the request beyond its service tier, such as a reasoning mode.
+fn mode_service_tier_cost(
+    provider_id: &str,
+    model_id: &str,
+    mode_name: &str,
+    mode: &Value,
+) -> Option<(ServiceTier, PricingCatalogServiceTierCost)> {
+    let mode = match ModeDocument::deserialize(mode) {
+        Ok(mode) => mode,
+        Err(error) => {
+            debug!(provider_id, model_id, mode_name, %error, "skipping unreadable models.dev mode");
+            return None;
+        }
+    };
+    let cost = mode.cost?;
+    let tier = mode_service_tier(mode.provider.body)?;
+    if tier == ServiceTier::Default {
+        return None;
+    }
+    match project_service_tier_cost(provider_id, model_id, &cost) {
+        Ok(cost) => Some((tier, cost)),
+        Err(error) => {
+            warn!(provider_id, model_id, mode_name, %error, "skipping models.dev mode with an invalid cost");
+            None
+        }
+    }
+}
+
+/// The tier a mode's request body selects with the fields callers send (`service_tier`,
+/// `speed`), at the top level or in Bedrock's model request fields. `None` when the body
+/// selects no tier or sets any other field.
+fn mode_service_tier(mut body: BTreeMap<String, Value>) -> Option<ServiceTier> {
+    let tier = take_requested_service_tier(&mut body).ok()?;
+    // A nested body that sets any other field disqualifies the whole mode, so it must not
+    // read the same as one that selects no tier.
+    let nested_tier = match body.remove(BEDROCK_MODEL_REQUEST_FIELDS) {
+        Some(Value::Object(fields)) => {
+            let mut fields = fields.into_iter().collect::<BTreeMap<_, _>>();
+            let nested = take_requested_service_tier(&mut fields).ok()?;
+            if !fields.is_empty() {
+                return None;
+            }
+            nested
+        }
+        Some(_) => return None,
+        None => None,
+    };
+    if !body.is_empty() {
+        return None;
+    }
+    match (tier, nested_tier) {
+        (Some(tier), Some(nested)) => (tier == nested).then_some(tier),
+        (tier, nested) => tier.or(nested),
+    }
+}
+
+fn project_service_tier_cost(
+    provider_id: &str,
+    model_id: &str,
+    cost: &CostDocument,
+) -> Result<PricingCatalogServiceTierCost, GatewayError> {
+    let mut conditions = cost.conditions.clone();
+    Ok(PricingCatalogServiceTierCost {
+        input: project_cost(cost.input.as_ref())?,
+        output: project_cost(cost.output.as_ref())?,
+        cache_read: project_cost(cost.cache_read.as_ref())?,
+        cache_write: project_cost(cost.cache_write.as_ref())?,
+        context_tiers: take_context_tiers(provider_id, model_id, &mut conditions)?,
     })
 }
 
@@ -216,6 +334,9 @@ struct ModelDocument {
     limit: LimitDocument,
     #[serde(default)]
     modalities: ModalitiesDocument,
+    /// Parsed per mode in [`service_tier_costs`], so one unreadable mode skips only itself.
+    #[serde(default)]
+    experimental: Option<Value>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -228,6 +349,21 @@ struct CostDocument {
     cache_write: Option<Number>,
     input_audio: Option<Number>,
     output_audio: Option<Number>,
+}
+
+/// One models.dev `experimental.modes` entry: a request variant and its rates.
+#[derive(Debug, Deserialize)]
+struct ModeDocument {
+    cost: Option<CostDocument>,
+    #[serde(default)]
+    provider: ModeProviderDocument,
+}
+
+/// What a mode changes in the provider request; headers do not change billing.
+#[derive(Debug, Default, Deserialize)]
+struct ModeProviderDocument {
+    #[serde(default)]
+    body: BTreeMap<String, Value>,
 }
 
 /// One entry of models.dev `cost.tiers`.
@@ -268,21 +404,44 @@ mod tests {
 
     use super::*;
 
-    fn project_openai_cost(cost: Value) -> PricingCatalogCostDocument {
-        let body = json!({
-            "openai": {
-                "name": "OpenAI",
-                "models": {
-                    "gpt-6-astra": {"id": "gpt-6-astra", "name": "GPT-6 Astra", "cost": cost}
-                }
-            }
-        });
+    /// Projects one OpenAI model document with `fields` beside its id and name.
+    fn project_openai_model(fields: Value) -> PricingCatalogCostDocument {
+        let mut model = json!({"id": "gpt-6-astra", "name": "GPT-6 Astra"});
+        model
+            .as_object_mut()
+            .expect("model object")
+            .extend(fields.as_object().expect("fields object").clone());
+        let body = json!({"openai": {"name": "OpenAI", "models": {"gpt-6-astra": model}}});
         let mut providers = project(body.to_string().as_bytes()).expect("projected providers");
         providers
             .remove("openai")
             .and_then(|mut provider| provider.models.remove("gpt-6-astra"))
             .expect("projected model")
             .cost
+    }
+
+    fn project_openai_cost(cost: Value) -> PricingCatalogCostDocument {
+        project_openai_model(json!({"cost": cost}))
+    }
+
+    fn project_openai_modes(modes: Value) -> BTreeMap<ServiceTier, PricingCatalogServiceTierCost> {
+        project_openai_model(json!({
+            "cost": {"input": 1, "output": 2},
+            "experimental": {"modes": modes}
+        }))
+        .service_tiers
+    }
+
+    fn mode(cost: Value, body: Value) -> Value {
+        json!({"cost": cost, "provider": {"body": body}})
+    }
+
+    fn tier_cost(input: &str, output: &str) -> PricingCatalogServiceTierCost {
+        PricingCatalogServiceTierCost {
+            input: Some(input.to_string()),
+            output: Some(output.to_string()),
+            ..PricingCatalogServiceTierCost::default()
+        }
     }
 
     fn tier(above_input_tokens: i64, input: &str, output: &str) -> PricingCatalogContextTier {
@@ -374,6 +533,81 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&projected.conditions).expect("conditions json"),
             conditions
+        );
+    }
+
+    #[test]
+    fn modes_price_the_service_tiers_their_request_bodies_select() {
+        let fast_cost = json!({"input": 2, "output": 4, "cache_read": 0.2});
+        let tiers = project_openai_modes(json!({
+            "fast": mode(fast_cost.clone(), json!({"speed": "fast"})),
+            "priority": mode(fast_cost, json!({"service_tier": "priority"})),
+            "flex": mode(
+                json!({
+                    "input": 0.5, "output": 1,
+                    "tiers": [{"input": 1, "output": 2, "tier": {"type": "context", "size": 272_000}}]
+                }),
+                json!({"service_tier": "flex"}),
+            ),
+            "ultrafast": mode(
+                json!({"input": 6, "output": 12}),
+                json!({"additionalModelRequestFields": {"service_tier": "ultrafast"}}),
+            ),
+            "pro": {"provider": {"body": {"reasoning": {"mode": "pro"}}}},
+            "pro_fast": mode(
+                json!({"input": 30, "output": 60}),
+                json!({"service_tier": "priority", "reasoning": {"mode": "pro"}}),
+            ),
+            "bedrock_pro_fast": mode(
+                json!({"input": 40, "output": 80}),
+                json!({
+                    "service_tier": "priority",
+                    "additionalModelRequestFields": {"reasoning": {"mode": "pro"}}
+                }),
+            ),
+            "bedrock_flex_spelled_twice": mode(
+                json!({"input": 0.1, "output": 0.2}),
+                json!({
+                    "service_tier": "flex",
+                    "additionalModelRequestFields": {"service_tier": "priority"}
+                }),
+            ),
+        }));
+
+        assert_eq!(
+            tiers,
+            BTreeMap::from([
+                (
+                    ServiceTier::Flex,
+                    PricingCatalogServiceTierCost {
+                        context_tiers: vec![tier(272_000, "1.0000", "2.0000")],
+                        ..tier_cost("0.5000", "1.0000")
+                    },
+                ),
+                (
+                    ServiceTier::Priority,
+                    PricingCatalogServiceTierCost {
+                        cache_read: Some("0.2000".to_string()),
+                        ..tier_cost("2.0000", "4.0000")
+                    },
+                ),
+                (ServiceTier::Ultrafast, tier_cost("6.0000", "12.0000")),
+            ]),
+            "modes changing more than the tier are not tier prices"
+        );
+    }
+
+    #[test]
+    fn modes_pricing_one_tier_differently_leave_that_tier_unpriced() {
+        let tiers = project_openai_modes(json!({
+            "fast": mode(json!({"input": 2, "output": 4}), json!({"speed": "fast"})),
+            "priority": mode(json!({"input": 2.5, "output": 5}), json!({"service_tier": "priority"})),
+            "flex": mode(json!({"input": 0.5, "output": 1}), json!({"service_tier": "flex"})),
+        }));
+
+        assert_eq!(
+            tiers,
+            BTreeMap::from([(ServiceTier::Flex, tier_cost("0.5000", "1.0000"))])
         );
     }
 }

@@ -166,6 +166,7 @@ mod tests {
             },
             created_at: now,
             updated_at: now,
+            service_tiers: Vec::new(),
         }
     }
 

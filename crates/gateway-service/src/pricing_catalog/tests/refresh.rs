@@ -389,6 +389,61 @@ async fn refresh_repairs_an_invalid_cached_snapshot() {
 }
 
 #[tokio::test]
+async fn a_304_does_not_keep_a_snapshot_projected_before_service_tiers() {
+    // A gateway before service tiers cached models.dev under this key, without tier
+    // schedules, and the source still answers its ETag with 304.
+    let pre_tier_providers = project_models_dev(&gpt_5_body(1.25), None, epoch_second()).providers;
+    let repo = Arc::new(InMemoryRepo::with_cache_rows([PricingCatalogCacheRecord {
+        catalog_key: "models_dev_supported_v4".to_string(),
+        ..cache_row(
+            CatalogSourceId::ModelsDev,
+            Some("\"catalog-etag\""),
+            epoch_second(),
+            &pre_tier_providers,
+        )
+    }]));
+    let mut body = gpt_5_body(1.25);
+    body["openai"]["models"]["gpt-5"]["experimental"] = json!({"modes": {"priority": {
+        "cost": {"input": 2.5, "output": 20.0},
+        "provider": {"body": {"service_tier": "priority"}}
+    }}});
+    let app = Router::new().route(
+        "/api.json",
+        get(move |headers: HeaderMap| {
+            let body = body.clone();
+            async move {
+                if headers.contains_key(IF_NONE_MATCH) {
+                    StatusCode::NOT_MODIFIED.into_response()
+                } else {
+                    axum::Json(body).into_response()
+                }
+            }
+        }),
+    );
+    let host = start_server(app).await;
+    let catalog = empty_catalog(repo.clone(), format!("{host}/api.json"));
+
+    let outcomes = catalog.refresh_sources(RefreshMode::IfStale).await;
+
+    assert_eq!(
+        models_dev_outcome(&outcomes),
+        PricingCatalogRefreshOutcome::Updated
+    );
+    let cached = repo
+        .cache_row(MODELS_DEV_CACHE_KEY)
+        .expect("cache row under the current key");
+    let document = serde_json::from_str::<PricingCatalogDocument>(&cached.snapshot_json)
+        .expect("cached snapshot JSON");
+    assert!(
+        document.providers["openai"].models["gpt-5"]
+            .cost
+            .service_tiers
+            .contains_key(&ServiceTier::Priority),
+        "the upgraded gateway must project the source again, with its priority schedule"
+    );
+}
+
+#[tokio::test]
 async fn an_unexplained_cache_write_miss_fails_only_that_source() {
     let repo = Arc::new(InMemoryRepo {
         cache_write_rejections_remaining: Arc::new(AtomicUsize::new(1)),
@@ -441,6 +496,7 @@ async fn remote_failure_falls_back_to_store_then_vendored_snapshot() {
                         output_audio: None,
                         output_image: None,
                         tiers: Vec::new(),
+                        service_tiers: BTreeMap::new(),
                     },
                     limit: PricingCatalogLimitDocument::default(),
                     modalities: PricingCatalogModalitiesDocument::default(),

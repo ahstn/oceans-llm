@@ -3,17 +3,19 @@
 //! Per provider and model, each field takes the value of the first source that has one,
 //! in precedence order: OpenRouter (only for the `openrouter` provider), then models.dev,
 //! then LiteLLM. Pricing is taken as a whole schedule from the first source with both an
-//! input and an output rate, so rates from two sources never mix. Disagreements are
-//! recorded as conflicts, never resolved by comparing values.
+//! input and an output rate, so rates from two sources never mix. Each service tier's
+//! schedule extends it, taken whole from the first source that prices that tier.
+//! Disagreements are recorded as conflicts, never resolved by comparing values.
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use gateway_core::ServiceTier;
 use serde::Serialize;
 use serde_json::Value;
 
 use super::{
     PricingCatalogContextTier, PricingCatalogCostDocument, PricingCatalogLimitDocument,
-    PricingCatalogModelDocument, PricingCatalogProviderDocument,
+    PricingCatalogModelDocument, PricingCatalogProviderDocument, PricingCatalogServiceTierCost,
     metadata::CatalogModelMetadata,
     sources::{CatalogSourceId, Providers},
     target::OPENROUTER_PRICING_PROVIDER_ID,
@@ -39,6 +41,9 @@ pub struct MergedModelReport {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct MergedModelProvenance {
     pub pricing: Option<CatalogSourceId>,
+    /// The source of each service tier's schedule.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub service_tiers: BTreeMap<ServiceTier, CatalogSourceId>,
     pub limits: LimitProvenance,
     pub metadata: MetadataProvenance,
     pub modalities: Option<CatalogSourceId>,
@@ -221,6 +226,11 @@ fn merge_model(
             &mut conflicts,
         )
     });
+    // Tier schedules extend a base schedule; a model without one has none either.
+    let (service_tiers, service_tier_sources) = match &pricing {
+        Some((_, schedule)) => merge_service_tiers(candidates, schedule.cost, &mut conflicts),
+        None => Default::default(),
+    };
     let (limit, limits) = merge_limits(candidates, &mut conflicts);
     let (metadata, metadata_provenance) = merge_metadata(candidates, &mut conflicts);
     let modalities = first_with_value(
@@ -249,7 +259,7 @@ fn merge_model(
         metadata,
         cost: pricing
             .as_ref()
-            .map(|(_, schedule)| schedule.cost.clone())
+            .map(|(_, schedule)| with_service_tiers(schedule.cost, service_tiers))
             .unwrap_or_default(),
         limit,
         modalities: modalities
@@ -259,6 +269,7 @@ fn merge_model(
     let report = MergedModelReport {
         provenance: MergedModelProvenance {
             pricing: pricing.map(|(source, _)| source),
+            service_tiers: service_tier_sources,
             limits,
             metadata: metadata_provenance,
             modalities: modalities.map(|(source, _)| source),
@@ -266,6 +277,95 @@ fn merge_model(
         conflicts,
     };
     (document, report)
+}
+
+/// Each service tier's schedule and the source it came from. The first source whose
+/// schedule has a context tier at every context threshold of the merged `base` wins, so
+/// long requests stay priced. Without one, the first source with the tier wins and
+/// billing fails closed above the thresholds it lacks.
+fn merge_service_tiers(
+    candidates: &[Candidate<'_>],
+    base: &PricingCatalogCostDocument,
+    conflicts: &mut Vec<FieldConflict>,
+) -> (
+    BTreeMap<ServiceTier, PricingCatalogServiceTierCost>,
+    BTreeMap<ServiceTier, CatalogSourceId>,
+) {
+    let mut schedules = BTreeMap::new();
+    let mut sources = BTreeMap::new();
+    for tier in ServiceTier::ALL {
+        let tier_schedules = || {
+            candidates.iter().filter_map(move |&(source, model)| {
+                model
+                    .cost
+                    .service_tiers
+                    .get(&tier)
+                    .map(|schedule| (source, schedule))
+            })
+        };
+        let Some((source, schedule)) = tier_schedules()
+            .find(|(_, schedule)| covers_context_tiers(schedule, base))
+            .or_else(|| tier_schedules().next())
+        else {
+            continue;
+        };
+        let mut others = tier_schedules()
+            .filter(|(other, _)| *other != source)
+            .peekable();
+        if others.peek().is_some() {
+            record_conflict(
+                service_tier_field(tier),
+                (source, schedule),
+                others,
+                conflicts,
+            );
+        }
+        schedules.insert(tier, schedule.clone());
+        sources.insert(tier, source);
+    }
+    (schedules, sources)
+}
+
+/// Whether `schedule` has a context tier at every context threshold of `base`.
+fn covers_context_tiers(
+    schedule: &PricingCatalogServiceTierCost,
+    base: &PricingCatalogCostDocument,
+) -> bool {
+    base.tiers.iter().all(|base_tier| {
+        schedule
+            .context_tiers
+            .iter()
+            .any(|tier| tier.above_input_tokens == base_tier.above_input_tokens)
+    })
+}
+
+/// The conflict field name of a tier's schedule.
+const fn service_tier_field(tier: ServiceTier) -> &'static str {
+    match tier {
+        ServiceTier::Default => "pricing.service_tiers.default",
+        ServiceTier::Flex => "pricing.service_tiers.flex",
+        ServiceTier::Priority => "pricing.service_tiers.priority",
+        ServiceTier::Ultrafast => "pricing.service_tiers.ultrafast",
+    }
+}
+
+/// The base schedule of `cost` with the merged tier schedules in place of its own.
+fn with_service_tiers(
+    cost: &PricingCatalogCostDocument,
+    service_tiers: BTreeMap<ServiceTier, PricingCatalogServiceTierCost>,
+) -> PricingCatalogCostDocument {
+    PricingCatalogCostDocument {
+        conditions: cost.conditions.clone(),
+        input: cost.input.clone(),
+        output: cost.output.clone(),
+        cache_read: cost.cache_read.clone(),
+        cache_write: cost.cache_write.clone(),
+        input_audio: cost.input_audio.clone(),
+        output_audio: cost.output_audio.clone(),
+        output_image: cost.output_image.clone(),
+        tiers: cost.tiers.clone(),
+        service_tiers,
+    }
 }
 
 fn merge_limits(
@@ -399,29 +499,39 @@ fn first_with_value<'doc, V: Serialize>(
         .iter()
         .filter_map(|&(source, model)| value_of(model).map(|value| (source, value)));
     let (winner_source, winner_value) = present.next()?;
-    let rest: Vec<(CatalogSourceId, V)> = present.collect();
-    if !rest.is_empty() {
-        let winner_json = to_json(&winner_value);
-        let others: Vec<SourceValue> = rest
-            .iter()
-            .map(|(source, value)| SourceValue {
-                source: *source,
-                value: to_json(value),
-            })
-            .filter(|other| other.value != winner_json)
-            .collect();
-        if !others.is_empty() {
-            conflicts.push(FieldConflict {
-                field,
-                winner: SourceValue {
-                    source: winner_source,
-                    value: winner_json,
-                },
-                others,
-            });
-        }
+    let mut rest = present.peekable();
+    if rest.peek().is_some() {
+        record_conflict(field, (winner_source, &winner_value), rest, conflicts);
     }
     Some((winner_source, winner_value))
+}
+
+/// Records a conflict on `field` when any of `others` differs from the winning value.
+/// Values compare by their JSON form.
+fn record_conflict<W: Serialize, V: Serialize>(
+    field: &'static str,
+    (winner_source, winner_value): (CatalogSourceId, &W),
+    others: impl Iterator<Item = (CatalogSourceId, V)>,
+    conflicts: &mut Vec<FieldConflict>,
+) {
+    let winner_json = to_json(winner_value);
+    let others: Vec<SourceValue> = others
+        .map(|(source, value)| SourceValue {
+            source,
+            value: to_json(&value),
+        })
+        .filter(|other| other.value != winner_json)
+        .collect();
+    if !others.is_empty() {
+        conflicts.push(FieldConflict {
+            field,
+            winner: SourceValue {
+                source: winner_source,
+                value: winner_json,
+            },
+            others,
+        });
+    }
 }
 
 fn to_json(value: &impl Serialize) -> Value {
@@ -429,252 +539,4 @@ fn to_json(value: &impl Serialize) -> Value {
 }
 
 #[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::*;
-    use crate::pricing_catalog::PricingCatalogModalitiesDocument;
-
-    fn model(id: &str) -> PricingCatalogModelDocument {
-        PricingCatalogModelDocument {
-            id: id.to_string(),
-            display_name: id.to_string(),
-            release_date: String::new(),
-            last_updated: String::new(),
-            metadata: CatalogModelMetadata::default(),
-            cost: PricingCatalogCostDocument::default(),
-            limit: PricingCatalogLimitDocument::default(),
-            modalities: PricingCatalogModalitiesDocument::default(),
-        }
-    }
-
-    fn priced(id: &str, input: &str, output: &str) -> PricingCatalogModelDocument {
-        let mut document = model(id);
-        document.cost.input = Some(input.to_string());
-        document.cost.output = Some(output.to_string());
-        document
-    }
-
-    fn providers(provider_id: &str, models: Vec<PricingCatalogModelDocument>) -> Providers {
-        Providers::from([(
-            provider_id.to_string(),
-            PricingCatalogProviderDocument {
-                display_name: provider_id.to_string(),
-                models: models
-                    .into_iter()
-                    .map(|model| (model.id.clone(), model))
-                    .collect(),
-            },
-        )])
-    }
-
-    fn report<'merged>(
-        merged: &'merged MergedCatalog,
-        provider_id: &str,
-        model_id: &str,
-    ) -> &'merged MergedModelReport {
-        &merged.reports[&(provider_id.to_string(), model_id.to_string())]
-    }
-
-    #[test]
-    fn openrouter_wins_for_openrouter_ids_then_models_dev_then_litellm() {
-        let with_context = |context| {
-            let mut document = model("vendor/model");
-            document.limit.context = Some(context);
-            document
-        };
-        let mut litellm_only = with_context(3);
-        litellm_only.limit.output = Some(30);
-        let merged = merge_catalogs(
-            &providers("openrouter", vec![with_context(2)]),
-            &providers("openrouter", vec![with_context(1)]),
-            &providers("openrouter", vec![litellm_only]),
-        );
-
-        let document = &merged.providers["openrouter"].models["vendor/model"];
-        assert_eq!(document.limit.context, Some(1));
-        assert_eq!(document.limit.output, Some(30));
-        let report = report(&merged, "openrouter", "vendor/model");
-        assert_eq!(
-            report.provenance.limits.context,
-            Some(CatalogSourceId::OpenRouter)
-        );
-        assert_eq!(
-            report.provenance.limits.output,
-            Some(CatalogSourceId::LiteLlm)
-        );
-        assert_eq!(
-            report.conflicts,
-            [FieldConflict {
-                field: "limit.context",
-                winner: SourceValue {
-                    source: CatalogSourceId::OpenRouter,
-                    value: json!(1),
-                },
-                others: vec![
-                    SourceValue {
-                        source: CatalogSourceId::ModelsDev,
-                        value: json!(2),
-                    },
-                    SourceValue {
-                        source: CatalogSourceId::LiteLlm,
-                        value: json!(3),
-                    },
-                ],
-            }]
-        );
-    }
-
-    #[test]
-    fn models_dev_wins_elsewhere_and_openrouter_never_participates() {
-        let mut models_dev = model("gpt-5");
-        models_dev.metadata.reasoning = Some(true);
-        let mut openrouter = model("gpt-5");
-        openrouter.metadata.reasoning = Some(false);
-        openrouter.metadata.tool_call = Some(true);
-        let mut litellm = model("gpt-5");
-        litellm.metadata.reasoning = Some(false);
-        litellm.metadata.structured_output = Some(true);
-        let merged = merge_catalogs(
-            &providers("openai", vec![models_dev]),
-            &providers("openai", vec![openrouter, model("openrouter-only")]),
-            &providers("openai", vec![litellm, model("litellm-only")]),
-        );
-
-        let models = &merged.providers["openai"].models;
-        assert_eq!(
-            models.keys().map(String::as_str).collect::<Vec<_>>(),
-            ["gpt-5", "litellm-only"]
-        );
-        let metadata = &models["gpt-5"].metadata;
-        assert_eq!(metadata.reasoning, Some(true));
-        assert_eq!(metadata.tool_call, None);
-        assert_eq!(metadata.structured_output, Some(true));
-        let provenance = &report(&merged, "openai", "gpt-5").provenance.metadata;
-        assert_eq!(provenance.reasoning, Some(CatalogSourceId::ModelsDev));
-        assert_eq!(provenance.structured_output, Some(CatalogSourceId::LiteLlm));
-        assert_eq!(
-            report(&merged, "openai", "litellm-only").provenance,
-            MergedModelProvenance::default()
-        );
-    }
-
-    #[test]
-    fn pricing_is_a_whole_schedule_from_one_source() {
-        let mut models_dev = model("gpt-5");
-        models_dev.cost.input = Some("1.0000".to_string());
-        models_dev.cost.cache_read = Some("0.1000".to_string());
-        let mut litellm = priced("gpt-5", "2.0000", "8.0000");
-        litellm.cost.cache_write = Some("2.5000".to_string());
-        litellm.cost.tiers = vec![PricingCatalogContextTier {
-            above_input_tokens: 200_000,
-            input: Some("4.0000".to_string()),
-            output: None,
-            cache_read: None,
-            cache_write: None,
-        }];
-        let merged = merge_catalogs(
-            &providers("openai", vec![models_dev]),
-            &Providers::new(),
-            &providers("openai", vec![litellm]),
-        );
-
-        let cost = &merged.providers["openai"].models["gpt-5"].cost;
-        assert_eq!(cost.input.as_deref(), Some("2.0000"));
-        assert_eq!(cost.output.as_deref(), Some("8.0000"));
-        assert_eq!(cost.cache_read, None, "never mixed in from models.dev");
-        assert_eq!(cost.cache_write.as_deref(), Some("2.5000"));
-        assert_eq!(cost.tiers.len(), 1);
-        let report = report(&merged, "openai", "gpt-5");
-        assert_eq!(report.provenance.pricing, Some(CatalogSourceId::LiteLlm));
-        assert!(report.conflicts.is_empty(), "{:?}", report.conflicts);
-    }
-
-    #[test]
-    fn differing_complete_schedules_record_a_pricing_conflict() {
-        let merged = merge_catalogs(
-            &providers("openai", vec![priced("gpt-5", "1.2500", "10.0000")]),
-            &Providers::new(),
-            &providers(
-                "openai",
-                vec![
-                    priced("gpt-5", "1.0000", "10.0000"),
-                    priced("same", "1.0000", "2.0000"),
-                ],
-            ),
-        );
-
-        let report = report(&merged, "openai", "gpt-5");
-        assert_eq!(report.provenance.pricing, Some(CatalogSourceId::ModelsDev));
-        let [conflict] = report.conflicts.as_slice() else {
-            panic!("expected one conflict: {:?}", report.conflicts);
-        };
-        assert_eq!(conflict.field, "pricing");
-        assert_eq!(conflict.winner.value["input"], json!("1.2500"));
-        assert_eq!(conflict.others[0].source, CatalogSourceId::LiteLlm);
-        assert_eq!(conflict.others[0].value["input"], json!("1.0000"));
-    }
-
-    #[test]
-    fn false_and_zero_win_over_later_sources() {
-        let mut models_dev = priced("gpt-5", "0.0000", "0.0000");
-        models_dev.metadata.tool_call = Some(false);
-        models_dev.limit.output = Some(0);
-        let mut litellm = priced("gpt-5", "1.0000", "2.0000");
-        litellm.metadata.tool_call = Some(true);
-        litellm.limit.output = Some(128_000);
-        let merged = merge_catalogs(
-            &providers("openai", vec![models_dev]),
-            &Providers::new(),
-            &providers("openai", vec![litellm]),
-        );
-
-        let document = &merged.providers["openai"].models["gpt-5"];
-        assert_eq!(document.metadata.tool_call, Some(false));
-        assert_eq!(document.limit.output, Some(0));
-        assert_eq!(document.cost.input.as_deref(), Some("0.0000"));
-        let provenance = &report(&merged, "openai", "gpt-5").provenance;
-        assert_eq!(provenance.pricing, Some(CatalogSourceId::ModelsDev));
-        assert_eq!(
-            provenance.metadata.tool_call,
-            Some(CatalogSourceId::ModelsDev)
-        );
-    }
-
-    #[test]
-    fn an_input_only_schedule_is_used_only_without_a_complete_one() {
-        let mut input_only = model("embedding");
-        input_only.cost.input = Some("0.1500".to_string());
-
-        let alone = merge_catalogs(
-            &providers("google-vertex", vec![input_only.clone()]),
-            &Providers::new(),
-            &Providers::new(),
-        );
-        let cost = &alone.providers["google-vertex"].models["embedding"].cost;
-        assert_eq!(cost.input.as_deref(), Some("0.1500"));
-        assert_eq!(
-            report(&alone, "google-vertex", "embedding")
-                .provenance
-                .pricing,
-            Some(CatalogSourceId::ModelsDev)
-        );
-
-        let with_complete = merge_catalogs(
-            &providers("google-vertex", vec![input_only]),
-            &Providers::new(),
-            &providers(
-                "google-vertex",
-                vec![priced("embedding", "0.2000", "0.0000")],
-            ),
-        );
-        let cost = &with_complete.providers["google-vertex"].models["embedding"].cost;
-        assert_eq!(cost.input.as_deref(), Some("0.2000"));
-        assert_eq!(
-            report(&with_complete, "google-vertex", "embedding")
-                .provenance
-                .pricing,
-            Some(CatalogSourceId::LiteLlm)
-        );
-    }
-}
+mod tests;

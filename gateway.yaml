@@ -403,9 +403,23 @@ models:
 
   deepseek-v4.1-flash:
     description: Low-cost OpenRouter model for generic live request verification
+    service_tiers: [flex]
     route:
       provider: openrouter
       upstream_model: deepseek/deepseek-v4.1-flash
+
+  gpt-6-luna:
+    description: GPT-6 Luna through OpenRouter; callers may request the flex or priority (fast) service tier
+    route:
+      provider: openrouter
+      upstream_model: openai/gpt-6-luna
+
+  gpt-6-luna-fast:
+    description: GPT-6 Luna through OpenRouter, always on the priority service tier
+    route:
+      provider: openrouter
+      upstream_model: openai/gpt-6-luna
+      service_tier: priority
 
   claude-haiku-5.5:
     description: Claude Haiku 5.5 through OpenRouter for Anthropic Messages verification

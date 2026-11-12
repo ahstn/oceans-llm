@@ -40,6 +40,7 @@ async fn seed_request_logs<S: GatewayStore + Sync>(store: &S) -> SeededLogs {
         rank: 10,
         routes: Vec::new(),
         allowlist: None,
+        service_tiers: None,
     }];
     let api_keys = [SeedApiKey {
         name: "dev".to_string(),

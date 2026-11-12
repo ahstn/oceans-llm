@@ -193,6 +193,8 @@ fn ledger(api_key_id: Uuid, user_id: Uuid, team_id: Uuid, cost_10000: i64) -> Us
         pricing_tier_above_input_tokens: None,
         computed_cost_usd: Money4::from_scaled(cost_10000),
         occurred_at,
+        requested_service_tier: None,
+        served_service_tier: None,
     }
 }
 

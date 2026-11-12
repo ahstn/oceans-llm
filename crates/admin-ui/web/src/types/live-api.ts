@@ -100,6 +100,7 @@ export type CreateBudgetIncreaseResultView = components['schemas']['CreateBudget
 
 export type ModelAllowlistView = NonNullable<components['schemas']['AdminModelView']['allowlist']>
 export type ModelView = components['schemas']['AdminModelView']
+export type ServiceTierView = components['schemas']['ServiceTierView']
 export type ModelPageView = components['schemas']['AdminModelPageView']
 export type ModelListQuery = NonNullable<operations['list_models']['parameters']['query']>
 export type GenerateModelClientConfigsInput =

@@ -101,6 +101,22 @@ Prove backend gateway routing and generated-tool guardrails through OpenRouter:
 
 The Backend Gateway driver opens the real API Keys page, creates a temporary user key limited to `deepseek-v4.1-flash`, evaluates one synthetic destructive command without executing it, and sends one bounded forced-tool Chat Completions request through OpenRouter. It confirms the request-linked guardrail decision and request-log attempt, writes sanitized evidence, revokes the key, and confirms that the revoked key is rejected. Use [features/backend-gateway.md](./features/backend-gateway.md) for the exact contract.
 
+Prove service tiers through OpenRouter:
+
+```bash
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin drive service-tiers
+```
+
+The Service Tiers driver creates a temporary key for the tier canary models, checks tier discovery and four free rejections (unknown tier, conflicting fields, policy-blocked tier, no route for the tier), then sends six short paid requests: default, priority and flex A/B on `gpt-6-luna`, the route-forced `gpt-6-luna-fast`, Anthropic `speed: "fast"` on `claude-haiku-5.5`, and a streamed priority request. It compares OpenRouter's per-token prompt cost across tiers, checks the requested and served tier in each request log, screenshots the request detail, and revokes the key. Use [features/service-tiers.md](./features/service-tiers.md) for the exact contract.
+
+Prove the inference endpoints and the OpenCode plugin in real clients:
+
+```bash
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin drive harness-integration
+```
+
+The plan selects this proof for changes to the chat, Responses and Messages handlers, model discovery, generated client configs, and `packages/opencode-oceans`. The driver needs a run ID and `OPENROUTER_API_KEY`, but no launched stack: `tests/harness-integration` builds the gateway from this checkout and starts a temporary one. It runs the Pi and OpenCode contracts and the packed-plugin suite, including six short paid plugin requests, and records one check per test. Use [features/harness-integration.md](./features/harness-integration.md) for the exact contract.
+
 Prove the MCP registry, Tool Sets workbench, grants, and live tool routing:
 
 ```bash
@@ -216,6 +232,18 @@ The Backend Gateway proof produces:
 - `backend-gateway-canary-proof.json` with checks for key creation, the direct audit, the tool call, the request-linked decision, the request-log attempt, and key revocation; `details` holds the gateway model, provider, upstream model, request ID, status, usage presence, tool count, guardrail rule, payload capture mode, and action log.
 - No prompt, response, gateway key, provider credential, or authorization header.
 
+The Service Tiers proof produces:
+
+- `service-tiers-request-log-priority.png` and `service-tiers-request-log-downgrade.png`, with `request-log-payloads` masked.
+- `service-tiers-proof.json` with checks for key creation, discovery, each rejection, each paid request, request-log tiers, the request detail, and key revocation; `details` holds the served tier per request and the request-log ID with its requested and served tier.
+- No prompt, response, gateway key, provider credential, or authorization header.
+
+The Harness Integration proof produces:
+
+- `harness-integration-results.json`, the vitest JSON report.
+- `harness-integration-proof.json` with one check per test and `plugin-live-usage`; `details` holds each live plugin request with its request-log ID, requested and served tier, tokens, and OpenCode and Oceans cost. A skipped test is an optional `blocked` check.
+- `harness-integration.log` beside the evidence directory, with the suite and temporary gateway output. It holds no gateway key or provider credential.
+
 The MCP proof produces:
 
 - Screenshots and ARIA snapshots for sign-in, discovery, the failed-discovery overview and toast, the menu disable and enable, saved membership, independent drafts, client configuration, mobile layout, grants, and filtered invocation lists.
@@ -263,6 +291,8 @@ control-oceans-admin doctor
 control-oceans-admin drive models
 control-oceans-admin drive observability
 control-oceans-admin drive backend-gateway
+control-oceans-admin drive service-tiers
+control-oceans-admin drive harness-integration
 control-oceans-admin drive mcp
 control-oceans-admin drive profile
 control-oceans-admin drive skills
@@ -272,7 +302,7 @@ control-oceans-admin report [--plan [base-ref]]
 control-oceans-admin cleanup
 ```
 
-The browser implementations are [scripts/drive-models.mjs](./scripts/drive-models.mjs), [scripts/drive-observability.mjs](./scripts/drive-observability.mjs), [scripts/drive-backend-gateway.mjs](./scripts/drive-backend-gateway.mjs), [scripts/drive-mcp.mjs](./scripts/drive-mcp.mjs), [scripts/drive-profile.mjs](./scripts/drive-profile.mjs), and [scripts/drive-skills.mjs](./scripts/drive-skills.mjs). The MCP driver uses [scripts/mcp-browser.mjs](./scripts/mcp-browser.mjs) and [scripts/mcp-canary.mjs](./scripts/mcp-canary.mjs), and validates its candidate file with [scripts/mcp-candidates.mjs](./scripts/mcp-candidates.mjs). `plan` runs [scripts/plan-verification.mjs](./scripts/plan-verification.mjs). `record`, `evidence`, and `report` run [scripts/proof-cli.mjs](./scripts/proof-cli.mjs) over the envelope in [scripts/proof.mjs](./scripts/proof.mjs).
+The browser implementations are [scripts/drive-models.mjs](./scripts/drive-models.mjs), [scripts/drive-observability.mjs](./scripts/drive-observability.mjs), [scripts/drive-backend-gateway.mjs](./scripts/drive-backend-gateway.mjs), [scripts/drive-service-tiers.mjs](./scripts/drive-service-tiers.mjs), [scripts/drive-mcp.mjs](./scripts/drive-mcp.mjs), [scripts/drive-profile.mjs](./scripts/drive-profile.mjs), and [scripts/drive-skills.mjs](./scripts/drive-skills.mjs). The MCP driver uses [scripts/mcp-browser.mjs](./scripts/mcp-browser.mjs) and [scripts/mcp-canary.mjs](./scripts/mcp-canary.mjs), and validates its candidate file with [scripts/mcp-candidates.mjs](./scripts/mcp-candidates.mjs). `plan` runs [scripts/plan-verification.mjs](./scripts/plan-verification.mjs). `record`, `evidence`, and `report` run [scripts/proof-cli.mjs](./scripts/proof-cli.mjs) over the envelope in [scripts/proof.mjs](./scripts/proof.mjs).
 
 Offline regression tests (no stack, no upstream calls):
 
@@ -281,3 +311,5 @@ mise exec -- node --test .agents/skills/verify-oceans-admin/scripts/*.test.mjs
 ```
 
 Call the drivers through `control-oceans-admin` so they receive the recorded URL, evidence path, credentials, and gateway version.
+
+[scripts/drive-harness-integration.mjs](./scripts/drive-harness-integration.mjs) runs the client suite instead of a browser. `control-oceans-admin` gives it the evidence path, a source snapshot taken before the suite builds the gateway, and the `gateway` crate version.
