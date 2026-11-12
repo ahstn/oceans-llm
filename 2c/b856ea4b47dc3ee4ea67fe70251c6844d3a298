@@ -1,0 +1,14 @@
+crates/gateway-store/mise.toml
+  h_2f452a9c375069 55-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "2cb856ea4b47dc3ee4ea67fe70251c6844d3a298",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
