@@ -1,0 +1,34 @@
+.agents/skills/verify-oceans-admin/features/models.md
+  h_2f452a9c375069 36
+crates/admin-ui/web/src/components/icons/agent-harness-icon.tsx
+  h_2f452a9c375069 16-17
+crates/gateway-client-config/src/api_style.rs
+  h_2f452a9c375069 62
+crates/gateway-client-config/src/lib.rs
+  h_2f452a9c375069 16-18
+crates/gateway-client-config/src/templates/mod.rs
+  h_2f452a9c375069 5,11,29
+crates/gateway-client-config/src/templates/opencode.rs
+  h_2f452a9c375069 62,180-186,192-195,199,202
+crates/gateway-client-config/src/templates/opencode_plugin.rs
+  h_2f452a9c375069 1-125
+crates/gateway-client-config/src/tests.rs
+  h_2f452a9c375069 8-10,404-454,1093,1368,1378-1381
+crates/gateway-service/src/admin_models.rs
+  h_2f452a9c375069 1985,2252,2473,2569,2594-2596,2602,2607,2611-2612,2614,2620,2625,2643,2665,2690-2691,2693,2698,2703
+docs/adr/2026-10-28-opencode-plugin-package.md
+  h_2f452a9c375069 1-45
+packages/opencode-oceans/bun.lock
+  h_2f452a9c375069 1-5,7,13,17-20,23,24-40,42,44,46,48,50,52,54,56,58,60-62,64,66,68-72,74-76,78,80,98-136,164,166,168,170,172,174-198,200,202,204,206,208,210,212,214,216,218,220,222,224,226,228,230,232,234,236,238-250,252,254,256,258,260,262,264,266,268,270,272,274,276,278,280,282,284,286,288-290,292,294,296,298,300-312,314-318,320-322,324,326,328-340,342-388,390-446,448-494,496-580,582,584-614,616-624,626-664,666-670,672-690,692-757
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "eac6899ca8773c2c6bff4177cf63ead58b30fa76",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
