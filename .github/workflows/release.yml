@@ -39,26 +39,81 @@ permissions:
 # If there's a prerelease-style suffix to the version, then the release(s)
 # will be marked as a prerelease.
 on:
-  pull_request:
   push:
     tags:
-      - '**[0-9]+.[0-9]+.[0-9]+*'
+      - "v[0-9]+.[0-9]+.[0-9]+*"
 
 jobs:
+  verify-release-provenance:
+    runs-on: "ubuntu-22.04"
+    timeout-minutes: 5
+    permissions:
+      "contents": "read"
+    outputs:
+      tag: ${{ steps.provenance.outputs.tag }}
+    steps:
+      - name: Checkout the immutable release commit, tags and main history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Require the release tag to name a commit on main
+        id: provenance
+        env:
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_commit_length=$(printf %s "$RELEASE_COMMIT" | wc -c)
+          if ! grep -Eq '^[[:xdigit:]]+$' <<< "$RELEASE_COMMIT" \
+            || [[ $release_commit_length -ne 40 && $release_commit_length -ne 64 ]]; then
+            echo "error: release commit must be a full Git object ID" >&2
+            exit 1
+          fi
+          if ! grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' <<< "$RELEASE_TAG"; then
+            echo "error: release tag must look like vX.Y.Z[-pre][+build]" >&2
+            exit 1
+          fi
+
+          release_oid=$(git rev-parse --verify --end-of-options "$RELEASE_COMMIT")
+          if [[ $(git cat-file -t "$release_oid") != commit ]]; then
+            echo "error: release object $release_oid is not a commit" >&2
+            exit 1
+          fi
+          tag_oid=$(git rev-parse --verify --end-of-options "refs/tags/$RELEASE_TAG^{commit}")
+          if [[ $tag_oid != "$release_oid" ]]; then
+            echo "error: tag $RELEASE_TAG names $tag_oid, not the release commit $release_oid" >&2
+            exit 1
+          fi
+          trusted_oid=$(git rev-parse --verify --end-of-options refs/remotes/origin/main)
+          if ! git merge-base --is-ancestor "$release_oid" "$trusted_oid"; then
+            echo "error: release commit $release_oid is not reachable from main ($trusted_oid)" >&2
+            exit 1
+          fi
+
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "Release $RELEASE_TAG is approved at main commit $release_oid"
+
   # Run 'dist plan' (or host) to determine what tasks we need to do
   plan:
+    needs:
+      - verify-release-provenance
     runs-on: "ubuntu-22.04"
     outputs:
       val: ${{ steps.plan.outputs.manifest }}
-      tag: ${{ !github.event.pull_request && github.ref_name || '' }}
-      tag-flag: ${{ !github.event.pull_request && format('--tag={0}', github.ref_name) || '' }}
-      publishing: ${{ !github.event.pull_request }}
+      tag: ${{ needs.verify-release-provenance.outputs.tag }}
+      tag-flag: ${{ format('--tag={0}', needs.verify-release-provenance.outputs.tag) }}
+      publishing: "true"
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
           submodules: recursive
       - name: Install dist
         # we specify bash to get pipefail; it guards against the `curl` command
@@ -76,8 +131,10 @@ jobs:
       # (PRs run on the *source* but secrets are usually on the *target* -- that's *good*
       # but also really annoying to build CI around when it needs secrets to work right.)
       - id: plan
+        env:
+          RELEASE_TAG: ${{ needs.verify-release-provenance.outputs.tag }}
         run: |
-          dist ${{ (!github.event.pull_request && format('host --steps=create --tag={0}', github.ref_name)) || 'plan' }} --output-format=json > plan-dist-manifest.json
+          dist host --steps=create --tag="$RELEASE_TAG" --output-format=json > plan-dist-manifest.json
           echo "dist ran successfully"
           cat plan-dist-manifest.json
           echo "manifest=$(jq -c "." plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
@@ -119,6 +176,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
           submodules: recursive
       - name: Install Rust non-interactively if not already installed
         if: ${{ matrix.container }}
@@ -183,6 +241,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
           submodules: recursive
       - name: Install cached dist
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
@@ -245,6 +304,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
           submodules: recursive
       - name: Install cached dist
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
@@ -311,6 +371,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
           submodules: recursive
       # Create a GitHub Release while uploading all files to it
       - name: "Download GitHub Artifacts"

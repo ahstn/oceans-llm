@@ -4,6 +4,10 @@ members = ["cargo:."]
 
 [dist]
 cargo-dist-version = "0.33.0"
+# cargo-dist cannot express a pre-plan protected-main provenance gate.
+# release.yml therefore has reviewed hardening edits enforced by
+# scripts/check-release-workflow.sh.
+allow-dirty = ["ci"]
 ci = ["github"]
 dist = false
 precise-builds = true
@@ -20,8 +24,9 @@ windows-archive = ".zip"
 checksum = "sha256"
 source-tarball = false
 merge-tasks = false
-# Pull requests only validate the release plan; artifacts are built for tags.
-pr-run-mode = "plan"
+# Keep the generated write-capable publisher off pull requests. Protected main
+# pushes select an exact release tag; pull requests use release-plan.yml.
+pr-run-mode = "skip"
 github-build-setup = "../dist-build-setup.yml"
 # No package manager publishes depend on hosted URLs, so announce only after
 # the CLI checks, container images, and Helm chart succeed.

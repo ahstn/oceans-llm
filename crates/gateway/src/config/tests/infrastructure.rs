@@ -264,7 +264,13 @@ request_logging:
 fn resolves_default_and_postgres_database_options() -> anyhow::Result<()> {
     let tmp = tempdir()?;
     let missing_path = tmp.path().join("missing.yaml");
-    let default_config = GatewayConfig::from_path(&missing_path)?;
+    let error = GatewayConfig::from_path(&missing_path).expect_err("missing config must fail");
+    assert!(
+        format!("{error:#}").contains("does not exist"),
+        "unexpected error: {error:#}"
+    );
+
+    let default_config = GatewayConfig::default();
     assert!(matches!(
         default_config.database_options()?,
         StoreConnectionOptions::Libsql { .. }

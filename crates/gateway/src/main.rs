@@ -28,8 +28,8 @@ use gateway_providers::{
 };
 use gateway_service::{
     AnalysisPolicy, DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, McpCredentialService,
-    ProviderCredentialService, RateLimiter, SkillService, WeightedRoutePlanner,
-    hash_gateway_key_secret,
+    PasswordAuthProtection, ProviderCredentialService, RateLimiter, SkillService,
+    WeightedRoutePlanner, hash_gateway_key_secret,
 };
 use gateway_store::{
     AnyStore, GatewayStore, MigrationStatus, S3SkillObjectStore, check_migrations_with_options,
@@ -96,15 +96,8 @@ fn load_config(sources: &ConfigSources) -> anyhow::Result<GatewayConfig> {
         })
 }
 
-/// `config validate` requires the main file unless fragments are configured; `serve` also
-/// accepts a missing implicit `./gateway.yaml` when `--config-dir` supplies the config.
+/// `config validate` loads the config exactly as `serve` does; a missing main file fails.
 fn validate_config_file(sources: &ConfigSources) -> anyhow::Result<()> {
-    if !sources.path.exists() && (sources.path_is_explicit || sources.dir.is_none()) {
-        anyhow::bail!(
-            "gateway configuration `{}` does not exist",
-            sources.path.display()
-        );
-    }
     let _ = load_config(sources)?;
     Ok(())
 }
@@ -344,6 +337,7 @@ async fn run_serve_with_store(
             service.store().clone(),
             gateway::http::mcp_gateway::stream_reach::STREAM_REACH_RECHECK_INTERVAL,
         ),
+        password_auth: Arc::new(PasswordAuthProtection::default()),
         identity_token_secret: Arc::new(load_identity_token_secret()),
         oidc_public_base_url: Arc::new(
             config
@@ -880,18 +874,14 @@ providers:
         let tmp = tempdir().expect("tempdir");
         let missing_path = tmp.path().join("missing.yaml");
 
-        let error = validate_config_file(&gateway::config::ConfigSources {
-            path: missing_path,
-            path_is_explicit: false,
-            dir: None,
-        })
-        .expect_err("missing config should fail");
+        let error = validate_config_file(&gateway::config::ConfigSources::file(missing_path))
+            .expect_err("missing config should fail");
 
         assert!(format!("{error:#}").contains("does not exist"));
     }
 
     #[test]
-    fn config_validation_accepts_fragments_without_the_implicit_main_file() {
+    fn config_validation_requires_the_main_file_even_with_fragments() {
         let tmp = tempdir().expect("tempdir");
         let dir = tmp.path().join("conf.d");
         std::fs::create_dir_all(&dir).expect("conf.d");
@@ -900,21 +890,17 @@ providers:
             "providers:\n  openai:\n    type: openai_compat\n    base_url: https://api.openai.com/v1\n",
         )
         .expect("write fragment");
-        let missing_path = tmp.path().join("gateway.yaml");
-
-        validate_config_file(&gateway::config::ConfigSources {
-            path: missing_path.clone(),
-            path_is_explicit: false,
-            dir: Some(dir.clone()),
-        })
-        .expect("fragments alone are a valid config");
-
-        let error = validate_config_file(&gateway::config::ConfigSources {
-            path: missing_path,
-            path_is_explicit: true,
+        let main_path = tmp.path().join("gateway.yaml");
+        let sources = gateway::config::ConfigSources {
+            path: main_path.clone(),
             dir: Some(dir),
-        })
-        .expect_err("an explicit main path must exist");
+        };
+
+        let error = validate_config_file(&sources).expect_err("the main file must exist");
         assert!(format!("{error:#}").contains("does not exist"));
+
+        std::fs::write(&main_path, "# providers and models live in conf.d\n")
+            .expect("write placeholder");
+        validate_config_file(&sources).expect("a placeholder main file with fragments is valid");
     }
 }

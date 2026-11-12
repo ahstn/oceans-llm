@@ -12,7 +12,6 @@ providers:
 fn sources(dir: &Path) -> ConfigSources {
     ConfigSources {
         path: dir.join("gateway.yaml"),
-        path_is_explicit: true,
         dir: Some(dir.join("conf.d")),
     }
 }
@@ -129,16 +128,18 @@ fn fragment_references_resolve_after_merge() {
 }
 
 #[test]
-fn explicit_paths_must_exist() {
+fn config_paths_must_exist() {
     let tmp = tempdir().expect("tempdir");
 
     let error = GatewayConfig::load(&ConfigSources::file(tmp.path().join("missing.yaml")))
-        .expect_err("missing explicit config");
+        .expect_err("missing config");
     assert!(format!("{error:#}").contains("does not exist"));
 
-    let implicit = GatewayConfig::from_path(&tmp.path().join("missing.yaml"))
-        .expect("the implicit default path may be absent");
-    assert!(implicit.models.is_empty());
+    std::fs::create_dir_all(tmp.path().join("conf.d")).expect("conf.d");
+    let error = GatewayConfig::load(&sources(tmp.path()))
+        .expect_err("fragments do not replace a missing main file");
+    assert!(format!("{error:#}").contains("does not exist"));
+    std::fs::remove_dir(tmp.path().join("conf.d")).expect("remove conf.d");
 
     write(tmp.path(), "gateway.yaml", MAIN);
     let error = GatewayConfig::load(&sources(tmp.path())).expect_err("missing config dir");
@@ -174,7 +175,6 @@ fn checked_in_config_dir_example_is_valid() {
     let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../deploy/examples/config-dir");
     let loaded = GatewayConfig::load(&ConfigSources {
         path: example.join("gateway.yaml"),
-        path_is_explicit: true,
         dir: Some(example.join("conf.d")),
     })
     .expect("example config should load");
@@ -366,7 +366,6 @@ fn rendered_config_loads_back_to_the_same_models_and_providers() {
     let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../deploy/examples/config-dir");
     let sources = ConfigSources {
         path: example.join("gateway.yaml"),
-        path_is_explicit: true,
         dir: Some(example.join("conf.d")),
     };
     let loaded = GatewayConfig::load(&sources).expect("example config should load");
@@ -434,7 +433,6 @@ fn a_main_file_inside_the_config_directory_is_read_once() {
 
     let loaded = GatewayConfig::load(&ConfigSources {
         path: tmp.path().join("gateway.yaml"),
-        path_is_explicit: true,
         dir: Some(tmp.path().to_path_buf()),
     })
     .expect("main file is not also a fragment");

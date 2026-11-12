@@ -7,8 +7,7 @@ use gateway_core::RequestLogRetentionWindow;
     about = "Oceans LLM gateway runtime and maintenance CLI"
 )]
 pub struct Cli {
-    /// Main config file. Defaults to `./gateway.yaml`, which may be absent; a path given here
-    /// or in `GATEWAY_CONFIG` must exist.
+    /// Main config file. Defaults to `./gateway.yaml`. The file must exist.
     #[arg(long, global = true, env = "GATEWAY_CONFIG")]
     pub config: Option<String>,
 
@@ -52,7 +51,6 @@ impl Cli {
     pub fn config_sources(&self) -> crate::config::ConfigSources {
         crate::config::ConfigSources {
             path: self.config.as_deref().unwrap_or(DEFAULT_CONFIG_PATH).into(),
-            path_is_explicit: self.config.is_some(),
             dir: self.config_dir.as_deref().map(Into::into),
         }
     }
@@ -83,7 +81,7 @@ pub struct ServeArgs {
     #[arg(
         long = "bootstrap-admin",
         env = "GATEWAY_BOOTSTRAP_ADMIN",
-        default_value_t = true,
+        default_value_t = false,
         action = ArgAction::Set
     )]
     pub bootstrap_admin: bool,
@@ -213,6 +211,16 @@ mod tests {
         assert!(!args.run_migrations);
         assert!(!args.bootstrap_admin);
         assert!(!args.seed_config);
+    }
+
+    #[test]
+    fn serve_disables_bootstrap_admin_by_default() {
+        let cli = Cli::parse_from(["gateway", "serve"]);
+
+        let Command::Serve(args) = cli.command.expect("command") else {
+            panic!("expected serve command");
+        };
+        assert!(!args.bootstrap_admin);
     }
 
     #[test]

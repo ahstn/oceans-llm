@@ -17,6 +17,14 @@ The gateway is the only thing callers and admins talk to:
 
 So the admin UI and the API share one origin. That's a product rule, not a local convenience: sessions, cookies, and same-origin checks on write requests all depend on it. Expose the gateway, and keep the admin UI reachable only from the gateway. The Helm chart, for example, renders an ingress for the gateway service and never for the admin UI.
 
+### Admin UI request limits
+
+The gateway caps each proxied `/admin/*` request body, regardless of content type. The cap is the [Skills archive limit](/extensions/skills/#settings), `skills.limits.max_archive_bytes`, plus 64 KiB for framing when Skills is enabled. Otherwise it is 10 MiB plus 64 KiB: 10,551,296 bytes. This is a per-request cap, not an aggregate memory limit.
+
+A declared `Content-Length` above the cap returns `413` before the body is read. The gateway also counts streamed bytes, so a missing or understated length cannot bypass the cap; exceeding it returns `413`. This applies to JSON, plain text and multipart bodies alike.
+
+Reading the body has a deadline set by the admin proxy's `request_timeout_ms`: 10,000 ms by default, configured with the `ADMIN_UI_REQUEST_TIMEOUT_MS` environment variable, not a YAML key. An incomplete body at that deadline returns `408`. The same setting also controls the separate upstream request timeout. These proxy limits do not replace the limits on `/api/v1/*` or `/v1/*`.
+
 ## Database and migrations
 
 Use PostgreSQL for production and anything that looks like it. The libsql file database is for local development.

@@ -359,6 +359,7 @@ async fn native_messages_handlers_preserve_protocol_and_account_for_cached_usage
             [(Endpoint::Messages, streaming)]
         );
         let detail = request_detail(&state).await;
+        assert_eq!(detail.log.metadata["operation"], "messages");
         assert_eq!(detail.attempts[0].status, RequestAttemptStatus::Success);
         assert_eq!(detail.log.prompt_tokens, Some(10));
         assert_eq!(detail.log.total_tokens, Some(11));

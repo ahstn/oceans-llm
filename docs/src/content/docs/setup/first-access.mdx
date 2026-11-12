@@ -17,13 +17,13 @@ Because they're separate, a new environment can have API access but no admin sig
 
 `gateway serve` starts the gateway. Running `gateway` with no command does the same. Before it serves traffic, it can do three things, in this order:
 
-| Step | Turned off with | Run on its own with |
+| Step | Startup setting | Run on its own with |
 | --- | --- | --- |
-| Apply database migrations | `GATEWAY_RUN_MIGRATIONS=false` | `gateway migrate --apply` |
-| Seed objects from the config: providers, models, teams, users, service accounts, and budgets | `GATEWAY_SEED_CONFIG=false` | `gateway seed-config` |
-| Create the bootstrap admin, if needed | `GATEWAY_BOOTSTRAP_ADMIN=false` | `gateway bootstrap-admin` |
+| Apply database migrations | on; disable with `GATEWAY_RUN_MIGRATIONS=false` | `gateway migrate --apply` |
+| Seed objects from the config: providers, models, teams, users, service accounts, and budgets | on; disable with `GATEWAY_SEED_CONFIG=false` | `gateway seed-config` |
+| Create the bootstrap admin, if needed | off; enable with `GATEWAY_BOOTSTRAP_ADMIN=true` | `gateway bootstrap-admin` |
 
-All three are on by default. `gateway seed-config` and `gateway bootstrap-admin` apply migrations first, whatever the toggles say.
+Migrations and config seeding are on by default; bootstrap is an explicit opt-in. `gateway seed-config` and `gateway bootstrap-admin` apply migrations first, whatever the startup toggles say.
 
 Every command reads the main config from `--config` or `GATEWAY_CONFIG`, plus any fragments under `--config-dir` or `GATEWAY_CONFIG_DIR` ([Config files and fragments](/configuration/#config-files-and-fragments)). Seeding creates and updates config-backed objects. It never removes providers or models deleted from config, and their routes stay enabled.
 
@@ -98,13 +98,13 @@ To sign in:
 
 ### Production-shaped local run
 
-`mise run prod-stack` runs the built admin UI server with `gateway.prod.yaml` and PostgreSQL. It's closer to a real deployment than `dev-stack`. Set `POSTGRES_URL` before you start it; the task also reads `OPENAI_API_KEY`.
+`mise run prod-stack` runs the built admin UI server with `gateway.prod.yaml` and PostgreSQL. It's closer to a real deployment than `dev-stack`. Set `POSTGRES_URL` and a unique `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD` of at least 16 characters before you start it; the task explicitly opts in to bootstrap and also reads `OPENAI_API_KEY`.
 
 There's no demo data and no seeded service account.
 
 <Steps>
   <Step title="Sign in">
-    Open `http://localhost:8080/admin` and sign in as `admin@local` with `admin`.
+    Open `http://localhost:8080/admin` and sign in as `admin@local` with `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD`.
   </Step>
   <Step title="Change the password">
     The gateway asks for a new password at first sign-in.
@@ -123,7 +123,7 @@ Compose refuses to start without these two:
 - `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY`: a base64-encoded 32-byte key, such as the output of `openssl rand -base64 32`.
 - `GATEWAY_PUBLIC_BASE_URL`: the public URL of the gateway.
 
-Other values fall back to insecure placeholders if you leave them out, so set them as well: `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD` (otherwise `change-me-admin`), `GATEWAY_API_KEY` (otherwise `gwk_deploy.replace-me`), `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`. Add the provider keys your config uses, such as `OPENAI_API_KEY`.
+Compose also refuses to start without `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD`; generate a unique value of at least 16 characters. Set the remaining example placeholders as well: `GATEWAY_API_KEY` (otherwise `gwk_deploy.replace-me`), `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`. Add the provider keys your config uses, such as `OPENAI_API_KEY`.
 
 <Aside type="caution" title="Set an identity token secret">
   The gateway signs sessions and invite links with `GATEWAY_IDENTITY_TOKEN_SECRET`. Without it, the gateway falls back to a built-in development secret that anyone can read in the source. `deploy/compose.yaml` doesn't pass this variable through, so add it to the gateway service's `environment` before you expose the stack.

@@ -1,7 +1,7 @@
 # ADR: Self-Hosting with mise Daemons, Manual Pull-Based Updates, and Tailscale Serve
 
 - Date: 2026-10-01
-- Status: Accepted
+- Status: Accepted; the plaintext secret-storage portion is superseded by [ADR Self-host secrets with fnox](./2026-11-11-self-host-secrets-with-fnox.md)
 - Supersedes: decision 2 of [2026-03-17 migration atomicity and local Postgres ops hardening](2026-03-17-migration-atomicity-and-local-postgres-ops-hardening.md) (pitchfork-first local Postgres via `pitchfork.toml` and a helper script)
 
 ## Current state

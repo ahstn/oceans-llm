@@ -131,7 +131,7 @@ The gateway gains `--config-dir` (env `GATEWAY_CONFIG_DIR`). There is no default
 - Each fragment is parsed as a `ConfigFragment` with `deny_unknown_fields`. A fragment may contain only `teams`, `users` and `service_accounts`. Everything else (`server`, `auth`, `models`, `identity_defaults`, `budgets`, `permissions`) stays in the main config file, where one owner controls it.
 - The merge is a union by key. The same team, user or service account defined in two places is an error that names both source files, including when one of them is the main file. No file overrides another.
 - Nested `members` and `service_accounts` belong to their team's entry. A team defined in one fragment cannot have members added from another fragment.
-- `--config` and `--config-dir`, when set explicitly, must exist. A missing explicit path is a startup error, not an empty config. Only the implicit `./gateway.yaml` default may be absent.
+- `--config` and `--config-dir` must exist. A missing path is a startup error, not an empty config. This includes the default `./gateway.yaml`, since the 2026-11 security hardening, so fragments never start the gateway on default listener, database, or administrator settings.
 - Validation runs once, on the merged config. Errors carry the source file of each entity involved.
 
 A new `gateway config render [--show-sources]` command prints the merged config, optionally annotating each entity with its source file. `gateway config validate` accepts the same flags as `serve`.

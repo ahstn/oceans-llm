@@ -80,8 +80,9 @@ The release tag points to a commit that contains the Cargo version changes and t
 
 ## Distribution Workflow
 
-The pushed `vX.Y.Z` tag starts [release.yml](../../../.github/workflows/release.yml). cargo-dist generates this workflow from [dist-workspace.toml](../../../dist-workspace.toml). The workflow:
+The pushed `vX.Y.Z` tag starts [release.yml](../../../.github/workflows/release.yml). A merge to `main` without a tag does not start a release. cargo-dist generates this workflow from [dist-workspace.toml](../../../dist-workspace.toml). The workflow:
 
+- Checks that the tag is a version tag, names the pushed commit, and that this commit is on `main`. Push `main` before or with the tag, as `mise run release` does, or the check fails.
 - Builds only `oceans-cli` and its dependencies using the Rust toolchain configured in `mise.toml`.
 - Packages the `oceans` executable for Linux x86-64 and ARM64, macOS Intel and Apple Silicon, and Windows x86-64.
 - Creates `.tar.gz` archives for Unix targets and `.zip` archives for Windows, with SHA-256 checksums and provenance attestations.
@@ -97,7 +98,7 @@ Linux binaries are built on Ubuntu 22.04 runners. Check the cargo-dist linkage r
 
 Prerelease tags produce GitHub prereleases and versioned container images. They do not update the container `latest` tags.
 
-On pull requests the generated release workflow only runs `dist plan`. It does not build CLI artifacts or publish images, charts, or GitHub releases.
+On pull requests, [release-plan.yml](../../../.github/workflows/release-plan.yml) runs `dist plan` with read-only permissions. It does not build CLI artifacts or publish images, charts, or GitHub releases.
 
 The workflow publishes the Helm chart to:
 

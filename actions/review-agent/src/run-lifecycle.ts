@@ -81,16 +81,18 @@ export async function run(): Promise<void> {
   process.once('SIGINT', cancel)
   process.once('SIGTERM', cancel)
   try {
-    result = await invokePi(
-      {
-        context: pullRequestContext,
-        effectiveConfig: config,
-        workspace: runtime.workspace,
-        oceansUrl: inputs.oceansUrl,
-      },
-      inputs.oceansApiKey,
-      inputs.timeoutMinutes,
-      { signal: cancellation.signal },
+    result = redactor.reviewResult(
+      await invokePi(
+        {
+          context: pullRequestContext,
+          effectiveConfig: config,
+          workspace: runtime.workspace,
+          oceansUrl: inputs.oceansUrl,
+        },
+        inputs.oceansApiKey,
+        inputs.timeoutMinutes,
+        { signal: cancellation.signal },
+      ),
     )
     cancellation.signal.throwIfAborted()
     const publisher = new GitHubPublisher(github.getOctokit(inputs.githubToken))

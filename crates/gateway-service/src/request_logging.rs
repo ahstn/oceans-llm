@@ -222,6 +222,27 @@ where
     }
 
     #[must_use]
+    pub fn begin_messages_request(
+        &self,
+        request_id: &str,
+        requested_model_key: &str,
+        resolved_model_key: &str,
+        request: &ChatCompletionsRequest,
+        request_headers: &BTreeMap<String, String>,
+        request_tags: RequestTags,
+    ) -> RequestLogContext {
+        self.begin_operation_request(OperationRequestLogInput {
+            operation: "messages",
+            request_id,
+            requested_model_key,
+            resolved_model_key,
+            request,
+            request_headers,
+            request_tags,
+        })
+    }
+
+    #[must_use]
     pub fn begin_responses_request(
         &self,
         request_id: &str,

@@ -54,7 +54,7 @@ pub(super) async fn v1_messages_inner(
 
     let request_headers = extract_request_headers(&headers);
     let request_tags = extract_request_tags(&headers)?;
-    let request_log_context = state.service.begin_chat_request_log(
+    let request_log_context = state.service.begin_messages_request_log(
         &request_id,
         &resolved.selection.requested_model.model_key,
         &resolved.selection.execution_model.model_key,

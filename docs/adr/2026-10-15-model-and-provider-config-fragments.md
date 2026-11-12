@@ -89,8 +89,8 @@ Config validation rejects an explicit `true` above the ceiling, such as `respons
 - Fragments merge as a union, so an id defined in two places is an error that names both files.
 
 **Missing paths:**
-- An explicitly set `--config` or `--config-dir` must exist.
-- Only the implicit `./gateway.yaml` may be absent.
+- The main file must exist, including the default `./gateway.yaml`, and so must `--config-dir` when it is set.
+- An empty placeholder main file is valid when every provider and model lives in fragments.
 
 `gateway config render --show-sources` prints the merged `providers` and `models` in map form and lists each one's source file. It redacts `literal.` values, header values, and URL credentials (usernames, passwords, query values, and fragments). It does not remove identity data such as user emails.
 

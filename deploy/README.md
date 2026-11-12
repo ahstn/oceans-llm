@@ -69,7 +69,7 @@ The checked-in stack creates:
 - an admin UI container
 - config-seeded runtime objects on gateway boot, including teams, invited users, and budgets
 
-The gateway can run migrations and seed config-backed objects on startup.
+The gateway runs migrations and seeds config-backed objects on startup. This Compose profile also opts in explicitly to bootstrap creation with the required external password.
 
 ## Access After Boot
 

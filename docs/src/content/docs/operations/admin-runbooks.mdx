@@ -24,7 +24,7 @@ The gateway binary has maintenance commands next to `serve`. Each one reads its 
 `gateway migrate` needs exactly one of `--status`, `--check`, or `--apply`.
 
 <Aside type="caution" title="Check the config path">
-  If the config file doesn't exist, every command except `gateway config validate` carries on with built-in defaults instead of failing. The default database is a libsql file at `./gateway.db`, so a wrong `GATEWAY_CONFIG` points a command at a different, empty database. `gateway config validate` fails when the file is missing.
+  Every command fails when the config file doesn't exist, so a wrong `GATEWAY_CONFIG` stops the command instead of pointing it at a different, empty database.
 </Aside>
 
 Where you run them depends on the setup:

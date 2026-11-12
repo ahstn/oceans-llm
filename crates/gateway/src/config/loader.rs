@@ -24,10 +24,8 @@ use super::{
 /// Where the gateway reads its configuration from.
 #[derive(Debug, Clone)]
 pub struct ConfigSources {
+    /// Main config file. It must exist, so a wrong path never starts the gateway on defaults.
     pub path: PathBuf,
-    /// Set when the path came from `--config` or `GATEWAY_CONFIG`. An explicit path must exist;
-    /// only the implicit `./gateway.yaml` default may be absent.
-    pub path_is_explicit: bool,
     pub dir: Option<PathBuf>,
 }
 
@@ -36,7 +34,6 @@ impl ConfigSources {
     pub fn file(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
-            path_is_explicit: true,
             dir: None,
         }
     }
@@ -68,9 +65,8 @@ pub struct LoadedConfig {
     pub config: GatewayConfig,
     pub sources: Vec<ConfigEntitySource>,
     /// The text of the files the load read, so `render_config` merges exactly what was loaded
-    /// without walking or reading the sources again. The main document is `None` when the
-    /// implicit default path is absent.
-    main_document: Option<(PathBuf, String)>,
+    /// without walking or reading the sources again.
+    main_document: (PathBuf, String),
     fragment_documents: Vec<(PathBuf, String)>,
 }
 
@@ -88,7 +84,7 @@ const FRAGMENT_COLLECTIONS: [&str; 2] = ["providers", "models"];
 impl GatewayConfig {
     pub fn load(sources: &ConfigSources) -> anyhow::Result<LoadedConfig> {
         let (mut config, main_text) = read_main_file(sources)?;
-        let main_document = main_text.map(|text| (sources.path.clone(), text));
+        let main_document = (sources.path.clone(), main_text);
         let mut fragment_documents = Vec::new();
         let mut tracker = SourceTracker::default();
         tracker.record_main(&config, &sources.path)?;
@@ -137,45 +133,33 @@ impl GatewayConfig {
         })
     }
 
-    /// Loads a single config file. A missing file yields the default config.
+    /// Loads a single config file, which must exist.
     pub fn from_path(path: &Path) -> anyhow::Result<Self> {
-        Self::load(&ConfigSources {
-            path: path.to_path_buf(),
-            path_is_explicit: false,
-            dir: None,
-        })
-        .map(|loaded| loaded.config)
+        Self::load(&ConfigSources::file(path)).map(|loaded| loaded.config)
     }
 }
 
-/// Returns the typed main config and its text, or the default config and `None` when the
-/// implicit default path is absent.
-fn read_main_file(sources: &ConfigSources) -> anyhow::Result<(GatewayConfig, Option<String>)> {
+/// Returns the typed main config and its text. A missing main file is an error, even with a
+/// config directory: fragments hold only providers and models, so starting without the main file
+/// would silently use the default listener, database, and administrator settings.
+fn read_main_file(sources: &ConfigSources) -> anyhow::Result<(GatewayConfig, String)> {
     let path = &sources.path;
     if !path.exists() {
-        if sources.path_is_explicit {
-            bail!("gateway configuration `{}` does not exist", path.display());
-        }
-        return Ok((GatewayConfig::default(), None));
+        bail!("gateway configuration `{}` does not exist", path.display());
     }
     let raw = fs::read_to_string(path)
         .with_context(|| format!("failed reading config file `{}`", path.display()))?;
     // An empty, comment-only, or `---`-only main file is the default config, so a deployment
     // can keep everything in fragments behind a placeholder main file.
     if is_blank_yaml(&raw) {
-        return Ok((GatewayConfig::default(), Some(raw)));
+        return Ok((GatewayConfig::default(), raw));
     }
     // Typed config is parsed straight from the text so errors keep line and column numbers.
     let config = serde_yaml::from_str(&raw)
         .with_context(|| format!("failed parsing yaml config `{}`", path.display()))?;
-    Ok((config, Some(raw)))
+    Ok((config, raw))
 }
 
-/// YAML files under `dir`, recursively, in lexical order of their relative path.
-///
-/// Entries whose name starts with `.` are skipped. Kubernetes ConfigMap mounts place the real
-/// files under `..data` and timestamped `..2026_...` directories and link to them from the
-/// visible names, so skipping dot entries and following symlinks reads each file once.
 /// A fragment as listed under the config directory, plus the validated target it resolves to.
 /// The loader reads `canonical`, the path containment was checked against, so swapping `path`
 /// for a symlink after the walk cannot redirect the read outside the config directory.
@@ -184,6 +168,11 @@ struct FragmentFile {
     canonical: PathBuf,
 }
 
+/// YAML files under `dir`, recursively, in lexical order of their relative path.
+///
+/// Entries whose name starts with `.` are skipped. Kubernetes ConfigMap mounts place the real
+/// files under `..data` and timestamped `..2026_...` directories and link to them from the
+/// visible names, so skipping dot entries and following symlinks reads each file once.
 fn fragment_files(dir: &Path) -> anyhow::Result<Vec<FragmentFile>> {
     let metadata = fs::metadata(dir)
         .with_context(|| format!("config directory `{}` does not exist", dir.display()))?;
@@ -315,14 +304,9 @@ pub fn render_config(sources: &ConfigSources, show_sources: bool) -> anyhow::Res
     // Merge the same documents the load used. Only the main file contributes sections other
     // than providers and models, which the load already enforced for fragments.
     let mut collections: BTreeMap<&str, Mapping> = BTreeMap::new();
-    let mut merged = match &loaded.main_document {
-        Some((path, text)) => {
-            let mut document = parse_yaml_mapping(path, text)?;
-            take_collections(&mut document, &mut collections)?;
-            document
-        }
-        None => Mapping::new(),
-    };
+    let (main_path, main_text) = &loaded.main_document;
+    let mut merged = parse_yaml_mapping(main_path, main_text)?;
+    take_collections(&mut merged, &mut collections)?;
     for (path, text) in &loaded.fragment_documents {
         let mut document = parse_yaml_mapping(path, text)?;
         take_collections(&mut document, &mut collections)?;

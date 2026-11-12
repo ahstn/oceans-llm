@@ -451,6 +451,26 @@ where
     }
 
     #[must_use]
+    pub fn begin_messages_request_log(
+        &self,
+        request_id: &str,
+        requested_model_key: &str,
+        resolved_model_key: &str,
+        request: &ChatCompletionsRequest,
+        request_headers: &std::collections::BTreeMap<String, String>,
+        request_tags: RequestTags,
+    ) -> RequestLogContext {
+        self.request_logging.begin_messages_request(
+            request_id,
+            requested_model_key,
+            resolved_model_key,
+            request,
+            request_headers,
+            request_tags,
+        )
+    }
+
+    #[must_use]
     pub fn begin_responses_request_log(
         &self,
         request_id: &str,

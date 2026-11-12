@@ -10,7 +10,7 @@ auth:
   bootstrap_admin:
     enabled: true
     email: admin@local
-    password: literal.admin
+    password: env.GATEWAY_BOOTSTRAP_ADMIN_PASSWORD
     require_password_change: true
 
 permissions:

@@ -1,7 +1,7 @@
 import { readFileSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 import { runPiSession } from './pi-session'
-import { workerErrorMarker, type PiReviewRequest } from './pi'
+import { workerErrorMarker, type PiWorkerRequest } from './pi'
 
 // pi-intercom starts a detached broker that idles until its last session
 // disconnects. The sandbox PID namespace reaps it, but unsandboxed runs would
@@ -33,7 +33,7 @@ for (const [signal, status] of [
 try {
   const [requestPath, resultPath] = process.argv.slice(2)
   if (!requestPath || !resultPath) throw new Error('Expected request and result paths')
-  const request = JSON.parse(readFileSync(requestPath, 'utf8')) as PiReviewRequest
+  const request = JSON.parse(readFileSync(requestPath, 'utf8')) as PiWorkerRequest
   await runPiSession(request, resultPath)
   stopIntercomBroker()
   // Some package resource managers retain timers after session disposal. The

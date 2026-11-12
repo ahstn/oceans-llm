@@ -131,6 +131,7 @@ pub struct GatewayConfig {
 impl GatewayConfig {
     fn validate(&self) -> anyhow::Result<()> {
         self.server.validate()?;
+        self.auth.bootstrap_admin.validate(&self.server)?;
         self.database.connection_options()?;
         self.skills.validate()?;
         self.budget_alerts.validate()?;

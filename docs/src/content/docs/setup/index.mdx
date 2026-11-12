@@ -13,7 +13,7 @@ Oceans runs as two processes behind one address: the gateway, and the admin UI i
 | Setup | Start with | First sign-in |
 | --- | --- | --- |
 | Local development | `mise run dev-stack` | `admin@local` / `admin` |
-| Production-shaped local | `mise run prod-stack` | `admin@local` / `admin`, then a new password |
+| Production-shaped local | `mise run prod-stack` | `admin@local` with your required bootstrap password, then a new password |
 | Docker Compose | `docker compose -f deploy/compose.yaml up -d` | `admin@local` with your password, after one config change |
 | Kubernetes with Helm | `helm install` | Only with the bootstrap-admin Job |
 | Local process (mise) | `mise run deploy` | `admin@local` with your password, then a new password |

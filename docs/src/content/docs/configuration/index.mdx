@@ -16,7 +16,7 @@ The gateway reads the main file named by `--config` or the `GATEWAY_CONFIG` envi
 
 | Flag | Environment variable | Default | When the path is missing |
 | --- | --- | --- | --- |
-| `--config` | `GATEWAY_CONFIG` | `./gateway.yaml` | Startup fails when the path was set explicitly. Only the implicit default may be absent. |
+| `--config` | `GATEWAY_CONFIG` | `./gateway.yaml` | The file must exist. Startup fails when it is missing. |
 | `--config-dir` | `GATEWAY_CONFIG_DIR` | none | Startup fails. |
 
 An admin checks a file before deploying it:
@@ -25,10 +25,10 @@ An admin checks a file before deploying it:
 gateway --config ./gateway.yaml config validate
 ```
 
-`config validate` parses and validates the merged config, prints a `gateway configuration ... is valid` line, and exits. It fails if the main file does not exist, unless `--config-dir` supplies the config.
+`config validate` parses and validates the merged config, prints a `gateway configuration ... is valid` line, and exits. It fails if the main file does not exist, including when `--config-dir` is set.
 
-<Aside type="caution" title="The implicit default file may be missing">
-When neither `--config` nor `GATEWAY_CONFIG` is set and `./gateway.yaml` does not exist, `gateway serve` and the other commands start with built-in defaults: a local libSQL database at `./gateway.db`, no providers or models, and a bootstrap admin `admin@local` with the password `admin`. A path you set explicitly must exist. Set `GATEWAY_CONFIG` in your deployment, or run `config validate` in your pipeline, so a wrong path fails loudly.
+<Aside type="note" title="A missing file stops startup">
+`gateway serve` and every maintenance command fail when the selected config file does not exist, even when `--config-dir` supplies fragments. This keeps a wrong path from silently starting a different listener, database, or administrator configuration. Run `config validate` in your deploy pipeline to catch the same error before deployment.
 </Aside>
 
 An empty or comment-only main file is the default config, so a deployment can keep every provider and model in fragments behind a placeholder main file.
@@ -130,9 +130,10 @@ database:
 
 auth:
   bootstrap_admin:
+    enabled: true
     email: "admin@local"
-    password: "literal.admin"
-    require_password_change: false
+    password: env.GATEWAY_BOOTSTRAP_ADMIN_PASSWORD
+    require_password_change: true
 
 providers:
   - id: openai
@@ -165,6 +166,7 @@ database:
 
 auth:
   bootstrap_admin:
+    enabled: true
     email: "admin@local"
     password: env.GATEWAY_BOOTSTRAP_ADMIN_PASSWORD
     require_password_change: true
@@ -224,17 +226,17 @@ If a section is absent, the gateway uses these defaults:
 
 | Field | Default |
 | --- | --- |
-| `server.bind` | `0.0.0.0:8080` |
+| `server.bind` | `127.0.0.1:8080` |
 | `database.kind` | `libsql` (or `postgres` when `url` is set) |
 | `database.path` | `./gateway.db` |
-| `auth.bootstrap_admin` | enabled, `admin@local`, password `literal.admin`, no forced password change |
+| `auth.bootstrap_admin` | disabled, `admin@local`, no password, forced password change when enabled |
 | `request_logging.payloads.capture_mode` | `redacted_payloads` |
 | `request_logging.purge.enabled` | `false` |
 | `agent_analysis.enabled` | `true` |
 | `budgets.exceeded_status_code` | `422` |
 | `budget_alerts.email.transport.kind` | `sink` (no email is sent) |
 
-Change the bootstrap admin password before you expose a gateway. [Start up and first access](/setup/first-access/) explains what the bootstrap admin does at startup.
+Bootstrap is off unless both the config and the runtime command enable it. A non-loopback listener also requires an `env.*` or `file.*` password with at least 16 characters and 8 distinct characters, plus forced first-login rotation. [Start up and first access](/setup/first-access/) explains the explicit bootstrap step.
 
 Route defaults (`priority`, `weight`, `enabled`, capability flags) are on [Models and routes](/configuration/models-and-routes/). Permission and budget defaults are on [Auth and access settings](/access/access-settings/) and [Budget settings](/spend/budget-settings/).
 
@@ -242,7 +244,7 @@ Route defaults (`priority`, `weight`, `enabled`, capability flags) are on [Model
 
 | Field | Default | Notes |
 | --- | --- | --- |
-| `bind` | `0.0.0.0:8080` | Must be a socket address such as `127.0.0.1:8080`. The `PORT` environment variable or `gateway serve --port` overrides the port. |
+| `bind` | `127.0.0.1:8080` | Must be a socket address such as `127.0.0.1:8080`. The `PORT` environment variable or `gateway serve --port` overrides the port. |
 | `log_format` | `pretty` | The checked-in deploy configs use `json`. |
 | `otel_endpoint` | unset | OTLP trace endpoint. Must be an absolute `http` or `https` URI with a host. |
 | `otel_metrics_endpoint` | unset | OTLP metrics endpoint. Same rule as `otel_endpoint`. |
