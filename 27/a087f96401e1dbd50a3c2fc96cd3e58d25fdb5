@@ -1,0 +1,20 @@
+crates/gateway-providers/src/streaming.rs
+  h_2f452a9c375069 321-322,328-330,879-892
+crates/gateway-service/src/service.rs
+  h_2f452a9c375069 1004-1014,1016,1018-1019,1023,1027-1028,1031-1032,1034-1035,1282-1285,1298,1301
+crates/gateway/src/http/handlers.rs
+  h_2f452a9c375069 1084-1085
+docs/src/content/docs/reference/request-lifecycle.mdx
+  h_2f452a9c375069 49-50,101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "27a087f96401e1dbd50a3c2fc96cd3e58d25fdb5",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
