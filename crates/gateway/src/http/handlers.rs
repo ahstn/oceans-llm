@@ -1081,7 +1081,8 @@ async fn record_guarded_stream_failure(
                 request_log_context,
                 collector.served_service_tier(),
             ),
-            usage_estimate: request_log_context.usage_estimate(Some(collector.output_text_bytes())),
+            // A provider may not bill a stream that failed, so only reported usage is charged.
+            usage_estimate: gateway_service::UsageEstimateInput::default(),
         },
         collector.usage().cloned(),
     )

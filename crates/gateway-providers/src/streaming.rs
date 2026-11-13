@@ -318,13 +318,16 @@ fn fold_usage_chunk(final_chunk: &mut Value, usage_chunk: Value) {
 }
 
 /// Folds a usage-only chunk that came before the final choice chunk. The final chunk is
-/// later, so a `usage` or other field it already reports wins.
+/// later, so a `usage` object or other field it already reports wins. A `usage: null`
+/// placeholder is not a report.
 fn fill_from_early_usage_chunk(final_chunk: &mut Value, usage_chunk: Value) {
     let (Some(target), Value::Object(source)) = (final_chunk.as_object_mut(), usage_chunk) else {
         return;
     };
     for (key, value) in source {
-        if key != "choices" {
+        if key == "usage" && target.get("usage").is_some_and(Value::is_null) {
+            target.insert(key, value);
+        } else if key != "choices" {
             target.entry(key).or_insert(value);
         }
     }
@@ -873,6 +876,20 @@ mod tests {
         assert_eq!(events.len(), 2, "{rendered}");
         let final_chunk: Value = serde_json::from_str(events[0]).expect("final chunk");
         assert_eq!(final_chunk["usage"]["total_tokens"], 7, "{rendered}");
+
+        // `usage: null` is a placeholder, not a report, so the early usage still lands.
+        let rendered = render(normalize_openai_compat_chat_stream(
+            upstream(
+                "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}\n\n\
+                 data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":null}\n\n\
+                 data: [DONE]\n\n",
+            ),
+            false,
+        ))
+        .await;
+        let final_chunk: Value =
+            serde_json::from_str(rendered_events(&rendered)[0]).expect("final chunk");
+        assert_eq!(final_chunk["usage"]["total_tokens"], 3, "{rendered}");
     }
 
     #[tokio::test]

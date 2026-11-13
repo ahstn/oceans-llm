@@ -1001,23 +1001,38 @@ where
         route: &ModelRoute,
         occurred_at: OffsetDateTime,
     ) -> Result<PricingResolution, GatewayError> {
+        self.resolve_route_pricing_and_provider(route, occurred_at)
+            .await
+            .map(|(resolution, _)| resolution)
+    }
+
+    /// [`Self::resolve_route_pricing`], plus the provider it loaded to resolve the catalog.
+    async fn resolve_route_pricing_and_provider(
+        &self,
+        route: &ModelRoute,
+        occurred_at: OffsetDateTime,
+    ) -> Result<(PricingResolution, Option<gateway_core::ProviderConnection>), GatewayError> {
         if let Some(pricing) = &route.pricing_override {
-            return Ok(PricingResolution::ConfiguredOverride {
+            let resolution = PricingResolution::ConfiguredOverride {
                 pricing: pricing.clone(),
-            });
+            };
+            return Ok((resolution, None));
         }
 
         let Some(provider) = self.store.get_provider_by_key(&route.provider_key).await? else {
-            return Ok(PricingResolution::Unpriced {
+            let resolution = PricingResolution::Unpriced {
                 reason: PricingUnpricedReason::UnsupportedPricingProviderId(
                     route.provider_key.clone(),
                 ),
-            });
+            };
+            return Ok((resolution, None));
         };
 
-        self.pricing_catalog
+        let resolution = self
+            .pricing_catalog
             .resolve_for_provider_connection(&provider, route, occurred_at)
-            .await
+            .await?;
+        Ok((resolution, Some(provider)))
     }
 
     pub async fn resolve_route_metadata(
@@ -1264,7 +1279,10 @@ where
         route: &ModelRoute,
         occurred_at: OffsetDateTime,
     ) -> Result<(), GatewayError> {
-        let reason = match self.resolve_route_pricing(route, occurred_at).await? {
+        let (resolution, provider) = self
+            .resolve_route_pricing_and_provider(route, occurred_at)
+            .await?;
+        let reason = match resolution {
             PricingResolution::Exact { pricing } => {
                 return apply_exact_pricing(record, &pricing, cache_usage);
             }
@@ -1277,10 +1295,10 @@ where
         // The catalog prices Vertex Anthropic only at the global endpoint; a regional
         // route bills at its global rates plus the regional premium, as an estimate.
         if let PricingUnpricedReason::UnsupportedVertexLocation(location) = &reason
-            && let Some(provider) = self.store.get_provider_by_key(&route.provider_key).await?
+            && let Some(provider) = &provider
             && let Some(global) = self
                 .pricing_catalog
-                .resolve_global_location_pricing(&provider, route, occurred_at)
+                .resolve_global_location_pricing(provider, route, occurred_at)
                 .await?
             && apply_regional_vertex_estimate(record, &global, location, cache_usage)?
         {
