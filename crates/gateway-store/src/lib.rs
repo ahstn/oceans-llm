@@ -783,6 +783,7 @@ pub(crate) mod tests {
             uncached_input_tokens: Some(10),
             cache_read_tokens: Some(80),
             cache_write_tokens: Some(10),
+            cache_write_1h_tokens: Some(4),
             completion_tokens: Some(50),
             image_output_tokens: Some(40),
             total_tokens: Some(150),
@@ -804,6 +805,7 @@ pub(crate) mod tests {
             output_cost_per_million_tokens: Some(Money4::from_scaled(10_000)),
             cache_read_cost_per_million_tokens: Some(Money4::from_scaled(125)),
             cache_write_cost_per_million_tokens: Some(Money4::from_scaled(250)),
+            cache_write_1h_cost_per_million_tokens: Some(Money4::from_scaled(2_500)),
             image_output_cost_per_million_tokens: Some(Money4::from_scaled(300_000)),
             pricing_tier_above_input_tokens: None,
             computed_cost_usd: Money4::from_scaled(computed_cost_10000),
@@ -826,6 +828,7 @@ pub(crate) mod tests {
             output_cost_per_million_tokens: Some(Money4::from_scaled(500_000)),
             cache_read_cost_per_million_tokens: Some(Money4::from_scaled(10_000)),
             cache_write_cost_per_million_tokens: None,
+            cache_write_1h_cost_per_million_tokens: Some(Money4::from_scaled(200_000)),
             input_audio_cost_per_million_tokens: None,
             output_audio_cost_per_million_tokens: None,
             output_image_usd_per_million: Some(Money4::from_scaled(400_000)),
@@ -836,6 +839,7 @@ pub(crate) mod tests {
                     output: Some(Money4::from_scaled(600_000)),
                     cache_read: None,
                     cache_write: None,
+                    cache_write_1h: None,
                 },
                 gateway_core::ContextPricingTier {
                     above_input_tokens: 272_000,
@@ -843,6 +847,7 @@ pub(crate) mod tests {
                     output: Some(Money4::from_scaled(750_000)),
                     cache_read: Some(Money4::from_scaled(20_000)),
                     cache_write: Some(Money4::from_scaled(250_000)),
+                    cache_write_1h: Some(Money4::from_scaled(400_000)),
                 },
             ],
             release_date: "2026-01-01".to_string(),
@@ -872,6 +877,7 @@ pub(crate) mod tests {
                     output: Some(Money4::from_scaled(250_000)),
                     cache_read: Some(Money4::from_scaled(5_000)),
                     cache_write: None,
+                    cache_write_1h: None,
                     context_tiers: Vec::new(),
                 },
                 gateway_core::ServiceTierPricing {
@@ -880,20 +886,22 @@ pub(crate) mod tests {
                     output: Some(Money4::from_scaled(1_000_000)),
                     cache_read: Some(Money4::from_scaled(20_000)),
                     cache_write: None,
+                    cache_write_1h: Some(Money4::from_scaled(400_000)),
                     context_tiers: vec![gateway_core::ContextPricingTier {
                         above_input_tokens: 200_000,
                         input: Some(Money4::from_scaled(300_000)),
                         output: Some(Money4::from_scaled(1_200_000)),
                         cache_read: None,
                         cache_write: None,
+                        cache_write_1h: None,
                     }],
                 },
             ],
         }
     }
 
-    /// Context tiers, service tier schedules and the catalog image rate survive both
-    /// insert paths.
+    /// Context tiers, service tier schedules, the 1-hour cache write rate and the catalog
+    /// image rate survive both insert paths.
     async fn exercise_model_pricing_context_tiers_round_trip<S>(store: &S)
     where
         S: PricingCatalogRepository,
@@ -6874,6 +6882,7 @@ pub(crate) mod tests {
                     output_cost_per_million_tokens: Money4::from_scaled(50_000),
                     cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_250)),
                     cache_write_cost_per_million_tokens: None,
+                    cache_write_1h_cost_per_million_tokens: None,
                     image_output_cost_per_million_tokens: Some(Money4::from_scaled(300_000)),
                     service_tiers: Vec::new(),
                 }),
@@ -7758,6 +7767,11 @@ pub(crate) mod tests {
         assert_eq!(kept_usage.uncached_input_tokens, Some(10));
         assert_eq!(kept_usage.cache_read_tokens, Some(80));
         assert_eq!(kept_usage.cache_write_tokens, Some(10));
+        assert_eq!(kept_usage.cache_write_1h_tokens, Some(4));
+        assert_eq!(
+            kept_usage.cache_write_1h_cost_per_million_tokens,
+            Some(Money4::from_scaled(2_500))
+        );
         assert_eq!(kept_usage.image_output_tokens, Some(40));
         assert_eq!(
             kept_usage.image_output_cost_per_million_tokens,
@@ -8048,6 +8062,11 @@ pub(crate) mod tests {
         assert_eq!(kept_usage.uncached_input_tokens, Some(10));
         assert_eq!(kept_usage.cache_read_tokens, Some(80));
         assert_eq!(kept_usage.cache_write_tokens, Some(10));
+        assert_eq!(kept_usage.cache_write_1h_tokens, Some(4));
+        assert_eq!(
+            kept_usage.cache_write_1h_cost_per_million_tokens,
+            Some(Money4::from_scaled(2_500))
+        );
         assert_eq!(kept_usage.image_output_tokens, Some(40));
         assert_eq!(
             kept_usage.image_output_cost_per_million_tokens,
@@ -11623,6 +11642,7 @@ pub(crate) mod tests {
                     output_cost_per_million_tokens: Money4::from_scaled(50_000),
                     cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_250)),
                     cache_write_cost_per_million_tokens: Some(Money4::from_scaled(2_500)),
+                    cache_write_1h_cost_per_million_tokens: None,
                     image_output_cost_per_million_tokens: Some(Money4::from_scaled(300_000)),
                     service_tiers: Vec::new(),
                 }),
@@ -11731,6 +11751,7 @@ pub(crate) mod tests {
                 output_cost_per_million_tokens: Money4::from_scaled(50_000),
                 cache_read_cost_per_million_tokens: Some(Money4::from_scaled(1_250)),
                 cache_write_cost_per_million_tokens: Some(Money4::from_scaled(2_500)),
+                cache_write_1h_cost_per_million_tokens: None,
                 image_output_cost_per_million_tokens: Some(Money4::from_scaled(300_000)),
                 service_tiers: Vec::new(),
             })
@@ -11889,6 +11910,7 @@ pub(crate) mod tests {
             output_cost_per_million_tokens: Some(Money4::from_scaled(10_000)),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            cache_write_1h_cost_per_million_tokens: None,
             input_audio_cost_per_million_tokens: None,
             output_audio_cost_per_million_tokens: None,
             output_image_usd_per_million: None,
@@ -11945,6 +11967,7 @@ pub(crate) mod tests {
             uncached_input_tokens: None,
             cache_read_tokens: None,
             cache_write_tokens: None,
+            cache_write_1h_tokens: None,
             completion_tokens: Some(5),
             image_output_tokens: None,
             total_tokens: Some(15),
@@ -11962,6 +11985,7 @@ pub(crate) mod tests {
             output_cost_per_million_tokens: pricing_record.output_cost_per_million_tokens,
             cache_read_cost_per_million_tokens: pricing_record.cache_read_cost_per_million_tokens,
             cache_write_cost_per_million_tokens: pricing_record.cache_write_cost_per_million_tokens,
+            cache_write_1h_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
             pricing_tier_above_input_tokens: None,
             computed_cost_usd: Money4::from_scaled(25),
@@ -11986,6 +12010,7 @@ pub(crate) mod tests {
             uncached_input_tokens: None,
             cache_read_tokens: None,
             cache_write_tokens: None,
+            cache_write_1h_tokens: None,
             completion_tokens: Some(5),
             image_output_tokens: None,
             total_tokens: Some(15),
@@ -12003,6 +12028,7 @@ pub(crate) mod tests {
             output_cost_per_million_tokens: None,
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            cache_write_1h_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
             pricing_tier_above_input_tokens: None,
             computed_cost_usd: Money4::ZERO,

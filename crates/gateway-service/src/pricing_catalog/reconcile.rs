@@ -215,6 +215,9 @@ fn pricing_record_at(
         output_cost_per_million_tokens: parse_money(document.cost.output.as_deref())?,
         cache_read_cost_per_million_tokens: parse_money(document.cost.cache_read.as_deref())?,
         cache_write_cost_per_million_tokens: parse_money(document.cost.cache_write.as_deref())?,
+        cache_write_1h_cost_per_million_tokens: parse_money(
+            document.cost.cache_write_1h.as_deref(),
+        )?,
         input_audio_cost_per_million_tokens: parse_money(document.cost.input_audio.as_deref())?,
         output_audio_cost_per_million_tokens: parse_money(document.cost.output_audio.as_deref())?,
         output_image_usd_per_million: parse_money(document.cost.output_image.as_deref())?,
@@ -263,6 +266,7 @@ fn context_pricing_tier(
         output: parse_money(tier.output.as_deref())?,
         cache_read: parse_money(tier.cache_read.as_deref())?,
         cache_write: parse_money(tier.cache_write.as_deref())?,
+        cache_write_1h: parse_money(tier.cache_write_1h.as_deref())?,
     })
 }
 
@@ -276,6 +280,7 @@ fn service_tier_pricing(
         output: parse_money(cost.output.as_deref())?,
         cache_read: parse_money(cost.cache_read.as_deref())?,
         cache_write: parse_money(cost.cache_write.as_deref())?,
+        cache_write_1h: parse_money(cost.cache_write_1h.as_deref())?,
         context_tiers: cost
             .context_tiers
             .iter()
@@ -291,6 +296,8 @@ fn pricing_record_matches(existing: &ModelPricingRecord, desired: &ModelPricingR
         && existing.cache_read_cost_per_million_tokens == desired.cache_read_cost_per_million_tokens
         && existing.cache_write_cost_per_million_tokens
             == desired.cache_write_cost_per_million_tokens
+        && existing.cache_write_1h_cost_per_million_tokens
+            == desired.cache_write_1h_cost_per_million_tokens
         && existing.input_audio_cost_per_million_tokens
             == desired.input_audio_cost_per_million_tokens
         && existing.output_audio_cost_per_million_tokens

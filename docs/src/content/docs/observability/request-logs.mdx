@@ -14,13 +14,13 @@ The gateway writes request log rows for these API families. The `operation` valu
 | API | `operation` |
 | --- | --- |
 | `POST /v1/chat/completions` | `chat_completions` |
-| `POST /v1/messages` | `chat_completions` |
+| `POST /v1/messages` | `messages` |
 | `POST /v1/responses` | `responses` |
 | `POST /v1/embeddings` | `embeddings` |
 | `POST /v1/images`, `POST /v1/images/generations` | `images` |
 | `POST /v1/decisions`, `POST /v1/systemone` | `decisions` |
 
-The unversioned aliases log the same way. Anthropic Messages requests have no operation of their own. The gateway stores them as `chat_completions`, and stores the request body in the gateway's internal Chat Completions shape, not the Anthropic wire format.
+The unversioned aliases log the same way. Anthropic Messages requests show as **Messages** in the admin UI. The gateway stores their request body in its internal Chat Completions shape, not the Anthropic wire format.
 
 These requests never get a row:
 

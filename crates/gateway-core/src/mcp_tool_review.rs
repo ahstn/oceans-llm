@@ -56,9 +56,6 @@ impl McpToolApprovalStatus {
     }
 }
 
-/// SQL list of served statuses, for `approval_status IN (...)`.
-pub const SERVED_APPROVAL_STATUSES_SQL: &str = "'approved', 'pending_change'";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum McpToolVersionStatus {

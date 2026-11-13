@@ -87,6 +87,7 @@ fn billing_modifiers_suppress_catalog_prices_but_preserve_explicit_overrides() {
         output_cost_per_million_tokens: Money4::from_scaled(12345),
         cache_read_cost_per_million_tokens: None,
         cache_write_cost_per_million_tokens: None,
+        cache_write_1h_cost_per_million_tokens: None,
         image_output_cost_per_million_tokens: None,
         service_tiers: vec![gateway_core::RouteServiceTierPricing {
             service_tier: ServiceTier::Priority,
@@ -94,6 +95,7 @@ fn billing_modifiers_suppress_catalog_prices_but_preserve_explicit_overrides() {
             output_cost_per_million_tokens: Money4::from_scaled(40_000),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            cache_write_1h_cost_per_million_tokens: None,
         }],
     });
     let configured = route_metadata(&route, Some(&provider()), &snapshot);

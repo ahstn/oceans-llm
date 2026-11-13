@@ -49,7 +49,7 @@ pub(super) const MODELS_DEV_CACHE_KEY: &str = "models_dev_supported_v5";
 pub(super) const MODELS_DEV_REMOTE_SOURCE: &str = "models_dev_api";
 pub(super) const MODELS_DEV_VENDORED_SOURCE: &str = "vendored_models_dev";
 pub(super) const OPENROUTER_CACHE_KEY: &str = "openrouter_v1";
-pub(super) const LITELLM_CACHE_KEY: &str = "litellm_v3";
+pub(super) const LITELLM_CACHE_KEY: &str = "litellm_v4";
 /// A URL that refuses connections, so a refresh of it fails at once.
 pub(super) const UNREACHABLE_URL: &str = "http://127.0.0.1:9/api.json";
 /// The paths [`source_urls`] serves each source from, in [`CatalogSourceId::ALL`] order.
@@ -433,6 +433,7 @@ fn fallback_providers() -> Providers {
                                 output: Some("15.0000".to_string()),
                                 cache_read: Some("0.3000".to_string()),
                                 cache_write: Some("3.7500".to_string()),
+                                cache_write_1h: None,
                                 input_audio: None,
                                 output_audio: None,
                                 output_image: None,
@@ -468,6 +469,7 @@ fn fallback_providers() -> Providers {
                                 output: Some("0.6000".to_string()),
                                 cache_read: None,
                                 cache_write: None,
+                                cache_write_1h: None,
                                 input_audio: None,
                                 output_audio: None,
                                 output_image: None,
@@ -506,6 +508,7 @@ fn fallback_providers() -> Providers {
                             output: Some("10.0000".to_string()),
                             cache_read: Some("0.1250".to_string()),
                             cache_write: None,
+                            cache_write_1h: None,
                             input_audio: None,
                             output_audio: None,
                             output_image: None,
@@ -543,6 +546,7 @@ fn fallback_providers() -> Providers {
                             output: Some("0.1800".to_string()),
                             cache_read: Some("0.0180".to_string()),
                             cache_write: None,
+                            cache_write_1h: None,
                             input_audio: None,
                             output_audio: None,
                             output_image: None,
@@ -581,6 +585,7 @@ fn fallback_providers() -> Providers {
                                 output: Some("2.5000".to_string()),
                                 cache_read: Some("0.0750".to_string()),
                                 cache_write: Some("0.3830".to_string()),
+                                cache_write_1h: None,
                                 input_audio: None,
                                 output_audio: None,
                                 output_image: None,
@@ -618,6 +623,7 @@ fn fallback_providers() -> Providers {
                                 output: None,
                                 cache_read: None,
                                 cache_write: None,
+                                cache_write_1h: None,
                                 input_audio: None,
                                 output_audio: None,
                                 output_image: None,
@@ -656,6 +662,7 @@ fn fallback_providers() -> Providers {
                             output: Some("15.0000".to_string()),
                             cache_read: Some("0.3000".to_string()),
                             cache_write: Some("3.7500".to_string()),
+                            cache_write_1h: None,
                             input_audio: None,
                             output_audio: None,
                             output_image: None,
@@ -694,6 +701,7 @@ fn fallback_providers() -> Providers {
                                 output: Some("50.0000".to_string()),
                                 cache_read: Some("0.2500".to_string()),
                                 cache_write: Some("12.5000".to_string()),
+                                cache_write_1h: None,
                                 input_audio: None,
                                 output_audio: None,
                                 output_image: None,
@@ -729,6 +737,7 @@ fn fallback_providers() -> Providers {
                                 output: Some("15.0000".to_string()),
                                 cache_read: Some("0.3000".to_string()),
                                 cache_write: Some("3.7500".to_string()),
+                                cache_write_1h: None,
                                 input_audio: None,
                                 output_audio: None,
                                 output_image: None,

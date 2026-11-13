@@ -196,6 +196,8 @@ function startGateway(
       // Generated client configs (the OpenCode harness config) must point at this gateway.
       GATEWAY_CLIENT_CONFIG_BASE_URL: baseUrl,
       GATEWAY_CONFIG: configPath,
+      // The managed admin in gateway.yaml is seeded only when serve opts in.
+      GATEWAY_BOOTSTRAP_ADMIN: "true",
       GATEWAY_IDENTITY_TOKEN_SECRET: "harness-integration-identity-secret",
       HARNESS_OCEANS_API_KEY: MANAGED_API_KEY,
       OCEANS_API_KEY_SECRET_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",

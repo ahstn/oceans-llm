@@ -120,15 +120,6 @@ where
             query_credential,
         })
     }
-
-    pub async fn prepare_upstream_for_key_and_auth(
-        &self,
-        auth: &AuthenticatedApiKey,
-        server_key: &str,
-    ) -> Result<McpGatewayUpstream, GatewayError> {
-        let server = self.load_active_server(server_key).await?;
-        self.prepare_upstream_for_auth(auth, server).await
-    }
 }
 
 #[must_use]

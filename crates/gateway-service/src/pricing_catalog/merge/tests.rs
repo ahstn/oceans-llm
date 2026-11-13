@@ -140,6 +140,7 @@ fn pricing_is_a_whole_schedule_from_one_source() {
         output: None,
         cache_read: None,
         cache_write: None,
+        cache_write_1h: None,
     }];
     let merged = merge_catalogs(
         &providers("openai", vec![models_dev]),
@@ -303,6 +304,7 @@ fn a_tier_schedule_covering_the_base_context_tiers_wins_over_an_earlier_one() {
         output: None,
         cache_read: None,
         cache_write: None,
+        cache_write_1h: None,
     };
     let flat = |input: &str| PricingCatalogServiceTierCost {
         input: Some(input.to_string()),

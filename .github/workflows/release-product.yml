@@ -46,9 +46,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
 
       - name: Setup mise
-        uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           install: false
           cache: false
@@ -71,7 +72,7 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to GHCR
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -83,13 +84,13 @@ jobs:
         with:
           images: ghcr.io/ahstn/${{ matrix.image }}
           tags: |
-            type=raw,value=${{ github.ref_name }}
+            type=raw,value=${{ fromJSON(inputs.plan).announcement_tag }}
             type=raw,value=sha-${{ github.sha }}
             type=raw,value=latest,enable=${{ !fromJSON(inputs.plan).announcement_is_prerelease }}
           labels: |
             org.opencontainers.image.title=${{ matrix.title }}
             org.opencontainers.image.description=${{ matrix.description }}
-            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.version=${{ fromJSON(inputs.plan).announcement_tag }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
@@ -131,9 +132,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
 
       - name: Setup mise, Helm, and kubeconform
-        uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           install_args: helm kubeconform
           cache: false
@@ -145,16 +147,17 @@ jobs:
       - name: Package and push Helm chart
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ fromJSON(inputs.plan).announcement_tag }}
         run: |
           set -euo pipefail
 
           helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin <<< "$GH_TOKEN"
-          chart_version="${GITHUB_REF_NAME#v}"
+          chart_version="${RELEASE_TAG#v}"
           mkdir -p dist/charts
 
           helm package "$HELM_CHART_DIR" \
             --version "$chart_version" \
-            --app-version "$GITHUB_REF_NAME" \
+            --app-version "$RELEASE_TAG" \
             --destination dist/charts
 
           helm push "dist/charts/${HELM_CHART_NAME}-${chart_version}.tgz" "oci://${HELM_OCI_REGISTRY}"

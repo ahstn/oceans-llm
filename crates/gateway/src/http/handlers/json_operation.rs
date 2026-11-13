@@ -216,7 +216,7 @@ async fn dispatch_json_operation<O: JsonOperation>(
         provider_key: &route.provider_key,
         stream: false,
     };
-    let usage_context = || UsageAccountingContext {
+    let usage_context = |usage_estimate| UsageAccountingContext {
         auth,
         rate_limit_team,
         model: &resolved.selection.execution_model,
@@ -225,6 +225,7 @@ async fn dispatch_json_operation<O: JsonOperation>(
         labels: labels.clone(),
         operation: O::OPERATION,
         service_tiers: gateway_core::ServiceTierOutcome::default(),
+        usage_estimate,
     };
     let route_key = model_route_key(
         &resolved.selection.execution_model.model_key,
@@ -302,7 +303,12 @@ async fn dispatch_json_operation<O: JsonOperation>(
         Err(error) => {
             let (provider_error, partial_provider_usage) = split_partial_provider_error(error);
             if let Some(provider_usage) = partial_provider_usage {
-                finalize_successful_usage_accounting(state, usage_context(), provider_usage).await;
+                finalize_successful_usage_accounting(
+                    state,
+                    usage_context(gateway_service::UsageEstimateInput::default()),
+                    provider_usage,
+                )
+                .await;
             }
 
             let (error, attempt) = guarded_provider_error_attempt(
@@ -333,8 +339,14 @@ async fn dispatch_json_operation<O: JsonOperation>(
     };
     let attempt = success_attempt(&request_log_context, &route, false, attempt_started_at);
 
-    finalize_successful_usage_accounting(state, usage_context(), usage_value_from_response(&value))
-        .await;
+    let usage_estimate =
+        request_log_context.usage_estimate(Some(gateway_service::response_text_bytes(&value)));
+    finalize_successful_usage_accounting(
+        state,
+        usage_context(usage_estimate),
+        usage_value_from_response(&value),
+    )
+    .await;
     best_effort_log_non_stream_success(
         &state.service,
         auth,

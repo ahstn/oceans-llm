@@ -16,7 +16,10 @@ use uuid::Uuid;
 use crate::agent_analysis::{
     PassiveRequestMetadata, extract_request_metadata, serialized_request_prompt_bytes,
 };
-use crate::payload_bounding::{bound_request_payload, bound_request_payload_after_known_fields};
+use crate::payload_bounding::{
+    bound_request_payload, bound_request_payload_after_known_fields, serialized_size,
+};
+use crate::usage::UsageEstimateInput;
 
 use crate::redaction::{
     RequestLogPayloadCaptureMode, RequestLogPayloadPolicy, redact_json_value_with_policy,
@@ -61,6 +64,8 @@ pub struct RequestLogContext {
     /// The tier the request asked the provider for: the route's forced tier, else the
     /// caller's. Set once a route is chosen; recorded as `metadata.service_tier`.
     pub service_tier: Option<ServiceTier>,
+    /// The request body's size in bytes: its `Content-Length`, else its serialized size.
+    pub request_body_bytes: Option<u64>,
     payload_policy: RequestLogPayloadPolicy,
     pub tool_cardinality: RequestToolCardinality,
     request_json: Option<Value>,
@@ -68,6 +73,18 @@ pub struct RequestLogContext {
     pub(crate) started_at: OffsetDateTime,
     pub(crate) analysis_metadata: PassiveRequestMetadata,
     pub(crate) analysis_payload_permitted: bool,
+}
+
+impl RequestLogContext {
+    /// The sizes that estimate the request's tokens when the provider reports none:
+    /// the request body and `response_text_bytes` of generated text.
+    #[must_use]
+    pub fn usage_estimate(&self, response_text_bytes: Option<u64>) -> UsageEstimateInput {
+        UsageEstimateInput {
+            request_body_bytes: self.request_body_bytes,
+            response_text_bytes,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -222,6 +239,27 @@ where
     }
 
     #[must_use]
+    pub fn begin_messages_request(
+        &self,
+        request_id: &str,
+        requested_model_key: &str,
+        resolved_model_key: &str,
+        request: &ChatCompletionsRequest,
+        request_headers: &BTreeMap<String, String>,
+        request_tags: RequestTags,
+    ) -> RequestLogContext {
+        self.begin_operation_request(OperationRequestLogInput {
+            operation: "messages",
+            request_id,
+            requested_model_key,
+            resolved_model_key,
+            request,
+            request_headers,
+            request_tags,
+        })
+    }
+
+    #[must_use]
     pub fn begin_responses_request(
         &self,
         request_id: &str,
@@ -319,6 +357,11 @@ where
     {
         let user_agent_raw = normalized_user_agent(request_user_agent(input.request_headers));
         let harness = classify_agent_harness(user_agent_raw.as_deref());
+        let request_body_bytes = input
+            .request_headers
+            .get("content-length")
+            .and_then(|length| length.parse::<u64>().ok())
+            .or_else(|| serialized_size(input.request).ok().map(|size| size as u64));
         let request_body = serde_json::to_value(input.request).unwrap_or_else(|_| json!({}));
         let request_tool_count = shallow_tool_count_from_request_body(&request_body);
         let prepared =
@@ -335,6 +378,7 @@ where
             agent_harness_key: harness.key.to_string(),
             agent_harness_label: harness.label.to_string(),
             service_tier: None,
+            request_body_bytes,
             payload_policy: self.payload_policy.clone(),
             // `exposed_tool_count` starts as the request-body count and may later be replaced by
             // the MCP grant inventory; `request_tool_count` keeps the request-body count.

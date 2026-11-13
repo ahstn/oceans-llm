@@ -267,6 +267,7 @@ fn forced_tier_routes_report_that_tiers_catalog_schedule() {
             output: Some("20.0000".into()),
             cache_read: Some("0.2500".into()),
             cache_write: None,
+            cache_write_1h: None,
             context_tiers: Vec::new(),
         },
     );

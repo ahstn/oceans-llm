@@ -176,6 +176,7 @@
       "paths": [
         "crates/gateway-core/**",
         "crates/gateway-service/src/{service,usage,route_planner,model_resolution,model_access,authenticator}.rs",
+        "crates/gateway-service/src/usage/**",
         "crates/gateway/src/http/handlers.rs",
         "crates/gateway/src/http/handlers/inference.rs",
         "crates/gateway/src/http/handlers/messages.rs",
@@ -278,6 +279,7 @@
         "crates/gateway/src/http/admin_auth.rs",
         "crates/gateway/src/http/handlers/auth.rs",
         "crates/gateway-service/src/authenticator.rs",
+        "crates/gateway-service/src/password_auth.rs",
         "crates/gateway-store/src/libsql_store/identity.rs",
         "crates/gateway/src/local_demo_seed/users.rs"
       ]
@@ -408,6 +410,7 @@
         "crates/gateway-client-config/src/thinking.rs",
         "crates/gateway-service/src/effective_route_metadata.rs",
         "crates/gateway-service/src/{request_logging,service,usage}.rs",
+        "crates/gateway-service/src/usage/**",
         "crates/gateway-providers/src/anthropic/**",
         "crates/gateway-providers/src/anthropic_compat.rs",
         "crates/gateway-providers/src/http.rs",
@@ -563,7 +566,7 @@
         "crates/gateway-service/src/attribution/**",
         "crates/gateway-store/src/attribution.rs",
         "crates/gateway-store/src/attribution/**",
-        "crates/gateway-store/migrations/**/V78__git_ai_attribution.sql",
+        "crates/gateway-store/migrations/**/V79__git_ai_attribution.sql",
         "crates/oceans-cli/src/attribution/**",
         "crates/oceans-cli/src/{config,process}.rs",
         "crates/oceans-cli/assets/**"
@@ -627,6 +630,7 @@
         "crates/gateway/src/batch_worker.rs",
         "crates/gateway-service/src/batches.rs",
         "crates/gateway-service/src/usage.rs",
+        "crates/gateway-service/src/usage/**",
         "crates/gateway-store/src/libsql_store/batches.rs",
         "crates/gateway-store/src/any_store_batches.rs",
         "crates/gateway-store/src/seed.rs",
@@ -673,6 +677,7 @@
         "crates/gateway/src/http/mod.rs",
         "crates/gateway/src/config/rate_limits.rs",
         "crates/gateway-service/src/{service,usage}.rs",
+        "crates/gateway-service/src/usage/**",
         "crates/gateway/src/http/mcp_gateway/rate_limits.rs",
         "crates/gateway/src/http/handlers.rs",
         "crates/gateway/src/http/handlers/{inference,messages,embeddings,decisions,count_tokens}.rs",
@@ -716,6 +721,7 @@
         "crates/admin-ui/web/src/routes/identity/-users/{use-onboarding-reset.ts,user-auth-section.tsx}",
         "crates/admin-ui/web/src/components/layout/auth-layout.tsx",
         "crates/gateway/src/http/{identity,identity_lifecycle}.rs",
+        "crates/gateway-service/src/password_auth.rs",
         "crates/gateway-store/src/libsql_store/identity.rs",
         "crates/gateway/src/email.rs"
       ]

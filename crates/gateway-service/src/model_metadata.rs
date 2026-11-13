@@ -290,6 +290,7 @@ fn override_cost(pricing: &RoutePricingOverride) -> PricingCatalogCostDocument {
         output: Some(rate(pricing.output_cost_per_million_tokens)),
         cache_read: pricing.cache_read_cost_per_million_tokens.map(rate),
         cache_write: pricing.cache_write_cost_per_million_tokens.map(rate),
+        cache_write_1h: pricing.cache_write_1h_cost_per_million_tokens.map(rate),
         service_tiers: pricing
             .service_tiers
             .iter()
@@ -299,6 +300,7 @@ fn override_cost(pricing: &RoutePricingOverride) -> PricingCatalogCostDocument {
                     output: Some(rate(tier.output_cost_per_million_tokens)),
                     cache_read: tier.cache_read_cost_per_million_tokens.map(rate),
                     cache_write: tier.cache_write_cost_per_million_tokens.map(rate),
+                    cache_write_1h: tier.cache_write_1h_cost_per_million_tokens.map(rate),
                     context_tiers: Vec::new(),
                 };
                 (tier.service_tier, cost)
@@ -331,6 +333,7 @@ fn catalog_route_cost(
         output: schedule.output,
         cache_read: schedule.cache_read,
         cache_write: schedule.cache_write,
+        cache_write_1h: schedule.cache_write_1h,
         tiers: schedule.context_tiers,
         ..Default::default()
     })

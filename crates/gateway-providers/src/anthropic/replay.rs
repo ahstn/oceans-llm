@@ -207,7 +207,10 @@ impl AnthropicReplayStream {
                 if self.open.remove(&index).is_none() {
                     return Err(ReplayError::StopWithoutOpenBlock);
                 }
-                if let Some(arguments) = self.arguments.remove(&index) {
+                // A no-argument tool streams only an empty fragment; its start `input` stands.
+                if let Some(arguments) = self.arguments.remove(&index)
+                    && !arguments.is_empty()
+                {
                     let input: Value = serde_json::from_str(&arguments)
                         .map_err(|_| ReplayError::InvalidToolArguments)?;
                     self.blocks

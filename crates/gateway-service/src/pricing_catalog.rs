@@ -158,6 +158,29 @@ where
         })
     }
 
+    /// The catalog's global-location rates for `route`, ignoring the provider's location.
+    /// The catalog prices Vertex Anthropic only at the global endpoint.
+    pub(crate) async fn resolve_global_location_pricing(
+        &self,
+        provider: &ProviderConnection,
+        route: &ModelRoute,
+        occurred_at: OffsetDateTime,
+    ) -> Result<Option<ResolvedModelPricing>, GatewayError> {
+        let Some((pricing_provider_id, model_id)) =
+            catalog_metadata_target_for_route(provider, route)
+        else {
+            return Ok(None);
+        };
+        let record = resolve_catalog_pricing_record(
+            self.repo.as_ref(),
+            &pricing_provider_id,
+            &model_id,
+            occurred_at,
+        )
+        .await?;
+        Ok(record.as_ref().map(resolved_model_pricing))
+    }
+
     /// Reconcile the latest merged snapshot, reloading and retrying when another
     /// reconciliation raced this one. Returns the reconciled snapshot.
     async fn sync_latest_snapshot_with_retry(
@@ -280,6 +303,7 @@ fn resolved_model_pricing(record: &ModelPricingRecord) -> ResolvedModelPricing {
         output_cost_per_million_tokens: record.output_cost_per_million_tokens,
         cache_read_cost_per_million_tokens: record.cache_read_cost_per_million_tokens,
         cache_write_cost_per_million_tokens: record.cache_write_cost_per_million_tokens,
+        cache_write_1h_cost_per_million_tokens: record.cache_write_1h_cost_per_million_tokens,
         input_audio_cost_per_million_tokens: record.input_audio_cost_per_million_tokens,
         output_audio_cost_per_million_tokens: record.output_audio_cost_per_million_tokens,
         output_image_usd_per_million: record.output_image_usd_per_million,
@@ -493,6 +517,9 @@ pub struct PricingCatalogCostDocument {
     pub output: Option<String>,
     pub cache_read: Option<String>,
     pub cache_write: Option<String>,
+    /// USD per million 1-hour cache write tokens; `cache_write` prices 5-minute writes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_1h: Option<String>,
     pub input_audio: Option<String>,
     pub output_audio: Option<String>,
     /// USD per million image output tokens.
@@ -518,6 +545,8 @@ pub struct PricingCatalogContextTier {
     pub output: Option<String>,
     pub cache_read: Option<String>,
     pub cache_write: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_1h: Option<String>,
 }
 
 /// One service tier's schedule, in USD per million tokens at 4 dp like the base fields.
@@ -528,6 +557,8 @@ pub struct PricingCatalogServiceTierCost {
     pub output: Option<String>,
     pub cache_read: Option<String>,
     pub cache_write: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_1h: Option<String>,
     /// Context tiers within the service tier; an unset rate inherits the service tier's.
     /// Sorted ascending by `above_input_tokens`, thresholds unique.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

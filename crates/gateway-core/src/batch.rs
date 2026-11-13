@@ -198,6 +198,9 @@ pub struct BatchTokenRates {
     pub output: Option<Money4>,
     pub cache_read: Option<Money4>,
     pub cache_write: Option<Money4>,
+    /// Rate for 1-hour cache writes; `None` bills them at twice the input rate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_1h: Option<Money4>,
     /// Rate for image tokens within the completion tokens; absent in snapshots
     /// taken before image rates existed.
     #[serde(default)]
@@ -214,6 +217,7 @@ impl BatchTokenRates {
             output: tier.output.or(self.output),
             cache_read: tier.cache_read.or(self.cache_read),
             cache_write: tier.cache_write.or(self.cache_write),
+            cache_write_1h: tier.cache_write_1h.or(self.cache_write_1h),
             image_output: self.image_output,
         }
     }

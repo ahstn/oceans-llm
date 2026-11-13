@@ -468,11 +468,13 @@ mod tests {
             "output_cost_per_token_batches": 1e-06,
             "input_cost_per_token_above_1m_tokens": 9e-06,
             "cache_creation_input_token_cost_above_1hr": 9e-06,
-            "cache_creation_input_token_cost_above_1hr_above_200k_tokens": 9e-06,
+            "cache_creation_input_token_cost_above_1hr_above_272k_tokens": 1.8e-05,
+            "cache_creation_input_token_cost_above_12hr_above_200k_tokens": 9e-06,
         }}));
-        let tiers = &providers["openai"].models["gpt-5"].cost.tiers;
+        let cost = &providers["openai"].models["gpt-5"].cost;
+        assert_eq!(cost.cache_write_1h.as_deref(), Some("9.0000"));
         assert_eq!(
-            tiers,
+            &cost.tiers,
             &[
                 PricingCatalogContextTier {
                     above_input_tokens: 128_000,
@@ -480,6 +482,7 @@ mod tests {
                     output: None,
                     cache_read: Some("0.3000".to_string()),
                     cache_write: None,
+                    cache_write_1h: None,
                 },
                 PricingCatalogContextTier {
                     above_input_tokens: 272_000,
@@ -487,6 +490,7 @@ mod tests {
                     output: Some("4.0000".to_string()),
                     cache_read: None,
                     cache_write: None,
+                    cache_write_1h: Some("18.0000".to_string()),
                 },
             ]
         );

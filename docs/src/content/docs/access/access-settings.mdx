@@ -24,14 +24,25 @@ auth:
 
 | Field | Default | Notes |
 | --- | --- | --- |
-| `enabled` | `true` | Creates the bootstrap admin at startup. |
+| `enabled` | `false` | Allows an explicit bootstrap command or an opted-in `serve` startup to create the admin. |
 | `email` | `admin@local` | Must contain `@`. No entry in `users` can use this email. |
-| `password` | `literal.admin` | A secret field: `env.`, `file.` or `literal.`. |
-| `require_password_change` | `false` | When `true`, the admin must set a new password at first sign-in. |
+| `password` | unset | A secret field: `env.`, `file.` or `literal.`. |
+| `require_password_change` | `true` | When `true`, the admin must set a new password at first sign-in. |
 
 <Aside type="caution">
-The default password is `admin`. Set `password` from a secret and set `require_password_change: true` for any shared or exposed gateway.
+Bootstrap is also off by default in `gateway serve`; opt in with `GATEWAY_BOOTSTRAP_ADMIN=true`, `--bootstrap-admin=true`, or the one-shot `gateway bootstrap-admin` command. When `server.bind` is not loopback, `password` must use `env.*` or `file.*`, resolve to at least 16 characters with at least 8 distinct characters, and `require_password_change` must be `true`. Literal passwords remain available only for explicit loopback development configurations.
 </Aside>
+
+### Password sign-in protections
+
+Password sign-in has fixed, process-local protections, not extra YAML settings:
+
+- Each account allows 5 failed attempts and each source IP allows 20. Admission reserves capacity in both allowances atomically, including while an attempt waits for password verification. Cancelling an admitted attempt cannot avoid failure accounting.
+- Reaching either failed-attempt threshold starts a 1-second backoff. Further failures increase it exponentially to at most 60 seconds. History resets after 15 idle minutes. A successful sign-in clears that account's failures, but keeps other in-flight reservations and the source's history.
+- The account and source histories each hold at most 10,000 entries keyed by fixed-size, 32-byte SHA-256 identifiers, rather than retaining submitted email strings. Entries with in-flight reservations cannot be evicted.
+- Password hashing and verification share 4 blocking Argon2 jobs. Waiting more than 5 seconds for a slot returns `429`, as does a throttled sign-in. Cancelling a request does not release a slot while its Argon2 job is still running.
+
+These limits are per gateway process, not shared across replicas or persisted across restarts. They do not set an aggregate memory limit for all requests. The source IP follows [`server.trusted_proxies`](/configuration/#server); configure trusted proxies correctly before relying on source-based limits.
 
 ## `auth.oidc`
 

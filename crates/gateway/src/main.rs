@@ -26,8 +26,8 @@ use gateway_providers::{
 };
 use gateway_service::{
     AnalysisPolicy, DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, McpCredentialService,
-    ProviderCredentialService, RateLimiter, SkillService, WeightedRoutePlanner,
-    hash_gateway_key_secret,
+    PasswordAuthProtection, ProviderCredentialService, RateLimiter, SkillService,
+    WeightedRoutePlanner, hash_gateway_key_secret,
 };
 use gateway_store::{
     AnyStore, GatewayStore, MigrationStatus, S3SkillObjectStore, check_migrations_with_options,
@@ -322,6 +322,7 @@ async fn run_serve_with_store(
             service.store().clone(),
             gateway::http::mcp_gateway::stream_reach::STREAM_REACH_RECHECK_INTERVAL,
         ),
+        password_auth: Arc::new(PasswordAuthProtection::default()),
         identity_token_secret: Arc::new(load_identity_token_secret()),
         oidc_public_base_url: Arc::new(
             config

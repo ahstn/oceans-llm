@@ -32,6 +32,7 @@ pub mod model_access;
 pub mod model_metadata;
 pub mod model_resolution;
 pub mod outbound_fetch;
+mod password_auth;
 mod payload_bounding;
 pub mod pricing_catalog;
 pub mod provider_credentials;
@@ -148,6 +149,7 @@ pub use model_access::ModelAccess;
 pub use model_resolution::{
     ModelResolver, ResolvedGatewayRequest, ResolvedModelSelection, ResolvedProviderConnection,
 };
+pub use password_auth::{LoginAttempt, LoginThrottleScope, PasswordAuthProtection};
 pub use pricing_catalog::sources::{CatalogSourceId, fetch_vendored_source_snapshot};
 pub use pricing_catalog::{
     DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, PricingCatalog, PricingCatalogRefreshError,
@@ -185,5 +187,6 @@ pub use secret_storage::{
     encrypt_gateway_api_key_secret,
 };
 pub use service::{BatchUsageInput, GatewayService, RecordedChatUsage};
+pub use usage::{UsageEstimateInput, response_text_bytes};
 
 pub use skills::SkillService;

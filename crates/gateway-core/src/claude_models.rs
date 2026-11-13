@@ -28,10 +28,6 @@ pub fn claude_thinking_policy(upstream_model: &str) -> ClaudeThinkingPolicy {
     }
 }
 
-pub fn is_adaptive_only_claude(model: &str) -> bool {
-    is_normalized_adaptive_only_claude(&normalize_claude_model(model))
-}
-
 /// Expects a model already passed through `normalize_claude_model`.
 fn is_normalized_adaptive_only_claude(model: &str) -> bool {
     is_rolling_claude_alias(model)

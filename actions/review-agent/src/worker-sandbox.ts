@@ -1,8 +1,6 @@
-import { existsSync, realpathSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { existsSync, lstatSync, realpathSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 
-// The root starts empty. In particular, never mount procfs: its environ files
-// would expose model credentials to read/fetch tools, even in a PID namespace.
 export function sandboxCommand(
   actionRoot: string,
   workspace: string,
@@ -12,6 +10,21 @@ export function sandboxCommand(
   if (process.platform !== 'linux' || !existsSync('/usr/bin/bwrap')) {
     throw new Error('The review worker requires Linux with /usr/bin/bwrap (bubblewrap) installed')
   }
+  return {
+    command: '/usr/bin/bwrap',
+    args: sandboxArguments(actionRoot, workspace, tempDir, workerArgs),
+  }
+}
+
+// The root starts empty. In particular, never mount procfs: its environ files
+// would expose model credentials to read/fetch tools, even in a PID namespace.
+// Building the arguments needs no bubblewrap, so tests run on any platform.
+export function sandboxArguments(
+  actionRoot: string,
+  workspace: string,
+  tempDir: string,
+  workerArgs: string[],
+): string[] {
   const args = [
     '--unshare-user',
     '--unshare-pid',
@@ -38,6 +51,16 @@ export function sandboxCommand(
     const resolved = realpathSync(path)
     args.push('--ro-bind', resolved, path)
   }
+  // Diff preparation finishes before the worker starts, so model tools never need Git metadata.
+  const gitMetadata = join(workspace, '.git')
+  const gitMetadataType = lstatSync(gitMetadata)
+  if (gitMetadataType.isDirectory()) {
+    args.push('--tmpfs', gitMetadata)
+  } else if (gitMetadataType.isFile()) {
+    args.push('--ro-bind', '/dev/null', gitMetadata)
+  } else {
+    throw new Error('The review workspace .git metadata must be a file or directory')
+  }
   args.push(
     '--dev',
     '/dev',
@@ -52,5 +75,5 @@ export function sandboxCommand(
     process.execPath,
     ...workerArgs,
   )
-  return { command: '/usr/bin/bwrap', args }
+  return args
 }

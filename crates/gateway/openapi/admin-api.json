@@ -8907,7 +8907,7 @@
             "items": {
               "$ref": "#/components/schemas/AdminServiceTierPricingView"
             },
-            "description": "Rates for non-default service tiers on the same primary route, sorted by tier. A\nrequest billed at a tier with no rate for a token bucket it used is unpriced."
+            "description": "Rates for non-default service tiers on the same primary route, sorted by tier. A\nrequest these rates can't price is estimated at the default tier's rates."
           },
           "pricing_source": {
             "oneOf": [

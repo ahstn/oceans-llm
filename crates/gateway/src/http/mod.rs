@@ -110,7 +110,8 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
         .route("/v1/chat/completions", post(v1_chat_completions))
         .route("/v1/responses", post(v1_responses))
         .route("/v1/embeddings", post(v1_embeddings))
-        // OpenRouter serves `/images`; OpenAI SDKs call `/images/generations`.
+        // OpenRouter clients call `/images`; OpenAI SDKs call `/images/generations`. Both
+        // reach one handler, and the provider picks the upstream path.
         .route("/v1/images", post(v1_images))
         .route("/v1/images/generations", post(v1_images))
         .route("/v1/decisions", post(v1_decisions))

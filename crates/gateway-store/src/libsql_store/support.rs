@@ -714,6 +714,9 @@ pub(super) fn decode_usage_ledger_record(
     let pricing_tier_above_input_tokens: Option<i64> = row.get(36).map_err(to_query_error)?;
     let requested_service_tier: Option<String> = row.get(37).map_err(to_query_error)?;
     let served_service_tier: Option<String> = row.get(38).map_err(to_query_error)?;
+    let cache_write_1h_tokens: Option<i64> = row.get(39).map_err(to_query_error)?;
+    let cache_write_1h_cost_per_million_tokens_10000: Option<i64> =
+        row.get(40).map_err(to_query_error)?;
 
     Ok(UsageLedgerRecord {
         usage_event_id: parse_uuid(&usage_event_id)?,
@@ -732,6 +735,7 @@ pub(super) fn decode_usage_ledger_record(
         uncached_input_tokens,
         cache_read_tokens,
         cache_write_tokens,
+        cache_write_1h_tokens,
         completion_tokens: row.get(13).map_err(to_query_error)?,
         image_output_tokens,
         total_tokens: row.get(14).map_err(to_query_error)?,
@@ -756,6 +760,8 @@ pub(super) fn decode_usage_ledger_record(
         cache_read_cost_per_million_tokens: cache_read_cost_per_million_tokens_10000
             .map(Money4::from_scaled),
         cache_write_cost_per_million_tokens: cache_write_cost_per_million_tokens_10000
+            .map(Money4::from_scaled),
+        cache_write_1h_cost_per_million_tokens: cache_write_1h_cost_per_million_tokens_10000
             .map(Money4::from_scaled),
         image_output_cost_per_million_tokens: image_output_cost_per_million_tokens_10000
             .map(Money4::from_scaled),
@@ -792,6 +798,8 @@ pub(super) fn decode_model_pricing_record(
         row.get(21).map_err(to_query_error)?;
     let context_tiers_json: String = row.get(22).map_err(to_query_error)?;
     let service_tiers_json: String = row.get(23).map_err(to_query_error)?;
+    let cache_write_1h_cost_per_million_tokens_10000: Option<i64> =
+        row.get(24).map_err(to_query_error)?;
 
     Ok(ModelPricingRecord {
         model_pricing_id: parse_uuid(&model_pricing_id)?,
@@ -804,6 +812,8 @@ pub(super) fn decode_model_pricing_record(
         cache_read_cost_per_million_tokens: cache_read_cost_per_million_tokens_10000
             .map(Money4::from_scaled),
         cache_write_cost_per_million_tokens: cache_write_cost_per_million_tokens_10000
+            .map(Money4::from_scaled),
+        cache_write_1h_cost_per_million_tokens: cache_write_1h_cost_per_million_tokens_10000
             .map(Money4::from_scaled),
         input_audio_cost_per_million_tokens: input_audio_cost_per_million_tokens_10000
             .map(Money4::from_scaled),

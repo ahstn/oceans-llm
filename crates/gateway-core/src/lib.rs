@@ -29,8 +29,8 @@ pub use agent_analysis::{
     AgentRequestLogLinkRecord, AgentSessionAnalysisRecord, AgentSessionAnalysisRepository,
     AgentSessionListPage, AgentSessionListQuery, AgentSessionRecord, AgentSessionReportRepository,
     AgentSessionRequestLinkRecord, AgentSessionSourceRecord, AgentSessionTraceRecord,
-    AgentSessionTraceRepository, MAX_AGENT_ANALYSIS_DISTINCT_ITEMS, MAX_AGENT_SESSION_NESTED_FACTS,
-    MAX_AGENT_SESSION_PAGE_SIZE, MAX_AGENT_SESSION_REQUESTS,
+    AgentSessionTraceRepository, MAX_AGENT_SESSION_NESTED_FACTS, MAX_AGENT_SESSION_PAGE_SIZE,
+    MAX_AGENT_SESSION_REQUESTS,
 };
 pub use agent_session_analysis::{
     ActivityInterval, AgentSessionId, AgentSessionSourceId, AnalysisId, AnalysisMetricPolicy,
@@ -123,16 +123,15 @@ pub use domain::{
     ReviewAgentPullRequestRecord, ReviewAgentPullRequestState, ReviewAgentRepositoryRecord,
     ReviewAgentRepositoryStatus, ReviewAgentRunRecord, ReviewAgentRunStatus, ReviewAgentSettings,
     RouteCompatibility, RoutePricingOverride, RouteServiceTierPricing,
-    SYSTEM_BOOTSTRAP_ADMIN_EMAIL, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SeedApiKey,
-    SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey,
-    SeedModel, SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider,
-    SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership, SeedUserModelBudgetDefault,
-    ServiceAccountRecord, ServiceAccountStatus, ServiceTierPricing, SpendDailyAggregateRecord,
-    SpendModelAggregateRecord, SpendModelTokenDailyRecord, SpendOwnerAggregateRecord,
-    SpendOwnerTokenDailyRecord, TeamMembershipRecord, TeamRecord, TokenUsageBuckets,
-    TransferExternalMcpServerOwnershipRecord, UpdateExternalMcpServerRecord,
-    UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord, UpdateReviewAgentRunRecord,
-    UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
+    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SeedApiKey, SeedApiKeySecretMaterial, SeedBudget,
+    SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute,
+    SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
+    SeedUserMembership, SeedUserModelBudgetDefault, ServiceAccountRecord, ServiceAccountStatus,
+    ServiceTierPricing, SpendDailyAggregateRecord, SpendModelAggregateRecord,
+    SpendModelTokenDailyRecord, SpendOwnerAggregateRecord, SpendOwnerTokenDailyRecord,
+    TeamMembershipRecord, TeamRecord, TokenUsageBuckets, TransferExternalMcpServerOwnershipRecord,
+    UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord,
+    UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
     UpsertMcpUpstreamCredentialBindingRecord, UpsertProviderUserCredentialRecord,
     UpsertReviewAgentPullRequestRecord, UsageLeaderboardBucketRecord,
     UsageLeaderboardHarnessRecord, UsageLeaderboardUserRecord, UsageLedgerRecord,
@@ -198,7 +197,7 @@ pub use protocol::decisions::{
 };
 pub use protocol::openai::{
     ChatCompletionsRequest, EmbeddingsRequest, OpenAiErrorBody, OpenAiErrorEnvelope,
-    ResponseOutputItem, ResponseUsage, ResponsesRequest, ResponsesResponse, ResponsesStreamEvent,
+    ResponsesRequest,
 };
 pub use protocol::translate::{
     anthropic_messages_request_to_core, core_chat_request_to_openai,

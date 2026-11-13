@@ -122,6 +122,8 @@ pub(super) fn map_chat_request_to_converse(
     }
     extract_converse_request_controls(&mut body, &mut passthrough, request.stream)?;
     merge_object_overrides(&mut body, &context.extra_body);
+    // After the merge, so route-supplied `toolConfig` counts as tools.
+    map_converse_parallel_tool_calls(&mut body, &mut passthrough, &context.upstream_model)?;
     validate_converse_tool_choice(&body, &context.upstream_model)?;
     validate_converse_request_controls(&body, request.stream)?;
     apply_converse_anthropic_thinking_compatibility(
@@ -135,7 +137,7 @@ pub(super) fn map_chat_request_to_converse(
         &context.upstream_model,
     )?;
 
-    reject_openai_only_fields(&passthrough)?;
+    strip_openai_only_fields(&mut passthrough, "aws_bedrock Converse")?;
     reject_unknown_converse_fields(&passthrough)?;
     Ok(Value::Object(body))
 }
@@ -513,7 +515,11 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
         body.extend(tools);
     }
     extract_anthropic_passthrough_fields(&mut body, &mut passthrough);
+    if let Some(parallel) = passthrough.remove("parallel_tool_calls") {
+        body.insert("parallel_tool_calls".to_string(), parallel);
+    }
     merge_object_overrides(&mut body, &context.extra_body);
+    crate::anthropic::translate_parallel_tool_calls(&mut body)?;
     // Canonicalize validated entries before model policy adds an automatic effort beta. Raw
     // duplicates at the input limit must not make that generated entry exceed the array limit.
     body.remove("anthropic_beta");
@@ -530,7 +536,7 @@ pub(crate) fn map_chat_request_to_anthropic_messages(
             apply_messages_thinking(&mut body, &mut passthrough, &context.upstream_model)?;
         }
     }
-    reject_openai_only_fields(&passthrough)?;
+    strip_openai_only_fields(&mut passthrough, "Anthropic Messages")?;
     reject_unknown_anthropic_messages_fields(&passthrough)?;
     validate_anthropic_sampling_fields(&mut body, &context.upstream_model)?;
 

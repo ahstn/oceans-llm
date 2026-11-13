@@ -457,7 +457,7 @@ pub struct AdminModelView {
     /// threshold. Empty when the price comes from a route pricing override.
     pub pricing_tiers: Vec<AdminPricingTierView>,
     /// Rates for non-default service tiers on the same primary route, sorted by tier. A
-    /// request billed at a tier with no rate for a token bucket it used is unpriced.
+    /// request these rates can't price is estimated at the default tier's rates.
     pub pricing_service_tiers: Vec<AdminServiceTierPricingView>,
     pub pricing_source: Option<EffectiveMetadataSourceView>,
     pub pricing_varies_by_route: bool,

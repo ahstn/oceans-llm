@@ -6,6 +6,12 @@ This page is for maintainers testing admin authentication from the source-built 
 
 ## Local Compose Stack
 
+The local gateway listens on `0.0.0.0` inside its container, so it rejects a short or repository-known bootstrap password. Export a unique password of at least 16 characters before you start the stack, and keep it: the first start seeds it into the local database.
+
+```shell
+export GATEWAY_BOOTSTRAP_ADMIN_PASSWORD="$(openssl rand -base64 24)"
+```
+
 Run the source-built stack with the SSO profile:
 
 ```shell
@@ -44,18 +50,18 @@ Local defaults are intentionally simple and only belong to the disposable compos
 
 | Account or secret | Value |
 | --- | --- |
-| Fresh local bootstrap admin | `admin@local` / `admin` |
+| Fresh local bootstrap admin | `admin@local` / your `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD`, then a new password |
 | Authentik admin | `akadmin@example.com` / `akadmin-password` |
 | Authentik SSO test user | `sso-user@example.com` / `sso-user-password` |
 | OIDC client id | `oceans-llm` |
 | OIDC client secret | `oceans-llm-local-secret` |
 | Gateway API key | `gwk_localdev.replace-me` |
 
-Existing Docker volumes keep the bootstrap admin password that was first seeded. If an older volume was created with `change-me-admin`, that password remains valid until the local gateway database is recreated or the password is changed through the product flow.
+Existing Docker volumes keep the bootstrap admin password that was first seeded. If an older volume was created with `admin` or `change-me-admin`, that password remains valid until the local gateway database is recreated or the password is changed through the product flow.
 
 ## SSO Test Flow
 
-1. Start the stack:
+1. Export `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD` as shown above, then start the stack:
 
 ```shell
 BUN_VERSION="$(mise tool bun --requested)" RUST_VERSION="$(mise tool rust --requested)" docker compose --profile sso -f compose.local.yaml up --build
@@ -74,8 +80,8 @@ Use password login when testing the bootstrap session path without SSO.
 
 1. Open `http://localhost:8080/admin/login`.
 2. Sign in as `admin@local`.
-3. Use `admin` on a fresh local database, or the password that was seeded into the existing local volume.
-4. If password rotation is required, complete the rotation and continue to `/admin`.
+3. Use your `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD` on a fresh local database, or the password that was seeded into the existing local volume.
+4. Set a new password when asked, then continue to `/admin`.
 
 The bootstrap admin is created only when no platform admin already exists. Changing `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD` after the first seed does not rewrite an existing local password.
 
@@ -138,7 +144,7 @@ Authentik rejects the callback:
 - confirm `GATEWAY_PUBLIC_BASE_URL` is `http://localhost:8080`
 - confirm the client secret matches `AUTHENTIK_OCEANS_LLM_CLIENT_SECRET`
 
-Password login does not accept `admin`:
+Password login does not accept your `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD`:
 
 - check whether the local Postgres volume predates the current fixture
 - try the previously seeded local password
