@@ -113,7 +113,7 @@ To deliver quarantined entries, configure a key for their owner again, then run 
 
 ## Merged pull requests
 
-Squash and rebase merges create new commits on GitHub that have no Git AI notes. `oceans hook prs` reads merged pull requests with the GitHub CLI, and the gateway joins each one to the notes of its original commits by SHA. The gateway needs no GitHub token.
+Squash and rebase merges create new commits on GitHub that have no Git AI notes. `oceans hook prs` reads merged pull requests with the GitHub CLI, and the gateway joins each one to the notes of its original commits by SHA. The gateway needs no GitHub token. When several developers sync the same repository, the report still counts each pull request once.
 
 When an agent session starts in a repository, the session hook starts `oceans hook prs --if-stale 1h` in the background, so each repository syncs at most once an hour. To sync now, run it in the repository:
 
@@ -165,7 +165,7 @@ The **Attribution** page covers the last 7, 30 or 90 days. Platform admins see e
 - **Requests and cost** come from gateway traffic. A commit gets the requests of each session that wrote it, made after that session's previous commit and up to this commit. Requests after a session's last commit count as uncommitted work. Totals therefore add up without counting a request twice.
 - **Unpriced requests** are counted separately, and never treated as free. See [Pricing catalog and accounting](/spend/pricing-and-accounting/).
 - **People** are matched by email. Author emails in notes and pull request commits are matched to Oceans users. A commit without an email counts for the key's owner. A contributor whose email matches no Oceans user is counted, but not named.
-- **Sessions** join to gateway requests when the session id from a note or a session hook matches one the gateway recorded for the same owner. The match doesn't depend on which agent the gateway thinks sent the requests. This matters for OMP, because OMP looks like Claude Code when it uses the Messages API. A session with no commit yet still counts its requests as uncommitted work. The gateway reads these session ids:
+- **Sessions** join to gateway requests when the session id from a note or a session hook matches one the gateway recorded for the same owner. The match doesn't depend on which agent the gateway thinks sent the requests. This matters for OMP, because OMP looks like Claude Code when it uses the Messages API. A session with no commit yet still counts its requests as uncommitted work, even when it started before the window, up to 30 days before. The gateway reads these session ids:
 
   | Agent | Session id the gateway reads |
   | --- | --- |

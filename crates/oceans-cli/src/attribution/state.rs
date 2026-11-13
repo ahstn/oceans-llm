@@ -74,6 +74,36 @@ struct OwnershipCache {
     lookups: Vec<CachedOwnership>,
 }
 
+impl OwnershipCache {
+    fn cache_lookup(&mut self, lookup: CachedOwnership) {
+        self.lookups.retain(|cached| {
+            cached.gateway_url != lookup.gateway_url
+                || cached.key_fingerprint != lookup.key_fingerprint
+        });
+        self.lookups.insert(0, lookup);
+        self.lookups.truncate(MAX_CACHED_LOOKUPS);
+    }
+
+    /// Compare-and-set: makes `lookup` current only while `current` is still `seen` (or is
+    /// already `lookup`), then updates `seen` to match. Returns whether `current` changed.
+    fn replace_current_if(
+        &mut self,
+        seen: &mut Option<CachedOwnership>,
+        lookup: CachedOwnership,
+    ) -> bool {
+        if self.current.as_ref() == Some(&lookup) {
+            *seen = Some(lookup);
+            return false;
+        }
+        if self.current != *seen {
+            return false;
+        }
+        self.current = Some(lookup.clone());
+        *seen = Some(lookup);
+        true
+    }
+}
+
 pub fn state_root(env: &Env) -> Option<PathBuf> {
     let base = env.dir_var("XDG_STATE_HOME");
     #[cfg(windows)]
@@ -241,6 +271,11 @@ impl State {
             .map(|current| current.ownership_scope)
     }
 
+    /// The current ownership, for a later `*_unless_changed` update to compare against.
+    pub fn current_ownership(&self) -> Option<CachedOwnership> {
+        self.ownership_cache().current
+    }
+
     pub fn cached_ownership(
         &self,
         gateway_url: &str,
@@ -258,30 +293,41 @@ impl State {
         fingerprint: &str,
         ownership: &Ownership,
     ) -> anyhow::Result<()> {
+        let lookup = cached_lookup(gateway_url, fingerprint, ownership);
         let mut cache = self.ownership_cache();
-        let lookup = CachedOwnership {
-            gateway_url: gateway_url.to_owned(),
-            key_fingerprint: fingerprint.to_owned(),
-            ownership_scope: ownership.ownership_scope.clone(),
-            owner_kind: ownership.owner_kind.clone(),
-            owner_id: ownership.owner_id.clone(),
-        };
-        cache.lookups.retain(|cached| {
-            cached.gateway_url != gateway_url || cached.key_fingerprint != fingerprint
-        });
-        cache.lookups.insert(0, lookup.clone());
-        cache.lookups.truncate(MAX_CACHED_LOOKUPS);
+        cache.cache_lookup(lookup.clone());
         cache.current = Some(lookup);
         self.write_ownership_cache(&cache)
     }
 
-    /// Makes an existing lookup current again, for a key switched back to an earlier owner.
-    pub fn make_current(&self, lookup: CachedOwnership) -> anyhow::Result<()> {
+    /// Caches a lookup like `record_ownership`, but makes it the current scope only while the
+    /// current ownership is still `seen_current`, read before the lookup started. A login that
+    /// ran meanwhile keeps its scope. `seen_current` becomes the lookup once it is current.
+    pub fn record_ownership_unless_changed(
+        &self,
+        gateway_url: &str,
+        fingerprint: &str,
+        ownership: &Ownership,
+        seen_current: &mut Option<CachedOwnership>,
+    ) -> anyhow::Result<()> {
+        let lookup = cached_lookup(gateway_url, fingerprint, ownership);
         let mut cache = self.ownership_cache();
-        if cache.current.as_ref() == Some(&lookup) {
+        cache.cache_lookup(lookup.clone());
+        cache.replace_current_if(seen_current, lookup);
+        self.write_ownership_cache(&cache)
+    }
+
+    /// Makes an existing lookup current again, for a key switched back to an earlier owner,
+    /// under the same rule as `record_ownership_unless_changed`.
+    pub fn make_current_unless_changed(
+        &self,
+        lookup: CachedOwnership,
+        seen_current: &mut Option<CachedOwnership>,
+    ) -> anyhow::Result<()> {
+        let mut cache = self.ownership_cache();
+        if !cache.replace_current_if(seen_current, lookup) {
             return Ok(());
         }
-        cache.current = Some(lookup);
         self.write_ownership_cache(&cache)
     }
 
@@ -347,6 +393,16 @@ impl State {
             }
         }
         Ok(())
+    }
+}
+
+fn cached_lookup(gateway_url: &str, fingerprint: &str, ownership: &Ownership) -> CachedOwnership {
+    CachedOwnership {
+        gateway_url: gateway_url.to_owned(),
+        key_fingerprint: fingerprint.to_owned(),
+        ownership_scope: ownership.ownership_scope.clone(),
+        owner_kind: ownership.owner_kind.clone(),
+        owner_id: ownership.owner_id.clone(),
     }
 }
 

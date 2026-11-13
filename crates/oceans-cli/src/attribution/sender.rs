@@ -13,7 +13,7 @@ use serde::Deserialize;
 use super::{
     ownership::{LookupError, key_fingerprint, lookup},
     queue::{Entry, read_entry},
-    state::{LOCK_TIMEOUT, State},
+    state::{CachedOwnership, LOCK_TIMEOUT, State},
 };
 use crate::{client::Client, config::Connection};
 
@@ -71,8 +71,11 @@ pub async fn send(
             break;
         }
         if sender.is_none() {
+            // Read before the key is resolved, so a login that saves another key from here on
+            // keeps its scope current.
+            let seen_current = state.current_ownership();
             let connection = connect.take().expect("connects once")()?;
-            sender = Some(Sender::new(state, connection, options)?);
+            sender = Some(Sender::new(state, connection, seen_current, options)?);
         }
         let active = sender.as_mut().expect("created above");
         if let Err(stop) = active.run(&mut report).await {
@@ -96,6 +99,9 @@ struct Sender<'a> {
     gateway_url: String,
     fingerprint: String,
     scope: Option<String>,
+    /// The ownership cache's current entry as this sender last saw or set it. The sender
+    /// replaces it only if nothing else, such as `oceans login`, changed it since.
+    seen_current: Option<CachedOwnership>,
     options: &'a SendOptions,
     /// After the gateway refuses a whole batch, its entries go one at a time to find the one
     /// it refuses. Counts the entries left to send that way.
@@ -134,6 +140,7 @@ impl<'a> Sender<'a> {
     fn new(
         state: &'a State,
         connection: Connection,
+        seen_current: Option<CachedOwnership>,
         options: &'a SendOptions,
     ) -> anyhow::Result<Self> {
         Ok(Self {
@@ -142,6 +149,7 @@ impl<'a> Sender<'a> {
             gateway_url: connection.url.to_string(),
             client: Client::new(connection.url, &connection.api_key)?,
             scope: None,
+            seen_current,
             options,
             one_at_a_time: 0,
             owner_changes: 0,
@@ -177,13 +185,20 @@ impl<'a> Sender<'a> {
             .cached_ownership(&self.gateway_url, &self.fingerprint)
         {
             self.scope = Some(cached.ownership_scope.clone());
-            self.state.make_current(cached).map_err(text)?;
+            self.state
+                .make_current_unless_changed(cached, &mut self.seen_current)
+                .map_err(text)?;
             return Ok(Step::Progress);
         }
         match lookup(&self.client).await {
             Ok(ownership) => {
                 self.state
-                    .record_ownership(&self.gateway_url, &self.fingerprint, &ownership)
+                    .record_ownership_unless_changed(
+                        &self.gateway_url,
+                        &self.fingerprint,
+                        &ownership,
+                        &mut self.seen_current,
+                    )
                     .map_err(text)?;
                 self.scope = Some(ownership.ownership_scope);
                 Ok(Step::Progress)

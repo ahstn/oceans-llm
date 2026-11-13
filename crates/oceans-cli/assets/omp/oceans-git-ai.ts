@@ -12,15 +12,17 @@
 // Both binaries are optional: a missing binary makes the matching hook a no-op.
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import { type ChildProcess, spawn } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
+import { readFile, realpath, stat } from "node:fs/promises";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 
 const OCEANS_BIN = "__OCEANS_BIN__";
 const GIT_AI_BIN = "__GIT_AI_BIN__";
 const SESSION_ENV = "OCEANS_SESSION_ID";
 const CHECKPOINT_TIMEOUT_MS = 10_000;
 // `dirty_files` is an optional pre-edit snapshot. Larger files are left out of it, as are
-// non-regular files such as FIFOs, which a read would block on.
+// non-regular files such as FIFOs, which a read would block on, and files outside the
+// session's working directory, so a tool call naming a credential file elsewhere never puts
+// its contents in the payload. git-ai reads any file left out from disk itself.
 const MAX_DIRTY_FILE_BYTES = 8 * 1024 * 1024;
 
 type CanonicalTool = "edit" | "write" | "bash";
@@ -75,8 +77,16 @@ function absolutePaths(cwd: string, paths: string[]): string[] {
 	return [...new Set(paths.map(path => (isAbsolute(path) ? path : resolve(cwd, path))))];
 }
 
-async function dirtyFiles(paths: string[]): Promise<Record<string, string>> {
+/** Whether `path`, symlinks resolved, is `root` or inside it. `root` is already resolved. */
+function isInside(root: string, path: string): boolean {
+	const rel = relative(root, path);
+	return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+}
+
+async function dirtyFiles(cwd: string, paths: string[]): Promise<Record<string, string>> {
 	const files: Record<string, string> = {};
+	const root = await realpath(cwd).catch(() => null);
+	if (!root) return files;
 	await Promise.all(
 		paths.map(async path => {
 			const info = await stat(path).catch(() => null);
@@ -86,6 +96,8 @@ async function dirtyFiles(paths: string[]): Promise<Record<string, string>> {
 				return;
 			}
 			if (!info.isFile() || info.size > MAX_DIRTY_FILE_BYTES) return;
+			const target = await realpath(path).catch(() => null);
+			if (!target || !isInside(root, target)) return;
 			const content = await readFile(path, "utf8").catch(() => null);
 			if (content !== null) files[path] = content;
 		}),
@@ -149,11 +161,24 @@ export default function oceansGitAi(pi: ExtensionAPI) {
 		return run(GIT_AI_BIN, ["checkpoint", "pi", "--hook-input", "stdin"], JSON.stringify(payload), false);
 	};
 
-	const reportSession = (event: "start" | "end", ctx: ExtensionContext) => {
-		const sessionId = ctx.sessionManager.getSessionId();
-		if (!sessionId) return Promise.resolve();
-		const payload = { session_id: sessionId, cwd: ctx.cwd, event, harness_version: harnessVersion };
+	type ActiveSession = { id: string; cwd: string };
+	const reportSession = (event: "start" | "end", session: ActiveSession) => {
+		const payload = { session_id: session.id, cwd: session.cwd, event, harness_version: harnessVersion };
 		return run(OCEANS_BIN, ["hook", "omp"], JSON.stringify(payload), true);
+	};
+
+	// The session each session manager last reported a start for. A switch or branch fires
+	// after it has happened, so it ends the previous session here rather than in
+	// `session_before_switch`, which another extension can still cancel.
+	const active = new WeakMap<object, ActiveSession>();
+	const enterSession = async (ctx: ExtensionContext) => {
+		const id = ctx.sessionManager.getSessionId();
+		const previous = active.get(ctx.sessionManager);
+		if (!id || previous?.id === id) return;
+		const current = { id, cwd: ctx.cwd };
+		active.set(ctx.sessionManager, current);
+		if (previous) await reportSession("end", previous);
+		await reportSession("start", current);
 	};
 
 	// Subagents run in this process and share its environment. Only the main session sets the
@@ -167,24 +192,25 @@ export default function oceansGitAi(pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		exportSession(ctx);
-		await reportSession("start", ctx);
-	});
-
-	pi.on("session_before_switch", async (_event, ctx) => {
-		await reportSession("end", ctx);
+		await enterSession(ctx);
 	});
 
 	pi.on("session_switch", async (_event, ctx) => {
 		exportSession(ctx);
-		await reportSession("start", ctx);
+		await enterSession(ctx);
 	});
 
+	// A branch continues in a new session file with its own id.
 	pi.on("session_branch", async (_event, ctx) => {
 		exportSession(ctx);
+		await enterSession(ctx);
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
-		await reportSession("end", ctx);
+		const previous = active.get(ctx.sessionManager);
+		if (!previous) return;
+		active.delete(ctx.sessionManager);
+		await reportSession("end", previous);
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
@@ -202,7 +228,7 @@ export default function oceansGitAi(pi: ExtensionAPI) {
 		pending.set(event.toolCallId, call);
 		await checkpoint("before_edit", call, ctx, event.toolCallId, {
 			will_edit_filepaths: filepaths,
-			dirty_files: await dirtyFiles(filepaths),
+			dirty_files: await dirtyFiles(ctx.cwd, filepaths),
 			tool_input: event.input,
 		});
 	});

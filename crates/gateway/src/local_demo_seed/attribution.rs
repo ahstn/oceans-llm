@@ -44,6 +44,10 @@ struct DemoSession {
     started: Duration,
     ended: Option<Duration>,
     ai_lines: i64,
+    /// Puts the commit midway between this many of the session's linked requests and the
+    /// next, instead of at its `age`. A reseed re-dates request logs, but a session keeps the
+    /// link times from its first seed, so only the stored times split the requests reliably.
+    commit_after_requests: Option<usize>,
 }
 
 struct DemoCommit {
@@ -94,6 +98,7 @@ const DEMO_COMMITS: &[DemoCommit] = &[
             started: Duration::minutes(117),
             ended: Some(Duration::minutes(61)),
             ai_lines: 148,
+            commit_after_requests: None,
         }),
     },
     // Seven of the Jira session's requests come before it and three after.
@@ -115,6 +120,7 @@ const DEMO_COMMITS: &[DemoCommit] = &[
             started: Duration::minutes(30),
             ended: None,
             ai_lines: 36,
+            commit_after_requests: Some(7),
         }),
     },
     // No gateway request carries this session, so the commit shows as unjoined.
@@ -136,6 +142,7 @@ const DEMO_COMMITS: &[DemoCommit] = &[
             started: Duration::hours(49),
             ended: Some(Duration::hours(48)),
             ai_lines: 64,
+            commit_after_requests: None,
         }),
     },
     DemoCommit {
@@ -193,8 +200,19 @@ pub(super) async fn seed_demo_attribution(
             .await
             .context("failed deleting previously seeded attribution")?;
     }
+    let mut committed = HashMap::new();
+    for commit in DEMO_COMMITS {
+        committed.insert(commit.commit_sha, committed_at(store, commit, now).await?);
+    }
     for (sequence, commit) in (1..).zip(DEMO_COMMITS) {
-        let write = commit_write(commit, &owners[commit.owner], &user_id, sequence, now)?;
+        let write = commit_write(
+            commit,
+            &owners[commit.owner],
+            &user_id,
+            sequence,
+            committed[commit.commit_sha],
+            now,
+        )?;
         store
             .apply_attribution_commit(&write)
             .await
@@ -206,13 +224,53 @@ pub(super) async fn seed_demo_attribution(
         }
     }
     for pull_request in DEMO_PULL_REQUESTS {
-        let write = pull_request_write(pull_request, &owners[pull_request.owner], &user_id, now)?;
+        let write = pull_request_write(
+            pull_request,
+            &owners[pull_request.owner],
+            &user_id,
+            &committed,
+            now,
+        )?;
         store
             .apply_attribution_pull_request(&write)
             .await
             .with_context(|| format!("failed seeding pull request #{}", pull_request.number))?;
     }
     Ok(())
+}
+
+/// `now - age`, or the point [`DemoSession::commit_after_requests`] picks when the session has
+/// enough linked requests.
+async fn committed_at(
+    store: &AnyStore,
+    commit: &DemoCommit,
+    now: OffsetDateTime,
+) -> anyhow::Result<OffsetDateTime> {
+    let fallback = now - commit.age;
+    let Some((session, after)) = commit
+        .session
+        .as_ref()
+        .and_then(|session| Some((session, session.commit_after_requests?)))
+    else {
+        return Ok(fallback);
+    };
+    let mut times = store
+        .list_attribution_request_facts(&[session.session_hash.to_string()], now)
+        .await
+        .context("failed reading the demo session's requests")?
+        .into_iter()
+        .map(|fact| fact.occurred_at)
+        .collect::<Vec<_>>();
+    times.sort_unstable();
+    Ok(
+        match (
+            after.checked_sub(1).and_then(|index| times.get(index)),
+            times.get(after),
+        ) {
+            (Some(before), Some(next)) => *before + (*next - *before) / 2,
+            _ => fallback,
+        },
+    )
 }
 
 fn owner(user_id: Uuid) -> AttributionOwner {
@@ -228,6 +286,7 @@ fn commit_write(
     owner: &AttributionOwner,
     user_id: &impl Fn(&str) -> anyhow::Result<Uuid>,
     sequence: i64,
+    committed_at: OffsetDateTime,
     now: OffsetDateTime,
 ) -> anyhow::Result<AttributionCommitWrite> {
     let author_user_id = commit.author.map(user_id).transpose()?;
@@ -263,7 +322,7 @@ fn commit_write(
         freshness: AttributionFreshness {
             installation_id: INSTALLATION_ID.to_string(),
             sequence,
-            observed_at: now - commit.age,
+            observed_at: committed_at,
             late_sequenced: false,
         },
         sessions,
@@ -308,6 +367,7 @@ fn pull_request_write(
     pull_request: &DemoPullRequest,
     owner: &AttributionOwner,
     user_id: &impl Fn(&str) -> anyhow::Result<Uuid>,
+    committed: &HashMap<&str, OffsetDateTime>,
     now: OffsetDateTime,
 ) -> anyhow::Result<AttributionPullRequestWrite> {
     let commits = pull_request
@@ -322,7 +382,7 @@ fn pull_request_write(
             Ok(AttributionPullRequestCommit {
                 commit_sha: commit.commit_sha.to_string(),
                 subject: Some(commit.subject.to_string()),
-                authored_at: Some(now - commit.age),
+                authored_at: committed.get(commit.commit_sha).copied(),
                 author_user_id,
                 author_email_hash: author_user_id
                     .is_none()

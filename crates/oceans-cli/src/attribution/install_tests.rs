@@ -165,27 +165,35 @@ fn the_omp_extension_gets_both_binary_paths() {
 
 #[test]
 fn install_locations_follow_the_harness_environment() {
-    let home = Path::new("/home/alice");
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join("alice");
+    let claude_dir = root.path().join("cfg").join("claude");
+    let pi_dir = root.path().join("agents").join("pi");
     assert_eq!(
-        claude_settings_path(&Env::fixed(&[], Some(home))),
-        Some("/home/alice/.claude/settings.json".into())
+        claude_settings_path(&Env::fixed(&[], Some(&home))),
+        Some(home.join(".claude").join("settings.json"))
     );
     assert_eq!(
         claude_settings_path(&Env::fixed(
-            &[("CLAUDE_CONFIG_DIR", "/cfg/claude")],
-            Some(home)
+            &[("CLAUDE_CONFIG_DIR", claude_dir.to_str().unwrap())],
+            Some(&home)
         )),
-        Some("/cfg/claude/settings.json".into())
+        Some(claude_dir.join("settings.json"))
     );
     assert_eq!(
-        omp_extension_path(&Env::fixed(&[], Some(home))),
-        Some("/home/alice/.omp/agent/extensions/oceans-git-ai.ts".into())
+        omp_extension_path(&Env::fixed(&[], Some(&home))),
+        Some(
+            home.join(".omp")
+                .join("agent")
+                .join("extensions")
+                .join("oceans-git-ai.ts")
+        )
     );
     assert_eq!(
         omp_extension_path(&Env::fixed(
-            &[("PI_CODING_AGENT_DIR", "/agents/pi")],
-            Some(home)
+            &[("PI_CODING_AGENT_DIR", pi_dir.to_str().unwrap())],
+            Some(&home)
         )),
-        Some("/agents/pi/extensions/oceans-git-ai.ts".into())
+        Some(pi_dir.join("extensions").join("oceans-git-ai.ts"))
     );
 }

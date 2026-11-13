@@ -1,5 +1,3 @@
-import type { KeyboardEvent } from 'react'
-
 import { CompactCount } from '@/components/data/compact-count'
 import { AdminTableHeader, type AdminTableColumn } from '@/components/shared/admin-table-header'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
@@ -23,7 +21,7 @@ const COLUMNS: AdminTableColumn[] = [
 
 /**
  * One row per Oceans user, matched by author email or else the key owner. With `onSelectUser`
- * (platform admins), a row filters the report to that user by click, Enter, or Space.
+ * (platform admins), each user's name is a toggle button that filters the report to that user.
  */
 export function UserActivityTable({
   users,
@@ -70,27 +68,26 @@ function UserActivityRow({
   selected: boolean
   onSelect?: (userId: string) => void
 }) {
-  const select = onSelect ? () => onSelect(row.user.id) : undefined
-  const onKeyDown = select
-    ? (event: KeyboardEvent<HTMLTableRowElement>) => {
-        // Keys pressed on a focusable child, such as a count's tooltip trigger, stay there.
-        if (event.target !== event.currentTarget) return
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault()
-          select()
-        }
-      }
-    : undefined
   return (
     <TableRow
       data-state={selected ? 'selected' : undefined}
       aria-current={selected ? 'true' : undefined}
-      className={select ? 'cursor-pointer' : undefined}
-      tabIndex={select ? 0 : undefined}
-      onClick={select}
-      onKeyDown={onKeyDown}
     >
-      <PersonCell person={row.user} fallback={null} />
+      {onSelect ? (
+        <TableCell className="px-3 py-2">
+          <button
+            type="button"
+            aria-pressed={selected}
+            aria-label={`Filter the report to ${row.user.name}`}
+            className="focus-visible:ring-ring rounded-sm text-left font-medium outline-none hover:underline focus-visible:ring-2"
+            onClick={() => onSelect(row.user.id)}
+          >
+            {row.user.name}
+          </button>
+        </TableCell>
+      ) : (
+        <PersonCell person={row.user} fallback={null} />
+      )}
       <CountCell value={row.commit_count} unit="commits" />
       <CountCell value={row.merged_pull_request_count} unit="merged pull requests" />
       <CountCell value={row.ai_lines} unit="AI lines" />

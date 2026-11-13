@@ -33,12 +33,15 @@ pub enum Change {
 }
 
 /// Registers `<oceans> hook notes` as git-ai's `post_notes_updated` hook and restarts the
-/// git-ai background service so it takes effect.
+/// git-ai background service so it takes effect. The restart also runs when the hook is
+/// already registered, so a retry after a failed restart still loads it.
 pub fn git_ai(oceans: &str) -> anyhow::Result<Change> {
     let git_ai = find_on_path("git-ai").context("git-ai is not on PATH; install Git AI first")?;
     let command = format!("{oceans} hook notes");
     let output = run_git_ai(&git_ai, &["config", "git_ai_hooks"])?;
     if registered_hooks(&output)?.contains(&command) {
+        run_git_ai(&git_ai, &["bg", "restart"])
+            .context("git-ai bg restart failed; restart it to load the hook")?;
         return Ok(Change::Unchanged);
     }
     run_git_ai(&git_ai, &["config", "--add", GIT_AI_HOOK, &command])?;

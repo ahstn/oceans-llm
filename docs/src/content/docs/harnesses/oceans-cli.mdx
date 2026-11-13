@@ -120,5 +120,6 @@ The config file holds one key for all commands. A key limited to **Attribution**
 | `the api_key command failed (...)` with another status | Run the command yourself to see its error. It runs from the hook's working directory, so use a command that works from any directory. |
 | `the api_key command didn't finish within 10 seconds` | The command may be waiting for input, such as an unlock prompt. Use a command that can run without one. |
 | `... is writable by other users, so oceans won't use it; run chmod 600 ...` | Run the `chmod` command it shows. |
+| `... belongs to another user, so oceans won't use it` | Another account owns the config file, so it could have changed it. Delete the file and run `oceans login` again. |
 | `api_key starts with !, which YAML reads as a tag; quote the whole value: ...` | Use the quoted value it shows. |
 | `the gateway rejected the API key (HTTP 401)` | The key is wrong, revoked or expired. Create a new one and run `oceans login` again. |

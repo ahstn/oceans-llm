@@ -1,8 +1,5 @@
-import type { ReactNode } from 'react'
-
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { KpiCard } from '@/components/data/kpi-card'
 import { Progress } from '@/components/ui/progress'
-import { Skeleton } from '@/components/ui/skeleton'
 import { formatCount, formatUsd10000 } from '@/lib/format'
 import type { AttributionReportView } from '@/types/api'
 
@@ -22,7 +19,7 @@ export function AttributionKpis({
   const priced = pricingCoverage(coverage)
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
-      <Kpi
+      <KpiCard
         label="Commits"
         value={formatCount(totals.commit_count)}
         hint={
@@ -32,13 +29,13 @@ export function AttributionKpis({
         }
         pending={pending}
       />
-      <Kpi
+      <KpiCard
         label="Merged PRs"
         value={formatCount(totals.pull_request_count)}
         hint={`Merged in the last ${report.window_days} days`}
         pending={pending}
       />
-      <Kpi
+      <KpiCard
         label="AI lines"
         value={formatCount(totals.ai_lines)}
         hint={
@@ -48,7 +45,7 @@ export function AttributionKpis({
         }
         pending={pending}
       />
-      <Kpi
+      <KpiCard
         label="Requests"
         value={formatCount(totals.request_count)}
         hint={
@@ -62,7 +59,7 @@ export function AttributionKpis({
         }
         pending={pending}
       />
-      <Kpi
+      <KpiCard
         label="Attributed cost"
         value={formatAttributedCost(totals.priced_cost_usd_10000, totals.priced_request_count)}
         hint={
@@ -72,7 +69,7 @@ export function AttributionKpis({
         }
         pending={pending}
       />
-      <Kpi
+      <KpiCard
         label="Pricing coverage"
         value={PERCENT_FORMATTER.format(priced)}
         hint={
@@ -88,39 +85,5 @@ export function AttributionKpis({
         pending={pending}
       />
     </div>
-  )
-}
-
-function Kpi({
-  label,
-  value,
-  hint,
-  tone = 'default',
-  pending,
-}: {
-  label: string
-  value: string
-  hint: ReactNode
-  tone?: 'default' | 'warning'
-  pending: boolean
-}) {
-  return (
-    <Card size="sm">
-      <CardHeader>
-        <CardDescription>{label}</CardDescription>
-        {pending ? (
-          <Skeleton className="h-7 w-28" />
-        ) : (
-          <CardTitle
-            className={
-              tone === 'warning' ? 'text-warning text-2xl tabular-nums' : 'text-2xl tabular-nums'
-            }
-          >
-            {value}
-          </CardTitle>
-        )}
-      </CardHeader>
-      <CardContent className="text-muted-foreground text-xs">{hint}</CardContent>
-    </Card>
   )
 }

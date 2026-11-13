@@ -25,10 +25,15 @@ fn env_with_config(directory: &Path, vars: &[(&str, &str)], contents: &str) -> E
 
 #[test]
 fn config_path_prefers_absolute_xdg_config_home() {
-    let home = Path::new("/home/alice");
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join("alice");
+    let xdg = root.path().join("xdg");
     assert_eq!(
-        config_path(&Env::fixed(&[("XDG_CONFIG_HOME", "/xdg")], Some(home))),
-        Some("/xdg/oceans/config.yaml".into())
+        config_path(&Env::fixed(
+            &[("XDG_CONFIG_HOME", xdg.to_str().unwrap())],
+            Some(&home)
+        )),
+        Some(xdg.join("oceans").join("config.yaml"))
     );
     for vars in [
         vec![],
@@ -36,8 +41,8 @@ fn config_path_prefers_absolute_xdg_config_home() {
         vec![("XDG_CONFIG_HOME", "")],
     ] {
         assert_eq!(
-            config_path(&Env::fixed(&vars, Some(home))),
-            Some("/home/alice/.config/oceans/config.yaml".into())
+            config_path(&Env::fixed(&vars, Some(&home))),
+            Some(home.join(".config").join("oceans").join("config.yaml"))
         );
     }
     assert_eq!(config_path(&Env::fixed(&[], None)), None);
@@ -191,6 +196,15 @@ fn config_files_other_users_can_write_are_refused() {
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
         assert!(resolve_connection(&Overrides::default(), &env, TIMEOUT).is_ok());
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn config_files_other_users_own_are_refused() {
+    let path = Path::new("config.yaml");
+    assert!(ensure_owned(path, 1000, 1000).is_ok());
+    let error = ensure_owned(path, 1001, 1000).unwrap_err().to_string();
+    assert!(error.contains("belongs to another user"), "{error}");
 }
 
 #[test]

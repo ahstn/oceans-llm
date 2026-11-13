@@ -205,9 +205,22 @@ impl Cli {
     }
 }
 
+/// Whether `args` run a hook entrypoint: the first `hook` followed, after any global options,
+/// by one of `HOOK_ENTRYPOINTS`.
 fn is_hook_entrypoint(args: &[OsString]) -> bool {
-    args.windows(2)
-        .any(|pair| pair[0] == "hook" && HOOK_ENTRYPOINTS.iter().any(|name| pair[1] == *name))
+    let mut rest = args.iter().skip(1).skip_while(|arg| *arg != "hook").skip(1);
+    while let Some(arg) = rest.next() {
+        if arg == "--url" || arg == "--api-key" {
+            rest.next();
+            continue;
+        }
+        let text = arg.to_string_lossy();
+        if arg == "--json" || text.starts_with("--url=") || text.starts_with("--api-key=") {
+            continue;
+        }
+        return HOOK_ENTRYPOINTS.iter().any(|name| arg == *name);
+    }
+    false
 }
 
 #[derive(Subcommand)]
@@ -433,9 +446,31 @@ mod tests {
             "send",
             "--bogus"
         ])));
+        assert!(is_hook_entrypoint(&args(&[
+            "oceans",
+            "hook",
+            "--url",
+            "https://x",
+            "notes",
+            "--unknown"
+        ])));
+        assert!(is_hook_entrypoint(&args(&[
+            "oceans",
+            "hook",
+            "--api-key",
+            "k",
+            "--json",
+            "--url=https://x",
+            "--api-key=k",
+            "claude"
+        ])));
         assert!(!is_hook_entrypoint(&args(&[
             "oceans", "hook", "install", "--claude"
         ])));
+        assert!(!is_hook_entrypoint(&args(&[
+            "oceans", "hook", "--json", "install", "--claude"
+        ])));
+        assert!(!is_hook_entrypoint(&args(&["oceans", "hook", "--url"])));
         assert!(!is_hook_entrypoint(&args(&["oceans", "hook", "queue"])));
         assert!(!is_hook_entrypoint(&args(&["oceans", "skills", "list"])));
     }

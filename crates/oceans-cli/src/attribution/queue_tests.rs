@@ -215,8 +215,10 @@ fn ownership_cache_tracks_lookups_per_gateway_and_key() {
     let first = state
         .cached_ownership("https://a.example.com/", "aaaa")
         .unwrap();
-    state.make_current(first).unwrap();
+    let mut seen = state.current_ownership();
+    state.make_current_unless_changed(first, &mut seen).unwrap();
     assert_eq!(state.current_scope(), Some(format!("user:{OWNER_ID}")));
+    assert_eq!(seen, state.current_ownership());
     state
         .forget_ownership("https://a.example.com/", "aaaa")
         .unwrap();
@@ -230,6 +232,41 @@ fn ownership_cache_tracks_lookups_per_gateway_and_key() {
             .cached_ownership("https://a.example.com/", "bbbb")
             .is_some()
     );
+}
+
+#[test]
+fn a_sender_lookup_does_not_replace_a_login_made_meanwhile() {
+    let root = tempfile::tempdir().unwrap();
+    let state = state(&root);
+    let gateway = "https://a.example.com/";
+    state.record_ownership(gateway, "aaaa", &owner()).unwrap();
+    let first = state.cached_ownership(gateway, "aaaa").unwrap();
+    // The sender reads `current` before its lookup; a login then switches to another key.
+    let mut seen = state.current_ownership();
+    let login = Ownership {
+        ownership_scope: "service_account:7d1c6a52-2a7e-4c55-9d0e-6f0b3c9a1e22".into(),
+        owner_kind: "service_account".into(),
+        owner_id: "7d1c6a52-2a7e-4c55-9d0e-6f0b3c9a1e22".into(),
+    };
+    state.record_ownership(gateway, "bbbb", &login).unwrap();
+
+    let looked_up = Ownership {
+        ownership_scope: "user:11111111-2222-4333-8444-555555555555".into(),
+        owner_kind: "user".into(),
+        owner_id: "11111111-2222-4333-8444-555555555555".into(),
+    };
+    state
+        .record_ownership_unless_changed(gateway, "cccc", &looked_up, &mut seen)
+        .unwrap();
+    assert_eq!(state.current_scope(), Some(login.ownership_scope.clone()));
+    assert_eq!(
+        state
+            .cached_ownership(gateway, "cccc")
+            .map(|cached| cached.ownership_scope),
+        Some(looked_up.ownership_scope)
+    );
+    state.make_current_unless_changed(first, &mut seen).unwrap();
+    assert_eq!(state.current_scope(), Some(login.ownership_scope));
 }
 
 #[cfg(unix)]

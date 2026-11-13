@@ -47,16 +47,9 @@ export function AttributionPage() {
   }
 
   // The report echoes the filters it applied, and the controls show those, so they always describe
-  // the rendered report. The gateway ignores `user_id` for non-admins.
-  const filtered = Boolean(report.user_id || report.repository)
-  const empty =
-    report.users.length === 0 && report.pull_requests.length === 0 && report.changes.length === 0
+  // the rendered report. For non-admins the gateway echoes their own id, which is not a filter.
+  const filtered = Boolean((isPlatformAdmin && report.user_id) || report.repository)
   const selectedUser = report.users.find((row) => row.user.id === report.user_id)?.user
-  const { coverage } = report
-  const truncated =
-    coverage.commits_truncated ||
-    coverage.pull_requests_truncated ||
-    coverage.request_facts_truncated
 
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-6">
@@ -94,38 +87,66 @@ export function AttributionPage() {
         }
       />
 
-      {truncated ? (
-        <Alert>
-          <AlertTitle>This report is incomplete</AlertTitle>
-          <AlertDescription>
-            The window holds more commits, pull requests, or requests than one report reads, so some
-            are left out of these totals. Choose a shorter window, or filter by user or repository.
-          </AlertDescription>
-        </Alert>
-      ) : null}
+      <TruncationAlert coverage={report.coverage} />
 
       <AttributionKpis report={report} pending={isPending} />
 
-      {empty && filtered ? (
-        <AttributionFilteredEmpty
-          onClear={() => updateSearch({ user_id: undefined, repository: undefined })}
-        />
-      ) : empty ? (
-        <AttributionSetupEmpty windowDays={report.window_days} />
-      ) : (
-        <AttributionSections
-          report={report}
-          isPending={isPending}
-          onSelectUser={
-            isPlatformAdmin
-              ? (userId) =>
-                  updateSearch({ user_id: userId === report.user_id ? undefined : userId })
-              : undefined
-          }
-        />
-      )}
+      <AttributionBody
+        report={report}
+        isPending={isPending}
+        filtered={filtered}
+        onClearFilters={() => updateSearch({ user_id: undefined, repository: undefined })}
+        onSelectUser={
+          isPlatformAdmin
+            ? (userId) => updateSearch({ user_id: userId === report.user_id ? undefined : userId })
+            : undefined
+        }
+      />
     </div>
   )
+}
+
+/** Warns when a capped read left rows out of the totals. */
+function TruncationAlert({ coverage }: { coverage: AttributionReportView['coverage'] }) {
+  const truncated =
+    coverage.commits_truncated ||
+    coverage.pull_requests_truncated ||
+    coverage.agent_sessions_truncated ||
+    coverage.request_facts_truncated
+  if (!truncated) return null
+  return (
+    <Alert>
+      <AlertTitle>This report is incomplete</AlertTitle>
+      <AlertDescription>
+        The window holds more commits, pull requests, agent sessions, or requests than one report
+        reads, so some are left out of these totals. Choose a shorter window, or filter by user or
+        repository.
+      </AlertDescription>
+    </Alert>
+  )
+}
+
+/** The report sections, or an empty state that tells filtered-out apart from not set up. */
+function AttributionBody({
+  report,
+  isPending,
+  filtered,
+  onClearFilters,
+  onSelectUser,
+}: {
+  report: AttributionReportView
+  isPending: boolean
+  filtered: boolean
+  onClearFilters: () => void
+  onSelectUser?: (userId: string) => void
+}) {
+  const empty =
+    report.users.length === 0 && report.pull_requests.length === 0 && report.changes.length === 0
+  if (!empty) {
+    return <AttributionSections report={report} isPending={isPending} onSelectUser={onSelectUser} />
+  }
+  if (filtered) return <AttributionFilteredEmpty onClear={onClearFilters} />
+  return <AttributionSetupEmpty windowDays={report.window_days} />
 }
 
 function AttributionSections({
@@ -149,7 +170,7 @@ function AttributionSections({
         title="User activity"
         description={
           onSelectUser
-            ? 'Activity per user, matched by commit author email or else the key owner. Select a row to filter the report to that user.'
+            ? "Activity per user, matched by commit author email or else the key owner. Select a user's name to filter the report to them."
             : 'Activity per user, matched by commit author email or else the key owner.'
         }
       >

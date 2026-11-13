@@ -279,15 +279,28 @@ pub fn read_config(path: &Path) -> anyhow::Result<Option<ConfigFile>> {
         .with_context(|| format!("invalid config file {}", path.display()))
 }
 
-/// A file others can write to could swap in a command that runs on every commit, or point a
-/// key at another gateway, so none of its values are used.
+/// A file others can write to, or one another user owns, could swap in a command that runs
+/// on every commit, or point a key at another gateway, so none of its values are used.
 #[cfg(unix)]
 fn ensure_not_shared(path: &Path, metadata: &fs::Metadata) -> anyhow::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    // SAFETY: geteuid has no preconditions and cannot fail.
+    ensure_owned(path, metadata.uid(), unsafe { libc::geteuid() })?;
     if metadata.permissions().mode() & 0o022 != 0 {
         bail!(
             "{} is writable by other users, so oceans won't use it; run chmod 600 {}",
             path.display(),
+            path.display()
+        );
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn ensure_owned(path: &Path, file_uid: u32, current_uid: u32) -> anyhow::Result<()> {
+    if file_uid != current_uid {
+        bail!(
+            "{} belongs to another user, so oceans won't use it",
             path.display()
         );
     }

@@ -63,6 +63,7 @@ function attributionReport(overrides: Partial<AttributionReportView> = {}): Attr
       priced_cost_usd_10000: 138_400,
       commits_truncated: false,
       pull_requests_truncated: false,
+      agent_sessions_truncated: false,
       request_facts_truncated: false,
     },
     users: [
@@ -369,37 +370,32 @@ describe('AttributionPage', () => {
     expect(kpi('Pricing coverage').getByText('0%')).toBeInTheDocument()
   })
 
-  it('filters to a user when a row is clicked or activated from the keyboard', async () => {
+  it('filters to a user from the name button in their row', async () => {
     renderPage(attributionReport())
     const users = within(screen.getByRole('table', { name: 'User activity' }))
 
-    const aliceRow = users.getByRole('row', { name: /Alice Doe/ })
-    expect(aliceRow).toHaveAttribute('tabindex', '0')
-    fireEvent.click(aliceRow)
+    const aliceButton = users.getByRole('button', { name: 'Filter the report to Alice Doe' })
+    expect(aliceButton).toHaveAttribute('aria-pressed', 'false')
+    expect(users.getByRole('row', { name: /Alice Doe/ })).not.toHaveAttribute('tabindex')
+    fireEvent.click(aliceButton)
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith({
         to: '/observability/attribution',
         search: { days: 30, user_id: 'user-alice' },
       })
     })
-
-    fireEvent.keyDown(users.getByRole('row', { name: /Bob Roe/ }), { key: 'Enter' })
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith({
-        to: '/observability/attribution',
-        search: { days: 30, user_id: 'user-bob' },
-      })
-    })
+    expect(navigateMock).toHaveBeenCalledTimes(1)
   })
 
   it('clears the user filter from the header', async () => {
     renderPage(attributionReport({ user_id: alice.id }), { days: 30, user_id: alice.id })
 
-    expect(
-      within(screen.getByRole('table', { name: 'User activity' })).getByRole('row', {
-        name: /Alice Doe/,
-      }),
-    ).toHaveAttribute('aria-current', 'true')
+    const users = within(screen.getByRole('table', { name: 'User activity' }))
+    expect(users.getByRole('row', { name: /Alice Doe/ })).toHaveAttribute('aria-current', 'true')
+    expect(users.getByRole('button', { name: 'Filter the report to Alice Doe' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Clear user filter: Alice Doe' }))
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith({
@@ -409,16 +405,13 @@ describe('AttributionPage', () => {
     })
   })
 
-  it('keeps user rows static for a user who only sees their own activity', () => {
+  it('offers no user filter to a user who only sees their own activity', () => {
     routeMock.useRouteContext.mockReturnValue(session('user'))
     renderPage(attributionReport())
 
-    const aliceRow = within(screen.getByRole('table', { name: 'User activity' })).getByRole('row', {
-      name: /Alice Doe/,
-    })
-    expect(aliceRow).not.toHaveAttribute('tabindex')
-    fireEvent.click(aliceRow)
-    expect(navigateMock).not.toHaveBeenCalled()
+    const users = within(screen.getByRole('table', { name: 'User activity' }))
+    expect(users.getByRole('row', { name: /Alice Doe/ })).toBeInTheDocument()
+    expect(users.queryByRole('button', { name: /Filter the report to/ })).not.toBeInTheDocument()
   })
 
   it('changes the report window', async () => {
@@ -447,6 +440,15 @@ describe('AttributionPage', () => {
     expect(kpi('Attributed cost').getByText('—')).toBeInTheDocument()
   })
 
+  it('explains the hook install to a user whose own id the gateway echoes', () => {
+    routeMock.useRouteContext.mockReturnValue(session('user'))
+    renderPage(emptyReport({ user_id: alice.id }))
+
+    expect(screen.getByText('No attributed commits yet')).toBeInTheDocument()
+    expect(screen.queryByText('No attribution matches these filters')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument()
+  })
+
   it('offers to clear filters when nothing matches them', async () => {
     renderPage(emptyReport({ repository: 'github.com/acme/other' }), {
       days: 90,
@@ -467,6 +469,15 @@ describe('AttributionPage', () => {
   it('warns when the report hit a read limit', () => {
     const report = attributionReport()
     renderPage(attributionReport({ coverage: { ...report.coverage, commits_truncated: true } }))
+
+    expect(screen.getByText('This report is incomplete')).toBeInTheDocument()
+  })
+
+  it('warns when the agent session lookup hit its read limit', () => {
+    const report = attributionReport()
+    renderPage(
+      attributionReport({ coverage: { ...report.coverage, agent_sessions_truncated: true } }),
+    )
 
     expect(screen.getByText('This report is incomplete')).toBeInTheDocument()
   })

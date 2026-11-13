@@ -3102,6 +3102,11 @@ export interface components {
         };
         AttributionCoverageView: components["schemas"]["AttributionRequestTallyView"] & {
             /**
+             * @description The 1000-row cap cut hook-reported agent sessions, so session counts and uncommitted
+             *     requests are low.
+             */
+            agent_sessions_truncated: boolean;
+            /**
              * @description The 1000-row cap cut commits inside the window, or, when the window has merged pull
              *     requests, older commits their totals may read.
              */

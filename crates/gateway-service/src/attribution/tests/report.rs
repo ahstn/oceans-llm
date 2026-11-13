@@ -809,3 +809,100 @@ async fn a_users_report_counts_only_their_own_uncommitted_requests() {
     let everyone = report(&store, &query()).await;
     assert_eq!(everyone.totals.uncommitted.request_count, 1);
 }
+
+#[tokio::test]
+async fn a_session_open_across_the_window_counts_its_window_requests_as_uncommitted() {
+    let dev = user_owner(Uuid::new_v4());
+    let mut store = FakeStore {
+        // Started a day before the window and never reported an end.
+        agent_sessions: vec![agent_session(&dev, "h1", minutes(-24 * 60))],
+        facts: vec![
+            request(&dev, "h1", "before", minutes(-60)),
+            request(&dev, "h1", "inside", minutes(30)),
+        ],
+        ..FakeStore::default()
+    };
+
+    let report = report(&store, &query()).await;
+    assert_eq!(report.totals.uncommitted.request_count, 1);
+    assert_eq!(
+        report.totals.agent_session_count, 0,
+        "it neither started nor ended in the window"
+    );
+    assert!(report.users.is_empty());
+
+    // One that ended before the window opened adds nothing.
+    store.agent_sessions[0].ended_at = Some(minutes(-30));
+    let ended = build_attribution_report(&store, &query()).await.unwrap();
+    assert_eq!(ended.totals.uncommitted.request_count, 0);
+}
+
+#[tokio::test]
+async fn flags_session_truncation_only_when_the_cap_cut_window_sessions() {
+    let dev = user_owner(Uuid::new_v4());
+    let capped = AttributionReportQuery {
+        limit: 2,
+        ..query()
+    };
+    let mut store = FakeStore {
+        agent_sessions: vec![
+            agent_session(&dev, "h1", minutes(10)),
+            agent_session(&dev, "h2", minutes(20)),
+        ],
+        ..FakeStore::default()
+    };
+    assert!(
+        report(&store, &capped)
+            .await
+            .coverage
+            .agent_sessions_truncated
+    );
+
+    store.agent_sessions[1] = agent_session(&dev, "h2", minutes(-60));
+    assert!(
+        !report(&store, &capped)
+            .await
+            .coverage
+            .agent_sessions_truncated,
+        "the cap was reached by a session last observed before the window"
+    );
+}
+
+#[tokio::test]
+async fn a_pull_request_two_owners_reported_counts_once_for_its_author() {
+    let (alice, bob) = (Uuid::new_v4(), Uuid::new_v4());
+    let (alice_owner, bob_owner) = (user_owner(alice), user_owner(bob));
+    let reported_by = |owner: &AttributionOwner| AttributionPullRequestRecord {
+        author_user_id: Some(alice),
+        ..pull_request(7, owner, minutes(30), &[1])
+    };
+    let store = FakeStore {
+        pull_requests: Mutex::new(vec![reported_by(&bob_owner), reported_by(&alice_owner)]),
+        ..FakeStore::with_commits(vec![commit(
+            1,
+            &alice_owner,
+            REPOSITORY,
+            minutes(10),
+            Vec::new(),
+        )])
+    };
+
+    for query in [
+        query(),
+        AttributionReportQuery {
+            user_id: Some(alice),
+            ..query()
+        },
+    ] {
+        let report = report(&store, &query).await;
+        assert_eq!(report.totals.pull_request_count, 1);
+        assert_eq!(report.pull_requests.len(), 1);
+        assert_eq!(report.pull_requests[0].pull_request.owner, alice_owner);
+        let author = report
+            .users
+            .iter()
+            .find(|user| user.user_id == alice)
+            .unwrap();
+        assert_eq!(author.merged_pull_request_count, 1);
+    }
+}

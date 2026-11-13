@@ -280,7 +280,7 @@ impl AttributionRepository for FakeStore {
         &self,
         query: &AttributionReportQuery,
     ) -> Result<Vec<AttributionAgentSessionRecord>, StoreError> {
-        Ok(self
+        let mut rows = self
             .agent_sessions
             .iter()
             .filter(|session| {
@@ -291,7 +291,10 @@ impl AttributionRepository for FakeStore {
                     && visible_to(query, &session.owner, None)
             })
             .cloned()
-            .collect())
+            .collect::<Vec<_>>();
+        rows.sort_by_key(|row| std::cmp::Reverse(row.last_observed_at));
+        rows.truncate(query.limit as usize);
+        Ok(rows)
     }
 
     async fn list_attribution_session_commit_times(

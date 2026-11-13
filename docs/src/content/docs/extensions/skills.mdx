@@ -177,7 +177,7 @@ Only the owner can add a version or change the default.
 
 ## Use the Oceans CLI
 
-Install the `oceans` binary and connect it to the gateway as described in [Oceans CLI](/harnesses/oceans-cli/). It takes the gateway URL and API key from `--url` and `--api-key`, from `OCEANS_URL` and `OCEANS_API_KEY`, or from the config file that `oceans login` writes. Reading works with any key, but claiming a namespace and uploading need a user-owned key. Add `--json` to any command for structured output.
+Install the `oceans` binary and connect it to the gateway as described in [Oceans CLI](/harnesses/oceans-cli/). It takes the gateway URL and API key from `--url` and `--api-key`, from `OCEANS_URL` and `OCEANS_API_KEY`, or from the config file that `oceans login` writes. Every Skills command needs a key with **Full access**. Claiming a namespace and uploading also need a key that a user owns, not a service account. Add `--json` to any command for structured output.
 
 ```sh
 export OCEANS_URL=https://oceans.example.com

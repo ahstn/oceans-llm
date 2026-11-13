@@ -1,7 +1,7 @@
 //! `GET /api/v1/admin/attribution/report`: commits, merged PRs and the gateway requests behind
 //! them. Platform admins see everyone; other users see the rows they own or authored.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use axum::{
     Json,
@@ -10,14 +10,14 @@ use axum::{
 };
 use gateway_core::{
     ATTRIBUTION_MAX_REPORT_ROWS, AttributionOwner, AttributionReportQuery, GatewayError,
-    GlobalRole, IdentityRepository, UserRecord,
+    GlobalRole, UserRecord,
 };
 use gateway_service::attribution::{
     AttributionChangeActivity, AttributionModelActivity, AttributionPullRequestActivity,
     AttributionReport, AttributionReportCoverage, AttributionReportTotals, AttributionUserActivity,
     RequestTally, build_attribution_report,
 };
-use gateway_store::AnyStore;
+use gateway_store::{AnyStore, GatewayStore};
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime, Time, UtcOffset};
 use utoipa::{IntoParams, ToSchema};
@@ -89,6 +89,9 @@ pub struct AttributionCoverageView {
     pub pull_requests_truncated: bool,
     /// Some requests were left out because a lookup or the report hit its cap.
     pub request_facts_truncated: bool,
+    /// The 1000-row cap cut hook-reported agent sessions, so session counts and uncommitted
+    /// requests are low.
+    pub agent_sessions_truncated: bool,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -307,9 +310,10 @@ struct Names {
 }
 
 impl Names {
+    /// Two directory reads rather than one per id: a report can name up to 1,000 users.
     async fn load(store: &AnyStore, report: &AttributionReport) -> Result<Self, AppError> {
-        let mut user_ids: Vec<Uuid> = report.users.iter().map(|user| user.user_id).collect();
-        let mut service_account_ids = Vec::new();
+        let mut user_ids: HashSet<Uuid> = report.users.iter().map(|user| user.user_id).collect();
+        let mut service_account_ids = HashSet::new();
         for activity in &report.pull_requests {
             user_ids.extend(activity.pull_request.author_user_id);
         }
@@ -318,24 +322,23 @@ impl Names {
             user_ids.extend(activity.commit.owner.owner_user_id);
             service_account_ids.extend(activity.commit.owner.owner_service_account_id);
         }
-        user_ids.sort_unstable();
-        user_ids.dedup();
-        service_account_ids.sort_unstable();
-        service_account_ids.dedup();
         let mut names = Self::default();
-        for user_id in user_ids {
-            if let Some(user) = store.get_user_by_id(user_id).await? {
-                names.users.insert(user_id, user.name);
-            }
+        if !user_ids.is_empty() {
+            names.users = store
+                .list_identity_users()
+                .await?
+                .into_iter()
+                .filter(|identity| user_ids.contains(&identity.user.user_id))
+                .map(|identity| (identity.user.user_id, identity.user.name))
+                .collect();
         }
-        for service_account_id in service_account_ids {
-            if let Some(account) =
-                IdentityRepository::get_service_account_by_id(store, service_account_id).await?
-            {
-                names
-                    .service_accounts
-                    .insert(service_account_id, account.service_account_name);
-            }
+        if !service_account_ids.is_empty() {
+            names.service_accounts = GatewayStore::list_service_accounts(store)
+                .await?
+                .into_iter()
+                .filter(|account| service_account_ids.contains(&account.service_account_id))
+                .map(|account| (account.service_account_id, account.service_account_name))
+                .collect();
         }
         Ok(names)
     }
@@ -468,6 +471,7 @@ impl From<AttributionReportCoverage> for AttributionCoverageView {
             commits_truncated: coverage.commits_truncated,
             pull_requests_truncated: coverage.pull_requests_truncated,
             request_facts_truncated: coverage.request_facts_truncated,
+            agent_sessions_truncated: coverage.agent_sessions_truncated,
         }
     }
 }

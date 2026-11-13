@@ -42,7 +42,8 @@ pub struct Captured {
 }
 
 /// Runs `command` with stdin and stderr closed and captures at most `max_stdout` bytes of
-/// stdout. The child is killed once `timeout` passes.
+/// stdout. The child, and on Unix and Windows everything it started, is killed once `timeout`
+/// passes.
 pub fn run_captured(
     command: &mut Command,
     timeout: Duration,
@@ -52,6 +53,12 @@ pub fn run_captured(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // Its own process group, so a timeout can kill whatever the child started too.
+        command.process_group(0);
+    }
     let mut child = command.spawn().map_err(|error| match error.kind() {
         io::ErrorKind::NotFound => RunError::NotFound,
         _ => RunError::Spawn(error),
@@ -91,13 +98,47 @@ fn wait_until(child: &mut Child, deadline: Instant) -> Result<ExitStatus, RunErr
         }
         let now = Instant::now();
         if now >= deadline {
-            let _ = child.kill();
+            kill_tree(child);
             let _ = child.wait();
             return Err(RunError::TimedOut);
         }
         thread::sleep(pause.min(deadline - now));
         pause = (pause * 2).min(Duration::from_millis(25));
     }
+}
+
+/// Kills `child` and the processes it started: its process group, which `run_captured`
+/// created for it.
+#[cfg(unix)]
+fn kill_tree(child: &mut Child) {
+    let Ok(group) = i32::try_from(child.id()) else {
+        let _ = child.kill();
+        return;
+    };
+    // SAFETY: kill only sends a signal. The group id is the child's pid, which can't be
+    // reused until `child.wait()` reaps it, so it can't name an unrelated group.
+    if unsafe { libc::kill(-group, libc::SIGKILL) } != 0 {
+        let _ = child.kill();
+    }
+}
+
+/// Kills `child` and its descendants with `taskkill /T`, then the child itself in case
+/// taskkill couldn't run.
+#[cfg(windows)]
+fn kill_tree(child: &mut Child) {
+    let _ = Command::new("taskkill")
+        .args(["/T", "/F", "/PID"])
+        .arg(child.id().to_string())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    let _ = child.kill();
+}
+
+#[cfg(not(any(unix, windows)))]
+fn kill_tree(child: &mut Child) {
+    let _ = child.kill();
 }
 
 /// Starts `program` detached from the caller, with all standard streams closed, and doesn't
@@ -257,6 +298,36 @@ mod tests {
             ),
             Err(RunError::NotFound)
         ));
+    }
+
+    #[test]
+    fn a_timeout_kills_what_the_command_started() {
+        let directory = tempfile::tempdir().unwrap();
+        let pid_file = directory.path().join("pid");
+        let script = format!(
+            "sleep 30 & echo $! > {}; wait",
+            quote_word(pid_file.to_str().unwrap())
+        );
+        assert!(matches!(
+            run_captured(&mut shell_command(&script), Duration::from_millis(200), 10),
+            Err(RunError::TimedOut)
+        ));
+        let pid: i32 = fs::read_to_string(&pid_file)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        // The orphaned grandchild is reaped by init shortly after the kill.
+        let gone = (0..200).any(|_| {
+            // SAFETY: signal 0 only checks whether the process exists.
+            let gone = unsafe { libc::kill(pid, 0) } != 0
+                && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
+            if !gone {
+                thread::sleep(Duration::from_millis(10));
+            }
+            gone
+        });
+        assert!(gone, "process {pid} survived the timeout");
     }
 
     #[test]

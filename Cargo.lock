@@ -3033,6 +3033,7 @@ dependencies = [
  "futures-util",
  "gateway-skills",
  "indexmap 2.14.1",
+ "libc",
  "reqwest 0.13.5",
  "rpassword",
  "serde",

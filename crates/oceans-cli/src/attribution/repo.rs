@@ -8,6 +8,15 @@ use crate::process::run_captured;
 pub const MAX_REPOSITORY_LEN: usize = 256;
 const GIT_TIMEOUT: Duration = Duration::from_secs(2);
 const MAX_GIT_OUTPUT: usize = 64 * 1024;
+/// Variables a git hook sets that would point `git -C <directory>` at the hook's repository.
+const GIT_REPOSITORY_VARS: [&str; 6] = [
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+];
 
 /// Normalises a git remote to `host[:port]/org/repo`: no scheme, userinfo, default port or
 /// `.git` suffix, and a lowercase host. Path case is kept. Local paths, unknown schemes and
@@ -184,14 +193,11 @@ pub fn git_context(directory: &Path) -> GitContext {
 
 fn git(directory: &Path, args: &[&str]) -> Option<String> {
     let mut command = Command::new("git");
+    command.arg("-C").arg(directory).args(args);
+    for name in GIT_REPOSITORY_VARS {
+        command.env_remove(name);
+    }
     command
-        .arg("-C")
-        .arg(directory)
-        .args(args)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .env_remove("GIT_COMMON_DIR")
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_OPTIONAL_LOCKS", "0");
     let output = run_captured(&mut command, GIT_TIMEOUT, MAX_GIT_OUTPUT).ok()?;
@@ -303,14 +309,17 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path();
         let run = |args: &[&str]| {
-            let status = Command::new("git")
+            let mut command = Command::new("git");
+            command
                 .arg("-C")
                 .arg(path)
                 .args(args)
                 .env("GIT_CONFIG_GLOBAL", "/dev/null")
-                .env("GIT_CONFIG_NOSYSTEM", "1")
-                .output()
-                .unwrap();
+                .env("GIT_CONFIG_NOSYSTEM", "1");
+            for name in GIT_REPOSITORY_VARS {
+                command.env_remove(name);
+            }
+            let status = command.output().unwrap();
             assert!(status.status.success(), "git {args:?}");
         };
         assert_eq!(git_context(path), GitContext::default());

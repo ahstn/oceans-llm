@@ -12,7 +12,12 @@
 //! Requests are pooled across a session's hashes by request id, so a session whose requests
 //! were recorded under two namespaces counts each request once.
 //! A hook-reported session carries the same hashes, so a session with no commit yet has its
-//! requests counted as uncommitted whichever namespace the gateway recorded them under.
+//! requests counted as uncommitted whichever namespace the gateway recorded them under. That
+//! holds for a session that was open across the whole window too, if it started within
+//! [`LOOKBACK`] before it.
+//!
+//! Two developers who both run the hooks in a repository both report its merged pull
+//! requests. Storage keeps a row per owner, and the report counts each pull request once.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -25,9 +30,10 @@ use gateway_core::{
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
-/// How far before the window commits are loaded, so a merged PR finds the notes of commits
-/// made before the window opened.
-const PULL_REQUEST_COMMIT_LOOKBACK: Duration = Duration::days(30);
+/// How far before the window commits and hook-reported sessions are loaded, so a merged PR
+/// finds the notes of commits made before the window opened, and a session that started
+/// before the window still has its requests in the window counted.
+const LOOKBACK: Duration = Duration::days(30);
 /// Request facts one report holds; past this the coverage reports truncation.
 const MAX_REPORT_REQUEST_FACTS: usize = 200_000;
 /// Label for requests whose log has no model key.
@@ -105,6 +111,8 @@ pub struct AttributionReportCoverage {
     pub pull_requests_truncated: bool,
     /// A session had more requests than one lookup returns, or the report's fact cap was hit.
     pub request_facts_truncated: bool,
+    /// The row cap cut hook-reported sessions last observed in the window.
+    pub agent_sessions_truncated: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -178,20 +186,30 @@ pub async fn build_attribution_report<S>(
 where
     S: AttributionRepository + Sync,
 {
-    let commit_query = AttributionReportQuery {
-        from: query.from - PULL_REQUEST_COMMIT_LOOKBACK,
+    let lookback_query = AttributionReportQuery {
+        from: query.from - LOOKBACK,
         ..query.clone()
     };
-    let (commits, pull_requests, agent_sessions) = tokio::try_join!(
-        store.list_attribution_commits(&commit_query),
+    let (commits, pull_requests, loaded_sessions) = tokio::try_join!(
+        store.list_attribution_commits(&lookback_query),
         store.list_attribution_pull_requests(query),
-        store.list_attribution_agent_sessions(query),
+        store.list_attribution_agent_sessions(&lookback_query),
     )?;
+    let limit = usize::try_from(query.limit).unwrap_or(usize::MAX);
+    // Sessions come most recently observed first, so a cap reached only by sessions last
+    // observed before the window left out no session the window reports.
+    let agent_sessions_truncated = loaded_sessions.len() >= limit
+        && loaded_sessions
+            .last()
+            .is_some_and(|session| session.last_observed_at >= query.from);
+    let agent_sessions = loaded_sessions
+        .into_iter()
+        .filter(|session| overlaps(query, session))
+        .collect::<Vec<_>>();
     let hashes = session_hashes(&commits, &agent_sessions);
     let windows = commit_windows(load_commit_times(store, &hashes, query.to).await?);
     let (facts, request_facts_truncated) = load_request_facts(store, &hashes, query.to).await?;
     let inputs = ReportInputs::new(query, &commits, &facts, &windows);
-    let limit = usize::try_from(query.limit).unwrap_or(usize::MAX);
     // Lookback commits only feed pull request totals, so a cap reached by them matters only
     // when the window has a pull request.
     let commits_capped = commits.len() >= limit
@@ -204,8 +222,59 @@ where
         commits_truncated: commits_capped,
         pull_requests_truncated: pull_requests.len() >= limit,
         request_facts_truncated,
+        agent_sessions_truncated,
     };
-    Ok(inputs.report(pull_requests, &agent_sessions, coverage))
+    Ok(inputs.report(
+        distinct_pull_requests(pull_requests),
+        &agent_sessions,
+        coverage,
+    ))
+}
+
+/// Whether a hook-reported session was open at some point in the window. A missing start or
+/// end leaves that side open.
+fn overlaps(query: &AttributionReportQuery, session: &AttributionAgentSessionRecord) -> bool {
+    session.started_at.is_none_or(|started| started <= query.to)
+        && session.ended_at.is_none_or(|ended| ended >= query.from)
+}
+
+/// Whether a hook-reported session started or ended in the window, which is what the session
+/// counts report.
+fn reported_in_window(
+    query: &AttributionReportQuery,
+    session: &AttributionAgentSessionRecord,
+) -> bool {
+    let window = query.from..=query.to;
+    session.started_at.is_some_and(|at| window.contains(&at))
+        || session.ended_at.is_some_and(|at| window.contains(&at))
+}
+
+/// One row per `(repository, number)`, in the stored order. Of the copies that several owners
+/// reported, the one its author reported is kept, else the first.
+fn distinct_pull_requests(
+    pull_requests: Vec<AttributionPullRequestRecord>,
+) -> Vec<AttributionPullRequestRecord> {
+    let mut kept: Vec<AttributionPullRequestRecord> = Vec::with_capacity(pull_requests.len());
+    let mut index: HashMap<(String, i64), usize> = HashMap::new();
+    for pull_request in pull_requests {
+        let key = (pull_request.repository.clone(), pull_request.number);
+        match index.get(&key) {
+            Some(&position) => {
+                let author = pull_request.author_user_id;
+                let reported_by_author = |row: &AttributionPullRequestRecord| {
+                    author.is_some() && row.owner.owner_user_id == author
+                };
+                if !reported_by_author(&kept[position]) && reported_by_author(&pull_request) {
+                    kept[position] = pull_request;
+                }
+            }
+            None => {
+                index.insert(key, kept.len());
+                kept.push(pull_request);
+            }
+        }
+    }
+    kept
 }
 
 fn session_hashes(
@@ -399,13 +468,19 @@ impl<'a> ReportInputs<'a> {
         agent_sessions: &[AttributionAgentSessionRecord],
         coverage: AttributionReportCoverage,
     ) -> AttributionReport {
-        let totals = self.totals(pull_requests.len(), agent_sessions.len());
+        // Sessions open across the window only feed request facts; the counts cover sessions
+        // that started or ended in it.
+        let reported = agent_sessions
+            .iter()
+            .filter(|session| reported_in_window(self.query, session))
+            .collect::<Vec<_>>();
+        let totals = self.totals(pull_requests.len(), reported.len());
         let coverage = AttributionReportCoverage {
             requests: totals.requests.merged(totals.uncommitted),
             ..coverage
         };
         let changes = self.changes(&pull_request_numbers(&pull_requests));
-        let users = self.users(&pull_requests, agent_sessions);
+        let users = self.users(&pull_requests, &reported);
         AttributionReport {
             totals,
             coverage,
@@ -493,7 +568,7 @@ impl<'a> ReportInputs<'a> {
     fn users(
         &self,
         pull_requests: &[AttributionPullRequestRecord],
-        agent_sessions: &[AttributionAgentSessionRecord],
+        agent_sessions: &[&AttributionAgentSessionRecord],
     ) -> Vec<AttributionUserActivity> {
         let mut users: HashMap<Uuid, UserRollup<'a>> = HashMap::new();
         for commit in self.window_commits() {

@@ -11722,9 +11722,14 @@
             "required": [
               "commits_truncated",
               "pull_requests_truncated",
-              "request_facts_truncated"
+              "request_facts_truncated",
+              "agent_sessions_truncated"
             ],
             "properties": {
+              "agent_sessions_truncated": {
+                "type": "boolean",
+                "description": "The 1000-row cap cut hook-reported agent sessions, so session counts and uncommitted\nrequests are low."
+              },
               "commits_truncated": {
                 "type": "boolean",
                 "description": "The 1000-row cap cut commits inside the window, or, when the window has merged pull\nrequests, older commits their totals may read."
