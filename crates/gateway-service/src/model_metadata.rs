@@ -333,6 +333,7 @@ fn catalog_route_cost(
         output: schedule.output,
         cache_read: schedule.cache_read,
         cache_write: schedule.cache_write,
+        cache_write_1h: schedule.cache_write_1h,
         tiers: schedule.context_tiers,
         ..Default::default()
     })

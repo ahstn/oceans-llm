@@ -120,9 +120,10 @@ pub(super) fn map_chat_request_to_converse(
     if let Some(additional) = passthrough.remove("additional_model_request_fields") {
         body.insert("additionalModelRequestFields".to_string(), additional);
     }
-    map_converse_parallel_tool_calls(&mut body, &mut passthrough, &context.upstream_model)?;
     extract_converse_request_controls(&mut body, &mut passthrough, request.stream)?;
     merge_object_overrides(&mut body, &context.extra_body);
+    // After the merge, so route-supplied `toolConfig` counts as tools.
+    map_converse_parallel_tool_calls(&mut body, &mut passthrough, &context.upstream_model)?;
     validate_converse_tool_choice(&body, &context.upstream_model)?;
     validate_converse_request_controls(&body, request.stream)?;
     apply_converse_anthropic_thinking_compatibility(

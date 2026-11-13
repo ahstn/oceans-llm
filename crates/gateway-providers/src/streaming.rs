@@ -69,6 +69,8 @@ where
         let mut finished_choices = HashSet::new();
         // The final choice chunk, held back while a usage-only chunk may still fold into it.
         let mut held: Option<HeldChatChunk> = None;
+        // A usage-only chunk that came before the final choice chunk it folds into.
+        let mut early_usage: Option<HeldChatChunk> = None;
         futures_util::pin_mut!(upstream);
 
         'upstream: while let Some(chunk) = upstream.next().await {
@@ -164,16 +166,27 @@ where
                     !seen_choices.is_empty() && seen_choices.is_subset(&finished_choices);
                 if !forward_usage_chunk {
                     if !semantics.is_error && is_usage_only_chunk(&value) {
-                        if let Some((_, final_chunk)) = held.as_mut() {
-                            fold_usage_chunk(final_chunk, value);
-                            continue;
+                        match held.as_mut() {
+                            Some((_, final_chunk)) => {
+                                fold_usage_chunk(final_chunk, value);
+                                continue;
+                            }
+                            None if !saw_terminal_event => {
+                                early_usage = Some((event.event, value));
+                                continue;
+                            }
+                            None => {}
                         }
                     } else {
                         if let Some(final_chunk) = render_held_chat_chunk(&mut held) {
                             yield Ok(final_chunk);
                         }
                         if saw_terminal_event && !semantics.is_error {
-                            held = Some((event.event, value));
+                            let mut final_chunk = value;
+                            if let Some((_, usage_chunk)) = early_usage.take() {
+                                fold_usage_chunk(&mut final_chunk, usage_chunk);
+                            }
+                            held = Some((event.event, final_chunk));
                             continue;
                         }
                     }
@@ -190,6 +203,10 @@ where
 
         if let Some(final_chunk) = render_held_chat_chunk(&mut held) {
             yield Ok(final_chunk);
+        }
+        // Usage the stream never got to fold still reaches the ledger.
+        if let Some(usage_chunk) = render_held_chat_chunk(&mut early_usage) {
+            yield Ok(usage_chunk);
         }
 
         if !stream_failed && let Err(error) = parser.finish() {

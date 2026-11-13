@@ -206,7 +206,7 @@ These transforms apply to Chat Completions requests unless a field says otherwis
 | Field | Default | Values and effect |
 | --- | --- | --- |
 | `supports_store` | `true` | `false` removes `store` from outbound Chat Completions requests. |
-| `max_tokens_field` | `max_completion_tokens` | `max_tokens` renames `max_completion_tokens` to `max_tokens`. On `openai_compat` and `gcp_cloud_run_openai_compat` routes, the default renames `max_tokens` to `max_completion_tokens`, which OpenAI reasoning models require, also on routes without a profile. A request with both fields at different values gets a 400. |
+| `max_tokens_field` | `max_completion_tokens` | `max_tokens` renames `max_completion_tokens` to `max_tokens`. The default renames `max_tokens` to `max_completion_tokens`, which OpenAI reasoning models require. A request with both fields at different values gets a 400. A route without a profile gets the rename only when its provider `base_url` is on `api.openai.com` or `openrouter.ai`. Other servers, such as Ollama, read only `max_tokens`, so the gateway sends the field as the caller sent it. |
 | `developer_role` | `developer` | `system` rewrites `developer` messages to `system`. |
 | `reasoning_effort` | `passthrough` | `omit` removes `reasoning_effort`. `reasoning_object` rewrites `reasoning_effort: "high"` to `reasoning: { "effort": "high" }`. |
 | `supports_stream_usage` | `true` | Streaming Chat Completions requests on `openai_compat` and `gcp_cloud_run_openai_compat` routes get `stream_options.include_usage: true`, also on routes without a profile. `false` leaves `stream_options` as the caller sent it, for upstreams that reject it. |

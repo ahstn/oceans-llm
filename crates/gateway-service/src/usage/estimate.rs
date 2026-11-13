@@ -42,13 +42,14 @@ const TEXT_KEYS: [&str; 9] = [
 ];
 
 /// Keys whose arrays or objects hold generated text.
-const CONTAINER_KEYS: [&str; 8] = [
+const CONTAINER_KEYS: [&str; 9] = [
     "choices",
     "message",
     "delta",
     "content",
     "tool_calls",
     "function",
+    "function_call",
     "output",
     "summary",
 ];
@@ -132,6 +133,14 @@ mod tests {
         });
         assert_eq!(response_text_bytes(&chat), 10);
 
+        let legacy_function_call = json!({
+            "choices": [{"message": {
+                "content": null,
+                "function_call": {"name": "f", "arguments": "{\"a\":1}"}
+            }}]
+        });
+        assert_eq!(response_text_bytes(&legacy_function_call), 7);
+
         let responses = json!({
             "instructions": "not output",
             "output": [
@@ -155,6 +164,8 @@ mod tests {
     #[test]
     fn stream_events_count_only_their_deltas() {
         let chat = json!({"choices": [{"delta": {"content": "hey"}}]});
+        let legacy_function_call =
+            json!({"choices": [{"delta": {"function_call": {"arguments": "{\"a\""}}}]});
         let responses = json!({"type": "response.output_text.delta", "delta": "four"});
         let audio = json!({"type": "response.audio.delta", "delta": "AAAA"});
         let done = json!({"type": "response.output_text.done", "text": "four"});
@@ -164,6 +175,7 @@ mod tests {
         });
 
         assert_eq!(stream_event_text_bytes(&chat), 3);
+        assert_eq!(stream_event_text_bytes(&legacy_function_call), 4);
         assert_eq!(stream_event_text_bytes(&responses), 4);
         assert_eq!(stream_event_text_bytes(&audio), 0);
         assert_eq!(stream_event_text_bytes(&done), 0);

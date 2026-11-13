@@ -376,6 +376,14 @@ impl OpenAiCompatProvider {
         }
     }
 
+    /// Whether the upstream reads `max_completion_tokens`. OpenAI and OpenRouter do, and
+    /// OpenAI reasoning models reject `max_tokens`. Other compatible servers, such as
+    /// Ollama, read only `max_tokens`, so their routes opt in through a profile.
+    fn takes_max_completion_tokens(&self) -> bool {
+        url::Url::parse(&self.config.base_url)
+            .is_ok_and(|url| matches!(url.host_str(), Some("api.openai.com" | "openrouter.ai")))
+    }
+
     fn build_responses_request_with_token(
         &self,
         request: &CoreResponsesRequest,
@@ -486,7 +494,11 @@ impl OpenAiCompatProvider {
         }
         apply_openai_compat_empty_tools_profile(&mut body, context)?;
         if apply_compatibility_profile {
-            apply_openai_compat_chat_profile(&mut body, context)?;
+            apply_openai_compat_chat_profile(
+                &mut body,
+                context,
+                self.takes_max_completion_tokens(),
+            )?;
         }
         let images = matches!(endpoint_suffix, "images" | "images/generations");
         if images || matches!(endpoint_suffix, "chat/completions" | "responses") {
@@ -571,24 +583,24 @@ pub(crate) fn apply_openai_compat_request_profile(
     apply_openai_compat_profile_to_body(body, profile);
 }
 
-/// Chat Completions profile for openai_compat routes. A route without a profile gets the
-/// default `max_completion_tokens` field, so a translated `max_tokens` still reaches OpenAI
-/// reasoning models, which reject `max_tokens`.
+/// Chat Completions profile for openai_compat routes. A profile's `max_tokens_field`
+/// decides the token-limit field. A route without a profile sends `max_completion_tokens`
+/// only when `upstream_takes_max_completion_tokens`.
 fn apply_openai_compat_chat_profile(
     body: &mut Value,
     context: &ProviderRequestContext,
+    upstream_takes_max_completion_tokens: bool,
 ) -> Result<(), ProviderError> {
     apply_openai_compat_request_profile(body, context);
-    let max_tokens_field = context
+    let renames = context
         .compatibility
         .openai_compat
         .as_ref()
-        .map(|profile| profile.max_tokens_field)
-        .unwrap_or_default();
-    match (max_tokens_field, body.as_object_mut()) {
-        (OpenAiCompatMaxTokensField::MaxCompletionTokens, Some(object)) => {
-            move_max_tokens_to_max_completion_tokens(object)
-        }
+        .map_or(upstream_takes_max_completion_tokens, |profile| {
+            profile.max_tokens_field == OpenAiCompatMaxTokensField::MaxCompletionTokens
+        });
+    match body.as_object_mut() {
+        Some(object) if renames => move_max_tokens_to_max_completion_tokens(object),
         _ => Ok(()),
     }
 }
@@ -1234,7 +1246,7 @@ mod tests {
     }
 
     #[test]
-    fn chat_without_profile_sends_max_tokens_as_max_completion_tokens() {
+    fn chat_without_profile_sends_max_completion_tokens_only_to_openai_and_openrouter() {
         let request = chat_request_with(json!({"max_tokens": 64}));
 
         let built = provider()
@@ -1244,6 +1256,31 @@ mod tests {
 
         assert_eq!(body_json["max_completion_tokens"], json!(64));
         assert!(body_json.get("max_tokens").is_none());
+
+        // Ollama reads only `max_tokens`; renaming it would drop the limit.
+        let ollama = OpenAiCompatProvider::new(OpenAiCompatConfig {
+            base_url: "http://localhost:11434/v1".to_string(),
+            ..provider().config
+        })
+        .expect("provider");
+        let built = ollama
+            .build_chat_request(&request, &default_context())
+            .expect("build request");
+        let body_json = request_body_json(&built);
+        assert_eq!(body_json["max_tokens"], json!(64));
+        assert!(body_json.get("max_completion_tokens").is_none());
+
+        let opted_in = context_with_profile(
+            serde_json::from_value(json!({"max_tokens_field": "max_completion_tokens"}))
+                .expect("profile"),
+        );
+        let built = ollama
+            .build_chat_request(&request, &opted_in)
+            .expect("build request");
+        assert_eq!(
+            request_body_json(&built)["max_completion_tokens"],
+            json!(64)
+        );
     }
 
     #[test]
@@ -1407,19 +1444,15 @@ mod tests {
         assert!(body_json.get("stream_options").is_none(), "{body_json}");
     }
 
-    async fn usage_chunk_server() -> String {
+    async fn usage_chunk_server(sse: &'static str) -> String {
         let app = Router::new().route(
             "/v1/chat/completions",
-            post(|Json(body): Json<Value>| async move {
+            post(move |Json(body): Json<Value>| async move {
                 assert_eq!(body["stream_options"]["include_usage"], true);
                 Response::builder()
                     .status(StatusCode::OK)
                     .header("content-type", "text/event-stream")
-                    .body(Body::from(
-                        "data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n\n\
-                         data: {\"id\":\"chatcmpl-1\",\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}\n\n\
-                         data: [DONE]\n\n",
-                    ))
+                    .body(Body::from(sse))
                     .expect("response")
             }),
         );
@@ -1435,30 +1468,38 @@ mod tests {
 
     #[tokio::test]
     async fn chat_stream_hides_gateway_requested_usage_chunk_from_client() {
-        let provider = provider_with_base_url(usage_chunk_server().await);
+        const FINISH: &str = "data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n\n";
+        const USAGE: &str = "data: {\"id\":\"chatcmpl-1\",\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}\n\n";
+        const DONE: &str = "data: [DONE]\n\n";
+        // Usage after the final choice, as OpenAI sends it, and before it.
+        let usage_last: &'static str = format!("{FINISH}{USAGE}{DONE}").leak();
+        let usage_first: &'static str = format!("{USAGE}{FINISH}{DONE}").leak();
 
-        for (extra, forwards_usage_chunk) in [
-            (json!({}), false),
-            (json!({"stream_options": {"include_usage": false}}), false),
-            (json!({"stream_options": {"include_usage": true}}), true),
-        ] {
-            let mut request = chat_request_with(extra.clone());
-            request.stream = true;
-            let stream = provider
-                .chat_completions_stream(&request, &default_context())
-                .await
-                .expect("stream");
-            let rendered = render_provider_stream(stream).await;
+        for sse in [usage_last, usage_first] {
+            let provider = provider_with_base_url(usage_chunk_server(sse).await);
+            for (extra, forwards_usage_chunk) in [
+                (json!({}), false),
+                (json!({"stream_options": {"include_usage": false}}), false),
+                (json!({"stream_options": {"include_usage": true}}), true),
+            ] {
+                let mut request = chat_request_with(extra.clone());
+                request.stream = true;
+                let stream = provider
+                    .chat_completions_stream(&request, &default_context())
+                    .await
+                    .expect("stream");
+                let rendered = render_provider_stream(stream).await;
 
-            assert!(
-                rendered.contains("\"total_tokens\":3"),
-                "{extra}: {rendered}"
-            );
-            assert_eq!(
-                rendered.contains("\"choices\":[]"),
-                forwards_usage_chunk,
-                "{extra}: {rendered}"
-            );
+                assert!(
+                    rendered.contains("\"total_tokens\":3"),
+                    "{extra}: {rendered}"
+                );
+                assert_eq!(
+                    rendered.contains("\"choices\":[]"),
+                    forwards_usage_chunk,
+                    "{extra}: {rendered}"
+                );
+            }
         }
     }
 

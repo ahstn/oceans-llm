@@ -142,7 +142,10 @@ impl Money4 {
         {
             return Err(invalid());
         }
-        let fraction = fraction.trim_end_matches('0');
+        // Half-up rounding to four places reads only the fifth decimal digit after the
+        // exponent shift, so later digits are dropped before they can overflow `units`.
+        let significant = usize::try_from((5 + i64::from(exponent)).max(0)).unwrap_or(usize::MAX);
+        let fraction = fraction[..fraction.len().min(significant)].trim_end_matches('0');
         let overflow = || format!("cost `{value}` overflowed");
         let mut units = 0_i128;
         for digit in integer.bytes().chain(fraction.bytes()) {
@@ -4029,6 +4032,9 @@ mod tests {
             ("0e9999", 0),
             ("1e-60", 0),
             (" 0.0042 ", 42),
+            ("0.9999999999999999999999999999999999999999", 10_000),
+            ("0.0000499999999999999999999999999999999999999", 0),
+            ("0.000049999999999999999999999999999999999999e1", 5),
         ] {
             assert_eq!(
                 parse(text),

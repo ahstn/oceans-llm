@@ -707,6 +707,25 @@ fn parallel_tool_calls_false_disables_parallel_claude_tool_use() {
         body["additionalModelRequestFields"]["tool_choice"],
         json!({"disable_parallel_tool_use": true})
     );
+
+    // Tools that only the route's `extra_body` supplies still get the constraint.
+    let mut route_tools = context("us.anthropic.claude-haiku-5-5-v1:0");
+    route_tools.extra_body.insert(
+        "toolConfig".to_string(),
+        json!({"tools": [{"toolSpec": {"name": "get_weather", "inputSchema": {"json": {"type": "object"}}}}]}),
+    );
+    let toolless = CoreChatRequest {
+        extra: BTreeMap::from([
+            ("max_tokens".to_string(), json!(256)),
+            ("parallel_tool_calls".to_string(), json!(false)),
+        ]),
+        ..request
+    };
+    let body = map_chat_request_to_converse(&toolless, &route_tools).expect("Converse body");
+    assert_eq!(
+        body["additionalModelRequestFields"]["tool_choice"],
+        json!({"type": "auto", "disable_parallel_tool_use": true})
+    );
 }
 
 #[test]
