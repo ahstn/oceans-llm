@@ -207,6 +207,28 @@ async fn missing_usage_is_estimated_from_the_request_and_response_sizes() {
 }
 
 #[tokio::test]
+async fn usage_with_only_a_total_is_estimated_from_the_sizes() {
+    let route = catalog_route();
+    let provider = openai_provider(&route.provider_key);
+    let event = recorded_usage(
+        &route,
+        provider,
+        Some(pricing_record(None)),
+        Some(json!({"total_tokens": 1_500})),
+        UsageEstimateInput {
+            request_body_bytes: Some(4_001),
+            response_text_bytes: Some(2_001),
+        },
+    )
+    .await;
+
+    assert_eq!(event.pricing_status, UsagePricingStatus::LegacyEstimated);
+    assert_eq!(event.prompt_tokens, Some(1_001));
+    assert_eq!(event.completion_tokens, Some(501));
+    assert_eq!(event.computed_cost_usd, Money4::from_scaled(20));
+}
+
+#[tokio::test]
 async fn missing_usage_stays_unbilled_without_a_request_size_or_rates() {
     let sizes = UsageEstimateInput {
         request_body_bytes: Some(4_000),

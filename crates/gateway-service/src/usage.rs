@@ -341,13 +341,10 @@ fn normalize_exclusive_cache_tokens(
         Ok(tokens) => tokens,
         Err(reason) => return CacheUsageNormalization::Invalid(reason),
     };
+    // The 1-hour writes are a share of all writes; a count above them bills every write at
+    // the 1-hour rate rather than discard the valid input total.
     let cache_write_1h_tokens = match cache_write_1h_tokens {
-        Ok(tokens) if tokens <= cache_write_tokens => tokens,
-        Ok(_) => {
-            return CacheUsageNormalization::Invalid(
-                "1-hour cache writes exceed total cache writes".to_string(),
-            );
-        }
+        Ok(tokens) => tokens.min(cache_write_tokens),
         Err(reason) => return CacheUsageNormalization::Invalid(reason),
     };
     let Some(total_input_tokens) = uncached_input_tokens

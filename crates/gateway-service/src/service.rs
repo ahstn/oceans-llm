@@ -1205,7 +1205,8 @@ where
             apply_provider_reported_cost(record, cost_usd);
             return Ok(());
         }
-        if !usage_summary.has_usage() {
+        // A bare `total_tokens` has no input/output split to price, so it is estimated too.
+        if usage_summary.prompt_tokens.is_none() && usage_summary.completion_tokens.is_none() {
             warn!(
                 request_id = %record.request_id,
                 provider_key = %route.provider_key,
@@ -3277,7 +3278,7 @@ mod tests {
     }
 
     #[test]
-    fn one_hour_writes_above_all_writes_are_invalid() {
+    fn one_hour_writes_above_all_writes_count_every_write_as_one_hour() {
         for usage in [
             json!({
                 "input_tokens": 100, "output_tokens": 20, "cache_creation_input_tokens": 100,
@@ -3292,11 +3293,9 @@ mod tests {
             }),
         ] {
             let summary = usage_summary_from_value(Some(&usage)).unwrap();
-            assert_eq!(summary.cache_write_1h_tokens, None, "{usage}");
-            assert!(
-                matches!(summary.cache_usage, CacheUsageNormalization::Invalid(_)),
-                "{usage}"
-            );
+            assert_eq!(summary.prompt_tokens, Some(200), "{usage}");
+            assert_eq!(summary.cache_write_1h_tokens, Some(100), "{usage}");
+            assert_eq!(summary.cache_usage.reason(), None, "{usage}");
         }
     }
 

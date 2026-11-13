@@ -492,8 +492,14 @@ pub(super) fn map_converse_parallel_tool_calls(
             ));
         }
     }
-    // Without tools, or with `tool_choice: none`, the constraint is vacuous.
-    let Some(tool_config) = body.get("toolConfig") else {
+    // Without tools, or with `tool_choice: none`, the constraint is vacuous. A route's
+    // `toolConfig` with no tools also has nothing to call in parallel.
+    let Some(tool_config) = body.get("toolConfig").filter(|config| {
+        config
+            .get("tools")
+            .and_then(Value::as_array)
+            .is_some_and(|tools| !tools.is_empty())
+    }) else {
         return Ok(());
     };
     if !is_anthropic_claude_model(upstream_model) {

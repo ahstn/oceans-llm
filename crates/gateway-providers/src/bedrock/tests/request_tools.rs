@@ -747,4 +747,13 @@ fn converse_models_without_a_parallel_switch_reject_only_disabling_it() {
     };
     let body = map_chat_request_to_converse(&toolless, &nova).expect("vacuous without tools");
     assert!(body.get("additionalModelRequestFields").is_none());
+
+    // A route `toolConfig` without tools still has nothing to call in parallel.
+    let mut route_tool_config = nova.clone();
+    route_tool_config.extra_body.insert(
+        "toolConfig".to_string(),
+        json!({"toolChoice": {"auto": {}}}),
+    );
+    map_chat_request_to_converse(&toolless, &route_tool_config)
+        .expect("vacuous without tools in toolConfig");
 }

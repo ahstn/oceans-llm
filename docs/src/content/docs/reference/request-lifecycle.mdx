@@ -46,8 +46,8 @@ A streamed response starts with `200` and `text/event-stream`. After that, the s
 | --- | --- | --- |
 | The provider fails before the stream starts | Row with the error status and a `stream_start_error` attempt | No row |
 | The stream completes | Row with status `200` and a success attempt | Row from the last usage snapshot, else an estimate or `usage_missing` |
-| The provider sends an error event | Row with the failure status and code | Row only if the stream had reported usage |
-| The upstream transport fails mid-stream | Row with a `stream_error` attempt | Row only if the stream had reported usage |
+| The provider sends an error event | Row with the failure status and code | Row from the last usage snapshot, else an estimate from the request and the output streamed so far, or `usage_missing` |
+| The upstream transport fails mid-stream | Row with a `stream_error` attempt | Row from the last usage snapshot, else an estimate from the request and the output streamed so far, or `usage_missing` |
 | The client disconnects | Row recorded in the background | No row. Reported tokens still count against token rate limits |
 
 The stream logger parses SSE across UTF-8 and frame boundaries. It keeps the latest usage snapshot it sees. Chat Completions streams usually report usage at the top level of a chunk. Responses streams report it on the completed event as `response.usage`. Bedrock streams are converted to OpenAI-compatible SSE before this step (see [AWS Bedrock](/providers/aws-bedrock/)). Payload policy can cap the stored stream events without affecting usage or error parsing.
@@ -98,7 +98,7 @@ The default is `422` because the OpenAI and Anthropic Python SDKs retry `429` bu
 | Adapter rejects the request locally | `400` | `invalid_request` |
 | Adapter doesn't implement the operation | `501` | `provider_not_implemented` |
 
-If the provider reported usage before it failed, the gateway still writes a ledger row and charges that usage.
+If a stream fails after it starts, the gateway still writes a ledger row. It charges the usage the provider reported, or else an estimate from the request size and the output streamed before the failure.
 
 ## Pricing states
 

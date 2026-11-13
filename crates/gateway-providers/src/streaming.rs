@@ -77,8 +77,8 @@ where
             let chunk = match chunk {
                 Ok(chunk) => chunk,
                 Err(error) => {
-                    if let Some(final_chunk) = render_held_chat_chunk(&mut held) {
-                        yield Ok(final_chunk);
+                    for pending in take_pending_chat_chunks(&mut held, &mut early_usage) {
+                        yield Ok(pending);
                     }
                     yield Ok(openai_sse_error_chunk(
                         "upstream_openai_compat_stream_error",
@@ -92,8 +92,8 @@ where
             let events = match parser.push_bytes(&chunk) {
                 Ok(events) => events,
                 Err(error) => {
-                    if let Some(final_chunk) = render_held_chat_chunk(&mut held) {
-                        yield Ok(final_chunk);
+                    for pending in take_pending_chat_chunks(&mut held, &mut early_usage) {
+                        yield Ok(pending);
                     }
                     yield Ok(openai_sse_error_chunk(
                         "openai_compat_sse_parse_error",
@@ -118,8 +118,8 @@ where
                 let value = match serde_json::from_str::<Value>(data) {
                     Ok(value) if value.is_object() => value,
                     Ok(_) => {
-                        if let Some(final_chunk) = render_held_chat_chunk(&mut held) {
-                            yield Ok(final_chunk);
+                        for pending in take_pending_chat_chunks(&mut held, &mut early_usage) {
+                            yield Ok(pending);
                         }
                         yield Ok(openai_sse_error_chunk(
                             "openai_compat_payload_parse_error",
@@ -129,8 +129,8 @@ where
                         break 'upstream;
                     }
                     Err(error) => {
-                        if let Some(final_chunk) = render_held_chat_chunk(&mut held) {
-                            yield Ok(final_chunk);
+                        for pending in take_pending_chat_chunks(&mut held, &mut early_usage) {
+                            yield Ok(pending);
                         }
                         yield Ok(openai_sse_error_chunk(
                             "openai_compat_payload_parse_error",
@@ -143,8 +143,8 @@ where
                 let semantics = match chat_sse_semantics(&value) {
                     Ok(semantics) => semantics,
                     Err(error) => {
-                        if let Some(final_chunk) = render_held_chat_chunk(&mut held) {
-                            yield Ok(final_chunk);
+                        for pending in take_pending_chat_chunks(&mut held, &mut early_usage) {
+                            yield Ok(pending);
                         }
                         yield Ok(openai_sse_error_chunk(
                             "openai_compat_protocol_error",
@@ -178,13 +178,18 @@ where
                             None => {}
                         }
                     } else {
-                        if let Some(final_chunk) = render_held_chat_chunk(&mut held) {
+                        // Usage held for a final chunk must precede an error, which ends the stream.
+                        if semantics.is_error {
+                            for pending in take_pending_chat_chunks(&mut held, &mut early_usage) {
+                                yield Ok(pending);
+                            }
+                        } else if let Some(final_chunk) = render_held_chat_chunk(&mut held) {
                             yield Ok(final_chunk);
                         }
                         if saw_terminal_event && !semantics.is_error {
                             let mut final_chunk = value;
                             if let Some((_, usage_chunk)) = early_usage.take() {
-                                fold_usage_chunk(&mut final_chunk, usage_chunk);
+                                fill_from_early_usage_chunk(&mut final_chunk, usage_chunk);
                             }
                             held = Some((event.event, final_chunk));
                             continue;
@@ -201,12 +206,9 @@ where
             }
         }
 
-        if let Some(final_chunk) = render_held_chat_chunk(&mut held) {
-            yield Ok(final_chunk);
-        }
         // Usage the stream never got to fold still reaches the ledger.
-        if let Some(usage_chunk) = render_held_chat_chunk(&mut early_usage) {
-            yield Ok(usage_chunk);
+        for pending in take_pending_chat_chunks(&mut held, &mut early_usage) {
+            yield Ok(pending);
         }
 
         if !stream_failed && let Err(error) = parser.finish() {
@@ -280,6 +282,18 @@ fn render_held_chat_chunk(held: &mut Option<HeldChatChunk>) -> Option<Bytes> {
     })
 }
 
+/// The held final chunk, then a usage-only chunk that never found a final chunk to fold
+/// into, for a stream about to end.
+fn take_pending_chat_chunks(
+    held: &mut Option<HeldChatChunk>,
+    early_usage: &mut Option<HeldChatChunk>,
+) -> Vec<Bytes> {
+    render_held_chat_chunk(held)
+        .into_iter()
+        .chain(render_held_chat_chunk(early_usage))
+        .collect()
+}
+
 /// The chunk `stream_options.include_usage` adds after the last choice chunk.
 fn is_usage_only_chunk(value: &Value) -> bool {
     value.get("usage").is_some_and(Value::is_object)
@@ -298,6 +312,19 @@ fn fold_usage_chunk(final_chunk: &mut Value, usage_chunk: Value) {
         if key == "usage" {
             target.insert(key, value);
         } else if key != "choices" {
+            target.entry(key).or_insert(value);
+        }
+    }
+}
+
+/// Folds a usage-only chunk that came before the final choice chunk. The final chunk is
+/// later, so a `usage` or other field it already reports wins.
+fn fill_from_early_usage_chunk(final_chunk: &mut Value, usage_chunk: Value) {
+    let (Some(target), Value::Object(source)) = (final_chunk.as_object_mut(), usage_chunk) else {
+        return;
+    };
+    for (key, value) in source {
+        if key != "choices" {
             target.entry(key).or_insert(value);
         }
     }
@@ -828,6 +855,48 @@ mod tests {
             .find("openai_compat_payload_parse_error")
             .expect("error chunk");
         assert!(finish < error, "{rendered}");
+    }
+
+    #[tokio::test]
+    async fn chat_final_chunk_usage_wins_over_an_early_usage_chunk() {
+        let rendered = render(normalize_openai_compat_chat_stream(
+            upstream(
+                "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":0,\"total_tokens\":2}}\n\n\
+                 data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":5,\"total_tokens\":7}}\n\n\
+                 data: [DONE]\n\n",
+            ),
+            false,
+        ))
+        .await;
+
+        let events = rendered_events(&rendered);
+        assert_eq!(events.len(), 2, "{rendered}");
+        let final_chunk: Value = serde_json::from_str(events[0]).expect("final chunk");
+        assert_eq!(final_chunk["usage"]["total_tokens"], 7, "{rendered}");
+    }
+
+    #[tokio::test]
+    async fn chat_flushes_early_usage_before_an_error() {
+        for transcript in [
+            concat!(
+                "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}\n\n",
+                "data: not-json\n\n"
+            ),
+            concat!(
+                "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}\n\n",
+                "data: {\"error\":{\"message\":\"boom\"}}\n\n"
+            ),
+        ] {
+            let rendered = render(normalize_openai_compat_chat_stream(
+                upstream(transcript),
+                false,
+            ))
+            .await;
+
+            let usage = rendered.find("\"usage\"").expect("usage chunk");
+            let error = rendered.find("\"error\"").expect("error chunk");
+            assert!(usage < error, "{rendered}");
+        }
     }
 
     #[tokio::test]

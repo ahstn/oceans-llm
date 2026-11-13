@@ -585,24 +585,37 @@ pub(crate) fn apply_openai_compat_request_profile(
 
 /// Chat Completions profile for openai_compat routes. A profile's `max_tokens_field`
 /// decides the token-limit field. A route without a profile sends `max_completion_tokens`
-/// only when `upstream_takes_max_completion_tokens`.
+/// only when `upstream_takes_max_completion_tokens`. Either rename rejects two different
+/// limits rather than drop one.
 fn apply_openai_compat_chat_profile(
     body: &mut Value,
     context: &ProviderRequestContext,
     upstream_takes_max_completion_tokens: bool,
 ) -> Result<(), ProviderError> {
+    let profile = context.compatibility.openai_compat.as_ref();
+    if profile
+        .is_some_and(|profile| profile.max_tokens_field == OpenAiCompatMaxTokensField::MaxTokens)
+        && let Some(object) = body.as_object()
+        && let (Some(max_tokens), Some(completion)) = (
+            object.get("max_tokens"),
+            object.get("max_completion_tokens"),
+        )
+        && max_tokens != completion
+    {
+        return Err(conflicting_max_tokens());
+    }
     apply_openai_compat_request_profile(body, context);
-    let renames = context
-        .compatibility
-        .openai_compat
-        .as_ref()
-        .map_or(upstream_takes_max_completion_tokens, |profile| {
-            profile.max_tokens_field == OpenAiCompatMaxTokensField::MaxCompletionTokens
-        });
+    let renames = profile.map_or(upstream_takes_max_completion_tokens, |profile| {
+        profile.max_tokens_field == OpenAiCompatMaxTokensField::MaxCompletionTokens
+    });
     match body.as_object_mut() {
         Some(object) if renames => move_max_tokens_to_max_completion_tokens(object),
         _ => Ok(()),
     }
+}
+
+fn conflicting_max_tokens() -> ProviderError {
+    ProviderError::InvalidRequest("`max_completion_tokens` conflicts with `max_tokens`".to_string())
 }
 
 fn move_max_tokens_to_max_completion_tokens(
@@ -612,9 +625,7 @@ fn move_max_tokens_to_max_completion_tokens(
         return Ok(());
     };
     match object.get("max_completion_tokens") {
-        Some(completion) if *completion != max_tokens => Err(ProviderError::InvalidRequest(
-            "`max_completion_tokens` conflicts with `max_tokens`".to_string(),
-        )),
+        Some(completion) if *completion != max_tokens => Err(conflicting_max_tokens()),
         Some(_) => Ok(()),
         None => {
             object.insert("max_completion_tokens".to_string(), max_tokens);
@@ -1234,6 +1245,16 @@ mod tests {
 
         assert_eq!(body_json["max_tokens"], json!(256));
         assert!(body_json.get("max_completion_tokens").is_none());
+
+        let conflicting =
+            chat_request_with(json!({"max_tokens": 64, "max_completion_tokens": 128}));
+        let error = provider
+            .build_chat_request(&conflicting, &context)
+            .expect_err("a profile rename must not drop a different limit");
+        assert!(
+            error.to_string().contains("conflicts with `max_tokens`"),
+            "{error}"
+        );
     }
 
     fn chat_request_with(extra: Value) -> CoreChatRequest {
