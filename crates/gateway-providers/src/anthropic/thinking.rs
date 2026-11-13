@@ -5,7 +5,7 @@ use super::error::AnthropicAdapterError;
 pub use gateway_core::claude_models::{
     ClaudeThinkingOff, ClaudeThinkingPolicy, claude_rejects_forced_tool_choice,
     claude_thinking_off, claude_thinking_policy, contains_exact_claude_model_marker,
-    is_adaptive_only_claude, known_claude_thinking_policy,
+    known_claude_thinking_policy,
 };
 
 const ADAPTIVE_EFFORT_LEVELS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];

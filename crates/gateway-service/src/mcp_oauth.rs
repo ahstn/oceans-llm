@@ -313,11 +313,6 @@ impl McpOauthRuntime {
         Ok(self)
     }
 
-    #[must_use]
-    pub fn is_configured(&self) -> bool {
-        self.public_base_url.is_some() && !self.providers.is_empty()
-    }
-
     /// The externally reachable gateway origin, without a trailing slash.
     #[must_use]
     pub fn public_base_url(&self) -> Option<&str> {

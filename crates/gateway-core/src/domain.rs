@@ -13,7 +13,6 @@ use crate::routing::ModelRoutingPolicy;
 use crate::service_tier::ServiceTier;
 
 pub const SYSTEM_BOOTSTRAP_ADMIN_USER_ID: &str = "00000000-0000-0000-0000-000000000002";
-pub const SYSTEM_BOOTSTRAP_ADMIN_EMAIL: &str = "admin@local";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 #[serde(transparent)]
