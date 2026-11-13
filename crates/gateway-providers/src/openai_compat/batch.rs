@@ -558,11 +558,13 @@ fn timestamp(value: &Value, keys: &[&str]) -> Option<OffsetDateTime> {
 }
 
 fn parse_money(value: &Value) -> Option<Money4> {
-    let raw = value
-        .as_str()
-        .map(str::to_string)
-        .or_else(|| value.as_f64().map(|number| number.to_string()))?;
-    Money4::from_decimal_str(&raw).ok()
+    match value {
+        Value::String(text) => Money4::from_reported_cost_str(text).ok(),
+        // serde_json prints a float as its shortest round-trip decimal, possibly
+        // in exponent form such as `4.23e-5`.
+        Value::Number(number) => Money4::from_reported_cost_str(&number.to_string()).ok(),
+        _ => None,
+    }
 }
 
 fn parse_openai_result(value: &Value) -> Result<ProviderBatchResult, ProviderError> {
@@ -832,5 +834,40 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].custom_id, "row-1");
         assert_eq!(results[0].cost_usd, Some(Money4::from_scaled(25)));
+    }
+
+    #[test]
+    fn reported_costs_beyond_four_places_round_half_up() {
+        let state = parse_state(&json!({
+            "id": "batch_456",
+            "status": "completed",
+            "usage": {"cost": 0.000423}
+        }))
+        .expect("state");
+        assert_eq!(state.provider_cost_usd, Some(Money4::from_scaled(4)));
+
+        let results = parse_openrouter_results(&json!({
+            "requests": [
+                {"custom_id": "row-1", "usage": {"cost": 0.000423}},
+                {"custom_id": "row-2", "usage": {"cost": "0.000050"}},
+                {"custom_id": "row-3", "response": {"usage": {"cost": 4.2e-5}}}
+            ]
+        }));
+        let costs: Vec<_> = results.iter().map(|result| result.cost_usd).collect();
+        assert_eq!(
+            costs,
+            [
+                Some(Money4::from_scaled(4)),
+                Some(Money4::from_scaled(1)),
+                Some(Money4::from_scaled(0)),
+            ]
+        );
+
+        let result = parse_openai_result(&json!({
+            "custom_id": "row-4",
+            "response": {"body": {"usage": {"cost": 0.012345}}}
+        }))
+        .expect("result");
+        assert_eq!(result.cost_usd, Some(Money4::from_scaled(123)));
     }
 }

@@ -125,6 +125,32 @@ fn response_input_is_user_turn(input: &Value) -> bool {
             .is_some_and(content_is_only_tool_results)
 }
 
+/// Whether an outgoing Chat, Responses or Messages body sends an image, which
+/// Copilot rejects unless the request carries `Copilot-Vision-Request: true`.
+fn body_has_image(body: &Value) -> bool {
+    ["messages", "input"]
+        .into_iter()
+        .filter_map(|field| body.get(field))
+        .any(contains_image_part)
+}
+
+/// Walks content arrays, including tool results nested in `content` or `output`.
+fn contains_image_part(value: &Value) -> bool {
+    match value {
+        Value::Array(items) => items.iter().any(contains_image_part),
+        Value::Object(object) => {
+            matches!(
+                object.get("type").and_then(Value::as_str),
+                Some("image_url" | "input_image" | "image")
+            ) || ["content", "output"]
+                .into_iter()
+                .filter_map(|field| object.get(field))
+                .any(contains_image_part)
+        }
+        _ => false,
+    }
+}
+
 fn normalize_embeddings_response(mut response: Value, requested_model: &str) -> Value {
     if let Some(object) = response.as_object_mut() {
         object
@@ -307,6 +333,7 @@ impl CopilotProvider {
             Vec::new()
         };
         let token = self.token(context).await?;
+        let vision = body_has_image(&body);
         let url = join_base_url(&self.config.base_url, endpoint_suffix)?;
         let req_builder = self.client.post(url).json(&body);
         let req_builder = self.apply_copilot_headers(req_builder, context);
@@ -349,6 +376,12 @@ impl CopilotProvider {
             "x-initiator",
             reqwest::header::HeaderValue::from_static(initiator.as_str()),
         );
+        if vision {
+            request.headers_mut().insert(
+                "copilot-vision-request",
+                reqwest::header::HeaderValue::from_static("true"),
+            );
+        }
         Ok(request)
     }
 

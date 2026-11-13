@@ -418,10 +418,11 @@ If a later call fails after earlier calls worked, the whole request fails. The g
 
 ### Usage and pricing
 
-The gateway uses only token counts that Vertex reports: `statistics.token_count` per prediction for `:predict`, and `usageMetadata.promptTokenCount` for `:embedContent`. It never turns characters or bytes into tokens.
+The gateway uses the token counts that Vertex reports: `statistics.token_count` per prediction for `:predict`, and `usageMetadata.promptTokenCount` for `:embedContent`.
 
 - With token counts and an exact price, embedding spend counts against [budgets](/spend/budgets/) like other traffic.
-- If Vertex omits token counts, the ledger row is `usage_missing`. If the catalog has no exact price, the row is `unpriced`. Both rows show in reporting but don't use budget.
+- If Vertex omits token counts, the gateway estimates the input tokens from the request size, at one token per 4 bytes. The row is `legacy_estimated` and uses budget.
+- If the catalog has no exact price, the row is `unpriced`, or `usage_missing` when the token counts are missing too. These rows show in reporting but don't use budget.
 
 The vendored pricing snapshots include `gemini-embedding-001` and `gemini-embedding-2` only. See [Pricing catalog and accounting](/spend/pricing-and-accounting/).
 
@@ -433,7 +434,8 @@ The vendored pricing snapshots include `gemini-embedding-001` and `gemini-embedd
 | `encoding_format` fails | Use `float`. Vertex `base64` encoding isn't supported. |
 | Token-array or nested-array input fails | Send text strings. The gateway can't turn OpenAI token arrays into Vertex text. |
 | `unsupported vertex embeddings request field(s)` | Remove the named field, or move it to a field the model accepts. |
-| Spend row is `usage_missing` | Vertex didn't return token counts, so the request doesn't use budget. |
+| Spend row is `legacy_estimated` with `estimated_usage_missing` | Vertex didn't return token counts, so the gateway estimated them from the request size. |
+| Spend row is `usage_missing` | Vertex didn't return token counts, and the catalog has no price for the model. |
 | Spend row is `unpriced` | The catalog has no exact price for the model. |
 
 ## Batches

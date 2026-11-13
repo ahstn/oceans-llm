@@ -45,7 +45,8 @@ fn translate_stop(body: &mut Map<String, Value>) -> Result<(), AnthropicAdapterE
     Ok(())
 }
 
-fn translate_parallel_tool_calls(
+/// Maps Chat `parallel_tool_calls` onto Claude `tool_choice.disable_parallel_tool_use`.
+pub(crate) fn translate_parallel_tool_calls(
     body: &mut Map<String, Value>,
 ) -> Result<(), AnthropicAdapterError> {
     let parallel = match body.remove("parallel_tool_calls") {

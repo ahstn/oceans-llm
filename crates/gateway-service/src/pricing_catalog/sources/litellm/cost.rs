@@ -1,8 +1,9 @@
 //! LiteLLM per-token rate keys projected into a cost document: the base schedule, its
 //! context tiers, and one schedule per service tier.
 //!
-//! A rate key is `<rate>[_above_<N>k_tokens][_flex|_priority|_ultrafast]`. Keys with any
-//! other suffix (`_batches`, `_above_1hr`, ...) price other dimensions and are ignored.
+//! A rate key is `<rate>[_above_<N>k_tokens][_flex|_priority|_ultrafast]`, where `<rate>`
+//! `cache_creation_input_token_cost_above_1hr` prices 1-hour cache writes. Keys with any
+//! other suffix (`_batches`, `_above_12hr`, ...) price other dimensions and are ignored.
 
 use std::collections::BTreeMap;
 
@@ -15,11 +16,12 @@ use crate::pricing_catalog::{
 };
 
 /// LiteLLM per-token rate keys in [`Rates`] order.
-const RATE_KEYS: [&str; 4] = [
+const RATE_KEYS: [&str; 5] = [
     "input_cost_per_token",
     "output_cost_per_token",
     "cache_read_input_token_cost",
     "cache_creation_input_token_cost",
+    "cache_creation_input_token_cost_above_1hr",
 ];
 const OUTPUT_IMAGE_RATE_KEY: &str = "output_cost_per_image_token";
 /// Rate key suffixes naming a non-default service tier.
@@ -29,8 +31,8 @@ const SERVICE_TIER_SUFFIXES: [(&str, ServiceTier); 3] = [
     ("_ultrafast", ServiceTier::Ultrafast),
 ];
 
-/// Per-token input, output, cache read and cache write rates.
-type Rates = [Option<f64>; 4];
+/// Per-token input, output, cache read, 5-minute and 1-hour cache write rates.
+type Rates = [Option<f64>; 5];
 
 /// One service tier's per-token rates and their context tiers, keyed by threshold.
 #[derive(Debug, Clone, Default)]
@@ -69,12 +71,13 @@ pub(super) fn cost_document(
             .entry(ServiceTier::Priority)
             .or_insert_with(|| base.scaled(multiplier));
     }
-    let [input, output, cache_read, cache_write] = per_million(&base.flat);
+    let [input, output, cache_read, cache_write, cache_write_1h] = per_million(&base.flat);
     PricingCatalogCostDocument {
         input,
         output,
         cache_read,
         cache_write,
+        cache_write_1h,
         output_image: fields
             .get(OUTPUT_IMAGE_RATE_KEY)
             .and_then(Value::as_f64)
@@ -109,27 +112,33 @@ fn tier_rates(fields: &Map<String, Value>) -> BTreeMap<ServiceTier, TierRates> {
 }
 
 /// The [`Rates`] index, context threshold and service tier a rate key names.
+/// `cache_creation_input_token_cost_above_1hr` keys also start with the 5-minute key, so
+/// a prefix whose suffix does not parse yields to the next one.
 fn parse_rate_key(key: &str) -> Option<(usize, Option<i64>, ServiceTier)> {
-    let (bucket, rest) = RATE_KEYS
-        .iter()
-        .enumerate()
-        .find_map(|(bucket, rate_key)| Some((bucket, key.strip_prefix(rate_key)?)))?;
+    RATE_KEYS.iter().enumerate().find_map(|(bucket, rate_key)| {
+        let (above_input_tokens, tier) = parse_rate_suffix(key.strip_prefix(rate_key)?)?;
+        Some((bucket, above_input_tokens, tier))
+    })
+}
+
+/// The context threshold and service tier a rate key's suffix names.
+fn parse_rate_suffix(rest: &str) -> Option<(Option<i64>, ServiceTier)> {
     let (rest, tier) = SERVICE_TIER_SUFFIXES
         .iter()
         .find_map(|(suffix, tier)| Some((rest.strip_suffix(suffix)?, *tier)))
         .unwrap_or((rest, ServiceTier::Default));
     if rest.is_empty() {
-        return Some((bucket, None, tier));
+        return Some((None, tier));
     }
     let thousands = rest.strip_prefix("_above_")?.strip_suffix("k_tokens")?;
     if thousands.is_empty() || !thousands.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
     let above_input_tokens = thousands.parse::<i64>().ok()?.checked_mul(1000)?;
-    Some((bucket, Some(above_input_tokens), tier))
+    Some((Some(above_input_tokens), tier))
 }
 
-fn per_million(rates: &Rates) -> [Option<String>; 4] {
+fn per_million(rates: &Rates) -> [Option<String>; 5] {
     rates
         .each_ref()
         .map(|rate| rate.and_then(f64_per_token_to_per_million))
@@ -140,25 +149,27 @@ fn context_tiers(context: &BTreeMap<i64, Rates>) -> Vec<PricingCatalogContextTie
     context
         .iter()
         .map(|(above_input_tokens, rates)| {
-            let [input, output, cache_read, cache_write] = per_million(rates);
+            let [input, output, cache_read, cache_write, cache_write_1h] = per_million(rates);
             PricingCatalogContextTier {
                 above_input_tokens: *above_input_tokens,
                 input,
                 output,
                 cache_read,
                 cache_write,
+                cache_write_1h,
             }
         })
         .collect()
 }
 
 fn service_tier_cost(rates: &TierRates) -> PricingCatalogServiceTierCost {
-    let [input, output, cache_read, cache_write] = per_million(&rates.flat);
+    let [input, output, cache_read, cache_write, cache_write_1h] = per_million(&rates.flat);
     PricingCatalogServiceTierCost {
         input,
         output,
         cache_read,
         cache_write,
+        cache_write_1h,
         context_tiers: context_tiers(&rates.context),
     }
 }
@@ -184,6 +195,7 @@ mod tests {
             output: Some(output.to_string()),
             cache_read: None,
             cache_write: None,
+            cache_write_1h: None,
         }
     }
 
@@ -223,6 +235,7 @@ mod tests {
                 output: Some("1.0000".to_string()),
                 cache_read: Some("0.0200".to_string()),
                 cache_write: None,
+                cache_write_1h: Some("9.0000".to_string()),
                 context_tiers: vec![context_tier(272_000, "0.4000", "1.5000")],
             }
         );
@@ -233,6 +246,35 @@ mod tests {
                 output: Some("0.2500".to_string()),
                 ..PricingCatalogServiceTierCost::default()
             }
+        );
+    }
+
+    #[test]
+    fn one_hour_cache_write_keys_price_their_own_bucket() {
+        let cost = cost_of(
+            &json!({
+                "input_cost_per_token": 3e-06,
+                "output_cost_per_token": 1.5e-05,
+                "cache_creation_input_token_cost": 3.75e-06,
+                "cache_creation_input_token_cost_above_1hr": 6e-06,
+                "input_cost_per_token_above_200k_tokens": 6e-06,
+                "output_cost_per_token_above_200k_tokens": 2.25e-05,
+                "cache_creation_input_token_cost_above_200k_tokens": 7.5e-06,
+                "cache_creation_input_token_cost_above_1hr_above_200k_tokens": 1.2e-05,
+                "cache_creation_input_token_cost_above_12hr": 9e-06,
+            }),
+            None,
+        );
+
+        assert_eq!(cost.cache_write.as_deref(), Some("3.7500"));
+        assert_eq!(cost.cache_write_1h.as_deref(), Some("6.0000"));
+        assert_eq!(
+            cost.tiers,
+            [PricingCatalogContextTier {
+                cache_write: Some("7.5000".to_string()),
+                cache_write_1h: Some("12.0000".to_string()),
+                ..context_tier(200_000, "6.0000", "22.5000")
+            }]
         );
     }
 
@@ -257,6 +299,7 @@ mod tests {
                 output: Some("40.0000".to_string()),
                 cache_read: Some("0.4000".to_string()),
                 cache_write: Some("10.0000".to_string()),
+                cache_write_1h: None,
                 context_tiers: vec![context_tier(200_000, "16.0000", "60.0000")],
             }
         );

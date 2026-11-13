@@ -9,6 +9,7 @@ fn tier(above_input_tokens: i64, input: &str, output: &str) -> PricingCatalogCon
         output: Some(output.to_string()),
         cache_read: None,
         cache_write: None,
+        cache_write_1h: None,
     }
 }
 
@@ -551,6 +552,7 @@ fn pricing_record_carries_service_tier_schedules_with_unset_rates_left_unset() {
                 output: Some("20.0000".to_string()),
                 cache_read: Some("0.2500".to_string()),
                 cache_write: None,
+                cache_write_1h: None,
                 context_tiers: vec![tier(272_000, "5.0000", "30.0000")],
             },
         ),
@@ -569,6 +571,7 @@ fn pricing_record_carries_service_tier_schedules_with_unset_rates_left_unset() {
                 output: money(50_000),
                 cache_read: None,
                 cache_write: None,
+                cache_write_1h: None,
                 context_tiers: Vec::new(),
             },
             ServiceTierPricing {
@@ -577,12 +580,14 @@ fn pricing_record_carries_service_tier_schedules_with_unset_rates_left_unset() {
                 output: money(200_000),
                 cache_read: money(2_500),
                 cache_write: None,
+                cache_write_1h: None,
                 context_tiers: vec![ContextPricingTier {
                     above_input_tokens: 272_000,
                     input: money(50_000),
                     output: money(300_000),
                     cache_read: None,
                     cache_write: None,
+                    cache_write_1h: None,
                 }],
             },
         ],

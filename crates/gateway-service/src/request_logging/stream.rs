@@ -7,6 +7,7 @@ use crate::{
     redaction::{
         RequestLogPayloadPolicy, redact_json_value_with_policy, truncate_large_payload_fields,
     },
+    usage::stream_event_text_bytes,
 };
 
 use super::{tool_cardinality::InvokedToolCounts, truncate_payload};
@@ -39,6 +40,7 @@ pub struct StreamResponseCollector {
     served_service_tier: Option<ServiceTier>,
     failure: Option<StreamFailureSummary>,
     tool_calls: ToolCallTally,
+    output_text_bytes: u64,
     finished: bool,
     truncated: bool,
 }
@@ -112,6 +114,9 @@ impl StreamResponseCollector {
                     self.served_service_tier = Some(tier);
                 }
                 self.observe_tool_calls(parsed);
+                self.output_text_bytes = self
+                    .output_text_bytes
+                    .saturating_add(stream_event_text_bytes(parsed));
                 observation.has_output |= stream_event_has_output(parsed);
                 observation.has_terminal_event |= stream_event_is_terminal(parsed);
                 observation.ends_stream |= stream_event_ends_stream(parsed);
@@ -164,6 +169,13 @@ impl StreamResponseCollector {
     #[must_use]
     pub fn failure(&self) -> Option<&StreamFailureSummary> {
         self.failure.as_ref()
+    }
+
+    /// Bytes of generated text the stream carried, which estimate its output tokens when
+    /// the provider reports no usage.
+    #[must_use]
+    pub fn output_text_bytes(&self) -> u64 {
+        self.output_text_bytes
     }
 
     #[must_use]

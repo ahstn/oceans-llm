@@ -520,6 +520,7 @@ async fn forced_service_tier_routes_resolve_the_catalog_row_with_its_tier_schedu
             output: Some(Money4::from_scaled(200_000)),
             cache_read: None,
             cache_write: None,
+            cache_write_1h: None,
             context_tiers: Vec::new(),
         }]
     );

@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use crate::{
     GatewayService,
-    service::select_context_tier,
+    service::{fallback_cache_write_1h_rate, select_context_tier},
     usage::{CacheUsageNormalization, UsageSummary, usage_summary_from_value},
 };
 
@@ -136,6 +136,7 @@ where
                     output: pricing.output_cost_per_million_tokens,
                     cache_read: pricing.cache_read_cost_per_million_tokens,
                     cache_write: pricing.cache_write_cost_per_million_tokens,
+                    cache_write_1h: pricing.cache_write_1h_cost_per_million_tokens,
                     image_output: pricing.output_image_usd_per_million,
                 };
                 (Some(rates), pricing.context_tiers)
@@ -146,6 +147,7 @@ where
                     output: Some(pricing.output_cost_per_million_tokens),
                     cache_read: pricing.cache_read_cost_per_million_tokens,
                     cache_write: pricing.cache_write_cost_per_million_tokens,
+                    cache_write_1h: pricing.cache_write_1h_cost_per_million_tokens,
                     image_output: pricing.image_output_cost_per_million_tokens,
                 };
                 (Some(rates), Vec::new())
@@ -178,18 +180,29 @@ fn batch_usage_cost_numerator(
     let mut components = Vec::new();
     match &usage.cache_usage {
         CacheUsageNormalization::Valid(_) => {
+            // Cache writes count both TTLs; 1-hour writes bill at their own rate.
+            let cache_write_1h_tokens = usage.cache_write_1h_tokens.unwrap_or_default();
+            let cache_write_1h_rate = rates
+                .cache_write_1h
+                .or_else(|| rates.input.map(fallback_cache_write_1h_rate));
             components.push((usage.uncached_input_tokens, rates.input, true));
             components.push((
                 usage.cache_read_tokens,
                 rates.cache_read,
                 policy == BatchPricingPolicy::HalfAllTokenRates,
             ));
-            components.push((usage.cache_write_tokens, rates.cache_write, true));
+            components.push((
+                usage
+                    .cache_write_tokens
+                    .map(|tokens| tokens - cache_write_1h_tokens),
+                rates.cache_write,
+                true,
+            ));
+            components.push((Some(cache_write_1h_tokens), cache_write_1h_rate, true));
         }
         CacheUsageNormalization::Unavailable | CacheUsageNormalization::Invalid(_) => {
             components.push((usage.prompt_tokens, rates.input, true));
         }
-        CacheUsageNormalization::Unsupported { .. } => return Ok(None),
     }
     // Image tokens are part of the completion tokens; with an image rate they
     // are charged at it and the rest at the output rate, as in usage pricing.
@@ -620,6 +633,7 @@ mod tests {
                 output: Some(Money4::ZERO),
                 cache_read: None,
                 cache_write: None,
+                cache_write_1h: None,
                 image_output: None,
             }),
             context_tiers: Vec::new(),
@@ -647,6 +661,7 @@ mod tests {
                 output: Some(Money4::from_scaled(20_000)),
                 cache_read: None,
                 cache_write: None,
+                cache_write_1h: None,
                 image_output: None,
             }),
             context_tiers: vec![ContextPricingTier {
@@ -655,6 +670,7 @@ mod tests {
                 output: None,
                 cache_read: None,
                 cache_write: None,
+                cache_write_1h: None,
             }],
             policy: BatchPricingPolicy::HalfAllTokenRates,
         });

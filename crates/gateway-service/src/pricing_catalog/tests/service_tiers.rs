@@ -52,6 +52,7 @@ fn tier_rates(service_tier: ServiceTier) -> RouteServiceTierPricing {
         output_cost_per_million_tokens: Money4::from_scaled(20_000),
         cache_read_cost_per_million_tokens: None,
         cache_write_cost_per_million_tokens: None,
+        cache_write_1h_cost_per_million_tokens: None,
     }
 }
 
@@ -61,6 +62,7 @@ fn pricing_override(service_tiers: Vec<RouteServiceTierPricing>) -> RoutePricing
         output_cost_per_million_tokens: Money4::from_scaled(40_000),
         cache_read_cost_per_million_tokens: None,
         cache_write_cost_per_million_tokens: None,
+        cache_write_1h_cost_per_million_tokens: None,
         image_output_cost_per_million_tokens: None,
         service_tiers,
     }

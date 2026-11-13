@@ -66,6 +66,7 @@ pub struct EffectiveRoutePricing {
     pub output_cost_per_million_tokens: Option<Money4>,
     pub cache_read_cost_per_million_tokens: Option<Money4>,
     pub cache_write_cost_per_million_tokens: Option<Money4>,
+    pub cache_write_1h_cost_per_million_tokens: Option<Money4>,
     /// Catalog context tiers, ascending by threshold. Empty for a route
     /// `pricing_override`, which replaces the whole catalog schedule.
     pub context_tiers: Vec<ContextPricingTier>,
@@ -174,6 +175,7 @@ fn catalog_pricing(
             output_cost_per_million_tokens: record.output_cost_per_million_tokens,
             cache_read_cost_per_million_tokens: record.cache_read_cost_per_million_tokens,
             cache_write_cost_per_million_tokens: record.cache_write_cost_per_million_tokens,
+            cache_write_1h_cost_per_million_tokens: record.cache_write_1h_cost_per_million_tokens,
             context_tiers: record.context_tiers.clone(),
             service_tiers: record.service_tiers.clone(),
         },
@@ -187,6 +189,7 @@ fn catalog_pricing(
                 output_cost_per_million_tokens: schedule.output,
                 cache_read_cost_per_million_tokens: schedule.cache_read,
                 cache_write_cost_per_million_tokens: schedule.cache_write,
+                cache_write_1h_cost_per_million_tokens: schedule.cache_write_1h,
                 context_tiers: schedule.context_tiers.clone(),
                 service_tiers: record.service_tiers.clone(),
             }
@@ -212,6 +215,7 @@ fn override_pricing(
             output: Some(pricing.output_cost_per_million_tokens),
             cache_read: pricing.cache_read_cost_per_million_tokens,
             cache_write: pricing.cache_write_cost_per_million_tokens,
+            cache_write_1h: pricing.cache_write_1h_cost_per_million_tokens,
             context_tiers: Vec::new(),
         });
     let mut service_tiers = own_tier
@@ -222,6 +226,7 @@ fn override_pricing(
             output: Some(tier.output_cost_per_million_tokens),
             cache_read: tier.cache_read_cost_per_million_tokens,
             cache_write: tier.cache_write_cost_per_million_tokens,
+            cache_write_1h: tier.cache_write_1h_cost_per_million_tokens,
             context_tiers: Vec::new(),
         }))
         .collect::<Vec<_>>();
@@ -233,6 +238,7 @@ fn override_pricing(
         output_cost_per_million_tokens: Some(pricing.output_cost_per_million_tokens),
         cache_read_cost_per_million_tokens: pricing.cache_read_cost_per_million_tokens,
         cache_write_cost_per_million_tokens: pricing.cache_write_cost_per_million_tokens,
+        cache_write_1h_cost_per_million_tokens: pricing.cache_write_1h_cost_per_million_tokens,
         context_tiers: Vec::new(),
         service_tiers,
     }

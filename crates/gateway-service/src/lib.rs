@@ -186,5 +186,6 @@ pub use secret_storage::{
     encrypt_gateway_api_key_secret,
 };
 pub use service::{BatchUsageInput, GatewayService, RecordedChatUsage};
+pub use usage::{UsageEstimateInput, response_text_bytes};
 
 pub use skills::SkillService;

@@ -60,7 +60,7 @@ For streamed responses, the gateway records spend when the stream ends, from the
 
 ## Which spend counts
 
-Only requests with a known cost count toward budget windows. Each request in the ledger has a pricing state, and only `priced` and `legacy_estimated` requests count. `unpriced` and `usage_missing` requests still show in reports and request logs, but they don't use up any budget, hard or soft. [Pricing catalog and accounting](/spend/pricing-and-accounting/#ledger-states) explains the states and how to fix traffic that isn't priced.
+Only requests with a known or estimated cost count toward budget windows. Each request in the ledger has a pricing state, and only `priced` and `legacy_estimated` requests count. `unpriced` and `usage_missing` requests still show in reports and request logs, but they don't use up any budget, hard or soft. [Pricing catalog and accounting](/spend/pricing-and-accounting/#ledger-states) explains the states and how to fix traffic that isn't priced.
 
 Embedding requests follow the same rules as chat and Responses traffic. A priced embedding request counts against the caller's user budget or service account budget, and against a matching user model budget. For how Vertex embeddings get a price, see [Vertex text embeddings](/spend/pricing-and-accounting/#vertex-text-embeddings).
 

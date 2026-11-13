@@ -142,6 +142,7 @@ mod tests {
             output_cost_per_million_tokens: None,
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            cache_write_1h_cost_per_million_tokens: None,
             input_audio_cost_per_million_tokens: None,
             output_audio_cost_per_million_tokens: None,
             output_image_usd_per_million: None,

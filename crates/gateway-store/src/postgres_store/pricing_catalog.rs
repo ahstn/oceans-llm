@@ -77,7 +77,7 @@ impl PricingCatalogRepository for PostgresStore {
                 limits_json, modalities_json, provenance_source, provenance_etag,
                 provenance_fetched_at, created_at, updated_at,
                 output_image_cost_per_million_tokens_10000, context_tiers_json,
-                    service_tiers_json
+                    service_tiers_json, cache_write_1h_cost_per_million_tokens_10000
             FROM model_pricing
             WHERE effective_end_at IS NULL
             ORDER BY pricing_provider_id ASC, pricing_model_id ASC, effective_start_at ASC
@@ -110,10 +110,10 @@ impl PricingCatalogRepository for PostgresStore {
                 limits_json, modalities_json, provenance_source, provenance_etag,
                 provenance_fetched_at, created_at, updated_at,
                 output_image_cost_per_million_tokens_10000, context_tiers_json,
-                    service_tiers_json
+                    service_tiers_json, cache_write_1h_cost_per_million_tokens_10000
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-                $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+                $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
             )
             "#,
         )
@@ -169,6 +169,11 @@ impl PricingCatalogRepository for PostgresStore {
         )
         .bind(context_tiers_json)
         .bind(service_tiers_json)
+        .bind(
+            record
+                .cache_write_1h_cost_per_million_tokens
+                .map(Money4::as_scaled_i64),
+        )
         .execute(&self.pool)
         .await
         .map_err(to_write_error)?;
@@ -272,10 +277,10 @@ impl PricingCatalogRepository for PostgresStore {
                     limits_json, modalities_json, provenance_source, provenance_etag,
                     provenance_fetched_at, created_at, updated_at,
                     output_image_cost_per_million_tokens_10000, context_tiers_json,
-                    service_tiers_json
+                    service_tiers_json, cache_write_1h_cost_per_million_tokens_10000
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-                    $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+                    $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
                 )
                 "#,
             )
@@ -331,6 +336,11 @@ impl PricingCatalogRepository for PostgresStore {
             )
             .bind(context_tiers_json)
             .bind(service_tiers_json)
+            .bind(
+                record
+                    .cache_write_1h_cost_per_million_tokens
+                    .map(Money4::as_scaled_i64),
+            )
             .execute(&mut *tx)
             .await
             .map_err(to_write_error)?;
@@ -395,7 +405,7 @@ impl PostgresStore {
                 limits_json, modalities_json, provenance_source, provenance_etag,
                 provenance_fetched_at, created_at, updated_at,
                 output_image_cost_per_million_tokens_10000, context_tiers_json,
-                    service_tiers_json
+                    service_tiers_json, cache_write_1h_cost_per_million_tokens_10000
             FROM model_pricing
             WHERE pricing_provider_id = $1
               AND pricing_model_id IN ($2, $3)

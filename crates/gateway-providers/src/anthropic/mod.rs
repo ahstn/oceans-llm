@@ -26,6 +26,7 @@ mod tests;
 pub mod thinking;
 
 pub(crate) use compat_stream::normalize_anthropic_messages_stream;
+pub(crate) use controls::translate_parallel_tool_calls;
 pub use count_tokens::{
     COUNT_TOKENS_FIELDS, normalize_count_tokens_response, retain_count_tokens_fields,
 };

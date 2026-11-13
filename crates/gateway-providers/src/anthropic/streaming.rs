@@ -200,12 +200,15 @@ where
                             content_chunk = Some(chunk);
                             role_emitted = true;
                         } else if delta_type == Some("input_json_delta")
+                            // Anthropic opens tool input with an empty fragment; it must not
+                            // drop the start block's `input`, which `content_block_stop` emits.
                             && let (Some(_block_index), Some(tool_call_index), Some(partial_json)) = (
                                 block_index,
                                 block_index.and_then(|idx| tool_block_indexes.get(&idx).copied()),
                                 delta
                                     .and_then(|d| d.get("partial_json"))
-                                    .and_then(Value::as_str),
+                                    .and_then(Value::as_str)
+                                    .filter(|json| !json.is_empty()),
                             )
                         {
                             if let Some(index) = block_index {

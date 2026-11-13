@@ -821,6 +821,103 @@ fn rejects_unknown_anthropic_messages_request_fields() {
     assert!(error.contains("extra_body"));
 }
 
+/// Fields every OpenAI SDK or AI SDK client may send that Bedrock has no use for.
+fn common_openai_sdk_fields() -> [(&'static str, Value); 10] {
+    [
+        ("stream_options", json!({"include_usage": true})),
+        ("user", json!("user-123")),
+        ("store", json!(false)),
+        ("metadata", json!({"trace": "abc"})),
+        ("prompt_cache_key", json!("session-1")),
+        ("prompt_cache_retention", json!("24h")),
+        ("safety_identifier", json!("safe-1")),
+        ("logit_bias", json!({"50256": -100})),
+        ("n", json!(1)),
+        ("logprobs", json!(false)),
+    ]
+}
+
+#[test]
+fn converse_drops_common_openai_sdk_fields() {
+    let mut extra = BTreeMap::from(common_openai_sdk_fields().map(|(k, v)| (k.to_string(), v)));
+    extra.insert("top_logprobs".to_string(), Value::Null);
+    let request = CoreChatRequest {
+        model: "nova".to_string(),
+        messages: vec![message("user", "Hello")],
+        stream: true,
+        extra,
+    };
+
+    let body = map_chat_request_to_converse(&request, &context("amazon.nova-pro-v1:0"))
+        .expect("common OpenAI fields are accepted");
+    assert_eq!(
+        body.as_object().unwrap().keys().collect::<Vec<_>>(),
+        ["messages"]
+    );
+}
+
+#[test]
+fn anthropic_messages_drops_common_openai_sdk_fields() {
+    let mut extra = BTreeMap::from(common_openai_sdk_fields().map(|(k, v)| (k.to_string(), v)));
+    extra.insert("max_tokens".to_string(), json!(64));
+    let request = CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![message("user", "Hello")],
+        stream: false,
+        extra,
+    };
+
+    let body = map_chat_request_to_anthropic_messages(
+        &request,
+        &context("anthropic.claude-3-haiku-20240307-v1:0"),
+    )
+    .expect("common OpenAI fields are accepted");
+    for (field, _) in common_openai_sdk_fields() {
+        // Chat `metadata` keeps its existing Anthropic passthrough.
+        if field != "metadata" {
+            assert!(body.get(field).is_none(), "{field} leaked: {body}");
+        }
+    }
+}
+
+#[test]
+fn openai_controls_without_a_bedrock_equivalent_are_rejected() {
+    for (field, value) in [
+        ("n", json!(2)),
+        ("logprobs", json!(true)),
+        ("top_logprobs", json!(3)),
+    ] {
+        let request = CoreChatRequest {
+            model: "claude".to_string(),
+            messages: vec![message("user", "Hello")],
+            stream: false,
+            extra: BTreeMap::from([
+                ("max_tokens".to_string(), json!(64)),
+                (field.to_string(), value),
+            ]),
+        };
+        for (result, mapping) in [
+            (
+                map_chat_request_to_converse(&request, &context("amazon.nova-pro-v1:0")),
+                "aws_bedrock Converse",
+            ),
+            (
+                map_chat_request_to_anthropic_messages(
+                    &request,
+                    &context("anthropic.claude-3-haiku-20240307-v1:0"),
+                ),
+                "Anthropic Messages",
+            ),
+        ] {
+            let error = result.expect_err("no Bedrock equivalent").to_string();
+            assert!(
+                error.contains(&format!("`{field}` is not supported by the {mapping}")),
+                "{error}"
+            );
+        }
+    }
+}
+
 #[test]
 fn maps_anthropic_base64_image_blocks_and_rejects_remote_urls() {
     let request = CoreChatRequest {

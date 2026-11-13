@@ -426,29 +426,107 @@ pub(super) fn extract_anthropic_passthrough_fields(
     }
 }
 
-pub(super) fn reject_openai_only_fields(
-    extra: &BTreeMap<String, Value>,
+/// Drops OpenAI Chat hints Bedrock has no use for and rejects controls it cannot honour.
+///
+/// Transport, storage, caching and end-user hints are dropped: Bedrock reports stream usage
+/// without `stream_options`. Unset (`null`) and default values (`n: 1`, `logprobs: false`) are
+/// dropped too. Other OpenAI-only controls remain an error naming the `mapping`.
+pub(super) fn strip_openai_only_fields(
+    extra: &mut BTreeMap<String, Value>,
+    mapping: &str,
 ) -> Result<(), ProviderError> {
+    const IGNORED: &[&str] = &[
+        "stream_options",
+        "store",
+        "user",
+        "safety_identifier",
+        "prompt_cache_key",
+        "prompt_cache_retention",
+        "logit_bias",
+        "metadata",
+    ];
     const UNSUPPORTED: &[&str] = &[
         "frequency_penalty",
         "presence_penalty",
-        "logit_bias",
         "logprobs",
         "top_logprobs",
         "n",
         "response_format",
         "seed",
-        "store",
-        "metadata",
-        "parallel_tool_calls",
-        "user",
     ];
 
-    if let Some(field) = UNSUPPORTED.iter().find(|field| extra.contains_key(**field)) {
+    for field in IGNORED {
+        extra.remove(*field);
+    }
+    for field in UNSUPPORTED {
+        let is_default = match extra.get(*field) {
+            Some(Value::Null) => true,
+            Some(value) if *field == "n" => value.as_u64() == Some(1),
+            Some(value) if *field == "logprobs" => value == &Value::Bool(false),
+            _ => false,
+        };
+        if is_default {
+            extra.remove(*field);
+        } else if extra.contains_key(*field) {
+            return Err(ProviderError::InvalidRequest(format!(
+                "`{field}` is not supported by the {mapping} mapping"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Claude on Converse takes `disable_parallel_tool_use` through the model-specific
+/// `additionalModelRequestFields.tool_choice`; other Converse models have no such switch.
+pub(super) fn map_converse_parallel_tool_calls(
+    body: &mut Map<String, Value>,
+    extra: &mut BTreeMap<String, Value>,
+    upstream_model: &str,
+) -> Result<(), ProviderError> {
+    match extra.remove("parallel_tool_calls") {
+        None | Some(Value::Null | Value::Bool(true)) => return Ok(()),
+        Some(Value::Bool(false)) => {}
+        Some(_) => {
+            return Err(ProviderError::InvalidRequest(
+                "`parallel_tool_calls` must be a boolean or null".to_string(),
+            ));
+        }
+    }
+    // Without tools, or with `tool_choice: none`, the constraint is vacuous. A route's
+    // `toolConfig` with no tools also has nothing to call in parallel.
+    let Some(tool_config) = body.get("toolConfig").filter(|config| {
+        config
+            .get("tools")
+            .and_then(Value::as_array)
+            .is_some_and(|tools| !tools.is_empty())
+    }) else {
+        return Ok(());
+    };
+    if !is_anthropic_claude_model(upstream_model) {
         return Err(ProviderError::InvalidRequest(format!(
-            "`{field}` is not supported by the Anthropic Messages mapping"
+            "`parallel_tool_calls: false` is not supported by the aws_bedrock Converse mapping for `{upstream_model}`"
         )));
     }
-
+    // Bedrock rejects a typed `tool_choice` beside `toolConfig.toolChoice` and an untyped
+    // one without it.
+    let mut choice = Map::new();
+    if tool_config.get("toolChoice").is_none() {
+        choice.insert("type".to_string(), Value::String("auto".to_string()));
+    }
+    choice.insert("disable_parallel_tool_use".to_string(), Value::Bool(true));
+    let additional = body
+        .entry("additionalModelRequestFields")
+        .or_insert_with(|| Value::Object(Map::new()))
+        .as_object_mut()
+        .ok_or_else(|| {
+            ProviderError::InvalidRequest(
+                "`additionalModelRequestFields` must be an object for aws_bedrock Converse"
+                    .to_string(),
+            )
+        })?;
+    // A caller's own Claude `tool_choice` stays authoritative.
+    additional
+        .entry("tool_choice")
+        .or_insert(Value::Object(choice));
     Ok(())
 }

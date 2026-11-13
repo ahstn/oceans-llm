@@ -13,6 +13,7 @@ fn tier(above_input_tokens: i64) -> ContextPricingTier {
         output: None,
         cache_read: None,
         cache_write: None,
+        cache_write_1h: None,
     }
 }
 
@@ -54,6 +55,7 @@ async fn recorded_catalog_usage(
             "req_context_tier",
             Some(provider_usage),
             gateway_core::ServiceTierOutcome::default(),
+            UsageEstimateInput::default(),
             OffsetDateTime::now_utc(),
         )
         .await
@@ -401,7 +403,7 @@ async fn native_messages_cache_counters_select_and_bill_the_same_context_tier() 
 }
 
 #[tokio::test]
-async fn mixed_ttl_usage_retains_ledger_counts_and_provider_reported_cost_precedence() {
+async fn mixed_ttl_usage_bills_each_write_bucket_and_keeps_provider_reported_cost_precedence() {
     let usage = json!({
         "input_tokens": 100, "output_tokens": 20,
         "cache_read_input_tokens": 900, "cache_creation_input_tokens": 200,
@@ -412,25 +414,33 @@ async fn mixed_ttl_usage_retains_ledger_counts_and_provider_reported_cost_preced
         if let Some(cost) = reported_cost {
             usage["cost"] = json!(cost);
         }
-        let event =
-            recorded_catalog_usage(&catalog_route(), tiered_pricing_record(), usage.clone()).await;
+        let event = recorded_catalog_usage(
+            &catalog_route(),
+            cache_alias_pricing_record(),
+            usage.clone(),
+        )
+        .await;
         assert_eq!(event.prompt_tokens, Some(1_200));
         assert_eq!(event.total_tokens, Some(1_220));
         assert_eq!(event.uncached_input_tokens, Some(100));
         assert_eq!(event.cache_read_tokens, Some(900));
         assert_eq!(event.cache_write_tokens, Some(200));
+        assert_eq!(event.cache_write_1h_tokens, Some(120));
         assert_eq!(event.provider_usage, usage);
+        assert_eq!(event.pricing_status, UsagePricingStatus::Priced);
+        assert_eq!(event.unpriced_reason, None);
         if reported_cost.is_some() {
-            assert_eq!(event.pricing_status, UsagePricingStatus::Priced);
             assert_eq!(event.computed_cost_usd, Money4::from_scaled(123));
             assert_eq!(event.pricing_source.as_deref(), Some("provider_reported"));
         } else {
-            assert_eq!(event.pricing_status, UsagePricingStatus::Unpriced);
-            assert_eq!(event.computed_cost_usd, Money4::ZERO);
             assert_eq!(
-                event.unpriced_reason.as_deref(),
-                Some("unsupported_cache_token_usage:mixed_ttl_cache_write_classes")
+                event.cache_write_1h_cost_per_million_tokens,
+                Some(Money4::from_scaled(60_000)),
+                "1-hour writes bill at twice the context tier's $3 input rate"
             );
+            // 100 uncached at $3 + 900 reads at $0.10 + 80 5-minute writes at $1.25 + 120
+            // 1-hour writes at $6 + 20 output at $6, each rounded: 3 + 1 + 1 + 7 + 1.
+            assert_eq!(event.computed_cost_usd, Money4::from_scaled(13));
         }
     }
 }
@@ -466,6 +476,7 @@ async fn route_pricing_override_ignores_catalog_tiers() {
         output_cost_per_million_tokens: Money4::from_scaled(20_000),
         cache_read_cost_per_million_tokens: None,
         cache_write_cost_per_million_tokens: None,
+        cache_write_1h_cost_per_million_tokens: None,
         image_output_cost_per_million_tokens: None,
         service_tiers: Vec::new(),
     });
