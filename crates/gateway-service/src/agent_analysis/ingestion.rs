@@ -103,14 +103,10 @@ where
     } else {
         input.auth.owner_team_id
     };
-    let normalized_session_id = input
-        .metadata
-        .external_session_id
-        .as_deref()
-        .map(|candidate| {
-            hash_lineage_candidate(&ownership_scope_key, &input.harness_key, candidate)
-        });
-    let session_source = if input.metadata.external_session_id.is_some() {
+    let normalized_session_id = input.metadata.normalized_session_id(&ownership_scope_key);
+    // The source stays keyed by harness: the store accepts one harness per source, and harnesses
+    // that share a session namespace still store the same `normalized_session_id`.
+    let session_source = if let Some(normalized_session_id) = &normalized_session_id {
         let now = input.completed_at;
         let agent_session_source_id = stable_uuid(
             SESSION_SOURCE_ID_NAMESPACE,
@@ -136,9 +132,7 @@ where
                     service_account_id: input.auth.owner_service_account_id,
                     actor_user_id: None,
                     adapter_namespace: input.harness_key.to_string(),
-                    normalized_session_id: normalized_session_id
-                        .clone()
-                        .expect("session ID exists when a session candidate exists"),
+                    normalized_session_id: normalized_session_id.clone(),
                     adapter_version: input.metadata.adapter_version.clone(),
                     source_provenance: input
                         .metadata
@@ -339,16 +333,7 @@ where
     if usage_event_id.is_none() {
         limitations.push(LimitationCode::UsageUnavailable);
     }
-    let execution_id = input.metadata.execution_id.as_deref().map(|candidate| {
-        hash_lineage_candidate(&ownership_scope_key, &input.harness_key, candidate)
-    });
-    let parent_execution_id = input
-        .metadata
-        .parent_execution_id
-        .as_deref()
-        .map(|candidate| {
-            hash_lineage_candidate(&ownership_scope_key, &input.harness_key, candidate)
-        });
+    let (execution_id, parent_execution_id) = input.metadata.hashed_lineage(&ownership_scope_key);
     let mut request_link = AgentSessionRequestLinkRecord {
         agent_session_id: session.agent_session_id,
         request_id: input.request_id.clone(),

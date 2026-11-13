@@ -47,31 +47,43 @@ impl<'a> SessionFields<'a> {
 
 pub(crate) struct ClientSessionMetadata {
     pub session: SessionResolution,
+    /// Namespace `session.value` is hashed under: [`OCEANS_SESSION_NAMESPACE`] when the canonical
+    /// header names the session, otherwise the harness adapter's. `None` without a session.
+    pub session_namespace: Option<&'static str>,
     pub execution_id: Option<String>,
     pub parent_execution_id: Option<String>,
+    /// Namespace the lineage IDs are hashed under: the harness adapter's, even when the
+    /// canonical header names the session. `None` without an adapter, which reads no lineage.
+    pub lineage_namespace: Option<&'static str>,
     pub adapter_version: &'static str,
 }
 
+/// Passive analysis never rejects a request: an unusable session ID becomes a limitation.
 pub(crate) fn extract_client_session(
     body: &Value,
     headers: &BTreeMap<String, String>,
     harness_key: &str,
 ) -> ClientSessionMetadata {
     let body = SessionFields::new(|key| body.get(key), ParsePolicy::Passive);
-    let metadata = if harness_key == "codex" {
+    let adapter = harness_adapter(harness_key);
+    let metadata = if adapter == Some(HarnessAdapter::Codex) {
         codex_turn_metadata(body, headers).0
     } else {
         Vec::new()
     };
-    let session = extract_session(body, headers, harness_key, &metadata);
-    let (execution_id, parent_execution_id) =
-        extract_lineage(body, headers, harness_key, &metadata);
+    let (session, session_namespace) = select_session(
+        canonical_session(body, headers),
+        extract_session(body, headers, adapter, &metadata),
+        adapter,
+    );
+    let (execution_id, parent_execution_id) = extract_lineage(body, headers, adapter, &metadata);
     ClientSessionMetadata {
         session,
+        session_namespace,
         execution_id,
         parent_execution_id,
-        adapter_version: harness_adapter(harness_key)
-            .map_or("unsupported-v1", |adapter| adapter.version),
+        lineage_namespace: adapter.map(HarnessAdapter::namespace),
+        adapter_version: adapter.map_or("unsupported-v1", HarnessAdapter::version),
     }
 }
 
@@ -81,15 +93,15 @@ pub(crate) struct RoutingSession {
     pub value: String,
 }
 
-/// The canonical header selects the Oceans namespace, but must agree with any recognized
-/// harness session identifier. Unlike passive analysis, malformed IDs reject routing.
+/// Unlike passive analysis, an unusable session ID rejects routing.
 pub(crate) fn extract_routing_session(
     extra: &BTreeMap<String, Value>,
     headers: &BTreeMap<String, String>,
     harness_key: &str,
 ) -> Result<Option<RoutingSession>, GatewayError> {
     let body = SessionFields::new(|key| extra.get(key), ParsePolicy::Routing);
-    let (metadata, malformed) = if harness_key == "codex" {
+    let adapter = harness_adapter(harness_key);
+    let (metadata, malformed) = if adapter == Some(HarnessAdapter::Codex) {
         codex_turn_metadata(body, headers)
     } else {
         (Vec::new(), false)
@@ -99,35 +111,73 @@ pub(crate) fn extract_routing_session(
             SessionCorrelationLimitation::MalformedCandidate,
         ));
     }
-    let canonical = resolve_session(header_observations(
-        headers,
-        "x-oceans-session-id",
-        body.policy,
-    ));
-    let harness = extract_session(body, headers, harness_key, &metadata);
-    if let Some(limitation) = canonical.limitation.or(harness.limitation) {
+    let (session, namespace) = select_session(
+        canonical_session(body, headers),
+        extract_session(body, headers, adapter, &metadata),
+        adapter,
+    );
+    if let Some(limitation) = session.limitation {
         return Err(invalid_routing_session(limitation));
     }
-    if let (Some(canonical), Some(harness)) = (&canonical.value, &harness.value)
-        && canonical != harness
-    {
-        return Err(invalid_routing_session(
-            SessionCorrelationLimitation::ConflictingAliases,
-        ));
+    Ok(session
+        .value
+        .zip(namespace)
+        .map(|(value, namespace)| RoutingSession { namespace, value }))
+}
+
+/// The canonical header names the session in [`OCEANS_SESSION_NAMESPACE`], but must agree with
+/// any session ID the harness adapter found. Without the canonical header, the adapter's ID names
+/// the session in the adapter's namespace. A limitation on either side, or a disagreement, leaves
+/// no session. Routing and passive analysis share this rule.
+fn select_session(
+    canonical: SessionResolution,
+    harness: SessionResolution,
+    adapter: Option<HarnessAdapter>,
+) -> (SessionResolution, Option<&'static str>) {
+    if let Some(limitation) = canonical.limitation.or(harness.limitation) {
+        return (
+            SessionResolution {
+                limitation: Some(limitation),
+                ..SessionResolution::default()
+            },
+            None,
+        );
     }
-    if let Some(value) = canonical.value {
-        return Ok(Some(RoutingSession {
-            namespace: "oceans",
-            value,
-        }));
-    }
-    let Some(adapter) = harness_adapter(harness_key) else {
-        return Ok(None);
+    let Some(value) = canonical.value else {
+        // `extract_session` finds a value only through an adapter.
+        let namespace = harness
+            .value
+            .as_ref()
+            .and(adapter)
+            .map(HarnessAdapter::namespace);
+        return (harness, namespace);
     };
-    Ok(harness.value.map(|value| RoutingSession {
-        namespace: adapter.namespace,
-        value,
-    }))
+    if harness.value.as_ref().is_some_and(|other| *other != value) {
+        return (SessionResolution::conflicted(), None);
+    }
+    let source = match (canonical.source, harness.source) {
+        (Some(canonical_source), Some(harness_source)) => {
+            Some(format!("{canonical_source}+{harness_source}"))
+        }
+        (canonical_source, harness_source) => canonical_source.or(harness_source),
+    };
+    let session = SessionResolution {
+        value: Some(value),
+        source,
+        limitation: None,
+    };
+    (session, Some(OCEANS_SESSION_NAMESPACE))
+}
+
+fn canonical_session(
+    body: SessionFields<'_>,
+    headers: &BTreeMap<String, String>,
+) -> SessionResolution {
+    resolve_session(header_observations(
+        headers,
+        OCEANS_SESSION_HEADER,
+        body.policy,
+    ))
 }
 
 fn invalid_routing_session(limitation: SessionCorrelationLimitation) -> GatewayError {
@@ -142,36 +192,74 @@ fn invalid_routing_session(limitation: SessionCorrelationLimitation) -> GatewayE
     GatewayError::InvalidRequest(message.to_string())
 }
 
-#[derive(Debug, Clone, Copy)]
-struct HarnessAdapter {
-    namespace: &'static str,
-    version: &'static str,
+/// A harness whose own session and lineage IDs the gateway reads. Several harness keys can
+/// share one adapter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HarnessAdapter {
+    ClaudeCode,
+    Codex,
+    OpenCode,
+    Pi,
+    OhMyPi,
 }
+
+impl HarnessAdapter {
+    /// Namespace the adapter's session and lineage IDs are hashed and routed under.
+    const fn namespace(self) -> &'static str {
+        match self {
+            Self::ClaudeCode => "claude_code",
+            Self::Codex => "codex",
+            Self::OpenCode => "opencode",
+            Self::Pi => "pi",
+            Self::OhMyPi => "oh_my_pi",
+        }
+    }
+
+    fn version(self) -> &'static str {
+        match self {
+            Self::ClaudeCode => "claude-code-v1",
+            Self::Codex => "codex-v1",
+            Self::OpenCode => "opencode-v1",
+            Self::Pi => "pi-v1",
+            Self::OhMyPi => "oh-my-pi-v1",
+        }
+    }
+}
+
+/// Canonical session header that any client can send, whatever its harness.
+const OCEANS_SESSION_HEADER: &str = "x-oceans-session-id";
+
+/// Namespace of sessions named by the canonical [`OCEANS_SESSION_HEADER`].
+pub(crate) const OCEANS_SESSION_NAMESPACE: &str = "oceans";
+
+/// Every namespace a passive session hash can be computed under: each harness adapter's,
+/// plus the canonical header's. A caller that knows a raw session id but not which harness
+/// the gateway classified its traffic as matches against all of them.
+pub(crate) const SESSION_HASH_NAMESPACES: [&str; 6] = [
+    HarnessAdapter::ClaudeCode.namespace(),
+    HarnessAdapter::Codex.namespace(),
+    HarnessAdapter::OpenCode.namespace(),
+    HarnessAdapter::Pi.namespace(),
+    HarnessAdapter::OhMyPi.namespace(),
+    OCEANS_SESSION_NAMESPACE,
+];
 
 fn harness_adapter(harness_key: &str) -> Option<HarnessAdapter> {
     match harness_key {
-        "claude_code" => Some(HarnessAdapter {
-            namespace: "claude_code",
-            version: "claude-code-v1",
-        }),
-        "codex" => Some(HarnessAdapter {
-            namespace: "codex",
-            version: "codex-v1",
-        }),
-        "opencode" => Some(HarnessAdapter {
-            namespace: "opencode",
-            version: "opencode-v1",
-        }),
-        "pi" => Some(HarnessAdapter {
-            namespace: "pi",
-            version: "pi-v1",
-        }),
-        "oh_my_pi" => Some(HarnessAdapter {
-            namespace: "oh_my_pi",
-            version: "oh-my-pi-v1",
-        }),
+        // Claude Code identifies itself as `claude-cli/`, as does OMP's Messages client, which
+        // sends the same Claude Code session header.
+        "claude_code" | "claude_cli" => Some(HarnessAdapter::ClaudeCode),
+        "codex" => Some(HarnessAdapter::Codex),
+        "opencode" => Some(HarnessAdapter::OpenCode),
+        "pi" => Some(HarnessAdapter::Pi),
+        "oh_my_pi" => Some(HarnessAdapter::OhMyPi),
         _ => None,
     }
+}
+
+/// Whether `value` is a session id the gateway would accept from a request.
+pub(crate) fn is_external_session_id(value: &str) -> bool {
+    normalized_identifier(value, false).is_some()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -349,16 +437,16 @@ fn resolve_session(observations: Vec<CandidateObservation>) -> SessionResolution
 fn extract_session(
     body: SessionFields<'_>,
     headers: &BTreeMap<String, String>,
-    harness_key: &str,
+    adapter: Option<HarnessAdapter>,
     codex_metadata: &[EmbeddedMetadata],
 ) -> SessionResolution {
-    match harness_key {
-        "claude_code" => resolve_session(header_observations(
+    match adapter {
+        Some(HarnessAdapter::ClaudeCode) => resolve_session(header_observations(
             headers,
             "x-claude-code-session-id",
             body.policy,
         )),
-        "codex" => {
+        Some(HarnessAdapter::Codex) => {
             let mut observations = header_observations(headers, "session-id", body.policy);
             observations.extend(body_observation(
                 body,
@@ -372,10 +460,10 @@ fn extract_session(
             );
             resolve_session(observations)
         }
-        "opencode" => extract_opencode_session(body, headers),
-        "pi" => extract_pi_session(body, headers),
-        "oh_my_pi" => extract_oh_my_pi_session(body, headers),
-        _ => SessionResolution::default(),
+        Some(HarnessAdapter::OpenCode) => extract_opencode_session(body, headers),
+        Some(HarnessAdapter::Pi) => extract_pi_session(body, headers),
+        Some(HarnessAdapter::OhMyPi) => extract_oh_my_pi_session(body, headers),
+        None => SessionResolution::default(),
     }
 }
 
@@ -506,11 +594,11 @@ fn resolved_lineage_value(observations: Vec<CandidateObservation>) -> Option<Str
 fn extract_lineage(
     body: SessionFields<'_>,
     headers: &BTreeMap<String, String>,
-    harness_key: &str,
+    adapter: Option<HarnessAdapter>,
     codex_metadata: &[EmbeddedMetadata],
 ) -> (Option<String>, Option<String>) {
-    match harness_key {
-        "claude_code" => (
+    match adapter {
+        Some(HarnessAdapter::ClaudeCode) => (
             resolved_lineage_value(header_observations(
                 headers,
                 "x-claude-code-agent-id",
@@ -522,7 +610,7 @@ fn extract_lineage(
                 body.policy,
             )),
         ),
-        "opencode" => (
+        Some(HarnessAdapter::OpenCode) => (
             None,
             resolved_lineage_value(header_observations(
                 headers,
@@ -530,8 +618,8 @@ fn extract_lineage(
                 body.policy,
             )),
         ),
-        "codex" => extract_codex_lineage(body, headers, codex_metadata),
-        _ => (None, None),
+        Some(HarnessAdapter::Codex) => extract_codex_lineage(body, headers, codex_metadata),
+        Some(HarnessAdapter::Pi | HarnessAdapter::OhMyPi) | None => (None, None),
     }
 }
 

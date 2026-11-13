@@ -3,7 +3,7 @@ use std::time::Duration;
 use anyhow::{Context, bail};
 use reqwest::{
     Method, Response, StatusCode,
-    header::{AUTHORIZATION, HeaderValue},
+    header::{AUTHORIZATION, CONTENT_TYPE, HeaderValue},
 };
 use serde::{Serialize, de::DeserializeOwned};
 use url::{Host, Url};
@@ -17,6 +17,12 @@ pub struct Client {
     http: reqwest::Client,
     base_url: Url,
     authorization: HeaderValue,
+}
+
+/// A response whose status the caller interprets. Error bodies are truncated, never echoed.
+pub struct RawResponse {
+    pub status: StatusCode,
+    pub body: Vec<u8>,
 }
 
 impl Client {
@@ -43,7 +49,7 @@ impl Client {
             }
         }
         if api_key.trim().is_empty() {
-            bail!("OCEANS_API_KEY is empty");
+            bail!("the Oceans API key is empty");
         }
         base_url
             .path_segments_mut()
@@ -51,7 +57,9 @@ impl Client {
             .pop_if_empty()
             .extend(["api", "v1"]);
         let mut authorization = HeaderValue::from_str(&format!("Bearer {}", api_key.trim()))
-            .map_err(|_| anyhow::anyhow!("OCEANS_API_KEY contains invalid header characters"))?;
+            .map_err(|_| {
+                anyhow::anyhow!("the Oceans API key contains invalid header characters")
+            })?;
         authorization.set_sensitive(true);
         let http = reqwest::Client::builder()
             .user_agent(concat!("oceans/", env!("CARGO_PKG_VERSION")))
@@ -193,6 +201,29 @@ impl Client {
         .await
     }
 
+    /// Sends a request with an optional JSON body and returns its status and body instead of
+    /// failing on error statuses. A successful body over `max_bytes` is an error.
+    pub async fn send_raw(
+        &self,
+        method: Method,
+        path: &[&str],
+        json_body: Option<Vec<u8>>,
+        max_bytes: usize,
+    ) -> anyhow::Result<RawResponse> {
+        let mut request = self.request(method, path);
+        if let Some(body) = json_body {
+            request = request.header(CONTENT_TYPE, "application/json").body(body);
+        }
+        let mut response = request.send().await?;
+        let status = response.status();
+        let body = if status.is_success() {
+            read_bounded(response, max_bytes).await?
+        } else {
+            read_prefix(&mut response, MAX_ERROR_BYTES).await?
+        };
+        Ok(RawResponse { status, body })
+    }
+
     async fn decode<T: DeserializeOwned>(&self, response: Response) -> anyhow::Result<T> {
         let response = check_status(response, &self.authorization).await?;
         let bytes = read_bounded(response, MAX_JSON_BYTES).await?;
@@ -205,7 +236,7 @@ async fn decode_sensitive<T: DeserializeOwned>(response: Response) -> anyhow::Re
     if !status.is_success() {
         // Credential APIs must never display response bodies, including errors from proxies.
         let guidance = match status {
-            StatusCode::UNAUTHORIZED => "check OCEANS_API_KEY",
+            StatusCode::UNAUTHORIZED => "check the Oceans API key",
             StatusCode::FORBIDDEN => "this request requires an eligible user-owned API key",
             StatusCode::NOT_FOUND => "the provider credential API or provider was not found",
             StatusCode::SERVICE_UNAVAILABLE => "provider credential storage is unavailable",
@@ -229,14 +260,7 @@ async fn check_status(
         return Ok(response);
     }
     let status = response.status();
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await? {
-        let count = chunk.len().min(MAX_ERROR_BYTES - bytes.len());
-        bytes.extend_from_slice(&chunk[..count]);
-        if bytes.len() == MAX_ERROR_BYTES {
-            break;
-        }
-    }
+    let bytes = read_prefix(&mut response, MAX_ERROR_BYTES).await?;
     let message: String = String::from_utf8_lossy(&bytes)
         .chars()
         .filter(|value| !value.is_control() || matches!(value, '\n' | '\t'))
@@ -252,6 +276,19 @@ async fn check_status(
         message.replace(key, "[redacted]")
     };
     bail!("gateway returned HTTP {status}: {}", message.trim());
+}
+
+/// Reads at most `max_bytes` of the body and drops the rest.
+async fn read_prefix(response: &mut Response, max_bytes: usize) -> anyhow::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        let count = chunk.len().min(max_bytes - bytes.len());
+        bytes.extend_from_slice(&chunk[..count]);
+        if bytes.len() == max_bytes {
+            break;
+        }
+    }
+    Ok(bytes)
 }
 
 #[cfg(test)]

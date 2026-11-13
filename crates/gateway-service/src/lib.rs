@@ -2,6 +2,7 @@ pub mod admin_api_keys;
 pub mod admin_audit;
 pub mod admin_models;
 mod agent_analysis;
+pub mod attribution;
 pub mod authenticator;
 pub mod batches;
 pub mod benchmark_catalog;

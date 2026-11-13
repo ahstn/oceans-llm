@@ -7,6 +7,13 @@ use super::super::{
 #[test]
 fn classifies_known_agent_harness_user_agents() {
     let cases = [
+        (
+            "codex_exec/0.166.0 (Ubuntu 24.4.0; x86_64) xterm-256color (codex_exec; 0.166.0)",
+            "codex",
+            "Codex",
+        ),
+        ("codex_vscode/0.166.0", "codex", "Codex"),
+        ("codex_sdk_ts/0.166.0", "codex", "Codex"),
         ("opencode/1.2.3", "opencode", "Opencode"),
         ("opencode/1.2.3-beta.1", "opencode", "Opencode"),
         (
@@ -94,6 +101,7 @@ fn classifies_missing_empty_and_unmatched_user_agents_as_unknown() {
         Some("mastra-es/1.0.0"),
         Some("mastra-elasticsearch"),
         Some("mastra-elasticsearch/1.0.0"),
+        Some("codex-proxy/1.0.0"),
     ] {
         assert_eq!(classify_agent_harness(user_agent), AgentHarness::UNKNOWN);
     }
@@ -122,8 +130,10 @@ fn reads_user_agent_header_case_insensitively() {
 fn classifies_supported_session_analysis_harnesses() {
     for (user_agent, expected_key) in [
         ("codex_cli_rs/0.106.0", "codex"),
+        ("codex_exec/0.166.0", "codex"),
         ("Codex/0.106.0", "codex"),
         ("claude-code/2.1.0", "claude_code"),
+        ("claude-cli/2.1.303 (external, sdk-cli)", "claude_cli"),
         ("opencode/1.2.3", "opencode"),
         ("pi/0.45.0", "pi"),
         ("oh-my-pi/0.45.0", "oh_my_pi"),

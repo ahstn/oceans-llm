@@ -4,6 +4,7 @@
 //! backend integration test module into domain-focused files under
 //! `tests/` or private test submodules as store domains continue to grow.
 mod any_store_agent_analysis;
+mod any_store_attribution;
 mod any_store_audit_logs;
 mod any_store_batches;
 mod any_store_gateway_oauth;
@@ -18,6 +19,7 @@ mod any_store_rate_limits;
 mod any_store_review_agent;
 mod any_store_routing;
 mod any_store_skills;
+mod attribution;
 mod audit_logs;
 mod budget_batch;
 mod budget_increases;
@@ -50,6 +52,9 @@ pub(crate) use migrate::{MigrationTestHook, run_migrations_with_options_for_test
 
 #[cfg(test)]
 mod agent_analysis_tests;
+
+#[cfg(test)]
+mod attribution_tests;
 
 #[cfg(test)]
 mod budget_increase_tests;
@@ -740,7 +745,7 @@ pub(crate) mod tests {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn build_usage_ledger_record(
+    pub(crate) fn build_usage_ledger_record(
         request_id: &str,
         ownership_scope_key: String,
         api_key_id: Uuid,

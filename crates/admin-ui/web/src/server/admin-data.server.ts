@@ -5,6 +5,7 @@ import type {
   AgentSessionPageView,
   ApiEnvelope,
   ApiKeysPayload,
+  AttributionReportView,
   AuthSessionView,
   BudgetAlertHistoryView,
   BatchFiltersInput,
@@ -292,6 +293,25 @@ export async function getHarnessUsage(params?: {
       params: {
         query: {
           range: params?.range,
+        },
+      },
+    }),
+  )
+}
+
+export async function getAttributionReport(params: {
+  days: 7 | 30 | 90
+  user_id?: string
+  repository?: string
+}): Promise<ApiEnvelope<AttributionReportView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(
+    await client.GET('/api/v1/admin/attribution/report', {
+      params: {
+        query: {
+          days: params.days,
+          user_id: params.user_id,
+          repository: params.repository,
         },
       },
     }),

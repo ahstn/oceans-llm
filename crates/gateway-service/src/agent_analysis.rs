@@ -43,6 +43,7 @@ pub(crate) const SESSION_ANALYSIS_DIAGNOSTIC_HEADERS: &[&str] = &[
     "x-claude-code-session-id",
     "x-client-request-id",
     "x-codex-turn-metadata",
+    "x-oceans-session-id",
     "x-opencode-session",
     "x-parent-session-id",
     "x-session-affinity",
@@ -70,9 +71,10 @@ pub(crate) use ingestion::{
 };
 use report_builder::generate_report;
 pub(crate) use session_resolution::{
-    PassiveRequestMetadata, extract_request_metadata, serialized_request_prompt_bytes,
+    PassiveRequestMetadata, extract_request_metadata, hash_lineage_candidate,
+    serialized_request_prompt_bytes,
 };
-use session_resolution::{hash_identifier, hash_lineage_candidate, stable_uuid};
+use session_resolution::{hash_identifier, stable_uuid};
 use worker::ensure_supported_versions;
 pub use worker::{
     desired_versions, desired_versions_for_policy, enqueue_analysis,

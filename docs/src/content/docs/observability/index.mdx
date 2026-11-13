@@ -19,6 +19,7 @@ Oceans gives admins two kinds of signal. The gateway stores request logs, MCP in
 | Who spends the most? | **Leaderboard** | [Leaderboard](#leaderboard) on this page |
 | Which agent harnesses call the gateway? | **Agent Harnesses** | [Agent harness usage](/observability/agent-harness-usage/) |
 | How did an agent session go? | **Agent Sessions** | [Agent session analysis](/observability/agent-session-analysis/) |
+| How much of a commit did AI write, and what did it cost? | **Attribution** | [Git AI attribution](/harnesses/git-ai-attribution/) |
 | How much did a user or team spend? | **Usage Costs**, **Spend Controls** | [Pricing catalog and accounting](/spend/pricing-and-accounting/), [Budgets](/spend/budgets/) |
 | What did a guardrail decide? | **Guardrails** | [Gateway guardrails](/operations/gateway-guardrails/) |
 | Who changed a setting? | **Audit Log** | [Admin audit log](/access/admin-audit-log/) |
@@ -125,3 +126,4 @@ The admin UI reads these endpoints. They all use the admin session cookie.
 | `GET /api/v1/admin/observability/leaderboard` | Any signed-in user |
 | `GET /api/v1/admin/observability/harness-usage` | Any signed-in user. See [Agent harness usage](/observability/agent-harness-usage/). |
 | `GET /api/v1/admin/observability/agent-sessions`, `.../agent-sessions/<session_id>` | Platform admins, and team owners and admins when agent analysis allows it. See [Agent session analysis](/observability/agent-session-analysis/). |
+| `GET /api/v1/admin/attribution/report` | Platform admins see every user and can filter by `user_id`. Other users see only the commits their keys reported or that they authored, and `user_id` is ignored. See [Git AI attribution](/harnesses/git-ai-attribution/). |

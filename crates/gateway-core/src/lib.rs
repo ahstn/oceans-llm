@@ -1,4 +1,5 @@
 pub mod agent_analysis;
+pub mod attribution;
 pub mod audit;
 pub mod auth;
 pub mod batch;
@@ -41,6 +42,15 @@ pub use agent_session_analysis::{
     SessionEfficiencyReport, SessionLifecycleState, SessionRequestFact, SkillDiagnostics,
     ToolInvocationFact, ToolServerDiagnostics,
 };
+pub use attribution::{
+    ATTRIBUTION_MAX_BATCH_BYTES, ATTRIBUTION_MAX_BATCH_ENTRIES, ATTRIBUTION_MAX_HASHES_PER_LOOKUP,
+    ATTRIBUTION_MAX_REPORT_ROWS, ATTRIBUTION_MAX_REQUEST_FACTS, AttributionAgentSessionRecord,
+    AttributionApplyOutcome, AttributionCommitRecord, AttributionCommitSession,
+    AttributionCommitWrite, AttributionFreshness, AttributionOwner, AttributionPullRequestCommit,
+    AttributionPullRequestRecord, AttributionPullRequestWrite, AttributionReportQuery,
+    AttributionRepository, AttributionRequestFact, AttributionSessionCommitTime,
+    AttributionSessionEventKind, AttributionSessionEventWrite,
+};
 pub use audit::{
     AuditActor, AuditActorKind, AuditLogCursor, AuditLogPage, AuditLogQuery, AuditLogRecord,
     AuditLogRepository, DEFAULT_AUDIT_LOG_PAGE_SIZE, MAX_AUDIT_LOG_PAGE_SIZE, NewAuditLogRecord,
@@ -64,7 +74,8 @@ pub use budgets::{
     BudgetSettings, BudgetSource, BudgetSourceKind, BudgetUpsert, ManualBudgetSave,
 };
 pub use credential_scopes::{
-    API_KEY_SCOPES, ApiKeyAccess, SCOPE_INFERENCE, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY,
+    API_KEY_SCOPES, ApiKeyAccess, SCOPE_ATTRIBUTION_WRITE, SCOPE_INFERENCE, SCOPE_MCP_AGGREGATE,
+    SCOPE_MCP_PROXY,
 };
 pub use domain::{
     ApiKeyModelAccess, ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord,
