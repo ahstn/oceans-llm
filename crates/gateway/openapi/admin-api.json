@@ -11727,7 +11727,7 @@
             "properties": {
               "commits_truncated": {
                 "type": "boolean",
-                "description": "The 1000-row cap cut commits inside the window."
+                "description": "The 1000-row cap cut commits inside the window, or, when the window has merged pull\nrequests, older commits their totals may read."
               },
               "pull_requests_truncated": {
                 "type": "boolean"

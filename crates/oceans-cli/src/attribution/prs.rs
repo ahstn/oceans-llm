@@ -101,7 +101,7 @@ pub fn sync(
     }
     // Marked first, so sessions starting together run `gh` once.
     state.mark_pr_sync(&repository, now)?;
-    let output = match run_gh(directory, limit) {
+    let output = match run_gh(directory, &repository, limit) {
         Ok(output) => output,
         Err(reason) => return Ok(SyncOutcome::Unavailable(reason)),
     };
@@ -117,11 +117,16 @@ pub fn sync(
     })
 }
 
-fn run_gh(directory: &Path, limit: u32) -> Result<Vec<u8>, String> {
+/// Lists `repository`'s merged pull requests. The repository is passed explicitly, so neither
+/// `GH_REPO` nor a fork's gh default repository can stamp another repository's pull requests
+/// with this one's name.
+fn run_gh(directory: &Path, repository: &str, limit: u32) -> Result<Vec<u8>, String> {
     let mut command = Command::new("gh");
     command
         .current_dir(directory)
-        .args(["pr", "list", "--state", "merged", "--limit"])
+        .args([
+            "pr", "list", "--repo", repository, "--state", "merged", "--limit",
+        ])
         .arg(limit.to_string())
         .args([
             "--json",

@@ -1,5 +1,7 @@
 SET LOCAL lock_timeout = '5s';
-SET LOCAL statement_timeout = '60s';
+-- Longer than other migrations' 60s: the agent_session_requests index at the end
+-- reads every existing request row.
+SET LOCAL statement_timeout = '15min';
 
 -- Git AI attribution (docs/adr/2026-11-01-git-ai-attribution-via-oceans-hooks.md).
 -- Rows belong to the ownership scope of the API key that reported them. Agent
@@ -166,5 +168,6 @@ CREATE INDEX IF NOT EXISTS idx_attribution_pull_request_commits_sha
 -- Attribution looks up gateway requests by their hashed session id. The runner
 -- applies each migration in a transaction, so the build cannot be CONCURRENTLY
 -- and blocks writes to agent_session_requests until it finishes.
+-- On a large table, plan the upgrade for a quiet time.
 CREATE INDEX IF NOT EXISTS idx_agent_session_requests_normalized_session
   ON agent_session_requests(normalized_session_id, occurred_at);

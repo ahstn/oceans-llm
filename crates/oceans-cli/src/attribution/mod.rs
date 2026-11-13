@@ -56,7 +56,10 @@ pub fn run(command: HookCommand, overrides: Overrides<'_>, json: bool) -> anyhow
         }),
         HookCommand::Prs(args) => hook(|| sync_pull_requests(&env, &args)),
         HookCommand::Send(args) if args.foreground => send_foreground(overrides, &env, json),
-        HookCommand::Send(_) => hook(|| send(overrides, &env).map(drop)),
+        HookCommand::Send(_) => hook(|| match send(overrides, &env)?.stopped {
+            Some(reason) => bail!("delivery stopped: {reason}"),
+            None => Ok(()),
+        }),
         HookCommand::Queue(args) => queue(&args, &env, json),
         HookCommand::Install(args) => crate::block_on(install(&args, overrides, &env)),
     }

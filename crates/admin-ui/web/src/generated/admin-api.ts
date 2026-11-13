@@ -3101,7 +3101,10 @@ export interface components {
             unjoined_session_count: number;
         };
         AttributionCoverageView: components["schemas"]["AttributionRequestTallyView"] & {
-            /** @description The 1000-row cap cut commits inside the window. */
+            /**
+             * @description The 1000-row cap cut commits inside the window, or, when the window has merged pull
+             *     requests, older commits their totals may read.
+             */
             commits_truncated: boolean;
             pull_requests_truncated: boolean;
             /** @description Some requests were left out because a lookup or the report hit its cap. */

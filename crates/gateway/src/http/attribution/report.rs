@@ -83,7 +83,8 @@ pub struct AttributionCoverageView {
     /// Every request the report counts, allocated or uncommitted.
     #[serde(flatten)]
     pub requests: AttributionRequestTallyView,
-    /// The 1000-row cap cut commits inside the window.
+    /// The 1000-row cap cut commits inside the window, or, when the window has merged pull
+    /// requests, older commits their totals may read.
     pub commits_truncated: bool,
     pub pull_requests_truncated: bool,
     /// Some requests were left out because a lookup or the report hit its cap.

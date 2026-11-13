@@ -195,7 +195,7 @@ The **Attribution** page covers the last 7, 30 or 90 days. Platform admins see e
 
 - **git-ai:** run `git-ai config git_ai_hooks` to list its hooks. `git-ai config unset git_ai_hooks.post_notes_updated` removes all `post_notes_updated` hooks, so add back any others with `git-ai config --add`. Then run `git-ai bg restart`.
 - **Claude Code:** delete the `oceans hook claude` entries under `hooks.SessionStart` and `hooks.SessionEnd` in `settings.json`.
-- **OMP:** delete `~/.omp/agent/extensions/oceans-git-ai.ts`.
+- **OMP:** delete `~/.omp/agent/extensions/oceans-git-ai.ts`, and remove the `session_id: OCEANS_SESSION_ID` header from your Oceans provider in `models.yml`. Without the extension, OMP sends that header's text as-is, so all of the machine's Chat Completions and Responses traffic would count as one session.
 - **Queue:** run `oceans hook queue` to check that nothing is waiting, then delete `~/.local/state/oceans/attribution`.
 
 ## Troubleshooting

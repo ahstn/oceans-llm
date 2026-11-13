@@ -99,7 +99,8 @@ pub struct AttributionReportTotals {
 pub struct AttributionReportCoverage {
     /// Every request the report counts, allocated or uncommitted.
     pub requests: RequestTally,
-    /// The row cap cut commits inside the window.
+    /// The row cap cut commits inside the window, or, when the window has merged pull requests,
+    /// lookback commits their totals may read.
     pub commits_truncated: bool,
     pub pull_requests_truncated: bool,
     /// A session had more requests than one lookup returns, or the report's fact cap was hit.
@@ -191,12 +192,16 @@ where
     let (facts, request_facts_truncated) = load_request_facts(store, &hashes, query.to).await?;
     let inputs = ReportInputs::new(query, &commits, &facts, &windows);
     let limit = usize::try_from(query.limit).unwrap_or(usize::MAX);
+    // Lookback commits only feed pull request totals, so a cap reached by them matters only
+    // when the window has a pull request.
+    let commits_capped = commits.len() >= limit
+        && (!pull_requests.is_empty()
+            || commits
+                .last()
+                .is_some_and(|commit| commit.first_observed_at >= query.from));
     let coverage = AttributionReportCoverage {
         requests: RequestTally::default(),
-        commits_truncated: commits.len() >= limit
-            && commits
-                .last()
-                .is_some_and(|commit| commit.first_observed_at >= query.from),
+        commits_truncated: commits_capped,
         pull_requests_truncated: pull_requests.len() >= limit,
         request_facts_truncated,
     };
@@ -257,10 +262,6 @@ where
         .rev()
         .collect::<Vec<_>>();
     while let Some(chunk) = pending.pop() {
-        if facts.len() >= MAX_REPORT_REQUEST_FACTS {
-            truncated = true;
-            break;
-        }
         let found = store.list_attribution_request_facts(chunk, until).await?;
         if found.len() >= per_call_cap && chunk.len() > 1 {
             let (first, second) = chunk.split_at(chunk.len() / 2);
@@ -268,6 +269,12 @@ where
             continue;
         }
         truncated |= found.len() >= per_call_cap;
+        let room = MAX_REPORT_REQUEST_FACTS - facts.len();
+        if found.len() >= room {
+            truncated |= found.len() > room || !pending.is_empty();
+            facts.extend(found.into_iter().take(room));
+            break;
+        }
         facts.extend(found);
     }
     Ok((facts, truncated))
@@ -343,10 +350,18 @@ impl<'a> ReportInputs<'a> {
         }
         let mut by_commit: HashMap<Uuid, Vec<_>> = HashMap::new();
         let mut uncommitted = Vec::new();
+        // A user's report reaches other owners' sessions through commits the user authored.
+        // Those sessions' requests count toward the commits; requests after the session's last
+        // commit are the other owner's own usage, so only the user's own scope counts them.
+        let own_scope = query.user_id.map(|user_id| format!("user:{user_id}"));
         for (commit, fact) in requests.into_values() {
             match commit {
                 Some((_, commit_id)) => by_commit.entry(commit_id).or_default().push(fact),
-                None if (query.from..=query.to).contains(&fact.occurred_at) => {
+                None if (query.from..=query.to).contains(&fact.occurred_at)
+                    && own_scope
+                        .as_ref()
+                        .is_none_or(|scope| fact.ownership_scope_key == *scope) =>
+                {
                     uncommitted.push(fact);
                 }
                 None => {}

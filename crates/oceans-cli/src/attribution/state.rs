@@ -123,6 +123,12 @@ impl State {
             .persist(target)
             .map_err(|error| error.error)
             .with_context(|| format!("could not write {}", target.display()))?;
+        // The rename is durable only once the directory is synced. Without this a power loss
+        // can bring back the old sequence counter, and the next entries would reuse sequences.
+        #[cfg(unix)]
+        std::fs::File::open(directory)
+            .and_then(|directory| directory.sync_all())
+            .with_context(|| format!("could not sync {}", directory.display()))?;
         Ok(())
     }
 

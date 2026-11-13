@@ -234,7 +234,10 @@ struct AttestedLines<'a> {
 
 /// Distinct attested lines per key. Overlapping ranges for one key in one file count once.
 fn count_attested_lines(section: &str) -> Result<AttestedLines<'_>, NoteError> {
-    let mut spans: HashMap<(&str, AttestedKey<'_>), Vec<(u32, u32)>> = HashMap::new();
+    // Paths are interned when their header is read, so each entry hashes a small id rather than
+    // the whole path: a long path followed by many entries would otherwise be hashed per entry.
+    let mut path_ids: HashMap<&str, usize> = HashMap::new();
+    let mut spans: HashMap<(usize, AttestedKey<'_>), Vec<(u32, u32)>> = HashMap::new();
     let mut path = None;
     let (mut paths, mut entries) = (0_usize, 0_usize);
     for line in section.lines() {
@@ -247,7 +250,8 @@ fn count_attested_lines(section: &str) -> Result<AttestedLines<'_>, NoteError> {
             if paths > MAX_FILE_PATHS {
                 return Err(NoteError::Oversized);
             }
-            path = Some(unquote_path(line));
+            let next_id = path_ids.len();
+            path = Some(*path_ids.entry(unquote_path(line)).or_insert(next_id));
             continue;
         };
         entries += 1;

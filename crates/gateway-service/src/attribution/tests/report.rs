@@ -742,7 +742,7 @@ async fn a_session_past_the_lookup_cap_is_reported_truncated() {
 }
 
 #[tokio::test]
-async fn flags_commit_truncation_only_inside_the_window() {
+async fn flags_commit_truncation_only_when_it_affects_the_report() {
     let dev = user_owner(Uuid::new_v4());
     let capped = AttributionReportQuery {
         limit: 2,
@@ -758,10 +758,54 @@ async fn flags_commit_truncation_only_inside_the_window() {
         commit(1, &dev, REPOSITORY, minutes(10), Vec::new()),
         commit(2, &dev, REPOSITORY, minutes(-60), Vec::new()),
     ]);
-    let report = report(&store, &capped).await;
+    let lookback_only = report(&store, &capped).await;
     assert!(
-        !report.coverage.commits_truncated,
+        !lookback_only.coverage.commits_truncated,
         "the cap was reached by lookback rows"
     );
-    assert_eq!(report.totals.commit_count, 1);
+    assert_eq!(lookback_only.totals.commit_count, 1);
+
+    // A window pull request may read lookback commits the cap cut.
+    let store = FakeStore {
+        pull_requests: Mutex::new(vec![pull_request(7, &dev, minutes(30), &[3])]),
+        ..FakeStore::with_commits(vec![
+            commit(1, &dev, REPOSITORY, minutes(10), Vec::new()),
+            commit(2, &dev, REPOSITORY, minutes(-60), Vec::new()),
+            commit(3, &dev, REPOSITORY, minutes(-120), Vec::new()),
+        ])
+    };
+    assert!(report(&store, &capped).await.coverage.commits_truncated);
+}
+
+#[tokio::test]
+async fn a_users_report_counts_only_their_own_uncommitted_requests() {
+    let (alice, bob) = (Uuid::new_v4(), Uuid::new_v4());
+    let bob_owner = user_owner(bob);
+    // Bob's key reported a commit Alice authored, from Bob's agent session.
+    let authored = AttributionCommitRecord {
+        author_user_id: Some(alice),
+        ..commit(
+            1,
+            &bob_owner,
+            REPOSITORY,
+            minutes(10),
+            vec![note_session("s_aa", &["h1"])],
+        )
+    };
+    let mut store = FakeStore::with_commits(vec![authored]);
+    store.facts = vec![
+        request(&bob_owner, "h1", "r1", minutes(5)),
+        request(&bob_owner, "h1", "r2", minutes(20)),
+    ];
+    let for_alice = AttributionReportQuery {
+        user_id: Some(alice),
+        ..query()
+    };
+
+    let alice_report = report(&store, &for_alice).await;
+    assert_eq!(change_requests(&alice_report, 1), 1);
+    assert_eq!(alice_report.totals.uncommitted.request_count, 0);
+
+    let everyone = report(&store, &query()).await;
+    assert_eq!(everyone.totals.uncommitted.request_count, 1);
 }

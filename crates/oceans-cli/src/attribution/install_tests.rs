@@ -83,6 +83,23 @@ fn claude_hooks_from_a_moved_binary_are_updated_in_place() {
 }
 
 #[test]
+fn a_compound_command_ending_in_an_oceans_hook_is_kept() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("settings.json");
+    let compound = "echo audit >> /tmp/audit; /usr/local/bin/oceans hook claude";
+    let old = serde_json::json!({"hooks": {
+        "SessionStart": [{"hooks": [{"type": "command", "command": compound}]}],
+    }});
+    fs::write(&path, old.to_string()).unwrap();
+    assert_eq!(claude(&path, COMMAND).unwrap(), Change::Added);
+    let value: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    let groups = value["hooks"]["SessionStart"].as_array().unwrap();
+    assert_eq!(groups[0]["hooks"][0]["command"], compound);
+    assert_eq!(groups[1]["hooks"][0]["command"], COMMAND);
+}
+
+#[test]
 fn invalid_claude_settings_are_left_untouched() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("settings.json");
@@ -93,6 +110,17 @@ fn invalid_claude_settings_are_left_untouched() {
     }
     let missing = directory.path().join("new/settings.json");
     assert_eq!(claude(&missing, COMMAND).unwrap(), Change::Added);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_dangling_settings_symlink_is_not_replaced() {
+    use std::os::unix::fs::symlink;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("settings.json");
+    symlink(directory.path().join("dotfiles/settings.json"), &path).unwrap();
+    assert!(claude(&path, COMMAND).is_err());
+    assert!(fs::symlink_metadata(&path).unwrap().is_symlink());
 }
 
 #[cfg(unix)]

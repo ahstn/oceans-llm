@@ -16,8 +16,10 @@ export type AttributionSearch = {
 }
 
 export function normalizeAttributionSearch(search: Record<string, unknown>): AttributionSearch {
-  // Search params usually arrive JSON-parsed, but `?days="30"` stays a string.
-  const days = Number(search.days)
+  // Search params usually arrive JSON-parsed, but `?days="30"` stays a string. Any other type,
+  // such as a parsed object, falls back: `Number()` on one can throw.
+  const rawDays = search.days
+  const days = typeof rawDays === 'number' || typeof rawDays === 'string' ? Number(rawDays) : NaN
   const result: AttributionSearch = {
     days: ATTRIBUTION_WINDOWS.find((window) => window === days) ?? DEFAULT_ATTRIBUTION_WINDOW,
   }

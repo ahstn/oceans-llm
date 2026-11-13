@@ -189,8 +189,10 @@ impl State {
                 self.new_entry(&installation_id, scope.as_deref(), &observed_at, payload)
             })
             .collect();
-        let mut used = self.stored_bytes()?;
         let lock = self.lock_queue(self.lock_timeout)?;
+        // Measured under the lock, so writers that queue one after another each see the
+        // others' entries. A writer that timed out on the lock can still overshoot by its batch.
+        let mut used = self.stored_bytes()?;
         if lock.is_some() {
             let start = self.read_counter()?;
             // The counter moves first: a crash before the entries are written leaves a gap,

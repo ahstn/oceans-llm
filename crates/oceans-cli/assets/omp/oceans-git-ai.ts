@@ -12,13 +12,16 @@
 // Both binaries are optional: a missing binary makes the matching hook a no-op.
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import { type ChildProcess, spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 
 const OCEANS_BIN = "__OCEANS_BIN__";
 const GIT_AI_BIN = "__GIT_AI_BIN__";
 const SESSION_ENV = "OCEANS_SESSION_ID";
 const CHECKPOINT_TIMEOUT_MS = 10_000;
+// `dirty_files` is an optional pre-edit snapshot. Larger files are left out of it, as are
+// non-regular files such as FIFOs, which a read would block on.
+const MAX_DIRTY_FILE_BYTES = 8 * 1024 * 1024;
 
 type CanonicalTool = "edit" | "write" | "bash";
 type HookEvent = "before_edit" | "after_edit" | "before_command" | "after_command";
@@ -73,10 +76,21 @@ function absolutePaths(cwd: string, paths: string[]): string[] {
 }
 
 async function dirtyFiles(paths: string[]): Promise<Record<string, string>> {
-	const entries = await Promise.all(
-		paths.map(async path => [path, await readFile(path, "utf8").catch(() => "")] as const),
+	const files: Record<string, string> = {};
+	await Promise.all(
+		paths.map(async path => {
+			const info = await stat(path).catch(() => null);
+			// A missing file is about to be created, so its content before the edit is empty.
+			if (!info) {
+				files[path] = "";
+				return;
+			}
+			if (!info.isFile() || info.size > MAX_DIRTY_FILE_BYTES) return;
+			const content = await readFile(path, "utf8").catch(() => null);
+			if (content !== null) files[path] = content;
+		}),
 	);
-	return Object.fromEntries(entries);
+	return files;
 }
 
 /** Runs `bin args` with `stdin`, never rejecting; resolves when the child exits or times out. */
@@ -197,7 +211,8 @@ export default function oceansGitAi(pi: ExtensionAPI) {
 		const call = pending.get(event.toolCallId);
 		if (!call) return;
 		pending.delete(event.toolCallId);
-		if (event.isError) return;
+		// A failed call can still have changed files (a bash script that writes and then fails, a
+		// partly applied patch), so it gets its after checkpoint too.
 		if (call.tool === "bash") {
 			await checkpoint("after_command", call, ctx, event.toolCallId, {});
 			return;

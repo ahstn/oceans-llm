@@ -86,7 +86,15 @@ pub fn claude_settings_path(env: &Env) -> Option<PathBuf> {
 /// keeping every other setting and hook in place.
 pub fn claude(settings: &Path, command: &str) -> anyhow::Result<Change> {
     // Writing through a symlink keeps settings that live in a dotfiles repository.
-    let target = fs::canonicalize(settings).unwrap_or_else(|_| settings.to_path_buf());
+    let target = match fs::canonicalize(settings) {
+        Ok(target) => target,
+        // A symlink to a missing file: writing here would replace the link with a file.
+        Err(_) if fs::symlink_metadata(settings).is_ok_and(|meta| meta.is_symlink()) => bail!(
+            "{} is a symlink to a file that doesn't exist; create that file, then run this again",
+            settings.display()
+        ),
+        Err(_) => settings.to_path_buf(),
+    };
     let (text, permissions) = match fs::read_to_string(&target) {
         Ok(text) => (text, Some(fs::metadata(&target)?.permissions())),
         Err(error) if error.kind() == io::ErrorKind::NotFound => (String::new(), None),
@@ -191,12 +199,24 @@ fn merge_event(groups: &mut Vec<Json>, command: &str) -> Change {
 }
 
 /// Whether `command` runs an `oceans` binary with `suffix`, so an install from another path
-/// replaces it instead of adding a second hook.
+/// replaces it instead of adding a second hook. The program must be one shell word, as
+/// `process::shell_word` writes it, so a compound command that ends in an oceans hook is kept.
 fn is_oceans_command(command: &str, suffix: &str) -> bool {
     let Some(program) = command.strip_suffix(suffix) else {
         return false;
     };
-    let program = program.trim().trim_matches(['\'', '"']);
+    let program = program.trim();
+    let quoted = ['\'', '"'].into_iter().find_map(|quote| {
+        let inner = program.strip_prefix(quote)?.strip_suffix(quote)?;
+        (!inner.contains(quote)).then_some(inner)
+    });
+    let program = match quoted {
+        Some(inner) => inner,
+        None if program.contains(|c: char| c.is_whitespace() || "'\";&|<>()$`".contains(c)) => {
+            return false;
+        }
+        None => program,
+    };
     Path::new(program)
         .file_name()
         .is_some_and(|name| name == "oceans" || name == "oceans.exe")
