@@ -1,0 +1,19 @@
+crates/gateway/src/config/tests/providers.rs
+  s_dd118f467446e0::t_0a8e1ee264f0f1 997-1041
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "02e7ba7ea24cf542e84f8bd0dc732d247985a7c5",
+  "prompts": {},
+  "sessions": {
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
