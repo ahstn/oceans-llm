@@ -152,7 +152,9 @@ function BudgetIncreaseForm({
           <FieldLabel id="budget-increase-period-label">Period</FieldLabel>
           <ToggleGroup
             type="single"
-            variant="outline"
+            variant="checked"
+            size="sm"
+            spacing={1}
             value={period}
             onValueChange={(value) => {
               if (value === 'end_of_month' || value === 'seven_days') setPeriod(value)
@@ -173,20 +175,29 @@ function BudgetIncreaseForm({
         </Field>
         <Field data-invalid={showError || undefined}>
           <FieldLabel htmlFor="budget-increase-amount">Increase amount (USD)</FieldLabel>
-          <div className="grid grid-cols-4 gap-2" role="group" aria-label="Prefill amount">
+          <ToggleGroup
+            type="single"
+            variant="checked"
+            size="sm"
+            spacing={1}
+            className="w-full flex-wrap"
+            value={amount}
+            onValueChange={(value) => {
+              if (value) setAmount(value)
+            }}
+            aria-label="Prefill amount"
+          >
             {increasePresets(base10000).map(({ percent, amount10000 }) => (
-              <Button
+              <ToggleGroupItem
                 key={percent}
-                type="button"
-                size="sm"
-                variant="secondary"
+                value={amountInputValue(amount10000)}
+                className="flex-1"
                 aria-label={`Prefill ${percent}% of the budget`}
-                onClick={() => setAmount(amountInputValue(amount10000))}
               >
                 {formatUsd10000(amount10000)}
-              </Button>
+              </ToggleGroupItem>
             ))}
-          </div>
+          </ToggleGroup>
           <Input
             id="budget-increase-amount"
             type="number"

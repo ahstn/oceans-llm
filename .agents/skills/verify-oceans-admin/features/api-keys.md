@@ -28,6 +28,7 @@ Preconditions:
 
 - **List.** Choose `API Keys`. The `API keys` heading and the `Keys` card appear for the current scope.
 - **Open create.** Choose `Create API key`. A creation dialog appears with `Name`, `Owner type`, owner selection, and model access controls.
+- **Model grant selector.** In both create and manage dialogs, `All models` and `Selected models` use separate bordered pills, with a lilac selected state matching the Models client config selector. Switching modes shows or hides `Granted models`; clicking the selected pill keeps it selected. Service-account mode stays disabled.
 - **Create.** Fill `Name`, choose an allowed owner, set model access, and choose the final `Create API key` button. The toast reads `API key created`, and the `Copy the new key now` alert's `new-api-key-raw-key` element holds a raw key starting with `gwk_`. Use it in memory only, then choose `Dismiss` before any screenshot.
 - **Confirm use.** Call `/v1/models` with the new key and confirm that returned model IDs equal the effective intersection of the selected grants and owner/model allowlists. Do not store the raw key in proof.
 - **Scopes on create.** In the create dialog, set the `Capabilities` toggle to `Limited` and tick `MCP proxy` (`create-api-key-scope-mcp:proxy`). The `MCP servers` toggle appears; choose `Selected servers` and tick one seeded server. `Create API key` stays disabled until at least one scope, and at least one server under `Selected servers`, is ticked. The new row's `Scopes` column reads `MCP proxy · <server_key>`.

@@ -960,6 +960,10 @@ function ModelGrantModeField({
       <FieldLabel>Model grant mode</FieldLabel>
       <ToggleGroup
         type="single"
+        variant="checked"
+        size="sm"
+        spacing={1}
+        className="max-w-full min-w-0 flex-wrap"
         value={mode}
         onValueChange={(value) => {
           if (value === 'all' || value === 'explicit') {
