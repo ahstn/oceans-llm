@@ -1,0 +1,19 @@
+crates/admin-ui/web/src/test/routes/spend-controls-route.test.tsx
+  s_7c0b3fb83afb86::t_ecb56af7efaea2 523-524,535
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "5ea97678795d906ff5e1cac6dc96003aac8aafa6",
+  "prompts": {},
+  "sessions": {
+    "s_7c0b3fb83afb86": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1d957-cdf2-7675-b0a3-de091862a0c5",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
