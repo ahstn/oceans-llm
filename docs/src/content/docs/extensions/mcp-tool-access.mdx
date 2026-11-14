@@ -296,11 +296,12 @@ On `/mcp`, `tools/list` returns only the gateway's own tools: `search_tools`, `d
 {
   "address": "mcp://github/tools/issues.create",
   "arguments": {},
+  "arguments_json": "{\"title\":\"Example\"}",
   "schema_hash": "sha256:optional"
 }
 ```
 
-`address` is required. `arguments` defaults to `{}`. If the caller sends `schema_hash` and it no longer matches the stored tool, the gateway returns `tool_schema_changed` and doesn't contact the upstream server. The hash covers the input schema, title, upstream annotations and output schema. It doesn't cover admin overrides, so an override doesn't trigger `tool_schema_changed`.
+`address` is required. `arguments` defaults to `{}`. `arguments_json` is optional. It holds the target tool's arguments as a JSON-encoded object, for clients that can't send an object with arbitrary keys in `arguments`. When `arguments_json` is a non-empty string, the gateway uses it instead of `arguments`. Then `arguments` must be absent, `null` or `{}`. A value that isn't a JSON object, or a call that sets both, gets an invalid-params error that names `arguments_json`. If the caller sends `schema_hash` and it no longer matches the stored tool, the gateway returns `tool_schema_changed` and doesn't contact the upstream server. The hash covers the input schema, title, upstream annotations and output schema. It doesn't cover admin overrides, so an override doesn't trigger `tool_schema_changed`.
 
 A missing upstream credential returns `credential_required`, and an expired one returns `credential_expired`. These errors, and `tool_schema_changed`, come back as a tool result with `isError: true` and the code in `structuredContent.error_code`.
 

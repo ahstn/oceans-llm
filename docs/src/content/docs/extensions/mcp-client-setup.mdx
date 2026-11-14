@@ -268,7 +268,7 @@ The MCP routes and the metadata, token, registration and revocation endpoints an
 | --- | --- | --- |
 | `search_tools` | `query`, `limit`, `offset`, `server_key` (all optional) | Searches the tools granted to the caller across all servers. `limit` defaults to `10`, maximum `50`. An empty query lists all granted tools. |
 | `describe_tool` | `address` | Returns the stored schema and metadata for one granted tool. |
-| `call_tool` | `address`, `arguments`, `schema_hash` (optional) | Calls one granted tool. |
+| `call_tool` | `address`, `arguments`, `arguments_json` (optional), `schema_hash` (optional) | Calls one granted tool. |
 
 A tool address has the form `mcp://<server_key>/tools/<tool_name>`. A `call_tool` request looks like this:
 
@@ -279,6 +279,16 @@ A tool address has the form `mcp://<server_key>/tools/<tool_name>`. A `call_tool
     "libraryId": "/tanstack/router",
     "query": "How do route loaders work?"
   }
+}
+```
+
+Some clients can't send an object with arbitrary keys in `arguments`. For example, a client that uses OpenAI strict mode for function calls can send only `{}` there. Such a client sends the same arguments as a JSON string in `arguments_json` instead:
+
+```json
+{
+  "address": "mcp://context7/tools/query-docs",
+  "arguments": {},
+  "arguments_json": "{\"libraryId\":\"/tanstack/router\",\"query\":\"How do route loaders work?\"}"
 }
 ```
 
