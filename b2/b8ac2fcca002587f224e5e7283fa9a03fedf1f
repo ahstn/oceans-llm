@@ -1,0 +1,16 @@
+fnox.local.toml.example
+  h_2f452a9c375069 9-10
+fnox.toml
+  h_2f452a9c375069 27-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "b2b8ac2fcca002587f224e5e7283fa9a03fedf1f",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
