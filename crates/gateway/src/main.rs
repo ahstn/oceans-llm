@@ -344,6 +344,7 @@ async fn run_serve_with_store(
         ),
         benchmark_model_ids: Arc::new(config.benchmark_model_ids()),
         budget_defaults: human_budget_defaults,
+        attribution_email_aliases: Arc::new(config.attribution_email_aliases()?),
         agent_analysis: agent_analysis.capabilities,
         admin_permissions,
         mcp_organisation_publishing: config.mcp.registry.organisation_publishing,

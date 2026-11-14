@@ -502,6 +502,15 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         libsql_sql: include_str!("../migrations/V79__git_ai_attribution.sql"),
         postgres_sql: include_str!("../migrations/postgres/V79__git_ai_attribution.sql"),
     },
+    MigrationManifest {
+        version: 80,
+        name: "attribution_note_key_owner_authors",
+        checksum: "V80__attribution_note_key_owner_authors.sql",
+        libsql_sql: include_str!("../migrations/V80__attribution_note_key_owner_authors.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V80__attribution_note_key_owner_authors.sql"
+        ),
+    },
 ];
 
 #[cfg(test)]

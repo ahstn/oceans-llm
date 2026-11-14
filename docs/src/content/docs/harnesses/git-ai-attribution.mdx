@@ -164,7 +164,21 @@ The **Attribution** page covers the last 7, 30 or 90 days. Platform admins see e
 - **AI and human lines** come from the notes. A line git-ai didn't attest to anyone counts as neither.
 - **Requests and cost** come from gateway traffic. A commit gets the requests of each session that wrote it, made after that session's previous commit and up to this commit. Requests after a session's last commit count as uncommitted work. Totals therefore add up without counting a request twice.
 - **Unpriced requests** are counted separately, and never treated as free. See [Pricing catalog and accounting](/spend/pricing-and-accounting/).
-- **People** are matched by email. Author emails in notes and pull request commits are matched to Oceans users. A commit without an email counts for the key's owner. A contributor whose email matches no Oceans user is counted, but not named.
+- **People** come from the API key first. A note sent with your key counts for you, whatever email your Git config uses. Pull request commits, and notes sent with a service account key, are matched to Oceans users by author email. If you commit with another email, list it in your user's `additional_attribution_emails` in the [gateway config](/access/access-settings/#users). A commit without an email counts for the key's owner. A contributor whose email matches no Oceans user is counted, but not named.
+
+  For example, GitHub authors merges and web edits with your `noreply` address. Add it, and any personal Git email, to your user:
+
+  ```yaml
+  users:
+    - name: Octo Cat
+      email: octocat@example.com
+      auth_mode: password
+      additional_attribution_emails:
+        - 583231+octocat@users.noreply.github.com
+        - octocat@personal.example
+  ```
+
+  Your `noreply` address is `ID+username@users.noreply.github.com`. `gh api user --jq '"\(.id)+\(.login)@users.noreply.github.com"'` prints it.
 - **Sessions** join to gateway requests when the session id from a note or a session hook matches one the gateway recorded for the same owner. The match doesn't depend on which agent the gateway thinks sent the requests. This matters for OMP, because OMP looks like Claude Code when it uses the Messages API. A session with no commit yet still counts its requests as uncommitted work, even when it started before the window, up to 30 days before. The gateway reads these session ids:
 
   | Agent | Session id the gateway reads |

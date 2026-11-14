@@ -2,7 +2,7 @@
 //! before the body is read, and serde errors never reach a response: they can quote raw
 //! session ids or emails.
 
-use std::sync::Arc;
+use std::collections::HashMap;
 
 use async_trait::async_trait;
 use axum::{
@@ -259,7 +259,10 @@ pub async fn post_attribution_entries(
     };
     let outcome = ingest_attribution_batch(
         state.store.as_ref(),
-        &StoreUsers(state.store.clone()),
+        &StoreUsers {
+            store: &state.store,
+            aliases: &state.attribution_email_aliases,
+        },
         &key,
         batch,
         OffsetDateTime::now_utc(),
@@ -268,18 +271,32 @@ pub async fn post_attribution_entries(
     Ok(Json(outcome.into()))
 }
 
-/// Author matching over the store's normalized-email lookup.
-struct StoreUsers(Arc<AnyStore>);
+/// Author matching over the store's normalized-email lookup: a user's Oceans email first,
+/// then the `additional_attribution_emails` config gives them.
+struct StoreUsers<'a> {
+    store: &'a AnyStore,
+    aliases: &'a HashMap<String, String>,
+}
 
 #[async_trait]
-impl AttributionUserLookup for StoreUsers {
+impl AttributionUserLookup for StoreUsers<'_> {
     async fn user_id_by_normalized_email(
         &self,
         email_normalized: &str,
     ) -> Result<Option<Uuid>, StoreError> {
-        Ok(self
-            .0
+        if let Some(user) = self
+            .store
             .get_user_by_email_normalized(email_normalized)
+            .await?
+        {
+            return Ok(Some(user.user_id));
+        }
+        let Some(oceans_email) = self.aliases.get(email_normalized) else {
+            return Ok(None);
+        };
+        Ok(self
+            .store
+            .get_user_by_email_normalized(oceans_email)
             .await?
             .map(|user| user.user_id))
     }

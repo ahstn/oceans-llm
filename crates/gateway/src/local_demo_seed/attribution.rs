@@ -1,8 +1,10 @@
 //! Git AI attribution for two demo developers, matching
 //! `.agents/skills/verify-oceans-admin/features/attribution.md`. Gina has two commits joined
 //! to her seeded Codex sessions; the newer session keeps making requests after its commit.
-//! Alice has a commit whose Claude session matched no traffic, and owns a human-only commit
-//! by an author who is not an Oceans user. Two merged PRs cover the `admin-console` commits.
+//! Alice has a commit whose Claude session matched no traffic, and a human-only commit whose
+//! Git author is not an Oceans user: its note counts for Alice, whose key sent it, while pull
+//! request #41 lists that author's unmatched email. Two merged PRs cover the `admin-console`
+//! commits.
 //!
 //! Every run deletes both owners' attribution rows and writes them again at times relative to
 //! `now`. A replacement note keeps its commit's first observation time, so this is the only way
@@ -52,8 +54,9 @@ struct DemoSession {
 
 struct DemoCommit {
     owner: &'static str,
-    /// `None` for an author who is not an Oceans user.
-    author: Option<&'static str>,
+    /// The Git author a pull request lists for the commit; `None` for one who is not an Oceans
+    /// user. The note's author is always `owner`, as ingestion credits the sending key's owner.
+    git_author: Option<&'static str>,
     repository: &'static str,
     commit_sha: &'static str,
     subject: &'static str,
@@ -82,7 +85,7 @@ const DEMO_COMMITS: &[DemoCommit] = &[
     // After every request of the route migration session (1h56m to 1h2m ago).
     DemoCommit {
         owner: GINA,
-        author: Some(GINA),
+        git_author: Some(GINA),
         repository: ADMIN_CONSOLE,
         commit_sha: GINA_ROUTE_COMMIT,
         subject: "Rename the observability route to sessions",
@@ -104,7 +107,7 @@ const DEMO_COMMITS: &[DemoCommit] = &[
     // Seven of the Jira session's requests come before it and three after.
     DemoCommit {
         owner: GINA,
-        author: Some(GINA),
+        git_author: Some(GINA),
         repository: RELEASE_RUNBOOKS,
         commit_sha: GINA_RUNBOOK_COMMIT,
         subject: "Record the 2026.07 release handoff",
@@ -126,7 +129,7 @@ const DEMO_COMMITS: &[DemoCommit] = &[
     // No gateway request carries this session, so the commit shows as unjoined.
     DemoCommit {
         owner: ALICE,
-        author: Some(ALICE),
+        git_author: Some(ALICE),
         repository: ADMIN_CONSOLE,
         commit_sha: ALICE_DASHBOARD_COMMIT,
         subject: "Summarise release blockers on the dashboard",
@@ -147,7 +150,7 @@ const DEMO_COMMITS: &[DemoCommit] = &[
     },
     DemoCommit {
         owner: ALICE,
-        author: None,
+        git_author: None,
         repository: ADMIN_CONSOLE,
         commit_sha: CONTRACTOR_COMMIT,
         subject: "Add the release blocker query",
@@ -208,11 +211,10 @@ pub(super) async fn seed_demo_attribution(
         let write = commit_write(
             commit,
             &owners[commit.owner],
-            &user_id,
             sequence,
             committed[commit.commit_sha],
             now,
-        )?;
+        );
         store
             .apply_attribution_commit(&write)
             .await
@@ -284,12 +286,10 @@ fn owner(user_id: Uuid) -> AttributionOwner {
 fn commit_write(
     commit: &DemoCommit,
     owner: &AttributionOwner,
-    user_id: &impl Fn(&str) -> anyhow::Result<Uuid>,
     sequence: i64,
     committed_at: OffsetDateTime,
     now: OffsetDateTime,
-) -> anyhow::Result<AttributionCommitWrite> {
-    let author_user_id = commit.author.map(user_id).transpose()?;
+) -> AttributionCommitWrite {
     let sessions = commit
         .session
         .iter()
@@ -300,21 +300,19 @@ fn commit_write(
             harness_key: Some(session.harness_key.to_string()),
             session_hashes: vec![session.session_hash.to_string()],
             ai_lines: session.ai_lines,
-            human_author_user_id: author_user_id,
+            human_author_user_id: owner.owner_user_id,
             human_author_hash: None,
         })
         .collect::<Vec<_>>();
-    Ok(AttributionCommitWrite {
+    AttributionCommitWrite {
         attribution_commit_id: local_demo_uuid("attribution_commit", commit.commit_sha),
         owner: owner.clone(),
         repository: commit.repository.to_string(),
         commit_sha: commit.commit_sha.to_string(),
         branch: Some(commit.branch.to_string()),
         is_default_branch: commit.branch == "main",
-        author_user_id,
-        author_email_hash: author_user_id
-            .is_none()
-            .then(|| UNMATCHED_AUTHOR_HASH.to_string()),
+        author_user_id: owner.owner_user_id,
+        author_email_hash: None,
         schema_version: "authorship/3.0.0".to_string(),
         git_ai_version: Some("1.7.6".to_string()),
         ai_lines: sessions.iter().map(|session| session.ai_lines).sum(),
@@ -327,7 +325,7 @@ fn commit_write(
         },
         sessions,
         received_at: now,
-    })
+    }
 }
 
 async fn seed_session_events(
@@ -378,7 +376,7 @@ fn pull_request_write(
                 .iter()
                 .find(|commit| commit.commit_sha == *sha)
                 .ok_or_else(|| anyhow::anyhow!("pull request lists unknown demo commit `{sha}`"))?;
-            let author_user_id = commit.author.map(user_id).transpose()?;
+            let author_user_id = commit.git_author.map(user_id).transpose()?;
             Ok(AttributionPullRequestCommit {
                 commit_sha: commit.commit_sha.to_string(),
                 subject: Some(commit.subject.to_string()),
@@ -452,7 +450,7 @@ mod tests {
 
         let everyone = report(&store, None, None).await;
         assert_eq!(everyone.totals.commit_count, 4);
-        assert_eq!(everyone.totals.unmatched_author_commit_count, 1);
+        assert_eq!(everyone.totals.unmatched_author_commit_count, 0);
         assert_eq!(everyone.totals.pull_request_count, 2);
         assert_eq!(everyone.totals.requests.request_count, 17);
         assert!(everyone.totals.requests.priced_request_count > 0);
