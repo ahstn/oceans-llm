@@ -26,6 +26,10 @@ const REQUEST_PATHS: &[EffortPath] = &[
 const CHAT_REQUEST_PATHS: &[EffortPath] = &[
     &["generationConfig", "thinkingConfig", "thinkingLevel"],
     &["generation_config", "thinking_config", "thinking_level"],
+    // Gemini's OpenAI-compatible endpoint reads thinking settings from `google`, sent either
+    // at the top level or inside a literal `extra_body`.
+    &["google", "thinking_config", "thinking_level"],
+    &["extra_body", "google", "thinking_config", "thinking_level"],
     &["chat_template_kwargs", "reasoning_effort"],
     &["chat_template_args", "reasoning_effort"],
 ];
@@ -238,19 +242,14 @@ fn enforce_effort_value(
     let Some(raw_effort) = value.as_str() else {
         return Err(reject(None));
     };
-    if raw_effort.eq_ignore_ascii_case("none") || raw_effort.eq_ignore_ascii_case("off") {
-        return Ok(());
-    }
-    let Some(requested) = [
-        ReasoningEffort::Minimal,
-        ReasoningEffort::Low,
-        ReasoningEffort::Medium,
-        ReasoningEffort::High,
-        ReasoningEffort::XHigh,
-        ReasoningEffort::Max,
-    ]
-    .into_iter()
-    .find(|effort| effort.as_str().eq_ignore_ascii_case(raw_effort)) else {
+    let requested = if raw_effort.eq_ignore_ascii_case("off") {
+        Some(ReasoningEffort::None)
+    } else {
+        ReasoningEffort::ALL
+            .into_iter()
+            .find(|effort| effort.as_str().eq_ignore_ascii_case(raw_effort))
+    };
+    let Some(requested) = requested else {
         return Err(reject(None));
     };
     if requested > ceiling {
@@ -296,6 +295,66 @@ mod tests {
             GatewayError::from(error),
             GatewayError::InvalidRequest(_)
         ));
+    }
+
+    #[test]
+    fn none_ceiling_allows_only_disabled_reasoning() {
+        for effort in ["none", "off", "NONE", "Off"] {
+            enforce_reasoning_effort_value(&json!(effort), Some(ReasoningEffort::None))
+                .expect("disabled reasoning should pass a `none` ceiling");
+        }
+        for (effort, requested) in [
+            ("minimal", ReasoningEffort::Minimal),
+            ("low", ReasoningEffort::Low),
+            ("max", ReasoningEffort::Max),
+        ] {
+            let error = enforce_reasoning_effort_value(&json!(effort), Some(ReasoningEffort::None))
+                .expect_err("any reasoning should exceed a `none` ceiling");
+            assert_eq!(error.requested, Some(requested));
+            assert_eq!(
+                error.to_string(),
+                format!("reasoning effort `{effort}` exceeds the model maximum `none`")
+            );
+        }
+    }
+
+    #[test]
+    fn gemini_openai_compat_thinking_level_is_held_to_the_ceiling() {
+        let thinking =
+            |level: &str| json!({"google": {"thinking_config": {"thinking_level": level}}});
+        for (field, value) in [
+            ("google", thinking("HIGH")["google"].clone()),
+            ("extra_body", thinking("high")),
+            ("extra_body", thinking("XHigh")),
+        ] {
+            let request = CoreChatRequest {
+                model: "gemini".to_string(),
+                messages: Vec::new(),
+                stream: false,
+                extra: BTreeMap::from([(field.to_string(), value)]),
+            };
+            let rejection = enforce_chat_reasoning_effort(&request, Some(ReasoningEffort::Medium))
+                .expect_err("a Gemini thinking level above the ceiling should fail");
+            assert!(
+                rejection
+                    .field_path
+                    .ends_with("google.thinking_config.thinking_level"),
+                "unexpected path {}",
+                rejection.field_path
+            );
+        }
+
+        for level in ["MINIMAL", "low", "Medium"] {
+            enforce_reasoning_effort_value(
+                &json!({"extra_body": thinking(level)}),
+                Some(ReasoningEffort::Medium),
+            )
+            .expect("a Gemini thinking level at or below the ceiling should pass");
+        }
+        assert!(
+            enforce_reasoning_effort_value(&thinking("EXTREME"), Some(ReasoningEffort::Max))
+                .is_err()
+        );
     }
 
     #[test]

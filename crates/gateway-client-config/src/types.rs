@@ -28,6 +28,8 @@ pub enum ApiFormat {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ReasoningLevel {
+    /// Reasoning off. As a gateway ceiling, it leaves no effort to offer.
+    None,
     Minimal,
     Low,
     Medium,
@@ -37,7 +39,8 @@ pub enum ReasoningLevel {
 }
 
 impl ReasoningLevel {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
+        Self::None,
         Self::Minimal,
         Self::Low,
         Self::Medium,
@@ -49,6 +52,7 @@ impl ReasoningLevel {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::None => "none",
             Self::Minimal => "minimal",
             Self::Low => "low",
             Self::Medium => "medium",
@@ -58,7 +62,7 @@ impl ReasoningLevel {
         }
     }
 
-    /// `None` for values outside the scale, such as `none`.
+    /// `None` for values outside the scale, such as `off`.
     #[must_use]
     pub fn parse(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|level| level.as_str() == value)

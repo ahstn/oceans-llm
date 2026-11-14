@@ -27,7 +27,7 @@ impl OpenAiErrorEnvelope {
                 message: error.to_string(),
                 error_type: error.error_type().to_string(),
                 code: Some(error.error_code().to_string()),
-                param: None,
+                param: error.param().map(str::to_string),
             },
         }
     }
@@ -145,5 +145,27 @@ mod tests {
         let serialized = serde_json::to_value(envelope).expect("must serialize");
         assert_eq!(serialized["error"]["type"], "not_implemented_error");
         assert_eq!(serialized["error"]["code"], "not_implemented");
+        assert_eq!(serialized["error"]["param"], Value::Null);
+    }
+
+    #[test]
+    fn error_envelope_names_the_unsupported_parameter() {
+        let envelope = OpenAiErrorEnvelope::from_gateway_error(&GatewayError::Provider(
+            crate::ProviderError::UnsupportedParameter {
+                param: "previous_response_id",
+                message: "OpenRouter Responses keeps no state".to_string(),
+            },
+        ));
+
+        let serialized = serde_json::to_value(envelope).expect("must serialize");
+        assert_eq!(serialized["error"]["type"], "invalid_request_error");
+        assert_eq!(serialized["error"]["code"], "unsupported_parameter");
+        assert_eq!(serialized["error"]["param"], "previous_response_id");
+        assert!(
+            serialized["error"]["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("OpenRouter Responses keeps no state")),
+            "{serialized}"
+        );
     }
 }

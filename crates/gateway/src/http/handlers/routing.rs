@@ -59,11 +59,17 @@ pub(super) async fn select_provider_route(
         &resolved.capability_hints,
         requirements,
     );
-    let mut eligible =
-        match routes_serving_service_tier(&state.providers, resolved, capable, service_tier) {
-            Ok(routes) => routes,
-            Err(error) => return Ok((0, Err(error))),
-        };
+    let serving = routes_serving_service_tier(
+        &state.providers,
+        resolved,
+        capable,
+        service_tier,
+        endpoint.service_tier_api(),
+    );
+    let mut eligible = match serving {
+        Ok(routes) => routes,
+        Err(error) => return Ok((0, Err(error))),
+    };
     let provider_identities = if policy.is_some() {
         retain_routing_identities(state, &mut eligible)
     } else {

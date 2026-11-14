@@ -346,7 +346,7 @@ The gateway validates the whole file before it starts. A failure stops startup (
 - Budget defaults, rate-limit policies, teams, service accounts and users.
 
 <Aside type="note" title="Some sections ignore unknown keys">
-Many sections do not reject unknown keys: `server`, `database`, `request_logging`, `budget_alerts`, the entries under `auth.oidc` and `auth.oauth`, route entries under `models[*].routes`, and most provider types. A misspelled field there is ignored and its default applies. Check spelling against the field references.
+Many sections do not reject unknown keys: `server`, `database`, `request_logging`, `budget_alerts`, and the entries under `auth.oidc` and `auth.oauth`. A misspelled field there is ignored and its default applies. Check spelling against the field references. `providers` and route entries under `models[*].routes` reject unknown keys.
 </Aside>
 
 Some checks happen later. At seed time, the gateway checks that OIDC and OAuth providers referenced by users are enabled, and that a seeded user's auth mode or provider changes only while the user is still invited. At request time, failures come from routing, missing providers, capability mismatches, and missing prices. See [Request lifecycle and failure modes](/reference/request-lifecycle/) for those.

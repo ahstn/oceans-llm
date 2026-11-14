@@ -1,7 +1,9 @@
 //! Bedrock service tiers per api style: the tiers a route can request, their wire form, and
 //! the tier Bedrock reports serving.
 
-use gateway_core::{AwsBedrockApiStyle, ProviderError, ProviderRequestContext, ServiceTier};
+use gateway_core::{
+    AwsBedrockApiStyle, ProviderError, ProviderRequestContext, RouteCompatibility, ServiceTier,
+};
 use serde_json::{Value, json};
 
 use crate::service_tier::{DEFAULT_FLEX_PRIORITY, DEFAULT_ONLY, checked_service_tier};
@@ -10,9 +12,7 @@ use crate::service_tier::{DEFAULT_FLEX_PRIORITY, DEFAULT_ONLY, checked_service_t
 pub(super) const SERVICE_TIER_HEADER: &str = "x-amzn-bedrock-service-tier";
 
 /// Claude on Mantle ignores the service tier header, so it serves the default tier only.
-pub(super) const fn api_style_service_tiers(
-    api_style: AwsBedrockApiStyle,
-) -> &'static [ServiceTier] {
+const fn api_style_service_tiers(api_style: AwsBedrockApiStyle) -> &'static [ServiceTier] {
     match api_style {
         AwsBedrockApiStyle::RuntimeConverse
         | AwsBedrockApiStyle::RuntimeAnthropicInvoke
@@ -21,6 +21,17 @@ pub(super) const fn api_style_service_tiers(
         | AwsBedrockApiStyle::MantleOpenaiResponses => DEFAULT_FLEX_PRIORITY,
         AwsBedrockApiStyle::MantleAnthropicMessages => DEFAULT_ONLY,
     }
+}
+
+/// The tiers a Bedrock route can send: those of its api style, or the default tier alone for
+/// a route that names none.
+pub(crate) fn bedrock_service_tiers(compatibility: &RouteCompatibility) -> &'static [ServiceTier] {
+    compatibility
+        .aws_bedrock
+        .as_ref()
+        .map_or(DEFAULT_ONLY, |compatibility| {
+            api_style_service_tiers(compatibility.api_style)
+        })
 }
 
 /// Writes the effective tier into the body: Converse's `serviceTier` object, or the

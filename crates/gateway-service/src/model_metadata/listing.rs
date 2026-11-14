@@ -285,7 +285,7 @@ impl<'a> ModelView<'a> {
         let service_tiers = servable_service_tiers(
             chat_routes
                 .iter()
-                .map(|((route, provider, _), _)| (*route, *provider)),
+                .map(|((route, provider, caps), _)| (*route, *provider, *caps)),
             allowed,
             snapshot,
             adapter,

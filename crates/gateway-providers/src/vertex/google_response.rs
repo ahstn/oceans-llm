@@ -138,6 +138,7 @@ pub(super) fn normalize_google_response(
         } else {
             mapped
         };
+        let reasoning_details = parts.reasoning_details();
 
         let mut metadata = native_parts_metadata(
             parts.native_parts,
@@ -165,6 +166,12 @@ pub(super) fn normalize_google_response(
         }
         if let Some(signature) = parts.thought_signature {
             message.insert(THOUGHT_SIGNATURE_FIELD.to_string(), signature);
+        }
+        if !reasoning_details.is_empty() {
+            message.insert(
+                "reasoning_details".to_string(),
+                Value::Array(reasoning_details),
+            );
         }
         message.insert("provider_metadata".to_string(), metadata);
         if !parts.tool_calls.is_empty() {

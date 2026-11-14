@@ -79,6 +79,7 @@ impl ProviderConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OpenAiCompatProviderConfig {
     pub id: String,
     pub base_url: String,
@@ -97,6 +98,7 @@ pub struct OpenAiCompatProviderConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct OpenAiBatchProviderConfig {
     pub dialect: OpenAiBatchDialectConfig,
     #[serde(default)]
@@ -111,13 +113,21 @@ pub enum OpenAiBatchDialectConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OpenAiCompatAuthConfig {
-    pub kind: String,
-    #[serde(default)]
-    pub token: Option<String>,
+    pub kind: OpenAiCompatAuthKindConfig,
+    pub token: String,
+}
+
+/// The only scheme OpenAI-compatible upstreams accept: `Authorization: Bearer <token>`.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenAiCompatAuthKindConfig {
+    Bearer,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TypeSafeProviderConfig {
     pub id: String,
     #[serde(default = "default_typesafe_base_url")]
@@ -139,6 +149,7 @@ fn default_typesafe_base_url() -> String {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AnthropicCompatProviderConfig {
     pub id: String,
     pub base_url: String,
@@ -155,6 +166,7 @@ pub struct AnthropicCompatProviderConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AnthropicCompatAuthConfig {
     #[serde(default)]
     pub kind: AnthropicCompatAuthKindConfig,
@@ -226,6 +238,7 @@ impl GcpCloudRunOpenAiCompatAuthHeaderConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProviderDisplayConfig {
     #[serde(default)]
     pub label: Option<String>,
@@ -234,6 +247,7 @@ pub struct ProviderDisplayConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GcpVertexProviderConfig {
     pub id: String,
     pub project_id: String,
@@ -257,6 +271,7 @@ pub struct GcpVertexProviderConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct GcpVertexBatchConfig {
     #[serde(default)]
     pub bigquery_project_id: Option<String>,
@@ -264,7 +279,7 @@ pub struct GcpVertexBatchConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "mode", rename_all = "snake_case")]
+#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
 pub enum GcpVertexAuthConfig {
     Adc,
     ServiceAccount { credentials_path: String },
@@ -272,6 +287,7 @@ pub enum GcpVertexAuthConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AwsBedrockProviderConfig {
     pub id: String,
     pub region: String,
@@ -290,6 +306,7 @@ pub struct AwsBedrockProviderConfig {
     pub display: Option<ProviderDisplayConfig>,
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GitHubCopilotProviderConfig {
     pub id: String,
     #[serde(default = "default_copilot_base_url")]
@@ -357,6 +374,7 @@ pub enum AwsBedrockAuthConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProviderTimeouts {
     #[serde(default = "default_provider_timeout_ms")]
     pub total_ms: u64,
@@ -559,11 +577,6 @@ impl TypeSafeProviderConfig {
                 "typesafe provider `{}` base_url path must be empty, `/`, or `/v1`",
                 self.id
             );
-        }
-        if let Some(auth) = &self.auth
-            && auth.kind != "bearer"
-        {
-            bail!("typesafe provider `{}` auth.kind must be `bearer`", self.id);
         }
         if self.pricing_provider_id.trim().is_empty() {
             bail!(

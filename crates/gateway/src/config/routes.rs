@@ -8,9 +8,9 @@ use gateway_core::{
     OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
     OpenRouterProviderRouting, OpenRouterRouteCompatibility, PartialCapabilities,
     ProviderCapabilities, ReasoningEffort, RouteCompatibility, RoutePricingOverride, ServiceTier,
-    enforce_reasoning_effort_map, infer_compatibility_capabilities,
+    ServiceTierApi, enforce_reasoning_effort_map, infer_compatibility_capabilities,
 };
-use gateway_providers::BedrockEndpointKind;
+use gateway_providers::{BedrockEndpointKind, ServiceTierProvider, route_service_tiers};
 use serde::{Deserialize, Deserializer, de};
 use serde_json::{Map, Value};
 
@@ -33,6 +33,7 @@ const fn default_enabled() -> bool {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ModelRouteConfig {
     #[serde(default)]
     pub id: Option<String>,
@@ -125,24 +126,99 @@ impl ModelRouteConfig {
                 self.provider
             );
         }
-        let capabilities = self.resolved_capabilities(provider);
+        let compatibility = self.compatibility.clone().into_compatibility();
+        let capabilities = self.resolved_capabilities(provider, &compatibility);
         if let Some(ProviderConfig::AwsBedrock(provider)) = provider {
             validate_aws_bedrock_route_compatibility(model_id, self, provider, capabilities)?;
         }
         validate_decisions_route_capability(model_id, self, provider, capabilities)?;
         validate_images_route_capability(model_id, self, provider, capabilities)?;
+        validate_forced_service_tier(model_id, self, provider, &compatibility, capabilities)?;
         Ok(())
     }
 
     /// Explicit settings over compatibility inference over defaults. Validation checks this so
     /// omitted fields take their inferred values and only explicit contradictions fail.
-    fn resolved_capabilities(&self, provider: Option<&ProviderConfig>) -> ProviderCapabilities {
-        let inferred = infer_compatibility_capabilities(
-            &self.compatibility.clone().into_compatibility(),
-            provider.map_or("", provider_type),
-        );
+    fn resolved_capabilities(
+        &self,
+        provider: Option<&ProviderConfig>,
+        compatibility: &RouteCompatibility,
+    ) -> ProviderCapabilities {
+        let inferred =
+            infer_compatibility_capabilities(compatibility, provider.map_or("", provider_type));
         self.capabilities.into_partial().or(inferred).resolve()
     }
+}
+
+/// Rejects a forced non-default `service_tier` that no API the route serves can send. The
+/// check reads [`route_service_tiers`], the table adapters and routing use, so a route that
+/// loads never fails every request with a tier its provider does not sell. An unknown provider
+/// is left to the caller, which reports it by name.
+fn validate_forced_service_tier(
+    model_id: &str,
+    route: &ModelRouteConfig,
+    provider: Option<&ProviderConfig>,
+    compatibility: &RouteCompatibility,
+    capabilities: ProviderCapabilities,
+) -> anyhow::Result<()> {
+    let (Some(tier), Some(provider)) = (route.service_tier, provider) else {
+        return Ok(());
+    };
+    if tier == ServiceTier::Default {
+        return Ok(());
+    }
+    let tier_provider = match provider {
+        ProviderConfig::OpenAiCompat(provider) => ServiceTierProvider::OpenAiCompat {
+            base_url: &provider.base_url,
+        },
+        ProviderConfig::GcpCloudRunOpenAiCompat(provider) => ServiceTierProvider::OpenAiCompat {
+            base_url: &provider.base_url,
+        },
+        ProviderConfig::AnthropicCompat(_) => ServiceTierProvider::AnthropicCompat,
+        ProviderConfig::GcpVertex(provider) => ServiceTierProvider::GcpVertex {
+            location: &provider.location,
+        },
+        ProviderConfig::AwsBedrock(_) => ServiceTierProvider::AwsBedrock,
+        ProviderConfig::GitHubCopilot(_) | ProviderConfig::TypeSafe(_) => {
+            ServiceTierProvider::Untiered
+        }
+    };
+    let apis: Vec<ServiceTierApi> = ServiceTierApi::served_by(capabilities).collect();
+    if apis.iter().any(|&api| {
+        route_service_tiers(tier_provider, &route.upstream_model, compatibility, api)
+            .contains(&tier)
+    }) {
+        return Ok(());
+    }
+    let reason = match provider {
+        _ if apis.is_empty() => {
+            "the route serves neither chat_completions nor responses, the only APIs that take a tier"
+                .to_string()
+        }
+        ProviderConfig::GcpVertex(provider) => format!(
+            "gcp_vertex location `{}` cannot send it for this model",
+            provider.location
+        ),
+        ProviderConfig::OpenAiCompat(_) | ProviderConfig::GcpCloudRunOpenAiCompat(_) => {
+            let apis: Vec<&str> = apis
+                .iter()
+                .map(|api| match api {
+                    ServiceTierApi::ChatCompletions => "chat_completions",
+                    ServiceTierApi::Responses => "responses",
+                })
+                .collect();
+            format!("the route cannot send it on {}", apis.join(" or "))
+        }
+        provider => format!(
+            "{} cannot send it for this model",
+            provider_type(provider)
+        ),
+    };
+    bail!(
+        "model `{model_id}` route `{}` for provider `{}` forces service_tier `{tier}`, but {reason}",
+        route.upstream_model,
+        route.provider
+    );
 }
 
 /// The `ProviderConnection.provider_type` a provider config seeds.
@@ -269,6 +345,7 @@ pub(super) fn parse_non_negative_rate(value: &str, label: &str) -> anyhow::Resul
 /// Explicit route capability settings. Omitted fields stay unset and are filled from route
 /// compatibility, catalog hints, and finally the defaults in `PartialCapabilities::resolve`.
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RouteCapabilitiesConfig {
     #[serde(default)]
     pub chat_completions: Option<bool>,
@@ -311,6 +388,7 @@ impl RouteCapabilitiesConfig {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RouteCompatibilityConfig {
     #[serde(default)]
     pub openai_compat: Option<OpenAiCompatRouteCompatibilityConfig>,
@@ -338,6 +416,7 @@ impl RouteCompatibilityConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AwsBedrockRouteCompatibilityConfig {
     pub api_style: AwsBedrockApiStyle,
     #[serde(default)]
@@ -357,6 +436,7 @@ impl AwsBedrockRouteCompatibilityConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OpenAiCompatRouteCompatibilityConfig {
     #[serde(default = "default_enabled")]
     pub supports_store: bool,

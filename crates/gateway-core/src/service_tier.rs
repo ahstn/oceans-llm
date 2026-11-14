@@ -13,7 +13,7 @@ use std::{collections::BTreeMap, fmt};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::GatewayError;
+use crate::{GatewayError, ProviderCapabilities};
 
 /// Request fields that select a tier. [`take_requested_service_tier`] removes all of
 /// them so no spelling reaches a provider unpriced.
@@ -80,6 +80,29 @@ impl ServiceTier {
 impl fmt::Display for ServiceTier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+/// The API a tiered request runs on. Some upstreams sell a tier on one API only: OpenAI
+/// serves `ultrafast` on Responses, and its Chat Completions `service_tier` has no such
+/// value. Anthropic Messages runs on the Chat Completions pipeline, so it is
+/// `ChatCompletions` here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ServiceTierApi {
+    ChatCompletions,
+    Responses,
+}
+
+impl ServiceTierApi {
+    /// The tiered APIs a route with `capabilities` serves: `chat_completions` serves Chat
+    /// Completions and Messages, and `responses` serves Responses.
+    pub fn served_by(capabilities: ProviderCapabilities) -> impl Iterator<Item = Self> {
+        [
+            (capabilities.chat_completions, Self::ChatCompletions),
+            (capabilities.responses, Self::Responses),
+        ]
+        .into_iter()
+        .filter_map(|(served, api)| served.then_some(api))
     }
 }
 

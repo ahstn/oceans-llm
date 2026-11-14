@@ -5,15 +5,20 @@ use crate::model_metadata::{
 };
 use ServiceTier::{Default as Standard, Flex, Priority, Ultrafast};
 
-/// The tiers the real adapters send: OpenAI-compatible hosts take every tier, Anthropic
-/// takes Fast, and Copilot takes none.
+/// The tiers the real adapters send: OpenRouter takes every tier, OpenAI takes `ultrafast`
+/// on Responses only, Anthropic takes Fast, and Copilot takes none.
 struct ByProvider;
 
 impl AdapterServiceTiers for ByProvider {
-    fn adapter_service_tiers(&self, route: &ModelRoute) -> &'static [ServiceTier] {
-        match route.provider_key.as_str() {
-            "openrouter" => &ServiceTier::ALL,
-            "anthropic" => &[Standard, Priority],
+    fn adapter_service_tiers(
+        &self,
+        route: &ModelRoute,
+        api: ServiceTierApi,
+    ) -> &'static [ServiceTier] {
+        match (route.provider_key.as_str(), api) {
+            ("openrouter", _) | ("openai", ServiceTierApi::Responses) => &ServiceTier::ALL,
+            ("openai", ServiceTierApi::ChatCompletions) => &[Standard, Flex, Priority],
+            ("anthropic", _) => &[Standard, Priority],
             _ => &[Standard],
         }
     }
@@ -62,7 +67,9 @@ fn servable(
 ) -> Vec<ServiceTier> {
     let snapshot = crate::pricing_catalog::load_vendored_fallback_snapshot();
     servable_service_tiers(
-        routes.iter().map(|(route, provider)| (route, provider)),
+        routes
+            .iter()
+            .map(|(route, provider)| (route, provider, ProviderCapabilities::all_enabled())),
         allowed,
         &snapshot,
         &ByProvider,
@@ -110,6 +117,40 @@ fn forced_tiers_the_adapter_cannot_send_are_not_servable() {
             None
         ),
         []
+    );
+}
+
+/// A route serves a tier when it serves an API its adapter sends that tier on.
+#[test]
+fn servable_tiers_follow_the_apis_a_route_serves() {
+    let openai = ProviderConnection {
+        provider_key: "openai".into(),
+        provider_type: "openai_compat".into(),
+        config: json!({}),
+        secrets: None,
+    };
+    // Not in the catalog, so every tier bills.
+    let route = ModelRoute {
+        upstream_model: "gpt-house-upstream".into(),
+        ..route_on(&openai, None)
+    };
+    let snapshot = crate::pricing_catalog::load_vendored_fallback_snapshot();
+    let servable = |capabilities: ProviderCapabilities| {
+        servable_service_tiers(
+            [(&route, &openai, capabilities)],
+            None,
+            &snapshot,
+            &ByProvider,
+        )
+    };
+    let chat_only = ProviderCapabilities {
+        responses: false,
+        ..ProviderCapabilities::all_enabled()
+    };
+    assert_eq!(servable(chat_only), [Standard, Flex, Priority]);
+    assert_eq!(
+        servable(ProviderCapabilities::all_enabled()),
+        [Standard, Flex, Priority, Ultrafast]
     );
 }
 

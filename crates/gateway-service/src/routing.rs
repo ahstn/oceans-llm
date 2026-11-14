@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 
 use gateway_core::{
     GatewayError, ModelRoute, ResponseRouteOrigin, RouteBindingReceipt, RouteSelectionMode,
-    RouteSelectionRequest, RoutingCandidate, RoutingRepository, RoutingStrategy,
+    RouteSelectionRequest, RoutingCandidate, RoutingRepository, RoutingStrategy, ServiceTierApi,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -22,6 +22,17 @@ pub enum RoutingEndpoint {
 }
 
 impl RoutingEndpoint {
+    /// The API a tiered request on this endpoint runs on. Messages runs on the Chat
+    /// Completions pipeline. Embeddings, images and Decisions run at the default tier only.
+    #[must_use]
+    pub const fn service_tier_api(self) -> Option<ServiceTierApi> {
+        match self {
+            Self::ChatCompletions | Self::Messages => Some(ServiceTierApi::ChatCompletions),
+            Self::Responses => Some(ServiceTierApi::Responses),
+            Self::Embeddings | Self::Images | Self::Decisions => None,
+        }
+    }
+
     fn supports_affinity(self) -> bool {
         matches!(
             self,

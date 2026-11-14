@@ -73,7 +73,7 @@ fn thought_parts_become_reasoning_content_and_never_leak_into_content() {
 }
 
 #[test]
-fn text_part_thought_signature_is_surfaced_on_message_and_provider_metadata() {
+fn text_part_thought_signature_is_surfaced_on_message_reasoning_details_and_metadata() {
     let response = json!({
         "candidates": [{
             "content": {
@@ -87,6 +87,11 @@ fn text_part_thought_signature_is_surfaced_on_message_and_provider_metadata() {
 
     assert_eq!(message["content"], "hello");
     assert_eq!(message["thought_signature"], "sig-text");
+    assert_eq!(
+        message["reasoning_details"],
+        json!([{ "type": "reasoning.encrypted", "data": "sig-text", "format": "google-gemini-v1" }]),
+        "a text-part signature has no tool call to bind to"
+    );
     assert_eq!(
         message["provider_metadata"]["gcp_vertex"]["thought_signature"],
         "sig-text"
@@ -105,10 +110,11 @@ fn empty_text_part_thought_signature_is_ignored() {
     let message = &normalize(&response)["choices"][0]["message"];
 
     assert!(message.get("thought_signature").is_none());
+    assert!(message.get("reasoning_details").is_none());
 }
 
 #[test]
-fn function_call_thought_signature_rides_on_the_tool_call() {
+fn function_call_thought_signature_rides_on_the_tool_call_and_reasoning_details() {
     let response = json!({
         "candidates": [{
             "content": {
@@ -136,7 +142,55 @@ fn function_call_thought_signature_rides_on_the_tool_call() {
         tool_calls[0]["function"]["arguments"],
         r#"{"city":"London"}"#
     );
-    assert_eq!(tool_calls[0]["thought_signature"], "sig-call");
+    assert_eq!(
+        tool_calls[0]["extra_content"],
+        json!({ "google": { "thought_signature": "sig-call" } })
+    );
+    assert!(tool_calls[0].get("thought_signature").is_none());
+    assert_eq!(
+        message["reasoning_details"],
+        json!([{
+            "type": "reasoning.encrypted",
+            "id": "fc-1",
+            "data": "sig-call",
+            "format": "google-gemini-v1"
+        }])
+    );
+}
+
+#[test]
+fn parallel_calls_bind_each_signature_to_its_own_call() {
+    // Gemini signs only the first call of a parallel step; a later part may sign text.
+    let response = json!({
+        "candidates": [{
+            "content": {
+                "role": "model",
+                "parts": [
+                    { "functionCall": { "id": "fc-paris", "name": "weather", "args": { "city": "Paris" } },
+                      "thoughtSignature": "sig-paris" },
+                    { "functionCall": { "id": "fc-london", "name": "weather", "args": { "city": "London" } } },
+                    { "text": "", "thoughtSignature": "sig-tail" }
+                ]
+            },
+            "finishReason": "STOP"
+        }]
+    });
+    let message = &normalize(&response)["choices"][0]["message"];
+
+    let tool_calls = message["tool_calls"].as_array().expect("tool_calls");
+    assert_eq!(
+        tool_calls[0]["extra_content"]["google"]["thought_signature"],
+        "sig-paris"
+    );
+    assert!(tool_calls[1].get("extra_content").is_none());
+    assert_eq!(
+        message["reasoning_details"],
+        json!([
+            { "type": "reasoning.encrypted", "id": "fc-paris", "data": "sig-paris", "format": "google-gemini-v1" },
+            { "type": "reasoning.encrypted", "data": "sig-tail", "format": "google-gemini-v1" }
+        ])
+    );
+    assert_eq!(message["thought_signature"], "sig-tail");
 }
 
 #[test]
@@ -155,7 +209,7 @@ fn function_call_without_id_gets_a_generated_call_id() {
     let id = tool_call["id"].as_str().expect("call id");
     assert!(id.starts_with("call_"), "unexpected id `{id}`");
     assert_eq!(tool_call["function"]["arguments"], "{}");
-    assert!(tool_call.get("thought_signature").is_none());
+    assert!(tool_call.get("extra_content").is_none());
 }
 
 #[test]

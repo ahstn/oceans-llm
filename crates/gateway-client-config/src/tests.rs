@@ -1461,6 +1461,34 @@ fn effort_presets_respect_the_gateway_ceiling() {
 }
 
 #[test]
+fn none_ceiling_offers_only_disabled_reasoning() {
+    let mut claude = input(Some(ThinkingPolicy::AnthropicSafeEffort));
+    claude.max_reasoning_effort = Some(ReasoningLevel::None);
+    let hints = client_hints(&claude).expect("hints");
+    assert_eq!(hints.harnesses.opencode.variants, None);
+    assert_eq!(
+        hints.harnesses.pi.thinking_level_map,
+        Some(serde_json::json!({
+            "off": null, "minimal": null, "low": null, "medium": null,
+            "high": null, "xhigh": null, "max": null
+        }))
+    );
+
+    // Gemini turns thinking off with `none`, which a `none` ceiling accepts.
+    let mut gemini = gemini_input("gemini-2.5-flash", "google/gemini-2.5-flash");
+    gemini.max_reasoning_effort = Some(ReasoningLevel::None);
+    let hints = client_hints(&gemini).expect("hints");
+    assert_eq!(hints.harnesses.opencode.variants, None);
+    assert_eq!(
+        hints.harnesses.pi.thinking_level_map,
+        Some(serde_json::json!({
+            "off": "none", "minimal": "none", "low": "none", "medium": "none",
+            "high": "none", "xhigh": "none", "max": "none"
+        }))
+    );
+}
+
+#[test]
 fn responses_native_routes_prefer_responses_when_chat_is_also_served() {
     let mut input = non_anthropic_input();
     input.capabilities.responses = true;

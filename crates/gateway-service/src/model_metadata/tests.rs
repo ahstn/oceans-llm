@@ -3,7 +3,9 @@ use crate::pricing_catalog::{
     PricingCatalogDocument, PricingCatalogModelDocument, PricingCatalogProviderDocument,
     PricingCatalogSnapshotMetadata, merge::merge_catalogs, sources::Providers,
 };
-use gateway_core::{Money4, PartialCapabilities, ProviderCapabilities, RoutePricingOverride};
+use gateway_core::{
+    Money4, PartialCapabilities, ProviderCapabilities, RoutePricingOverride, ServiceTierApi,
+};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -14,7 +16,7 @@ mod service_tiers;
 struct Adapters(&'static [ServiceTier]);
 
 impl AdapterServiceTiers for Adapters {
-    fn adapter_service_tiers(&self, _: &ModelRoute) -> &'static [ServiceTier] {
+    fn adapter_service_tiers(&self, _: &ModelRoute, _: ServiceTierApi) -> &'static [ServiceTier] {
         self.0
     }
 }

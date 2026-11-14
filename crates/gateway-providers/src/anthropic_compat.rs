@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use gateway_core::{
     CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, ModelRoute, ProviderCapabilities,
     ProviderClient, ProviderError, ProviderRequestContext, ProviderStream, ServiceTier,
+    ServiceTierApi,
 };
 use serde_json::Value;
 use time::OffsetDateTime;
@@ -13,9 +14,9 @@ use crate::anthropic::{
     AnthropicRequestOptions, COUNT_TOKENS_FIELDS, map_anthropic_request,
     normalize_anthropic_response, normalize_anthropic_stream, normalize_count_tokens_response,
     retain_count_tokens_fields,
+    service_tier::{ClaudePlatform, claude_service_tiers},
 };
 use crate::http::{execute_json_request, execute_request, join_base_url, map_reqwest_error};
-use crate::service_tier::DEFAULT_PRIORITY;
 
 const DEFAULT_ANTHROPIC_VERSION: &str = "2023-06-01";
 
@@ -142,7 +143,11 @@ impl AnthropicCompatProvider {
             }
         }
 
-        request = crate::anthropic::native::request_headers(request, context);
+        request = crate::anthropic::native::request_headers(
+            request,
+            context,
+            &self.config.default_headers,
+        );
         for (header_name, value) in &context.extra_headers {
             if header_name.eq_ignore_ascii_case("anthropic-beta") {
                 continue;
@@ -225,8 +230,8 @@ impl ProviderClient for AnthropicCompatProvider {
         &self.config.provider_type
     }
 
-    fn service_tiers(&self, _route: &ModelRoute) -> &'static [ServiceTier] {
-        DEFAULT_PRIORITY
+    fn service_tiers(&self, route: &ModelRoute, _api: ServiceTierApi) -> &'static [ServiceTier] {
+        claude_service_tiers(&route.upstream_model, ClaudePlatform::ClaudeApi)
     }
 
     fn capabilities(&self) -> ProviderCapabilities {

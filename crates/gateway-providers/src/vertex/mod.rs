@@ -5,6 +5,7 @@ use gateway_core::{
     BatchCapabilities, CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, ModelRoute,
     ProviderBatchRequest, ProviderBatchResult, ProviderBatchState, ProviderCapabilities,
     ProviderClient, ProviderError, ProviderRequestContext, ProviderStream, ServiceTier,
+    ServiceTierApi,
 };
 use serde_json::Value;
 use time::OffsetDateTime;
@@ -13,6 +14,7 @@ use uuid::Uuid;
 use crate::{
     anthropic::{
         normalize_anthropic_response, normalize_anthropic_stream, normalize_count_tokens_response,
+        service_tier::{ClaudePlatform, claude_service_tiers},
     },
     http::{execute_request, map_reqwest_error},
     service_tier::{DEFAULT_FLEX_PRIORITY, DEFAULT_ONLY, DEFAULT_PRIORITY, checked_service_tier},
@@ -133,7 +135,10 @@ impl VertexProvider {
         family: PublisherFamily,
     ) -> Result<reqwest::Request, ProviderError> {
         // Claude bodies already carry `speed`; Gemini takes the tier as a header.
-        let service_tier = checked_service_tier(context, family.service_tiers())?;
+        let service_tier = checked_service_tier(
+            context,
+            vertex_service_tiers(&self.config.location, &context.upstream_model),
+        )?;
         let token = self.access_token_source.token().await?;
         let body = body.clone();
         let request = self.client.post(endpoint).bearer_auth(token);
@@ -224,13 +229,20 @@ enum PublisherFamily {
     Anthropic,
 }
 
-impl PublisherFamily {
-    /// Gemini's shared capacity grades, or Claude's standard and fast mode.
-    const fn service_tiers(self) -> &'static [ServiceTier] {
-        match self {
-            Self::Google => DEFAULT_FLEX_PRIORITY,
-            Self::Anthropic => DEFAULT_PRIORITY,
+/// The tiers a Vertex route to `upstream_model` can send from `location`. Gemini sells Flex
+/// PayGo on the `global` endpoint only, and Priority PayGo on `global` and the `us` and `eu`
+/// multi-region endpoints. Claude sells fast mode on the models Google-managed Vertex lists.
+pub(crate) fn vertex_service_tiers(location: &str, upstream_model: &str) -> &'static [ServiceTier] {
+    match parse_upstream_model(upstream_model) {
+        Ok((PublisherFamily::Google, _, _)) => match location {
+            "global" => DEFAULT_FLEX_PRIORITY,
+            "us" | "eu" => DEFAULT_PRIORITY,
+            _ => DEFAULT_ONLY,
+        },
+        Ok((PublisherFamily::Anthropic, _, model_id)) => {
+            claude_service_tiers(model_id, ClaudePlatform::Vertex)
         }
+        Err(_) => DEFAULT_ONLY,
     }
 }
 
@@ -316,9 +328,8 @@ impl ProviderClient for VertexProvider {
         PROVIDER_NAMESPACE
     }
 
-    fn service_tiers(&self, route: &ModelRoute) -> &'static [ServiceTier] {
-        parse_upstream_model(&route.upstream_model)
-            .map_or(DEFAULT_ONLY, |(family, _, _)| family.service_tiers())
+    fn service_tiers(&self, route: &ModelRoute, _api: ServiceTierApi) -> &'static [ServiceTier] {
+        vertex_service_tiers(&self.config.location, &route.upstream_model)
     }
 
     fn capabilities(&self) -> ProviderCapabilities {

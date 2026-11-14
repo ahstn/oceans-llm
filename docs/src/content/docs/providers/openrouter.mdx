@@ -52,6 +52,17 @@ For Chat Completions callers on these routes:
 - `response_format.type: json_schema` maps the schema to the native `output_config.format` and keeps the other output options. Conflicting explicit formats fail in the gateway. Native Messages callers keep their `output_config` unchanged.
 - Streaming totals include uncached input, cache reads, cache writes and output tokens.
 
+## Responses are stateless
+
+OpenRouter's Responses API keeps no state. It rejects a request that sets `store: true` or a non-null `previous_response_id` with a 400 ([Responses overview](https://openrouter.ai/docs/api_reference/responses/overview.md)). On a route to OpenRouter, by provider `base_url` host or by a `compatibility.openrouter` block, Oceans does this on `POST /v1/responses`:
+
+- It removes `store` from the request, whatever its value. Clients that always send `store`, such as OpenCode with `store: false`, keep working.
+- It rejects a non-null `previous_response_id` with 400 before it calls OpenRouter. The error has type `invalid_request_error`, code `unsupported_parameter` and param `previous_response_id`. Send the full conversation in `input` instead.
+
+## Service tiers
+
+OpenRouter accepts every [service tier](/configuration/models-and-routes/#service-tiers) (`flex`, `priority` and `ultrafast`) in the body `service_tier` on Chat Completions, Responses and Messages ([service tiers](https://openrouter.ai/docs/guides/features/service-tiers.md)). A route to OpenRouter can therefore force `ultrafast` and still serve Chat Completions. A direct OpenAI route can't, because OpenAI sells `ultrafast` on Responses only. Whether a model has a faster endpoint is OpenRouter's choice: a request it can't serve at the tier is served at a lower tier, and Oceans bills the cost OpenRouter reports.
+
 ## Set OpenRouter provider routing
 
 OpenRouter can send one model to several upstream providers. This is an OpenRouter feature, not Oceans route fallback. Oceans still selects one gateway route first, and OpenRouter then picks an upstream inside that route. See [No failover](/configuration/model-routing/#no-failover) for how Oceans selects routes.

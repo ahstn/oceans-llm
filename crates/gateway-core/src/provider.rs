@@ -22,7 +22,7 @@ use crate::{
         core::{ChatRequest, EmbeddingsRequest, ImagesRequest, ResponsesRequest},
         decisions::{DecisionsRequest, ProviderDecisionsResponse},
     },
-    service_tier::ServiceTier,
+    service_tier::{ServiceTier, ServiceTierApi},
 };
 
 /// Public API contract used when dispatching through the common chat execution path.
@@ -211,6 +211,13 @@ const fn default_true() -> bool {
 pub enum ProviderError {
     #[error("invalid request for provider: {0}")]
     InvalidRequest(String),
+    /// A request field the route's upstream cannot take, rejected before the call. `param`
+    /// names the field, as OpenAI's error `param` does.
+    #[error("invalid request for provider: {message}")]
+    UnsupportedParameter {
+        param: &'static str,
+        message: String,
+    },
     #[error("upstream provider timed out")]
     Timeout,
     #[error("upstream provider transport failure: {0}")]
@@ -279,9 +286,9 @@ pub trait ProviderClient: Send + Sync {
     fn provider_key(&self) -> &str;
     fn provider_type(&self) -> &str;
     fn capabilities(&self) -> ProviderCapabilities;
-    /// Tiers this adapter can send for `route`. Routing skips a route that cannot serve
-    /// the effective tier, and adapters reject one they are handed anyway.
-    fn service_tiers(&self, _route: &ModelRoute) -> &'static [ServiceTier] {
+    /// Tiers this adapter can send for `route` on `api`. Routing skips a route that cannot
+    /// serve the effective tier, and adapters reject one they are handed anyway.
+    fn service_tiers(&self, _route: &ModelRoute, _api: ServiceTierApi) -> &'static [ServiceTier] {
         &[ServiceTier::Default]
     }
     /// Whether this route can carry Anthropic Messages without translating the response.

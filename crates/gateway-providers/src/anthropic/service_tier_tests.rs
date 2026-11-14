@@ -98,6 +98,31 @@ fn flex_and_ultrafast_are_rejected_before_the_request_is_built() {
 }
 
 #[test]
+fn priority_is_rejected_on_claude_api_models_without_fast_mode() {
+    for model in [
+        "claude-haiku-5-5",
+        "claude-sonnet-5-5",
+        "claude-opus-latest",
+    ] {
+        let error = built_request(model, Some(ServiceTier::Priority)).expect_err("no fast mode");
+        assert!(
+            matches!(
+                &error,
+                ProviderError::InvalidRequest(message)
+                    if message == "provider `anthropic` route does not support service tier `priority`"
+            ),
+            "{model}: {error:?}"
+        );
+        let (body, _) = built_request(model, Some(ServiceTier::Default)).expect("default");
+        assert_eq!(body["service_tier"], "standard_only", "{model}");
+    }
+    for model in ["claude-opus-5-5", "claude-opus-5-5-20261101"] {
+        let (body, _) = built_request(model, Some(ServiceTier::Priority)).expect("fast mode");
+        assert_eq!(body["speed"], "fast", "{model}");
+    }
+}
+
+#[test]
 fn translated_response_reports_the_served_speed_at_the_top_level() {
     for (usage, served) in [
         (

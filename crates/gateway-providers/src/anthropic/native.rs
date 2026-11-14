@@ -51,17 +51,33 @@ pub(crate) fn stream_response(
     }
 }
 
+/// Caller headers that pick the workspace or the user a request is attributed to. The
+/// provider credential owns both, so callers never set them; operators may, through
+/// `default_headers` or route `extra_headers`.
+const OPERATOR_ONLY_HEADERS: [&str; 2] = ["anthropic-workspace-id", "anthropic-user-profile-id"];
+
 /// Forward the open Anthropic capability/header namespace, never gateway credentials,
 /// cookies or connection headers. Beta lists are bounded and merged by `beta` instead.
+/// A header the operator sets in the provider's `default_headers` or the route's
+/// `extra_headers` keeps the operator's value, so a caller cannot replace it.
 pub(crate) fn request_headers(
     request: reqwest::RequestBuilder,
     context: &ProviderRequestContext,
+    default_headers: &BTreeMap<String, String>,
 ) -> reqwest::RequestBuilder {
+    let operator_set = |name: &str| {
+        default_headers
+            .keys()
+            .chain(context.extra_headers.keys())
+            .any(|configured| configured.eq_ignore_ascii_case(name))
+    };
     let mut forwarded = reqwest::header::HeaderMap::new();
     for (name, value) in &context.request_headers {
         let name = name.to_ascii_lowercase();
         if (name.starts_with("anthropic-") || name.starts_with("x-claude-code-"))
             && name != "anthropic-beta"
+            && !OPERATOR_ONLY_HEADERS.contains(&name.as_str())
+            && !operator_set(&name)
             && let (Ok(name), Ok(value)) = (
                 reqwest::header::HeaderName::try_from(name),
                 reqwest::header::HeaderValue::from_str(value),

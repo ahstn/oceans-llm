@@ -2956,6 +2956,8 @@ pub enum PricingResolution {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 pub enum ReasoningEffort {
+    /// No reasoning. As a ceiling, only `none` and `off` requests pass.
+    None,
     Minimal,
     Low,
     Medium,
@@ -2965,9 +2967,21 @@ pub enum ReasoningEffort {
 }
 
 impl ReasoningEffort {
+    /// Every effort, weakest first.
+    pub const ALL: [Self; 7] = [
+        Self::None,
+        Self::Minimal,
+        Self::Low,
+        Self::Medium,
+        Self::High,
+        Self::XHigh,
+        Self::Max,
+    ];
+
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::None => "none",
             Self::Minimal => "minimal",
             Self::Low => "low",
             Self::Medium => "medium",
@@ -2979,15 +2993,9 @@ impl ReasoningEffort {
 
     #[must_use]
     pub fn from_db(value: &str) -> Option<Self> {
-        match value {
-            "minimal" => Some(Self::Minimal),
-            "low" => Some(Self::Low),
-            "medium" => Some(Self::Medium),
-            "high" => Some(Self::High),
-            "xhigh" => Some(Self::XHigh),
-            "max" => Some(Self::Max),
-            _ => None,
-        }
+        Self::ALL
+            .into_iter()
+            .find(|effort| effort.as_str() == value)
     }
 }
 
@@ -4051,6 +4059,7 @@ mod tests {
     #[test]
     fn reasoning_effort_order_and_wire_values_match_policy_order() {
         let efforts = [
+            (ReasoningEffort::None, "none"),
             (ReasoningEffort::Minimal, "minimal"),
             (ReasoningEffort::Low, "low"),
             (ReasoningEffort::Medium, "medium"),
@@ -4068,6 +4077,8 @@ mod tests {
             );
         }
 
+        assert!(ReasoningEffort::ALL.is_sorted());
+        assert!(ReasoningEffort::None < ReasoningEffort::Minimal);
         assert!(ReasoningEffort::Minimal < ReasoningEffort::Low);
         assert!(ReasoningEffort::Low < ReasoningEffort::Medium);
         assert!(ReasoningEffort::Medium < ReasoningEffort::High);

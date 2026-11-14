@@ -220,6 +220,82 @@ fn builds_request_with_bearer_auth_and_custom_version() {
 }
 
 #[test]
+fn caller_anthropic_headers_never_replace_operator_headers() {
+    let mut config = AnthropicCompatConfig::new(
+        "anthropic".to_string(),
+        "https://api.anthropic.com".to_string(),
+    );
+    config.default_headers.extend([
+        ("Anthropic-Version".to_string(), "2026-10-21".to_string()),
+        (
+            "anthropic-workspace-id".to_string(),
+            "wrkspc_operator".to_string(),
+        ),
+    ]);
+    let provider = AnthropicCompatProvider::new(config).expect("provider");
+    let mut context = test_context("claude-opus-5-5");
+    context
+        .extra_headers
+        .insert("Anthropic-Route-Flag".to_string(), json!("route"));
+    context.request_headers.extend(
+        [
+            ("anthropic-version", "2023-06-01"),
+            ("anthropic-route-flag", "caller"),
+            ("Anthropic-Workspace-Id", "wrkspc_caller"),
+            ("anthropic-user-profile-id", "caller-profile"),
+            ("anthropic-future-capability", "opaque"),
+            ("anthropic-beta", "caller-beta-2026-01-01"),
+        ]
+        .map(|(name, value)| (name.to_string(), value.to_string())),
+    );
+    let body = json!({
+        "model": "claude-opus-5-5",
+        "messages": [{"role": "user", "content": "hello"}]
+    });
+
+    let request = provider.build_request(body, &context).expect("request");
+    let values = |name: &str| -> Vec<&str> {
+        request
+            .headers()
+            .get_all(name)
+            .iter()
+            .map(|value| value.to_str().expect("ascii header"))
+            .collect()
+    };
+    assert_eq!(values("anthropic-version"), ["2026-10-21"]);
+    assert_eq!(values("anthropic-route-flag"), ["route"]);
+    assert_eq!(values("anthropic-workspace-id"), ["wrkspc_operator"]);
+    assert!(values("anthropic-user-profile-id").is_empty());
+    assert_eq!(values("anthropic-future-capability"), ["opaque"]);
+    assert_eq!(values("anthropic-beta"), ["caller-beta-2026-01-01"]);
+}
+
+#[test]
+fn caller_workspace_and_user_profile_headers_are_dropped() {
+    let provider = AnthropicCompatProvider::new(AnthropicCompatConfig::new(
+        "anthropic".to_string(),
+        "https://api.anthropic.com".to_string(),
+    ))
+    .expect("provider");
+    let mut context = test_context("claude-opus-5-5");
+    context.request_headers.extend(
+        [
+            ("anthropic-workspace-id", "wrkspc_caller"),
+            ("anthropic-user-profile-id", "caller-profile"),
+        ]
+        .map(|(name, value)| (name.to_string(), value.to_string())),
+    );
+    let body = json!({
+        "model": "claude-opus-5-5",
+        "messages": [{"role": "user", "content": "hello"}]
+    });
+
+    let request = provider.build_request(body, &context).expect("request");
+    assert!(!request.headers().contains_key("anthropic-workspace-id"));
+    assert!(!request.headers().contains_key("anthropic-user-profile-id"));
+}
+
+#[test]
 fn chat_completions_defaults_fable_5_1_to_adaptive_high() {
     let request = CoreChatRequest {
         model: "claude-fable-5-1".to_string(),

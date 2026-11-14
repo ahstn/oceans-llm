@@ -8,6 +8,31 @@ providers:
     type: openai_compat
     base_url: https://api.openai.com/v1
     pricing_provider_id: openai
+  - id: claude-api
+    type: anthropic_compat
+    base_url: https://api.anthropic.com
+    pricing_provider_id: opencode
+    auth:
+      kind: x_api_key
+      token: literal.test-anthropic-key
+  - id: vertex-us
+    type: gcp_vertex
+    project_id: test-proj
+    location: us
+    auth:
+      mode: bearer
+      token: literal.test-vertex-token
+  - id: vertex-global
+    type: gcp_vertex
+    project_id: test-proj
+    location: global
+    auth:
+      mode: bearer
+      token: literal.test-vertex-token
+  - id: openrouter
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openrouter
 "#;
 
 fn load(models: &str) -> anyhow::Result<GatewayConfig> {
@@ -19,6 +44,93 @@ fn load(models: &str) -> anyhow::Result<GatewayConfig> {
 
 fn load_error(models: &str) -> String {
     format!("{:#}", load(models).expect_err("config should fail"))
+}
+
+/// One model with one route to `upstream_model` on `provider` that forces `tier`. `extra` adds
+/// route settings, indented as route fields.
+fn forced_tier_route(provider: &str, upstream_model: &str, tier: &str, extra: &str) -> String {
+    format!(
+        "  - id: m\n    routes:\n      - provider: {provider}\n        upstream_model: {upstream_model}\n        service_tier: {tier}\n{extra}"
+    )
+}
+
+const CHAT_ONLY: &str = "        capabilities:\n          responses: false\n";
+
+#[test]
+fn rejects_a_forced_tier_the_provider_cannot_send() {
+    for (provider, upstream_model, tier, extra, expected) in [
+        (
+            "claude-api",
+            "claude-opus-5-5",
+            "flex",
+            "",
+            "model `m` route `claude-opus-5-5` for provider `claude-api` forces service_tier `flex`, but anthropic_compat cannot send it for this model",
+        ),
+        (
+            "claude-api",
+            "claude-sonnet-5-5",
+            "fast",
+            "",
+            "forces service_tier `priority`, but anthropic_compat cannot send it for this model",
+        ),
+        (
+            "openai-prod",
+            "gpt-6-luna",
+            "ultrafast",
+            CHAT_ONLY,
+            "route `gpt-6-luna` for provider `openai-prod` forces service_tier `ultrafast`, but the route cannot send it on chat_completions",
+        ),
+        (
+            "vertex-us",
+            "google/gemini-3-pro",
+            "flex",
+            "",
+            "for provider `vertex-us` forces service_tier `flex`, but gcp_vertex location `us` cannot send it for this model",
+        ),
+        (
+            "vertex-global",
+            "anthropic/claude-opus-5-5",
+            "priority",
+            "",
+            "gcp_vertex location `global` cannot send it for this model",
+        ),
+        (
+            "openai-prod",
+            "gpt-6-luna",
+            "priority",
+            "        capabilities:\n          chat_completions: false\n          responses: false\n",
+            "the route serves neither chat_completions nor responses",
+        ),
+    ] {
+        let error = load_error(&forced_tier_route(provider, upstream_model, tier, extra));
+        assert!(
+            error.contains(expected),
+            "unexpected error for `{tier}` on `{provider}`: {error}"
+        );
+    }
+}
+
+#[test]
+fn accepts_a_forced_tier_some_served_api_can_send() {
+    for (provider, upstream_model, tier, extra) in [
+        ("claude-api", "claude-opus-5-5", "priority", ""),
+        ("openai-prod", "gpt-6-luna", "ultrafast", ""),
+        ("openai-prod", "gpt-6-luna", "flex", CHAT_ONLY),
+        ("vertex-us", "google/gemini-3-pro", "priority", ""),
+        ("vertex-global", "google/gemini-3-pro", "flex", ""),
+        (
+            "vertex-global",
+            "anthropic/claude-fable-5-2",
+            "priority",
+            "",
+        ),
+        ("openrouter", "openai/gpt-6-luna", "ultrafast", CHAT_ONLY),
+        ("claude-api", "claude-sonnet-5-5", "standard", ""),
+    ] {
+        load(&forced_tier_route(provider, upstream_model, tier, extra)).unwrap_or_else(|error| {
+            panic!("`{tier}` on `{provider}` route `{upstream_model}` should load: {error:#}")
+        });
+    }
 }
 
 #[test]

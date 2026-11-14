@@ -71,6 +71,25 @@ Notes on the matrix:
 
 Route validation rejects `capabilities.images: true` on any provider type other than `openai_compat` and `gcp_cloud_run_openai_compat`. [Providers](/configuration/providers/) lists the GitHub Copilot route fields.
 
+## Service tiers by API
+
+The non-default [service tiers](/configuration/models-and-routes/#service-tiers) a route can send depend on the provider type, the API and sometimes the location or model ([`gateway-providers/src/service_tier.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-providers/src/service_tier.rs)). Embeddings, images, Decisions and batches send no tier.
+
+| Provider type | Chat Completions and Messages | Responses |
+| --- | --- | --- |
+| `openai_compat` to OpenRouter | `flex`, `priority`, `ultrafast` | `flex`, `priority`, `ultrafast` |
+| `openai_compat` and `gcp_cloud_run_openai_compat`, other hosts | `flex`, `priority` | `flex`, `priority`, `ultrafast` |
+| `openai_compat` Decisions routes | none | none |
+| `anthropic_compat` | `priority` on Claude Fable 5.2, Mythos 5.2, Opus 5.5, Opus 5 and Opus 4.8 only | not served |
+| `gcp_vertex` Claude | `priority` on Claude Fable 5.2 and Mythos 5.2 only | not served |
+| `gcp_vertex` Gemini | `global`: `flex`, `priority`. `us`, `eu`: `priority`. Other locations: none. | not served |
+| `aws_bedrock` | `flex`, `priority`, except `mantle_anthropic_messages` | `flex`, `priority` (`mantle_openai_responses`) |
+| `github_copilot`, `typesafe` | none | none |
+
+Sources: OpenRouter [service tiers](https://openrouter.ai/docs/guides/features/service-tiers.md); OpenAI [Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create.md), which has no `ultrafast` value, and [Ultrafast mode](https://developers.openai.com/api/docs/guides/ultrafast-mode.md); Anthropic [fast mode](https://platform.claude.com/docs/en/build-with-claude/fast-mode.md); Google [Flex PayGo](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/flex-paygo.md.txt) and [Priority PayGo](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/priority-paygo.md.txt).
+
+Route selection uses this table for each request's API. Config loading uses it too: a route whose `service_tier` forces a tier that none of its APIs can send fails to load ([`crates/gateway/src/config/routes.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway/src/config/routes.rs)).
+
 ## Effective capabilities
 
 A route's effective capabilities are what the gateway lets it attempt. The gateway works them out in this order ([`crates/gateway-core/src/route_capabilities.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-core/src/route_capabilities.rs)):
@@ -115,7 +134,7 @@ An unknown native model can still use explicit manual thinking or a budget alias
 
 Headers:
 
-- Caller headers in the `anthropic-*` and `x-claude-code-*` namespaces go upstream on supported transports. Beta lists use the merge and limits in [Beta headers](#beta-headers).
+- Caller headers in the `anthropic-*` and `x-claude-code-*` namespaces go upstream on supported transports, with two exceptions. A header that the provider's `default_headers` or the route's `extra_headers` also sets keeps the configured value, so a caller can't replace the operator's `anthropic-version`, for example. The gateway always drops a caller's `anthropic-workspace-id` and `anthropic-user-profile-id`, because the provider credential owns them. Operators can still set them in `default_headers` or `extra_headers`. Beta lists use the merge and limits in [Beta headers](#beta-headers).
 - Native responses and upstream HTTP errors keep Anthropic and OpenRouter extension headers, rate-limit headers, the upstream `request-id`, `retry-after` and `x-should-retry`. The gateway keeps its own `x-request-id`. Credentials, cookies and connection headers are removed.
 - Upstream native error bodies keep their original wording, so clients can retry and recover from capability rejections.
 
@@ -205,7 +224,7 @@ These transforms apply to Chat Completions requests unless a field says otherwis
 
 | Field | Default | Values and effect |
 | --- | --- | --- |
-| `supports_store` | `true` | `false` removes `store` from outbound Chat Completions requests. |
+| `supports_store` | `true` | `false` removes `store` from outbound Chat Completions and Responses requests. Routes to OpenRouter always remove `store` from Responses requests and reject a non-null `previous_response_id` with 400, because OpenRouter's Responses API keeps no state ([Responses overview](https://openrouter.ai/docs/api_reference/responses/overview.md)). |
 | `max_tokens_field` | `max_completion_tokens` | `max_tokens` renames `max_completion_tokens` to `max_tokens`. The default renames `max_tokens` to `max_completion_tokens`, which OpenAI reasoning models require. A request with both fields at different values gets a 400. A route without a profile gets the rename only when its provider `base_url` is on `api.openai.com` or `openrouter.ai`. Other servers, such as Ollama, read only `max_tokens`, so the gateway sends the field as the caller sent it. |
 | `developer_role` | `developer` | `system` rewrites `developer` messages to `system`. |
 | `reasoning_effort` | `passthrough` | `omit` removes `reasoning_effort`. `reasoning_object` rewrites `reasoning_effort: "high"` to `reasoning: { "effort": "high" }`. |
@@ -323,6 +342,8 @@ Streams:
 - Observed usage is kept through these failures, including later usage-only stream frames.
 
 On models without call IDs, a complete group of consecutive tool results follows the original Chat `tool_call_id` order, even when parallel functions share a name. Reordering needs unique call IDs and one matching result for each call. Incomplete or ambiguous groups keep their input order. The mapper doesn't invent missing results or move them across turns. Ordered signed parts follow [native chat replay](#native-chat-replay). The existing model-specific function-ID rules don't change.
+
+Clients that don't keep `provider_metadata` can still continue a Gemini tool loop. A function call's thought signature comes back as `extra_content.google.thought_signature` on the tool call, and as a `reasoning_details` entry with the call's `id` and `format: "google-gemini-v1"`. Either shape restores the signature on the next request. On Gemini 3 and later, a current-turn call with no signature gets Google's documented `skip_thought_signature_validator` value, not a Vertex 400. See [Thought signatures](/providers/gcp-vertex/#thought-signatures).
 
 An explicit `strict: true` on a function tool or response schema is rejected locally, not silently weakened. The gateway doesn't rewrite `AUTO` to a forced-tool mode, and doesn't add speculative `const` rewrites to schemas. When Vertex returns `logprobsResult`, the chosen tokens and top alternatives appear in `choices[*].logprobs`, in JSON and in streams. This doesn't mean every model or API version supports log probabilities.
 

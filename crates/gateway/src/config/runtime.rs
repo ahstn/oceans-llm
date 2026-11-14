@@ -68,10 +68,8 @@ impl GatewayConfig {
                         };
                     }
 
-                    if let Some(auth) = &provider.auth
-                        && let Some(token) = &auth.token
-                    {
-                        config.bearer_token = Some(resolve_secret_reference(token)?);
+                    if let Some(auth) = &provider.auth {
+                        config.bearer_token = Some(resolve_secret_reference(&auth.token)?);
                     }
 
                     configs.push(config);
@@ -153,10 +151,8 @@ impl GatewayConfig {
                 .as_ref()
                 .map(|timeouts| timeouts.total_ms)
                 .unwrap_or(DEFAULT_REQUEST_TIMEOUT_MS);
-            if let Some(auth) = &provider.auth
-                && let Some(token) = &auth.token
-            {
-                config.bearer_token = Some(resolve_secret_reference(token)?);
+            if let Some(auth) = &provider.auth {
+                config.bearer_token = Some(resolve_secret_reference(&auth.token)?);
             }
 
             configs.push(config);

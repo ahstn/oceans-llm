@@ -1,11 +1,11 @@
 //! Service tiers on inference requests. The caller's tier must be on the model's
 //! allow-list. Each route then serves its forced tier, else the caller's, and stays
-//! eligible only when its adapter can send that tier and its pricing can bill it.
-//! Embeddings, images and Decisions run at the default tier only.
+//! eligible only when its adapter can send that tier on the request's API and its pricing
+//! can bill it. Embeddings, images and Decisions run at the default tier only.
 use std::collections::BTreeMap;
 
 use gateway_core::{
-    GatewayError, ModelRoute, ProviderRegistry, ServiceTier, ServiceTierOutcome,
+    GatewayError, ModelRoute, ProviderRegistry, ServiceTier, ServiceTierApi, ServiceTierOutcome,
     enforce_service_tier_policy, take_requested_service_tier,
 };
 use gateway_service::{RequestLogContext, ResolvedGatewayRequest};
@@ -48,13 +48,15 @@ pub(super) fn service_tier_outcome(
     }
 }
 
-/// Keeps the routes that can serve the tier a request would use on them. Fails with a
-/// 400 that names the tier when no route in a non-empty `routes` qualifies.
+/// Keeps the routes that can serve the tier a request would use on them through `api`,
+/// which is `None` for operations that run at the default tier only. Fails with a 400 that
+/// names the tier when no route in a non-empty `routes` qualifies.
 pub(super) fn routes_serving_service_tier(
     providers: &ProviderRegistry,
     resolved: &ResolvedGatewayRequest,
     routes: Vec<ModelRoute>,
     requested: Option<ServiceTier>,
+    api: Option<ServiceTierApi>,
 ) -> Result<Vec<ModelRoute>, GatewayError> {
     if routes.is_empty() {
         return Ok(routes);
@@ -65,7 +67,7 @@ pub(super) fn routes_serving_service_tier(
     };
     let serving = routes
         .into_iter()
-        .filter(|route| route_serves_service_tier(providers, resolved, route, requested))
+        .filter(|route| route_serves_service_tier(providers, resolved, route, requested, api))
         .collect::<Vec<_>>();
     if serving.is_empty() {
         return Err(GatewayError::InvalidRequest(format!(
@@ -82,13 +84,17 @@ fn route_serves_service_tier(
     resolved: &ResolvedGatewayRequest,
     route: &ModelRoute,
     requested: Option<ServiceTier>,
+    api: Option<ServiceTierApi>,
 ) -> bool {
     let Some(tier) = effective_service_tier(route, requested) else {
         return true;
     };
     providers
         .get(&route.provider_key)
-        .is_some_and(|provider| provider.service_tiers(route).contains(&tier))
+        .is_some_and(|provider| match api {
+            Some(api) => provider.service_tiers(route, api).contains(&tier),
+            None => tier == ServiceTier::Default,
+        })
         && resolved.route_bills_service_tier(route, tier)
 }
 

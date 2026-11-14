@@ -16,7 +16,7 @@ use gateway_core::{
     CoreEmbeddingsRequest, CoreResponsesRequest, DecisionsWireFormat, ImagesRequest, ModelRoute,
     ProviderCapabilities, ProviderClient, ProviderDecisionsResponse, ProviderError,
     ProviderRequestContext, ProviderStream, RequestLogDetail, RequestLogQuery,
-    SERVICE_TIER_REQUEST_FIELDS, ServiceTier,
+    SERVICE_TIER_REQUEST_FIELDS, ServiceTier, ServiceTierApi,
 };
 use serde_json::{Value, json};
 use tower_http::request_id::RequestId;
@@ -173,15 +173,32 @@ async fn authenticated_call(
 type RecordedCall = (Option<ServiceTier>, BTreeMap<String, Value>);
 
 /// An upstream that records the tier and extension fields of each call, and reports
-/// `served` as the tier it served.
+/// `served` as the tier it served. It sends `tiers` on Chat Completions and Messages, and
+/// `responses_tiers` on Responses.
 struct TierProvider {
     key: &'static str,
     tiers: &'static [ServiceTier],
+    responses_tiers: &'static [ServiceTier],
     served: Option<&'static str>,
     calls: Mutex<Vec<RecordedCall>>,
 }
 
 impl TierProvider {
+    fn new(
+        key: &'static str,
+        tiers: &'static [ServiceTier],
+        responses_tiers: &'static [ServiceTier],
+        served: Option<&'static str>,
+    ) -> Self {
+        Self {
+            key,
+            tiers,
+            responses_tiers,
+            served,
+            calls: Mutex::default(),
+        }
+    }
+
     fn record(&self, context: &ProviderRequestContext, extra: &BTreeMap<String, Value>) {
         self.calls
             .lock()
@@ -215,8 +232,11 @@ impl ProviderClient for TierProvider {
         ProviderCapabilities::all_enabled()
     }
 
-    fn service_tiers(&self, _route: &ModelRoute) -> &'static [ServiceTier] {
-        self.tiers
+    fn service_tiers(&self, _route: &ModelRoute, api: ServiceTierApi) -> &'static [ServiceTier] {
+        match api {
+            ServiceTierApi::ChatCompletions => self.tiers,
+            ServiceTierApi::Responses => self.responses_tiers,
+        }
     }
 
     async fn chat_completions(
@@ -349,19 +369,20 @@ async fn setup(served: Option<&'static str>) -> (tempfile::TempDir, AppState, Ar
         ],
     )
     .await;
-    let provider = Arc::new(TierProvider {
-        key: "tiers",
-        tiers: &ServiceTier::ALL,
+    let provider = Arc::new(TierProvider::new(
+        "tiers",
+        &ServiceTier::ALL,
+        &ServiceTier::ALL,
         served,
-        calls: Mutex::default(),
-    });
+    ));
     state.providers.register(provider.clone());
-    state.providers.register(Arc::new(TierProvider {
-        key: "plain",
-        tiers: &[ServiceTier::Default],
+    let default_only = &[ServiceTier::Default];
+    state.providers.register(Arc::new(TierProvider::new(
+        "plain",
+        default_only,
+        default_only,
         served,
-        calls: Mutex::default(),
-    }));
+    )));
     (directory, state, provider)
 }
 
@@ -521,6 +542,59 @@ async fn rejects_a_tier_that_no_route_can_serve() {
         )
         .await
         .unwrap_or_else(|error| panic!("default tier failed: {}", error.0));
+}
+
+/// OpenAI sells `ultrafast` on Responses only, so a Chat Completions or Messages request for
+/// it finds no route, while the same route serves it on Responses.
+#[tokio::test]
+async fn routes_a_tier_only_on_the_apis_that_sell_it() {
+    let (_directory, mut state) = app_state().await;
+    seed_test_models(
+        &state.store,
+        &["openai"],
+        vec![test_model("gpt", "openai", "gpt-upstream")],
+    )
+    .await;
+    let provider = Arc::new(TierProvider::new(
+        "openai",
+        &[
+            ServiceTier::Default,
+            ServiceTier::Flex,
+            ServiceTier::Priority,
+        ],
+        &ServiceTier::ALL,
+        None,
+    ));
+    state.providers.register(provider.clone());
+
+    for endpoint in [Endpoint::Chat, Endpoint::Messages] {
+        let error = endpoint
+            .call(
+                &state,
+                "ultrafast-chat",
+                endpoint.body("gpt", false, json!({"service_tier": "ultrafast"})),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.0.http_status_code(), 400, "{endpoint:?}");
+        assert_eq!(
+            error.0.to_string(),
+            "invalid request: no configured route for model `gpt` supports service tier \
+             `ultrafast`",
+            "{endpoint:?}"
+        );
+    }
+    assert!(provider.calls().is_empty());
+
+    Endpoint::Responses
+        .call(
+            &state,
+            REQUEST_ID,
+            Endpoint::Responses.body("gpt", false, json!({"service_tier": "ultrafast"})),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("Responses ultrafast failed: {}", error.0));
+    assert_eq!(provider.calls()[0].0, Some(ServiceTier::Ultrafast));
 }
 
 #[tokio::test]

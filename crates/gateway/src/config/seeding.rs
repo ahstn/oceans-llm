@@ -32,10 +32,8 @@ impl GatewayConfig {
         for provider in &self.providers {
             match provider {
                 ProviderConfig::OpenAiCompat(provider) => {
-                    if let Some(auth) = &provider.auth
-                        && let Some(token) = &auth.token
-                    {
-                        validate_env_reference_if_needed(token)?;
+                    if let Some(auth) = &provider.auth {
+                        validate_env_reference_if_needed(&auth.token)?;
                     }
 
                     let config = json!({
@@ -91,10 +89,8 @@ impl GatewayConfig {
                     });
                 }
                 ProviderConfig::TypeSafe(provider) => {
-                    if let Some(auth) = &provider.auth
-                        && let Some(token) = &auth.token
-                    {
-                        validate_env_reference_if_needed(token)?;
+                    if let Some(auth) = &provider.auth {
+                        validate_env_reference_if_needed(&auth.token)?;
                     }
 
                     let config = json!({

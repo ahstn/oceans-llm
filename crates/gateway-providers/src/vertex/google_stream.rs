@@ -6,7 +6,10 @@ use serde_json::{Map, Value, json};
 
 use super::{
     error::VertexAdapterError,
-    google_replay::{CandidateParts, THOUGHT_SIGNATURE_FIELD, native_parts_metadata},
+    google_replay::{
+        CandidateParts, THOUGHT_SIGNATURE_FIELD, native_parts_metadata, signature_reasoning_detail,
+        tool_call_reasoning_detail,
+    },
     google_response::{
         candidate_finish_reason, google_served_tier, inline_error, map_google_logprobs,
         map_google_usage, prompt_block_reason,
@@ -160,7 +163,13 @@ impl GoogleStreamState {
             None,
             Some(finish_reason),
         );
-        finish["choices"][0]["delta"]["provider_metadata"] = self.replay_metadata();
+        let delta = &mut finish["choices"][0]["delta"];
+        delta["provider_metadata"] = self.replay_metadata();
+        // The text-part signature is final only once the candidate ends.
+        if let Some(signature) = &self.thought_signature {
+            delta[THOUGHT_SIGNATURE_FIELD] = signature.clone();
+            delta["reasoning_details"] = json!([signature_reasoning_detail(None, signature)]);
+        }
         if let Some(usage) = &self.latest_usage {
             finish["usage"] = usage.clone();
             report_served_tier(&mut finish, self.served_tier);
@@ -213,17 +222,23 @@ impl GoogleStreamState {
     }
 
     fn tool_call_chunk(&mut self, mut tool_call: Value) -> Value {
+        let reasoning_detail = tool_call_reasoning_detail(&tool_call);
         let mut call_delta = Map::new();
         call_delta.insert("index".to_string(), json!(self.next_tool_call_index));
         self.next_tool_call_index += 1;
         if let Some(call) = tool_call.as_object_mut() {
-            for key in ["id", "type", "function", THOUGHT_SIGNATURE_FIELD] {
+            for key in ["id", "type", "function", "extra_content"] {
                 if let Some(value) = call.remove(key) {
                     call_delta.insert(key.to_string(), value);
                 }
             }
         }
-        self.delta_chunk(json!({ "tool_calls": [Value::Object(call_delta)] }))
+        let mut delta = json!({ "tool_calls": [Value::Object(call_delta)] });
+        // Same delta as the call, so clients that match the entry by call ID find the call.
+        if let Some(detail) = reasoning_detail {
+            delta["reasoning_details"] = json!([detail]);
+        }
+        self.delta_chunk(delta)
     }
 }
 

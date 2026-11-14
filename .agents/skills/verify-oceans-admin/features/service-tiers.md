@@ -44,6 +44,6 @@ Preconditions:
 - On a BYOK OpenRouter account, `usage.cost` is `0` and `cost_details.upstream_inference_cost` holds the provider's charge. The gateway adds them. The cost split is present for both BYOK and credit requests.
 - OpenRouter prices for `openai/gpt-6-luna` when this was written, in USD per million tokens: default 0.10 input and 0.50 output, priority (`openai/fast` endpoint) 0.20 and 1.00, flex 0.05 and 0.25.
 - OpenAI can serve a priority request at the default tier when it is short of capacity, and then reports `service_tier: "default"`. The driver then fails with a served-tier mismatch. This is a provider decision, not a gateway fault. Retry once after a few minutes.
-- OpenRouter has no fast endpoint for `claude-haiku-5.5`, so `speed: "fast"` is served at standard speed. Anthropic fast mode exists only on Opus models, which cost much more. Do not add an Opus canary without approval.
+- OpenRouter has no fast endpoint for `claude-haiku-5.5`, so `speed: "fast"` is served at standard speed. On the Claude API, fast mode exists only on Claude Fable 5.2, Mythos 5.2, Opus 5.5, Opus 5 and Opus 4.8 (until 2026-11-30). On Google-managed Vertex AI, it exists only on Fable 5.2 and Mythos 5.2. These models cost much more. Do not add a fast-mode canary on them without approval.
 - A different tier breaks the provider's prompt cache. The canary prompt is too short to be cached, so this does not change the A/B result.
 - `claude-sonnet` routes to Vertex. The flex check stops at routing, so it needs no Google credentials.

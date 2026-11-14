@@ -181,8 +181,11 @@ where
             .filter_map(|route| {
                 let provider = providers_by_key.get(&route.provider_key)?;
                 let capabilities = self.route_capabilities(route, Some(provider));
-                (capabilities.chat_completions || capabilities.responses)
-                    .then_some((route, provider))
+                (capabilities.chat_completions || capabilities.responses).then_some((
+                    route,
+                    provider,
+                    capabilities,
+                ))
             });
         servable_service_tiers(
             chat_routes,
@@ -665,6 +668,7 @@ fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientC
 
 pub(crate) const fn reasoning_level(effort: ReasoningEffort) -> ReasoningLevel {
     match effort {
+        ReasoningEffort::None => ReasoningLevel::None,
         ReasoningEffort::Minimal => ReasoningLevel::Minimal,
         ReasoningEffort::Low => ReasoningLevel::Low,
         ReasoningEffort::Medium => ReasoningLevel::Medium,
