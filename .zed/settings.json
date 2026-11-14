@@ -1,0 +1,14 @@
+// Zed project settings. Open the repository root as the Zed project.
+{
+  "lsp": {
+    // Run the admin UI's pinned tsrs as the TypeScript 7 language server. The server comes
+    // from the "TypeScript Language Server" (tsgo) extension, and
+    // crates/admin-ui/web/.zed/settings.json enables it for the admin UI only.
+    "typescript-ls": {
+      "binary": {
+        "path": "crates/admin-ui/web/node_modules/.bin/tsrs",
+        "arguments": ["--lsp", "--stdio"]
+      }
+    }
+  }
+}
