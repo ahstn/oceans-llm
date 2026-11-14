@@ -219,9 +219,11 @@ impl ProviderCapabilities {
             "aws_bedrock" => Self::aws_bedrock_baseline(),
             "github_copilot" => Self::none(),
             "typesafe" => Self::decisions_only(),
-            // Every config provider type has an entry above; a gateway config test fails when
-            // a new type is missing, because this fallback would grant every capability.
-            _ => Self::all_enabled(),
+            // Fail closed: an unrecognised type advertises nothing, so a provider type added
+            // without an entry here cannot validate or advertise APIs its client lacks. The
+            // gateway config test `every_provider_type_has_a_capability_baseline` lists every
+            // config type and fails to compile when one is added.
+            _ => Self::none(),
         }
     }
 

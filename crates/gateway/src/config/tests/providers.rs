@@ -994,3 +994,48 @@ providers:
         );
     }
 }
+
+#[test]
+fn every_provider_type_has_a_capability_baseline() {
+    // Adding a `ProviderConfig` variant breaks this match, which forces the new type into
+    // `TYPES` and so into the baseline check below.
+    use crate::config::ProviderConfig;
+
+    fn listed(provider: &ProviderConfig) -> &'static str {
+        match provider {
+            ProviderConfig::OpenAiCompat(_)
+            | ProviderConfig::GcpCloudRunOpenAiCompat(_)
+            | ProviderConfig::AnthropicCompat(_)
+            | ProviderConfig::GcpVertex(_)
+            | ProviderConfig::AwsBedrock(_)
+            | ProviderConfig::GitHubCopilot(_)
+            | ProviderConfig::TypeSafe(_) => provider.provider_type(),
+        }
+    }
+    let _ = listed;
+    const TYPES: [&str; 7] = [
+        "openai_compat",
+        "gcp_cloud_run_openai_compat",
+        "anthropic_compat",
+        "gcp_vertex",
+        "aws_bedrock",
+        "github_copilot",
+        "typesafe",
+    ];
+
+    let none = gateway_core::ProviderCapabilities::none();
+    for provider_type in TYPES {
+        let baseline = gateway_core::ProviderCapabilities::for_provider_type(provider_type);
+        // GitHub Copilot narrows per route from its compatibility profile.
+        if provider_type != "github_copilot" {
+            assert_ne!(
+                baseline, none,
+                "`{provider_type}` has no capability baseline"
+            );
+        }
+    }
+    assert_eq!(
+        gateway_core::ProviderCapabilities::for_provider_type("not_a_provider"),
+        none
+    );
+}
