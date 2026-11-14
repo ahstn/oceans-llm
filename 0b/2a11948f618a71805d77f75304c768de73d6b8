@@ -1,0 +1,40 @@
+crates/gateway-core/src/domain.rs
+  h_2f452a9c375069 145-148,4035-4037
+crates/gateway-providers/src/bedrock/request/mod.rs
+  h_2f452a9c375069 125-126
+crates/gateway-providers/src/bedrock/tests/request_tools.rs
+  h_2f452a9c375069 709-727
+crates/gateway-providers/src/openai_compat.rs
+  h_2f452a9c375069 379-386,497-501,586-588,592,595,599-603,1249,1259-1283,1447,1450,1455,1471-1502
+crates/gateway-providers/src/streaming.rs
+  h_2f452a9c375069 72-73,169-178,185-189,207-210
+crates/gateway-service/src/admin_models.rs
+  h_2f452a9c375069 911,960,966,975-994,996-997
+crates/gateway-service/src/effective_route_metadata.rs
+  h_2f452a9c375069 69,178,192,241
+crates/gateway-service/src/model_metadata.rs
+  h_2f452a9c375069 336
+crates/gateway-service/src/pricing_catalog/sources/mod.rs
+  h_2f452a9c375069 93
+crates/gateway-service/src/pricing_catalog/tests/support.rs
+  h_2f452a9c375069 52
+crates/gateway-service/src/usage/estimate.rs
+  h_2f452a9c375069 45,52,136-143,167-168,178
+docs/adr/2026-10-31-multi-source-model-catalog.md
+  h_2f452a9c375069 80
+docs/contributing/reference/data-relationships.md
+  h_2f452a9c375069 187
+docs/src/content/docs/reference/provider-api-compatibility.mdx
+  h_2f452a9c375069 209
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "0b2a11948f618a71805d77f75304c768de73d6b8",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

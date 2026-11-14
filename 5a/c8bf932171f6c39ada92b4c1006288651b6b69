@@ -1,0 +1,22 @@
+crates/gateway/src/http/mcp_gateway/aggregate.rs
+  h_2f452a9c375069 1,4,27,398,400,403,491-494,500-508
+crates/gateway/src/http/mcp_gateway/aggregate/call_input.rs
+  h_2f452a9c375069 1-202
+crates/gateway/src/http/mcp_gateway/aggregate/tests.rs
+  h_2f452a9c375069 15,64-67,446-505
+docs/src/content/docs/extensions/mcp-client-setup.mdx
+  h_2f452a9c375069 271,285-294
+docs/src/content/docs/extensions/mcp-tool-access.mdx
+  h_2f452a9c375069 299,304
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "5ac8bf932171f6c39ada92b4c1006288651b6b69",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

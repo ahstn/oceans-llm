@@ -1,0 +1,18 @@
+docs/src/content/docs/harnesses/index.mdx
+  h_2f452a9c375069 23-24
+docs/src/content/docs/harnesses/verification.mdx
+  h_2f452a9c375069 1-129
+docs/src/lib/sidebar-icons.ts
+  h_2f452a9c375069 21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "64e13a462e972df4a23a9df8e70c0c6a72b6932e",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

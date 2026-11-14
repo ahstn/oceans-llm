@@ -1,0 +1,48 @@
+.gitleaks.toml
+  h_2f452a9c375069 49-53
+crates/admin-ui/web/src/generated/admin-api.ts
+  h_2f452a9c375069 3104-3107
+crates/admin-ui/web/src/routes/observability/-attribution/shared.ts
+  h_2f452a9c375069 19-22
+crates/gateway-service/src/attribution/note.rs
+  h_2f452a9c375069 237-240,253-254
+crates/gateway-service/src/attribution/report.rs
+  h_2f452a9c375069 102-103,195-201,204,272-277,353-356,360-364
+crates/gateway-service/src/attribution/tests/report.rs
+  h_2f452a9c375069 745,761,763,766-810
+crates/gateway-store/migrations/postgres/V78__git_ai_attribution.sql
+  h_2f452a9c375069 2-4,171
+crates/gateway/openapi/admin-api.json
+  h_2f452a9c375069 11730
+crates/gateway/src/http/attribution/report.rs
+  h_2f452a9c375069 86-87
+crates/oceans-cli/assets/omp/oceans-git-ai.ts
+  h_2f452a9c375069 15,22-24,79-91,93,214-215
+crates/oceans-cli/src/attribution/install.rs
+  h_2f452a9c375069 89-97,202-203,208-219
+crates/oceans-cli/src/attribution/install_tests.rs
+  h_2f452a9c375069 85-101,115-125
+crates/oceans-cli/src/attribution/mod.rs
+  h_2f452a9c375069 59-62
+crates/oceans-cli/src/attribution/prs.rs
+  h_2f452a9c375069 104,120-123,127-129
+crates/oceans-cli/src/attribution/queue.rs
+  h_2f452a9c375069 193-195
+crates/oceans-cli/src/attribution/state.rs
+  h_2f452a9c375069 126-131
+docs/adr/2026-11-01-git-ai-attribution-via-oceans-hooks.md
+  h_2f452a9c375069 176
+docs/src/content/docs/harnesses/git-ai-attribution.mdx
+  h_2f452a9c375069 198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "a89613139ae993b2141edf2e529ae0f9800cd2c0",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
