@@ -1,0 +1,26 @@
+crates/gateway-client-config/src/templates/pi.rs
+  h_2f452a9c375069 177,197-201,219-231
+crates/gateway-client-config/src/tests.rs
+  h_2f452a9c375069 534,795-832
+crates/gateway-client-config/src/types.rs
+  h_2f452a9c375069 156-159,269
+crates/gateway-service/src/admin_models.rs
+  h_2f452a9c375069 467-469,581-582,663,1573,1631,2407-2461,2834
+crates/gateway-service/src/capability_hints.rs
+  h_2f452a9c375069 47-57,60,89-99
+crates/gateway-service/src/model_metadata/listing.rs
+  h_2f452a9c375069 498
+docs/src/content/docs/harnesses/index.mdx
+  h_2f452a9c375069 105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "94532ab9f606a56508a61cb03051b18142654579",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
