@@ -67,7 +67,7 @@ Confirming a suspected bug is OPTIONAL and MUST stay cheap:
 - **kind**: `bug` (we do something wrong or lossy) or `gap` (we do not support something upstream offers).
 - **severity**:
   - `high`: wrong output, silent data loss, wrong usage or cost, policy bypass, or a common client flow that fails.
-  - `medium`: a supported feature that is partial, an error shape that clients mis-handle, or a recent upstream feature that clients actively use.
+  - `medium`: a supported feature that is partial, an error shape that clients mishandle, or a recent upstream feature that clients actively use.
   - `low`: a rare param, cosmetic metadata, or a niche endpoint.
 - **size**: `S` (one function, under about 50 lines), `M` (one module or one provider path, with tests), `L` (cross-crate, new endpoint, or schema / config change).
 
