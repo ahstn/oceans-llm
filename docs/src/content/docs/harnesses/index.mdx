@@ -102,7 +102,7 @@ The Pi tab emits `models.json` for Pi's custom provider config at `~/.pi/agent/m
 
 Each provider sets `baseUrl`, `api` and `apiKey`. The `apiKey` value is `$OCEANS_LLM_API_KEY`, so Pi reads the key from that variable. Each model sets `reasoning`, `input`, `contextWindow`, `maxTokens` and `cost`.
 
-Reasoning models get a `thinkingLevelMap`. Levels above the model's reasoning ceiling are clamped to the strongest allowed effort, so picking `max` in Pi still sends an effort the gateway accepts. If no effort is allowed, the level is hidden with `null`.
+Reasoning models get a `thinkingLevelMap`. A model is a reasoning model when Oceans knows its thinking controls (Claude, Gemini) or when the model catalog says it reasons (for example GPT). A catalog reasoning model without known thinking controls maps `minimal` to `low` and offers `low`, `medium` and `high`, which Pi sends as `reasoning_effort`. Levels above the model's reasoning ceiling are clamped to the strongest allowed effort, so picking `max` in Pi still sends an effort the gateway accepts. If no effort is allowed, the level is hidden with `null`.
 
 ## Claude Code
 

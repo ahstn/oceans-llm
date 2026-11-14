@@ -174,7 +174,7 @@ fn pi_model(input: &ClientConfigInput) -> Map<String, Value> {
         ("name".to_string(), json!(input.display_name)),
         (
             "reasoning".to_string(),
-            json!(input.thinking_policy.is_some()),
+            json!(input.thinking_policy.is_some() || input.reasoning),
         ),
         ("input".to_string(), json!(input.input_modalities())),
         ("contextWindow".to_string(), json!(input.context_window())),
@@ -194,7 +194,11 @@ fn pi_model(input: &ClientConfigInput) -> Map<String, Value> {
 /// `max` in Pi still sends an accepted effort. When the policy has no effort within the
 /// ceiling (e.g. Claude under a `minimal` ceiling), the level is hidden with `null`.
 pub(crate) fn pi_thinking_level_map(input: &ClientConfigInput) -> Option<Value> {
-    let mut level_map = policy_level_map(input.thinking_policy?)?;
+    let mut level_map = match input.thinking_policy {
+        Some(policy) => policy_level_map(policy)?,
+        None if input.reasoning => reasoning_effort_level_map(),
+        None => return None,
+    };
     if let (Some(ceiling), Some(levels)) = (input.max_reasoning_effort, level_map.as_object_mut()) {
         let level_of = |value: &Value| value.as_str().and_then(ReasoningLevel::parse);
         let clamped = levels
@@ -210,6 +214,19 @@ pub(crate) fn pi_thinking_level_map(input: &ClientConfigInput) -> Option<Value> 
         }
     }
     Some(level_map)
+}
+
+/// A reasoning model with no family policy, such as an OpenAI GPT model, takes Chat
+/// `reasoning_effort` directly. The map offers only `low`, `medium` and `high`, the efforts
+/// every OpenAI-compatible reasoning model accepts: `minimal` sends `low`, and `xhigh` and `max`
+/// stay hidden. `off` is unset, so Pi sends no effort and the model uses its default.
+fn reasoning_effort_level_map() -> Value {
+    json!({
+        "minimal": "low",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+    })
 }
 
 fn policy_level_map(policy: ThinkingPolicy) -> Option<Value> {

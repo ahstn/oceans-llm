@@ -153,6 +153,10 @@ pub struct ClientConfigInput {
     pub output_window_tokens: Option<i64>,
     pub capabilities: ClientModelCapabilities,
     pub thinking_policy: Option<ThinkingPolicy>,
+    /// The model catalog says the model reasons. Pi then offers a reasoning effort ladder even
+    /// when no thinking policy names the model family, such as an OpenAI GPT model.
+    #[serde(default)]
+    pub reasoning: bool,
     /// An explicit Codex default. A gateway maximum is a ceiling and must not populate this field.
     pub codex_reasoning_effort: Option<CodexReasoningEffort>,
     /// The format the primary route's provider speaks natively, when the provider type makes
@@ -262,6 +266,7 @@ impl Default for ClientConfigInput {
             output_window_tokens: None,
             capabilities: ClientModelCapabilities::default(),
             thinking_policy: None,
+            reasoning: false,
             codex_reasoning_effort: None,
             native_api_format: None,
             max_reasoning_effort: None,

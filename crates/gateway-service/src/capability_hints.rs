@@ -44,14 +44,20 @@ pub(crate) fn hints_for_route(
     provider: &ProviderConnection,
     route: &ModelRoute,
 ) -> PartialCapabilities {
-    let Some((provider_id, model_id)) = catalog_metadata_target_for_route(provider, route) else {
-        return PartialCapabilities::default();
-    };
-    let model = snapshot.model(&provider_id, &model_id).or_else(|| {
+    hints_for_model(catalog_model_for_route(snapshot, provider, route))
+}
+
+/// The catalog entry `route` resolves to through `provider`, if any.
+fn catalog_model_for_route<'a>(
+    snapshot: &'a PricingCatalogSnapshot,
+    provider: &ProviderConnection,
+    route: &ModelRoute,
+) -> Option<&'a PricingCatalogModelDocument> {
+    let (provider_id, model_id) = catalog_metadata_target_for_route(provider, route)?;
+    snapshot.model(&provider_id, &model_id).or_else(|| {
         catalog_model_id_fallback(&provider_id, &model_id)
             .and_then(|fallback| snapshot.model(&provider_id, &fallback))
-    });
-    hints_for_model(model)
+    })
 }
 
 /// Capability hints from one catalog snapshot; cheap to clone.
@@ -79,6 +85,17 @@ impl CatalogCapabilityHints {
         provider.map_or_else(PartialCapabilities::default, |provider| {
             hints_for_route(&self.snapshot, provider, route)
         })
+    }
+
+    /// Whether the catalog says the model behind `route` reasons.
+    pub(crate) fn route_reasons(
+        &self,
+        provider: Option<&ProviderConnection>,
+        route: &ModelRoute,
+    ) -> bool {
+        provider
+            .and_then(|provider| catalog_model_for_route(&self.snapshot, provider, route))
+            .is_some_and(|model| model.metadata.reasoning == Some(true))
     }
 }
 

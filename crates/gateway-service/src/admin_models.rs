@@ -464,6 +464,9 @@ where
                             |key| by_key.get(key),
                             &model,
                         ),
+                        reasoning: self.capability_hints.as_ref().is_some_and(|hints| {
+                            hints.route_reasons(primary_provider, primary_route)
+                        }),
                         primary_route: Some(primary_route),
                         primary_provider,
                         provider_display: provider_display.as_ref(),
@@ -575,6 +578,8 @@ struct ClientConfigContext<'a> {
     model: &'a GatewayModel,
     execution_model: &'a GatewayModel,
     reasoning_ceiling: Option<ReasoningEffort>,
+    /// The catalog says the primary route's model reasons.
+    reasoning: bool,
     primary_route: Option<&'a ModelRoute>,
     primary_provider: Option<&'a ProviderConnection>,
     provider_display: Option<&'a crate::ProviderDisplayIdentity>,
@@ -655,6 +660,7 @@ fn build_client_config_input(context: ClientConfigContext<'_>) -> Option<ClientC
             vision: capabilities.vision,
         },
         thinking_policy,
+        reasoning: context.reasoning,
         // max_reasoning_effort is an enforcement ceiling, not a client default.
         codex_reasoning_effort: None,
         native_api_format: native_api_format(primary_provider, primary_route),
@@ -1564,6 +1570,7 @@ mod tests {
         ] {
             let route = model_route(upstream_model, capabilities);
             let input = super::build_client_config_input(super::ClientConfigContext {
+                reasoning: false,
                 model: &model,
                 execution_model: &model,
                 reasoning_ceiling: None,
@@ -1621,6 +1628,7 @@ mod tests {
                 service_tiers: allowed,
             };
             let input = super::build_client_config_input(super::ClientConfigContext {
+                reasoning: false,
                 model: &model,
                 execution_model: &model,
                 reasoning_ceiling: None,
@@ -2397,6 +2405,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn catalog_reasoning_models_get_a_pi_effort_ladder() {
+        use crate::pricing_catalog::load_vendored_fallback_snapshot;
+
+        let model = plain_model("gpt-6-luna", None);
+        let model_id = model.id;
+        let route = ModelRoute {
+            model_id,
+            provider_key: "openrouter".to_string(),
+            capabilities: PartialCapabilities::default(),
+            ..model_route("openai/gpt-6-luna", ProviderCapabilities::none())
+        };
+        let repo = Arc::new(CountingRepo {
+            models: vec![model],
+            routes_by_model: HashMap::from([(model_id, vec![route])]),
+            providers_by_key: HashMap::from([(
+                "openrouter".to_string(),
+                ProviderConnection {
+                    provider_key: "openrouter".to_string(),
+                    provider_type: "openai_compat".to_string(),
+                    config: json!({"pricing_provider_id": "openrouter"}),
+                    secrets: None,
+                },
+            )]),
+            ..Default::default()
+        });
+        let pi_model = |items: &[super::AdminModelSummary]| -> serde_json::Value {
+            let pi = items[0]
+                .client_configurations
+                .iter()
+                .find(|config| config.key == "pi")
+                .expect("pi config");
+            let value: serde_json::Value =
+                serde_json::from_str(&pi.blocks[0].content).expect("pi json");
+            value["providers"]["oceans-llm"]["models"][0].clone()
+        };
+
+        let without_hints = AdminModelsService::new(repo.clone())
+            .list_models()
+            .await
+            .expect("admin models");
+        assert_eq!(pi_model(&without_hints)["reasoning"], json!(false));
+
+        let items = AdminModelsService::new(repo)
+            .with_capability_hints(crate::CatalogCapabilityHints::new(Arc::new(
+                load_vendored_fallback_snapshot(),
+            )))
+            .list_models()
+            .await
+            .expect("admin models");
+        let model = pi_model(&items);
+        assert_eq!(model["reasoning"], json!(true));
+        assert_eq!(model["thinkingLevelMap"]["low"], json!("low"));
+    }
+
+    #[tokio::test]
     async fn list_models_does_not_reconcile_pricing() {
         let model_id = Uuid::new_v4();
         let repo = Arc::new(CountingRepo {
@@ -2768,6 +2831,7 @@ mod tests {
             service_tier: None,
         };
         let input = super::build_client_config_input(super::ClientConfigContext {
+            reasoning: false,
             model: &model,
             execution_model: &model,
             reasoning_ceiling: None,
