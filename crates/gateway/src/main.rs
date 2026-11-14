@@ -1,11 +1,13 @@
-use std::{env, path::Path, sync::Arc, time::Duration};
+use std::{env, sync::Arc, time::Duration};
 
 use admin_ui::AdminUiConfig;
 use anyhow::Context;
 use clap::Parser;
 use gateway::{
     cli::{Cli, Command, ConfigCommand, MigrateAction, ServeArgs},
-    config::{BootstrapAdminConfig, BudgetAlertEmailConfig, GatewayConfig},
+    config::{
+        BootstrapAdminConfig, BudgetAlertEmailConfig, ConfigSources, GatewayConfig, render_config,
+    },
     email::build_budget_alert_sender,
     http::{
         build_router,
@@ -46,21 +48,29 @@ const ADMIN_VIEW_CACHE_TTL: Duration = Duration::from_secs(30);
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    let sources = cli.config_sources();
     let command = cli
         .command
         .unwrap_or_else(|| Command::Serve(ServeArgs::from_env()));
 
-    if matches!(&command, Command::Config(ConfigCommand::Validate)) {
-        validate_config_file(&cli.config)?;
-        println!("gateway configuration `{}` is valid", cli.config);
-        return Ok(());
+    match &command {
+        Command::Config(ConfigCommand::Validate) => {
+            validate_config_file(&sources)?;
+            println!("gateway configuration {} is valid", sources.describe());
+            return Ok(());
+        }
+        Command::Config(ConfigCommand::Render { show_sources }) => {
+            print!("{}", render_config(&sources, *show_sources)?);
+            return Ok(());
+        }
+        _ => {}
     }
 
-    let config = load_config(&cli.config)?;
+    let config = load_config(&sources)?;
     let observability = observability::init_observability(&config.server)?;
 
     let result = match command {
-        Command::Config(ConfigCommand::Validate) => unreachable!("handled before runtime startup"),
+        Command::Config(_) => unreachable!("handled before runtime startup"),
         Command::Serve(args) => run_serve(&config, observability.metrics.clone(), args).await,
         Command::Migrate(args) => run_migrate(&config, args.action()?).await,
         Command::PurgeRequestLogs(args) => request_log_purge::run_command(&config, args).await,
@@ -75,16 +85,20 @@ async fn main() -> anyhow::Result<()> {
     result
 }
 
-fn load_config(config_path: &str) -> anyhow::Result<GatewayConfig> {
-    GatewayConfig::from_path(Path::new(config_path))
-        .with_context(|| format!("failed to load gateway configuration from `{config_path}`"))
+fn load_config(sources: &ConfigSources) -> anyhow::Result<GatewayConfig> {
+    GatewayConfig::load(sources)
+        .map(|loaded| loaded.config)
+        .with_context(|| {
+            format!(
+                "failed to load gateway configuration from {}",
+                sources.describe()
+            )
+        })
 }
 
-fn validate_config_file(config_path: &str) -> anyhow::Result<()> {
-    if !Path::new(config_path).exists() {
-        anyhow::bail!("gateway configuration `{config_path}` does not exist");
-    }
-    let _ = load_config(config_path)?;
+/// `config validate` loads the config exactly as `serve` does; a missing main file fails.
+fn validate_config_file(sources: &ConfigSources) -> anyhow::Result<()> {
+    let _ = load_config(sources)?;
     Ok(())
 }
 
@@ -230,11 +244,11 @@ async fn run_serve_with_store(
         .await
         .context("invalid stored route service tier")?;
     service
-        .refresh_pricing_catalog_if_stale()
+        .initialize_pricing_catalog()
         .await
         .context("failed to initialize pricing catalog")?;
-    service
-        .validate_route_context_overrides()
+    let overridden_routes = service
+        .validate_route_overrides()
         .await
         .context("invalid route context-window override")?;
     service
@@ -267,6 +281,7 @@ async fn run_serve_with_store(
             .context("failed to initialize guardrail evaluators")?,
     );
     let guardrail_config = Arc::new(config.guardrails.clone());
+    spawn_redundant_route_override_check(service.clone(), overridden_routes);
     spawn_pricing_catalog_refresh_loop(service.clone());
     spawn_budget_alert_delivery_loop(service.clone(), &config.budget_alerts.email);
     if agent_analysis.capabilities.passive_analysis_enabled {
@@ -643,6 +658,18 @@ fn load_client_config_gateway_base_url() -> anyhow::Result<Option<String>> {
     Ok(Some(trimmed.trim_end_matches('/').to_string()))
 }
 
+/// Warns about route overrides that repeat the catalog. It runs once after startup, over the
+/// routes startup validation already collected, so it neither delays readiness nor reads the
+/// route table again.
+fn spawn_redundant_route_override_check(
+    service: Arc<GatewayService<AnyStore, WeightedRoutePlanner>>,
+    routes: gateway_service::OverriddenRoutes,
+) {
+    tokio::spawn(async move {
+        service.warn_on_redundant_route_overrides(routes).await;
+    });
+}
+
 fn spawn_pricing_catalog_refresh_loop(
     service: Arc<GatewayService<AnyStore, WeightedRoutePlanner>>,
 ) {
@@ -847,9 +874,33 @@ providers:
         let tmp = tempdir().expect("tempdir");
         let missing_path = tmp.path().join("missing.yaml");
 
-        let error = validate_config_file(missing_path.to_str().expect("utf-8 path"))
+        let error = validate_config_file(&gateway::config::ConfigSources::file(missing_path))
             .expect_err("missing config should fail");
 
         assert!(format!("{error:#}").contains("does not exist"));
+    }
+
+    #[test]
+    fn config_validation_requires_the_main_file_even_with_fragments() {
+        let tmp = tempdir().expect("tempdir");
+        let dir = tmp.path().join("conf.d");
+        std::fs::create_dir_all(&dir).expect("conf.d");
+        std::fs::write(
+            dir.join("openai.yaml"),
+            "providers:\n  openai:\n    type: openai_compat\n    base_url: https://api.openai.com/v1\n",
+        )
+        .expect("write fragment");
+        let main_path = tmp.path().join("gateway.yaml");
+        let sources = gateway::config::ConfigSources {
+            path: main_path.clone(),
+            dir: Some(dir),
+        };
+
+        let error = validate_config_file(&sources).expect_err("the main file must exist");
+        assert!(format!("{error:#}").contains("does not exist"));
+
+        std::fs::write(&main_path, "# providers and models live in conf.d\n")
+            .expect("write placeholder");
+        validate_config_file(&sources).expect("a placeholder main file with fragments is valid");
     }
 }

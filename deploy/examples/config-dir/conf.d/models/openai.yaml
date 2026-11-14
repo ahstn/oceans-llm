@@ -1,0 +1,20 @@
+# One file per provider account: its providers, plus the models that route only to them.
+providers:
+  openai-prod:
+    type: openai_compat
+    base_url: https://api.openai.com/v1 # pricing_provider_id is inferred: openai
+    auth:
+      token: env.OPENAI_API_KEY
+
+  openai-secondary:
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    auth:
+      token: env.OPENAI_API_KEY_SECONDARY
+
+models:
+  gpt-5.6-luna:
+    description: GPT-5.6 Luna on the primary OpenAI account
+    route:
+      provider: openai-prod
+      upstream_model: gpt-5.6-luna

@@ -29,17 +29,15 @@ The gateway accepts these `type` values. Any other value fails config loading.
 
 Most provider types accept these fields. The per-type sections below list the exceptions.
 
-<Aside type="caution" title="Unknown provider fields are ignored">
-Only `gcp_cloud_run_openai_compat` rejects unknown provider fields. For every other provider type, a misspelled top-level key is silently ignored. Auth blocks with a `mode` field (Cloud Run, Bedrock, GitHub Copilot) do reject unknown auth fields.
-</Aside>
+Every provider type rejects unknown fields, so a misspelled key fails config loading. `providers` is a map keyed by provider id, or a list of entries with `id`; see [Config files and fragments](/configuration/#config-files-and-fragments).
 
 | Field | Default | Notes |
 | --- | --- | --- |
-| `id` | required | Unique across `providers`. It can't be empty. |
+| `id` | required | The map key, or `id` in list form. Unique across `providers`, including across fragments. It can't be empty. |
 | `default_headers` | `{}` | Headers sent with every upstream request. They can't set a [service tier](/configuration/models-and-routes/#service-tiers) header. |
 | `timeouts.total_ms` | `300000` | Total deadline per upstream request, including consumption of a streaming body. |
 | `display.label` | none | Admin UI label. It can't be empty when set. |
-| `display.icon_key` | none | Admin UI icon. One of `openai`, `openrouter`, `anthropic`, `aws`, `typesafe`, `vertexai` (case-insensitive). |
+| `display.icon_key` | none (`aws` for `aws_bedrock`) | Admin UI icon. One of `openai`, `openrouter`, `anthropic`, `aws`, `typesafe`, `vertexai` (case-insensitive). |
 
 Every provider HTTP client also has a fixed 10-second connection timeout. There is no separate idle-read timeout. For long reasoning runs, set `timeouts.total_ms` higher, for example `600000`. Upstream and proxy deadlines still apply.
 
@@ -104,8 +102,8 @@ Use `openai_compat` for OpenAI, OpenRouter, and other OpenAI-compatible APIs.
 | Field | Default | Notes |
 | --- | --- | --- |
 | `base_url` | required | HTTP or HTTPS URL with a host. |
-| `pricing_provider_id` | required | A supported pricing family. It can't be empty. |
-| `auth.kind` | required when `auth` is set | Free-form label. The gateway always sends `auth.token` as a bearer token. |
+| `pricing_provider_id` | inferred from host | `openai` for `api.openai.com`, `openrouter` for `openrouter.ai`, `opencode` for `opencode.ai`. Required for any other host. Must be a supported pricing family. |
+| `auth.kind` | `bearer` | Optional. Must be `bearer` when set. The gateway sends `auth.token` as a bearer token. |
 | `auth.token` | none | Secret reference. Omit `auth` for upstreams that need no token. |
 | `batch.dialect` | none | `open_ai` or `open_router`. Enables durable provider batches. |
 | `batch.base_url` | none | HTTP or HTTPS URL with a host. Required when `batch.dialect` is `open_router`. |
@@ -124,7 +122,7 @@ Use `typesafe` for native System One requests. The adapter calls `/v1/systemone`
 | --- | --- | --- |
 | `base_url` | `https://api.typesafe.ai` | Path must be empty, `/`, or `/v1`. No query or fragment. HTTPS, except plain HTTP to `localhost` or a loopback IP. |
 | `pricing_provider_id` | required | A supported pricing family. Use a route `pricing_override` when the upstream model has no exact catalog entry. |
-| `auth.kind` | required when `auth` is set | Must be `bearer`. |
+| `auth.kind` | `bearer` | Optional. Must be `bearer` when set. |
 | `auth.token` | none | Secret reference such as `env.TYPESAFE_API_KEY`. |
 
 It also takes the [shared fields](#shared-fields). See [TypeSafe](/providers/typesafe/) for a full provider and route example.
@@ -136,7 +134,7 @@ Use `anthropic_compat` for upstreams that expose native Anthropic Messages. The 
 | Field | Default | Notes |
 | --- | --- | --- |
 | `base_url` | required | HTTP or HTTPS origin or base, without `/v1/messages`. No query or fragment. |
-| `pricing_provider_id` | required | A supported pricing family, for example `opencode`. |
+| `pricing_provider_id` | inferred from host | `opencode` for `opencode.ai`, with the same host rules as `openai_compat`. Required for any other host. |
 | `auth.kind` | `x_api_key` | `x_api_key` sends the `x-api-key` header. `bearer` sends `Authorization: Bearer`. |
 | `auth.token` | none | Secret reference such as `env.OPENCODE_API_KEY`. |
 

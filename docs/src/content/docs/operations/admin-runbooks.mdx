@@ -24,7 +24,7 @@ The gateway binary has maintenance commands next to `serve`. Each one reads its 
 `gateway migrate` needs exactly one of `--status`, `--check`, or `--apply`.
 
 <Aside type="caution" title="Check the config path">
-  If the config file doesn't exist, every command except `gateway config validate` carries on with built-in defaults instead of failing. The default database is a libsql file at `./gateway.db`, so a wrong `GATEWAY_CONFIG` points a command at a different, empty database. `gateway config validate` fails when the file is missing.
+  Every command fails when the config file doesn't exist, so a wrong `GATEWAY_CONFIG` stops the command instead of pointing it at a different, empty database.
 </Aside>
 
 Where you run them depends on the setup:
@@ -226,6 +226,8 @@ Start with the least destructive step.
 5. Apply them with `gateway migrate --apply`, or `mise run //gateway:migrate` in a local checkout.
 
 If the error says `database reset required`, the command found history it can't upgrade in place. [Topology and operations](/setup/deploy-and-operations/#database-and-migrations) lists the causes. If the cause is an older gateway running against a newer database, see [Roll back](#roll-back). Otherwise, recreate the database, then run the migrations, the config seed, and the bootstrap admin again on the new one.
+
+If a PostgreSQL index migration fails with `canceling statement due to statement timeout` or `lock timeout`, the table was too large or too busy to index within the migration's time limit. Migrations run in a transaction, so they can't build indexes concurrently. Build the index online with the statement from the migration file, with `CONCURRENTLY` added. For `V80__batch_jobs_route_index`, that's `CREATE INDEX CONCURRENTLY IF NOT EXISTS batch_jobs_route_idx ON batch_jobs (route_id);`. Then run the migrations again. The migration finds the index and does nothing.
 
 For any other error, stop and read it before you retry. Don't assume a manual repair is safer than recreating the database.
 

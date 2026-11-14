@@ -9,12 +9,15 @@ A `models[*]` entry defines one gateway model that callers can request. Each mod
 
 ## Model fields
 
-A model must set exactly one of `routes` or `alias_of`. Setting both, or neither, fails config loading. Unknown model fields are rejected.
+`models` is a map keyed by model id, or a list of entries with `id`; see [Config files and fragments](/configuration/#config-files-and-fragments). A model must set exactly one of `routes`, `route`, or `alias_of`. Setting more than one, or none, fails config loading. Model ids must be unique, including across fragments. Unknown model fields are rejected.
+
+The model id is the stable key for grants, budgets, request logs, and spend. The gateway never derives it from `upstream_model`, so changing the upstream model does not rename the gateway model.
 
 | Field | Default | Notes |
 | --- | --- | --- |
 | `id` | required | The model name callers send. |
 | `routes` | `[]` | Provider-backed routes. See [Route fields](#route-fields). |
+| `route` | none | Shorthand for a single route: the same fields as one `routes` entry. Can't be combined with `routes`. |
 | `alias_of` | none | Target model `id`. The target must exist. A model can't alias itself, and alias cycles fail. |
 | `description` | none | Shown in the admin UI and model lists. |
 | `tags` | `[]` | Used by `tag:` selectors. |
@@ -196,13 +199,11 @@ Rules:
 
 Each `models[*].routes[*]` entry sends the model to one provider.
 
-<Aside type="caution" title="Unknown route fields are ignored">
-Route entries aren't checked for unknown fields. A misspelled route key is silently ignored, so check spelling against this table.
-</Aside>
+Unknown route fields, including inside `capabilities` and `compatibility`, fail config loading.
 
 | Field | Default | Notes |
 | --- | --- | --- |
-| `id` | none | Required on every route when the model has `routing`. Unique within the model. 1 to 128 ASCII letters, digits, periods, underscores, or hyphens. |
+| `id` | provider key | Defaults to the provider key when that provider appears once in the model, the key is a valid route id, and no explicit route `id` in the model already uses it. Set it explicitly when two routes in one model share a provider. Every route needs one when the model has `routing`. Unique within the model. 1 to 128 ASCII letters, digits, periods, underscores, or hyphens. |
 | `provider` | required | A `providers[*].id`. Unknown providers fail config loading. |
 | `upstream_model` | required | Model name sent to the provider. `gcp_vertex` routes need `<publisher>/<model_id>`. |
 | `priority` | `100` | Route priority. |
@@ -216,7 +217,9 @@ Route entries aren't checked for unknown fields. A misspelled route key is silen
 | `extra_headers` | `{}` | Headers added to upstream requests for this route. |
 | `extra_body` | `{}` | Fields merged into the upstream request body. |
 
-Keep route `id` stable when you change priority, weight, or YAML order. Changing `provider` or `upstream_model` creates a different internal route identity.
+Keep route `id` stable when you change priority, weight, or YAML order. Changing `provider` or `upstream_model` creates a different internal route identity. A route that still has no id gets an identity from its priority and position, so reordering or reprioritizing it creates a new route.
+
+A route that had no `id` before ids defaulted to the provider key keeps its old internal id after the upgrade, so Responses continuations, session affinity, and request-log links keep working. It moves to the stable keyed id the first time its priority or position changes.
 
 `extra_headers` is how you send provider headers such as `OpenAI-Project`. The gateway doesn't forward arbitrary caller headers to providers.
 
@@ -276,7 +279,7 @@ models:
 
 Omit a flag to let the gateway fill it in. Set it only to override. A route can narrow what the provider supports. It can't expand it. When nothing else sets a flag, `images` and `decisions` default to `false` and every other flag defaults to `true`. The order of sources and the catalog hint rules are described in [Model routing and APIs](/configuration/model-routing/).
 
-Startup validation uses explicit flags, then compatibility inference, then defaults. It doesn't use catalog hints. An omitted flag never fails validation. An explicit flag that contradicts the route's compatibility fails startup.
+Startup validation uses explicit flags, then compatibility inference, then defaults. It doesn't use catalog hints. An omitted flag never fails validation. An explicit flag that contradicts the route's compatibility fails startup. So does `true` for a flag the provider type and compatibility profile cannot serve at all, such as `responses: true` on an `anthropic_compat` route or `tools: true` on a Vertex model without tool support, because the adapter cap would silently drop it.
 
 Rules for specific flags:
 
@@ -344,7 +347,7 @@ Every `aws_bedrock` route must set `compatibility.aws_bedrock.api_style`.
 | Field | Notes |
 | --- | --- |
 | `api_style` | Required. Runtime styles need `endpoint_kind: bedrock_runtime`. Mantle styles need `bedrock_mantle`. |
-| `openai_base_path` | Required for OpenAI-shaped styles (`runtime_openai_chat`, `mantle_openai_chat`, `mantle_openai_responses`), for example `/openai/v1`. Not allowed on other styles. |
+| `openai_base_path` | OpenAI-shaped styles only (`runtime_openai_chat`, `mantle_openai_chat`, `mantle_openai_responses`). Defaults to `/openai/v1` for `runtime_openai_chat` and `/v1` for the Mantle styles, the AWS defaults. Set it when a Mantle model is served under `/openai/v1`, as GPT-5.5 is. Not allowed on other styles. |
 | `supports_strict_tools` | Optional, `runtime_converse` only. |
 
 The gateway infers these capabilities from `api_style`, so a Bedrock route needs no `capabilities` block for them:

@@ -80,9 +80,9 @@ A route's effective capabilities are what the gateway lets it attempt. The gatew
 3. Hints from the model catalog.
 4. Defaults. `images` and `decisions` default to `false`. Every other capability defaults to `true`.
 
-The gateway then intersects the result with what the provider adapter can execute.
+The gateway then intersects the result with what the provider adapter can execute. That cap also depends on the route: Vertex routes are capped by `upstream_model`, Copilot routes by their route evidence, Decisions profiles to `decisions`, and Bedrock routes by `api_style`. Startup rejects an explicit `true` above the cap ([Route capabilities](/configuration/models-and-routes/#route-capabilities)).
 
-Because most defaults are `true`, set unsupported API families to `false` on routes to partial providers. Then the request fails at route selection, not inside the adapter. For example, a Vertex Google chat route should set `responses: false` and `embeddings: false`. For Cloud Run routes, set capabilities to match the endpoints the deployed service exposes. A vLLM deployment might enable only some of them.
+Because most defaults are `true`, set unsupported API families to `false` on routes to partial providers whose cap does not already exclude them. Then the request fails at route selection, not inside the adapter. For Cloud Run routes, set capabilities to match the endpoints the deployed service exposes. A vLLM deployment might enable only some of them.
 
 ### Hosted Responses tools
 
@@ -377,7 +377,7 @@ An `aws_bedrock` route must set `compatibility.aws_bedrock.api_style`. The style
 
 Route validation also enforces these rules:
 
-- The OpenAI-shaped styles (`runtime_openai_chat`, `mantle_openai_chat`, `mantle_openai_responses`) need `openai_base_path`. The other styles can't set it.
+- The OpenAI-shaped styles (`runtime_openai_chat`, `mantle_openai_chat`, `mantle_openai_responses`) use `openai_base_path`, which defaults to the AWS path for each style. See [AWS Bedrock route compatibility](/configuration/models-and-routes/#aws-bedrock-route-compatibility). The other styles can't set it.
 - Only `mantle_openai_responses` can enable `responses` and `json_schema`, and it can't enable `chat_completions`.
 - Bedrock routes never serve embeddings, images or Decisions.
 

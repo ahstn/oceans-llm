@@ -3145,6 +3145,83 @@ pub fn vertex_route_capabilities_for_upstream_model(
 
     ProviderCapabilities::chat_only_streaming()
 }
+/// Narrows a provider's capabilities to what one route's upstream model and compatibility
+/// profile can serve. Request routing passes the live provider client's capabilities as `base`;
+/// model metadata passes [`ProviderCapabilities::for_provider_type`].
+#[must_use]
+pub fn route_provider_capabilities(
+    provider_type: &str,
+    base: ProviderCapabilities,
+    route: Option<&ModelRoute>,
+) -> ProviderCapabilities {
+    narrow_for_route_profile(
+        provider_type,
+        base,
+        route.map(|route| route.upstream_model.as_str()),
+        route.map(|route| &route.compatibility),
+    )
+}
+
+/// The most a configured route can serve: the provider-type baseline narrowed by the route's
+/// upstream model and compatibility profile. Config validation rejects an explicit `true` above
+/// it, and request routing caps routes at the same narrowing through
+/// [`route_provider_capabilities`], so both read one policy. Unset flags are resolved separately,
+/// by [`crate::effective_route_capabilities`].
+#[must_use]
+pub fn route_capability_ceiling(
+    provider_type: &str,
+    upstream_model: &str,
+    compatibility: &RouteCompatibility,
+) -> ProviderCapabilities {
+    // TypeSafe's baseline is already decisions-only; Decisions profiles narrow below.
+    narrow_for_route_profile(
+        provider_type,
+        ProviderCapabilities::for_provider_type(provider_type),
+        Some(upstream_model),
+        Some(compatibility),
+    )
+}
+
+fn narrow_for_route_profile(
+    provider_type: &str,
+    base: ProviderCapabilities,
+    upstream_model: Option<&str>,
+    compatibility: Option<&RouteCompatibility>,
+) -> ProviderCapabilities {
+    match provider_type {
+        "gcp_vertex" => vertex_route_capabilities_for_upstream_model(upstream_model),
+        "github_copilot" => github_copilot_route_capabilities(
+            compatibility.and_then(|compatibility| compatibility.github_copilot.as_ref()),
+        ),
+        // A Decisions profile (OpenRouter `api: decisions` or `openai_compat.decisions_api`)
+        // serves only Decisions, whatever the provider's baseline. Only `openai_compat` takes
+        // these profiles, matching `infer_compatibility_capabilities`; config validation rejects
+        // them on every other provider type.
+        "openai_compat" if compatibility.is_some_and(RouteCompatibility::selects_decisions_api) => {
+            ProviderCapabilities::decisions_only()
+        }
+        // Only Bedrock providers use api_style; other providers ignore the block.
+        "aws_bedrock" => {
+            let mut capabilities = base;
+            if let Some(bedrock) =
+                compatibility.and_then(|compatibility| compatibility.aws_bedrock.as_ref())
+            {
+                if bedrock.api_style == AwsBedrockApiStyle::MantleOpenaiResponses {
+                    capabilities.chat_completions = false;
+                } else {
+                    capabilities.responses = false;
+                    capabilities.json_schema = false;
+                }
+                if bedrock.api_style == AwsBedrockApiStyle::RuntimeAnthropicInvoke {
+                    capabilities.stream = false;
+                }
+            }
+            capabilities
+        }
+        _ => base,
+    }
+}
+
 #[must_use]
 pub fn github_copilot_route_capabilities(
     compatibility: Option<&GitHubCopilotRouteCompatibility>,
@@ -4013,6 +4090,134 @@ mod tests {
         is_supported_vertex_google_chat_upstream_model,
         vertex_route_capabilities_for_upstream_model,
     };
+
+    #[test]
+    fn runtime_and_seeded_bedrock_capabilities_apply_the_same_api_style_policy() {
+        use super::{
+            AwsBedrockApiStyle, AwsBedrockRouteCompatibility, ModelRoute, ProviderCapabilities,
+            RouteCompatibility, route_capability_ceiling, route_provider_capabilities,
+        };
+
+        for api_style in [
+            AwsBedrockApiStyle::RuntimeConverse,
+            AwsBedrockApiStyle::RuntimeAnthropicInvoke,
+            AwsBedrockApiStyle::RuntimeOpenaiChat,
+            AwsBedrockApiStyle::MantleOpenaiResponses,
+            AwsBedrockApiStyle::MantleOpenaiChat,
+            AwsBedrockApiStyle::MantleAnthropicMessages,
+        ] {
+            let compatibility = RouteCompatibility {
+                aws_bedrock: Some(AwsBedrockRouteCompatibility {
+                    api_style,
+                    openai_base_path: None,
+                    supports_strict_tools: None,
+                }),
+                ..Default::default()
+            };
+            let seeded = route_capability_ceiling("aws_bedrock", "model", &compatibility);
+            // A route stored with every flag enabled, as an admin-created or older row may be.
+            let route = ModelRoute {
+                id: uuid::Uuid::nil(),
+                model_id: uuid::Uuid::nil(),
+                provider_key: "bedrock".to_string(),
+                upstream_model: "model".to_string(),
+                priority: 100,
+                weight: 1.0,
+                enabled: true,
+                context_window_tokens: None,
+                pricing_override: None,
+                extra_headers: serde_json::Map::new(),
+                extra_body: serde_json::Map::new(),
+                capabilities: crate::PartialCapabilities::default(),
+                compatibility,
+                service_tier: None,
+            };
+            let runtime = route_provider_capabilities(
+                "aws_bedrock",
+                ProviderCapabilities::aws_bedrock_baseline(),
+                Some(&route),
+            );
+            assert_eq!(runtime, seeded, "{api_style:?}");
+        }
+
+        let invoke = route_capability_ceiling(
+            "aws_bedrock",
+            "model",
+            &RouteCompatibility {
+                aws_bedrock: Some(AwsBedrockRouteCompatibility {
+                    api_style: AwsBedrockApiStyle::RuntimeAnthropicInvoke,
+                    openai_base_path: None,
+                    supports_strict_tools: None,
+                }),
+                ..Default::default()
+            },
+        );
+        assert!(!invoke.stream && !invoke.responses && !invoke.json_schema && !invoke.embeddings);
+    }
+
+    #[test]
+    fn runtime_and_seeded_decisions_profiles_are_decisions_only() {
+        use super::{
+            ModelRoute, ProviderCapabilities, RouteCompatibility, route_capability_ceiling,
+            route_provider_capabilities,
+        };
+
+        let profile = |value: serde_json::Value| {
+            serde_json::from_value::<RouteCompatibility>(value).expect("compatibility profile")
+        };
+        let openai_decisions = profile(serde_json::json!({
+            "openai_compat": { "decisions_api": "openai" }
+        }));
+        let openrouter_decisions = profile(serde_json::json!({
+            "openrouter": { "api": "decisions" }
+        }));
+        for compatibility in [openai_decisions, openrouter_decisions] {
+            let seeded = route_capability_ceiling("openai_compat", "model", &compatibility);
+            let route = ModelRoute {
+                id: uuid::Uuid::nil(),
+                model_id: uuid::Uuid::nil(),
+                provider_key: "openai".to_string(),
+                upstream_model: "model".to_string(),
+                priority: 100,
+                weight: 1.0,
+                enabled: true,
+                context_window_tokens: None,
+                pricing_override: None,
+                extra_headers: serde_json::Map::new(),
+                extra_body: serde_json::Map::new(),
+                capabilities: crate::PartialCapabilities::default(),
+                compatibility,
+                service_tier: None,
+            };
+            let runtime = route_provider_capabilities(
+                "openai_compat",
+                ProviderCapabilities::openai_compat_baseline(),
+                Some(&route),
+            );
+            assert_eq!(seeded, ProviderCapabilities::decisions_only());
+            assert_eq!(runtime, seeded);
+            // The ceiling and inference agree that Cloud Run is not a Decisions transport.
+            assert_eq!(
+                route_capability_ceiling(
+                    "gcp_cloud_run_openai_compat",
+                    "model",
+                    &route.compatibility
+                ),
+                ProviderCapabilities::openai_compat_baseline()
+            );
+            assert_eq!(
+                crate::infer_compatibility_capabilities(
+                    &route.compatibility,
+                    "gcp_cloud_run_openai_compat"
+                ),
+                crate::PartialCapabilities::default()
+            );
+        }
+        assert_eq!(
+            route_capability_ceiling("typesafe", "jev", &RouteCompatibility::default()),
+            ProviderCapabilities::decisions_only()
+        );
+    }
 
     #[test]
     fn reported_cost_rounds_half_up_to_four_places() {

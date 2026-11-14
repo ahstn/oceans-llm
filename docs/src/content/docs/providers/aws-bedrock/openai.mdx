@@ -10,7 +10,7 @@ Oceans can serve OpenAI models that Amazon Bedrock hosts, such as GPT-5.5 and gp
 
 ## Choose a route shape
 
-Each route uses one OpenAI-style `api_style`. All three need `compatibility.aws_bedrock.openai_base_path`:
+Each route uses one OpenAI-style `api_style`. All three use `compatibility.aws_bedrock.openai_base_path`, which defaults to the AWS path for the style ([AWS Bedrock route compatibility](/configuration/models-and-routes/#aws-bedrock-route-compatibility)):
 
 | `api_style` | `endpoint_kind` | Gateway endpoint it serves |
 | --- | --- | --- |
@@ -20,10 +20,10 @@ Each route uses one OpenAI-style `api_style`. All three need `compatibility.aws_
 
 A `mantle_openai_responses` route can't serve Chat Completions, and the chat styles can't serve Responses. The gateway infers this from `api_style`, so the routes need no `capabilities` block for it. If a model needs both APIs, give it one route of each kind. Capability gating then sends each request to the route that serves it ([Model routing and APIs](/configuration/model-routing/#capability-gating)).
 
-The gateway appends `responses` or `chat/completions` to the endpoint URL plus `openai_base_path`. The base path differs by model, so copy it from the model card:
+The gateway appends `responses` or `chat/completions` to the endpoint URL plus `openai_base_path`. The base path can differ by model, so check the model card and set it when it differs from the default:
 
-- GPT-5.5 uses `/openai/v1` on Mantle. AWS says `/v1` doesn't work for inference on this model.
-- The repository's [`gateway.yaml`](https://github.com/ahstn/oceans-llm/blob/main/gateway.yaml) uses `/v1` for `openai.gpt-oss-120b` on Mantle, and `/openai/v1` for `openai.gpt-oss-120b-1:0` on Runtime.
+- GPT-5.5 uses `/openai/v1` on Mantle, not the `/v1` default. AWS says `/v1` doesn't work for inference on this model.
+- The repository's [`gateway.yaml`](https://github.com/ahstn/oceans-llm/blob/main/gateway.yaml) relies on the defaults for `openai.gpt-oss-120b` on Mantle (`/v1`) and `openai.gpt-oss-120b-1:0` on Runtime (`/openai/v1`).
 
 ## GPT-5.5 on Bedrock
 

@@ -136,7 +136,7 @@ If `routing` is omitted, the gateway uses weighted selection on every request wi
 
 ### Route identity
 
-Every route needs a stable `id` when the model defines `routing`. Keep the ID when changing a route's priority, weight or YAML position. These edits keep the route's identity and don't break a valid session binding. Changing the provider, upstream model or `service_tier` creates a new route identity.
+Every route needs a stable `id` when the model defines `routing`. A route's `id` defaults to its provider key when that provider appears once in the model; see [Route fields](/configuration/models-and-routes/#route-fields). Keep the ID when changing a route's priority, weight or YAML position. These edits keep the route's identity and don't break a valid session binding. Changing the provider, upstream model or `service_tier` creates a new route identity.
 
 Each binding also stores an execution fingerprint. It covers the initialised provider's endpoint, authentication and headers, the request-affecting route settings, and the caller's linked provider credential ID. A change to any of these invalidates the binding. Display, pricing, timeout and batch settings don't affect it. Normal token refresh doesn't change it.
 
@@ -227,7 +227,7 @@ Catalog hints fill flags that config and compatibility leave unset:
 
 A hint can set an unset flag to `false`, but never changes a flag you set. A catalog refresh can change a hinted flag, so set the flag explicitly when a route must not change.
 
-Startup validation checks route config, compatibility and defaults, not hints. It rejects specific contradictions, such as `stream: true` on a `runtime_anthropic_invoke` route or `chat_completions: true` on a Decisions route. It doesn't catch every contradiction; the adapter cap still stops an unsupported flag from taking effect. Route selection, batches, the admin Models page, `GET /v1/models` and `GET /v1/model-metadata` share this resolution, but results can differ: batches apply the batch adapter's own cap, and metadata can report a flag as unknown.
+Startup validation checks route config, compatibility and defaults, not hints. It rejects contradictions with compatibility, such as `stream: true` on a `runtime_anthropic_invoke` route or `chat_completions: true` on a Decisions route. It also rejects `true` for a flag the adapter cap would drop; see [Route capabilities](/configuration/models-and-routes/#route-capabilities). Route selection, batches, the admin Models page, `GET /v1/models` and `GET /v1/model-metadata` share this resolution, but results can differ: batches apply the batch adapter's own cap, and metadata can report a flag as unknown.
 
 ### Decisions and image routes
 

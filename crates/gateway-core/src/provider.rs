@@ -165,6 +165,69 @@ impl ProviderCapabilities {
     }
 
     #[must_use]
+    pub const fn anthropic_compat_baseline() -> Self {
+        Self {
+            chat_completions: true,
+            responses: false,
+            stream: true,
+            embeddings: false,
+            images: false,
+            decisions: false,
+            tools: true,
+            vision: true,
+            json_schema: false,
+            developer_role: false,
+        }
+    }
+
+    #[must_use]
+    pub const fn aws_bedrock_baseline() -> Self {
+        Self {
+            chat_completions: true,
+            responses: true,
+            stream: true,
+            embeddings: false,
+            images: false,
+            decisions: false,
+            tools: true,
+            vision: true,
+            json_schema: true,
+            developer_role: true,
+        }
+    }
+
+    #[must_use]
+    pub const fn gcp_vertex_baseline() -> Self {
+        Self::with_dimensions(true, true, false, true, true, true, true)
+    }
+
+    #[must_use]
+    pub const fn decisions_only() -> Self {
+        Self {
+            decisions: true,
+            ..Self::none()
+        }
+    }
+
+    /// Capabilities a provider type can serve before route-specific narrowing.
+    #[must_use]
+    pub fn for_provider_type(provider_type: &str) -> Self {
+        match provider_type {
+            "openai_compat" | "gcp_cloud_run_openai_compat" => Self::openai_compat_baseline(),
+            "anthropic_compat" => Self::anthropic_compat_baseline(),
+            "gcp_vertex" => Self::gcp_vertex_baseline(),
+            "aws_bedrock" => Self::aws_bedrock_baseline(),
+            "github_copilot" => Self::none(),
+            "typesafe" => Self::decisions_only(),
+            // Fail closed: an unrecognised type advertises nothing, so a provider type added
+            // without an entry here cannot validate or advertise APIs its client lacks. The
+            // gateway config test `every_provider_type_has_a_capability_baseline` lists every
+            // config type and fails to compile when one is added.
+            _ => Self::none(),
+        }
+    }
+
+    #[must_use]
     pub const fn all_enabled() -> Self {
         Self {
             chat_completions: true,

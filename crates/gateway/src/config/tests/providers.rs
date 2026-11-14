@@ -637,7 +637,10 @@ providers:
             ),
         );
         let error = GatewayConfig::from_path(&path).expect_err("duplicate provider");
-        assert!(format!("{error:#}").contains("duplicate provider id `upstream`"));
+        assert!(
+            format!("{error:#}").contains("provider `upstream` is defined twice in"),
+            "unexpected error: {error:#}"
+        );
     }
 }
 
@@ -908,5 +911,131 @@ models:
     assert!(
         format!("{error:#}").contains("cannot disable capabilities.decisions"),
         "unexpected error: {error:#}"
+    );
+}
+
+#[test]
+fn rejects_unknown_provider_fields_and_non_bearer_openai_auth() {
+    let tmp = tempdir().expect("tempdir");
+    let path = tmp.path().join("gateway.yaml");
+    for (provider_yaml, expected) in [
+        (
+            "    base_url: https://api.openai.com/v1\n    pricing_provider: openai\n",
+            "unknown field `pricing_provider`",
+        ),
+        (
+            "    base_url: https://api.openai.com/v1\n    auth: { kind: basic, token: literal.test }\n",
+            "openai_compat provider `openai` auth.kind must be `bearer`",
+        ),
+    ] {
+        write_config(
+            &path,
+            &format!("providers:\n  openai:\n    type: openai_compat\n{provider_yaml}"),
+        );
+        let error = GatewayConfig::from_path(&path).expect_err("config should fail");
+        assert!(
+            format!("{error:#}").contains(expected),
+            "expected `{expected}`, got: {error:#}"
+        );
+    }
+}
+
+#[test]
+fn every_provider_type_has_a_core_capability_baseline() {
+    let tmp = tempdir().expect("tempdir");
+    let path = tmp.path().join("gateway.yaml");
+    write_config(
+        &path,
+        r#"
+providers:
+  openai:
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+  cloud-run:
+    type: gcp_cloud_run_openai_compat
+    base_url: https://example.com/v1
+    pricing_provider_id: google-vertex
+    auth: { mode: adc }
+  zen:
+    type: anthropic_compat
+    base_url: https://opencode.ai/zen
+  vertex:
+    type: gcp_vertex
+    project_id: project
+    auth: { mode: adc }
+  bedrock:
+    type: aws_bedrock
+    region: us-east-1
+    endpoint_kind: bedrock_runtime
+  copilot:
+    type: github_copilot
+    auth: { mode: github_user }
+  typesafe:
+    type: typesafe
+    pricing_provider_id: openrouter
+"#,
+    );
+
+    let config = GatewayConfig::from_path(&path).expect("config should parse");
+    let provider_types = config
+        .providers
+        .iter()
+        .map(|provider| provider.provider_type())
+        .collect::<std::collections::BTreeSet<_>>();
+    // One entry per ProviderConfig variant; extend the YAML when a provider type is added.
+    assert_eq!(provider_types.len(), 7);
+    for provider_type in provider_types {
+        // gateway-core falls back to every capability for unknown types, so a type missing
+        // from its table would silently gain capabilities it cannot serve.
+        assert_ne!(
+            gateway_core::ProviderCapabilities::for_provider_type(provider_type),
+            gateway_core::ProviderCapabilities::all_enabled(),
+            "`{provider_type}` has no baseline in ProviderCapabilities::for_provider_type"
+        );
+    }
+}
+
+#[test]
+fn every_provider_type_has_a_capability_baseline() {
+    // Adding a `ProviderConfig` variant breaks this match, which forces the new type into
+    // `TYPES` and so into the baseline check below.
+    use crate::config::ProviderConfig;
+
+    fn listed(provider: &ProviderConfig) -> &'static str {
+        match provider {
+            ProviderConfig::OpenAiCompat(_)
+            | ProviderConfig::GcpCloudRunOpenAiCompat(_)
+            | ProviderConfig::AnthropicCompat(_)
+            | ProviderConfig::GcpVertex(_)
+            | ProviderConfig::AwsBedrock(_)
+            | ProviderConfig::GitHubCopilot(_)
+            | ProviderConfig::TypeSafe(_) => provider.provider_type(),
+        }
+    }
+    let _ = listed;
+    const TYPES: [&str; 7] = [
+        "openai_compat",
+        "gcp_cloud_run_openai_compat",
+        "anthropic_compat",
+        "gcp_vertex",
+        "aws_bedrock",
+        "github_copilot",
+        "typesafe",
+    ];
+
+    let none = gateway_core::ProviderCapabilities::none();
+    for provider_type in TYPES {
+        let baseline = gateway_core::ProviderCapabilities::for_provider_type(provider_type);
+        // GitHub Copilot narrows per route from its compatibility profile.
+        if provider_type != "github_copilot" {
+            assert_ne!(
+                baseline, none,
+                "`{provider_type}` has no capability baseline"
+            );
+        }
+    }
+    assert_eq!(
+        gateway_core::ProviderCapabilities::for_provider_type("not_a_provider"),
+        none
     );
 }

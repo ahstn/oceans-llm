@@ -8,11 +8,16 @@ sidebar:
   label: Overview
 ---
 
-The gateway reads one YAML file at startup. It holds structure: providers, models, identities, budgets, and runtime settings. Secrets and deployment-specific values come from environment variables or files through value references. This page explains how the file is loaded, lists every top-level section, and documents the sections that have no page of their own.
+The gateway reads one main YAML file at startup, plus optional fragment files for providers and models. It holds structure: providers, models, identities, budgets, and runtime settings. Secrets and deployment-specific values come from environment variables or files through value references. This page explains how the file is loaded, lists every top-level section, and documents the sections that have no page of their own.
 
 ## Load and validate the file
 
-The gateway reads the file named by `--config` or the `GATEWAY_CONFIG` environment variable. The default is `./gateway.yaml`. The flag works with every subcommand.
+The gateway reads the main file named by `--config` or the `GATEWAY_CONFIG` environment variable, and any fragments under `--config-dir` or `GATEWAY_CONFIG_DIR`. Both flags work with every subcommand.
+
+| Flag | Environment variable | Default | When the path is missing |
+| --- | --- | --- | --- |
+| `--config` | `GATEWAY_CONFIG` | `./gateway.yaml` | The file must exist. Startup fails when it is missing. |
+| `--config-dir` | `GATEWAY_CONFIG_DIR` | none | Startup fails. |
 
 An admin checks a file before deploying it:
 
@@ -20,13 +25,58 @@ An admin checks a file before deploying it:
 gateway --config ./gateway.yaml config validate
 ```
 
-`config validate` parses and validates the file, prints a `gateway configuration ... is valid` line, and exits. It fails if the file does not exist.
+`config validate` parses and validates the merged config, prints a `gateway configuration ... is valid` line, and exits. It fails if the main file does not exist, including when `--config-dir` is set.
 
 <Aside type="note" title="A missing file stops startup">
-`gateway serve` and every maintenance command fail when the selected config file does not exist. This keeps a wrong path from silently starting a different listener, database, or administrator configuration. Run `config validate` in your deploy pipeline to catch the same error before deployment.
+`gateway serve` and every maintenance command fail when the selected config file does not exist, even when `--config-dir` supplies fragments. This keeps a wrong path from silently starting a different listener, database, or administrator configuration. Run `config validate` in your deploy pipeline to catch the same error before deployment.
 </Aside>
 
+An empty or comment-only main file is the default config, so a deployment can keep every provider and model in fragments behind a placeholder main file.
+
 Config changes take effect after a gateway restart.
+
+## Config files and fragments
+
+`providers` and `models` accept either a list of entries with `id`, or a map keyed by id. Prefer the map form: Helm merges maps across `-f` values files but replaces lists, and a map cannot repeat an id. A map entry must not also set `id`.
+
+```yaml title="gateway.yaml"
+providers:
+  openai-prod:
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    auth:
+      token: env.OPENAI_API_KEY
+models:
+  gpt-5.6-luna:
+    route:
+      provider: openai-prod
+      upstream_model: gpt-5.6-luna
+```
+
+Fragment rules:
+
+- The gateway reads `*.yaml` and `*.yml` files below `--config-dir` recursively, in lexical order of relative path.
+- It skips files and directories whose names start with `.`, which covers the `..data` directories in Kubernetes ConfigMap mounts, and it follows symlinks.
+- A symlink must resolve inside `--config-dir`. The loader resolves each file and directory to its real path and fails at startup, naming the link and its target, when that path is outside the directory. It never reads files outside `--config-dir`. Kubernetes ConfigMap mounts link only within the mount, so they pass.
+- A main config file inside `--config-dir` is read once, as the main file, not again as a fragment.
+- A fragment may contain only `providers` and `models`. Every other section stays in the main file.
+- Fragments merge as a union. A provider or model id defined in two places, including the main file, is an error that names both files. No file overrides another.
+- References such as `routes[].provider`, `alias_of`, `budgets.users.model_defaults`, and `service_accounts[].keys[].allowed_models` resolve after the merge, so they can point across files.
+- Validation runs once on the merged result.
+
+A layout that keeps ownership clear puts each provider account and the models that route only to it in one file, and models whose routes span providers in a shared file:
+
+```text
+conf.d/
+  models/
+    openai.yaml          # openai-prod, openai-secondary, and their single-provider models
+    bedrock.yaml
+    multi-provider.yaml  # models whose routes use more than one provider file
+```
+
+[`deploy/examples/config-dir`](https://github.com/ahstn/oceans-llm/tree/main/deploy/examples/config-dir) is a runnable example. `gateway config render --show-sources` prints the merged config with `providers` and `models` in map form, and lists the file that defined each one. It fails rather than print a config that differs from the one the gateway loads. It redacts `literal.` values, raw credential fields, service-account key values, header values, and URL credentials (usernames, passwords, query values, and fragments); `env.` and `file.` references stay visible. Redaction covers credentials only: the output still includes identity data such as user emails and team keys.
+
+Removing a fragment does not remove what it seeded. Models and providers that disappear from config stay in the database, and their routes stay enabled. Disable a model's routes with `enabled: false` before deleting its entry.
 
 ## Top-level sections
 
@@ -339,14 +389,15 @@ Scores change only when a release ships a refreshed snapshot. The attribution to
 The gateway validates the whole file before it starts. A failure stops startup (and `config validate`) with the field name in the error. Validation covers:
 
 - YAML syntax and field types, including enum values.
-- Unknown keys at the top level and in `auth`, `permissions`, `budgets`, `agent_analysis`, `models` entries, `teams`, `users` (including `membership`) and `service_accounts`.
+- Unknown keys at the top level and in `auth`, `permissions`, `budgets`, `agent_analysis`, `models` entries, routes and their `capabilities` and `compatibility`, providers, `teams`, `users` (including `membership`) and `service_accounts`.
+- Duplicate provider and model ids, including across config fragments.
 - `server`, `database`, `request_logging`, `budget_alerts` and `agent_analysis` rules on this page and on [Budget settings](/spend/budget-settings/).
 - Guardrails, permissions, OIDC and OAuth providers, and MCP settings.
 - Provider fields, model and alias references, and route wiring.
 - Budget defaults, rate-limit policies, teams, service accounts and users.
 
 <Aside type="note" title="Some sections ignore unknown keys">
-Many sections do not reject unknown keys: `server`, `database`, `request_logging`, `budget_alerts`, the entries under `auth.oidc` and `auth.oauth`, route entries under `models[*].routes`, and most provider types. A misspelled field there is ignored and its default applies. Check spelling against the field references.
+Some sections do not reject unknown keys: `server`, `database`, `request_logging`, `budget_alerts`, and the entries under `auth.oidc` and `auth.oauth`. A misspelled field there is ignored and its default applies. Check spelling against the field references.
 </Aside>
 
 Some checks happen later. At seed time, the gateway checks that OIDC and OAuth providers referenced by users are enabled, and that a seeded user's auth mode or provider changes only while the user is still invited. At request time, failures come from routing, missing providers, capability mismatches, and missing prices. See [Request lifecycle and failure modes](/reference/request-lifecycle/) for those.

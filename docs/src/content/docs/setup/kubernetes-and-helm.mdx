@@ -31,6 +31,39 @@ All public traffic goes through the gateway service, which proxies `/admin*` to 
 
 Write the gateway config as a map under `gateway.config` in your values. The chart renders it to a `ConfigMap` and mounts it at `gateway.configMountPath`, which defaults to `/app/gateway.yaml`. There's no way to pass raw YAML instead, so keep each environment's config in its values file.
 
+Write `gateway.config.providers` and `gateway.config.models` as maps keyed by id. Helm deep-merges maps across `-f` values files but replaces lists, so map entries let each values file own a set of providers and models:
+
+```sh
+helm upgrade oceans oci://ghcr.io/ahstn/charts/oceans-llm \
+  -f values.yaml -f models/openai.yaml -f models/multi-provider.yaml
+```
+
+An overlay removes an entry with `<id>: null`. The chart defaults both keys to `{}`. List-form values still work, but Helm logs a "cannot overwrite table with non table" notice.
+
+### Config fragments from your own ConfigMaps
+
+For a GitOps repository with one file per provider account, create the ConfigMaps yourself, for example with Kustomize `configMapGenerator`, and list them in `gateway.configDir.configMaps`:
+
+```yaml title="values.yaml"
+gateway:
+  configDir:
+    mountPath: /app/conf.d
+    configMaps:
+      - oceans-models-openai
+      - oceans-models-shared
+```
+
+Each ConfigMap mounts at `<mountPath>/<name>/`, and the chart sets `GATEWAY_CONFIG_DIR` on the gateway pods and every hook Job. Key names only need to be unique within one ConfigMap. The gateway reads every YAML file below the directory and rejects an id defined twice. See [Config files and fragments](/configuration/#config-files-and-fragments) for the merge rules.
+
+Limits to plan for:
+
+- The ConfigMaps must exist before install, because the migration hook and the gateway init container load the config.
+- The chart can't checksum ConfigMaps it doesn't render, so a fragment change neither restarts pods nor reseeds. Applying a change takes two steps:
+  - Reseed. Pods don't seed, so enable `seedConfigJob.enabled` and run `helm upgrade`. Under Argo CD the seed Job runs as a `PostSync` hook whenever the release's Application syncs. That happens on its own only when the fragment ConfigMaps belong to the same Application; otherwise sync it manually.
+  - Restart the gateway pods with `kubectl rollout restart deployment/<fullname>-gateway`, for example `deployment/oceans-llm-gateway` for a release named `oceans-llm`. Pods build provider clients at startup, so until they restart they keep the old endpoints and credentials and don't know about new providers. When Kustomize renders this chart with name hashes enabled, a changed ConfigMap gets a new name and the rollout happens on its own.
+- Kustomize `configMapGenerator` appends a content hash to generated names by default, which the names in `gateway.configDir.configMaps` won't match. Set `options.disableNameSuffixHash: true` on each generator, unless Kustomize also renders this chart and rewrites the references.
+- ConfigMap keys allow only letters, digits, `-`, `_`, and `.`, and each ConfigMap is limited to 1 MiB.
+
 Set `gateway.clientConfigGatewayBaseUrl` to the public base URL that callers use for the API. The gateway strips a trailing `/` or `/v1`, so either form works. The admin UI puts it in the client setup snippets it generates, through `GATEWAY_CLIENT_CONFIG_BASE_URL`. See [Client harness configuration](/harnesses/).
 
 ```yaml title="values.yaml"
@@ -88,7 +121,7 @@ The chart runs them as Helm hook Jobs instead, so replicated pods never race to 
 
 - **Migrations** run on every install and upgrade. This is on by default, in the `post-install,post-upgrade` phase, so the Job can read the `ConfigMap` and Secrets the chart renders.
 - **Bootstrap admin** runs with `bootstrapAdminJob.enabled=true`. It also needs `gateway.config.auth.bootstrap_admin.enabled: true`.
-- **Config seeding** runs with `seedConfigJob.enabled=true`.
+- **Config seeding** runs with `seedConfigJob.enabled=true`. Providers, models, teams, users, and service accounts in `gateway.config` or fragment ConfigMaps reach the database only through this Job, so with the default `false` a new install has no models until an admin creates them.
 
 While migrations run after install, each gateway pod has an init container that waits for them. It runs `gateway config validate`, then `gateway migrate --check` until the schema is current or `gateway.migrationWaiter.timeoutSeconds` passes. Invalid config stops it before it starts waiting. `gateway.migrationWaiter.enabled` overrides the automatic choice.
 
@@ -137,6 +170,7 @@ Configure the gateway's own export with `otel_endpoint`, `otel_metrics_endpoint`
 The chart ships [example values](https://github.com/ahstn/oceans-llm/tree/main/deploy/helm/oceans-llm/examples) for:
 
 - External PostgreSQL.
+- Providers and models from external fragment ConfigMaps.
 - An inline Secret.
 - An `ExternalSecret`.
 - An ingress with TLS, and autoscaling.

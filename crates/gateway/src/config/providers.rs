@@ -38,6 +38,20 @@ impl ProviderConfig {
         }
     }
 
+    /// The provider type's config and storage name, e.g. `openai_compat`.
+    #[must_use]
+    pub const fn provider_type(&self) -> &'static str {
+        match self {
+            Self::OpenAiCompat(_) => "openai_compat",
+            Self::GcpCloudRunOpenAiCompat(_) => "gcp_cloud_run_openai_compat",
+            Self::AnthropicCompat(_) => "anthropic_compat",
+            Self::GcpVertex(_) => "gcp_vertex",
+            Self::AwsBedrock(_) => "aws_bedrock",
+            Self::GitHubCopilot(_) => "github_copilot",
+            Self::TypeSafe(_) => "typesafe",
+        }
+    }
+
     fn default_headers(&self) -> &BTreeMap<String, String> {
         match self {
             Self::OpenAiCompat(provider) => &provider.default_headers,
@@ -79,6 +93,7 @@ impl ProviderConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OpenAiCompatProviderConfig {
     pub id: String,
     pub base_url: String,
@@ -97,6 +112,7 @@ pub struct OpenAiCompatProviderConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct OpenAiBatchProviderConfig {
     pub dialect: OpenAiBatchDialectConfig,
     #[serde(default)]
@@ -111,13 +127,17 @@ pub enum OpenAiBatchDialectConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OpenAiCompatAuthConfig {
-    pub kind: String,
+    /// Only `bearer` is supported, which is also the default.
+    #[serde(default)]
+    pub kind: Option<String>,
     #[serde(default)]
     pub token: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TypeSafeProviderConfig {
     pub id: String,
     #[serde(default = "default_typesafe_base_url")]
@@ -139,6 +159,7 @@ fn default_typesafe_base_url() -> String {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AnthropicCompatProviderConfig {
     pub id: String,
     pub base_url: String,
@@ -155,6 +176,7 @@ pub struct AnthropicCompatProviderConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AnthropicCompatAuthConfig {
     #[serde(default)]
     pub kind: AnthropicCompatAuthKindConfig,
@@ -226,6 +248,7 @@ impl GcpCloudRunOpenAiCompatAuthHeaderConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProviderDisplayConfig {
     #[serde(default)]
     pub label: Option<String>,
@@ -234,6 +257,7 @@ pub struct ProviderDisplayConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GcpVertexProviderConfig {
     pub id: String,
     pub project_id: String,
@@ -257,6 +281,7 @@ pub struct GcpVertexProviderConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct GcpVertexBatchConfig {
     #[serde(default)]
     pub bigquery_project_id: Option<String>,
@@ -264,7 +289,7 @@ pub struct GcpVertexBatchConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "mode", rename_all = "snake_case")]
+#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
 pub enum GcpVertexAuthConfig {
     Adc,
     ServiceAccount { credentials_path: String },
@@ -272,6 +297,7 @@ pub enum GcpVertexAuthConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AwsBedrockProviderConfig {
     pub id: String,
     pub region: String,
@@ -290,6 +316,7 @@ pub struct AwsBedrockProviderConfig {
     pub display: Option<ProviderDisplayConfig>,
 }
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GitHubCopilotProviderConfig {
     pub id: String,
     #[serde(default = "default_copilot_base_url")]
@@ -357,6 +384,7 @@ pub enum AwsBedrockAuthConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProviderTimeouts {
     #[serde(default = "default_provider_timeout_ms")]
     pub total_ms: u64,
@@ -376,6 +404,52 @@ impl GcpVertexProviderConfig {
             .clone()
             .unwrap_or_else(|| gateway_providers::vertex_api_host_for_location(&self.location))
     }
+}
+
+const INFERRED_PRICING_PROVIDER_HOSTS: &str = "api.openai.com, openrouter.ai, and opencode.ai";
+
+/// Pricing catalog id implied by a well-known provider host.
+fn inferred_pricing_provider_id(base_url: &str) -> Option<&'static str> {
+    let parsed = url::Url::parse(base_url.trim()).ok()?;
+    match parsed.host_str()? {
+        "api.openai.com" => Some("openai"),
+        "openrouter.ai" => Some("openrouter"),
+        "opencode.ai" => Some("opencode"),
+        _ => None,
+    }
+}
+
+/// Fills an omitted `pricing_provider_id` from the base URL host where the host decides it.
+pub(super) fn infer_pricing_provider_ids(providers: &mut [ProviderConfig]) {
+    for provider in providers {
+        let (pricing_provider_id, base_url) = match provider {
+            ProviderConfig::OpenAiCompat(provider) => {
+                (&mut provider.pricing_provider_id, &provider.base_url)
+            }
+            ProviderConfig::AnthropicCompat(provider) => {
+                (&mut provider.pricing_provider_id, &provider.base_url)
+            }
+            _ => continue,
+        };
+        if pricing_provider_id.trim().is_empty()
+            && let Some(inferred) = inferred_pricing_provider_id(base_url)
+        {
+            *pricing_provider_id = inferred.to_string();
+        }
+    }
+}
+
+fn validate_bearer_auth_kind(
+    provider_type: &str,
+    provider_id: &str,
+    auth: Option<&OpenAiCompatAuthConfig>,
+) -> anyhow::Result<()> {
+    if let Some(kind) = auth.and_then(|auth| auth.kind.as_deref())
+        && kind != "bearer"
+    {
+        bail!("{provider_type} provider `{provider_id}` auth.kind must be `bearer`");
+    }
+    Ok(())
 }
 
 pub(super) fn validate_providers(providers: &[ProviderConfig]) -> anyhow::Result<()> {
@@ -435,8 +509,9 @@ impl OpenAiCompatProviderConfig {
         }
         if self.pricing_provider_id.trim().is_empty() {
             bail!(
-                "openai_compat provider `{}` pricing_provider_id cannot be empty",
-                self.id
+                "openai_compat provider `{}` pricing_provider_id cannot be empty; it is inferred only for {} base URLs",
+                self.id,
+                INFERRED_PRICING_PROVIDER_HOSTS
             );
         }
         if !is_supported_pricing_provider_id(&self.pricing_provider_id) {
@@ -446,6 +521,7 @@ impl OpenAiCompatProviderConfig {
                 self.pricing_provider_id
             );
         }
+        validate_bearer_auth_kind("openai_compat", &self.id, self.auth.as_ref())?;
         if let Some(batch) = &self.batch {
             if let Some(base_url) = batch.base_url.as_deref() {
                 if base_url.trim().is_empty() {
@@ -510,8 +586,9 @@ impl AnthropicCompatProviderConfig {
         }
         if self.pricing_provider_id.trim().is_empty() {
             bail!(
-                "anthropic_compat provider `{}` pricing_provider_id cannot be empty",
-                self.id
+                "anthropic_compat provider `{}` pricing_provider_id cannot be empty; it is inferred only for {} base URLs",
+                self.id,
+                INFERRED_PRICING_PROVIDER_HOSTS
             );
         }
         if !is_supported_pricing_provider_id(&self.pricing_provider_id) {
@@ -560,11 +637,7 @@ impl TypeSafeProviderConfig {
                 self.id
             );
         }
-        if let Some(auth) = &self.auth
-            && auth.kind != "bearer"
-        {
-            bail!("typesafe provider `{}` auth.kind must be `bearer`", self.id);
-        }
+        validate_bearer_auth_kind("typesafe", &self.id, self.auth.as_ref())?;
         if self.pricing_provider_id.trim().is_empty() {
             bail!(
                 "typesafe provider `{}` pricing_provider_id cannot be empty",

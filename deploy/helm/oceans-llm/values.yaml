@@ -18,6 +18,12 @@ gateway:
   podAnnotations: {}
   containerPort: 8080
   configMountPath: /app/gateway.yaml
+  # Config fragments that add `providers` and `models`, read with `--config-dir`.
+  # Each listed ConfigMap mounts at `<mountPath>/<name>/`. The chart does not create these
+  # ConfigMaps and cannot checksum them, so changes apply when the seed-config job next runs.
+  configDir:
+    mountPath: /app/conf.d
+    configMaps: []
   allowLiteralSecretsInConfig: false
   clientConfigGatewayBaseUrl: ""
   config:
@@ -61,8 +67,8 @@ gateway:
         response_max_bytes: 65536
         stream_max_events: 128
         redaction_paths: []
-    providers: []
-    models: []
+    providers: {}
+    models: {}
     teams: []
     service_accounts: []
     users: []

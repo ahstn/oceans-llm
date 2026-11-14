@@ -31,7 +31,7 @@ Every route on a Bedrock provider must set `compatibility.aws_bedrock.api_style`
 | `mantle_openai_chat` | `bedrock_mantle` | OpenAI Chat Completions | Yes |
 | `mantle_anthropic_messages` | `bedrock_mantle` | Anthropic Messages | Yes |
 
-The three OpenAI styles also need `compatibility.aws_bedrock.openai_base_path`, for example `/openai/v1`. The other styles can't set it. The checks are in [`crates/gateway/src/config/routes.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway/src/config/routes.rs).
+The three OpenAI styles use `compatibility.aws_bedrock.openai_base_path`, which defaults to the AWS path for the endpoint ([AWS Bedrock route compatibility](/configuration/models-and-routes/#aws-bedrock-route-compatibility)). Set it when a model is served elsewhere, as GPT-5.5 is on Mantle. The other styles can't set it. The checks are in [`crates/gateway/src/config/routes.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway/src/config/routes.rs).
 
 The gateway infers the API families from `api_style`, so most Bedrock routes need no `capabilities` block. Only `mantle_openai_responses` serves `/v1/responses` and `json_schema`, and it can't serve Chat Completions. `runtime_anthropic_invoke` can't stream. An explicit flag that contradicts the style fails startup. Bedrock routes never serve embeddings, images or Decisions. The full list of inferred flags is in [Models and routes](/configuration/models-and-routes/#aws-bedrock-route-compatibility).
 

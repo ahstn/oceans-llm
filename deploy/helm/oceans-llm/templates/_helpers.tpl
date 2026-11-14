@@ -176,6 +176,10 @@ app.kubernetes.io/component: {{ .component }}
 {{- define "oceans-llm.commonEnv" -}}
 - name: GATEWAY_CONFIG
   value: {{ .Values.gateway.configMountPath | quote }}
+{{- if .Values.gateway.configDir.configMaps }}
+- name: GATEWAY_CONFIG_DIR
+  value: {{ .Values.gateway.configDir.mountPath | quote }}
+{{- end }}
 - name: ADMIN_UI_UPSTREAM
   value: {{ printf "http://%s:%v" (include "oceans-llm.adminUiServiceName" .) .Values.service.adminUi.port | quote }}
 - name: GATEWAY_RUN_MIGRATIONS
@@ -263,4 +267,25 @@ initialDelaySeconds: {{ $probe.initialDelaySeconds }}
 periodSeconds: {{ $probe.periodSeconds }}
 timeoutSeconds: {{ $probe.timeoutSeconds }}
 failureThreshold: {{ $probe.failureThreshold }}
+{{- end -}}
+
+{{/*
+Config fragment volumes. Each ConfigMap in gateway.configDir.configMaps mounts under its own
+subdirectory of gateway.configDir.mountPath, so key names only need to be unique per ConfigMap.
+*/}}
+{{- define "oceans-llm.configDirVolumes" -}}
+{{- range $index, $name := .Values.gateway.configDir.configMaps }}
+- name: {{ printf "gateway-config-dir-%d" $index }}
+  configMap:
+    name: {{ $name | quote }}
+{{- end }}
+{{- end -}}
+
+{{- define "oceans-llm.configDirVolumeMounts" -}}
+{{- $mountPath := .Values.gateway.configDir.mountPath -}}
+{{- range $index, $name := .Values.gateway.configDir.configMaps }}
+- name: {{ printf "gateway-config-dir-%d" $index }}
+  mountPath: {{ printf "%s/%s" (trimSuffix "/" $mountPath) $name | quote }}
+  readOnly: true
+{{- end }}
 {{- end -}}
