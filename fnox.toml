@@ -24,3 +24,5 @@ env = "exec"
 [secrets]
 OPENAI_API_KEY = { description = "OpenAI provider key; gateway.yaml and gateway.prod.yaml need it to start" }
 REUI_LICENSE_KEY = { description = "ReUI Pro license for the reui MCP server in .mcp.json", if_missing = "warn" }
+OCEANS_HARNESS_VERTEX_PROJECT = { description = "Google Cloud project for the harness suite's Vertex AI cells; without it they are skipped", if_missing = "warn" }
+OCEANS_HARNESS_VERTEX_SA_JSON = { description = "Service account key JSON (roles/aiplatform.user) for the harness suite's Vertex AI cells", if_missing = "warn" }
