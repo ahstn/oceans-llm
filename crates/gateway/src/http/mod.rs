@@ -2,6 +2,7 @@ pub mod admin_auth;
 pub mod admin_contract;
 mod anthropic_stream;
 pub mod api_keys;
+pub mod attribution;
 pub mod audit;
 #[cfg(test)]
 mod audit_tests;
@@ -61,6 +62,7 @@ use tower_http::{
 
 use self::{
     api_keys::*,
+    attribution::{get_attribution_report, get_my_attribution_ownership, post_attribution_entries},
     audit::{get_audit_log, list_audit_logs},
     batches::*,
     guardrails::*,
@@ -108,7 +110,8 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
         .route("/v1/chat/completions", post(v1_chat_completions))
         .route("/v1/responses", post(v1_responses))
         .route("/v1/embeddings", post(v1_embeddings))
-        // OpenRouter serves `/images`; OpenAI SDKs call `/images/generations`.
+        // OpenRouter clients call `/images`; OpenAI SDKs call `/images/generations`. Both
+        // reach one handler, and the provider picks the upstream path.
         .route("/v1/images", post(v1_images))
         .route("/v1/images/generations", post(v1_images))
         .route("/v1/decisions", post(v1_decisions))
@@ -300,6 +303,16 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             "/api/v1/me/provider-credentials/{provider_key}",
             axum::routing::put(set_my_provider_credential)
                 .layer(DefaultBodyLimit::max(PROVIDER_CREDENTIAL_BODY_LIMIT)),
+        )
+        .route("/api/v1/me/ownership", get(get_my_attribution_ownership))
+        .route(
+            "/api/v1/attribution/entries",
+            post(post_attribution_entries)
+                .layer(DefaultBodyLimit::max(gateway_core::ATTRIBUTION_MAX_BATCH_BYTES)),
+        )
+        .route(
+            "/api/v1/admin/attribution/report",
+            get(get_attribution_report),
         )
         .route(
             "/api/v1/admin/spend/budgets",

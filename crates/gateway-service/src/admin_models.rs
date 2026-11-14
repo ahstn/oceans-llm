@@ -910,6 +910,7 @@ mod tests {
             output_cost_per_million_tokens: Some(Money4::from_scaled(20_000)),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            cache_write_1h_cost_per_million_tokens: None,
             context_tiers: Vec::new(),
             service_tiers: Vec::new(),
         };
@@ -953,37 +954,49 @@ mod tests {
             output: Some(Money4::from_scaled(output)),
             cache_read: None,
             cache_write: None,
+            cache_write_1h: None,
         }
     }
 
     #[test]
-    fn pricing_varies_by_route_when_routes_differ_only_in_tiers() {
+    fn pricing_varies_by_route_when_routes_differ_only_in_tiers_or_1h_rate() {
         let base = EffectiveRoutePricing {
             input_cost_per_million_tokens: Some(Money4::from_scaled(10_000)),
             output_cost_per_million_tokens: Some(Money4::from_scaled(20_000)),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            cache_write_1h_cost_per_million_tokens: None,
             context_tiers: Vec::new(),
             service_tiers: Vec::new(),
-        };
-        let tiered = EffectiveRoutePricing {
-            context_tiers: vec![context_tier(200_000, 20_000, 40_000)],
-            ..base.clone()
         };
         let limits = PricingLimits {
             context: Some(128_000),
             input: None,
             output: None,
         };
-        let route_metadata = vec![
-            (
-                Uuid::new_v4(),
-                effective_metadata(limits.clone(), Some(base)),
-            ),
-            (Uuid::new_v4(), effective_metadata(limits, Some(tiered))),
-        ];
+        for other in [
+            EffectiveRoutePricing {
+                context_tiers: vec![context_tier(200_000, 20_000, 40_000)],
+                ..base.clone()
+            },
+            EffectiveRoutePricing {
+                cache_write_1h_cost_per_million_tokens: Some(Money4::from_scaled(30_000)),
+                ..base.clone()
+            },
+        ] {
+            let route_metadata = vec![
+                (
+                    Uuid::new_v4(),
+                    effective_metadata(limits.clone(), Some(base.clone())),
+                ),
+                (
+                    Uuid::new_v4(),
+                    effective_metadata(limits.clone(), Some(other)),
+                ),
+            ];
 
-        assert!(aggregate_model_metadata(&route_metadata).pricing_varies_by_route);
+            assert!(aggregate_model_metadata(&route_metadata).pricing_varies_by_route);
+        }
     }
 
     /// One `openai` route priced from the catalog row for `upstream_model` unless
@@ -1033,6 +1046,7 @@ mod tests {
             output: Some(Money4::from_scaled(1_000_000)),
             cache_read: None,
             cache_write: None,
+            cache_write_1h: None,
             context_tiers: vec![context_tier(272_000, 400_000, 1_500_000)],
         }];
         let repo = Arc::new(CountingRepo {
@@ -1127,6 +1141,7 @@ mod tests {
             output_cost_per_million_tokens: Money4::from_scaled(500_000),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            cache_write_1h_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
             service_tiers: Vec::new(),
         };
@@ -1156,6 +1171,7 @@ mod tests {
             output_cost_per_million_tokens: Money4::from_scaled(input * 5),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            cache_write_1h_cost_per_million_tokens: None,
         }
     }
 
@@ -1166,6 +1182,7 @@ mod tests {
             output_cost_per_million_tokens: Money4::from_scaled(1_000_000),
             cache_read_cost_per_million_tokens: Some(Money4::from_scaled(20_000)),
             cache_write_cost_per_million_tokens: None,
+            cache_write_1h_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
             // A duplicate of the route's own tier loses to the base rates.
             service_tiers: vec![
@@ -1407,6 +1424,7 @@ mod tests {
             ),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            cache_write_1h_cost_per_million_tokens: None,
             input_audio_cost_per_million_tokens: None,
             output_audio_cost_per_million_tokens: None,
             output_image_usd_per_million: None,

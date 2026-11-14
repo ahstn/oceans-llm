@@ -184,7 +184,7 @@ Request-log purge treats `request_logs` as the parent retention boundary. Purgin
 
 - `pricing_catalog_cache`
   - Key columns: `catalog_key`, `source`, `etag`, `fetched_at`, `snapshot_json`
-  - Notes: one row per catalog source (`models_dev_supported_v5`, `openrouter_v1`, `litellm_v3`), each with its own ETag, fetch time, and a content checksum inside `snapshot_json`. Runtime merges the three cached snapshots, using each source's vendored fallback in the repo when its row is missing. A key's version advances whenever that source's projection changes, because a 304 would otherwise keep a row projected the old way
+  - Notes: one row per catalog source (`models_dev_supported_v5`, `openrouter_v1`, `litellm_v4`), each with its own ETag, fetch time, and a content checksum inside `snapshot_json`. Runtime merges the three cached snapshots, using each source's vendored fallback in the repo when its row is missing. A key's version advances whenever that source's projection changes, because a 304 would otherwise keep a row projected the old way
 - `model_pricing`
   - Key columns: `model_pricing_id`, `pricing_provider_id`, `pricing_model_id`, `context_tiers_json`, `output_image_cost_per_million_tokens_10000`, `effective_start_at`, `effective_end_at`
   - Notes: effective-dated pricing rows are the durable historical charging source. One reconciliation writes all rows of a merged catalog generation; each row's provenance is the source that supplied its pricing

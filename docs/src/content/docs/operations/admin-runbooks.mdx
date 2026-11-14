@@ -227,7 +227,7 @@ Start with the least destructive step.
 
 If the error says `database reset required`, the command found history it can't upgrade in place. [Topology and operations](/setup/deploy-and-operations/#database-and-migrations) lists the causes. If the cause is an older gateway running against a newer database, see [Roll back](#roll-back). Otherwise, recreate the database, then run the migrations, the config seed, and the bootstrap admin again on the new one.
 
-If a PostgreSQL index migration fails with `canceling statement due to statement timeout` or `lock timeout`, the table was too large or too busy to index within the migration's time limit. Migrations run in a transaction, so they can't build indexes concurrently. Build the index online with the statement from the migration file, with `CONCURRENTLY` added. For `V78__batch_jobs_route_index`, that's `CREATE INDEX CONCURRENTLY IF NOT EXISTS batch_jobs_route_idx ON batch_jobs (route_id);`. Then run the migrations again. The migration finds the index and does nothing.
+If a PostgreSQL index migration fails with `canceling statement due to statement timeout` or `lock timeout`, the table was too large or too busy to index within the migration's time limit. Migrations run in a transaction, so they can't build indexes concurrently. Build the index online with the statement from the migration file, with `CONCURRENTLY` added. For `V80__batch_jobs_route_index`, that's `CREATE INDEX CONCURRENTLY IF NOT EXISTS batch_jobs_route_idx ON batch_jobs (route_id);`. Then run the migrations again. The migration finds the index and does nothing.
 
 For any other error, stop and read it before you retry. Don't assume a manual repair is safer than recreating the database.
 

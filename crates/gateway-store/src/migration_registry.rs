@@ -490,10 +490,24 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 78,
+        name: "cache_write_1h",
+        checksum: "V78__cache_write_1h.sql",
+        libsql_sql: include_str!("../migrations/V78__cache_write_1h.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V78__cache_write_1h.sql"),
+    },
+    MigrationManifest {
+        version: 79,
+        name: "git_ai_attribution",
+        checksum: "V79__git_ai_attribution.sql",
+        libsql_sql: include_str!("../migrations/V79__git_ai_attribution.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V79__git_ai_attribution.sql"),
+    },
+    MigrationManifest {
+        version: 80,
         name: "batch_jobs_route_index",
-        checksum: "V78__batch_jobs_route_index.sql",
-        libsql_sql: include_str!("../migrations/V78__batch_jobs_route_index.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V78__batch_jobs_route_index.sql"),
+        checksum: "V80__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V80__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V80__batch_jobs_route_index.sql"),
     },
 ];
 

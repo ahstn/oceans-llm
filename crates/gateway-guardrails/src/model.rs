@@ -126,23 +126,6 @@ impl EvaluationPayload {
         format!("sha256:{:x}", Sha256::digest(encoded))
     }
 
-    pub fn byte_len(&self) -> usize {
-        match self {
-            Self::Text { text } => text.len(),
-            Self::TextSegments { segments } => segments.iter().map(String::len).sum(),
-            Self::ShellCommand { command } => command.len(),
-            Self::ToolCall { name, arguments } => name.len() + arguments.to_string().len(),
-            Self::McpCall { call } => {
-                call.server.len() + call.tool.len() + call.arguments.to_string().len()
-            }
-            Self::McpResult {
-                server,
-                tool,
-                result,
-            } => server.len() + tool.len() + result.to_string().len(),
-        }
-    }
-
     pub fn text_content(&self) -> Option<&str> {
         match self {
             Self::Text { text } => Some(text),

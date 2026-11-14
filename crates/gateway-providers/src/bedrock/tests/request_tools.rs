@@ -647,3 +647,113 @@ fn route_extra_body_can_replace_a_forced_tool_choice() {
 
     assert_eq!(body["tool_choice"], json!({"type": "auto"}));
 }
+
+fn weather_tool_request(fields: &[(&str, Value)]) -> CoreChatRequest {
+    let mut extra = BTreeMap::from([
+        ("max_tokens".to_string(), json!(256)),
+        (
+            "tools".to_string(),
+            json!([{
+                "type": "function",
+                "function": {"name": "get_weather", "parameters": {"type": "object"}}
+            }]),
+        ),
+    ]);
+    extra.extend(
+        fields
+            .iter()
+            .map(|(field, value)| (field.to_string(), value.clone())),
+    );
+    CoreChatRequest {
+        model: "claude".to_string(),
+        messages: vec![message("user", "Check weather")],
+        stream: false,
+        extra,
+    }
+}
+
+#[test]
+fn parallel_tool_calls_false_disables_parallel_claude_tool_use() {
+    let model = context("us.anthropic.claude-haiku-5-5-v1:0");
+    let request = weather_tool_request(&[("parallel_tool_calls", json!(false))]);
+
+    let body = map_chat_request_to_anthropic_messages(&request, &model).expect("invoke body");
+    assert_eq!(
+        body["tool_choice"],
+        json!({"type": "auto", "disable_parallel_tool_use": true})
+    );
+    assert!(body.get("parallel_tool_calls").is_none());
+
+    let body = map_chat_request_to_converse(&request, &model).expect("Converse body");
+    assert_eq!(
+        body["additionalModelRequestFields"]["tool_choice"],
+        json!({"type": "auto", "disable_parallel_tool_use": true})
+    );
+
+    // Bedrock rejects a typed Claude `tool_choice` beside a native `toolChoice`.
+    let forced = weather_tool_request(&[
+        ("parallel_tool_calls", json!(false)),
+        (
+            "tool_choice",
+            json!({"type": "function", "function": {"name": "get_weather"}}),
+        ),
+    ]);
+    let body = map_chat_request_to_converse(&forced, &model).expect("Converse body");
+    assert_eq!(
+        body["toolConfig"]["toolChoice"],
+        json!({"tool": {"name": "get_weather"}})
+    );
+    assert_eq!(
+        body["additionalModelRequestFields"]["tool_choice"],
+        json!({"disable_parallel_tool_use": true})
+    );
+
+    // Tools that only the route's `extra_body` supplies still get the constraint.
+    let mut route_tools = context("us.anthropic.claude-haiku-5-5-v1:0");
+    route_tools.extra_body.insert(
+        "toolConfig".to_string(),
+        json!({"tools": [{"toolSpec": {"name": "get_weather", "inputSchema": {"json": {"type": "object"}}}}]}),
+    );
+    let toolless = CoreChatRequest {
+        extra: BTreeMap::from([
+            ("max_tokens".to_string(), json!(256)),
+            ("parallel_tool_calls".to_string(), json!(false)),
+        ]),
+        ..request
+    };
+    let body = map_chat_request_to_converse(&toolless, &route_tools).expect("Converse body");
+    assert_eq!(
+        body["additionalModelRequestFields"]["tool_choice"],
+        json!({"type": "auto", "disable_parallel_tool_use": true})
+    );
+}
+
+#[test]
+fn converse_models_without_a_parallel_switch_reject_only_disabling_it() {
+    let nova = context("amazon.nova-pro-v1:0");
+    let enabled = weather_tool_request(&[("parallel_tool_calls", json!(true))]);
+    let body = map_chat_request_to_converse(&enabled, &nova).expect("parallel use is the default");
+    assert!(body.get("additionalModelRequestFields").is_none());
+
+    let disabled = weather_tool_request(&[("parallel_tool_calls", json!(false))]);
+    let error = map_chat_request_to_converse(&disabled, &nova)
+        .expect_err("Nova cannot disable parallel tool use")
+        .to_string();
+    assert!(error.contains("`parallel_tool_calls: false`"), "{error}");
+
+    let toolless = CoreChatRequest {
+        extra: BTreeMap::from([("parallel_tool_calls".to_string(), json!(false))]),
+        ..disabled
+    };
+    let body = map_chat_request_to_converse(&toolless, &nova).expect("vacuous without tools");
+    assert!(body.get("additionalModelRequestFields").is_none());
+
+    // A route `toolConfig` without tools still has nothing to call in parallel.
+    let mut route_tool_config = nova.clone();
+    route_tool_config.extra_body.insert(
+        "toolConfig".to_string(),
+        json!({"toolChoice": {"auto": {}}}),
+    );
+    map_chat_request_to_converse(&toolless, &route_tool_config)
+        .expect("vacuous without tools in toolConfig");
+}

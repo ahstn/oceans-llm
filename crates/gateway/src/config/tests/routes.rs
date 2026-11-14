@@ -24,7 +24,7 @@ models:
             max_tokens_field: max_tokens
             developer_role: system
             reasoning_effort: reasoning_object
-            supports_stream_usage: true
+            supports_stream_usage: false
             empty_tools: preserve_with_tool_history
 "#,
     );
@@ -47,11 +47,46 @@ models:
         profile.reasoning_effort,
         OpenAiCompatReasoningEffort::ReasoningObject
     );
-    assert!(profile.supports_stream_usage);
+    assert!(!profile.supports_stream_usage);
     assert_eq!(
         profile.empty_tools,
         OpenAiCompatEmptyTools::PreserveWithToolHistory
     );
+}
+
+#[test]
+fn openai_compat_profile_requests_stream_usage_unless_opted_out() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+
+    write_config(
+        &config_path,
+        r#"
+providers:
+  - id: openai-prod
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-4o-mini
+        compatibility:
+          openai_compat:
+            supports_store: false
+"#,
+    );
+
+    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+    let models = config.seed_models().expect("seed models");
+    let profile = models[0].routes[0]
+        .compatibility
+        .openai_compat
+        .as_ref()
+        .expect("openai compat profile");
+
+    assert!(profile.supports_stream_usage);
 }
 
 #[test]

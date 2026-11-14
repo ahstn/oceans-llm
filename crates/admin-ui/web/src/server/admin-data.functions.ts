@@ -27,6 +27,7 @@ import {
   listAgentSessions,
   getRequestLogDetail,
   getBatchResults,
+  getAttributionReport,
   getHarnessUsage,
   getMyProfile as getGatewayMyProfile,
   getGuardrailPolicies,
@@ -105,6 +106,22 @@ import {
 import { resolveBrowserGatewayOrigin } from '@/server/gateway-client.server'
 
 type AgentSessionFilters = NonNullable<Parameters<typeof listAgentSessions>[0]>
+type AttributionReportInput = Parameters<typeof getAttributionReport>[0]
+
+const attributionWindows = new Set<unknown>([7, 30, 90])
+
+// Shape checks only; the gateway owns the window, user, and repository rules.
+function validateAttributionReportInput(data: unknown): AttributionReportInput {
+  const input = requireObject(data, 'Attribution report input')
+  if (!attributionWindows.has(input.days)) {
+    throw new Error('days must be 7, 30 or 90')
+  }
+  return {
+    days: input.days as AttributionReportInput['days'],
+    user_id: optionalString(input.user_id, 'user_id'),
+    repository: optionalString(input.repository, 'repository'),
+  }
+}
 
 function validateAgentSessionFilters(data: unknown): AgentSessionFilters {
   if (data === undefined) return {}
@@ -414,6 +431,12 @@ export const refreshObservabilityHarnessUsage = createServerFn({ method: 'POST' 
   .validator((data: { range: '7d' | '31d' }) => data)
   .handler(async ({ data }) => {
     return getHarnessUsage(data)
+  })
+
+export const getAttribution = createServerFn({ method: 'GET' })
+  .validator(validateAttributionReportInput)
+  .handler(async ({ data }) => {
+    return getAttributionReport(data)
   })
 
 export const getSpendUsageReport = createServerFn({ method: 'POST' })

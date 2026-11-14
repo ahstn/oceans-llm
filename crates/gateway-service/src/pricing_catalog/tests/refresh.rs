@@ -492,6 +492,7 @@ async fn remote_failure_falls_back_to_store_then_vendored_snapshot() {
                         output: Some("20.0000".to_string()),
                         cache_read: None,
                         cache_write: None,
+                        cache_write_1h: None,
                         input_audio: None,
                         output_audio: None,
                         output_image: None,

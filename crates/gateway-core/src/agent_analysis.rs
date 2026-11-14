@@ -241,7 +241,6 @@ pub struct AgentObservationSetAppendResult {
     pub inserted: bool,
     pub nested_facts_truncated: bool,
 }
-pub const MAX_AGENT_ANALYSIS_DISTINCT_ITEMS: usize = 512;
 
 #[async_trait]
 pub trait AgentSessionTraceRepository {

@@ -658,6 +658,10 @@ pub fn parse_openai_tool_arguments(
             .ok_or_else(|| AnthropicAdapterError::InvalidToolArguments {
                 reason: "arguments must be a string".to_string(),
             })?;
+    // Streamed no-argument calls can arrive with no argument text at all.
+    if arguments.trim().is_empty() {
+        return Ok(Value::Object(Map::new()));
+    }
     let value = serde_json::from_str::<Value>(arguments).map_err(|err| {
         AnthropicAdapterError::InvalidToolArguments {
             reason: format!("arguments must be valid JSON: {err}"),

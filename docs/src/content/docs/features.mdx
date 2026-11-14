@@ -33,7 +33,7 @@ A hard limit blocks new requests once recorded spend reaches the cap. It doesn't
 
 ## Usage accounting and observability
 
-- **A usage ledger, not estimates.** Each request's usage is priced from an effective-dated catalog, with the price source recorded. Rows are `priced`, `unpriced`, `usage_missing`, or `legacy_estimated`, a fallback for malformed cache counters. Only `priced` and `legacy_estimated` rows count toward spend and budgets. See [Pricing catalog and accounting](/spend/pricing-and-accounting/).
+- **A usage ledger.** Each request's usage is priced from an effective-dated catalog, with the price source recorded. Rows are `priced`, `unpriced`, `usage_missing`, or `legacy_estimated`, an estimate that records why, such as a missing rate or missing usage. Only `priced` and `legacy_estimated` rows count toward spend and budgets. See [Pricing catalog and accounting](/spend/pricing-and-accounting/).
 - **FOCUS CSV export.** Export usage as best-effort FOCUS-compatible CSV, so FinOps tools can read it without a custom pipeline.
 - **Request logs.** Inspect each request's owner, model resolution, provider attempts, latency, token usage, tags, payload policy, and truncation state. See [Request logs](/observability/request-logs/).
 - **Agent harness tracking.** See which coding agents send traffic, such as Claude Code, Codex, OpenCode, Pi, Gemini CLI, Copilot CLI, and GitHub Copilot. Oceans reads this from the caller's `User-Agent`, which the caller reports about itself; anything it doesn't recognise shows as `Unknown`. See [Agent harness usage](/observability/agent-harness-usage/).

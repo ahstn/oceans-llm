@@ -1,0 +1,212 @@
+---
+title: Git AI attribution
+description: Send Git AI notes, agent sessions and merged pull requests to Oceans, so the Attribution page shows how much of each commit AI wrote and what it cost.
+sidebar:
+  label: Git AI attribution
+  order: 4
+---
+
+[Git AI](https://github.com/git-ai-project/git-ai) records which lines of each commit an agent wrote, as git notes in the repository. The `oceans hook` commands send those notes to Oceans from each user's machine, with agent session events and merged pull requests. The **Attribution** page (`/admin/observability/attribution`) then shows how much of each commit AI wrote, and the gateway requests and cost behind it.
+
+Git AI runs locally, and Oceans doesn't need Git AI's paid hosted service. The [ADR on Git AI attribution](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-11-01-git-ai-attribution-via-oceans-hooks.md) explains the design.
+
+## What gets sent
+
+| Source | Hook | What it sends | When |
+| --- | --- | --- | --- |
+| Git AI | `oceans hook notes` | Each note git-ai writes: the repository, commit, branch, and the note, which lists the lines each agent session wrote and the author names and emails. | After git-ai writes a note, for example after a commit, amend, rebase or cherry-pick. |
+| Claude Code | `oceans hook claude` | The session id, repository, branch and HEAD commit. No prompt text. | When a session starts and ends. |
+| Oh-My-Pi (OMP) | `oceans hook omp`, from the Oceans OMP extension | The same as Claude Code, plus the extension's version. | When a session starts and ends. |
+| GitHub CLI | `oceans hook prs` | Merged pull requests: number, title, link, branches, merge commit and time, and each commit's SHA, subject, date and author email. | At the start of an agent session, at most once an hour per repository, and when you run it. |
+
+The repository is the `origin` remote, or the first remote if there's no `origin`. The CLI sends it as `host/owner/repo`, without the scheme, any credentials or `.git`. A remote it can't read that way, such as a local path, isn't sent.
+
+## Before you start
+
+You need:
+
+- **Git AI, set up for your agents.** Install it from the [Git AI README](https://github.com/git-ai-project/git-ai). `git-ai install-hooks` adds its hooks to Claude Code and the other agents it finds. Git AI has no OMP support of its own, so OMP needs the Oceans extension below.
+- **The Oceans CLI, logged in.** Install it and run `oceans login`, as described in [Oceans CLI](/harnesses/oceans-cli/). The hooks may run without your shell's environment, so they read the URL and key from the config file that `oceans login` writes.
+- **An API key with the right owner.** The gateway joins a commit to the requests of the sessions that wrote it only when both come from the same owner, a user or a service account. Use a key owned by the same user or service account as the keys your agents send requests with. The key needs **Full access** or the **Attribution** scope. See [API key scopes](/access/identity-and-access/#api-key-scopes).
+- **The GitHub CLI, for merged pull requests.** Optional. Install [`gh`](https://cli.github.com/) and run `gh auth login`.
+
+## Set up
+
+<Steps>
+<Step title="Install the hooks">
+Pick the agents you use:
+
+```sh
+oceans hook install --git-ai --claude
+oceans hook install --git-ai --omp
+oceans hook install --git-ai --claude --omp
+```
+
+The command checks the key with the gateway, then installs each hook:
+
+```text
+Attribution goes to user 6f1c2a4e-0b7d-4c9e-9a51-3d2f8e7b1c60 on https://oceans.example.com/.
+git-ai: added the hook to git-ai config git_ai_hooks.post_notes_updated
+Claude Code: added the hook to /home/alice/.claude/settings.json
+```
+
+Check that this is the same user or service account that owns your agents' keys.
+</Step>
+<Step title="Commit some agent work">
+Make a commit that includes lines an agent wrote. git-ai writes a note, and the hook queues it and starts delivery in the background.
+</Step>
+<Step title="Check delivery">
+Send the queue now and see the result:
+
+```sh
+oceans hook send --foreground
+```
+
+`Delivered 1, quarantined 0, 0 still queued.` means the gateway has it. The commit appears on the **Attribution** page.
+</Step>
+</Steps>
+
+Install the hooks on each machine that commits agent work. Run the install again after you move the `oceans` binary. Hooks that are already in place are left alone.
+
+### What the install changes
+
+- **`--git-ai`** runs `git-ai config --add git_ai_hooks.post_notes_updated "<path to oceans> hook notes"`, then `git-ai bg restart`, so git-ai's background service loads the hook.
+- **`--claude`** adds `<path to oceans> hook claude` as a `SessionStart` and `SessionEnd` hook in `~/.claude/settings.json`, or in `$CLAUDE_CONFIG_DIR/settings.json` when that's set. Other settings and hooks stay as they are, in the same order. A hook for an `oceans` binary at another path is updated in place.
+- **`--omp`** writes the Oceans extension to `~/.omp/agent/extensions/oceans-git-ai.ts`, or to `$PI_CODING_AGENT_DIR/extensions/` when that's set. OMP loads it when it next starts. The extension runs `git-ai checkpoint pi` before and after each `edit`, `apply_patch`, `write` and `bash` call, so git-ai attributes OMP's edits, and reports session start and end through `oceans hook omp`. It also keeps the `OCEANS_SESSION_ID` environment variable set to the main session's id.
+
+OMP sends no session id to a custom provider over Chat Completions or Responses, so the gateway can't tell its sessions apart. To fix this, add the session header to your Oceans provider in OMP's `models.yml`:
+
+```yaml
+providers:
+  oceans:
+    # ...your existing baseUrl, apiKey and api
+    headers:
+      session_id: OCEANS_SESSION_ID
+```
+
+OMP reads the variable on each request. The Messages API doesn't need the header, because OMP already sends its own session id there. Add the header only on machines where the extension is installed. Without the extension, OMP sends the text `OCEANS_SESSION_ID` as the value, and the gateway then counts all of that machine's OMP Chat Completions and Responses requests as one session. Requests from OMP subagents count for the main session, except over the Messages API, where each subagent sends its own id.
+
+Each hook records the full path of the `oceans` binary. git-ai has no way to update a hook in place, so after you move the binary, remove the old git-ai hook as described in [Remove the hooks](#remove-the-hooks).
+
+## How delivery works
+
+The hooks never slow down or fail a commit or an agent session. Each one writes to a local queue and returns at once. Problems go to standard error, and the hook still succeeds.
+
+A background `oceans hook send` then delivers the queue in order:
+
+- It resolves the API key only when there's something to send, so a `!` command in the config file doesn't run on every commit.
+- It sends batches of up to 100 entries and 2 MiB.
+- If the gateway can't be reached, or returns `429` or a `5xx` status, it waits 5, 15 and then 40 seconds between attempts. After that it stops, and the entries stay queued until the next hook or `oceans hook send` runs.
+- If the gateway rejects the key (`401`), the key lacks the scope (`403`) or the gateway has no attribution API (`404`), it stops and keeps the queue.
+
+Background runs print nothing. To see why delivery fails, run `oceans hook send --foreground`.
+
+### Owner binding
+
+Each entry is queued for the owner that `oceans login` or `oceans hook install` last recorded. The sender delivers an entry only with a key that has the same owner, so data queued for one owner is never stored under another:
+
+- A new key for the same owner keeps delivering.
+- If the key now belongs to another owner, the sender quarantines the previous owner's entries instead of sending them.
+- Each batch also tells the gateway which owner to expect. If the key changed owner in the meantime, the gateway refuses the batch with `409`, and the sender quarantines it as `owner_changed`.
+
+To deliver quarantined entries, configure a key for their owner again, then run `oceans hook queue --resend`.
+
+## Merged pull requests
+
+Squash and rebase merges create new commits on GitHub that have no Git AI notes. `oceans hook prs` reads merged pull requests with the GitHub CLI, and the gateway joins each one to the notes of its original commits by SHA. The gateway needs no GitHub token. When several developers sync the same repository, the report still counts each pull request once.
+
+When an agent session starts in a repository, the session hook starts `oceans hook prs --if-stale 1h` in the background, so each repository syncs at most once an hour. To sync now, run it in the repository:
+
+```sh
+oceans hook prs
+oceans hook prs --repo-dir ~/src/widgets --limit 200
+```
+
+It reads the newest 30 merged pull requests by default, and up to 1,000 with `--limit`. `--if-stale` skips the sync if the repository synced more recently than the age you give, such as `30m`, `1h` or `2d`. If `gh` isn't installed or isn't signed in, the sync is skipped and the message says why.
+
+## Check the queue
+
+```sh
+oceans hook queue
+```
+
+```text
+Queued: 1
+  note           github.com/acme/widgets                  3f9a1c2b7d4e
+Quarantined: 1
+  note           github.com/acme/widgets                  8b2e4f6a1c3d ownership_scope_mismatch
+Dropped: 0
+Run oceans hook queue --resend to retry quarantined entries, or --discard to delete them.
+```
+
+The listing shows each entry's kind, repository, commit and quarantine reason. It never shows note content, session ids or emails. Add `--json` for JSON.
+
+- `oceans hook queue --resend` moves quarantined entries back to the queue and starts delivery. They keep their place in order, so an old note can't replace a newer one.
+- `oceans hook queue --discard` deletes quarantined entries. The sender deletes them anyway after 30 days.
+
+| Reason | Meaning | What to do |
+| --- | --- | --- |
+| `ownership_scope_mismatch` | The entry was queued for another owner than the current key's owner. | Configure a key for that owner, then `--resend`. Or `--discard`. |
+| `owner_changed` | The key changed owner while a batch was being sent. | The same as above. |
+| `missing_ownership_scope` | The entry was queued before `oceans login` or `oceans hook install` recorded an owner. | `--resend`. The entries take the current owner. |
+| `oversized_note` | The note is larger than 1 MiB. | `--discard`. |
+| `oversized_entry` | The entry doesn't fit in a 2 MiB request. | `--discard`. |
+| `invalid_repository` | The remote isn't a `host/owner/repo` URL the gateway accepts. | Fix the remote, then `--discard`. Later commits are sent. |
+| `invalid_note`, `unsupported_schema` | The gateway couldn't read the note. | Upgrade the gateway if Git AI uses a newer note format, then `--resend`. Or `--discard`. |
+| `invalid_entry`, `rejected` | The gateway refused the entry. | `--discard`. |
+
+The queue holds at most 512 MiB per machine. When it's full, the hooks drop new entries and count them under `Dropped`.
+
+## Read the Attribution page
+
+The **Attribution** page covers the last 7, 30 or 90 days. Platform admins see every user and can filter by user and repository. Other users see only the commits their keys reported or that they authored. See [Admin control plane](/access/admin-control-plane/).
+
+- **AI and human lines** come from the notes. A line git-ai didn't attest to anyone counts as neither.
+- **Requests and cost** come from gateway traffic. A commit gets the requests of each session that wrote it, made after that session's previous commit and up to this commit. Requests after a session's last commit count as uncommitted work. Totals therefore add up without counting a request twice.
+- **Unpriced requests** are counted separately, and never treated as free. See [Pricing catalog and accounting](/spend/pricing-and-accounting/).
+- **People** are matched by email. Author emails in notes and pull request commits are matched to Oceans users. A commit without an email counts for the key's owner. A contributor whose email matches no Oceans user is counted, but not named.
+- **Sessions** join to gateway requests when the session id from a note or a session hook matches one the gateway recorded for the same owner. The match doesn't depend on which agent the gateway thinks sent the requests. This matters for OMP, because OMP looks like Claude Code when it uses the Messages API. A session with no commit yet still counts its requests as uncommitted work, even when it started before the window, up to 30 days before. The gateway reads these session ids:
+
+  | Agent | Session id the gateway reads |
+  | --- | --- |
+  | Claude Code | `x-claude-code-session-id` |
+  | Codex | `session-id` and `x-codex-turn-metadata` |
+  | OpenCode | `x-session-id` and `x-opencode-session` |
+  | Pi | `session_id`, which Pi sends only with the Responses API |
+  | OMP | `session_id` from the header above. With the Messages API, OMP sends `x-claude-code-session-id`. |
+  | Any client | `x-oceans-session-id` |
+
+  Lines a Claude Code subagent wrote count as AI lines without a matching session.
+
+## Privacy
+
+- **On the gateway:** the gateway reads each note in memory and stores totals per commit and per session, with each session's agent tool and model. It stores no file paths, line ranges, raw session ids or emails. A session id is stored as a hash tied to the key's owner. An email is stored as the matching Oceans user, or as a hash.
+- **On your machine:** the queue holds the raw notes until they're delivered. They're the same notes that already sit in the repository's `refs/notes/ai`. The queue is in `~/.local/state/oceans/attribution`, or `$XDG_STATE_HOME/oceans/attribution` when that's set, and only your user can read it. On Linux and macOS, the CLI refuses to queue into a folder that other users can read.
+- **In output:** the CLI never prints or logs note content, session ids or emails.
+
+## Limits
+
+- **Each machine reports its own notes.** Notes fetched from a remote don't run the hook, so teammates need the hooks on their own machines. Commits from before the install aren't sent.
+- **Some commits have no notes.** git-ai writes no note for `git merge --no-ff` or `git revert`.
+- **Git AI's hosted notes mode isn't supported.** In that mode the notes go to Git AI's servers, and the hook doesn't run.
+- **Rebased commits count their lines again.** After a rebase, both the old and new commits keep their notes, so the report counts their AI lines twice. Requests and merged pull request totals aren't affected.
+
+## Remove the hooks
+
+- **git-ai:** run `git-ai config git_ai_hooks` to list its hooks. `git-ai config unset git_ai_hooks.post_notes_updated` removes all `post_notes_updated` hooks, so add back any others with `git-ai config --add`. Then run `git-ai bg restart`.
+- **Claude Code:** delete the `oceans hook claude` entries under `hooks.SessionStart` and `hooks.SessionEnd` in `settings.json`.
+- **OMP:** delete `~/.omp/agent/extensions/oceans-git-ai.ts`, and remove the `session_id: OCEANS_SESSION_ID` header from your Oceans provider in `models.yml`. Without the extension, OMP sends that header's text as-is, so all of the machine's Chat Completions and Responses traffic would count as one session.
+- **Queue:** run `oceans hook queue` to check that nothing is waiting, then delete `~/.local/state/oceans/attribution`.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| A commit doesn't appear on the **Attribution** page. | Run `oceans hook send --foreground` to deliver the queue and see any error. If nothing was queued, check that git-ai wrote a note with `git-ai stats <commit>`, and run `oceans hook install --git-ai` to check the hook. |
+| `the API key can't read its ownership (HTTP 403)` or `the API key can't send attribution (HTTP 403)` | The key needs **Full access** or the **Attribution** scope. |
+| `this gateway has no attribution API (HTTP 404)` | The gateway is older than this feature. Ask your admin to upgrade it. |
+| `git-ai is not on PATH; install Git AI first` | Install Git AI, or add it to your `PATH`, then run the install again. |
+| `... is accessible by other users, so attribution data won't be queued there; run chmod 700 ...` | Run the `chmod` command it shows. |
+| Commits appear, but with no requests or cost. | The hooks' key and your agents' keys must have the same owner. Check the owner that `oceans hook install` prints. |
+
+For key and config file errors, see [Oceans CLI troubleshooting](/harnesses/oceans-cli/#troubleshooting).

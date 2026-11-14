@@ -126,6 +126,8 @@ pub struct RouteServiceTierPricingConfig {
     pub cache_read_usd_per_million_tokens: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_yaml_string")]
     pub cache_write_usd_per_million_tokens: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_yaml_string")]
+    pub cache_write_1h_usd_per_million_tokens: Option<String>,
 }
 
 impl RouteServiceTierPricingConfig {
@@ -149,6 +151,11 @@ impl RouteServiceTierPricingConfig {
                 self.cache_write_usd_per_million_tokens.as_deref(),
                 label,
                 "cache_write_usd_per_million_tokens",
+            )?,
+            cache_write_1h_cost_per_million_tokens: parse_optional_non_negative_rate(
+                self.cache_write_1h_usd_per_million_tokens.as_deref(),
+                label,
+                "cache_write_1h_usd_per_million_tokens",
             )?,
         })
     }

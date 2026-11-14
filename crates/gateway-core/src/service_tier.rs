@@ -75,12 +75,6 @@ impl ServiceTier {
             _ => None,
         }
     }
-
-    /// Whether the tier bills above the standard rate.
-    #[must_use]
-    pub const fn is_premium(self) -> bool {
-        matches!(self, Self::Priority | Self::Ultrafast)
-    }
 }
 
 impl fmt::Display for ServiceTier {

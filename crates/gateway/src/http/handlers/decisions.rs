@@ -436,6 +436,7 @@ async fn dispatch_decisions(
                         labels: labels.clone(),
                         operation: "decisions",
                         service_tiers: gateway_core::ServiceTierOutcome::default(),
+                        usage_estimate: gateway_service::UsageEstimateInput::default(),
                     },
                     provider_usage,
                 )
@@ -475,6 +476,7 @@ async fn dispatch_decisions(
 
     // Price the upstream's own usage report: it carries the cached and
     // reasoning token details, whatever shape the caller receives.
+    let text_bytes = gateway_service::response_text_bytes(&provider_response.body);
     finalize_successful_usage_accounting(
         state,
         UsageAccountingContext {
@@ -486,6 +488,7 @@ async fn dispatch_decisions(
             labels: labels.clone(),
             operation: "decisions",
             service_tiers: gateway_core::ServiceTierOutcome::default(),
+            usage_estimate: request_log_context.usage_estimate(Some(text_bytes)),
         },
         usage_value_from_response(&provider_response.body),
     )

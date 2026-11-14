@@ -46,3 +46,5 @@ curent = "curent"
 hard_limti = "hard_limti"
 max_reasoning_efort = "max_reasoning_efort"
 stratgey = "stratgey"
+# Git AI authorship note field, spelled this way in the v3 notes format.
+overriden_lines = "overriden_lines"

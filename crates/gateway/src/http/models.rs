@@ -668,6 +668,7 @@ mod tests {
                 output: Some(Money4::from_scaled(225_000)),
                 cache_read: None,
                 cache_write: None,
+                cache_write_1h: None,
             },
             ContextPricingTier {
                 above_input_tokens: 1_000_000,
@@ -675,6 +676,7 @@ mod tests {
                 output: None,
                 cache_read: Some(Money4::from_scaled(12_000)),
                 cache_write: None,
+                cache_write_1h: None,
             },
         ];
 

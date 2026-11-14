@@ -457,7 +457,7 @@ pub struct AdminModelView {
     /// threshold. Empty when the price comes from a route pricing override.
     pub pricing_tiers: Vec<AdminPricingTierView>,
     /// Rates for non-default service tiers on the same primary route, sorted by tier. A
-    /// request billed at a tier with no rate for a token bucket it used is unpriced.
+    /// request these rates can't price is estimated at the default tier's rates.
     pub pricing_service_tiers: Vec<AdminServiceTierPricingView>,
     pub pricing_source: Option<EffectiveMetadataSourceView>,
     pub pricing_varies_by_route: bool,
@@ -2164,6 +2164,9 @@ pub struct AgentSessionDetailView {
         crate::http::identity::oauth_start,
         crate::http::identity::oauth_callback_github,
         crate::http::spend::get_spend_report,
+        crate::http::attribution::ingest::get_my_attribution_ownership,
+        crate::http::attribution::ingest::post_attribution_entries,
+        crate::http::attribution::report::get_attribution_report,
         crate::http::review_agent::list_review_agent_repositories,
         crate::http::review_agent::create_review_agent_repository,
         crate::http::review_agent::get_review_agent_repository,
@@ -2406,6 +2409,9 @@ mod tests {
         assert!(paths.contains_key("/api/v1/admin/models"));
         assert!(paths.contains_key("/api/v1/admin/models/pricing-catalog/refresh"));
         assert!(paths.contains_key("/api/v1/admin/spend/report"));
+        assert!(paths.contains_key("/api/v1/admin/attribution/report"));
+        assert!(paths.contains_key("/api/v1/attribution/entries"));
+        assert!(paths.contains_key("/api/v1/me/ownership"));
         assert!(paths.contains_key("/api/v1/admin/observability/leaderboard"));
         assert!(paths.contains_key("/api/v1/admin/observability/request-logs/{request_log_id}"));
         assert!(paths.contains_key("/api/v1/admin/observability/agent-sessions/{session_id}"));
@@ -2473,6 +2479,11 @@ mod tests {
                 .contains_key("Envelope_AdminIdentityPayload")
         );
         assert!(components.schemas.contains_key("Envelope_SpendReportView"));
+        assert!(
+            components
+                .schemas
+                .contains_key("Envelope_AttributionReportView")
+        );
         assert!(components.schemas.contains_key("Envelope_LeaderboardView"));
         assert!(
             components

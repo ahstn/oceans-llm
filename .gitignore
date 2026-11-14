@@ -4,6 +4,7 @@ mise.*.local.toml
 .miserc.local.toml
 fnox.local.toml
 .fnox.local.toml
+AGENTS.local.md
 
 target/
 .local/

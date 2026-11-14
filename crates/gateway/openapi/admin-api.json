@@ -232,6 +232,77 @@
         ]
       }
     },
+    "/api/v1/admin/attribution/report": {
+      "get": {
+        "tags": [
+          "crate::http::attribution"
+        ],
+        "operationId": "get_attribution_report",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "description": "7, 30 or 90 whole UTC days ending today. Defaults to 7.",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "description": "Platform admins only: the rows one user owns or authored. Other users always get\ntheir own.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "repository",
+            "in": "query",
+            "description": "One normalised repository, such as `github.com/acme/widgets`.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_AttributionReportView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`days` is not 7, 30 or 90, or `user_id` is not a UUID"
+          },
+          "401": {
+            "description": "No signed-in session"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/audit-logs": {
       "get": {
         "tags": [
@@ -5085,6 +5156,56 @@
         ]
       }
     },
+    "/api/v1/attribution/entries": {
+      "post": {
+        "tags": [
+          "crate::http::attribution"
+        ],
+        "operationId": "post_attribution_entries",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttributionBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttributionBatchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a batch, or more than 100 entries"
+          },
+          "401": {
+            "description": "Missing or invalid gateway API key"
+          },
+          "403": {
+            "description": "The key has neither `attribution:write` nor full access"
+          },
+          "409": {
+            "description": "`expected_ownership_scope` is not the key's owner; nothing was applied"
+          },
+          "413": {
+            "description": "Request body exceeds 2 MiB"
+          }
+        },
+        "security": [
+          {
+            "gateway_api_key": []
+          }
+        ]
+      }
+    },
     "/api/v1/auth/invitations/{token}": {
       "get": {
         "tags": [
@@ -6331,6 +6452,37 @@
         "security": [
           {
             "session_cookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/me/ownership": {
+      "get": {
+        "tags": [
+          "crate::http::attribution"
+        ],
+        "operationId": "get_my_attribution_ownership",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttributionOwnershipView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid gateway API key"
+          },
+          "403": {
+            "description": "The key has neither `attribution:write` nor full access"
+          }
+        },
+        "security": [
+          {
+            "gateway_api_key": []
           }
         ]
       }
@@ -8755,7 +8907,7 @@
             "items": {
               "$ref": "#/components/schemas/AdminServiceTierPricingView"
             },
-            "description": "Rates for non-default service tiers on the same primary route, sorted by tier. A\nrequest billed at a tier with no rate for a token bucket it used is unpriced."
+            "description": "Rates for non-default service tiers on the same primary route, sorted by tier. A\nrequest these rates can't price is estimated at the default tier's rates."
           },
           "pricing_source": {
             "oneOf": [
@@ -11407,6 +11559,902 @@
           "explicit"
         ]
       },
+      "AttributionBatchRequest": {
+        "type": "object",
+        "required": [
+          "expected_ownership_scope",
+          "entries"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttributionEntryRequest"
+            },
+            "description": "At most 100 entries. An entry without this shape is rejected on its own as\n`invalid_entry`."
+          },
+          "expected_ownership_scope": {
+            "type": "string",
+            "description": "The `ownership_scope` from `GET /api/v1/me/ownership`."
+          }
+        }
+      },
+      "AttributionBatchResponse": {
+        "type": "object",
+        "required": [
+          "ownership_scope",
+          "results"
+        ],
+        "properties": {
+          "ownership_scope": {
+            "type": "string"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttributionEntryResultView"
+            },
+            "description": "One result per entry, in request order."
+          }
+        }
+      },
+      "AttributionChangeView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AttributionRequestTallyView"
+          },
+          {
+            "type": "object",
+            "required": [
+              "attribution_commit_id",
+              "repository",
+              "commit_sha",
+              "is_default_branch",
+              "committed_at",
+              "owner",
+              "ai_lines",
+              "human_lines",
+              "session_count",
+              "joined_session_count",
+              "unjoined_session_count",
+              "models",
+              "note_models",
+              "agent_tools"
+            ],
+            "properties": {
+              "agent_tools": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "git-ai agent tools the note names, such as `claude` or `pi`."
+              },
+              "ai_lines": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "attribution_commit_id": {
+                "type": "string"
+              },
+              "author": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AttributionUserRefView"
+                  }
+                ]
+              },
+              "branch": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "commit_sha": {
+                "type": "string"
+              },
+              "committed_at": {
+                "type": "string",
+                "description": "When the first note for this commit was observed."
+              },
+              "human_lines": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "is_default_branch": {
+                "type": "boolean"
+              },
+              "joined_session_count": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "models": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Gateway model keys of the allocated requests."
+              },
+              "note_models": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Models the note names."
+              },
+              "owner": {
+                "$ref": "#/components/schemas/AttributionOwnerRefView"
+              },
+              "pull_request_number": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "description": "The most recently merged window PR listing this commit."
+              },
+              "repository": {
+                "type": "string"
+              },
+              "session_count": {
+                "type": "integer",
+                "format": "int64",
+                "description": "AI sessions named by the note."
+              },
+              "unjoined_session_count": {
+                "type": "integer",
+                "format": "int64"
+              }
+            }
+          }
+        ]
+      },
+      "AttributionCoverageView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AttributionRequestTallyView",
+            "description": "Every request the report counts, allocated or uncommitted."
+          },
+          {
+            "type": "object",
+            "required": [
+              "commits_truncated",
+              "pull_requests_truncated",
+              "request_facts_truncated",
+              "agent_sessions_truncated"
+            ],
+            "properties": {
+              "agent_sessions_truncated": {
+                "type": "boolean",
+                "description": "The 1000-row cap cut hook-reported agent sessions, so session counts and uncommitted\nrequests are low."
+              },
+              "commits_truncated": {
+                "type": "boolean",
+                "description": "The 1000-row cap cut commits inside the window, or, when the window has merged pull\nrequests, older commits their totals may read."
+              },
+              "pull_requests_truncated": {
+                "type": "boolean"
+              },
+              "request_facts_truncated": {
+                "type": "boolean",
+                "description": "Some requests were left out because a lookup or the report hit its cap."
+              }
+            }
+          }
+        ]
+      },
+      "AttributionEntryRequest": {
+        "type": "object",
+        "required": [
+          "entry_id",
+          "installation_id",
+          "sequence",
+          "observed_at",
+          "payload"
+        ],
+        "properties": {
+          "entry_id": {
+            "type": "string",
+            "description": "1-64 characters of `[A-Za-z0-9._-]`, unique per installation."
+          },
+          "installation_id": {
+            "type": "string"
+          },
+          "late_sequenced": {
+            "type": "boolean"
+          },
+          "observed_at": {
+            "type": "string",
+            "description": "RFC 3339."
+          },
+          "payload": {
+            "$ref": "#/components/schemas/AttributionPayloadRequest"
+          },
+          "sequence": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "AttributionEntryResultView": {
+        "type": "object",
+        "required": [
+          "entry_id",
+          "status"
+        ],
+        "properties": {
+          "entry_id": {
+            "type": "string",
+            "description": "Empty when the entry had no valid id."
+          },
+          "reason": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AttributionRejectReasonView",
+                "description": "Set only when `status` is `rejected`."
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/AttributionEntryStatusView"
+          }
+        }
+      },
+      "AttributionEntryStatusView": {
+        "type": "string",
+        "description": "`rejected` entries are quarantined by the client; the others are done.",
+        "enum": [
+          "applied",
+          "duplicate",
+          "stale",
+          "rejected"
+        ]
+      },
+      "AttributionModelView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AttributionRequestTallyView",
+            "description": "Requests allocated to commits."
+          },
+          {
+            "type": "object",
+            "required": [
+              "model_key",
+              "commit_count",
+              "uncommitted_request_count",
+              "uncommitted_cost_usd_10000"
+            ],
+            "properties": {
+              "commit_count": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Window commits with at least one request on this model."
+              },
+              "model_key": {
+                "type": "string"
+              },
+              "uncommitted_cost_usd_10000": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "uncommitted_request_count": {
+                "type": "integer",
+                "format": "int64"
+              }
+            }
+          }
+        ]
+      },
+      "AttributionOwnerKind": {
+        "type": "string",
+        "description": "Who owns attribution rows: the user or service account of the key that sent them.",
+        "enum": [
+          "user",
+          "service_account"
+        ]
+      },
+      "AttributionOwnerRefView": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AttributionOwnerKind"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "AttributionOwnershipView": {
+        "type": "object",
+        "required": [
+          "ownership_scope",
+          "owner_kind",
+          "owner_id"
+        ],
+        "properties": {
+          "owner_id": {
+            "type": "string"
+          },
+          "owner_kind": {
+            "$ref": "#/components/schemas/AttributionOwnerKind"
+          },
+          "ownership_scope": {
+            "type": "string",
+            "description": "Send back as `expected_ownership_scope` with each batch."
+          }
+        }
+      },
+      "AttributionPayloadRequest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The git-ai note of one commit.",
+            "required": [
+              "repository",
+              "commit_sha",
+              "note_content",
+              "kind"
+            ],
+            "properties": {
+              "branch": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "commit_sha": {
+                "type": "string",
+                "description": "40 or 64 lowercase hex characters."
+              },
+              "is_default_branch": {
+                "type": "boolean"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "note"
+                ]
+              },
+              "note_content": {
+                "type": "string",
+                "description": "The raw git-ai note, at most 1 MiB."
+              },
+              "repository": {
+                "type": "string",
+                "description": "Normalised `host[:port]/owner/repo`, without scheme, userinfo or `.git`."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A harness session start or end.",
+            "required": [
+              "harness",
+              "session_id",
+              "event",
+              "kind"
+            ],
+            "properties": {
+              "branch": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "event": {
+                "$ref": "#/components/schemas/AttributionSessionEventRequest"
+              },
+              "harness": {
+                "type": "string",
+                "description": "The hook's harness, such as `oh_my_pi`: 1-64 characters of `[a-z0-9_-]`."
+              },
+              "harness_version": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "head_sha": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "session"
+                ]
+              },
+              "repository": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "session_id": {
+                "type": "string",
+                "description": "The raw harness session id. Only a hash bound to the key's owner is stored."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Merged pull requests of one repository and their commits.",
+            "required": [
+              "repository",
+              "pull_requests",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "pull_requests"
+                ]
+              },
+              "pull_requests": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AttributionPullRequestRequest"
+                }
+              },
+              "repository": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "AttributionPullRequestCommitRequest": {
+        "type": "object",
+        "required": [
+          "sha"
+        ],
+        "properties": {
+          "author_email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Matched to an Oceans user or stored as a hash bound to the key's owner."
+          },
+          "authored_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "RFC 3339."
+          },
+          "sha": {
+            "type": "string"
+          },
+          "subject": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AttributionPullRequestRequest": {
+        "type": "object",
+        "required": [
+          "number",
+          "title",
+          "merged_at"
+        ],
+        "properties": {
+          "base_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "commits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttributionPullRequestCommitRequest"
+            }
+          },
+          "head_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "merge_commit_sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "merged_at": {
+            "type": "string",
+            "description": "RFC 3339."
+          },
+          "number": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AttributionPullRequestView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AttributionRequestTallyView"
+          },
+          {
+            "type": "object",
+            "required": [
+              "repository",
+              "number",
+              "title",
+              "merged_at",
+              "commit_count",
+              "attributed_commit_count",
+              "ai_lines",
+              "human_lines",
+              "models"
+            ],
+            "properties": {
+              "ai_lines": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "attributed_commit_count": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Listed commits with a stored note; the merge commit when none of them has one."
+              },
+              "author": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AttributionUserRefView"
+                  }
+                ]
+              },
+              "base_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "commit_count": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "head_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "human_lines": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "merged_at": {
+                "type": "string"
+              },
+              "models": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "number": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "repository": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "AttributionRejectReasonView": {
+        "type": "string",
+        "enum": [
+          "oversized_note",
+          "invalid_note",
+          "unsupported_schema",
+          "invalid_repository",
+          "invalid_entry"
+        ]
+      },
+      "AttributionReportView": {
+        "type": "object",
+        "required": [
+          "window_days",
+          "window_start",
+          "window_end",
+          "totals",
+          "coverage",
+          "users",
+          "models",
+          "pull_requests",
+          "changes"
+        ],
+        "properties": {
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttributionChangeView"
+            }
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/AttributionCoverageView"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttributionModelView"
+            }
+          },
+          "pull_requests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttributionPullRequestView"
+            }
+          },
+          "repository": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "totals": {
+            "$ref": "#/components/schemas/AttributionTotalsView"
+          },
+          "user_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The user the rows are limited to, if any."
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttributionUserActivityView"
+            }
+          },
+          "window_days": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "window_end": {
+            "type": "string"
+          },
+          "window_start": {
+            "type": "string"
+          }
+        }
+      },
+      "AttributionRequestTallyView": {
+        "type": "object",
+        "description": "Request counts and priced cost, split by pricing outcome as in the spend report.",
+        "required": [
+          "request_count",
+          "priced_request_count",
+          "unpriced_request_count",
+          "usage_missing_request_count",
+          "priced_cost_usd_10000"
+        ],
+        "properties": {
+          "priced_cost_usd_10000": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "priced_request_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "request_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "unpriced_request_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "usage_missing_request_count": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "AttributionSessionEventRequest": {
+        "type": "string",
+        "enum": [
+          "start",
+          "end"
+        ]
+      },
+      "AttributionTotalsView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AttributionRequestTallyView",
+            "description": "Requests allocated to the window's commits."
+          },
+          {
+            "type": "object",
+            "required": [
+              "commit_count",
+              "pull_request_count",
+              "ai_lines",
+              "human_lines",
+              "ai_session_count",
+              "joined_session_count",
+              "agent_session_count",
+              "uncommitted_request_count",
+              "uncommitted_cost_usd_10000",
+              "unmatched_author_commit_count"
+            ],
+            "properties": {
+              "agent_session_count": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Harness sessions reported by hook events in the window."
+              },
+              "ai_lines": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "ai_session_count": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Distinct AI sessions named by the window's commit notes."
+              },
+              "commit_count": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "human_lines": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "joined_session_count": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Those sessions that matched gateway requests."
+              },
+              "pull_request_count": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "uncommitted_cost_usd_10000": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "uncommitted_request_count": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Requests after their session's last commit."
+              },
+              "unmatched_author_commit_count": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Window commits whose author is not an Oceans user."
+              }
+            }
+          }
+        ]
+      },
+      "AttributionUserActivityView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AttributionRequestTallyView"
+          },
+          {
+            "type": "object",
+            "required": [
+              "user",
+              "commit_count",
+              "merged_pull_request_count",
+              "ai_lines",
+              "human_lines",
+              "ai_session_count",
+              "agent_session_count",
+              "models"
+            ],
+            "properties": {
+              "agent_session_count": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "ai_lines": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "ai_session_count": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "commit_count": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "human_lines": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "last_activity_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "merged_pull_request_count": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "models": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Gateway model keys, most requests first."
+              },
+              "user": {
+                "$ref": "#/components/schemas/AttributionUserRefView"
+              }
+            }
+          }
+        ]
+      },
+      "AttributionUserRefView": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "AuditActorView": {
         "type": "object",
         "required": [
@@ -13816,6 +14864,88 @@
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "Envelope_AttributionReportView": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "window_days",
+              "window_start",
+              "window_end",
+              "totals",
+              "coverage",
+              "users",
+              "models",
+              "pull_requests",
+              "changes"
+            ],
+            "properties": {
+              "changes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AttributionChangeView"
+                }
+              },
+              "coverage": {
+                "$ref": "#/components/schemas/AttributionCoverageView"
+              },
+              "models": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AttributionModelView"
+                }
+              },
+              "pull_requests": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AttributionPullRequestView"
+                }
+              },
+              "repository": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "totals": {
+                "$ref": "#/components/schemas/AttributionTotalsView"
+              },
+              "user_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The user the rows are limited to, if any."
+              },
+              "users": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AttributionUserActivityView"
+                }
+              },
+              "window_days": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "window_end": {
+                "type": "string"
+              },
+              "window_start": {
+                "type": "string"
               }
             }
           },

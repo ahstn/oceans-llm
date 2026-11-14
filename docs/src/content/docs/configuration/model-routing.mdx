@@ -21,7 +21,7 @@ The gateway exposes these authenticated endpoints for callers:
 | `POST /v1/chat/completions` | OpenAI Chat Completions | `chat_completions` capability |
 | `POST /v1/responses` | OpenAI Responses | `responses` capability |
 | `POST /v1/embeddings` | OpenAI Embeddings | `embeddings` capability |
-| `POST /v1/images` | OpenAI Images generation (OpenRouter path) | `images` capability |
+| `POST /v1/images` | OpenAI Images generation (OpenRouter client path) | `images` capability |
 | `POST /v1/images/generations` | OpenAI Images generation (OpenAI SDK path) | `images` capability |
 | `POST /v1/decisions` | Decisions, System One or OpenAI format | `decisions` capability |
 | `POST /v1/systemone` | Decisions, System One format only | `decisions` capability |
@@ -447,7 +447,7 @@ See [TypeSafe](/providers/typesafe/) for the System One shape and [Provider API 
 
 ### Images
 
-`POST /v1/images` and `POST /v1/images/generations` generate images through the OpenAI Images API and need the `images` capability. A request needs `model` and `prompt`. Other fields, such as `n`, `size` or `quality`, pass through unchanged, except tier fields (see [Service tiers](#service-tiers)). The gateway sets `model` to the upstream model (route `extra_body` can override it) and sends the request to `/images` under `base_url`.
+`POST /v1/images` and `POST /v1/images/generations` generate images through the OpenAI Images API and need the `images` capability. A request needs `model` and `prompt`. Other fields, such as `n`, `size` or `quality`, pass through unchanged, except tier fields (see [Service tiers](#service-tiers)). The gateway sets `model` to the upstream model (route `extra_body` can override it) and sends the request to `/images/generations` under `base_url`. OpenRouter routes, by `base_url` host or a `compatibility.openrouter` profile, use `/images` instead.
 
 The response is the provider's body (`created`, `data[]` and `usage`). If the provider adds a `model` field, the gateway replaces it with the gateway model name.
 

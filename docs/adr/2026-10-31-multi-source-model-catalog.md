@@ -77,6 +77,8 @@ Catalog prices can have typed context tiers. Each tier has a threshold, `above_i
 - models.dev tiers come from `tiers` entries with `type: context`. The `context_over_200k` condition is never used to make a tier. It repeats the first tier, often at a different threshold. Two different tiers at one threshold leave the model with base rates only.
 - LiteLLM tiers come from `*_above_<N>k_tokens` keys that have no other suffix. Keys such as `_priority`, `_flex`, `_batches`, and `_above_1hr` are other billing dimensions and are ignored.
 
+_Changed 2026-11-12 for [issue #649](https://github.com/ahstn/oceans-llm/issues/649) (ANT-1):_ `cache_creation_input_token_cost_above_1hr` keys now set the 1-hour cache-write rate, including with a context tier or service tier suffix. Other `_above_<N>hr` keys, such as `_above_12hr`, are still ignored. Migration V78 adds `model_pricing.cache_write_1h_cost_per_million_tokens_10000` and the matching `usage_cost_events` columns. The LiteLLM cache key moves to `litellm_v4`, so an upgraded gateway projects LiteLLM again instead of keeping a cached row without 1-hour rates.
+
 The billing rule:
 
 - The tier applies when the normalized prompt tokens, cache tokens included, are **strictly greater** than its threshold. A request of exactly the threshold uses the lower schedule.

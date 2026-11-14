@@ -18,6 +18,8 @@ const sidebarIcons: Record<string, string> = {
   "/harnesses": "ph:list-dashes",
   "/harnesses/opencode": "ph:code",
   "/harnesses/omp": "ph:pi",
+  "/harnesses/oceans-cli": "ph:command",
+  "/harnesses/git-ai-attribution": "ph:git-commit",
   "/providers/openrouter": "ph:shuffle",
   "/providers/typesafe": "ph:list-checks",
   "/providers/opencode-zen": "ph:code-block",

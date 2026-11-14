@@ -1,17 +1,26 @@
 use super::*;
 use serde_json::json;
 
+use crate::request_logging::classify_agent_harness;
+
+fn header_map(headers: &[(&str, &str)]) -> BTreeMap<String, String> {
+    headers
+        .iter()
+        .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+        .collect()
+}
+
 fn routing_session(
     body: Value,
     headers: &[(&str, &str)],
     harness: &str,
 ) -> Result<Option<RoutingSession>, GatewayError> {
     let extra = serde_json::from_value(body).expect("request extensions");
-    let headers = headers
-        .iter()
-        .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
-        .collect();
-    extract_routing_session(&extra, &headers, harness)
+    extract_routing_session(&extra, &header_map(headers), harness)
+}
+
+fn passive_session(body: Value, headers: &[(&str, &str)], harness: &str) -> ClientSessionMetadata {
+    extract_client_session(&body, &header_map(headers), harness)
 }
 
 #[test]
@@ -50,20 +59,21 @@ fn canonical_id_must_agree_with_harness_id() {
 #[test]
 fn routing_preserves_recognized_harness_namespaces() {
     let cases = [
-        ("claude_code", "x-claude-code-session-id"),
-        ("codex", "session-id"),
-        ("opencode", "x-session-id"),
-        ("opencode", "x-session-affinity"),
-        ("opencode", "x-opencode-session"),
-        ("pi", "session_id"),
-        ("oh_my_pi", "session_id"),
-        ("oh_my_pi", "x-claude-code-session-id"),
+        ("claude_code", "x-claude-code-session-id", "claude_code"),
+        ("claude_cli", "x-claude-code-session-id", "claude_code"),
+        ("codex", "session-id", "codex"),
+        ("opencode", "x-session-id", "opencode"),
+        ("opencode", "x-session-affinity", "opencode"),
+        ("opencode", "x-opencode-session", "opencode"),
+        ("pi", "session_id", "pi"),
+        ("oh_my_pi", "session_id", "oh_my_pi"),
+        ("oh_my_pi", "x-claude-code-session-id", "oh_my_pi"),
     ];
-    for (harness, header) in cases {
+    for (harness, header, namespace) in cases {
         let session = routing_session(json!({}), &[(header, "session-a")], harness)
             .expect("verified harness header")
             .expect("session");
-        assert_eq!(session.namespace, harness);
+        assert_eq!(session.namespace, namespace, "{harness}");
         assert_eq!(session.value, "session-a");
     }
 }
@@ -233,20 +243,169 @@ fn routing_keeps_harness_alias_conflict_rules() {
 #[test]
 fn passive_metadata_keeps_existing_redaction_and_lineage_behavior() {
     let body = json!({"client_metadata": {"session_id": "session-a", "thread_id": "thread-a"}});
-    let headers = BTreeMap::from([
-        ("session-id".to_string(), REDACTED_VALUE.to_string()),
-        ("x-codex-turn-metadata".to_string(), "malformed".to_string()),
-        (
-            "x-oceans-session-id".to_string(),
-            "different-session".to_string(),
-        ),
-    ]);
-    let passive = extract_client_session(&body, &headers, "codex");
+    let headers = [
+        ("session-id", REDACTED_VALUE),
+        ("x-codex-turn-metadata", "malformed"),
+    ];
+    let passive = passive_session(body, &headers, "codex");
     assert_eq!(passive.session.value.as_deref(), Some("session-a"));
     assert_eq!(
         passive.session.source.as_deref(),
         Some("body:client_metadata.session_id")
     );
+    assert_eq!(passive.session_namespace, Some("codex"));
     assert_eq!(passive.execution_id.as_deref(), Some("thread-a"));
+    assert_eq!(passive.lineage_namespace, Some("codex"));
     assert_eq!(passive.adapter_version, "codex-v1");
+}
+
+#[test]
+fn passive_reads_the_canonical_header_for_every_harness() {
+    for harness in ["unknown", "oh_my_pi", "pi", "claude_cli"] {
+        let passive = passive_session(
+            json!({}),
+            &[("X-Oceans-Session-Id", " session-a\t")],
+            harness,
+        );
+        assert_eq!(
+            passive.session.value.as_deref(),
+            Some("session-a"),
+            "{harness}"
+        );
+        assert_eq!(
+            passive.session.source.as_deref(),
+            Some("header:x-oceans-session-id"),
+            "{harness}"
+        );
+        assert_eq!(passive.session.limitation, None, "{harness}");
+        assert_eq!(
+            passive.session_namespace,
+            Some(OCEANS_SESSION_NAMESPACE),
+            "{harness}"
+        );
+    }
+    let unknown = passive_session(
+        json!({}),
+        &[("x-oceans-session-id", "session-a")],
+        "unknown",
+    );
+    assert_eq!(unknown.lineage_namespace, None);
+    assert_eq!(unknown.adapter_version, "unsupported-v1");
+}
+
+#[test]
+fn passive_canonical_id_must_agree_with_harness_id() {
+    let agreeing = passive_session(
+        json!({}),
+        &[
+            ("x-oceans-session-id", "session-a"),
+            ("x-claude-code-session-id", "session-a"),
+            ("x-claude-code-agent-id", "agent-a"),
+        ],
+        "claude_cli",
+    );
+    assert_eq!(agreeing.session.value.as_deref(), Some("session-a"));
+    assert_eq!(
+        agreeing.session.source.as_deref(),
+        Some("header:x-oceans-session-id+header:x-claude-code-session-id")
+    );
+    assert_eq!(agreeing.session_namespace, Some(OCEANS_SESSION_NAMESPACE));
+    assert_eq!(agreeing.execution_id.as_deref(), Some("agent-a"));
+    assert_eq!(agreeing.lineage_namespace, Some("claude_code"));
+
+    let cases = [
+        (
+            "harness ID differs",
+            "claude_cli",
+            [
+                ("x-oceans-session-id", "session-a"),
+                ("x-claude-code-session-id", "session-b"),
+            ],
+            SessionCorrelationLimitation::ConflictingAliases,
+        ),
+        (
+            "canonical case variants differ",
+            "unknown",
+            [
+                ("X-Oceans-Session-Id", "session-a"),
+                ("x-oceans-session-id", "session-b"),
+            ],
+            SessionCorrelationLimitation::ConflictingAliases,
+        ),
+        (
+            "malformed canonical ID",
+            "codex",
+            [
+                ("x-oceans-session-id", "bad/session"),
+                ("session-id", "session-a"),
+            ],
+            SessionCorrelationLimitation::MalformedCandidate,
+        ),
+        (
+            "malformed harness ID",
+            "claude_cli",
+            [
+                ("x-oceans-session-id", "session-a"),
+                ("x-claude-code-session-id", "bad/session"),
+            ],
+            SessionCorrelationLimitation::MalformedCandidate,
+        ),
+    ];
+    for (name, harness, headers, limitation) in cases {
+        let passive = passive_session(json!({}), &headers, harness);
+        assert_eq!(passive.session.value, None, "{name}");
+        assert_eq!(passive.session.source, None, "{name}");
+        assert_eq!(passive.session.limitation, Some(limitation), "{name}");
+        assert_eq!(passive.session_namespace, None, "{name}");
+    }
+}
+
+#[test]
+fn claude_cli_uses_the_claude_code_adapter() {
+    let passive = passive_session(
+        json!({}),
+        &[
+            ("x-claude-code-session-id", "session-a"),
+            ("x-claude-code-agent-id", "agent-a"),
+            ("x-claude-code-parent-agent-id", "agent-parent"),
+        ],
+        "claude_cli",
+    );
+    assert_eq!(passive.session.value.as_deref(), Some("session-a"));
+    assert_eq!(
+        passive.session.source.as_deref(),
+        Some("header:x-claude-code-session-id")
+    );
+    assert_eq!(passive.session_namespace, Some("claude_code"));
+    assert_eq!(passive.execution_id.as_deref(), Some("agent-a"));
+    assert_eq!(passive.parent_execution_id.as_deref(), Some("agent-parent"));
+    assert_eq!(passive.lineage_namespace, Some("claude_code"));
+    assert_eq!(passive.adapter_version, "claude-code-v1");
+}
+
+#[test]
+fn codex_exec_requests_are_read_as_codex_sessions() {
+    let harness = classify_agent_harness(Some(
+        "codex_exec/0.166.0 (Ubuntu 24.4.0; x86_64) xterm-256color (codex_exec; 0.166.0)",
+    ));
+    let session = "019a5c1e-7d2b-7c40-9a51-3f1e2d4c5b6a";
+    let thread = "019a5c1e-8e3c-7d51-8b62-4a2f3e5d6c7b";
+    let metadata = format!("{{\"session_id\":\"{session}\",\"thread_id\":\"{thread}\"}}");
+    let passive = passive_session(
+        json!({}),
+        &[
+            ("session-id", session),
+            ("x-client-request-id", thread),
+            ("x-codex-turn-metadata", &metadata),
+        ],
+        harness.key,
+    );
+    assert_eq!(passive.session.value.as_deref(), Some(session));
+    assert_eq!(
+        passive.session.source.as_deref(),
+        Some("header:session-id+header:x-codex-turn-metadata.session_id")
+    );
+    assert_eq!(passive.session_namespace, Some("codex"));
+    assert_eq!(passive.execution_id.as_deref(), Some(thread));
+    assert_eq!(passive.lineage_namespace, Some("codex"));
 }

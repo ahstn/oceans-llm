@@ -13,7 +13,6 @@ use crate::routing::ModelRoutingPolicy;
 use crate::service_tier::ServiceTier;
 
 pub const SYSTEM_BOOTSTRAP_ADMIN_USER_ID: &str = "00000000-0000-0000-0000-000000000002";
-pub const SYSTEM_BOOTSTRAP_ADMIN_EMAIL: &str = "admin@local";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 #[serde(transparent)]
@@ -114,6 +113,73 @@ impl Money4 {
         }
 
         Ok(Self::from_scaled(scaled))
+    }
+
+    /// Parses a provider-reported cost such as `0.000423` or `4.23e-4`,
+    /// rounding half up to four decimal places.
+    ///
+    /// Unlike [`Self::from_decimal_str`], extra fractional digits are rounded
+    /// instead of rejected. Negative costs are rejected.
+    pub fn from_reported_cost_str(value: &str) -> Result<Self, String> {
+        let invalid = || format!("cost `{value}` is not a decimal amount");
+        let text = value.trim();
+        if text.starts_with('-') {
+            return Err(format!("cost `{value}` cannot be negative"));
+        }
+        let (mantissa, exponent) = match text.split_once(['e', 'E']) {
+            Some((mantissa, exponent)) => {
+                (mantissa, exponent.parse::<i32>().map_err(|_| invalid())?)
+            }
+            None => (text, 0),
+        };
+        let (integer, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+        let is_digits = |part: &str| part.bytes().all(|byte| byte.is_ascii_digit());
+        if integer.is_empty()
+            || !is_digits(integer)
+            || !is_digits(fraction)
+            || mantissa.ends_with('.')
+        {
+            return Err(invalid());
+        }
+        // Half-up rounding to four places reads only the fifth decimal digit after the
+        // exponent shift, so later digits are dropped before they can overflow `units`.
+        let significant = usize::try_from((5 + i64::from(exponent)).max(0)).unwrap_or(usize::MAX);
+        let fraction = fraction[..fraction.len().min(significant)].trim_end_matches('0');
+        let overflow = || format!("cost `{value}` overflowed");
+        let mut units = 0_i128;
+        for digit in integer.bytes().chain(fraction.bytes()) {
+            units = units
+                .checked_mul(10)
+                .and_then(|units| units.checked_add(i128::from(digit - b'0')))
+                .ok_or_else(overflow)?;
+        }
+        if units == 0 {
+            return Ok(Self::from_scaled(0));
+        }
+        // `units / 10^scale` is the exact amount; Money4 keeps four places.
+        let scale = fraction.len() as i64 - i64::from(exponent);
+        let scaled = if scale <= 4 {
+            u32::try_from(4 - scale)
+                .ok()
+                .and_then(|shift| 10_i128.checked_pow(shift))
+                .and_then(|factor| units.checked_mul(factor))
+                .ok_or_else(overflow)?
+        } else {
+            // A divisor beyond i128 exceeds twice any `units`, so the amount rounds to zero.
+            match u32::try_from(scale - 4)
+                .ok()
+                .and_then(|excess| 10_i128.checked_pow(excess))
+            {
+                Some(divisor) => {
+                    let remainder = units % divisor;
+                    units / divisor + i128::from(remainder >= divisor - remainder)
+                }
+                None => 0,
+            }
+        };
+        i64::try_from(scaled)
+            .map(Self::from_scaled)
+            .map_err(|_| overflow())
     }
 
     #[must_use]
@@ -1086,6 +1152,9 @@ pub struct UsageLedgerRecord {
     pub cache_read_tokens: Option<i64>,
     #[serde(default)]
     pub cache_write_tokens: Option<i64>,
+    /// The 1-hour-TTL share of `cache_write_tokens`; the rest are 5-minute writes.
+    #[serde(default)]
+    pub cache_write_1h_tokens: Option<i64>,
     pub completion_tokens: Option<i64>,
     /// Image tokens the provider reported within `completion_tokens`.
     #[serde(default)]
@@ -1107,6 +1176,9 @@ pub struct UsageLedgerRecord {
     pub cache_read_cost_per_million_tokens: Option<Money4>,
     #[serde(default)]
     pub cache_write_cost_per_million_tokens: Option<Money4>,
+    /// Rate that priced `cache_write_1h_tokens`.
+    #[serde(default)]
+    pub cache_write_1h_cost_per_million_tokens: Option<Money4>,
     #[serde(default)]
     pub image_output_cost_per_million_tokens: Option<Money4>,
     /// Context tier threshold that priced this event; `None` for the base
@@ -2702,12 +2774,16 @@ pub struct RoutePricingOverride {
     pub output_cost_per_million_tokens: Money4,
     pub cache_read_cost_per_million_tokens: Option<Money4>,
     pub cache_write_cost_per_million_tokens: Option<Money4>,
+    /// Rate for 1-hour cache writes. Without it, they bill at twice the input rate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_1h_cost_per_million_tokens: Option<Money4>,
     /// Rate for image output tokens. Without it, image tokens bill at the output rate.
     /// Overrides persisted before this field existed deserialize without it.
     #[serde(default)]
     pub image_output_cost_per_million_tokens: Option<Money4>,
     /// Flat rates for other tiers callers may request on this route. A request billed at
-    /// a tier with no rates here is unpriced. Sorted by tier, tiers unique.
+    /// a tier with no rates here is estimated at the base rates. Sorted by tier, tiers
+    /// unique.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub service_tiers: Vec<RouteServiceTierPricing>,
 }
@@ -2720,6 +2796,8 @@ pub struct RouteServiceTierPricing {
     pub output_cost_per_million_tokens: Money4,
     pub cache_read_cost_per_million_tokens: Option<Money4>,
     pub cache_write_cost_per_million_tokens: Option<Money4>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_1h_cost_per_million_tokens: Option<Money4>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -2752,11 +2830,13 @@ pub struct ContextPricingTier {
     pub output: Option<Money4>,
     pub cache_read: Option<Money4>,
     pub cache_write: Option<Money4>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_1h: Option<Money4>,
 }
 
 /// Catalog rates for one non-default service tier. They replace the base schedule for a
 /// request billed at that tier. Unlike a context tier, a `None` rate does not inherit the
-/// base: the tier has no rate for that bucket, and a request that uses it is unpriced.
+/// base: the tier has no rate for that bucket, and a request that uses it is estimated.
 /// `context_tiers` apply within the service tier the same way base context tiers do.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ServiceTierPricing {
@@ -2765,6 +2845,8 @@ pub struct ServiceTierPricing {
     pub output: Option<Money4>,
     pub cache_read: Option<Money4>,
     pub cache_write: Option<Money4>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_1h: Option<Money4>,
     /// Sorted ascending by `above_input_tokens`, thresholds unique.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub context_tiers: Vec<ContextPricingTier>,
@@ -2780,6 +2862,9 @@ pub struct ResolvedModelPricing {
     pub output_cost_per_million_tokens: Option<Money4>,
     pub cache_read_cost_per_million_tokens: Option<Money4>,
     pub cache_write_cost_per_million_tokens: Option<Money4>,
+    /// Rate for 1-hour cache writes; `None` bills them at twice the input rate.
+    #[serde(default)]
+    pub cache_write_1h_cost_per_million_tokens: Option<Money4>,
     pub input_audio_cost_per_million_tokens: Option<Money4>,
     pub output_audio_cost_per_million_tokens: Option<Money4>,
     #[serde(default)]
@@ -2809,6 +2894,8 @@ pub struct ModelPricingRecord {
     pub output_cost_per_million_tokens: Option<Money4>,
     pub cache_read_cost_per_million_tokens: Option<Money4>,
     pub cache_write_cost_per_million_tokens: Option<Money4>,
+    #[serde(default)]
+    pub cache_write_1h_cost_per_million_tokens: Option<Money4>,
     pub input_audio_cost_per_million_tokens: Option<Money4>,
     pub output_audio_cost_per_million_tokens: Option<Money4>,
     #[serde(default)]
@@ -3387,7 +3474,9 @@ pub struct OpenAiCompatRouteCompatibility {
     pub developer_role: OpenAiCompatDeveloperRole,
     #[serde(default)]
     pub reasoning_effort: OpenAiCompatReasoningEffort,
-    #[serde(default)]
+    /// Streaming Chat Completions request `stream_options.include_usage`. `false` opts out
+    /// for upstreams that reject `stream_options`.
+    #[serde(default = "default_true")]
     pub supports_stream_usage: bool,
     #[serde(default)]
     pub empty_tools: OpenAiCompatEmptyTools,
@@ -3404,7 +3493,7 @@ impl Default for OpenAiCompatRouteCompatibility {
             max_tokens_field: OpenAiCompatMaxTokensField::default(),
             developer_role: OpenAiCompatDeveloperRole::default(),
             reasoning_effort: OpenAiCompatReasoningEffort::default(),
-            supports_stream_usage: false,
+            supports_stream_usage: true,
             empty_tools: OpenAiCompatEmptyTools::default(),
             decisions_api: None,
         }
@@ -4128,6 +4217,40 @@ mod tests {
             route_capability_ceiling("typesafe", "jev", &RouteCompatibility::default()),
             ProviderCapabilities::decisions_only()
         );
+    }
+
+    #[test]
+    fn reported_cost_rounds_half_up_to_four_places() {
+        let parse = super::Money4::from_reported_cost_str;
+        for (text, scaled) in [
+            ("0.000423", 4),
+            ("0.00005", 1),
+            ("0.000049", 0),
+            ("0.00015", 2),
+            ("1.23456789", 12_346),
+            ("0.0125", 125),
+            ("2", 20_000),
+            ("4.23e-4", 4),
+            ("5E-5", 1),
+            ("1.5e2", 1_500_000),
+            ("0e9999", 0),
+            ("1e-60", 0),
+            (" 0.0042 ", 42),
+            ("0.9999999999999999999999999999999999999999", 10_000),
+            ("0.0000499999999999999999999999999999999999999", 0),
+            ("0.000049999999999999999999999999999999999999e1", 5),
+        ] {
+            assert_eq!(
+                parse(text),
+                Ok(super::Money4::from_scaled(scaled)),
+                "{text}"
+            );
+        }
+        for text in ["-0.0001", "", ".5", "1.", "abc", "1e", "1.2.3"] {
+            assert!(parse(text).is_err(), "{text}");
+        }
+        // Config amounts stay strict about extra places.
+        assert!(super::Money4::from_decimal_str("0.000423").is_err());
     }
 
     #[test]

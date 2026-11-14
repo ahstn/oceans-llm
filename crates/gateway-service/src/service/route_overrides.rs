@@ -127,6 +127,8 @@ fn pricing_override_matches_catalog(
             == configured.cache_read_cost_per_million_tokens
         && catalog.cache_write_cost_per_million_tokens
             == configured.cache_write_cost_per_million_tokens
+        && catalog.cache_write_1h_cost_per_million_tokens
+            == configured.cache_write_1h_cost_per_million_tokens
         // Each side bills image tokens at its own image rate, else at its output rate.
         && configured
             .image_output_cost_per_million_tokens
@@ -344,6 +346,7 @@ mod tests {
             output_cost_per_million_tokens: money("0.60"),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            cache_write_1h_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
             service_tiers: Vec::new(),
         };
@@ -352,6 +355,7 @@ mod tests {
             output_cost_per_million_tokens: Some(money("0.6000")),
             cache_read_cost_per_million_tokens: None,
             cache_write_cost_per_million_tokens: None,
+            cache_write_1h_cost_per_million_tokens: None,
             context_tiers: Vec::new(),
             service_tiers: Vec::new(),
         };
@@ -366,6 +370,9 @@ mod tests {
         catalog.cache_read_cost_per_million_tokens = Some(money("0.01"));
         assert!(!matches(&configured, &catalog, None));
         catalog.cache_read_cost_per_million_tokens = None;
+        catalog.cache_write_1h_cost_per_million_tokens = Some(money("0.03"));
+        assert!(!matches(&configured, &catalog, None));
+        catalog.cache_write_1h_cost_per_million_tokens = None;
 
         catalog.output_cost_per_million_tokens = Some(money("0.64"));
         assert!(!matches(&configured, &catalog, None));
@@ -396,6 +403,7 @@ mod tests {
             output: Some(money("1.20")),
             cache_read: None,
             cache_write: None,
+            cache_write_1h: None,
             context_tiers: Vec::new(),
         });
         assert!(!matches(&configured, &catalog, None));
@@ -407,6 +415,7 @@ mod tests {
                 output_cost_per_million_tokens: money("1.20"),
                 cache_read_cost_per_million_tokens: None,
                 cache_write_cost_per_million_tokens: None,
+                cache_write_1h_cost_per_million_tokens: None,
             }],
             ..configured.clone()
         };
@@ -419,6 +428,7 @@ mod tests {
             output: Some(money("1.20")),
             cache_read: None,
             cache_write: None,
+            cache_write_1h: None,
         });
         assert!(!matches(&configured, &catalog, None));
     }

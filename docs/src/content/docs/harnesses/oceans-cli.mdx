@@ -1,0 +1,125 @@
+---
+title: Oceans CLI
+description: Install the oceans command-line tool, connect it to your gateway, and save how it finds your API key.
+sidebar:
+  label: Oceans CLI
+  order: 3
+---
+
+Users run the `oceans` command-line tool on their own machines. It installs [Agent Skills](/extensions/skills/#use-the-oceans-cli), stores [GitHub Copilot tokens](/providers/github-copilot/), and runs the [Git AI attribution](/harnesses/git-ai-attribution/) hooks. This page covers installing it and connecting it to the gateway.
+
+## Install
+
+From a checkout of the repository, run this in the repository root:
+
+```sh
+mise exec -- cargo install --locked --path crates/oceans-cli
+```
+
+Cargo installs `oceans` into its `bin` folder, usually `~/.cargo/bin`. Check that it's on your `PATH`:
+
+```sh
+oceans --version
+```
+
+## Connect to the gateway
+
+Every command that calls the gateway needs its URL and an Oceans API key. The CLI takes each one from the first place that sets it:
+
+| Setting | 1. Flag | 2. Environment variable | 3. Config file |
+| --- | --- | --- | --- |
+| Gateway URL | `--url` | `OCEANS_URL` | `url` |
+| API key | `--api-key` | `OCEANS_API_KEY` | `api_key` |
+
+If nothing sets the URL, the CLI uses `http://127.0.0.1:8080`. An empty variable counts as unset.
+
+The URL must use HTTPS. Plain HTTP is allowed only for a loopback IP, such as `127.0.0.1` or `[::1]`, and those requests skip proxy settings. Use the IP, not `localhost`. The CLI doesn't follow redirects, so use the gateway's final URL.
+
+Other users on the same machine can see command-line arguments, so avoid `--api-key` on shared machines. Use the variable or the config file instead.
+
+## Save your settings with `oceans login`
+
+The attribution hooks run under git-ai's background service and under Claude Code. Neither reliably has your shell's environment, so the hooks read the gateway URL and key from the config file. `oceans login` checks a key against the gateway and then writes that file.
+
+<Steps>
+<Step title="Create an API key">
+Create a key on the **API Keys** page (`/admin/api-keys`). `oceans login` checks the key with the attribution ownership route, so the key needs **Full access** or the **Attribution** scope. A key limited to **Attribution** can only send attribution data, which suits a key that only the hooks use. See [API key scopes](/access/identity-and-access/#api-key-scopes).
+</Step>
+<Step title="Run oceans login">
+Choose how the CLI should find the key each time it needs it:
+
+```sh
+# Run a command that prints the key. The key itself isn't saved.
+oceans login --url https://oceans.example.com --api-key-command "fnox get OCEANS_API_KEY"
+
+# Read the key from an environment variable.
+oceans login --url https://oceans.example.com --api-key-env OCEANS_API_KEY
+
+# Save the key itself. The CLI asks for it without showing what you type.
+oceans login --url https://oceans.example.com
+```
+
+The CLI resolves the key, asks the gateway who owns it, and saves the file only if that works:
+
+```text
+Logged in to https://oceans.example.com/ as user 6f1c2a4e-0b7d-4c9e-9a51-3d2f8e7b1c60. Saved /home/alice/.config/oceans/config.yaml.
+```
+
+It also records the owner for the attribution hooks. Add `--json` to print the result as JSON.
+</Step>
+</Steps>
+
+`oceans login` replaces the whole file. Without `--url`, it saves the URL from `OCEANS_URL`, else the one already in the file, else `http://127.0.0.1:8080`.
+
+## The config file
+
+The file is `~/.config/oceans/config.yaml`, or `$XDG_CONFIG_HOME/oceans/config.yaml` when `XDG_CONFIG_HOME` is set. You can also write it yourself:
+
+```yaml title="~/.config/oceans/config.yaml"
+url: https://oceans.example.com
+api_key: "!fnox get OCEANS_API_KEY"
+```
+
+The file supports only `url` and `api_key`. Any other setting is an error.
+
+The `api_key` value takes one of three forms:
+
+| Form | Example | Key used |
+| --- | --- | --- |
+| `!` and a command | `"!op read op://dev/oceans/api-key"` | The command's output, with surrounding whitespace removed. |
+| `env:` and a variable name | `env:OCEANS_API_KEY` | The variable's value. If the variable is unset or empty, the command fails and names the variable. |
+| Anything else | `<Oceans API key>` | The value itself. |
+
+- **Quote commands.** YAML reads an unquoted value that starts with `!` as a tag. The CLI rejects it and prints the quoted form to use.
+- **Write `env:` before a variable name.** A bare name such as `OCEANS_API_KEY` is read as the key itself, and the gateway then returns `401`.
+- **Commands run only when a key is needed.** The CLI runs the command with `sh -c`, with no input and a 10-second limit. The hooks never run it. The background sender runs it only when it has entries to deliver.
+- **Command output is never shown.** If the command fails, the error shows only its exit status.
+
+`oceans login` creates the file with owner-only permissions (`0600`, in a `0700` folder). On Linux and macOS, the CLI refuses a config file that other users can write to, because a `!` command in it runs on every commit. To fix it, run `chmod 600 ~/.config/oceans/config.yaml`.
+
+The config file holds one key for all commands. A key limited to **Attribution** works only for `oceans login` and the hooks. For skills and provider commands, set `OCEANS_API_KEY` to a key with the access they need. The variable wins over the file.
+
+## Commands
+
+| Command | What it does | Docs |
+| --- | --- | --- |
+| `oceans login` | Checks a key and saves the config file. | This page |
+| `oceans skills` | Lists, uploads, downloads and installs skills. | [Agent Skills](/extensions/skills/#use-the-oceans-cli) |
+| `oceans providers set-copilot-token` | Stores your GitHub token for a Copilot provider. | [GitHub Copilot](/providers/github-copilot/) |
+| `oceans hook` | Queues Git AI notes, agent sessions and merged pull requests, and sends them to the gateway. | [Git AI attribution](/harnesses/git-ai-attribution/) |
+
+`--url`, `--api-key` and `--json` work with every command. `--json` prints structured output from `login`, `skills`, `providers`, `hook queue` and `hook send --foreground`. Run `oceans --help`, or `--help` after any command, for its options.
+
+## Troubleshooting
+
+| Message | Fix |
+| --- | --- |
+| `no Oceans API key: run oceans login, set OCEANS_API_KEY, or pass --api-key` | Nothing set a key. Run `oceans login`. |
+| `api_key refers to environment variable NAME, which is unset or empty` | The process that ran the CLI doesn't have that variable. Hooks often run without your shell's environment, so use the command form or a literal key in the config file. |
+| `the api_key command failed (exit status: 127)` | The shell couldn't find the command. Hooks may run with a shorter `PATH` than your shell, so use the command's full path. |
+| `the api_key command failed (...)` with another status | Run the command yourself to see its error. It runs from the hook's working directory, so use a command that works from any directory. |
+| `the api_key command didn't finish within 10 seconds` | The command may be waiting for input, such as an unlock prompt. Use a command that can run without one. |
+| `... is writable by other users, so oceans won't use it; run chmod 600 ...` | Run the `chmod` command it shows. |
+| `... belongs to another user, so oceans won't use it` | Another account owns the config file, so it could have changed it. Delete the file and run `oceans login` again. |
+| `api_key starts with !, which YAML reads as a tag; quote the whole value: ...` | Use the quoted value it shows. |
+| `the gateway rejected the API key (HTTP 401)` | The key is wrong, revoked or expired. Create a new one and run `oceans login` again. |

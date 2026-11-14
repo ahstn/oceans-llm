@@ -1,4 +1,5 @@
 pub mod agent_analysis;
+pub mod attribution;
 pub mod audit;
 pub mod auth;
 pub mod batch;
@@ -28,8 +29,8 @@ pub use agent_analysis::{
     AgentRequestLogLinkRecord, AgentSessionAnalysisRecord, AgentSessionAnalysisRepository,
     AgentSessionListPage, AgentSessionListQuery, AgentSessionRecord, AgentSessionReportRepository,
     AgentSessionRequestLinkRecord, AgentSessionSourceRecord, AgentSessionTraceRecord,
-    AgentSessionTraceRepository, MAX_AGENT_ANALYSIS_DISTINCT_ITEMS, MAX_AGENT_SESSION_NESTED_FACTS,
-    MAX_AGENT_SESSION_PAGE_SIZE, MAX_AGENT_SESSION_REQUESTS,
+    AgentSessionTraceRepository, MAX_AGENT_SESSION_NESTED_FACTS, MAX_AGENT_SESSION_PAGE_SIZE,
+    MAX_AGENT_SESSION_REQUESTS,
 };
 pub use agent_session_analysis::{
     ActivityInterval, AgentSessionId, AgentSessionSourceId, AnalysisId, AnalysisMetricPolicy,
@@ -40,6 +41,15 @@ pub use agent_session_analysis::{
     ReliabilityDiagnostics, RequestAttemptFact, ScoreMaturity, SessionEfficiencyComponents,
     SessionEfficiencyReport, SessionLifecycleState, SessionRequestFact, SkillDiagnostics,
     ToolInvocationFact, ToolServerDiagnostics,
+};
+pub use attribution::{
+    ATTRIBUTION_MAX_BATCH_BYTES, ATTRIBUTION_MAX_BATCH_ENTRIES, ATTRIBUTION_MAX_HASHES_PER_LOOKUP,
+    ATTRIBUTION_MAX_REPORT_ROWS, ATTRIBUTION_MAX_REQUEST_FACTS, AttributionAgentSessionRecord,
+    AttributionApplyOutcome, AttributionCommitRecord, AttributionCommitSession,
+    AttributionCommitWrite, AttributionFreshness, AttributionOwner, AttributionPullRequestCommit,
+    AttributionPullRequestRecord, AttributionPullRequestWrite, AttributionReportQuery,
+    AttributionRepository, AttributionRequestFact, AttributionSessionCommitTime,
+    AttributionSessionEventKind, AttributionSessionEventWrite,
 };
 pub use audit::{
     AuditActor, AuditActorKind, AuditLogCursor, AuditLogPage, AuditLogQuery, AuditLogRecord,
@@ -64,7 +74,8 @@ pub use budgets::{
     BudgetSettings, BudgetSource, BudgetSourceKind, BudgetUpsert, ManualBudgetSave,
 };
 pub use credential_scopes::{
-    API_KEY_SCOPES, ApiKeyAccess, SCOPE_INFERENCE, SCOPE_MCP_AGGREGATE, SCOPE_MCP_PROXY,
+    API_KEY_SCOPES, ApiKeyAccess, SCOPE_ATTRIBUTION_WRITE, SCOPE_INFERENCE, SCOPE_MCP_AGGREGATE,
+    SCOPE_MCP_PROXY,
 };
 pub use domain::{
     ApiKeyModelAccess, ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord,
@@ -112,16 +123,15 @@ pub use domain::{
     ReviewAgentPullRequestRecord, ReviewAgentPullRequestState, ReviewAgentRepositoryRecord,
     ReviewAgentRepositoryStatus, ReviewAgentRunRecord, ReviewAgentRunStatus, ReviewAgentSettings,
     RouteCompatibility, RoutePricingOverride, RouteServiceTierPricing,
-    SYSTEM_BOOTSTRAP_ADMIN_EMAIL, SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SeedApiKey,
-    SeedApiKeySecretMaterial, SeedBudget, SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey,
-    SeedModel, SeedModelRoute, SeedOauthProvider, SeedOidcProvider, SeedProvider,
-    SeedServiceAccount, SeedTeam, SeedUser, SeedUserMembership, SeedUserModelBudgetDefault,
-    ServiceAccountRecord, ServiceAccountStatus, ServiceTierPricing, SpendDailyAggregateRecord,
-    SpendModelAggregateRecord, SpendModelTokenDailyRecord, SpendOwnerAggregateRecord,
-    SpendOwnerTokenDailyRecord, TeamMembershipRecord, TeamRecord, TokenUsageBuckets,
-    TransferExternalMcpServerOwnershipRecord, UpdateExternalMcpServerRecord,
-    UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord, UpdateReviewAgentRunRecord,
-    UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
+    SYSTEM_BOOTSTRAP_ADMIN_USER_ID, SeedApiKey, SeedApiKeySecretMaterial, SeedBudget,
+    SeedHumanBudgetDefaults, SeedManagedServiceAccountApiKey, SeedModel, SeedModelRoute,
+    SeedOauthProvider, SeedOidcProvider, SeedProvider, SeedServiceAccount, SeedTeam, SeedUser,
+    SeedUserMembership, SeedUserModelBudgetDefault, ServiceAccountRecord, ServiceAccountStatus,
+    ServiceTierPricing, SpendDailyAggregateRecord, SpendModelAggregateRecord,
+    SpendModelTokenDailyRecord, SpendOwnerAggregateRecord, SpendOwnerTokenDailyRecord,
+    TeamMembershipRecord, TeamRecord, TokenUsageBuckets, TransferExternalMcpServerOwnershipRecord,
+    UpdateExternalMcpServerRecord, UpdateMcpToolsetRecord, UpdateReviewAgentRepositoryRecord,
+    UpdateReviewAgentRunRecord, UpsertExternalMcpToolRecord, UpsertMcpToolGrantRecord,
     UpsertMcpUpstreamCredentialBindingRecord, UpsertProviderUserCredentialRecord,
     UpsertReviewAgentPullRequestRecord, UsageLeaderboardBucketRecord,
     UsageLeaderboardHarnessRecord, UsageLeaderboardUserRecord, UsageLedgerRecord,
@@ -188,7 +198,7 @@ pub use protocol::decisions::{
 };
 pub use protocol::openai::{
     ChatCompletionsRequest, EmbeddingsRequest, OpenAiErrorBody, OpenAiErrorEnvelope,
-    ResponseOutputItem, ResponseUsage, ResponsesRequest, ResponsesResponse, ResponsesStreamEvent,
+    ResponsesRequest,
 };
 pub use protocol::translate::{
     anthropic_messages_request_to_core, core_chat_request_to_openai,

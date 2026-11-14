@@ -13,6 +13,9 @@ const PRIORITY: ServiceTierOutcome = ServiceTierOutcome {
     served: None,
 };
 
+/// The reason a priority request billed at the default tier's rates carries.
+const PRIORITY_ESTIMATE: &str = "estimated_service_tier:priority";
+
 fn money(scaled: i64) -> Option<Money4> {
     Some(Money4::from_scaled(scaled))
 }
@@ -25,6 +28,7 @@ fn priority_schedule() -> ServiceTierPricing {
         output: money(40_000),
         cache_read: None,
         cache_write: None,
+        cache_write_1h: None,
         context_tiers: Vec::new(),
     }
 }
@@ -50,6 +54,7 @@ fn pricing_override(service_tiers: Vec<RouteServiceTierPricing>) -> RoutePricing
         output_cost_per_million_tokens: Money4::from_scaled(100_000),
         cache_read_cost_per_million_tokens: None,
         cache_write_cost_per_million_tokens: None,
+        cache_write_1h_cost_per_million_tokens: None,
         image_output_cost_per_million_tokens: None,
         service_tiers,
     }
@@ -79,6 +84,7 @@ async fn recorded_usage(
             "req_service_tier",
             Some(provider_usage),
             service_tiers,
+            UsageEstimateInput::default(),
             OffsetDateTime::now_utc(),
         )
         .await
@@ -101,6 +107,14 @@ fn assert_unpriced(event: &UsageLedgerRecord, reason: &str) {
     assert_eq!(event.computed_cost_usd, Money4::ZERO);
 }
 
+fn assert_estimated(event: &UsageLedgerRecord, reason: &str, input: i64, output: i64, cost: i64) {
+    assert_eq!(event.pricing_status, UsagePricingStatus::LegacyEstimated);
+    assert_eq!(event.unpriced_reason.as_deref(), Some(reason));
+    assert_eq!(event.input_cost_per_million_tokens, money(input));
+    assert_eq!(event.output_cost_per_million_tokens, money(output));
+    assert_eq!(event.computed_cost_usd, Money4::from_scaled(cost));
+}
+
 #[tokio::test]
 async fn priority_usage_bills_the_catalog_priority_schedule() {
     let event = recorded_usage(
@@ -117,7 +131,7 @@ async fn priority_usage_bills_the_catalog_priority_schedule() {
 }
 
 #[tokio::test]
-async fn a_tier_the_catalog_has_no_schedule_for_is_unpriced() {
+async fn a_tier_the_catalog_has_no_schedule_for_is_estimated_at_the_default_rates() {
     let event = recorded_usage(
         &route(),
         catalog_pricing(Vec::new()),
@@ -125,6 +139,16 @@ async fn a_tier_the_catalog_has_no_schedule_for_is_unpriced() {
         usage(1_000),
     )
     .await;
+
+    // 1,000 input at $1 ($0.001) + 500 output at $2 ($0.001).
+    assert_estimated(&event, PRIORITY_ESTIMATE, 10_000, 20_000, 20);
+}
+
+#[tokio::test]
+async fn a_tier_stays_unpriced_when_the_default_rates_cannot_price_it_either() {
+    let mut pricing = catalog_pricing(Vec::new());
+    pricing.output_cost_per_million_tokens = None;
+    let event = recorded_usage(&route(), pricing, PRIORITY, usage(1_000)).await;
 
     assert_unpriced(&event, "service_tier:priority");
     assert_eq!(event.input_cost_per_million_tokens, None);
@@ -149,7 +173,7 @@ async fn a_served_default_tier_bills_the_default_schedule() {
 }
 
 #[tokio::test]
-async fn a_used_bucket_without_a_tier_rate_is_unpriced_even_when_the_base_has_one() {
+async fn a_cache_bucket_without_a_tier_rate_is_estimated_from_the_tier_input_rate() {
     let mut pricing = catalog_pricing(vec![priority_schedule()]);
     pricing.cache_read_cost_per_million_tokens = money(1_000);
     let event = recorded_usage(
@@ -164,11 +188,20 @@ async fn a_used_bucket_without_a_tier_rate_is_unpriced_even_when_the_base_has_on
     )
     .await;
 
-    assert_unpriced(&event, "service_tier:priority");
+    // 600 uncached and 400 cached input at the tier's $2 ($0.002) + 500 output at $4
+    // ($0.002): premium cache reads never bill at the base's $0.10.
+    assert_estimated(
+        &event,
+        "estimated_missing_cache_read_rate",
+        20_000,
+        40_000,
+        40,
+    );
+    assert_eq!(event.cache_read_cost_per_million_tokens, money(20_000));
 }
 
 #[tokio::test]
-async fn image_output_the_base_rates_apart_is_unpriced_at_a_tier() {
+async fn image_output_the_base_rates_apart_is_estimated_at_the_default_rates() {
     let mut pricing = catalog_pricing(vec![priority_schedule()]);
     pricing.output_image_usd_per_million = money(400_000);
     let event = recorded_usage(
@@ -183,7 +216,8 @@ async fn image_output_the_base_rates_apart_is_unpriced_at_a_tier() {
     )
     .await;
 
-    assert_unpriced(&event, "service_tier:priority");
+    // 1,000 input at $1 ($0.001) + 200 text at $2 ($0.0004) + 300 image at $40 ($0.012).
+    assert_estimated(&event, PRIORITY_ESTIMATE, 10_000, 20_000, 134);
 }
 
 #[tokio::test]
@@ -194,6 +228,7 @@ async fn a_base_context_tier_needs_a_twin_in_the_service_tier() {
         output: None,
         cache_read: None,
         cache_write: None,
+        cache_write_1h: None,
     };
     let mut pricing = catalog_pricing(vec![priority_schedule()]);
     pricing.context_tiers = vec![base_context.clone()];
@@ -201,7 +236,10 @@ async fn a_base_context_tier_needs_a_twin_in_the_service_tier() {
     let below = recorded_usage(&route(), pricing.clone(), PRIORITY, usage(1_000)).await;
     assert_priced(&below, 20_000, 40_000, 40);
     let above = recorded_usage(&route(), pricing.clone(), PRIORITY, usage(1_200)).await;
-    assert_unpriced(&above, "service_tier:priority");
+    // Without a twin, the default tier's context tier estimates it: 1,200 input at $3
+    // ($0.0036) + 500 output at $2 ($0.001).
+    assert_estimated(&above, PRIORITY_ESTIMATE, 30_000, 20_000, 46);
+    assert_eq!(above.pricing_tier_above_input_tokens, Some(1_000));
 
     let mut with_twin = priority_schedule();
     with_twin.context_tiers = vec![ContextPricingTier {
@@ -225,6 +263,7 @@ async fn override_rates_price_the_routes_own_tier_and_its_entries_the_others() {
         output_cost_per_million_tokens: Money4::from_scaled(20_000),
         cache_read_cost_per_million_tokens: None,
         cache_write_cost_per_million_tokens: None,
+        cache_write_1h_cost_per_million_tokens: None,
     }]));
     let served = |served| ServiceTierOutcome { served, ..PRIORITY };
 
@@ -246,15 +285,16 @@ async fn override_rates_price_the_routes_own_tier_and_its_entries_the_others() {
         usage(1_000),
     )
     .await;
-    assert_unpriced(&flex, "service_tier:flex");
+    // No flex entry: the override's own rates estimate it.
+    assert_estimated(&flex, "estimated_service_tier:flex", 50_000, 100_000, 100);
 }
 
 #[tokio::test]
-async fn an_override_without_an_entry_leaves_a_requested_tier_unpriced() {
+async fn an_override_without_an_entry_estimates_a_requested_tier_at_its_own_rates() {
     let mut route = route();
     route.pricing_override = Some(pricing_override(Vec::new()));
 
     let event = recorded_usage(&route, pricing_record(None), PRIORITY, usage(1_000)).await;
 
-    assert_unpriced(&event, "service_tier:priority");
+    assert_estimated(&event, PRIORITY_ESTIMATE, 50_000, 100_000, 100);
 }

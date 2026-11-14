@@ -252,9 +252,9 @@ models:
 `pricing_override` is optional. When present:
 
 - `input_usd_per_million_tokens` and `output_usd_per_million_tokens` are required.
-- `cache_read_usd_per_million_tokens`, `cache_write_usd_per_million_tokens`, and `image_output_usd_per_million_tokens` are optional. Omitted rates stay absent. They don't fall back to catalog rates.
+- `cache_read_usd_per_million_tokens`, `cache_write_usd_per_million_tokens`, `cache_write_1h_usd_per_million_tokens`, and `image_output_usd_per_million_tokens` are optional. Omitted rates don't fall back to catalog rates. A cache bucket without a rate is charged from the input rate, and 1-hour cache writes default to twice the input rate. See [Cache-token accounting](/spend/pricing-and-accounting/#cache-token-accounting).
 - The rates price the route's own tier: its `service_tier`, or `default` when it has none.
-- `service_tiers` is an optional list of rates for the other tiers the route can bill. Each entry has `service_tier`, `input_usd_per_million_tokens`, `output_usd_per_million_tokens`, and optional `cache_read_usd_per_million_tokens` and `cache_write_usd_per_million_tokens`. A tier may appear once, and the route's own tier can't appear. A request billed at a tier with no rates is unpriced. The gateway never bills a premium tier at the default rate.
+- `service_tiers` is an optional list of rates for the other tiers the route can bill. Each entry has `service_tier`, `input_usd_per_million_tokens`, `output_usd_per_million_tokens`, and optional `cache_read_usd_per_million_tokens`, `cache_write_usd_per_million_tokens`, and `cache_write_1h_usd_per_million_tokens`. A tier may appear once, and the route's own tier can't appear. A request billed at a tier with no entry is charged at the route's own rates as an estimate, with the reason `estimated_service_tier:<tier>`. Add an entry for each premium tier the route can serve, so its requests aren't billed at the lower rates.
 - On a route with `service_tier: priority`, add a `default` entry to price requests that the provider serves at the default tier instead.
 - Every rate is a quoted decimal string with at most four fractional digits. Zero is valid. Unquoted numbers, negative, malformed, and overflowing values fail config loading. Unknown fields are rejected.
 
@@ -307,7 +307,7 @@ For what each adapter does with these settings, see [Provider API compatibility]
 | `max_tokens_field` | `max_completion_tokens` | `max_completion_tokens`, `max_tokens` |
 | `developer_role` | `developer` | `developer`, `system` |
 | `reasoning_effort` | `passthrough` | `passthrough`, `omit`, `reasoning_object` |
-| `supports_stream_usage` | `false` | `true`, `false` |
+| `supports_stream_usage` | `true` | `true`, `false` |
 | `empty_tools` | `preserve` | `preserve`, `omit`, `preserve_with_tool_history` |
 | `decisions_api` | unset | `openai` |
 
@@ -424,9 +424,10 @@ models:
             max_tokens_field: max_tokens
             developer_role: system
             reasoning_effort: omit
-            supports_stream_usage: true
             empty_tools: omit
 ```
+
+Streaming Chat Completions routes request usage by default. Set `supports_stream_usage: false` only for an upstream that rejects `stream_options`. Usage on those streams then depends on the provider sending it unasked.
 
 OpenRouter routes can set upstream provider policy:
 

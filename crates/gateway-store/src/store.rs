@@ -3,12 +3,12 @@ use std::path::PathBuf;
 use async_trait::async_trait;
 use gateway_core::{
     AdminApiKeyRepository, AdminIdentityRepository, AgentSessionAnalysisRepository,
-    ApiKeyRepository, AuditLogRepository, AuthMode, BatchRepository, BudgetAlertRepository,
-    BudgetRecord, BudgetRepository, GlobalRole, GuardrailDecisionRepository, IdentityRepository,
-    IdentityUserRecord, McpAccessRepository, McpAggregateSessionRepository, McpOauthStateRecord,
-    McpRegistryRepository, McpTokenOverheadRepository, McpToolInvocationRepository,
-    McpUpstreamCredentialRepository, MembershipRole, ModelRepository, Money4,
-    OauthLoginStateRecord, OauthProviderRecord, OidcLoginStateRecord, OidcProviderRecord,
+    ApiKeyRepository, AttributionRepository, AuditLogRepository, AuthMode, BatchRepository,
+    BudgetAlertRepository, BudgetRecord, BudgetRepository, GlobalRole, GuardrailDecisionRepository,
+    IdentityRepository, IdentityUserRecord, McpAccessRepository, McpAggregateSessionRepository,
+    McpOauthStateRecord, McpRegistryRepository, McpTokenOverheadRepository,
+    McpToolInvocationRepository, McpUpstreamCredentialRepository, MembershipRole, ModelRepository,
+    Money4, OauthLoginStateRecord, OauthProviderRecord, OidcLoginStateRecord, OidcProviderRecord,
     PasswordInvitationRecord, PricingCatalogRepository, ProviderRepository,
     ProviderUserCredentialRepository, RateLimitRepository, RequestLogRepository, RequestTag,
     ReviewAgentRepository, RoutingRepository, SeedApiKey, SeedHumanBudgetDefaults, SeedModel,
@@ -65,6 +65,7 @@ pub trait GatewayStore:
     + McpToolInvocationRepository
     + PricingCatalogRepository
     + AgentSessionAnalysisRepository
+    + AttributionRepository
     + RateLimitRepository
     + StoreHealth
     + Send

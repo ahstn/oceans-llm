@@ -45,9 +45,9 @@ A streamed response starts with `200` and `text/event-stream`. After that, the s
 | Stream outcome | Request log | Ledger |
 | --- | --- | --- |
 | The provider fails before the stream starts | Row with the error status and a `stream_start_error` attempt | No row |
-| The stream completes | Row with status `200` and a success attempt | Row from the last usage snapshot, or `usage_missing` |
-| The provider sends an error event | Row with the failure status and code | Row only if the stream had reported usage |
-| The upstream transport fails mid-stream | Row with a `stream_error` attempt | Row only if the stream had reported usage |
+| The stream completes | Row with status `200` and a success attempt | Row from the last usage snapshot, else an estimate or `usage_missing` |
+| The provider sends an error event | Row with the failure status and code | Charges the last usage snapshot. Without one, nothing is charged or estimated |
+| The upstream transport fails mid-stream | Row with a `stream_error` attempt | Charges the last usage snapshot. Without one, nothing is charged or estimated |
 | The client disconnects | Row recorded in the background | No row. Reported tokens still count against token rate limits |
 
 The stream logger parses SSE across UTF-8 and frame boundaries. It keeps the latest usage snapshot it sees. Chat Completions streams usually report usage at the top level of a chunk. Responses streams report it on the completed event as `response.usage`. Bedrock streams are converted to OpenAI-compatible SSE before this step (see [AWS Bedrock](/providers/aws-bedrock/)). Payload policy can cap the stored stream events without affecting usage or error parsing.
@@ -98,7 +98,7 @@ The default is `422` because the OpenAI and Anthropic Python SDKs retry `429` bu
 | Adapter rejects the request locally | `400` | `invalid_request` |
 | Adapter doesn't implement the operation | `501` | `provider_not_implemented` |
 
-If the provider reported usage before it failed, the gateway still writes a ledger row and charges that usage.
+If the provider reported usage before a stream failed, the gateway still writes a ledger row and charges that usage. A failed stream without reported usage is not estimated, because the provider may not bill it.
 
 ## Pricing states
 
@@ -107,11 +107,11 @@ Each ledger row in `usage_cost_events` has a `pricing_status`. A provider-report
 | `pricing_status` | Meaning | Adds to spend |
 | --- | --- | --- |
 | `priced` | Exact pricing or a provider-reported cost | Yes |
-| `legacy_estimated` | Estimated cost, because cache usage data was invalid or a batch was only partly priced (reason `batch_partially_priced`) | Yes |
-| `unpriced` | Usage exists but no exact rate matched | No (cost is zero) |
-| `usage_missing` | The provider reported no usable usage | No (cost is zero) |
+| `legacy_estimated` | Estimated cost, for example because cache usage data was invalid, a rate or the usage was missing, or a batch was only partly priced. The reason names the case | Yes |
+| `unpriced` | Usage exists but no rate can price or estimate it | No (cost is zero) |
+| `usage_missing` | The provider reported no usable usage, and the route has no rates to estimate it | No (cost is zero) |
 
-`unpriced` and `usage_missing` rows stay visible in reports. Common `unpriced` causes are an unsupported `pricing_provider_id`, an unsupported Vertex publisher or location, a service tier with no rates (reason `service_tier:<tier>`), and missing rates. [Pricing catalog and accounting](/spend/pricing-and-accounting/) owns the rules.
+`unpriced` and `usage_missing` rows stay visible in reports. Common `unpriced` causes are an unsupported `pricing_provider_id`, an unsupported Vertex publisher, a model the catalog doesn't know, and a missing input or output rate. [Pricing catalog and accounting](/spend/pricing-and-accounting/) owns the rules.
 
 If the ledger write itself fails, the gateway logs a warning and the caller still gets the successful response.
 
@@ -145,7 +145,7 @@ The Vertex adapter checks that the input is text only and that the parameters ar
 | The upstream model isn't a supported embedding model | Adapter validation | `400 invalid_request`. Not every `google/*` model is treated as an embedding model. |
 | `input` is a token array, nested array, non-string, empty array or empty string | Adapter validation | `400 invalid_request` before the upstream call |
 | `encoding_format: "base64"` | Adapter validation | `400 invalid_request`. Native Vertex embeddings return float vectors only. |
-| Any output has no token count | Accounting | The request succeeds with a `usage_missing` ledger row |
+| Any output has no token count | Accounting | The request succeeds. The ledger row estimates the input tokens from the request size, or is `usage_missing` when the model has no rate |
 | No exact embedding rate | Accounting | The request succeeds with an `unpriced` ledger row |
 
 ## Logs and ledger
