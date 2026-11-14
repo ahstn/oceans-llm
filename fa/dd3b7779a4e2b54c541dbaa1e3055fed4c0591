@@ -1,0 +1,459 @@
+.agents/skills/verify-oceans-admin/features/README.md
+  s_dd118f467446e0::t_b0835e617644ad 78
+.agents/skills/verify-oceans-admin/features/api-keys.md
+  s_dd118f467446e0::t_3e249fd5aec9c9 31
+.agents/skills/verify-oceans-admin/features/attribution.md
+  s_dd118f467446e0::t_861a185183c9d5 1-51
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_dd118f467446e0::t_3baab33d4dc985 179,413,551-574,633,680
+.agents/skills/verify-oceans-admin/features/spend-controls.md
+  s_dd118f467446e0::t_d48dec0e915764 40
+.agents/skills/verify-oceans-admin/scripts/messages-regressions.mjs
+  s_dd118f467446e0::t_71a438e83ff51e 108-109
+.github/workflows/ci.yml
+  s_dd118f467446e0::t_c23aa6191aedad 55
+.github/workflows/cli-ci.yml
+  s_dd118f467446e0::t_20fc6e47b114f0 58
+.github/workflows/docs-ci.yml
+  s_dd118f467446e0::t_1631f4d729b076 37
+.github/workflows/helm-ci.yml
+  s_dd118f467446e0::t_f59de8aa7fde82 41
+.github/workflows/oceans-review-agent.yml
+  s_dd118f467446e0::t_bdc808946c2262 85
+.github/workflows/opencode-oceans.yml
+  s_dd118f467446e0::t_f9ae3e1e747322 53,104
+.github/workflows/release-product.yml
+  s_dd118f467446e0::t_6dd4844a9e7640 52,75,138
+.github/workflows/repo-lint.yml
+  s_dd118f467446e0::t_307d6bcf3d96d1 49
+.github/workflows/review-agent-ci.yml
+  s_dd118f467446e0::t_12385560e50373 36
+.github/workflows/review-agent-self-hosted-smoke.yml
+  s_dd118f467446e0::t_8425dccdbeb1b8 44
+.github/workflows/ui-ci.yml
+  s_dd118f467446e0::t_1f34bf563484a0 36
+.gitignore
+  s_dd118f467446e0::t_71a322ab45177a 7
+.gitleaks.toml
+  s_dd118f467446e0::t_fa9800fc151940 49-53
+.omp/commands/cleanup.md
+  s_dd118f467446e0::t_aec74f68a3433b 1-131
+.omp/commands/provider-api-audit.md
+  s_dd118f467446e0::t_f10a6554240d26 1-97
+.worktreeinclude
+  s_dd118f467446e0::t_76b9768c8eadbd 8-9
+Cargo.lock
+  s_dd118f467446e0::t_21131a959b1526 229,231,322,324,358,360,383,385,406,408,1540,3034-3035,3040,3557,3935,4004,4687,4690,5456
+_typos.toml
+  s_dd118f467446e0::t_f551dc26e323a5 49-50
+crates/admin-ui/web/src/components/data/kpi-card.tsx
+  s_dd118f467446e0::t_c494f405bc884a 1-39
+crates/admin-ui/web/src/components/layout/admin-nav.ts
+  s_dd118f467446e0::t_2952750138750e 5,134-140
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_dd118f467446e0::t_d307d7735767b7 87-102,1263-1278,1720-1735,2373,3054-3330,3953-3970,6226-6268,8787-8844,9592-9624
+crates/admin-ui/web/src/lib/api-key-scopes.ts
+  s_dd118f467446e0::t_5f231583526bd5 29-32
+crates/admin-ui/web/src/routeTree.gen.ts
+  s_dd118f467446e0::t_ee7d187a279e7b 38,181-186,261,299,338,378,416,454,493,691-697,789
+crates/admin-ui/web/src/routes/api-keys/-components.tsx
+  s_dd118f467446e0::t_a6eb5d9bf09c48 963-966
+crates/admin-ui/web/src/routes/observability/-attribution/cells.tsx
+  s_dd118f467446e0::t_6b51410b1e7b93 1-138
+crates/admin-ui/web/src/routes/observability/-attribution/changes-table.tsx
+  s_dd118f467446e0::t_99f2f7b5f6e19e 1-181
+crates/admin-ui/web/src/routes/observability/-attribution/controls.tsx
+  s_dd118f467446e0::t_dedae894479a71 1-119
+crates/admin-ui/web/src/routes/observability/-attribution/empty-state.tsx
+  s_dd118f467446e0::t_86dcb3513d8812 1-76
+crates/admin-ui/web/src/routes/observability/-attribution/kpis.tsx
+  s_dd118f467446e0::t_a3aa7e93954dd8 1-89
+crates/admin-ui/web/src/routes/observability/-attribution/model-breakdown.tsx
+  s_dd118f467446e0::t_3147b46c1e3398 1-45
+crates/admin-ui/web/src/routes/observability/-attribution/pull-requests-table.tsx
+  s_dd118f467446e0::t_2648d1977a1f91 1-104
+crates/admin-ui/web/src/routes/observability/-attribution/row-limit.tsx
+  s_dd118f467446e0::t_f050cd37e31b75 1-42
+crates/admin-ui/web/src/routes/observability/-attribution/shared.ts
+  s_dd118f467446e0::t_739948b64110ba 1-63
+crates/admin-ui/web/src/routes/observability/-attribution/user-activity-table.tsx
+  s_dd118f467446e0::t_5a8346c5c39a41 1-113
+crates/admin-ui/web/src/routes/observability/attribution.tsx
+  s_dd118f467446e0::t_9d441af626f26d 1-237
+crates/admin-ui/web/src/routes/observability/usage-costs.tsx
+  s_dd118f467446e0::t_c64cb0d2029c30 4,184,190,196,211
+crates/admin-ui/web/src/routes/spend-controls/-budget-increase.tsx
+  s_dd118f467446e0::t_fb2a3b6b033ba9 155-157,178-189,191,193-194,198,200
+crates/admin-ui/web/src/server/admin-data.functions.ts
+  s_dd118f467446e0::t_fcf7be105adb7d 30,109-124,436-441
+crates/admin-ui/web/src/server/admin-data.server.ts
+  s_dd118f467446e0::t_74b6aa34b09cfa 8,302-320
+crates/admin-ui/web/src/test/routes/api-keys-route.test.tsx
+  s_dd118f467446e0::t_56c0fa9b0d54b8 105
+crates/admin-ui/web/src/test/routes/attribution-route.test.tsx
+  s_dd118f467446e0::t_93147af331f823 1-484
+crates/admin-ui/web/src/test/routes/spend-controls-route.test.tsx
+  s_dd118f467446e0::t_32612cfce83acb 523-524,535
+crates/admin-ui/web/src/types/live-api.ts
+  s_dd118f467446e0::t_60b54e94cf603f 76-83
+crates/gateway-core/src/attribution.rs
+  s_dd118f467446e0::t_682d3c43b5e9f9 1-413
+crates/gateway-core/src/batch.rs
+  s_dd118f467446e0::t_47789b4d8de669 201-203,220
+crates/gateway-core/src/credential_scopes.rs
+  s_dd118f467446e0::t_b23dcfa9f9062a 16-18,21-26,146-149,209-240
+crates/gateway-core/src/domain.rs
+  s_dd118f467446e0::t_989078a44c8954 118-184,1155-1157,1179-1181,2777-2779,2785-2786,2799-2800,2833-2834,2839,2848-2849,2865-2867,2897-2898,3477-3479,3496,4222-4255
+crates/gateway-core/src/lib.rs
+  s_dd118f467446e0::t_0419892aa49e2b 2,32-33,45-53,77-78,126-134,201
+crates/gateway-providers/src/anthropic/compat_stream.rs
+  s_dd118f467446e0::t_53708bee2dbc30 191-197
+crates/gateway-providers/src/anthropic/controls.rs
+  s_dd118f467446e0::t_68ab9a7f405075 48-49
+crates/gateway-providers/src/anthropic/mod.rs
+  s_dd118f467446e0::t_10db75549f63a9 29,38,44-45
+crates/gateway-providers/src/anthropic/replay.rs
+  s_dd118f467446e0::t_dbc07dac2207ff 210-213
+crates/gateway-providers/src/anthropic/replay_tests.rs
+  s_dd118f467446e0::t_0bfe6e600abc29 391-447
+crates/gateway-providers/src/anthropic/request.rs
+  s_dd118f467446e0::t_1869c16eba54d7 661-664
+crates/gateway-providers/src/anthropic/streaming.rs
+  s_dd118f467446e0::t_2de7d53537165b 203-204,210-211
+crates/gateway-providers/src/anthropic/thinking.rs
+  s_dd118f467446e0::t_d9112fe218fc77 8
+crates/gateway-providers/src/bedrock/request/inference.rs
+  s_dd118f467446e0::t_119947758a7ec3 429-436,438-447,458-505,507,510-530
+crates/gateway-providers/src/bedrock/request/mod.rs
+  s_dd118f467446e0::t_a2e3c443793351 125-126,140,518-520,522,539
+crates/gateway-providers/src/bedrock/tests/request_content.rs
+  s_dd118f467446e0::t_ea452290fe4ee1 824-920
+crates/gateway-providers/src/bedrock/tests/request_tools.rs
+  s_dd118f467446e0::t_a2ede963849b30 650-759
+crates/gateway-providers/src/copilot/mod.rs
+  s_dd118f467446e0::t_0a30f7633947a8 128-153,336,379-384
+crates/gateway-providers/src/copilot/tests.rs
+  s_dd118f467446e0::t_03f9fcedae4f49 1111-1182
+crates/gateway-providers/src/openai_compat.rs
+  s_dd118f467446e0::t_18b2db64aa1940 18-20,362-384,497-501,503-504,509,516,586-656,933,949-952,1248-1331,1436-1526,1761-1794,2434
+crates/gateway-providers/src/openai_compat/batch.rs
+  s_dd118f467446e0::t_575efa7185abde 561-567,838-872
+crates/gateway-providers/src/streaming.rs
+  s_dd118f467446e0::t_cebb5dfe5fa429 45-58,70-73,80-82,95-97,121-123,132-134,146-148,167-198,209-213,273-335,796-918
+crates/gateway-service/src/admin_models.rs
+  s_dd118f467446e0::t_578791edc892d8 913,957,962,968,977-996,998-999,1049,1144,1174,1185,1427
+crates/gateway-service/src/agent_analysis.rs
+  s_dd118f467446e0::t_9e48e7b0194bd5 46,74-75,77
+crates/gateway-service/src/agent_analysis/ingestion.rs
+  s_dd118f467446e0::t_c0c0630ed10741 106-109,135,336
+crates/gateway-service/src/agent_analysis/session_resolution.rs
+  s_dd118f467446e0::t_7d14fed9d32d7f 15-16,22-23,36-71,105,111,134
+crates/gateway-service/src/agent_analysis/tests.rs
+  s_dd118f467446e0::t_1a8a7777807184 235-282,363-382,674-685,692,942,947
+crates/gateway-service/src/attribution.rs
+  s_dd118f467446e0::t_6ddb95d9fe0ce7 1-102
+crates/gateway-service/src/attribution/ingest.rs
+  s_dd118f467446e0::t_32f719461275f5 1-565
+crates/gateway-service/src/attribution/note.rs
+  s_dd118f467446e0::t_ff7b7e37af771b 1-470
+crates/gateway-service/src/attribution/note/tests.rs
+  s_dd118f467446e0::t_28ba9d7f4a0dec 1-288
+crates/gateway-service/src/attribution/report.rs
+  s_dd118f467446e0::t_060bbbfb7c8d5c 1-848
+crates/gateway-service/src/attribution/tests.rs
+  s_dd118f467446e0::t_eb57d423b6fc13 1-401
+crates/gateway-service/src/attribution/tests/ingest.rs
+  s_dd118f467446e0::t_7bcd169ce8c3f1 1-595
+crates/gateway-service/src/attribution/tests/report.rs
+  s_dd118f467446e0::t_24fa1605e75681 1-908
+crates/gateway-service/src/attribution/validate.rs
+  s_dd118f467446e0::t_dadcd3599bb70c 1-200
+crates/gateway-service/src/batches.rs
+  s_dd118f467446e0::t_9164691293b2f5 21,139,150,183-187,194-201,636,664,673
+crates/gateway-service/src/budget_guard.rs
+  s_dd118f467446e0::t_c2cd3dd37b9377 570,588
+crates/gateway-service/src/client_session.rs
+  s_dd118f467446e0::t_1ffb2f006d5fb6 50-52,55-57,61,68-69,74-79,82,85-86,96,103-104,114-119,122-144,146-156,158-167,169-180,195-226,229-246,249-255,260-264,440,443-444,449,463-466,597,600-601,613,621-622
+crates/gateway-service/src/client_session/tests.rs
+  s_dd118f467446e0::t_092aa5ef94d0eb 4-12,19-23,62-70,72,76,246-250,256,258,261-411
+crates/gateway-service/src/effective_route_metadata.rs
+  s_dd118f467446e0::t_1d8a164b036362 69,193,207,233,244,256
+crates/gateway-service/src/lib.rs
+  s_dd118f467446e0::t_26cb9ca94e6190 5,190
+crates/gateway-service/src/model_metadata.rs
+  s_dd118f467446e0::t_6ce37f0a73aea4 293,303,336
+crates/gateway-service/src/model_metadata/tests.rs
+  s_dd118f467446e0::t_b08cbead54093a 90,98
+crates/gateway-service/src/model_metadata/tests/model_group_info.rs
+  s_dd118f467446e0::t_d65f70a0e79265 103,134
+crates/gateway-service/src/model_metadata/tests/service_tiers.rs
+  s_dd118f467446e0::t_1d1456b23a6aa7 270
+crates/gateway-service/src/pricing_catalog.rs
+  s_dd118f467446e0::t_c2e3d7d3f53e84 161-183,306,520-522,548-549,560-561
+crates/gateway-service/src/pricing_catalog/merge.rs
+  s_dd118f467446e0::t_73e72e7ff822e1 97-98,124,366
+crates/gateway-service/src/pricing_catalog/merge/tests.rs
+  s_dd118f467446e0::t_31a123ba15d236 143,307
+crates/gateway-service/src/pricing_catalog/reconcile.rs
+  s_dd118f467446e0::t_fd0320edbaa3d5 218-220,269,283,299-300
+crates/gateway-service/src/pricing_catalog/sources/litellm.rs
+  s_dd118f467446e0::t_c29c23810c38a1 471-472,474-475,477,485,493
+crates/gateway-service/src/pricing_catalog/sources/litellm/cost.rs
+  s_dd118f467446e0::t_58e9146f9008fe 4-6,19,24,34-35,74,80,115-116,118-125,131,138,141,152,159,166,172,198,238,252-280,302
+crates/gateway-service/src/pricing_catalog/sources/mod.rs
+  s_dd118f467446e0::t_b79d504f4681ca 93
+crates/gateway-service/src/pricing_catalog/sources/models_dev.rs
+  s_dd118f467446e0::t_dceee9f0e15fd7 107,225,291,457
+crates/gateway-service/src/pricing_catalog/tests/reconciliation.rs
+  s_dd118f467446e0::t_807639d2538f18 12,555,574,583,590
+crates/gateway-service/src/pricing_catalog/tests/refresh.rs
+  s_dd118f467446e0::t_c5712c8a3dffee 495
+crates/gateway-service/src/pricing_catalog/tests/resolution.rs
+  s_dd118f467446e0::t_8783beee69edbd 523
+crates/gateway-service/src/pricing_catalog/tests/service_tiers.rs
+  s_dd118f467446e0::t_bf35f81d3e8d7b 55,65
+crates/gateway-service/src/pricing_catalog/tests/support.rs
+  s_dd118f467446e0::t_ebf10c4ef2c00f 52,436,472,511,549,588,626,665,704,740
+crates/gateway-service/src/request_logging.rs
+  s_dd118f467446e0::t_85560df175c8d6 19-22,67-68,78-89,360-364,381
+crates/gateway-service/src/request_logging/harness.rs
+  s_dd118f467446e0::t_1796cc6479ee21 50-52
+crates/gateway-service/src/request_logging/stream.rs
+  s_dd118f467446e0::t_db4d4a038d1467 10,43,117-119,174-180
+crates/gateway-service/src/request_logging/tests/harness.rs
+  s_dd118f467446e0::t_49930693a0a74b 10-16,104,133,136
+crates/gateway-service/src/request_logging/tests/persistence.rs
+  s_dd118f467446e0::t_0df96dd6aeea86 558-611
+crates/gateway-service/src/service.rs
+  s_dd118f467446e0::t_8cadd154f5aff1 12-14,37,47-50,924-934,936,938-939,943,947-948,951-952,954-955,1017,1041,1059,1067-1075,1117-1118,1123,1143-1144,1151-1176,1178-1188,1190-1205,1207,1209-1211,1213-1225,1227-1242,1322,1345,1427-1428,1457-1462,1521-1536,1543,1547-1548,1550-1551,1557-1560,1564,1571-1579,1666,1684,1714,1745,1947,1988,2535,2604,2645,2686,2774,2967,3003,3053,3118,3157,3178,3212,3236,3320,3354-3377,3402,3412,3434,3438,3440,3444-3449,3451-3453,3467,3489,3531,3546
+crates/gateway-service/src/service/route_overrides.rs
+  s_dd118f467446e0::t_65166b9f449ab6 130-131,349,358,373-375,406,418,431
+crates/gateway-service/src/service/tests/cache_ttl_and_estimates.rs
+  s_dd118f467446e0::t_3186ff995220c8 1-285
+crates/gateway-service/src/service/tests/context_tier_pricing.rs
+  s_dd118f467446e0::t_d614b745364fcb 16,58,406,417-422,428,430-431,437-439,441-443,479
+crates/gateway-service/src/service/tests/reported_cost_and_image_usage.rs
+  s_dd118f467446e0::t_f079efffaaea9f 16,34
+crates/gateway-service/src/service/tests/service_tier_pricing.rs
+  s_dd118f467446e0::t_501499a2fbb74b 16-18,31,57,87,110-117,134,143-152,176,191-200,204,219-220,231,239-242,266,288-289,293,299
+crates/gateway-service/src/service/tier_pricing.rs
+  s_dd118f467446e0::t_1cd40c11e6bb16 1-6,13,18,21,28,44,49-113,122,124-125,139-141,143-144,147-151,153-200,202-213,215-250,253-302,308,310-314,341-343,387-389,410,428,443-449
+crates/gateway-service/src/usage.rs
+  s_dd118f467446e0::t_17e611b65aa75b 5-9,15,17-18,81-91,99,151,170-171,222,233,313,317-318,324,344-349,356,361-362,365-367,369,371-374,377-379,381,383-392
+crates/gateway-service/src/usage/estimate.rs
+  s_dd118f467446e0::t_76cfaa20187034 1-184
+crates/gateway-store/migrations/V78__cache_write_1h.sql
+  s_dd118f467446e0::t_c5b9ae3978d215 1-3
+crates/gateway-store/migrations/V79__git_ai_attribution.sql
+  s_dd118f467446e0::t_788f8d6da33002 1-165
+crates/gateway-store/migrations/postgres/V78__cache_write_1h.sql
+  s_dd118f467446e0::t_a2facf3e78e81c 1-13
+crates/gateway-store/migrations/postgres/V79__git_ai_attribution.sql
+  s_dd118f467446e0::t_311a4b20693687 1-173
+crates/gateway-store/src/any_store_attribution.rs
+  s_dd118f467446e0::t_0a6fce8df8d371 1-90
+crates/gateway-store/src/attribution.rs
+  s_dd118f467446e0::t_bd6afe95b57df8 1-283
+crates/gateway-store/src/attribution/commits.rs
+  s_dd118f467446e0::t_6eaae9966cd6fe 1-292
+crates/gateway-store/src/attribution/pull_requests.rs
+  s_dd118f467446e0::t_1763666444d080 1-197
+crates/gateway-store/src/attribution/sessions.rs
+  s_dd118f467446e0::t_565faf72832049 1-289
+crates/gateway-store/src/attribution/tests.rs
+  s_dd118f467446e0::t_91a423882a35c0 1-282
+crates/gateway-store/src/attribution_tests.rs
+  s_dd118f467446e0::t_d5fcfc58425302 1-882
+crates/gateway-store/src/audit_logs.rs
+  s_dd118f467446e0::t_428ed120c3a698 9
+crates/gateway-store/src/lib.rs
+  s_dd118f467446e0::t_ecf4ca1f6deb14 7,22,56-58,1226,1264,1286,1309,1320,1328,1358,1367,1374,1381-1382,7480,8365-8369,8660-8664,12240,12349,12508,12565,12583,12608,12626
+crates/gateway-store/src/libsql_store/attribution.rs
+  s_dd118f467446e0::t_31fa0769211efc 1-518
+crates/gateway-store/src/libsql_store/batches.rs
+  s_dd118f467446e0::t_98bffedf581da4 652
+crates/gateway-store/src/libsql_store/budgets.rs
+  s_dd118f467446e0::t_638edf3315b91e 378-379,424-425,467-468,1558-1559,1563,1618-1622
+crates/gateway-store/src/libsql_store/mod.rs
+  s_dd118f467446e0::t_d0bd40610836d1 3
+crates/gateway-store/src/libsql_store/pricing_catalog.rs
+  s_dd118f467446e0::t_25016e6e8f7be0 93,132,135,176-179,283,286,327-330,398
+crates/gateway-store/src/libsql_store/support.rs
+  s_dd118f467446e0::t_4402b3d6c3cc2b 717-719,738,764-765,801-802,816-817
+crates/gateway-store/src/migration_registry.rs
+  s_dd118f467446e0::t_74e610165a3122 493-506,508-510
+crates/gateway-store/src/postgres_store/attribution.rs
+  s_dd118f467446e0::t_a6b3d7118b98c4 1-438
+crates/gateway-store/src/postgres_store/budgets.rs
+  s_dd118f467446e0::t_5fae13b7072c5d 420-421,460-461,497-498,1534-1535,1539,1607-1612
+crates/gateway-store/src/postgres_store/mod.rs
+  s_dd118f467446e0::t_bb5e9d3e261801 3
+crates/gateway-store/src/postgres_store/pricing_catalog.rs
+  s_dd118f467446e0::t_e4df8ca2bf088a 80,113,116,172-176,280,283,339-343,408
+crates/gateway-store/src/postgres_store/support.rs
+  s_dd118f467446e0::t_74d4cb9859e67d 674-676,695,721-722,758-759,772-773
+crates/gateway-store/src/pricing_sync.rs
+  s_dd118f467446e0::t_b633df69169a1b 145
+crates/gateway-store/src/shared.rs
+  s_dd118f467446e0::t_8c409f17bfc49a 279-289
+crates/gateway-store/src/store.rs
+  s_dd118f467446e0::t_c60ac5421a3e36 6-11,68
+crates/gateway/openapi/admin-api.json
+  s_dd118f467446e0::t_e3f86ef43d0b8c 235-305,5159-5208,6459-6489,8910,11562,11565-11566,11569,11572,11574,11576-11578,11582,11585-11586,11589,11592-11597,11601-11604,11606-12596,14872-14953
+crates/gateway/src/config/routes.rs
+  s_dd118f467446e0::t_006fd65d1b3f89 212-214,271-275,436
+crates/gateway/src/config/service_tiers.rs
+  s_dd118f467446e0::t_c806803ac56d41 129-130,155-159
+crates/gateway/src/config/tests/routes.rs
+  s_dd118f467446e0::t_aa3f73868bba2c 27,50,57-91
+crates/gateway/src/http/admin_contract.rs
+  s_dd118f467446e0::t_620a31b2ad2398 460,2167-2169,2412-2414,2482-2486
+crates/gateway/src/http/attribution.rs
+  s_dd118f467446e0::t_b0521d9c9183cd 1-22
+crates/gateway/src/http/attribution/ingest.rs
+  s_dd118f467446e0::t_4d3efdf1681bd0 1-437
+crates/gateway/src/http/attribution/report.rs
+  s_dd118f467446e0::t_6674b5ad7e6a00 1-514
+crates/gateway/src/http/attribution/tests.rs
+  s_dd118f467446e0::t_67938129a7d1b8 1-361
+crates/gateway/src/http/handlers.rs
+  s_dd118f467446e0::t_d4f08c535b131c 968-969,1084-1085,1426-1428,1887
+crates/gateway/src/http/handlers/decisions.rs
+  s_dd118f467446e0::t_700c08d9da1958 439,479,491
+crates/gateway/src/http/handlers/inference.rs
+  s_dd118f467446e0::t_f9d8e8e8a6c1be 234,459-460
+crates/gateway/src/http/handlers/json_operation.rs
+  s_dd118f467446e0::t_b6604fa4f59620 219,228,306-311,342-349
+crates/gateway/src/http/mod.rs
+  s_dd118f467446e0::t_9f9c6509134f03 5,65,113-114,307-316
+crates/gateway/src/http/models.rs
+  s_dd118f467446e0::t_f331a3707f6661 671,679
+crates/gateway/src/http/observability/request_logs.rs
+  s_dd118f467446e0::t_393707253daf72 779,797
+crates/gateway/src/http/scoped_api_key_tests.rs
+  s_dd118f467446e0::t_ffda8bd772300d 510-543,758-763
+crates/gateway/src/http/spend_budget_increases/handler_tests.rs
+  s_dd118f467446e0::t_a9fee30bc4b9ca 175,193
+crates/gateway/src/local_demo_seed/attribution.rs
+  s_dd118f467446e0::t_1464fa898afd7e 1-489
+crates/gateway/src/local_demo_seed/history.rs
+  s_dd118f467446e0::t_5098488db25b40 303,330
+crates/gateway/src/local_demo_seed/mod.rs
+  s_dd118f467446e0::t_e24ba4c5af3ba8 21,432,487,542-544,1075-1102,1204
+crates/oceans-cli/Cargo.toml
+  s_dd118f467446e0::t_ec1933e1aba885 22-23,28,31,36-38
+crates/oceans-cli/assets/omp/oceans-git-ai.ts
+  s_dd118f467446e0::t_3d76d7b04a301f 1-252
+crates/oceans-cli/src/attribution/hooks.rs
+  s_dd118f467446e0::t_bcd53c7026fd72 1-231
+crates/oceans-cli/src/attribution/hooks_tests.rs
+  s_dd118f467446e0::t_15eb1819d66ca9 1-218
+crates/oceans-cli/src/attribution/install.rs
+  s_dd118f467446e0::t_396b81fb96cb31 1-290
+crates/oceans-cli/src/attribution/install_tests.rs
+  s_dd118f467446e0::t_69da7020e911ad 1-199
+crates/oceans-cli/src/attribution/mod.rs
+  s_dd118f467446e0::t_5b79a29f907056 1-359
+crates/oceans-cli/src/attribution/ownership.rs
+  s_dd118f467446e0::t_1771ee006da397 1-87
+crates/oceans-cli/src/attribution/payload.rs
+  s_dd118f467446e0::t_0d59af2e3466b4 1-131
+crates/oceans-cli/src/attribution/prs.rs
+  s_dd118f467446e0::t_69750e173ba68e 1-332
+crates/oceans-cli/src/attribution/queue.rs
+  s_dd118f467446e0::t_91a2cb53a40c40 1-396
+crates/oceans-cli/src/attribution/queue_tests.rs
+  s_dd118f467446e0::t_09718da0e1f2ee 1-297
+crates/oceans-cli/src/attribution/repo.rs
+  s_dd118f467446e0::t_bffb989ca97e00 1-352
+crates/oceans-cli/src/attribution/sender.rs
+  s_dd118f467446e0::t_638d8c50956105 1-448
+crates/oceans-cli/src/attribution/sender_tests.rs
+  s_dd118f467446e0::t_72233d077baf11 1-415
+crates/oceans-cli/src/attribution/state.rs
+  s_dd118f467446e0::t_f102d744d6fdc9 1-497
+crates/oceans-cli/src/cli.rs
+  s_dd118f467446e0::t_5a6704411501c7 1,6-8,13,16-24,42-140,164-177,184,187-191,193-195,198-200,208-225,282-283,286-288,356-476
+crates/oceans-cli/src/client.rs
+  s_dd118f467446e0::t_837ef21864e02f 6,22-27,52,60-62,204-226,239,263,281-293
+crates/oceans-cli/src/config.rs
+  s_dd118f467446e0::t_7d2ab759b676ab 1-412
+crates/oceans-cli/src/config_tests.rs
+  s_dd118f467446e0::t_71437ed40b6719 1-261
+crates/oceans-cli/src/login.rs
+  s_dd118f467446e0::t_5bbecc30986c94 1-151
+crates/oceans-cli/src/main.rs
+  s_dd118f467446e0::t_1530c07f52e13b 1,4,6-7,13,15-19,21-29,31-34,37-50
+crates/oceans-cli/src/process.rs
+  s_dd118f467446e0::t_452c69a37ef6a6 1-342
+docs/adr/2026-07-21-passive-agent-session-analysis.md
+  s_dd118f467446e0::t_09fcabaa7b93d4 39-49
+docs/adr/2026-10-17-scoped-api-keys.md
+  s_dd118f467446e0::t_0c7f183b2ba470 30
+docs/adr/2026-10-31-multi-source-model-catalog.md
+  s_dd118f467446e0::t_303be39b7336a3 80-81
+docs/adr/2026-11-01-git-ai-attribution-via-oceans-hooks.md
+  s_dd118f467446e0::t_756b4a375ea55a 1-212
+docs/contributing/reference/data-relationships.md
+  s_dd118f467446e0::t_68a9520d8e2b1a 187
+docs/src/content/docs/access/access-settings.mdx
+  s_dd118f467446e0::t_2ef07a94049718 212
+docs/src/content/docs/access/admin-control-plane.mdx
+  s_dd118f467446e0::t_6fb66f571566a9 74
+docs/src/content/docs/access/identity-and-access.mdx
+  s_dd118f467446e0::t_21bcca1f6bae16 137,171,173
+docs/src/content/docs/configuration/model-routing.mdx
+  s_dd118f467446e0::t_a8e674729247b8 24,450
+docs/src/content/docs/configuration/models-and-routes.mdx
+  s_dd118f467446e0::t_b9da6c9059336c 255,257,310,430-431
+docs/src/content/docs/extensions/skills.mdx
+  s_dd118f467446e0::t_5a8176ec9a4a8a 180
+docs/src/content/docs/features.mdx
+  s_dd118f467446e0::t_f43f79877e95fd 36
+docs/src/content/docs/harnesses/git-ai-attribution.mdx
+  s_dd118f467446e0::t_17df961b7cd64a 1-212
+docs/src/content/docs/harnesses/index.mdx
+  s_dd118f467446e0::t_f151bc5de4934c 15-16
+docs/src/content/docs/harnesses/oceans-cli.mdx
+  s_dd118f467446e0::t_ebef893311a03b 1-125
+docs/src/content/docs/observability/agent-harness-usage.mdx
+  s_dd118f467446e0::t_b311d20a52eec8 30
+docs/src/content/docs/observability/agent-session-analysis.mdx
+  s_dd118f467446e0::t_bff4194c3ae395 73
+docs/src/content/docs/observability/index.mdx
+  s_dd118f467446e0::t_3b372709dadebd 22,129
+docs/src/content/docs/observability/request-logs.mdx
+  s_dd118f467446e0::t_01a47ff450705a 167
+docs/src/content/docs/operations/admin-runbooks.mdx
+  s_dd118f467446e0::t_573db124b76ab1 230
+docs/src/content/docs/providers/gcp-vertex.mdx
+  s_dd118f467446e0::t_6967beb24d63b3 421,424-425,437-438
+docs/src/content/docs/providers/github-copilot.mdx
+  s_dd118f467446e0::t_ab284af27cbd95 53,81
+docs/src/content/docs/reference/provider-api-compatibility.mdx
+  s_dd118f467446e0::t_319f3067cae9d5 209,212,222-223,416-418,434-435,574,577,579
+docs/src/content/docs/reference/request-lifecycle.mdx
+  s_dd118f467446e0::t_701a4112943ef3 48-50,101,110-112,114,148
+docs/src/content/docs/spend/budgets.mdx
+  s_dd118f467446e0::t_5242a04ea81927 63
+docs/src/content/docs/spend/pricing-and-accounting.mdx
+  s_dd118f467446e0::t_2dcf377e931813 8,16-19,21,23,25-35,116,137,145-146,153,187,216,218-221,223,225,238,240,242,255,269-271,273,279,281,313,318
+docs/src/lib/sidebar-icons.ts
+  s_dd118f467446e0::t_0f07f852fb4693 21-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fadd3b7779a4e2b54c541dbaa1e3055fed4c0591",
+  "prompts": {},
+  "sessions": {
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
