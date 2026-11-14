@@ -17,6 +17,8 @@ fn classifies_known_agent_harness_user_agents() {
         ("pi/0.4.0 (darwin; bun/1.2.19; arm64)", "pi", "Pi"),
         ("pi/0.4.0 (linux; node/v22.14.0; x64)", "pi", "Pi"),
         ("pi/0.4.0", "pi", "Pi"),
+        ("pi (linux 7.0.0-34-generic; x64)", "pi", "Pi"),
+        ("pi (browser)", "pi", "Pi"),
         ("mastra", "mastra", "Mastra"),
         ("MASTRA", "mastra", "Mastra"),
         ("Mastra/0.19.0", "mastra", "Mastra"),

@@ -113,7 +113,8 @@ pub fn classify_agent_harness(user_agent: Option<&str>) -> AgentHarness {
             label: "curl",
         };
     }
-    if lower.starts_with("pi/") {
+    // Pi 0.87 sends `pi (<platform> <release>; <arch>)`; older releases sent `pi/<version>`.
+    if lower.starts_with("pi/") || lower.starts_with("pi (") {
         return AgentHarness {
             key: "pi",
             label: "Pi",

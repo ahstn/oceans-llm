@@ -37,7 +37,7 @@ The classifier is explicit and conservative. It checks these rules in order, and
 | Starts with `claude-cli/` | `claude_cli` | Claude CLI |
 | Starts with `dspy/` | `dspy` | DSPy |
 | Starts with `curl/` | `curl` | curl |
-| Starts with `pi/` | `pi` | Pi |
+| Starts with `pi/` or `pi (` | `pi` | Pi |
 | Starts with `GithubCopilot/` | `github_copilot` | GitHub Copilot |
 
 A missing, blank or unmatched value maps to key `unknown` with label `Unknown`. Generic runtime values, such as `undici`, stay `Unknown`. The rules are in [`harness.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-service/src/request_logging/harness.rs).
