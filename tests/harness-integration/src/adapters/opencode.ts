@@ -8,11 +8,22 @@ import { fileURLToPath } from "node:url";
 
 import { z } from "zod";
 
-import { fetchGeneratedOpenCodeConfig, parseCredentialUrl } from "../gateway-client.js";
+import { fetchGeneratedClientConfig, parseCredentialUrl } from "../gateway-client.js";
 import { delay, runCommand } from "../process.js";
-import type { GatewayRuntime, HarnessAdapter, HarnessRun } from "../types.js";
+import type {
+  GatewayRuntime,
+  HarnessAdapter,
+  HarnessRun,
+  HarnessRunOptions,
+} from "../types.js";
 import { parseAssistantOutput, parseToolCalls } from "./events.js";
-import { createHarnessEnvironment, createIsolatedPaths } from "./isolation.js";
+import {
+  createHarnessEnvironment,
+  createIsolatedPaths,
+  HARNESS_TIMEOUT_MS,
+  type IsolatedPaths,
+} from "./isolation.js";
+import { sandboxHelpersSource } from "./sandbox.js";
 
 const PACKAGE_ROOT = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const OPENCODE_BINARY = join(PACKAGE_ROOT, "node_modules", ".bin", "opencode");
@@ -30,20 +41,21 @@ const GeneratedConfigSchema = z
           env: z.array(z.string()).min(1),
           headers: z.record(z.string(), z.string()).optional(),
           models: z.record(z.string(), z.unknown()),
+          package: z.string(),
           settings: z.object({ baseURL: z.string() }).passthrough(),
         })
         .passthrough(),
     ),
   })
   .passthrough();
-type GeneratedConfig = z.infer<typeof GeneratedConfigSchema>;
+export type GeneratedOpenCodeConfig = z.infer<typeof GeneratedConfigSchema>;
 
 /**
  * Parses the generated config. The adapter gives each provider the Oceans API key, and OpenCode
  * sends that key to the provider's `settings.baseURL`. That URL comes from the gateway's
  * client-config setting, not from `GATEWAY_BASE_URL`, so it gets the same cleartext check.
  */
-export function parseGeneratedOpenCodeConfig(value: unknown): GeneratedConfig {
+export function parseGeneratedOpenCodeConfig(value: unknown): GeneratedOpenCodeConfig {
   const config = GeneratedConfigSchema.parse(value);
   for (const [id, provider] of Object.entries(config.providers)) {
     parseCredentialUrl(provider.settings.baseURL, `Generated OpenCode provider ${id} baseURL`);
@@ -51,34 +63,45 @@ export function parseGeneratedOpenCodeConfig(value: unknown): GeneratedConfig {
   return config;
 }
 
+export async function fetchGeneratedOpenCodeConfig(
+  runtime: GatewayRuntime,
+  model: string,
+): Promise<GeneratedOpenCodeConfig> {
+  const [content] = await fetchGeneratedClientConfig(runtime, model, "opencode");
+  return parseGeneratedOpenCodeConfig(JSON.parse(content ?? "null"));
+}
+
+/** OpenCode with the native config that Oceans generates for a model. */
 export class OpenCodeAdapter implements HarnessAdapter {
-  readonly key = "opencode" as const;
+  readonly harness = "opencode" as const;
   readonly label = "OpenCode";
+  readonly tools = { read: "read", shell: "shell", write: ["write", "patch"] };
   readonly #runtime: GatewayRuntime;
-  #generated: Promise<GeneratedConfig> | undefined;
+  readonly #generated = new Map<string, Promise<GeneratedOpenCodeConfig>>();
 
   constructor(runtime: GatewayRuntime) {
     this.#runtime = runtime;
   }
 
-  async run(workspace: string, prompt: string): Promise<HarnessRun> {
+  async run(
+    workspace: string,
+    prompt: string,
+    model: string,
+    options: HarnessRunOptions = {},
+  ): Promise<HarnessRun> {
     const requestTag = randomUUID();
     // Drive OpenCode with the config Oceans generates for users, so the suite proves that config
     // works in the real client. Only harness-specific settings are layered on top.
-    this.#generated ??= fetchGeneratedOpenCodeConfig(this.#runtime, this.#runtime.model).then(
-      parseGeneratedOpenCodeConfig,
-    );
-    const generated = await this.#generated;
-    const isolated = await createIsolatedPaths(workspace, this.key);
-    const pluginDirectory = join(isolated.config, "plugins");
-    await mkdir(pluginDirectory, { recursive: true });
-    await writeFile(
-      join(pluginDirectory, "oceans-guardrails.js"),
-      guardrailPluginSource(workspace),
-      "utf8",
-    );
+    let generated = this.#generated.get(model);
+    if (!generated) {
+      generated = fetchGeneratedOpenCodeConfig(this.#runtime, model);
+      this.#generated.set(model, generated);
+    }
+    const config = await generated;
+    const isolated = await createIsolatedPaths(workspace, this.harness);
+    await installGuardrailPlugin(isolated, workspace);
     const providers = Object.fromEntries(
-      Object.entries(generated.providers).map(([id, provider]) => [
+      Object.entries(config.providers).map(([id, provider]) => [
         id,
         {
           ...provider,
@@ -86,79 +109,139 @@ export class OpenCodeAdapter implements HarnessAdapter {
         },
       ]),
     );
-    const config = {
-      ...generated,
-      providers,
-      agents: {
-        build: {
-          steps: 8,
-        },
-      },
-      mcp: {
-        servers: {
-          oceans: {
-            // Code Mode wraps MCP calls in generated `execute` scripts. Direct tool calls keep the
-            // aggregate operations and their inputs visible in the event stream.
-            codemode: false,
-            headers: { Authorization: "Bearer {env:OCEANS_API_KEY}" },
-            oauth: false,
-            timeout: { catalog: 60_000, execution: 60_000, startup: 60_000 },
-            type: "remote",
-            url: `${this.#runtime.baseUrl}/mcp`,
-          },
-        },
-      },
-      permissions: [
-        { action: "shell", effect: "allow", resource: "*" },
-        { action: "external_directory", effect: "deny", resource: "*" },
-        { action: "subagent", effect: "deny", resource: "*" },
-      ],
-    };
     // The generated config names the API key variable in `providers.*.env`; supply the key there.
     const providerKeys = Object.fromEntries(
-      Object.values(generated.providers).flatMap((provider) =>
+      Object.values(config.providers).flatMap((provider) =>
         provider.env.map((name) => [name, this.#runtime.apiKey]),
       ),
     );
-    const environment = createHarnessEnvironment(isolated, {
+    const environment = openCodeEnvironment(isolated, {
       ...providerKeys,
       OCEANS_API_KEY: this.#runtime.apiKey,
       OCEANS_BASE_URL: this.#runtime.baseUrl,
-      OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
-      OPENCODE_CONFIG_DIR: isolated.config,
-      OPENCODE_DISABLE_AUTOUPDATE: "true",
-      OPENCODE_DISABLE_CLAUDE_CODE: "true",
-      OPENCODE_DISABLE_FILEWATCHER: "true",
-      OPENCODE_DISABLE_FREE_MODELS: "true",
-      OPENCODE_DISABLE_MODELS_FETCH: "true",
-    });
-    const result = await withPrivateServer(workspace, environment, async (server) => {
-      // V2 connects MCP servers in the background after the server starts. Wait until Oceans MCP
-      // is connected on this server, so the first model request already lists its tools.
-      await waitForOceansMcp(workspace, server);
-      return runCommand(
-        OPENCODE_BINARY,
-        [
-          "run",
-          "--server",
-          server.url,
-          "--format",
-          "json",
-          "--model",
-          generated.model,
-          "--auto",
-          "--",
-          prompt,
-        ],
-        { cwd: workspace, env: server.env, timeoutMs: 90_000 },
-      );
+      OPENCODE_CONFIG_CONTENT: JSON.stringify({
+        ...config,
+        ...harnessOpenCodeConfig(this.#runtime, options),
+        providers,
+      }),
     });
     return {
-      output: parseAssistantOutput(result.stdout),
+      ...(await runOpenCode(workspace, environment, config.model, prompt, options)),
       requestTag,
-      toolCalls: parseToolCalls(result.stdout),
     };
   }
+}
+
+/**
+ * The isolated environment for an OpenCode server. It turns off update checks, Claude Code config
+ * import, the file watcher and remote model lists.
+ */
+export function openCodeEnvironment(
+  isolated: IsolatedPaths,
+  overrides: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+  return createHarnessEnvironment(isolated, {
+    XDG_STATE_HOME: join(isolated.home, "state"),
+    OPENCODE_CONFIG_DIR: isolated.config,
+    OPENCODE_DISABLE_AUTOUPDATE: "true",
+    OPENCODE_DISABLE_CLAUDE_CODE: "true",
+    OPENCODE_DISABLE_FILEWATCHER: "true",
+    OPENCODE_DISABLE_FREE_MODELS: "true",
+    OPENCODE_DISABLE_MODELS_FETCH: "true",
+    ...overrides,
+  });
+}
+
+/** OpenCode settings for a harness run: a step limit, permissions, and Oceans MCP when asked. */
+export function harnessOpenCodeConfig(
+  runtime: GatewayRuntime,
+  options: HarnessRunOptions,
+): Record<string, unknown> {
+  return {
+    agents: {
+      build: {
+        steps: 8,
+      },
+    },
+    ...(options.mcp
+      ? {
+          mcp: {
+            servers: {
+              oceans: {
+                // Code Mode wraps MCP calls in generated `execute` scripts. Direct tool calls keep
+                // the aggregate operations and their inputs visible in the event stream.
+                codemode: false,
+                headers: { Authorization: "Bearer {env:OCEANS_API_KEY}" },
+                oauth: false,
+                timeout: { catalog: 60_000, execution: 60_000, startup: 60_000 },
+                type: "remote",
+                url: `${runtime.baseUrl}/mcp`,
+              },
+            },
+          },
+        }
+      : {}),
+    permissions: [
+      { action: "shell", effect: "allow", resource: "*" },
+      { action: "external_directory", effect: "deny", resource: "*" },
+      { action: "subagent", effect: "deny", resource: "*" },
+    ],
+  };
+}
+
+/** Adds the guardrail plugin to the isolated OpenCode config folder. */
+export async function installGuardrailPlugin(
+  isolated: IsolatedPaths,
+  workspace: string,
+): Promise<void> {
+  const pluginDirectory = join(isolated.config, "plugins");
+  await mkdir(pluginDirectory, { recursive: true });
+  await writeFile(
+    join(pluginDirectory, "oceans-guardrails.js"),
+    guardrailPluginSource(workspace),
+    "utf8",
+  );
+}
+
+/** Runs one prompt on a private OpenCode server and parses its JSON event stream. */
+export async function runOpenCode(
+  workspace: string,
+  environment: NodeJS.ProcessEnv,
+  model: string,
+  prompt: string,
+  options: HarnessRunOptions,
+): Promise<Omit<HarnessRun, "requestTag">> {
+  const result = await withPrivateServer(workspace, environment, async (server) => {
+    if (options.mcp) {
+      // V2 connects MCP servers in the background after the server starts. Wait until Oceans
+      // MCP is connected on this server, so the first model request already lists its tools.
+      await waitForOceansMcp(workspace, server);
+    }
+    return runCommand(
+      OPENCODE_BINARY,
+      [
+        "run",
+        "--server",
+        server.url,
+        "--format",
+        "json",
+        "--model",
+        model,
+        // A session without a title asks the model for one, and the server stops when the run
+        // ends, which cancels that request.
+        "--title",
+        "Oceans harness run",
+        "--auto",
+        "--",
+        prompt,
+      ],
+      { cwd: workspace, env: server.env, timeoutMs: HARNESS_TIMEOUT_MS },
+    );
+  });
+  return {
+    output: parseAssistantOutput(result.stdout),
+    toolCalls: parseToolCalls(result.stdout),
+  };
 }
 
 export interface PrivateServer {
@@ -225,44 +308,7 @@ async function waitForOceansMcp(workspace: string, server: PrivateServer): Promi
 }
 
 export function guardrailPluginSource(workspace: string): string {
-  return `
-const guardrailUrl = new URL("/api/v1/guardrails/evaluate", process.env.OCEANS_BASE_URL).toString();
-const guardrailTimeoutMs = Number(process.env.OCEANS_GUARDRAIL_TIMEOUT_MS ?? "2000");
-const workspace = ${JSON.stringify(workspace)};
-
-function validateGuardrailDecision(value) {
-  if (
-    value === null ||
-    typeof value !== "object" ||
-    typeof value.allowed !== "boolean" ||
-    typeof value.transformed !== "boolean" ||
-    typeof value.decision_id !== "string" ||
-    value.decision_id.length === 0 ||
-    (!value.allowed && (typeof value.reason_code !== "string" || value.reason_code.length === 0))
-  ) {
-    throw new Error("Guardrail evaluation returned an invalid response");
-  }
-  return value;
-}
-
-
-function shellQuote(value) {
-  return "'" + value.replaceAll("'", "'\\"'\\"'") + "'";
-}
-
-function confineShell(command) {
-  if (process.platform === "linux") {
-    return "bwrap --die-with-parent --unshare-all --new-session --tmpfs / --proc /proc --dev /dev --tmpfs /tmp --ro-bind-try /usr /usr --ro-bind-try /bin /bin --ro-bind-try /lib /lib --ro-bind-try /lib64 /lib64 --bind " +
-      shellQuote(workspace) + " /workspace --chdir /workspace /bin/sh -c " + shellQuote(command);
-  }
-  if (process.platform === "darwin") {
-    const profile = '(version 1)(deny default)(allow process*)(allow sysctl-read)(allow mach-lookup)(allow file-read* (subpath "/System") (subpath "/usr") (subpath "/bin") (subpath "/dev") (subpath ' +
-      JSON.stringify(workspace) + '))(allow file-write* (subpath ' + JSON.stringify(workspace) + '))';
-    return "/usr/bin/sandbox-exec -p " + shellQuote(profile) + " /bin/sh -c " + shellQuote(command);
-  }
-  return null;
-}
-
+  return `${sandboxHelpersSource(workspace)}
 async function guardToolCall(event) {
   // session_move relocates the session, which would move the workspace boundary that the
   // external_directory rule enforces. It has no permission check, so reject it here. Code Mode
@@ -275,29 +321,7 @@ async function guardToolCall(event) {
   if (typeof command !== "string") {
     throw new Error("Shell command is missing");
   }
-  const response = await fetch(guardrailUrl, {
-    signal: AbortSignal.timeout(guardrailTimeoutMs),
-    method: "POST",
-    headers: {
-      authorization: "Bearer " + process.env.OCEANS_API_KEY,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ tool_name: "bash", command }),
-  });
-  if (!response.ok) {
-    throw new Error("Guardrail evaluation failed with HTTP " + response.status);
-  }
-  const decision = validateGuardrailDecision(await response.json());
-  console.error("oceans_guardrail_decision_id=" + decision.decision_id);
-  if (!decision.allowed) {
-    throw new Error("Oceans guardrail denied shell execution: " + decision.reason_code);
-  }
-  if (decision.transformed) {
-    if (typeof decision.output_command !== "string") {
-      throw new Error("Oceans guardrail returned an invalid shell transformation");
-    }
-    event.input.command = decision.output_command;
-  }
+  event.input.command = await guardShell(command);
 }
 
 // Confine at process creation, after OpenCode has checked permissions against the model's command.

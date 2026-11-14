@@ -115,7 +115,7 @@ Prove the inference endpoints and the OpenCode plugin in real clients:
 .agents/skills/verify-oceans-admin/scripts/control-oceans-admin drive harness-integration
 ```
 
-The plan selects this proof for changes to the chat, Responses and Messages handlers, model discovery, generated client configs, and `packages/opencode-oceans`. The driver needs a run ID and `OPENROUTER_API_KEY`, but no launched stack: `tests/harness-integration` builds the gateway from this checkout and starts a temporary one. It runs the Pi and OpenCode contracts and the packed-plugin suite, including six short paid plugin requests, and records one check per test. Use [features/harness-integration.md](./features/harness-integration.md) for the exact contract.
+The plan selects this proof for changes to the chat, Responses and Messages handlers, model discovery, generated client configs, and `packages/opencode-oceans`. The driver needs a run ID and `OPENROUTER_API_KEY`, but no launched stack: `tests/harness-integration` builds the gateway from this checkout and starts a temporary one. It runs the harness x model matrix (OpenCode plugin, Pi, Oh-My-Pi and Claude Code with GPT-6 Luna, Claude Haiku 5.5 and Gemini 4 Hydrogen), the per-harness MCP checks, and the packed-plugin suite, and records one check per test. Use [features/harness-integration.md](./features/harness-integration.md) for the exact contract.
 
 Prove the MCP registry, Tool Sets workbench, grants, and live tool routing:
 

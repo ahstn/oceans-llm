@@ -1,8 +1,9 @@
-// Runs tests/harness-integration (real Pi, OpenCode and the packed Oceans plugin against a
-// temporary gateway built from this checkout) and records one proof check per test.
+// Runs tests/harness-integration (real OpenCode, Pi, OMP, Claude Code and the packed Oceans plugin
+// against a temporary gateway built from this checkout) and records one proof check per test.
 import { execFileSync, spawn } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
-import { readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import { createProofRecorder, repoRoot } from './proof.mjs'
@@ -22,12 +23,15 @@ const proof = createProofRecorder({
 })
 const details = { suite: 'tests/harness-integration', log: path.basename(logFile), live: [] }
 
+const vertex = await vertexEnvironment()
 try {
-  const apiKey = openRouterKey()
+  const apiKey = process.env.OPENROUTER_API_KEY || fnoxValue('OPENROUTER_API_KEY')
+  // Without Vertex settings the suite skips its Vertex cells, so record why.
+  details.vertex = vertex.source
   if (apiKey) {
     // A suite that dies before writing its report must not leave an older report to read.
     await rm(path.join(evidenceDir, RESULTS), { force: true })
-    const { exitCode, stdout } = await runSuite(apiKey)
+    const { exitCode, stdout } = await runSuite({ ...vertex.env, OPENROUTER_API_KEY: apiKey })
     details.exitCode = exitCode
     details.live = stdout.split('\n').flatMap(liveRequest)
     // A failed teardown or a signal (exit code null) can leave a report of passed tests.
@@ -54,13 +58,14 @@ try {
 } catch (error) {
   await proof.write({ details, error })
   process.exitCode = 1
+} finally {
+  await vertex.cleanup()
 }
 
-/** The caller's key, else fnox's; never printed or saved. */
-function openRouterKey() {
-  if (process.env.OPENROUTER_API_KEY) return process.env.OPENROUTER_API_KEY
+/** A secret from fnox, or '' when fnox cannot resolve it without a prompt; never printed or saved. */
+function fnoxValue(name) {
   try {
-    return execFileSync('fnox', ['--non-interactive', '--no-daemon', 'get', 'OPENROUTER_API_KEY'], {
+    return execFileSync('fnox', ['--non-interactive', '--no-daemon', 'get', name], {
       cwd: repoRoot,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
@@ -70,13 +75,36 @@ function openRouterKey() {
   }
 }
 
+/**
+ * Vertex AI settings for the suite: the caller's environment, else fnox. fnox holds the service
+ * account JSON itself, so it goes to a 0600 file outside the repository and the evidence folder,
+ * which `cleanup` removes. Values are never logged.
+ */
+async function vertexEnvironment() {
+  const none = async () => {}
+  if (process.env.OCEANS_HARNESS_VERTEX_PROJECT && process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    return { source: 'environment', env: {}, cleanup: none }
+  }
+  const project = fnoxValue('OCEANS_HARNESS_VERTEX_PROJECT')
+  const serviceAccount = project ? fnoxValue('OCEANS_HARNESS_VERTEX_SA_JSON') : ''
+  if (!project || !serviceAccount) return { source: 'not configured', env: {}, cleanup: none }
+  const directory = await mkdtemp(path.join(tmpdir(), 'oceans-vertex-'))
+  const credentials = path.join(directory, 'service-account.json')
+  await writeFile(credentials, serviceAccount, { mode: 0o600 })
+  return {
+    source: 'fnox',
+    env: { OCEANS_HARNESS_VERTEX_PROJECT: project, GOOGLE_APPLICATION_CREDENTIALS: credentials },
+    cleanup: () => rm(directory, { force: true, recursive: true }),
+  }
+}
+
 /** Streams the suite to the terminal and the run log; resolves with its exit code and stdout. */
-function runSuite(apiKey) {
+function runSuite(secrets) {
   const log = createWriteStream(logFile)
   const child = spawn(
     'npm',
     ['test', '--', '--reporter=verbose', '--reporter=json', `--outputFile.json=${path.join(evidenceDir, RESULTS)}`],
-    { cwd: suiteDir, env: { ...process.env, OPENROUTER_API_KEY: apiKey }, stdio: ['ignore', 'pipe', 'pipe'] },
+    { cwd: suiteDir, env: { ...process.env, ...secrets }, stdio: ['ignore', 'pipe', 'pipe'] },
   )
   let stdout = ''
   child.stdout.on('data', (chunk) => {

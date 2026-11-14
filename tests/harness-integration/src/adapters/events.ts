@@ -12,7 +12,8 @@ const PiToolEventSchema = z.object({
 const PiToolEndEventSchema = z.object({
   type: z.literal("tool_execution_end"),
   toolCallId: z.string(),
-  isError: z.boolean(),
+  // OMP omits `isError` on success.
+  isError: z.boolean().optional(),
 });
 
 const OpenCodeToolEventSchema = z.object({
@@ -52,9 +53,36 @@ const OpenCodeErrorEventSchema = z.object({
   error: z.unknown(),
 });
 
+// Claude Code `--output-format stream-json`: tool calls arrive as content blocks of assistant
+// messages, and their results as content blocks of the next user message.
+const ClaudeMessageEventSchema = z.object({
+  type: z.enum(["assistant", "user"]),
+  message: z.object({ content: z.unknown() }),
+});
+
+const ClaudeToolUseSchema = z.object({
+  type: z.literal("tool_use"),
+  id: z.string(),
+  name: z.string(),
+  input: z.unknown(),
+});
+
+const ClaudeToolResultSchema = z.object({
+  type: z.literal("tool_result"),
+  tool_use_id: z.string(),
+  is_error: z.boolean().optional(),
+});
+
+const ClaudeResultEventSchema = z.object({
+  type: z.literal("result"),
+  subtype: z.string(),
+  is_error: z.boolean(),
+  result: z.string().optional(),
+});
+
 export function parseToolCalls(output: string): ToolCall[] {
   const toolCalls: ToolCall[] = [];
-  const piToolCalls = new Map<string, ToolCall>();
+  const toolCallsById = new Map<string, ToolCall>();
   for (const event of parseJsonEvents(output)) {
     const piEvent = PiToolEventSchema.safeParse(event);
     if (piEvent.success) {
@@ -64,12 +92,12 @@ export function parseToolCalls(output: string): ToolCall[] {
         status: "started",
       };
       toolCalls.push(toolCall);
-      piToolCalls.set(piEvent.data.toolCallId, toolCall);
+      toolCallsById.set(piEvent.data.toolCallId, toolCall);
       continue;
     }
     const piEndEvent = PiToolEndEventSchema.safeParse(event);
     if (piEndEvent.success) {
-      const toolCall = piToolCalls.get(piEndEvent.data.toolCallId);
+      const toolCall = toolCallsById.get(piEndEvent.data.toolCallId);
       if (toolCall) {
         toolCall.status = piEndEvent.data.isError ? "error" : "completed";
       }
@@ -82,6 +110,31 @@ export function parseToolCalls(output: string): ToolCall[] {
         name: openCodeEvent.data.part.tool,
         status: openCodeEvent.data.part.state.status,
       });
+      continue;
+    }
+    const claudeMessage = ClaudeMessageEventSchema.safeParse(event);
+    if (claudeMessage.success && Array.isArray(claudeMessage.data.message.content)) {
+      for (const block of claudeMessage.data.message.content) {
+        const toolUse = ClaudeToolUseSchema.safeParse(block);
+        if (toolUse.success) {
+          const toolCall: ToolCall = {
+            input: toolUse.data.input,
+            name: toolUse.data.name,
+            status: "started",
+          };
+          toolCalls.push(toolCall);
+          toolCallsById.set(toolUse.data.id, toolCall);
+          continue;
+        }
+        const toolResult = ClaudeToolResultSchema.safeParse(block);
+        if (!toolResult.success) {
+          continue;
+        }
+        const toolCall = toolCallsById.get(toolResult.data.tool_use_id);
+        if (toolCall) {
+          toolCall.status = toolResult.data.is_error ? "error" : "completed";
+        }
+      }
     }
   }
   return toolCalls;
@@ -119,6 +172,15 @@ export function parseAssistantOutput(output: string): string {
     const openCodeError = OpenCodeErrorEventSchema.safeParse(event);
     if (openCodeError.success) {
       terminalError = openCodeError.data.error;
+      continue;
+    }
+    const claudeResult = ClaudeResultEventSchema.safeParse(event);
+    if (claudeResult.success) {
+      if (claudeResult.data.is_error || claudeResult.data.subtype !== "success") {
+        terminalError = event;
+      } else if (claudeResult.data.result?.trim()) {
+        assistantOutput = claudeResult.data.result.trim();
+      }
     }
   }
 

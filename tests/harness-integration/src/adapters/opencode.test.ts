@@ -4,11 +4,12 @@ import { parseGeneratedOpenCodeConfig } from "./opencode.js";
 
 function generatedConfig(baseURL: string) {
   return {
-    model: "oceans-llm-openai-compatible/harness-openrouter",
+    model: "oceans-llm-openai-compatible/gpt-6-luna",
     providers: {
       "oceans-llm-openai-compatible": {
         env: ["OCEANS_LLM_API_KEY"],
-        models: { "harness-openrouter": {} },
+        models: { "gpt-6-luna": {} },
+        package: "@opencode/ai/providers/openai-compatible",
         settings: { baseURL },
       },
     },

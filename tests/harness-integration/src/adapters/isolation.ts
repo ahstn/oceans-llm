@@ -1,6 +1,9 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
+/** The longest a harness command may run. Tool runs make several model requests. */
+export const HARNESS_TIMEOUT_MS = 240_000;
+
 export interface IsolatedPaths {
   cache: string;
   config: string;

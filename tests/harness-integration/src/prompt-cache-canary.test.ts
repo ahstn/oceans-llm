@@ -15,8 +15,8 @@ describe.skipIf(!cacheCanaryModel || !process.env.GATEWAY_BASE_URL)(
   "Responses prompt-cache canary",
   () => {
     const runtime = inject("gateway");
-    const model = cacheCanaryModel ?? runtime.model;
-    const admin = new GatewayAdminClient({ ...runtime, model });
+    const model = cacheCanaryModel ?? "";
+    const admin = new GatewayAdminClient(runtime);
 
     test("records a first-turn write and a second-turn read on one route", async () => {
       await admin.login();
@@ -40,8 +40,8 @@ describe.skipIf(!cacheCanaryModel || !process.env.GATEWAY_BASE_URL)(
         cacheKey,
         stablePrefix,
       );
-      const firstDetail = await loggedDetail(admin, first.requestTag);
-      const secondDetail = await loggedDetail(admin, second.requestTag);
+      const firstDetail = await loggedDetail(admin, first.requestTag, model);
+      const secondDetail = await loggedDetail(admin, second.requestTag, model);
       const firstUsage = cacheUsage(firstDetail.payload?.response_json);
       const secondUsage = cacheUsage(secondDetail.payload?.response_json);
 
@@ -97,8 +97,8 @@ async function sendResponse(
   return { requestTag };
 }
 
-async function loggedDetail(admin: GatewayAdminClient, requestTag: string) {
-  const log = await admin.waitForSuccessfulModelLog(requestTag);
+async function loggedDetail(admin: GatewayAdminClient, requestTag: string, model: string) {
+  const log = await admin.waitForSuccessfulModelLog(requestTag, model);
   return admin.getRequestLogDetail(log.request_log_id);
 }
 

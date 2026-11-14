@@ -5,7 +5,10 @@ export default defineConfig({
     fileParallelism: false,
     globalSetup: ["./src/global-setup.ts"],
     hookTimeout: 120_000,
+    // The matrix runs the three models of one harness and test at the same time.
+    maxConcurrency: 3,
     maxWorkers: 1,
-    testTimeout: 180_000,
+    // A harness command may run for four minutes, and its request logs are then awaited.
+    testTimeout: 330_000,
   },
 });
