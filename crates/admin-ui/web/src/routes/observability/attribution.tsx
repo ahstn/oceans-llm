@@ -12,7 +12,6 @@ import { ChangesTable } from './-attribution/changes-table'
 import { AttributionFilters, UserFilterButton } from './-attribution/controls'
 import { AttributionFilteredEmpty, AttributionSetupEmpty } from './-attribution/empty-state'
 import { AttributionKpis } from './-attribution/kpis'
-import { ModelBreakdown } from './-attribution/model-breakdown'
 import { PullRequestsTable } from './-attribution/pull-requests-table'
 import {
   normalizeAttributionSearch,
@@ -28,7 +27,7 @@ export const Route = createFileRoute('/observability/attribution')({
   component: AttributionPage,
 })
 
-// Git AI attribution joined with gateway traffic: KPIs, then users, models, PRs, and commits.
+// Git AI attribution joined with gateway traffic: KPIs, then users, PRs, and commits.
 export function AttributionPage() {
   const { data: report } = Route.useLoaderData()
   const { session } = Route.useRouteContext()
@@ -170,8 +169,8 @@ function AttributionSections({
         title="User activity"
         description={
           onSelectUser
-            ? "Activity per user, matched by commit author email or else the key owner. Select a user's name to filter the report to them."
-            : 'Activity per user, matched by commit author email or else the key owner.'
+            ? "Activity per user. A hooked commit counts for the API key's owner, and a merged pull request for its commit author's email. Select a user's name to filter the report to them."
+            : "Activity per user. A hooked commit counts for the API key's owner, and a merged pull request for its commit author's email."
         }
       >
         <UserActivityTable
@@ -179,12 +178,6 @@ function AttributionSections({
           selectedUserId={report.user_id}
           onSelectUser={onSelectUser}
         />
-      </ReportCard>
-      <ReportCard
-        title="Models"
-        description="Requests allocated to the window's commits and their priced cost, per gateway model, with each model's share of those requests."
-      >
-        <ModelBreakdown models={report.models} />
       </ReportCard>
       <ReportCard
         title="Merged pull requests"

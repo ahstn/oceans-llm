@@ -1,10 +1,11 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use anyhow::{Context, bail};
 use gateway_core::{AuthMode, GlobalRole, MembershipRole, RequestTag};
 use serde::Deserialize;
 
 use super::{
+    GatewayConfig,
     auth::{AuthConfig, normalize_config_auth_provider_key},
     budgets::BudgetConfig,
     models::ModelConfig,
@@ -12,6 +13,21 @@ use super::{
         normalize_config_email, normalize_config_team_key, normalize_optional_config_entity_tags,
     },
 };
+
+impl GatewayConfig {
+    /// Each user's `additional_attribution_emails`, normalized, mapped to the user's normalized
+    /// Oceans email. Validation has already rejected an email listed twice or owned by a user.
+    pub fn attribution_email_aliases(&self) -> anyhow::Result<HashMap<String, String>> {
+        let mut aliases = HashMap::new();
+        for user in &self.users {
+            let email_normalized = normalize_config_email(&user.email)?;
+            for email in &user.additional_attribution_emails {
+                aliases.insert(normalize_config_email(email)?, email_normalized.clone());
+            }
+        }
+        Ok(aliases)
+    }
+}
 
 pub(super) fn normalize_config_service_account_key(
     service_account_key: &str,
@@ -104,6 +120,11 @@ pub struct UserConfig {
     pub membership: Option<UserMembershipConfig>,
     #[serde(default)]
     pub budget: Option<BudgetConfig>,
+    /// Other emails this user commits as, such as a personal Git email. Attribution matches
+    /// pull request commit authors, and notes sent with a service account key, against these
+    /// after the user's Oceans email.
+    #[serde(default)]
+    pub additional_attribution_emails: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -206,6 +227,7 @@ pub(super) fn validate_users(
     let oidc_provider_keys = auth.oidc.provider_keys()?;
     let oauth_provider_keys = auth.oauth.provider_keys()?;
     let mut user_emails = std::collections::BTreeSet::new();
+    let mut attribution_emails = Vec::new();
 
     for user in users {
         if user.name.trim().is_empty() {
@@ -217,6 +239,11 @@ pub(super) fn validate_users(
         }
         if !user_emails.insert(email_normalized.clone()) {
             bail!("duplicate user email `{email_normalized}`");
+        }
+        for email in &user.additional_attribution_emails {
+            let email = normalize_config_email(email)
+                .with_context(|| format!("user `{}` additional_attribution_emails", user.email))?;
+            attribution_emails.push((email, email_normalized.clone()));
         }
         normalize_optional_config_entity_tags(
             user.tags.as_deref(),
@@ -240,6 +267,18 @@ pub(super) fn validate_users(
         }
         if let Some(budget) = &user.budget {
             budget.validate(&format!("user `{}` budget", user.email))?;
+        }
+    }
+    // Each extra email must name one user: none can be any user's Oceans email or repeat.
+    let mut seen = std::collections::BTreeSet::new();
+    for (email, user_email) in attribution_emails {
+        if email == reserved_bootstrap_admin_email || user_emails.contains(&email) {
+            bail!(
+                "user `{user_email}` additional_attribution_emails entry `{email}` is already a user's email"
+            );
+        }
+        if !seen.insert(email.clone()) {
+            bail!("additional_attribution_emails entry `{email}` is listed more than once");
         }
     }
     Ok(())

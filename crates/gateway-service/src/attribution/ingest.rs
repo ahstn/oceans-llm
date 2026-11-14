@@ -262,7 +262,10 @@ where
         let branch = validate::optional_text(input.branch, MAX_BRANCH_BYTES)?;
         let parsed = note::parse_note(&input.note_content).map_err(note_reason)?;
         let sessions = self.commit_sessions(&parsed).await?;
-        let author = self.authors.first_user(note_authors(&parsed)).await?;
+        let author = match self.note_author() {
+            Some(owner) => owner,
+            None => self.authors.first_user(note_authors(&parsed)).await?,
+        };
         let write = AttributionCommitWrite {
             attribution_commit_id: Uuid::new_v4(),
             owner: self.owner.clone(),
@@ -291,9 +294,10 @@ where
         let mut sessions = Vec::with_capacity(parsed.sessions.len());
         for session in &parsed.sessions {
             let tool = session.tool.as_deref().unwrap_or("unknown");
-            let human = match session.human_author.as_deref() {
-                Some(author) => self.authors.first_user([author].into_iter()).await?,
-                None => AuthorMatch::default(),
+            let human = match (self.note_author(), session.human_author.as_deref()) {
+                (Some(owner), _) => owner,
+                (None, Some(author)) => self.authors.first_user([author].into_iter()).await?,
+                (None, None) => AuthorMatch::default(),
             };
             sessions.push(AttributionCommitSession {
                 note_session_key: session.key.clone(),
@@ -312,6 +316,17 @@ where
             });
         }
         Ok(sessions)
+    }
+
+    /// The author of every commit and session in a note sent with a user's key: that user.
+    /// git-ai runs the notes hook on the machine that made the commit, so the key owner is the
+    /// developer, whatever email their Git config uses. `None` for a service account key,
+    /// whose notes match author emails instead.
+    fn note_author(&self) -> Option<AuthorMatch> {
+        self.owner.owner_user_id.map(|user_id| AuthorMatch {
+            user_id: Some(user_id),
+            email_hash: None,
+        })
     }
 
     async fn session(

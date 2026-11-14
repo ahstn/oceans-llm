@@ -280,6 +280,7 @@ Teams have no `budget` field in config. The id `system-legacy` has no special me
 | `membership.role` | `member` | `admin` or `member`. `owner` is rejected. |
 | `budget` | unset | Per-user budget. Same shape as [budget settings](/spend/budget-settings/#budget-fields). |
 | `tags` | unset | Identity tags. |
+| `additional_attribution_emails` | `[]` | Other emails the user commits as, such as a personal Git email or the `ID+username@users.noreply.github.com` address GitHub uses for merges and web edits. [Git AI attribution](/harnesses/git-ai-attribution/#read-the-attribution-page) matches pull request commit authors to them. Trimmed and lowercased. Each must be unique, and can't be any user's `email` or the bootstrap admin email. |
 
 A seeded user's role, team, auth method and request logging setting show on the user's **Overview** tab in **Identity > Users**.
 

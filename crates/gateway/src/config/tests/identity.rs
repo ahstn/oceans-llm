@@ -286,6 +286,65 @@ users:
         "unexpected error: {error_text}"
     );
 }
+
+#[test]
+fn maps_additional_attribution_emails_to_the_users_email() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    write_config(
+        &config_path,
+        r#"
+users:
+  - name: Member
+    email: Member@Example.com
+    auth_mode: password
+    additional_attribution_emails: [" Member@Personal.example ", member@users.noreply.example]
+"#,
+    );
+
+    let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+    let aliases = config
+        .attribution_email_aliases()
+        .expect("attribution email aliases");
+    assert_eq!(aliases.len(), 2);
+    assert_eq!(aliases["member@personal.example"], "member@example.com");
+    assert_eq!(
+        aliases["member@users.noreply.example"],
+        "member@example.com"
+    );
+}
+
+#[test]
+fn rejects_additional_attribution_emails_that_name_another_user() {
+    for (users, expected) in [
+        (
+            "[{name: A, email: a@example.com, auth_mode: password, additional_attribution_emails: [b@example.com]}, \
+              {name: B, email: b@example.com, auth_mode: password}]",
+            "`b@example.com` is already a user's email",
+        ),
+        (
+            "[{name: A, email: a@example.com, auth_mode: password, additional_attribution_emails: [admin@local]}]",
+            "`admin@local` is already a user's email",
+        ),
+        (
+            "[{name: A, email: a@example.com, auth_mode: password, additional_attribution_emails: [git@example.com]}, \
+              {name: B, email: b@example.com, auth_mode: password, additional_attribution_emails: [Git@example.com]}]",
+            "`git@example.com` is listed more than once",
+        ),
+    ] {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(&config_path, &format!("users: {users}\n"));
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(
+            error_text.contains(expected),
+            "unexpected error: {error_text}"
+        );
+    }
+}
+
 #[test]
 #[serial]
 fn parses_service_accounts_with_managed_key_and_budget() {
