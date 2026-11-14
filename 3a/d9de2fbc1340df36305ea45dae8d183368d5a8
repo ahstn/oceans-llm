@@ -1,0 +1,19 @@
+.omp/commands/provider-api-audit.md
+  s_1121327246a626::t_a4553edf07fdd0 70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3ad9de2fbc1340df36305ea45dae8d183368d5a8",
+  "prompts": {},
+  "sessions": {
+    "s_1121327246a626": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4b4ef4b8-4d5e-43e9-9d26-60bb85493277",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
