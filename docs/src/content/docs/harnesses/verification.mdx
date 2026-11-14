@@ -1,0 +1,129 @@
+---
+title: Harness Verification
+description: Which agent harness, model and provider combinations Oceans checks end to end, what each check proves, and which combinations are blocked or not applicable.
+sidebar:
+  order: 3
+---
+
+Oceans checks its inference endpoints with the real agent harnesses that users run. A live suite starts a gateway built from the source, connects each harness to it the way the setup pages describe, and sends real model requests through the gateway to the upstream provider. Maintainers run the suite when a change touches the inference endpoints, model discovery, generated client configs or the OpenCode plugin.
+
+This page lists the combinations that the suite checks. Use it to see which harness, model and provider combinations are known to work, and which API each one uses on the gateway.
+
+## The matrix
+
+The matrix has three axes: the harness, the model, and the provider that serves the model. Each cell is one harness with one model on one provider. A tested cell shows the gateway API that the harness calls. The request log records this API as the request's operation. A cell that isn't tested is one of two kinds:
+
+- **Blocked**: the combination can work, but the test account can't run it today. The reason says what is missing.
+- **Not applicable**: the combination can't work, because the provider or the harness doesn't offer it.
+
+The models are a cheap model from each vendor:
+
+| Gateway model | OpenRouter | Vertex AI | Bedrock |
+| --- | --- | --- | --- |
+| `gpt-6-luna` | `openai/gpt-6-luna` | None | `us.openai.gpt-6-luna` |
+| `claude-haiku-5.5` | `anthropic/claude-haiku-5.5` | `anthropic/claude-haiku-5-5` | `us.anthropic.claude-haiku-5-5` |
+| `gemini-4-hydrogen` | `google/gemini-4-hydrogen` | `google/gemini-4-hydrogen` | None |
+
+### OpenRouter
+
+| Harness | GPT-6 Luna | Claude Haiku 5.5 | Gemini 4 Hydrogen |
+| --- | --- | --- | --- |
+| [OpenCode](/harnesses/opencode/) with the Oceans plugin | Responses | Messages | Chat Completions |
+| [Pi](/harnesses/#pi), generated `models.json` | Chat Completions | Messages | Chat Completions |
+| [Oh-My-Pi (OMP)](/harnesses/omp/), `litellm` discovery | Responses | Messages | Chat Completions |
+| [Claude Code](/harnesses/#claude-code), generated `settings.json` | Not applicable (1) | Messages | Not applicable (1) |
+
+### Vertex AI
+
+The Vertex AI provider uses the `global` location. Vertex AI cells run only when the suite has Google Cloud credentials. Without them, the suite skips these cells and says why.
+
+| Harness | GPT-6 Luna | Claude Haiku 5.5 | Gemini 4 Hydrogen |
+| --- | --- | --- | --- |
+| OpenCode with the Oceans plugin | Not applicable (2) | Blocked (3) | Chat Completions |
+| Pi, generated `models.json` | Not applicable (2) | Blocked (3) | Chat Completions |
+| OMP, `litellm` discovery | Not applicable (2) | Blocked (3) | Chat Completions |
+| Claude Code, generated `settings.json` | Not applicable (1) | Blocked (3) | Not applicable (1) |
+
+### Amazon Bedrock
+
+The Bedrock provider uses `us-east-1`. Bedrock cells run only when a maintainer turns them on, so the suite never uses AWS credentials by accident.
+
+| Harness | GPT-6 Luna | Claude Haiku 5.5 | Gemini 4 Hydrogen |
+| --- | --- | --- | --- |
+| OpenCode with the Oceans plugin | Blocked (4) | Blocked (5) | Not applicable (6) |
+| Pi, generated `models.json` | Blocked (4) | Blocked (5) | Not applicable (6) |
+| OMP, `litellm` discovery | Blocked (4) | Blocked (5) | Not applicable (6) |
+| Claude Code, generated `settings.json` | Not applicable (1) | Blocked (7) | Not applicable (1) |
+
+### Reasons
+
+1. **Not applicable: Claude Code with non-Claude models.** Claude Code is tested with Claude models only. Anthropic doesn't support Claude Code with non-Claude models through a gateway ([Claude Code LLM gateway docs](https://code.claude.com/docs/en/llm-gateway)). The Claude Code tab in the **Client config** dialog also leaves out models that don't use Anthropic Messages.
+2. **Not applicable: no OpenAI models on Vertex AI.** Vertex AI lists no OpenAI publisher models.
+3. **Blocked: Vertex AI quota.** The test project's quota for the Claude Haiku base model is 0 in `global`, and a quota increase is pending. The model isn't available in `us-east5`.
+4. **Blocked: Bedrock access to GPT-6 Luna.** Bedrock Runtime denies the test account access to the model. Bedrock Mantle lists it, but rejects `/v1/responses` for it.
+5. **Blocked: Bedrock access to Claude Haiku 5.5.** Bedrock denies the test account access to the model.
+6. **Not applicable: no Gemini models on Bedrock.** Bedrock offers Google's Gemma 3 models only.
+7. **Blocked: Claude Code on Bedrock.** Claude Code needs streaming, and the gateway's Bedrock `runtime_anthropic_invoke` routes can't stream. This stays blocked after the account gets access to the model.
+
+### How each harness picks the API
+
+The harness gets its model list and API choice from the gateway, so the API in a cell comes from the gateway's model data:
+
+- **OpenCode** and **OMP** use `/model_group/info`. A model whose routes all serve OpenAI goes to Responses. OMP sends Claude models to Messages only with a `modelOverrides` entry, as in [Send Claude models over Anthropic Messages](/harnesses/omp/#send-claude-models-over-anthropic-messages). The suite uses that entry.
+- **Pi** and **Claude Code** use the snippets from the **Client config** dialog. The Pi snippet picks the API as [How the API style is chosen](/harnesses/#how-the-api-style-is-chosen) describes. A GPT model on an OpenRouter route gets Chat Completions.
+
+The API between the harness and the gateway doesn't change with the provider. The gateway translates each request to the provider's own API, for example from Chat Completions to Vertex AI `generateContent`.
+
+## What each cell checks
+
+Each cell runs three tests. Each test starts the harness in a new workspace, with its own home and config folders.
+
+| Test | What the harness does | What must be true |
+| --- | --- | --- |
+| Conversation | Replies to a prompt with an exact word. | The reply has the word. |
+| File read and write | Reads `source.txt` with its file tool, then writes `destination.txt` with its file tools, not the shell. | The harness called its file tools, and `destination.txt` holds the expected text. |
+| Bash | Runs `date -u +%F` with its shell tool. | The shell call finished, and the reply has today's UTC date. |
+
+The file and bash tests need more than one model request: the harness sends the tool result back to the model. So they also check that the gateway keeps tool calls intact between requests.
+
+For every test, the suite then finds the requests in the gateway's request logs by their `harness_run` [request tag](/observability/tagging/), and checks that:
+
+- each request succeeded with status `200`,
+- the model and provider are the ones in the cell,
+- the operation is the API in the cell,
+- the agent harness is the right one. See [Agent harness usage](/observability/agent-harness-usage/). Claude Code in print mode sends a `claude-cli/` user agent, so its requests show as **Claude CLI**.
+
+The shell tests run with the same pre-tool hook that the suite uses for every harness. The hook asks [gateway guardrails](/operations/gateway-guardrails/) about each shell command before it runs, and runs the command in a sandbox that can only see the workspace.
+
+## Other checks
+
+The suite also checks these paths outside the matrix, all on OpenRouter:
+
+- **MCP.** Each harness calls Context7 through the gateway's aggregate `/mcp` endpoint: first `search_tools`, then `call_tool`. OpenCode, Pi and OMP use GPT-6 Luna. Claude Code uses Claude Haiku 5.5. See [MCP client setup](/extensions/mcp-client-setup/).
+- **OpenCode snippet.** OpenCode runs one conversation test with the generated `opencode.json` snippet instead of the plugin. See [Use a generated snippet](/harnesses/opencode/#use-a-generated-snippet).
+- **OpenCode plugin discovery.** The plugin must find the three models with the right SDK package, limits, prices and reasoning levels, and must not show a model that the API key can't use.
+- **OpenCode plugin variants.** GPT-6 Luna and Claude Haiku 5.5 run with the `low`, `high` and `fast` variants. Each request sends an image and a PDF. The suite compares OpenCode's token and cost totals with the gateway's request log.
+- **Model allowlists.** A user whose email is on a model's allowlist can call that model from Pi.
+
+## Versions tested
+
+| Harness | Version |
+| --- | --- |
+| OpenCode | 2.2.6 |
+| Oceans plugin (`@ahstn/opencode-oceans`) | Packed from the same source as the gateway |
+| Pi | 0.87.1 |
+| Oh-My-Pi | 18.20.0 |
+| Claude Code | 2.1.323 |
+
+Other versions may work, but the suite doesn't check them.
+
+## Limits
+
+- **Three providers.** The matrix covers OpenRouter, Vertex AI and Bedrock. Other providers, such as the Claude API or GitHub Copilot, aren't in it. See [Provider API compatibility](/reference/provider-api-compatibility/) for those.
+- **Not tested: Codex.** The suite doesn't run Codex.
+- **Default reasoning.** Matrix runs use each harness's default reasoning level. Only the OpenCode plugin variants check `low`, `high` and `fast`.
+- **Short tasks.** The tests are small. They prove that the harness, the gateway and the model work together, not how well a model codes.
+
+## Run the suite against your gateway
+
+Admins can run the same suite against their own deployment. The suite then uses an existing gateway instead of starting one, and makes short, paid model requests through it. The [harness integration README](https://github.com/ahstn/oceans-llm/blob/main/tests/harness-integration/README.md#external-gateway) lists the models, API key grants and environment variables it needs. Use a test deployment and a test admin account, not production credentials.
