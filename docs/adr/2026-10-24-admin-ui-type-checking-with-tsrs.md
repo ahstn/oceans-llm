@@ -1,6 +1,7 @@
 # ADR Admin UI type checking with tsrs
 
 - Date: 2026-10-24
+- Updated: 2026-11-14 (tsrs 0.25.0)
 - Status: Accepted
 
 ## Context
@@ -21,14 +22,30 @@ Measured on an Apple M4 Pro with `--noEmit -p .`, 10 runs after 2 warm-ups:
 
 All three report no errors on the admin UI. On a file with seven deliberate errors, tsrs and TypeScript 7 produced byte-identical output; `tsc` 5.9 differed only in property order inside one message.
 
+On 2026-11-14 the check was rerun on Linux x64 (Intel Core Ultra 7 265K, 20 threads) with `hyperfine`, 10 runs after 2 warm-ups:
+
+| Checker | Wall time | Peak memory |
+| --- | --- | --- |
+| tsc 5.9.3 | 5.77 s | 931 MiB |
+| tsc 6.0.3 | 5.86 s | 942 MiB |
+| TypeScript 7.0.2 | 0.99 s | 975 MiB |
+| TypeScript 7.1.0-beta | 0.82 s | 685 MiB |
+| tsrs 0.18.0 | 0.23 s | 418 MiB |
+| tsrs 0.25.0 | 0.33 s | 321 MiB |
+| TypeScript 7.0.2, single-threaded | 1.72 s | 626 MiB |
+| tsrs 0.18.0, single-threaded | 0.54 s | 188 MiB |
+| tsrs 0.25.0, single-threaded | 0.55 s | 202 MiB |
+
+tsrs 0.25.0 is about 40% slower than 0.18.0 in the default multi-threaded mode (its reported check time goes from 0.13 s to 0.23 s) but uses about a quarter less memory. It is still about 2.5 times faster than TypeScript 7.1.0-beta and 18 times faster than `tsc` 6.0. On a fixture with seven deliberate errors, tsrs 0.25.0, tsrs 0.18.0, TypeScript 7.0.2 and TypeScript 7.1.0-beta produced byte-identical output.
+
 ## Decision
 
 Type-check the admin UI with tsrs. The `typecheck` script runs `tsrs --noEmit -p .`, and `tsrs` is a pinned dev dependency in `package.json` and `bun.lock`. Bun remains the only package manager and script runner for the admin UI.
 
 ## Implementation
 
-- `crates/admin-ui/web/package.json` pins `tsrs@0.18.0-ts7.1.0-dev.20260929`. It installs one platform package from its optional dependencies: macOS arm64, or Linux x64 and arm64 with glibc or musl. `bun.lock` records all five.
-- `mise run //ui:typecheck` calls `bun run typecheck`, and `mise run //ui:check` calls `bun run typecheck:any`, which runs `typecheck` wherever tsrs has a binary, so CI picks up tsrs without workflow changes. The tsrs launcher is a Node script; under `bun run` Bun stands in for `node` when Node is absent.
+- `crates/admin-ui/web/package.json` pins `tsrs@0.25.0-ts7.1.0-beta`. It installs one platform package from its optional dependencies: macOS arm64 and x64, Windows x64 and arm64, or Linux x64 and arm64 with glibc or musl. `bun.lock` records all eight.
+- `mise run //ui:typecheck` and `mise run //ui:check` call `bun run typecheck`, so CI picks up tsrs without workflow changes. The tsrs launcher is a Node script; under `bun run` Bun stands in for `node` when Node is absent.
 - `typescript` moves from 5.9.3 to 6.0.3, the last JavaScript release, and stays installed for `generate:admin-api` and editors. `openapi-typescript` 7.13.0 builds its output with the `ts.factory` API, which the TypeScript 7 package does not export, so generation crashes on 7. With 6.0.3 it produces output identical to the checked-in `admin-api.ts`, though its peer range is still `^5.x`. `tsconfck`, under `vite-tsconfig-paths`, has an optional `^5.0.0` peer and is unaffected.
 - The Docker build does not type-check, so the image is unchanged.
 - `CONTRIBUTING.md` and `crates/admin-ui/web/AGENTS.md` document the Bun and tsrs workflow.
@@ -37,8 +54,8 @@ Type-check the admin UI with tsrs. The `typecheck` script runs `tsrs --noEmit -p
 
 - Moving to TypeScript 7 alone gives most of the gain: about 6.5 times faster than `tsc` 5.9. tsrs is about 3.5 times faster again and uses less than half the memory, which also keeps the check cheap when several worktrees run it at once.
 - tsrs targets TypeScript 7's diagnostics exactly, so switching to the official TypeScript 7 later is a script and dependency change only.
-- tsrs is pre-1.0 and tracks a TypeScript 7.1 dev snapshot. A tsrs bug could hide or invent an error that TypeScript 7 would not report.
-- tsrs has no binary for Intel macOS or Windows, so `typecheck` fails to start there. `typecheck:ts7` (`mise run //ui:typecheck:ts7`) runs TypeScript 7 through `bunx --package typescript@7.0.2` on those platforms. It matched tsrs on the tested fixture, but tsrs tracks a 7.1 snapshot, so diagnostics can differ between the two. It adds nothing to `bun.lock`, but it downloads TypeScript 7 on first use. `mise run //ui:check` runs `typecheck:any` (`scripts/typecheck.mjs`), which picks `typecheck` on darwin-arm64, linux-x64 and linux-arm64 and `typecheck:ts7` elsewhere.
+- tsrs is pre-1.0 and tracks TypeScript 7.1.0-beta. A tsrs bug could hide or invent an error that TypeScript 7 would not report.
+- tsrs 0.18.0 had no binary for Intel macOS or Windows, so this change first shipped a TypeScript 7.0.2 fallback for those platforms. tsrs 0.20.0 added both, and the fallback was removed with the move to 0.25.0.
 - Editors run their bundled TypeScript or the workspace's `typescript` 6.0, while CI runs TypeScript 7.1 semantics through tsrs. An error that changed between versions can appear in only one of them.
 - Only the admin UI changes. `actions/review-agent` and `tests/harness-integration` keep `tsc`.
 
