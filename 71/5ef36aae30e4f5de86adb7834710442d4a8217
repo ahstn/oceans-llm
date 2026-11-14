@@ -1,0 +1,148 @@
+.agents/skills/verify-oceans-admin/features/service-tiers.md
+  h_2f452a9c375069 47
+crates/admin-ui/web/src/test/routes/models-route.test.tsx
+  h_2f452a9c375069 215
+crates/gateway-client-config/src/tests.rs
+  h_2f452a9c375069 1463-1490
+crates/gateway-client-config/src/types.rs
+  h_2f452a9c375069 31-32,42-43,55,65
+crates/gateway-core/src/domain.rs
+  h_2f452a9c375069 2959-2960,2970-2980,2984,2996-2998,4062,4080-4081
+crates/gateway-core/src/error.rs
+  h_2f452a9c375069 193-195,202-204,241-243,304,313,328-336
+crates/gateway-core/src/lib.rs
+  h_2f452a9c375069 222-223
+crates/gateway-core/src/protocol/openai.rs
+  h_2f452a9c375069 30,148-169
+crates/gateway-core/src/provider.rs
+  h_2f452a9c375069 25,214-220,289-291
+crates/gateway-core/src/reasoning_policy.rs
+  h_2f452a9c375069 29-32,245-252,300-359
+crates/gateway-core/src/service_tier.rs
+  h_2f452a9c375069 16,86-108
+crates/gateway-providers/src/anthropic/native.rs
+  h_2f452a9c375069 54-58,61-62,66,68-73,79-80
+crates/gateway-providers/src/anthropic/service_tier.rs
+  h_2f452a9c375069 1-2,11,16-61,70,72
+crates/gateway-providers/src/anthropic/service_tier_tests.rs
+  h_2f452a9c375069 100-124
+crates/gateway-providers/src/anthropic/tests.rs
+  h_2f452a9c375069 222-297
+crates/gateway-providers/src/anthropic_compat.rs
+  h_2f452a9c375069 7,17,146-150,233-234
+crates/gateway-providers/src/bedrock/mod.rs
+  h_2f452a9c375069 15-16,494-498,805-806,999
+crates/gateway-providers/src/bedrock/service_tier.rs
+  h_2f452a9c375069 4-6,15,26-36
+crates/gateway-providers/src/copilot/mod.rs
+  h_2f452a9c375069 341-345
+crates/gateway-providers/src/lib.rs
+  h_2f452a9c375069 31
+crates/gateway-providers/src/openai_compat.rs
+  h_2f452a9c375069 10-12,28-29,34,373,454-460,500,753-757,866-867,2315-2316
+crates/gateway-providers/src/openai_compat/native_messages.rs
+  h_2f452a9c375069 41,51-55
+crates/gateway-providers/src/openai_compat/responses_store.rs
+  h_2f452a9c375069 1-45
+crates/gateway-providers/src/openai_compat/service_tier.rs
+  h_2f452a9c375069 1-48
+crates/gateway-providers/src/openai_compat/service_tier_tests.rs
+  h_2f452a9c375069 13-14,86-92,101-123,147,158,160-173,179-240
+crates/gateway-providers/src/service_tier.rs
+  h_2f452a9c375069 7-10,12-14,17-18,22-23,26-27,34-71
+crates/gateway-providers/src/vertex/anthropic.rs
+  h_2f452a9c375069 43
+crates/gateway-providers/src/vertex/gemini.rs
+  h_2f452a9c375069 66-70,83,85-86,118-121,132
+crates/gateway-providers/src/vertex/google_conversation.rs
+  h_2f452a9c375069 12,15-28,32,104-106,149-191,213,247
+crates/gateway-providers/src/vertex/google_replay.rs
+  h_2f452a9c375069 10-12,15-19,27,44-46,60,66-85,108-111,116-202
+crates/gateway-providers/src/vertex/google_request.rs
+  h_2f452a9c375069 8,23-26,30
+crates/gateway-providers/src/vertex/google_response.rs
+  h_2f452a9c375069 141,169-174
+crates/gateway-providers/src/vertex/google_stream.rs
+  h_2f452a9c375069 9-12,166-172,225,230,236-241
+crates/gateway-providers/src/vertex/mod.rs
+  h_2f452a9c375069 8,17,138-141,232-243,245,331-332
+crates/gateway-providers/src/vertex/tests/google_tools.rs
+  h_2f452a9c375069 473-475,674-677
+crates/gateway-providers/src/vertex/tests/mod.rs
+  h_2f452a9c375069 47
+crates/gateway-providers/src/vertex/tests/response.rs
+  h_2f452a9c375069 76,90-94,113,117,145-193,212
+crates/gateway-providers/src/vertex/tests/service_tier.rs
+  h_2f452a9c375069 3-4,15-106,136,141
+crates/gateway-providers/src/vertex/tests/streaming.rs
+  h_2f452a9c375069 125,141-146,183-186,188-191,194-211,216-220
+crates/gateway-providers/src/vertex/tests/thought_signatures.rs
+  h_2f452a9c375069 1-371
+crates/gateway-service/src/admin_models.rs
+  h_2f452a9c375069 184-188,671
+crates/gateway-service/src/model_metadata/listing.rs
+  h_2f452a9c375069 288
+crates/gateway-service/src/model_metadata/service_tiers.rs
+  h_2f452a9c375069 5-8,12-14,16-20,24-28,31,57-58,60,66-70,77
+crates/gateway-service/src/model_metadata/tests.rs
+  h_2f452a9c375069 6-8,19
+crates/gateway-service/src/model_metadata/tests/service_tiers.rs
+  h_2f452a9c375069 8-9,13-21,70-72,123-156
+crates/gateway-service/src/routing.rs
+  h_2f452a9c375069 6,25-35
+crates/gateway/src/config/mod.rs
+  h_2f452a9c375069 90-91
+crates/gateway/src/config/providers.rs
+  h_2f452a9c375069 82,101,116,118-126,130,152,169,241,250,274,282,290,309,377
+crates/gateway/src/config/routes.rs
+  h_2f452a9c375069 11,13,36,129-130,136,142-148,153-223,348,391,419,439
+crates/gateway/src/config/runtime.rs
+  h_2f452a9c375069 71-72,154-155
+crates/gateway/src/config/seeding.rs
+  h_2f452a9c375069 35-36,92-93
+crates/gateway/src/config/tests/mod.rs
+  h_2f452a9c375069 46
+crates/gateway/src/config/tests/models.rs
+  h_2f452a9c375069 548-596
+crates/gateway/src/config/tests/providers.rs
+  h_2f452a9c375069 823,828-852
+crates/gateway/src/config/tests/service_tiers.rs
+  h_2f452a9c375069 11-35,49-135
+crates/gateway/src/config/tests/unknown_fields.rs
+  h_2f452a9c375069 1-161
+crates/gateway/src/http/handlers/routing.rs
+  h_2f452a9c375069 62-72
+crates/gateway/src/http/handlers/service_tier.rs
+  h_2f452a9c375069 3-4,8,51-53,59,70,87,94-97
+crates/gateway/src/http/handlers/service_tier_tests.rs
+  h_2f452a9c375069 19,176-177,181,187-201,235-239,372-375,377,379-383,385,547-599
+crates/gateway/src/http/request_tracing.rs
+  h_2f452a9c375069 144-146
+docs/adr/2026-11-09-service-tiers.md
+  h_2f452a9c375069 131-139
+docs/src/content/docs/configuration/index.mdx
+  h_2f452a9c375069 349
+docs/src/content/docs/configuration/model-routing.mdx
+  h_2f452a9c375069 84,92,97,374-375,380
+docs/src/content/docs/configuration/models-and-routes.mdx
+  h_2f452a9c375069 97-99,116,149,153-157,159-161,163,204-205
+docs/src/content/docs/configuration/providers.mdx
+  h_2f452a9c375069 32-33,54,108-109,128
+docs/src/content/docs/providers/gcp-vertex.mdx
+  h_2f452a9c375069 156-171,280,296-309
+docs/src/content/docs/providers/openrouter.mdx
+  h_2f452a9c375069 55-65
+docs/src/content/docs/reference/provider-api-compatibility.mdx
+  h_2f452a9c375069 74-92,137,227,346-347
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "715ef36aae30e4f5de86adb7834710442d4a8217",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
