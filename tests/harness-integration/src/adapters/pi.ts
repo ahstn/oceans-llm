@@ -77,6 +77,10 @@ export class PiAdapter implements HarnessAdapter {
     model: string,
     options: HarnessRunOptions = {},
   ): Promise<HarnessRun> {
+    if (options.tier) {
+      // The generated models.json has no tier setting, and Pi has no tier flag.
+      throw new Error("Pi has no service-tier setting to drive");
+    }
     const requestTag = randomUUID();
     // Drive Pi with the `models.json` that Oceans generates for users. Only the request tag is
     // added to it.
@@ -144,6 +148,7 @@ export class PiAdapter implements HarnessAdapter {
         id,
         "--model",
         model,
+        ...(options.effort ? ["--thinking", options.effort] : []),
         "--approve",
       ],
       {

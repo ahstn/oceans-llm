@@ -76,13 +76,15 @@ The API between the harness and the gateway doesn't change with the provider. Th
 
 ## What each cell checks
 
-Each cell runs three tests. Each test starts the harness in a new workspace, with its own home and config folders.
+Each cell runs five tests. Each test starts the harness in a new workspace, with its own home and config folders.
 
 | Test | What the harness does | What must be true |
 | --- | --- | --- |
 | Conversation | Replies to a prompt with an exact word. | The reply has the word. |
 | File read and write | Reads `source.txt` with its file tool, then writes `destination.txt` with its file tools, not the shell. | The harness called its file tools, and `destination.txt` holds the expected text. |
 | Bash | Runs `date -u +%F` with its shell tool. | The shell call finished, and the reply has today's UTC date. |
+| Effort | Replies to a prompt with an exact word, at the `low` reasoning effort. | The reply has the word, and each request asked for `low`. See [Reasoning effort and fast mode](#reasoning-effort-and-fast-mode). |
+| Fast | Replies to a prompt with an exact word, in fast mode. | The reply has the word, and each request asked for the `priority` tier. |
 
 The file and bash tests need more than one model request: the harness sends the tool result back to the model. So they also check that the gateway keeps tool calls intact between requests.
 
@@ -94,6 +96,46 @@ For every test, the suite then finds the requests in the gateway's request logs 
 - the agent harness is the right one. See [Agent harness usage](/observability/agent-harness-usage/). Claude Code in print mode sends a `claude-cli/` user agent, so its requests show as **Claude CLI**.
 
 The shell tests run with the same pre-tool hook that the suite uses for every harness. The hook asks [gateway guardrails](/operations/gateway-guardrails/) about each shell command before it runs, and runs the command in a sandbox that can only see the workspace.
+
+## Reasoning effort and fast mode
+
+The effort and fast tests use a harness setting that a user can change, not a setting that only the suite can make:
+
+- **Effort** asks for the `low` reasoning effort. No harness uses `low` by default, so a pass shows that the setting gets to the gateway.
+- **Fast** asks for the `priority` [service tier](/configuration/model-routing/#service-tiers). Harnesses call this fast mode.
+
+Each harness uses its own setting:
+
+| Harness | Effort setting | Fast setting |
+| --- | --- | --- |
+| OpenCode with the Oceans plugin | Model variant `oceans/<model>#low` | Model variant `oceans/<model>#fast` |
+| Pi, generated `models.json` | `--thinking low` | None |
+| OMP, `litellm` discovery | `--thinking low` | `tier.openai: priority` in `config.yml`. For Claude models, `compat.fastMode: true` in `modelOverrides`, as in [Use fast mode](/harnesses/omp/#use-fast-mode). |
+| Claude Code, generated `settings.json` | `--effort low` | None for Claude Haiku 5.5 |
+
+After the checks in [What each cell checks](#what-each-cell-checks), the suite reads each request log again:
+
+- **Effort.** The log must have no service tier. The request body that the gateway stores must have `low` in the effort field of the cell's API: `reasoning.effort` on Responses, `output_config.effort` on Messages, and `reasoning_effort` on Chat Completions. The request log has no separate effort field, so the suite reads the stored body. The gateway stores bodies when request payload capture is `redacted_payloads`.
+- **Fast.** The log must record the requested `priority` tier. The log also shows the tier that the provider served, if the provider reports it. The suite doesn't check the served tier: OpenRouter can serve a priority request at the standard tier. For example, OpenRouter serves Claude Haiku 5.5 at the standard tier.
+
+### OpenRouter
+
+| Harness | GPT-6 Luna | Claude Haiku 5.5 | Gemini 4 Hydrogen |
+| --- | --- | --- | --- |
+| OpenCode with the Oceans plugin | Effort and fast | Effort and fast | Effort and fast |
+| Pi, generated `models.json` | Effort. Fast: not applicable (8) | Effort. Fast: not applicable (8) | Effort. Fast: not applicable (8) |
+| OMP, `litellm` discovery | Effort and fast | Effort and fast | Effort. Fast: not applicable (9) |
+| Claude Code, generated `settings.json` | Not applicable (1) | Effort. Fast: not applicable (10) | Not applicable (1) |
+
+### Other providers
+
+On Vertex AI, the Gemini 4 Hydrogen cells run the same effort and fast tests as on OpenRouter: OpenCode runs both, and Pi and OMP run the effort test. Vertex AI `global` accepts the `priority` and `flex` tiers for Gemini. Without Google Cloud credentials, these tests skip. The Bedrock opt-in runs both tests in the Bedrock cells, with the same exceptions.
+
+### Reasons
+
+8. **Not applicable: Pi has no tier setting.** The `models.json` that Oceans generates has no tier field, and Pi has no tier flag or environment variable. Pi's Anthropic Messages provider also ignores the extra request fields of a model.
+9. **Not applicable: OMP sends no tier for Gemini.** OMP sends a tier only for model families that it knows. A Gemini model from a custom provider on Chat Completions has no tier family, so OMP ignores `tier.google`.
+10. **Not applicable: Claude Code fast mode with Claude Haiku.** Claude Code fast mode is for Opus models. With fast mode on, `/fast on` changes the model to Opus. A Claude Haiku 5.5 request with the `fastMode` setting has no `speed` field and no tier.
 
 ## Other checks
 
@@ -121,7 +163,7 @@ Other versions may work, but the suite doesn't check them.
 
 - **Three providers.** The matrix covers OpenRouter, Vertex AI and Bedrock. Other providers, such as the Claude API or GitHub Copilot, aren't in it. See [Provider API compatibility](/reference/provider-api-compatibility/) for those.
 - **Not tested: Codex.** The suite doesn't run Codex.
-- **Default reasoning.** Matrix runs use each harness's default reasoning level. Only the OpenCode plugin variants check `low`, `high` and `fast`.
+- **One effort level.** The effort tests check `low` only, and the fast tests check `priority` only. The other matrix tests use each harness's default reasoning level and no tier. The OpenCode plugin variants also check `high`.
 - **Short tasks.** The tests are small. They prove that the harness, the gateway and the model work together, not how well a model codes.
 
 ## Run the suite against your gateway

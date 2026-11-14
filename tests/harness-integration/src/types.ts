@@ -52,6 +52,10 @@ export interface HarnessRunOptions {
    * so a Context7 outage cannot fail them.
    */
   mcp?: boolean;
+  /** The reasoning effort to ask for with the harness's own setting. Without it, the harness default. */
+  effort?: "low";
+  /** The service tier to ask for with the harness's own setting. Without it, no tier. */
+  tier?: "priority";
 }
 
 /** Native tool names in the harness's event stream. */

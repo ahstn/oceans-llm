@@ -65,7 +65,15 @@ export class OmpAdapter implements HarnessAdapter {
                   ...Object.values(this.#runtime.providerModels).map((models) => models.anthropic),
                 ]
                   .filter((model) => model !== undefined)
-                  .map((model) => [model, { api: "anthropic-messages" }]),
+                  // OMP sends `speed: "fast"` to a custom Messages model only when its compat
+                  // marks it as a fast-mode model; a priority tier alone does not.
+                  .map((model) => [
+                    model,
+                    {
+                      api: "anthropic-messages",
+                      ...(options.tier === "priority" ? { compat: { fastMode: true } } : {}),
+                    },
+                  ]),
               ),
             },
           },
@@ -73,6 +81,18 @@ export class OmpAdapter implements HarnessAdapter {
         "utf8",
       ),
       writeFile(sandboxExtension, ompSandboxSource(workspace), "utf8"),
+      ...(options.tier
+        ? [
+            // The user settings file. OMP sends `tier.openai` as `service_tier` on OpenAI-family
+            // models. `tier.anthropic` is the Claude setting a user picks too, but for a custom
+            // provider only the `compat.fastMode` override above sends fast mode.
+            writeFile(
+              join(agentDir, "config.yml"),
+              JSON.stringify({ tier: { openai: options.tier, anthropic: options.tier } }),
+              "utf8",
+            ),
+          ]
+        : []),
     ];
     if (options.mcp) {
       files.push(
@@ -114,6 +134,7 @@ export class OmpAdapter implements HarnessAdapter {
         ["read", "write", "bash", ...(options.mcp ? OCEANS_MCP_TOOLS : [])].join(","),
         "--model",
         `oceans/${model}`,
+        ...(options.effort ? ["--thinking", options.effort] : []),
       ],
       {
         cwd: workspace,

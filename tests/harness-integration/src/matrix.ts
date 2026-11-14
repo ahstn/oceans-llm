@@ -30,6 +30,13 @@ export interface MatrixHarness {
   readonly harness: HarnessKey;
   readonly label: string;
   readonly cells: Readonly<Record<Provider, Readonly<Record<ModelFamily, Cell>>>>;
+  /**
+   * Tests that the harness cannot run with a model on any provider, by model and test. An entry
+   * replaces a runnable provider cell for that one test.
+   */
+  readonly tests?: Readonly<
+    Partial<Record<ModelFamily, Readonly<Partial<Record<MatrixTest, Cell>>>>>
+  >;
   /** The OpenRouter model of the harness's one Context7 aggregate-MCP run. */
   readonly mcpModel: ModelFamily;
 }
@@ -37,9 +44,16 @@ export interface MatrixHarness {
 export const MATRIX_PROVIDERS: readonly Provider[] = ["openrouter", "vertex", "bedrock"];
 export const MATRIX_MODELS: readonly ModelFamily[] = ["openai", "anthropic", "google"];
 
-/** The tests that run in every runnable cell. */
-export const MATRIX_TESTS = ["chat", "files", "bash"] as const;
+/**
+ * The tests that run in every runnable cell. `effort` asks for the reasoning effort
+ * {@link MATRIX_EFFORT}, and `fast` asks for the priority service tier, each with the harness's
+ * own setting.
+ */
+export const MATRIX_TESTS = ["chat", "files", "bash", "effort", "fast"] as const;
 export type MatrixTest = (typeof MATRIX_TESTS)[number];
+
+/** The effort of the `effort` tests. No harness uses it by default, so a run proves the setting. */
+export const MATRIX_EFFORT = "low";
 
 const run = (operation: Operation): Cell => ({ status: "run", operation });
 const blocked = (reason: string): Cell => ({ status: "blocked", reason });
@@ -54,6 +68,15 @@ const VERTEX_CLAUDE_QUOTA = blocked(
 );
 const BEDROCK_NO_GEMINI = notApplicable("Bedrock offers Google Gemma 3 only, no Gemini models.");
 const VERTEX = { openai: VERTEX_NO_OPENAI, anthropic: VERTEX_CLAUDE_QUOTA, google: run("chat_completions") };
+
+const PI_NO_TIER = notApplicable(
+  "Pi has no service-tier setting: the generated models.json has no tier field, and Pi 0.87.1 has no tier flag or environment variable (dist/cli/args.js). Its Anthropic Messages provider also ignores the model samplingParams (dist/bundle/chunks/anthropic-messages-*.js).",
+);
+const PI_TESTS = {
+  openai: { fast: PI_NO_TIER },
+  anthropic: { fast: PI_NO_TIER },
+  google: { fast: PI_NO_TIER },
+};
 
 /**
  * Bedrock cells of a harness that runs every model family. They expect the same gateway API as
@@ -105,6 +128,7 @@ export const MATRIX: readonly MatrixHarness[] = [
       vertex: VERTEX,
       bedrock: bedrock("chat_completions", "messages"),
     },
+    tests: PI_TESTS,
     mcpModel: "openai",
   },
   {
@@ -118,6 +142,13 @@ export const MATRIX: readonly MatrixHarness[] = [
       },
       vertex: VERTEX,
       bedrock: bedrock("responses", "messages"),
+    },
+    tests: {
+      google: {
+        fast: notApplicable(
+          "OMP sends a service tier only for a model family that it recognises. A Gemini model of a custom provider over Chat Completions has no tier family, so OMP leaves out tier.google (@oh-my-pi/pi-ai src/types.ts, serviceTierFamily).",
+        ),
+      },
     },
     mcpModel: "openai",
   },
@@ -136,6 +167,13 @@ export const MATRIX: readonly MatrixHarness[] = [
         google: CLAUDE_MODELS_ONLY,
       },
     },
+    tests: {
+      anthropic: {
+        fast: notApplicable(
+          "Claude Code fast mode is for Opus models only. With fastMode on, /fast on changes the session model to Opus 5.5, and a claude-haiku-5.5 request has no speed field and no service tier (live run, Claude Code 2.1.323).",
+        ),
+      },
+    },
     mcpModel: "anthropic",
   },
 ];
@@ -147,6 +185,20 @@ export function runnable(cell: Cell): { operation: Operation; optInEnv?: string 
     return { operation: cell.optIn.operation, optInEnv: cell.optIn.env };
   }
   return undefined;
+}
+
+/**
+ * The cell of one test. A per-test entry of the harness replaces a provider cell that runs, so a
+ * cell that never runs keeps its own reason.
+ */
+export function testCell(
+  row: MatrixHarness,
+  provider: Provider,
+  family: ModelFamily,
+  test: MatrixTest,
+): Cell {
+  const cell = row.cells[provider][family];
+  return runnable(cell) === undefined ? cell : (row.tests?.[family]?.[test] ?? cell);
 }
 
 /** The cell as the docs show it: the operation, or `blocked: <reason>` / `not applicable: <reason>`. */

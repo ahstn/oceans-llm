@@ -80,8 +80,9 @@ export class OpenCodePluginAdapter implements HarnessAdapter {
       ...harnessOpenCodeConfig(this.#runtime, options),
       providers: { oceans: { headers: { "x-oceans-tags": `harness_run=${requestTag}` } } },
     });
+    const selected = `oceans/${model}${variant(options)}`;
     return {
-      ...(await runOpenCode(workspace, environment, `oceans/${model}`, prompt, options)),
+      ...(await runOpenCode(workspace, environment, selected, prompt, options)),
       requestTag,
     };
   }
@@ -91,4 +92,17 @@ export class OpenCodePluginAdapter implements HarnessAdapter {
     const directory = await this.#directory?.catch(() => undefined);
     if (directory) await rm(directory, { recursive: true, force: true });
   }
+}
+
+/**
+ * The plugin's model variant for the run options, as `#<variant>` after the model. The plugin names
+ * effort variants after the effort, and the priority tier variant `fast`. A model has one variant
+ * at a time.
+ */
+function variant(options: HarnessRunOptions): string {
+  if (options.effort && options.tier) {
+    throw new Error("An OpenCode model variant sets an effort or a tier, not both");
+  }
+  if (options.tier === "priority") return "#fast";
+  return options.effort ? `#${options.effort}` : "";
 }

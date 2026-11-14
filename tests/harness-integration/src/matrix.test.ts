@@ -10,15 +10,24 @@ import { GatewayAdminClient } from "./gateway-client.js";
 import {
   describeCell,
   MATRIX,
+  MATRIX_EFFORT,
   MATRIX_MODELS,
   MATRIX_PROVIDERS,
   MATRIX_TESTS,
   runnable,
+  testCell,
   type MatrixHarness,
   type MatrixTest,
 } from "./matrix.js";
-import { expectRequestLogs, reportRun, withWorkspace } from "./run-checks.js";
-import type { HarnessAdapter, HarnessKey, HarnessRun, Operation, Provider } from "./types.js";
+import { expectRequestLogs, expectRequestSetting, reportRun, withWorkspace } from "./run-checks.js";
+import type {
+  HarnessAdapter,
+  HarnessKey,
+  HarnessRun,
+  HarnessRunOptions,
+  Operation,
+  Provider,
+} from "./types.js";
 
 const runtime = inject("gateway");
 const openCode = new OpenCodePluginAdapter(runtime);
@@ -41,13 +50,15 @@ for (const row of MATRIX) {
     for (const provider of MATRIX_PROVIDERS) {
       for (const kind of MATRIX_TESTS) {
         for (const family of MATRIX_MODELS) {
-          const cell = row.cells[provider][family];
+          const cell = testCell(row, provider, family, kind);
+          const perTest = cell !== row.cells[provider][family];
           const plan = runnable(cell);
-          // A blocked or not-applicable cell is data about the harness, not a skipped test.
+          // A blocked or not-applicable cell is data about the harness, not a skipped test. A
+          // provider cell prints once, and a per-test cell prints with its test.
           if (plan === undefined) {
-            if (kind === "chat") {
+            if (kind === "chat" || perTest) {
               process.stdout.write(
-                `Matrix cell: ${row.harness} ${provider} ${family}: ${describeCell(cell)}\n`,
+                `Matrix cell: ${row.harness} ${provider} ${family}${perTest ? ` ${kind}` : ""}: ${describeCell(cell)}\n`,
               );
             }
             continue;
@@ -96,9 +107,12 @@ async function runMatrixTest(
   operation: Operation,
 ): Promise<void> {
   let run: HarnessRun;
-  if (kind === "chat") {
+  if (kind === "chat" || kind === "effort" || kind === "fast") {
     const token = `OCEANS_MATRIX_${row.harness.toUpperCase()}_OK`;
-    run = await adapter.run(workspace, `Reply with exactly ${token} and no other text.`, model);
+    const options: HarnessRunOptions =
+      kind === "effort" ? { effort: MATRIX_EFFORT } : kind === "fast" ? { tier: "priority" } : {};
+    const prompt = `Reply with exactly ${token} and no other text.`;
+    run = await adapter.run(workspace, prompt, model, options);
     expect(run.output).toBe(token);
   } else if (kind === "files") {
     const marker = `matrix-${row.harness}-${Date.now()}`;
@@ -141,9 +155,15 @@ async function runMatrixTest(
     run,
     // Managed provider ids are the provider names.
     { harness: row.harness, model, operation, provider },
-    kind === "chat" ? 1 : 2,
+    kind === "files" || kind === "bash" ? 2 : 1,
   );
-  reportRun(`${row.harness} ${model} ${kind}`, run, logs);
+  const setting =
+    kind === "effort"
+      ? await expectRequestSetting(expect, admin, logs, { effort: MATRIX_EFFORT, operation })
+      : kind === "fast"
+        ? await expectRequestSetting(expect, admin, logs, { tier: "priority" })
+        : undefined;
+  reportRun(`${row.harness} ${model} ${kind}`, run, logs, setting);
 }
 
 function utcDate(): string {

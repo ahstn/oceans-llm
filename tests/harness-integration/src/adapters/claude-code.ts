@@ -66,6 +66,11 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
     model: string,
     options: HarnessRunOptions = {},
   ): Promise<HarnessRun> {
+    if (options.tier) {
+      // Claude Code fast mode switches the session to an Opus model, so it never sends a tier
+      // for the model under test.
+      throw new Error("Claude Code has no service-tier setting for the matrix model");
+    }
     const requestTag = randomUUID();
     let generated = this.#generated.get(model);
     if (!generated) {
@@ -137,6 +142,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
         "--verbose",
         "--model",
         model,
+        ...(options.effort ? ["--effort", options.effort] : []),
         "--setting-sources",
         "user",
         "--strict-mcp-config",

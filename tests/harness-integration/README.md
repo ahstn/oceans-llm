@@ -6,13 +6,15 @@ The suite is credential-sensitive and makes paid, live model calls. Do not run i
 
 ## Harness matrix
 
-`src/matrix.ts` defines the harness x model x provider matrix, and `src/matrix.test.ts` generates its tests from it. Each harness uses the setup that the Oceans docs give to users. A cell has one of four statuses:
+`src/matrix.ts` defines the harness x model x provider matrix, and `src/matrix.test.ts` generates its tests from it. Each harness uses the setup that the Oceans docs give to users. A cell has one of three statuses:
 
 - `run`: the suite runs the cell when its provider is configured. If the provider is not configured, the test skips and gives the reason.
 - `blocked`: the cell applies but cannot run yet. The reason is kept in `src/matrix.ts`. A blocked cell with an opt-in variable runs when that variable is set, so that access can be checked again. Otherwise the test skips and gives the reason.
 - `not-applicable`: the harness, model or provider does not support the cell. The reason is kept in `src/matrix.ts`.
 
-The suite generates tests only for `run` cells and opt-in `blocked` cells, and prints one `Matrix cell:` line for every other cell. On OpenRouter, each runnable cell is the gateway API that the harness must use for that model, as the request log records it in `metadata.operation`:
+A harness can also give one test of a model its own status in `tests`, for example when the harness has no setting for that test. That status replaces a runnable provider cell for that test only.
+
+The suite generates tests only for `run` cells and opt-in `blocked` cells, and prints one `Matrix cell:` line for every other cell. A line for a per-test status also names the test. On OpenRouter, each runnable cell is the gateway API that the harness must use for that model, as the request log records it in `metadata.operation`:
 
 | Harness | Setup | `gpt-6-luna` | `claude-haiku-5.5` | `gemini-4-hydrogen` |
 | --- | --- | --- | --- | --- |
@@ -25,15 +27,19 @@ Claude Code supports only Claude models through a gateway, so its other cells ar
 
 On Vertex AI (location `global`), `gemini-4-hydrogen` runs for OpenCode, Pi and OMP on `chat_completions`, with the Oceans model key `gemini-4-hydrogen-vertex`. Claude Haiku on Vertex AI is blocked by quota, and Vertex AI has no OpenAI models. On Bedrock, the OpenAI and Claude cells of OpenCode, Pi and OMP are blocked by account access, and `OCEANS_HARNESS_BEDROCK=1` runs them again. Bedrock has no Gemini models. Claude Code stays blocked on Bedrock whatever the access, because its `runtime_anthropic_invoke` routes do not stream. `src/matrix.ts` has the full reasons.
 
-Every applicable cell runs three tests:
+Every applicable cell runs five tests:
 
 - **chat**: the reply must be an exact token.
 - **files**: the harness reads `source.txt` and writes `destination.txt` with its own file tools. The test checks the file content and a completed read call and write call. OpenCode gives GPT models a `patch` tool in place of `write`, so OpenCode accepts either.
 - **bash**: the shell tool runs `date -u +%F`. The test checks a completed shell call whose command contains `date`, and that the answer contains the UTC date from before or after the run.
+- **effort**: the chat prompt at the `low` reasoning effort, set with the harness's own setting: the OpenCode model variant `#low`, `--thinking low` for Pi and OMP, and `--effort low` for Claude Code. Every request log must have no service tier, and the stored request body (`detail.payload.request_json.body`) must hold `low` in the effort field of the cell's operation: `reasoning.effort` for `responses`, `output_config.effort` for `messages`, and `reasoning_effort` for `chat_completions`.
+- **fast**: the chat prompt at the `priority` service tier: the OpenCode model variant `#fast`, and for OMP `tier.openai: priority` in `config.yml` plus `compat.fastMode: true` on the Claude model override. Every request log must record `service_tier: "priority"`. The run line shows the served tier, but the test does not check it, because OpenRouter can serve a priority request at `default`.
 
-On OpenRouter, that is 30 runs (10 cells x 3 tests). With Vertex AI configured, there are 9 more runs, and the Bedrock opt-in adds 18. Every run sends a new `harness_run` tag, and the test then checks every request log with that tag: status 200, the cell's Oceans model, provider `openrouter`, the cell's operation, the cell's provider (`openrouter`, `vertex` or `bedrock`, the managed provider ids), and the harness key that the gateway takes from the `User-Agent`. The keys are `opencode`, `pi`, `oh_my_pi` and `claude_cli`. The gateway classifies Claude Code model requests (`claude-cli/<version>`) as `claude_cli`. When the key does not match, the failure message shows the raw `User-Agent` from the request-log detail. Each run prints one `Harness run:` line with its operations, harness keys, request count and completed tools.
+The fast test is not applicable to every Pi cell (Pi has no tier setting), to OMP with `gemini-4-hydrogen` (OMP sends no tier for a custom Chat Completions Gemini model), and to Claude Code with `claude-haiku-5.5` (Claude Code fast mode is for Opus models only). `src/matrix.ts` has the full reasons.
 
-The three models of one harness and test run at the same time (`maxConcurrency: 3`). Each run has a new, empty workspace with its own home, config, cache and data folders, and its own request tag. Models use their default reasoning level.
+On OpenRouter, that is 45 runs (10 cells x 5 tests, less 5 not-applicable fast tests). With Vertex AI configured, there are 13 more runs, and the Bedrock opt-in adds 28. Every run sends a new `harness_run` tag, and the test then checks every request log with that tag: status 200, the cell's Oceans model, provider `openrouter`, the cell's operation, the cell's provider (`openrouter`, `vertex` or `bedrock`, the managed provider ids), and the harness key that the gateway takes from the `User-Agent`. The keys are `opencode`, `pi`, `oh_my_pi` and `claude_cli`. The gateway classifies Claude Code model requests (`claude-cli/<version>`) as `claude_cli`. When the key does not match, the failure message shows the raw `User-Agent` from the request-log detail. Each run prints one `Harness run:` line with its operations, harness keys, request count and completed tools. Effort and fast runs add the requested and served tier, and the effort field.
+
+The three models of one harness and test run at the same time (`maxConcurrency: 3`). Each run has a new, empty workspace with its own home, config, cache and data folders, and its own request tag. Except in the effort tests, models use their default reasoning level.
 
 `src/harness-contract.test.ts` holds the runs outside the matrix:
 
@@ -126,7 +132,7 @@ Optional external-mode variables:
 
 The external gateway must already expose the matrix models on OpenRouter routes, with the same APIs as the managed gateway, and an aggregate MCP endpoint with callable Context7 tools. The administrator account must be able to read request logs so the suite can correlate each harness invocation with its Oceans request-log entries. It must also be able to generate model client configs, because the OpenCode snippet, Pi and Claude Code adapters run the generated configs.
 
-For the plugin suite, enable `redacted_payloads` request logging. The OpenAI and Anthropic models must accept images and PDF files. Cap the Anthropic model at `high`. The key must also grant the text-only negative control, but not the hidden model. Match the managed gateway's route configuration in `src/global-setup.ts`; missing models fail the suite rather than skip coverage.
+Enable `redacted_payloads` request logging: the plugin suite and the matrix effort tests read the stored request bodies. The matrix models must allow the `low` effort and the `priority` tier, for the effort and fast tests. For the plugin suite, the OpenAI and Anthropic models must accept images and PDF files. Cap the Anthropic model at `high`. The key must also grant the text-only negative control, but not the hidden model. Match the managed gateway's route configuration in `src/global-setup.ts`; missing models fail the suite rather than skip coverage.
 
 ## Commands
 
@@ -136,7 +142,7 @@ From the repository root:
 mise install
 mise run //harness:typecheck
 mise run //harness:test
-# Only the harness x model x test matrix (30 paid runs):
+# Only the harness x model x test matrix (45 paid runs on OpenRouter):
 mise run //harness:matrix-test
 # Only the packed discovery plugin suite (six paid inference calls):
 mise run //harness:plugin-test
@@ -154,7 +160,7 @@ mise exec -- sh -eu -c '
 '
 ```
 
-Test names are `<harness label> <provider> <model family> <test>`, so `-t` can select one harness, provider, model or test, for example `-t "OMP with litellm discovery openrouter openai bash"`, `-t "vertex"` or `-t "files"`.
+Test names are `<harness label> <provider> <model family> <test>`, so `-t` can select one harness, provider, model or test, for example `-t "OMP with litellm discovery openrouter openai bash"`, `-t "vertex"` or `-t "files"`. `-t "openrouter .* (effort|fast)$"` runs only the 15 OpenRouter effort and fast tests. They are single chat requests, so they cost less than the files and bash tests.
 
 For CI, provide `OPENROUTER_API_KEY` for managed mode, or the external-mode variables above from the CI secret store. Do not expose those secrets to untrusted pull requests. The live test requires outbound access to OpenRouter and Context7.
 
@@ -169,3 +175,4 @@ The cache canary is separate from the default OpenRouter contract because it mak
 5. Parse the final assistant response and structured tool-call inputs from the harness event stream. Do not assert against raw output that can echo the prompt. Add focused parser tests in `src/adapters/events.test.ts` for any new event format.
 6. Check every shell command with `guardShell`, confine it with `confineShell`, and check file-tool paths with `workspacePathError` from `src/adapters/sandbox.ts`. Add offline hook tests to `src/guardrails-hook.test.ts`. Restrict parent-environment inheritance.
 7. Add a row to `MATRIX` in `src/matrix.ts` with a cell for each provider and model, and add the adapter to the adapter maps in `src/matrix.test.ts` and `src/harness-contract.test.ts`.
+8. Map `effort` and `tier` in `HarnessRunOptions` to settings that a user of the harness can change. When the harness has no such setting for a model, add a `not-applicable` entry for that test to the row's `tests`, with a reason that cites the harness source or a live run.
