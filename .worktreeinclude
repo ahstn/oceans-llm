@@ -5,3 +5,5 @@
 fnox.local.toml
 # Local mise overrides that aren't secrets; provider keys come from fnox.
 mise.local.toml
+# Machine-specific agent rules, such as keeping tests off the deployed self-host stack.
+AGENTS.local.md
