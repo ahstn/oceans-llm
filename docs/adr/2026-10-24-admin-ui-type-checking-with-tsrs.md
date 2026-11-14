@@ -48,6 +48,7 @@ Type-check the admin UI with tsrs. The `typecheck` script runs `tsrs --noEmit -p
 - `mise run //ui:typecheck` and `mise run //ui:check` call `bun run typecheck`, so CI picks up tsrs without workflow changes. The tsrs launcher is a Node script; under `bun run` Bun stands in for `node` when Node is absent.
 - `typescript` moves from 5.9.3 to 6.0.3, the last JavaScript release, and stays installed for `generate:admin-api` and editors. `openapi-typescript` 7.13.0 builds its output with the `ts.factory` API, which the TypeScript 7 package does not export, so generation crashes on 7. With 6.0.3 it produces output identical to the checked-in `admin-api.ts`, though its peer range is still `^5.x`. `tsconfck`, under `vite-tsconfig-paths`, has an optional `^5.0.0` peer and is unaffected.
 - The Docker build does not type-check, so the image is unchanged.
+- Zed uses tsrs as the language server for the admin UI. The root `.zed/settings.json` sets the binary of the `typescript-ls` server, from the "TypeScript Language Server" (tsgo) extension, to `crates/admin-ui/web/node_modules/.bin/tsrs --lsp --stdio`. `crates/admin-ui/web/.zed/settings.json` makes it the TypeScript and TSX server for that directory only, ahead of `vtsls` and `typescript-language-server`. Other TypeScript projects in the repository keep Zed's default server, because they still check with `tsc`.
 - `CONTRIBUTING.md` and `crates/admin-ui/web/AGENTS.md` document the Bun and tsrs workflow.
 
 ## Reasons and tradeoffs
@@ -56,7 +57,7 @@ Type-check the admin UI with tsrs. The `typecheck` script runs `tsrs --noEmit -p
 - tsrs targets TypeScript 7's diagnostics exactly, so switching to the official TypeScript 7 later is a script and dependency change only.
 - tsrs is pre-1.0 and tracks TypeScript 7.1.0-beta. A tsrs bug could hide or invent an error that TypeScript 7 would not report.
 - tsrs 0.18.0 had no binary for Intel macOS or Windows, so this change first shipped a TypeScript 7.0.2 fallback for those platforms. tsrs 0.20.0 added both, and the fallback was removed with the move to 0.25.0.
-- Editors run their bundled TypeScript or the workspace's `typescript` 6.0, while CI runs TypeScript 7.1 semantics through tsrs. An error that changed between versions can appear in only one of them.
+- Zed runs the pinned tsrs, so its errors match `bun run typecheck`. The setup needs the tsgo extension and `node` on Zed's `PATH`. Zed resolves the binary path from the open project's root, so the repository root must be the open project. The path is the Unix launcher, so it covers macOS and Linux, not Windows. Other editors run their bundled TypeScript or the workspace's `typescript` 6.0, so an error that changed between versions can appear in only one of them.
 - Only the admin UI changes. `actions/review-agent` and `tests/harness-integration` keep `tsc`.
 
 ## Follow up

@@ -1,0 +1,12 @@
+// Use tsrs (typescript-ls, configured in the repository's .zed/settings.json) for the admin UI,
+// so the editor reports the same errors as `bun run typecheck`.
+{
+  "languages": {
+    "TypeScript": {
+      "language_servers": ["typescript-ls", "!vtsls", "!typescript-language-server", "..."]
+    },
+    "TSX": {
+      "language_servers": ["typescript-ls", "!vtsls", "!typescript-language-server", "..."]
+    }
+  }
+}

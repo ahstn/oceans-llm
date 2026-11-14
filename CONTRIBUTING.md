@@ -54,7 +54,8 @@ The admin UI uses Bun for packages and scripts, and tsrs for type checking:
 
 - install and run with Bun (`bun install`, `bun run <script>`, `bunx <tool>`), not npm or npx, so `bun.lock` stays the only lockfile
 - `mise run //ui:typecheck` runs `tsrs --noEmit -p .`, a port of TypeScript 7.1.0-beta that is several times faster than TypeScript 7. tsrs ships binaries for macOS, Linux and Windows
-- editors still use their bundled TypeScript or the workspace's `typescript` 6.0, which can disagree with tsrs on errors that TypeScript 7 changed; treat `mise run //ui:typecheck` as the source of truth
+- in Zed on macOS or Linux, the project settings run tsrs as the language server for the admin UI's TypeScript and TSX files. Open the repository root, install the "TypeScript Language Server" (tsgo) extension, run `bun install` in `crates/admin-ui/web`, and trust the worktree. tsrs's launcher needs `node` on Zed's `PATH`
+- other editors use their bundled TypeScript or the workspace's `typescript` 6.0, which can disagree with tsrs on errors that TypeScript 7 changed; treat `mise run //ui:typecheck` as the source of truth
 
 See [docs/adr/2026-10-24-admin-ui-type-checking-with-tsrs.md](docs/adr/2026-10-24-admin-ui-type-checking-with-tsrs.md) for the decision.
 

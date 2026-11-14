@@ -4,6 +4,7 @@
 
 - Use Bun for packages and scripts: `bun install`, `bun run <script>`, `bunx <tool>`. Do not use npm or npx; `bun.lock` is the only lockfile.
 - Type-check with `bun run typecheck` (or `mise run //ui:typecheck`). It runs tsrs, the Rust port of TypeScript 7. Do not run `tsc` or `npx tsc` to confirm a type check passes: the installed `typescript` package is 6.0 and can report different errors. It stays on 6.0 because `openapi-typescript` needs the JavaScript API that TypeScript 7 dropped.
+- Zed runs the same tsrs as the language server for this directory: the repository's `.zed/settings.json` points the `typescript-ls` server at `node_modules/.bin/tsrs`, and `.zed/settings.json` here enables it for TypeScript and TSX. Keep both in step if the tsrs install path changes.
 
 ## Styling Tokens
 
