@@ -9,7 +9,7 @@ use gateway_core::{
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
-use super::ingest::{entry, ingest, note, session};
+use super::ingest::{entry, ingest, note, request_session, session};
 use super::{FakeStore, FakeUsers, t0, user_key, user_owner};
 use crate::agent_analysis::hash_lineage_candidate;
 use crate::attribution::{AttributionReport, RequestTally, build_attribution_report};
@@ -904,5 +904,112 @@ async fn a_pull_request_two_owners_reported_counts_once_for_its_author() {
             .find(|user| user.user_id == alice)
             .unwrap();
         assert_eq!(author.merged_pull_request_count, 1);
+    }
+}
+
+#[tokio::test]
+async fn explicit_journals_override_provider_parents_and_count_requests_and_cost_once() {
+    for mapping_before_request in [true, false] {
+        let user = Uuid::from_u128(301);
+        let owner = user_owner(user);
+        let other_user = Uuid::from_u128(302);
+        let other = user_owner(other_user);
+        let ids = [303, 304, 305].map(|id| Uuid::from_u128(id).to_string());
+        let native =
+            hash_lineage_candidate(&owner.ownership_scope_key, "claude_code", "provider-parent");
+        let child = hash_lineage_candidate(&owner.ownership_scope_key, "oceans", "journal-child");
+        let mut store = FakeStore::with_commits(vec![
+            commit(
+                1,
+                &owner,
+                REPOSITORY,
+                minutes(10),
+                vec![note_session("parent", &[&native])],
+            ),
+            commit(
+                2,
+                &owner,
+                REPOSITORY,
+                minutes(20),
+                vec![
+                    note_session("child-a", &[&child]),
+                    note_session("child-b", &[&child]),
+                ],
+            ),
+        ]);
+        let facts = ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| request(&owner, &native, id, minutes(5 + i as i64)))
+            .collect::<Vec<_>>();
+        if !mapping_before_request {
+            store.facts = facts.clone();
+        }
+        let users = FakeUsers::default();
+        ingest(
+            &store,
+            &users,
+            &owner.ownership_scope_key,
+            &user_key(user),
+            vec![
+                entry(
+                    "child-request-1",
+                    1,
+                    request_session(&ids[0], "journal-child"),
+                ),
+                entry(
+                    "child-request-2",
+                    2,
+                    request_session(&ids[1], "journal-child"),
+                ),
+                entry("replay", 2, request_session(&ids[1], "wrong-journal")),
+            ],
+        )
+        .await
+        .expect("journal mappings");
+        // Same request UUID but a different owner: it must neither steal nor suppress the
+        // parent's remaining request, including its native fallback.
+        ingest(
+            &store,
+            &users,
+            &other.ownership_scope_key,
+            &user_key(other_user),
+            vec![entry(
+                "other-owner",
+                1,
+                request_session(&ids[2], "journal-child"),
+            )],
+        )
+        .await
+        .expect("other owner's mapping");
+        if mapping_before_request {
+            store.facts = facts;
+        }
+        let output = report(&store, &query()).await;
+        assert_eq!(
+            change_requests(&output, 1),
+            1,
+            "native parent excludes explicitly mapped children"
+        );
+        assert_eq!(change_requests(&output, 2), 2);
+        assert_eq!(output.totals.requests.request_count, 3);
+        assert_eq!(output.totals.requests.priced_cost_10000, 300);
+        assert_eq!(output.coverage.requests.request_count, 3);
+        assert_eq!(output.coverage.requests.priced_cost_10000, 300);
+        assert_eq!(output.totals.uncommitted.request_count, 0);
+        let child_change = output
+            .changes
+            .iter()
+            .find(|change| change.commit.commit_sha == sha(2))
+            .expect("child change");
+        assert_eq!(child_change.requests.priced_cost_10000, 200);
+        assert_eq!(
+            output
+                .models
+                .iter()
+                .map(|model| model.requests.request_count)
+                .sum::<i64>(),
+            3
+        );
     }
 }

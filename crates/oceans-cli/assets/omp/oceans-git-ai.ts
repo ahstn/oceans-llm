@@ -3,11 +3,7 @@
 // - Marks OMP file edits for Git AI by driving `git-ai checkpoint pi` before and after each
 //   mutating tool call (git-ai has no OMP preset yet; its Pi preset accepts the same payload).
 // - Reports session start and end to `oceans hook omp`, which queues them for the gateway.
-// - Keeps `OCEANS_SESSION_ID` set to the main session's id. OMP resolves provider header
-//   values that name an environment variable on every request, so an Oceans provider with
-//   `headers: { session_id: OCEANS_SESSION_ID }` tells the gateway which session each Chat
-//   Completions or Responses request belongs to. Configure that header only where this
-//   extension is installed: without it, OMP sends the variable's name as the value.
+// - Joins each Oceans response's gateway request id to this context's own journal session.
 //
 // Both binaries are optional: a missing binary makes the matching hook a no-op.
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
@@ -17,13 +13,13 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 
 const OCEANS_BIN = "__OCEANS_BIN__";
 const GIT_AI_BIN = "__GIT_AI_BIN__";
-const SESSION_ENV = "OCEANS_SESSION_ID";
 const CHECKPOINT_TIMEOUT_MS = 10_000;
 // `dirty_files` is an optional pre-edit snapshot. Larger files are left out of it, as are
 // non-regular files such as FIFOs, which a read would block on, and files outside the
 // session's working directory, so a tool call naming a credential file elsewhere never puts
 // its contents in the payload. git-ai reads any file left out from disk itself.
 const MAX_DIRTY_FILE_BYTES = 8 * 1024 * 1024;
+const REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type CanonicalTool = "edit" | "write" | "bash";
 type HookEvent = "before_edit" | "after_edit" | "before_command" | "after_command";
@@ -118,7 +114,7 @@ function run(bin: string, args: string[], stdin: string, detached: boolean): Pro
 	child.stdin?.on("error", () => {});
 	child.stdin?.end(stdin);
 	if (detached) {
-		// Session hooks only queue locally; don't hold the session open for them.
+		// Attribution hooks only queue locally; don't hold the session open for them.
 		child.on("error", () => {});
 		child.unref();
 		done();
@@ -181,28 +177,16 @@ export default function oceansGitAi(pi: ExtensionAPI) {
 		await reportSession("start", current);
 	};
 
-	// Subagents run in this process and share its environment. Only the main session sets the
-	// variable, so a subagent's Chat Completions and Responses requests count for the main
-	// session; over Messages, OMP sends each session's own id.
-	const exportSession = (ctx: ExtensionContext) => {
-		if (ctx.agent?.kind === "sub") return;
-		const sessionId = ctx.sessionManager.getSessionId();
-		if (sessionId) process.env[SESSION_ENV] = sessionId;
-	};
-
 	pi.on("session_start", async (_event, ctx) => {
-		exportSession(ctx);
 		await enterSession(ctx);
 	});
 
 	pi.on("session_switch", async (_event, ctx) => {
-		exportSession(ctx);
 		await enterSession(ctx);
 	});
 
 	// A branch continues in a new session file with its own id.
 	pi.on("session_branch", async (_event, ctx) => {
-		exportSession(ctx);
 		await enterSession(ctx);
 	});
 
@@ -211,6 +195,23 @@ export default function oceansGitAi(pi: ExtensionAPI) {
 		if (!previous) return;
 		active.delete(ctx.sessionManager);
 		await reportSession("end", previous);
+	});
+
+	pi.on("after_provider_response", async (event, ctx) => {
+		// OMP 18.20.2 supplies a plain header record, not a fetch Headers object.
+		// Generic requestId/x-request-id can name an upstream request, never the gateway.
+		const requestId = Object.entries(event.headers).find(
+			([name]) => name.toLowerCase() === "x-oceans-request-id",
+		)?.[1];
+		if (typeof requestId !== "string" || requestId.length !== 36 || !REQUEST_ID.test(requestId)) return;
+		const sessionId = ctx.sessionManager.getSessionId();
+		if (!sessionId || sessionId.length > 256 || /[^A-Za-z0-9._:-]/.test(sessionId)) return;
+		await run(
+			OCEANS_BIN,
+			["hook", "request"],
+			JSON.stringify({ request_id: requestId, session_id: sessionId }),
+			true,
+		);
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
@@ -245,7 +246,7 @@ export default function oceansGitAi(pi: ExtensionAPI) {
 		}
 		await checkpoint("after_edit", call, ctx, event.toolCallId, {
 			edited_filepaths: call.filepaths,
-			dirty_files: await dirtyFiles(call.filepaths),
+			dirty_files: await dirtyFiles(ctx.cwd, call.filepaths),
 			tool_input: call.input,
 		});
 	});

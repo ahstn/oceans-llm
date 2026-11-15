@@ -117,6 +117,7 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
         .route("/v1/decisions", post(v1_decisions))
         .route("/v1/systemone", post(v1_systemone))
         .layer(DefaultBodyLimit::max(request_body::DEFAULT_MAX_BYTES))
+        .layer(middleware::from_fn(attribution_request_id_response))
         .layer(middleware::from_fn(request_body::observe_request_body))
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -587,6 +588,21 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
         .layer(SetRequestIdLayer::new(request_id_header, MakeRequestUuid));
 
     mount_admin_ui(api_router, admin_ui)
+}
+
+/// Identifies this gateway's request independently of an upstream provider's request ID.
+async fn attribution_request_id_response(
+    request: axum::extract::Request,
+    next: middleware::Next,
+) -> axum::response::Response {
+    let request_id = request.headers().get("x-request-id").cloned();
+    let mut response = next.run(request).await;
+    if let Some(request_id) = request_id {
+        response
+            .headers_mut()
+            .insert("x-oceans-request-id", request_id);
+    }
+    response
 }
 
 #[cfg(test)]

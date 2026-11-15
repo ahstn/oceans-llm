@@ -14,7 +14,10 @@ use serde::{
 };
 
 use super::{
-    payload::{Harness, NotePayload, Payload, SessionEvent, SessionPayload},
+    payload::{
+        Harness, NotePayload, Payload, RequestSessionPayload, SessionEvent, SessionPayload,
+        is_request_id, is_session_id,
+    },
     queue::EnqueueReport,
     repo::{git_context, normalize_repository},
     state::State,
@@ -26,7 +29,6 @@ const MAX_SESSION_INPUT_BYTES: u64 = 1024 * 1024;
 /// The gateway's limits for display text it stores.
 const MAX_BRANCH_BYTES: usize = 256;
 const MAX_HARNESS_VERSION_BYTES: usize = 128;
-const MAX_SESSION_ID_BYTES: usize = 256;
 
 /// One element of the `post_notes_updated` payload. git-ai also sends `repo_name`, which isn't
 /// needed.
@@ -163,6 +165,15 @@ pub fn omp(state: &State, input: impl Read) -> anyhow::Result<Option<QueuedSessi
     )
 }
 
+/// Queues the gateway response id against the journal that received that response.
+pub fn request(state: &State, input: impl Read) -> anyhow::Result<EnqueueReport> {
+    let mapping: RequestSessionPayload = read_json(input, "a request/session mapping")?;
+    if !is_request_id(&mapping.request_id) || !is_session_id(&mapping.session_id) {
+        bail!("the request/session mapping isn't one the gateway accepts; nothing was queued");
+    }
+    state.enqueue(vec![Payload::RequestSession(mapping)])
+}
+
 fn queue_session(
     state: &State,
     harness: Harness,
@@ -209,14 +220,6 @@ fn read_json<T: DeserializeOwned>(input: impl Read, expected: &str) -> anyhow::R
         bail!("stdin is larger than 1 MiB; expected {expected}");
     }
     serde_json::from_slice(&bytes).map_err(|_| anyhow!("stdin isn't {expected}"))
-}
-
-/// The session ids the gateway accepts: 1-256 bytes of `[A-Za-z0-9._:-]`.
-fn is_session_id(value: &str) -> bool {
-    (1..=MAX_SESSION_ID_BYTES).contains(&value.len())
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'))
 }
 
 /// Optional display text the gateway accepts: non-empty, short, no control characters.

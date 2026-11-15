@@ -12,7 +12,8 @@ use crate::attribution::{
     AttributionBatchInput, AttributionBatchOutcome, AttributionEntryCandidate,
     AttributionEntryInput, AttributionEntryStatus, AttributionNoteInput, AttributionPayloadInput,
     AttributionPullRequestCommitInput, AttributionPullRequestInput, AttributionPullRequestsInput,
-    AttributionRejectReason, AttributionSessionInput, ingest_attribution_batch,
+    AttributionRejectReason, AttributionRequestSessionInput, AttributionSessionInput,
+    ingest_attribution_batch,
 };
 
 const INSTALLATION: &str = "0b8e3e6c-8f6f-4d55-9d7a-2a3c1b1e9f10";
@@ -100,6 +101,13 @@ pub(super) fn session(harness: &str, session_id: &str) -> AttributionPayloadInpu
         branch: Some("feature/x".to_string()),
         head_sha: Some(SHA_A.to_string()),
         harness_version: Some("2.1.0".to_string()),
+    })
+}
+
+pub(super) fn request_session(request_id: &str, session_id: &str) -> AttributionPayloadInput {
+    AttributionPayloadInput::RequestSession(AttributionRequestSessionInput {
+        request_id: request_id.to_string(),
+        session_id: session_id.to_string(),
     })
 }
 
@@ -618,4 +626,102 @@ async fn prefers_the_first_author_who_is_an_oceans_user() {
         Some(outside.as_str())
     );
     assert_eq!(pull_request.commits[1].author_user_id, Some(reviewer));
+}
+
+#[tokio::test]
+async fn request_sessions_validate_bind_owner_hash_and_apply_freshness() {
+    let dev = Uuid::from_u128(101);
+    let other = Uuid::from_u128(102);
+    let request = Uuid::from_u128(103).to_string();
+    let scope = format!("user:{dev}");
+    let (store, users) = (FakeStore::default(), FakeUsers::default());
+    let entries = vec![
+        entry("mapping", 2, request_session(&request, "journal-child")),
+        entry(
+            "duplicate",
+            2,
+            request_session(&request, "must-not-replace"),
+        ),
+        entry("stale", 1, request_session(&request, "must-not-replace")),
+        entry(
+            "provider-id",
+            3,
+            request_session("msg_provider_id", "journal-child"),
+        ),
+        entry(
+            "oversized-request",
+            4,
+            request_session(&"a".repeat(1_000), "journal-child"),
+        ),
+        entry("empty-session", 5, request_session(&request, "")),
+        entry(
+            "invalid-session",
+            6,
+            request_session(&request, "bad\nsession"),
+        ),
+        entry(
+            "oversized-session",
+            7,
+            request_session(&request, &"s".repeat(10_000)),
+        ),
+    ];
+    let outcome = ingest(&store, &users, &scope, &user_key(dev), entries)
+        .await
+        .expect("batch");
+    assert_eq!(
+        statuses(&outcome),
+        [
+            ("mapping", Applied),
+            ("duplicate", Duplicate),
+            ("stale", Stale),
+            (
+                "provider-id",
+                Rejected(AttributionRejectReason::InvalidEntry)
+            ),
+            (
+                "oversized-request",
+                Rejected(AttributionRejectReason::InvalidEntry)
+            ),
+            (
+                "empty-session",
+                Rejected(AttributionRejectReason::InvalidEntry)
+            ),
+            (
+                "invalid-session",
+                Rejected(AttributionRejectReason::InvalidEntry)
+            ),
+            (
+                "oversized-session",
+                Rejected(AttributionRejectReason::InvalidEntry)
+            ),
+        ]
+    );
+    let other_scope = format!("user:{other}");
+    ingest(
+        &store,
+        &users,
+        &other_scope,
+        &user_key(other),
+        vec![entry(
+            "other-owner",
+            1,
+            request_session(&request, "journal-child"),
+        )],
+    )
+    .await
+    .expect("other owner's mapping");
+    let mappings = store.request_sessions.lock().expect("mappings");
+    assert_eq!(mappings.len(), 2);
+    assert_eq!(mappings[0].owner.owner_user_id, Some(dev));
+    assert_eq!(mappings[0].request_id.to_string(), request);
+    assert_eq!(mappings[0].freshness.sequence, 2);
+    assert_eq!(
+        mappings[0].session_hash,
+        hash_lineage_candidate(&scope, "oceans", "journal-child")
+    );
+    assert_ne!(mappings[0].session_hash, mappings[1].session_hash);
+    drop(mappings);
+    let stored = store.stored_json();
+    assert!(!stored.contains("journal-child"));
+    assert!(!stored.contains("must-not-replace"));
 }

@@ -153,6 +153,18 @@ pub struct AttributionSessionEventWrite {
     pub received_at: OffsetDateTime,
 }
 
+/// A journal's explicit association with one gateway request. No request foreign key is
+/// required: the client can report this before the request or its analysis row is stored.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttributionRequestSessionWrite {
+    pub owner: AttributionOwner,
+    pub request_id: Uuid,
+    /// `hash_lineage_candidate(scope, "oceans", journal_session_id)`, never the raw id.
+    pub session_hash: String,
+    pub freshness: AttributionFreshness,
+    pub received_at: OffsetDateTime,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttributionPullRequestCommit {
     pub commit_sha: String,
@@ -266,7 +278,7 @@ pub struct AttributionSessionCommitTime {
     pub committed_at: OffsetDateTime,
 }
 
-/// One gateway request linked to a session hash through `agent_session_requests`.
+/// One request linked to its journal, note-attested Codex execution, or native session hash.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttributionRequestFact {
     pub ownership_scope_key: String,
@@ -296,6 +308,13 @@ pub trait AttributionRepository {
     async fn apply_attribution_session_event(
         &self,
         write: &AttributionSessionEventWrite,
+    ) -> Result<AttributionApplyOutcome, StoreError>;
+
+    /// Stores `(ownership_scope_key, request_id)` atomically when `freshness` wins. This
+    /// association overrides native session identity only for requests owned by that scope.
+    async fn apply_attribution_request_session(
+        &self,
+        write: &AttributionRequestSessionWrite,
     ) -> Result<AttributionApplyOutcome, StoreError>;
 
     /// Stores a merged PR and replaces its commit list in one transaction when
@@ -334,9 +353,10 @@ pub trait AttributionRepository {
         until: OffsetDateTime,
     ) -> Result<Vec<AttributionSessionCommitTime>, StoreError>;
 
-    /// Gateway requests whose `agent_session_requests.normalized_session_id` is one of the
-    /// hashes and that occurred at or before `until`, oldest first, capped at
-    /// [`ATTRIBUTION_MAX_REQUEST_FACTS`]. At most [`ATTRIBUTION_MAX_HASHES_PER_LOOKUP`] hashes.
+    /// Gateway requests matching their explicit journal hash (preferred), a Codex execution
+    /// hash attested by any same-owner stored note, or their native normalized session hash
+    /// otherwise. Requests are owner-scoped, oldest first, at or before `until`, and capped at
+    /// [`ATTRIBUTION_MAX_REQUEST_FACTS`]. At most [`ATTRIBUTION_MAX_HASHES_PER_LOOKUP`] hashes per call.
     async fn list_attribution_request_facts(
         &self,
         session_hashes: &[String],
