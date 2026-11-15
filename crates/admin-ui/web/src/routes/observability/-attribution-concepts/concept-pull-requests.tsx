@@ -6,7 +6,7 @@ import { ArrowDown01Icon, ArrowRight01Icon } from '@hugeicons/core-free-icons'
 import { Fragment, useMemo, useState, type CSSProperties } from 'react'
 
 import { AppIcon } from '@/components/icons/app-icon'
-import { AdminTableHeader } from '@/components/shared/admin-table-header'
+import { AdminTableHead, AdminTableHeader } from '@/components/shared/admin-table-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
@@ -123,19 +123,21 @@ export default function PullRequestsConcept({ days }: { days: ConceptWindow }) {
 
           <div className="border-border overflow-x-auto rounded-md border">
             <Table aria-label="Pull requests" className="min-w-[60rem]">
-              <AdminTableHeader
-                columns={[
-                  { label: '', key: 'expand', narrow: true },
-                  'Pull request',
-                  'State',
-                  'AI share',
-                  'Commits',
-                  'Harnesses',
-                  { label: 'Cost', align: 'right' },
-                  { label: 'Lead time', align: 'right' },
-                  { label: 'Durable 30d', align: 'right' },
-                ]}
-              />
+              <AdminTableHeader>
+                {['Pull request', 'State', 'AI share', 'Commits', 'Harnesses'].map((label) => (
+                  <AdminTableHead key={label}>{label}</AdminTableHead>
+                ))}
+                {['Cost', 'Lead time', 'Durable 30d'].map((label) => (
+                  <AdminTableHead key={label} className="text-right">
+                    {label}
+                  </AdminTableHead>
+                ))}
+                {/* Pinned right, so the details stay in reach while the ledger scrolls sideways. */}
+                <AdminTableHead
+                  className="bg-surface-muted shadow-sticky-edge-end sticky right-0 z-10 w-10"
+                  aria-label="Details"
+                />
+              </AdminTableHeader>
               <TableBody>
                 {visible.map((row) => {
                   const key = `${row.pr.repository}#${row.pr.number}`
@@ -143,26 +145,10 @@ export default function PullRequestsConcept({ days }: { days: ConceptWindow }) {
                   return (
                     <Fragment key={key}>
                       <TableRow
-                        className="cursor-pointer"
+                        className="group hover:bg-surface-muted cursor-pointer"
                         data-state={open ? 'selected' : undefined}
                         onClick={() => setExpanded(open ? null : key)}
                       >
-                        <TableCell className="w-10 px-2 py-2">
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-expanded={open}
-                            aria-label={
-                              open ? `Collapse #${row.pr.number}` : `Expand #${row.pr.number}`
-                            }
-                          >
-                            <AppIcon
-                              icon={open ? ArrowDown01Icon : ArrowRight01Icon}
-                              size={16}
-                              aria-hidden
-                            />
-                          </Button>
-                        </TableCell>
                         <TableCell className="px-3 py-2">
                           <p className="max-w-80 truncate font-medium">{row.pr.title}</p>
                           <p className="text-muted-foreground text-xs">
@@ -213,6 +199,22 @@ export default function PullRequestsConcept({ days }: { days: ConceptWindow }) {
                           {row.pr.state === 'merged' && row.aiLines > 0
                             ? formatPercent(row.pr.aiLinesDurable30 / row.aiLines)
                             : '—'}
+                        </TableCell>
+                        <TableCell className="bg-card shadow-sticky-edge-end group-hover:bg-surface-muted group-data-[state=selected]:bg-muted sticky right-0 z-10 w-10 px-2 py-2">
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-expanded={open}
+                            aria-label={
+                              open ? `Collapse #${row.pr.number}` : `Expand #${row.pr.number}`
+                            }
+                          >
+                            <AppIcon
+                              icon={open ? ArrowDown01Icon : ArrowRight01Icon}
+                              size={16}
+                              aria-hidden
+                            />
+                          </Button>
                         </TableCell>
                       </TableRow>
                       {open ? (
