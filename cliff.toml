@@ -26,7 +26,7 @@ filter_commits = true
 # pull request title with `!` instead.
 protect_breaking_commits = false
 fail_on_unmatched_commit = false
-tag_pattern = "v[0-9].*"
+tag_pattern = "^v[0-9].*$"
 topo_order = false
 sort_commits = "oldest"
 

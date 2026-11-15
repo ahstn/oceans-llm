@@ -8,6 +8,8 @@ This runbook explains how maintainers publish an Oceans LLM release.
 
 Oceans LLM uses one Semantic Version for the CLI, gateway, admin UI, container images, and Helm chart. A tag named `vX.Y.Z` identifies the source for all release artifacts.
 
+The [`@ahstn/opencode-oceans` plugin](https://www.npmjs.com/package/@ahstn/opencode-oceans) has independent versions, release notes and `opencode-oceans-vX.Y.Z` tags. It is not released by `mise run release` or cargo-dist. See [OpenCode plugin releases](#opencode-plugin-releases).
+
 Run one command to create and publish a release:
 
 ```bash
@@ -154,6 +156,41 @@ If the tag was pushed but a required CI job failed, correct the problem and reru
 If GitHub publication failed, inspect whether a release or partial asset set exists before rerunning the final job. Do not replace published assets or move a published tag. A source correction requires a new version and tag.
 
 The workflow change applies to tags whose source includes this configuration. Rerunning an old tag uses that tag's original workflow.
+
+## OpenCode plugin releases
+
+The plugin ships TypeScript source on public npm. Its versions and release notes are independent of the CLI, gateway, images and Helm chart. Do not use a product `vX.Y.Z` tag or the product changelog as the plugin's release identity. Record plugin-specific changes in release notes for the matching `opencode-oceans-vX.Y.Z` tag.
+
+### Trusted publisher setup
+
+Use npm 11.15.0 or later with Node 22.14.0 or later through `mise` for staged publishing. Enable 2FA on the maintainer account. Configure the npm trusted publisher for this public package:
+
+| Field | Value |
+| --- | --- |
+| Organisation or user | `ahstn` |
+| Repository | `oceans-llm` |
+| Workflow filename | `opencode-oceans.yml` |
+| Environment | `npm-opencode` |
+| Allowed actions | `npm stage publish` only |
+
+Create the `npm-opencode` GitHub environment and allow deployments from `main` only. Protect `main` and plugin release tags from unreviewed changes. Use GitHub-hosted runners and validate a new trusted publisher within npm's two-day window. Set npm publishing access to require 2FA and disallow tokens once trusted publishing is configured. Do not put a long-lived npm token in CI. See [npm trusted publishers](https://docs.npmjs.com/trusted-publishers/) and [staged publishing](https://docs.npmjs.com/staged-publishing/).
+
+### Prepare and stage
+
+1. Choose the next plugin version, review dependency updates and plugin-specific changes, update the package version and lockfile, and merge the release source to `main`. Run `mise run //opencode:check` and `mise run //opencode:pack` as appropriate before release. The check includes the source smoke: it packs this checkout and runs OpenCode against a local fixture.
+2. Create and push the exact tag `opencode-oceans-vX.Y.Z` on the merged commit. Write release notes for that plugin version. Never move a published release tag.
+3. Dispatch the [OpenCode Oceans plugin workflow](../../../.github/workflows/opencode-oceans.yml) from `main`, supplying that existing tag. The tag must point to the exact workflow-dispatch commit (`github.sha`), not just an ancestor of `main`, so npm provenance identifies the source being staged. The read-only check job validates that match, main ancestry, the tag, version, package name, public npm registry and access. It checks and packs the tagged source, then uploads the tarball and checksum. If `main` advances, rerun the original workflow run; a fresh dispatch against the older tag fails intentionally.
+4. The `npm-opencode` stage job downloads that exact artifact, validates its checksum and stages it with short-lived OIDC credentials using `npm stage publish`, public access, `latest` and `--ignore-scripts`. Only this job has `id-token: write`. CI cannot approve the stage or publish directly.
+
+### Review, approve and verify
+
+Sign in to npm as a maintainer. List and inspect the candidate with `mise exec -- npm stage list @ahstn/opencode-oceans` and `mise exec -- npm stage view <stage-id>`, then download it with `mise exec -- npm stage download <stage-id>`. Inspect its version and contents, compare the downloaded tarball's SHA-256 checksum with the workflow artifact checksum, and check the provenance and workflow commit. Later OIDC stages should have npm provenance; the first locally staged `0.1.0` release has no CI provenance.
+
+Reject an incorrect candidate with `mise exec -- npm stage reject <stage-id>` before trying again. A staged version is reserved until rejected. Correct the source as needed, then use an appropriate matching tag and dispatch again; do not move a published tag. A maintainer approves a correct candidate with `mise exec -- npm stage approve <stage-id>` and 2FA. Approval publishes it with the staged `latest` tag; CI does not approve it.
+
+After approval, run `mise run //opencode:smoke-published -- X.Y.Z` with the exact published version, or dispatch the [published smoke workflow](../../../.github/workflows/opencode-oceans-published.yml) with that version. In a fresh isolated environment, this runs `opencode plugin add @ahstn/opencode-oceans@X.Y.Z` before starting a private server. It installs from public npm without registry credentials or a source fallback and exercises a local synthetic gateway without paid requests. It is not the source smoke or the live provider harness suite. Record the result rather than assuming a successful stage proves installation.
+
+Only after release, update the exact version pins in the package README, OpenCode setup page and landing page. Published npm versions are immutable. If a defect is found after approval, deprecate the affected version as appropriate and publish a fixed patch under a new version and tag; do not replace the published tarball.
 
 ## CI Boundary
 
