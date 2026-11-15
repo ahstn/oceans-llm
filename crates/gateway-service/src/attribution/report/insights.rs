@@ -2,8 +2,10 @@
 //! session's work ended up, harness × model efficiency, and a period summary for deltas.
 //!
 //! A session here is one agent session however it reached Oceans: a hook-reported session, a
-//! session named by a window commit's note, or both, joined when they share a session hash.
-//! Its requests are the window's requests under any of its hashes, each request counted once.
+//! session named by a commit's note (a window commit, or a lookback commit when the session still
+//! spent in the window), or both, joined when they share a session hash. Its requests are the
+//! window's requests under any of its hashes, each request counted once. Only window commits set
+//! its lines and outcome.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 

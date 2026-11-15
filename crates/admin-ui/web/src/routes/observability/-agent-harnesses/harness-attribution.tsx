@@ -256,8 +256,9 @@ function HarnessModelCard({
   const ranked = cells
     .filter((cell) => cell.pricedSessions >= 3 && costPer100(cell) != null)
     .sort((a, b) => (costPer100(a) ?? 0) - (costPer100(b) ?? 0))
-  const cell = (harness: string, model: string) =>
-    cells.find((entry) => entry.harness === harness && entry.model === model)
+  // The heatmap reads every cell twice (range, then render), so look each up in constant time.
+  const byPair = new Map(cells.map((entry) => [`${entry.harness}::${entry.model}`, entry]))
+  const cell = (harness: string, model: string) => byPair.get(`${harness}::${model}`)
   return (
     <InsightCard
       title="Harness by model"

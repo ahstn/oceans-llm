@@ -18,7 +18,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
-import { formatPercent, HARNESSES, READINESS, SIGNED_PERCENT, type Readiness } from './format'
+import { formatPercent, harnessInfo, READINESS, SIGNED_PERCENT, type Readiness } from './format'
 
 // Attribution data roles. AI and human are the two fixed series; their lightness differs (blue
 // against a lighter green) so a stack of them reads without colour. Unattested lines are unknown,
@@ -375,7 +375,7 @@ export function Insight({ children }: { children: ReactNode }) {
 
 /** A harness mark and name. Harnesses without a brand mark get their initial in a tile. */
 export function ToolLabel({ harness, hideName = false }: { harness: string; hideName?: boolean }) {
-  const known = HARNESSES[harness]
+  const known = harnessInfo(harness)
   const label = known?.label ?? harness
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5" title={label}>

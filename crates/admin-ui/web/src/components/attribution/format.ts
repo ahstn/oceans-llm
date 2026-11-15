@@ -78,14 +78,21 @@ export const HARNESSES: Record<string, { label: string; icon?: string }> = {
 }
 
 /** git-ai's `claude` and the Claude Code hook's `claude_code` are one harness. */
-const HARNESS_ALIASES: Record<string, string> = { claude_code: 'claude' }
+// Harness names come from git-ai notes as free strings, so lookups never reach inherited
+// properties such as `__proto__` or `toString`.
+const HARNESS_ALIASES = new Map([['claude_code', 'claude']])
 
 export function canonicalHarness(harness: string) {
-  return HARNESS_ALIASES[harness] ?? harness
+  return HARNESS_ALIASES.get(harness) ?? harness
+}
+
+/** The label and brand mark for a known harness, else `undefined`. */
+export function harnessInfo(harness: string) {
+  return Object.hasOwn(HARNESSES, harness) ? HARNESSES[harness] : undefined
 }
 
 export function harnessLabel(harness: string) {
-  return HARNESSES[harness]?.label ?? harness
+  return harnessInfo(harness)?.label ?? harness
 }
 
 /** `Nov 14` for a `YYYY-MM-DD` axis key, in UTC so server and browser agree. */

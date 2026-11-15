@@ -12,6 +12,7 @@ import {
 } from '@/routes/observability/-attribution/insights'
 
 import { deployBand, failBand, leadBand } from '@/components/attribution/delivery-bands'
+import { canonicalHarness, harnessLabel } from '@/components/attribution/format'
 
 import { platformAdminSession } from './auth-session'
 
@@ -161,5 +162,16 @@ describe('merged share by bucket', () => {
         [bucket('2026-11-01'), bucket('2026-11-08'), bucket('2026-11-15')],
       ),
     ).toEqual([0.75, 0, null])
+  })
+})
+
+describe('harness names', () => {
+  it('never returns inherited properties for a harness name', () => {
+    for (const name of ['__proto__', 'toString', 'constructor']) {
+      expect(canonicalHarness(name)).toBe(name)
+      expect(harnessLabel(name)).toBe(name)
+    }
+    expect(canonicalHarness('claude_code')).toBe('claude')
+    expect(harnessLabel('claude')).toBe('Claude Code')
   })
 })
