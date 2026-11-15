@@ -57,6 +57,16 @@ describe('attribution report input', () => {
     }
   })
 
+  it("loads the first enabled tab's report for a bare URL with no tab", () => {
+    const bare: { tab?: AttributionTab; days: 30 } = { days: 30 }
+    const { report, ...filters } = attributionReportDeps(bare)
+    expect(report).toBeUndefined()
+    // The loader passes no tab, and the input resolves it to the first enabled one (Impact).
+    expect(
+      attributionReportInput({ ...filters, tab: reportShapeTab(report, admin) }, admin),
+    ).toEqual({ days: 30, compare: true })
+  })
+
   it('reads no report when every report tab is off', () => {
     const conceptsOnly = {
       ...admin,

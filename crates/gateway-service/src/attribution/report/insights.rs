@@ -164,13 +164,18 @@ impl ReportInputs<'_> {
         agent_sessions: &[&'b AttributionAgentSessionRecord],
         reported: &[&'b AttributionAgentSessionRecord],
     ) -> Vec<SessionRollup<'b>> {
+        // Reported sessions are a subset of `agent_sessions`, matched by identity in one lookup.
+        let reported = reported
+            .iter()
+            .map(|session| std::ptr::from_ref(*session))
+            .collect::<HashSet<_>>();
         let mut rollups: Vec<SessionRollup<'b>> = Vec::new();
         let mut by_hash: HashMap<(&str, &str), usize> = HashMap::new();
         for session in agent_sessions {
             let scope = session.owner.ownership_scope_key.as_str();
             let index = rollups.len();
             rollups.push(SessionRollup {
-                reported: reported.iter().any(|seen| std::ptr::eq(*seen, *session)),
+                reported: reported.contains(&std::ptr::from_ref(*session)),
                 harness: Some(session.harness_key.as_str()),
                 ..SessionRollup::default()
             });

@@ -317,30 +317,47 @@ export function repositoryRows(
   windowStart: string,
   windowEnd: string,
 ): RepositoryRow[] {
-  const names = new Set([
-    ...changes.map((c) => c.repository),
-    ...pullRequests.map((p) => p.repository),
-  ])
   const start = new Date(windowStart).getTime()
   const span = Math.max(1, new Date(windowEnd).getTime() - start)
   const slots = 8
-  return [...names]
-    .map((repository) => {
-      const commits = changes.filter((change) => change.repository === repository)
-      const prs = pullRequestRows(pullRequests.filter((pr) => pr.repository === repository))
+  // One pass groups commits and pull requests by repository, placing each commit in its trend
+  // slot, so the per-repository figures below never rescan the whole report.
+  const groups = new Map<
+    string,
+    { commits: ChangeView[]; prs: PullRequestView[]; ai: number[]; human: number[] }
+  >()
+  const group = (repository: string) => {
+    let entry = groups.get(repository)
+    if (!entry) {
+      entry = {
+        commits: [],
+        prs: [],
+        ai: Array.from({ length: slots }, () => 0),
+        human: Array.from({ length: slots }, () => 0),
+      }
+      groups.set(repository, entry)
+    }
+    return entry
+  }
+  for (const change of changes) {
+    const entry = group(change.repository)
+    entry.commits.push(change)
+    const at = (new Date(change.committed_at).getTime() - start) / span
+    const slot = Math.min(slots - 1, Math.max(0, Math.floor(at * slots)))
+    entry.ai[slot] += change.ai_lines
+    entry.human[slot] += change.human_lines
+  }
+  for (const pr of pullRequests) group(pr.repository).prs.push(pr)
+  return [...groups.entries()]
+    .map(([repository, entry]) => {
+      const { commits } = entry
+      const prs = pullRequestRows(entry.prs)
       const aiLines = commits.reduce((total, change) => total + change.ai_lines, 0)
       const humanLines = commits.reduce((total, change) => total + change.human_lines, 0)
       const autonomous = commits
         .filter((change) => change.ai_lines > 0 && change.human_lines <= change.ai_lines * 0.05)
         .reduce((total, change) => total + change.ai_lines, 0)
-      const trend = Array.from({ length: slots }, (_, slot) => {
-        const inSlot = commits.filter((change) => {
-          const at = (new Date(change.committed_at).getTime() - start) / span
-          return Math.min(slots - 1, Math.max(0, Math.floor(at * slots))) === slot
-        })
-        const ai = inSlot.reduce((total, change) => total + change.ai_lines, 0)
-        return ratio(ai, ai + inSlot.reduce((total, change) => total + change.human_lines, 0))
-      })
+      const trend = entry.ai.map((ai, slot) => ratio(ai, ai + entry.human[slot]))
       return {
         repository,
         commits: commits.length,
