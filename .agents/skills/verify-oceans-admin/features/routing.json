@@ -557,6 +557,9 @@
       "paths": [
         "crates/admin-ui/web/src/routes/observability/attribution.tsx",
         "crates/admin-ui/web/src/routes/observability/-attribution/**",
+        "crates/admin-ui/web/src/routes/observability/attribution_.concepts.tsx",
+        "crates/admin-ui/web/src/routes/observability/-attribution-concepts/**",
+        "crates/admin-ui/web/src/test/attribution-concepts.test.ts",
         "crates/admin-ui/web/src/routes/observability/-usage-costs/shared.ts",
         "crates/gateway/src/http/attribution*.rs",
         "crates/gateway/src/http/attribution/**",

@@ -352,6 +352,17 @@ The helpers live in `src/lib/format.ts` (`formatCount`, `formatDuration`, `forma
 - In a stack, neighbouring bands differ in lightness as well as hue. A stack whose series have fixed meanings alternates light and dark: Profile token volume runs Output `--chart-2`, Input `--chart-5`, Cached input `--chart-4`, bottom to top.
 - Series and active heatmap levels are graphics, so they need 3:1 against the card (WCAG 1.4.11). The design-system page grades them, and `src/test/design-contrast.test.ts` fails the build when they, or a text pair under 4.5:1, slip.
 
+### Attribution Data
+
+Attribution charts (`/observability/attribution`, and the candidate tabs on `/observability/attribution/concepts`) give a few series fixed meanings, so they read the same on every chart:
+
+- **AI lines** take `--chart-1` (blue) and **human lines** `--chart-2` (green). The green is lighter, so a stack of the two reads without hue. **Unattested lines** take `--chart-other`: they are unknown, never human, and stay out of every AI share.
+- **Spend that shipped** (reached a commit on the default branch) takes `--chart-4`; **spend that did not** takes `--chart-other`. Waste is drawn muted, not in rose: it is data, not a failure state.
+- **Deltas stay neutral.** A KPI's change against the previous window is ink with an arrow, never green or rose, because whether up is good depends on the metric.
+- **Pair throughput with its counterweight.** A volume figure (AI share, merged PRs, lines per dollar) sits beside the measure that would expose gaming it (durability, reverts, lead time). Never show AI line counts as a score on their own.
+- **No individual rankings.** Team, repository, harness and model views compare against each other; a person's view compares only against their own previous period.
+- **Shapes:** a column Sankey (`FlowChart`) for session outcomes, sized by sessions or spend, with drop-offs muted below the main stack; a quadrant for readiness (AI share against durability, bubble area by spend); the contribution calendar and weekday-by-hour punch card on the heatmap levels; per-PR commit strips (one bar per commit, AI over human). Each grid cell and SVG mark carries its value in a tooltip or `<title>`.
+
 ## 7. Packaging and Reuse
 
 The theme ships beyond the admin UI from the same tokens:
