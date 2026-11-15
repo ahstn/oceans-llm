@@ -216,7 +216,8 @@ pub(crate) fn insert_pull_request_commits(
     Ok(statements)
 }
 
-/// A page of pull requests merged, opened or closed in range, latest activity first, each
+/// A page of pull requests merged, opened, closed or synced in range (a sync follows any
+/// change, such as a review), latest activity first, each
 /// followed by its commits in list order: one row per commit, or one row with NULL commit
 /// columns for an empty list.
 pub(crate) fn list_pull_requests(
@@ -227,7 +228,7 @@ pub(crate) fn list_pull_requests(
     let conditions = report_conditions(
         &mut binds,
         query,
-        &["merged_at", "opened_at", "closed_at"],
+        &["merged_at", "opened_at", "closed_at", "observed_at"],
         &["owner_user_id", "author_user_id"],
     )?;
     let limit = report_limit(&mut binds, query);

@@ -1559,3 +1559,87 @@ async fn open_and_closed_pull_requests_feed_lifecycle_figures_but_not_merged_one
     // Reviews 60 and 60 minutes after opening.
     assert_eq!(lifecycle.median_review_wait_seconds, Some(3600));
 }
+
+#[tokio::test]
+async fn a_revert_resolves_an_original_merged_before_the_window() {
+    let dev = user_owner(Uuid::new_v4());
+    // Merged 60 days before the window: loaded only to resolve the link, never counted.
+    let original = pull_request(5, &dev, t0() - Duration::days(60), &[11]);
+    let mut revert = pull_request(6, &dev, minutes(60), &[12]);
+    revert.lifecycle.details.reverts = Some(AttributionRevertLink {
+        pull_request_number: Some(5),
+        commit_shas: vec![],
+        evidence: AttributionRevertEvidence::RevertCommit,
+    });
+    let mut store = FakeStore::with_commits(vec![]);
+    store.pull_requests = Mutex::new(vec![original, revert]);
+    let report = report(&store, &query()).await;
+
+    assert_eq!(
+        report.pull_requests.len(),
+        1,
+        "the original is not a window merge"
+    );
+    assert_eq!(report.totals.pull_request_count, 1);
+    let lifecycle = &report.pull_request_lifecycle;
+    assert_eq!(lifecycle.revert_count, 1);
+    assert_eq!(
+        lifecycle.median_time_to_revert_seconds,
+        Some((Duration::days(60) + Duration::minutes(60)).whole_seconds())
+    );
+    assert_eq!(lifecycle.merged_count, 1);
+    assert!(!report.coverage.pull_requests_truncated);
+}
+
+#[tokio::test]
+async fn a_later_merged_copy_wins_over_the_authors_earlier_open_copy() {
+    let author_id = Uuid::new_v4();
+    let author = user_owner(author_id);
+    let teammate = user_owner(Uuid::new_v4());
+    let mut open_copy = pull_request(9, &author, minutes(0), &[]);
+    open_copy.author_user_id = Some(author_id);
+    open_copy.merged_at = None;
+    open_copy.lifecycle.state = AttributionPullRequestState::Open;
+    open_copy.lifecycle.closed_at = None;
+    open_copy.lifecycle.opened_at = Some(minutes(10));
+    open_copy.observed_at = minutes(20);
+    let mut merged_copy = pull_request(9, &teammate, minutes(90), &[]);
+    merged_copy.author_user_id = Some(author_id);
+    merged_copy.lifecycle.opened_at = Some(minutes(10));
+    merged_copy.observed_at = minutes(95);
+    let mut store = FakeStore::with_commits(vec![]);
+    store.pull_requests = Mutex::new(vec![open_copy, merged_copy]);
+    let report = report(&store, &query()).await;
+
+    assert_eq!(report.pull_requests.len(), 1);
+    let merged = &report.pull_requests[0].pull_request;
+    assert_eq!(merged.merged_at, Some(minutes(90)));
+    assert_eq!(
+        merged.owner.owner_user_id,
+        Some(author_id),
+        "attribution stays with the author"
+    );
+    assert_eq!(report.pull_request_lifecycle.open_count, 0);
+}
+
+#[tokio::test]
+async fn an_older_open_pull_request_counts_only_when_synced_in_the_window() {
+    let dev = user_owner(Uuid::new_v4());
+    let open = |number: i64, observed_at: OffsetDateTime| {
+        let mut pr = pull_request(number, &dev, minutes(0), &[]);
+        pr.merged_at = None;
+        pr.lifecycle.state = AttributionPullRequestState::Open;
+        pr.lifecycle.closed_at = None;
+        pr.lifecycle.opened_at = Some(t0() - Duration::days(10));
+        pr.observed_at = observed_at;
+        pr
+    };
+    let mut store = FakeStore::with_commits(vec![]);
+    store.pull_requests = Mutex::new(vec![
+        open(1, minutes(30)),
+        open(2, t0() - Duration::days(9)),
+    ]);
+    let report = report(&store, &query()).await;
+    assert_eq!(report.pull_request_lifecycle.open_count, 1);
+    assert_eq!(report.pull_request_lifecycle.opened_count, 0);
+}

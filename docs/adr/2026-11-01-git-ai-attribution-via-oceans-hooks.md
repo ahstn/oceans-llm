@@ -309,6 +309,10 @@ The gateway stores the lifecycle as `state`, `opened_at` and `closed_at` columns
 - **Partial reverts and fix-forwards aren't detected:** only an exact inverse matches. Incident links are the real answer.
 - **Older rows are title-only:** pull requests stored before this change have no link, so a revert title on them reads as a possible revert, and their reverts stop counting toward change fail rate until the hook re-sends them.
 - **Bot reviews are excluded by account type:** GitHub's `Bot` actors are left out, but a bot that reviews from a user account counts as a person.
+- **A 90-day lookback for revert links:** the report loads pull requests from 90 days before the window so a revert resolves an older original and yields a time to revert. Those older rows only resolve links; window figures count activity in the window. A revert of a change older than that resolves only by number, without a time.
+- **Binary files match by blob ids:** a binary change has no lines to compare, so the fingerprint uses its from and to blob ids, which keep the change's direction.
+- **More than 100 reviews:** the hook reads the first 100 and sends the counts as unknown when there are more. The first review time is still exact, since reviews come oldest first.
+- **Copies from several owners:** the author's copy keeps attribution, and the state, merge, commits and lifecycle come from the most recently observed copy, so a teammate's sync after the merge isn't overridden by the author's earlier one.
 
 ## Follow-ups
 

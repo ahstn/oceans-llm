@@ -43,6 +43,10 @@ pub use lifecycle::{AttributionPullRequestLifecycleSummary, AttributionRevertAct
 /// finds the notes of commits made before the window opened, and a session that started
 /// before the window still has its requests in the window counted.
 const LOOKBACK: Duration = Duration::days(30);
+/// How far before the window pull requests are loaded, so a revert merged in the window
+/// resolves an original merged up to this long before it. Those older pull requests only
+/// resolve links; every window figure counts activity inside the window.
+const REVERT_LOOKBACK: Duration = Duration::days(90);
 /// Commit details each pull request carries. The totals use every matched commit; this bounds
 /// the response, since the report caps pull requests but not their commits.
 pub const MAX_PULL_REQUEST_COMMIT_DETAILS: usize = 50;
@@ -265,9 +269,13 @@ where
         from: query.from - LOOKBACK,
         ..query.clone()
     };
+    let pull_request_query = AttributionReportQuery {
+        from: query.from - REVERT_LOOKBACK,
+        ..query.clone()
+    };
     let (commits, pull_requests, loaded_sessions) = tokio::try_join!(
         store.list_attribution_commits(&lookback_query),
-        store.list_attribution_pull_requests(query),
+        store.list_attribution_pull_requests(&pull_request_query),
         store.list_attribution_agent_sessions(&lookback_query),
     )?;
     let limit = usize::try_from(query.limit).unwrap_or(usize::MAX);
@@ -303,7 +311,14 @@ where
     let coverage = AttributionReportCoverage {
         requests: RequestTally::default(),
         commits_truncated: commits_capped,
-        pull_requests_truncated: loaded.len() >= limit,
+        // Pull requests come latest activity first, so a cap reached only by ones before the
+        // window, loaded for revert links, left out none the window reports.
+        pull_requests_truncated: loaded.len() >= limit
+            && loaded
+                .iter()
+                .map(lifecycle::activity_at)
+                .min()
+                .is_some_and(|at| at >= query.from),
         request_facts_truncated,
         agent_sessions_truncated,
     };
@@ -332,31 +347,55 @@ fn reported_in_window(
 }
 
 /// One row per `(repository, number)`, in the stored order. Of the copies that several owners
-/// reported, the one its author reported is kept, else the first.
+/// reported, the one its author reported is kept for attribution, else the first. Its state,
+/// merge, commits and lifecycle come from the most recently observed copy, so a teammate who
+/// synced after the merge isn't overridden by the author's copy from while it was open.
 fn distinct_pull_requests(
     pull_requests: Vec<AttributionPullRequestRecord>,
 ) -> Vec<AttributionPullRequestRecord> {
-    let mut kept: Vec<AttributionPullRequestRecord> = Vec::with_capacity(pull_requests.len());
+    let mut groups: Vec<Vec<AttributionPullRequestRecord>> = Vec::new();
     let mut index: HashMap<(String, i64), usize> = HashMap::new();
     for pull_request in pull_requests {
         let key = (pull_request.repository.clone(), pull_request.number);
         match index.get(&key) {
-            Some(&position) => {
-                let author = pull_request.author_user_id;
-                let reported_by_author = |row: &AttributionPullRequestRecord| {
-                    author.is_some() && row.owner.owner_user_id == author
-                };
-                if !reported_by_author(&kept[position]) && reported_by_author(&pull_request) {
-                    kept[position] = pull_request;
-                }
-            }
+            Some(&position) => groups[position].push(pull_request),
             None => {
-                index.insert(key, kept.len());
-                kept.push(pull_request);
+                index.insert(key, groups.len());
+                groups.push(vec![pull_request]);
             }
         }
     }
-    kept
+    groups
+        .into_iter()
+        .map(|mut copies| {
+            let freshest = copies
+                .iter()
+                .enumerate()
+                .max_by_key(|(position, row)| (row.observed_at, std::cmp::Reverse(*position)))
+                .map_or(0, |(position, _)| position);
+            let attributed = copies
+                .iter()
+                .position(|row| {
+                    row.author_user_id.is_some() && row.owner.owner_user_id == row.author_user_id
+                })
+                .unwrap_or(0);
+            if freshest == attributed {
+                return copies.swap_remove(attributed);
+            }
+            let fresher = copies[freshest].clone();
+            let mut row = copies.swap_remove(attributed);
+            row.title = fresher.title;
+            row.url = fresher.url;
+            row.base_ref = fresher.base_ref;
+            row.head_ref = fresher.head_ref;
+            row.merge_commit_sha = fresher.merge_commit_sha;
+            row.merged_at = fresher.merged_at;
+            row.commits = fresher.commits;
+            row.lifecycle = fresher.lifecycle;
+            row.observed_at = fresher.observed_at;
+            row
+        })
+        .collect()
 }
 
 fn session_hashes(

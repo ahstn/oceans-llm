@@ -298,6 +298,7 @@ impl AttributionRepository for FakeStore {
                     pull_request.merged_at,
                     pull_request.lifecycle.opened_at,
                     pull_request.lifecycle.closed_at,
+                    Some(pull_request.observed_at),
                 ]
                 .into_iter()
                 .flatten()

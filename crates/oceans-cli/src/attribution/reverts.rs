@@ -216,6 +216,7 @@ fn diff(directory: &Path, from: &str, to: &str) -> Option<Vec<u8>> {
             "--no-ext-diff",
             "--no-renames",
             "--no-textconv",
+            "--full-index",
             "-U0",
             from,
             to,
@@ -227,34 +228,45 @@ fn diff(directory: &Path, from: &str, to: &str) -> Option<Vec<u8>> {
 }
 
 /// A fingerprint of a `-U0` diff: per file, the path and each added or removed line with its
-/// whitespace stripped, combined in path order. Context, line numbers and blob ids are left
-/// out, so an exact inverse matches even after unrelated edits nearby. `None` for an empty
-/// diff, which would match every other empty change.
+/// whitespace stripped, combined in path order. Context, line numbers and text blob ids are
+/// left out, so an exact inverse matches even after unrelated edits nearby. A binary file has
+/// no lines to compare, so it contributes its `index <from>..<to>` blob ids, which keep the
+/// change's direction: two unrelated edits to one image never match. `None` for an empty diff,
+/// which would match every other empty change.
 pub fn fingerprint(diff: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(diff);
     let mut files: BTreeMap<String, Sha256> = BTreeMap::new();
     let mut current: Option<String> = None;
+    let mut index: Option<String> = None;
     let mut lines = 0usize;
     for line in text.lines() {
         if let Some(header) = line.strip_prefix("diff --git ") {
             current = Some(header.to_owned());
+            index = None;
             files.entry(header.to_owned()).or_default();
             continue;
         }
         let Some(path) = current.as_ref() else {
             continue;
         };
+        if let Some(blobs) = line.strip_prefix("index ") {
+            // `index <from>..<to> [mode]`; only the blob ids identify a binary change.
+            index = blobs.split_whitespace().next().map(str::to_owned);
+            continue;
+        }
         if line.starts_with("+++ ") || line.starts_with("--- ") || line.starts_with("@@") {
             continue;
         }
+        let binary;
         let (sign, content) = match line.as_bytes().first() {
             Some(b'+') => ('+', &line[1..]),
             Some(b'-') => ('-', &line[1..]),
-            // Binary files, mode changes and new or deleted file markers.
-            _ if line.starts_with("Binary files ")
-                || line.starts_with("new file mode")
-                || line.starts_with("deleted file mode") =>
-            {
+            _ if line.starts_with("Binary files ") => {
+                binary = index.clone().unwrap_or_else(|| line.to_owned());
+                ('b', binary.as_str())
+            }
+            // New or deleted file markers.
+            _ if line.starts_with("new file mode") || line.starts_with("deleted file mode") => {
                 ('=', line)
             }
             _ => continue,
@@ -368,6 +380,29 @@ mod tests {
         );
         assert_eq!(fingerprint(b""), None);
         assert_eq!(fingerprint(b"diff --git a/x b/x\nindex 1..2\n"), None);
+    }
+
+    #[test]
+    fn binary_changes_match_only_their_exact_inverse() {
+        let edit = |from: &str, to: &str| {
+            format!(
+                "diff --git a/logo.png b/logo.png\nindex {from}..{to} 100644\nBinary files a/logo.png and b/logo.png differ\n"
+            )
+        };
+        // A later, unrelated edit of the same image does not undo the first.
+        assert_ne!(
+            fingerprint(edit("a1", "b2").as_bytes()),
+            fingerprint(edit("c3", "d4").as_bytes())
+        );
+        // The revert's inverse diff runs from the original's old blob to its new one again.
+        assert_eq!(
+            fingerprint(edit("a1", "b2").as_bytes()),
+            fingerprint(edit("a1", "b2").as_bytes())
+        );
+        assert_ne!(
+            fingerprint(edit("a1", "b2").as_bytes()),
+            fingerprint(edit("b2", "a1").as_bytes())
+        );
     }
 
     #[test]

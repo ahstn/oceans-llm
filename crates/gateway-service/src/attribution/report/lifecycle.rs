@@ -68,6 +68,30 @@ pub(super) fn merged_in(
             .is_some_and(|at| at >= query.from && at <= query.to)
 }
 
+/// The latest of a pull request's lifecycle times, as the store orders its read.
+pub(super) fn activity_at(pull_request: &AttributionPullRequestRecord) -> OffsetDateTime {
+    pull_request
+        .merged_at
+        .or(pull_request.lifecycle.closed_at)
+        .or(pull_request.lifecycle.opened_at)
+        .unwrap_or(pull_request.observed_at)
+}
+
+/// Whether anything happened to `pull_request` in the window: it opened, was reviewed, merged,
+/// closed, or was synced again because it changed.
+fn active_in(query: &AttributionReportQuery, pull_request: &AttributionPullRequestRecord) -> bool {
+    [
+        pull_request.merged_at,
+        pull_request.lifecycle.opened_at,
+        pull_request.lifecycle.closed_at,
+        pull_request.lifecycle.details.first_review_at,
+        Some(pull_request.observed_at),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|at| at >= query.from && at <= query.to)
+}
+
 /// The merge time of a pull request the report already knows merged.
 pub(super) fn merged_time(pull_request: &AttributionPullRequestRecord) -> OffsetDateTime {
     pull_request.merged_at.unwrap_or(pull_request.observed_at)
@@ -87,6 +111,7 @@ pub(super) fn summary(
     let open: Vec<_> = pull_requests
         .iter()
         .filter(|pr| pr.lifecycle.state == AttributionPullRequestState::Open)
+        .filter(|pr| active_in(query, pr))
         .collect();
     let mut review_waits: Vec<i64> = pull_requests
         .iter()

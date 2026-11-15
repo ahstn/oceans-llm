@@ -57,13 +57,20 @@ export default function DeliveryTab({ report }: { report: AttributionReportView 
   const flow = flowFigures(report.pull_request_lifecycle)
 
   if (rows.length === 0) {
+    const lifecycle = report.pull_request_lifecycle
+    // Open, reviewed and abandoned work still has figures when nothing merged.
+    const active =
+      lifecycle.opened_count + lifecycle.open_count + lifecycle.closed_unmerged_count > 0
     return (
-      <InsightCard title="Delivery" description="No merged pull requests in this window.">
-        <p className="text-muted-foreground py-6 text-center text-sm">
-          Delivery measures start once <code className="font-mono">oceans hook prs</code> reports
-          merged pull requests.
-        </p>
-      </InsightCard>
+      <div className="flex flex-col gap-6">
+        {active ? <ReviewFlow lifecycle={lifecycle} /> : null}
+        <InsightCard title="Delivery" description="No merged pull requests in this window.">
+          <p className="text-muted-foreground py-6 text-center text-sm">
+            Delivery measures start once <code className="font-mono">oceans hook prs</code> reports
+            merged pull requests.
+          </p>
+        </InsightCard>
+      </div>
     )
   }
 

@@ -510,6 +510,16 @@ describe('AttributionPage', () => {
     ).toBeInTheDocument()
   })
 
+  it('shows open and abandoned work on Delivery when nothing merged', async () => {
+    renderPage(attributionReport({ pull_requests: [] }), { days: 30, tab: 'delivery' })
+
+    expect(await screen.findByText('No merged pull requests in this window.')).toBeInTheDocument()
+    expect(
+      kpi('Open pull requests').getByText('1 draft, of those updated in the window'),
+    ).toBeInTheDocument()
+    expect(kpi('Abandon rate').getByText('1 closed without merging')).toBeInTheDocument()
+  })
+
   it('renders unpriced cost as — rather than $0', async () => {
     renderPage(attributionReport())
 

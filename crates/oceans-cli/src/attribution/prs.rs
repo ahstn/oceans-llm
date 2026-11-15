@@ -44,6 +44,7 @@ query($owner: String!, $name: String!, $pageSize: Int!, $cursor: String) {
         author { __typename login }
         comments { totalCount }
         reviews(first: 100) {
+          totalCount
           nodes { state submittedAt author { __typename login } }
         }
         commits(first: 100) {
@@ -61,7 +62,8 @@ query($owner: String!, $name: String!, $pageSize: Int!, $cursor: String) {
 const PR_PAGE_FILTER: &str = r#".data.repository.pullRequests | {
   pullRequests: [.nodes[] | .commits = [
     .commits.nodes[].commit | .authors = .authors.nodes
-  ] | .reviews = .reviews.nodes | .commentCount = .comments.totalCount | del(.comments)],
+  ] | .reviewTotal = .reviews.totalCount | .reviews = .reviews.nodes
+    | .commentCount = .comments.totalCount | del(.comments)],
   pageInfo
 }"#;
 
@@ -128,6 +130,9 @@ struct GhPullRequest {
     comment_count: Option<u32>,
     #[serde(default)]
     reviews: Vec<GhReview>,
+    /// Every review, of which `reviews` holds the first 100.
+    #[serde(default)]
+    review_total: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -372,6 +377,13 @@ fn lifecycle(fetched: &GhPullRequest) -> PullRequestLifecycle {
         .collect();
     reviewers.sort_unstable();
     reviewers.dedup();
+    // Past the first page the counts would read low, and a page of bot reviews would read as
+    // no review at all, so they are sent as unknown. Reviews come oldest first, so a first
+    // review found on the page is still the first.
+    let complete = fetched
+        .review_total
+        .is_none_or(|total| total <= fetched.reviews.len() as u64);
+    let known = |count: u32| complete.then_some(count);
     let state = fetched.state.as_deref().map(|state| match state {
         "MERGED" => "merged",
         "CLOSED" => "closed",
@@ -388,10 +400,10 @@ fn lifecycle(fetched: &GhPullRequest) -> PullRequestLifecycle {
             .filter(|time| is_rfc3339(time))
             .min_by_key(|time| OffsetDateTime::parse(time, &Rfc3339).ok())
             .map(str::to_owned),
-        review_count: Some(u32::try_from(human_reviews.len()).unwrap_or(u32::MAX)),
-        approval_count: Some(count("APPROVED")),
-        changes_requested_count: Some(count("CHANGES_REQUESTED")),
-        reviewer_count: Some(u32::try_from(reviewers.len()).unwrap_or(u32::MAX)),
+        review_count: known(u32::try_from(human_reviews.len()).unwrap_or(u32::MAX)),
+        approval_count: known(count("APPROVED")),
+        changes_requested_count: known(count("CHANGES_REQUESTED")),
+        reviewer_count: known(u32::try_from(reviewers.len()).unwrap_or(u32::MAX)),
         comment_count: fetched.comment_count,
         additions: fetched.additions,
         deletions: fetched.deletions,
@@ -732,6 +744,21 @@ mod tests {
                 "{private} leaked"
             );
         }
+    }
+
+    #[test]
+    fn review_counts_past_the_first_page_are_unknown() {
+        let mut fetched = lifecycle_fixture();
+        fetched[0].review_total = Some(150);
+        let pr = pull_request(fetched.remove(0), None).unwrap();
+        assert_eq!(pr.lifecycle.review_count, None);
+        assert_eq!(pr.lifecycle.approval_count, None);
+        assert_eq!(pr.lifecycle.reviewer_count, None);
+        // The first review is on the first page, so it still counts.
+        assert_eq!(
+            pr.lifecycle.first_review_at.as_deref(),
+            Some("2026-11-12T11:00:00Z")
+        );
     }
 
     #[test]
