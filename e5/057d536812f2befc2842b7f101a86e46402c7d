@@ -1,0 +1,57 @@
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_9379a6359d74c1::t_c5e50432b49993 3397-3398
+crates/gateway-core/src/attribution.rs
+  s_9379a6359d74c1::t_0a3c34d4526544 284-286
+crates/gateway-service/src/attribution/report.rs
+  s_9379a6359d74c1::t_0ee2b94121b3a8 295-303,323
+crates/gateway-service/src/attribution/report/lifecycle.rs
+  s_9379a6359d74c1::t_9923563f1f8258 71-72,74-79,84-85,92,178-183
+crates/gateway-service/src/attribution/tests.rs
+  s_9379a6359d74c1::t_e4976bb6fb2154 301,311-313
+crates/gateway-service/src/attribution/tests/report.rs
+  s_9379a6359d74c1::t_70ebe6aebaa036 1648,1650,1656-1658,1670-1733
+crates/gateway-store/migrations/V82__attribution_pull_request_lifecycle.sql
+  s_9379a6359d74c1::t_78dc22a1281a3c 7-8,32,46,52,68-69
+crates/gateway-store/migrations/postgres/V82__attribution_pull_request_lifecycle.sql
+  s_9379a6359d74c1::t_cfff0af410dd49 18-19,25-27,33-34
+crates/gateway-store/src/attribution/pull_requests.rs
+  s_9379a6359d74c1::t_a8ab456d22a94e 22,24-28,48,61,97,165-168,228-229,240
+crates/gateway-store/src/attribution_tests.rs
+  s_9379a6359d74c1::t_b152ddfc20a45e 506
+crates/gateway-store/src/libsql_store/attribution.rs
+  s_9379a6359d74c1::t_38a84058580041 196
+crates/gateway-store/src/postgres_store/attribution.rs
+  s_9379a6359d74c1::t_94471088d7000c 182
+crates/gateway/openapi/admin-api.json
+  s_9379a6359d74c1::t_98a06d59d2f53c 12536-12542
+crates/gateway/src/http/attribution/ingest.rs
+  s_9379a6359d74c1::t_cccdfd23ccf8d4 161-162,491
+crates/gateway/src/local_demo_seed/attribution.rs
+  s_9379a6359d74c1::t_e88c2a77d521fb 469-470
+crates/oceans-cli/src/attribution/payload.rs
+  s_9379a6359d74c1::t_f961138151b9a1 96-99
+crates/oceans-cli/src/attribution/prs.rs
+  s_9379a6359d74c1::t_89c3530c414c7e 42,116-118,399
+crates/oceans-cli/src/attribution/queue_tests.rs
+  s_9379a6359d74c1::t_072cfa65bf5daa 50-53
+crates/oceans-cli/src/attribution/reverts.rs
+  s_9379a6359d74c1::t_6b0428f070a168 230-236,277,367-368,371,376-381
+docs/adr/2026-11-01-git-ai-attribution-via-oceans-hooks.md
+  s_9379a6359d74c1::t_d9c2445ec9c9dc 315-316
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e5057d536812f2befc2842b7f101a86e46402c7d",
+  "prompts": {},
+  "sessions": {
+    "s_9379a6359d74c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "24386ac1-62a3-474e-9c88-ccc4d428ec6d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
