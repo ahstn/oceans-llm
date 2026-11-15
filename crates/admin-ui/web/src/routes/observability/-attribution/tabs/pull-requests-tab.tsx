@@ -47,7 +47,7 @@ export default function PullRequestsTab({ report }: { report: AttributionReportV
       sort === 'cost'
         ? b.pr.priced_cost_usd_10000 - a.pr.priced_cost_usd_10000
         : sort === 'ai'
-          ? b.aiShare - a.aiShare
+          ? (b.aiShare ?? -1) - (a.aiShare ?? -1)
           : b.pr.merged_at.localeCompare(a.pr.merged_at),
     )
   const { visible, showMore } = useRowLimit(filtered)
@@ -89,7 +89,9 @@ export default function PullRequestsTab({ report }: { report: AttributionReportV
                 <Stat label="Merged" value={formatCount(rows.length)} />
                 <Stat
                   label="Median AI share"
-                  value={formatPercent(median(rows.map((row) => row.aiShare)))}
+                  value={formatPercent(
+                    median(rows.flatMap((row) => (row.aiShare == null ? [] : [row.aiShare]))),
+                  )}
                 />
                 <Stat
                   label="Median cost"

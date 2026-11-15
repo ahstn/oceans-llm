@@ -3348,6 +3348,8 @@ export interface components {
             models: components["schemas"]["AttributionModelView"][];
             /** @description The same figures for the window of equal length just before this one. */
             previous_summary: components["schemas"]["AttributionPeriodSummaryView"];
+            /** @description A read cap cut the previous window short, so changes against it are unreliable. */
+            previous_truncated: boolean;
             pull_requests: components["schemas"]["AttributionPullRequestView"][];
             repository?: string | null;
             /** @description Agent sessions by the furthest stage their work reached. */
@@ -4087,6 +4089,8 @@ export interface components {
                 models: components["schemas"]["AttributionModelView"][];
                 /** @description The same figures for the window of equal length just before this one. */
                 previous_summary: components["schemas"]["AttributionPeriodSummaryView"];
+                /** @description A read cap cut the previous window short, so changes against it are unreliable. */
+                previous_truncated: boolean;
                 pull_requests: components["schemas"]["AttributionPullRequestView"][];
                 repository?: string | null;
                 /** @description Agent sessions by the furthest stage their work reached. */

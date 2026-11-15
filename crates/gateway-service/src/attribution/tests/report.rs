@@ -805,9 +805,49 @@ async fn a_users_report_counts_only_their_own_uncommitted_requests() {
     let alice_report = report(&store, &for_alice).await;
     assert_eq!(change_requests(&alice_report, 1), 1);
     assert_eq!(alice_report.totals.uncommitted.request_count, 0);
+    // The tab aggregates follow the same rule: Bob's later request never reaches Alice's report.
+    let session_requests = |report: &AttributionReport| -> (i64, i64) {
+        (
+            report
+                .session_outcomes
+                .iter()
+                .map(|tally| tally.requests.request_count)
+                .sum(),
+            report
+                .harness_models
+                .iter()
+                .map(|row| row.requests.request_count)
+                .sum(),
+        )
+    };
+    assert_eq!(session_requests(&alice_report), (1, 1));
+    let summary = alice_report.summary();
+    assert_eq!(summary.priced_cost_10000, 100);
+    assert_eq!(
+        summary.shipped_cost_10000, 100,
+        "shipped and total spend count the same requests"
+    );
 
     let everyone = report(&store, &query()).await;
     assert_eq!(everyone.totals.uncommitted.request_count, 1);
+    assert_eq!(session_requests(&everyone), (2, 2));
+}
+
+#[tokio::test]
+async fn daily_buckets_stop_before_an_exclusive_midnight() {
+    let start = t0().replace_time(time::Time::MIDNIGHT);
+    let window = AttributionReportQuery {
+        from: start,
+        to: start + Duration::days(2),
+        ..query()
+    };
+    let report = report(&FakeStore::default(), &window).await;
+    assert_eq!(
+        report.daily.len(),
+        2,
+        "two whole days, not the empty third date of `to`"
+    );
+    assert_eq!(report.daily[0].day, start.date());
 }
 
 #[tokio::test]

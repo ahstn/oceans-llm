@@ -202,6 +202,7 @@ function attributionReport(overrides: Partial<AttributionReportView> = {}): Attr
     harness_models: [],
     summary: periodSummary(),
     previous_summary: periodSummary(),
+    previous_truncated: false,
     changes: [
       {
         attribution_commit_id: 'commit-1',
@@ -544,6 +545,36 @@ describe('AttributionPage', () => {
         search: { days: 90 },
       })
     })
+  })
+
+  it('hides changes against a previous window that hit a read limit', async () => {
+    renderPage(attributionReport({ previous_truncated: true }))
+
+    expect(screen.getByText('No comparison with the previous window')).toBeInTheDocument()
+    expect((await screen.findAllByText('AI share of merged code')).length).toBeGreaterThan(0)
+    expect(kpi('Merged PRs').getByText('No prior period')).toBeInTheDocument()
+  })
+
+  it('leaves pull requests without notes out of the AI-share bands', async () => {
+    const report = attributionReport()
+    const withoutNotes = {
+      ...report.pull_requests[0],
+      number: 43,
+      title: 'Bump dependencies',
+      ai_lines: 0,
+      human_lines: 0,
+      attributed_commit_count: 0,
+      commits: [],
+    }
+    renderPage(attributionReport({ pull_requests: [report.pull_requests[0], withoutNotes] }), {
+      days: 30,
+      tab: 'delivery',
+    })
+
+    const bands = within(await screen.findByRole('table', { name: 'Delivery by AI share' }))
+    const noAi = bands.getByRole('row', { name: /^No AI/ })
+    expect(within(noAi).getAllByRole('cell')[1]).toHaveTextContent('0')
+    expect(screen.getByText(/1 merged pull requests have no notes/)).toBeInTheDocument()
   })
 
   it('warns when the report hit a read limit', () => {

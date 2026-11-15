@@ -38,6 +38,8 @@ export default function MyWorkTab({
   name: string
 }) {
   const { summary, previous_summary: previous } = report
+  // A truncated previous window makes every change against it wrong, so none are shown.
+  const deltaOf = report.previous_truncated ? () => null : delta
   const buckets = bucketDays(report.daily, chartBucketSize(report.window_days))
   const aiShare = ratio(summary.ai_lines, summary.ai_lines + summary.human_lines)
   const previousShare = ratio(previous.ai_lines, previous.ai_lines + previous.human_lines)
@@ -58,7 +60,7 @@ export default function MyWorkTab({
         <TrendKpi
           label="Your AI share"
           value={formatPercent(aiShare)}
-          delta={delta(aiShare, previousShare)}
+          delta={deltaOf(aiShare, previousShare)}
           spark={buckets.map((bucket) => bucket.aiShare)}
           tone={AI_TONE}
           hint="Of attested lines"
@@ -66,13 +68,13 @@ export default function MyWorkTab({
         <TrendKpi
           label="Merged PRs"
           value={formatCount(summary.merged_pull_request_count)}
-          delta={delta(summary.merged_pull_request_count, previous.merged_pull_request_count)}
+          delta={deltaOf(summary.merged_pull_request_count, previous.merged_pull_request_count)}
           spark={buckets.map((bucket) => bucket.mergedPrs)}
         />
         <TrendKpi
           label="Agent spend"
           value={formatUsd10000(summary.priced_cost_usd_10000)}
-          delta={delta(summary.priced_cost_usd_10000, previous.priced_cost_usd_10000)}
+          delta={deltaOf(summary.priced_cost_usd_10000, previous.priced_cost_usd_10000)}
           spark={buckets.map((bucket) => bucket.committedCost + bucket.uncommittedCost)}
           hint={`${formatPercent(ratio(report.totals.uncommitted_cost_usd_10000, summary.priced_cost_usd_10000))} never committed`}
         />
@@ -83,7 +85,7 @@ export default function MyWorkTab({
               ? null
               : summary.median_lead_time_seconds * 1000,
           )}
-          delta={delta(summary.median_lead_time_seconds, previous.median_lead_time_seconds)}
+          delta={deltaOf(summary.median_lead_time_seconds, previous.median_lead_time_seconds)}
           hint="Median"
         />
       </div>

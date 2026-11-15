@@ -39,6 +39,7 @@ export default function DeliveryTab({ report }: { report: AttributionReportView 
   const mergesPerDay = rows.length / report.window_days
   const failRate = ratio(rows.filter((row) => row.pr.is_revert).length, rows.length)
   const bands = bandSummaries(rows)
+  const withNotes = rows.filter((row) => row.band != null).length
   const weeks = Math.max(1, Math.floor(report.window_days / 7))
 
   if (rows.length === 0) {
@@ -102,12 +103,12 @@ export default function DeliveryTab({ report }: { report: AttributionReportView 
         </InsightCard>
         <InsightCard
           title="Lead time against AI share"
-          description="One dot per merged pull request, sized by added lines. A cloud rising to the right means AI-heavy work waits longer."
+          description="One dot per merged pull request with notes, sized by attested lines. A cloud rising to the right means AI-heavy work waits longer."
         >
           <LeadTimeScatter
             medianHours={medianLead}
             points={rows.flatMap((row) =>
-              row.leadHours == null
+              row.leadHours == null || row.aiShare == null
                 ? []
                 : [
                     {
@@ -146,12 +147,17 @@ export default function DeliveryTab({ report }: { report: AttributionReportView 
               />
               <TableBody>
                 {bands.map((band) => (
-                  <BandRow key={band.key} band={band} total={rows.length} bands={bands} />
+                  <BandRow key={band.key} band={band} total={withNotes} bands={bands} />
                 ))}
               </TableBody>
             </Table>
           </div>
-          <Insight>{bandComparison(bands)}</Insight>
+          <Insight>
+            {bandComparison(bands)}
+            {rows.length > withNotes
+              ? ` ${formatCount(rows.length - withNotes)} merged pull requests have no notes, so their AI share is unknown and they are left out of these bands.`
+              : ''}
+          </Insight>
         </div>
       </InsightCard>
 

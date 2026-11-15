@@ -223,6 +223,8 @@ pub struct AttributionReportView {
     pub summary: AttributionPeriodSummaryView,
     /// The same figures for the window of equal length just before this one.
     pub previous_summary: AttributionPeriodSummaryView,
+    /// A read cap cut the previous window short, so changes against it are unreliable.
+    pub previous_truncated: bool,
 }
 
 #[utoipa::path(
@@ -303,6 +305,10 @@ pub async fn get_attribution_report(
         harness_models: harness_models.into_iter().map(Into::into).collect(),
         summary: summary.into(),
         previous_summary: previous.summary().into(),
+        previous_truncated: previous.coverage.commits_truncated
+            || previous.coverage.pull_requests_truncated
+            || previous.coverage.request_facts_truncated
+            || previous.coverage.agent_sessions_truncated,
     })))
 }
 

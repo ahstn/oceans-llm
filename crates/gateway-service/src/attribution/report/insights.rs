@@ -99,7 +99,9 @@ impl ReportInputs<'_> {
         pull_requests: &[AttributionPullRequestActivity],
     ) -> Vec<AttributionDayActivity> {
         let first = self.query.from.date();
-        let last = self.query.to.date();
+        // The window ends at an exclusive midnight in the HTTP report, so the last day is the one
+        // before `to`, not the date `to` falls on.
+        let last = (self.query.to - Duration::nanoseconds(1)).date().max(first);
         let mut days: BTreeMap<Date, AttributionDayActivity> = BTreeMap::new();
         let mut day = first;
         while day <= last {
@@ -198,12 +200,16 @@ impl ReportInputs<'_> {
                 }
             }
         }
-        let window = self.query.from..=self.query.to;
+        // Only the requests the report already counts: those allocated to the window's commits and
+        // the uncommitted ones in the window. That keeps the totals and these aggregates on one
+        // population, and keeps the report's ownership rule: another owner's requests after their
+        // session's last commit never reach a user's report.
+        let allocated = self
+            .window_commits()
+            .flat_map(|commit| self.facts_for(commit.attribution_commit_id).iter().copied())
+            .chain(self.uncommitted.iter().copied());
         let mut counted: HashSet<(&str, &str)> = HashSet::new();
-        for fact in self.facts {
-            if !window.contains(&fact.occurred_at) {
-                continue;
-            }
+        for fact in allocated {
             let scope = fact.ownership_scope_key.as_str();
             let Some(&index) = by_hash.get(&(scope, fact.session_hash.as_str())) else {
                 continue;

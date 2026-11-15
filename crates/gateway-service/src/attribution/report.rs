@@ -419,8 +419,6 @@ struct ReportInputs<'a> {
     query: &'a AttributionReportQuery,
     /// Every loaded commit, including the PR lookback before the window.
     commits: &'a [AttributionCommitRecord],
-    /// Every loaded request fact, before allocation.
-    facts: &'a [AttributionRequestFact],
     by_commit: HashMap<Uuid, Vec<&'a AttributionRequestFact>>,
     uncommitted: Vec<&'a AttributionRequestFact>,
     /// `(scope, hash)` pairs that matched at least one request.
@@ -474,7 +472,6 @@ impl<'a> ReportInputs<'a> {
         Self {
             query,
             commits,
-            facts,
             by_commit,
             uncommitted,
             joined,

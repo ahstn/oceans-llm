@@ -39,6 +39,8 @@ export default function ImpactTab({
   onSelectUser?: (userId: string) => void
 }) {
   const { summary, previous_summary: previous, totals, coverage } = report
+  // A truncated previous window makes every change against it wrong, so none are shown.
+  const deltaOf = report.previous_truncated ? () => null : delta
   const buckets = bucketDays(report.daily, chartBucketSize(report.window_days))
   const linesPerDollar = ratio(totals.ai_lines, totals.priced_cost_usd_10000 / 10_000)
   const previousLinesPerDollar = ratio(previous.ai_lines, previous.priced_cost_usd_10000 / 10_000)
@@ -54,7 +56,7 @@ export default function ImpactTab({
         <TrendKpi
           label="AI share of merged code"
           value={formatPercent(mergedAiShare(summary))}
-          delta={delta(mergedAiShare(summary), mergedAiShare(previous))}
+          delta={deltaOf(mergedAiShare(summary), mergedAiShare(previous))}
           spark={buckets.map((bucket) => bucket.aiShare)}
           tone={AI_TONE}
           hint={`${formatCount(summary.merged_ai_lines)} AI lines merged`}
@@ -66,7 +68,7 @@ export default function ImpactTab({
               ? EMPTY_VALUE
               : formatUsd10000(summary.median_pull_request_cost_usd_10000)
           }
-          delta={delta(
+          delta={deltaOf(
             summary.median_pull_request_cost_usd_10000,
             previous.median_pull_request_cost_usd_10000,
           )}
@@ -75,14 +77,14 @@ export default function ImpactTab({
         <TrendKpi
           label="Merged PRs"
           value={formatCount(summary.merged_pull_request_count)}
-          delta={delta(summary.merged_pull_request_count, previous.merged_pull_request_count)}
+          delta={deltaOf(summary.merged_pull_request_count, previous.merged_pull_request_count)}
           spark={buckets.map((bucket) => bucket.mergedPrs)}
           hint={`${formatCount(summary.commit_count)} commits`}
         />
         <TrendKpi
           label="Spend that shipped"
           value={formatPercent(shippedShare(summary))}
-          delta={delta(shippedShare(summary), shippedShare(previous))}
+          delta={deltaOf(shippedShare(summary), shippedShare(previous))}
           tone={SHIPPED_TONE}
           hint={`of ${formatUsd10000(summary.priced_cost_usd_10000)} priced spend`}
         />
@@ -96,7 +98,7 @@ export default function ImpactTab({
           <div className="flex flex-col gap-4">
             <AiShareBar ai={totals.ai_lines} human={totals.human_lines} legend />
             <LinesMixChart rows={buckets} />
-            <Insight>{aiShareTrend(totals, previous)}</Insight>
+            <Insight>{aiShareTrend(totals, report.previous_truncated ? null : previous)}</Insight>
           </div>
         </InsightCard>
         <InsightCard
@@ -134,7 +136,7 @@ export default function ImpactTab({
             left={{
               label: 'AI share of merged code',
               value: formatPercent(mergedAiShare(summary)),
-              delta: delta(mergedAiShare(summary), mergedAiShare(previous)),
+              delta: deltaOf(mergedAiShare(summary), mergedAiShare(previous)),
             }}
             right={{
               label: 'AI lines unchanged after 30 days',
@@ -147,12 +149,12 @@ export default function ImpactTab({
             left={{
               label: 'Merged PRs',
               value: formatCount(summary.merged_pull_request_count),
-              delta: delta(summary.merged_pull_request_count, previous.merged_pull_request_count),
+              delta: deltaOf(summary.merged_pull_request_count, previous.merged_pull_request_count),
             }}
             right={{
               label: 'Merged PRs that are reverts',
               value: formatPercent(revertRate, 1),
-              delta: delta(revertRate, previousRevertRate),
+              delta: deltaOf(revertRate, previousRevertRate),
               readiness: 'proxy',
             }}
           />
@@ -160,7 +162,7 @@ export default function ImpactTab({
             left={{
               label: 'AI lines per dollar',
               value: linesPerDollar == null ? EMPTY_VALUE : formatCount(linesPerDollar),
-              delta: delta(linesPerDollar, previousLinesPerDollar),
+              delta: deltaOf(linesPerDollar, previousLinesPerDollar),
             }}
             right={{
               label: 'First commit to merge',
@@ -169,7 +171,7 @@ export default function ImpactTab({
                   ? null
                   : summary.median_lead_time_seconds * 1000,
               ),
-              delta: delta(summary.median_lead_time_seconds, previous.median_lead_time_seconds),
+              delta: deltaOf(summary.median_lead_time_seconds, previous.median_lead_time_seconds),
             }}
           />
         </div>
@@ -347,10 +349,12 @@ function CoverageRow({ label, value }: { label: string; value: number | null }) 
 /** One sentence on the AI share of attested lines, against the previous window when it had any. */
 function aiShareTrend(
   totals: AttributionReportView['totals'],
-  previous: AttributionReportView['previous_summary'],
+  previous: AttributionReportView['previous_summary'] | null,
 ) {
   const now = formatPercent(ratio(totals.ai_lines, totals.ai_lines + totals.human_lines))
-  const before = ratio(previous.ai_lines, previous.ai_lines + previous.human_lines)
+  const before = previous
+    ? ratio(previous.ai_lines, previous.ai_lines + previous.human_lines)
+    : null
   const lead =
     before == null
       ? `AI wrote ${now} of attested lines; the previous window has none to compare.`

@@ -138,21 +138,23 @@ export function aiBand(share: number): AiBandKey {
 export type PullRequestRow = {
   pr: PullRequestView
   added: number
-  aiShare: number
+  /** `null` when no commit of the PR has a note: attribution unknown, not 0% AI. */
+  aiShare: number | null
   leadHours: number | null
-  band: AiBandKey
+  /** `null` with `aiShare`; such PRs stay out of every AI-share statistic. */
+  band: AiBandKey | null
 }
 
 export function pullRequestRows(pullRequests: PullRequestView[]): PullRequestRow[] {
   return pullRequests.map((pr) => {
     const added = pr.ai_lines + pr.human_lines
-    const aiShare = added > 0 ? pr.ai_lines / added : 0
+    const aiShare = added > 0 ? pr.ai_lines / added : null
     return {
       pr,
       added,
       aiShare,
       leadHours: pr.lead_time_seconds == null ? null : pr.lead_time_seconds / 3600,
-      band: aiBand(aiShare),
+      band: aiShare == null ? null : aiBand(aiShare),
     }
   })
 }
@@ -205,7 +207,9 @@ export function weeklyLeadTimes(rows: PullRequestRow[], windowEnd: string, weeks
 
 const SIZE_EDGES = [0, 25, 50, 100, 200, 400, 800, 1600, Infinity]
 
-export function sizeHistogram(rows: PullRequestRow[]) {
+/** Attested lines per PR. PRs without notes have no known size and are left out. */
+export function sizeHistogram(allRows: PullRequestRow[]) {
+  const rows = allRows.filter((row) => row.aiShare != null)
   const med = median(rows.map((row) => row.added)) ?? 0
   return SIZE_EDGES.slice(0, -1).map((low, index) => {
     const high = SIZE_EDGES[index + 1]

@@ -12453,7 +12453,8 @@
           "session_outcomes",
           "harness_models",
           "summary",
-          "previous_summary"
+          "previous_summary",
+          "previous_truncated"
         ],
         "properties": {
           "changes": {
@@ -12488,6 +12489,10 @@
           "previous_summary": {
             "$ref": "#/components/schemas/AttributionPeriodSummaryView",
             "description": "The same figures for the window of equal length just before this one."
+          },
+          "previous_truncated": {
+            "type": "boolean",
+            "description": "A read cap cut the previous window short, so changes against it are unreliable."
           },
           "pull_requests": {
             "type": "array",
@@ -15221,7 +15226,8 @@
               "session_outcomes",
               "harness_models",
               "summary",
-              "previous_summary"
+              "previous_summary",
+              "previous_truncated"
             ],
             "properties": {
               "changes": {
@@ -15256,6 +15262,10 @@
               "previous_summary": {
                 "$ref": "#/components/schemas/AttributionPeriodSummaryView",
                 "description": "The same figures for the window of equal length just before this one."
+              },
+              "previous_truncated": {
+                "type": "boolean",
+                "description": "A read cap cut the previous window short, so changes against it are unreliable."
               },
               "pull_requests": {
                 "type": "array",

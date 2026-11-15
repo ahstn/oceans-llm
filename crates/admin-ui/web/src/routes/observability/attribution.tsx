@@ -119,7 +119,7 @@ export function AttributionPage() {
         search={search}
         conceptsEnabled={session?.capabilities.attribution_tabs.includes('concepts') ?? false}
       />
-      <TruncationAlert coverage={report.coverage} />
+      <TruncationAlert report={report} />
       <AttributionBody
         tab={tab}
         report={report}
@@ -229,21 +229,33 @@ function TabsOffEmpty() {
   )
 }
 
-/** Warns when a capped read left rows out of the totals. */
-function TruncationAlert({ coverage }: { coverage: AttributionReportView['coverage'] }) {
+/** Warns when a capped read left rows out of the totals, or out of the previous window. */
+function TruncationAlert({ report }: { report: AttributionReportView }) {
+  const { coverage } = report
   const truncated =
     coverage.commits_truncated ||
     coverage.pull_requests_truncated ||
     coverage.agent_sessions_truncated ||
     coverage.request_facts_truncated
-  if (!truncated) return null
+  if (truncated) {
+    return (
+      <Alert>
+        <AlertTitle>This report is incomplete</AlertTitle>
+        <AlertDescription>
+          The window holds more commits, pull requests, agent sessions, or requests than one report
+          reads, so some are left out of these totals. Choose a shorter window, or filter by user or
+          repository.
+        </AlertDescription>
+      </Alert>
+    )
+  }
+  if (!report.previous_truncated) return null
   return (
     <Alert>
-      <AlertTitle>This report is incomplete</AlertTitle>
+      <AlertTitle>No comparison with the previous window</AlertTitle>
       <AlertDescription>
-        The window holds more commits, pull requests, agent sessions, or requests than one report
-        reads, so some are left out of these totals. Choose a shorter window, or filter by user or
-        repository.
+        The previous window holds more rows than one report reads, so changes against it would be
+        wrong and are hidden. Choose a shorter window, or filter by user or repository.
       </AlertDescription>
     </Alert>
   )
