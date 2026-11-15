@@ -7,10 +7,10 @@ use gateway_core::{
     AttributionApplyOutcome, AttributionCommitRecord, AttributionCommitSession,
     AttributionCommitWrite, AttributionFreshness, AttributionOwner, AttributionPullRequestCommit,
     AttributionPullRequestRecord, AttributionPullRequestWrite, AttributionReportQuery,
-    AttributionRequestFact, AttributionSessionCommitTime, AttributionSessionEventKind,
-    AttributionSessionEventWrite, AuthMode, Confidence, GlobalRole, NewApiKeyRecord,
-    RequestLogRecord, RequestTags, RequestToolCardinality, SessionLifecycleState, StoreError,
-    UsagePricingStatus, UserStatus,
+    AttributionRequestFact, AttributionRequestSessionWrite, AttributionSessionCommitTime,
+    AttributionSessionEventKind, AttributionSessionEventWrite, AuthMode, Confidence, GlobalRole,
+    NewApiKeyRecord, RequestLogRecord, RequestTags, RequestToolCardinality, SessionLifecycleState,
+    StoreError, UsagePricingStatus, UserStatus,
 };
 use serde_json::Map;
 use serial_test::serial;
@@ -63,6 +63,12 @@ on_both_backends! {
         pull_requests_replace_by_observation;
     libsql_attribution_agent_sessions_merge_events,
     postgres_attribution_agent_sessions_merge_events => agent_sessions_merge_events;
+    libsql_attribution_request_sessions_override_native_identity,
+    postgres_attribution_request_sessions_override_native_identity => request_sessions_override_native_identity;
+    libsql_attribution_codex_requests_use_exact_execution,
+    postgres_attribution_codex_requests_use_exact_execution => codex_requests_use_exact_execution;
+    libsql_attribution_codex_turn_ids_keep_native_fallback,
+    postgres_attribution_codex_turn_ids_keep_native_fallback => codex_turn_ids_keep_native_fallback;
     libsql_attribution_session_lookups,
     postgres_attribution_session_lookups => session_lookups;
     libsql_attribution_reports_filter_and_owner_deletion,
@@ -603,6 +609,7 @@ async fn session_lookups<S: GatewayStore>(store: &S) {
 async fn open_agent_session<S: GatewayStore>(
     store: &S,
     owner: &AttributionOwner,
+    harness_key: &str,
 ) -> AgentSessionRecord {
     let api_key = store
         .create_api_key(&NewApiKeyRecord {
@@ -628,7 +635,7 @@ async fn open_agent_session<S: GatewayStore>(
         team_id: None,
         service_account_id: None,
         actor_user_id: None,
-        harness_key: "claude_code".to_string(),
+        harness_key: harness_key.to_string(),
         requested_model_key: "requested-model".to_string(),
         operation: "responses".to_string(),
         caller_class: "user".to_string(),
@@ -660,6 +667,8 @@ async fn link_request<S: GatewayStore>(
     request_id: &str,
     session_hash: &str,
     occurred_at: OffsetDateTime,
+    execution_id: Option<&str>,
+    parent_execution_id: Option<&str>,
 ) {
     let request_log_id = Uuid::new_v4();
     let log = RequestLogRecord {
@@ -684,8 +693,8 @@ async fn link_request<S: GatewayStore>(
         request_tags: RequestTags::default(),
         tool_cardinality: RequestToolCardinality::default(),
         user_agent_raw: None,
-        agent_harness_key: "claude_code".to_string(),
-        agent_harness_label: "Claude Code".to_string(),
+        agent_harness_key: session.harness_key.clone(),
+        agent_harness_label: session.harness_key.clone(),
         metadata: Map::new(),
         occurred_at,
     };
@@ -699,8 +708,8 @@ async fn link_request<S: GatewayStore>(
         request_log_id: Some(request_log_id),
         usage_event_id: None,
         ordinal: 0,
-        execution_id: None,
-        parent_execution_id: None,
+        execution_id: execution_id.map(str::to_string),
+        parent_execution_id: parent_execution_id.map(str::to_string),
         normalized_session_id: Some(session_hash.to_string()),
         correlation_confidence: Confidence::High,
         limitation_codes: Vec::new(),
@@ -715,7 +724,7 @@ async fn link_request<S: GatewayStore>(
 }
 
 async fn request_facts_join_usage<S: GatewayStore>(store: &S, owner: &AttributionOwner) {
-    let session = open_agent_session(store, owner).await;
+    let session = open_agent_session(store, owner, "claude_code").await;
     for (request_id, session_hash, offset) in [
         ("req-priced", "hash-a", 0),
         ("req-unpriced", "hash-a", 1),
@@ -723,7 +732,16 @@ async fn request_facts_join_usage<S: GatewayStore>(store: &S, owner: &Attributio
         ("req-other-session", "hash-b", 2),
     ] {
         let occurred_at = base() + Duration::seconds(offset);
-        link_request(store, &session, request_id, session_hash, occurred_at).await;
+        link_request(
+            store,
+            &session,
+            request_id,
+            session_hash,
+            occurred_at,
+            None,
+            None,
+        )
+        .await;
     }
     // Usage recorded after the request was linked still counts.
     for (request_id, status, cost_10000) in [
@@ -877,6 +895,468 @@ async fn reports_filter_and_owner_deletion<S: GatewayStore>(store: &S) {
             .list_attribution_agent_sessions(&day())
             .await
             .expect("sessions")
+            .is_empty()
+    );
+}
+
+async fn request_sessions_override_native_identity<S: GatewayStore>(store: &S) {
+    let alice = user_owner(store, "alice").await;
+    let bob = user_owner(store, "bob").await;
+    let first_id = Uuid::from_u128(201);
+    let second_id = Uuid::from_u128(202);
+    let native_id = Uuid::from_u128(203);
+    let mapping =
+        |owner: &AttributionOwner, request_id, hash: &str| AttributionRequestSessionWrite {
+            owner: owner.clone(),
+            request_id,
+            session_hash: hash.to_string(),
+            freshness: freshness("installation-a", 2, base()),
+            received_at: base(),
+        };
+    let first = mapping(&alice, first_id, "journal-child-hash");
+    assert_eq!(
+        store
+            .apply_attribution_request_session(&first)
+            .await
+            .expect("mapping before request"),
+        AttributionApplyOutcome::Applied
+    );
+    assert!(
+        store
+            .list_attribution_request_facts(std::slice::from_ref(&first.session_hash), base())
+            .await
+            .expect("no request yet")
+            .is_empty()
+    );
+    let stale_hash = AttributionRequestSessionWrite {
+        session_hash: "must-not-replace".to_string(),
+        ..first.clone()
+    };
+    assert_eq!(
+        store
+            .apply_attribution_request_session(&stale_hash)
+            .await
+            .expect("replay"),
+        AttributionApplyOutcome::Duplicate
+    );
+    let mut stale = stale_hash.clone();
+    stale.freshness.sequence = 1;
+    assert_eq!(
+        store
+            .apply_attribution_request_session(&stale)
+            .await
+            .expect("older sequence"),
+        AttributionApplyOutcome::Stale
+    );
+    stale.freshness.sequence = 3;
+    stale.freshness.late_sequenced = true;
+    stale.freshness.observed_at -= Duration::milliseconds(1);
+    assert_eq!(
+        store
+            .apply_attribution_request_session(&stale)
+            .await
+            .expect("late stale observation"),
+        AttributionApplyOutcome::Stale
+    );
+    stale.freshness = freshness("installation-b", 9, base() + Duration::microseconds(400));
+    assert_eq!(
+        store
+            .apply_attribution_request_session(&stale)
+            .await
+            .expect("stored precision"),
+        AttributionApplyOutcome::Stale
+    );
+
+    let native = open_agent_session(store, &alice, "claude_code").await;
+    for id in [first_id, second_id, native_id] {
+        link_request(
+            store,
+            &native,
+            &id.to_string(),
+            "provider-parent-hash",
+            base(),
+            None,
+            None,
+        )
+        .await;
+    }
+    let parent_facts = store
+        .list_attribution_request_facts(&["provider-parent-hash".to_string()], base())
+        .await
+        .expect("native fallback");
+    assert_eq!(
+        parent_facts.len(),
+        2,
+        "explicit mapping excludes the first request from its native parent"
+    );
+    assert!(
+        parent_facts
+            .iter()
+            .all(|fact| fact.request_id != first_id.to_string())
+    );
+
+    let second = mapping(&alice, second_id, "journal-child-hash");
+    store
+        .apply_attribution_request_session(&second)
+        .await
+        .expect("mapping after request");
+    let mut replacement = first.clone();
+    replacement.session_hash = "old-journal-hash".to_string();
+    replacement.freshness.sequence = 3;
+    assert_eq!(
+        store
+            .apply_attribution_request_session(&replacement)
+            .await
+            .expect("newer sequence"),
+        AttributionApplyOutcome::Applied
+    );
+    let remapped = store
+        .list_attribution_request_facts(&["old-journal-hash".to_string()], base())
+        .await
+        .expect("updated journal hash");
+    assert_eq!(remapped.len(), 1);
+    assert_eq!(remapped[0].request_id, first_id.to_string());
+    replacement.session_hash.clone_from(&first.session_hash);
+    replacement.freshness = freshness("installation-b", 1, base() + Duration::seconds(1));
+    assert_eq!(
+        store
+            .apply_attribution_request_session(&replacement)
+            .await
+            .expect("newer installation"),
+        AttributionApplyOutcome::Applied
+    );
+    // Another owner can queue this UUID, but cannot remap or read Alice's request.
+    for id in [first_id, native_id] {
+        store
+            .apply_attribution_request_session(&mapping(&bob, id, "bob-journal-hash"))
+            .await
+            .expect("other owner's mapping");
+    }
+    assert!(
+        store
+            .list_attribution_request_facts(&["bob-journal-hash".to_string()], base())
+            .await
+            .expect("owner bound lookup")
+            .is_empty()
+    );
+    for (id, owner, cost) in [
+        (first_id, &alice, 111),
+        (second_id, &alice, 222),
+        (native_id, &bob, 999),
+    ] {
+        let usage = build_usage_ledger_record(
+            &id.to_string(),
+            owner.ownership_scope_key.clone(),
+            native.api_key_id,
+            owner.owner_user_id,
+            None,
+            None,
+            None,
+            "gpt-test",
+            UsagePricingStatus::Priced,
+            cost,
+            base(),
+        );
+        store
+            .insert_usage_ledger_if_absent(&usage)
+            .await
+            .expect("usage");
+    }
+    let facts = store
+        .list_attribution_request_facts(
+            &[
+                "journal-child-hash".to_string(),
+                "provider-parent-hash".to_string(),
+            ],
+            base(),
+        )
+        .await
+        .expect("effective sessions");
+    assert_eq!(facts.len(), 3, "each request is returned once");
+    assert_eq!(
+        facts.iter().filter_map(|fact| fact.cost_10000).sum::<i64>(),
+        333
+    );
+    assert!(
+        facts
+            .iter()
+            .all(|fact| fact.model_key.as_deref() == Some("resolved-model"))
+    );
+    for fact in &facts {
+        assert_eq!(fact.ownership_scope_key, alice.ownership_scope_key);
+        if fact.request_id == native_id.to_string() {
+            assert_eq!(fact.session_hash, "provider-parent-hash");
+            assert_eq!(fact.cost_10000, None, "other owner's usage cannot join");
+        } else {
+            assert_eq!(fact.session_hash, "journal-child-hash");
+        }
+    }
+    assert!(
+        store
+            .list_attribution_request_facts(
+                &["journal-child-hash".to_string()],
+                base() - Duration::milliseconds(1)
+            )
+            .await
+            .expect("time bound")
+            .is_empty()
+    );
+    assert_eq!(
+        store
+            .delete_attribution_for_owner(&alice.ownership_scope_key)
+            .await
+            .expect("delete mappings"),
+        2
+    );
+    assert_eq!(
+        store
+            .list_attribution_request_facts(&["provider-parent-hash".to_string()], base())
+            .await
+            .expect("native fallback restored")
+            .len(),
+        3
+    );
+    assert_eq!(
+        store
+            .delete_attribution_for_owner(&bob.ownership_scope_key)
+            .await
+            .expect("other mappings retained"),
+        2
+    );
+}
+
+async fn codex_requests_use_exact_execution<S: GatewayStore>(store: &S) {
+    let owner = user_owner(store, "codex-owner").await;
+    let native = open_agent_session(store, &owner, "codex").await;
+    let root_id = Uuid::from_u128(501);
+    let child_id = Uuid::from_u128(502);
+    let root_hash = "codex-root-thread-hash";
+    let child_hash = "codex-child-thread-hash";
+    // The analysis groups root and child requests by one session, but stores each exact
+    // execution/thread hash independently. Parent lineage must not imply attribution.
+    for (id, execution, parent, cost) in [
+        (root_id, root_hash, None, 111),
+        (child_id, child_hash, Some(root_hash), 222),
+    ] {
+        link_request(
+            store,
+            &native,
+            &id.to_string(),
+            root_hash,
+            base(),
+            Some(execution),
+            parent,
+        )
+        .await;
+        let usage = build_usage_ledger_record(
+            &id.to_string(),
+            owner.ownership_scope_key.clone(),
+            native.api_key_id,
+            owner.owner_user_id,
+            None,
+            None,
+            None,
+            "gpt-test",
+            UsagePricingStatus::Priced,
+            cost,
+            base(),
+        );
+        store
+            .insert_usage_ledger_if_absent(&usage)
+            .await
+            .expect("usage");
+    }
+    assert_eq!(
+        store
+            .list_attribution_request_facts(&[root_hash.to_string()], base())
+            .await
+            .expect("native fallback before notes arrive")
+            .len(),
+        2
+    );
+    assert!(
+        store
+            .list_attribution_request_facts(&[child_hash.to_string()], base())
+            .await
+            .expect("unattested execution is not an alias")
+            .is_empty()
+    );
+    for (sha, hash) in [("root-note", root_hash), ("child-note", child_hash)] {
+        store
+            .apply_attribution_commit(&commit(
+                &owner,
+                REPOSITORY,
+                sha,
+                base() + Duration::minutes(10),
+                vec![AttributionCommitSession {
+                    agent_tool: "codex".to_string(),
+                    harness_key: Some("codex".to_string()),
+                    ..session("thread", &[hash])
+                }],
+            ))
+            .await
+            .expect("note naming exact thread");
+    }
+    let facts = store
+        .list_attribution_request_facts(&[root_hash.to_string(), child_hash.to_string()], base())
+        .await
+        .expect("exact execution facts");
+    assert_eq!(facts.len(), 2);
+    assert_eq!(
+        facts.iter().filter_map(|fact| fact.cost_10000).sum::<i64>(),
+        333
+    );
+    let notes = store.list_attribution_commits(&day()).await.expect("notes");
+    for (sha, id, hash, cost) in [
+        ("root-note", root_id, root_hash, 111),
+        ("child-note", child_id, child_hash, 222),
+    ] {
+        let note = notes
+            .iter()
+            .find(|note| note.commit_sha == sha)
+            .expect("thread note");
+        assert_eq!(note.sessions[0].session_hashes, [hash.to_string()]);
+        let matched = facts
+            .iter()
+            .filter(|fact| note.sessions[0].session_hashes.contains(&fact.session_hash))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            matched.len(),
+            1,
+            "root and child notes must not borrow each other's requests"
+        );
+        assert_eq!(matched[0].request_id, id.to_string());
+        assert_eq!(matched[0].cost_10000, Some(cost));
+        let single = store
+            .list_attribution_request_facts(&[hash.to_string()], base())
+            .await
+            .expect("single thread lookup");
+        assert_eq!(single.len(), 1);
+        assert_eq!(single[0].request_id, id.to_string());
+    }
+    let mapping = AttributionRequestSessionWrite {
+        owner: owner.clone(),
+        request_id: child_id,
+        session_hash: "explicit-journal-hash".to_string(),
+        freshness: freshness("installation-a", 1, base()),
+        received_at: base(),
+    };
+    store
+        .apply_attribution_request_session(&mapping)
+        .await
+        .expect("explicit override");
+    assert!(
+        store
+            .list_attribution_request_facts(&[child_hash.to_string()], base())
+            .await
+            .expect("execution overridden")
+            .is_empty()
+    );
+    let explicit = store
+        .list_attribution_request_facts(&[mapping.session_hash], base())
+        .await
+        .expect("explicit journal");
+    assert_eq!(explicit.len(), 1);
+    assert_eq!(explicit[0].request_id, child_id.to_string());
+    assert_eq!(explicit[0].cost_10000, Some(222));
+
+    // Without an execution id Codex still uses its normalized session. Merely naming a
+    // parent execution never matches that parent's note.
+    let fallback_id = Uuid::from_u128(503).to_string();
+    link_request(
+        store,
+        &native,
+        &fallback_id,
+        "fallback-session-hash",
+        base(),
+        None,
+        Some(root_hash),
+    )
+    .await;
+    let fallback = store
+        .list_attribution_request_facts(&["fallback-session-hash".to_string()], base())
+        .await
+        .expect("normalized fallback");
+    assert_eq!(fallback.len(), 1);
+    assert_eq!(fallback[0].request_id, fallback_id);
+    assert_eq!(
+        store
+            .list_attribution_request_facts(&[root_hash.to_string()], base())
+            .await
+            .expect("parent lineage ignored")
+            .len(),
+        1
+    );
+
+    // Execution ids from other harness namespaces are not Codex thread identities.
+    let claude = open_agent_session(store, &owner, "claude_code").await;
+    link_request(
+        store,
+        &claude,
+        "non-codex",
+        "claude-session-hash",
+        base(),
+        Some(child_hash),
+        None,
+    )
+    .await;
+    assert!(
+        store
+            .list_attribution_request_facts(&[child_hash.to_string()], base())
+            .await
+            .expect("non-Codex execution ignored")
+            .is_empty()
+    );
+    assert_eq!(
+        store
+            .list_attribution_request_facts(&["claude-session-hash".to_string()], base())
+            .await
+            .expect("non-Codex normalized identity")
+            .len(),
+        1
+    );
+}
+
+async fn codex_turn_ids_keep_native_fallback<S: GatewayStore>(store: &S) {
+    let owner = user_owner(store, "codex-turn-owner").await;
+    let other = user_owner(store, "codex-other-owner").await;
+    let native = open_agent_session(store, &owner, "codex").await;
+    let request_id = Uuid::from_u128(504).to_string();
+    let turn_hash = "codex-unattested-turn-hash";
+    let session_hash = "codex-native-session-hash";
+    link_request(
+        store,
+        &native,
+        &request_id,
+        session_hash,
+        base(),
+        Some(turn_hash),
+        None,
+    )
+    .await;
+    // Evidence in another owner's notes never attests this request's execution identity.
+    store
+        .apply_attribution_commit(&commit(
+            &other,
+            REPOSITORY,
+            "other-owner-turn-note",
+            base(),
+            vec![session("thread", &[turn_hash])],
+        ))
+        .await
+        .expect("other owner's note");
+    let facts = store
+        .list_attribution_request_facts(&[session_hash.to_string()], base())
+        .await
+        .expect("turn-only native fallback");
+    assert_eq!(facts.len(), 1);
+    assert_eq!(facts[0].request_id, request_id);
+    assert_eq!(facts[0].session_hash, session_hash);
+    assert!(
+        store
+            .list_attribution_request_facts(&[turn_hash.to_string()], base())
+            .await
+            .expect("other owner's evidence ignored")
             .is_empty()
     );
 }

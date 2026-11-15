@@ -12,6 +12,7 @@ pub const MAX_NOTE_BYTES: usize = 1024 * 1024;
 pub enum Payload {
     Note(NotePayload),
     Session(SessionPayload),
+    RequestSession(RequestSessionPayload),
     PullRequests(PullRequestsPayload),
 }
 
@@ -51,6 +52,12 @@ pub struct SessionPayload {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RequestSessionPayload {
+    pub request_id: String,
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PullRequestsPayload {
     pub repository: String,
     pub pull_requests: Vec<PullRequest>,
@@ -81,6 +88,7 @@ impl Payload {
         match self {
             Self::Note(_) => "note",
             Self::Session(_) => "session",
+            Self::RequestSession(_) => "request_session",
             Self::PullRequests(_) => "pull_requests",
         }
     }
@@ -96,6 +104,7 @@ impl Payload {
                 Some(note.commit_sha.as_str()).filter(|sha| is_commit_sha(sha)),
             ),
             Self::Session(session) => (session.repository.as_deref(), session.head_sha.as_deref()),
+            Self::RequestSession(_) => (None, None),
             Self::PullRequests(prs) => (present(&prs.repository), None),
         }
     }
@@ -114,6 +123,11 @@ impl Payload {
             {
                 Some("invalid_repository")
             }
+            Self::RequestSession(mapping)
+                if !is_request_id(&mapping.request_id) || !is_session_id(&mapping.session_id) =>
+            {
+                Some("invalid_entry")
+            }
             Self::PullRequests(prs) if !is_repository(&prs.repository) => {
                 Some("invalid_repository")
             }
@@ -128,4 +142,17 @@ pub fn is_commit_sha(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// Gateway request ids are UUIDs in their hyphenated response-header form.
+pub fn is_request_id(value: &str) -> bool {
+    value.len() == 36 && uuid::Uuid::try_parse(value).is_ok()
+}
+
+/// The session ids the gateway accepts: 1-256 bytes of `[A-Za-z0-9._:-]`.
+pub fn is_session_id(value: &str) -> bool {
+    (1..=256).contains(&value.len())
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'))
 }

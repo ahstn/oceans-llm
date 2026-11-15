@@ -17,6 +17,7 @@ Git AI runs locally, and Oceans doesn't need Git AI's paid hosted service. The [
 | Git AI | `oceans hook notes` | Each note git-ai writes: the repository, commit, branch, and the note, which lists the lines each agent session wrote and the author names and emails. | After git-ai writes a note, for example after a commit, amend, rebase or cherry-pick. |
 | Claude Code | `oceans hook claude` | The session id, repository, branch and HEAD commit. No prompt text. | When a session starts and ends. |
 | Oh-My-Pi (OMP) | `oceans hook omp`, from the Oceans OMP extension | The same as Claude Code, plus the extension's version. | When a session starts and ends. |
+| OMP response hook | `oceans hook request` | The gateway request ID and the requesting context's journal ID. No prompt text. | When the client receives an Oceans provider response. |
 | GitHub CLI | `oceans hook prs` | Merged pull requests: number, title, link, branches, merge commit and time, and each commit's SHA, subject, date and author email. | At the start of an agent session, at most once an hour per repository, and when you run it. |
 
 The repository is the `origin` remote, or the first remote if there's no `origin`. The CLI sends it as `host/owner/repo`, without the scheme, any credentials or `.git`. A remote it can't read that way, such as a local path, isn't sent.
@@ -72,27 +73,19 @@ Install the hooks on each machine that commits agent work. Run the install again
 
 - **`--git-ai`** runs `git-ai config --add git_ai_hooks.post_notes_updated "<path to oceans> hook notes"`, then `git-ai bg restart`, so git-ai's background service loads the hook.
 - **`--claude`** adds `<path to oceans> hook claude` as a `SessionStart` and `SessionEnd` hook in `~/.claude/settings.json`, or in `$CLAUDE_CONFIG_DIR/settings.json` when that's set. Other settings and hooks stay as they are, in the same order. A hook for an `oceans` binary at another path is updated in place.
-- **`--omp`** writes the Oceans extension to `~/.omp/agent/extensions/oceans-git-ai.ts`, or to `$PI_CODING_AGENT_DIR/extensions/` when that's set. OMP loads it when it next starts. The extension runs `git-ai checkpoint pi` before and after each `edit`, `apply_patch`, `write` and `bash` call, so git-ai attributes OMP's edits, and reports session start and end through `oceans hook omp`. It also keeps the `OCEANS_SESSION_ID` environment variable set to the main session's id.
+- **`--omp`** writes the Oceans extension to `~/.omp/agent/extensions/oceans-git-ai.ts`, or to `$PI_CODING_AGENT_DIR/extensions/` when that's set. OMP loads it when it next starts. The extension runs `git-ai checkpoint pi` before and after each `edit`, `apply_patch`, `write` and `bash` call, so git-ai attributes OMP's edits, and reports session start and end through `oceans hook omp`.
 
-OMP sends no session id to a custom provider over Chat Completions or Responses, so the gateway can't tell its sessions apart. To fix this, add the session header to your Oceans provider in OMP's `models.yml`:
+For OMP, the extension also reports each gateway request ID with the requesting context's journal ID through `oceans hook request`. This needs an OMP version with the `after_provider_response` extension hook, such as 18.20.2. The gateway returns its own ID in `x-oceans-request-id`; the extension does not use an upstream provider's request ID. Main sessions and subagents report their own journal IDs, even when OMP changes its provider session ID.
 
-```yaml
-providers:
-  oceans:
-    # ...your existing baseUrl, apiKey and api
-    headers:
-      session_id: OCEANS_SESSION_ID
-```
-
-OMP reads the variable on each request. The Messages API doesn't need the header, because OMP already sends its own session id there. Add the header only on machines where the extension is installed. Without the extension, OMP sends the text `OCEANS_SESSION_ID` as the value, and the gateway then counts all of that machine's OMP Chat Completions and Responses requests as one session. Requests from OMP subagents count for the main session, except over the Messages API, where each subagent sends its own id.
+**Upgrading an older install:** run `oceans hook install --omp` again, remove the `session_id: OCEANS_SESSION_ID` header from your Oceans provider in `models.yml`, then restart OMP. The extension no longer sets that environment variable. No custom attribution session header is needed, and the provider's native session and cache settings stay unchanged.
 
 Each hook records the full path of the `oceans` binary. git-ai has no way to update a hook in place, so after you move the binary, remove the old git-ai hook as described in [Remove the hooks](#remove-the-hooks).
 
 ## How delivery works
 
-The hooks never slow down or fail a commit or an agent session. Each one writes to a local queue and returns at once. Problems go to standard error, and the hook still succeeds.
+The hooks do not wait on network delivery in the commit or agent session. Each one writes to a local queue first. Problems go to standard error, and the hook still succeeds.
 
-A background `oceans hook send` then delivers the queue in order:
+For OMP request mappings, the extension starts one detached `oceans hook request` process. It queues the mapping and delivers through the existing sender in that same process, without starting another process. Concurrent senders share a lock, so only one resolves the key and delivers the queue at a time. Other hooks start a background `oceans hook send`. Both paths deliver in order:
 
 - It resolves the API key only when there's something to send, so a `!` command in the config file doesn't run on every commit.
 - It sends batches of up to 100 entries and 2 MiB.
@@ -122,7 +115,7 @@ oceans hook prs
 oceans hook prs --repo-dir ~/src/widgets --limit 200
 ```
 
-It reads the newest 30 merged pull requests by default, and up to 1,000 with `--limit`. `--if-stale` skips the sync if the repository synced more recently than the age you give, such as `30m`, `1h` or `2d`. If `gh` isn't installed or isn't signed in, the sync is skipped and the message says why.
+It reads the newest 30 merged pull requests by default, and up to 1,000 with `--limit`. The limit is the total to fetch, not the page size: `--limit 200` reads up to 200 pull requests in pages of at most 49. This keeps each query below GitHub's GraphQL node limit while it reads commit authors. `--if-stale` skips the sync if the repository synced more recently than the age you give, such as `30m`, `1h` or `2d`. If `gh` isn't installed or a fetch fails, the sync is skipped. Failed requests include the error from `gh`; an API limit error does not mean you need to sign in again. No pull requests are queued unless all requested pages succeed.
 
 ## Check the queue
 
@@ -194,23 +187,23 @@ The **Agent Harnesses** page shows, for each harness and model, the gateway cost
   ```
 
   A new email applies to pull requests sent after the gateway restarts. The gateway stores only hashes of pull request emails, so it can't match pull requests it already has. To match them, run `oceans hook prs --limit 200` again in each repository. The gateway replaces each stored pull request with the newer copy.
-- **Sessions** join to gateway requests when the session id from a note or a session hook matches one the gateway recorded for the same owner. The match doesn't depend on which agent the gateway thinks sent the requests. This matters for OMP, because OMP looks like Claude Code when it uses the Messages API. A session with no commit yet still counts its requests as uncommitted work, even when it started before the window, up to 30 days before. The gateway reads these session ids:
+- **Sessions** join to gateway requests through an explicit request-to-journal mapping, or through a matching native session ID when no mapping exists. The hooks' key and the inference key must have the same owner. The match doesn't depend on which agent the gateway thinks sent the requests. This matters for OMP, because OMP looks like Claude Code when it uses the Messages API. A session with no commit yet still counts its requests as uncommitted work, even when it started before the window, up to 30 days before. The gateway reads these IDs:
 
   | Agent | Session id the gateway reads |
   | --- | --- |
-  | Claude Code | `x-claude-code-session-id` |
-  | Codex | `session-id` and `x-codex-turn-metadata` |
-  | OpenCode | `x-session-id` and `x-opencode-session` |
-  | Pi | `session_id`, which Pi sends only with the Responses API |
-  | OMP | `session_id` from the header above. With the Messages API, OMP sends `x-claude-code-session-id`. |
+  | Claude Code | `x-claude-code-session-id`, or the explicit session component of `metadata.user_id` when payload policy permits. Account and device IDs are not session IDs. |
+  | Codex | An exact request execution/thread hash attested by the same owner's notes; otherwise the native session ID from `session-id` or `x-codex-turn-metadata`. Parent thread IDs are not aliases. |
+  | OpenCode | `x-opencode-session-id`; older clients use `x-session-id`, `x-session-affinity` or `x-opencode-session`. Cache affinity is not substituted for an explicit conversation ID. |
+  | Pi | `session-id` on Responses, `x-session-id` on OpenRouter, and the older `session_id`. A client can omit these fields. |
+  | OMP | The extension maps each gateway request to its journal. Native Messages requests also carry `x-claude-code-session-id`, which can differ from the journal. |
   | Any client | `x-oceans-session-id` |
 
-  Lines a Claude Code subagent wrote count as AI lines without a matching session.
+  A Claude Code subagent or Codex thread joins only when its note ID has an exact match or an explicit request mapping. A shared parent session, model or timestamp alone does not prove the match.
 
 ## Privacy
 
 - **On the gateway:** the gateway reads each note in memory and stores totals per commit and per session, with each session's agent tool and model. It stores no file paths, line ranges, raw session ids or emails. A session id is stored as a hash tied to the key's owner. An email is stored as the matching Oceans user, or as a hash.
-- **On your machine:** the queue holds the raw notes until they're delivered. They're the same notes that already sit in the repository's `refs/notes/ai`. The queue is in `~/.local/state/oceans/attribution`, or `$XDG_STATE_HOME/oceans/attribution` when that's set, and only your user can read it. On Linux and macOS, the CLI refuses to queue into a folder that other users can read.
+- **On your machine:** the queue holds raw notes and session/request hook payloads until they're delivered, including raw session IDs. The notes also sit in the repository's `refs/notes/ai`. The queue is in `~/.local/state/oceans/attribution`, or `$XDG_STATE_HOME/oceans/attribution` when that's set, and only your user can read it. On Linux and macOS, the CLI refuses to queue into a folder that other users can read.
 - **In output:** the CLI never prints or logs note content, session ids or emails.
 
 ## Limits
@@ -219,12 +212,13 @@ The **Agent Harnesses** page shows, for each harness and model, the gateway cost
 - **Some commits have no notes.** git-ai writes no note for `git merge --no-ff` or `git revert`.
 - **Git AI's hosted notes mode isn't supported.** In that mode the notes go to Git AI's servers, and the hook doesn't run.
 - **Rebased commits count their lines again.** After a rebase, both the old and new commits keep their notes, so the report counts their AI lines twice. Requests and merged pull request totals aren't affected.
+- **Mappings start with the updated extension.** A request must reach OMP's response hook with the gateway's response header. Requests cancelled before headers, and internal paths without that hook, cannot report a journal mapping. Older missing request logs are not recreated by a PR sync or by analysis recompute.
 
 ## Remove the hooks
 
 - **git-ai:** run `git-ai config git_ai_hooks` to list its hooks. `git-ai config unset git_ai_hooks.post_notes_updated` removes all `post_notes_updated` hooks, so add back any others with `git-ai config --add`. Then run `git-ai bg restart`.
 - **Claude Code:** delete the `oceans hook claude` entries under `hooks.SessionStart` and `hooks.SessionEnd` in `settings.json`.
-- **OMP:** delete `~/.omp/agent/extensions/oceans-git-ai.ts`, and remove the `session_id: OCEANS_SESSION_ID` header from your Oceans provider in `models.yml`. Without the extension, OMP sends that header's text as-is, so all of the machine's Chat Completions and Responses traffic would count as one session.
+- **OMP:** delete `~/.omp/agent/extensions/oceans-git-ai.ts` and restart OMP. If you used the old setup, also remove `session_id: OCEANS_SESSION_ID` from your Oceans provider in `models.yml`.
 - **Queue:** run `oceans hook queue` to check that nothing is waiting, then delete `~/.local/state/oceans/attribution`.
 
 ## Troubleshooting

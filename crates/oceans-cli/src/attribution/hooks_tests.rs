@@ -216,3 +216,80 @@ fn omp_session_events_carry_the_extension_version() {
     assert_eq!(session.repository, None);
     assert_eq!(session.harness_version.as_deref(), Some("14.2.0"));
 }
+
+#[test]
+fn request_mappings_use_the_existing_owned_queue_envelope() {
+    let root = tempfile::tempdir().unwrap();
+    let state = state(&root);
+    let scope = "user:0b9d3f8e-8a59-4f5e-9c61-3f1c1d2a7b10";
+    state
+        .record_ownership(
+            "https://oceans.example.com/",
+            "key-fingerprint",
+            &crate::attribution::ownership::Ownership {
+                ownership_scope: scope.into(),
+                owner_kind: "user".into(),
+                owner_id: "0b9d3f8e-8a59-4f5e-9c61-3f1c1d2a7b10".into(),
+            },
+        )
+        .unwrap();
+    let input = json!({
+        "request_id": "1c8f3d6a-5bf0-4e84-8dd2-81c5d27b4da1",
+        "session_id": "journal:own-session.42",
+    });
+    assert_eq!(
+        request(&state, input.to_string().as_bytes())
+            .unwrap()
+            .queued,
+        1
+    );
+    let entries = queued(&state);
+    assert_eq!(entries.len(), 1);
+    let entry = &entries[0];
+    assert_eq!(entry.ownership_scope.as_deref(), Some(scope));
+    assert_eq!(entry.sequence, Some(1));
+    assert_eq!(entry.payload.kind(), "request_session");
+    assert_eq!(entry.payload.listing(), (None, None));
+    assert_eq!(entry.payload.local_rejection(), None);
+    let wire = serde_json::to_value(entry.wire().unwrap()).unwrap();
+    assert_eq!(
+        wire["payload"],
+        json!({
+            "kind": "request_session",
+            "request_id": input["request_id"],
+            "session_id": input["session_id"],
+        })
+    );
+    assert!(wire.get("ownership_scope").is_none());
+    let listing = serde_json::to_string(&state.listing().unwrap().queued).unwrap();
+    assert!(!listing.contains("journal") && !listing.contains("1c8f3d6a"));
+}
+
+#[test]
+fn request_mappings_reject_invalid_ids_without_echoing_input() {
+    let root = tempfile::tempdir().unwrap();
+    let state = state(&root);
+    let valid_id = "1c8f3d6a-5bf0-4e84-8dd2-81c5d27b4da1";
+    for input in [
+        json!({"request_id": "secret-upstream-id", "session_id": "journal"}),
+        json!({"request_id": "1c8f3d6a5bf04e848dd281c5d27b4da1", "session_id": "journal"}),
+        json!({"request_id": format!("{valid_id}\n"), "session_id": "journal"}),
+        json!({"request_id": valid_id, "session_id": "secret journal"}),
+        json!({"request_id": valid_id, "session_id": "secret\n"}),
+        json!({"request_id": valid_id, "session_id": "x".repeat(257)}),
+        json!({"request_id": valid_id, "session_id": ""}),
+        json!({"request_id": valid_id}),
+        json!({"session_id": "journal"}),
+        json!({"request_id": {"secret": true}, "session_id": "journal"}),
+    ] {
+        let error = request(&state, input.to_string().as_bytes())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            !error.contains("secret") && !error.contains(valid_id),
+            "{error}"
+        );
+    }
+    assert!(queued(&state).is_empty());
+    assert!(state.listing().unwrap().quarantined.is_empty());
+}

@@ -12107,6 +12107,31 @@
           },
           {
             "type": "object",
+            "description": "Associate a gateway request with the journal that actually received its response.",
+            "required": [
+              "request_id",
+              "session_id",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "request_session"
+                ]
+              },
+              "request_id": {
+                "type": "string",
+                "description": "The gateway's request UUID, not a provider response id."
+              },
+              "session_id": {
+                "type": "string",
+                "description": "The raw journal session id. Only an owner-scoped hash is stored."
+              }
+            }
+          },
+          {
+            "type": "object",
             "description": "Merged pull requests of one repository and their commits.",
             "required": [
               "repository",

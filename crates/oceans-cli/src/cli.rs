@@ -4,7 +4,7 @@ use clap::{Args, Parser, Subcommand};
 use url::Url;
 
 /// Hooks that git-ai, Claude Code and OMP run. They never fail their caller.
-const HOOK_ENTRYPOINTS: [&str; 5] = ["notes", "claude", "omp", "prs", "send"];
+const HOOK_ENTRYPOINTS: [&str; 6] = ["notes", "claude", "omp", "request", "prs", "send"];
 
 #[derive(Parser)]
 #[command(
@@ -65,6 +65,8 @@ pub enum HookCommand {
     Claude,
     /// OMP extension hook: queue the session event on standard input.
     Omp,
+    /// Queue a gateway request id and journal session id from standard input.
+    Request,
     /// Queue recently merged pull requests and their commits, read with gh.
     Prs(PrsArgs),
     /// Deliver queued entries to the gateway.
@@ -394,6 +396,12 @@ mod tests {
 
     #[test]
     fn hook_commands_parse() {
+        assert!(matches!(
+            Cli::try_parse_from(["oceans", "hook", "request"])
+                .unwrap()
+                .command,
+            Command::Hook(HookCommand::Request)
+        ));
         let cli = Cli::try_parse_from([
             "oceans",
             "hook",
@@ -438,6 +446,14 @@ mod tests {
     fn hook_entrypoints_are_recognised() {
         let args = |words: &[&str]| words.iter().map(OsString::from).collect::<Vec<_>>();
         assert!(is_hook_entrypoint(&args(&["oceans", "hook", "notes"])));
+        assert!(is_hook_entrypoint(&args(&[
+            "oceans",
+            "--json",
+            "hook",
+            "--url=https://x",
+            "request",
+            "--unknown"
+        ])));
         assert!(is_hook_entrypoint(&args(&[
             "/bin/oceans",
             "--url",

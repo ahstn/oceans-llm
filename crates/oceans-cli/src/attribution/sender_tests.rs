@@ -413,3 +413,48 @@ async fn an_empty_queue_never_resolves_the_key() {
         .unwrap();
     assert_eq!(report, SendReport::default());
 }
+
+#[tokio::test]
+async fn request_mappings_are_delivered_through_the_owned_sender() {
+    let server = server(OWNER_A, answer(|_| "applied")).await;
+    let root = tempfile::tempdir().unwrap();
+    let state = state_for(&root, &server, OWNER_A, Some(OWNER_A));
+    let mapping = json!({
+        "request_id": "1c8f3d6a-5bf0-4e84-8dd2-81c5d27b4da1",
+        "session_id": "journal:own-session",
+    });
+    crate::attribution::hooks::request(&state, mapping.to_string().as_bytes()).unwrap();
+    let report = send(&state, || server.connection(), &options())
+        .await
+        .unwrap();
+    assert_eq!((report.delivered, report.remaining), (1, 0));
+    let batches = server.batches();
+    assert_eq!(batches.len(), 1);
+    assert_eq!(
+        batches[0]["expected_ownership_scope"],
+        format!("user:{OWNER_A}")
+    );
+    assert_eq!(
+        batches[0]["entries"][0]["payload"],
+        json!({
+            "kind": "request_session",
+            "request_id": mapping["request_id"],
+            "session_id": mapping["session_id"],
+        })
+    );
+}
+
+#[tokio::test]
+async fn request_mappings_survive_sender_configuration_failure() {
+    let root = tempfile::tempdir().unwrap();
+    let state = State::open(root.path().join("attribution")).unwrap();
+    let mapping = json!({
+        "request_id": "1c8f3d6a-5bf0-4e84-8dd2-81c5d27b4da1",
+        "session_id": "journal:own-session",
+    });
+    crate::attribution::hooks::request(&state, mapping.to_string().as_bytes()).unwrap();
+    let before = state.queued_files().unwrap();
+    let result = send(&state, || anyhow::bail!("no local credentials"), &options()).await;
+    assert!(result.is_err());
+    assert_eq!(state.queued_files().unwrap(), before);
+}

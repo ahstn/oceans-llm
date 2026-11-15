@@ -511,6 +511,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
             "../migrations/postgres/V80__attribution_note_key_owner_authors.sql"
         ),
     },
+    MigrationManifest {
+        version: 81,
+        name: "attribution_request_sessions",
+        checksum: "V81__attribution_request_sessions.sql",
+        libsql_sql: include_str!("../migrations/V81__attribution_request_sessions.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V81__attribution_request_sessions.sql"),
+    },
 ];
 
 #[cfg(test)]

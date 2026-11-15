@@ -8,7 +8,8 @@ use gateway_core::{
     AttributionCommitSession, AttributionCommitWrite, AttributionFreshness,
     AttributionPullRequestCommit, AttributionPullRequestRecord, AttributionPullRequestWrite,
     AttributionReportQuery, AttributionRepository, AttributionRequestFact,
-    AttributionSessionCommitTime, AttributionSessionEventWrite, StoreError,
+    AttributionRequestSessionWrite, AttributionSessionCommitTime, AttributionSessionEventWrite,
+    StoreError,
 };
 use sqlx::postgres::{PgArguments, PgRow};
 use sqlx::query::Query;
@@ -307,6 +308,36 @@ impl AttributionRepository for PostgresStore {
         };
         let hashes = attribution::insert_agent_session_hashes(DIALECT, &session);
         execute_all(&mut transaction, hashes).await?;
+        transaction.commit().await.map_err(to_write_error)?;
+        Ok(AttributionApplyOutcome::Applied)
+    }
+
+    async fn apply_attribution_request_session(
+        &self,
+        write: &AttributionRequestSessionWrite,
+    ) -> Result<AttributionApplyOutcome, StoreError> {
+        let mut transaction = self.pool.begin().await.map_err(to_query_error)?;
+        let insert = attribution::insert_request_session(DIALECT, write)?;
+        if execute(&mut transaction, insert).await? == 0 {
+            let row = fetch_conflicting(
+                &mut transaction,
+                attribution::select_request_session_freshness(DIALECT, write),
+            )
+            .await?;
+            let stored = AttributionFreshness {
+                installation_id: get(&row, 0)?,
+                sequence: get(&row, 1)?,
+                observed_at: time_at(&row, 2)?,
+                late_sequenced: get(&row, 3)?,
+            };
+            let outcome = attribution::request_session_outcome(write, &stored)?;
+            if outcome != AttributionApplyOutcome::Applied {
+                transaction.rollback().await.map_err(to_query_error)?;
+                return Ok(outcome);
+            }
+            let update = attribution::update_request_session(DIALECT, write)?;
+            execute(&mut transaction, update).await?;
+        }
         transaction.commit().await.map_err(to_write_error)?;
         Ok(AttributionApplyOutcome::Applied)
     }

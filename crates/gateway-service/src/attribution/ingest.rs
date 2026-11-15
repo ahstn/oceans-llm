@@ -9,8 +9,8 @@ use gateway_core::{
     ATTRIBUTION_MAX_BATCH_ENTRIES, ApiKeyOwnerKind, AttributionApplyOutcome,
     AttributionCommitSession, AttributionCommitWrite, AttributionFreshness, AttributionOwner,
     AttributionPullRequestCommit, AttributionPullRequestWrite, AttributionRepository,
-    AttributionSessionEventKind, AttributionSessionEventWrite, AuthError, AuthenticatedApiKey,
-    GatewayError, StoreError,
+    AttributionRequestSessionWrite, AttributionSessionEventKind, AttributionSessionEventWrite,
+    AuthError, AuthenticatedApiKey, GatewayError, StoreError,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -20,7 +20,9 @@ use super::validate::{self, MAX_BRANCH_BYTES, MAX_HARNESS_VERSION_BYTES, MAX_TIT
 use super::{AttributionEntryStatus, AttributionRejectReason, AttributionUserLookup};
 use crate::agent_analysis::hash_lineage_candidate;
 use crate::budget_scopes::usage_ownership_scope_key;
-use crate::client_session::{SESSION_HASH_NAMESPACES, is_external_session_id};
+use crate::client_session::{
+    OCEANS_SESSION_NAMESPACE, SESSION_HASH_NAMESPACES, is_external_session_id,
+};
 
 /// Lineage namespace for author email hashes (ADR "Identity storage").
 const HUMAN_HASH_NAMESPACE: &str = "git_ai_human";
@@ -54,6 +56,7 @@ pub struct AttributionEntryInput {
 pub enum AttributionPayloadInput {
     Note(AttributionNoteInput),
     Session(AttributionSessionInput),
+    RequestSession(AttributionRequestSessionInput),
     PullRequests(AttributionPullRequestsInput),
 }
 
@@ -75,6 +78,12 @@ pub struct AttributionSessionInput {
     pub branch: Option<String>,
     pub head_sha: Option<String>,
     pub harness_version: Option<String>,
+}
+
+pub struct AttributionRequestSessionInput {
+    pub request_id: String,
+    /// The raw journal id; stored only as an owner-scoped canonical session hash.
+    pub session_id: String,
 }
 
 pub struct AttributionPullRequestsInput {
@@ -246,6 +255,9 @@ where
         match payload {
             AttributionPayloadInput::Note(note) => self.note(freshness, note).await,
             AttributionPayloadInput::Session(session) => self.session(&freshness, session).await,
+            AttributionPayloadInput::RequestSession(input) => {
+                self.request_session(freshness, input).await
+            }
             AttributionPayloadInput::PullRequests(input) => {
                 self.pull_requests(&freshness, input).await
             }
@@ -361,6 +373,30 @@ where
             received_at: self.now,
         };
         Ok(self.store.apply_attribution_session_event(&write).await?)
+    }
+
+    async fn request_session(
+        &self,
+        freshness: AttributionFreshness,
+        input: AttributionRequestSessionInput,
+    ) -> Result<AttributionApplyOutcome, EntryError> {
+        if input.request_id.len() != 36 || !is_external_session_id(&input.session_id) {
+            return Err(AttributionRejectReason::InvalidEntry.into());
+        }
+        let request_id = Uuid::parse_str(&input.request_id)
+            .map_err(|_| AttributionRejectReason::InvalidEntry)?;
+        let write = AttributionRequestSessionWrite {
+            owner: self.owner.clone(),
+            request_id,
+            session_hash: hash_lineage_candidate(
+                &self.owner.ownership_scope_key,
+                OCEANS_SESSION_NAMESPACE,
+                &input.session_id,
+            ),
+            freshness,
+            received_at: self.now,
+        };
+        Ok(self.store.apply_attribution_request_session(&write).await?)
     }
 
     async fn pull_requests(

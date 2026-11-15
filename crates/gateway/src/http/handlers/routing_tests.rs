@@ -41,6 +41,7 @@ struct RoutingProvider {
 #[derive(Clone, Copy)]
 enum StreamEnd {
     Completed,
+    CompletedPending,
     EarlyEof,
     Pending,
 }
@@ -115,7 +116,7 @@ impl ProviderClient for RoutingProvider {
     ) -> Result<ProviderStream, ProviderError> {
         let mut response = self.answer(request.extra.get("previous_response_id"))?;
         let event_type = match self.stream_end {
-            StreamEnd::Completed => "response.completed",
+            StreamEnd::Completed | StreamEnd::CompletedPending => "response.completed",
             StreamEnd::EarlyEof | StreamEnd::Pending => {
                 response["status"] = json!("in_progress");
                 "response.created"
@@ -125,7 +126,10 @@ impl ProviderClient for RoutingProvider {
         let stream = futures_util::stream::iter([Ok(Bytes::from(format!(
             "event: {event_type}\ndata: {event}\n\n"
         )))]);
-        if matches!(self.stream_end, StreamEnd::Pending) {
+        if matches!(
+            self.stream_end,
+            StreamEnd::Pending | StreamEnd::CompletedPending
+        ) {
             Ok(Box::pin(stream.chain(futures_util::stream::pending())))
         } else {
             Ok(Box::pin(stream))
@@ -500,6 +504,45 @@ async fn missing_runtime_identity_invalidates_only_its_providers_response_origin
 }
 
 #[tokio::test]
+async fn responses_terminal_chunk_persists_origin_without_waiting_for_eof() {
+    let harness = RoutingHarness::with_stream_end(false, StreamEnd::CompletedPending).await;
+    let response = harness
+        .responses(true, None)
+        .await
+        .map_err(|error| error.0)
+        .unwrap();
+    let mut body = response.into_body().into_data_stream();
+    let terminal = tokio::time::timeout(std::time::Duration::from_secs(5), body.next())
+        .await
+        .expect("terminal chunk does not wait for upstream EOF")
+        .unwrap()
+        .unwrap();
+    let first = harness.calls.lock().unwrap()[0].clone();
+    assert!(String::from_utf8_lossy(&terminal).contains(&first.response_id));
+    drop(body);
+    let metrics = harness.state.metrics.test_snapshot();
+    assert_eq!(metrics.requests, 1);
+    assert_eq!(metrics.request_outcomes.get("success"), Some(&1));
+    assert_eq!(metrics.request_outcomes.get("client_cancelled"), None);
+
+    consume(
+        harness
+            .responses(false, Some(&first.response_id))
+            .await
+            .map_err(|error| error.0)
+            .unwrap(),
+    )
+    .await;
+    let calls = harness.calls.lock().unwrap();
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[1].provider, first.provider);
+    assert_eq!(
+        calls[1].previous_response_id.as_deref(),
+        Some(first.response_id.as_str())
+    );
+}
+
+#[tokio::test]
 async fn responses_stream_without_a_terminal_event_does_not_record_an_origin() {
     let harness = RoutingHarness::with_stream_end(false, StreamEnd::EarlyEof).await;
     let body = consume(
@@ -570,13 +613,34 @@ async fn provider_failure_does_not_retry_another_route() {
 #[tokio::test]
 async fn duplicate_session_headers_are_rejected_before_provider_dispatch() {
     let harness = RoutingHarness::new(false).await;
+    for name in ["x-oceans-session-id", "x-opencode-session-id"] {
+        let mut headers = HeaderMap::new();
+        headers.append(name, "session-a".parse().unwrap());
+        headers.append(name, "session-b".parse().unwrap());
+
+        let error = harness.chat(headers).await.unwrap_err();
+
+        assert_eq!(error.0.http_status_code(), 400);
+        assert!(error.0.to_string().contains(name));
+        assert!(error.0.to_string().contains("may only be sent once"));
+    }
+    assert!(harness.calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn nontext_opencode_session_header_is_rejected_before_provider_dispatch() {
+    let harness = RoutingHarness::new(false).await;
     let mut headers = session_headers("session-a");
-    headers.append("x-oceans-session-id", "session-b".parse().unwrap());
+    headers.insert(
+        "x-opencode-session-id",
+        axum::http::HeaderValue::from_bytes(b"\xff").unwrap(),
+    );
 
     let error = harness.chat(headers).await.unwrap_err();
 
     assert_eq!(error.0.http_status_code(), 400);
-    assert!(error.0.to_string().contains("may only be sent once"));
+    assert!(error.0.to_string().contains("x-opencode-session-id"));
+    assert!(error.0.to_string().contains("must be valid UTF-8 text"));
     assert!(harness.calls.lock().unwrap().is_empty());
 }
 
