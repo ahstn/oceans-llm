@@ -43,9 +43,10 @@ pub use lifecycle::{AttributionPullRequestLifecycleSummary, AttributionRevertAct
 /// finds the notes of commits made before the window opened, and a session that started
 /// before the window still has its requests in the window counted.
 const LOOKBACK: Duration = Duration::days(30);
-/// How far before the window pull requests are loaded, so a revert merged in the window
-/// resolves an original merged up to this long before it. Those older pull requests only
-/// resolve links; every window figure counts activity inside the window.
+/// How far before the window pull requests are loaded when a revert merged in the window names
+/// one the window's read doesn't hold, so it resolves an original merged up to this long
+/// before it. Those older pull requests only resolve links; every window figure counts
+/// activity inside the window. Most windows have no such revert, so the read is skipped.
 const REVERT_LOOKBACK: Duration = Duration::days(90);
 /// Commit details each pull request carries. The totals use every matched commit; this bounds
 /// the response, since the report caps pull requests but not their commits.
@@ -269,13 +270,9 @@ where
         from: query.from - LOOKBACK,
         ..query.clone()
     };
-    let pull_request_query = AttributionReportQuery {
-        from: query.from - REVERT_LOOKBACK,
-        ..query.clone()
-    };
     let (commits, pull_requests, loaded_sessions) = tokio::try_join!(
         store.list_attribution_commits(&lookback_query),
-        store.list_attribution_pull_requests(&pull_request_query),
+        store.list_attribution_pull_requests(query),
         store.list_attribution_agent_sessions(&lookback_query),
     )?;
     let limit = usize::try_from(query.limit).unwrap_or(usize::MAX);
@@ -293,14 +290,18 @@ where
     let windows = commit_windows(load_commit_times(store, &hashes, query.to).await?);
     let (facts, request_facts_truncated) = load_request_facts(store, &hashes, query.to).await?;
     // The cap counts every owner's copy, so saturation is judged before copies are merged.
-    // Pull requests come latest activity first, so a cap reached only by ones before the
-    // window, loaded for revert links, left out none the window reports.
-    let pull_requests_truncated = pull_requests.len() >= limit
-        && pull_requests
-            .iter()
-            .map(lifecycle::activity_at)
-            .min()
-            .is_some_and(|at| at >= query.from);
+    let pull_requests_truncated = pull_requests.len() >= limit;
+    let mut pull_requests = pull_requests;
+    if lifecycle::needs_revert_lookback(&pull_requests, query) {
+        // Only to resolve links: a capped read here leaves a revert's target unknown, not a
+        // window figure short.
+        let before = AttributionReportQuery {
+            from: query.from - REVERT_LOOKBACK,
+            to: query.from,
+            ..query.clone()
+        };
+        pull_requests.extend(store.list_attribution_pull_requests(&before).await?);
+    }
     let loaded = distinct_pull_requests(pull_requests);
     let mut lifecycle_summary = lifecycle::summary(&loaded, query);
     let mut merged = loaded

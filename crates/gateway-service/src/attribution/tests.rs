@@ -69,6 +69,8 @@ struct FakeStore {
     request_sessions: Mutex<Vec<AttributionRequestSessionWrite>>,
     /// Hash count of every request-fact lookup.
     fact_lookups: Mutex<Vec<usize>>,
+    /// The `(from, to)` of every pull request read.
+    pull_request_reads: Mutex<Vec<(time::OffsetDateTime, time::OffsetDateTime)>>,
 }
 
 impl FakeStore {
@@ -290,6 +292,10 @@ impl AttributionRepository for FakeStore {
         &self,
         query: &AttributionReportQuery,
     ) -> Result<Vec<AttributionPullRequestRecord>, StoreError> {
+        self.pull_request_reads
+            .lock()
+            .expect("pull request reads lock")
+            .push((query.from, query.to));
         let mut rows = self
             .pull_requests()
             .into_iter()

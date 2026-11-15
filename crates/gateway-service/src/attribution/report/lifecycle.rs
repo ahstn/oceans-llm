@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use gateway_core::{
     AttributionPullRequestRecord, AttributionPullRequestState, AttributionReportQuery,
-    AttributionRevertEvidence,
+    AttributionRevertEvidence, AttributionRevertLink,
 };
 use time::{Duration, OffsetDateTime};
 
@@ -69,18 +69,6 @@ pub(super) fn merged_in(
             .is_some_and(|at| at >= query.from && at <= query.to)
 }
 
-/// A pull request's latest activity, as the store orders its read: the forge's last change,
-/// else the latest lifecycle time an older hook sent.
-pub(super) fn activity_at(pull_request: &AttributionPullRequestRecord) -> OffsetDateTime {
-    let lifecycle = &pull_request.lifecycle;
-    lifecycle
-        .last_activity_at
-        .or(pull_request.merged_at)
-        .or(lifecycle.closed_at)
-        .or(lifecycle.opened_at)
-        .unwrap_or(pull_request.observed_at)
-}
-
 /// Whether anything happened to `pull_request` in the window: it opened, was reviewed, merged,
 /// closed, or changed on the forge. A routine re-sync of an untouched pull request doesn't
 /// count, so `observed_at` is left out.
@@ -95,6 +83,42 @@ fn active_in(query: &AttributionReportQuery, pull_request: &AttributionPullReque
     .into_iter()
     .flatten()
     .any(|at| at >= query.from && at <= query.to)
+}
+
+/// Whether a confirmed revert merged in the window names a pull request that `window`, the
+/// window's read, can't resolve, so the report must read further back. Resolves as
+/// `apply_reverts` does: by number, else by a reverted commit listed in, or merging, another
+/// merged pull request.
+pub(super) fn needs_revert_lookback(
+    window: &[AttributionPullRequestRecord],
+    query: &AttributionReportQuery,
+) -> bool {
+    let merged: Vec<_> = window
+        .iter()
+        .filter(|pr| pr.lifecycle.state == AttributionPullRequestState::Merged)
+        .collect();
+    let resolves = |revert: &AttributionPullRequestRecord, link: &AttributionRevertLink| {
+        merged.iter().any(|original| {
+            original.repository == revert.repository
+                && original.number != revert.number
+                && match link.pull_request_number {
+                    Some(number) => original.number == number,
+                    None => link.commit_shas.iter().any(|reverted| {
+                        original
+                            .merge_commit_sha
+                            .iter()
+                            .chain(original.commits.iter().map(|commit| &commit.commit_sha))
+                            .any(|sha| sha.starts_with(reverted.as_str()))
+                    }),
+                }
+        })
+    };
+    window
+        .iter()
+        .filter(|pr| merged_in(query, pr))
+        .filter_map(|pr| Some((pr, pr.lifecycle.details.reverts.as_ref()?)))
+        .filter(|(_, link)| link.evidence.is_confirmed())
+        .any(|(pr, link)| !resolves(pr, link))
 }
 
 /// The merge time of a pull request the report already knows merged.

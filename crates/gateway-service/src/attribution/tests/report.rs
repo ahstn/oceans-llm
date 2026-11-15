@@ -1532,6 +1532,29 @@ async fn revert_links_resolve_to_the_reverted_pull_request() {
 }
 
 #[tokio::test]
+async fn the_revert_lookback_is_read_only_for_a_target_outside_the_window() {
+    let dev = user_owner(Uuid::new_v4());
+    let original = pull_request(5, &dev, minutes(30), &[11]);
+    let mut revert = pull_request(6, &dev, minutes(60), &[12]);
+    revert.title = "Tidy".to_string();
+    revert.lifecycle.details.reverts = Some(AttributionRevertLink {
+        pull_request_number: Some(5),
+        commit_shas: Vec::new(),
+        evidence: AttributionRevertEvidence::ChangeMatch,
+    });
+    let mut store = FakeStore::with_commits(vec![]);
+    store.pull_requests = Mutex::new(vec![revert, original]);
+    let report = report(&store, &query()).await;
+
+    assert_eq!(report.pull_request_lifecycle.revert_count, 1);
+    assert_eq!(
+        store.pull_request_reads.lock().unwrap().len(),
+        1,
+        "the original merged in the window, so nothing older is read"
+    );
+}
+
+#[tokio::test]
 async fn open_and_closed_pull_requests_feed_lifecycle_figures_but_not_merged_ones() {
     let dev = user_owner(Uuid::new_v4());
     let mut reviewed = pull_request(1, &dev, minutes(300), &[]);
@@ -1609,6 +1632,14 @@ async fn a_revert_resolves_an_original_merged_before_the_window() {
     store.pull_requests = Mutex::new(vec![original, revert]);
     let report = report(&store, &query()).await;
 
+    assert_eq!(
+        *store.pull_request_reads.lock().unwrap(),
+        [
+            (query().from, query().to),
+            (query().from - Duration::days(90), query().from)
+        ],
+        "the window, then before it for the revert's target"
+    );
     assert_eq!(
         report.pull_requests.len(),
         1,
