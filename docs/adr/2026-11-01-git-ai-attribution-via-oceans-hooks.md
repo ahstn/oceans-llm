@@ -280,8 +280,35 @@ Every tab needs the same joined rows. Daily buckets and session outcomes have to
 
 ### Trade-offs
 
-- **No open or closed PRs:** pull requests come only from `gh pr list --state merged`, so session outcomes can't separate "in review" from "abandoned". Work that hasn't merged stays in one stage.
+- **No open or closed PRs:** pull requests come only from `gh pr list --state merged`, so session outcomes can't separate "in review" from "abandoned". Work that hasn't merged stays in one stage. (The 2026-11-16 amendment adds open and closed pull requests; the session outcome stages still don't use them.)
 - **Missing data stays visible:** line survival, review times, deploys and incidents are missing. The UI keeps those sections with a "Needs new data" pill. [Attribution data gaps](../internal/2026-11-15-attribution-data-gaps.md) lists the gaps and how to collect each one.
+
+## Amendment 2026-11-16: pull request lifecycle and revert links
+
+### Decision
+
+`oceans hook prs` reads open, closed and merged pull requests, most recently updated first, instead of merged ones only. It sends each one's state, draft flag, opened and closed times, first human review time, review, approval, changes-requested and comment counts, and lines added, deleted and files changed. It also sends a revert link: which pull request or commits this one reverts, and the evidence. The hook finds the link from the strongest signal available:
+
+1. `revert_commit`: a pull request commit carries git's `This reverts commit <sha>` line.
+2. `github_revert`: GitHub's revert button (`Reverts owner/repo#N` in the description, or a `revert-N-…` branch), counted only with a revert title.
+3. `change_match`: the pull request's first-parent change is the exact inverse of an earlier merged pull request's, by a fingerprint of the added and removed lines.
+4. `title`: a revert title alone. A possible revert, not counted as one.
+
+The gateway stores the lifecycle as `state`, `opened_at` and `closed_at` columns plus a `details` JSON object (migration V82, which makes `merged_at` nullable). The report's commit, spend and delivery figures still use pull requests merged in the window. A new lifecycle summary counts opened, closed-unmerged, open and draft pull requests, merges without review, review wait, confirmed and possible reverts, and time to revert. The report resolves each link by number, or by a reverted commit listed in, or merging, another pull request.
+
+### Why
+
+- **The revert line is machine-written.** Studies of reverted commits, and change-failure tools such as Swarmia's, key on git's `This reverts commit` line and GitHub's revert-button markers. Titles are rewritten often enough that a title match both misses reverts and flags non-reverts.
+- **The change match catches reworded reverts.** A revert's change is the inverse of the original's whatever its message says. The fingerprint leaves out context lines and line numbers, so unrelated edits between the two don't break the match, and it needs nothing beyond the local clone the hook already runs in.
+- **Counts, not identities.** Review data reduces to counts and times on the developer's machine. Reviewer logins, descriptions, commit messages and fingerprints never leave it, which keeps the ADR's rule that raw external identifiers are not stored.
+
+### Trade-offs
+
+- **Draft history:** the CLI reports only the current draft state, so review wait runs from opened, not from ready for review. A GitHub App's `ready_for_review` events would fix that.
+- **Change match needs local history:** a merge commit missing from the clone is skipped, and a revert of a pull request the hook never fingerprinted only matches by its other signals. The fingerprint cache keeps the newest 5,000 merge commits per repository.
+- **Partial reverts and fix-forwards aren't detected:** only an exact inverse matches. Incident links are the real answer.
+- **Older rows are title-only:** pull requests stored before this change have no link, so a revert title on them reads as a possible revert, and their reverts stop counting toward change fail rate until the hook re-sends them.
+- **Bot reviews are excluded by account type:** GitHub's `Bot` actors are left out, but a bot that reviews from a user account counts as a person.
 
 ## Follow-ups
 

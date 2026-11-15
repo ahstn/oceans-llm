@@ -18,7 +18,7 @@ Git AI runs locally, and Oceans doesn't need Git AI's paid hosted service. The [
 | Claude Code | `oceans hook claude` | The session id, repository, branch and HEAD commit. No prompt text. | When a session starts and ends. |
 | Oh-My-Pi (OMP) | `oceans hook omp`, from the Oceans OMP extension | The same as Claude Code, plus the extension's version. | When a session starts and ends. |
 | OMP response hook | `oceans hook request` | The gateway request ID and the requesting context's journal ID. No prompt text. | When the client receives an Oceans provider response. |
-| GitHub CLI | `oceans hook prs` | Merged pull requests: number, title, link, branches, merge commit and time, and each commit's SHA, subject, date and author email. | At the start of an agent session, at most once an hour per repository, and when you run it. |
+| GitHub CLI | `oceans hook prs` | Recently updated pull requests, open, closed or merged: number, title, link, branches, state, draft flag, and when it opened, closed and merged; the merge commit; review, approval and comment counts and the first review time; lines added and deleted and files changed; what it reverts, if anything; and each commit's SHA, subject, date and author email. No reviewer names, descriptions or file lists. | At the start of an agent session, at most once an hour per repository, and when you run it. |
 
 The repository is the `origin` remote, or the first remote if there's no `origin`. The CLI sends it as `host/owner/repo`, without the scheme, any credentials or `.git`. A remote it can't read that way, such as a local path, isn't sent.
 
@@ -104,9 +104,26 @@ Each entry is queued for the owner that `oceans login` or `oceans hook install` 
 
 To deliver quarantined entries, configure a key for their owner again, then run `oceans hook queue --resend`.
 
-## Merged pull requests
+## Pull requests
 
-Squash and rebase merges create new commits on GitHub that have no Git AI notes. `oceans hook prs` reads merged pull requests with the GitHub CLI, and the gateway joins each one to the notes of its original commits by SHA. The gateway needs no GitHub token. When several developers sync the same repository, the report still counts each pull request once.
+Squash and rebase merges create new commits on GitHub that have no Git AI notes. `oceans hook prs` reads pull requests with the GitHub CLI, and the gateway joins each merged one to the notes of its original commits by SHA. The gateway needs no GitHub token. When several developers sync the same repository, the report still counts each pull request once.
+
+The hook reads open and closed pull requests as well as merged ones, most recently updated first, so a pull request that was reviewed, merged or closed since the last sync is sent again and moves on. It turns reviews and comments into counts and times before anything leaves your machine:
+
+- **Reviews** count only people other than the pull request's author. Bot reviews, such as code review apps, are left out. The first review time is the earliest of those. Reviewer names stay on your machine.
+- **Descriptions and commit messages** are read only to find reverts. They are never sent.
+- **Draft state** is the current one: GitHub's CLI doesn't say when a draft became ready, so review wait starts when the pull request opened.
+
+### Reverts
+
+The hook links each pull request to the one it reverts. It checks these signals strongest first:
+
+1. A commit carries the `This reverts commit <sha>` line that `git revert` writes, whatever its subject says.
+2. GitHub's revert button: `Reverts owner/repo#N` in the description, or a `revert-N-…` branch. This counts only when the title or a commit also says revert, because anyone can edit a description.
+3. The change itself is the exact inverse of an earlier merged pull request's. The hook compares a fingerprint of the lines each change adds and removes, so a revert with a rewritten message still matches. This needs both merge commits in your clone. The fingerprints stay in a private cache in the hook's state directory and are never sent.
+4. A `Revert "…"` or `revert:` title and nothing else. This is shown as a possible revert, and doesn't count toward change fail rate.
+
+Only the link leaves your machine: which pull request or commits were reverted, and which signal found it. A revert mixed into other work, or a fix made without reverting, isn't detected.
 
 When an agent session starts in a repository, the session hook starts `oceans hook prs --if-stale 1h` in the background, so each repository syncs at most once an hour. To sync now, run it in the repository:
 
@@ -115,7 +132,7 @@ oceans hook prs
 oceans hook prs --repo-dir ~/src/widgets --limit 200
 ```
 
-It reads the newest 30 merged pull requests by default, and up to 1,000 with `--limit`. The limit is the total to fetch, not the page size: `--limit 200` reads up to 200 pull requests in pages of at most 49. This keeps each query below GitHub's GraphQL node limit while it reads commit authors. `--if-stale` skips the sync if the repository synced more recently than the age you give, such as `30m`, `1h` or `2d`. If `gh` isn't installed or a fetch fails, the sync is skipped. Failed requests include the error from `gh`; an API limit error does not mean you need to sign in again. No pull requests are queued unless all requested pages succeed.
+It reads the 30 most recently updated pull requests by default, and up to 1,000 with `--limit`. The limit is the total to fetch, not the page size: `--limit 200` reads up to 200 pull requests in pages of at most 49. This keeps each query below GitHub's GraphQL node limit while it reads commit authors. `--if-stale` skips the sync if the repository synced more recently than the age you give, such as `30m`, `1h` or `2d`. If `gh` isn't installed or a fetch fails, the sync is skipped. Failed requests include the error from `gh`; an API limit error does not mean you need to sign in again. No pull requests are queued unless all requested pages succeed.
 
 ## Check the queue
 
@@ -159,13 +176,13 @@ The page has a tab per question. Admins turn each one on or off with [`attributi
 | Tab | What it shows |
 | --- | --- |
 | **Impact** | AI share of merged code, cost per merged pull request, merged pull requests and the share of spend that shipped, each against the previous window. Then who wrote the code, spend against output, where agent sessions ended up, and per-user activity. |
-| **Delivery** | DORA measures from merged pull requests: merges per day (standing in for deploys), first commit to merge, and reverts (standing in for change failures). Then lead time against AI share and batch size. |
-| **Pull requests** | Each merged pull request with its AI share, commits, harnesses, cost and lead time. Expand a row for its commits. Recent changes lists every attributed commit. |
+| **Delivery** | DORA measures from merged pull requests: merges per day (standing in for deploys), first commit to merge, reverts (standing in for change failures) and time to revert (standing in for recovery). Then review wait, merges without review, abandoned pull requests and open ones, lead time against AI share, and batch size. |
+| **Pull requests** | Each merged pull request with its AI share, commits, harnesses, cost and lead time, and what it reverts or was reverted by. Expand a row for its review wait, reviews, size and commits. Recent changes lists every attributed commit. |
 | **Repositories** (off by default) | AI share, autonomy, cost and lead time per repository. Autonomy is a proxy from commit composition: the share of AI lines in commits where people added no more than 5% as many lines as the agent. Notes count lines per commit, so it can't tell whether people edited the agent's lines. |
 | **Durability** | Whether AI code lasts. Most of it needs data Oceans does not collect yet. |
 | **My work** | Your own commits, pull requests and agent spend against your previous window. It never compares you with anyone else. |
 
-Sections marked with a warning **Data** pill wait on data Oceans does not collect yet, such as line survival, deploy events or pull request review times. Sections marked **Proxy** approximate one measure with another, and say which.
+Sections marked with a warning **Data** pill wait on data Oceans does not collect yet, such as line survival, deploy events or incidents. Sections marked **Proxy** approximate one measure with another, and say which.
 
 The **Agent Harnesses** page shows, for each harness and model, the gateway cost per 100 committed AI lines and the share of sessions whose work shipped.
 
