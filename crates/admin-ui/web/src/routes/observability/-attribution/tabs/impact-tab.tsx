@@ -84,9 +84,6 @@ export default function ImpactTab({
           label="Spend that shipped"
           value={formatPercent(shippedShare(summary))}
           delta={delta(shippedShare(summary), shippedShare(previous))}
-          spark={buckets.map((bucket) =>
-            ratio(bucket.committedCost, bucket.committedCost + bucket.uncommittedCost),
-          )}
           tone={SHIPPED_TONE}
           hint={`of ${formatUsd10000(summary.priced_cost_usd_10000)} priced spend`}
         />
@@ -100,24 +97,22 @@ export default function ImpactTab({
           <div className="flex flex-col gap-4">
             <AiShareBar ai={totals.ai_lines} human={totals.human_lines} legend />
             <LinesMixChart rows={buckets} />
-            <Insight>
-              AI share of attested lines moved from{' '}
-              {formatPercent(ratio(previous.ai_lines, previous.ai_lines + previous.human_lines))} to{' '}
-              {formatPercent(ratio(totals.ai_lines, totals.ai_lines + totals.human_lines))}. Read it
-              with the counterweights below: more AI lines only help if they last.
-            </Insight>
+            <Insight>{aiShareTrend(totals, previous)}</Insight>
           </div>
         </InsightCard>
         <InsightCard
           title="Spend against output"
-          description="Priced gateway cost, split by whether a session reached a commit, against pull requests merged in the same period."
+          description="Priced gateway cost: requests allocated to the commits they led to, and requests after a session's last commit, against pull requests merged in the same period."
         >
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-3 gap-4">
               <Stat label="Priced spend" value={formatUsd10000(summary.priced_cost_usd_10000)} />
-              <Stat label="Reached a commit" value={formatUsd10000(totals.priced_cost_usd_10000)} />
               <Stat
-                label="No commit"
+                label="Allocated to commits"
+                value={formatUsd10000(totals.priced_cost_usd_10000)}
+              />
+              <Stat
+                label="After the last commit"
                 value={formatUsd10000(totals.uncommitted_cost_usd_10000)}
                 hint={formatPercent(
                   ratio(totals.uncommitted_cost_usd_10000, summary.priced_cost_usd_10000),
@@ -344,4 +339,18 @@ function CoverageRow({ label, value }: { label: string; value: number | null }) 
       <InlineMeter value={value} label={formatPercent(value)} />
     </div>
   )
+}
+
+/** One sentence on the AI share of attested lines, against the previous window when it had any. */
+function aiShareTrend(
+  totals: AttributionReportView['totals'],
+  previous: AttributionReportView['previous_summary'],
+) {
+  const now = formatPercent(ratio(totals.ai_lines, totals.ai_lines + totals.human_lines))
+  const before = ratio(previous.ai_lines, previous.ai_lines + previous.human_lines)
+  const lead =
+    before == null
+      ? `AI wrote ${now} of attested lines; the previous window has none to compare.`
+      : `AI share of attested lines moved from ${formatPercent(before)} to ${now}.`
+  return `${lead} Read it with the counterweights below: more AI lines only help if they last.`
 }

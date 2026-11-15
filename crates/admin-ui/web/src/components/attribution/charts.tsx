@@ -146,8 +146,8 @@ export function LinesMixChart({
 }
 
 const SPEND_CONFIG = {
-  committedCost: { label: 'Reached a commit', color: SHIPPED_TONE },
-  uncommittedCost: { label: 'No commit', color: UNSHIPPED_TONE },
+  committedCost: { label: 'Allocated to commits', color: SHIPPED_TONE },
+  uncommittedCost: { label: 'After the last commit', color: UNSHIPPED_TONE },
   mergedPrs: { label: 'Merged PRs', color: 'var(--chart-2)' },
 } satisfies ChartConfig
 
@@ -238,6 +238,8 @@ export function LeadTimeTrendChart({
 }: {
   rows: { day: string; p50: number | null; p85: number | null }[]
 }) {
+  // A week or two of merges is one or two points; dots keep them visible without a line.
+  const sparse = rows.filter((row) => row.p50 != null).length < 3
   return (
     <ChartContainer config={LEAD_CONFIG} className="aspect-auto h-56 w-full">
       <LineChart data={rows} margin={{ left: 4, right: 12 }}>
@@ -275,7 +277,7 @@ export function LeadTimeTrendChart({
           stroke="var(--color-p85)"
           strokeWidth={1.5}
           strokeDasharray="4 3"
-          dot={false}
+          dot={sparse}
           connectNulls
           {...chartAnimation}
         />
@@ -284,7 +286,7 @@ export function LeadTimeTrendChart({
           type="monotone"
           stroke="var(--color-p50)"
           strokeWidth={2}
-          dot={false}
+          dot={sparse}
           connectNulls
           {...chartAnimation}
         />

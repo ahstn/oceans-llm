@@ -64,6 +64,26 @@ export function Quadrant({
     { label: labels[2], x: pad + 6, y: size - pad - 8, end: false },
     { label: labels[3], x: size - pad - 6, y: size - pad - 8, end: true },
   ]
+  const radiusOf = (point: QuadrantPoint) => 6 + Math.sqrt(point.size / maxSize) * 18
+  // Labels sit beside their bubble; one that would overlap an earlier label moves down a line.
+  const labelYs = new Map<string, number>()
+  const placed: { left: number; right: number; y: number }[] = []
+  for (const point of [...points].sort((a, b) => y(a.y) - y(b.y))) {
+    const radius = radiusOf(point)
+    const toRight = x(point.x) <= size * 0.62
+    const width = point.label.length * 5.5
+    const left = toRight ? x(point.x) + radius + 4 : x(point.x) - radius - 4 - width
+    let labelY = y(point.y) + 3
+    while (
+      placed.some(
+        (box) => Math.abs(box.y - labelY) < 11 && left < box.right && left + width > box.left,
+      )
+    ) {
+      labelY += 12
+    }
+    placed.push({ left, right: left + width, y: labelY })
+    labelYs.set(point.key, labelY)
+  }
   return (
     <svg
       viewBox={`0 0 ${size} ${size}`}
@@ -149,9 +169,10 @@ export function Quadrant({
         {yLabel}
       </text>
       {points.map((point, index) => {
-        const radius = 6 + Math.sqrt(point.size / maxSize) * 18
+        const radius = radiusOf(point)
         const active = !focus || focus === point.key
         const right = x(point.x) > size * 0.62
+        const labelY = labelYs.get(point.key) ?? y(point.y) + 3
         return (
           <g
             key={point.key}
@@ -171,7 +192,7 @@ export function Quadrant({
             </circle>
             <text
               x={right ? x(point.x) - radius - 4 : x(point.x) + radius + 4}
-              y={y(point.y) + 3}
+              y={labelY}
               textAnchor={right ? 'end' : 'start'}
               className={cn(
                 'text-2xs',

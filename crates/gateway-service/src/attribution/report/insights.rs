@@ -12,7 +12,7 @@ use time::{Date, Duration, OffsetDateTime};
 
 use super::{
     AttributionAgentSessionRecord, AttributionPullRequestActivity, AttributionReport, ReportInputs,
-    RequestTally, count, model_label,
+    RequestTally, count,
 };
 
 /// One UTC day of the window. Committed requests count on their commit's day; uncommitted ones
@@ -297,11 +297,14 @@ fn outcome_of(
     AttributionSessionOutcome::Unmerged
 }
 
-/// The model with the most requests; ties by name.
+/// The model with the most requests; ties by name. Requests whose log names no model don't
+/// count, so the note's model can stand in for them.
 fn dominant_model<'a>(facts: &[&'a AttributionRequestFact]) -> Option<&'a str> {
     let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
     for fact in facts {
-        *counts.entry(model_label(fact)).or_default() += 1;
+        if let Some(model) = fact.model_key.as_deref() {
+            *counts.entry(model).or_default() += 1;
+        }
     }
     counts
         .into_iter()
