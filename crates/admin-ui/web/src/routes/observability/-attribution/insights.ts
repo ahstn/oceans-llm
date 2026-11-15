@@ -53,6 +53,18 @@ export function resolveAttributionTab(
  * The report request for a tab: the route search without the tab, and on My work always the
  * signed-in user's own id, whatever user filter the URL carries.
  */
+/**
+ * The search fields the report depends on. Every tab but My work reads the same report, so the tab
+ * is kept only when it is My work, which scopes the report to the signed-in user. Switching
+ * between the other tabs then reuses the loaded report.
+ */
+export function attributionReportDeps<Search extends { tab?: AttributionTab }>({
+  tab,
+  ...filters
+}: Search) {
+  return { ...filters, tab: tab === 'my_work' ? tab : undefined }
+}
+
 export function attributionReportInput<Search extends { tab?: AttributionTab; user_id?: string }>(
   search: Search,
   session: AuthSessionView | null | undefined,

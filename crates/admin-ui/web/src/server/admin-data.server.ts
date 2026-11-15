@@ -303,6 +303,8 @@ export async function getAttributionReport(params: {
   days: 7 | 30 | 90
   user_id?: string
   repository?: string
+  /** `false` skips the previous window, for pages that read only this one. */
+  compare?: boolean
 }): Promise<ApiEnvelope<AttributionReportView>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
@@ -312,6 +314,7 @@ export async function getAttributionReport(params: {
           days: params.days,
           user_id: params.user_id,
           repository: params.repository,
+          compare: params.compare,
         },
       },
     }),

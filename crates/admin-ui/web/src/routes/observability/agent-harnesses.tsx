@@ -36,7 +36,7 @@ export const Route = createFileRoute('/observability/agent-harnesses')({
     // Attribution is optional here: the page still shows request activity if the report fails.
     const [usage, attribution] = await Promise.all([
       getObservabilityHarnessUsage({ data: { range: '7d' } }),
-      getAttribution({ data: { days: 7 } }).catch(() => null),
+      getAttribution({ data: { days: 7, compare: false } }).catch(() => null),
     ])
     return { ...usage, attribution: attribution?.data ?? null, attributionFailed: !attribution }
   },

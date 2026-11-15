@@ -420,3 +420,22 @@ async fn attribution_report_rejects_unknown_windows() {
     let reply = gateway.send(request).await;
     assert_eq!(reply.status, StatusCode::BAD_REQUEST, "{}", reply.body);
 }
+
+#[tokio::test]
+async fn attribution_report_skips_the_previous_window_when_asked() {
+    let gateway = Gateway::new().await;
+    let compared = gateway.report().await;
+    assert_eq!(compared.status, StatusCode::OK, "{}", compared.body);
+    assert!(compared.body["data"]["previous_summary"].is_object());
+
+    let request = gateway
+        .with_cookie(
+            Request::builder().uri("/api/v1/admin/attribution/report?days=7&compare=false"),
+        )
+        .body(Body::empty())
+        .unwrap();
+    let reply = gateway.send(request).await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+    assert!(reply.body["data"]["previous_summary"].is_null());
+    assert_eq!(reply.body["data"]["previous_truncated"], json!(false));
+}

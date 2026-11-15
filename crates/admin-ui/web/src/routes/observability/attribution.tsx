@@ -19,6 +19,7 @@ import type { AttributionReportView } from '@/types/api'
 import { AttributionFilters, UserFilterButton } from './-attribution/controls'
 import { AttributionFilteredEmpty, AttributionSetupEmpty } from './-attribution/empty-state'
 import {
+  attributionReportDeps,
   attributionReportInput,
   enabledAttributionTabs,
   resolveAttributionTab,
@@ -50,7 +51,7 @@ const TABS: Record<AttributionTab, ComponentType<TabProps>> = {
 
 export const Route = createFileRoute('/observability/attribution')({
   validateSearch: (search: Record<string, unknown>) => normalizeAttributionSearch(search),
-  loaderDeps: ({ search }) => search,
+  loaderDeps: ({ search }) => attributionReportDeps(search),
   loader: ({ deps, context }) => {
     const input = attributionReportInput(deps, context.session)
     return input ? getAttribution({ data: input }) : null

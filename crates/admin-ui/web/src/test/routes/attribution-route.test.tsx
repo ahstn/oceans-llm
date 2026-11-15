@@ -568,6 +568,13 @@ describe('AttributionPage', () => {
     expect(kpi('Merged PRs').getByText('No prior period')).toBeInTheDocument()
   })
 
+  it('shows no changes when the report carries no previous window', async () => {
+    renderPage(attributionReport({ previous_summary: null }))
+
+    expect((await screen.findAllByText('AI share of merged code')).length).toBeGreaterThan(0)
+    expect(kpi('Merged PRs').getByText('No prior period')).toBeInTheDocument()
+  })
+
   it('leaves pull requests without notes out of the AI-share bands', async () => {
     const report = attributionReport()
     const withoutNotes = {

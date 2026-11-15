@@ -37,9 +37,12 @@ export default function MyWorkTab({
   report: AttributionReportView
   name: string
 }) {
-  const { summary, previous_summary: previous } = report
-  // A truncated previous window makes every change against it wrong, so none are shown.
-  const deltaOf = report.previous_truncated ? () => null : delta
+  const { summary } = report
+  // The page always asks for the comparison, but a report without one, or with a truncated one,
+  // shows no changes. The current summary stands in so the figures below stay typed.
+  const compared = Boolean(report.previous_summary) && !report.previous_truncated
+  const previous = report.previous_summary ?? summary
+  const deltaOf = compared ? delta : () => null
   const buckets = bucketDays(report.daily, chartBucketSize(report.window_days))
   const aiShare = ratio(summary.ai_lines, summary.ai_lines + summary.human_lines)
   const previousShare = ratio(previous.ai_lines, previous.ai_lines + previous.human_lines)

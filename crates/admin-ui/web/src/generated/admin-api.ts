@@ -3361,8 +3361,7 @@ export interface components {
             /** @description Harness × model rows, most sessions first. */
             harness_models: components["schemas"]["AttributionHarnessModelView"][];
             models: components["schemas"]["AttributionModelView"][];
-            /** @description The same figures for the window of equal length just before this one. */
-            previous_summary: components["schemas"]["AttributionPeriodSummaryView"];
+            previous_summary?: null | components["schemas"]["AttributionPeriodSummaryView"];
             /** @description A read cap cut the previous window short, so changes against it are unreliable. */
             previous_truncated: boolean;
             pull_requests: components["schemas"]["AttributionPullRequestView"][];
@@ -4102,8 +4101,7 @@ export interface components {
                 /** @description Harness × model rows, most sessions first. */
                 harness_models: components["schemas"]["AttributionHarnessModelView"][];
                 models: components["schemas"]["AttributionModelView"][];
-                /** @description The same figures for the window of equal length just before this one. */
-                previous_summary: components["schemas"]["AttributionPeriodSummaryView"];
+                previous_summary?: null | components["schemas"]["AttributionPeriodSummaryView"];
                 /** @description A read cap cut the previous window short, so changes against it are unreliable. */
                 previous_truncated: boolean;
                 pull_requests: components["schemas"]["AttributionPullRequestView"][];
@@ -6389,6 +6387,12 @@ export interface operations {
                 user_id?: string | null;
                 /** @description One normalised repository, such as `github.com/acme/widgets`. */
                 repository?: string | null;
+                /**
+                 * @description Build the window of equal length just before this one for comparison. Defaults to true.
+                 *     `false` skips that second build and returns no `previous_summary`, for pages that only
+                 *     read this window, such as Agent Harnesses.
+                 */
+                compare?: boolean | null;
             };
             header?: never;
             path?: never;

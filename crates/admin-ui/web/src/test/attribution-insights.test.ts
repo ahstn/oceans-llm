@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   aiBand,
+  attributionReportDeps,
   attributionReportInput,
   bucketDays,
   enabledAttributionTabs,
@@ -29,6 +30,22 @@ describe('attribution report input', () => {
     expect(
       attributionReportInput({ tab: 'impact', days: 7, user_id: 'someone-else' }, admin),
     ).toEqual({ days: 7, user_id: 'someone-else' })
+  })
+
+  it('keeps the tab in the loader deps only for My work', () => {
+    const impact = attributionReportDeps({ tab: 'impact' as const, days: 30, user_id: 'u' })
+    const delivery = attributionReportDeps({ tab: 'delivery' as const, days: 30, user_id: 'u' })
+    expect(impact).toEqual(delivery)
+    expect(attributionReportDeps({ tab: 'my_work' as const, days: 30 })).toEqual({
+      days: 30,
+      tab: 'my_work',
+    })
+    // Without a tab in the deps, the loader still resolves the same tab, so the same report.
+    for (const tab of ['impact', 'delivery', 'pull_requests'] as const) {
+      expect(attributionReportInput(attributionReportDeps({ tab, days: 7 }), admin)).toEqual(
+        attributionReportInput({ tab, days: 7 }, admin),
+      )
+    }
   })
 
   it('reads no report when every report tab is off', () => {

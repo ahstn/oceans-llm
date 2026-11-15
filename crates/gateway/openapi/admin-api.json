@@ -276,6 +276,18 @@
                 "null"
               ]
             }
+          },
+          {
+            "name": "compare",
+            "in": "query",
+            "description": "Build the window of equal length just before this one for comparison. Defaults to true.\n`false` skips that second build and returns no `previous_summary`, for pages that only\nread this window, such as Agent Harnesses.",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -12471,7 +12483,6 @@
           "session_outcomes",
           "harness_models",
           "summary",
-          "previous_summary",
           "previous_truncated"
         ],
         "properties": {
@@ -12505,8 +12516,15 @@
             }
           },
           "previous_summary": {
-            "$ref": "#/components/schemas/AttributionPeriodSummaryView",
-            "description": "The same figures for the window of equal length just before this one."
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AttributionPeriodSummaryView",
+                "description": "The same figures for the window of equal length just before this one.\n`null` when the request set `compare=false`."
+              }
+            ]
           },
           "previous_truncated": {
             "type": "boolean",
@@ -15244,7 +15262,6 @@
               "session_outcomes",
               "harness_models",
               "summary",
-              "previous_summary",
               "previous_truncated"
             ],
             "properties": {
@@ -15278,8 +15295,15 @@
                 }
               },
               "previous_summary": {
-                "$ref": "#/components/schemas/AttributionPeriodSummaryView",
-                "description": "The same figures for the window of equal length just before this one."
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AttributionPeriodSummaryView",
+                    "description": "The same figures for the window of equal length just before this one.\n`null` when the request set `compare=false`."
+                  }
+                ]
               },
               "previous_truncated": {
                 "type": "boolean",

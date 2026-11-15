@@ -515,8 +515,11 @@ impl<'a> ReportInputs<'a> {
         let numbers = pull_request_numbers(&pull_requests);
         let changes = self.changes(&numbers);
         let merged_commits = numbers.keys().copied().collect::<HashSet<_>>();
-        // Spend insights take every session open in the window, not only those that started or
-        // ended in it: a session open across the whole window still spends inside it.
+        // Spend insights take every loaded session open in the window, not only those that
+        // started or ended in it: a session open across the whole window still spends inside it.
+        // The store loads sessions that started or ended within `LOOKBACK` of the window, so a
+        // hook-only session open longer than that is left out here and, with none of its hashes
+        // loaded, out of the request totals too; one a commit names still joins through it.
         let overlapping = agent_sessions.iter().collect::<Vec<_>>();
         let (session_outcomes, harness_models) =
             self.session_insights(&overlapping, &reported, &merged_commits);

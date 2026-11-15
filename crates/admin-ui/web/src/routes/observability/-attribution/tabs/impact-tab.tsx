@@ -46,9 +46,12 @@ export default function ImpactTab({
   report: AttributionReportView
   onSelectUser?: (userId: string) => void
 }) {
-  const { summary, previous_summary: previous, totals, coverage } = report
-  // A truncated previous window makes every change against it wrong, so none are shown.
-  const deltaOf = report.previous_truncated ? () => null : delta
+  const { summary, totals, coverage } = report
+  // The page always asks for the comparison, but a report without one, or with a truncated one,
+  // shows no changes. The current summary stands in so the figures below stay typed.
+  const compared = Boolean(report.previous_summary) && !report.previous_truncated
+  const previous = report.previous_summary ?? summary
+  const deltaOf = compared ? delta : () => null
   const buckets = bucketDays(report.daily, chartBucketSize(report.window_days))
   // Both periods divide by all priced spend, committed or not, so the two figures compare.
   const linesPerDollar = ratio(summary.ai_lines, summary.priced_cost_usd_10000 / 10_000)
@@ -107,7 +110,7 @@ export default function ImpactTab({
           <div className="flex flex-col gap-4">
             <AiShareBar ai={totals.ai_lines} human={totals.human_lines} legend />
             <LinesMixChart rows={buckets} />
-            <Insight>{aiShareTrend(totals, report.previous_truncated ? null : previous)}</Insight>
+            <Insight>{aiShareTrend(totals, compared ? previous : null)}</Insight>
           </div>
         </InsightCard>
         <InsightCard
@@ -358,7 +361,7 @@ function CoverageRow({ label, value }: { label: string; value: number | null }) 
 /** One sentence on the AI share of attested lines, against the previous window when it had any. */
 function aiShareTrend(
   totals: AttributionReportView['totals'],
-  previous: AttributionReportView['previous_summary'] | null,
+  previous: AttributionReportView['summary'] | null,
 ) {
   const now = formatPercent(ratio(totals.ai_lines, totals.ai_lines + totals.human_lines))
   const before = previous

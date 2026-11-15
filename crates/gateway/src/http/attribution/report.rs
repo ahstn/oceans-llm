@@ -50,6 +50,10 @@ pub struct AttributionReportRequestQuery {
     pub user_id: Option<String>,
     /// One normalised repository, such as `github.com/acme/widgets`.
     pub repository: Option<String>,
+    /// Build the window of equal length just before this one for comparison. Defaults to true.
+    /// `false` skips that second build and returns no `previous_summary`, for pages that only
+    /// read this window, such as Agent Harnesses.
+    pub compare: Option<bool>,
 }
 
 /// Request counts and priced cost, split by pricing outcome as in the spend report.
@@ -222,7 +226,8 @@ pub struct AttributionReportView {
     pub harness_models: Vec<AttributionHarnessModelView>,
     pub summary: AttributionPeriodSummaryView,
     /// The same figures for the window of equal length just before this one.
-    pub previous_summary: AttributionPeriodSummaryView,
+    /// `null` when the request set `compare=false`.
+    pub previous_summary: Option<AttributionPeriodSummaryView>,
     /// A read cap cut the previous window short, so changes against it are unreliable.
     pub previous_truncated: bool,
 }
@@ -246,6 +251,7 @@ pub async fn get_attribution_report(
 ) -> Result<Json<Envelope<AttributionReportView>>, AppError> {
     let current_user = require_authenticated_session(&state, &headers).await?;
     let window_days = parse_window_days(query.days)?;
+    let compare = query.compare.unwrap_or(true);
     let user_id = report_user(&current_user, query.user_id.as_deref())?;
     let repository = query.repository.filter(|repository| !repository.is_empty());
     let (window_start, window_end) = report_window(window_days, OffsetDateTime::now_utc());
@@ -262,9 +268,18 @@ pub async fn get_attribution_report(
         to: window_start,
         ..report_query.clone()
     };
+    let previous_report = async {
+        if compare {
+            build_attribution_report(state.store.as_ref(), &previous_query)
+                .await
+                .map(Some)
+        } else {
+            Ok(None)
+        }
+    };
     let (report, previous) = tokio::try_join!(
         build_attribution_report(state.store.as_ref(), &report_query),
-        build_attribution_report(state.store.as_ref(), &previous_query),
+        previous_report,
     )?;
     let names = Names::load(&state.store, &report).await?;
     let summary = report.summary();
@@ -304,11 +319,13 @@ pub async fn get_attribution_report(
         session_outcomes: session_outcomes.into_iter().map(Into::into).collect(),
         harness_models: harness_models.into_iter().map(Into::into).collect(),
         summary: summary.into(),
-        previous_summary: previous.summary().into(),
-        previous_truncated: previous.coverage.commits_truncated
-            || previous.coverage.pull_requests_truncated
-            || previous.coverage.request_facts_truncated
-            || previous.coverage.agent_sessions_truncated,
+        previous_summary: previous.as_ref().map(|previous| previous.summary().into()),
+        previous_truncated: previous.as_ref().is_some_and(|previous| {
+            previous.coverage.commits_truncated
+                || previous.coverage.pull_requests_truncated
+                || previous.coverage.request_facts_truncated
+                || previous.coverage.agent_sessions_truncated
+        }),
     })))
 }
 

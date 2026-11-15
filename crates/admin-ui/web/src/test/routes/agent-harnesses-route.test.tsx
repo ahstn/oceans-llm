@@ -3,6 +3,7 @@ import { cloneElement, type ReactElement, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { AgentHarnessesPage } from '@/routes/observability/agent-harnesses'
+import { getAttribution } from '@/server/admin-data.functions'
 
 const refreshObservabilityHarnessUsageMock = vi.fn()
 
@@ -360,6 +361,27 @@ describe('AgentHarnessesPage', () => {
     const section = within(view.getByRole('region', { name: 'Harness attribution' }))
     expect(section.getAllByText('$1.00').length).toBeGreaterThan(0)
     expect(section.queryByText('$0.10')).not.toBeInTheDocument()
+  })
+
+  it('asks for no previous window when the attribution window changes', async () => {
+    vi.mocked(getAttribution).mockResolvedValue({
+      data: { window_days: 30, harness_models: [] },
+    } as never)
+    routeMock.useLoaderData.mockReturnValue({
+      data: harnessUsageData,
+      attribution: { window_days: 7, harness_models: [] },
+    })
+
+    const view = render(
+      <TooltipProvider>
+        <AgentHarnessesPage />
+      </TooltipProvider>,
+    )
+    fireEvent.click(view.getByRole('radio', { name: 'Attribution for the last 30 days' }))
+
+    await waitFor(() =>
+      expect(getAttribution).toHaveBeenCalledWith({ data: { days: 30, compare: false } }),
+    )
   })
 
   it('warns and drops the cheapest-pair callout when the attribution report was cut short', () => {
