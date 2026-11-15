@@ -1251,6 +1251,34 @@ async fn the_report_commit_detail_budget_goes_to_the_newest_pull_requests() {
 }
 
 #[tokio::test]
+async fn the_summary_build_matches_the_full_reports_summary() {
+    use crate::attribution::build_attribution_summary;
+
+    let dev = user_owner(Uuid::new_v4());
+    let mut store = FakeStore::with_commits(vec![commit(
+        1,
+        &dev,
+        REPOSITORY,
+        minutes(30),
+        vec![note_session("s_aa", &["h1"])],
+    )]);
+    store.pull_requests = Mutex::new(vec![pull_request(7, &dev, minutes(60), &[1])]);
+    store.facts = vec![request(&dev, "h1", "inside", minutes(10))];
+    let full = report(&store, &query()).await;
+    let (summary, coverage) = build_attribution_summary(&store, &query())
+        .await
+        .expect("summary builds");
+
+    assert_eq!(summary, full.summary());
+    assert_eq!(coverage, full.coverage);
+    assert_eq!(
+        full.pull_requests[0].commits.len(),
+        1,
+        "the full report keeps its details"
+    );
+}
+
+#[tokio::test]
 async fn daily_buckets_put_commits_and_uncommitted_spend_on_their_own_dates() {
     let dev = user_owner(Uuid::new_v4());
     let start = t0().replace_time(time::Time::MIDNIGHT);

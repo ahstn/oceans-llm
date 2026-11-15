@@ -227,6 +227,31 @@ pub async fn build_attribution_report<S>(
 where
     S: AttributionRepository + Sync,
 {
+    build_report(store, query, true).await
+}
+
+/// The headline summary and read coverage for `query`, for comparing one window with another.
+/// It reads what the full report reads, since the summary depends on the request allocation,
+/// but builds no per-commit pull request details.
+pub async fn build_attribution_summary<S>(
+    store: &S,
+    query: &AttributionReportQuery,
+) -> Result<(AttributionPeriodSummary, AttributionReportCoverage), StoreError>
+where
+    S: AttributionRepository + Sync,
+{
+    let report = build_report(store, query, false).await?;
+    Ok((report.summary(), report.coverage))
+}
+
+async fn build_report<S>(
+    store: &S,
+    query: &AttributionReportQuery,
+    commit_details: bool,
+) -> Result<AttributionReport, StoreError>
+where
+    S: AttributionRepository + Sync,
+{
     let lookback_query = AttributionReportQuery {
         from: query.from - LOOKBACK,
         ..query.clone()
@@ -250,7 +275,8 @@ where
     let hashes = session_hashes(&commits, &agent_sessions);
     let windows = commit_windows(load_commit_times(store, &hashes, query.to).await?);
     let (facts, request_facts_truncated) = load_request_facts(store, &hashes, query.to).await?;
-    let inputs = ReportInputs::new(query, &commits, &facts, &windows);
+    let mut inputs = ReportInputs::new(query, &commits, &facts, &windows);
+    inputs.commit_details = commit_details;
     // Lookback commits only feed pull request totals, so a cap reached by them matters only
     // when the window has a pull request.
     let commits_capped = commits.len() >= limit
@@ -431,6 +457,8 @@ struct ReportInputs<'a> {
     uncommitted: Vec<&'a AttributionRequestFact>,
     /// `(scope, hash)` pairs that matched at least one request.
     joined: HashSet<(&'a str, &'a str)>,
+    /// Whether pull requests carry per-commit details; a summary-only build skips them.
+    commit_details: bool,
 }
 
 impl<'a> ReportInputs<'a> {
@@ -483,6 +511,7 @@ impl<'a> ReportInputs<'a> {
             by_commit,
             uncommitted,
             joined,
+            commit_details: true,
         }
     }
 
@@ -726,7 +755,11 @@ impl<'a> ReportInputs<'a> {
                 .push(commit);
         }
         // Pull requests come newest first, so the detail budget goes to the most recent ones.
-        let mut budget = MAX_REPORT_COMMIT_DETAILS;
+        let mut budget = if self.commit_details {
+            MAX_REPORT_COMMIT_DETAILS
+        } else {
+            0
+        };
         pull_requests
             .into_iter()
             .map(|pull_request| {

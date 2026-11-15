@@ -15,7 +15,7 @@ use gateway_core::{
 use gateway_service::attribution::{
     AttributionChangeActivity, AttributionModelActivity, AttributionPullRequestActivity,
     AttributionReport, AttributionReportCoverage, AttributionReportTotals, AttributionUserActivity,
-    RequestTally, build_attribution_report,
+    RequestTally, build_attribution_report, build_attribution_summary,
 };
 use gateway_store::{AnyStore, GatewayStore};
 use serde::{Deserialize, Serialize};
@@ -272,7 +272,7 @@ pub async fn get_attribution_report(
     };
     let previous_report = async {
         if compare {
-            build_attribution_report(state.store.as_ref(), &previous_query)
+            build_attribution_summary(state.store.as_ref(), &previous_query)
                 .await
                 .map(Some)
         } else {
@@ -284,6 +284,16 @@ pub async fn get_attribution_report(
         previous_report,
     )?;
     let names = Names::load(&state.store, &report).await?;
+    let (previous_summary, previous_truncated) = match previous {
+        Some((summary, coverage)) => (
+            Some(summary.into()),
+            coverage.commits_truncated
+                || coverage.pull_requests_truncated
+                || coverage.request_facts_truncated
+                || coverage.agent_sessions_truncated,
+        ),
+        None => (None, false),
+    };
     let summary = report.summary();
     let AttributionReport {
         totals,
@@ -321,13 +331,8 @@ pub async fn get_attribution_report(
         session_outcomes: session_outcomes.into_iter().map(Into::into).collect(),
         harness_models: harness_models.into_iter().map(Into::into).collect(),
         summary: summary.into(),
-        previous_summary: previous.as_ref().map(|previous| previous.summary().into()),
-        previous_truncated: previous.as_ref().is_some_and(|previous| {
-            previous.coverage.commits_truncated
-                || previous.coverage.pull_requests_truncated
-                || previous.coverage.request_facts_truncated
-                || previous.coverage.agent_sessions_truncated
-        }),
+        previous_summary,
+        previous_truncated,
     })))
 }
 
