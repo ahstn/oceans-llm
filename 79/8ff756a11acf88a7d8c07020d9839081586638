@@ -1,0 +1,37 @@
+crates/admin-ui/web/src/components/attribution/format.ts
+  s_a57603c76ab834::t_d1c931608f4c8f 80-86
+crates/admin-ui/web/src/routes/observability/-agent-harnesses/harness-attribution.tsx
+  s_a57603c76ab834::t_2a171f155882e3 16,44
+crates/admin-ui/web/src/routes/observability/-attribution/insights.ts
+  s_0a4447f1aa57dd::t_8949fe69ef9d4a 5,70,349-353,355-358,361,365-383
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/impact-tab.tsx
+  s_0a4447f1aa57dd::t_8c62ed4b8e1e19 26-34,69
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/my-work-tab.tsx
+  s_0a4447f1aa57dd::t_976eb04b22ff06 47
+crates/admin-ui/web/src/test/attribution-insights.test.ts
+  s_0a4447f1aa57dd::t_8462cf242328e0 9-10,136-166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "798ff756a11acf88a7d8c07020d9839081586638",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_a57603c76ab834": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d4d8-2fbe-7922-ac90-eba388131852",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
