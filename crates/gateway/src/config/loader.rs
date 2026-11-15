@@ -64,10 +64,9 @@ pub struct ConfigEntitySource {
 pub struct LoadedConfig {
     pub config: GatewayConfig,
     pub sources: Vec<ConfigEntitySource>,
-    /// The text of the files the load read, so `render_config` merges exactly what was loaded
-    /// without walking or reading the sources again.
-    main_document: (PathBuf, String),
-    fragment_documents: Vec<(PathBuf, String)>,
+    /// The merged YAML the typed config was parsed from, before inferred defaults are applied.
+    /// `render_config` prints this value, so rendering cannot drift from loading.
+    merged: Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -83,11 +82,15 @@ const FRAGMENT_COLLECTIONS: [&str; 2] = ["providers", "models"];
 
 impl GatewayConfig {
     pub fn load(sources: &ConfigSources) -> anyhow::Result<LoadedConfig> {
-        let (mut config, main_text) = read_main_file(sources)?;
-        let main_document = (sources.path.clone(), main_text);
-        let mut fragment_documents = Vec::new();
+        // Each file is parsed into typed config first, so errors name the file and keep line
+        // numbers, and duplicate ids are reported with both paths. The config itself comes from
+        // the one merged document, which `render_config` also prints.
+        let (main_config, main_text) = read_main_file(sources)?;
         let mut tracker = SourceTracker::default();
-        tracker.record_main(&config, &sources.path)?;
+        tracker.record_main(&main_config, &sources.path)?;
+        let mut collections = BTreeMap::new();
+        let mut merged = parse_yaml_mapping(&sources.path, &main_text)?;
+        take_collections(&mut merged, &mut collections)?;
 
         if let Some(dir) = &sources.dir {
             // A main file inside the config directory is read once, as the main file.
@@ -115,12 +118,21 @@ impl GatewayConfig {
                 for model in &fragment.models {
                     tracker.record("models", &model.id, &path)?;
                 }
-                config.providers.extend(fragment.providers);
-                config.models.extend(fragment.models);
-                fragment_documents.push((path, raw));
+                take_collections(&mut parse_yaml_mapping(&path, &raw)?, &mut collections)?;
             }
         }
 
+        for collection in FRAGMENT_COLLECTIONS {
+            if let Some(entries) = collections.remove(collection) {
+                merged.insert(
+                    Value::String(collection.to_string()),
+                    Value::Mapping(entries),
+                );
+            }
+        }
+        let merged = Value::Mapping(merged);
+        let config: GatewayConfig = serde_yaml::from_value(merged.clone())
+            .with_context(|| format!("failed parsing merged config {}", sources.describe()))?;
         config
             .validate()
             .with_context(|| format!("invalid gateway configuration {}", sources.describe()))?;
@@ -128,8 +140,7 @@ impl GatewayConfig {
         Ok(LoadedConfig {
             config,
             sources: tracker.sources,
-            main_document,
-            fragment_documents,
+            merged,
         })
     }
 
@@ -300,28 +311,7 @@ impl SourceTracker {
 /// file that defined each provider and model.
 pub fn render_config(sources: &ConfigSources, show_sources: bool) -> anyhow::Result<String> {
     let loaded = GatewayConfig::load(sources)?;
-
-    // Merge the same documents the load used. Only the main file contributes sections other
-    // than providers and models, which the load already enforced for fragments.
-    let mut collections: BTreeMap<&str, Mapping> = BTreeMap::new();
-    let (main_path, main_text) = &loaded.main_document;
-    let mut merged = parse_yaml_mapping(main_path, main_text)?;
-    take_collections(&mut merged, &mut collections)?;
-    for (path, text) in &loaded.fragment_documents {
-        let mut document = parse_yaml_mapping(path, text)?;
-        take_collections(&mut document, &mut collections)?;
-    }
-    for collection in FRAGMENT_COLLECTIONS {
-        if let Some(entries) = collections.remove(collection) {
-            merged.insert(
-                Value::String(collection.to_string()),
-                Value::Mapping(entries),
-            );
-        }
-    }
-
-    let mut merged = Value::Mapping(merged);
-    ensure_render_matches_load(&merged, &loaded.config)?;
+    let mut merged = loaded.merged;
     redact_secrets(&mut merged, RedactScope::Plain);
     let mut rendered = serde_yaml::to_string(&merged)?;
     if show_sources {
@@ -475,20 +465,6 @@ fn take_collections(
     Ok(())
 }
 
-/// Render rebuilds the merged config from raw YAML, while the load deserializes typed entries
-/// file by file. Parsing the rendered value must give back exactly the loaded config, field by
-/// field, so render fails rather than print a config that was not loaded. Every inferred value is
-/// filled during parsing, so both sides carry it. Config types keep ordered maps, so their `Debug`
-/// output compares deterministically.
-fn ensure_render_matches_load(merged: &Value, loaded: &GatewayConfig) -> anyhow::Result<()> {
-    let rendered: GatewayConfig = serde_yaml::from_value(merged.clone())
-        .context("rendered config does not parse back; this is a gateway bug")?;
-    if format!("{rendered:?}") != format!("{loaded:?}") {
-        bail!("rendered config differs from the loaded config; this is a gateway bug");
-    }
-    Ok(())
-}
-
 fn parse_yaml_mapping(path: &Path, raw: &str) -> anyhow::Result<Mapping> {
     // A comment-only or `---`-only main file is valid; fragments like that were never recorded.
     if is_blank_yaml(raw) {
@@ -500,26 +476,5 @@ fn parse_yaml_mapping(path: &Path, raw: &str) -> anyhow::Result<Mapping> {
         Value::Mapping(mapping) => Ok(mapping),
         Value::Null => Ok(Mapping::new()),
         _ => bail!("`{}` must contain a YAML mapping", path.display()),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn render_fails_when_its_merge_differs_from_the_load() {
-        let yaml = "providers:\n  openai:\n    type: openai_compat\n    base_url: https://api.openai.com/v1\nmodels:\n  fast:\n    route: { provider: openai, upstream_model: gpt-5-mini }\n";
-        let loaded: GatewayConfig = serde_yaml::from_str(yaml).expect("config parses");
-        let merged: Value = serde_yaml::from_str(yaml).expect("yaml parses");
-        ensure_render_matches_load(&merged, &loaded).expect("same config");
-
-        // A field-level difference, not only a missing id, is caught.
-        let drifted: Value =
-            serde_yaml::from_str(&yaml.replace("gpt-5-mini", "gpt-5")).expect("yaml parses");
-        let error = ensure_render_matches_load(&drifted, &loaded)
-            .expect_err("render changed a route field")
-            .to_string();
-        assert!(error.contains("differs from the loaded config"), "{error}");
     }
 }
