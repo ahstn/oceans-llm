@@ -1,0 +1,77 @@
+crates/admin-ui/web/src/components/attribution/format.ts
+  s_0a4447f1aa57dd::t_b4157a54caa4cf 63
+crates/admin-ui/web/src/components/mcp/server-registry.tsx
+  s_0a4447f1aa57dd::t_18639c755d5af1 1,52-53,81-92,94-118,120-135,137-161
+crates/admin-ui/web/src/routes/mcp/-navigation.tsx
+  s_0a4447f1aa57dd::t_4ce364d19c470d 2-4,7-35,41
+crates/admin-ui/web/src/components/attribution/parts.tsx
+  s_0a4447f1aa57dd::t_c6d91f9e095992 4-9,40-49,51-61,65-82,261-267
+crates/admin-ui/web/src/routes/mcp/-toolsets-tab.tsx
+  s_0a4447f1aa57dd::t_f264e14560d5e1 1-8,47-48,141
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/pull-requests-tab.tsx
+  s_0a4447f1aa57dd::t_3f4a18c03d4793 221-226,235-242,293-294
+  s_0a4447f1aa57dd::t_90d09826da840d 295-296
+  s_0a4447f1aa57dd::t_62e6dcc5c88f58 30
+docs/src/content/docs/harnesses/git-ai-attribution.mdx
+  s_0a4447f1aa57dd::t_218d7ec43cb072 164,168
+crates/admin-ui/web/src/test/routes/mcp-servers-route.test.tsx
+  s_0a4447f1aa57dd::t_517e6025119055 204
+DESIGN.md
+  s_0a4447f1aa57dd::t_28ce208af9f702 357,367
+crates/admin-ui/web/src/routes/mcp/index.tsx
+  s_0a4447f1aa57dd::t_177a1421fbe998 18,120-132,165-168,170-174
+crates/admin-ui/web/src/routes/observability/attribution.tsx
+  s_0a4447f1aa57dd::t_e870116620d04a 1,5,35,193-198
+crates/admin-ui/web/src/test/routes/mcp-navigation.test.tsx
+  s_0a4447f1aa57dd::t_b3f09a49916b8e 1,19,68-81,88,175-184
+.agents/skills/verify-oceans-admin/features/attribution.md
+  s_0a4447f1aa57dd::t_198aae4f5c6aac 32-33,35,39,44
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/delivery-tab.tsx
+  s_0a4447f1aa57dd::t_00122bcb802e1a 103,110,263-271
+crates/admin-ui/web/src/test/routes/mcp-toolsets-route.test.tsx
+  s_0a4447f1aa57dd::t_d70bd45fa39fd2 169,611
+crates/admin-ui/web/src/routes/mcp/-servers-tab.tsx
+  s_0a4447f1aa57dd::t_53ee02dc07d120 8,106,114-115,469
+.agents/skills/verify-oceans-admin/features/mcp.md
+  s_0a4447f1aa57dd::t_cf4f5d643a06ac 23
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/impact-tab.tsx
+  s_0a4447f1aa57dd::t_19457daa32b425 108
+crates/admin-ui/web/src/components/mcp/toolset-workbench.tsx
+  s_0a4447f1aa57dd::t_c9d4e52747f7e3 1,46-47,93-95,98-139,141-162
+crates/gateway/src/config/attribution.rs
+  s_0a4447f1aa57dd::t_606f4add6a8c43 10-11,21-22,39,59,63
+docs/src/content/docs/configuration/index.mdx
+  s_0a4447f1aa57dd::t_7ab066f330bf50 319,327
+crates/admin-ui/web/src/test/routes/agent-harnesses-route.test.tsx
+  s_0a4447f1aa57dd::t_030f855ee118ec 319-324
+crates/admin-ui/web/src/routes/mcp/toolsets.tsx
+  s_4c0e054fac477a::t_62c61824c994d1 5,37-43
+crates/admin-ui/web/src/test/routes/attribution-route.test.tsx
+  s_0a4447f1aa57dd::t_9d38b1a7e760d6 364,398-420,425,528
+crates/admin-ui/web/src/routes/observability/-attribution/shared.ts
+  s_0a4447f1aa57dd::t_931ebba2b0b856 63-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ee7768b5d1e7c8f92d8381bf498fc0a29470427d",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_4c0e054fac477a": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1e11b-bd9e-7185-a54c-40e824db5b39",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
