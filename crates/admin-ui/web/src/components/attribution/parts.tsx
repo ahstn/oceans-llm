@@ -1,5 +1,5 @@
-// Building blocks shared by the attribution concepts: the data-readiness badge every widget carries,
-// the concept card, KPI tiles with sparklines, and the AI / human split bar.
+// Building blocks of the Attribution tabs and their concept mockups: the data-readiness badge, the
+// section card, KPI tiles with sparklines, the AI / human split bar and harness labels.
 
 import { ArrowDownRight01Icon, ArrowUpRight01Icon } from '@hugeicons/core-free-icons'
 import { useId, type CSSProperties, type ReactNode } from 'react'
@@ -18,8 +18,6 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { EMPTY_VALUE } from '@/lib/format'
 import { cn } from '@/lib/utils'
-
-import { AGENT_TOOL_ICON_KEYS, AGENT_TOOL_LABELS, type AgentTool } from './fixtures'
 
 // Attribution data roles. AI and human are the two fixed series; their lightness differs (blue
 // against a lighter green) so a stack of them reads without colour. Unattested lines are unknown,
@@ -112,8 +110,8 @@ export function ReadinessBadge({ level, note }: { level: Readiness; note?: strin
   )
 }
 
-/** A report section with its readiness in the header. */
-export function ConceptCard({
+/** A report section, with a readiness badge in the header when its data is a proxy or missing. */
+export function InsightCard({
   title,
   description,
   readiness,
@@ -125,7 +123,8 @@ export function ConceptCard({
 }: {
   title: string
   description?: ReactNode
-  readiness: Readiness
+  /** Omit for data Oceans already has; set to flag a proxy or a gap. */
+  readiness?: Readiness
   readinessNote?: string
   action?: ReactNode
   children: ReactNode
@@ -137,7 +136,7 @@ export function ConceptCard({
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center gap-2">
           {title}
-          <ReadinessBadge level={readiness} note={readinessNote} />
+          {readiness ? <ReadinessBadge level={readiness} note={readinessNote} /> : null}
         </CardTitle>
         {description ? <CardDescription>{description}</CardDescription> : null}
         {action ? <CardAction>{action}</CardAction> : null}
@@ -272,7 +271,8 @@ export function TrendKpi({
   hint?: ReactNode
   spark?: (number | null)[]
   tone?: string
-  readiness: Readiness
+  /** Omit for data Oceans already has; set to flag a proxy or a gap. */
+  readiness?: Readiness
   readinessNote?: string
 }) {
   return (
@@ -280,9 +280,11 @@ export function TrendKpi({
       <CardHeader>
         <CardDescription className="flex items-start justify-between gap-2">
           <span className="min-w-0">{label}</span>
-          <span className="shrink-0">
-            <ReadinessBadge level={readiness} note={readinessNote} />
-          </span>
+          {readiness ? (
+            <span className="shrink-0">
+              <ReadinessBadge level={readiness} note={readinessNote} />
+            </span>
+          ) : null}
         </CardDescription>
         <p className="flex items-baseline gap-1.5 text-2xl font-medium tracking-tight tabular-nums">
           {value}
@@ -432,30 +434,78 @@ export function Insight({ children }: { children: ReactNode }) {
   )
 }
 
+/** Harness names as git-ai notes and Oceans hooks report them, mapped to a label and brand mark. */
+const HARNESSES: Record<string, { label: string; icon?: string }> = {
+  claude: { label: 'Claude Code', icon: 'claudecode' },
+  claude_code: { label: 'Claude Code', icon: 'claudecode' },
+  codex: { label: 'Codex', icon: 'codex' },
+  pi: { label: 'Pi', icon: 'pi' },
+  oh_my_pi: { label: 'OMP', icon: 'ohmypi' },
+  opencode: { label: 'OpenCode', icon: 'opencode' },
+  cursor: { label: 'Cursor' },
+}
+
+export function harnessLabel(harness: string) {
+  return HARNESSES[harness]?.label ?? harness
+}
+
 /** A harness mark and name. Harnesses without a brand mark get their initial in a tile. */
-export function ToolLabel({ tool, hideName = false }: { tool: AgentTool; hideName?: boolean }) {
-  const hasIcon = tool !== 'cursor'
+export function ToolLabel({ harness, hideName = false }: { harness: string; hideName?: boolean }) {
+  const known = HARNESSES[harness]
+  const label = known?.label ?? harness
   return (
-    <span className="inline-flex min-w-0 items-center gap-1.5" title={AGENT_TOOL_LABELS[tool]}>
-      {hasIcon ? (
-        <AgentHarnessIcon
-          harnessKey={AGENT_TOOL_ICON_KEYS[tool]}
-          size={14}
-          className="text-foreground"
-        />
+    <span className="inline-flex min-w-0 items-center gap-1.5" title={label}>
+      {known?.icon ? (
+        <AgentHarnessIcon harnessKey={known.icon} size={14} className="text-foreground" />
       ) : (
         <span
-          className="bg-muted text-foreground text-2xs grid size-3.5 place-items-center rounded-sm font-semibold"
+          className="bg-muted text-foreground text-2xs grid size-3.5 place-items-center rounded-sm font-semibold uppercase"
           aria-hidden
         >
-          {AGENT_TOOL_LABELS[tool][0]}
+          {label[0]}
         </span>
       )}
       {hideName ? (
-        <span className="sr-only">{AGENT_TOOL_LABELS[tool]}</span>
+        <span className="sr-only">{label}</span>
       ) : (
-        <span className="truncate">{AGENT_TOOL_LABELS[tool]}</span>
+        <span className="truncate">{label}</span>
       )}
     </span>
+  )
+}
+
+export type PairSide = { label: string; value: string; delta: number | null; readiness?: Readiness }
+
+/** Two metrics that pull against each other, read together. */
+export function CounterweightPair({ left, right }: { left: PairSide; right: PairSide }) {
+  return (
+    <div className="border-border grid grid-cols-[1fr_auto_1fr] items-stretch rounded-lg border">
+      <PairCell side={left} />
+      <div
+        className="border-border text-muted-foreground flex items-center border-x px-2 text-xs"
+        aria-hidden
+      >
+        vs
+      </div>
+      <PairCell side={right} />
+    </div>
+  )
+}
+
+function PairCell({ side }: { side: PairSide }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1 p-3">
+      <span className="text-muted-foreground text-xs">{side.label}</span>
+      <span className="text-lg font-medium tabular-nums">{side.value}</span>
+      <span className="flex flex-wrap items-center gap-2 text-xs">
+        {side.readiness ? <ReadinessBadge level={side.readiness} /> : null}
+        {side.delta != null ? (
+          <span className="text-muted-foreground tabular-nums">
+            {side.delta >= 0 ? '+' : ''}
+            {Math.round(side.delta * 100)}% vs previous
+          </span>
+        ) : null}
+      </span>
+    </div>
   )
 }

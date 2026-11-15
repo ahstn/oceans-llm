@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import type React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -18,6 +19,21 @@ const invalidateMock = vi.fn()
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
   useRouter: () => ({ navigate: navigateMock, invalidate: invalidateMock }),
+  // Tabs are links; the test reads which one is current, not where it goes.
+  Link: ({
+    children,
+    to: _to,
+    search: _search,
+    ...props
+  }: {
+    children: React.ReactNode
+    to?: string
+    search?: unknown
+  } & Record<string, unknown>) => (
+    <a href="#tab" {...props}>
+      {children}
+    </a>
+  ),
 }))
 
 vi.mock('@/server/admin-data.functions', () => ({
@@ -276,11 +292,14 @@ function emptyReport(overrides: Partial<AttributionReportView> = {}): Attributio
   }
 }
 
-function session(globalRole: 'platform_admin' | 'user') {
+const ALL_TABS = ['impact', 'delivery', 'pull_requests', 'repositories', 'durability', 'my_work']
+
+function session(globalRole: 'platform_admin' | 'user', attributionTabs: string[] = ALL_TABS) {
   return {
     session: {
       must_change_password: false,
       user: { id: alice.id, name: alice.name, email: 'alice@example.com', global_role: globalRole },
+      capabilities: { attribution_tabs: attributionTabs },
     },
   }
 }
@@ -295,9 +314,12 @@ function renderPage(report: AttributionReportView, search: Record<string, unknow
   )
 }
 
+/** The KPI card whose label is `label`; the label sits in the card description. */
 function kpi(label: string) {
-  const description = screen.getByText(label, { selector: '[data-slot="card-description"]' })
-  return within(description.closest<HTMLElement>('[data-slot="card"]')!)
+  const labelNode = screen
+    .getAllByText(label)
+    .find((node) => node.closest('[data-slot="card-description"]'))
+  return within(labelNode!.closest<HTMLElement>('[data-slot="card"]')!)
 }
 
 beforeEach(() => {
@@ -313,33 +335,67 @@ afterEach(() => {
   cleanup()
 })
 
+function tabNav() {
+  return within(screen.getByRole('navigation', { name: 'Attribution sections' }))
+}
+
 describe('AttributionPage', () => {
-  it('renders the KPIs and tables from the report', () => {
+  it('opens on Impact with the headline figures against the previous window', async () => {
     renderPage(attributionReport())
 
     expect(screen.getByRole('heading', { level: 1, name: 'Attribution' })).toBeInTheDocument()
-    expect(kpi('Commits').getByText('3')).toBeInTheDocument()
-    expect(kpi('Commits').getByText('1 with an unmatched author')).toBeInTheDocument()
-    expect(kpi('Merged PRs').getByText('Merged in the last 30 days')).toBeInTheDocument()
-    expect(kpi('AI lines').getByText('120')).toBeInTheDocument()
-    expect(kpi('AI lines').getByText('75% of attested lines · 40 human')).toBeInTheDocument()
-    // Requests, cost, and models have their own pages; the report keeps them to the tables.
-    expect(screen.queryByText('Attributed cost')).not.toBeInTheDocument()
-    expect(screen.queryByText('Pricing coverage')).not.toBeInTheDocument()
-    expect(screen.queryByRole('list', { name: 'Models' })).not.toBeInTheDocument()
+    expect(tabNav().getByRole('link', { name: 'Impact' })).toHaveAttribute('aria-current', 'page')
+    // Merged code: 100 AI and 20 human lines.
+    expect((await screen.findAllByText('AI share of merged code')).length).toBeGreaterThan(0)
+    expect(kpi('AI share of merged code').getByText('83%')).toBeInTheDocument()
+    expect(kpi('Cost per merged PR').getByText('$12.34')).toBeInTheDocument()
+    expect(kpi('Merged PRs').getByText('3 commits')).toBeInTheDocument()
 
     const users = within(screen.getByRole('table', { name: 'User activity' }))
     const aliceRow = users.getByRole('row', { name: /Alice Doe/ })
     expect(within(aliceRow).getByText('$12.34')).toBeInTheDocument()
     expect(within(aliceRow).getByText('2 hooked')).toBeInTheDocument()
+    // Durability is not collected yet, so its counterweight carries the pill.
+    expect(screen.getAllByText('Needs new data').length).toBeGreaterThan(0)
+  })
 
-    const pullRequests = within(screen.getByRole('table', { name: 'Merged pull requests' }))
+  it('shows only the tabs the gateway config turns on', async () => {
+    routeMock.useRouteContext.mockReturnValue(session('platform_admin', ['delivery', 'my_work']))
+    renderPage(attributionReport())
+
+    const links = tabNav().getAllByRole('link')
+    expect(links.map((link) => link.textContent)).toEqual(['Delivery', 'My work'])
+    // Impact is off, so the page opens on the first tab that is on.
+    expect(tabNav().getByRole('link', { name: 'Delivery' })).toHaveAttribute('aria-current', 'page')
+    expect(await screen.findByText('Lead time for changes')).toBeInTheDocument()
+    expect(tabNav().queryByRole('link', { name: 'Concepts' })).not.toBeInTheDocument()
+  })
+
+  it('explains how to turn tabs back on when every tab is off', () => {
+    routeMock.useRouteContext.mockReturnValue(session('platform_admin', []))
+    renderPage(attributionReport())
+
+    expect(screen.getByText('Every Attribution tab is turned off')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('navigation', { name: 'Attribution sections' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('lists merged pull requests and recent changes on the Pull requests tab', async () => {
+    renderPage(attributionReport(), { days: 30, tab: 'pull_requests' })
+
+    const pullRequests = within(await screen.findByRole('table', { name: 'Merged pull requests' }))
     expect(pullRequests.getByRole('link', { name: 'github.com/acme/widgets#42' })).toHaveAttribute(
       'href',
       'https://github.com/acme/widgets/pull/42',
     )
     expect(pullRequests.getByText('Add widget search')).toBeInTheDocument()
-    expect(pullRequests.getByText('2 with notes')).toBeInTheDocument()
+    expect(pullRequests.getByText('1/2')).toBeInTheDocument()
+
+    fireEvent.click(pullRequests.getByRole('button', { name: 'Expand #42' }))
+    const commits = within(screen.getByRole('table', { name: 'Commits in #42' }))
+    expect(commits.getByText('abcdef1')).toBeInTheDocument()
+    expect(commits.getByText('$10.00')).toBeInTheDocument()
 
     const changes = within(screen.getByRole('table', { name: 'Recent changes' }))
     const joinedRow = changes.getByRole('row', { name: /abcdef1/ })
@@ -355,30 +411,26 @@ describe('AttributionPage', () => {
     expect(within(unjoinedRow).getByText('Default')).toBeInTheDocument()
     // No joined requests, so the models come from the note.
     expect(within(unjoinedRow).getByText('local-model')).toBeInTheDocument()
+    expect(within(unjoinedRow).getAllByRole('cell')[10]).toHaveTextContent('—')
     expect(screen.getByText('Showing 2 of 2 changes')).toBeInTheDocument()
   })
 
-  it('renders unpriced cost as — rather than $0', () => {
+  it('renders unpriced cost as — rather than $0', async () => {
     renderPage(attributionReport())
 
-    const bobRow = within(screen.getByRole('table', { name: 'User activity' })).getByRole('row', {
-      name: /Bob Roe/,
-    })
+    const bobRow = within(await screen.findByRole('table', { name: 'User activity' })).getByRole(
+      'row',
+      { name: /Bob Roe/ },
+    )
     const bobCost = within(bobRow).getAllByRole('cell')[7]
     expect(bobCost).toHaveTextContent('2 gaps')
     expect(bobCost).toHaveTextContent('—')
-
-    const unjoinedRow = within(screen.getByRole('table', { name: 'Recent changes' })).getByRole(
-      'row',
-      { name: /1234567/ },
-    )
-    expect(within(unjoinedRow).getAllByRole('cell')[10]).toHaveTextContent('—')
     expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
   })
 
   it('filters to a user from the name button in their row', async () => {
     renderPage(attributionReport())
-    const users = within(screen.getByRole('table', { name: 'User activity' }))
+    const users = within(await screen.findByRole('table', { name: 'User activity' }))
 
     const aliceButton = users.getByRole('button', { name: 'Filter the report to Alice Doe' })
     expect(aliceButton).toHaveAttribute('aria-pressed', 'false')
@@ -396,7 +448,7 @@ describe('AttributionPage', () => {
   it('clears the user filter from the header', async () => {
     renderPage(attributionReport({ user_id: alice.id }), { days: 30, user_id: alice.id })
 
-    const users = within(screen.getByRole('table', { name: 'User activity' }))
+    const users = within(await screen.findByRole('table', { name: 'User activity' }))
     expect(users.getByRole('row', { name: /Alice Doe/ })).toHaveAttribute('aria-current', 'true')
     expect(users.getByRole('button', { name: 'Filter the report to Alice Doe' })).toHaveAttribute(
       'aria-pressed',
@@ -411,13 +463,36 @@ describe('AttributionPage', () => {
     })
   })
 
-  it('offers no user filter to a user who only sees their own activity', () => {
+  it('offers no user filter on My work, which is always your own report', async () => {
+    renderPage(attributionReport({ user_id: alice.id }), {
+      days: 30,
+      tab: 'my_work',
+      user_id: alice.id,
+    })
+
+    expect(await screen.findByText('Your AI share')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Clear user filter/ })).not.toBeInTheDocument()
+    expect(screen.getByText(/compared with your previous 30 days/)).toBeInTheDocument()
+  })
+
+  it('offers no user filter to a user who only sees their own activity', async () => {
     routeMock.useRouteContext.mockReturnValue(session('user'))
     renderPage(attributionReport())
 
-    const users = within(screen.getByRole('table', { name: 'User activity' }))
+    const users = within(await screen.findByRole('table', { name: 'User activity' }))
     expect(users.getByRole('row', { name: /Alice Doe/ })).toBeInTheDocument()
     expect(users.queryByRole('button', { name: /Filter the report to/ })).not.toBeInTheDocument()
+  })
+
+  it('keeps the needs-new-data reminders on the Durability tab', async () => {
+    renderPage(attributionReport(), { days: 30, tab: 'durability' })
+
+    expect(await screen.findByText('No survival data yet')).toBeInTheDocument()
+    expect(screen.getAllByText('Needs new data').length).toBeGreaterThanOrEqual(5)
+    expect(screen.getByRole('link', { name: 'the attribution data gaps note' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('docs/internal/2026-11-15-attribution-data-gaps.md'),
+    )
   })
 
   it('changes the report window', async () => {

@@ -13,7 +13,7 @@ import { getMockDataset, shortRepository } from './fixtures'
 import { repositoryRows, sliceWindow, type ConceptWindow, type RepositoryRow } from './metrics'
 import {
   AI_TONE,
-  ConceptCard,
+  InsightCard,
   DECIMAL_1,
   formatHours,
   formatPercent,
@@ -21,7 +21,7 @@ import {
   Insight,
   ReadinessBadge,
   Sparkline,
-} from './parts'
+} from '@/components/attribution/parts'
 
 export default function RepositoriesConcept({ days }: { days: ConceptWindow }) {
   const rows = useMemo(() => repositoryRows(sliceWindow(getMockDataset(), days)), [days])
@@ -32,7 +32,7 @@ export default function RepositoriesConcept({ days }: { days: ConceptWindow }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <ConceptCard
+      <InsightCard
         title="Agent readiness"
         description="AI share across, 30-day durability up, bubble size by spend. Top right is leverage; bottom right is AI code that does not last. Invest in the repositories with the lowest autonomy and the worst generated-to-committed ratio."
         readiness="new"
@@ -42,9 +42,9 @@ export default function RepositoriesConcept({ days }: { days: ConceptWindow }) {
           <Quadrant rows={rows} focus={focus} onFocus={setFocus} />
           <CompareList rows={rows} focus={focus} onFocus={setFocus} />
         </div>
-      </ConceptCard>
+      </InsightCard>
 
-      <ConceptCard
+      <InsightCard
         title="Repositories"
         description="Sorted by commits. Read across a row: high AI share with high thrash and low durability means agents lack context there."
         readiness="derived"
@@ -132,7 +132,7 @@ export default function RepositoriesConcept({ days }: { days: ConceptWindow }) {
             </Insight>
           ) : null}
         </div>
-      </ConceptCard>
+      </InsightCard>
     </div>
   )
 }

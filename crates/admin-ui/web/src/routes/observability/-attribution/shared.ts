@@ -1,5 +1,7 @@
 import { EMPTY_VALUE, formatUsd10000 } from '@/lib/format'
 
+import { ATTRIBUTION_TABS, type AttributionTab } from './insights'
+
 /** The setup guide for `oceans hook install`, linked from the empty state. */
 export const ATTRIBUTION_DOCS_URL = 'https://oceans-llm.com/harnesses/git-ai-attribution/'
 
@@ -7,8 +9,9 @@ export const ATTRIBUTION_WINDOWS = [7, 30, 90] as const
 export type AttributionWindowDays = (typeof ATTRIBUTION_WINDOWS)[number]
 const DEFAULT_ATTRIBUTION_WINDOW: AttributionWindowDays = 30
 
-/** Route search: the report window plus the optional user and repository filters. */
+/** Route search: the tab, the report window and the optional user and repository filters. */
 export type AttributionSearch = {
+  tab?: AttributionTab
   days: AttributionWindowDays
   user_id?: string
   repository?: string
@@ -22,6 +25,8 @@ export function normalizeAttributionSearch(search: Record<string, unknown>): Att
   const result: AttributionSearch = {
     days: ATTRIBUTION_WINDOWS.find((window) => window === days) ?? DEFAULT_ATTRIBUTION_WINDOW,
   }
+  const tab = ATTRIBUTION_TABS.find((entry) => entry === search.tab)
+  if (tab) result.tab = tab
   for (const key of ['user_id', 'repository'] as const) {
     const value = search[key]
     if (typeof value === 'string' && value.trim()) result[key] = value.trim()

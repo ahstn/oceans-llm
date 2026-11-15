@@ -1,5 +1,5 @@
-// Recharts views for the concepts. The concept pages load lazily, so Recharts stays out of the
-// route chunk as it does on Usage Costs.
+// Recharts views for the Attribution tabs and their concept mockups. Callers load these lazily,
+// so Recharts stays out of the route chunk as it does on Usage Costs.
 
 import {
   Area,
@@ -28,8 +28,16 @@ import {
 import { chartAnimation } from '@/lib/chart-motion'
 import { formatCount, formatUsdTotal } from '@/lib/format'
 
-import { formatDay } from '../-usage-costs/shared'
 import { AI_TONE, HUMAN_TONE, PERCENT, SHIPPED_TONE, UNSHIPPED_TONE } from './parts'
+
+/** `Nov 14` for a `YYYY-MM-DD` axis key, in UTC so server and browser agree. */
+export function formatDay(value: string) {
+  return new Date(value).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  })
+}
 
 const SERIES = [
   'var(--chart-1)',

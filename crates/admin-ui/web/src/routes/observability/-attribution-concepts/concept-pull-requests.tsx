@@ -27,7 +27,7 @@ import {
 import {
   AI_TONE,
   AiShareBar,
-  ConceptCard,
+  InsightCard,
   formatHours,
   formatPercent,
   HUMAN_TONE,
@@ -35,7 +35,7 @@ import {
   Stat,
   Swatch,
   ToolLabel,
-} from './parts'
+} from '@/components/attribution/parts'
 
 type Sort = 'recent' | 'cost' | 'ai'
 
@@ -66,7 +66,7 @@ export default function PullRequestsConcept({ days }: { days: ConceptWindow }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <ConceptCard
+      <InsightCard
         title="Pull requests"
         description="Every PR in the window with the attribution and gateway cost of its commits. Expand a row for its timeline."
         readiness="live"
@@ -200,7 +200,7 @@ export default function PullRequestsConcept({ days }: { days: ConceptWindow }) {
                               <span className="text-muted-foreground">—</span>
                             ) : null}
                             {row.tools.map((tool) => (
-                              <ToolLabel key={tool} tool={tool} hideName />
+                              <ToolLabel key={tool} harness={tool} hideName />
                             ))}
                           </span>
                         </TableCell>
@@ -242,7 +242,7 @@ export default function PullRequestsConcept({ days }: { days: ConceptWindow }) {
             </span>
           </div>
         </div>
-      </ConceptCard>
+      </InsightCard>
     </div>
   )
 }
@@ -365,7 +365,7 @@ function PullRequestDetail({ row }: { row: PullRequestRollup }) {
                   {formatTimestamp(new Date(commit.at))}
                 </TableCell>
                 <TableCell className="px-3 py-1.5">
-                  {commit.tool ? <ToolLabel tool={commit.tool} /> : '—'}
+                  {commit.tool ? <ToolLabel harness={commit.tool} /> : '—'}
                 </TableCell>
                 <TableCell className="px-3 py-1.5 font-mono text-xs">
                   {commit.model ?? '—'}

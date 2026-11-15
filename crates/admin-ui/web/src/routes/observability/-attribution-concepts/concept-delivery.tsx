@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { AdminTableHeader } from '@/components/shared/admin-table-header'
 import { formatCount, formatUsd10000 } from '@/lib/format'
 
-import { Histogram, LeadTimeScatter, LeadTimeTrendChart } from './charts'
+import { Histogram, LeadTimeScatter, LeadTimeTrendChart } from '@/components/attribution/charts'
 import { getMockDataset, HOUR_MS } from './fixtures'
 import {
   AI_BANDS,
@@ -24,7 +24,7 @@ import {
   type PullRequestRollup,
 } from './metrics'
 import {
-  ConceptCard,
+  InsightCard,
   DECIMAL_1,
   formatHours,
   formatPercent,
@@ -32,7 +32,7 @@ import {
   Insight,
   ReadinessBadge,
   type Readiness,
-} from './parts'
+} from '@/components/attribution/parts'
 
 type Band = 'Elite' | 'High' | 'Medium' | 'Low'
 
@@ -140,14 +140,14 @@ export default function DeliveryConcept({ days }: { days: ConceptWindow }) {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <ConceptCard
+        <InsightCard
           title="Lead time trend"
           description="First commit to merge, by week. The 85th percentile shows the slow tail that a median hides."
           readiness="derived"
         >
           <LeadTimeTrendChart rows={model.weeks} />
-        </ConceptCard>
-        <ConceptCard
+        </InsightCard>
+        <InsightCard
           title="Lead time against AI share"
           description="One dot per merged PR, sized by added lines. A cloud rising to the right means AI-heavy work waits longer."
           readiness="derived"
@@ -168,10 +168,10 @@ export default function DeliveryConcept({ days }: { days: ConceptWindow }) {
                 : [],
             )}
           />
-        </ConceptCard>
+        </InsightCard>
       </div>
 
-      <ConceptCard
+      <InsightCard
         title="Delivery by AI share"
         description="Merged PRs grouped by how much of their added code AI wrote. Bands beat a yes or no flag: a PR with one AI line is not agent work."
         readiness="derived"
@@ -239,9 +239,9 @@ export default function DeliveryConcept({ days }: { days: ConceptWindow }) {
             bottleneck moves from writing code to reviewing it.
           </Insight>
         </div>
-      </ConceptCard>
+      </InsightCard>
 
-      <ConceptCard
+      <InsightCard
         title="Batch size"
         description="Added lines per merged PR. DORA's AI capabilities model names small batches as one of the seven practices that make AI pay off."
         readiness="derived"
@@ -250,7 +250,7 @@ export default function DeliveryConcept({ days }: { days: ConceptWindow }) {
           bins={sizeBins}
           medianLabel={`Median ${formatCount(median(rollups.map((row) => row.addedLines)) ?? 0)}`}
         />
-      </ConceptCard>
+      </InsightCard>
       <p className="text-muted-foreground text-xs">
         Window: {formatCount(slice.merged.length)} merged PRs. DORA bands follow the 2024 report
         thresholds.

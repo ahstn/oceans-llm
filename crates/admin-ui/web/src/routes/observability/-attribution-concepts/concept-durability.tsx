@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { formatCount } from '@/lib/format'
 
-import { SurvivalChart } from './charts'
+import { SurvivalChart } from '@/components/attribution/charts'
 import { getMockDataset } from './fixtures'
 import {
   AI_BANDS,
@@ -22,14 +22,14 @@ import {
   type ConceptWindow,
 } from './metrics'
 import {
-  ConceptCard,
+  InsightCard,
   formatPercent,
   InlineMeter,
   Insight,
   ReadinessBadge,
   TrendKpi,
   type Readiness,
-} from './parts'
+} from '@/components/attribution/parts'
 
 const ROADMAP: {
   data: string
@@ -171,15 +171,15 @@ export default function DurabilityConcept({ days }: { days: ConceptWindow }) {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <ConceptCard
+        <InsightCard
           title="Line survival"
           description="Share of merged lines still unchanged N days after merge. The gap between the curves is the AI maintenance cost."
           readiness="new"
           readinessNote="Needs per-line history from scheduled git ai blame runs."
         >
           <SurvivalChart rows={model.curve} />
-        </ConceptCard>
-        <ConceptCard
+        </InsightCard>
+        <InsightCard
           title="Quality by AI share"
           description="Merged PRs with any AI lines, by band. If durability falls as AI share rises, the heaviest agent work needs more review."
           readiness="new"
@@ -218,10 +218,10 @@ export default function DurabilityConcept({ days }: { days: ConceptWindow }) {
               </TableBody>
             </Table>
           </div>
-        </ConceptCard>
+        </InsightCard>
       </div>
 
-      <ConceptCard
+      <InsightCard
         title="Data to collect"
         description="What each addition unlocks across these concepts, smallest first. Line counts only: like today's notes, none of it stores file paths or line content."
         readiness="new"
@@ -258,7 +258,7 @@ export default function DurabilityConcept({ days }: { days: ConceptWindow }) {
             rate. They cover most of the Delivery and Agents concepts.
           </Insight>
         </div>
-      </ConceptCard>
+      </InsightCard>
     </div>
   )
 }

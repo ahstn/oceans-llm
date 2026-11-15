@@ -9,7 +9,7 @@ import {
   UserIcon,
 } from '@hugeicons/core-free-icons'
 import type { IconSvgElement } from '@hugeicons/react'
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link, redirect, useNavigate } from '@tanstack/react-router'
 import { lazy, Suspense, type ComponentType } from 'react'
 
 import { AppIcon } from '@/components/icons/app-icon'
@@ -20,7 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
 import { CONCEPT_WINDOWS, type ConceptWindow } from './-attribution-concepts/metrics'
-import { READINESS, ReadinessBadge, type Readiness } from './-attribution-concepts/parts'
+import { READINESS, ReadinessBadge, type Readiness } from '@/components/attribution/parts'
 
 type ConceptProps = { days: ConceptWindow }
 
@@ -101,6 +101,12 @@ export const Route = createFileRoute('/observability/attribution_/concepts')({
       : 'impact'
     const days = CONCEPT_WINDOWS.find((window) => window === Number(search.days)) ?? 30
     return { tab, days }
+  },
+  // Off unless `attribution.pages.concepts` is on in the gateway config.
+  beforeLoad: ({ context }) => {
+    if (!context.session?.capabilities.attribution_tabs.includes('concepts')) {
+      throw redirect({ to: '/observability/attribution', search: { days: 30 } })
+    }
   },
   component: AttributionConceptsPage,
 })

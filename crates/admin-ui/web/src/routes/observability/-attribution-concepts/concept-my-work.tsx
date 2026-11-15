@@ -15,7 +15,7 @@ import {
 import { formatCount, formatTimestamp, formatUsd10000 } from '@/lib/format'
 
 import { getMockDataset, MOCK_USERS, mockUser, shortRepository, type AgentTool } from './fixtures'
-import { ContributionCalendar, PunchCard } from './heatmaps'
+import { ContributionCalendar, PunchCard } from '@/components/attribution/heatmaps'
 import {
   delta,
   headline,
@@ -31,13 +31,13 @@ import {
 import {
   AI_TONE,
   AiShareBar,
-  ConceptCard,
+  InsightCard,
   formatHours,
   formatPercent,
   InlineMeter,
   ToolLabel,
   TrendKpi,
-} from './parts'
+} from '@/components/attribution/parts'
 
 function forUser(slice: WindowSlice, userId: string): WindowSlice {
   const commits = slice.commits.filter((commit) => commit.userId === userId)
@@ -143,7 +143,7 @@ export default function MyWorkConcept({ days }: { days: ConceptWindow }) {
         />
       </div>
 
-      <ConceptCard
+      <InsightCard
         title="Activity"
         description="Commits per day over 26 weeks. A dot marks days where AI wrote most of your attested lines."
         readiness="derived"
@@ -153,17 +153,17 @@ export default function MyWorkConcept({ days }: { days: ConceptWindow }) {
           <ContributionCalendar cells={model.calendar} />
           <CalendarStats cells={model.calendar} />
         </div>
-      </ConceptCard>
+      </InsightCard>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
-        <ConceptCard
+        <InsightCard
           title="When you work with agents"
           description="Commits by weekday and hour (UTC) over 90 days. Brighter dots are hours where most commits were AI-written."
           readiness="derived"
         >
           <PunchCard grid={model.punch} />
-        </ConceptCard>
-        <ConceptCard
+        </InsightCard>
+        <InsightCard
           title="Harnesses"
           description="Share of your committed AI lines."
           readiness="live"
@@ -172,7 +172,7 @@ export default function MyWorkConcept({ days }: { days: ConceptWindow }) {
             {model.tools.map(([tool, lines]) => (
               <li key={tool} className="flex flex-col gap-1">
                 <div className="flex items-center justify-between gap-2 text-sm">
-                  <ToolLabel tool={tool} />
+                  <ToolLabel harness={tool} />
                   <span className="text-muted-foreground text-xs tabular-nums">
                     {formatCount(lines)} lines
                   </span>
@@ -181,10 +181,10 @@ export default function MyWorkConcept({ days }: { days: ConceptWindow }) {
               </li>
             ))}
           </ul>
-        </ConceptCard>
+        </InsightCard>
       </div>
 
-      <ConceptCard
+      <InsightCard
         title="Your recent merges"
         description="AI share and cost of each PR you merged in the window."
         readiness="live"
@@ -223,7 +223,7 @@ export default function MyWorkConcept({ days }: { days: ConceptWindow }) {
             </li>
           ))}
         </ul>
-      </ConceptCard>
+      </InsightCard>
     </div>
   )
 }

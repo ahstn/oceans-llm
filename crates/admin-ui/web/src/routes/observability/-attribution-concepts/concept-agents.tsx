@@ -8,9 +8,9 @@ import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { formatCount, formatUsd10000 } from '@/lib/format'
 
-import { ModelMixChart } from './charts'
+import { ModelMixChart } from '@/components/attribution/charts'
 import { AGENT_TOOLS, getMockDataset, type AgentTool } from './fixtures'
-import { MatrixHeatmap } from './heatmaps'
+import { MatrixHeatmap } from '@/components/attribution/heatmaps'
 import {
   sliceWindow,
   toolModelCells,
@@ -19,14 +19,14 @@ import {
   type ConceptWindow,
 } from './metrics'
 import {
-  ConceptCard,
+  InsightCard,
   DECIMAL_1,
   formatPercent,
   InlineMeter,
   Insight,
   ReadinessBadge,
   ToolLabel,
-} from './parts'
+} from '@/components/attribution/parts'
 
 type MatrixMetric = 'cost' | 'merged' | 'steering'
 
@@ -60,7 +60,7 @@ export default function AgentsConcept({ days }: { days: ConceptWindow }) {
           <Card key={tool.tool} size="sm" className="min-w-0">
             <CardHeader>
               <CardDescription className="flex items-center justify-between gap-2">
-                <ToolLabel tool={tool.tool} />
+                <ToolLabel harness={tool.tool} />
                 <span className="text-xs tabular-nums">{formatCount(tool.sessions)} sessions</span>
               </CardDescription>
               <p className="flex items-baseline gap-1.5 text-2xl font-medium tracking-tight tabular-nums">
@@ -90,7 +90,7 @@ export default function AgentsConcept({ days }: { days: ConceptWindow }) {
         ))}
       </div>
 
-      <ConceptCard
+      <InsightCard
         title="Harness by model"
         description={
           metric === 'cost'
@@ -121,7 +121,7 @@ export default function AgentsConcept({ days }: { days: ConceptWindow }) {
             caption="Harness by model"
             rows={tools}
             columns={models}
-            rowLabel={(tool) => <ToolLabel tool={tool} />}
+            rowLabel={(tool) => <ToolLabel harness={tool} />}
             columnLabel={(name) => name}
             invert={metric !== 'merged'}
             value={(tool, name) => {
@@ -149,16 +149,16 @@ export default function AgentsConcept({ days }: { days: ConceptWindow }) {
             </Insight>
           ) : null}
         </div>
-      </ConceptCard>
+      </InsightCard>
 
-      <ConceptCard
+      <InsightCard
         title="Model mix"
         description="Weekly gateway spend by model, top five plus other."
         readiness="live"
         readinessNote="The report already returns per-model requests and cost; weekly buckets are derivable."
       >
         <ModelMixChart rows={model.mix.rows} models={model.mix.models} />
-      </ConceptCard>
+      </InsightCard>
     </div>
   )
 }

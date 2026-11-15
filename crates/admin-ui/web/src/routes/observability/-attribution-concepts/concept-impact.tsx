@@ -5,7 +5,7 @@ import { useMemo } from 'react'
 
 import { formatCount, formatUsd10000 } from '@/lib/format'
 
-import { LinesMixChart, SpendOutputChart } from './charts'
+import { LinesMixChart, SpendOutputChart } from '@/components/attribution/charts'
 import { getMockDataset } from './fixtures'
 import {
   delta,
@@ -22,17 +22,16 @@ import {
 import {
   AI_TONE,
   AiShareBar,
-  ConceptCard,
+  CounterweightPair,
+  InsightCard,
   formatHours,
   formatPercent,
   InlineMeter,
   Insight,
-  ReadinessBadge,
   SHIPPED_TONE,
   Stat,
   TrendKpi,
-  type Readiness,
-} from './parts'
+} from '@/components/attribution/parts'
 
 // A concept page is one linear layout read top to bottom; splitting it would scatter the mockup.
 // oxlint-disable-next-line eslint/max-lines-per-function
@@ -138,7 +137,7 @@ export default function ImpactConcept({ days }: { days: ConceptWindow }) {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <ConceptCard
+        <InsightCard
           title="Who wrote the code"
           description="Attested lines added per period. Unattested lines are unknown, not human, so they stay out of the share."
           readiness="derived"
@@ -152,8 +151,8 @@ export default function ImpactConcept({ days }: { days: ConceptWindow }) {
               Read it with durability below: more AI lines is only good if they last.
             </Insight>
           </div>
-        </ConceptCard>
-        <ConceptCard
+        </InsightCard>
+        <InsightCard
           title="Spend against output"
           description="Gateway cost split by whether a session reached a commit, against PRs merged in the same period."
           readiness="derived"
@@ -171,10 +170,10 @@ export default function ImpactConcept({ days }: { days: ConceptWindow }) {
             </div>
             <SpendOutputChart rows={model.points} />
           </div>
-        </ConceptCard>
+        </InsightCard>
       </div>
 
-      <ConceptCard
+      <InsightCard
         title="Counterweights"
         description="Each throughput figure sits beside the measure that would expose gaming it. A team can raise the left column by shipping worse work; the right column catches it."
         readiness="proxy"
@@ -224,9 +223,9 @@ export default function ImpactConcept({ days }: { days: ConceptWindow }) {
             }}
           />
         </div>
-      </ConceptCard>
+      </InsightCard>
 
-      <ConceptCard
+      <InsightCard
         title="Data coverage"
         description="How much of the window the join could see. Low coverage makes every figure above an undercount."
         readiness="live"
@@ -245,43 +244,7 @@ export default function ImpactConcept({ days }: { days: ConceptWindow }) {
             )}
           />
         </div>
-      </ConceptCard>
-    </div>
-  )
-}
-
-type PairSide = { label: string; value: string; delta: number | null; readiness: Readiness }
-
-/** Two metrics that pull against each other, read together. */
-export function CounterweightPair({ left, right }: { left: PairSide; right: PairSide }) {
-  return (
-    <div className="border-border grid grid-cols-[1fr_auto_1fr] items-stretch rounded-lg border">
-      <PairCell side={left} />
-      <div
-        className="border-border text-muted-foreground flex items-center border-x px-2 text-xs"
-        aria-hidden
-      >
-        vs
-      </div>
-      <PairCell side={right} />
-    </div>
-  )
-}
-
-function PairCell({ side }: { side: PairSide }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-1 p-3">
-      <span className="text-muted-foreground text-xs">{side.label}</span>
-      <span className="text-lg font-medium tabular-nums">{side.value}</span>
-      <span className="flex flex-wrap items-center gap-2 text-xs">
-        <ReadinessBadge level={side.readiness} />
-        {side.delta != null ? (
-          <span className="text-muted-foreground tabular-nums">
-            {side.delta >= 0 ? '+' : ''}
-            {Math.round(side.delta * 100)}% vs previous
-          </span>
-        ) : null}
-      </span>
+      </InsightCard>
     </div>
   )
 }

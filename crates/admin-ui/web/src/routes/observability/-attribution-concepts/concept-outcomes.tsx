@@ -7,7 +7,7 @@ import { useMemo, useState } from 'react'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { formatCount, formatTimestamp, formatUsd10000 } from '@/lib/format'
 
-import { FlowChart, type FlowLink, type FlowNode } from './flow-chart'
+import { FlowChart, type FlowLink, type FlowNode } from '@/components/attribution/flow-chart'
 import { getMockDataset, mockUser, shortRepository } from './fixtures'
 import {
   ratio,
@@ -19,14 +19,14 @@ import {
   type SessionOutcome,
 } from './metrics'
 import {
-  ConceptCard,
+  InsightCard,
   formatPercent,
   Insight,
   ReadinessBadge,
   SHIPPED_TONE,
   ToolLabel,
   UNSHIPPED_TONE,
-} from './parts'
+} from '@/components/attribution/parts'
 
 type Measure = 'sessions' | 'cost'
 
@@ -63,7 +63,7 @@ export default function OutcomesConcept({ days }: { days: ConceptWindow }) {
   return (
     <div className="flex flex-col gap-6">
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <ConceptCard
+        <InsightCard
           title="Session outcomes"
           description="Every agent session in the window, followed to the furthest stage its commits reached."
           readiness="derived"
@@ -95,9 +95,9 @@ export default function OutcomesConcept({ days }: { days: ConceptWindow }) {
               for typical teams.
             </Insight>
           </div>
-        </ConceptCard>
+        </InsightCard>
 
-        <ConceptCard
+        <InsightCard
           title="Costliest unshipped sessions"
           description="Where to look for missing context, flaky tests or the wrong model."
           readiness="derived"
@@ -116,7 +116,7 @@ export default function OutcomesConcept({ days }: { days: ConceptWindow }) {
                 </div>
                 <div className="text-muted-foreground flex items-center justify-between gap-3 text-xs">
                   <span className="flex min-w-0 items-center gap-2">
-                    <ToolLabel tool={session.tool} hideName />
+                    <ToolLabel harness={session.tool} hideName />
                     <span className="truncate font-mono">
                       {shortRepository(session.repository)}
                     </span>
@@ -135,17 +135,17 @@ export default function OutcomesConcept({ days }: { days: ConceptWindow }) {
               </li>
             ))}
           </ul>
-        </ConceptCard>
+        </InsightCard>
       </div>
 
-      <ConceptCard
+      <InsightCard
         title="AI code journey"
         description="Lines through each stage from generation to 30 days after merge. Each drop names what removed the lines."
         readiness="new"
         readinessNote="Generated lines need checkpoint telemetry from git-ai, and durability needs line survival. Committed and merged are derivable today."
       >
         <LineJourney slice={model.slice} />
-      </ConceptCard>
+      </InsightCard>
     </div>
   )
 }
