@@ -1,0 +1,29 @@
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/durability-tab.tsx
+  s_0a4447f1aa57dd::t_86262855a16626 7-8,134
+crates/admin-ui/web/src/routes/observability/-attribution/insights.ts
+  s_0a4447f1aa57dd::t_0ffac422f8570f 56-61,63-64,70-91,102-106
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/concept-durability.tsx
+  s_0a4447f1aa57dd::t_e0b6b9703a429d 31-32,170,179,185
+crates/admin-ui/web/src/test/attribution-insights.test.ts
+  s_0a4447f1aa57dd::t_02a12a328f6853 6,8-9,29,35,38-41,43-56,76
+crates/admin-ui/web/src/routes/observability/attribution.tsx
+  s_0a4447f1aa57dd::t_a3c4d3ea98d292 24,56-58
+crates/admin-ui/web/src/components/attribution/data-gaps.ts
+  s_0a4447f1aa57dd::t_40791aa1bbff37 1-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ce7997119a8dc2b8dc6dd4aef3293272e5b77af4",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
