@@ -10,7 +10,7 @@ sidebar:
 
 Users point local agent harnesses, such as OpenCode or Claude Code, at the gateway. Oceans generates a config snippet for each harness from the live model catalog, so users don't write model data by hand.
 
-This page covers the snippets that every harness shares. OpenCode and Oh-My-Pi have their own pages. The other harnesses are covered below.
+This page covers the snippets that every harness shares. OpenCode, Oh-My-Pi and Claude Code have their own pages. Pi and Codex are covered below.
 
 The [Oceans CLI](/harnesses/oceans-cli/) page covers the `oceans` command-line tool. Its hooks report which lines of each commit an agent wrote, as described in [Git AI attribution](/harnesses/git-ai-attribution/).
 
@@ -19,7 +19,7 @@ The [Oceans CLI](/harnesses/oceans-cli/) page covers the `oceans` command-line t
 | OpenCode | [OpenCode](/harnesses/opencode/): the Oceans plugin, which finds your models on the gateway, or a generated snippet. |
 | Oh-My-Pi (OMP) | [Oh-My-Pi (OMP)](/harnesses/omp/): omp's own model discovery reads the gateway. No snippet needed. |
 | Pi | [Pi](#pi), below. |
-| Claude Code | [Claude Code](#claude-code), below. |
+| Claude Code | [Claude Code](/harnesses/claude-code/): generated settings, gateway model discovery and safe background models. |
 | Codex | [Codex](#codex), below. |
 
 [Harness Verification](/harnesses/verification/) lists the harness and model pairs that Oceans checks end to end, and the API each pair uses.
@@ -108,33 +108,7 @@ Reasoning models get a `thinkingLevelMap`. A model is a reasoning model when Oce
 
 ## Claude Code
 
-![Client config dialog with the Claude Code tab open](/images/screenshot-model-client-config-claude-code.png)
-
-The Claude Code tab emits `settings.json` content with the SchemaStore Claude Code schema URL. Use `~/.claude/settings.json` for user config or `.claude/settings.json` for project config. The tab links to the [Claude Code settings docs](https://code.claude.com/docs/en/settings). Only models that use Anthropic Messages are included.
-
-The first block, **Gateway model settings**, sets these values:
-
-- `ANTHROPIC_AUTH_TOKEN`, set to the placeholder `<gateway api token>`. Replace it with a gateway API key.
-- `ANTHROPIC_BASE_URL`, set to the gateway root without `/v1`.
-- `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY`, set to `1`, so Claude Code can discover gateway models.
-- `ANTHROPIC_MODEL`, set to the first selected model.
-- `ANTHROPIC_SMALL_FAST_MODEL`, set to the background model (see below).
-- `ANTHROPIC_DEFAULT_OPUS_MODEL`, `ANTHROPIC_DEFAULT_SONNET_MODEL`, `ANTHROPIC_DEFAULT_HAIKU_MODEL` or `ANTHROPIC_DEFAULT_FABLE_MODEL`, set to the first selected model of that family.
-- `modelOverrides`, which maps Claude Code's Anthropic model ids (such as `claude-sonnet-4-6`) to the selected gateway model ids.
-
-Claude Code appends Anthropic paths such as `/v1/messages`, `/v1/messages/count_tokens` and `/v1/models` to `ANTHROPIC_BASE_URL`. Don't put `/v1/messages` in the base URL. Token counting returns a real count only when the selected route's provider has an upstream count API. Other routes return `501 not_implemented_error`. See [Provider API compatibility](/reference/provider-api-compatibility/).
-
-The second block, **Lower token usage settings**, is optional. It turns off telemetry, error reporting, experimental betas, 1M context and the terminal title. It also sets a simple system prompt, sets `CLAUDE_CODE_AUTO_COMPACT_WINDOW` to `200000`, and sets `ENABLE_TOOL_SEARCH` to `auto`.
-
-### Claude Code background model
-
-Claude Code runs background work, such as WebFetch summaries and session titles, on its small/fast model. It sends `thinking: { "type": "disabled" }` with that work. The snippet sets `ANTHROPIC_SMALL_FAST_MODEL` to the first selected model that can turn thinking off. If every selected model always thinks, it uses the first selected model and adds a note.
-
-Some Claude models always think, such as Claude Opus 5.5 and Fable 5. The gateway rejects thinking-off requests to them with a 400, and Claude Code reports a tool failure. Other models forward or rewrite the request, in some cases only at lower effort. [Model routing and APIs](/configuration/model-routing/) has the per-model rules.
-
-To avoid failures, include a Haiku or Sonnet model in the selection. Or set `ANTHROPIC_SMALL_FAST_MODEL` and `ANTHROPIC_DEFAULT_HAIKU_MODEL` to a gateway model that can turn thinking off.
-
-When a host app manages Claude Code's provider settings, such as the Claude desktop app with `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1`, user-level overrides of these variables may not apply. In that case, choose a main model that can turn thinking off.
+See the [Claude Code guide](/harnesses/claude-code/) for setup, safe credential storage, model discovery and background model settings.
 
 ## Codex
 

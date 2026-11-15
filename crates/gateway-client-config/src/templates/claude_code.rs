@@ -22,12 +22,10 @@ const CLAUDE_CODE_SETTINGS_DOCS_URL: &str = "https://code.claude.com/docs/en/set
 const CLAUDE_CODE_SETTINGS_SCHEMA: &str = "https://json.schemastore.org/claude-code-settings.json";
 const CLAUDE_CODE_LOWER_TOKEN_USAGE_ENV: &[(&str, &str)] = &[
     ("CLAUDE_CODE_ENABLE_TELEMETRY", "0"),
-    ("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "1"),
     ("CLAUDE_CODE_DISABLE_1M_CONTEXT", "1"),
     ("CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT", "1"),
     ("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "200000"),
     ("ENABLE_TOOL_SEARCH", "auto"),
-    ("CLAUDE_CODE_NO_FLICKER", "1"),
     ("CLAUDE_CODE_DISABLE_TERMINAL_TITLE", "1"),
     ("CLAUDE_CODE_ATTRIBUTION_HEADER", "0"),
     ("DISABLE_ERROR_REPORTING", "1"),
@@ -90,14 +88,14 @@ fn claude_code_setup() -> Vec<ClientConfigSetupItem> {
         ClientConfigSetupItem {
             label: "Configuration".to_string(),
             value:
-                "~/.claude/settings.json for user configuration; .claude/settings.json for project configuration."
+                "~/.claude/settings.json for user configuration; .claude/settings.local.json for ignored project-local configuration. Do not commit settings containing an API key."
                     .to_string(),
             href: None,
         },
         ClientConfigSetupItem {
             label: "API key".to_string(),
             value: format!(
-                "Replace {} with a gateway API key before using this Claude Code configuration.",
+                "Replace {} with a gateway API key before using this Claude Code configuration. Values in settings env are literal; $VARIABLE references are not expanded. Merge both snippets into one settings object and one env object if using the optional lower-token settings.",
                 CLAUDE_CODE_AUTH_TOKEN_PLACEHOLDER
             ),
             href: None,
@@ -143,7 +141,7 @@ fn claude_code_gateway_env(inputs: &[&ClientConfigInput]) -> Map<String, Value> 
         ),
         ("ANTHROPIC_MODEL".to_string(), json!(input.model_id)),
         (
-            "ANTHROPIC_SMALL_FAST_MODEL".to_string(),
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(),
             json!(claude_code_background_model(inputs).model_id),
         ),
     ]);
@@ -158,13 +156,22 @@ fn claude_code_gateway_env(inputs: &[&ClientConfigInput]) -> Map<String, Value> 
     env
 }
 
-/// Claude Code runs background work on its small/fast model with thinking turned off, so prefer
-/// the first selected model that can turn thinking off.
+/// The Haiku alias also runs background work with thinking turned off. Prefer a selected
+/// Haiku that supports this, then any compatible model, before falling back with a warning.
 fn claude_code_background_model<'a>(inputs: &[&'a ClientConfigInput]) -> &'a ClientConfigInput {
     inputs
         .iter()
         .copied()
-        .find(|input| !claude_code_input_always_thinks(input))
+        .find(|input| {
+            claude_code_default_model_env_var(input) == Some("ANTHROPIC_DEFAULT_HAIKU_MODEL")
+                && !claude_code_input_always_thinks(input)
+        })
+        .or_else(|| {
+            inputs
+                .iter()
+                .copied()
+                .find(|input| !claude_code_input_always_thinks(input))
+        })
         .unwrap_or(inputs[0])
 }
 
