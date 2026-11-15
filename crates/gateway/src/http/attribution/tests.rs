@@ -295,6 +295,71 @@ async fn attribution_entries_report_one_outcome_each_and_reach_the_report() {
 }
 
 #[tokio::test]
+async fn pull_requests_carry_their_lifecycle_and_revert_links_to_the_report() {
+    let gateway = Gateway::new().await;
+    let now = OffsetDateTime::now_utc();
+    let at = |hours: i64| (now - Duration::hours(hours)).format(&Rfc3339).unwrap();
+    let payload = json!({
+        "kind": "pull_requests",
+        "repository": REPOSITORY,
+        "pull_requests": [
+            // An older hook's shape: no state, so it is merged.
+            {
+                "number": 7, "title": "Add widgets", "url": null, "base_ref": "main",
+                "head_ref": "widgets", "merge_commit_sha": null, "merged_at": at(5),
+                "commits": [],
+            },
+            {
+                "number": 8, "title": "Tidy widgets", "url": null, "base_ref": "main",
+                "head_ref": "tidy", "merge_commit_sha": null, "merged_at": at(1),
+                "state": "merged", "opened_at": at(3), "closed_at": at(1),
+                "first_review_at": at(2), "review_count": 1, "approval_count": 1,
+                "reverts": {"pull_request_number": 7, "commit_shas": [], "evidence": "change_match"},
+                "commits": [],
+            },
+            {
+                "number": 9, "title": "Open draft", "url": null, "base_ref": "main",
+                "head_ref": "draft", "merge_commit_sha": null, "merged_at": null,
+                "state": "open", "is_draft": true, "opened_at": at(2), "commits": [],
+            },
+        ],
+    });
+    let reply = gateway
+        .post_entries(&gateway.scope(), vec![entry("prs-1", 1, payload)])
+        .await;
+    assert_eq!(
+        reply.body["results"][0]["status"], "applied",
+        "{}",
+        reply.body
+    );
+
+    let report = gateway.report().await;
+    let data = &report.body["data"];
+    let pull_requests = data["pull_requests"].as_array().expect("pull requests");
+    assert_eq!(
+        pull_requests.len(),
+        2,
+        "the open draft is not a merged pull request"
+    );
+    let find = |number: i64| {
+        pull_requests
+            .iter()
+            .find(|pull_request| pull_request["number"] == number)
+            .expect("reported pull request")
+    };
+    assert_eq!(find(8)["is_revert"], true);
+    assert_eq!(find(8)["revert"]["evidence"], "change_match");
+    assert_eq!(find(8)["revert"]["reverts_pull_request_number"], 7);
+    assert_eq!(find(8)["review_wait_seconds"], 3600);
+    assert_eq!(find(7)["reverted_by_number"], 8);
+    let lifecycle = &data["pull_request_lifecycle"];
+    assert_eq!(lifecycle["open_count"], 1, "{lifecycle}");
+    assert_eq!(lifecycle["draft_count"], 1);
+    assert_eq!(lifecycle["revert_count"], 1);
+    assert_eq!(lifecycle["median_time_to_revert_seconds"], 4 * 3600);
+}
+
+#[tokio::test]
 async fn pull_request_authors_match_additional_attribution_emails() {
     let gateway = Gateway::with_attribution_emails(&["ada@personal.example"]).await;
     let merged_at = OffsetDateTime::now_utc() - Duration::hours(1);

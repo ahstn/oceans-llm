@@ -71,8 +71,62 @@ pub struct PullRequest {
     pub base_ref: String,
     pub head_ref: String,
     pub merge_commit_sha: Option<String>,
-    pub merged_at: String,
+    /// Absent for an open or closed pull request. Queued entries from older versions always
+    /// carry it.
+    #[serde(default)]
+    pub merged_at: Option<String>,
     pub commits: Vec<PullRequestCommit>,
+    #[serde(flatten)]
+    pub lifecycle: PullRequestLifecycle,
+    #[serde(default)]
+    pub reverts: Option<RevertLink>,
+}
+
+/// Lifecycle counts and times, reduced on this machine: no reviewer logins, PR description
+/// or file list leaves it. Every field is optional so older queued entries still parse.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PullRequestLifecycle {
+    /// `open`, `closed` (without merging) or `merged`.
+    #[serde(default)]
+    pub state: Option<String>,
+    #[serde(default)]
+    pub is_draft: Option<bool>,
+    #[serde(default)]
+    pub opened_at: Option<String>,
+    #[serde(default)]
+    pub closed_at: Option<String>,
+    /// The first review by a person other than the author; bot reviews do not count.
+    #[serde(default)]
+    pub first_review_at: Option<String>,
+    #[serde(default)]
+    pub review_count: Option<u32>,
+    #[serde(default)]
+    pub approval_count: Option<u32>,
+    #[serde(default)]
+    pub changes_requested_count: Option<u32>,
+    #[serde(default)]
+    pub reviewer_count: Option<u32>,
+    #[serde(default)]
+    pub comment_count: Option<u32>,
+    #[serde(default)]
+    pub additions: Option<u64>,
+    #[serde(default)]
+    pub deletions: Option<u64>,
+    #[serde(default)]
+    pub changed_files: Option<u64>,
+}
+
+/// What a pull request reverts and how that was found. Only the link leaves the machine.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RevertLink {
+    /// The reverted pull request in the same repository, when known.
+    #[serde(default)]
+    pub pull_request_number: Option<u64>,
+    /// Reverted commits, which the gateway maps to their pull requests.
+    #[serde(default)]
+    pub commit_shas: Vec<String>,
+    /// `revert_commit`, `github_revert`, `change_match` or `title`, strongest first.
+    pub evidence: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

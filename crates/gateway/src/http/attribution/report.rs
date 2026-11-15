@@ -27,7 +27,8 @@ use super::{
     AttributionOwnerKind,
     insights::{
         AttributionDayView, AttributionHarnessModelView, AttributionPeriodSummaryView,
-        AttributionPullRequestCommitView, AttributionSessionOutcomeView,
+        AttributionPullRequestCommitView, AttributionPullRequestLifecycleView,
+        AttributionRevertView, AttributionSessionOutcomeView,
     },
 };
 use crate::http::{
@@ -167,8 +168,27 @@ pub struct AttributionPullRequestView {
     pub first_commit_at: Option<String>,
     /// First commit to merge.
     pub lead_time_seconds: Option<i64>,
-    /// The title reads as a revert (`Revert "…"` or `revert:`), a change-failure proxy.
+    /// Reverts another pull request, by evidence stronger than its title: git's revert line,
+    /// GitHub's revert button or an exact inverse change. A change-failure proxy.
     pub is_revert: bool,
+    /// What this pull request reverts, including a title-only possible revert.
+    pub revert: Option<AttributionRevertView>,
+    /// The pull request in this report that reverted this one.
+    pub reverted_by_number: Option<i64>,
+    /// RFC 3339; absent for rows from hooks that sent no lifecycle.
+    pub opened_at: Option<String>,
+    /// RFC 3339; the first review by a person other than the author.
+    pub first_review_at: Option<String>,
+    /// Opened to first human review.
+    pub review_wait_seconds: Option<i64>,
+    /// Human reviews other than the author's; absent when the hook sent no review data.
+    pub review_count: Option<i64>,
+    pub approval_count: Option<i64>,
+    pub changes_requested_count: Option<i64>,
+    pub comment_count: Option<i64>,
+    pub additions: Option<i64>,
+    pub deletions: Option<i64>,
+    pub changed_files: Option<i64>,
     /// git-ai agent tools the matched notes name.
     pub agent_tools: Vec<String>,
     /// The first 50 commits with a stored note, oldest first, within a budget of 2,000 across the
@@ -226,6 +246,8 @@ pub struct AttributionReportView {
     pub session_outcomes: Vec<AttributionSessionOutcomeView>,
     /// Harness × model rows, most sessions first.
     pub harness_models: Vec<AttributionHarnessModelView>,
+    /// Opened, closed, open and reviewed pull requests, and revert figures.
+    pub pull_request_lifecycle: AttributionPullRequestLifecycleView,
     pub summary: AttributionPeriodSummaryView,
     /// The same figures for the window of equal length just before this one.
     /// `null` unless the request set `compare=true`.
@@ -305,6 +327,7 @@ pub async fn get_attribution_report(
         daily,
         session_outcomes,
         harness_models,
+        pull_request_lifecycle,
     } = report;
     Ok(Json(envelope(AttributionReportView {
         window_days,
@@ -330,6 +353,7 @@ pub async fn get_attribution_report(
         daily: daily.into_iter().map(Into::into).collect(),
         session_outcomes: session_outcomes.into_iter().map(Into::into).collect(),
         harness_models: harness_models.into_iter().map(Into::into).collect(),
+        pull_request_lifecycle: pull_request_lifecycle.into(),
         summary: summary.into(),
         previous_summary,
         previous_truncated,
@@ -469,10 +493,28 @@ impl Names {
     fn pull_request(&self, activity: AttributionPullRequestActivity) -> AttributionPullRequestView {
         let lead_time_seconds = activity.lead_time().map(|lead| lead.whole_seconds());
         let pull_request = activity.pull_request;
+        let lifecycle = pull_request.lifecycle;
+        let details = lifecycle.details;
+        let review_wait_seconds = details
+            .first_review_at
+            .zip(lifecycle.opened_at)
+            .map(|(reviewed, opened)| (reviewed - opened).whole_seconds().max(0));
         AttributionPullRequestView {
             author: pull_request.author_user_id.map(|id| self.user(id)),
             commit_count: count(pull_request.commits.len()),
-            merged_at: format_timestamp(pull_request.merged_at),
+            merged_at: format_timestamp(pull_request.merged_at.unwrap_or(pull_request.observed_at)),
+            revert: activity.revert.map(Into::into),
+            reverted_by_number: activity.reverted_by,
+            opened_at: lifecycle.opened_at.map(format_timestamp),
+            first_review_at: details.first_review_at.map(format_timestamp),
+            review_wait_seconds,
+            review_count: details.review_count,
+            approval_count: details.approval_count,
+            changes_requested_count: details.changes_requested_count,
+            comment_count: details.comment_count,
+            additions: details.additions,
+            deletions: details.deletions,
+            changed_files: details.changed_files,
             repository: pull_request.repository,
             number: pull_request.number,
             title: pull_request.title,

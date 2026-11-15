@@ -92,6 +92,7 @@ pub struct AttributionPeriodSummary {
     pub median_pull_request_cost_10000: Option<i64>,
     /// Median first commit to merge.
     pub median_lead_time_seconds: Option<i64>,
+    /// Merged pull requests in the window that revert another, by confirmed evidence.
     pub reverted_pull_request_count: i64,
 }
 
@@ -148,7 +149,9 @@ impl ReportInputs<'_> {
             }
         }
         for activity in pull_requests {
-            if let Some(entry) = days.get_mut(&activity.pull_request.merged_at.date()) {
+            if let Some(entry) =
+                days.get_mut(&super::lifecycle::merged_time(&activity.pull_request).date())
+            {
                 entry.merged_pull_request_count += 1;
             }
         }
@@ -426,13 +429,13 @@ impl AttributionPullRequestActivity {
     #[must_use]
     pub fn lead_time(&self) -> Option<Duration> {
         let first: OffsetDateTime = self.first_commit_at?;
-        Some((self.pull_request.merged_at - first).max(Duration::ZERO))
+        Some((super::lifecycle::merged_time(&self.pull_request) - first).max(Duration::ZERO))
     }
 }
 
 /// The median of `values`, which it sorts: the mean of the two middle values for an even count,
 /// rounded down, as the admin UI computes its own medians.
-fn median(values: &mut [i64]) -> Option<i64> {
+pub(super) fn median(values: &mut [i64]) -> Option<i64> {
     if values.is_empty() {
         return None;
     }

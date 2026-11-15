@@ -31,11 +31,13 @@ use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 mod insights;
+mod lifecycle;
 
 pub use insights::{
     AttributionDayActivity, AttributionHarnessModelActivity, AttributionPeriodSummary,
     AttributionSessionOutcome, AttributionSessionOutcomeTally,
 };
+pub use lifecycle::{AttributionPullRequestLifecycleSummary, AttributionRevertActivity};
 
 /// How far before the window commits and hook-reported sessions are loaded, so a merged PR
 /// finds the notes of commits made before the window opened, and a session that started
@@ -157,8 +159,12 @@ pub struct AttributionPullRequestActivity {
     pub pull_request: AttributionPullRequestRecord,
     /// The earliest of the PR's commit author times and its matched notes' observation times.
     pub first_commit_at: Option<OffsetDateTime>,
-    /// The title reads as a revert; see `insights::is_revert_title`.
+    /// Reverts another pull request, by evidence stronger than its title.
     pub is_revert: bool,
+    /// What this pull request reverts, including a title-only possible revert.
+    pub revert: Option<AttributionRevertActivity>,
+    /// The merged pull request in the window that reverted this one.
+    pub reverted_by: Option<i64>,
     /// git-ai agent tools the matched notes name.
     pub agent_tools: Vec<String>,
     /// The first [`MAX_PULL_REQUEST_COMMIT_DETAILS`] matched commits, oldest first, with their
@@ -217,6 +223,8 @@ pub struct AttributionReport {
     pub session_outcomes: Vec<AttributionSessionOutcomeTally>,
     /// Most sessions first.
     pub harness_models: Vec<AttributionHarnessModelActivity>,
+    /// Opened, closed, open and reviewed pull requests, and revert figures.
+    pub pull_request_lifecycle: AttributionPullRequestLifecycleSummary,
 }
 
 /// Builds the report for `query`. `query.limit` caps commits and PRs separately.
@@ -275,27 +283,33 @@ where
     let hashes = session_hashes(&commits, &agent_sessions);
     let windows = commit_windows(load_commit_times(store, &hashes, query.to).await?);
     let (facts, request_facts_truncated) = load_request_facts(store, &hashes, query.to).await?;
+    let loaded = distinct_pull_requests(pull_requests);
+    let mut lifecycle_summary = lifecycle::summary(&loaded, query);
+    let merged = loaded
+        .iter()
+        .filter(|pull_request| lifecycle::merged_in(query, pull_request))
+        .cloned()
+        .collect::<Vec<_>>();
     let mut inputs = ReportInputs::new(query, &commits, &facts, &windows);
     inputs.commit_details = commit_details;
     // Lookback commits only feed pull request totals, so a cap reached by them matters only
     // when the window has a pull request.
     let commits_capped = commits.len() >= limit
-        && (!pull_requests.is_empty()
+        && (!merged.is_empty()
             || commits
                 .last()
                 .is_some_and(|commit| commit.first_observed_at >= query.from));
     let coverage = AttributionReportCoverage {
         requests: RequestTally::default(),
         commits_truncated: commits_capped,
-        pull_requests_truncated: pull_requests.len() >= limit,
+        pull_requests_truncated: loaded.len() >= limit,
         request_facts_truncated,
         agent_sessions_truncated,
     };
-    Ok(inputs.report(
-        distinct_pull_requests(pull_requests),
-        &agent_sessions,
-        coverage,
-    ))
+    let mut report = inputs.report(merged, &agent_sessions, coverage);
+    lifecycle::apply_reverts(&mut report.pull_requests, &loaded, &mut lifecycle_summary);
+    report.pull_request_lifecycle = lifecycle_summary;
+    Ok(report)
 }
 
 /// Whether a hook-reported session was open at some point in the window. A missing start or
@@ -572,6 +586,7 @@ impl<'a> ReportInputs<'a> {
             changes,
             session_outcomes,
             harness_models,
+            pull_request_lifecycle: AttributionPullRequestLifecycleSummary::default(),
         }
     }
 
@@ -676,7 +691,7 @@ impl<'a> ReportInputs<'a> {
             ) {
                 let rollup = users.entry(user_id).or_default();
                 rollup.merged_pull_request_count += 1;
-                rollup.touch(pull_request.merged_at);
+                rollup.touch(lifecycle::merged_time(pull_request));
             }
         }
         for session in agent_sessions {
@@ -778,7 +793,10 @@ impl<'a> ReportInputs<'a> {
                 ordered.sort_by_key(|commit| commit.first_observed_at);
                 AttributionPullRequestActivity {
                     first_commit_at: authored.chain(observed).min(),
-                    is_revert: insights::is_revert_title(&pull_request.title),
+                    // Set from the revert links once every pull request is known.
+                    is_revert: false,
+                    revert: None,
+                    reverted_by: None,
                     agent_tools: distinct(
                         matched
                             .iter()

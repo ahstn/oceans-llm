@@ -12132,7 +12132,7 @@
           },
           {
             "type": "object",
-            "description": "Merged pull requests of one repository and their commits.",
+            "description": "Pull requests of one repository, open, closed or merged, with their commits.",
             "required": [
               "repository",
               "pull_requests",
@@ -12308,19 +12308,135 @@
         ],
         "description": "A merged pull request's commit that has a stored note."
       },
+      "AttributionPullRequestLifecycleView": {
+        "type": "object",
+        "description": "Lifecycle figures over every pull request merged, opened or closed in the window.",
+        "required": [
+          "opened_count",
+          "merged_count",
+          "closed_unmerged_count",
+          "open_count",
+          "draft_count",
+          "review_known_count",
+          "merged_without_review_count",
+          "revert_count",
+          "possible_revert_count"
+        ],
+        "properties": {
+          "closed_unmerged_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Closed without merging in the window."
+          },
+          "draft_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "median_review_wait_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Median opened to first human review, for reviews in the window."
+          },
+          "median_time_to_revert_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Median merge of a reverted pull request to the merge of its revert."
+          },
+          "merged_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "merged_without_review_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Merged in the window with no review by anyone but the author or a bot."
+          },
+          "open_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Still open, of those opened or updated in the window."
+          },
+          "opened_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "possible_revert_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Merged in the window with only a revert title to go on."
+          },
+          "revert_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Merged in the window and reverting another pull request, by confirmed evidence."
+          },
+          "review_known_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Merged in the window with review data from the hook; older hooks sent none."
+          }
+        }
+      },
       "AttributionPullRequestRequest": {
         "type": "object",
         "required": [
           "number",
-          "title",
-          "merged_at"
+          "title"
         ],
         "properties": {
+          "additions": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "approval_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
           "base_ref": {
             "type": [
               "string",
               "null"
             ]
+          },
+          "changed_files": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "changes_requested_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "closed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "RFC 3339; when it closed, merged or not."
+          },
+          "comment_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           },
           "commits": {
             "type": "array",
@@ -12328,9 +12444,29 @@
               "$ref": "#/components/schemas/AttributionPullRequestCommitRequest"
             }
           },
+          "deletions": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "first_review_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "RFC 3339; the first review by a person other than the author."
+          },
           "head_ref": {
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "is_draft": {
+            "type": [
+              "boolean",
               "null"
             ]
           },
@@ -12341,12 +12477,58 @@
             ]
           },
           "merged_at": {
-            "type": "string",
-            "description": "RFC 3339."
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "RFC 3339. Required for a merged pull request; absent for an open or closed one."
           },
           "number": {
             "type": "integer",
             "format": "int64"
+          },
+          "opened_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "RFC 3339."
+          },
+          "reverts": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AttributionRevertLinkRequest",
+                "description": "What this pull request reverts, as the hook detected it."
+              }
+            ]
+          },
+          "review_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "reviewer_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "state": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AttributionPullRequestStateRequest",
+                "description": "Defaults to `merged` when absent, as older hooks sent only merged pull requests."
+              }
+            ]
           },
           "title": {
             "type": "string"
@@ -12358,6 +12540,14 @@
             ]
           }
         }
+      },
+      "AttributionPullRequestStateRequest": {
+        "type": "string",
+        "enum": [
+          "open",
+          "closed",
+          "merged"
+        ]
       },
       "AttributionPullRequestView": {
         "allOf": [
@@ -12381,6 +12571,13 @@
               "commits"
             ],
             "properties": {
+              "additions": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64"
+              },
               "agent_tools": {
                 "type": "array",
                 "items": {
@@ -12390,6 +12587,13 @@
               },
               "ai_lines": {
                 "type": "integer",
+                "format": "int64"
+              },
+              "approval_count": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
                 "format": "int64"
               },
               "attributed_commit_count": {
@@ -12413,6 +12617,27 @@
                   "null"
                 ]
               },
+              "changed_files": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64"
+              },
+              "changes_requested_count": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64"
+              },
+              "comment_count": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64"
+              },
               "commit_count": {
                 "type": "integer",
                 "format": "int64"
@@ -12424,12 +12649,26 @@
                 },
                 "description": "The first 50 commits with a stored note, oldest first, within a budget of 2,000 across the\nreport's newest pull requests; older ones past it carry none. `attributed_commit_count`\ncounts them all."
               },
+              "deletions": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64"
+              },
               "first_commit_at": {
                 "type": [
                   "string",
                   "null"
                 ],
                 "description": "The earliest of the PR's commit author times and its notes' observation times."
+              },
+              "first_review_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "RFC 3339; the first review by a person other than the author."
               },
               "head_ref": {
                 "type": [
@@ -12443,7 +12682,7 @@
               },
               "is_revert": {
                 "type": "boolean",
-                "description": "The title reads as a revert (`Revert \"…\"` or `revert:`), a change-failure proxy."
+                "description": "Reverts another pull request, by evidence stronger than its title: git's revert line,\nGitHub's revert button or an exact inverse change. A change-failure proxy."
               },
               "lead_time_seconds": {
                 "type": [
@@ -12466,8 +12705,50 @@
                 "type": "integer",
                 "format": "int64"
               },
+              "opened_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "RFC 3339; absent for rows from hooks that sent no lifecycle."
+              },
               "repository": {
                 "type": "string"
+              },
+              "revert": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AttributionRevertView",
+                    "description": "What this pull request reverts, including a title-only possible revert."
+                  }
+                ]
+              },
+              "reverted_by_number": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "description": "The pull request in this report that reverted this one."
+              },
+              "review_count": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "description": "Human reviews other than the author's; absent when the hook sent no review data."
+              },
+              "review_wait_seconds": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "description": "Opened to first human review."
               },
               "title": {
                 "type": "string"
@@ -12507,6 +12788,7 @@
           "daily",
           "session_outcomes",
           "harness_models",
+          "pull_request_lifecycle",
           "summary",
           "previous_truncated"
         ],
@@ -12554,6 +12836,10 @@
           "previous_truncated": {
             "type": "boolean",
             "description": "A read cap cut the previous window short, so changes against it are unreliable."
+          },
+          "pull_request_lifecycle": {
+            "$ref": "#/components/schemas/AttributionPullRequestLifecycleView",
+            "description": "Opened, closed, open and reviewed pull requests, and revert figures."
           },
           "pull_requests": {
             "type": "array",
@@ -12636,6 +12922,77 @@
           "usage_missing_request_count": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "AttributionRevertEvidenceRequest": {
+        "type": "string",
+        "description": "Strongest first; `title` is a possible revert only.",
+        "enum": [
+          "revert_commit",
+          "github_revert",
+          "change_match",
+          "title"
+        ]
+      },
+      "AttributionRevertEvidenceView": {
+        "type": "string",
+        "description": "How a revert link was found, strongest first. `title` alone is a possible revert.",
+        "enum": [
+          "revert_commit",
+          "github_revert",
+          "change_match",
+          "title"
+        ]
+      },
+      "AttributionRevertLinkRequest": {
+        "type": "object",
+        "required": [
+          "evidence"
+        ],
+        "properties": {
+          "commit_shas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Reverted commits, full or abbreviated (at least 7 characters)."
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/AttributionRevertEvidenceRequest"
+          },
+          "pull_request_number": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The reverted pull request in the same repository."
+          }
+        }
+      },
+      "AttributionRevertView": {
+        "type": "object",
+        "description": "What a merged pull request reverts.",
+        "required": [
+          "evidence",
+          "confirmed"
+        ],
+        "properties": {
+          "confirmed": {
+            "type": "boolean",
+            "description": "Whether the evidence is stronger than a title."
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/AttributionRevertEvidenceView"
+          },
+          "reverts_pull_request_number": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The reverted pull request in the same repository, when it could be resolved."
           }
         }
       },
@@ -15286,6 +15643,7 @@
               "daily",
               "session_outcomes",
               "harness_models",
+              "pull_request_lifecycle",
               "summary",
               "previous_truncated"
             ],
@@ -15333,6 +15691,10 @@
               "previous_truncated": {
                 "type": "boolean",
                 "description": "A read cap cut the previous window short, so changes against it are unreliable."
+              },
+              "pull_request_lifecycle": {
+                "$ref": "#/components/schemas/AttributionPullRequestLifecycleView",
+                "description": "Opened, closed, open and reviewed pull requests, and revert figures."
               },
               "pull_requests": {
                 "type": "array",

@@ -10,7 +10,10 @@ pub(crate) struct MigrationManifest {
 /// libsql migrations that rebuild a table other tables reference, with that
 /// table. They run with foreign keys off, as SQLite's table-rebuild
 /// procedure requires, and then check the rebuilt table's children.
-const LIBSQL_REBUILT_PARENTS: &[(u32, &str)] = &[(66, "gateway_oauth_clients")];
+const LIBSQL_REBUILT_PARENTS: &[(u32, &str)] = &[
+    (66, "gateway_oauth_clients"),
+    (82, "attribution_pull_requests"),
+];
 
 impl MigrationManifest {
     pub(crate) fn libsql_rebuilt_parent(&self) -> Option<&'static str> {
@@ -517,6 +520,15 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         checksum: "V81__attribution_request_sessions.sql",
         libsql_sql: include_str!("../migrations/V81__attribution_request_sessions.sql"),
         postgres_sql: include_str!("../migrations/postgres/V81__attribution_request_sessions.sql"),
+    },
+    MigrationManifest {
+        version: 82,
+        name: "attribution_pull_request_lifecycle",
+        checksum: "V82__attribution_pull_request_lifecycle.sql",
+        libsql_sql: include_str!("../migrations/V82__attribution_pull_request_lifecycle.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V82__attribution_pull_request_lifecycle.sql"
+        ),
     },
 ];
 

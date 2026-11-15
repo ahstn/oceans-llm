@@ -3,7 +3,8 @@ use std::sync::Mutex;
 use gateway_core::{
     ATTRIBUTION_MAX_REQUEST_FACTS, AttributionAgentSessionRecord, AttributionCommitRecord,
     AttributionCommitSession, AttributionFreshness, AttributionOwner, AttributionPullRequestCommit,
-    AttributionPullRequestRecord, AttributionReportQuery, AttributionRequestFact,
+    AttributionPullRequestRecord, AttributionPullRequestState, AttributionReportQuery,
+    AttributionRequestFact, AttributionRevertEvidence, AttributionRevertLink,
     AttributionSessionEventWrite,
 };
 use time::{Duration, OffsetDateTime};
@@ -112,7 +113,11 @@ fn pull_request(
         base_ref: Some("main".to_string()),
         head_ref: None,
         merge_commit_sha: None,
-        merged_at,
+        merged_at: Some(merged_at),
+        lifecycle: gateway_core::AttributionPullRequestLifecycle {
+            closed_at: Some(merged_at),
+            ..Default::default()
+        },
         author_user_id: None,
         author_email_hash: None,
         commits: commit_ids
@@ -277,7 +282,7 @@ async fn sessions_sharing_a_hash_count_its_requests_once() {
 async fn a_pi_note_joins_requests_the_gateway_recorded_as_claude_code() {
     let dev = Uuid::new_v4();
     let scope = format!("user:{dev}");
-    let mut store = FakeStore::default();
+    let mut store = FakeStore::with_commits(vec![]);
     let note_content = r#"a.rs
   s_aa::t_01 1-5
 ---
@@ -392,7 +397,7 @@ async fn a_hook_session_finds_its_requests_under_any_namespace() {
 async fn a_hook_only_omp_session_counts_its_oceans_requests_as_uncommitted() {
     let dev = Uuid::new_v4();
     let scope = format!("user:{dev}");
-    let mut store = FakeStore::default();
+    let mut store = FakeStore::with_commits(vec![]);
     let entries = vec![entry("s-1", 5, session("oh_my_pi", "omp-session-9"))];
     ingest(
         &store,
@@ -1059,7 +1064,14 @@ async fn sessions_reach_their_furthest_stage_and_feed_the_tab_insights() {
     assert!(day.committed.request_count + report.daily[1].committed.request_count >= 3);
 
     let merged = &report.pull_requests[0];
-    assert!(merged.is_revert);
+    // A title with no revert line, button or matching change is a possible revert only.
+    assert!(!merged.is_revert);
+    assert_eq!(
+        merged.revert.map(|revert| revert.evidence),
+        Some(AttributionRevertEvidence::Title)
+    );
+    assert_eq!(report.pull_request_lifecycle.possible_revert_count, 1);
+    assert_eq!(report.pull_request_lifecycle.revert_count, 0);
     assert_eq!(
         merged.first_commit_at,
         Some(minutes(35)),
@@ -1070,7 +1082,10 @@ async fn sessions_reach_their_furthest_stage_and_feed_the_tab_insights() {
     assert_eq!(merged.commits[0].requests.request_count, 2);
 
     let summary = report.summary();
-    assert_eq!(summary.reverted_pull_request_count, 1);
+    assert_eq!(
+        summary.reverted_pull_request_count, 0,
+        "possible reverts are not counted"
+    );
     assert_eq!(summary.median_lead_time_seconds, Some(55 * 60));
     assert_eq!(summary.shipped_cost_10000, 300);
 }
@@ -1439,4 +1454,108 @@ async fn explicit_journals_override_provider_parents_and_count_requests_and_cost
             3
         );
     }
+}
+
+#[tokio::test]
+async fn revert_links_resolve_to_the_reverted_pull_request() {
+    let dev = user_owner(Uuid::new_v4());
+    let mut original = pull_request(5, &dev, minutes(60), &[11]);
+    original.commits[0].commit_sha = "abcdef0123456789abcdef0123456789abcdef01".to_string();
+    // Reverts that commit by an abbreviated SHA, with a title that does not say revert.
+    let mut by_commit = pull_request(6, &dev, minutes(180), &[12]);
+    by_commit.title = "Tidy the widgets module".to_string();
+    by_commit.lifecycle.details.reverts = Some(AttributionRevertLink {
+        pull_request_number: None,
+        commit_shas: vec!["abcdef0123".to_string()],
+        evidence: AttributionRevertEvidence::RevertCommit,
+    });
+    let mut by_title = pull_request(7, &dev, minutes(240), &[13]);
+    by_title.lifecycle.details.reverts = Some(AttributionRevertLink {
+        pull_request_number: Some(5),
+        commit_shas: vec![],
+        evidence: AttributionRevertEvidence::Title,
+    });
+    let mut store = FakeStore::with_commits(vec![]);
+    store.pull_requests = Mutex::new(vec![original, by_commit, by_title]);
+    let report = report(&store, &query()).await;
+
+    let find = |number: i64| {
+        report
+            .pull_requests
+            .iter()
+            .find(|activity| activity.pull_request.number == number)
+            .unwrap()
+    };
+    let revert = find(6);
+    assert!(revert.is_revert);
+    assert_eq!(
+        revert
+            .revert
+            .and_then(|revert| revert.reverts_pull_request_number),
+        Some(5)
+    );
+    assert_eq!(
+        find(5).reverted_by,
+        Some(6),
+        "a possible revert does not mark the original"
+    );
+    assert!(!find(7).is_revert);
+    let lifecycle = &report.pull_request_lifecycle;
+    assert_eq!(
+        (lifecycle.revert_count, lifecycle.possible_revert_count),
+        (1, 1)
+    );
+    assert_eq!(lifecycle.median_time_to_revert_seconds, Some(2 * 3600));
+    assert_eq!(report.summary().reverted_pull_request_count, 1);
+}
+
+#[tokio::test]
+async fn open_and_closed_pull_requests_feed_lifecycle_figures_but_not_merged_ones() {
+    let dev = user_owner(Uuid::new_v4());
+    let mut reviewed = pull_request(1, &dev, minutes(300), &[]);
+    reviewed.lifecycle.opened_at = Some(minutes(60));
+    reviewed.lifecycle.details.first_review_at = Some(minutes(120));
+    reviewed.lifecycle.details.review_count = Some(2);
+    let mut unreviewed = pull_request(2, &dev, minutes(310), &[]);
+    unreviewed.lifecycle.opened_at = Some(minutes(200));
+    unreviewed.lifecycle.details.review_count = Some(0);
+    let mut open = pull_request(3, &dev, minutes(0), &[]);
+    open.merged_at = None;
+    open.lifecycle.state = AttributionPullRequestState::Open;
+    open.lifecycle.closed_at = None;
+    open.lifecycle.opened_at = Some(minutes(30));
+    open.lifecycle.details.is_draft = Some(true);
+    let mut closed = pull_request(4, &dev, minutes(0), &[]);
+    closed.merged_at = None;
+    closed.lifecycle.state = AttributionPullRequestState::Closed;
+    closed.lifecycle.opened_at = Some(minutes(20));
+    closed.lifecycle.closed_at = Some(minutes(90));
+    closed.lifecycle.details.first_review_at = Some(minutes(80));
+    // Opened in the window but merged after it, as a previous-window read sees it.
+    let mut merged_later = pull_request(5, &dev, minutes(60 * 30), &[]);
+    merged_later.lifecycle.opened_at = Some(minutes(10));
+    let mut store = FakeStore::with_commits(vec![]);
+    store.pull_requests = Mutex::new(vec![reviewed, unreviewed, open, closed, merged_later]);
+    let report = report(&store, &query()).await;
+
+    let merged: Vec<i64> = report
+        .pull_requests
+        .iter()
+        .map(|activity| activity.pull_request.number)
+        .collect();
+    assert_eq!(
+        merged.len(),
+        2,
+        "only pull requests merged in the window: {merged:?}"
+    );
+    assert_eq!(report.totals.pull_request_count, 2);
+    let lifecycle = &report.pull_request_lifecycle;
+    assert_eq!(lifecycle.opened_count, 5);
+    assert_eq!(lifecycle.merged_count, 2);
+    assert_eq!(lifecycle.closed_unmerged_count, 1);
+    assert_eq!((lifecycle.open_count, lifecycle.draft_count), (1, 1));
+    assert_eq!(lifecycle.review_known_count, 2);
+    assert_eq!(lifecycle.merged_without_review_count, 1);
+    // Reviews 60 and 60 minutes after opening.
+    assert_eq!(lifecycle.median_review_wait_seconds, Some(3600));
 }

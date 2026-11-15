@@ -3310,23 +3310,103 @@ export interface components {
             human_lines: number;
             models: string[];
         };
+        /** @description Lifecycle figures over every pull request merged, opened or closed in the window. */
+        AttributionPullRequestLifecycleView: {
+            /**
+             * Format: int64
+             * @description Closed without merging in the window.
+             */
+            closed_unmerged_count: number;
+            /** Format: int64 */
+            draft_count: number;
+            /**
+             * Format: int64
+             * @description Median opened to first human review, for reviews in the window.
+             */
+            median_review_wait_seconds?: number | null;
+            /**
+             * Format: int64
+             * @description Median merge of a reverted pull request to the merge of its revert.
+             */
+            median_time_to_revert_seconds?: number | null;
+            /** Format: int64 */
+            merged_count: number;
+            /**
+             * Format: int64
+             * @description Merged in the window with no review by anyone but the author or a bot.
+             */
+            merged_without_review_count: number;
+            /**
+             * Format: int64
+             * @description Still open, of those opened or updated in the window.
+             */
+            open_count: number;
+            /** Format: int64 */
+            opened_count: number;
+            /**
+             * Format: int64
+             * @description Merged in the window with only a revert title to go on.
+             */
+            possible_revert_count: number;
+            /**
+             * Format: int64
+             * @description Merged in the window and reverting another pull request, by confirmed evidence.
+             */
+            revert_count: number;
+            /**
+             * Format: int64
+             * @description Merged in the window with review data from the hook; older hooks sent none.
+             */
+            review_known_count: number;
+        };
         AttributionPullRequestRequest: {
+            /** Format: int64 */
+            additions?: number | null;
+            /** Format: int64 */
+            approval_count?: number | null;
             base_ref?: string | null;
+            /** Format: int64 */
+            changed_files?: number | null;
+            /** Format: int64 */
+            changes_requested_count?: number | null;
+            /** @description RFC 3339; when it closed, merged or not. */
+            closed_at?: string | null;
+            /** Format: int64 */
+            comment_count?: number | null;
             commits?: components["schemas"]["AttributionPullRequestCommitRequest"][];
+            /** Format: int64 */
+            deletions?: number | null;
+            /** @description RFC 3339; the first review by a person other than the author. */
+            first_review_at?: string | null;
             head_ref?: string | null;
+            is_draft?: boolean | null;
             merge_commit_sha?: string | null;
-            /** @description RFC 3339. */
-            merged_at: string;
+            /** @description RFC 3339. Required for a merged pull request; absent for an open or closed one. */
+            merged_at?: string | null;
             /** Format: int64 */
             number: number;
+            /** @description RFC 3339. */
+            opened_at?: string | null;
+            reverts?: null | components["schemas"]["AttributionRevertLinkRequest"];
+            /** Format: int64 */
+            review_count?: number | null;
+            /** Format: int64 */
+            reviewer_count?: number | null;
+            state?: null | components["schemas"]["AttributionPullRequestStateRequest"];
             title: string;
             url?: string | null;
         };
+        /** @enum {string} */
+        AttributionPullRequestStateRequest: "open" | "closed" | "merged";
         AttributionPullRequestView: components["schemas"]["AttributionRequestTallyView"] & {
+            /** Format: int64 */
+            additions?: number | null;
             /** @description git-ai agent tools the matched notes name. */
             agent_tools: string[];
             /** Format: int64 */
             ai_lines: number;
+            /** Format: int64 */
+            approval_count?: number | null;
             /**
              * Format: int64
              * @description Listed commits with a stored note; the merge commit when none of them has one.
@@ -3335,6 +3415,12 @@ export interface components {
             author?: null | components["schemas"]["AttributionUserRefView"];
             base_ref?: string | null;
             /** Format: int64 */
+            changed_files?: number | null;
+            /** Format: int64 */
+            changes_requested_count?: number | null;
+            /** Format: int64 */
+            comment_count?: number | null;
+            /** Format: int64 */
             commit_count: number;
             /**
              * @description The first 50 commits with a stored note, oldest first, within a budget of 2,000 across the
@@ -3342,12 +3428,19 @@ export interface components {
              *     counts them all.
              */
             commits: components["schemas"]["AttributionPullRequestCommitView"][];
+            /** Format: int64 */
+            deletions?: number | null;
             /** @description The earliest of the PR's commit author times and its notes' observation times. */
             first_commit_at?: string | null;
+            /** @description RFC 3339; the first review by a person other than the author. */
+            first_review_at?: string | null;
             head_ref?: string | null;
             /** Format: int64 */
             human_lines: number;
-            /** @description The title reads as a revert (`Revert "…"` or `revert:`), a change-failure proxy. */
+            /**
+             * @description Reverts another pull request, by evidence stronger than its title: git's revert line,
+             *     GitHub's revert button or an exact inverse change. A change-failure proxy.
+             */
             is_revert: boolean;
             /**
              * Format: int64
@@ -3358,7 +3451,25 @@ export interface components {
             models: string[];
             /** Format: int64 */
             number: number;
+            /** @description RFC 3339; absent for rows from hooks that sent no lifecycle. */
+            opened_at?: string | null;
             repository: string;
+            revert?: null | components["schemas"]["AttributionRevertView"];
+            /**
+             * Format: int64
+             * @description The pull request in this report that reverted this one.
+             */
+            reverted_by_number?: number | null;
+            /**
+             * Format: int64
+             * @description Human reviews other than the author's; absent when the hook sent no review data.
+             */
+            review_count?: number | null;
+            /**
+             * Format: int64
+             * @description Opened to first human review.
+             */
+            review_wait_seconds?: number | null;
             title: string;
             url?: string | null;
         };
@@ -3375,6 +3486,8 @@ export interface components {
             previous_summary?: null | components["schemas"]["AttributionPeriodSummaryView"];
             /** @description A read cap cut the previous window short, so changes against it are unreliable. */
             previous_truncated: boolean;
+            /** @description Opened, closed, open and reviewed pull requests, and revert figures. */
+            pull_request_lifecycle: components["schemas"]["AttributionPullRequestLifecycleView"];
             pull_requests: components["schemas"]["AttributionPullRequestView"][];
             repository?: string | null;
             /** @description Agent sessions by the furthest stage their work reached. */
@@ -3401,6 +3514,37 @@ export interface components {
             unpriced_request_count: number;
             /** Format: int64 */
             usage_missing_request_count: number;
+        };
+        /**
+         * @description Strongest first; `title` is a possible revert only.
+         * @enum {string}
+         */
+        AttributionRevertEvidenceRequest: "revert_commit" | "github_revert" | "change_match" | "title";
+        /**
+         * @description How a revert link was found, strongest first. `title` alone is a possible revert.
+         * @enum {string}
+         */
+        AttributionRevertEvidenceView: "revert_commit" | "github_revert" | "change_match" | "title";
+        AttributionRevertLinkRequest: {
+            /** @description Reverted commits, full or abbreviated (at least 7 characters). */
+            commit_shas?: string[];
+            evidence: components["schemas"]["AttributionRevertEvidenceRequest"];
+            /**
+             * Format: int64
+             * @description The reverted pull request in the same repository.
+             */
+            pull_request_number?: number | null;
+        };
+        /** @description What a merged pull request reverts. */
+        AttributionRevertView: {
+            /** @description Whether the evidence is stronger than a title. */
+            confirmed: boolean;
+            evidence: components["schemas"]["AttributionRevertEvidenceView"];
+            /**
+             * Format: int64
+             * @description The reverted pull request in the same repository, when it could be resolved.
+             */
+            reverts_pull_request_number?: number | null;
         };
         /** @enum {string} */
         AttributionSessionEventRequest: "start" | "end";
@@ -4115,6 +4259,8 @@ export interface components {
                 previous_summary?: null | components["schemas"]["AttributionPeriodSummaryView"];
                 /** @description A read cap cut the previous window short, so changes against it are unreliable. */
                 previous_truncated: boolean;
+                /** @description Opened, closed, open and reviewed pull requests, and revert figures. */
+                pull_request_lifecycle: components["schemas"]["AttributionPullRequestLifecycleView"];
                 pull_requests: components["schemas"]["AttributionPullRequestView"][];
                 repository?: string | null;
                 /** @description Agent sessions by the furthest stage their work reached. */

@@ -1,6 +1,8 @@
-//! `oceans hook prs`: merged pull requests and their commits from the local `gh`, so the
-//! gateway never needs a GitHub token (ADR "Pull request merges"). The repository comes from
-//! the same remote git-ai reports, so pull request commits join the notes.
+//! `oceans hook prs`: recently updated pull requests, open, closed or merged, with their
+//! commits, from the local `gh`, so the gateway never needs a GitHub token (ADR "Pull request
+//! merges"). The repository comes from the same remote git-ai reports, so pull request commits
+//! join the notes. Reviews, descriptions and commit messages are reduced here to counts, times
+//! and revert links; reviewer logins and description text never leave this machine.
 
 use std::{
     path::Path,
@@ -12,9 +14,13 @@ use serde::Deserialize;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use super::{
-    payload::{Payload, PullRequest, PullRequestCommit, PullRequestsPayload, is_commit_sha},
+    payload::{
+        Payload, PullRequest, PullRequestCommit, PullRequestLifecycle, PullRequestsPayload,
+        RevertLink, is_commit_sha,
+    },
     queue::EnqueueReport,
     repo::git_context,
+    reverts::{self, Candidate},
     state::State,
 };
 use crate::process::{RunError, run_captured_with_stderr};
@@ -22,19 +28,27 @@ use crate::process::{RunError, run_captured_with_stderr};
 const GH_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_GH_OUTPUT: usize = 64 * 1024 * 1024;
 const MAX_GH_STDERR: usize = 64 * 1024;
-// Each PR can select 100 commits with 100 authors each. 50 PRs would exceed
-// GitHub's 500,000-node GraphQL limit (505,050 nodes).
+// Each PR selects 100 commits with one author each and 100 reviews, about 300 nodes, so a
+// page stays far below GitHub's 500,000-node GraphQL limit.
 const GH_PAGE_SIZE: u32 = 49;
+// Recently updated first, so a PR that was reviewed, merged or closed since the last sync is
+// fetched again and its stored state moves on.
 const PR_QUERY: &str = r#"
 query($owner: String!, $name: String!, $pageSize: Int!, $cursor: String) {
   repository(owner: $owner, name: $name) {
-    pullRequests(first: $pageSize, after: $cursor, states: MERGED,
-                 orderBy: {field: CREATED_AT, direction: DESC}) {
+    pullRequests(first: $pageSize, after: $cursor, states: [OPEN, CLOSED, MERGED],
+                 orderBy: {field: UPDATED_AT, direction: DESC}) {
       nodes {
-        number title url mergedAt baseRefName headRefName mergeCommit { oid }
+        number title url state isDraft createdAt closedAt mergedAt baseRefName headRefName
+        body additions deletions changedFiles mergeCommit { oid }
+        author { __typename login }
+        comments { totalCount }
+        reviews(first: 100) {
+          nodes { state submittedAt author { __typename login } }
+        }
         commits(first: 100) {
           nodes { commit {
-            oid messageHeadline authoredDate authors(first: 100) { nodes { email } }
+            oid messageHeadline messageBody authoredDate authors(first: 1) { nodes { email } }
           } }
         }
       }
@@ -47,7 +61,8 @@ query($owner: String!, $name: String!, $pageSize: Int!, $cursor: String) {
 const PR_PAGE_FILTER: &str = r#".data.repository.pullRequests | {
   pullRequests: [.nodes[] | .commits = [
     .commits.nodes[].commit | .authors = .authors.nodes
-  ]], pageInfo
+  ] | .reviews = .reviews.nodes | .commentCount = .comments.totalCount | del(.comments)],
+  pageInfo
 }"#;
 
 #[derive(Deserialize)]
@@ -89,6 +104,47 @@ struct GhPullRequest {
     merge_commit: Option<GhCommitRef>,
     #[serde(default)]
     commits: Vec<GhCommit>,
+    /// `OPEN`, `CLOSED` or `MERGED`.
+    #[serde(default)]
+    state: Option<String>,
+    #[serde(default)]
+    is_draft: Option<bool>,
+    #[serde(default)]
+    created_at: Option<String>,
+    #[serde(default)]
+    closed_at: Option<String>,
+    /// Read for revert links only; never sent.
+    #[serde(default)]
+    body: Option<String>,
+    #[serde(default)]
+    additions: Option<u64>,
+    #[serde(default)]
+    deletions: Option<u64>,
+    #[serde(default)]
+    changed_files: Option<u64>,
+    #[serde(default)]
+    author: Option<GhActor>,
+    #[serde(default)]
+    comment_count: Option<u32>,
+    #[serde(default)]
+    reviews: Vec<GhReview>,
+}
+
+#[derive(Deserialize)]
+struct GhActor {
+    #[serde(rename = "__typename", default)]
+    kind: String,
+    #[serde(default)]
+    login: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GhReview {
+    #[serde(default)]
+    state: String,
+    submitted_at: Option<String>,
+    author: Option<GhActor>,
 }
 
 #[derive(Deserialize)]
@@ -102,6 +158,9 @@ struct GhCommit {
     oid: String,
     #[serde(default)]
     message_headline: String,
+    /// Read for `This reverts commit` lines only; never sent.
+    #[serde(default)]
+    message_body: String,
     authored_date: Option<String>,
     #[serde(default)]
     authors: Vec<GhAuthor>,
@@ -147,7 +206,17 @@ pub fn sync(
         Ok(output) => output,
         Err(reason) => return Ok(SyncOutcome::Unavailable(reason)),
     };
-    let pull_requests: Vec<PullRequest> = fetched.into_iter().filter_map(pull_request).collect();
+    let repository_path = repository.split_once('/').map_or("", |(_, path)| path);
+    let mut cache = state.change_cache(&repository);
+    let links = revert_links(&fetched, repository_path, directory, &mut cache);
+    reverts::trim(&mut cache);
+    // The cache only speeds up later matches, so a failed write must not lose the sync.
+    let _ = state.save_change_cache(&repository, &cache);
+    let pull_requests: Vec<PullRequest> = fetched
+        .into_iter()
+        .zip(links)
+        .filter_map(|(fetched, link)| pull_request(fetched, link))
+        .collect();
     let count = pull_requests.len();
     let payloads = chunk(&repository, pull_requests);
     let report = state.enqueue(payloads)?;
@@ -226,8 +295,122 @@ fn fetch_pages(
     Ok(fetched)
 }
 
-fn pull_request(fetched: GhPullRequest) -> Option<PullRequest> {
-    let merged_at = fetched.merged_at.filter(|time| is_rfc3339(time))?;
+/// Each fetched pull request's revert link. Every merged pull request is fingerprinted first,
+/// so a revert matches its original whichever order the two arrive in.
+fn revert_links(
+    fetched: &[GhPullRequest],
+    repository_path: &str,
+    directory: &Path,
+    cache: &mut reverts::ChangeCache,
+) -> Vec<Option<RevertLink>> {
+    let candidates: Vec<Candidate<'_>> = fetched.iter().map(candidate).collect();
+    for candidate in &candidates {
+        reverts::remember(candidate, directory, cache);
+    }
+    candidates
+        .iter()
+        .map(|candidate| reverts::detect(candidate, repository_path, directory, cache))
+        .collect()
+}
+
+fn candidate(fetched: &GhPullRequest) -> Candidate<'_> {
+    let merged_at = fetched.merged_at.as_deref().filter(|time| is_rfc3339(time));
+    Candidate {
+        number: fetched.number,
+        title: &fetched.title,
+        body: fetched.body.as_deref().unwrap_or_default(),
+        head_ref: &fetched.head_ref_name,
+        merge_commit_sha: merged_at.and(
+            fetched
+                .merge_commit
+                .as_ref()
+                .map(|commit| commit.oid.as_str())
+                .filter(|sha| is_commit_sha(sha)),
+        ),
+        merged_at,
+        commit_bodies: fetched
+            .commits
+            .iter()
+            .map(|commit| commit.message_body.as_str())
+            .collect(),
+    }
+}
+
+/// Counts and times from the pull request's reviews and comments. Reviews by bots and by the
+/// author are left out; logins are compared here and never sent.
+fn lifecycle(fetched: &GhPullRequest) -> PullRequestLifecycle {
+    let author = fetched
+        .author
+        .as_ref()
+        .map(|author| author.login.as_str())
+        .unwrap_or_default();
+    let human_reviews: Vec<&GhReview> = fetched
+        .reviews
+        .iter()
+        .filter(|review| review.state != "PENDING")
+        .filter(|review| {
+            review.author.as_ref().is_some_and(|reviewer| {
+                reviewer.kind == "User" && !reviewer.login.is_empty() && reviewer.login != author
+            })
+        })
+        .collect();
+    let count = |state: &str| {
+        let count = human_reviews
+            .iter()
+            .filter(|review| review.state == state)
+            .count();
+        u32::try_from(count).unwrap_or(u32::MAX)
+    };
+    let mut reviewers: Vec<&str> = human_reviews
+        .iter()
+        .filter_map(|review| {
+            review
+                .author
+                .as_ref()
+                .map(|reviewer| reviewer.login.as_str())
+        })
+        .collect();
+    reviewers.sort_unstable();
+    reviewers.dedup();
+    let state = fetched.state.as_deref().map(|state| match state {
+        "MERGED" => "merged",
+        "CLOSED" => "closed",
+        _ => "open",
+    });
+    PullRequestLifecycle {
+        state: state.map(str::to_owned),
+        is_draft: fetched.is_draft,
+        opened_at: fetched.created_at.clone().filter(|time| is_rfc3339(time)),
+        closed_at: fetched.closed_at.clone().filter(|time| is_rfc3339(time)),
+        first_review_at: human_reviews
+            .iter()
+            .filter_map(|review| review.submitted_at.as_deref())
+            .filter(|time| is_rfc3339(time))
+            .min_by_key(|time| OffsetDateTime::parse(time, &Rfc3339).ok())
+            .map(str::to_owned),
+        review_count: Some(u32::try_from(human_reviews.len()).unwrap_or(u32::MAX)),
+        approval_count: Some(count("APPROVED")),
+        changes_requested_count: Some(count("CHANGES_REQUESTED")),
+        reviewer_count: Some(u32::try_from(reviewers.len()).unwrap_or(u32::MAX)),
+        comment_count: fetched.comment_count,
+        additions: fetched.additions,
+        deletions: fetched.deletions,
+        changed_files: fetched.changed_files,
+    }
+}
+
+fn pull_request(fetched: GhPullRequest, reverts: Option<RevertLink>) -> Option<PullRequest> {
+    let lifecycle = lifecycle(&fetched);
+    let merged_at = fetched.merged_at.filter(|time| is_rfc3339(time));
+    // A merged pull request without a merge time is malformed; open and closed ones have none.
+    if merged_at.is_none()
+        && lifecycle
+            .state
+            .as_deref()
+            .is_none_or(|state| state == "merged")
+    {
+        return None;
+    }
     let url = fetched
         .url
         .starts_with("https://")
@@ -262,6 +445,8 @@ fn pull_request(fetched: GhPullRequest) -> Option<PullRequest> {
             .filter(|sha| is_commit_sha(sha)),
         merged_at,
         commits,
+        lifecycle,
+        reverts,
     })
     .filter(|pull_request| pull_request.number > 0)
 }
@@ -424,7 +609,10 @@ mod tests {
 
     #[test]
     fn merged_pull_requests_map_to_the_wire_shape() {
-        let pull_requests: Vec<_> = fetched().into_iter().filter_map(pull_request).collect();
+        let pull_requests: Vec<_> = fetched()
+            .into_iter()
+            .filter_map(|pr| pull_request(pr, None))
+            .collect();
         assert_eq!(pull_requests.len(), 2);
         let first = &pull_requests[0];
         assert_eq!(first.title, "Add widgets ");
@@ -446,7 +634,10 @@ mod tests {
 
     #[test]
     fn payloads_split_by_size_and_count() {
-        let template = fetched().into_iter().find_map(pull_request).unwrap();
+        let template = fetched()
+            .into_iter()
+            .find_map(|pr| pull_request(pr, None))
+            .unwrap();
         let many: Vec<_> = (1..=250)
             .map(|number| PullRequest {
                 number,
@@ -473,6 +664,93 @@ mod tests {
         for payload in &payloads {
             assert!(serde_json::to_vec(payload).unwrap().len() <= MAX_PAYLOAD_BYTES + 64 * 1024);
         }
+    }
+
+    fn lifecycle_fixture() -> Vec<GhPullRequest> {
+        serde_json::from_value(serde_json::json!([
+            {
+                "number": 20, "title": "Open work", "url": "https://github.com/acme/widgets/pull/20",
+                "state": "OPEN", "isDraft": true, "createdAt": "2026-11-12T09:00:00Z",
+                "closedAt": null, "mergedAt": null, "mergeCommit": null,
+                "body": "Private description", "additions": 40, "deletions": 3, "changedFiles": 2,
+                "author": {"__typename": "User", "login": "dev"}, "commentCount": 4,
+                "reviews": [
+                    {"state": "COMMENTED", "submittedAt": "2026-11-12T10:00:00Z", "author": {"__typename": "Bot", "login": "coderabbitai"}},
+                    {"state": "COMMENTED", "submittedAt": "2026-11-12T10:30:00Z", "author": {"__typename": "User", "login": "dev"}},
+                    {"state": "CHANGES_REQUESTED", "submittedAt": "2026-11-12T12:00:00Z", "author": {"__typename": "User", "login": "rev1"}},
+                    {"state": "APPROVED", "submittedAt": "2026-11-12T11:00:00Z", "author": {"__typename": "User", "login": "rev2"}},
+                    {"state": "APPROVED", "submittedAt": "2026-11-13T11:00:00Z", "author": {"__typename": "User", "login": "rev1"}},
+                    {"state": "PENDING", "submittedAt": null, "author": {"__typename": "User", "login": "rev3"}}
+                ],
+                "commits": []
+            },
+            {
+                "number": 21, "title": "Abandoned", "url": "https://github.com/acme/widgets/pull/21",
+                "state": "CLOSED", "createdAt": "2026-11-01T09:00:00Z", "closedAt": "2026-11-02T09:00:00Z",
+                "mergedAt": null, "mergeCommit": null, "commits": [], "reviews": []
+            }
+        ]))
+        .unwrap()
+    }
+
+    #[test]
+    fn open_and_closed_pull_requests_carry_their_lifecycle() {
+        let prs: Vec<_> = lifecycle_fixture()
+            .into_iter()
+            .filter_map(|pr| pull_request(pr, None))
+            .collect();
+        assert_eq!(prs.len(), 2);
+        let open = &prs[0];
+        assert_eq!(open.merged_at, None);
+        assert_eq!(open.lifecycle.state.as_deref(), Some("open"));
+        assert_eq!(open.lifecycle.is_draft, Some(true));
+        // Bot and self reviews are left out, and so is the pending one.
+        assert_eq!(open.lifecycle.review_count, Some(3));
+        assert_eq!(
+            open.lifecycle.first_review_at.as_deref(),
+            Some("2026-11-12T11:00:00Z")
+        );
+        assert_eq!(open.lifecycle.approval_count, Some(2));
+        assert_eq!(open.lifecycle.changes_requested_count, Some(1));
+        assert_eq!(open.lifecycle.reviewer_count, Some(2));
+        assert_eq!(open.lifecycle.comment_count, Some(4));
+        assert_eq!(
+            (open.lifecycle.additions, open.lifecycle.deletions),
+            (Some(40), Some(3))
+        );
+        let closed = &prs[1];
+        assert_eq!(closed.lifecycle.state.as_deref(), Some("closed"));
+        assert_eq!(
+            closed.lifecycle.closed_at.as_deref(),
+            Some("2026-11-02T09:00:00Z")
+        );
+        // Nothing that identifies a reviewer, nor the description, is in the payload.
+        let wire = serde_json::to_string(&prs).unwrap();
+        for private in ["coderabbitai", "rev1", "rev2", "dev", "Private description"] {
+            assert!(
+                !wire.contains(&format!("\"{private}\"")) && !wire.contains(private),
+                "{private} leaked"
+            );
+        }
+    }
+
+    #[test]
+    fn a_revert_line_in_a_commit_body_links_the_reverted_commit() {
+        let mut fetched = fetched();
+        fetched[0].title = "Undo widgets".into();
+        fetched[0].commits[0].message_body =
+            "This reverts commit 2222222222222222222222222222222222222222.".into();
+        let mut cache = reverts::ChangeCache::new();
+        let links = revert_links(
+            &fetched,
+            "acme/widgets",
+            Path::new("/nonexistent"),
+            &mut cache,
+        );
+        let link = links[0].as_ref().expect("revert link");
+        assert_eq!(link.evidence, "revert_commit");
+        assert_eq!(link.commit_shas, [SHA_2]);
+        assert!(links[1].is_none() && links[2].is_none());
     }
 
     #[test]

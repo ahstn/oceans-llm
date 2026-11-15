@@ -6,11 +6,13 @@ use gateway_core::{
     ApiKeyAccess, ApiKeyModelGrantMode, ApiKeyOwnerKind, AttributionAgentSessionRecord,
     AttributionApplyOutcome, AttributionCommitRecord, AttributionCommitSession,
     AttributionCommitWrite, AttributionFreshness, AttributionOwner, AttributionPullRequestCommit,
-    AttributionPullRequestRecord, AttributionPullRequestWrite, AttributionReportQuery,
-    AttributionRequestFact, AttributionRequestSessionWrite, AttributionSessionCommitTime,
-    AttributionSessionEventKind, AttributionSessionEventWrite, AuthMode, Confidence, GlobalRole,
-    NewApiKeyRecord, RequestLogRecord, RequestTags, RequestToolCardinality, SessionLifecycleState,
-    StoreError, UsagePricingStatus, UserStatus,
+    AttributionPullRequestDetails, AttributionPullRequestLifecycle, AttributionPullRequestRecord,
+    AttributionPullRequestState, AttributionPullRequestWrite, AttributionReportQuery,
+    AttributionRequestFact, AttributionRequestSessionWrite, AttributionRevertEvidence,
+    AttributionRevertLink, AttributionSessionCommitTime, AttributionSessionEventKind,
+    AttributionSessionEventWrite, AuthMode, Confidence, GlobalRole, NewApiKeyRecord,
+    RequestLogRecord, RequestTags, RequestToolCardinality, SessionLifecycleState, StoreError,
+    UsagePricingStatus, UserStatus,
 };
 use serde_json::Map;
 use serial_test::serial;
@@ -61,6 +63,8 @@ on_both_backends! {
     libsql_attribution_pull_requests_replace_by_observation,
     postgres_attribution_pull_requests_replace_by_observation =>
         pull_requests_replace_by_observation;
+    libsql_attribution_pull_requests_keep_their_lifecycle,
+    postgres_attribution_pull_requests_keep_their_lifecycle => pull_requests_keep_their_lifecycle;
     libsql_attribution_agent_sessions_merge_events,
     postgres_attribution_agent_sessions_merge_events => agent_sessions_merge_events;
     libsql_attribution_request_sessions_override_native_identity,
@@ -257,7 +261,11 @@ fn pull_request(
         base_ref: Some("main".to_string()),
         head_ref: Some("feature".to_string()),
         merge_commit_sha: Some("merge-sha".to_string()),
-        merged_at,
+        merged_at: Some(merged_at),
+        lifecycle: gateway_core::AttributionPullRequestLifecycle {
+            closed_at: Some(merged_at),
+            ..Default::default()
+        },
         author_user_id: owner.owner_user_id,
         author_email_hash: Some("sha256:email".to_string()),
         commits: commit_shas
@@ -290,6 +298,7 @@ fn stored_pull_request(
         base_ref: write.base_ref.clone(),
         head_ref: write.head_ref.clone(),
         merge_commit_sha: write.merge_commit_sha.clone(),
+        lifecycle: write.lifecycle.clone(),
         merged_at: write.merged_at,
         author_user_id: write.author_user_id,
         author_email_hash: write.author_email_hash.clone(),
@@ -480,6 +489,62 @@ async fn pull_requests_replace_by_observation<S: GatewayStore>(store: &S) {
             Vec::new()
         )]
     );
+}
+
+/// An open pull request is stored without a merge time, lists by its opened time, and moves on
+/// to merged when re-sent; its details JSON round-trips.
+async fn pull_requests_keep_their_lifecycle<S: GatewayStore>(store: &S) {
+    let alice = user_owner(store, "alice").await;
+    let merged = pull_request(&alice, 9, base(), &["c-1"]);
+    let open = AttributionPullRequestWrite {
+        merged_at: None,
+        merge_commit_sha: None,
+        lifecycle: AttributionPullRequestLifecycle {
+            state: AttributionPullRequestState::Open,
+            opened_at: Some(base() - Duration::hours(2)),
+            closed_at: None,
+            details: AttributionPullRequestDetails {
+                is_draft: Some(true),
+                first_review_at: Some(base() - Duration::hours(1)),
+                review_count: Some(2),
+                approval_count: Some(1),
+                additions: Some(40),
+                reverts: Some(AttributionRevertLink {
+                    pull_request_number: Some(3),
+                    commit_shas: vec!["abcdef1".to_string()],
+                    evidence: AttributionRevertEvidence::ChangeMatch,
+                }),
+                ..AttributionPullRequestDetails::default()
+            },
+        },
+        observed_at: base() - Duration::hours(1),
+        ..merged.clone()
+    };
+    store
+        .apply_attribution_pull_request(&open)
+        .await
+        .expect("apply open pull request");
+    let listed = store
+        .list_attribution_pull_requests(&day())
+        .await
+        .expect("report");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].merged_at, None);
+    assert_eq!(listed[0].lifecycle, open.lifecycle);
+
+    assert_eq!(
+        store
+            .apply_attribution_pull_request(&merged)
+            .await
+            .expect("apply merge"),
+        AttributionApplyOutcome::Applied
+    );
+    let listed = store
+        .list_attribution_pull_requests(&day())
+        .await
+        .expect("report");
+    assert_eq!(listed[0].merged_at, Some(base()));
+    assert_eq!(listed[0].lifecycle, merged.lifecycle);
 }
 
 async fn agent_sessions_merge_events<S: GatewayStore>(store: &S) {
