@@ -46,14 +46,16 @@ A missing, blank or unmatched value maps to key `unknown` with label `Unknown`. 
 
 An admin opens **Observability** → **Agent Harnesses** (`/admin/observability/agent-harnesses`). Groups with the `agent_harnesses` page in [`permissions`](/access/access-settings/#pages-and-actions) see this item. The checked-in configs grant it to every user.
 
-The page has two cards:
+When [Git AI attribution](/harnesses/git-ai-attribution/) is on, the page opens with **What each harness ships**: a tile per harness with its gateway cost per 100 committed AI lines and the share of its sessions whose work shipped, then a **Harness by model** table with **Cost per line**, **Shipped** and **Steering** views. Choose **7d**, **30d** or **90d** for its window. With every Attribution tab turned off in `attribution.pages`, the section is left out.
+
+Below it are two cards:
 
 - **Request activity**: a chart of request counts for the top five harnesses, in 12-hour UTC periods. Choose **7d** or **31d** for the range.
 - **Top Harnesses**: up to 30 harnesses ranked by request count, with **Requests**, **Input tokens**, **Output tokens**, **Total tokens** and the harness **Key**. A token total shows `n/a` when any request in the group has no count for it.
 
 The figures cover all gateway traffic, not only the viewer's own requests.
 
-![Agent Harnesses page with the Request activity chart for Codex, Opencode, Claude Code, Mastra and Oh My Pi over 7 days, and the Top Harnesses table below](/images/agent-harnesses-page.png)
+![Agent Harnesses page with What each harness ships tiles for Codex and Claude Code, the Harness by model table, the Request activity chart over 7 days, and the Top Harnesses table](/images/agent-harnesses-page.png)
 
 To debug a classification, open a request in [Request logs](/observability/request-logs/). Its detail shows **Agent harness** (the label) and **User-agent** (the raw value).
 
