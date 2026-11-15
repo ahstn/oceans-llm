@@ -1,0 +1,19 @@
+crates/gateway/src/http/attribution/report.rs
+  s_0a4447f1aa57dd::t_502c3fbad99dce 260,352-360,362,608-612
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2a4adb63197c1d5b2b266f4f7926b0a63cab96b4",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
