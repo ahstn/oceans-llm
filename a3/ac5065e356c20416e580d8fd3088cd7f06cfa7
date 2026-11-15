@@ -1,0 +1,27 @@
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/concept-delivery.tsx
+  s_0a4447f1aa57dd::t_5ecd4b380ca9b9 19
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/delivery-tab.tsx
+  s_0a4447f1aa57dd::t_b9a766eeab1458 24-27
+crates/admin-ui/web/src/test/attribution-insights.test.ts
+  s_0a4447f1aa57dd::t_709db09cfdb749 14-15
+crates/admin-ui/web/src/components/attribution/delivery-bands.ts
+  s_0a4447f1aa57dd::t_5fe8c3a7c9f485 1-33
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/repositories-tab.tsx
+  s_0a4447f1aa57dd::t_b46a74ddc8a65c 5,33-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a3ac5065e356c20416e580d8fd3088cd7f06cfa7",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
