@@ -22,15 +22,24 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { chartAnimation } from '@/lib/chart-motion'
 import { formatTimestamp } from '@/lib/format'
 import {
+  getAttribution,
   getObservabilityHarnessUsage,
   refreshObservabilityHarnessUsage,
 } from '@/server/admin-data.functions'
 import type { HarnessUsageLeaderView, HarnessUsageRange, HarnessUsageView } from '@/types/api'
 
+import { HarnessAttribution } from './-agent-harnesses/harness-attribution'
 import { formatBucketDay, utcDayTicks } from './-bucket-axis'
 
 export const Route = createFileRoute('/observability/agent-harnesses')({
-  loader: () => getObservabilityHarnessUsage({ data: { range: '7d' } }),
+  loader: async () => {
+    // Attribution is optional here: the page still shows request activity if the report fails.
+    const [usage, attribution] = await Promise.all([
+      getObservabilityHarnessUsage({ data: { range: '7d' } }),
+      getAttribution({ data: { days: 7 } }).catch(() => null),
+    ])
+    return { ...usage, attribution: attribution?.data ?? null }
+  },
   component: AgentHarnessesPage,
 })
 
@@ -113,8 +122,10 @@ export function AgentHarnessesPage() {
       <PageHeader
         section="Observability"
         title="Agent harnesses"
-        description="Compare request activity from user harnesses over time."
+        description="Compare what each harness ships for its cost, and its request activity over time."
       />
+
+      <HarnessAttribution initial={loaderData.attribution} />
 
       <Card>
         <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

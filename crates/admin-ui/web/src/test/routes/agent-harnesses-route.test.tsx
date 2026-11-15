@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
 import { cloneElement, type ReactElement, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { AgentHarnessesPage } from '@/routes/observability/agent-harnesses'
 
 const refreshObservabilityHarnessUsageMock = vi.fn()
@@ -49,6 +50,7 @@ vi.mock('recharts', () => ({
 }))
 
 vi.mock('@/server/admin-data.functions', () => ({
+  getAttribution: vi.fn(),
   getObservabilityHarnessUsage: vi.fn(),
   refreshObservabilityHarnessUsage: (...args: unknown[]) =>
     refreshObservabilityHarnessUsageMock(...args),
@@ -247,5 +249,71 @@ describe('AgentHarnessesPage', () => {
     ).toEqual(['Mar 2', 'Mar 3'])
     expect(scope.getByText('1 Mar 2026, 12:00 UTC')).toBeInTheDocument()
     expect(scope.getByText('4 requests')).toBeInTheDocument()
+  })
+
+  it('shows what each harness ships above the request activity', () => {
+    const harnessModels = [
+      // The Claude Code hook key and git-ai's tool name are one harness.
+      {
+        harness: 'claude',
+        model_key: 'claude-sonnet-5',
+        session_count: 3,
+        shipped_session_count: 2,
+        ai_lines: 400,
+        request_count: 30,
+        priced_request_count: 30,
+        unpriced_request_count: 0,
+        usage_missing_request_count: 0,
+        priced_cost_usd_10000: 32000,
+      },
+      {
+        harness: 'claude_code',
+        model_key: 'claude-sonnet-5',
+        session_count: 1,
+        shipped_session_count: 0,
+        ai_lines: 0,
+        request_count: 4,
+        priced_request_count: 4,
+        unpriced_request_count: 0,
+        usage_missing_request_count: 0,
+        priced_cost_usd_10000: 4000,
+      },
+      {
+        harness: 'codex',
+        model_key: 'gpt-6-astra',
+        session_count: 2,
+        shipped_session_count: 2,
+        ai_lines: 100,
+        request_count: 10,
+        priced_request_count: 10,
+        unpriced_request_count: 0,
+        usage_missing_request_count: 0,
+        priced_cost_usd_10000: 2000,
+      },
+    ]
+    routeMock.useLoaderData.mockReturnValue({
+      data: harnessUsageData,
+      attribution: { window_days: 7, harness_models: harnessModels },
+    })
+
+    const view = render(
+      <TooltipProvider>
+        <AgentHarnessesPage />
+      </TooltipProvider>,
+    )
+    const section = within(view.getByRole('region', { name: 'Harness attribution' }))
+
+    // Claude Code: $3.60 over 400 AI lines is $0.90 per 100; 2 of 4 sessions shipped.
+    expect(section.getByText('4 sessions')).toBeInTheDocument()
+    expect(section.getAllByText('$0.90').length).toBeGreaterThan(0)
+    expect(section.getAllByText('Needs new data').length).toBe(2)
+    const matrix = within(section.getByRole('table', { name: 'Harness by model' }))
+    expect(matrix.getByText('gpt-6-astra')).toBeInTheDocument()
+    expect(matrix.getByText('$0.20')).toBeInTheDocument()
+    // The section's own window toggle never collides with the chart's.
+    expect(
+      section.getByRole('radio', { name: 'Attribution for the last 7 days' }),
+    ).toBeInTheDocument()
+    expect(view.getByRole('radio', { name: 'Last 7 days' })).toBeInTheDocument()
   })
 })
