@@ -254,6 +254,8 @@ impl ReportInputs<'_> {
         rollups
     }
 
+    /// Session outcomes and, for a full report, harness × model rows. A summary-only build
+    /// returns no harness rows, since the summary reads only the outcomes.
     pub(super) fn session_insights<'b>(
         &'b self,
         agent_sessions: &[&'b AttributionAgentSessionRecord],
@@ -273,6 +275,10 @@ impl ReportInputs<'_> {
             let entry = outcomes.entry(outcome).or_default();
             entry.0 += 1;
             entry.1 = entry.1.merged(requests);
+            // A summary-only build reads the outcomes, for shipped spend, but not the harness rows.
+            if !self.detail {
+                continue;
+            }
 
             let harness = session.harness.unwrap_or("unknown").to_string();
             let model = dominant_model(&session.facts)
