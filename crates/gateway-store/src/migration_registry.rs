@@ -7,12 +7,55 @@ pub(crate) struct MigrationManifest {
     pub postgres_sql: &'static str,
 }
 
+/// The oldest gateway, identified by its registry head (the newest migration
+/// version it knows), that can read a database with this migration applied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReaderCompatibility {
+    /// Any older gateway keeps working: new tables, nullable columns, indexes.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "no migration is additive yet; remove once one declares it"
+        )
+    )]
+    Additive,
+    /// Requires a gateway whose registry head is at least this version.
+    /// For expand/contract, first stop using a column in release N with head v,
+    /// then drop it in N+1 with `RequiresReader(v)`.
+    RequiresReader(u32),
+}
+
+const LAST_STRICT_VERSION: u32 = 81;
+
+// Every migration after the strict legacy registry must explicitly declare
+// its compatibility here; never infer compatibility from its SQL.
+const READER_COMPATIBILITY: &[(u32, ReaderCompatibility)] = &[];
+
 /// libsql migrations that rebuild a table other tables reference, with that
 /// table. They run with foreign keys off, as SQLite's table-rebuild
 /// procedure requires, and then check the rebuilt table's children.
 const LIBSQL_REBUILT_PARENTS: &[(u32, &str)] = &[(66, "gateway_oauth_clients")];
 
 impl MigrationManifest {
+    pub(crate) fn reader_compatibility(&self) -> ReaderCompatibility {
+        if self.version <= LAST_STRICT_VERSION {
+            return ReaderCompatibility::RequiresReader(self.version);
+        }
+        READER_COMPATIBILITY
+            .iter()
+            .find(|(version, _)| *version == self.version)
+            .map(|(_, compatibility)| *compatibility)
+            .expect("migration must declare reader compatibility")
+    }
+
+    pub(crate) fn min_reader_version(&self) -> u32 {
+        match self.reader_compatibility() {
+            ReaderCompatibility::Additive => 0,
+            ReaderCompatibility::RequiresReader(version) => version,
+        }
+    }
+
     pub(crate) fn libsql_rebuilt_parent(&self) -> Option<&'static str> {
         LIBSQL_REBUILT_PARENTS
             .iter()
@@ -522,7 +565,10 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
 
 #[cfg(test)]
 mod tests {
-    use super::{MIGRATION_REGISTRY, MigrationManifest};
+    use super::{
+        LAST_STRICT_VERSION, MIGRATION_REGISTRY, MigrationBackend, MigrationManifest,
+        READER_COMPATIBILITY, ReaderCompatibility,
+    };
 
     #[test]
     fn migration_registry_versions_are_unique_and_sorted() {
@@ -539,5 +585,83 @@ mod tests {
             assert!(!name.is_empty());
             assert!(!checksum.is_empty());
         }
+    }
+
+    #[test]
+    fn migration_registry_declares_reader_compatibility() {
+        for migration in MIGRATION_REGISTRY {
+            if migration.version > LAST_STRICT_VERSION {
+                assert_eq!(
+                    READER_COMPATIBILITY
+                        .iter()
+                        .filter(|(version, _)| *version == migration.version)
+                        .count(),
+                    1,
+                    "migration {} needs exactly one compatibility declaration",
+                    migration.version
+                );
+            }
+            if let ReaderCompatibility::RequiresReader(version) = migration.reader_compatibility() {
+                assert!(version <= migration.version);
+            }
+        }
+        for (version, _) in READER_COMPATIBILITY {
+            assert!(*version > LAST_STRICT_VERSION);
+            assert!(
+                MIGRATION_REGISTRY
+                    .iter()
+                    .any(|entry| entry.version == *version)
+            );
+        }
+    }
+
+    #[test]
+    fn additive_migrations_have_no_destructive_sql() {
+        for migration in MIGRATION_REGISTRY {
+            if migration.reader_compatibility() != ReaderCompatibility::Additive {
+                continue;
+            }
+            for backend in [MigrationBackend::Libsql, MigrationBackend::Postgres] {
+                assert_additive_sql(migration.sql_for(backend));
+            }
+        }
+    }
+
+    fn assert_additive_sql(sql: &str) {
+        let normalized = sql
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_uppercase();
+        for forbidden in ["DROP TABLE", "DROP COLUMN", "RENAME", "SET NOT NULL"] {
+            assert!(
+                !normalized.contains(forbidden),
+                "additive SQL contains {forbidden}"
+            );
+        }
+        for statement in normalized.split(';') {
+            if let Some((_, alteration)) = statement.split_once("ALTER COLUMN") {
+                assert!(
+                    !alteration.contains("TYPE"),
+                    "additive SQL changes a column type"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn additive_sql_guard_rejects_destructive_statements() {
+        for sql in [
+            "drop\n table old",
+            "ALTER TABLE old DROP COLUMN value",
+            "ALTER TABLE old RENAME TO new",
+            "ALTER TABLE old ALTER COLUMN value TYPE text",
+            "ALTER TABLE old ALTER COLUMN value SET NOT NULL",
+        ] {
+            assert!(std::panic::catch_unwind(|| assert_additive_sql(sql)).is_err());
+        }
+        assert_additive_sql(
+            "CREATE TABLE new (value TEXT); ALTER TABLE old ADD COLUMN value TEXT;",
+        );
     }
 }
