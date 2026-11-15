@@ -159,6 +159,8 @@ The suite also checks these paths outside the matrix, all on OpenRouter:
 
 Other versions may work, but the suite doesn't check them.
 
+The matrix and plugin tests pack the plugin from the checkout; they do not install it from npm. A separate post-release smoke installs an exact version anonymously from [public npm](https://www.npmjs.com/package/@ahstn/opencode-oceans) and exercises it against a local synthetic gateway without paid requests. That distribution check is separate from the live matrix and does not establish coverage of its provider combinations.
+
 ## Limits
 
 - **Three providers.** The matrix covers OpenRouter, Vertex AI and Bedrock. Other providers, such as the Claude API or GitHub Copilot, aren't in it. See [Provider API compatibility](/reference/provider-api-compatibility/) for those.
