@@ -483,6 +483,12 @@ fn response_from_parts(
         }
     }
     response_headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    // The upstream MCP server answered with this status; a 5xx is its failure.
+    if status.is_server_error() {
+        response
+            .extensions_mut()
+            .insert(crate::http::traffic::UpstreamFailure);
+    }
     response
 }
 

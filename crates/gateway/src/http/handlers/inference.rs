@@ -404,6 +404,7 @@ impl InferenceExecution<'_> {
                 #[cfg(test)]
                 test_gate: None,
             }),
+            shutdown: state.shutdown.clone(),
         });
 
         let mut response = Response::builder()

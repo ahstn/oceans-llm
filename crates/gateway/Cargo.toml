@@ -44,6 +44,7 @@ serde_yaml.workspace = true
 sha2.workspace = true
 time.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 tower-http.workspace = true
 tracing.workspace = true
 tracing-opentelemetry.workspace = true
@@ -58,4 +59,5 @@ async-trait.workspace = true
 gateway-guardrails = { workspace = true, features = ["test-utils"] }
 serial_test = "4"
 tempfile = "3"
+tokio = { workspace = true, features = ["test-util"] }
 url.workspace = true

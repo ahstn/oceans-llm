@@ -30,10 +30,12 @@ impl IntoResponse for AppError {
         let status = axum::http::StatusCode::from_u16(self.0.http_status_code())
             .unwrap_or(axum::http::StatusCode::INTERNAL_SERVER_ERROR);
 
-        (
+        let mut response = (
             status,
             Json(OpenAiErrorEnvelope::from_gateway_error(&self.0)),
         )
-            .into_response()
+            .into_response();
+        super::traffic::mark_upstream_failure(&mut response, &self.0);
+        response
     }
 }

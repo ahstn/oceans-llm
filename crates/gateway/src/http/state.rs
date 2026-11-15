@@ -14,10 +14,12 @@ use crate::http::{
     handlers::{CountTokensLimiter, McpTelemetrySnapshot},
     mcp_client_oauth::OauthStreamWatcher,
     response_cache::ResponseCache,
+    traffic::TrafficCounters,
 };
 use crate::{
     config::{AgentAnalysisRuntimeCapabilities, ResolvedAdminPermissions},
     observability::GatewayMetrics,
+    shutdown::Shutdown,
 };
 
 pub type AppGatewayService = GatewayService<AnyStore, WeightedRoutePlanner>;
@@ -64,4 +66,8 @@ pub struct AppState {
     /// API key or OAuth grant id, kept briefly so requests skip re-resolving it.
     pub mcp_telemetry_cache: Arc<ResponseCache<uuid::Uuid, Arc<McpTelemetrySnapshot>>>,
     pub trusted_proxies: TrustedProxies,
+    /// Draining state; streams and readiness follow it.
+    pub shutdown: Shutdown,
+    /// Response counts that `gateway rollout-guard` reads.
+    pub traffic: Arc<TrafficCounters>,
 }
