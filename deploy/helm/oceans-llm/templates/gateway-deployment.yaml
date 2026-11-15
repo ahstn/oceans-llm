@@ -14,6 +14,8 @@ spec:
       {{- include "oceans-llm.gatewaySelectorLabels" . | nindent 6 }}
   strategy:
     {{- toYaml .Values.rollout.strategy | nindent 4 }}
+  minReadySeconds: {{ .Values.rollout.minReadySeconds }}
+  progressDeadlineSeconds: {{ .Values.rollout.progressDeadlineSeconds }}
   template:
     metadata:
       labels:
@@ -25,7 +27,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
-        checksum/config: {{ toYaml .Values.gateway.config | sha256sum }}
+        checksum/config: {{ include "oceans-llm.gatewayConfig" . | sha256sum }}
         {{- if .Values.secrets.inline }}
         checksum/inline-secret: {{ toYaml .Values.secrets.inline | sha256sum }}
         {{- end }}
@@ -37,6 +39,7 @@ spec:
         {{- end }}
     spec:
       serviceAccountName: {{ include "oceans-llm.serviceAccountName" . }}
+      terminationGracePeriodSeconds: {{ .Values.gateway.terminationGracePeriodSeconds }}
       {{- with .Values.gateway.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
@@ -129,6 +132,11 @@ spec:
             - name: http
               containerPort: {{ .Values.gateway.containerPort }}
               protocol: TCP
+            {{- if .Values.rolloutGuard.enabled }}
+            - name: management
+              containerPort: {{ .Values.rolloutGuard.managementPort }}
+              protocol: TCP
+            {{- end }}
           env:
             {{- include "oceans-llm.commonEnv" . | nindent 12 }}
           {{- $envFrom := include "oceans-llm.envFrom" . }}
@@ -151,13 +159,17 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- if .Values.probes.gateway.startup.enabled }}
+          startupProbe:
+            {{- include "oceans-llm.renderProbe" (dict "probe" .Values.probes.gateway.startup) | nindent 12 }}
+          {{- end }}
           {{- if .Values.probes.gateway.liveness.enabled }}
           livenessProbe:
             {{- include "oceans-llm.renderProbe" (dict "probe" .Values.probes.gateway.liveness) | nindent 12 }}
           {{- end }}
           {{- if .Values.probes.gateway.readiness.enabled }}
           readinessProbe:
-            {{- include "oceans-llm.renderProbe" (dict "probe" .Values.probes.gateway.readiness) | nindent 12 }}
+            {{- include "oceans-llm.renderProbe" (dict "probe" .Values.probes.gateway.readiness "readiness" true) | nindent 12 }}
           {{- end }}
           {{- with .Values.gateway.lifecycle }}
           lifecycle:

@@ -105,9 +105,36 @@ Keep an existing distributed pool's drive count and endpoints fixed. Changing `d
 
 ## Startup Jobs
 
-The chart renders a Helm hook migration Job by default. The default hook phase is
-post-install and post-upgrade so chart-rendered ConfigMaps and Secrets exist
-before the Job starts. Gateway pods run with startup mutations disabled:
+The chart runs migrations in `pre-install,pre-upgrade` hooks by default, before
+workloads change. Hook-scoped ServiceAccount, ConfigMap and inline Secret
+resources run at weights -21, -20 and -19, before the migration Job at -10.
+External database and referenced Secrets must already exist.
+
+With `database.mode: cloudnativepg` or `externalSecrets.enabled`, the default
+becomes `post-install,pre-upgrade`: the Cluster or generated Secret must exist
+before the first migration, but upgrades migrate before replacing workloads.
+Explicit `migrations.hook` overrides are honored; `pre-install` overrides are
+rejected in these modes because their dependencies do not exist yet.
+
+Argo CD maps `pre-upgrade` to PreSync and `post-install` to PostSync, and does not
+distinguish installation from upgrade. The default CloudNativePG first sync
+would therefore run a PreSync migration before its Cluster exists (the same
+applies to External Secrets). For Argo CD, provision the database and generated
+Secret in a separate, earlier application/sync, then override
+`migrations.hook: pre-upgrade` so migration runs in PreSync against existing
+dependencies on every Argo CD sync. This override is Argo-only: plain Helm would
+skip migrations on installation with only `pre-upgrade`. Prefer
+`database.mode: external` when a separate application owns the CloudNativePG
+Cluster.
+
+Simply setting `migrations.hook: post-install,post-upgrade` is not sufficient:
+Argo CD normally waits for gateway health before PostSync, while the gateway's
+migration waiter cannot become ready until migrations complete. Keeping these
+dependencies in one first sync requires explicit external migration orchestration
+or Argo CD health customization; the default Helm lifecycle is not an Argo CD
+first-sync strategy.
+
+Gateway pods run with startup mutations disabled:
 
 - `GATEWAY_RUN_MIGRATIONS=false`
 - `GATEWAY_BOOTSTRAP_ADMIN=false`
@@ -119,19 +146,88 @@ Bootstrap-admin and seed-config Jobs are opt-in through:
 - `seedConfigJob.enabled`
 
 Gateway pods validate the gateway configuration once, then wait for
-`gateway migrate --check` when migrations run in a post-install or post-upgrade
-hook phase. Invalid configuration stops the init container before migration
-polling starts. Tune the migration wait with:
+`gateway migrate --check` when the effective migration hook includes
+`post-install` or `post-upgrade`. Invalid configuration stops the init container
+before migration polling starts. `gateway.migrationWaiter.enabled: auto` therefore
+enables the waiter for CloudNativePG and External Secrets, but not the default
+external-database mode. Tune the wait with:
 
 - `gateway.migrationWaiter.enabled`
 - `gateway.migrationWaiter.intervalSeconds`
-- `gateway.migrationWaiter.timeoutSeconds`
+- `gateway.migrationWaiter.timeoutSeconds` (default 600)
 
 Hook Jobs default to `hookDeletePolicy: before-hook-creation` and
 `ttlSecondsAfterFinished: 300`, which preserves completed Jobs briefly for
 inspection and removes the previous hook before a new run. Add
 `hook-succeeded` to a Job's `hookDeletePolicy` when successful Jobs should be
 deleted immediately.
+
+## Safe upgrades and rollback
+
+The default RollingUpdate keeps `maxUnavailable: 0` and `maxSurge: 25%`.
+`rollout.minReadySeconds: 10` requires stable readiness before replacing another
+pod; `rollout.progressDeadlineSeconds: 900` exceeds the 600-second migration
+waiter. The gateway startup probe checks `/healthz` every two seconds, allowing
+30 failures before restart. Liveness and startup probes use a separate
+30-second termination grace; readiness never sets probe-level termination grace.
+
+On pod termination, `gateway.lifecycle.preStop.sleep.seconds: 10` gives endpoint
+changes time to propagate before SIGTERM. Native lifecycle sleep requires
+Kubernetes 1.30 or newer; chart rendering is validated against Kubernetes 1.35.
+The gateway then drains in-flight requests for
+`gateway.config.server.shutdown_drain_seconds` (default 300). The pod's
+`gateway.terminationGracePeriodSeconds: 330` includes sleep, drain and 20 seconds
+for final writes and shutdown. Rendering fails unless:
+
+```text
+terminationGracePeriodSeconds >= preStop.sleep.seconds + shutdown_drain_seconds + 20
+```
+
+Increase the grace period together with a longer drain or sleep. Configure
+ingress/load-balancer timeouts for long-lived streams too; see the
+[ingress example](examples/ingress-hpa-values.yaml).
+
+For Helm 4, upgrade with automatic rollback on failure:
+
+```bash
+helm upgrade oceans-llm oci://ghcr.io/ahstn/charts/oceans-llm \
+  --namespace <namespace> \
+  --version <version> \
+  --values values.yaml \
+  --wait \
+  --rollback-on-failure \
+  --timeout 15m
+```
+
+Helm's `--timeout` also bounds hook Jobs. Allow enough time for migrations,
+workload readiness and the guard's full `rolloutGuard.windowSeconds` observation
+window; raise the timeout if those settings need longer.
+
+Enable `rolloutGuard.enabled` to add a post-upgrade traffic check, after the
+bootstrap and seed hooks. See [rollout-guard-values.yaml](examples/rollout-guard-values.yaml).
+It resolves ready gateway pods through a private headless management Service and
+polls their process-local traffic counters every 15 seconds for 300 seconds.
+The chart injects `server.management_bind: "0.0.0.0:9090"` into the effective
+gateway config; `rolloutGuard.managementPort` changes the port. A conflicting
+explicit bind is rejected. The Service is not routed through ingress; restrict
+pod-network access to management endpoints using your network policy.
+
+The guard sums counter deltas across observed instances, separating gateway
+5xx errors from upstream-provider 5xx errors (including upstream transport
+failures and timeouts). HTTP 4xx responses are not errors. Once at least
+`rolloutGuard.minRequests: 50` requests have been observed, it fails when gateway
+errors reach `rolloutGuard.maxGatewayErrorPercent: 5` or upstream errors reach
+`rolloutGuard.maxUpstreamErrorPercent: 25`. With less traffic, the window passes
+without enough evidence to assess error rates; no responding target during the
+entire window fails. Generate representative traffic if a meaningful rollout
+decision is required. The Job has no database credentials or gateway config mount.
+
+Database migrations are forward-only: automatic or manual rollback does not undo
+schema changes. Rolling back after a migration requires that migration to be
+reader-compatible with the older binary. Keep schema changes compatible with
+both versions during rollout and rollback; an incompatible migration prevents
+the older binary from using that database. `helm rollback` never runs migrations
+or the rollout guard, and the guard does not run on first installation.
 
 ## Examples
 
@@ -152,6 +248,7 @@ Example values live in [examples](examples):
 - direct OpenTelemetry export to an existing Datadog Agent DaemonSet
 - skill archives in external S3
 - the official RustFS dependency with distributed or standalone CSI storage
+- opt-in post-upgrade traffic guard with two gateway replicas
 
 ## Publishing
 
