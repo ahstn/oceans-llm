@@ -13,7 +13,7 @@ import {
   ReadinessBadge,
   ToolLabel,
 } from '@/components/attribution/parts'
-import { formatPercent, harnessLabel } from '@/components/attribution/format'
+import { canonicalHarness, formatPercent, harnessLabel } from '@/components/attribution/format'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
@@ -25,9 +25,6 @@ import type { AttributionReportView } from '@/types/api'
 type HarnessModelRow = AttributionReportView['harness_models'][number]
 type Metric = 'cost' | 'shipped' | 'steering'
 type Window = 7 | 30 | 90
-
-/** git-ai's `claude` and the Claude Code hook's `claude_code` are one harness. */
-const HARNESS_ALIASES: Record<string, string> = { claude_code: 'claude' }
 
 type Cell = {
   harness: string
@@ -44,7 +41,7 @@ type Cell = {
 function merge(rows: HarnessModelRow[]) {
   const cells = new Map<string, Cell>()
   for (const row of rows) {
-    const harness = HARNESS_ALIASES[row.harness] ?? row.harness
+    const harness = canonicalHarness(row.harness)
     const key = `${harness}::${row.model_key}`
     const cell = cells.get(key) ?? {
       harness,

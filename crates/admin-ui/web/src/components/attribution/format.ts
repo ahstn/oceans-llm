@@ -77,6 +77,13 @@ export const HARNESSES: Record<string, { label: string; icon?: string }> = {
   cursor: { label: 'Cursor' },
 }
 
+/** git-ai's `claude` and the Claude Code hook's `claude_code` are one harness. */
+const HARNESS_ALIASES: Record<string, string> = { claude_code: 'claude' }
+
+export function canonicalHarness(harness: string) {
+  return HARNESS_ALIASES[harness] ?? harness
+}
+
 export function harnessLabel(harness: string) {
   return HARNESSES[harness]?.label ?? harness
 }

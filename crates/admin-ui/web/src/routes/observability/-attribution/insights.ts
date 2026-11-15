@@ -2,6 +2,7 @@
 // time and AI share, repository rollups and the punch card. The report carries at most 1,000
 // commits and pull requests, so these run in the browser.
 
+import { canonicalHarness } from '@/components/attribution/format'
 import type { AttributionReportView, AuthSessionView } from '@/types/api'
 
 /** A tab of the Attribution page. `concepts` is the separate mockup route, not a tab here. */
@@ -66,6 +67,7 @@ export function attributionReportInput<Search extends { tab?: AttributionTab; us
 export type PullRequestView = AttributionReportView['pull_requests'][number]
 export type ChangeView = AttributionReportView['changes'][number]
 export type DayView = AttributionReportView['daily'][number]
+export type HarnessModelView = AttributionReportView['harness_models'][number]
 export type SummaryView = AttributionReportView['summary']
 
 export function ratio(part: number, whole: number) {
@@ -344,17 +346,39 @@ export function calendarCells(daily: DayView[]) {
   }))
 }
 
-/** AI lines per harness across the window's commits; a commit's lines split across its tools. */
-export function harnessShares(changes: ChangeView[]) {
+/**
+ * AI lines per harness, from each session's own line count in the window's commits. A commit two
+ * harnesses wrote is split by what each session wrote, not evenly.
+ */
+export function harnessShares(harnessModels: HarnessModelView[]) {
   const lines = new Map<string, number>()
-  for (const change of changes) {
-    if (change.agent_tools.length === 0 || change.ai_lines === 0) continue
-    const share = change.ai_lines / change.agent_tools.length
-    for (const tool of change.agent_tools) lines.set(tool, (lines.get(tool) ?? 0) + share)
+  for (const row of harnessModels) {
+    if (row.ai_lines === 0) continue
+    const harness = canonicalHarness(row.harness)
+    lines.set(harness, (lines.get(harness) ?? 0) + row.ai_lines)
   }
   return [...lines.entries()]
-    .map(([harness, aiLines]) => ({ harness, aiLines: Math.round(aiLines) }))
+    .map(([harness, aiLines]) => ({ harness, aiLines }))
     .sort((a, b) => b.aiLines - a.aiLines)
+}
+
+/**
+ * The AI share of the lines in pull requests merged in each bucket, so the trend measures what the
+ * "AI share of merged code" figure does. `null` for a bucket with no merged lines.
+ */
+export function mergedShareByBucket(pullRequests: PullRequestView[], buckets: Bucket[]) {
+  const ai = buckets.map(() => 0)
+  const human = buckets.map(() => 0)
+  for (const pr of pullRequests) {
+    const day = pr.merged_at.slice(0, 10)
+    // Buckets run oldest first, so the merge belongs to the last one starting on or before it.
+    let index = -1
+    for (const [at, bucket] of buckets.entries()) if (bucket.day <= day) index = at
+    if (index < 0) continue
+    ai[index] += pr.ai_lines
+    human[index] += pr.human_lines
+  }
+  return buckets.map((_, index) => ratio(ai[index], ai[index] + human[index]))
 }
 
 export type DoraBand = 'Elite' | 'High' | 'Medium' | 'Low'

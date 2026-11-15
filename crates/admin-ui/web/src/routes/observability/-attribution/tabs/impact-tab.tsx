@@ -23,7 +23,15 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { EMPTY_VALUE, formatCount, formatUsd10000 } from '@/lib/format'
 import type { AttributionReportView } from '@/types/api'
 
-import { bucketDays, chartBucketSize, delta, mergedAiShare, ratio, shippedShare } from '../insights'
+import {
+  bucketDays,
+  chartBucketSize,
+  delta,
+  mergedAiShare,
+  mergedShareByBucket,
+  ratio,
+  shippedShare,
+} from '../insights'
 import { UserActivityTable } from '../user-activity-table'
 
 type Outcome = AttributionReportView['session_outcomes'][number]['outcome']
@@ -58,7 +66,7 @@ export default function ImpactTab({
           label="AI share of merged code"
           value={formatPercent(mergedAiShare(summary))}
           delta={deltaOf(mergedAiShare(summary), mergedAiShare(previous))}
-          spark={buckets.map((bucket) => bucket.aiShare)}
+          spark={mergedShareByBucket(report.pull_requests, buckets)}
           tone={AI_TONE}
           hint={`${formatCount(summary.merged_ai_lines)} AI lines merged`}
         />

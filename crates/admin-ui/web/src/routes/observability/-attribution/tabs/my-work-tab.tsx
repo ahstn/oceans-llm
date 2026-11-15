@@ -44,7 +44,7 @@ export default function MyWorkTab({
   const aiShare = ratio(summary.ai_lines, summary.ai_lines + summary.human_lines)
   const previousShare = ratio(previous.ai_lines, previous.ai_lines + previous.human_lines)
   const cells = calendarCells(report.daily)
-  const harnesses = harnessShares(report.changes)
+  const harnesses = harnessShares(report.harness_models)
   const harnessTotal = harnesses.reduce((total, row) => total + row.aiLines, 0)
   const recent = [...report.pull_requests]
     .sort((a, b) => b.merged_at.localeCompare(a.merged_at))

@@ -6,6 +6,8 @@ import {
   bucketDays,
   deployBand,
   enabledAttributionTabs,
+  harnessShares,
+  mergedShareByBucket,
   failBand,
   leadBand,
   resolveAttributionTab,
@@ -129,5 +131,36 @@ describe('weekly lead times', () => {
       ['2026-11-01', 4],
       ['2026-11-03', 8],
     ])
+  })
+})
+
+describe('harness shares', () => {
+  it("splits a commit's lines by what each session wrote, and joins Claude Code's two names", () => {
+    const row = (harness: string, aiLines: number) =>
+      ({ harness, ai_lines: aiLines }) as unknown as Parameters<typeof harnessShares>[0][number]
+
+    expect(harnessShares([row('claude', 600), row('codex', 100), row('claude_code', 300)])).toEqual(
+      [
+        { harness: 'claude', aiLines: 900 },
+        { harness: 'codex', aiLines: 100 },
+      ],
+    )
+  })
+})
+
+describe('merged share by bucket', () => {
+  it('buckets merged pull request lines by merge date', () => {
+    const bucket = (day: string) => ({ day }) as Parameters<typeof mergedShareByBucket>[1][number]
+    const pr = (mergedAt: string, ai: number, human: number) =>
+      ({ merged_at: mergedAt, ai_lines: ai, human_lines: human }) as unknown as Parameters<
+        typeof mergedShareByBucket
+      >[0][number]
+
+    expect(
+      mergedShareByBucket(
+        [pr('2026-11-02T10:00:00Z', 30, 10), pr('2026-11-09T10:00:00Z', 0, 50)],
+        [bucket('2026-11-01'), bucket('2026-11-08'), bucket('2026-11-15')],
+      ),
+    ).toEqual([0.75, 0, null])
   })
 })
