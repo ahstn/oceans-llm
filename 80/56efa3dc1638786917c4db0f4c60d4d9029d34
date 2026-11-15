@@ -1,0 +1,30 @@
+crates/gateway/src/config/tests/identity.rs
+  s_b8dff9c971c29b::t_dd845ac28fa463 318,334-341
+crates/admin-ui/web/src/routes/observability/attribution.tsx
+  s_b8dff9c971c29b::t_20d5b5385e2b02 172-173
+crates/gateway/src/config/identity.rs
+  s_b8dff9c971c29b::t_dd845ac28fa463 5,247-253
+docs/src/content/docs/harnesses/git-ai-attribution.mdx
+  s_b8dff9c971c29b::t_0bd4f6c7a632ad 169,181
+docs/src/content/docs/access/access-settings.mdx
+  s_b8dff9c971c29b::t_8a65b6e0d29345 283
+docs/adr/2026-11-01-git-ai-attribution-via-oceans-hooks.md
+  s_b8dff9c971c29b::t_3225d9674f9924 5,35-36,49-50,180-181,207-228
+  s_b8dff9c971c29b::t_7b7481f70c033b 229
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "8056efa3dc1638786917c4db0f4c60d4d9029d34",
+  "prompts": {},
+  "sessions": {
+    "s_b8dff9c971c29b": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1d99a-fd02-77aa-b538-ce6ca82d1386",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
