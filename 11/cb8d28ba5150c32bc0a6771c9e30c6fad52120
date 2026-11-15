@@ -1,0 +1,19 @@
+crates/gateway/src/config/loader.rs
+  s_9889c62913c50b::t_c44ae71b58b894 67-69,85-88,90-93,121,125-135,143,314
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "11cb8d28ba5150c32bc0a6771c9e30c6fad52120",
+  "prompts": {},
+  "sessions": {
+    "s_9889c62913c50b": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1dfab-1228-70c5-aee4-771107089278",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
