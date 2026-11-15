@@ -1,0 +1,47 @@
+.agents/skills/verify-oceans-admin/features/attribution.md
+  s_0a4447f1aa57dd::t_9f28c777a43420 41
+crates/admin-ui/web/src/components/attribution/charts.tsx
+  s_0a4447f1aa57dd::t_6420f735a1ed2a 428-429,431,437-438
+crates/admin-ui/web/src/components/attribution/heatmaps.tsx
+  s_0a4447f1aa57dd::t_006990787b71f9 7-8,212-221,223-224,233,247,250,252-253
+crates/admin-ui/web/src/routes/observability/-agent-harnesses/harness-attribution.tsx
+  s_0a4447f1aa57dd::t_b3530bbe2dda87 72-79,81,89,91-92,153-157
+crates/admin-ui/web/src/routes/observability/-attribution/insights.ts
+  s_0a4447f1aa57dd::t_9ec9cc9d1c9dfd 48-60,139,141-142,149-153
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/delivery-tab.tsx
+  s_0a4447f1aa57dd::t_4df2c80e183675 222,232,234
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/my-work-tab.tsx
+  s_0a4447f1aa57dd::t_8c3d5f9dd77b93 148,159,161,170-172
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/pull-requests-tab.tsx
+  s_0a4447f1aa57dd::t_4f65c3008c8553 23,130-147
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/repositories-tab.tsx
+  s_0a4447f1aa57dd::t_7148729cf0944c 17-18,58,125-140,187-189
+crates/admin-ui/web/src/routes/observability/agent-harnesses.tsx
+  s_0a4447f1aa57dd::t_9d3c0afb9fe1b0 41,128-131
+crates/admin-ui/web/src/routes/observability/attribution.tsx
+  s_0a4447f1aa57dd::t_33eaec9d803f47 7-13,22,54-55,87-89,222,232-240
+crates/admin-ui/web/src/test/attribution-insights.test.ts
+  s_0a4447f1aa57dd::t_235bef7dc2dc8d 1-46
+crates/gateway-service/src/attribution/tests/report.rs
+  s_0a4447f1aa57dd::t_fce7d252d0277c 1114-1169
+docs/design-proposals/attribution/README.md
+  s_0a4447f1aa57dd::t_6ad1b8ba5c23b4 36
+docs/src/content/docs/harnesses/git-ai-attribution.mdx
+  s_0a4447f1aa57dd::t_288bffdfcaebaf 171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fc58bafa217d6b642fbab3696358965611ff4d60",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
