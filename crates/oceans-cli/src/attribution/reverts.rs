@@ -315,7 +315,9 @@ fn diff(directory: &Path, from: &str, to: &str) -> Option<Vec<u8>> {
             "--no-renames",
             "--no-textconv",
             "--full-index",
-            "-U0",
+            // One line of context places each edit: identical lines changed in two different
+            // functions don't match, while edits further away leave it alone.
+            "-U1",
             from,
             to,
             "--",
@@ -325,9 +327,12 @@ fn diff(directory: &Path, from: &str, to: &str) -> Option<Vec<u8>> {
     )
 }
 
-/// A fingerprint of a `-U0` diff: per file, the path and each added or removed line exactly as
-/// written, combined in path order. Context, line numbers and text blob ids are left out, so an
-/// exact inverse matches even after unrelated edits nearby. Whitespace is kept: a revert
+/// A fingerprint of a `-U1` diff: per file, the path and each added, removed or context line
+/// exactly as written, combined in path order. The context line on each side of an edit places
+/// it, so the same lines changed in another function don't match. Line numbers and text blob
+/// ids are left out, so an exact inverse matches even after unrelated edits elsewhere; an edit
+/// right next to the change breaks the match, and the revert then falls back to its other
+/// signals. Whitespace is kept: a revert
 /// reproduces the original lines exactly, and whitespace inside a string is content. A binary
 /// file has no lines to compare, so it contributes its `index <from>..<to>` blob ids, which keep
 /// the change's direction: two unrelated edits to one image never match. File mode changes,
@@ -361,6 +366,7 @@ pub fn fingerprint(diff: &[u8]) -> Option<String> {
         let (sign, content) = match line.as_bytes().first() {
             Some(b'+') => ('+', &line[1..]),
             Some(b'-') => ('-', &line[1..]),
+            Some(b' ') => (' ', &line[1..]),
             _ if line.starts_with("Binary files ") => {
                 binary = index.clone().unwrap_or_else(|| line.to_owned());
                 ('b', binary.as_str())
@@ -536,6 +542,60 @@ mod tests {
             fingerprint(forward.as_bytes()),
             fingerprint(edit("old mode 100755\nnew mode 100644\n").as_bytes())
         );
+    }
+
+    #[test]
+    fn the_same_lines_changed_in_another_function_do_not_match() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path();
+        let write = |first: &str, second: &str| {
+            std::fs::write(
+                dir.join("a.rs"),
+                format!("fn first() {{\n    {first}\n}}\n\nfn second() {{\n    {second}\n}}\n"),
+            )
+            .unwrap();
+        };
+        run(dir, &["init", "-q", "-b", "main"]);
+        write("return 1", "return 2");
+        run(dir, &["add", "."]);
+        run(dir, &["commit", "-qm", "base"]);
+        write("return 2", "return 2");
+        run(dir, &["commit", "-qam", "first returns 2"]);
+        let original = run(dir, &["rev-parse", "HEAD"]);
+        // `second` goes from 2 to 1: the same `-`/`+` lines inverted, in another function.
+        write("return 2", "return 1");
+        run(dir, &["commit", "-qam", "second returns 1"]);
+        let unrelated = run(dir, &["rev-parse", "HEAD"]);
+        // The real revert puts `first` back.
+        write("return 1", "return 1");
+        run(dir, &["commit", "-qam", "first returns 1 again"]);
+        let revert = run(dir, &["rev-parse", "HEAD"]);
+
+        let candidate = |number, sha: &'static str, merged_at| Candidate {
+            number,
+            title: "Change",
+            body: "",
+            head_ref: "x",
+            merge_commit_sha: Some(sha),
+            merged_at: Some(merged_at),
+            commit_bodies: vec![],
+            commit_subjects: vec![],
+        };
+        let (original, unrelated, revert): (&'static str, &'static str, &'static str) =
+            (original.leak(), unrelated.leak(), revert.leak());
+        let mut cache = ChangeCache::new();
+        let mut budget = FingerprintBudget::new(MAX_NEW_FINGERPRINTS);
+        let prs = [
+            candidate(1, original, "2026-11-01T00:00:00Z"),
+            candidate(2, unrelated, "2026-11-02T00:00:00Z"),
+            candidate(3, revert, "2026-11-03T00:00:00Z"),
+        ];
+        for pr in &prs {
+            remember(pr, dir, &mut cache, &mut budget);
+        }
+        assert!(detect(&prs[1], "acme/widgets", &cache).is_none());
+        let link = detect(&prs[2], "acme/widgets", &cache).expect("change match");
+        assert_eq!(link.pull_request_number, Some(1));
     }
 
     #[test]

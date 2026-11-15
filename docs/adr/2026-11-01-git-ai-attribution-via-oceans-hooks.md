@@ -299,7 +299,7 @@ The gateway stores the lifecycle as `state`, `opened_at` and `closed_at` columns
 ### Why
 
 - **The revert line is machine-written.** Studies of reverted commits, and change-failure tools such as Swarmia's, key on git's `This reverts commit` line and GitHub's revert-button markers. Titles are rewritten often enough that a title match both misses reverts and flags non-reverts.
-- **The change match catches reworded reverts.** A revert's change is the inverse of the original's whatever its message says. The fingerprint leaves out context lines and line numbers, so unrelated edits between the two don't break the match, and it needs nothing beyond the local clone the hook already runs in.
+- **The change match catches reworded reverts.** A revert's change is the inverse of the original's whatever its message says. The fingerprint leaves out line numbers but keeps one context line on each side of an edit, so unrelated edits elsewhere between the two don't break the match, while the same lines changed in another function don't match. It needs nothing beyond the local clone the hook already runs in.
 - **Counts, not identities.** Review data reduces to counts and times on the developer's machine. Reviewer logins, descriptions, commit messages and fingerprints never leave it, which keeps the ADR's rule that raw external identifiers are not stored.
 
 ### Trade-offs
@@ -313,6 +313,7 @@ The gateway stores the lifecycle as `state`, `opened_at` and `closed_at` columns
 - **Binary files match by blob ids:** a binary change has no lines to compare, so the fingerprint uses its from and to blob ids, which keep the change's direction. File mode changes count with their old and new modes, so restoring a file's text without its executable bit isn't an exact revert.
 - **More than 100 reviews:** the hook reads the first 100 and sends the counts as unknown when there are more. The first review time is still exact, since reviews come oldest first.
 - **Activity is the forge's, not the sync's:** the hook sends GitHub's `updatedAt`, stored as `last_activity_at`, which orders the report read and decides whether a pull request changed in the window. A routine re-sync of an untouched pull request doesn't count. The gateway fills `last_activity_at` on every write, from the hook's value, else the merge, close or open time, else when it was seen; rows stored before V82 keep it empty, and the read falls back to their merge time rather than rewriting the table in the migration.
+- **Context costs a few matches:** an edit right next to the original change, made before the revert, changes the context line and breaks the match; the revert then counts by its other signals or as possible. A false confirmed revert would skew change failure and recovery, so a missed match is the safer error. The fingerprint cache file is versioned with the fingerprint format.
 - **Exact lines:** the change fingerprint keeps whitespace, since a revert reproduces the original lines exactly and whitespace inside a string is content.
 - **Copies from several owners:** the author's copy keeps attribution, and the state, merge, commits and lifecycle come from the most recently observed copy, so a teammate's sync after the merge isn't overridden by the author's earlier one.
 

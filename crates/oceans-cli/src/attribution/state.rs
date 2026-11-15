@@ -390,7 +390,9 @@ impl State {
 
     fn change_cache_path(&self, repository: &str) -> PathBuf {
         let mut path = self.pr_sync_path(repository);
-        path.set_extension("changes.json");
+        // Versioned with the fingerprint: v2 adds rebase ranges, file modes and context lines,
+        // so fingerprints cached by an earlier build would never match new ones.
+        path.set_extension("changes.v2.json");
         path
     }
 
