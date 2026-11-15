@@ -354,14 +354,17 @@ The helpers live in `src/lib/format.ts` (`formatCount`, `formatDuration`, `forma
 
 ### Attribution Data
 
-Attribution charts (`/observability/attribution`, and the candidate tabs on `/observability/attribution/concepts`) give a few series fixed meanings, so they read the same on every chart:
+The Attribution page (`/observability/attribution`) is a row of tabs, like MCP's section nav: Impact, Delivery, Pull requests, Repositories, Durability and My work, each turned on or off by `attribution.pages` in the gateway config. Tab names carry no numbers. The Agent Harnesses page adds the harness tiles and the harness × model table above its request chart. The building blocks live in `src/components/attribution/` (`InsightCard`, `TrendKpi`, `AiShareBar`, `CounterweightPair`, `FlowChart`, `Quadrant`, `MatrixHeatmap`, `ContributionCalendar`, `PunchCard`), shared with the concept mockups at `/observability/attribution/concepts` (off unless `attribution.pages.concepts` is on).
+
+Attribution charts give a few series fixed meanings, so they read the same on every chart:
 
 - **AI lines** take `--chart-1` (blue) and **human lines** `--chart-2` (green). The green is lighter, so a stack of the two reads without hue. **Unattested lines** take `--chart-other`: they are unknown, never human, and stay out of every AI share.
 - **Spend that shipped** (reached a commit on the default branch) takes `--chart-4`; **spend that did not** takes `--chart-other`. Waste is drawn muted, not in rose: it is data, not a failure state.
 - **Deltas stay neutral.** A KPI's change against the previous window is ink with an arrow, never green or rose, because whether up is good depends on the metric.
 - **Pair throughput with its counterweight.** A volume figure (AI share, merged PRs, lines per dollar) sits beside the measure that would expose gaming it (durability, reverts, lead time). Never show AI line counts as a score on their own.
 - **No individual rankings.** Team, repository, harness and model views compare against each other; a person's view compares only against their own previous period.
-- **Shapes:** a column Sankey (`FlowChart`) for session outcomes, sized by sessions or spend, with drop-offs muted below the main stack; a quadrant for readiness (AI share against durability, bubble area by spend); the contribution calendar and weekday-by-hour punch card on the heatmap levels; per-PR commit strips (one bar per commit, AI over human). Each grid cell and SVG mark carries its value in a tooltip or `<title>`.
+- **Shapes:** a column Sankey (`FlowChart`) for session outcomes, sized by sessions or spend, with drop-offs muted below the main stack; a quadrant for readiness (AI share against autonomy today, durability once collected; bubble area by spend; dividers at the average); the contribution calendar and weekday-by-hour punch card on the heatmap levels; per-PR commit strips (one bar per commit, AI over human). Each grid cell and SVG mark carries its value in a tooltip or `<title>`.
+- **Gaps stay visible.** A section or column that needs data Oceans does not collect keeps its slot, shows `—` and carries a warning-variant **Needs new data** pill (`ReadinessBadge level="new"`) whose tooltip names the missing data. An approximation carries an outline **Proxy** pill that says what it stands in for, such as merges for deploys. Data Oceans already has carries no pill. The pills are a standing reminder of the gaps listed in `docs/internal/2026-11-15-attribution-data-gaps.md`; remove one only when its data arrives.
 
 ## 7. Packaging and Reuse
 

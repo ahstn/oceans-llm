@@ -3,6 +3,7 @@
 - Date: 2026-11-01
 - Status: Accepted
 - Amended in part: 2026-11-15, by [Amendment: key owner as note author](#amendment-2026-11-15-key-owner-as-note-author)
+- Extended: 2026-11-15, by [Amendment: report insights for the Attribution tabs](#amendment-2026-11-15-report-insights-for-the-attribution-tabs)
 
 ## Context
 
@@ -226,6 +227,30 @@ Notes matched their author emails even when a user's key sent them. A developer 
 
 - **Authorship is still a claim for PRs and service accounts:** a PR commit's author email, and the emails in a service account's notes, come from the commit. So any key holder can credit a pull request to another user, and a service account key holder can credit a note's commit, with that account's requests and cost, to another user. No other owner's requests reach it, because session hashes are bound to the sender's ownership scope. A pull request counts the lines and cost of only the notes its viewer can already see, so a user's notes don't follow a pull request credited to someone else.
 - **Notes credit the key, not the committer:** a note for a commit someone else authored, such as one a rebase rewrote, still counts for the user whose machine sent it.
+
+## Amendment 2026-11-15: report insights for the Attribution tabs
+
+### Decision
+
+- **The report computes the tab aggregations.** Next to its tables, `GET /api/v1/admin/attribution/report` returns:
+  - `daily` buckets: lines, commits and merges, with committed requests on their commit's day and uncommitted requests on the day they happened.
+  - `session_outcomes`: agent sessions by the furthest stage their work reached, which is merged, default branch, not merged yet or no commit.
+  - `harness_models` rows.
+  - Per pull request: its matched commits, `first_commit_at`, `lead_time_seconds`, `is_revert` and agent tools.
+  - A `summary` for the window and one for the window of equal length before it.
+- **Sessions join by hash.** A hook-reported session and a note's session are one session when they share a session hash. Requests count once per request id, as elsewhere in the report.
+- **Previous window:** the handler builds a second report for the preceding window in parallel and keeps only its summary. That doubles the reads per page load. Each read stays bounded by the same 1,000-row caps.
+- **Revert proxy:** a merged pull request whose title starts `Revert ` or `revert:` counts as a revert. It stands in for change failures until incidents reach Oceans.
+- **Tabs are config:** `attribution.pages` turns each tab on or off, and `AuthSessionCapabilitiesView.attribution_tabs` lists the tabs that are on. Other derivations, such as repository rollups, AI-share bands and the punch card, run in the browser over the report's capped rows.
+
+### Why
+
+Every tab needs the same joined rows. Daily buckets and session outcomes have to see the request allocation, which only exists inside the report builder. Computing them there avoids a second request-fact read.
+
+### Trade-offs
+
+- **No open or closed PRs:** pull requests come only from `gh pr list --state merged`, so session outcomes can't separate "in review" from "abandoned". Work that hasn't merged stays in one stage.
+- **Missing data stays visible:** line survival, review times, deploys and incidents are missing. The UI keeps those sections with a "Needs new data" pill. [Attribution data gaps](../internal/2026-11-15-attribution-data-gaps.md) lists the gaps and how to collect each one.
 
 ## Follow-ups
 

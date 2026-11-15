@@ -1,6 +1,6 @@
 # Attribution: Visualisation Concepts
 
-Status: proposal (the live Attribution page is unchanged)
+Status: implemented in part. The live Attribution page now has the Impact (with the session outcomes Sankey), Delivery, Pull requests, Repositories, Durability and My work tabs, each behind `attribution.pages` in the gateway config. Agents & models became the harness tiles and harness × model table on Agent Harnesses. These mockups stay as the guide, behind `attribution.pages.concepts`.
 Live mockups: `/admin/observability/attribution/concepts` (`crates/admin-ui/web/src/routes/observability/attribution_.concepts.tsx`)
 Stack: shadcn/ui (`radix-nova`, hugeicons) + Recharts 3, on the DESIGN.md tokens. Layouts borrow from ReUI Pro blocks: the `chart-49` trial Sankey, `chart-51` slope chart, `data-grid-advanced-1` in-cell sparklines, and `ai-usage-2` spend map.
 

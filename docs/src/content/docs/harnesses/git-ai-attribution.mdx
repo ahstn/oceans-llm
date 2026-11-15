@@ -161,6 +161,21 @@ The queue holds at most 512 MiB per machine. When it's full, the hooks drop new 
 
 The **Attribution** page covers the last 7, 30 or 90 days. Platform admins see every user and can filter by user and repository. Other users see only the commits their keys reported or that they authored. See [Admin control plane](/access/admin-control-plane/).
 
+The page has a tab per question. Admins turn each one on or off with [`attribution.pages`](/configuration/#attribution):
+
+| Tab | What it shows |
+| --- | --- |
+| **Impact** | AI share of merged code, cost per merged pull request, merged pull requests and the share of spend that shipped, each against the previous window. Then who wrote the code, spend against output, where agent sessions ended up, and per-user activity. |
+| **Delivery** | DORA measures from merged pull requests: merges per day (standing in for deploys), first commit to merge, and reverts (standing in for change failures). Then lead time against AI share and batch size. |
+| **Pull requests** | Each merged pull request with its AI share, commits, harnesses, cost and lead time. Expand a row for its commits. Recent changes lists every attributed commit. |
+| **Repositories** | AI share, autonomy (AI lines committed without human edits), cost and lead time per repository. |
+| **Durability** | Whether AI code lasts. Most of it needs data Oceans does not collect yet. |
+| **My work** | Your own commits, pull requests and agent spend against your previous window. It never compares you with anyone else. |
+
+Sections marked **Needs new data** wait on data Oceans does not collect yet, such as line survival, deploy events or pull request review times. Sections marked **Proxy** approximate one measure with another, and say which.
+
+The **Agent Harnesses** page shows, for each harness and model, the gateway cost per 100 committed AI lines and the share of sessions whose work shipped.
+
 - **AI and human lines** come from the notes. A line git-ai didn't attest to anyone counts as neither.
 - **Requests and cost** come from gateway traffic. A commit gets the requests of each session that wrote it, made after that session's previous commit and up to this commit. Requests after a session's last commit count as uncommitted work. Totals therefore add up without counting a request twice.
 - **Unpriced requests** are counted separately, and never treated as free. See [Pricing catalog and accounting](/spend/pricing-and-accounting/).

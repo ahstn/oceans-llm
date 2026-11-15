@@ -49,6 +49,7 @@ Every section is optional. The gateway rejects unknown top-level keys, so a miss
 | `guardrails` | Request and tool-call guardrail packs | [Gateway guardrails](/operations/gateway-guardrails/) |
 | `request_logging` | Request-log payload capture and purge | [`request_logging`](#request_logging) |
 | `agent_analysis` | Agent session analysis collection and access | [`agent_analysis`](#agent_analysis) |
+| `attribution` | Which tabs of the Attribution page the admin UI shows | [`attribution`](#attribution) |
 
 ## Value sources
 
@@ -313,6 +314,24 @@ After a change to metrics, context or cache profiles, an admin queues retained s
 
 For what the analysis shows and who can see it, see [Agent session analysis](/observability/agent-session-analysis/). Team admins also need the `agent_sessions` page in [`permissions`](/access/access-settings/).
 
+## `attribution`
+
+`attribution.pages` turns each tab of the **Attribution** page on or off. Every tab is on by default except `concepts`, the design mockups on sample data. Turning a tab off hides it from everyone; ingestion and the report API are unchanged.
+
+```yaml
+attribution:
+  pages:
+    impact: true
+    delivery: true
+    pull_requests: true
+    repositories: true
+    durability: true
+    my_work: true
+    concepts: false
+```
+
+With every tab off, the page explains how to turn one back on. Unknown fields in `attribution` fail startup. See [Git AI attribution](/harnesses/git-ai-attribution/#read-the-attribution-page).
+
 ## Benchmark catalog
 
 The admin Models page shows the Artificial Analysis Intelligence, Coding and Agentic indices for each model. The scores come from a snapshot in the repository, [`crates/gateway-service/data/model_benchmarks.json`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-service/data/model_benchmarks.json). The gateway makes no benchmark network calls at runtime and needs no API key.
@@ -339,7 +358,7 @@ Scores change only when a release ships a refreshed snapshot. The attribution to
 The gateway validates the whole file before it starts. A failure stops startup (and `config validate`) with the field name in the error. Validation covers:
 
 - YAML syntax and field types, including enum values.
-- Unknown keys at the top level and in `auth`, `permissions`, `budgets`, `agent_analysis`, `models` entries, `teams`, `users` (including `membership`) and `service_accounts`.
+- Unknown keys at the top level and in `auth`, `permissions`, `budgets`, `agent_analysis`, `attribution`, `models` entries, `teams`, `users` (including `membership`) and `service_accounts`.
 - `server`, `database`, `request_logging`, `budget_alerts` and `agent_analysis` rules on this page and on [Budget settings](/spend/budget-settings/).
 - Guardrails, permissions, OIDC and OAuth providers, and MCP settings.
 - Provider fields, model and alias references, and route wiring.
