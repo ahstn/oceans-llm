@@ -1,0 +1,49 @@
+crates/admin-ui/web/src/test/routes/attribution-route.test.tsx
+  s_0a4447f1aa57dd::t_a7b4c2b6fd3889 571-577
+crates/admin-ui/web/src/routes/observability/attribution.tsx
+  s_0a4447f1aa57dd::t_981480ce70f684 22,54
+crates/admin-ui/web/src/routes/observability/-attribution/insights.ts
+  s_0a4447f1aa57dd::t_68c940f0d5a8ee 56-67
+crates/admin-ui/web/src/server/admin-data.functions.ts
+  s_0a4447f1aa57dd::t_6d0dd463b8532c 123,183-188
+crates/admin-ui/web/src/routes/observability/agent-harnesses.tsx
+  s_0a4447f1aa57dd::t_fe9d88c1c0e83b 39
+crates/gateway/src/http/attribution/report.rs
+  s_0a4447f1aa57dd::t_71c651cd94d803 53-56,229-230,254,271-279,282,322-328
+crates/admin-ui/web/src/test/attribution-insights.test.ts
+  s_0a4447f1aa57dd::t_210db5cb77951c 5,35-50
+crates/gateway/src/http/attribution/tests.rs
+  s_0a4447f1aa57dd::t_e4bdc8fdb72ab4 423-441
+crates/admin-ui/web/src/server/admin-data.server.ts
+  s_0a4447f1aa57dd::t_683439dadda357 306-307,317
+crates/gateway/openapi/admin-api.json
+  s_0a4447f1aa57dd::t_4234fc9593502e 279-290,12519-12527,15298-15306
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_0a4447f1aa57dd::t_b4c5feeb9c8599 3364,4104,6390-6395
+crates/admin-ui/web/src/test/routes/agent-harnesses-route.test.tsx
+  s_0a4447f1aa57dd::t_0b51261cb04566 6,366-386
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/impact-tab.tsx
+  s_0a4447f1aa57dd::t_68939108da37c8 49-54,113,364
+crates/gateway-service/src/attribution/report.rs
+  s_0a4447f1aa57dd::t_113bc21264986e 518-522
+crates/admin-ui/web/src/routes/observability/-agent-harnesses/harness-attribution.tsx
+  s_0a4447f1aa57dd::t_f939f727cd4b84 93
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/my-work-tab.tsx
+  s_0a4447f1aa57dd::t_5721d2e8b3388c 40-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ccd9a24cd2ac7c7d6f86e84590f4963136b1dba7",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
