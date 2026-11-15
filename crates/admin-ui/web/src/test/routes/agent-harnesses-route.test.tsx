@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
 import { cloneElement, type ReactElement, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -111,6 +111,11 @@ const harnessUsageData = {
       total_tokens: null,
     },
   ],
+}
+
+/** The loader hands the attribution report over as a promise the section reads with `use`. */
+function withDeferredAttribution<T extends { attribution: unknown }>(data: T) {
+  return { ...data, attribution: Promise.resolve(data.attribution) }
 }
 
 describe('AgentHarnessesPage', () => {
@@ -252,7 +257,7 @@ describe('AgentHarnessesPage', () => {
     expect(scope.getByText('4 requests')).toBeInTheDocument()
   })
 
-  it('shows what each harness ships above the request activity', () => {
+  it('shows what each harness ships above the request activity', async () => {
     const harnessModels = [
       // The Claude Code hook key and git-ai's tool name are one harness.
       {
@@ -301,17 +306,23 @@ describe('AgentHarnessesPage', () => {
         fully_priced_cost_usd_10000: 2000,
       },
     ]
-    routeMock.useLoaderData.mockReturnValue({
-      data: harnessUsageData,
-      attributionEnabled: true,
-      attribution: { window_days: 7, harness_models: harnessModels },
-    })
-
-    const view = render(
-      <TooltipProvider>
-        <AgentHarnessesPage />
-      </TooltipProvider>,
+    routeMock.useLoaderData.mockReturnValue(
+      withDeferredAttribution({
+        data: harnessUsageData,
+        attributionEnabled: true,
+        attribution: { window_days: 7, harness_models: harnessModels },
+      }),
     )
+
+    const view = await act(async () =>
+      render(
+        <TooltipProvider>
+          <AgentHarnessesPage />
+        </TooltipProvider>,
+      ),
+    )
+    // The report streams in after the page renders.
+    await view.findByText('What each harness ships')
     const section = within(view.getByRole('region', { name: 'Harness attribution' }))
 
     // Claude Code: $3.60 over 400 AI lines is $0.90 per 100; 2 of 4 sessions shipped.
@@ -333,38 +344,44 @@ describe('AgentHarnessesPage', () => {
     expect(view.getByRole('radio', { name: 'Last 7 days' })).toBeInTheDocument()
   })
 
-  it('prices lines only from sessions whose requests were all priced', () => {
+  it('prices lines only from sessions whose requests were all priced', async () => {
     // One priced session wrote 100 lines for $1; nine unjoined sessions wrote 900 more.
-    routeMock.useLoaderData.mockReturnValue({
-      data: harnessUsageData,
-      attributionEnabled: true,
-      attribution: {
-        window_days: 7,
-        harness_models: [
-          {
-            harness: 'codex',
-            model_key: 'gpt-6-astra',
-            session_count: 10,
-            shipped_session_count: 10,
-            ai_lines: 1_000,
-            request_count: 5,
-            priced_request_count: 5,
-            unpriced_request_count: 0,
-            usage_missing_request_count: 0,
-            priced_cost_usd_10000: 10_000,
-            fully_priced_session_count: 1,
-            fully_priced_ai_lines: 100,
-            fully_priced_cost_usd_10000: 10_000,
-          },
-        ],
-      },
-    })
-
-    const view = render(
-      <TooltipProvider>
-        <AgentHarnessesPage />
-      </TooltipProvider>,
+    routeMock.useLoaderData.mockReturnValue(
+      withDeferredAttribution({
+        data: harnessUsageData,
+        attributionEnabled: true,
+        attribution: {
+          window_days: 7,
+          harness_models: [
+            {
+              harness: 'codex',
+              model_key: 'gpt-6-astra',
+              session_count: 10,
+              shipped_session_count: 10,
+              ai_lines: 1_000,
+              request_count: 5,
+              priced_request_count: 5,
+              unpriced_request_count: 0,
+              usage_missing_request_count: 0,
+              priced_cost_usd_10000: 10_000,
+              fully_priced_session_count: 1,
+              fully_priced_ai_lines: 100,
+              fully_priced_cost_usd_10000: 10_000,
+            },
+          ],
+        },
+      }),
     )
+
+    const view = await act(async () =>
+      render(
+        <TooltipProvider>
+          <AgentHarnessesPage />
+        </TooltipProvider>,
+      ),
+    )
+    // The report streams in after the page renders.
+    await view.findByText('What each harness ships')
     const section = within(view.getByRole('region', { name: 'Harness attribution' }))
     expect(section.getAllByText('$1.00').length).toBeGreaterThan(0)
     expect(section.queryByText('$0.10')).not.toBeInTheDocument()
@@ -391,17 +408,23 @@ describe('AgentHarnessesPage', () => {
     vi.mocked(getAttribution).mockResolvedValue({
       data: { window_days: 30, harness_models: [] },
     } as never)
-    routeMock.useLoaderData.mockReturnValue({
-      data: harnessUsageData,
-      attributionEnabled: true,
-      attribution: { window_days: 7, harness_models: [] },
-    })
-
-    const view = render(
-      <TooltipProvider>
-        <AgentHarnessesPage />
-      </TooltipProvider>,
+    routeMock.useLoaderData.mockReturnValue(
+      withDeferredAttribution({
+        data: harnessUsageData,
+        attributionEnabled: true,
+        attribution: { window_days: 7, harness_models: [] },
+      }),
     )
+
+    const view = await act(async () =>
+      render(
+        <TooltipProvider>
+          <AgentHarnessesPage />
+        </TooltipProvider>,
+      ),
+    )
+    // The report streams in after the page renders.
+    await view.findByText('What each harness ships')
     fireEvent.click(view.getByRole('radio', { name: 'Attribution for the last 30 days' }))
 
     await waitFor(() =>
@@ -409,7 +432,7 @@ describe('AgentHarnessesPage', () => {
     )
   })
 
-  it('warns and drops the cheapest-pair callout when the attribution report was cut short', () => {
+  it('warns and drops the cheapest-pair callout when the attribution report was cut short', async () => {
     const row = {
       model_key: 'claude-sonnet-5',
       session_count: 3,
@@ -424,35 +447,41 @@ describe('AgentHarnessesPage', () => {
       fully_priced_ai_lines: 300,
       fully_priced_cost_usd_10000: 9_000,
     }
-    routeMock.useLoaderData.mockReturnValue({
-      data: harnessUsageData,
-      attributionEnabled: true,
-      attribution: {
-        window_days: 7,
-        coverage: {
-          commits_truncated: true,
-          pull_requests_truncated: false,
-          agent_sessions_truncated: false,
-          request_facts_truncated: false,
-        },
-        harness_models: [
-          { ...row, harness: 'claude' },
-          {
-            ...row,
-            harness: 'codex',
-            model_key: 'gpt-6-astra',
-            priced_cost_usd_10000: 3_000,
-            fully_priced_cost_usd_10000: 3_000,
+    routeMock.useLoaderData.mockReturnValue(
+      withDeferredAttribution({
+        data: harnessUsageData,
+        attributionEnabled: true,
+        attribution: {
+          window_days: 7,
+          coverage: {
+            commits_truncated: true,
+            pull_requests_truncated: false,
+            agent_sessions_truncated: false,
+            request_facts_truncated: false,
           },
-        ],
-      },
-    })
-
-    const view = render(
-      <TooltipProvider>
-        <AgentHarnessesPage />
-      </TooltipProvider>,
+          harness_models: [
+            { ...row, harness: 'claude' },
+            {
+              ...row,
+              harness: 'codex',
+              model_key: 'gpt-6-astra',
+              priced_cost_usd_10000: 3_000,
+              fully_priced_cost_usd_10000: 3_000,
+            },
+          ],
+        },
+      }),
     )
+
+    const view = await act(async () =>
+      render(
+        <TooltipProvider>
+          <AgentHarnessesPage />
+        </TooltipProvider>,
+      ),
+    )
+    // The report streams in after the page renders.
+    await view.findByText('What each harness ships')
     expect(view.getByText('This comparison is incomplete')).toBeInTheDocument()
     expect(view.queryByText(/lands committed lines at/)).not.toBeInTheDocument()
   })

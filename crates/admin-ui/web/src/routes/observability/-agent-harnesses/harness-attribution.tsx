@@ -2,7 +2,7 @@
 // It reads the attribution report's harness × model rows: sessions joined to the commits they
 // wrote, with each session's gateway cost and whether its work merged or reached the default branch.
 
-import { useState, useTransition } from 'react'
+import { use, useState, useTransition } from 'react'
 import { toast } from 'sonner'
 
 import { MatrixHeatmap } from '@/components/attribution/heatmaps'
@@ -16,6 +16,7 @@ import {
 import { canonicalHarness, formatPercent, harnessLabel } from '@/components/attribution/format'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { getErrorMessage } from '@/lib/errors'
 import { EMPTY_VALUE, formatCount, formatUsd10000 } from '@/lib/format'
@@ -72,6 +73,31 @@ function costPer100(cell: Pick<Cell, 'pricedSessions' | 'pricedLines' | 'pricedC
   return cell.pricedSessions > 0 && cell.pricedLines > 0
     ? (cell.pricedCostUsd10000 / cell.pricedLines) * 100
     : null
+}
+
+/** Reads the report the page loader started without awaiting; `null` means it failed. */
+export function DeferredHarnessAttribution({
+  report,
+}: {
+  report: Promise<AttributionReportView | null>
+}) {
+  const initial = use(report)
+  return <HarnessAttribution initial={initial} initialFailed={initial === null} />
+}
+
+/** Holds the section's place while the report streams in. */
+export function HarnessAttributionSkeleton() {
+  return (
+    <section aria-label="Harness attribution" aria-busy className="flex flex-col gap-6">
+      <Skeleton className="h-12 w-80 rounded-md" />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        {['a', 'b', 'c'].map((key) => (
+          <Skeleton key={key} className="h-32 rounded-xl" />
+        ))}
+      </div>
+      <Skeleton className="h-48 rounded-xl" />
+    </section>
+  )
 }
 
 export function HarnessAttribution({

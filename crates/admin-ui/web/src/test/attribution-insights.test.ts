@@ -7,7 +7,7 @@ import {
   attributionReportInput,
   type AttributionTab,
   reportShapeTab,
-  turnedOffTabRedirect,
+  attributionTabRedirect,
   bucketDays,
   enabledAttributionTabs,
   flowFigures,
@@ -77,15 +77,21 @@ describe('attribution report input', () => {
         attribution_tabs: ['impact' as const, 'pull_requests' as const],
       },
     }
-    const next = turnedOffTabRedirect({ tab: 'delivery' as const, days: 30 }, noDelivery)
+    const next = attributionTabRedirect({ tab: 'delivery' as const, days: 30 }, noDelivery)
     expect(next).toEqual({ tab: 'impact', days: 30 })
     const { report, ...filters } = attributionReportDeps(next ?? {})
     expect(
       attributionReportInput({ ...filters, tab: reportShapeTab(report, noDelivery) }, noDelivery),
     ).toEqual({ days: 30, compare: true })
-    expect(turnedOffTabRedirect({ tab: 'impact' as const, days: 30 }, noDelivery)).toBeNull()
+    expect(attributionTabRedirect({ tab: 'impact' as const, days: 30 }, noDelivery)).toBeNull()
+    // A URL with no tab names the first enabled one, so the loader never guesses.
     const bare: { tab?: AttributionTab; days: 30 } = { days: 30 }
-    expect(turnedOffTabRedirect(bare, noDelivery)).toBeNull()
+    expect(attributionTabRedirect(bare, noDelivery)).toEqual({ days: 30, tab: 'impact' })
+    const conceptsOnly = {
+      ...admin,
+      capabilities: { ...admin.capabilities, attribution_tabs: ['concepts' as const] },
+    }
+    expect(attributionTabRedirect(bare, conceptsOnly)).toBeNull()
   })
 
   it('reads no report when every report tab is off', () => {

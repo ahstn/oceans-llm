@@ -1,4 +1,4 @@
-import { useState, useTransition } from 'react'
+import { Suspense, useState, useTransition } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts'
 import { toast } from 'sonner'
@@ -28,7 +28,10 @@ import {
 } from '@/server/admin-data.functions'
 import type { HarnessUsageLeaderView, HarnessUsageRange, HarnessUsageView } from '@/types/api'
 
-import { HarnessAttribution } from './-agent-harnesses/harness-attribution'
+import {
+  DeferredHarnessAttribution,
+  HarnessAttributionSkeleton,
+} from './-agent-harnesses/harness-attribution'
 import { formatBucketDay, utcDayTicks } from './-bucket-axis'
 
 export const Route = createFileRoute('/observability/agent-harnesses')({
@@ -38,19 +41,16 @@ export const Route = createFileRoute('/observability/agent-harnesses')({
     const attributionEnabled = (context.session?.capabilities.attribution_tabs ?? []).some(
       (tab) => tab !== 'concepts',
     )
-    // Attribution is optional here: the page still shows request activity if the report fails.
-    const [usage, attribution] = await Promise.all([
-      getObservabilityHarnessUsage({ data: { range: '7d' } }),
-      attributionEnabled
-        ? getAttribution({ data: { days: 7, compare: false } }).catch(() => null)
-        : null,
-    ])
-    return {
-      ...usage,
-      attributionEnabled,
-      attribution: attribution?.data ?? null,
-      attributionFailed: attributionEnabled && !attribution,
-    }
+    // The report is not awaited: request activity renders at once and the attribution section
+    // streams in when it is ready. A failed report resolves to `null`, which the section shows.
+    const attribution = attributionEnabled
+      ? getAttribution({ data: { days: 7, compare: false } }).then(
+          (response) => response.data,
+          () => null,
+        )
+      : null
+    const usage = await getObservabilityHarnessUsage({ data: { range: '7d' } })
+    return { ...usage, attributionEnabled, attribution }
   },
   component: AgentHarnessesPage,
 })
@@ -137,11 +137,10 @@ export function AgentHarnessesPage() {
         description="Compare what each harness ships for its cost, and its request activity over time."
       />
 
-      {loaderData.attributionEnabled ? (
-        <HarnessAttribution
-          initial={loaderData.attribution}
-          initialFailed={loaderData.attributionFailed}
-        />
+      {loaderData.attributionEnabled && loaderData.attribution ? (
+        <Suspense fallback={<HarnessAttributionSkeleton />}>
+          <DeferredHarnessAttribution report={loaderData.attribution} />
+        </Suspense>
       ) : null}
 
       <Card>

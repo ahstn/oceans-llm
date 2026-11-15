@@ -55,15 +55,15 @@ export function resolveAttributionTab(
  * signed-in user's own id, whatever user filter the URL carries.
  */
 /**
- * The search to redirect to when the URL names a tab that is turned off: the same search on the
- * tab the page would render instead. `null` when the requested tab is on or none was named. The
- * loader then only ever sees enabled tabs, so the report it reads fits the tab on screen.
+ * The search to redirect to when the URL names no tab, or a tab that is turned off: the same
+ * search on the tab the page renders, the first enabled one. `null` when the URL already names an
+ * enabled tab, or every report tab is off. The loader then only sees an explicit enabled tab, so
+ * the report it reads fits the tab on screen.
  */
-export function turnedOffTabRedirect<Search extends { tab?: AttributionTab }>(
+export function attributionTabRedirect<Search extends { tab?: AttributionTab }>(
   search: Search,
   session: AuthSessionView | null | undefined,
 ): Search | null {
-  if (search.tab === undefined) return null
   const tab = resolveAttributionTab(search.tab, session)
   return tab === search.tab ? null : { ...search, tab }
 }

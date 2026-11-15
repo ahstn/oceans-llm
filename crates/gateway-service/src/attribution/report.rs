@@ -240,7 +240,8 @@ where
 
 /// The headline summary and read coverage for `query`, for comparing one window with another.
 /// It reads what the full report reads, since the summary depends on the request allocation,
-/// but builds no per-commit pull request details.
+/// but aggregates only what the summary needs: no changes, users, models, daily buckets,
+/// harness rows or per-commit pull request details.
 pub async fn build_attribution_summary<S>(
     store: &S,
     query: &AttributionReportQuery,
@@ -255,7 +256,7 @@ where
 async fn build_report<S>(
     store: &S,
     query: &AttributionReportQuery,
-    commit_details: bool,
+    detail: bool,
 ) -> Result<AttributionReport, StoreError>
 where
     S: AttributionRepository + Sync,
@@ -291,7 +292,7 @@ where
         .cloned()
         .collect::<Vec<_>>();
     let mut inputs = ReportInputs::new(query, &commits, &facts, &windows);
-    inputs.commit_details = commit_details;
+    inputs.detail = detail;
     // Lookback commits only feed pull request totals, so a cap reached by them matters only
     // when the window has a pull request.
     let commits_capped = commits.len() >= limit
@@ -471,8 +472,10 @@ struct ReportInputs<'a> {
     uncommitted: Vec<&'a AttributionRequestFact>,
     /// `(scope, hash)` pairs that matched at least one request.
     joined: HashSet<(&'a str, &'a str)>,
-    /// Whether pull requests carry per-commit details; a summary-only build skips them.
-    commit_details: bool,
+    /// Whether to build the detail rows. A summary-only build computes only what
+    /// [`AttributionReport::summary`] reads: totals, coverage, pull request activity without
+    /// per-commit details, and session outcomes.
+    detail: bool,
 }
 
 impl<'a> ReportInputs<'a> {
@@ -525,7 +528,7 @@ impl<'a> ReportInputs<'a> {
             by_commit,
             uncommitted,
             joined,
-            commit_details: true,
+            detail: true,
         }
     }
 
@@ -564,7 +567,11 @@ impl<'a> ReportInputs<'a> {
             ..coverage
         };
         let numbers = pull_request_numbers(&pull_requests);
-        let changes = self.changes(&numbers);
+        let changes = if self.detail {
+            self.changes(&numbers)
+        } else {
+            Vec::new()
+        };
         let merged_commits = numbers.keys().copied().collect::<HashSet<_>>();
         // Spend insights take every loaded session open in the window, not only those that
         // started or ended in it: a session open across the whole window still spends inside it.
@@ -574,6 +581,15 @@ impl<'a> ReportInputs<'a> {
         let overlapping = agent_sessions.iter().collect::<Vec<_>>();
         let (session_outcomes, harness_models) =
             self.session_insights(&overlapping, &reported, &merged_commits);
+        if !self.detail {
+            return AttributionReport {
+                totals,
+                coverage,
+                pull_requests: self.pull_requests(pull_requests),
+                session_outcomes,
+                ..AttributionReport::default()
+            };
+        }
         let users = self.users(&pull_requests, &reported);
         let pull_requests = self.pull_requests(pull_requests);
         AttributionReport {
@@ -770,7 +786,7 @@ impl<'a> ReportInputs<'a> {
                 .push(commit);
         }
         // Pull requests come newest first, so the detail budget goes to the most recent ones.
-        let mut budget = if self.commit_details {
+        let mut budget = if self.detail {
             MAX_REPORT_COMMIT_DETAILS
         } else {
             0
