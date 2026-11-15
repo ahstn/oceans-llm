@@ -1,0 +1,83 @@
+crates/gateway-core/src/attribution.rs
+  s_9379a6359d74c1::t_c9f018d3dee0ee 177-289,302-303,308,357-358,362,449
+crates/gateway-core/src/lib.rs
+  s_9379a6359d74c1::t_1bf35b8fc8198e 50-51,53-54
+crates/gateway-service/src/attribution.rs
+  s_9379a6359d74c1::t_b63790b6d885ae 26-28
+crates/gateway-service/src/attribution/ingest.rs
+  s_9379a6359d74c1::t_217487f102eb69 11-14,102-103,105-106,450,491,498-548
+crates/gateway-service/src/attribution/report.rs
+  s_9379a6359d74c1::t_d7b9b82b33e655 34,40,162,164-167,226-227,286-292,298,305,309-312,589,694,796-799
+crates/gateway-service/src/attribution/report/insights.rs
+  s_9379a6359d74c1::t_e4cfbb6ec1b8b3 95,152-154,432,438
+crates/gateway-service/src/attribution/report/lifecycle.rs
+  s_9379a6359d74c1::t_bf9ae42ccfba38 1-221
+crates/gateway-service/src/attribution/tests.rs
+  s_9379a6359d74c1::t_19dee012d77a7e 161,297-304,308-315
+crates/gateway-service/src/attribution/tests/ingest.rs
+  s_9379a6359d74c1::t_56b24354ed6814 122-123,167-235
+crates/gateway-service/src/attribution/tests/report.rs
+  s_9379a6359d74c1::t_e6e70eb8333bef 6-7,116-120,285,400,1067-1074,1085-1088,1458-1561
+crates/gateway-store/migrations/V82__attribution_pull_request_lifecycle.sql
+  s_0a4447f1aa57dd::t_67ee0f4a04d7ab 1-65
+crates/gateway-store/migrations/postgres/V82__attribution_pull_request_lifecycle.sql
+  s_0a4447f1aa57dd::t_653afd548b1638 1-20
+crates/gateway-store/src/attribution.rs
+  s_9379a6359d74c1::t_456feb8ca4adb4 32
+crates/gateway-store/src/attribution/pull_requests.rs
+  s_9379a6359d74c1::t_fc0c82e542a99d 1,7-8,16,22,24-60,85,89-92,149,156-159,219-221,230,235-237,239,242-247
+crates/gateway-store/src/attribution_tests.rs
+  s_9379a6359d74c1::t_700c4991198276 9-15,66-67,264-268,301,494-549
+crates/gateway-store/src/libsql_store/attribution.rs
+  s_0a4447f1aa57dd::t_8267c35a8eec7b 186,191-196
+crates/gateway-store/src/migration_registry.rs
+  s_0a4447f1aa57dd::t_671d0b3ed8fcbb 13-16,524-532
+crates/gateway-store/src/postgres_store/attribution.rs
+  s_0a4447f1aa57dd::t_c52f884dfc01c9 172,177-182
+crates/gateway/src/http/attribution/ingest.rs
+  s_9379a6359d74c1::t_de5b5db7025a2f 14-17,128,150-151,154-201,457-502,504,512
+crates/gateway/src/http/attribution/insights.rs
+  s_9379a6359d74c1::t_c7aa14b8bd8f5f 4,7-8,108-194
+crates/gateway/src/http/attribution/report.rs
+  s_9379a6359d74c1::t_1b97657cea6283 30-31,171-172,174-191,249-250,330,356,496-501,505-517
+crates/gateway/src/http/attribution/tests.rs
+  s_9379a6359d74c1::t_078be0b5bfd446 297-361
+crates/gateway/src/local_demo_seed/attribution.rs
+  s_9379a6359d74c1::t_8d7c203aa4995d 20-21,75-83,172-173,180-187,195-202,205-234,458-461,465-480
+crates/oceans-cli/src/attribution/mod.rs
+  s_9379a6359d74c1::t_5279d14d3b7193 15
+crates/oceans-cli/src/attribution/payload.rs
+  s_9379a6359d74c1::t_3b95081d8fb40a 74-77,79-129
+crates/oceans-cli/src/attribution/prs.rs
+  s_9379a6359d74c1::t_9f5732b93d825f 1-5,17-20,23,31-32,34-35,39-40,42-48,51,64-65,107-147,161-163,209-219,298-413,448-449,612-615,637-640,669-755
+crates/oceans-cli/src/attribution/repo.rs
+  s_9379a6359d74c1::t_f453ef7f06eada 195-208,217-218
+crates/oceans-cli/src/attribution/reverts.rs
+  s_9379a6359d74c1::t_d6c812c3decc2e 1-524
+crates/oceans-cli/src/attribution/state.rs
+  s_0a4447f1aa57dd::t_871e15fb713ec7 370-396
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5bacb2996d8bdf41afc4df2ef1119a4952a2d036",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_9379a6359d74c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "24386ac1-62a3-474e-9c88-ccc4d428ec6d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
