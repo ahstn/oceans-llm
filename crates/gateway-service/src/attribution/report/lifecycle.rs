@@ -7,7 +7,7 @@
 //! GitHub's revert button and an exact inverse change before a title. Only those three count as
 //! reverts; a title alone, and any row stored before the hook sent links, is a possible revert.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use gateway_core::{
     AttributionPullRequestRecord, AttributionPullRequestState, AttributionReportQuery,
@@ -169,23 +169,20 @@ pub(super) fn apply_reverts(
     summary: &mut AttributionPullRequestLifecycleSummary,
 ) {
     let mut merged_at: HashMap<(&str, i64), OffsetDateTime> = HashMap::new();
-    let mut shas: Vec<(&str, &str, i64)> = Vec::new();
+    // `(repository, sha) → pull request`, sorted so an abbreviated SHA is a range lookup.
+    let mut shas: BTreeMap<(&str, &str), i64> = BTreeMap::new();
     for pr in loaded {
         if let Some(at) = pr.merged_at {
             merged_at.insert((pr.repository.as_str(), pr.number), at);
         }
-        shas.extend(
-            pr.merge_commit_sha
-                .as_deref()
-                .map(|sha| (pr.repository.as_str(), sha, pr.number)),
-        );
-        shas.extend(pr.commits.iter().map(|commit| {
-            (
-                pr.repository.as_str(),
-                commit.commit_sha.as_str(),
-                pr.number,
-            )
-        }));
+        if let Some(sha) = pr.merge_commit_sha.as_deref() {
+            shas.entry((pr.repository.as_str(), sha))
+                .or_insert(pr.number);
+        }
+        for commit in &pr.commits {
+            shas.entry((pr.repository.as_str(), commit.commit_sha.as_str()))
+                .or_insert(pr.number);
+        }
     }
     let mut reverted_by: HashMap<(String, i64), i64> = HashMap::new();
     let mut times_to_revert: Vec<i64> = Vec::new();
@@ -201,13 +198,12 @@ pub(super) fn apply_reverts(
         let target = link.and_then(|link| {
             link.pull_request_number.or_else(|| {
                 link.commit_shas.iter().find_map(|reverted| {
-                    shas.iter()
-                        .find(|(repo, sha, number)| {
-                            *repo == repository
-                                && *number != pr.number
-                                && sha.starts_with(reverted.as_str())
+                    shas.range((repository, reverted.as_str())..)
+                        .take_while(|((repo, sha), _)| {
+                            *repo == repository && sha.starts_with(reverted.as_str())
                         })
-                        .map(|(_, _, number)| *number)
+                        .map(|(_, number)| *number)
+                        .find(|number| *number != pr.number)
                 })
             })
         });
