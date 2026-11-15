@@ -1021,9 +1021,9 @@ providers:
 }
 
 #[test]
-fn every_provider_type_has_a_capability_baseline() {
+fn every_provider_type_has_a_capability_baseline_and_route_policy() {
     // Adding a `ProviderConfig` variant breaks this match, which forces the new type into
-    // `TYPES` and so into the baseline check below.
+    // `TYPES`, and so into a decision on its baseline and whether routes narrow it.
     use crate::config::ProviderConfig;
 
     fn listed(provider: &ProviderConfig) -> &'static str {
@@ -1038,25 +1038,51 @@ fn every_provider_type_has_a_capability_baseline() {
         }
     }
     let _ = listed;
-    const TYPES: [&str; 7] = [
-        "openai_compat",
-        "gcp_cloud_run_openai_compat",
-        "anthropic_compat",
-        "gcp_vertex",
-        "aws_bedrock",
-        "github_copilot",
-        "typesafe",
+
+    /// Whether `narrow_for_route_profile` has a rule for the type. A type without one serves
+    /// its baseline on every route.
+    #[derive(Clone, Copy, PartialEq)]
+    enum RoutePolicy {
+        Baseline,
+        NarrowsPerRoute,
+    }
+    use RoutePolicy::{Baseline, NarrowsPerRoute};
+    const TYPES: [(&str, RoutePolicy); 7] = [
+        // Decisions profiles narrow to Decisions only.
+        ("openai_compat", NarrowsPerRoute),
+        ("gcp_cloud_run_openai_compat", Baseline),
+        ("anthropic_compat", Baseline),
+        // Capabilities follow the upstream model family.
+        ("gcp_vertex", NarrowsPerRoute),
+        // `api_style` selects the API surface.
+        ("aws_bedrock", NarrowsPerRoute),
+        // The compatibility profile selects the chat API; the baseline is empty.
+        ("github_copilot", NarrowsPerRoute),
+        ("typesafe", Baseline),
     ];
 
     let none = gateway_core::ProviderCapabilities::none();
-    for provider_type in TYPES {
+    let compatibility = gateway_core::RouteCompatibility::default();
+    for (provider_type, policy) in TYPES {
         let baseline = gateway_core::ProviderCapabilities::for_provider_type(provider_type);
-        // GitHub Copilot narrows per route from its compatibility profile.
         if provider_type != "github_copilot" {
             assert_ne!(
                 baseline, none,
                 "`{provider_type}` has no capability baseline"
             );
+        }
+        if policy == Baseline {
+            for upstream_model in ["gpt-5-mini", "claude-sonnet-4-5", "unknown-model"] {
+                assert_eq!(
+                    gateway_core::route_capability_ceiling(
+                        provider_type,
+                        upstream_model,
+                        &compatibility
+                    ),
+                    baseline,
+                    "`{provider_type}` narrows per route; mark it `NarrowsPerRoute`"
+                );
+            }
         }
     }
     assert_eq!(

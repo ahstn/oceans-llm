@@ -118,7 +118,12 @@ fn pricing_override_matches_catalog(
     configured: &RoutePricingOverride,
     catalog: &EffectiveRoutePricing,
     catalog_image_output_rate: Option<Money4>,
+    route_tier: Option<ServiceTier>,
 ) -> bool {
+    // A route forcing a non-default tier bills only that tier's catalog schedule, which
+    // `catalog` already holds as its base rates and context tiers, so the catalog's other tier
+    // schedules never apply to it.
+    let forces_tier = route_tier.is_some_and(|tier| tier != ServiceTier::Default);
     catalog.input_cost_per_million_tokens == Some(configured.input_cost_per_million_tokens)
         && catalog.output_cost_per_million_tokens == Some(configured.output_cost_per_million_tokens)
         // The override replaces catalog pricing wholesale, so an omitted cache rate leaves cache
@@ -137,7 +142,7 @@ fn pricing_override_matches_catalog(
         // An override replaces the catalog's whole schedule, so it drops any context tiers and
         // the catalog's service tier rates, and its own tier rates have no catalog match.
         && catalog.context_tiers.is_empty()
-        && catalog.service_tiers.is_empty()
+        && (forces_tier || catalog.service_tiers.is_empty())
         && configured.service_tiers.is_empty()
 }
 
@@ -306,7 +311,12 @@ where
             let pricing = matches!(
                 (route.pricing_override.as_ref(), catalog.pricing.as_ref()),
                 (Some(configured), Some(pricing))
-                    if pricing_override_matches_catalog(configured, pricing, catalog.image_output_rate)
+                    if pricing_override_matches_catalog(
+                        configured,
+                        pricing,
+                        catalog.image_output_rate,
+                        route.service_tier,
+                    )
             );
             let context_window_tokens = route
                 .context_window_tokens
@@ -362,7 +372,7 @@ mod tests {
         let matches = |configured: &RoutePricingOverride,
                        catalog: &EffectiveRoutePricing,
                        image: Option<Money4>| {
-            pricing_override_matches_catalog(configured, catalog, image)
+            pricing_override_matches_catalog(configured, catalog, image, None)
         };
         assert!(matches(&configured, &catalog, None));
 
@@ -431,5 +441,52 @@ mod tests {
             cache_write_1h: None,
         });
         assert!(!matches(&configured, &catalog, None));
+        catalog.context_tiers.clear();
+
+        // A route forcing priority bills only the priority schedule, which `catalog` holds as its
+        // base rates, so the catalog's other tier schedules do not stop a match.
+        let priority = Some(ServiceTier::Priority);
+        catalog.service_tiers.push(ServiceTierPricing {
+            service_tier: ServiceTier::Flex,
+            input: Some(money("0.075")),
+            output: Some(money("0.30")),
+            cache_read: None,
+            cache_write: None,
+            cache_write_1h: None,
+            context_tiers: Vec::new(),
+        });
+        assert!(!matches(&configured, &catalog, None));
+        assert!(pricing_override_matches_catalog(
+            &configured,
+            &catalog,
+            None,
+            priority
+        ));
+        assert!(
+            pricing_override_matches_catalog(
+                &configured,
+                &catalog,
+                None,
+                Some(ServiceTier::Default)
+            ) == matches(&configured, &catalog, None)
+        );
+        assert!(!pricing_override_matches_catalog(
+            &with_tier, &catalog, None, priority
+        ));
+        // The forced schedule's context tiers still differ from the flat override.
+        catalog.context_tiers.push(ContextPricingTier {
+            above_input_tokens: 200_000,
+            input: Some(money("0.30")),
+            output: Some(money("1.20")),
+            cache_read: None,
+            cache_write: None,
+            cache_write_1h: None,
+        });
+        assert!(!pricing_override_matches_catalog(
+            &configured,
+            &catalog,
+            None,
+            priority
+        ));
     }
 }

@@ -221,7 +221,8 @@ impl ProviderCapabilities {
             "typesafe" => Self::decisions_only(),
             // Fail closed: an unrecognised type advertises nothing, so a provider type added
             // without an entry here cannot validate or advertise APIs its client lacks. The
-            // gateway config test `every_provider_type_has_a_capability_baseline` lists every
+            // gateway config test
+            // `every_provider_type_has_a_capability_baseline_and_route_policy` lists every
             // config type and fails to compile when one is added.
             _ => Self::none(),
         }

@@ -3226,6 +3226,9 @@ fn narrow_for_route_profile(
             }
             capabilities
         }
+        // Types without a rule serve their baseline on every route. The gateway config test
+        // `every_provider_type_has_a_capability_baseline_and_route_policy` makes each type
+        // declare which applies, and checks the ones marked baseline.
         _ => base,
     }
 }
