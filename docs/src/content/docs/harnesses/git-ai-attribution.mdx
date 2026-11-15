@@ -122,7 +122,7 @@ oceans hook prs
 oceans hook prs --repo-dir ~/src/widgets --limit 200
 ```
 
-It reads the newest 30 merged pull requests by default, and up to 1,000 with `--limit`. `--if-stale` skips the sync if the repository synced more recently than the age you give, such as `30m`, `1h` or `2d`. If `gh` isn't installed or isn't signed in, the sync is skipped and the message says why.
+It reads the newest 30 merged pull requests by default, and up to 1,000 with `--limit`. The limit is the total to fetch, not the page size: `--limit 200` reads up to 200 pull requests in pages of at most 49. This keeps each query below GitHub's GraphQL node limit while it reads commit authors. `--if-stale` skips the sync if the repository synced more recently than the age you give, such as `30m`, `1h` or `2d`. If `gh` isn't installed or a fetch fails, the sync is skipped. Failed requests include the error from `gh`; an API limit error does not mean you need to sign in again. No pull requests are queued unless all requested pages succeed.
 
 ## Check the queue
 

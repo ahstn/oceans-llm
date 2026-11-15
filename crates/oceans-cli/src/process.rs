@@ -39,6 +39,7 @@ impl std::error::Error for RunError {}
 pub struct Captured {
     pub status: ExitStatus,
     pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
 }
 
 /// Runs `command` with stdin and stderr closed and captures at most `max_stdout` bytes of
@@ -49,10 +50,33 @@ pub fn run_captured(
     timeout: Duration,
     max_stdout: usize,
 ) -> Result<Captured, RunError> {
+    run_captured_inner(command, timeout, max_stdout, None)
+}
+
+/// Like `run_captured`, but also captures bounded stderr for user-facing errors.
+pub fn run_captured_with_stderr(
+    command: &mut Command,
+    timeout: Duration,
+    max_stdout: usize,
+    max_stderr: usize,
+) -> Result<Captured, RunError> {
+    run_captured_inner(command, timeout, max_stdout, Some(max_stderr))
+}
+
+fn run_captured_inner(
+    command: &mut Command,
+    timeout: Duration,
+    max_stdout: usize,
+    max_stderr: Option<usize>,
+) -> Result<Captured, RunError> {
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        .stderr(if max_stderr.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        });
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -63,31 +87,57 @@ pub fn run_captured(
         io::ErrorKind::NotFound => RunError::NotFound,
         _ => RunError::Spawn(error),
     })?;
-    let stdout = child.stdout.take().expect("stdout is piped");
+    let receiver = capture_pipe(child.stdout.take().expect("stdout is piped"), max_stdout);
+    let stderr_receiver =
+        max_stderr.map(|limit| capture_pipe(child.stderr.take().expect("stderr is piped"), limit));
+    let deadline = Instant::now() + timeout;
+    let status = wait_until(&mut child, deadline)?;
+    let stdout = receive_pipe(receiver, deadline, max_stdout)?;
+    let stderr = match stderr_receiver {
+        Some(receiver) => receive_pipe(receiver, deadline, max_stderr.unwrap())?,
+        None => Vec::new(),
+    };
+    Ok(Captured {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+fn capture_pipe(
+    pipe: impl Read + Send + 'static,
+    limit: usize,
+) -> mpsc::Receiver<io::Result<Vec<u8>>> {
     let (sender, receiver) = mpsc::channel();
-    // A reader thread keeps a full pipe from stalling the child while this thread waits.
+    // Drain both pipes concurrently so neither can stall the child.
     thread::spawn(move || {
         let mut bytes = Vec::new();
-        let result = stdout
-            .take(max_stdout as u64 + 1)
+        let result = pipe
+            .take(limit as u64 + 1)
             .read_to_end(&mut bytes)
             .map(|_| bytes);
         let _ = sender.send(result);
     });
-    let deadline = Instant::now() + timeout;
-    let status = wait_until(&mut child, deadline)?;
-    // A grandchild can hold the pipe open after the child exits, so the read is bounded too.
+    receiver
+}
+
+fn receive_pipe(
+    receiver: mpsc::Receiver<io::Result<Vec<u8>>>,
+    deadline: Instant,
+    limit: usize,
+) -> Result<Vec<u8>, RunError> {
+    // A grandchild can hold a pipe open after the child exits, so bound the read too.
     let remaining = deadline
         .saturating_duration_since(Instant::now())
         .max(Duration::from_millis(100));
-    let stdout = receiver
+    let bytes = receiver
         .recv_timeout(remaining)
         .map_err(|_| RunError::TimedOut)?
         .map_err(RunError::Io)?;
-    if stdout.len() > max_stdout {
+    if bytes.len() > limit {
         return Err(RunError::OutputTooLarge);
     }
-    Ok(Captured { status, stdout })
+    Ok(bytes)
 }
 
 fn wait_until(child: &mut Child, deadline: Instant) -> Result<ExitStatus, RunError> {
@@ -261,6 +311,31 @@ pub fn shell_command(script: &str) -> Command {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn captured_stderr_preserves_failure_details_and_is_bounded() {
+        let output = run_captured_with_stderr(
+            &mut shell_command(
+                "printf 'partial'; printf 'GraphQL: node limit exceeded\\n' >&2; exit 1",
+            ),
+            Duration::from_secs(5),
+            64,
+            64,
+        )
+        .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        assert_eq!(output.stdout, b"partial");
+        assert_eq!(output.stderr, b"GraphQL: node limit exceeded\n");
+        assert!(matches!(
+            run_captured_with_stderr(
+                &mut shell_command("head -c 100 /dev/zero >&2"),
+                Duration::from_secs(5),
+                64,
+                10,
+            ),
+            Err(RunError::OutputTooLarge)
+        ));
+    }
 
     #[test]
     fn captured_output_is_bounded_in_size_and_time() {
