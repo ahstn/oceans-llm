@@ -270,7 +270,7 @@ Notes matched their author emails even when a user's key sent them. A developer 
   - Per pull request: its matched commits, `first_commit_at`, `lead_time_seconds`, `is_revert` and agent tools.
   - A `summary` for the window and one for the window of equal length before it.
 - **Sessions join by hash.** A hook-reported session and a note's session are one session when they share a session hash. Requests count once per request id, as elsewhere in the report.
-- **Previous window:** only when a request sets `compare=true` (the Impact and My work tabs), the handler builds the preceding window's summary in parallel through `build_attribution_summary`. It reads what the full report reads, because the summary depends on the request allocation, but builds no per-commit details. Each read stays bounded by the same 1,000-row caps.
+- **Previous window:** only when a request sets `compare=true` (the Impact and My work tabs), the handler builds the preceding window's summary in parallel through `build_attribution_summary`. It reads what the full report reads, because the summary depends on the request allocation, but aggregates only what the summary needs: no changes, users, models, daily buckets, harness rows or per-commit details. Each read stays bounded by the same 1,000-row caps.
 - **Revert proxy:** a merged pull request whose title starts `Revert ` or `revert:` counts as a revert. It stands in for change failures until incidents reach Oceans.
 - **Tabs are config:** `attribution.pages` turns each tab on or off, and `AuthSessionCapabilitiesView.attribution_tabs` lists the tabs that are on. Other derivations, such as repository rollups, AI-share bands and the punch card, run in the browser over the report's capped rows.
 
