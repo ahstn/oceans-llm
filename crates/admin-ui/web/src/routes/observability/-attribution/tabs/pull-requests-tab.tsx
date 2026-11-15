@@ -481,7 +481,7 @@ function ReviewFacts({ pr }: { pr: PullRequestView }) {
       ? null
       : pr.review_count === 0
         ? 'Merged without review'
-        : `${formatCount(pr.review_count)} reviews, ${formatCount(pr.approval_count ?? 0)} approving`
+        : `${formatCount(pr.review_count)} ${pr.review_count === 1 ? 'review' : 'reviews'}, ${formatCount(pr.approval_count ?? 0)} approving`
   const size =
     pr.additions == null || pr.deletions == null
       ? null

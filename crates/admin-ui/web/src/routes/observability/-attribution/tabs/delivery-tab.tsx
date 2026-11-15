@@ -274,7 +274,7 @@ function ReviewFlow({ lifecycle }: { lifecycle: LifecycleView }) {
         value={formatCount(lifecycle.open_count)}
         hint={
           lifecycle.draft_count > 0
-            ? `${formatCount(lifecycle.draft_count)} drafts, of those updated in the window`
+            ? `${formatCount(lifecycle.draft_count)} ${lifecycle.draft_count === 1 ? 'draft' : 'drafts'}, of those updated in the window`
             : 'Of those updated in the window'
         }
       />

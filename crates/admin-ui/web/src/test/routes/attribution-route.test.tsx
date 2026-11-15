@@ -506,7 +506,7 @@ describe('AttributionPage', () => {
     expect(kpi('Review wait').getByText('1.5 h')).toBeInTheDocument()
     expect(kpi('Abandon rate').getByText(/^50(\.0)?%$/)).toBeInTheDocument()
     expect(
-      kpi('Open pull requests').getByText('1 drafts, of those updated in the window'),
+      kpi('Open pull requests').getByText('1 draft, of those updated in the window'),
     ).toBeInTheDocument()
   })
 
