@@ -1,0 +1,19 @@
+docs/internal/2026-11-15-attribution-data-gaps.md
+  s_fbd63d70298f9c::t_6388165343ed9c 1-251
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "94007488a83e8e14bbaba3b89b23c2b9a5386fc7",
+  "prompts": {},
+  "sessions": {
+    "s_fbd63d70298f9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a19dd0364b624372b",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
