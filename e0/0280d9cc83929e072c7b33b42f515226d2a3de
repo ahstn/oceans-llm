@@ -1,0 +1,26 @@
+.agents/skills/verify-oceans-admin/features/attribution.md
+  h_2f452a9c375069 31-34,36-37,43
+.agents/skills/verify-oceans-admin/features/routing.json
+  h_2f452a9c375069 260,563-564
+DESIGN.md
+  h_2f452a9c375069 357-359,366-367
+docs/adr/2026-11-01-git-ai-attribution-via-oceans-hooks.md
+  h_2f452a9c375069 6,231-254
+docs/design-proposals/attribution/README.md
+  h_2f452a9c375069 3
+docs/src/content/docs/configuration/index.mdx
+  h_2f452a9c375069 52,317-334,361
+docs/src/content/docs/harnesses/git-ai-attribution.mdx
+  h_2f452a9c375069 164-178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e00280d9cc83929e072c7b33b42f515226d2a3de",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
