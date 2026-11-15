@@ -169,8 +169,8 @@ function AttributionSections({
         title="User activity"
         description={
           onSelectUser
-            ? "Activity per user. A hooked commit counts for the API key's owner, and a merged pull request for its commit author's email. Select a user's name to filter the report to them."
-            : "Activity per user. A hooked commit counts for the API key's owner, and a merged pull request for its commit author's email."
+            ? "Activity per user. A commit hooked with a user's API key counts for that user. Other commits, and merged pull requests, count for their author's email. Select a user's name to filter the report to them."
+            : "Activity per user. A commit hooked with a user's API key counts for that user. Other commits, and merged pull requests, count for their author's email."
         }
       >
         <UserActivityTable

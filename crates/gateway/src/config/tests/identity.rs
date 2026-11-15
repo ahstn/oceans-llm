@@ -315,7 +315,7 @@ users:
 }
 
 #[test]
-fn rejects_additional_attribution_emails_that_name_another_user() {
+fn rejects_unusable_additional_attribution_emails() {
     for (users, expected) in [
         (
             "[{name: A, email: a@example.com, auth_mode: password, additional_attribution_emails: [b@example.com]}, \
@@ -330,6 +330,14 @@ fn rejects_additional_attribution_emails_that_name_another_user() {
             "[{name: A, email: a@example.com, auth_mode: password, additional_attribution_emails: [git@example.com]}, \
               {name: B, email: b@example.com, auth_mode: password, additional_attribution_emails: [Git@example.com]}]",
             "`git@example.com` is listed more than once",
+        ),
+        (
+            "[{name: A, email: a@example.com, auth_mode: password, additional_attribution_emails: [member @personal.example]}]",
+            "`member @personal.example` can't match a commit author",
+        ),
+        (
+            "[{name: A, email: a@example.com, auth_mode: password, additional_attribution_emails: [\"Member <member@personal.example>\"]}]",
+            "can't match a commit author",
         ),
     ] {
         let tmp = tempdir().expect("tempdir");

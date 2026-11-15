@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use anyhow::{Context, bail};
 use gateway_core::{AuthMode, GlobalRole, MembershipRole, RequestTag};
+use gateway_service::attribution::note;
 use serde::Deserialize;
 
 use super::{
@@ -243,6 +244,13 @@ pub(super) fn validate_users(
         for email in &user.additional_attribution_emails {
             let email = normalize_config_email(email)
                 .with_context(|| format!("user `{}` additional_attribution_emails", user.email))?;
+            if note::author_email(&email).as_deref() != Some(email.as_str()) {
+                bail!(
+                    "user `{}` additional_attribution_emails: `{email}` can't match a commit author; \
+                     use a single address with no spaces, at most 320 bytes",
+                    user.email
+                );
+            }
             attribution_emails.push((email, email_normalized.clone()));
         }
         normalize_optional_config_entity_tags(
