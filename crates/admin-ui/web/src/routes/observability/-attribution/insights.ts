@@ -54,6 +54,20 @@ export function resolveAttributionTab(
  * The report request for a tab: the route search without the tab, and on My work always the
  * signed-in user's own id, whatever user filter the URL carries.
  */
+/**
+ * The search to redirect to when the URL names a tab that is turned off: the same search on the
+ * tab the page would render instead. `null` when the requested tab is on or none was named. The
+ * loader then only ever sees enabled tabs, so the report it reads fits the tab on screen.
+ */
+export function turnedOffTabRedirect<Search extends { tab?: AttributionTab }>(
+  search: Search,
+  session: AuthSessionView | null | undefined,
+): Search | null {
+  if (search.tab === undefined) return null
+  const tab = resolveAttributionTab(search.tab, session)
+  return tab === search.tab ? null : { ...search, tab }
+}
+
 /** Tabs that show changes against the previous window, so their report builds that window too. */
 const COMPARING_TABS = new Set<AttributionTab>(['impact', 'my_work'])
 

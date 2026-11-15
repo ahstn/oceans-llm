@@ -7,6 +7,7 @@ import {
   attributionReportInput,
   type AttributionTab,
   reportShapeTab,
+  turnedOffTabRedirect,
   bucketDays,
   enabledAttributionTabs,
   harnessShares,
@@ -65,6 +66,25 @@ describe('attribution report input', () => {
     expect(
       attributionReportInput({ ...filters, tab: reportShapeTab(report, admin) }, admin),
     ).toEqual({ days: 30, compare: true })
+  })
+
+  it('redirects a turned-off tab to the one the page renders, so the loader reads its report', () => {
+    const noDelivery = {
+      ...admin,
+      capabilities: {
+        ...admin.capabilities,
+        attribution_tabs: ['impact' as const, 'pull_requests' as const],
+      },
+    }
+    const next = turnedOffTabRedirect({ tab: 'delivery' as const, days: 30 }, noDelivery)
+    expect(next).toEqual({ tab: 'impact', days: 30 })
+    const { report, ...filters } = attributionReportDeps(next ?? {})
+    expect(
+      attributionReportInput({ ...filters, tab: reportShapeTab(report, noDelivery) }, noDelivery),
+    ).toEqual({ days: 30, compare: true })
+    expect(turnedOffTabRedirect({ tab: 'impact' as const, days: 30 }, noDelivery)).toBeNull()
+    const bare: { tab?: AttributionTab; days: 30 } = { days: 30 }
+    expect(turnedOffTabRedirect(bare, noDelivery)).toBeNull()
   })
 
   it('reads no report when every report tab is off', () => {

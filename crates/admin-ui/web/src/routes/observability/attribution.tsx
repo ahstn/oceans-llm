@@ -1,5 +1,5 @@
 import { lazy, Suspense, useTransition, type ComponentType } from 'react'
-import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
+import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router'
 
 import { PageHeader } from '@/components/layout/page-header'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -26,6 +26,7 @@ import {
   resolveAttributionTab,
   TAB_LABELS,
   TAB_QUESTIONS,
+  turnedOffTabRedirect,
   type AttributionTab,
 } from './-attribution/insights'
 import {
@@ -52,6 +53,10 @@ const TABS: Record<AttributionTab, ComponentType<TabProps>> = {
 
 export const Route = createFileRoute('/observability/attribution')({
   validateSearch: (search: Record<string, unknown>) => normalizeAttributionSearch(search),
+  beforeLoad: ({ search, context }) => {
+    const next = turnedOffTabRedirect(search, context.session)
+    if (next) throw redirect({ to: '/observability/attribution', search: next, replace: true })
+  },
   loaderDeps: ({ search }) => attributionReportDeps(search),
   loader: ({ deps: { report, ...filters }, context }) => {
     const tab = reportShapeTab(report, context.session)
