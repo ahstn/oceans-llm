@@ -1,0 +1,41 @@
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_0a4447f1aa57dd::t_be4f0245248734 3351-3352,4092-4093
+crates/admin-ui/web/src/routes/observability/-attribution/insights.ts
+  s_0a4447f1aa57dd::t_cc4a889a5fa92d 141-142,144-145,151,157,210-212
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/delivery-tab.tsx
+  s_0a4447f1aa57dd::t_cbd9b278f6f668 42,106,111,150,155-160
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/impact-tab.tsx
+  s_0a4447f1aa57dd::t_df267a069d2cac 42-43,59,71,80,87,101,139,152,157,165,174,352,355-357
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/my-work-tab.tsx
+  s_0a4447f1aa57dd::t_b9c790f4e0e295 41-42,63,71,77,88
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/pull-requests-tab.tsx
+  s_0a4447f1aa57dd::t_661205f006af27 50,92-94
+crates/admin-ui/web/src/routes/observability/attribution.tsx
+  s_0a4447f1aa57dd::t_b480dc47d9041f 122,232-234,240-252,255,257-258
+crates/admin-ui/web/src/test/routes/attribution-route.test.tsx
+  s_0a4447f1aa57dd::t_5563138bd71fbf 205,550-579
+crates/gateway-service/src/attribution/report/insights.rs
+  s_0a4447f1aa57dd::t_59000ae7c744a4 102-104,203-210,212
+crates/gateway-service/src/attribution/tests/report.rs
+  s_0a4447f1aa57dd::t_2dba481a708a20 808-829,833-850
+crates/gateway/openapi/admin-api.json
+  s_0a4447f1aa57dd::t_56ebb2e980663a 12456-12457,12493-12496,15229-15230,15266-15269
+crates/gateway/src/http/attribution/report.rs
+  s_0a4447f1aa57dd::t_f9cd87c48b5c1e 226-227,308-311
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b535126c2a15fc7b0d44106edd8314de5abedc1a",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
