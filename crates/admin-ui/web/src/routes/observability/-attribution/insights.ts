@@ -53,16 +53,42 @@ export function resolveAttributionTab(
  * The report request for a tab: the route search without the tab, and on My work always the
  * signed-in user's own id, whatever user filter the URL carries.
  */
+/** Tabs that show changes against the previous window, so their report builds that window too. */
+const COMPARING_TABS = new Set<AttributionTab>(['impact', 'my_work'])
+
+/** The three reports the tabs read: My work's own, a compared one, and one without comparison. */
+type ReportShape = 'my_work' | 'compare' | 'plain'
+
 /**
- * The search fields the report depends on. Every tab but My work reads the same report, so the tab
- * is kept only when it is My work, which scopes the report to the signed-in user. Switching
- * between the other tabs then reuses the loaded report.
+ * The search fields the report depends on. Tabs that read the same report share a shape, so
+ * switching between them reuses the loaded report rather than reading it again.
  */
 export function attributionReportDeps<Search extends { tab?: AttributionTab }>({
   tab,
   ...filters
 }: Search) {
-  return { ...filters, tab: tab === 'my_work' ? tab : undefined }
+  const report: ReportShape | undefined =
+    tab === undefined
+      ? undefined
+      : tab === 'my_work'
+        ? 'my_work'
+        : COMPARING_TABS.has(tab)
+          ? 'compare'
+          : 'plain'
+  return { ...filters, report }
+}
+
+/** An enabled tab that reads the report a shape names, for the loader to build its input from. */
+export function reportShapeTab(
+  report: ReportShape | undefined,
+  session: AuthSessionView | null | undefined,
+): AttributionTab | undefined {
+  if (report === 'my_work') return 'my_work'
+  if (report === 'compare') return 'impact'
+  if (report === 'plain') {
+    return enabledAttributionTabs(session).find((tab) => !COMPARING_TABS.has(tab))
+  }
+  return undefined
 }
 
 export function attributionReportInput<Search extends { tab?: AttributionTab; user_id?: string }>(
@@ -73,7 +99,11 @@ export function attributionReportInput<Search extends { tab?: AttributionTab; us
   const tab = resolveAttributionTab(requested, session)
   // With every report tab off there is nothing to read, and the page shows how to turn them on.
   if (!tab) return null
-  return { ...filters, user_id: tab === 'my_work' ? session?.user.id : filters.user_id }
+  return {
+    ...filters,
+    user_id: tab === 'my_work' ? session?.user.id : filters.user_id,
+    compare: COMPARING_TABS.has(tab),
+  }
 }
 
 export type PullRequestView = AttributionReportView['pull_requests'][number]

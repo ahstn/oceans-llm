@@ -21,6 +21,7 @@ import { AttributionFilteredEmpty, AttributionSetupEmpty } from './-attribution/
 import {
   attributionReportDeps,
   attributionReportInput,
+  reportShapeTab,
   enabledAttributionTabs,
   resolveAttributionTab,
   TAB_LABELS,
@@ -52,8 +53,9 @@ const TABS: Record<AttributionTab, ComponentType<TabProps>> = {
 export const Route = createFileRoute('/observability/attribution')({
   validateSearch: (search: Record<string, unknown>) => normalizeAttributionSearch(search),
   loaderDeps: ({ search }) => attributionReportDeps(search),
-  loader: ({ deps, context }) => {
-    const input = attributionReportInput(deps, context.session)
+  loader: ({ deps: { report, ...filters }, context }) => {
+    const tab = reportShapeTab(report, context.session)
+    const input = attributionReportInput({ ...filters, tab }, context.session)
     return input ? getAttribution({ data: input }) : null
   },
   component: AttributionPage,

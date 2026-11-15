@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest'
 import {
   aiBand,
   attributionReportDeps,
+  ATTRIBUTION_TABS,
   attributionReportInput,
+  type AttributionTab,
+  reportShapeTab,
   bucketDays,
   enabledAttributionTabs,
   harnessShares,
@@ -23,28 +26,34 @@ describe('attribution report input', () => {
   it('scopes My work to the signed-in user whatever user filter the URL carries', () => {
     expect(
       attributionReportInput({ tab: 'my_work', days: 30, user_id: 'someone-else' }, admin),
-    ).toEqual({ days: 30, user_id: admin.user.id })
+    ).toEqual({ days: 30, user_id: admin.user.id, compare: true })
   })
 
   it('keeps the user filter on other tabs and drops the tab itself', () => {
     expect(
       attributionReportInput({ tab: 'impact', days: 7, user_id: 'someone-else' }, admin),
-    ).toEqual({ days: 7, user_id: 'someone-else' })
+    ).toEqual({ days: 7, user_id: 'someone-else', compare: true })
   })
 
-  it('keeps the tab in the loader deps only for My work', () => {
-    const impact = attributionReportDeps({ tab: 'impact' as const, days: 30, user_id: 'u' })
-    const delivery = attributionReportDeps({ tab: 'delivery' as const, days: 30, user_id: 'u' })
-    expect(impact).toEqual(delivery)
-    expect(attributionReportDeps({ tab: 'my_work' as const, days: 30 })).toEqual({
-      days: 30,
-      tab: 'my_work',
+  it('asks for the previous window only on tabs that show changes against it', () => {
+    expect(attributionReportInput({ tab: 'delivery', days: 7 }, admin)).toEqual({
+      days: 7,
+      compare: false,
     })
-    // Without a tab in the deps, the loader still resolves the same tab, so the same report.
-    for (const tab of ['impact', 'delivery', 'pull_requests'] as const) {
-      expect(attributionReportInput(attributionReportDeps({ tab, days: 7 }), admin)).toEqual(
-        attributionReportInput({ tab, days: 7 }, admin),
-      )
+  })
+
+  it('shares loader deps between tabs that read the same report', () => {
+    const deps = (tab: AttributionTab) => attributionReportDeps({ tab, days: 30, user_id: 'u' })
+    expect(deps('delivery')).toEqual(deps('pull_requests'))
+    expect(deps('durability')).toEqual(deps('repositories'))
+    expect(deps('impact')).not.toEqual(deps('delivery'))
+    expect(deps('my_work')).not.toEqual(deps('impact'))
+    // The loader rebuilds the same input from the deps as from the full search.
+    for (const tab of ATTRIBUTION_TABS) {
+      const { report, ...filters } = attributionReportDeps({ tab, days: 7 })
+      expect(
+        attributionReportInput({ ...filters, tab: reportShapeTab(report, admin) }, admin),
+      ).toEqual(attributionReportInput({ tab, days: 7 }, admin))
     }
   })
 
@@ -64,7 +73,7 @@ describe('attribution report input', () => {
     expect(resolveAttributionTab('my_work', noMyWork)).toBe('impact')
     expect(
       attributionReportInput({ tab: 'my_work', days: 30, user_id: 'someone-else' }, noMyWork),
-    ).toEqual({ days: 30, user_id: 'someone-else' })
+    ).toEqual({ days: 30, user_id: 'someone-else', compare: true })
   })
 })
 

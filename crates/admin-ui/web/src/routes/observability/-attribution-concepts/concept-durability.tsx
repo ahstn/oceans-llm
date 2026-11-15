@@ -28,69 +28,8 @@ import {
   ReadinessBadge,
   TrendKpi,
 } from '@/components/attribution/parts'
-import { formatPercent, type Readiness } from '@/components/attribution/format'
-
-const ROADMAP: {
-  data: string
-  unlocks: string
-  source: string
-  effort: 'Small' | 'Medium' | 'Large'
-  readiness: Readiness
-}[] = [
-  {
-    data: 'PR opened, first review and review count',
-    unlocks: 'Review wait, merged without review, abandon rate',
-    source:
-      '`oceans hook prs` already runs `gh pr list`; add `createdAt`, `reviews` and closed-unmerged PRs to the same call.',
-    effort: 'Small',
-    readiness: 'new',
-  },
-  {
-    data: 'User turns per session',
-    unlocks: 'Steering and autonomy per harness and model',
-    source: 'Count user-role messages in requests the gateway already logs. No new ingestion.',
-    effort: 'Small',
-    readiness: 'proxy',
-  },
-  {
-    data: 'Revert and fix-up detection',
-    unlocks: 'Change fail rate proxy by AI band',
-    source: 'Match PR titles and `This reverts commit` bodies in the PR hook.',
-    effort: 'Small',
-    readiness: 'proxy',
-  },
-  {
-    data: 'Deleted lines per commit',
-    unlocks: 'Refactor rate, true PR size, net change',
-    source:
-      'The notes hook payload has the commit; add `git diff --numstat` totals, no file paths.',
-    effort: 'Medium',
-    readiness: 'new',
-  },
-  {
-    data: 'Generated lines per session',
-    unlocks: 'Generated : committed ratio, discarded work',
-    source:
-      'git-ai checkpoint stats (`git ai stats --json` `ai_additions` before commit) reported at session end.',
-    effort: 'Medium',
-    readiness: 'new',
-  },
-  {
-    data: 'Line survival at 14, 30 and 90 days',
-    unlocks: 'Churn, durability, cost per durable line',
-    source:
-      'A scheduled `git ai blame` pass per repository, reporting surviving AI and human line counts per merged PR.',
-    effort: 'Large',
-    readiness: 'new',
-  },
-  {
-    data: 'Deploy and incident events',
-    unlocks: 'Real DORA lead time, deploy frequency, failure and recovery',
-    source: 'GitHub Deployments or a webhook from CD and the incident tool.',
-    effort: 'Large',
-    readiness: 'new',
-  },
-]
+import { DATA_GAPS } from '@/components/attribution/data-gaps'
+import { formatPercent } from '@/components/attribution/format'
 
 // A concept page is one linear layout read top to bottom; splitting it would scatter the mockup.
 // oxlint-disable-next-line eslint/max-lines-per-function
@@ -228,7 +167,7 @@ export default function DurabilityConcept({ days }: { days: ConceptWindow }) {
             <Table aria-label="Data to collect" className="min-w-[64rem]">
               <AdminTableHeader columns={['Data', 'Unlocks', 'Source', 'Effort', 'Today']} />
               <TableBody>
-                {ROADMAP.map((row) => (
+                {DATA_GAPS.map((row) => (
                   <TableRow key={row.data}>
                     <TableCell className="max-w-56 px-3 py-2 font-medium whitespace-normal">
                       {row.data}
@@ -237,13 +176,13 @@ export default function DurabilityConcept({ days }: { days: ConceptWindow }) {
                       {row.unlocks}
                     </TableCell>
                     <TableCell className="text-muted-foreground max-w-md min-w-72 px-3 py-2 text-xs whitespace-normal">
-                      <InlineCode text={row.source} />
+                      <InlineCode text={row.avenue} />
                     </TableCell>
                     <TableCell className="px-3 py-2">
                       <Badge variant="outline">{row.effort}</Badge>
                     </TableCell>
                     <TableCell className="px-3 py-2">
-                      <ReadinessBadge level={row.readiness} />
+                      <ReadinessBadge level={row.today} />
                     </TableCell>
                   </TableRow>
                 ))}

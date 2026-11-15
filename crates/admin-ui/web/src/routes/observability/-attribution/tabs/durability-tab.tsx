@@ -4,7 +4,8 @@
 // docs/internal/2026-11-15-attribution-data-gaps.md.
 
 import { InsightCard, ReadinessBadge, TrendKpi } from '@/components/attribution/parts'
-import { formatPercent, type Readiness } from '@/components/attribution/format'
+import { DATA_GAPS, DATA_GAPS_URL } from '@/components/attribution/data-gaps'
+import { formatPercent } from '@/components/attribution/format'
 import { AdminTableHeader } from '@/components/shared/admin-table-header'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
@@ -12,67 +13,6 @@ import { EMPTY_VALUE, formatCount } from '@/lib/format'
 import type { AttributionReportView } from '@/types/api'
 
 import { bandSummaries, pullRequestRows, ratio } from '../insights'
-
-const DATA_GAPS_URL =
-  'https://github.com/ahstn/oceans-llm/blob/main/docs/internal/2026-11-15-attribution-data-gaps.md'
-
-const ROADMAP: {
-  data: string
-  unlocks: string
-  avenue: string
-  effort: 'Small' | 'Medium' | 'Large'
-  today: Readiness
-}[] = [
-  {
-    data: 'Pull request opened, reviews, open and closed pull requests',
-    unlocks: 'Review wait, merged without review, abandon rate, in-review stage',
-    avenue: 'More fields from the gh call oceans hook prs already makes, or a GitHub App',
-    effort: 'Small',
-    today: 'new',
-  },
-  {
-    data: 'User turns per agent session',
-    unlocks: 'Steering and autonomy per harness and model',
-    avenue: 'Count user messages in requests the gateway already logs',
-    effort: 'Small',
-    today: 'new',
-  },
-  {
-    data: 'Revert and fix-forward links',
-    unlocks: 'Change fail rate by AI share',
-    avenue: 'Revert commit bodies in the PR hook; titles are matched today',
-    effort: 'Small',
-    today: 'proxy',
-  },
-  {
-    data: 'Deleted lines and files changed per commit',
-    unlocks: 'Refactor rate, true batch size, net change',
-    avenue: 'git diff --numstat totals at session end, no paths',
-    effort: 'Medium',
-    today: 'new',
-  },
-  {
-    data: 'Generated lines per session',
-    unlocks: 'Generated : committed, discarded work',
-    avenue: 'git-ai checkpoint stats sent by the session-end hook',
-    effort: 'Medium',
-    today: 'new',
-  },
-  {
-    data: 'Deploy and incident events',
-    unlocks: 'Real DORA deploy frequency, lead time, failure and recovery',
-    avenue: 'GitHub Deployments, CD webhooks (Argo CD, Flux), incident tools',
-    effort: 'Large',
-    today: 'new',
-  },
-  {
-    data: 'Line survival at 14, 30 and 90 days',
-    unlocks: 'Durability, churn, cost per durable line, readiness quadrant',
-    avenue: 'A scheduled git ai blame pass where the clone lives, sending counts only',
-    effort: 'Large',
-    today: 'new',
-  },
-]
 
 // A tab is one linear layout read top to bottom; splitting it would scatter the sections.
 // oxlint-disable-next-line eslint/max-lines-per-function
@@ -191,7 +131,7 @@ export default function DurabilityTab({ report }: { report: AttributionReportVie
           <Table aria-label="Data to collect" className="min-w-[56rem]">
             <AdminTableHeader columns={['Data', 'Unlocks', 'Avenue', 'Effort', 'Today']} />
             <TableBody>
-              {ROADMAP.map((row) => (
+              {DATA_GAPS.map((row) => (
                 <TableRow key={row.data}>
                   <TableCell className="max-w-56 px-3 py-2 font-medium whitespace-normal">
                     {row.data}
