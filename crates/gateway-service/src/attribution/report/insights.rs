@@ -396,13 +396,18 @@ impl AttributionPullRequestActivity {
     }
 }
 
-/// The lower median of `values`, which it sorts.
+/// The median of `values`, which it sorts: the mean of the two middle values for an even count,
+/// rounded down, as the admin UI computes its own medians.
 fn median(values: &mut [i64]) -> Option<i64> {
     if values.is_empty() {
         return None;
     }
     values.sort_unstable();
-    Some(values[(values.len() - 1) / 2])
+    let middle = values.len() / 2;
+    if values.len() % 2 == 1 {
+        return Some(values[middle]);
+    }
+    Some(values[middle - 1] + (values[middle] - values[middle - 1]) / 2)
 }
 
 #[cfg(test)]
@@ -421,9 +426,10 @@ mod tests {
     }
 
     #[test]
-    fn median_takes_the_lower_middle() {
+    fn median_averages_the_two_middle_values() {
         assert_eq!(median(&mut []), None);
         assert_eq!(median(&mut [5]), Some(5));
-        assert_eq!(median(&mut [9, 1, 5, 3]), Some(3));
+        assert_eq!(median(&mut [9, 1, 5, 3]), Some(4));
+        assert_eq!(median(&mut [10_000, 90_000]), Some(50_000));
     }
 }

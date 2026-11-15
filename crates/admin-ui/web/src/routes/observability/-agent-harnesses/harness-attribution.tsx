@@ -14,6 +14,7 @@ import {
   ToolLabel,
 } from '@/components/attribution/parts'
 import { formatPercent, harnessLabel } from '@/components/attribution/format'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { getErrorMessage } from '@/lib/errors'
@@ -97,6 +98,14 @@ export function HarnessAttribution({
   }
 
   const cells = merge(report?.harness_models ?? [])
+  const coverage = report?.coverage
+  const incomplete = Boolean(
+    coverage &&
+    (coverage.commits_truncated ||
+      coverage.pull_requests_truncated ||
+      coverage.agent_sessions_truncated ||
+      coverage.request_facts_truncated),
+  )
   const harnesses = [...new Set(cells.map((cell) => cell.harness))].sort(
     (a, b) =>
       cells.filter((cell) => cell.harness === b).reduce((t, c) => t + c.sessions, 0) -
@@ -161,8 +170,23 @@ export function HarnessAttribution({
         </p>
       ) : (
         <>
+          {incomplete ? (
+            <Alert>
+              <AlertTitle>This comparison is incomplete</AlertTitle>
+              <AlertDescription>
+                The window holds more commits, sessions or requests than one report reads, so costs
+                can read low and sessions can look unshipped. The cheapest-pair callout is hidden.
+                Choose a shorter window.
+              </AlertDescription>
+            </Alert>
+          ) : null}
           <HarnessTiles totals={totals} />
-          <HarnessModelCard cells={cells} harnesses={harnesses} models={models} />
+          <HarnessModelCard
+            cells={cells}
+            harnesses={harnesses}
+            models={models}
+            incomplete={incomplete}
+          />
         </>
       )}
     </section>
@@ -215,10 +239,13 @@ function HarnessModelCard({
   cells,
   harnesses,
   models,
+  incomplete,
 }: {
   cells: Cell[]
   harnesses: string[]
   models: string[]
+  /** A read cap cut the report short, so no pair is called out as cheapest. */
+  incomplete: boolean
 }) {
   const [metric, setMetric] = useState<Metric>('cost')
   const ranked = cells
@@ -269,7 +296,7 @@ function HarnessModelCard({
           }}
           format={(value) => (metric === 'cost' ? formatUsd10000(value) : formatPercent(value))}
         />
-        {metric !== 'steering' && ranked.length > 1 ? (
+        {metric !== 'steering' && !incomplete && ranked.length > 1 ? (
           <Insight>
             {ranked[0].model} in {harnessLabel(ranked[0].harness)} lands committed lines at{' '}
             {formatUsd10000(costPer100(ranked[0]) ?? 0)} per 100, against{' '}

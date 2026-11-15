@@ -316,4 +316,42 @@ describe('AgentHarnessesPage', () => {
     ).toBeInTheDocument()
     expect(view.getByRole('radio', { name: 'Last 7 days' })).toBeInTheDocument()
   })
+
+  it('warns and drops the cheapest-pair callout when the attribution report was cut short', () => {
+    const row = {
+      model_key: 'claude-sonnet-5',
+      session_count: 3,
+      shipped_session_count: 3,
+      ai_lines: 300,
+      request_count: 9,
+      priced_request_count: 9,
+      unpriced_request_count: 0,
+      usage_missing_request_count: 0,
+      priced_cost_usd_10000: 9_000,
+    }
+    routeMock.useLoaderData.mockReturnValue({
+      data: harnessUsageData,
+      attribution: {
+        window_days: 7,
+        coverage: {
+          commits_truncated: true,
+          pull_requests_truncated: false,
+          agent_sessions_truncated: false,
+          request_facts_truncated: false,
+        },
+        harness_models: [
+          { ...row, harness: 'claude' },
+          { ...row, harness: 'codex', model_key: 'gpt-6-astra', priced_cost_usd_10000: 3_000 },
+        ],
+      },
+    })
+
+    const view = render(
+      <TooltipProvider>
+        <AgentHarnessesPage />
+      </TooltipProvider>,
+    )
+    expect(view.getByText('This comparison is incomplete')).toBeInTheDocument()
+    expect(view.queryByText(/lands committed lines at/)).not.toBeInTheDocument()
+  })
 })
