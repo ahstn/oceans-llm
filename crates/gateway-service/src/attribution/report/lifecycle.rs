@@ -68,24 +68,28 @@ pub(super) fn merged_in(
             .is_some_and(|at| at >= query.from && at <= query.to)
 }
 
-/// The latest of a pull request's lifecycle times, as the store orders its read.
+/// A pull request's latest activity, as the store orders its read: the forge's last change,
+/// else the latest lifecycle time an older hook sent.
 pub(super) fn activity_at(pull_request: &AttributionPullRequestRecord) -> OffsetDateTime {
-    pull_request
-        .merged_at
-        .or(pull_request.lifecycle.closed_at)
-        .or(pull_request.lifecycle.opened_at)
+    let lifecycle = &pull_request.lifecycle;
+    lifecycle
+        .last_activity_at
+        .or(pull_request.merged_at)
+        .or(lifecycle.closed_at)
+        .or(lifecycle.opened_at)
         .unwrap_or(pull_request.observed_at)
 }
 
 /// Whether anything happened to `pull_request` in the window: it opened, was reviewed, merged,
-/// closed, or was synced again because it changed.
+/// closed, or changed on the forge. A routine re-sync of an untouched pull request doesn't
+/// count, so `observed_at` is left out.
 fn active_in(query: &AttributionReportQuery, pull_request: &AttributionPullRequestRecord) -> bool {
     [
         pull_request.merged_at,
         pull_request.lifecycle.opened_at,
         pull_request.lifecycle.closed_at,
         pull_request.lifecycle.details.first_review_at,
-        Some(pull_request.observed_at),
+        pull_request.lifecycle.last_activity_at,
     ]
     .into_iter()
     .flatten()
@@ -171,7 +175,12 @@ pub(super) fn apply_reverts(
     let mut merged_at: HashMap<(&str, i64), OffsetDateTime> = HashMap::new();
     // `(repository, sha) → pull request`, sorted so an abbreviated SHA is a range lookup.
     let mut shas: BTreeMap<(&str, &str), i64> = BTreeMap::new();
-    for pr in loaded {
+    // Only merged pull requests can be reverted: an open release-promotion PR listing commits
+    // already merged elsewhere must not claim them.
+    for pr in loaded
+        .iter()
+        .filter(|pr| pr.lifecycle.state == AttributionPullRequestState::Merged)
+    {
         if let Some(at) = pr.merged_at {
             merged_at.insert((pr.repository.as_str(), pr.number), at);
         }

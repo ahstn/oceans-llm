@@ -12533,6 +12533,13 @@
           "title": {
             "type": "string"
           },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "RFC 3339; GitHub's last change to the pull request."
+          },
           "url": {
             "type": [
               "string",

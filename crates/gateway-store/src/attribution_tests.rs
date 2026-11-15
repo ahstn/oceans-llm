@@ -503,6 +503,7 @@ async fn pull_requests_keep_their_lifecycle<S: GatewayStore>(store: &S) {
             state: AttributionPullRequestState::Open,
             opened_at: Some(base() - Duration::hours(2)),
             closed_at: None,
+            last_activity_at: Some(base() - Duration::minutes(30)),
             details: AttributionPullRequestDetails {
                 is_draft: Some(true),
                 first_review_at: Some(base() - Duration::hours(1)),

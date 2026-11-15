@@ -193,6 +193,7 @@ fn decode_pull_request(row: &libsql::Row) -> Result<AttributionPullRequestRecord
             optional_integer(row, 16)?,
             optional_integer(row, 17)?,
             optional_string(row, 18)?.as_deref(),
+            optional_integer(row, 19)?,
         )?,
     })
 }

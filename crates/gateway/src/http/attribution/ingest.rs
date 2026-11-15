@@ -158,6 +158,8 @@ pub struct AttributionPullRequestRequest {
     pub opened_at: Option<String>,
     /// RFC 3339; when it closed, merged or not.
     pub closed_at: Option<String>,
+    /// RFC 3339; GitHub's last change to the pull request.
+    pub updated_at: Option<String>,
     /// RFC 3339; the first review by a person other than the author.
     pub first_review_at: Option<String>,
     pub review_count: Option<i64>,
@@ -486,6 +488,7 @@ impl AttributionPullRequestRequest {
             state,
             opened_at: optional_time(self.opened_at)?,
             closed_at: optional_time(self.closed_at)?,
+            last_activity_at: optional_time(self.updated_at)?,
             details: AttributionPullRequestDetails {
                 is_draft: self.is_draft,
                 first_review_at: optional_time(self.first_review_at)?,

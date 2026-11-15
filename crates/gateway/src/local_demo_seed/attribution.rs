@@ -466,6 +466,8 @@ fn pull_request_write(
             state: pull_request.state,
             opened_at: Some(now - pull_request.opened),
             closed_at: pull_request.closed.map(|ago| now - ago),
+            // The latest event the seed knows: the merge or close, else the opening.
+            last_activity_at: Some(now - pull_request.closed.unwrap_or(pull_request.opened)),
             details: AttributionPullRequestDetails {
                 is_draft: Some(pull_request.is_draft),
                 first_review_at: pull_request.reviewed.map(|ago| now - ago),

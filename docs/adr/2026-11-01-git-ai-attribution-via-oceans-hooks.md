@@ -312,6 +312,8 @@ The gateway stores the lifecycle as `state`, `opened_at` and `closed_at` columns
 - **A 90-day lookback for revert links:** the report loads pull requests from 90 days before the window so a revert resolves an older original and yields a time to revert. Those older rows only resolve links; window figures count activity in the window. A revert of a change older than that resolves only by number, without a time.
 - **Binary files match by blob ids:** a binary change has no lines to compare, so the fingerprint uses its from and to blob ids, which keep the change's direction.
 - **More than 100 reviews:** the hook reads the first 100 and sends the counts as unknown when there are more. The first review time is still exact, since reviews come oldest first.
+- **Activity is the forge's, not the sync's:** the hook sends GitHub's `updatedAt`, stored as `last_activity_at`, which orders the report read and decides whether a pull request changed in the window. A routine re-sync of an untouched pull request doesn't count. Rows from older hooks fall back to their merge, close or open time.
+- **Exact lines:** the change fingerprint keeps whitespace, since a revert reproduces the original lines exactly and whitespace inside a string is content.
 - **Copies from several owners:** the author's copy keeps attribution, and the state, merge, commits and lifecycle come from the most recently observed copy, so a teammate's sync after the merge isn't overridden by the author's earlier one.
 
 ## Follow-ups

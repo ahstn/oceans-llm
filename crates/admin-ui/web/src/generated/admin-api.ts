@@ -3394,6 +3394,8 @@ export interface components {
             reviewer_count?: number | null;
             state?: null | components["schemas"]["AttributionPullRequestStateRequest"];
             title: string;
+            /** @description RFC 3339; GitHub's last change to the pull request. */
+            updated_at?: string | null;
             url?: string | null;
         };
         /** @enum {string} */

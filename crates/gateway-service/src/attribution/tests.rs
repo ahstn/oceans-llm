@@ -298,7 +298,7 @@ impl AttributionRepository for FakeStore {
                     pull_request.merged_at,
                     pull_request.lifecycle.opened_at,
                     pull_request.lifecycle.closed_at,
-                    Some(pull_request.observed_at),
+                    pull_request.lifecycle.last_activity_at,
                 ]
                 .into_iter()
                 .flatten()
@@ -308,7 +308,9 @@ impl AttributionRepository for FakeStore {
             .collect::<Vec<_>>();
         rows.sort_by_key(|row| {
             std::cmp::Reverse(
-                row.merged_at
+                row.lifecycle
+                    .last_activity_at
+                    .or(row.merged_at)
                     .or(row.lifecycle.closed_at)
                     .or(row.lifecycle.opened_at)
                     .unwrap_or(row.observed_at),

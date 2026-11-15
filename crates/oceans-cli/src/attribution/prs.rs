@@ -39,7 +39,7 @@ query($owner: String!, $name: String!, $pageSize: Int!, $cursor: String) {
     pullRequests(first: $pageSize, after: $cursor, states: [OPEN, CLOSED, MERGED],
                  orderBy: {field: UPDATED_AT, direction: DESC}) {
       nodes {
-        number title url state isDraft createdAt closedAt mergedAt baseRefName headRefName
+        number title url state isDraft createdAt updatedAt closedAt mergedAt baseRefName headRefName
         body additions deletions changedFiles mergeCommit { oid }
         author { __typename login }
         comments { totalCount }
@@ -113,6 +113,9 @@ struct GhPullRequest {
     is_draft: Option<bool>,
     #[serde(default)]
     created_at: Option<String>,
+    /// When GitHub last saw any change: a push, review, comment, merge or close.
+    #[serde(default)]
+    updated_at: Option<String>,
     #[serde(default)]
     closed_at: Option<String>,
     /// Read for revert links only; never sent.
@@ -393,6 +396,7 @@ fn lifecycle(fetched: &GhPullRequest) -> PullRequestLifecycle {
         state: state.map(str::to_owned),
         is_draft: fetched.is_draft,
         opened_at: fetched.created_at.clone().filter(|time| is_rfc3339(time)),
+        updated_at: fetched.updated_at.clone().filter(|time| is_rfc3339(time)),
         closed_at: fetched.closed_at.clone().filter(|time| is_rfc3339(time)),
         first_review_at: human_reviews
             .iter()

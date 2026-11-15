@@ -292,6 +292,15 @@ where
     let hashes = session_hashes(&commits, &agent_sessions);
     let windows = commit_windows(load_commit_times(store, &hashes, query.to).await?);
     let (facts, request_facts_truncated) = load_request_facts(store, &hashes, query.to).await?;
+    // The cap counts every owner's copy, so saturation is judged before copies are merged.
+    // Pull requests come latest activity first, so a cap reached only by ones before the
+    // window, loaded for revert links, left out none the window reports.
+    let pull_requests_truncated = pull_requests.len() >= limit
+        && pull_requests
+            .iter()
+            .map(lifecycle::activity_at)
+            .min()
+            .is_some_and(|at| at >= query.from);
     let loaded = distinct_pull_requests(pull_requests);
     let mut lifecycle_summary = lifecycle::summary(&loaded, query);
     let merged = loaded
@@ -311,14 +320,7 @@ where
     let coverage = AttributionReportCoverage {
         requests: RequestTally::default(),
         commits_truncated: commits_capped,
-        // Pull requests come latest activity first, so a cap reached only by ones before the
-        // window, loaded for revert links, left out none the window reports.
-        pull_requests_truncated: loaded.len() >= limit
-            && loaded
-                .iter()
-                .map(lifecycle::activity_at)
-                .min()
-                .is_some_and(|at| at >= query.from),
+        pull_requests_truncated,
         request_facts_truncated,
         agent_sessions_truncated,
     };

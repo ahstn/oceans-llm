@@ -281,6 +281,9 @@ pub struct AttributionPullRequestLifecycle {
     pub opened_at: Option<OffsetDateTime>,
     /// When it closed, merged or not.
     pub closed_at: Option<OffsetDateTime>,
+    /// The forge's last change to the pull request (GitHub's `updatedAt`), not when Oceans last
+    /// synced it: a routine re-sync of an untouched pull request is not activity.
+    pub last_activity_at: Option<OffsetDateTime>,
     pub details: AttributionPullRequestDetails,
 }
 

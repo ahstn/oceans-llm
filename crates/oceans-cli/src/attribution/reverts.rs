@@ -227,12 +227,13 @@ fn diff(directory: &Path, from: &str, to: &str) -> Option<Vec<u8>> {
     )
 }
 
-/// A fingerprint of a `-U0` diff: per file, the path and each added or removed line with its
-/// whitespace stripped, combined in path order. Context, line numbers and text blob ids are
-/// left out, so an exact inverse matches even after unrelated edits nearby. A binary file has
-/// no lines to compare, so it contributes its `index <from>..<to>` blob ids, which keep the
-/// change's direction: two unrelated edits to one image never match. `None` for an empty diff,
-/// which would match every other empty change.
+/// A fingerprint of a `-U0` diff: per file, the path and each added or removed line exactly as
+/// written, combined in path order. Context, line numbers and text blob ids are left out, so an
+/// exact inverse matches even after unrelated edits nearby. Whitespace is kept: a revert
+/// reproduces the original lines exactly, and whitespace inside a string is content. A binary
+/// file has no lines to compare, so it contributes its `index <from>..<to>` blob ids, which keep
+/// the change's direction: two unrelated edits to one image never match. `None` for an empty
+/// diff, which would match every other empty change.
 pub fn fingerprint(diff: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(diff);
     let mut files: BTreeMap<String, Sha256> = BTreeMap::new();
@@ -271,10 +272,9 @@ pub fn fingerprint(diff: &[u8]) -> Option<String> {
             }
             _ => continue,
         };
-        let squeezed: String = content.chars().filter(|c| !c.is_whitespace()).collect();
         let hasher = files.entry(path.clone()).or_default();
         hasher.update([sign as u8]);
-        hasher.update(squeezed.as_bytes());
+        hasher.update(content.trim_end_matches('\r').as_bytes());
         hasher.update(b"\n");
         lines += 1;
     }
@@ -364,14 +364,20 @@ mod tests {
     }
 
     const FORWARD: &str = "diff --git a/src/a.rs b/src/a.rs\nindex 1..2 100644\n--- a/src/a.rs\n+++ b/src/a.rs\n@@ -3,0 +4,2 @@\n+let a = 1;\n+let b = 2;\n@@ -9 +11 @@\n-old()\n+new()\n";
-    // The same change undone, with different line numbers and spacing.
-    const INVERSE_OF_REVERT: &str = "diff --git a/src/a.rs b/src/a.rs\nindex 2..1 100644\n--- a/src/a.rs\n+++ b/src/a.rs\n@@ -40,0 +41,2 @@\n+let a =  1;\n+let b = 2;\n@@ -90 +92 @@\n-old( )\n+new()\n";
+    // The same change undone, with different line numbers.
+    const INVERSE_OF_REVERT: &str = "diff --git a/src/a.rs b/src/a.rs\nindex 2..1 100644\n--- a/src/a.rs\n+++ b/src/a.rs\n@@ -40,0 +41,2 @@\n+let a = 1;\n+let b = 2;\n@@ -90 +92 @@\n-old()\n+new()\n";
 
     #[test]
-    fn fingerprints_ignore_line_numbers_and_whitespace_but_not_content() {
+    fn fingerprints_ignore_line_numbers_but_not_content_or_whitespace() {
         assert_eq!(
             fingerprint(FORWARD.as_bytes()),
             fingerprint(INVERSE_OF_REVERT.as_bytes())
+        );
+        // `"a b"` → `"ab"` is not undone by `"ab"` → `"a  b"`.
+        let spaced = FORWARD.replace("let a = 1;", "let a =  1;");
+        assert_ne!(
+            fingerprint(FORWARD.as_bytes()),
+            fingerprint(spaced.as_bytes())
         );
         let different = FORWARD.replace("let b = 2;", "let b = 3;");
         assert_ne!(

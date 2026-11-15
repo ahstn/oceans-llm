@@ -93,6 +93,10 @@ pub struct PullRequestLifecycle {
     pub is_draft: Option<bool>,
     #[serde(default)]
     pub opened_at: Option<String>,
+    /// GitHub's last change to the pull request, so the gateway can tell real activity from a
+    /// routine re-sync.
+    #[serde(default)]
+    pub updated_at: Option<String>,
     #[serde(default)]
     pub closed_at: Option<String>,
     /// The first review by a person other than the author; bot reviews do not count.

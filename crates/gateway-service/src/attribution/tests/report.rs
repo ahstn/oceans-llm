@@ -1645,15 +1645,17 @@ async fn a_later_merged_copy_wins_over_the_authors_earlier_open_copy() {
 }
 
 #[tokio::test]
-async fn an_older_open_pull_request_counts_only_when_synced_in_the_window() {
+async fn an_older_open_pull_request_counts_only_when_it_changed_in_the_window() {
     let dev = user_owner(Uuid::new_v4());
-    let open = |number: i64, observed_at: OffsetDateTime| {
+    let open = |number: i64, changed_at: OffsetDateTime| {
         let mut pr = pull_request(number, &dev, minutes(0), &[]);
         pr.merged_at = None;
         pr.lifecycle.state = AttributionPullRequestState::Open;
         pr.lifecycle.closed_at = None;
         pr.lifecycle.opened_at = Some(t0() - Duration::days(10));
-        pr.observed_at = observed_at;
+        pr.lifecycle.last_activity_at = Some(changed_at);
+        // Re-synced in the window either way: a sync alone is not activity.
+        pr.observed_at = minutes(30);
         pr
     };
     let mut store = FakeStore::with_commits(vec![]);
@@ -1664,4 +1666,68 @@ async fn an_older_open_pull_request_counts_only_when_synced_in_the_window() {
     let report = report(&store, &query()).await;
     assert_eq!(report.pull_request_lifecycle.open_count, 1);
     assert_eq!(report.pull_request_lifecycle.opened_count, 0);
+}
+
+#[tokio::test]
+async fn an_open_pull_request_listing_a_merged_commit_is_not_the_reverted_one() {
+    let dev = user_owner(Uuid::new_v4());
+    let mut original = pull_request(5, &dev, minutes(60), &[11]);
+    original.commits[0].commit_sha = "abcdef0123456789abcdef0123456789abcdef01".to_string();
+    // A newer open promotion PR lists the same commit.
+    let mut promotion = pull_request(8, &dev, minutes(0), &[11]);
+    promotion.commits[0].commit_sha = original.commits[0].commit_sha.clone();
+    promotion.merged_at = None;
+    promotion.lifecycle.state = AttributionPullRequestState::Open;
+    promotion.lifecycle.closed_at = None;
+    promotion.lifecycle.opened_at = Some(minutes(70));
+    let mut revert = pull_request(6, &dev, minutes(180), &[12]);
+    revert.lifecycle.details.reverts = Some(AttributionRevertLink {
+        pull_request_number: None,
+        commit_shas: vec!["abcdef0123".to_string()],
+        evidence: AttributionRevertEvidence::RevertCommit,
+    });
+    let mut store = FakeStore::with_commits(vec![]);
+    store.pull_requests = Mutex::new(vec![promotion, revert, original]);
+    let report = report(&store, &query()).await;
+
+    let revert = report
+        .pull_requests
+        .iter()
+        .find(|activity| activity.pull_request.number == 6)
+        .unwrap();
+    assert_eq!(
+        revert
+            .revert
+            .and_then(|revert| revert.reverts_pull_request_number),
+        Some(5)
+    );
+    assert_eq!(
+        report.pull_request_lifecycle.median_time_to_revert_seconds,
+        Some(2 * 3600)
+    );
+}
+
+#[tokio::test]
+async fn a_read_saturated_by_owner_copies_is_reported_truncated() {
+    let devs = [user_owner(Uuid::new_v4()), user_owner(Uuid::new_v4())];
+    let mut store = FakeStore::with_commits(vec![]);
+    // Two owners each stored the same two pull requests: four rows, two distinct.
+    store.pull_requests = Mutex::new(
+        devs.iter()
+            .flat_map(|dev| {
+                [
+                    pull_request(1, dev, minutes(60), &[]),
+                    pull_request(2, dev, minutes(90), &[]),
+                ]
+            })
+            .collect(),
+    );
+    let mut capped = query();
+    capped.limit = 4;
+    let report = report(&store, &capped).await;
+    assert_eq!(report.pull_requests.len(), 2);
+    assert!(
+        report.coverage.pull_requests_truncated,
+        "the cap counted every copy"
+    );
 }

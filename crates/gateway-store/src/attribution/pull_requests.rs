@@ -19,11 +19,13 @@ use crate::shared::{datetime_to_unix_millis, unix_millis_to_datetime};
 pub(super) const PULL_REQUEST_COLUMNS: &str = "attribution_pull_request_id, \
     ownership_scope_key, owner_user_id, owner_service_account_id, repository, number, title, \
     url, base_ref, head_ref, merge_commit_sha, merged_at, author_user_id, author_email_hash, \
-    observed_at, state, opened_at, closed_at, details";
+    observed_at, state, opened_at, closed_at, details, last_activity_at";
 /// Number of [`PULL_REQUEST_COLUMNS`]; in a pull request report row the commit columns follow.
-pub(crate) const PULL_REQUEST_COLUMN_COUNT: usize = 19;
-/// The latest of a pull request's lifecycle times, which orders the report read.
-const PULL_REQUEST_ACTIVITY: &str = "COALESCE(merged_at, closed_at, opened_at, observed_at)";
+pub(crate) const PULL_REQUEST_COLUMN_COUNT: usize = 20;
+/// A pull request's latest activity, which orders the report read: the forge's last change,
+/// which follows every other event, else the latest lifecycle time older hooks sent.
+const PULL_REQUEST_ACTIVITY: &str =
+    "COALESCE(last_activity_at, merged_at, closed_at, opened_at, observed_at)";
 
 /// The `details` column: a JSON object, or NULL when nothing is known.
 fn details_column(write: &AttributionPullRequestWrite) -> Result<Option<String>, StoreError> {
@@ -43,6 +45,7 @@ pub(crate) fn decode_lifecycle(
     opened_at: Option<i64>,
     closed_at: Option<i64>,
     details: Option<&str>,
+    last_activity_at: Option<i64>,
 ) -> Result<AttributionPullRequestLifecycle, StoreError> {
     let state = AttributionPullRequestState::parse(state)
         .ok_or_else(|| StoreError::Serialization(format!("unknown pull request state {state}")))?;
@@ -55,6 +58,7 @@ pub(crate) fn decode_lifecycle(
         state,
         opened_at: opened_at.map(unix_millis_to_datetime).transpose()?,
         closed_at: closed_at.map(unix_millis_to_datetime).transpose()?,
+        last_activity_at: last_activity_at.map(unix_millis_to_datetime).transpose()?,
         details,
     })
 }
@@ -90,6 +94,7 @@ pub(crate) fn insert_pull_request(
         optional_millis(write.lifecycle.opened_at)?,
         optional_millis(write.lifecycle.closed_at)?,
         optional_text(details_column(write)?.as_deref()),
+        optional_millis(write.lifecycle.last_activity_at)?,
         int(received_at),
         int(received_at),
     ]);
@@ -157,6 +162,10 @@ pub(crate) fn update_pull_request(
         ("opened_at", optional_millis(write.lifecycle.opened_at)?),
         ("closed_at", optional_millis(write.lifecycle.closed_at)?),
         ("details", optional_text(details_column(write)?.as_deref())),
+        (
+            "last_activity_at",
+            optional_millis(write.lifecycle.last_activity_at)?,
+        ),
         ("updated_at", millis(write.received_at)?),
     ]);
     let pull_request = binds.push(text(attribution_pull_request_id));
@@ -216,8 +225,8 @@ pub(crate) fn insert_pull_request_commits(
     Ok(statements)
 }
 
-/// A page of pull requests merged, opened, closed or synced in range (a sync follows any
-/// change, such as a review), latest activity first, each
+/// A page of pull requests merged, opened, closed or changed on the forge in range (a review
+/// or push counts; a routine re-sync doesn't), latest activity first, each
 /// followed by its commits in list order: one row per commit, or one row with NULL commit
 /// columns for an empty list.
 pub(crate) fn list_pull_requests(
@@ -228,7 +237,7 @@ pub(crate) fn list_pull_requests(
     let conditions = report_conditions(
         &mut binds,
         query,
-        &["merged_at", "opened_at", "closed_at", "observed_at"],
+        &["merged_at", "opened_at", "closed_at", "last_activity_at"],
         &["owner_user_id", "author_user_id"],
     )?;
     let limit = report_limit(&mut binds, query);

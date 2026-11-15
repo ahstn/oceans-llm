@@ -179,6 +179,7 @@ fn decode_pull_request(row: &PgRow) -> Result<AttributionPullRequestRecord, Stor
             get(row, 16)?,
             get(row, 17)?,
             get::<Option<String>>(row, 18)?.as_deref(),
+            get(row, 19)?,
         )?,
     })
 }
