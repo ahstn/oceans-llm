@@ -422,20 +422,18 @@ async fn attribution_report_rejects_unknown_windows() {
 }
 
 #[tokio::test]
-async fn attribution_report_skips_the_previous_window_when_asked() {
+async fn attribution_report_builds_the_previous_window_only_when_asked() {
     let gateway = Gateway::new().await;
-    let compared = gateway.report().await;
-    assert_eq!(compared.status, StatusCode::OK, "{}", compared.body);
-    assert!(compared.body["data"]["previous_summary"].is_object());
+    let plain = gateway.report().await;
+    assert_eq!(plain.status, StatusCode::OK, "{}", plain.body);
+    assert!(plain.body["data"]["previous_summary"].is_null());
+    assert_eq!(plain.body["data"]["previous_truncated"], json!(false));
 
     let request = gateway
-        .with_cookie(
-            Request::builder().uri("/api/v1/admin/attribution/report?days=7&compare=false"),
-        )
+        .with_cookie(Request::builder().uri("/api/v1/admin/attribution/report?days=7&compare=true"))
         .body(Body::empty())
         .unwrap();
-    let reply = gateway.send(request).await;
-    assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
-    assert!(reply.body["data"]["previous_summary"].is_null());
-    assert_eq!(reply.body["data"]["previous_truncated"], json!(false));
+    let compared = gateway.send(request).await;
+    assert_eq!(compared.status, StatusCode::OK, "{}", compared.body);
+    assert!(compared.body["data"]["previous_summary"].is_object());
 }

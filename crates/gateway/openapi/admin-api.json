@@ -280,7 +280,7 @@
           {
             "name": "compare",
             "in": "query",
-            "description": "Build the window of equal length just before this one for comparison. Defaults to true.\n`false` skips that second build and returns no `previous_summary`, for pages that only\nread this window, such as Agent Harnesses.",
+            "description": "Also build the window of equal length just before this one, for comparison. Defaults to\nfalse, so callers that read only this window pay for one build. `true` returns\n`previous_summary`; the Impact and My work tabs ask for it.",
             "required": false,
             "schema": {
               "type": [
@@ -12522,7 +12522,7 @@
               },
               {
                 "$ref": "#/components/schemas/AttributionPeriodSummaryView",
-                "description": "The same figures for the window of equal length just before this one.\n`null` when the request set `compare=false`."
+                "description": "The same figures for the window of equal length just before this one.\n`null` unless the request set `compare=true`."
               }
             ]
           },
@@ -15301,7 +15301,7 @@
                   },
                   {
                     "$ref": "#/components/schemas/AttributionPeriodSummaryView",
-                    "description": "The same figures for the window of equal length just before this one.\n`null` when the request set `compare=false`."
+                    "description": "The same figures for the window of equal length just before this one.\n`null` unless the request set `compare=true`."
                   }
                 ]
               },

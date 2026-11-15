@@ -6388,9 +6388,9 @@ export interface operations {
                 /** @description One normalised repository, such as `github.com/acme/widgets`. */
                 repository?: string | null;
                 /**
-                 * @description Build the window of equal length just before this one for comparison. Defaults to true.
-                 *     `false` skips that second build and returns no `previous_summary`, for pages that only
-                 *     read this window, such as Agent Harnesses.
+                 * @description Also build the window of equal length just before this one, for comparison. Defaults to
+                 *     false, so callers that read only this window pay for one build. `true` returns
+                 *     `previous_summary`; the Impact and My work tabs ask for it.
                  */
                 compare?: boolean | null;
             };

@@ -13,6 +13,7 @@ import {
   type MockPullRequest,
   type MockSession,
 } from './fixtures'
+import { AI_BANDS, aiBand, type AiBandKey } from '@/components/attribution/ai-bands'
 
 export const CONCEPT_WINDOWS = [7, 30, 90] as const
 export type ConceptWindow = (typeof CONCEPT_WINDOWS)[number]
@@ -128,18 +129,7 @@ export function rollupPullRequest(slice: WindowSlice, pr: MockPullRequest): Pull
   }
 }
 
-/** AI share bands: more honest than an AI-assisted yes or no. */
-export const AI_BANDS = [
-  { key: 'none', label: 'No AI', min: 0, max: 0.01 },
-  { key: 'light', label: '1–49% AI', min: 0.01, max: 0.5 },
-  { key: 'heavy', label: '50–89% AI', min: 0.5, max: 0.9 },
-  { key: 'agentic', label: '90%+ AI', min: 0.9, max: 1.01 },
-] as const
-export type AiBandKey = (typeof AI_BANDS)[number]['key']
-
-export function aiBand(share: number): AiBandKey {
-  return (AI_BANDS.find((band) => share >= band.min && share < band.max) ?? AI_BANDS[3]).key
-}
+export { AI_BANDS, aiBand, type AiBandKey }
 
 // Headline totals ----------------------------------------------------------------------------------
 

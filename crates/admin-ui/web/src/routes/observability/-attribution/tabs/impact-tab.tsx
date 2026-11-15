@@ -249,12 +249,15 @@ function SessionOutcomesCard({
 }: {
   outcomes: AttributionReportView['session_outcomes']
 }) {
-  const [measure, setMeasure] = useState<Measure>('cost')
+  const [chosen, setMeasure] = useState<Measure>('cost')
   const tally = (outcome: Outcome) => outcomes.find((entry) => entry.outcome === outcome)
   const sessionsOf = (list: Outcome[]) =>
     list.reduce((total, outcome) => total + (tally(outcome)?.session_count ?? 0), 0)
   const costOf = (list: Outcome[]) =>
     list.reduce((total, outcome) => total + (tally(outcome)?.priced_cost_usd_10000 ?? 0), 0)
+  // With no priced request, spend would size every flow at zero, so the chart sizes by sessions.
+  const unpriced = costOf(ALL_OUTCOMES) === 0
+  const measure: Measure = unpriced ? 'sessions' : chosen
   const value = (list: Outcome[]) => (measure === 'cost' ? costOf(list) : sessionsOf(list))
   const all = ALL_OUTCOMES
   const committed = COMMITTED_OUTCOMES
@@ -313,7 +316,9 @@ function SessionOutcomesCard({
           onValueChange={(next) => next && setMeasure(next as Measure)}
           aria-label="Size flows by"
         >
-          <ToggleGroupItem value="cost">Spend</ToggleGroupItem>
+          <ToggleGroupItem value="cost" disabled={unpriced}>
+            Spend
+          </ToggleGroupItem>
           <ToggleGroupItem value="sessions">Sessions</ToggleGroupItem>
         </ToggleGroup>
       }
@@ -338,11 +343,17 @@ function SessionOutcomesCard({
             ]}
             ariaLabel="Agent sessions by outcome"
           />
-          <Insight>
-            {formatPercent(ratio(unshipped, totalCost))} of agent spend ({formatUsd10000(unshipped)}
-            ) went to sessions that never committed or whose work has not merged. Git AI reports
-            about 38% for typical teams.
-          </Insight>
+          {unpriced ? (
+            <p className="text-muted-foreground text-xs">
+              No request in these sessions was priced, so the flows are sized by sessions.
+            </p>
+          ) : (
+            <Insight>
+              {formatPercent(ratio(unshipped, totalCost))} of agent spend (
+              {formatUsd10000(unshipped)}) went to sessions that never committed or whose work has
+              not merged. Git AI reports about 38% for typical teams.
+            </Insight>
+          )}
         </div>
       )}
     </InsightCard>

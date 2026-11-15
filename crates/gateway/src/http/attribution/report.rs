@@ -50,9 +50,9 @@ pub struct AttributionReportRequestQuery {
     pub user_id: Option<String>,
     /// One normalised repository, such as `github.com/acme/widgets`.
     pub repository: Option<String>,
-    /// Build the window of equal length just before this one for comparison. Defaults to true.
-    /// `false` skips that second build and returns no `previous_summary`, for pages that only
-    /// read this window, such as Agent Harnesses.
+    /// Also build the window of equal length just before this one, for comparison. Defaults to
+    /// false, so callers that read only this window pay for one build. `true` returns
+    /// `previous_summary`; the Impact and My work tabs ask for it.
     pub compare: Option<bool>,
 }
 
@@ -226,7 +226,7 @@ pub struct AttributionReportView {
     pub harness_models: Vec<AttributionHarnessModelView>,
     pub summary: AttributionPeriodSummaryView,
     /// The same figures for the window of equal length just before this one.
-    /// `null` when the request set `compare=false`.
+    /// `null` unless the request set `compare=true`.
     pub previous_summary: Option<AttributionPeriodSummaryView>,
     /// A read cap cut the previous window short, so changes against it are unreliable.
     pub previous_truncated: bool,
@@ -251,7 +251,7 @@ pub async fn get_attribution_report(
 ) -> Result<Json<Envelope<AttributionReportView>>, AppError> {
     let current_user = require_authenticated_session(&state, &headers).await?;
     let window_days = parse_window_days(query.days)?;
-    let compare = query.compare.unwrap_or(true);
+    let compare = query.compare.unwrap_or(false);
     let user_id = report_user(&current_user, query.user_id.as_deref())?;
     let repository = query.repository.filter(|repository| !repository.is_empty());
     let (window_start, window_end) = report_window(window_days, OffsetDateTime::now_utc());

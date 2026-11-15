@@ -575,6 +575,28 @@ describe('AttributionPage', () => {
     expect(kpi('Merged PRs').getByText('No prior period')).toBeInTheDocument()
   })
 
+  it('sizes session outcomes by sessions when no request was priced', async () => {
+    const unpriced = (outcome: 'merged' | 'no_commit', sessions: number) => ({
+      outcome,
+      session_count: sessions,
+      request_count: 4,
+      priced_request_count: 0,
+      unpriced_request_count: 4,
+      usage_missing_request_count: 0,
+      priced_cost_usd_10000: 0,
+    })
+    renderPage(
+      attributionReport({ session_outcomes: [unpriced('merged', 2), unpriced('no_commit', 1)] }),
+    )
+
+    expect(
+      await screen.findByText(
+        'No request in these sessions was priced, so the flows are sized by sessions.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'Spend' })).toBeDisabled()
+  })
+
   it('leaves pull requests without notes out of the AI-share bands', async () => {
     const report = attributionReport()
     const withoutNotes = {

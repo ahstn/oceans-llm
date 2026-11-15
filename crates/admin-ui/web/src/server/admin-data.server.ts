@@ -303,7 +303,7 @@ export async function getAttributionReport(params: {
   days: 7 | 30 | 90
   user_id?: string
   repository?: string
-  /** `false` skips the previous window, for pages that read only this one. */
+  /** `true` also builds the previous window, for tabs that show changes against it. */
   compare?: boolean
 }): Promise<ApiEnvelope<AttributionReportView>> {
   const client = createGatewayApiClient()
