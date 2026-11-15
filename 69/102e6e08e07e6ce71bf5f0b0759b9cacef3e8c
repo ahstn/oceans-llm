@@ -1,0 +1,66 @@
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/metrics.ts
+  s_0a4447f1aa57dd::t_5ffc273a45bd98 328-331,408-411,415
+  s_0a4447f1aa57dd::t_3e87bfb5138ec1 426,431,447
+crates/admin-ui/web/src/components/attribution/charts.tsx
+  s_0a4447f1aa57dd::t_cfeb82540e0d93 1-2,4,6-7,11-12,14-17,44-133,135-137,148-232,234-236,246-315,317-319,328-393,395-397,402-448,450-488,498-564,566-568,577-599,601-612,614-641
+crates/admin-ui/web/src/components/attribution/format.ts
+  s_0a4447f1aa57dd::t_97be225c90f70d 1-90
+crates/admin-ui/web/src/components/attribution/heatmaps.tsx
+  s_0a4447f1aa57dd::t_e7c42cb84c4602 18,76,81,119-122,129,131,159,199-205
+crates/admin-ui/web/src/components/attribution/parts.tsx
+  s_0a4447f1aa57dd::t_86c18772a897e0 21-22
+crates/admin-ui/web/src/components/attribution/quadrant.tsx
+  s_0a4447f1aa57dd::t_a06e6325143d29 9,23-30
+crates/admin-ui/web/src/routes/observability/-agent-harnesses/harness-attribution.tsx
+  s_0a4447f1aa57dd::t_f7716991506223 16
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/concept-agents.tsx
+  s_0a4447f1aa57dd::t_8929d5e3e8de46 28
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/concept-delivery.tsx
+  s_0a4447f1aa57dd::t_161e0d0da8a26d 26,32,72,80,88,305-330
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/concept-durability.tsx
+  s_0a4447f1aa57dd::t_42a5df47bf90ed 31,113-114,268-274,279-280
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/concept-impact.tsx
+  s_0a4447f1aa57dd::t_3e087c7a79bcdd 33
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/concept-my-work.tsx
+  s_0a4447f1aa57dd::t_fa6d24ab7dbd14 39
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/concept-outcomes.tsx
+  s_0a4447f1aa57dd::t_083309c56baf29 29
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/concept-pull-requests.tsx
+  s_0a4447f1aa57dd::t_499077241fcaa4 37
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/concept-repositories.tsx
+  s_0a4447f1aa57dd::t_983ae22b14776f 22,138-145
+crates/admin-ui/web/src/routes/observability/-attribution/insights.ts
+  s_0a4447f1aa57dd::t_5d739aee42eb7d 33-47,275-277
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/delivery-tab.tsx
+  s_0a4447f1aa57dd::t_3dfcda7fcec3cf 6,12,61,69,75,228-253
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/durability-tab.tsx
+  s_0a4447f1aa57dd::t_b66a65c2d44496 6-7
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/impact-tab.tsx
+  s_0a4447f1aa57dd::t_e8f622c5daece6 21,221-224,245-247
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/my-work-tab.tsx
+  s_0a4447f1aa57dd::t_7054e62ddd7035 13
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/pull-requests-tab.tsx
+  s_0a4447f1aa57dd::t_b09513fa1ada24 18
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/repositories-tab.tsx
+  s_0a4447f1aa57dd::t_d938bba7707109 15
+crates/admin-ui/web/src/routes/observability/attribution.tsx
+  s_0a4447f1aa57dd::t_b451a34201f0f0 11,16-17,77-89,100,102,104-105,107-111,114-135,140-231
+crates/admin-ui/web/src/routes/observability/attribution_.concepts.tsx
+  s_0a4447f1aa57dd::t_1f6764f8fc6152 23-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "69102e6e08e07e6ce71bf5f0b0759b9cacef3e8c",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
