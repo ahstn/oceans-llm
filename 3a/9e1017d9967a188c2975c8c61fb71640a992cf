@@ -1,0 +1,27 @@
+crates/admin-ui/web/src/test/attribution-insights.test.ts
+  s_0a4447f1aa57dd::t_c8dc3bb9f6c67f 60-69
+crates/admin-ui/web/src/routes/observability/-attribution/insights.ts
+  s_0a4447f1aa57dd::t_5ec697068635d4 323-354,360
+crates/gateway/src/http/attribution/report.rs
+  s_0a4447f1aa57dd::t_8109fb0f181b82 265,267-268,352-358,593-602
+  s_0a4447f1aa57dd::t_bb120f7f828d98 603-605
+  s_0a4447f1aa57dd::t_61e48f75243757 606-607
+crates/gateway-service/src/attribution/report/insights.rs
+  s_0a4447f1aa57dd::t_aa985b6f5adad1 167-171,178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3a9e1017d9967a188c2975c8c61fb71640a992cf",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
