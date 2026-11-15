@@ -3,31 +3,14 @@
 // incident data. Merged pull requests are then split by how much of each AI wrote.
 
 import { Histogram, LeadTimeScatter, LeadTimeTrendChart } from '@/components/attribution/charts'
-import {
-  InlineMeter,
-  Insight,
-  InsightCard,
-  ReadinessBadge,
-  TrendKpi,
-} from '@/components/attribution/parts'
-import {
-  DECIMAL_1,
-  formatHours,
-  formatPercent,
-  type Readiness,
-} from '@/components/attribution/format'
+import { InlineMeter, Insight, InsightCard, TrendKpi } from '@/components/attribution/parts'
+import { DECIMAL_1, formatHours, formatPercent } from '@/components/attribution/format'
+import { DoraTile } from '@/components/attribution/dora-tile'
 import { AdminTableHeader } from '@/components/shared/admin-table-header'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { EMPTY_VALUE, formatCount, formatUsd10000 } from '@/lib/format'
 import type { AttributionReportView } from '@/types/api'
-import {
-  deployBand,
-  failBand,
-  leadBand,
-  type DoraBand,
-} from '@/components/attribution/delivery-bands'
+import { deployBand, failBand, leadBand } from '@/components/attribution/delivery-bands'
 
 import {
   bandSummaries,
@@ -41,7 +24,6 @@ import {
   type BandSummary,
 } from '../insights'
 
-type Band = DoraBand
 const HOUR_MS = 3_600_000
 
 // A tab is one linear layout read top to bottom; splitting it would scatter the sections.
@@ -302,60 +284,4 @@ function bandComparison(bands: BandSummary[]) {
     return 'Too few merged pull requests in the under-50% and 90%+ bands to compare them yet.'
   }
   return `90%+ AI pull requests are ${DECIMAL_1.format(agentic.medianSize / light.medianSize)}× the size of under-50% AI ones and take ${DECIMAL_1.format(agentic.medianLeadHours / light.medianLeadHours)}× as long from first commit to merge. LinearB and Faros see AI move the bottleneck from writing to review.`
-}
-
-const BANDS: Band[] = ['Low', 'Medium', 'High', 'Elite']
-
-function DoraTile({
-  label,
-  value,
-  band,
-  note,
-  readiness,
-  readinessNote,
-}: {
-  label: string
-  value: string
-  band?: Band
-  note: string
-  readiness?: Readiness
-  readinessNote?: string
-}) {
-  const index = band ? BANDS.indexOf(band) : -1
-  return (
-    <Card size="sm" className="min-w-0">
-      <CardHeader>
-        <CardDescription className="flex flex-col items-start gap-1.5">
-          <span className="flex items-center gap-1.5">
-            {label}
-            {readiness === 'proxy' ? (
-              <ReadinessBadge level="proxy" note={readinessNote} compact />
-            ) : null}
-          </span>
-          {readiness && readiness !== 'proxy' ? (
-            <ReadinessBadge level={readiness} note={readinessNote} />
-          ) : null}
-        </CardDescription>
-        <p className="text-2xl font-medium tracking-tight tabular-nums">{value}</p>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-2">
-        <div className="flex items-center gap-2">
-          <div className="flex flex-1 gap-0.5" aria-hidden>
-            {BANDS.map((entry, position) => (
-              <span
-                key={entry}
-                className={
-                  position <= index
-                    ? 'bg-chart-hero h-1.5 flex-1 rounded-full'
-                    : 'bg-muted h-1.5 flex-1 rounded-full'
-                }
-              />
-            ))}
-          </div>
-          {band ? <Badge variant="outline">{band}</Badge> : null}
-        </div>
-        <span className="text-muted-foreground text-xs">{note}</span>
-      </CardContent>
-    </Card>
-  )
 }

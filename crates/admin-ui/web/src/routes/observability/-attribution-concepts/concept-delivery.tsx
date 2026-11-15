@@ -4,19 +4,13 @@
 
 import { useMemo } from 'react'
 
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
+import { DoraTile } from '@/components/attribution/dora-tile'
 import { AdminTableHeader } from '@/components/shared/admin-table-header'
 import { formatCount, formatUsd10000 } from '@/lib/format'
 
 import { Histogram, LeadTimeScatter, LeadTimeTrendChart } from '@/components/attribution/charts'
-import {
-  deployBand,
-  failBand,
-  leadBand,
-  type DoraBand,
-} from '@/components/attribution/delivery-bands'
+import { deployBand, failBand, leadBand } from '@/components/attribution/delivery-bands'
 import { getMockDataset, HOUR_MS } from './fixtures'
 import {
   AI_BANDS,
@@ -30,14 +24,7 @@ import {
   type PullRequestRollup,
 } from './metrics'
 import { InsightCard, InlineMeter, Insight, ReadinessBadge } from '@/components/attribution/parts'
-import {
-  DECIMAL_1,
-  formatHours,
-  formatPercent,
-  type Readiness,
-} from '@/components/attribution/format'
-
-type Band = DoraBand
+import { DECIMAL_1, formatHours, formatPercent } from '@/components/attribution/format'
 
 // A concept page is one linear layout read top to bottom; splitting it would scatter the mockup.
 // oxlint-disable-next-line eslint/max-lines-per-function
@@ -274,60 +261,4 @@ function binSizes(rows: PullRequestRollup[]) {
       median: med >= low && med < high,
     }
   })
-}
-
-function DoraTile({
-  label,
-  value,
-  band,
-  note,
-  readiness,
-  readinessNote,
-}: {
-  label: string
-  value: string
-  band: Band
-  note: string
-  readiness: Readiness
-  readinessNote?: string
-}) {
-  return (
-    <Card size="sm" className="min-w-0">
-      <CardHeader>
-        <CardDescription className="flex flex-col items-start gap-1.5">
-          <span>{label}</span>
-          <ReadinessBadge level={readiness} note={readinessNote} />
-        </CardDescription>
-        <p className="text-2xl font-medium tracking-tight tabular-nums">{value}</p>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-2">
-        <DoraBandMeter band={band} />
-        <span className="text-muted-foreground text-xs">{note}</span>
-      </CardContent>
-    </Card>
-  )
-}
-
-const BANDS: Band[] = ['Low', 'Medium', 'High', 'Elite']
-
-/** The four DORA performance bands with the current one filled. Neutral: a band is a position. */
-function DoraBandMeter({ band }: { band: Band }) {
-  const index = BANDS.indexOf(band)
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex flex-1 gap-0.5" aria-hidden>
-        {BANDS.map((entry, position) => (
-          <span
-            key={entry}
-            className={
-              position <= index
-                ? 'bg-chart-hero h-1.5 flex-1 rounded-full'
-                : 'bg-muted h-1.5 flex-1 rounded-full'
-            }
-          />
-        ))}
-      </div>
-      <Badge variant="outline">{band}</Badge>
-    </div>
-  )
 }
