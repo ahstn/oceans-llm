@@ -26,6 +26,10 @@ export const SCOPE_DETAILS: Record<string, { label: string; description: string 
     label: 'MCP proxy',
     description: 'Per-server /mcp/{server_key} routes.',
   },
+  'attribution:write': {
+    label: 'Attribution',
+    description: 'Git AI attribution uploads from the oceans CLI hooks, and its ownership lookup.',
+  },
 }
 
 export function scopeLabel(scope: string) {

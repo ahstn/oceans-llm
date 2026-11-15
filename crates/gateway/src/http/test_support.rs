@@ -56,6 +56,7 @@ pub async fn app_state() -> (tempfile::TempDir, AppState) {
         client_config_gateway_base_url: Arc::new(None),
         benchmark_model_ids: Arc::default(),
         budget_defaults: Arc::new(Default::default()),
+        attribution_email_aliases: Arc::default(),
         agent_analysis: AgentAnalysisRuntimeCapabilities {
             passive_analysis_enabled: false,
             shadow_diagnostics_visible: false,

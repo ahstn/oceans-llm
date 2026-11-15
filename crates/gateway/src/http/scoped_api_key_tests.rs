@@ -508,6 +508,40 @@ async fn scoped_keys_cannot_call_full_access_routes() {
 }
 
 #[tokio::test]
+async fn attribution_keys_reach_only_the_attribution_routes() {
+    let harness = Harness::new().await;
+    let (_, attribution) = harness
+        .create_key(json!(["attribution:write"]), Value::Null)
+        .await;
+    let (_, inference) = harness.create_key(json!(["inference"]), Value::Null).await;
+    let (_, unscoped) = harness.create_key(Value::Null, Value::Null).await;
+
+    for key in [&attribution, &unscoped] {
+        let ownership = harness.get("/api/v1/me/ownership", key).await;
+        assert_eq!(ownership.status, StatusCode::OK, "{}", ownership.body);
+        assert_eq!(
+            ownership.body["ownership_scope"],
+            format!("user:{}", harness.user_id)
+        );
+    }
+    assert_openai_insufficient_scope(&harness.chat(&attribution).await);
+    assert_openai_insufficient_scope(&harness.get("/v1/models", &attribution).await);
+    assert_jsonrpc_insufficient_scope(
+        &harness.tools_list("notes", &attribution).await,
+        Some("mcp:proxy"),
+    );
+    for refused in [
+        harness
+            .get("/api/v1/me/provider-credentials", &attribution)
+            .await,
+        harness.get("/api/v1/me/ownership", &inference).await,
+    ] {
+        assert_eq!(refused.status, StatusCode::FORBIDDEN, "{}", refused.body);
+        assert_eq!(refused.body["error"]["code"], "insufficient_scope");
+    }
+}
+
+#[tokio::test]
 async fn server_lists_limit_the_proxy_without_revealing_other_servers() {
     let harness = Harness::new().await;
     let (_, notes_only) = harness
@@ -721,7 +755,12 @@ async fn keys_without_scopes_keep_full_access() {
     assert_eq!(existing["mcp_server_keys"], Value::Null);
     assert_eq!(
         listing.body["data"]["available_scopes"],
-        json!(["inference", "mcp:aggregate", "mcp:proxy"])
+        json!([
+            "inference",
+            "mcp:aggregate",
+            "mcp:proxy",
+            "attribution:write"
+        ])
     );
     assert_eq!(
         listing.body["data"]["mcp_servers"],

@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 
+import { KpiCard } from '@/components/data/kpi-card'
 import { PageHeader } from '@/components/layout/page-header'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -180,19 +181,19 @@ export function UsageCostsPage() {
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Kpi
+        <KpiCard
           label="Priced spend"
           value={formatUsd(report.totals.priced_cost_usd_10000)}
           hint={`${CURRENCY_FORMATTER.format(avgDaily / 10_000)} per day on average`}
           pending={isPending}
         />
-        <Kpi
+        <KpiCard
           label="Requests"
           value={formatCount(requests)}
           hint={`${formatCount(report.totals.priced_request_count)} priced`}
           pending={isPending}
         />
-        <Kpi
+        <KpiCard
           label="Pricing coverage"
           value={PERCENT_FORMATTER.format(coverage)}
           hint={
@@ -207,7 +208,7 @@ export function UsageCostsPage() {
           tone={coverage < 0.95 ? 'warning' : 'default'}
           pending={isPending}
         />
-        <Kpi
+        <KpiCard
           label="Peak day"
           value={peakDay ? formatUsd(peakDay.priced_cost_usd_10000) : '—'}
           hint={peakDay ? formatDay(peakDay.day_start) : 'No priced spend in window'}
@@ -313,40 +314,6 @@ export function UsageCostsPage() {
         </Card>
       </div>
     </div>
-  )
-}
-
-function Kpi({
-  label,
-  value,
-  hint,
-  tone = 'default',
-  pending,
-}: {
-  label: string
-  value: string
-  hint: React.ReactNode
-  tone?: 'default' | 'warning'
-  pending: boolean
-}) {
-  return (
-    <Card size="sm">
-      <CardHeader>
-        <CardDescription>{label}</CardDescription>
-        {pending ? (
-          <Skeleton className="h-7 w-28" />
-        ) : (
-          <CardTitle
-            className={
-              tone === 'warning' ? 'text-warning text-2xl tabular-nums' : 'text-2xl tabular-nums'
-            }
-          >
-            {value}
-          </CardTitle>
-        )}
-      </CardHeader>
-      <CardContent className="text-muted-foreground text-xs">{hint}</CardContent>
-    </Card>
   )
 }
 

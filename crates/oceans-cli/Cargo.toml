@@ -19,18 +19,24 @@ path = "src/main.rs"
 anyhow.workspace = true
 clap.workspace = true
 gateway-skills.workspace = true
+# Rewrites ~/.claude/settings.json without reordering the user's keys.
+indexmap = { version = "2", features = ["serde"] }
 reqwest.workspace = true
 rpassword = "7"
 serde.workspace = true
 serde_json.workspace = true
+serde_yaml.workspace = true
 sha2.workspace = true
 tempfile = "3"
+time.workspace = true
 tokio.workspace = true
 url.workspace = true
 uuid.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 axum.workspace = true
 futures-util.workspace = true
-time.workspace = true
 zip.workspace = true

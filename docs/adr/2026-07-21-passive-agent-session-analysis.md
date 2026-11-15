@@ -36,6 +36,17 @@ The agent-session detail sheet now presents a smaller operational subset. It ret
 
 The sheet no longer presents the score-confidence and comparison, reliability and retries, skills, outcome evidence, finish reasons, or analysis-version groups. The removed values remain in the analysis and API contracts. This is a presentation decision to reduce detail-sheet density, not a change to collection, persistence, scoring, or report semantics. These fields can be reconsidered if operator research shows that the reduced view hides information needed for routine session review.
 
+### Session identifier update (2026-11-12)
+
+Git AI attribution joins a commit to its gateway requests through the stored session hash, so passive analysis now reads session identifiers the way routing does:
+
+- Every harness can name its session in the canonical `x-oceans-session-id` header, including harnesses without an adapter. When the harness adapter also finds a session ID, the two must agree. A disagreement records `conflicting_aliases` and no session. Passive analysis still never rejects a request.
+- A canonical session ID is hashed in the `oceans` namespace. A harness session ID is hashed in its adapter's namespace, not under the harness key. Lineage IDs use the adapter's namespace even when the canonical header names the session. Session sources stay keyed by harness.
+- `claude_cli` requests, which Claude Code and OMP's Messages client send, use the Claude Code adapter and namespace. Their harness key and label stay `claude_cli` and "Claude CLI".
+- User agents that start with `codex_`, such as `codex_exec/`, are classified as Codex.
+
+An open session whose requests also carry a matching canonical header starts again once, because its hash namespace changes.
+
 ## Why
 
 Request-scoped observability cannot explain the operational cost and time of a multi-request agent session. Provider or harness conversation IDs are also not reliable user identity and cannot safely be joined globally. Dedicated session facts provide a bounded, auditable unit while preserving request-level lineage.

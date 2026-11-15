@@ -520,8 +520,8 @@ describe('budget increases', () => {
 
     fireEvent.click(increaseButton('Own Team'))
     const dialog = await screen.findByRole('dialog')
-    const presets = within(within(dialog).getByRole('group', { name: 'Prefill amount' }))
-      .getAllByRole('button')
+    const presets = within(within(dialog).getByRole('radiogroup', { name: 'Prefill amount' }))
+      .getAllByRole('radio')
       .map((button) => button.textContent)
     expect(presets).toEqual(['$50.00', '$100.00', '$150.00', '$200.00'])
     expect(within(dialog).getByRole('radio', { name: 'End of month' })).toBeChecked()
@@ -532,7 +532,7 @@ describe('budget increases', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Increase budget' }))
     expect(increaseBudgetMock).not.toHaveBeenCalled()
 
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Prefill 150% of the budget' }))
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Prefill 150% of the budget' }))
     expect(amount).toHaveValue(150)
     fireEvent.click(within(dialog).getByRole('radio', { name: '7 days' }))
     fireEvent.click(within(dialog).getByRole('button', { name: 'Increase budget' }))

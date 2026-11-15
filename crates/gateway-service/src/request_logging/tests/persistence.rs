@@ -556,6 +556,60 @@ async fn under_cap_responses_request_redacts_media_urls_and_filters_headers() {
 }
 
 #[tokio::test]
+async fn canonical_session_header_is_kept_for_passive_analysis() {
+    let repo = Arc::new(InMemoryRepo::default());
+    let logging = RequestLogging::new(repo.clone());
+    let request = ResponsesRequest {
+        model: "gpt-test".to_string(),
+        input: json!("hello"),
+        stream: false,
+        instructions: None,
+        tools: None,
+        tool_choice: None,
+        reasoning: None,
+        text: None,
+        extra: BTreeMap::new(),
+    };
+    let headers = BTreeMap::from([
+        ("user-agent".to_string(), "omp/18.18.5".to_string()),
+        ("x-oceans-session-id".to_string(), "omp-session".to_string()),
+    ]);
+    let context = logging.begin_responses_request(
+        "req_omp_canonical",
+        "gpt-test",
+        "gpt-test",
+        &request,
+        &headers,
+        RequestTags::default(),
+    );
+
+    assert_eq!(
+        context.analysis_metadata.external_session_id.as_deref(),
+        Some("omp-session")
+    );
+    assert_eq!(context.analysis_metadata.session_namespace, Some("oceans"));
+    logging
+        .log_non_stream_success(
+            &sample_service_account_auth(),
+            &context,
+            "openai-prod",
+            sample_icon_metadata(),
+            10,
+            0,
+            &json!({"id": "response-canonical", "status": "completed"}),
+            Vec::new(),
+        )
+        .await
+        .expect("log canonical session request");
+
+    let payloads = repo.payloads.lock().expect("payloads lock");
+    assert_eq!(
+        payloads[0].request_json["headers"]["x-oceans-session-id"],
+        "omp-session"
+    );
+}
+
+#[tokio::test]
 async fn oversized_pi_responses_request_keeps_analysis_and_structured_storage() {
     let repo = Arc::new(InMemoryRepo::default());
     let request_max_bytes = 8 * 1024;

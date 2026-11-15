@@ -12,11 +12,15 @@ where
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PassiveRequestMetadata {
     pub external_session_id: Option<String>,
+    /// Namespace `external_session_id` is hashed under; see `ClientSessionMetadata`.
+    pub session_namespace: Option<&'static str>,
     pub session_source: Option<String>,
     pub session_limitation: Option<SessionCorrelationLimitation>,
     pub execution_id: Option<String>,
     pub body_inspected: bool,
     pub parent_execution_id: Option<String>,
+    /// Namespace the lineage IDs are hashed under; see `ClientSessionMetadata`.
+    pub lineage_namespace: Option<&'static str>,
     pub message_count: Option<u32>,
     pub prompt_bytes: Option<u64>,
     pub supplied_tool_count: Option<u32>,
@@ -27,6 +31,42 @@ pub(crate) struct PassiveRequestMetadata {
     pub reasoning_config_hash: Option<String>,
     pub cache_requested: Option<bool>,
     pub adapter_version: String,
+}
+
+impl PassiveRequestMetadata {
+    /// The owner-scoped hash stored for `external_session_id`. It uses the session's namespace
+    /// rather than the harness key, so every harness that reads the same session ID in the same
+    /// namespace stores the same hash.
+    pub(super) fn normalized_session_id(&self, ownership_scope_key: &str) -> Option<String> {
+        let (value, namespace) = self
+            .external_session_id
+            .as_deref()
+            .zip(self.session_namespace)?;
+        Some(hash_lineage_candidate(
+            ownership_scope_key,
+            namespace,
+            value,
+        ))
+    }
+
+    /// The owner-scoped hashes stored for `execution_id` and `parent_execution_id`.
+    pub(super) fn hashed_lineage(
+        &self,
+        ownership_scope_key: &str,
+    ) -> (Option<String>, Option<String>) {
+        let hash = |value: Option<&str>| {
+            let (value, namespace) = value.zip(self.lineage_namespace)?;
+            Some(hash_lineage_candidate(
+                ownership_scope_key,
+                namespace,
+                value,
+            ))
+        };
+        (
+            hash(self.execution_id.as_deref()),
+            hash(self.parent_execution_id.as_deref()),
+        )
+    }
 }
 
 pub(crate) fn extract_request_metadata(
@@ -62,11 +102,13 @@ pub(crate) fn extract_request_metadata(
 
     PassiveRequestMetadata {
         external_session_id: client.session.value,
+        session_namespace: client.session_namespace,
         session_source: client.session.source,
         session_limitation: client.session.limitation,
         body_inspected: inspect_body,
         execution_id: client.execution_id,
         parent_execution_id: client.parent_execution_id,
+        lineage_namespace: client.lineage_namespace,
         message_count,
         prompt_bytes,
         supplied_tool_count,
@@ -89,7 +131,7 @@ pub(super) fn hash_identifier(value: &str) -> String {
     format!("sha256:{digest:x}")
 }
 
-pub(super) fn hash_lineage_candidate(
+pub(crate) fn hash_lineage_candidate(
     ownership_scope_key: &str,
     adapter_namespace: &str,
     value: &str,

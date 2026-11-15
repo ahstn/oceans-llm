@@ -209,6 +209,7 @@ Users can't receive `reveal_api_key` because a personal key secret is shown only
 - Users see `mcp` read-only, limited to the servers they can connect to. Team admins manage only their team's servers. See [MCP servers](/extensions/mcp-servers/).
 - Team admins see `spend_controls` for their own team only.
 - Team admins see `agent_sessions` only when `agent_analysis.team_admin_enabled` is `true`. See [`agent_analysis`](/configuration/#agent_analysis).
+- **Attribution** has no grant of its own. It shows with `usage_costs`, so removing `usage_costs` hides both pages. Users see only the commits their keys reported or that they authored. See [Git AI attribution](/harnesses/git-ai-attribution/).
 
 By default, a user can create, update and revoke only their own keys. A team owner or admin can also create, update, revoke and reveal service-account keys for that team. A platform admin has global key scope. If an admin removes an action, the gateway hides its UI control and the matching API returns `403`. Other admin operations keep their own authorisation rules.
 
@@ -279,6 +280,7 @@ Teams have no `budget` field in config. The id `system-legacy` has no special me
 | `membership.role` | `member` | `admin` or `member`. `owner` is rejected. |
 | `budget` | unset | Per-user budget. Same shape as [budget settings](/spend/budget-settings/#budget-fields). |
 | `tags` | unset | Identity tags. |
+| `additional_attribution_emails` | `[]` | Other emails the user commits as, such as a personal Git email or the `noreply` address GitHub uses for merges and web edits. [Git AI attribution](/harnesses/git-ai-attribution/#read-the-attribution-page) matches pull request commit authors to them. Trimmed and lowercased. Each must be a single address with no spaces, at most 320 bytes. Each must be unique, and can't be any user's `email` or the bootstrap admin email. |
 
 A seeded user's role, team, auth method and request logging setting show on the user's **Overview** tab in **Identity > Users**.
 

@@ -27,6 +27,7 @@ An API key carries either no scope list, meaning full access, or a non-empty lis
 | `inference` | `/v1/messages`, `/v1/messages/count_tokens`, `/v1/chat/completions`, `/v1/responses`, `/v1/embeddings`, `/v1/decisions`, `/v1/systemone`, their unversioned aliases, `/v1/models`, `/models`, `/v1/model-metadata`, `/api/v1/batches*`, and `/api/v1/guardrails/evaluate` |
 | `mcp:aggregate` | The aggregate endpoint `/mcp` |
 | `mcp:proxy` | Per-server routes `/mcp/{server_key}` |
+| `attribution:write` | `GET /api/v1/me/ownership` and `POST /api/v1/attribution/entries`, which `oceans hook` uses to upload Git AI attribution |
 
 `mcp:aggregate` and `mcp:proxy` are the OAuth scope names, so a key and a token with the same scope reach the same routes.
 

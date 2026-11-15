@@ -46,3 +46,8 @@ regexes = ['''^xoxb-1234567890-1234567890-$''']
 description = "Docs comment in a since-removed bundled dependency"
 targetRules = ["generic-api-key"]
 regexes = ['''^abc123xyz456$''']
+
+[[allowlists]]
+description = "git-ai note attestation keys in the demo seed and note parser tests"
+targetRules = ["generic-api-key"]
+regexes = ['''^(h_2f452a9c375069|s_3a9f1c2e7b4d60|s_7c2e9a4f1b6d30|s_5d1b8e3a9c7f20)$''']

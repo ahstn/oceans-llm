@@ -47,7 +47,9 @@ pub fn classify_agent_harness(user_agent: Option<&str>) -> AgentHarness {
     };
     let lower = user_agent.to_ascii_lowercase();
 
-    if lower.starts_with("codex_cli_rs/") || lower.starts_with("codex/") {
+    // Codex sends its originator as the product token: `codex_cli_rs`, `codex_exec`,
+    // `codex_vscode`, `codex_sdk_ts` and so on.
+    if lower.starts_with("codex_") || lower.starts_with("codex/") {
         return AgentHarness {
             key: "codex",
             label: "Codex",

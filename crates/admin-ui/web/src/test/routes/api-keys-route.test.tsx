@@ -102,7 +102,7 @@ const basePayload: ApiKeysPayload = {
       tags: ['reasoning'],
     },
   ],
-  available_scopes: ['inference', 'mcp:aggregate', 'mcp:proxy'],
+  available_scopes: ['inference', 'mcp:aggregate', 'mcp:proxy', 'attribution:write'],
   mcp_servers: [
     { key: 'notes', display_name: 'Notes' },
     { key: 'wiki', display_name: 'Wiki' },

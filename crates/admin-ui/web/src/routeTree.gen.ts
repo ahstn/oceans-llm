@@ -35,6 +35,7 @@ import { Route as McpToolsetsRouteImport } from './routes/mcp/toolsets'
 import { Route as OauthConsentRouteImport } from './routes/oauth/consent'
 import { Route as ObservabilityAgentHarnessesRouteImport } from './routes/observability/agent-harnesses'
 import { Route as ObservabilityAgentSessionsRouteImport } from './routes/observability/agent-sessions'
+import { Route as ObservabilityAttributionRouteImport } from './routes/observability/attribution'
 import { Route as ObservabilityAuditLogRouteImport } from './routes/observability/audit-log'
 import { Route as ObservabilityGuardrailsRouteImport } from './routes/observability/guardrails'
 import { Route as ObservabilityLeaderboardRouteImport } from './routes/observability/leaderboard'
@@ -177,6 +178,12 @@ const ObservabilityAgentSessionsRoute =
     path: '/observability/agent-sessions',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ObservabilityAttributionRoute =
+  ObservabilityAttributionRouteImport.update({
+    id: '/observability/attribution',
+    path: '/observability/attribution',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ObservabilityAuditLogRoute = ObservabilityAuditLogRouteImport.update({
   id: '/observability/audit-log',
   path: '/observability/audit-log',
@@ -251,6 +258,7 @@ export interface FileRoutesByFullPath {
   '/oauth/consent': typeof OauthConsentRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/agent-sessions': typeof ObservabilityAgentSessionsRoute
+  '/observability/attribution': typeof ObservabilityAttributionRoute
   '/observability/audit-log': typeof ObservabilityAuditLogRoute
   '/observability/guardrails': typeof ObservabilityGuardrailsRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
@@ -288,6 +296,7 @@ export interface FileRoutesByTo {
   '/oauth/consent': typeof OauthConsentRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/agent-sessions': typeof ObservabilityAgentSessionsRoute
+  '/observability/attribution': typeof ObservabilityAttributionRoute
   '/observability/audit-log': typeof ObservabilityAuditLogRoute
   '/observability/guardrails': typeof ObservabilityGuardrailsRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
@@ -326,6 +335,7 @@ export interface FileRoutesById {
   '/oauth/consent': typeof OauthConsentRoute
   '/observability/agent-harnesses': typeof ObservabilityAgentHarnessesRoute
   '/observability/agent-sessions': typeof ObservabilityAgentSessionsRoute
+  '/observability/attribution': typeof ObservabilityAttributionRoute
   '/observability/audit-log': typeof ObservabilityAuditLogRoute
   '/observability/guardrails': typeof ObservabilityGuardrailsRoute
   '/observability/leaderboard': typeof ObservabilityLeaderboardRoute
@@ -365,6 +375,7 @@ export interface FileRouteTypes {
     | '/oauth/consent'
     | '/observability/agent-harnesses'
     | '/observability/agent-sessions'
+    | '/observability/attribution'
     | '/observability/audit-log'
     | '/observability/guardrails'
     | '/observability/leaderboard'
@@ -402,6 +413,7 @@ export interface FileRouteTypes {
     | '/oauth/consent'
     | '/observability/agent-harnesses'
     | '/observability/agent-sessions'
+    | '/observability/attribution'
     | '/observability/audit-log'
     | '/observability/guardrails'
     | '/observability/leaderboard'
@@ -439,6 +451,7 @@ export interface FileRouteTypes {
     | '/oauth/consent'
     | '/observability/agent-harnesses'
     | '/observability/agent-sessions'
+    | '/observability/attribution'
     | '/observability/audit-log'
     | '/observability/guardrails'
     | '/observability/leaderboard'
@@ -477,6 +490,7 @@ export interface RootRouteChildren {
   OauthConsentRoute: typeof OauthConsentRoute
   ObservabilityAgentHarnessesRoute: typeof ObservabilityAgentHarnessesRoute
   ObservabilityAgentSessionsRoute: typeof ObservabilityAgentSessionsRoute
+  ObservabilityAttributionRoute: typeof ObservabilityAttributionRoute
   ObservabilityAuditLogRoute: typeof ObservabilityAuditLogRoute
   ObservabilityGuardrailsRoute: typeof ObservabilityGuardrailsRoute
   ObservabilityLeaderboardRoute: typeof ObservabilityLeaderboardRoute
@@ -674,6 +688,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ObservabilityAgentSessionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/observability/attribution': {
+      id: '/observability/attribution'
+      path: '/observability/attribution'
+      fullPath: '/observability/attribution'
+      preLoaderRoute: typeof ObservabilityAttributionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/observability/audit-log': {
       id: '/observability/audit-log'
       path: '/observability/audit-log'
@@ -765,6 +786,7 @@ const rootRouteChildren: RootRouteChildren = {
   OauthConsentRoute: OauthConsentRoute,
   ObservabilityAgentHarnessesRoute: ObservabilityAgentHarnessesRoute,
   ObservabilityAgentSessionsRoute: ObservabilityAgentSessionsRoute,
+  ObservabilityAttributionRoute: ObservabilityAttributionRoute,
   ObservabilityAuditLogRoute: ObservabilityAuditLogRoute,
   ObservabilityGuardrailsRoute: ObservabilityGuardrailsRoute,
   ObservabilityLeaderboardRoute: ObservabilityLeaderboardRoute,

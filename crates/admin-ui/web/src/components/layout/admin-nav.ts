@@ -2,6 +2,7 @@ import type { IconSvgElement } from '@hugeicons/react'
 import {
   Audit01Icon,
   DashboardSpeed01Icon,
+  GitCommitIcon,
   GitPullRequestIcon,
   HomeIcon,
   McpServerIcon,
@@ -129,6 +130,13 @@ export const adminNavSections: AdminNavSection[] = [
         label: 'Agent Sessions',
         to: '/observability/agent-sessions',
         icon: RoboticIcon,
+      },
+      // Shares Usage Costs' page: platform admins see everyone, other users only their own work.
+      {
+        requiredPage: 'usage_costs',
+        label: 'Attribution',
+        to: '/observability/attribution',
+        icon: GitCommitIcon,
       },
       {
         page: 'request_logs',
