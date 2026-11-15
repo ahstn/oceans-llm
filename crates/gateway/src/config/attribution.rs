@@ -7,8 +7,8 @@ const fn enabled() -> bool {
     true
 }
 
-/// Each Attribution tab, on by default. `concepts` is the design mockup on sample data, off by
-/// default.
+/// Each Attribution tab, on by default except two. `repositories` is off until line survival
+/// makes its readiness quadrant meaningful, and `concepts` is the design mockup on sample data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AttributionPagesConfig {
@@ -18,7 +18,8 @@ pub struct AttributionPagesConfig {
     pub delivery: bool,
     #[serde(default = "enabled")]
     pub pull_requests: bool,
-    #[serde(default = "enabled")]
+    /// Off by default: without line survival its quadrant has no durability axis.
+    #[serde(default)]
     pub repositories: bool,
     #[serde(default = "enabled")]
     pub durability: bool,
@@ -35,7 +36,7 @@ impl Default for AttributionPagesConfig {
             impact: true,
             delivery: true,
             pull_requests: true,
-            repositories: true,
+            repositories: false,
             durability: true,
             my_work: true,
             concepts: false,
@@ -55,10 +56,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_tab_but_the_concepts_defaults_on() {
+    fn every_tab_but_repositories_and_the_concepts_defaults_on() {
         let config: AttributionConfig = serde_yaml::from_str("{}").expect("empty config parses");
         assert_eq!(config.pages, AttributionPagesConfig::default());
         assert!(config.pages.impact && config.pages.my_work);
+        assert!(!config.pages.repositories);
         assert!(!config.pages.concepts);
     }
 

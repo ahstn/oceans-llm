@@ -27,6 +27,7 @@ import type { AttributionReportView } from '@/types/api'
 
 import { formatAttributedCost, shortSha } from '../shared'
 import { PullRequestLink } from '../cells'
+import { displayRepository } from '../shared'
 import { ChangesTable } from '../changes-table'
 import { AI_BANDS, median, pullRequestRows, type AiBandKey, type PullRequestRow } from '../insights'
 import { RowLimitFooter, useRowLimit } from '../row-limit'
@@ -217,7 +218,12 @@ function PullRequestRowView({
   const { pr } = row
   const gaps = pr.unpriced_request_count + pr.usage_missing_request_count
   return (
-    <TableRow className="group hover:bg-surface-muted" data-state={open ? 'selected' : undefined}>
+    // The whole row toggles its details; the button and link inside stop their clicks reaching it.
+    <TableRow
+      className="group hover:bg-surface-muted cursor-pointer"
+      data-state={open ? 'selected' : undefined}
+      onClick={onToggle}
+    >
       <TableCell className="px-3 py-2">
         <p className="flex max-w-96 items-center gap-2">
           <span className="truncate font-medium" title={pr.title}>
@@ -226,9 +232,15 @@ function PullRequestRowView({
           {pr.is_revert ? <Badge variant="warning">Revert</Badge> : null}
         </p>
         <p className="text-muted-foreground flex flex-wrap items-center gap-x-1 text-xs">
-          <PullRequestLink repository={pr.repository} number={pr.number} url={pr.url} />
+          <span onClick={(event) => event.stopPropagation()}>
+            <PullRequestLink
+              repository={pr.repository}
+              number={pr.number}
+              url={pr.url}
+              label={`${displayRepository(pr.repository)}#${pr.number}`}
+            />
+          </span>
           <span>· {pr.author?.name ?? 'Unmatched author'}</span>
-          <span className="whitespace-nowrap">· {formatTimestamp(pr.merged_at)}</span>
         </p>
       </TableCell>
       <TableCell className="w-44 px-3 py-2">
@@ -278,7 +290,10 @@ function PullRequestRowView({
           size="icon-sm"
           aria-expanded={open}
           aria-label={open ? `Collapse #${pr.number}` : `Expand #${pr.number}`}
-          onClick={onToggle}
+          onClick={(event) => {
+            event.stopPropagation()
+            onToggle()
+          }}
         >
           <AppIcon icon={open ? ArrowDown01Icon : ArrowRight01Icon} size={16} aria-hidden />
         </Button>

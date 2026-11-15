@@ -60,7 +60,7 @@ export const READINESS: Record<
     detail: 'Approximated from stored data. The page would say what it stands in for.',
   },
   new: {
-    label: 'Needs new data',
+    label: 'Data',
     variant: 'warning',
     detail: 'Needs data Oceans does not collect yet.',
   },

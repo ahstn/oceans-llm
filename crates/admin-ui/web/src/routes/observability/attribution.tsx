@@ -1,6 +1,8 @@
+import { LinkSquare02Icon } from '@hugeicons/core-free-icons'
 import { lazy, Suspense, useTransition, type ComponentType } from 'react'
 import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router'
 
+import { AppIcon } from '@/components/icons/app-icon'
 import { PageHeader } from '@/components/layout/page-header'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -30,6 +32,7 @@ import {
   type AttributionTab,
 } from './-attribution/insights'
 import {
+  ATTRIBUTION_DOCS_URL,
   normalizeAttributionSearch,
   toAttributionWindow,
   type AttributionSearch,
@@ -187,6 +190,12 @@ function AttributionActions({
         onRepositoryChange={(repository) => onUpdate({ repository })}
         onRefresh={onRefresh}
       />
+      <Button variant="outline" size="sm" asChild>
+        <a href={ATTRIBUTION_DOCS_URL} target="_blank" rel="noopener noreferrer">
+          Setup
+          <AppIcon icon={LinkSquare02Icon} data-icon="inline-end" aria-hidden />
+        </a>
+      </Button>
     </div>
   )
 }

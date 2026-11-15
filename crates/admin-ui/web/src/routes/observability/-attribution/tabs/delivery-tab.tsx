@@ -100,17 +100,14 @@ export default function DeliveryTab({ report }: { report: AttributionReportView 
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <InsightCard
-          title="Lead time trend"
-          description="First commit to merge, by week of merge. The 85th percentile shows the slow tail that a median hides."
-        >
+        <InsightCard title="Lead time trend" description="First commit to merge, by week of merge.">
           <LeadTimeTrendChart
             rows={weeklyLeadTimes(rows, report.window_start, report.window_end)}
           />
         </InsightCard>
         <InsightCard
           title="Lead time against AI share"
-          description="One dot per merged pull request with notes, sized by attested lines. A cloud rising to the right means AI-heavy work waits longer."
+          description="Merged pull requests sized by attested lines. A cloud rising to the right means AI-heavy work waits longer."
         >
           <LeadTimeScatter
             medianHours={medianLead}
@@ -263,8 +260,15 @@ function DoraTile({
     <Card size="sm" className="min-w-0">
       <CardHeader>
         <CardDescription className="flex flex-col items-start gap-1.5">
-          <span>{label}</span>
-          {readiness ? <ReadinessBadge level={readiness} note={readinessNote} /> : null}
+          <span className="flex items-center gap-1.5">
+            {label}
+            {readiness === 'proxy' ? (
+              <ReadinessBadge level="proxy" note={readinessNote} compact />
+            ) : null}
+          </span>
+          {readiness && readiness !== 'proxy' ? (
+            <ReadinessBadge level={readiness} note={readinessNote} />
+          ) : null}
         </CardDescription>
         <p className="text-2xl font-medium tracking-tight tabular-nums">{value}</p>
       </CardHeader>

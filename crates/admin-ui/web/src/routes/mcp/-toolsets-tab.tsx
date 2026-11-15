@@ -1,4 +1,11 @@
-import { useEffect, useEffectEvent, useState, useTransition, type FormEvent } from 'react'
+import {
+  useEffect,
+  useEffectEvent,
+  useState,
+  useTransition,
+  type FormEvent,
+  type ReactNode,
+} from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
@@ -37,6 +44,8 @@ import { useToolCatalog } from './-catalog'
 import { useToolsetMemberships } from './-toolset-membership'
 
 type ToolsetsTabProps = {
+  /** The page header, given the New tool set action. */
+  renderHeader: (action: ReactNode) => ReactNode
   toolsets: McpToolsetView[]
   servers: McpServerView[]
   selectedToolsetId: string | null
@@ -129,6 +138,7 @@ export function ToolsetsTab(props: ToolsetsTabProps) {
         </Alert>
       )}
       <ToolsetWorkbench
+        renderHeader={props.renderHeader}
         loadConnectionInfo={loadConnectionInfo}
         toolsets={toolsets}
         servers={servers}

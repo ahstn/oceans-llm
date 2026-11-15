@@ -161,11 +161,11 @@ The page has a tab per question. Admins turn each one on or off with [`attributi
 | **Impact** | AI share of merged code, cost per merged pull request, merged pull requests and the share of spend that shipped, each against the previous window. Then who wrote the code, spend against output, where agent sessions ended up, and per-user activity. |
 | **Delivery** | DORA measures from merged pull requests: merges per day (standing in for deploys), first commit to merge, and reverts (standing in for change failures). Then lead time against AI share and batch size. |
 | **Pull requests** | Each merged pull request with its AI share, commits, harnesses, cost and lead time. Expand a row for its commits. Recent changes lists every attributed commit. |
-| **Repositories** | AI share, autonomy, cost and lead time per repository. Autonomy is a proxy from commit composition: the share of AI lines in commits where people added no more than 5% as many lines as the agent. Notes count lines per commit, so it can't tell whether people edited the agent's lines. |
+| **Repositories** (off by default) | AI share, autonomy, cost and lead time per repository. Autonomy is a proxy from commit composition: the share of AI lines in commits where people added no more than 5% as many lines as the agent. Notes count lines per commit, so it can't tell whether people edited the agent's lines. |
 | **Durability** | Whether AI code lasts. Most of it needs data Oceans does not collect yet. |
 | **My work** | Your own commits, pull requests and agent spend against your previous window. It never compares you with anyone else. |
 
-Sections marked **Needs new data** wait on data Oceans does not collect yet, such as line survival, deploy events or pull request review times. Sections marked **Proxy** approximate one measure with another, and say which.
+Sections marked with a warning **Data** pill wait on data Oceans does not collect yet, such as line survival, deploy events or pull request review times. Sections marked **Proxy** approximate one measure with another, and say which.
 
 The **Agent Harnesses** page shows, for each harness and model, the gateway cost per 100 committed AI lines and the share of sessions whose work shipped.
 

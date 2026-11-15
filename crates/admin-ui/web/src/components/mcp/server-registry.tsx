@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useTable, type ColumnDef, type OnChangeFn, type SortingState } from '@tanstack/react-table'
 import { Add01Icon, ArrowRight01Icon, RefreshIcon, Search01Icon } from '@hugeicons/core-free-icons'
 import { AppIcon } from '@/components/icons/app-icon'
@@ -49,6 +49,8 @@ interface RegistryProps {
   /** Omitted for a read-only viewer, who cannot register servers. */
   onAdd?: () => void
   onCatalog?: () => void
+  /** The page header, given this registry's actions for its right-hand side. */
+  renderHeader: (actions: ReactNode) => ReactNode
 }
 
 type RegistryRowsProps = Omit<RegistryProps, 'refreshingServerIds'> & {
@@ -76,92 +78,87 @@ export function ServerRegistry(props: RegistryProps) {
     )
   })
 
+  const actions = props.onAdd ? (
+    <div className="flex gap-2">
+      <Button type="button" variant="outline" size="sm" onClick={props.onCatalog}>
+        Browse catalog
+      </Button>
+      <Button type="button" size="sm" onClick={props.onAdd}>
+        <AppIcon icon={Add01Icon} data-icon="inline-start" aria-hidden />
+        Add server
+      </Button>
+    </div>
+  ) : null
+
   return (
-    <section className="flex min-w-0 flex-col gap-6" aria-label="MCP server registry">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight">MCP servers</h1>
-            <Badge variant="secondary">{props.servers.length}</Badge>
-          </div>
-          <p className="text-muted-foreground text-sm">
-            {props.onAdd
-              ? 'Manage the connections that bring tools into your gateway.'
-              : 'The MCP servers your access lets you connect to.'}
-          </p>
+    <>
+      {props.renderHeader(actions)}
+      <section className="flex min-w-0 flex-col gap-6" aria-label="MCP server registry">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+          <span>
+            <strong className="font-medium">{props.servers.length}</strong>
+            <span className="text-muted-foreground"> registered</span>
+          </span>
+          <span>
+            <strong className="font-medium">{active}</strong>
+            <span className="text-muted-foreground"> active registrations</span>
+          </span>
+          <span>
+            <strong className="font-medium">{discovered}</strong>
+            <span className="text-muted-foreground"> with successful discovery</span>
+          </span>
+          <Button
+            type="button"
+            variant={attention ? 'destructive' : 'ghost'}
+            size="sm"
+            onClick={() => setFilter('attention')}
+          >
+            {attention} {attention === 1 ? 'needs' : 'need'} attention
+            <AppIcon icon={ArrowRight01Icon} aria-hidden data-icon="inline-end" />
+          </Button>
         </div>
-        {props.onAdd ? (
-          <div className="flex gap-2">
-            <Button type="button" variant="outline" onClick={props.onCatalog}>
-              Browse catalog
-            </Button>
-            <Button type="button" onClick={props.onAdd}>
-              <AppIcon icon={Add01Icon} data-icon="inline-start" aria-hidden />
-              Add server
-            </Button>
-          </div>
-        ) : null}
-      </div>
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-        <span>
-          <strong className="font-medium">{active}</strong>
-          <span className="text-muted-foreground"> active registrations</span>
-        </span>
-        <span>
-          <strong className="font-medium">{discovered}</strong>
-          <span className="text-muted-foreground"> with successful discovery</span>
-        </span>
-        <Button
-          type="button"
-          variant={attention ? 'destructive' : 'ghost'}
-          size="sm"
-          onClick={() => setFilter('attention')}
-        >
-          {attention} {attention === 1 ? 'needs' : 'need'} attention
-          <AppIcon icon={ArrowRight01Icon} aria-hidden data-icon="inline-end" />
-        </Button>
-      </div>
-      <Card className="min-w-0">
-        <CardHeader>
-          <CardTitle>Server registry</CardTitle>
-          <CardDescription>
-            Review registrations and the results of their latest discovery.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex min-w-0 flex-col gap-5">
-          <RegistryToolbar
-            query={query}
-            filter={filter}
-            owner={owner}
-            owners={ownerOptions(props.servers)}
-            onQueryChange={setQuery}
-            onFilterChange={setFilter}
-            onOwnerChange={setOwner}
-          />
-          {servers.length ? (
-            <RegistryTable
-              {...props}
-              servers={servers}
-              sorting={sorting}
-              onSortingChange={setSorting}
+        <Card className="min-w-0">
+          <CardHeader>
+            <CardTitle>Server registry</CardTitle>
+            <CardDescription>
+              Review registrations and the results of their latest discovery.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex min-w-0 flex-col gap-5">
+            <RegistryToolbar
+              query={query}
+              filter={filter}
+              owner={owner}
+              owners={ownerOptions(props.servers)}
+              onQueryChange={setQuery}
+              onFilterChange={setFilter}
+              onOwnerChange={setOwner}
             />
-          ) : (
-            <RegistryEmpty
-              hasServers={props.servers.length > 0}
-              onCatalog={props.onCatalog}
-              onClear={() => {
-                setQuery('')
-                setFilter('all')
-                setOwner('all')
-              }}
-            />
-          )}
-          <p className="text-muted-foreground text-xs" role="status">
-            Showing {servers.length} of {props.servers.length} servers
-          </p>
-        </CardContent>
-      </Card>
-    </section>
+            {servers.length ? (
+              <RegistryTable
+                {...props}
+                servers={servers}
+                sorting={sorting}
+                onSortingChange={setSorting}
+              />
+            ) : (
+              <RegistryEmpty
+                hasServers={props.servers.length > 0}
+                onCatalog={props.onCatalog}
+                onClear={() => {
+                  setQuery('')
+                  setFilter('all')
+                  setOwner('all')
+                }}
+              />
+            )}
+            <p className="text-muted-foreground text-xs" role="status">
+              Showing {servers.length} of {props.servers.length} servers
+            </p>
+          </CardContent>
+        </Card>
+      </section>
+    </>
   )
 }
 

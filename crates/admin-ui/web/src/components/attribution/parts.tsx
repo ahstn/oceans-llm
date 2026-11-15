@@ -1,7 +1,12 @@
 // Building blocks of the Attribution tabs and their concept mockups: the data-readiness badge, the
 // section card, KPI tiles with sparklines, the AI / human split bar and harness labels.
 
-import { ArrowDownRight01Icon, ArrowUpRight01Icon } from '@hugeicons/core-free-icons'
+import {
+  Alert02Icon,
+  ApproximatelyEqualIcon,
+  ArrowDownRight01Icon,
+  ArrowUpRight01Icon,
+} from '@hugeicons/core-free-icons'
 import { useId, type CSSProperties, type ReactNode } from 'react'
 
 import { AgentHarnessIcon } from '@/components/icons/agent-harness-icon'
@@ -32,14 +37,49 @@ export const UNSHIPPED_TONE = 'var(--chart-other)'
 
 // Data readiness -----------------------------------------------------------------------------------
 
-export function ReadinessBadge({ level, note }: { level: Readiness; note?: string }) {
+export function ReadinessBadge({
+  level,
+  note,
+  compact = false,
+}: {
+  level: Readiness
+  note?: string
+  /** An icon with the same tooltip, for a proxy that sits on a tile's heading line. */
+  compact?: boolean
+}) {
   const meta = READINESS[level]
+  // Missing data reads as a warning pill: "Data" with the icon, and the full phrase for screen readers.
+  const label =
+    level === 'new' ? (
+      <>
+        <AppIcon icon={Alert02Icon} data-icon="inline-start" aria-hidden />
+        <span className="sr-only">Needs new </span>
+        {meta.label}
+      </>
+    ) : (
+      meta.label
+    )
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Badge variant={meta.variant} tabIndex={0} data-readiness={level}>
-          {meta.label}
-        </Badge>
+        {compact ? (
+          <button
+            type="button"
+            aria-label={meta.label}
+            data-readiness={level}
+            className="text-muted-foreground hover:text-foreground focus-visible:ring-ring inline-flex shrink-0 rounded-sm transition-colors outline-none focus-visible:ring-2"
+          >
+            <AppIcon
+              icon={level === 'new' ? Alert02Icon : ApproximatelyEqualIcon}
+              size={14}
+              aria-hidden
+            />
+          </button>
+        ) : (
+          <Badge variant={meta.variant} tabIndex={0} data-readiness={level}>
+            {label}
+          </Badge>
+        )}
       </TooltipTrigger>
       <TooltipContent className="max-w-72">
         {meta.detail}
@@ -218,8 +258,13 @@ export function TrendKpi({
     <Card size="sm" className="min-w-0">
       <CardHeader>
         <CardDescription className="flex items-start justify-between gap-2">
-          <span className="min-w-0">{label}</span>
-          {readiness ? (
+          <span className="flex min-w-0 items-center gap-1.5">
+            {label}
+            {readiness === 'proxy' ? (
+              <ReadinessBadge level="proxy" note={readinessNote} compact />
+            ) : null}
+          </span>
+          {readiness && readiness !== 'proxy' ? (
             <span className="shrink-0">
               <ReadinessBadge level={readiness} note={readinessNote} />
             </span>

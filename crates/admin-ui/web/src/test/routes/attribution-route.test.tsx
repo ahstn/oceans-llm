@@ -361,7 +361,7 @@ describe('AttributionPage', () => {
     expect(within(aliceRow).getByText('$12.34')).toBeInTheDocument()
     expect(within(aliceRow).getByText('2 hooked')).toBeInTheDocument()
     // Durability is not collected yet, so its counterweight carries the pill.
-    expect(screen.getAllByText('Needs new data').length).toBeGreaterThan(0)
+    expect(document.querySelectorAll('[data-readiness="new"]').length).toBeGreaterThan(0)
   })
 
   it('shows only the tabs the gateway config turns on', async () => {
@@ -395,11 +395,34 @@ describe('AttributionPage', () => {
     expect(screen.getByRole('link', { name: 'Open the concepts' })).toBeInTheDocument()
   })
 
+  it('expands a pull request from anywhere on its row, but not from its forge link', async () => {
+    renderPage(attributionReport(), { days: 30, tab: 'pull_requests' })
+
+    const pullRequests = within(await screen.findByRole('table', { name: 'Merged pull requests' }))
+    fireEvent.click(pullRequests.getByRole('link', { name: 'acme/widgets#42' }))
+    expect(screen.queryByRole('table', { name: 'Commits in #42' })).not.toBeInTheDocument()
+    fireEvent.click(pullRequests.getByText('Add widget search'))
+    expect(screen.getByRole('table', { name: 'Commits in #42' })).toBeInTheDocument()
+    expect(pullRequests.getByRole('button', { name: 'Collapse #42' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+  })
+
+  it('links to the setup guide from the header', () => {
+    renderPage(attributionReport())
+
+    expect(screen.getByRole('link', { name: 'Setup' })).toHaveAttribute(
+      'href',
+      ATTRIBUTION_DOCS_URL,
+    )
+  })
+
   it('lists merged pull requests and recent changes on the Pull requests tab', async () => {
     renderPage(attributionReport(), { days: 30, tab: 'pull_requests' })
 
     const pullRequests = within(await screen.findByRole('table', { name: 'Merged pull requests' }))
-    expect(pullRequests.getByRole('link', { name: 'github.com/acme/widgets#42' })).toHaveAttribute(
+    expect(pullRequests.getByRole('link', { name: 'acme/widgets#42' })).toHaveAttribute(
       'href',
       'https://github.com/acme/widgets/pull/42',
     )
@@ -502,7 +525,7 @@ describe('AttributionPage', () => {
     renderPage(attributionReport(), { days: 30, tab: 'durability' })
 
     expect(await screen.findByText('No survival data yet')).toBeInTheDocument()
-    expect(screen.getAllByText('Needs new data').length).toBeGreaterThanOrEqual(5)
+    expect(document.querySelectorAll('[data-readiness="new"]').length).toBeGreaterThanOrEqual(5)
     expect(screen.getByRole('link', { name: 'the attribution data gaps note' })).toHaveAttribute(
       'href',
       expect.stringContaining('docs/internal/2026-11-15-attribution-data-gaps.md'),

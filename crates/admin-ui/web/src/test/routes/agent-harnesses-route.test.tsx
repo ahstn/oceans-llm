@@ -316,7 +316,12 @@ describe('AgentHarnessesPage', () => {
     // Claude Code: $3.60 over 400 AI lines is $0.90 per 100; 2 of 4 sessions shipped.
     expect(section.getByText('4 sessions')).toBeInTheDocument()
     expect(section.getAllByText('$0.90').length).toBeGreaterThan(0)
-    expect(section.getAllByText('Needs new data').length).toBe(2)
+    // Missing data shows a warning `Data` pill, marked `data-readiness="new"`.
+    expect(
+      view
+        .getByRole('region', { name: 'Harness attribution' })
+        .querySelectorAll('[data-readiness="new"]').length,
+    ).toBe(2)
     const matrix = within(section.getByRole('table', { name: 'Harness by model' }))
     expect(matrix.getByText('gpt-6-astra')).toBeInTheDocument()
     expect(matrix.getByText('$0.20')).toBeInTheDocument()

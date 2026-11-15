@@ -60,3 +60,8 @@ export function shortSha(sha: string) {
 export function pullRequestLabel(repository: string, number: number) {
   return `${repository}#${number}`
 }
+
+/** `github.com/acme/widgets` → `acme/widgets`; other forges keep their host, which isn't implied. */
+export function displayRepository(repository: string) {
+  return repository.replace(/^github\.com\//, '')
+}

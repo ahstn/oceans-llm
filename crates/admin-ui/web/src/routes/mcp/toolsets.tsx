@@ -2,7 +2,7 @@ import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import { getMcpServers, getMcpToolsets } from '@/server/admin-data.functions'
 import { ToolsetsTab } from './-toolsets-tab'
-import { McpNavigation } from './-navigation'
+import { McpHeader } from './-navigation'
 import { normalizeToolsetsSearch } from './-search'
 
 export const Route = createFileRoute('/mcp/toolsets')({
@@ -33,8 +33,14 @@ function ToolsetsPage() {
   const router = useRouter()
   return (
     <div className="flex min-w-0 flex-col gap-6">
-      <McpNavigation current="toolsets" />
       <ToolsetsTab
+        renderHeader={(action) => (
+          <McpHeader
+            current="toolsets"
+            description="Bring the right tools together for each team and workflow."
+            actions={action}
+          />
+        )}
         toolsets={data.toolsets}
         servers={data.servers}
         selectedToolsetId={search.toolset_id ?? null}

@@ -316,7 +316,7 @@ For what the analysis shows and who can see it, see [Agent session analysis](/ob
 
 ## `attribution`
 
-`attribution.pages` turns each tab of the **Attribution** page on or off. Every tab is on by default except `concepts`, the design mockups on sample data. Turning a tab off hides it from everyone; ingestion and the report API are unchanged.
+`attribution.pages` turns each tab of the **Attribution** page on or off. Every tab is on by default except `repositories`, whose readiness quadrant waits on line survival data, and `concepts`, the design mockups on sample data. Turning a tab off hides it from everyone; ingestion and the report API are unchanged.
 
 ```yaml
 attribution:
@@ -324,7 +324,7 @@ attribution:
     impact: true
     delivery: true
     pull_requests: true
-    repositories: true
+    repositories: false
     durability: true
     my_work: true
     concepts: false

@@ -105,7 +105,7 @@ export default function ImpactTab({
       <div className="grid gap-6 xl:grid-cols-2">
         <InsightCard
           title="Who wrote the code"
-          description="Attested lines added per period. Unattested lines are unknown, not human, so they stay out of the share."
+          description="Attested lines added in the timeframe; unknown attestations are ignored."
         >
           <div className="flex flex-col gap-4">
             <AiShareBar ai={totals.ai_lines} human={totals.human_lines} legend />
