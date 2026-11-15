@@ -557,7 +557,7 @@
       "paths": [
         "crates/admin-ui/web/src/routes/observability/attribution.tsx",
         "crates/admin-ui/web/src/routes/observability/-attribution/**",
-        "crates/admin-ui/web/src/routes/observability/-usage-costs/{bar-list.tsx,shared.ts}",
+        "crates/admin-ui/web/src/routes/observability/-usage-costs/shared.ts",
         "crates/gateway/src/http/attribution*.rs",
         "crates/gateway/src/http/attribution/**",
         "crates/gateway/src/local_demo_seed/attribution.rs",
@@ -567,6 +567,7 @@
         "crates/gateway-store/src/attribution.rs",
         "crates/gateway-store/src/attribution/**",
         "crates/gateway-store/migrations/**/V79__git_ai_attribution.sql",
+        "crates/gateway-store/migrations/**/V80__attribution_note_key_owner_authors.sql",
         "crates/oceans-cli/src/attribution/**",
         "crates/oceans-cli/src/{config,process}.rs",
         "crates/oceans-cli/assets/**"

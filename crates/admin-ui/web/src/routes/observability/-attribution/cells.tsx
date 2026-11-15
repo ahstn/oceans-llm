@@ -30,7 +30,7 @@ export function TimestampCell({ value }: { value: string | null | undefined }) {
 }
 
 /** Requests without a price (unpriced or usage missing), worded as on Usage Costs. */
-export function GapsBadge({ gaps }: { gaps: number }) {
+function GapsBadge({ gaps }: { gaps: number }) {
   if (gaps <= 0) return null
   return (
     <Badge variant="warning">

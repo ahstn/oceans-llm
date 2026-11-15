@@ -2,6 +2,7 @@
 
 - Date: 2026-11-01
 - Status: Accepted
+- Amended in part: 2026-11-15, by [Amendment: key owner as note author](#amendment-2026-11-15-key-owner-as-note-author)
 
 ## Context
 
@@ -32,6 +33,7 @@ oceans hook prs (local gh)                                  (merged PRs and thei
 - **Merged pull requests:** `oceans hook prs` runs the local `gh pr list --state merged` and sends each PR with its commit SHAs, subjects and author emails. It runs at agent session start, at most once an hour per repository, and on demand. Squash and rebase merges create commits on GitHub that have no notes, so a PR is joined to the notes of its original commits by SHA. The gateway needs no GitHub token.
 - **Cost and requests per change:** a commit gets the requests of each contributing session that happened after that session's previous commit and at or before this commit. Requests after a session's last commit count as uncommitted work. Totals therefore add up without double counting, and request counts stay whole. Costs come from `usage_cost_events`, so unpriced requests are counted separately and never treated as free.
 - **Joining by email:** author emails in a note (`sessions.*.human_author`, `prompts.*.human_author`, `humans.*.author`) and PR commit author emails are matched to Oceans users by normalised email. The admin Attribution page groups activity by that user, and falls back to the key owner when a commit carries no email.
+  > Superseded in part by [Amendment: key owner as note author](#amendment-2026-11-15-key-owner-as-note-author): a note sent with a user's key now names that user, and emails can also match a user's `additional_attribution_emails`.
 - Both post to a new authenticated ingestion endpoint under `/api/v1` with an Oceans API key owned by the same user or service account whose keys send the matching gateway traffic. API keys have only these two owner kinds, and `usage_ownership_scope_key` ([`budget_scopes.rs`](../../crates/gateway-service/src/budget_scopes.rs)) maps them to `user:{id}` and `service_account:{id}`. There is no team ownership scope. The endpoint is Oceans' own contract, not a Git AI-compatible one.
 - A new `attribution:write` API key scope grants only the ingestion endpoint and the ownership lookup, `GET /api/v1/me/ownership`, which the sender needs before it can deliver (see Owner binding). A full-access key also works.
 - The gateway parses notes against the v3 spec and stores totals per commit and per session. It stores no file paths and no line ranges.
@@ -45,6 +47,7 @@ oceans hook prs (local gh)                                  (merged PRs and thei
 - **Identity storage:** on the gateway, raw identifiers from a note exist only in memory while the request is parsed. They are never stored, never logged and never included in error messages. That covers `agent_id.id`, `human_author`, `humans.*.author` and the commit author. What is stored:
   - **Sessions:** the scope-bound hash described under Join, plus `agent_id.tool` and `agent_id.model`.
   - **Humans:** an author email that matches an Oceans user's email is stored as that user's id. Any other email is stored only as `hash_lineage_candidate(ownership_scope_key, "git_ai_human", lowercased email)`, which lets an owner's contributors be counted apart without storing who they are. As with session ids, this is correlation evidence within one ownership scope, not identity.
+    > Superseded in part by [Amendment: key owner as note author](#amendment-2026-11-15-key-owner-as-note-author): a note sent with a user's key stores that user's id, whatever its emails.
 - **Local queue contents:** the local queue does hold raw notes, identifiers included, until they're delivered. The CLI can't hash them first, because matching an email to an Oceans user happens on the gateway. The queue is limited instead:
   - **Exposure:** the queue adds no new exposure, because the same notes already sit in the repository's `refs/notes/ai` on that machine.
   - **Permissions:** the queue and quarantine directories are created owner-only (`0700`, with `0600` files). The CLI refuses to queue into a directory that other users can read.
@@ -175,6 +178,7 @@ The fixes: `claude_cli` uses the Claude Code adapter, `codex_` user-agent prefix
 - **OMP subagents:** subagents run in the main session's process and share its environment, so only the main session sets the variable. A subagent's Chat Completions and Responses requests count for the main session. Its lines carry its own session id, so they count as AI lines without a matching session, while its cost lands in the main session's windows.
 - **The upgrade locks request writes while an index builds:** V79 adds an index on `agent_session_requests(normalized_session_id, occurred_at)`. The migration runner applies each migration in a transaction, so PostgreSQL can't build it `CONCURRENTLY`, and writes to that table wait until the build ends. V79 allows 15 minutes instead of the usual 60 s, so a large table doesn't roll the migration back. Operators with a large table should upgrade at a quiet time.
 - **Authorship is a claim:** an author email comes from the commit, which anyone can set. A user's report also shows commits that name them as author, so a key holder can credit their own commit to another user. That user then sees the commit with the sender's requests and cost. No other owner's requests reach it, because session hashes are bound to the sender's ownership scope.
+  > Superseded in part by [Amendment: key owner as note author](#amendment-2026-11-15-key-owner-as-note-author): a user's own notes can no longer be credited to someone else.
 - **Report lookups read each session's whole history:** finding a request's commit reads every earlier commit and request of its sessions, not just the window's. A tighter bound would need each session's last commit before the window, per hash. Request lookups stop at 200,000 rows and mark the report incomplete.
 - **Long sessions have a limit:** a hook-reported session open across the window counts its requests in the window as uncommitted only if it started within 30 days before the window.
 
@@ -199,6 +203,29 @@ Rejected. The notes format is open, and attribution through history rewrites is 
 ### Run `git ai stats` on the server
 
 Rejected for ingestion. On this repository, `git ai stats HEAD~200..HEAD` hadn't finished after nearly 4 minutes, while `git cat-file --batch` read all 1,037 notes in 0.03 s.
+
+## Amendment 2026-11-15: key owner as note author
+
+Changed in [#654](https://github.com/ahstn/oceans-llm/pull/654), after the first deployment.
+
+### Decision
+
+- **The key owner is the note author:** git-ai runs the notes hook on the machine that made the commit. So a note sent with a user's key names that user as the author of the commit and its sessions, whatever email their Git config uses. Author emails still decide for notes sent with a service account key, and for PR commits, which `gh` fetches and which can be anyone's.
+- **Additional attribution emails:** `users[].additional_attribution_emails` in the gateway config lists more emails for a config user, such as a personal Git email or a GitHub `noreply` address. An email is matched to an Oceans user by normalised email first, then by this list. A note from a user's key stores that user's id. A matched email is stored as the user's id, and any other email is stored only as its scope-bound hash, as before.
+
+### Why
+
+Notes matched their author emails even when a user's key sent them. A developer whose Git email differed from their Oceans email then showed as an unmatched author on every commit, although the key already proved who sent the note.
+
+### As built
+
+- **Ingestion:** the gateway names the key's owner as the author of a note from a user's key. Migration V80 rewrites the stored notes of user-owned keys to match. Stored pull requests keep their email hashes until `oceans hook prs` reports them again, because the raw emails were never stored.
+- **Email list:** the gateway holds `additional_attribution_emails` in memory and checks it after the users table, so it needs no migration. Config validation rejects an email listed twice, one that is already a user's email or the bootstrap admin email, and one that author matching can't accept.
+
+### Trade-offs
+
+- **Authorship is still a claim for PRs and service accounts:** a PR commit's author email, and the emails in a service account's notes, come from the commit. So any key holder can credit a pull request to another user, and a service account key holder can credit a note's commit, with that account's requests and cost, to another user. No other owner's requests reach it, because session hashes are bound to the sender's ownership scope. A pull request counts the lines and cost of only the notes its viewer can already see, so a user's notes don't follow a pull request credited to someone else.
+- **Notes credit the key, not the committer:** a note for a commit someone else authored, such as one a rebase rewrote, still counts for the user whose machine sent it.
 
 ## Follow-ups
 
