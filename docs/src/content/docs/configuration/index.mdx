@@ -201,8 +201,14 @@ Route defaults (`priority`, `weight`, `enabled`, capability flags) are on [Model
 | `otel_trace_sample_ratio` | `1.0` | `0.0` through `1.0` inclusive. |
 | `otel_export_interval_secs` | `30` | Metrics export interval. |
 | `trusted_proxies` | `[]` | IP addresses or CIDR ranges. |
+| `shutdown_drain_seconds` | `300` | How long in-flight requests and streams get to finish after SIGTERM. |
+| `management_bind` | unset | Socket address for the private management listener. Must differ from `bind`. |
 
 The gateway trusts the `X-Forwarded-For` header only when the connection comes from an address in `trusted_proxies`. It uses the resolved client IP for rate limits and admin audit entries. With an empty list, the socket peer is the client. See [Rate limits](/spend/rate-limits/) for how client IPs affect limits.
+
+On the first SIGTERM or Ctrl-C, the gateway starts to drain. It stops accepting new connections, `/readyz` returns `503` with `{"status":"draining"}` on connections that are still open, and MCP event streams that wait for server messages close so that their clients reconnect to another replica. Requests and streams that are already in flight continue. When `shutdown_drain_seconds` passes, or a second signal arrives, the gateway ends what remains. A request that has no response yet gets `503` with the error code `server_shutdown`. An open inference stream ends with a transport error, and its request log records `503 server_shutdown` with the usage that the provider already reported. The process then waits up to 10 seconds for usage and request-log writes before it exits. Set your container stop timeout, or the Kubernetes `terminationGracePeriodSeconds`, higher than the drain.
+
+`management_bind` starts a second listener with only `/healthz` and `/internal/traffic`. `/internal/traffic` returns this process's response counters since it started: `requests`, `gateway_errors` (5xx responses that the gateway caused) and `upstream_errors` (5xx responses caused by a provider or upstream MCP server, including timeouts). It does not count `4xx` responses as errors, and it does not count health checks. The Helm rollout guard reads these counters. The listener has no authentication, so keep it off public networks.
 
 For OTLP settings in a deployment, see [Topology and operations](/setup/deploy-and-operations/). For collector and Datadog setup, see [Export traces and metrics](/observability/export-traces-and-metrics/).
 

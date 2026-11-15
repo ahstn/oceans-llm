@@ -39,6 +39,8 @@ Every migration command checks the database's recorded history against the migra
 
 In each case, the command stops with a `database reset required` error rather than guessing.
 
+A database that a newer gateway migrated is a different case. After a rollback, the older gateway starts only if every newer migration says that it can still read the database. Otherwise it stops with `database schema is newer than this gateway`, and never applies migrations of its own. See [Roll back](/operations/admin-runbooks/#roll-back).
+
 ## Telemetry
 
 Oceans exports traces and metrics over OTLP. Set these under `server` in the gateway config:
