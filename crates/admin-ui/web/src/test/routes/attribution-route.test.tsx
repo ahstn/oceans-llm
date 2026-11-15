@@ -30,6 +30,22 @@ vi.mock('@/server/admin-data.functions', () => ({
 const alice = { id: 'user-alice', name: 'Alice Doe' }
 const bob = { id: 'user-bob', name: 'Bob Roe' }
 
+function periodSummary(): AttributionReportView['summary'] {
+  return {
+    commit_count: 3,
+    merged_pull_request_count: 1,
+    ai_lines: 120,
+    human_lines: 40,
+    merged_ai_lines: 100,
+    merged_human_lines: 20,
+    priced_cost_usd_10000: 138_400,
+    shipped_cost_usd_10000: 100_000,
+    median_pull_request_cost_usd_10000: 123_400,
+    median_lead_time_seconds: 104_400,
+    reverted_pull_request_count: 0,
+  }
+}
+
 function attributionReport(overrides: Partial<AttributionReportView> = {}): AttributionReportView {
   return {
     window_days: 30,
@@ -144,8 +160,32 @@ function attributionReport(overrides: Partial<AttributionReportView> = {}): Attr
         usage_missing_request_count: 0,
         priced_cost_usd_10000: 123_400,
         models: ['claude-sonnet-5'],
+        first_commit_at: '2026-11-09T10:00:00Z',
+        lead_time_seconds: 104_400,
+        is_revert: false,
+        agent_tools: ['claude'],
+        commits: [
+          {
+            commit_sha: 'abcdef1234567890abcdef1234567890abcdef12',
+            committed_at: '2026-11-10T12:00:00Z',
+            ai_lines: 80,
+            human_lines: 10,
+            agent_tools: ['claude'],
+            models: ['claude-sonnet-5'],
+            request_count: 30,
+            priced_request_count: 30,
+            unpriced_request_count: 0,
+            usage_missing_request_count: 0,
+            priced_cost_usd_10000: 100_000,
+          },
+        ],
       },
     ],
+    daily: [],
+    session_outcomes: [],
+    harness_models: [],
+    summary: periodSummary(),
+    previous_summary: periodSummary(),
     changes: [
       {
         attribution_commit_id: 'commit-1',

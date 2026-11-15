@@ -714,6 +714,42 @@ pub struct AuthSessionCapabilitiesView {
     pub shadow_diagnostics_visible: bool,
     pub calibrated_score_visible: bool,
     pub team_admin_analytics_enabled: bool,
+    /// Attribution tabs the gateway config turns on, in display order.
+    pub attribution_tabs: Vec<AttributionTab>,
+}
+
+/// A tab of the admin Attribution page. `attribution.pages` in the gateway config turns each on
+/// or off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AttributionTab {
+    Impact,
+    Delivery,
+    PullRequests,
+    Repositories,
+    Durability,
+    MyWork,
+    /// Design mockups on generated sample data.
+    Concepts,
+}
+
+impl AttributionTab {
+    /// The tabs `pages` turns on, in display order.
+    #[must_use]
+    pub fn enabled(pages: &crate::config::AttributionPagesConfig) -> Vec<Self> {
+        [
+            (pages.impact, Self::Impact),
+            (pages.delivery, Self::Delivery),
+            (pages.pull_requests, Self::PullRequests),
+            (pages.repositories, Self::Repositories),
+            (pages.durability, Self::Durability),
+            (pages.my_work, Self::MyWork),
+            (pages.concepts, Self::Concepts),
+        ]
+        .into_iter()
+        .filter_map(|(on, tab)| on.then_some(tab))
+        .collect()
+    }
 }
 
 #[derive(Debug, Serialize, ToSchema)]

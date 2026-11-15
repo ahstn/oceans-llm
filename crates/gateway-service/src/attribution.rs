@@ -20,9 +20,11 @@ pub use ingest::{
     AttributionSessionInput, attribution_owner, ingest_attribution_batch,
 };
 pub use report::{
-    AttributionChangeActivity, AttributionModelActivity, AttributionPullRequestActivity,
-    AttributionReport, AttributionReportCoverage, AttributionReportTotals, AttributionUserActivity,
-    RequestTally, build_attribution_report,
+    AttributionChangeActivity, AttributionDayActivity, AttributionHarnessModelActivity,
+    AttributionModelActivity, AttributionPeriodSummary, AttributionPullRequestActivity,
+    AttributionPullRequestCommitActivity, AttributionReport, AttributionReportCoverage,
+    AttributionReportTotals, AttributionSessionOutcome, AttributionSessionOutcomeTally,
+    AttributionUserActivity, RequestTally, build_attribution_report,
 };
 
 /// Finds the Oceans user behind an author email. Implemented by the gateway over its store's

@@ -30,6 +30,13 @@ use gateway_core::{
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
+mod insights;
+
+pub use insights::{
+    AttributionDayActivity, AttributionHarnessModelActivity, AttributionPeriodSummary,
+    AttributionSessionOutcome, AttributionSessionOutcomeTally,
+};
+
 /// How far before the window commits and hook-reported sessions are loaded, so a merged PR
 /// finds the notes of commits made before the window opened, and a session that started
 /// before the window still has its requests in the window counted.
@@ -142,12 +149,32 @@ pub struct AttributionModelActivity {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttributionPullRequestActivity {
     pub pull_request: AttributionPullRequestRecord,
+    /// The earliest of the PR's commit author times and its matched notes' observation times.
+    pub first_commit_at: Option<OffsetDateTime>,
+    /// The title reads as a revert; see `insights::is_revert_title`.
+    pub is_revert: bool,
+    /// git-ai agent tools the matched notes name.
+    pub agent_tools: Vec<String>,
+    /// The matched commits, oldest first, with their attribution and requests.
+    pub commits: Vec<AttributionPullRequestCommitActivity>,
     /// Listed commits with a stored note; the merge commit when none of them has one.
     pub attributed_commit_count: i64,
     pub ai_lines: i64,
     pub human_lines: i64,
     pub requests: RequestTally,
     pub models: Vec<String>,
+}
+
+/// One commit of a merged pull request that has a stored note.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttributionPullRequestCommitActivity {
+    pub commit_sha: String,
+    pub committed_at: OffsetDateTime,
+    pub ai_lines: i64,
+    pub human_lines: i64,
+    pub agent_tools: Vec<String>,
+    pub models: Vec<String>,
+    pub requests: RequestTally,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -176,6 +203,12 @@ pub struct AttributionReport {
     pub pull_requests: Vec<AttributionPullRequestActivity>,
     /// Newest first.
     pub changes: Vec<AttributionChangeActivity>,
+    /// Every UTC day of the window, oldest first.
+    pub daily: Vec<AttributionDayActivity>,
+    /// Agent sessions by the furthest stage their work reached, in stage order.
+    pub session_outcomes: Vec<AttributionSessionOutcomeTally>,
+    /// Most sessions first.
+    pub harness_models: Vec<AttributionHarnessModelActivity>,
 }
 
 /// Builds the report for `query`. `query.limit` caps commits and PRs separately.
@@ -386,6 +419,8 @@ struct ReportInputs<'a> {
     query: &'a AttributionReportQuery,
     /// Every loaded commit, including the PR lookback before the window.
     commits: &'a [AttributionCommitRecord],
+    /// Every loaded request fact, before allocation.
+    facts: &'a [AttributionRequestFact],
     by_commit: HashMap<Uuid, Vec<&'a AttributionRequestFact>>,
     uncommitted: Vec<&'a AttributionRequestFact>,
     /// `(scope, hash)` pairs that matched at least one request.
@@ -439,6 +474,7 @@ impl<'a> ReportInputs<'a> {
         Self {
             query,
             commits,
+            facts,
             by_commit,
             uncommitted,
             joined,
@@ -479,15 +515,22 @@ impl<'a> ReportInputs<'a> {
             requests: totals.requests.merged(totals.uncommitted),
             ..coverage
         };
-        let changes = self.changes(&pull_request_numbers(&pull_requests));
+        let numbers = pull_request_numbers(&pull_requests);
+        let changes = self.changes(&numbers);
+        let merged_commits = numbers.keys().copied().collect::<HashSet<_>>();
+        let (session_outcomes, harness_models) = self.session_insights(&reported, &merged_commits);
         let users = self.users(&pull_requests, &reported);
+        let pull_requests = self.pull_requests(pull_requests);
         AttributionReport {
             totals,
             coverage,
             users,
             models: self.models(),
-            pull_requests: self.pull_requests(pull_requests),
+            daily: self.daily(&pull_requests),
+            pull_requests,
             changes,
+            session_outcomes,
+            harness_models,
         }
     }
 
@@ -679,7 +722,26 @@ impl<'a> ReportInputs<'a> {
                     .flat_map(|commit| self.facts_for(commit.attribution_commit_id))
                     .copied()
                     .collect::<Vec<_>>();
+                let authored = pull_request
+                    .commits
+                    .iter()
+                    .filter_map(|commit| commit.authored_at);
+                let observed = matched.iter().map(|commit| commit.first_observed_at);
+                let mut ordered = matched.clone();
+                ordered.sort_by_key(|commit| commit.first_observed_at);
                 AttributionPullRequestActivity {
+                    first_commit_at: authored.chain(observed).min(),
+                    is_revert: insights::is_revert_title(&pull_request.title),
+                    agent_tools: distinct(
+                        matched
+                            .iter()
+                            .flat_map(|commit| &commit.sessions)
+                            .map(|session| session.agent_tool.as_str()),
+                    ),
+                    commits: ordered
+                        .iter()
+                        .map(|commit| self.pull_request_commit(commit))
+                        .collect(),
                     attributed_commit_count: count(matched.len()),
                     ai_lines: matched.iter().map(|commit| commit.ai_lines).sum(),
                     human_lines: matched.iter().map(|commit| commit.human_lines).sum(),
@@ -689,6 +751,29 @@ impl<'a> ReportInputs<'a> {
                 }
             })
             .collect()
+    }
+}
+
+impl ReportInputs<'_> {
+    fn pull_request_commit(
+        &self,
+        commit: &AttributionCommitRecord,
+    ) -> AttributionPullRequestCommitActivity {
+        let facts = self.facts_for(commit.attribution_commit_id);
+        AttributionPullRequestCommitActivity {
+            commit_sha: commit.commit_sha.clone(),
+            committed_at: commit.first_observed_at,
+            ai_lines: commit.ai_lines,
+            human_lines: commit.human_lines,
+            agent_tools: distinct(
+                commit
+                    .sessions
+                    .iter()
+                    .map(|session| session.agent_tool.as_str()),
+            ),
+            models: ranked_models(facts),
+            requests: RequestTally::of(facts.iter().copied()),
+        }
     }
 }
 

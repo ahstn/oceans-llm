@@ -16,7 +16,7 @@ use crate::http::{
     response_cache::ResponseCache,
 };
 use crate::{
-    config::{AgentAnalysisRuntimeCapabilities, ResolvedAdminPermissions},
+    config::{AgentAnalysisRuntimeCapabilities, AttributionPagesConfig, ResolvedAdminPermissions},
     observability::GatewayMetrics,
 };
 
@@ -54,6 +54,8 @@ pub struct AppState {
     /// Config users' `additional_attribution_emails` → their Oceans email, both normalized.
     pub attribution_email_aliases: Arc<HashMap<String, String>>,
     pub agent_analysis: AgentAnalysisRuntimeCapabilities,
+    /// Which Attribution tabs the admin UI shows.
+    pub attribution_pages: AttributionPagesConfig,
     pub admin_permissions: Arc<ResolvedAdminPermissions>,
     /// Who may publish an MCP server to the organisation catalog.
     pub mcp_organisation_publishing: gateway_service::McpOrganisationPublishing,

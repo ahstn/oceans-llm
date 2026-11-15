@@ -3115,6 +3115,23 @@ export interface components {
             /** @description Some requests were left out because a lookup or the report hit its cap. */
             request_facts_truncated: boolean;
         };
+        /** @description One UTC day of the window. Committed requests count on their commit's day. */
+        AttributionDayView: {
+            /** Format: int64 */
+            ai_lines: number;
+            /** Format: int64 */
+            commit_count: number;
+            /** @description Requests allocated to the day's commits. */
+            committed: components["schemas"]["AttributionRequestTallyView"];
+            /** @description `YYYY-MM-DD`. */
+            day: string;
+            /** Format: int64 */
+            human_lines: number;
+            /** Format: int64 */
+            merged_pull_request_count: number;
+            /** @description Requests after their session's last commit, by the day they happened. */
+            uncommitted: components["schemas"]["AttributionRequestTallyView"];
+        };
         AttributionEntryRequest: {
             /** @description 1-64 characters of `[A-Za-z0-9._-]`, unique per installation. */
             entry_id: string;
@@ -3137,6 +3154,24 @@ export interface components {
          * @enum {string}
          */
         AttributionEntryStatusView: "applied" | "duplicate" | "stale" | "rejected";
+        /** @description Agent sessions of one harness on one model. */
+        AttributionHarnessModelView: components["schemas"]["AttributionRequestTallyView"] & {
+            /**
+             * Format: int64
+             * @description AI lines the sessions wrote into the window's commits.
+             */
+            ai_lines: number;
+            /** @description git-ai's tool name (`claude`, `codex`, `pi`), else the hook's harness key. */
+            harness: string;
+            model_key: string;
+            /** Format: int64 */
+            session_count: number;
+            /**
+             * Format: int64
+             * @description Sessions whose work was merged or reached the default branch.
+             */
+            shipped_session_count: number;
+        };
         AttributionModelView: components["schemas"]["AttributionRequestTallyView"] & {
             /**
              * Format: int64
@@ -3194,6 +3229,46 @@ export interface components {
             pull_requests: components["schemas"]["AttributionPullRequestRequest"][];
             repository: string;
         };
+        /** @description Headline figures for one window. */
+        AttributionPeriodSummaryView: {
+            /** Format: int64 */
+            ai_lines: number;
+            /** Format: int64 */
+            commit_count: number;
+            /** Format: int64 */
+            human_lines: number;
+            /**
+             * Format: int64
+             * @description Median first commit to merge.
+             */
+            median_lead_time_seconds?: number | null;
+            /** Format: int64 */
+            median_pull_request_cost_usd_10000?: number | null;
+            /**
+             * Format: int64
+             * @description Lines of the commits in merged pull requests.
+             */
+            merged_ai_lines: number;
+            /** Format: int64 */
+            merged_human_lines: number;
+            /** Format: int64 */
+            merged_pull_request_count: number;
+            /**
+             * Format: int64
+             * @description Priced cost of every counted request, committed or not.
+             */
+            priced_cost_usd_10000: number;
+            /**
+             * Format: int64
+             * @description Merged pull requests whose title reads as a revert.
+             */
+            reverted_pull_request_count: number;
+            /**
+             * Format: int64
+             * @description Priced cost of sessions whose work was merged or reached the default branch.
+             */
+            shipped_cost_usd_10000: number;
+        };
         AttributionPullRequestCommitRequest: {
             /** @description Matched to an Oceans user or stored as a hash bound to the key's owner. */
             author_email?: string | null;
@@ -3201,6 +3276,17 @@ export interface components {
             authored_at?: string | null;
             sha: string;
             subject?: string | null;
+        };
+        /** @description A merged pull request's commit that has a stored note. */
+        AttributionPullRequestCommitView: components["schemas"]["AttributionRequestTallyView"] & {
+            agent_tools: string[];
+            /** Format: int64 */
+            ai_lines: number;
+            commit_sha: string;
+            committed_at: string;
+            /** Format: int64 */
+            human_lines: number;
+            models: string[];
         };
         AttributionPullRequestRequest: {
             base_ref?: string | null;
@@ -3215,6 +3301,8 @@ export interface components {
             url?: string | null;
         };
         AttributionPullRequestView: components["schemas"]["AttributionRequestTallyView"] & {
+            /** @description git-ai agent tools the matched notes name. */
+            agent_tools: string[];
             /** Format: int64 */
             ai_lines: number;
             /**
@@ -3226,9 +3314,20 @@ export interface components {
             base_ref?: string | null;
             /** Format: int64 */
             commit_count: number;
+            /** @description Commits with a stored note, oldest first. */
+            commits: components["schemas"]["AttributionPullRequestCommitView"][];
+            /** @description The earliest of the PR's commit author times and its notes' observation times. */
+            first_commit_at?: string | null;
             head_ref?: string | null;
             /** Format: int64 */
             human_lines: number;
+            /** @description The title reads as a revert (`Revert "…"` or `revert:`), a change-failure proxy. */
+            is_revert: boolean;
+            /**
+             * Format: int64
+             * @description First commit to merge.
+             */
+            lead_time_seconds?: number | null;
             merged_at: string;
             models: string[];
             /** Format: int64 */
@@ -3242,9 +3341,18 @@ export interface components {
         AttributionReportView: {
             changes: components["schemas"]["AttributionChangeView"][];
             coverage: components["schemas"]["AttributionCoverageView"];
+            /** @description Every UTC day of the window, oldest first. */
+            daily: components["schemas"]["AttributionDayView"][];
+            /** @description Harness × model rows, most sessions first. */
+            harness_models: components["schemas"]["AttributionHarnessModelView"][];
             models: components["schemas"]["AttributionModelView"][];
+            /** @description The same figures for the window of equal length just before this one. */
+            previous_summary: components["schemas"]["AttributionPeriodSummaryView"];
             pull_requests: components["schemas"]["AttributionPullRequestView"][];
             repository?: string | null;
+            /** @description Agent sessions by the furthest stage their work reached. */
+            session_outcomes: components["schemas"]["AttributionSessionOutcomeView"][];
+            summary: components["schemas"]["AttributionPeriodSummaryView"];
             totals: components["schemas"]["AttributionTotalsView"];
             /** @description The user the rows are limited to, if any. */
             user_id?: string | null;
@@ -3269,6 +3377,22 @@ export interface components {
         };
         /** @enum {string} */
         AttributionSessionEventRequest: "start" | "end";
+        /**
+         * @description The furthest stage an agent session's work reached.
+         * @enum {string}
+         */
+        AttributionSessionOutcomeKind: "merged" | "default_branch" | "unmerged" | "no_commit";
+        AttributionSessionOutcomeView: components["schemas"]["AttributionRequestTallyView"] & {
+            outcome: components["schemas"]["AttributionSessionOutcomeKind"];
+            /** Format: int64 */
+            session_count: number;
+        };
+        /**
+         * @description A tab of the admin Attribution page. `attribution.pages` in the gateway config turns each on
+         *     or off.
+         * @enum {string}
+         */
+        AttributionTab: "impact" | "delivery" | "pull_requests" | "repositories" | "durability" | "my_work" | "concepts";
         AttributionTotalsView: components["schemas"]["AttributionRequestTallyView"] & {
             /**
              * Format: int64
@@ -3379,6 +3503,8 @@ export interface components {
         };
         AuthSessionCapabilitiesView: {
             agent_analysis: boolean;
+            /** @description Attribution tabs the gateway config turns on, in display order. */
+            attribution_tabs: components["schemas"]["AttributionTab"][];
             calibrated_score_visible: boolean;
             passive_analysis_enabled: boolean;
             platform_admin: boolean;
@@ -3954,9 +4080,18 @@ export interface components {
             data: {
                 changes: components["schemas"]["AttributionChangeView"][];
                 coverage: components["schemas"]["AttributionCoverageView"];
+                /** @description Every UTC day of the window, oldest first. */
+                daily: components["schemas"]["AttributionDayView"][];
+                /** @description Harness × model rows, most sessions first. */
+                harness_models: components["schemas"]["AttributionHarnessModelView"][];
                 models: components["schemas"]["AttributionModelView"][];
+                /** @description The same figures for the window of equal length just before this one. */
+                previous_summary: components["schemas"]["AttributionPeriodSummaryView"];
                 pull_requests: components["schemas"]["AttributionPullRequestView"][];
                 repository?: string | null;
+                /** @description Agent sessions by the furthest stage their work reached. */
+                session_outcomes: components["schemas"]["AttributionSessionOutcomeView"][];
+                summary: components["schemas"]["AttributionPeriodSummaryView"];
                 totals: components["schemas"]["AttributionTotalsView"];
                 /** @description The user the rows are limited to, if any. */
                 user_id?: string | null;

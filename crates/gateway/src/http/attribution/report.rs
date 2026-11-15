@@ -23,7 +23,13 @@ use time::{Duration, OffsetDateTime, Time, UtcOffset};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-use super::AttributionOwnerKind;
+use super::{
+    AttributionOwnerKind,
+    insights::{
+        AttributionDayView, AttributionHarnessModelView, AttributionPeriodSummaryView,
+        AttributionPullRequestCommitView, AttributionSessionOutcomeView,
+    },
+};
 use crate::http::{
     admin_auth::require_authenticated_session,
     admin_contract::{Envelope, envelope, format_timestamp},
@@ -153,6 +159,16 @@ pub struct AttributionPullRequestView {
     #[serde(flatten)]
     pub requests: AttributionRequestTallyView,
     pub models: Vec<String>,
+    /// The earliest of the PR's commit author times and its notes' observation times.
+    pub first_commit_at: Option<String>,
+    /// First commit to merge.
+    pub lead_time_seconds: Option<i64>,
+    /// The title reads as a revert (`Revert "…"` or `revert:`), a change-failure proxy.
+    pub is_revert: bool,
+    /// git-ai agent tools the matched notes name.
+    pub agent_tools: Vec<String>,
+    /// Commits with a stored note, oldest first.
+    pub commits: Vec<AttributionPullRequestCommitView>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -198,6 +214,15 @@ pub struct AttributionReportView {
     pub models: Vec<AttributionModelView>,
     pub pull_requests: Vec<AttributionPullRequestView>,
     pub changes: Vec<AttributionChangeView>,
+    /// Every UTC day of the window, oldest first.
+    pub daily: Vec<AttributionDayView>,
+    /// Agent sessions by the furthest stage their work reached.
+    pub session_outcomes: Vec<AttributionSessionOutcomeView>,
+    /// Harness × model rows, most sessions first.
+    pub harness_models: Vec<AttributionHarnessModelView>,
+    pub summary: AttributionPeriodSummaryView,
+    /// The same figures for the window of equal length just before this one.
+    pub previous_summary: AttributionPeriodSummaryView,
 }
 
 #[utoipa::path(
@@ -229,8 +254,18 @@ pub async fn get_attribution_report(
         repository: repository.clone(),
         limit: ATTRIBUTION_MAX_REPORT_ROWS,
     };
-    let report = build_attribution_report(state.store.as_ref(), &report_query).await?;
+    let window = window_end - window_start;
+    let previous_query = AttributionReportQuery {
+        from: window_start - window,
+        to: window_start,
+        ..report_query.clone()
+    };
+    let (report, previous) = tokio::try_join!(
+        build_attribution_report(state.store.as_ref(), &report_query),
+        build_attribution_report(state.store.as_ref(), &previous_query),
+    )?;
     let names = Names::load(&state.store, &report).await?;
+    let summary = report.summary();
     let AttributionReport {
         totals,
         coverage,
@@ -238,6 +273,9 @@ pub async fn get_attribution_report(
         models,
         pull_requests,
         changes,
+        daily,
+        session_outcomes,
+        harness_models,
     } = report;
     Ok(Json(envelope(AttributionReportView {
         window_days,
@@ -260,6 +298,11 @@ pub async fn get_attribution_report(
             .into_iter()
             .map(|change| names.change(change))
             .collect(),
+        daily: daily.into_iter().map(Into::into).collect(),
+        session_outcomes: session_outcomes.into_iter().map(Into::into).collect(),
+        harness_models: harness_models.into_iter().map(Into::into).collect(),
+        summary: summary.into(),
+        previous_summary: previous.summary().into(),
     })))
 }
 
@@ -381,6 +424,7 @@ impl Names {
     }
 
     fn pull_request(&self, activity: AttributionPullRequestActivity) -> AttributionPullRequestView {
+        let lead_time_seconds = activity.lead_time().map(|lead| lead.whole_seconds());
         let pull_request = activity.pull_request;
         AttributionPullRequestView {
             author: pull_request.author_user_id.map(|id| self.user(id)),
@@ -397,6 +441,11 @@ impl Names {
             human_lines: activity.human_lines,
             requests: activity.requests.into(),
             models: activity.models,
+            first_commit_at: activity.first_commit_at.map(format_timestamp),
+            lead_time_seconds,
+            is_revert: activity.is_revert,
+            agent_tools: activity.agent_tools,
+            commits: activity.commits.into_iter().map(Into::into).collect(),
         }
     }
 

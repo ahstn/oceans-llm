@@ -906,3 +906,121 @@ async fn a_pull_request_two_owners_reported_counts_once_for_its_author() {
         assert_eq!(author.merged_pull_request_count, 1);
     }
 }
+
+#[tokio::test]
+async fn sessions_reach_their_furthest_stage_and_feed_the_tab_insights() {
+    use crate::attribution::AttributionSessionOutcome;
+
+    let dev = user_owner(Uuid::new_v4());
+    let mut on_branch = commit(
+        2,
+        &dev,
+        REPOSITORY,
+        minutes(40),
+        vec![note_session("s_b", &["hb"])],
+    );
+    on_branch.is_default_branch = false;
+    let mut unmerged = commit(
+        3,
+        &dev,
+        REPOSITORY,
+        minutes(50),
+        vec![note_session("s_c", &["hc"])],
+    );
+    unmerged.is_default_branch = false;
+    let store = FakeStore {
+        commits: Mutex::new(vec![
+            commit(
+                1,
+                &dev,
+                REPOSITORY,
+                minutes(30),
+                vec![note_session("s_a", &["ha"])],
+            ),
+            on_branch,
+            unmerged,
+        ]),
+        pull_requests: Mutex::new(vec![{
+            let mut merged = pull_request(7, &dev, minutes(90), &[2]);
+            merged.title = "Revert \"Change 6\"".to_string();
+            merged.commits[0].authored_at = Some(minutes(35));
+            merged
+        }]),
+        // A hook session with requests but no commit, and the merged commit's session.
+        agent_sessions: vec![
+            agent_session(&dev, "hidle", minutes(5)),
+            agent_session(&dev, "hb", minutes(20)),
+        ],
+        facts: vec![
+            request(&dev, "ha", "a1", minutes(25)),
+            request(&dev, "hb", "b1", minutes(35)),
+            request(&dev, "hb", "b2", minutes(38)),
+            request(&dev, "hidle", "i1", minutes(60)),
+        ],
+        ..FakeStore::default()
+    };
+    let report = report(&store, &query()).await;
+
+    let outcome = |kind: AttributionSessionOutcome| {
+        report
+            .session_outcomes
+            .iter()
+            .find(|tally| tally.outcome == kind)
+            .map(|tally| (tally.session_count, tally.requests.request_count))
+    };
+    assert_eq!(
+        outcome(AttributionSessionOutcome::Merged),
+        Some((1, 2)),
+        "the hook and note session join by hash"
+    );
+    assert_eq!(
+        outcome(AttributionSessionOutcome::DefaultBranch),
+        Some((1, 1))
+    );
+    assert_eq!(outcome(AttributionSessionOutcome::Unmerged), Some((1, 0)));
+    assert_eq!(outcome(AttributionSessionOutcome::NoCommit), Some((1, 1)));
+
+    let claude = report
+        .harness_models
+        .iter()
+        .find(|row| row.harness == "claude" && row.model_key == "claude-sonnet")
+        .expect("claude row by request model");
+    assert_eq!((claude.session_count, claude.shipped_session_count), (2, 2));
+    assert_eq!(claude.ai_lines, 20);
+
+    let day = &report.daily[0];
+    assert_eq!(
+        report.daily.len(),
+        2,
+        "a window from 08:00 to 08:00 the next day spans two UTC dates"
+    );
+    assert_eq!(
+        report.daily.iter().map(|day| day.commit_count).sum::<i64>(),
+        3
+    );
+    assert_eq!(
+        report
+            .daily
+            .iter()
+            .map(|day| day.merged_pull_request_count)
+            .sum::<i64>(),
+        1
+    );
+    assert!(day.committed.request_count + report.daily[1].committed.request_count >= 3);
+
+    let merged = &report.pull_requests[0];
+    assert!(merged.is_revert);
+    assert_eq!(
+        merged.first_commit_at,
+        Some(minutes(35)),
+        "the author time precedes the note"
+    );
+    assert_eq!(merged.lead_time(), Some(Duration::minutes(55)));
+    assert_eq!(merged.commits.len(), 1);
+    assert_eq!(merged.commits[0].requests.request_count, 2);
+
+    let summary = report.summary();
+    assert_eq!(summary.reverted_pull_request_count, 1);
+    assert_eq!(summary.median_lead_time_seconds, Some(55 * 60));
+    assert_eq!(summary.shipped_cost_10000, 300);
+}
