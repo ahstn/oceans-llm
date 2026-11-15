@@ -19,6 +19,10 @@ import type { AttributionReportView } from '@/types/api'
 
 import {
   bandSummaries,
+  deployBand,
+  failBand,
+  leadBand,
+  type DoraBand,
   median,
   pullRequestRows,
   ratio,
@@ -27,7 +31,7 @@ import {
   type BandSummary,
 } from '../insights'
 
-type Band = 'Elite' | 'High' | 'Medium' | 'Low'
+type Band = DoraBand
 const HOUR_MS = 3_600_000
 
 // A tab is one linear layout read top to bottom; splitting it would scatter the sections.
@@ -76,7 +80,7 @@ export default function DeliveryTab({ report }: { report: AttributionReportView 
           band={failBand(failRate)}
           note="Merged pull requests that are reverts"
           readiness="proxy"
-          readinessNote="Matched by title (Revert or revert:). Incidents linked to changes would make it real."
+          readinessNote="Matched by title (Revert or revert:). Incidents linked to changes would make it real. The bands are Oceans' own, ordered by rate: DORA 2024's change-fail clusters aren't ordered by performance."
         />
         <DoraTile
           label="Recovery time"
@@ -170,7 +174,7 @@ export default function DeliveryTab({ report }: { report: AttributionReportView 
       >
         <Histogram
           bins={sizeHistogram(rows)}
-          medianLabel={`Median ${formatCount(median(rows.map((row) => row.added)) ?? 0)}`}
+          medianLabel={`Median ${formatCount(median(rows.flatMap((row) => (row.aiShare == null ? [] : [row.added]))) ?? 0)}`}
         />
       </InsightCard>
     </div>
@@ -232,32 +236,6 @@ function bandComparison(bands: BandSummary[]) {
     return 'Too few merged pull requests in the under-50% and 90%+ bands to compare them yet.'
   }
   return `90%+ AI pull requests are ${DECIMAL_1.format(agentic.medianSize / light.medianSize)}× the size of under-50% AI ones and take ${DECIMAL_1.format(agentic.medianLeadHours / light.medianLeadHours)}× as long from first commit to merge. LinearB and Faros see AI move the bottleneck from writing to review.`
-}
-
-/** DORA 2024 bands for deployment frequency, from deploys (here merges) per day. */
-function deployBand(perDay: number): Band {
-  if (perDay >= 1) return 'Elite'
-  if (perDay >= 1 / 7) return 'High'
-  if (perDay >= 1 / 30) return 'Medium'
-  return 'Low'
-}
-
-/** DORA 2024 bands for lead time, in hours. */
-function leadBand(hours: number | null): Band | undefined {
-  if (hours == null) return undefined
-  if (hours < 24) return 'Elite'
-  if (hours < 24 * 7) return 'High'
-  if (hours < 24 * 30) return 'Medium'
-  return 'Low'
-}
-
-/** DORA 2024 bands for change fail rate. */
-function failBand(rate: number | null): Band | undefined {
-  if (rate == null) return undefined
-  if (rate <= 0.05) return 'Elite'
-  if (rate <= 0.1) return 'High'
-  if (rate <= 0.15) return 'Medium'
-  return 'Low'
 }
 
 const BANDS: Band[] = ['Low', 'Medium', 'High', 'Elite']

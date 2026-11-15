@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest'
 import {
   aiBand,
   attributionReportInput,
+  deployBand,
+  failBand,
+  leadBand,
   resolveAttributionTab,
 } from '@/routes/observability/-attribution/insights'
 
@@ -42,5 +45,27 @@ describe('AI share bands', () => {
     expect(aiBand(0.5)).toBe('heavy')
     expect(aiBand(0.95)).toBe('agentic')
     expect(aiBand(1)).toBe('agentic')
+  })
+})
+
+describe('delivery bands', () => {
+  it('orders change-fail bands by rate, with 10% High and 20% Low', () => {
+    expect(failBand(null)).toBeUndefined()
+    expect(failBand(0.05)).toBe('Elite')
+    expect(failBand(0.1)).toBe('High')
+    expect(failBand(0.15)).toBe('Medium')
+    expect(failBand(0.2)).toBe('Low')
+  })
+
+  it('bands merges per day and lead time on the DORA 2024 thresholds', () => {
+    expect(deployBand(1)).toBe('Elite')
+    expect(deployBand(1 / 7)).toBe('High')
+    expect(deployBand(1 / 30)).toBe('Medium')
+    expect(deployBand(0.01)).toBe('Low')
+    expect(leadBand(null)).toBeUndefined()
+    expect(leadBand(23)).toBe('Elite')
+    expect(leadBand(24)).toBe('High')
+    expect(leadBand(24 * 7)).toBe('Medium')
+    expect(leadBand(24 * 30)).toBe('Low')
   })
 })

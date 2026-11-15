@@ -223,10 +223,14 @@ function TabsOffEmpty({ conceptsEnabled }: { conceptsEnabled: boolean }) {
   return (
     <Empty className="bg-surface-muted rounded-xl border">
       <EmptyHeader>
-        <EmptyTitle>Every Attribution tab is turned off</EmptyTitle>
+        <EmptyTitle>
+          {conceptsEnabled
+            ? 'Every report tab is turned off'
+            : 'Every Attribution tab is turned off'}
+        </EmptyTitle>
         <EmptyDescription>
           Turn tabs on under <code className="font-mono">attribution.pages</code> in the gateway
-          config.
+          config.{conceptsEnabled ? ' The concept mockups are still on.' : ''}
         </EmptyDescription>
       </EmptyHeader>
       {conceptsEnabled ? (

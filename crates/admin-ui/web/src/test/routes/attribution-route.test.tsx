@@ -382,6 +382,15 @@ describe('AttributionPage', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('links to the concepts when they are the only thing turned on', () => {
+    routeMock.useRouteContext.mockReturnValue(session('platform_admin', ['concepts']))
+    renderPage(attributionReport())
+
+    expect(screen.getByText('Every report tab is turned off')).toBeInTheDocument()
+    expect(screen.getByText(/The concept mockups are still on/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open the concepts' })).toBeInTheDocument()
+  })
+
   it('lists merged pull requests and recent changes on the Pull requests tab', async () => {
     renderPage(attributionReport(), { days: 30, tab: 'pull_requests' })
 

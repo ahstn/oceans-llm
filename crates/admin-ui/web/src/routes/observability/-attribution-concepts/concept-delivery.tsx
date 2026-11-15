@@ -11,6 +11,12 @@ import { AdminTableHeader } from '@/components/shared/admin-table-header'
 import { formatCount, formatUsd10000 } from '@/lib/format'
 
 import { Histogram, LeadTimeScatter, LeadTimeTrendChart } from '@/components/attribution/charts'
+import {
+  deployBand,
+  failBand,
+  leadBand,
+  type DoraBand,
+} from '@/routes/observability/-attribution/insights'
 import { getMockDataset, HOUR_MS } from './fixtures'
 import {
   AI_BANDS,
@@ -31,7 +37,7 @@ import {
   type Readiness,
 } from '@/components/attribution/format'
 
-type Band = 'Elite' | 'High' | 'Medium' | 'Low'
+type Band = DoraBand
 
 // A concept page is one linear layout read top to bottom; splitting it would scatter the mockup.
 // oxlint-disable-next-line eslint/max-lines-per-function
@@ -221,8 +227,8 @@ export default function DeliveryConcept({ days }: { days: ConceptWindow }) {
         />
       </InsightCard>
       <p className="text-muted-foreground text-xs">
-        Window: {formatCount(slice.merged.length)} merged PRs. DORA bands follow the 2024 report
-        thresholds.
+        Window: {formatCount(slice.merged.length)} merged PRs. Deploy and lead-time bands follow the
+        DORA 2024 thresholds; change-fail bands are Oceans' own.
       </p>
     </div>
   )
@@ -300,32 +306,6 @@ function DoraTile({
       </CardContent>
     </Card>
   )
-}
-
-/** DORA 2024 bands for deployment frequency, from deploys (here merges) per day. */
-function deployBand(perDay: number): Band {
-  if (perDay >= 1) return 'Elite'
-  if (perDay >= 1 / 7) return 'High'
-  if (perDay >= 1 / 30) return 'Medium'
-  return 'Low'
-}
-
-/** DORA 2024 bands for lead time, in hours. */
-function leadBand(hours: number | null): Band | undefined {
-  if (hours == null) return undefined
-  if (hours < 24) return 'Elite'
-  if (hours < 24 * 7) return 'High'
-  if (hours < 24 * 30) return 'Medium'
-  return 'Low'
-}
-
-/** DORA 2024 bands for change fail rate. */
-function failBand(rate: number | null): Band | undefined {
-  if (rate == null) return undefined
-  if (rate <= 0.05) return 'Elite'
-  if (rate <= 0.1) return 'High'
-  if (rate <= 0.15) return 'Medium'
-  return 'Low'
 }
 
 const BANDS: Band[] = ['Low', 'Medium', 'High', 'Elite']
