@@ -246,7 +246,11 @@ function PullRequestRowView({
         )}
       </TableCell>
       <TableCell className="px-3 py-2">
-        <CommitStrip commits={pr.commits} total={pr.commit_count} />
+        <CommitStrip
+          commits={pr.commits}
+          attributed={pr.attributed_commit_count}
+          total={pr.commit_count}
+        />
       </TableCell>
       <TableCell className="px-3 py-2">
         <span className="flex items-center gap-2">
@@ -284,14 +288,22 @@ function PullRequestRowView({
 }
 
 /** One bar per attributed commit, height by attested lines, AI stacked over human. */
-function CommitStrip({ commits, total }: { commits: CommitView[]; total: number }) {
+function CommitStrip({
+  commits,
+  attributed,
+  total,
+}: {
+  commits: CommitView[]
+  attributed: number
+  total: number
+}) {
   const max = Math.max(1, ...commits.map((commit) => commit.ai_lines + commit.human_lines))
   return (
     <div className="flex items-end gap-2">
       <div
         className="flex h-7 items-end gap-0.5"
         role="img"
-        aria-label={`${commits.length} of ${total} commits have notes`}
+        aria-label={`${attributed} of ${total} commits have notes`}
       >
         {commits.slice(0, 16).map((commit) => {
           const lines = commit.ai_lines + commit.human_lines
@@ -375,6 +387,9 @@ function PullRequestDetail({ row }: { row: PullRequestRow }) {
           <span>
             {formatCount(pr.attributed_commit_count)} of {formatCount(pr.commit_count)} commits have
             notes
+            {pr.commits.length < pr.attributed_commit_count
+              ? `; the first ${formatCount(pr.commits.length)} are shown`
+              : ''}
           </span>
         </div>
       </div>

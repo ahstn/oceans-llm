@@ -41,6 +41,9 @@ pub use insights::{
 /// finds the notes of commits made before the window opened, and a session that started
 /// before the window still has its requests in the window counted.
 const LOOKBACK: Duration = Duration::days(30);
+/// Commit details each pull request carries. The totals use every matched commit; this bounds
+/// the response, since the report caps pull requests but not their commits.
+pub const MAX_PULL_REQUEST_COMMIT_DETAILS: usize = 50;
 /// Request facts one report holds; past this the coverage reports truncation.
 const MAX_REPORT_REQUEST_FACTS: usize = 200_000;
 /// Label for requests whose log has no model key.
@@ -155,7 +158,8 @@ pub struct AttributionPullRequestActivity {
     pub is_revert: bool,
     /// git-ai agent tools the matched notes name.
     pub agent_tools: Vec<String>,
-    /// The matched commits, oldest first, with their attribution and requests.
+    /// The first [`MAX_PULL_REQUEST_COMMIT_DETAILS`] matched commits, oldest first, with their
+    /// attribution and requests. `attributed_commit_count` counts them all.
     pub commits: Vec<AttributionPullRequestCommitActivity>,
     /// Listed commits with a stored note; the merge commit when none of them has one.
     pub attributed_commit_count: i64,
@@ -744,6 +748,7 @@ impl<'a> ReportInputs<'a> {
                     ),
                     commits: ordered
                         .iter()
+                        .take(MAX_PULL_REQUEST_COMMIT_DETAILS)
                         .map(|commit| self.pull_request_commit(commit))
                         .collect(),
                     attributed_commit_count: count(matched.len()),

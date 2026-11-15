@@ -3329,7 +3329,10 @@ export interface components {
             base_ref?: string | null;
             /** Format: int64 */
             commit_count: number;
-            /** @description Commits with a stored note, oldest first. */
+            /**
+             * @description The first 50 commits with a stored note, oldest first. `attributed_commit_count` counts
+             *     them all.
+             */
             commits: components["schemas"]["AttributionPullRequestCommitView"][];
             /** @description The earliest of the PR's commit author times and its notes' observation times. */
             first_commit_at?: string | null;

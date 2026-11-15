@@ -1172,6 +1172,38 @@ async fn harness_cost_per_line_counts_only_fully_priced_sessions() {
 }
 
 #[tokio::test]
+async fn pull_request_commit_details_stop_at_the_cap() {
+    use crate::attribution::report::MAX_PULL_REQUEST_COMMIT_DETAILS;
+
+    let dev = user_owner(Uuid::new_v4());
+    let ids = (1..=60_u128).collect::<Vec<_>>();
+    let mut store = FakeStore::with_commits(
+        ids.iter()
+            .map(|id| {
+                commit(
+                    *id,
+                    &dev,
+                    REPOSITORY,
+                    minutes(i64::try_from(*id).unwrap()),
+                    vec![],
+                )
+            })
+            .collect(),
+    );
+    store.pull_requests = Mutex::new(vec![pull_request(7, &dev, minutes(120), &ids)]);
+    let report = report(&store, &query()).await;
+
+    let merged = &report.pull_requests[0];
+    assert_eq!(
+        merged.attributed_commit_count, 60,
+        "totals use every commit"
+    );
+    assert_eq!(merged.ai_lines, 600);
+    assert_eq!(merged.commits.len(), MAX_PULL_REQUEST_COMMIT_DETAILS);
+    assert_eq!(merged.commits[0].commit_sha, sha(1), "oldest first");
+}
+
+#[tokio::test]
 async fn daily_buckets_put_commits_and_uncommitted_spend_on_their_own_dates() {
     let dev = user_owner(Uuid::new_v4());
     let start = t0().replace_time(time::Time::MIDNIGHT);

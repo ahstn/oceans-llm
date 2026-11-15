@@ -12397,7 +12397,7 @@
                 "items": {
                   "$ref": "#/components/schemas/AttributionPullRequestCommitView"
                 },
-                "description": "Commits with a stored note, oldest first."
+                "description": "The first 50 commits with a stored note, oldest first. `attributed_commit_count` counts\nthem all."
               },
               "first_commit_at": {
                 "type": [
