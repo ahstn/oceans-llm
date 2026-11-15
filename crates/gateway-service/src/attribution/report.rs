@@ -353,10 +353,12 @@ fn session_hashes(
     for session in commits.iter().flat_map(|commit| &commit.sessions) {
         hashes.extend(session.session_hashes.iter().map(String::as_str));
     }
+    // The row's own key too, as the session join uses it: it is usually one of the namespace
+    // hashes already, but a row stored without them still finds its requests under it.
     hashes.extend(
         agent_sessions
             .iter()
-            .flat_map(|session| &session.session_hashes)
+            .flat_map(|session| session.session_hashes.iter().chain([&session.session_hash]))
             .map(String::as_str),
     );
     hashes.into_iter().map(str::to_string).collect()
