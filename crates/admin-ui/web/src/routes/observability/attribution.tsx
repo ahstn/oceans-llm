@@ -53,11 +53,11 @@ const TABS: Record<AttributionTab, ComponentType<TabProps>> = {
 
 export const Route = createFileRoute('/observability/attribution')({
   validateSearch: (search: Record<string, unknown>) => normalizeAttributionSearch(search),
+  loaderDeps: ({ search }) => attributionReportDeps(search),
   beforeLoad: ({ search, context }) => {
     const next = turnedOffTabRedirect(search, context.session)
     if (next) throw redirect({ to: '/observability/attribution', search: next, replace: true })
   },
-  loaderDeps: ({ search }) => attributionReportDeps(search),
   loader: ({ deps: { report, ...filters }, context }) => {
     const tab = reportShapeTab(report, context.session)
     const input = attributionReportInput({ ...filters, tab }, context.session)
