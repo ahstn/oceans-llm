@@ -1,0 +1,25 @@
+crates/admin-ui/web/src/components/attribution/charts.tsx
+  s_0a4447f1aa57dd::t_41bf6730fdb88b 149-150,241-242,280,289
+crates/admin-ui/web/src/components/attribution/quadrant.tsx
+  s_0a4447f1aa57dd::t_437ae3d12761f0 67-86,172,175,195
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/impact-tab.tsx
+  s_0a4447f1aa57dd::t_fb7a7cabbfaa29 100,105,111-115,343-356
+crates/gateway-service/src/attribution/report/insights.rs
+  s_0a4447f1aa57dd::t_b8a4d45b1554d5 15,300-301,305-307
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "81b4e9f7b98986c3e67a5a2c1b302bdb20cd36b9",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
