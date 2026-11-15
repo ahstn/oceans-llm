@@ -515,7 +515,11 @@ impl<'a> ReportInputs<'a> {
         let numbers = pull_request_numbers(&pull_requests);
         let changes = self.changes(&numbers);
         let merged_commits = numbers.keys().copied().collect::<HashSet<_>>();
-        let (session_outcomes, harness_models) = self.session_insights(&reported, &merged_commits);
+        // Spend insights take every session open in the window, not only those that started or
+        // ended in it: a session open across the whole window still spends inside it.
+        let overlapping = agent_sessions.iter().collect::<Vec<_>>();
+        let (session_outcomes, harness_models) =
+            self.session_insights(&overlapping, &reported, &merged_commits);
         let users = self.users(&pull_requests, &reported);
         let pull_requests = self.pull_requests(pull_requests);
         AttributionReport {

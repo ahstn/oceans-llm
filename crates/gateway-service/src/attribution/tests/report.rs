@@ -870,6 +870,16 @@ async fn a_session_open_across_the_window_counts_its_window_requests_as_uncommit
         "it neither started nor ended in the window"
     );
     assert!(report.users.is_empty());
+    // Its spend still shows in the outcome flow, as a session with no commit.
+    let no_commit = report
+        .session_outcomes
+        .iter()
+        .find(|tally| tally.outcome == crate::attribution::AttributionSessionOutcome::NoCommit)
+        .expect("the open session's spend reaches the outcome flow");
+    assert_eq!(
+        (no_commit.session_count, no_commit.requests.request_count),
+        (1, 1)
+    );
 
     // One that ended before the window opened adds nothing.
     store.agent_sessions[0].ended_at = Some(minutes(-30));
@@ -1063,4 +1073,41 @@ async fn sessions_reach_their_furthest_stage_and_feed_the_tab_insights() {
     assert_eq!(summary.reverted_pull_request_count, 1);
     assert_eq!(summary.median_lead_time_seconds, Some(55 * 60));
     assert_eq!(summary.shipped_cost_10000, 300);
+}
+
+#[tokio::test]
+async fn shipped_and_total_spend_share_requests_from_before_the_window() {
+    use crate::attribution::AttributionSessionOutcome;
+
+    let dev = user_owner(Uuid::new_v4());
+    // The session worked before the window and committed to the default branch inside it.
+    let mut store = FakeStore::with_commits(vec![commit(
+        1,
+        &dev,
+        REPOSITORY,
+        minutes(30),
+        vec![note_session("s_aa", &["h1"])],
+    )]);
+    store.facts = vec![
+        request(&dev, "h1", "before", minutes(-20)),
+        request(&dev, "h1", "inside", minutes(10)),
+        request(&dev, "h1", "after", minutes(40)),
+    ];
+    let report = report(&store, &query()).await;
+
+    let summary = report.summary();
+    assert_eq!(
+        summary.priced_cost_10000, 300,
+        "two allocated requests and one uncommitted"
+    );
+    assert_eq!(
+        summary.shipped_cost_10000, 300,
+        "the same three requests, all on a shipped session"
+    );
+    let shipped = report
+        .session_outcomes
+        .iter()
+        .find(|tally| tally.outcome == AttributionSessionOutcome::DefaultBranch)
+        .expect("default-branch outcome");
+    assert_eq!(shipped.requests.request_count, 3);
 }

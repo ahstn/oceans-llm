@@ -23,10 +23,11 @@ export function formatPercent(value: number | null | undefined, digits: 0 | 1 = 
   return (digits === 1 ? PERCENT_1 : PERCENT).format(value)
 }
 
-/** Hours for lead and review times: `5.2 h` under two days, `3.1 d` above. */
+/** Lead and review times that scale with size: `25 min` under an hour, `5.2 h`, then `3.1 d`. */
 export function formatHours(ms: number | null | undefined) {
   if (ms == null) return EMPTY_VALUE
   const hours = ms / 3_600_000
+  if (hours < 1) return `${Math.round(hours * 60)} min`
   return hours < 48 ? `${DECIMAL_1.format(hours)} h` : `${DECIMAL_1.format(hours / 24)} d`
 }
 

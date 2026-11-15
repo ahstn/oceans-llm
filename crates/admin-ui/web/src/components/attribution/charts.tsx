@@ -9,7 +9,7 @@ import { chartAnimation } from '@/lib/chart-motion'
 import { formatCount, formatUsdTotal } from '@/lib/format'
 
 import { AI_TONE, HUMAN_TONE, SHIPPED_TONE, UNSHIPPED_TONE } from './parts'
-import { PERCENT, formatDay } from './format'
+import { PERCENT, formatDay, formatHours } from './format'
 
 const loadChartKit = () => Promise.all([import('recharts'), import('@/components/ui/chart')])
 
@@ -334,7 +334,16 @@ const LazyLeadTimeScatter = lazy(async () => {
     points,
     medianHours,
   }: {
-    points: { aiShare: number; leadHours: number; lines: number; label: string; cost: string }[]
+    points: {
+      aiShare: number
+      /** Where the dot sits on the log axis. */
+      leadHours: number
+      /** The measured lead time, when the dot's position had to be clamped. */
+      actualHours?: number
+      lines: number
+      label: string
+      cost: string
+    }[]
     medianHours: number | null
   }) {
     return (
@@ -355,12 +364,13 @@ const LazyLeadTimeScatter = lazy(async () => {
             dataKey="leadHours"
             name="Lead time"
             scale="log"
-            domain={[1, 'auto']}
-            allowDataOverflow
+            domain={['auto', 'auto']}
             tickLine={false}
             axisLine={false}
             width={56}
-            tickFormatter={(value: number) => `${Math.round(value)} h`}
+            tickFormatter={(value: number) =>
+              value < 1 ? `${Math.round(value * 60)} min` : `${Math.round(value)} h`
+            }
           />
           <ZAxis type="number" dataKey="lines" range={[16, 220]} />
           {medianHours ? (
@@ -375,7 +385,10 @@ const LazyLeadTimeScatter = lazy(async () => {
                 <div className="bg-popover text-popover-foreground ring-foreground/10 shadow-popover flex min-w-48 flex-col gap-1 rounded-lg px-2.5 py-1.5 text-xs ring-1">
                   <span className="font-medium">{point.label}</span>
                   {tooltipRow('AI share', PERCENT.format(point.aiShare))}
-                  {tooltipRow('Lead time', `${point.leadHours.toFixed(1)} h`)}
+                  {tooltipRow(
+                    'Lead time',
+                    formatHours((point.actualHours ?? point.leadHours) * 3_600_000),
+                  )}
                   {tooltipRow('Added lines', formatCount(point.lines))}
                   {tooltipRow('Cost', point.cost)}
                 </div>

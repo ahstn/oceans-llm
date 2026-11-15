@@ -42,7 +42,8 @@ export default function ImpactTab({
   // A truncated previous window makes every change against it wrong, so none are shown.
   const deltaOf = report.previous_truncated ? () => null : delta
   const buckets = bucketDays(report.daily, chartBucketSize(report.window_days))
-  const linesPerDollar = ratio(totals.ai_lines, totals.priced_cost_usd_10000 / 10_000)
+  // Both periods divide by all priced spend, committed or not, so the two figures compare.
+  const linesPerDollar = ratio(summary.ai_lines, summary.priced_cost_usd_10000 / 10_000)
   const previousLinesPerDollar = ratio(previous.ai_lines, previous.priced_cost_usd_10000 / 10_000)
   const revertRate = ratio(summary.reverted_pull_request_count, summary.merged_pull_request_count)
   const previousRevertRate = ratio(

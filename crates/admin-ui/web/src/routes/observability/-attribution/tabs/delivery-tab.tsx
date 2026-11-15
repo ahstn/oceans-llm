@@ -113,7 +113,10 @@ export default function DeliveryTab({ report }: { report: AttributionReportView 
                 : [
                     {
                       aiShare: row.aiShare,
-                      leadHours: Math.max(1, row.leadHours),
+                      // The log axis can't place zero, so an instant merge sits at one minute;
+                      // the tooltip keeps the measured time.
+                      leadHours: Math.max(1 / 60, row.leadHours),
+                      actualHours: row.leadHours,
                       lines: row.added,
                       label: `#${row.pr.number} ${row.pr.title}`,
                       cost:

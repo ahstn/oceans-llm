@@ -86,6 +86,8 @@ pub struct AttributionPeriodSummary {
 
 #[derive(Default)]
 struct SessionRollup<'a> {
+    /// The hook reported the session starting or ending in the window.
+    reported: bool,
     harness: Option<&'a str>,
     note_model: Option<&'a str>,
     commits: Vec<&'a AttributionCommitRecord>,
@@ -147,6 +149,7 @@ impl ReportInputs<'_> {
     fn sessions<'b>(
         &'b self,
         agent_sessions: &[&'b AttributionAgentSessionRecord],
+        reported: &[&'b AttributionAgentSessionRecord],
     ) -> Vec<SessionRollup<'b>> {
         let mut rollups: Vec<SessionRollup<'b>> = Vec::new();
         let mut by_hash: HashMap<(&str, &str), usize> = HashMap::new();
@@ -154,6 +157,7 @@ impl ReportInputs<'_> {
             let scope = session.owner.ownership_scope_key.as_str();
             let index = rollups.len();
             rollups.push(SessionRollup {
+                reported: reported.iter().any(|seen| std::ptr::eq(*seen, *session)),
                 harness: Some(session.harness_key.as_str()),
                 ..SessionRollup::default()
             });
@@ -218,12 +222,17 @@ impl ReportInputs<'_> {
                 rollups[index].facts.push(fact);
             }
         }
+        // A session open across the window counts only when it did something in it.
+        rollups.retain(|rollup| {
+            rollup.reported || !rollup.commits.is_empty() || !rollup.facts.is_empty()
+        });
         rollups
     }
 
     pub(super) fn session_insights<'b>(
         &'b self,
         agent_sessions: &[&'b AttributionAgentSessionRecord],
+        reported: &[&'b AttributionAgentSessionRecord],
         merged_commits: &HashSet<(&str, &str)>,
     ) -> (
         Vec<AttributionSessionOutcomeTally>,
@@ -233,7 +242,7 @@ impl ReportInputs<'_> {
             BTreeMap::new();
         let mut harness_models: BTreeMap<(String, String), AttributionHarnessModelActivity> =
             BTreeMap::new();
-        for session in self.sessions(agent_sessions) {
+        for session in self.sessions(agent_sessions, reported) {
             let outcome = outcome_of(&session.commits, merged_commits);
             let requests = RequestTally::of(session.facts.iter().copied());
             let entry = outcomes.entry(outcome).or_default();
