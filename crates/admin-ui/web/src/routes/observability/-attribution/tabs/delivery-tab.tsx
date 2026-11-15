@@ -16,13 +16,15 @@ import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { EMPTY_VALUE, formatCount, formatUsd10000 } from '@/lib/format'
 import type { AttributionReportView } from '@/types/api'
-
 import {
-  bandSummaries,
   deployBand,
   failBand,
   leadBand,
   type DoraBand,
+} from '@/components/attribution/delivery-bands'
+
+import {
+  bandSummaries,
   median,
   pullRequestRows,
   ratio,

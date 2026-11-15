@@ -16,7 +16,7 @@ import {
   failBand,
   leadBand,
   type DoraBand,
-} from '@/routes/observability/-attribution/insights'
+} from '@/components/attribution/delivery-bands'
 import { getMockDataset, HOUR_MS } from './fixtures'
 import {
   AI_BANDS,

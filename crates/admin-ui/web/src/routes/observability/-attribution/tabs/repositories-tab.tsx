@@ -2,7 +2,7 @@
 // AI share against autonomy (AI lines committed without human edits) until line survival lets it
 // plot durability; the table gives each repository its trend, cost and lead time.
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import {
   AI_TONE,
@@ -30,11 +30,11 @@ function shortRepository(name: string) {
 // oxlint-disable-next-line eslint/max-lines-per-function
 export default function RepositoriesTab({ report }: { report: AttributionReportView }) {
   const [focus, setFocus] = useState<string | null>(null)
-  const rows = repositoryRows(
-    report.changes,
-    report.pull_requests,
-    report.window_start,
-    report.window_end,
+  // Hovering a repository only changes focus, so the rows derive from the report alone.
+  const rows = useMemo(
+    () =>
+      repositoryRows(report.changes, report.pull_requests, report.window_start, report.window_end),
+    [report.changes, report.pull_requests, report.window_start, report.window_end],
   )
   const plotted = rows.filter(
     (row) => row.aiShare != null && row.autonomy != null && row.aiLines > 0,

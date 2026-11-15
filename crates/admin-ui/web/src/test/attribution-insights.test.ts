@@ -4,15 +4,14 @@ import {
   aiBand,
   attributionReportInput,
   bucketDays,
-  deployBand,
   enabledAttributionTabs,
   harnessShares,
   mergedShareByBucket,
-  failBand,
-  leadBand,
   resolveAttributionTab,
   weeklyLeadTimes,
 } from '@/routes/observability/-attribution/insights'
+
+import { deployBand, failBand, leadBand } from '@/components/attribution/delivery-bands'
 
 import { platformAdminSession } from './auth-session'
 
