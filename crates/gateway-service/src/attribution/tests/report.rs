@@ -430,6 +430,28 @@ async fn a_hook_only_omp_session_counts_its_oceans_requests_as_uncommitted() {
 }
 
 #[tokio::test]
+async fn a_hook_session_finds_requests_under_its_own_key_without_namespace_hashes() {
+    use crate::attribution::AttributionSessionOutcome;
+
+    let dev = user_owner(Uuid::new_v4());
+    let mut store = FakeStore::default();
+    // A row stored without namespace hashes still names its requests by its own key.
+    let mut session = agent_session(&dev, "primary", minutes(5));
+    session.session_hashes = Vec::new();
+    store.agent_sessions = vec![session];
+    store.facts = vec![request(&dev, "primary", "r1", minutes(10))];
+    let report = report(&store, &query()).await;
+
+    assert_eq!(report.totals.uncommitted.request_count, 1);
+    let outcomes = report
+        .session_outcomes
+        .iter()
+        .map(|tally| (tally.outcome, tally.requests.request_count))
+        .collect::<Vec<_>>();
+    assert_eq!(outcomes, vec![(AttributionSessionOutcome::NoCommit, 1)]);
+}
+
+#[tokio::test]
 async fn equal_commit_times_go_to_the_lowest_commit_id() {
     let dev = user_owner(Uuid::new_v4());
     let session = || vec![note_session("s_aa", &["h1"])];
