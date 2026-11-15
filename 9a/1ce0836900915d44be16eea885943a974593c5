@@ -1,0 +1,153 @@
+.agents/skills/verify-oceans-admin/features/attribution.md
+  s_dd118f467446e0::t_8cd7decc3250f0 14,42-52,61
+.agents/skills/verify-oceans-admin/features/models.md
+  s_dd118f467446e0::t_299523ea2e15ae 37
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_dd118f467446e0::t_c5bd01679e902b 569-570,573
+.github/workflows/cli-ci.yml
+  s_dd118f467446e0::t_c1a2befe27376b 57,60
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_dd118f467446e0::t_bf53646500eaa9 3191-3197
+crates/gateway-client-config/src/templates/claude_code.rs
+  s_dd118f467446e0::t_c014390443f38f 91,98,144,159-160,165-174
+crates/gateway-client-config/src/templates/notes.rs
+  s_dd118f467446e0::t_60e821a0a0af78 114
+crates/gateway-client-config/src/tests.rs
+  s_dd118f467446e0::t_2331fcd9a4f2f8 1114,1141-1149,1159-1172,1210,1221-1263,1276
+crates/gateway-core/src/attribution.rs
+  s_dd118f467446e0::t_68996d7c3a875c 156-167,281,313-319,356-359
+crates/gateway-core/src/lib.rs
+  s_dd118f467446e0::t_d2474e92ccd0dc 51-52
+crates/gateway-service/src/agent_analysis.rs
+  s_dd118f467446e0::t_6463e05de54981 47,49
+crates/gateway-service/src/agent_analysis/tests.rs
+  s_dd118f467446e0::t_805c3eae5550df 33,435-465,537,545,608-609,611,613,679,767,787,791,796,799
+crates/gateway-service/src/attribution.rs
+  s_dd118f467446e0::t_4fca4bb4f3adeb 20-21
+crates/gateway-service/src/attribution/ingest.rs
+  s_dd118f467446e0::t_b1cffa18577fea 12-13,23-25,59,83-88,258-260,378-401
+crates/gateway-service/src/attribution/tests.rs
+  s_dd118f467446e0::t_0a9ad116bba651 14-15,69,99-105,217-236,369,373-382,399-403
+crates/gateway-service/src/attribution/tests/ingest.rs
+  s_dd118f467446e0::t_be21b0ee4cec36 15-16,107-113,630-727
+crates/gateway-service/src/attribution/tests/report.rs
+  s_dd118f467446e0::t_f3e713cac6dde8 12,909-1015
+crates/gateway-service/src/client_session.rs
+  s_dd118f467446e0::t_9b295ba8d8c014 220,222-224,444-449,475-490,495-500,507-512,515-519,530,534-585,657-660,664-666
+crates/gateway-service/src/client_session/tests.rs
+  s_dd118f467446e0::t_996b7c09d0037d 26-61,101,105-106,131-134,246,277,426,455-750
+crates/gateway-service/src/redaction/tests.rs
+  s_dd118f467446e0::t_54d12462f14e14 61-70,92-95,112-146
+crates/gateway-service/src/request_logging/harness.rs
+  s_dd118f467446e0::t_c995fdc665b100 118-119
+crates/gateway-service/src/request_logging/stream.rs
+  s_dd118f467446e0::t_7ccce1852e0dab 315-318
+crates/gateway-service/src/request_logging/tests/harness.rs
+  s_dd118f467446e0::t_e7bc0250f54c44 27-28,109-110
+crates/gateway-service/src/request_logging/tests/stream.rs
+  s_dd118f467446e0::t_f814143de54645 248-264,266-274,276-279
+crates/gateway-store/migrations/V81__attribution_request_sessions.sql
+  s_dd118f467446e0::t_a0343d533dc5c7 1-25
+crates/gateway-store/migrations/postgres/V81__attribution_request_sessions.sql
+  s_dd118f467446e0::t_e421a96b128ee3 1-29
+crates/gateway-store/src/any_store_attribution.rs
+  s_dd118f467446e0::t_10868e7aa3db01 6-7,38-44
+crates/gateway-store/src/attribution.rs
+  s_dd118f467446e0::t_cd761c7257ef62 10,36-39,280
+crates/gateway-store/src/attribution/request_sessions.rs
+  s_dd118f467446e0::t_6aaba48b17c895 1-87
+crates/gateway-store/src/attribution/sessions.rs
+  s_dd118f467446e0::t_bdae2cadcecfb2 258-259,275-281,283,288-330,332,335-337
+crates/gateway-store/src/attribution_tests.rs
+  s_dd118f467446e0::t_596132c6777a21 10-13,66-71,612,638,670-671,696-697,711-712,727,735-744,901-1362
+crates/gateway-store/src/libsql_store/attribution.rs
+  s_dd118f467446e0::t_d8840052cc64ce 10-11,352-389
+crates/gateway-store/src/migration_registry.rs
+  s_dd118f467446e0::t_b51afa79e08023 516-522,524-526
+crates/gateway-store/src/postgres_store/attribution.rs
+  s_dd118f467446e0::t_9c18d7a2c04605 11-12,315-344
+crates/gateway/openapi/admin-api.json
+  s_dd118f467446e0::t_331783f439d5ae 11994-12018
+crates/gateway/src/http/attribution/ingest.rs
+  s_dd118f467446e0::t_11f8cfd3e09769 21-22,119-125,379-385
+crates/gateway/src/http/attribution/tests.rs
+  s_dd118f467446e0::t_5ea599867e31c2 423-462
+crates/gateway/src/http/handlers.rs
+  s_dd118f467446e0::t_2bab2476d5458b 808-813,833-834,837-859,872,874-889,896,934,1167,1171-1178,1185-1189,1191,1199-1221,1223-1224,1227-1248,1251,1263-1268,1270-1272,1277-1281,1298-1308,1310-1311,1316-1317,1323-1348,1357-1359,1363-1382,1388-1390,1407-1413,2248-2274,2373,2391-2644
+crates/gateway/src/http/handlers/inference.rs
+  s_dd118f467446e0::t_ca39495ddeed38 385-406
+crates/gateway/src/http/handlers/route_tests.rs
+  s_dd118f467446e0::t_135c2d0d3296d0 236-310
+crates/gateway/src/http/handlers/routing.rs
+  s_dd118f467446e0::t_69d126dcdd38b8 193
+crates/gateway/src/http/handlers/routing_tests.rs
+  s_dd118f467446e0::t_3bce5145a80334 44,119,129-132,506-544,615-631,634-637,642-643
+crates/gateway/src/http/mod.rs
+  s_dd118f467446e0::t_de0ba73cacbc4f 59,120,588-589,594-648
+crates/oceans-cli/assets/omp/oceans-git-ai.test.ts
+  s_dd118f467446e0::t_103986c78cdeb6 1-209
+crates/oceans-cli/assets/omp/oceans-git-ai.ts
+  s_dd118f467446e0::t_71825bed918dd4 6,22,117,200-216,249
+crates/oceans-cli/mise.toml
+  s_dd118f467446e0::t_ecdf8d9adeda31 7,13-16
+crates/oceans-cli/src/attribution/hooks.rs
+  s_dd118f467446e0::t_eebbd472d68f00 1-2,17-20,168-176
+crates/oceans-cli/src/attribution/hooks_tests.rs
+  s_dd118f467446e0::t_a30b7722880f6b 219-295
+crates/oceans-cli/src/attribution/install_tests.rs
+  s_dd118f467446e0::t_a0dd5e145bde30 156-158
+crates/oceans-cli/src/attribution/mod.rs
+  s_dd118f467446e0::t_a98a3bb2b831db 4,57-68
+crates/oceans-cli/src/attribution/payload.rs
+  s_dd118f467446e0::t_4946cb31319c1e 15,54-59,91,107,126-130,146-158
+crates/oceans-cli/src/attribution/prs.rs
+  s_dd118f467446e0::t_d013f52c030c28 20,24-65,146,160-224,226,326-398
+crates/oceans-cli/src/attribution/sender_tests.rs
+  s_dd118f467446e0::t_b0eb61271d1be5 416-460
+crates/oceans-cli/src/cli.rs
+  s_dd118f467446e0::t_ff0dad2103e7b2 7,68-69,399-404,449-456
+crates/oceans-cli/src/process.rs
+  s_dd118f467446e0::t_bead9bb842d737 14-16,45,49-51,56-74,79-83,94-147,149-150,152-153,158-240,244,247,420-444,483-557,598-637
+crates/oceans-cli/tests/request_hook.rs
+  s_dd118f467446e0::t_53f6e0983673ef 1-112
+docs/adr/2026-11-01-git-ai-attribution-via-oceans-hooks.md
+  s_dd118f467446e0::t_a802c168d181a4 5,33-34,63,181,233-260,269
+docs/src/content/docs/harnesses/claude-code.mdx
+  s_dd118f467446e0::t_a303224943abbe 1-145
+docs/src/content/docs/harnesses/git-ai-attribution.mdx
+  s_dd118f467446e0::t_aa24f94315e52f 20,76,78,80,86,88,118,175,179-183,186,191,200,206
+docs/src/content/docs/harnesses/index.mdx
+  s_dd118f467446e0::t_cb2a9e98f6258a 13,22,111
+docs/src/content/docs/harnesses/verification.mdx
+  s_dd118f467446e0::t_e84868274bce28 34
+docs/src/content/docs/observability/request-logs.mdx
+  s_dd118f467446e0::t_6877c306404d82 167
+docs/src/content/docs/operations/admin-runbooks.mdx
+  s_0a4447f1aa57dd::t_46d6a3fed402bc 230
+docs/src/lib/sidebar-icons.ts
+  s_dd118f467446e0::t_e027c9c319785b 21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9a1ce0836900915d44be16eea885943a974593c5",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
