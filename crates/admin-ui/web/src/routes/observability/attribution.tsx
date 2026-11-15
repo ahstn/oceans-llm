@@ -28,7 +28,7 @@ import {
   resolveAttributionTab,
   TAB_LABELS,
   TAB_QUESTIONS,
-  turnedOffTabRedirect,
+  attributionTabRedirect,
   type AttributionTab,
 } from './-attribution/insights'
 import {
@@ -58,7 +58,7 @@ export const Route = createFileRoute('/observability/attribution')({
   validateSearch: (search: Record<string, unknown>) => normalizeAttributionSearch(search),
   loaderDeps: ({ search }) => attributionReportDeps(search),
   beforeLoad: ({ search, context }) => {
-    const next = turnedOffTabRedirect(search, context.session)
+    const next = attributionTabRedirect(search, context.session)
     if (next) throw redirect({ to: '/observability/attribution', search: next, replace: true })
   },
   loader: ({ deps: { report, ...filters }, context }) => {
