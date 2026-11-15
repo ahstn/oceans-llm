@@ -3,16 +3,13 @@
 // incident data. Merged pull requests are then split by how much of each AI wrote.
 
 import { Histogram, LeadTimeScatter, LeadTimeTrendChart } from '@/components/attribution/charts'
+import { InlineMeter, Insight, InsightCard, ReadinessBadge } from '@/components/attribution/parts'
 import {
   DECIMAL_1,
   formatHours,
   formatPercent,
-  InlineMeter,
-  Insight,
-  InsightCard,
-  ReadinessBadge,
   type Readiness,
-} from '@/components/attribution/parts'
+} from '@/components/attribution/format'
 import { AdminTableHeader } from '@/components/shared/admin-table-header'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
@@ -61,15 +58,7 @@ export default function DeliveryTab({ report }: { report: AttributionReportView 
         <DoraTile
           label="Deployment frequency"
           value={`${DECIMAL_1.format(mergesPerDay)} / day`}
-          band={
-            mergesPerDay >= 1
-              ? 'Elite'
-              : mergesPerDay >= 1 / 7
-                ? 'High'
-                : mergesPerDay >= 1 / 30
-                  ? 'Medium'
-                  : 'Low'
-          }
+          band={deployBand(mergesPerDay)}
           note="Merged pull requests per day"
           readiness="proxy"
           readinessNote="Merges stand in for deploys until deploy events reach Oceans."
@@ -77,33 +66,13 @@ export default function DeliveryTab({ report }: { report: AttributionReportView 
         <DoraTile
           label="Lead time for changes"
           value={formatHours(medianLead == null ? null : medianLead * HOUR_MS)}
-          band={
-            medianLead == null
-              ? undefined
-              : medianLead < 24
-                ? 'Elite'
-                : medianLead < 24 * 7
-                  ? 'High'
-                  : medianLead < 24 * 30
-                    ? 'Medium'
-                    : 'Low'
-          }
+          band={leadBand(medianLead)}
           note="First commit to merge, median"
         />
         <DoraTile
           label="Change fail rate"
           value={formatPercent(failRate, 1)}
-          band={
-            failRate == null
-              ? undefined
-              : failRate <= 0.05
-                ? 'Elite'
-                : failRate <= 0.1
-                  ? 'High'
-                  : failRate <= 0.15
-                    ? 'Medium'
-                    : 'Low'
-          }
+          band={failBand(failRate)}
           note="Merged pull requests that are reverts"
           readiness="proxy"
           readinessNote="Matched by title (Revert or revert:). Incidents linked to changes would make it real."
@@ -254,6 +223,32 @@ function bandComparison(bands: BandSummary[]) {
     return 'Too few merged pull requests in the 1–49% and 90%+ bands to compare them yet.'
   }
   return `90%+ AI pull requests are ${DECIMAL_1.format(agentic.medianSize / light.medianSize)}× the size of 1–49% AI ones and take ${DECIMAL_1.format(agentic.medianLeadHours / light.medianLeadHours)}× as long from first commit to merge. LinearB and Faros see AI move the bottleneck from writing to review.`
+}
+
+/** DORA 2024 bands for deployment frequency, from deploys (here merges) per day. */
+function deployBand(perDay: number): Band {
+  if (perDay >= 1) return 'Elite'
+  if (perDay >= 1 / 7) return 'High'
+  if (perDay >= 1 / 30) return 'Medium'
+  return 'Low'
+}
+
+/** DORA 2024 bands for lead time, in hours. */
+function leadBand(hours: number | null): Band | undefined {
+  if (hours == null) return undefined
+  if (hours < 24) return 'Elite'
+  if (hours < 24 * 7) return 'High'
+  if (hours < 24 * 30) return 'Medium'
+  return 'Low'
+}
+
+/** DORA 2024 bands for change fail rate. */
+function failBand(rate: number | null): Band | undefined {
+  if (rate == null) return undefined
+  if (rate <= 0.05) return 'Elite'
+  if (rate <= 0.1) return 'High'
+  if (rate <= 0.15) return 'Medium'
+  return 'Low'
 }
 
 const BANDS: Band[] = ['Low', 'Medium', 'High', 'Elite']

@@ -32,12 +32,11 @@ import {
   AI_TONE,
   AiShareBar,
   InsightCard,
-  formatHours,
-  formatPercent,
   InlineMeter,
   ToolLabel,
   TrendKpi,
 } from '@/components/attribution/parts'
+import { formatHours, formatPercent } from '@/components/attribution/format'
 
 function forUser(slice: WindowSlice, userId: string): WindowSlice {
   const commits = slice.commits.filter((commit) => commit.userId === userId)

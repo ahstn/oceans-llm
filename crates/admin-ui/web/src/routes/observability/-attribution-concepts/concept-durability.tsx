@@ -23,13 +23,12 @@ import {
 } from './metrics'
 import {
   InsightCard,
-  formatPercent,
   InlineMeter,
   Insight,
   ReadinessBadge,
   TrendKpi,
-  type Readiness,
 } from '@/components/attribution/parts'
+import { formatPercent, type Readiness } from '@/components/attribution/format'
 
 const ROADMAP: {
   data: string
@@ -111,7 +110,8 @@ export default function DurabilityConcept({ days }: { days: ConceptWindow }) {
         sum(rows, (row) => row.aiLines),
       )
     })
-    const bands = AI_BANDS.filter((band) => band.key !== 'none').map((band) => {
+    const bands = AI_BANDS.flatMap((band) => {
+      if (band.key === 'none') return []
       const rows = rollups.filter((row) => aiBand(row.aiShare) === band.key)
       return {
         band,
@@ -265,15 +265,17 @@ export default function DurabilityConcept({ days }: { days: ConceptWindow }) {
 
 /** Renders `backticked` spans as code, for the roadmap's command names. */
 function InlineCode({ text }: { text: string }) {
-  return text.split(/(`[^`]+`)/).map((part, index) =>
-    part.startsWith('`') ? (
-      // Parts never reorder, so position is a stable key here.
-      // oxlint-disable-next-line react/no-array-index-key
-      <code key={index} className="text-foreground font-mono">
+  // Each code span is keyed by where it starts in the text, which never changes.
+  let offset = 0
+  return text.split(/(`[^`]+`)/).map((part) => {
+    const start = offset
+    offset += part.length
+    return part.startsWith('`') ? (
+      <code key={start} className="text-foreground font-mono">
         {part.slice(1, -1)}
       </code>
     ) : (
       part
-    ),
-  )
+    )
+  })
 }

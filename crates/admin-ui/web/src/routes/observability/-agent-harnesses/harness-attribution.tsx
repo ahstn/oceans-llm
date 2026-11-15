@@ -7,14 +7,13 @@ import { toast } from 'sonner'
 
 import { MatrixHeatmap } from '@/components/attribution/heatmaps'
 import {
-  formatPercent,
   InlineMeter,
   Insight,
   InsightCard,
   ReadinessBadge,
   ToolLabel,
-  harnessLabel,
 } from '@/components/attribution/parts'
+import { formatPercent, harnessLabel } from '@/components/attribution/format'
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { getErrorMessage } from '@/lib/errors'

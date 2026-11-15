@@ -325,9 +325,10 @@ export type RepositoryRow = {
 export function repositoryRows(slice: WindowSlice): RepositoryRow[] {
   return MOCK_REPOSITORIES.map(({ name }) => {
     const commits = slice.commits.filter((commit) => commit.repository === name)
-    const merged = slice.merged
-      .filter((pr) => pr.repository === name)
-      .map((pr) => rollupPullRequest(slice, pr))
+    const merged: PullRequestRollup[] = []
+    for (const pr of slice.merged) {
+      if (pr.repository === name) merged.push(rollupPullRequest(slice, pr))
+    }
     const sessions = slice.sessions.filter((session) => session.repository === name)
     const aiLines = sum(commits, (commit) => commit.aiLines)
     const humanLines = sum(commits, (commit) => commit.humanLines)
@@ -404,14 +405,14 @@ export function toolModelCells(dataset: MockDataset, slice: WindowSlice): ToolMo
     cell.sessions += 1
     cell.costUsd10000 += session.costUsd10000
     cell.steering += session.steeringTurns
-    cell.aiLines += sum(
-      session.commitShas.map((sha) => slice.commitBySha.get(sha)).filter(Boolean) as MockCommit[],
-      (commit) => commit.aiLines / Math.max(1, commit.sessionIds.length),
-    )
+    for (const sha of session.commitShas) {
+      const commit = slice.commitBySha.get(sha)
+      if (commit) cell.aiLines += commit.aiLines / Math.max(1, commit.sessionIds.length)
+    }
     if (outcome === 'merged' || outcome === 'direct') cell.merged += 1
     cells.set(key, cell)
   }
-  return [...cells.values()].map(({ merged, steering, ...cell }) => ({
+  return Array.from(cells.values(), ({ merged, steering, ...cell }) => ({
     ...cell,
     aiLines: Math.round(cell.aiLines),
     costPer100Lines: cell.aiLines > 0 ? (cell.costUsd10000 / cell.aiLines) * 100 : null,
@@ -422,11 +423,12 @@ export function toolModelCells(dataset: MockDataset, slice: WindowSlice): ToolMo
 
 export function toolTotals(dataset: MockDataset, slice: WindowSlice) {
   const cells = toolModelCells(dataset, slice)
-  return AGENT_TOOLS.map((tool) => {
+  return AGENT_TOOLS.flatMap((tool) => {
     const own = cells.filter((cell) => cell.tool === tool)
     const aiLines = sum(own, (cell) => cell.aiLines)
     const cost = sum(own, (cell) => cell.costUsd10000)
     const sessions = sum(own, (cell) => cell.sessions)
+    if (sessions === 0) return []
     return {
       tool,
       sessions,
@@ -442,7 +444,7 @@ export function toolTotals(dataset: MockDataset, slice: WindowSlice) {
         sessions,
       ),
     }
-  }).filter((row) => row.sessions > 0)
+  })
 }
 
 /** Weekly cost by model, for the model mix chart. */

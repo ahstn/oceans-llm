@@ -8,8 +8,6 @@ import { Fragment, useState, type CSSProperties } from 'react'
 import {
   AI_TONE,
   AiShareBar,
-  formatHours,
-  formatPercent,
   HUMAN_TONE,
   InsightCard,
   ReadinessBadge,
@@ -17,6 +15,7 @@ import {
   Swatch,
   ToolLabel,
 } from '@/components/attribution/parts'
+import { formatHours, formatPercent } from '@/components/attribution/format'
 import { AppIcon } from '@/components/icons/app-icon'
 import { AdminTableHead, AdminTableHeader } from '@/components/shared/admin-table-header'
 import { Badge } from '@/components/ui/badge'

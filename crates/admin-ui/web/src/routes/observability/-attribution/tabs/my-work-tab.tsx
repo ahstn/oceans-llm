@@ -5,13 +5,12 @@ import { ContributionCalendar, PunchCard } from '@/components/attribution/heatma
 import {
   AI_TONE,
   AiShareBar,
-  formatHours,
-  formatPercent,
   InlineMeter,
   InsightCard,
   ToolLabel,
   TrendKpi,
 } from '@/components/attribution/parts'
+import { formatHours, formatPercent } from '@/components/attribution/format'
 import { EMPTY_VALUE, formatCount, formatTimestamp, formatUsd10000 } from '@/lib/format'
 import type { AttributionReportView } from '@/types/api'
 

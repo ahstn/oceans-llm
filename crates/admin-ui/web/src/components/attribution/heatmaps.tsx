@@ -15,7 +15,7 @@ const LEVELS = [
 ]
 
 /** 0 for empty, then four active levels split by quartile of the busiest cell. */
-export function heatLevel(value: number, max: number) {
+function heatLevel(value: number, max: number) {
   if (value <= 0 || max <= 0) return 0
   return Math.min(4, 1 + Math.floor((value / max) * 3.999))
 }
@@ -73,12 +73,12 @@ export function ContributionCalendar({
           ))}
         </div>
         <div className="flex gap-1">
-          {weeks.map((days, index) => {
+          {weeks.map((days) => {
             const first = days.find((day) => day.day)
             const date = first ? new Date(first.day) : null
             const showMonth = date && date.getUTCDate() <= 7
             return (
-              <div key={first?.day ?? index} className="flex flex-col gap-1">
+              <div key={first?.day} className="flex flex-col gap-1">
                 <span className="text-muted-foreground text-2xs h-4 whitespace-nowrap">
                   {showMonth && date ? MONTHS[date.getUTCMonth()] : ''}
                 </span>
@@ -116,17 +116,19 @@ export function ContributionCalendar({
   )
 }
 
+/** Monday first, Sunday last. */
+const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0]
+const HOURS = Array.from({ length: 24 }, (_, hour) => hour)
+
 /** Weekday by UTC hour. Circle size is commits; shade is the AI-majority share of them. */
 export function PunchCard({ grid }: { grid: { ai: number; all: number }[][] }) {
   const max = Math.max(...grid.flat().map((cell) => cell.all))
-  const order = [1, 2, 3, 4, 5, 6, 0]
-  const hours = Array.from({ length: 24 }, (_, hour) => hour)
   return (
     <div className="flex min-w-0 flex-col gap-2 overflow-x-auto">
       <div className="grid min-w-[40rem] grid-cols-[2.5rem_repeat(24,minmax(0,1fr))] items-center gap-y-1">
-        {order.map((weekday) => (
+        {WEEKDAY_ORDER.map((weekday) => (
           <PunchRow key={weekday} label={WEEKDAYS[weekday]}>
-            {hours.map((hour) => {
+            {HOURS.map((hour) => {
               const cell = grid[weekday][hour]
               const size = cell.all ? 4 + (cell.all / max) * 14 : 0
               const share = cell.all ? cell.ai / cell.all : 0
@@ -154,7 +156,7 @@ export function PunchCard({ grid }: { grid: { ai: number; all: number }[][] }) {
           </PunchRow>
         ))}
         <span />
-        {hours.map((hour) => (
+        {HOURS.map((hour) => (
           <span key={hour} className="text-muted-foreground text-2xs text-center tabular-nums">
             {hour % 3 === 0 ? hour : ''}
           </span>
@@ -194,9 +196,13 @@ export function MatrixHeatmap<Row extends string, Column extends string>({
   invert?: boolean
   caption: string
 }) {
-  const values = rows
-    .flatMap((row) => columns.map((column) => value(row, column)))
-    .filter((entry): entry is number => entry != null)
+  const values: number[] = []
+  for (const row of rows) {
+    for (const column of columns) {
+      const entry = value(row, column)
+      if (entry != null) values.push(entry)
+    }
+  }
   const min = Math.min(...values)
   const max = Math.max(...values)
   return (

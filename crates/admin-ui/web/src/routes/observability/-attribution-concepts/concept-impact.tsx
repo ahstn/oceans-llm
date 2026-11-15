@@ -24,14 +24,13 @@ import {
   AiShareBar,
   CounterweightPair,
   InsightCard,
-  formatHours,
-  formatPercent,
   InlineMeter,
   Insight,
   SHIPPED_TONE,
   Stat,
   TrendKpi,
 } from '@/components/attribution/parts'
+import { formatHours, formatPercent } from '@/components/attribution/format'
 
 // A concept page is one linear layout read top to bottom; splitting it would scatter the mockup.
 // oxlint-disable-next-line eslint/max-lines-per-function

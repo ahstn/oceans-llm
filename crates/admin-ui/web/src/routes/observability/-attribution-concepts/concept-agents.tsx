@@ -20,13 +20,12 @@ import {
 } from './metrics'
 import {
   InsightCard,
-  DECIMAL_1,
-  formatPercent,
   InlineMeter,
   Insight,
   ReadinessBadge,
   ToolLabel,
 } from '@/components/attribution/parts'
+import { DECIMAL_1, formatPercent } from '@/components/attribution/format'
 
 type MatrixMetric = 'cost' | 'merged' | 'steering'
 

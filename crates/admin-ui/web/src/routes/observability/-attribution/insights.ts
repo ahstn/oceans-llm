@@ -30,6 +30,21 @@ export const TAB_QUESTIONS: Record<AttributionTab, string> = {
 
 export const ATTRIBUTION_TABS = Object.keys(TAB_LABELS) as AttributionTab[]
 
+/** The tabs the gateway config turns on, in display order. */
+export function enabledAttributionTabs(session: AuthSessionView | null | undefined) {
+  const enabled = new Set(session?.capabilities.attribution_tabs ?? [])
+  return ATTRIBUTION_TABS.filter((tab) => enabled.has(tab))
+}
+
+/** The requested tab when it is on, else the first one that is. */
+export function resolveAttributionTab(
+  requested: AttributionTab | undefined,
+  session: AuthSessionView | null | undefined,
+) {
+  const enabled = enabledAttributionTabs(session)
+  return requested && enabled.includes(requested) ? requested : enabled[0]
+}
+
 export type PullRequestView = AttributionReportView['pull_requests'][number]
 export type ChangeView = AttributionReportView['changes'][number]
 export type DayView = AttributionReportView['daily'][number]
@@ -257,9 +272,9 @@ export function repositoryRows(
         aiShare: ratio(aiLines, aiLines + humanLines),
         autonomy: ratio(autonomous, aiLines),
         medianPrCost: median(
-          prs
-            .filter((row) => row.pr.priced_request_count > 0)
-            .map((row) => row.pr.priced_cost_usd_10000),
+          prs.flatMap((row) =>
+            row.pr.priced_request_count > 0 ? [row.pr.priced_cost_usd_10000] : [],
+          ),
         ),
         medianLeadHours: median(
           prs.flatMap((row) => (row.leadHours == null ? [] : [row.leadHours])),

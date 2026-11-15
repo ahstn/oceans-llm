@@ -23,16 +23,13 @@ import {
   type ConceptWindow,
   type PullRequestRollup,
 } from './metrics'
+import { InsightCard, InlineMeter, Insight, ReadinessBadge } from '@/components/attribution/parts'
 import {
-  InsightCard,
   DECIMAL_1,
   formatHours,
   formatPercent,
-  InlineMeter,
-  Insight,
-  ReadinessBadge,
   type Readiness,
-} from '@/components/attribution/parts'
+} from '@/components/attribution/format'
 
 type Band = 'Elite' | 'High' | 'Medium' | 'Low'
 
@@ -72,15 +69,7 @@ export default function DeliveryConcept({ days }: { days: ConceptWindow }) {
         <DoraTile
           label="Deployment frequency"
           value={`${DECIMAL_1.format(deploysPerDay)} / day`}
-          band={
-            deploysPerDay >= 1
-              ? 'Elite'
-              : deploysPerDay >= 1 / 7
-                ? 'High'
-                : deploysPerDay >= 1 / 30
-                  ? 'Medium'
-                  : 'Low'
-          }
+          band={deployBand(deploysPerDay)}
           note="Merges to the default branch"
           readiness="proxy"
           readinessNote="Stands in for deploys. Deploy events would make it real."
@@ -88,17 +77,7 @@ export default function DeliveryConcept({ days }: { days: ConceptWindow }) {
         <DoraTile
           label="Lead time for changes"
           value={formatHours(medianLead == null ? null : medianLead * HOUR_MS)}
-          band={
-            medianLead == null
-              ? 'Low'
-              : medianLead < 24
-                ? 'Elite'
-                : medianLead < 24 * 7
-                  ? 'High'
-                  : medianLead < 24 * 30
-                    ? 'Medium'
-                    : 'Low'
-          }
+          band={leadBand(medianLead) ?? 'Low'}
           note="First commit to merge, median"
           readiness="derived"
           readinessNote="Commit times and merge times are both stored."
@@ -106,17 +85,7 @@ export default function DeliveryConcept({ days }: { days: ConceptWindow }) {
         <DoraTile
           label="Change fail rate"
           value={formatPercent(changeFail, 1)}
-          band={
-            changeFail == null
-              ? 'Low'
-              : changeFail <= 0.05
-                ? 'Elite'
-                : changeFail <= 0.1
-                  ? 'High'
-                  : changeFail <= 0.15
-                    ? 'Medium'
-                    : 'Low'
-          }
+          band={failBand(changeFail) ?? 'Low'}
           note="Merged PRs later reverted"
           readiness="proxy"
           readinessNote="Detect revert PRs by title or by `This reverts commit`; incidents would make it real."
@@ -331,6 +300,32 @@ function DoraTile({
       </CardContent>
     </Card>
   )
+}
+
+/** DORA 2024 bands for deployment frequency, from deploys (here merges) per day. */
+function deployBand(perDay: number): Band {
+  if (perDay >= 1) return 'Elite'
+  if (perDay >= 1 / 7) return 'High'
+  if (perDay >= 1 / 30) return 'Medium'
+  return 'Low'
+}
+
+/** DORA 2024 bands for lead time, in hours. */
+function leadBand(hours: number | null): Band | undefined {
+  if (hours == null) return undefined
+  if (hours < 24) return 'Elite'
+  if (hours < 24 * 7) return 'High'
+  if (hours < 24 * 30) return 'Medium'
+  return 'Low'
+}
+
+/** DORA 2024 bands for change fail rate. */
+function failBand(rate: number | null): Band | undefined {
+  if (rate == null) return undefined
+  if (rate <= 0.05) return 'Elite'
+  if (rate <= 0.1) return 'High'
+  if (rate <= 0.15) return 'Medium'
+  return 'Low'
 }
 
 const BANDS: Band[] = ['Low', 'Medium', 'High', 'Elite']

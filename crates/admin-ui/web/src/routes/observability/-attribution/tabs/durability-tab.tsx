@@ -3,13 +3,8 @@
 // are matched by pull request title today. The collection plan lives in
 // docs/internal/2026-11-15-attribution-data-gaps.md.
 
-import {
-  formatPercent,
-  InsightCard,
-  ReadinessBadge,
-  TrendKpi,
-  type Readiness,
-} from '@/components/attribution/parts'
+import { InsightCard, ReadinessBadge, TrendKpi } from '@/components/attribution/parts'
+import { formatPercent, type Readiness } from '@/components/attribution/format'
 import { AdminTableHeader } from '@/components/shared/admin-table-header'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'

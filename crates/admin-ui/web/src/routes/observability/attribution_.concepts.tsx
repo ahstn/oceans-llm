@@ -20,7 +20,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
 import { CONCEPT_WINDOWS, type ConceptWindow } from './-attribution-concepts/metrics'
-import { READINESS, ReadinessBadge, type Readiness } from '@/components/attribution/parts'
+import { ReadinessBadge } from '@/components/attribution/parts'
+import { READINESS, type Readiness } from '@/components/attribution/format'
 
 type ConceptProps = { days: ConceptWindow }
 

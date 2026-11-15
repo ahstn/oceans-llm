@@ -8,12 +8,13 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/u
 import { Skeleton } from '@/components/ui/skeleton'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import { getAttribution } from '@/server/admin-data.functions'
-import type { AttributionReportView, AuthSessionView } from '@/types/api'
+import type { AttributionReportView } from '@/types/api'
 
 import { AttributionFilters, UserFilterButton } from './-attribution/controls'
 import { AttributionFilteredEmpty, AttributionSetupEmpty } from './-attribution/empty-state'
 import {
-  ATTRIBUTION_TABS,
+  enabledAttributionTabs,
+  resolveAttributionTab,
   TAB_LABELS,
   TAB_QUESTIONS,
   type AttributionTab,
@@ -40,21 +41,6 @@ const TABS: Record<AttributionTab, ComponentType<TabProps>> = {
   my_work: lazy(() => import('./-attribution/tabs/my-work-tab')),
 }
 
-/** The tabs the gateway config turns on, in display order. */
-export function enabledAttributionTabs(session: AuthSessionView | null | undefined) {
-  const enabled = new Set(session?.capabilities.attribution_tabs ?? [])
-  return ATTRIBUTION_TABS.filter((tab) => enabled.has(tab))
-}
-
-/** The requested tab when it is on, else the first one that is. */
-export function resolveAttributionTab(
-  requested: AttributionTab | undefined,
-  session: AuthSessionView | null | undefined,
-) {
-  const enabled = enabledAttributionTabs(session)
-  return requested && enabled.includes(requested) ? requested : enabled[0]
-}
-
 export const Route = createFileRoute('/observability/attribution')({
   validateSearch: (search: Record<string, unknown>) => normalizeAttributionSearch(search),
   loaderDeps: ({ search }) => search,
@@ -78,7 +64,6 @@ export function AttributionPage() {
   const isPlatformAdmin = isPlatformAdminSession(session)
   const tabs = enabledAttributionTabs(session)
   const tab = resolveAttributionTab(search.tab, session)
-  const conceptsEnabled = session?.capabilities.attribution_tabs.includes('concepts') ?? false
 
   function updateSearch(next: Partial<AttributionSearch>) {
     startTransition(async () => {
@@ -89,103 +74,158 @@ export function AttributionPage() {
     })
   }
 
+  if (!tab) {
+    return (
+      <div className="flex min-w-0 flex-1 flex-col gap-6">
+        <PageHeader
+          section="Observability"
+          title="Attribution"
+          description="Git AI attribution joined with gateway traffic."
+        />
+        <TabsOffEmpty />
+      </div>
+    )
+  }
+
   // The report echoes the filters it applied, and the controls show those, so they always describe
   // the rendered report. For non-admins, and on My work, the gateway echoes their own id, which is
   // not a filter.
   const userFiltered = isPlatformAdmin && tab !== 'my_work' && Boolean(report.user_id)
-  const filtered = userFiltered || Boolean(report.repository)
-  const selectedUser = report.users.find((row) => row.user.id === report.user_id)?.user
 
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-6">
       <PageHeader
         section="Observability"
         title="Attribution"
-        description={tab ? TAB_QUESTIONS[tab] : 'Git AI attribution joined with gateway traffic.'}
+        description={TAB_QUESTIONS[tab]}
         actions={
-          tab ? (
-            <div className="flex flex-wrap items-center gap-2">
-              {userFiltered ? (
-                <UserFilterButton
-                  name={selectedUser?.name ?? 'Selected user'}
-                  isPending={isPending}
-                  onClear={() => updateSearch({ user_id: undefined })}
-                />
-              ) : null}
-              <AttributionFilters
-                windowDays={toAttributionWindow(String(report.window_days)) ?? search.days}
-                repository={report.repository ?? undefined}
-                repositories={repositoryOptions(report)}
-                isPending={isPending}
-                onWindowChange={(days) => updateSearch({ days })}
-                onRepositoryChange={(repository) => updateSearch({ repository })}
-                onRefresh={() =>
-                  startTransition(async () => {
-                    await router.invalidate()
-                  })
-                }
-              />
-            </div>
-          ) : null
-        }
-      />
-
-      {tab ? (
-        <nav
-          aria-label="Attribution sections"
-          className="flex flex-wrap items-center gap-2 border-b pb-4"
-        >
-          {tabs.map((entry) => (
-            <Button key={entry} asChild variant={entry === tab ? 'secondary' : 'ghost'}>
-              <Link
-                to="/observability/attribution"
-                search={{ ...search, tab: entry }}
-                aria-current={entry === tab ? 'page' : undefined}
-              >
-                {TAB_LABELS[entry]}
-              </Link>
-            </Button>
-          ))}
-          {conceptsEnabled ? (
-            <Button asChild variant="link" className="ml-auto">
-              <Link to="/observability/attribution/concepts" search={{ tab: 'impact', days: 30 }}>
-                Concepts
-              </Link>
-            </Button>
-          ) : null}
-        </nav>
-      ) : null}
-
-      {tab ? (
-        <>
-          <TruncationAlert coverage={report.coverage} />
-          <AttributionBody
-            tab={tab}
+          <AttributionActions
             report={report}
+            fallbackDays={search.days}
+            userFiltered={userFiltered}
             isPending={isPending}
-            filtered={filtered}
-            name={session?.user.name ?? 'You'}
-            onClearFilters={() => updateSearch({ user_id: undefined, repository: undefined })}
-            onSelectUser={
-              isPlatformAdmin
-                ? (userId) =>
-                    updateSearch({ user_id: userId === report.user_id ? undefined : userId })
-                : undefined
+            onUpdate={updateSearch}
+            onRefresh={() =>
+              startTransition(async () => {
+                await router.invalidate()
+              })
             }
           />
-        </>
-      ) : (
-        <Empty className="bg-surface-muted rounded-xl border">
-          <EmptyHeader>
-            <EmptyTitle>Every Attribution tab is turned off</EmptyTitle>
-            <EmptyDescription>
-              Turn tabs on under <code className="font-mono">attribution.pages</code> in the gateway
-              config.
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      )}
+        }
+      />
+      <AttributionNav
+        tabs={tabs}
+        tab={tab}
+        search={search}
+        conceptsEnabled={session?.capabilities.attribution_tabs.includes('concepts') ?? false}
+      />
+      <TruncationAlert coverage={report.coverage} />
+      <AttributionBody
+        tab={tab}
+        report={report}
+        isPending={isPending}
+        filtered={userFiltered || Boolean(report.repository)}
+        name={session?.user.name ?? 'You'}
+        onClearFilters={() => updateSearch({ user_id: undefined, repository: undefined })}
+        onSelectUser={
+          isPlatformAdmin
+            ? (userId) => updateSearch({ user_id: userId === report.user_id ? undefined : userId })
+            : undefined
+        }
+      />
     </div>
+  )
+}
+
+/** The user filter (when one applies), window, repository and refresh controls. */
+function AttributionActions({
+  report,
+  fallbackDays,
+  userFiltered,
+  isPending,
+  onUpdate,
+  onRefresh,
+}: {
+  report: AttributionReportView
+  fallbackDays: AttributionSearch['days']
+  userFiltered: boolean
+  isPending: boolean
+  onUpdate: (next: Partial<AttributionSearch>) => void
+  onRefresh: () => void
+}) {
+  const selectedUser = report.users.find((row) => row.user.id === report.user_id)?.user
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {userFiltered ? (
+        <UserFilterButton
+          name={selectedUser?.name ?? 'Selected user'}
+          isPending={isPending}
+          onClear={() => onUpdate({ user_id: undefined })}
+        />
+      ) : null}
+      <AttributionFilters
+        windowDays={toAttributionWindow(String(report.window_days)) ?? fallbackDays}
+        repository={report.repository ?? undefined}
+        repositories={repositoryOptions(report)}
+        isPending={isPending}
+        onWindowChange={(days) => onUpdate({ days })}
+        onRepositoryChange={(repository) => onUpdate({ repository })}
+        onRefresh={onRefresh}
+      />
+    </div>
+  )
+}
+
+/** The enabled tabs, like MCP's section nav, plus the concepts link when its flag is on. */
+function AttributionNav({
+  tabs,
+  tab,
+  search,
+  conceptsEnabled,
+}: {
+  tabs: AttributionTab[]
+  tab: AttributionTab
+  search: AttributionSearch
+  conceptsEnabled: boolean
+}) {
+  return (
+    <nav
+      aria-label="Attribution sections"
+      className="flex flex-wrap items-center gap-2 border-b pb-4"
+    >
+      {tabs.map((entry) => (
+        <Button key={entry} asChild variant={entry === tab ? 'secondary' : 'ghost'}>
+          <Link
+            to="/observability/attribution"
+            search={{ ...search, tab: entry }}
+            aria-current={entry === tab ? 'page' : undefined}
+          >
+            {TAB_LABELS[entry]}
+          </Link>
+        </Button>
+      ))}
+      {conceptsEnabled ? (
+        <Button asChild variant="link" className="ml-auto">
+          <Link to="/observability/attribution/concepts" search={{ tab: 'impact', days: 30 }}>
+            Concepts
+          </Link>
+        </Button>
+      ) : null}
+    </nav>
+  )
+}
+
+function TabsOffEmpty() {
+  return (
+    <Empty className="bg-surface-muted rounded-xl border">
+      <EmptyHeader>
+        <EmptyTitle>Every Attribution tab is turned off</EmptyTitle>
+        <EmptyDescription>
+          Turn tabs on under <code className="font-mono">attribution.pages</code> in the gateway
+          config.
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   )
 }
 

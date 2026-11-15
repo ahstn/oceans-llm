@@ -20,13 +20,13 @@ import {
 } from './metrics'
 import {
   InsightCard,
-  formatPercent,
   Insight,
   ReadinessBadge,
   SHIPPED_TONE,
   ToolLabel,
   UNSHIPPED_TONE,
 } from '@/components/attribution/parts'
+import { formatPercent } from '@/components/attribution/format'
 
 type Measure = 'sessions' | 'cost'
 

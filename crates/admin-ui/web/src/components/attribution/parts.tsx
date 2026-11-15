@@ -16,8 +16,9 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { EMPTY_VALUE } from '@/lib/format'
 import { cn } from '@/lib/utils'
+
+import { formatPercent, HARNESSES, READINESS, SIGNED_PERCENT, type Readiness } from './format'
 
 // Attribution data roles. AI and human are the two fixed series; their lightness differs (blue
 // against a lighter green) so a stack of them reads without colour. Unattested lines are unknown,
@@ -29,69 +30,7 @@ export const UNKNOWN_TONE = 'var(--chart-other)'
 export const SHIPPED_TONE = 'var(--chart-4)'
 export const UNSHIPPED_TONE = 'var(--chart-other)'
 
-export const PERCENT = new Intl.NumberFormat('en-US', {
-  style: 'percent',
-  maximumFractionDigits: 0,
-})
-export const PERCENT_1 = new Intl.NumberFormat('en-US', {
-  style: 'percent',
-  maximumFractionDigits: 1,
-})
-export const SIGNED_PERCENT = new Intl.NumberFormat('en-US', {
-  style: 'percent',
-  maximumFractionDigits: 0,
-  signDisplay: 'exceptZero',
-})
-export const DECIMAL_1 = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 })
-
-export function formatPercent(value: number | null | undefined, digits: 0 | 1 = 0) {
-  if (value == null) return EMPTY_VALUE
-  return (digits === 1 ? PERCENT_1 : PERCENT).format(value)
-}
-
-/** Hours for lead and review times: `5.2 h` under two days, `3.1 d` above. */
-export function formatHours(ms: number | null | undefined) {
-  if (ms == null) return EMPTY_VALUE
-  const hours = ms / 3_600_000
-  return hours < 48 ? `${DECIMAL_1.format(hours)} h` : `${DECIMAL_1.format(hours / 24)} d`
-}
-
 // Data readiness -----------------------------------------------------------------------------------
-
-/**
- * How far each widget is from real data:
- * - live: the attribution report already returns it.
- * - derived: stored today; needs a new aggregation or endpoint, no new ingestion.
- * - proxy: an approximation from stored data, labelled as such in the UI.
- * - new: needs data Oceans does not collect yet.
- */
-export type Readiness = 'live' | 'derived' | 'proxy' | 'new'
-
-export const READINESS: Record<
-  Readiness,
-  { label: string; variant: 'success' | 'secondary' | 'outline' | 'warning'; detail: string }
-> = {
-  live: {
-    label: 'Live',
-    variant: 'success',
-    detail: 'The attribution report already returns this.',
-  },
-  derived: {
-    label: 'Derivable',
-    variant: 'secondary',
-    detail: 'Stored today. Needs a new aggregation in the report, not new ingestion.',
-  },
-  proxy: {
-    label: 'Proxy',
-    variant: 'outline',
-    detail: 'Approximated from stored data. The page would say what it stands in for.',
-  },
-  new: {
-    label: 'Needs new data',
-    variant: 'warning',
-    detail: 'Needs data Oceans does not collect yet.',
-  },
-}
 
 export function ReadinessBadge({ level, note }: { level: Readiness; note?: string }) {
   const meta = READINESS[level]
@@ -432,21 +371,6 @@ export function Insight({ children }: { children: ReactNode }) {
       {children}
     </p>
   )
-}
-
-/** Harness names as git-ai notes and Oceans hooks report them, mapped to a label and brand mark. */
-const HARNESSES: Record<string, { label: string; icon?: string }> = {
-  claude: { label: 'Claude Code', icon: 'claudecode' },
-  claude_code: { label: 'Claude Code', icon: 'claudecode' },
-  codex: { label: 'Codex', icon: 'codex' },
-  pi: { label: 'Pi', icon: 'pi' },
-  oh_my_pi: { label: 'OMP', icon: 'ohmypi' },
-  opencode: { label: 'OpenCode', icon: 'opencode' },
-  cursor: { label: 'Cursor' },
-}
-
-export function harnessLabel(harness: string) {
-  return HARNESSES[harness]?.label ?? harness
 }
 
 /** A harness mark and name. Harnesses without a brand mark get their initial in a tile. */

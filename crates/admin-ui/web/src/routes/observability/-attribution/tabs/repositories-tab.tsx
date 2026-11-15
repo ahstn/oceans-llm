@@ -6,14 +6,13 @@ import { useState } from 'react'
 
 import {
   AI_TONE,
-  formatHours,
-  formatPercent,
   InlineMeter,
   Insight,
   InsightCard,
   ReadinessBadge,
   Sparkline,
 } from '@/components/attribution/parts'
+import { formatHours, formatPercent } from '@/components/attribution/format'
 import { Quadrant } from '@/components/attribution/quadrant'
 import { AdminTableHead } from '@/components/shared/admin-table-header'
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '@/components/ui/table'

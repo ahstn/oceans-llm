@@ -14,14 +14,12 @@ import { repositoryRows, sliceWindow, type ConceptWindow, type RepositoryRow } f
 import {
   AI_TONE,
   InsightCard,
-  DECIMAL_1,
-  formatHours,
-  formatPercent,
   InlineMeter,
   Insight,
   ReadinessBadge,
   Sparkline,
 } from '@/components/attribution/parts'
+import { DECIMAL_1, formatHours, formatPercent } from '@/components/attribution/format'
 
 export default function RepositoriesConcept({ days }: { days: ConceptWindow }) {
   const rows = useMemo(() => repositoryRows(sliceWindow(getMockDataset(), days)), [days])
@@ -137,6 +135,14 @@ export default function RepositoriesConcept({ days }: { days: ConceptWindow }) {
   )
 }
 
+/** An axis range around `values`, padded and rounded to tenths, inside 0–1. */
+function domain(values: number[]) {
+  return [
+    Math.max(0, Math.floor((Math.min(...values) - 0.06) * 10) / 10),
+    Math.min(1, Math.ceil((Math.max(...values) + 0.06) * 10) / 10),
+  ]
+}
+
 /** An SVG quadrant: AI share (x) by durability (y), bubbles sized by spend. */
 // Axes, quadrant labels and bubbles share one coordinate system, so they stay in one SVG.
 // oxlint-disable-next-line eslint/max-lines-per-function
@@ -155,10 +161,6 @@ function Quadrant({
   // Axes zoom to the data; the dividers sit at the team average, so quadrants read as
   // above or below the team rather than against arbitrary targets.
   const plotted = rows.filter((row) => row.aiShare != null && row.durable30 != null)
-  const domain = (values: number[]) => [
-    Math.max(0, Math.floor((Math.min(...values) - 0.06) * 10) / 10),
-    Math.min(1, Math.ceil((Math.max(...values) + 0.06) * 10) / 10),
-  ]
   const [x0, x1] = domain(plotted.map((row) => row.aiShare ?? 0))
   const [y0, y1] = domain(plotted.map((row) => row.durable30 ?? 0))
   const weight = Math.max(

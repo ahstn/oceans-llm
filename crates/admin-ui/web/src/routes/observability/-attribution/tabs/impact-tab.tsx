@@ -10,8 +10,6 @@ import {
   AI_TONE,
   AiShareBar,
   CounterweightPair,
-  formatHours,
-  formatPercent,
   InlineMeter,
   Insight,
   InsightCard,
@@ -20,6 +18,7 @@ import {
   TrendKpi,
   UNSHIPPED_TONE,
 } from '@/components/attribution/parts'
+import { formatHours, formatPercent } from '@/components/attribution/format'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { EMPTY_VALUE, formatCount, formatUsd10000 } from '@/lib/format'
 import type { AttributionReportView } from '@/types/api'
@@ -219,6 +218,10 @@ export default function ImpactTab({
   )
 }
 
+const ALL_OUTCOMES: Outcome[] = ['merged', 'default_branch', 'unmerged', 'no_commit']
+const COMMITTED_OUTCOMES: Outcome[] = ['merged', 'default_branch', 'unmerged']
+const SHIPPED_OUTCOMES: Outcome[] = ['merged', 'default_branch']
+
 const OUTCOME_LABELS: Record<Outcome, string> = {
   merged: 'Merged PR',
   default_branch: 'Default branch',
@@ -239,9 +242,9 @@ function SessionOutcomesCard({
   const costOf = (list: Outcome[]) =>
     list.reduce((total, outcome) => total + (tally(outcome)?.priced_cost_usd_10000 ?? 0), 0)
   const value = (list: Outcome[]) => (measure === 'cost' ? costOf(list) : sessionsOf(list))
-  const all: Outcome[] = ['merged', 'default_branch', 'unmerged', 'no_commit']
-  const committed: Outcome[] = ['merged', 'default_branch', 'unmerged']
-  const shipped: Outcome[] = ['merged', 'default_branch']
+  const all = ALL_OUTCOMES
+  const committed = COMMITTED_OUTCOMES
+  const shipped = SHIPPED_OUTCOMES
   const totalSessions = sessionsOf(all)
   const totalCost = costOf(all)
   const detail = (list: Outcome[]) =>

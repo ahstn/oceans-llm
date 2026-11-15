@@ -6,7 +6,7 @@ import type { CSSProperties } from 'react'
 
 import { cn } from '@/lib/utils'
 
-import { formatPercent } from './parts'
+import { formatPercent } from './format'
 
 export type QuadrantPoint = {
   key: string
@@ -18,6 +18,14 @@ export type QuadrantPoint = {
   /** Weight for the average dividers. */
   weight: number
   title: string
+}
+
+/** An axis range around `values`, padded and rounded to tenths, inside 0–1. */
+function domain(values: number[]) {
+  return [
+    Math.max(0, Math.floor((Math.min(...values) - 0.06) * 10) / 10),
+    Math.min(1, Math.ceil((Math.max(...values) + 0.06) * 10) / 10),
+  ]
 }
 
 // Scales, dividers, labels and bubbles share one coordinate system, so they stay in one SVG.
@@ -42,10 +50,6 @@ export function Quadrant({
 }) {
   const size = 360
   const pad = 40
-  const domain = (values: number[]) => [
-    Math.max(0, Math.floor((Math.min(...values) - 0.06) * 10) / 10),
-    Math.min(1, Math.ceil((Math.max(...values) + 0.06) * 10) / 10),
-  ]
   const [x0, x1] = points.length ? domain(points.map((point) => point.x)) : [0, 1]
   const [y0, y1] = points.length ? domain(points.map((point) => point.y)) : [0, 1]
   const weight = Math.max(

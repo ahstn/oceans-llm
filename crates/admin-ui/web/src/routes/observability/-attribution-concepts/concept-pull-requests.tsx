@@ -28,14 +28,13 @@ import {
   AI_TONE,
   AiShareBar,
   InsightCard,
-  formatHours,
-  formatPercent,
   HUMAN_TONE,
   ReadinessBadge,
   Stat,
   Swatch,
   ToolLabel,
 } from '@/components/attribution/parts'
+import { formatHours, formatPercent } from '@/components/attribution/format'
 
 type Sort = 'recent' | 'cost' | 'ai'
 
