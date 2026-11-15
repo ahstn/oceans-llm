@@ -58,6 +58,8 @@ export function attributionReportInput<Search extends { tab?: AttributionTab; us
 ) {
   const { tab: requested, ...filters } = search
   const tab = resolveAttributionTab(requested, session)
+  // With every report tab off there is nothing to read, and the page shows how to turn them on.
+  if (!tab) return null
   return { ...filters, user_id: tab === 'my_work' ? session?.user.id : filters.user_id }
 }
 

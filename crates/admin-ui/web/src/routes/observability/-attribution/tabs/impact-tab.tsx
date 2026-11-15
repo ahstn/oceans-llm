@@ -292,7 +292,7 @@ function SessionOutcomesCard({
   return (
     <InsightCard
       title="Session outcomes"
-      description="Every agent session in the window, followed to the furthest stage its commits reached. Open and closed pull requests are not reported yet, so unmerged work stays in one stage."
+      description="Every agent session in the window, followed to the furthest stage its commits in the window reached. Open and closed pull requests are not reported yet, so unmerged work stays in one stage."
       action={
         <ToggleGroup
           type="single"

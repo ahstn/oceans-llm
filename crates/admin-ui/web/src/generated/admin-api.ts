@@ -3380,7 +3380,7 @@ export interface components {
         /** @enum {string} */
         AttributionSessionEventRequest: "start" | "end";
         /**
-         * @description The furthest stage an agent session's work reached.
+         * @description The furthest stage an agent session's work reached, counting only commits in the window.
          * @enum {string}
          */
         AttributionSessionOutcomeKind: "merged" | "default_branch" | "unmerged" | "no_commit";

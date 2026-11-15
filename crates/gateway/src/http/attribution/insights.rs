@@ -27,7 +27,7 @@ pub struct AttributionDayView {
     pub uncommitted: AttributionRequestTallyView,
 }
 
-/// The furthest stage an agent session's work reached.
+/// The furthest stage an agent session's work reached, counting only commits in the window.
 #[derive(Debug, Clone, Copy, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AttributionSessionOutcomeKind {
@@ -37,7 +37,7 @@ pub enum AttributionSessionOutcomeKind {
     DefaultBranch,
     /// Committed, but nothing reached the default branch or a merged pull request yet.
     Unmerged,
-    /// No commit names the session.
+    /// No commit in the window names the session.
     NoCommit,
 }
 

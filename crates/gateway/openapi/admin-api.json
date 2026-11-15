@@ -12587,7 +12587,7 @@
       },
       "AttributionSessionOutcomeKind": {
         "type": "string",
-        "description": "The furthest stage an agent session's work reached.",
+        "description": "The furthest stage an agent session's work reached, counting only commits in the window.",
         "enum": [
           "merged",
           "default_branch",

@@ -305,8 +305,12 @@ function session(globalRole: 'platform_admin' | 'user', attributionTabs: string[
   }
 }
 
-function renderPage(report: AttributionReportView, search: Record<string, unknown> = { days: 30 }) {
-  routeMock.useLoaderData.mockReturnValue({ data: report, meta: {} })
+function renderPage(
+  report: AttributionReportView | null,
+  search: Record<string, unknown> = { days: 30 },
+) {
+  // With every report tab off the loader reads no report.
+  routeMock.useLoaderData.mockReturnValue(report ? { data: report, meta: {} } : null)
   routeMock.useSearch.mockReturnValue(search)
   render(
     <TooltipProvider>
@@ -374,7 +378,7 @@ describe('AttributionPage', () => {
 
   it('explains how to turn tabs back on when every tab is off', () => {
     routeMock.useRouteContext.mockReturnValue(session('platform_admin', []))
-    renderPage(attributionReport())
+    renderPage(null)
 
     expect(screen.getByText('Every Attribution tab is turned off')).toBeInTheDocument()
     expect(
@@ -384,7 +388,7 @@ describe('AttributionPage', () => {
 
   it('links to the concepts when they are the only thing turned on', () => {
     routeMock.useRouteContext.mockReturnValue(session('platform_admin', ['concepts']))
-    renderPage(attributionReport())
+    renderPage(null)
 
     expect(screen.getByText('Every report tab is turned off')).toBeInTheDocument()
     expect(screen.getByText(/The concept mockups are still on/)).toBeInTheDocument()

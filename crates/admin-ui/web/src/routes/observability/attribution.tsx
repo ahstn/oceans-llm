@@ -51,14 +51,16 @@ const TABS: Record<AttributionTab, ComponentType<TabProps>> = {
 export const Route = createFileRoute('/observability/attribution')({
   validateSearch: (search: Record<string, unknown>) => normalizeAttributionSearch(search),
   loaderDeps: ({ search }) => search,
-  loader: ({ deps, context }) =>
-    getAttribution({ data: attributionReportInput(deps, context.session) }),
+  loader: ({ deps, context }) => {
+    const input = attributionReportInput(deps, context.session)
+    return input ? getAttribution({ data: input }) : null
+  },
   component: AttributionPage,
 })
 
 // Git AI attribution joined with gateway traffic, as tabs the gateway config turns on.
 export function AttributionPage() {
-  const { data: report } = Route.useLoaderData()
+  const loaded = Route.useLoaderData()
   const { session } = Route.useRouteContext()
   const search = Route.useSearch()
   const router = useRouter()
@@ -76,7 +78,7 @@ export function AttributionPage() {
     })
   }
 
-  if (!tab) {
+  if (!tab || !loaded) {
     return (
       <div className="flex min-w-0 flex-1 flex-col gap-6">
         <PageHeader
@@ -91,6 +93,7 @@ export function AttributionPage() {
     )
   }
 
+  const report = loaded.data
   // The report echoes the filters it applied, and the controls show those, so they always describe
   // the rendered report. For non-admins, and on My work, the gateway echoes their own id, which is
   // not a filter.

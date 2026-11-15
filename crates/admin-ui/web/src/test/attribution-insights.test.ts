@@ -28,6 +28,14 @@ describe('attribution report input', () => {
     ).toEqual({ days: 7, user_id: 'someone-else' })
   })
 
+  it('reads no report when every report tab is off', () => {
+    const conceptsOnly = {
+      ...admin,
+      capabilities: { ...admin.capabilities, attribution_tabs: ['concepts' as const] },
+    }
+    expect(attributionReportInput({ tab: 'impact', days: 30 }, conceptsOnly)).toBeNull()
+  })
+
   it('treats a turned-off My work tab like any other request', () => {
     const noMyWork = {
       ...admin,

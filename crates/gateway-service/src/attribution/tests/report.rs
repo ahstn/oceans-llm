@@ -1113,6 +1113,31 @@ async fn shipped_and_total_spend_share_requests_from_before_the_window() {
 }
 
 #[tokio::test]
+async fn a_commit_before_the_window_does_not_set_a_sessions_outcome() {
+    use crate::attribution::AttributionSessionOutcome;
+
+    let dev = user_owner(Uuid::new_v4());
+    // The session's only commit landed in the lookback, and it kept spending inside the window.
+    let mut store = FakeStore::with_commits(vec![commit(
+        1,
+        &dev,
+        REPOSITORY,
+        minutes(-30),
+        vec![note_session("s_aa", &["h1"])],
+    )]);
+    store.facts = vec![request(&dev, "h1", "inside", minutes(10))];
+    let report = report(&store, &query()).await;
+
+    let outcomes = report
+        .session_outcomes
+        .iter()
+        .map(|tally| (tally.outcome, tally.requests.request_count))
+        .collect::<Vec<_>>();
+    assert_eq!(outcomes, vec![(AttributionSessionOutcome::NoCommit, 1)]);
+    assert_eq!(report.summary().shipped_cost_10000, 0);
+}
+
+#[tokio::test]
 async fn daily_buckets_put_commits_and_uncommitted_spend_on_their_own_dates() {
     let dev = user_owner(Uuid::new_v4());
     let start = t0().replace_time(time::Time::MIDNIGHT);

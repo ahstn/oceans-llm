@@ -28,7 +28,9 @@ pub struct AttributionDayActivity {
     pub uncommitted: RequestTally,
 }
 
-/// The furthest stage an agent session's work reached in the window.
+/// The furthest stage an agent session's work reached in the window. Only window commits count: a
+/// commit before the window belongs to the previous window's outcomes, so a session that spent in
+/// the window without committing in it is `NoCommit`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum AttributionSessionOutcome {
     /// A commit is in a pull request merged in the window.
@@ -37,7 +39,7 @@ pub enum AttributionSessionOutcome {
     DefaultBranch,
     /// Committed, but no commit reached the default branch or a merged pull request yet.
     Unmerged,
-    /// No commit names the session.
+    /// No window commit names the session.
     NoCommit,
 }
 
@@ -144,8 +146,10 @@ impl ReportInputs<'_> {
         days.into_values().collect()
     }
 
-    /// Joins hook-reported sessions and window commits' note sessions by shared hash, then
-    /// gives each its window requests and the furthest stage its commits reached.
+    /// Joins hook-reported sessions and commits' note sessions by shared hash, then gives each its
+    /// window requests and the furthest stage its window commits reached. A lookback commit joins
+    /// its session, so the session's window spend is still counted, but sets neither its lines nor
+    /// its outcome.
     fn sessions<'b>(
         &'b self,
         agent_sessions: &[&'b AttributionAgentSessionRecord],
@@ -170,8 +174,9 @@ impl ReportInputs<'_> {
             }
         }
         let mut by_note: HashMap<(&str, &str), usize> = HashMap::new();
-        for commit in self.window_commits() {
+        for commit in self.commits {
             let scope = commit.owner.ownership_scope_key.as_str();
+            let in_window = commit.first_observed_at >= self.query.from;
             for session in &commit.sessions {
                 let known = session
                     .session_hashes
@@ -194,6 +199,9 @@ impl ReportInputs<'_> {
                 // The note names the harness the way git-ai does, so prefer it.
                 rollup.harness = Some(session.agent_tool.as_str());
                 rollup.note_model = rollup.note_model.or(session.agent_model.as_deref());
+                if !in_window {
+                    continue;
+                }
                 rollup.ai_lines += session.ai_lines;
                 if !rollup
                     .commits
@@ -222,7 +230,8 @@ impl ReportInputs<'_> {
                 rollups[index].facts.push(fact);
             }
         }
-        // A session open across the window counts only when it did something in it.
+        // A session open across the window, or known only from a lookback commit, counts only
+        // when it did something in the window.
         rollups.retain(|rollup| {
             rollup.reported || !rollup.commits.is_empty() || !rollup.facts.is_empty()
         });
