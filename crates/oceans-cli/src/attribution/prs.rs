@@ -303,8 +303,8 @@ fn fetch_pages(
     Ok(fetched)
 }
 
-/// Each fetched pull request's revert link. Every merged pull request is fingerprinted first,
-/// so a revert matches its original whichever order the two arrive in.
+/// Each fetched pull request's revert link. Merged pull requests are fingerprinted first, within
+/// a per-sync budget, so a revert matches its original whichever order the two arrive in.
 fn revert_links(
     fetched: &[GhPullRequest],
     repository_path: &str,
@@ -312,12 +312,13 @@ fn revert_links(
     cache: &mut reverts::ChangeCache,
 ) -> Vec<Option<RevertLink>> {
     let candidates: Vec<Candidate<'_>> = fetched.iter().map(candidate).collect();
+    let mut budget = reverts::FingerprintBudget::new(reverts::MAX_NEW_FINGERPRINTS);
     for candidate in &candidates {
-        reverts::remember(candidate, directory, cache);
+        reverts::remember(candidate, directory, cache, &mut budget);
     }
     candidates
         .iter()
-        .map(|candidate| reverts::detect(candidate, repository_path, directory, cache))
+        .map(|candidate| reverts::detect(candidate, repository_path, cache))
         .collect()
 }
 
@@ -340,6 +341,11 @@ fn candidate(fetched: &GhPullRequest) -> Candidate<'_> {
             .commits
             .iter()
             .map(|commit| commit.message_body.as_str())
+            .collect(),
+        commit_subjects: fetched
+            .commits
+            .iter()
+            .map(|commit| commit.message_headline.as_str())
             .collect(),
     }
 }

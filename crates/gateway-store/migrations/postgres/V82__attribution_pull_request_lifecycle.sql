@@ -1,6 +1,8 @@
 -- Pull requests that are open or closed without merging, their lifecycle and their revert
 -- links. `state` is `open`, `closed` (without merging) or `merged`; every stored row so far
--- was merged, so it closed when it merged. `details` is a JSON object the gateway writes and
+-- was merged. Those rows get no lifecycle times, which would rewrite the whole table: the
+-- gateway reads a merged row's activity from `merged_at` when they are absent, and fills
+-- `last_activity_at` on every write from now on. `details` is a JSON object the gateway writes and
 -- reads: draft flag, first review time, review and comment counts, size, and the revert link
 -- with its evidence. It never holds reviewer logins, file paths or description text.
 SET LOCAL lock_timeout = '5s';
@@ -22,9 +24,6 @@ ALTER TABLE attribution_pull_requests
 ALTER TABLE attribution_pull_requests
   ADD CONSTRAINT attribution_pull_requests_merged_has_time
     CHECK (state <> 'merged' OR merged_at IS NOT NULL) NOT VALID;
-UPDATE attribution_pull_requests
-  SET closed_at = merged_at, last_activity_at = merged_at
-  WHERE closed_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_attribution_pull_requests_opened
   ON attribution_pull_requests(opened_at);

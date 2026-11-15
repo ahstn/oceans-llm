@@ -474,14 +474,28 @@ function PullRequestDetail({ row }: { row: PullRequestRow }) {
   )
 }
 
+/**
+ * Whether a merged pull request had no human review before it merged, as the gateway counts it:
+ * a review left after the merge doesn't count.
+ */
+function mergedWithoutReview(pr: PullRequestView): boolean {
+  if (pr.review_count == null) return false
+  if (pr.first_review_at == null) return pr.review_count === 0
+  return Date.parse(pr.first_review_at) > Date.parse(pr.merged_at)
+}
+
+function reviewSummary(pr: PullRequestView): string | null {
+  if (pr.review_count == null) return null
+  const count = `${formatCount(pr.review_count)} ${pr.review_count === 1 ? 'review' : 'reviews'}`
+  if (!mergedWithoutReview(pr)) {
+    return `${count}, ${formatCount(pr.approval_count ?? 0)} approving`
+  }
+  return pr.review_count === 0 ? 'Merged without review' : `Merged without review; ${count} after`
+}
+
 /** Review wait, reviews and size, when the hook sent them. */
 function ReviewFacts({ pr }: { pr: PullRequestView }) {
-  const reviews =
-    pr.review_count == null
-      ? null
-      : pr.review_count === 0
-        ? 'Merged without review'
-        : `${formatCount(pr.review_count)} ${pr.review_count === 1 ? 'review' : 'reviews'}, ${formatCount(pr.approval_count ?? 0)} approving`
+  const reviews = reviewSummary(pr)
   const size =
     pr.additions == null || pr.deletions == null
       ? null

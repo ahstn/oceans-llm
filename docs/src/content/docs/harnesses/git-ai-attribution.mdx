@@ -110,7 +110,7 @@ Squash and rebase merges create new commits on GitHub that have no Git AI notes.
 
 The hook reads open and closed pull requests as well as merged ones, most recently updated first, so a pull request that was reviewed, merged or closed since the last sync is sent again and moves on. It turns reviews and comments into counts and times before anything leaves your machine:
 
-- **Reviews** count only people other than the pull request's author. Bot reviews, such as code review apps, are left out. The first review time is the earliest of those. Reviewer names stay on your machine.
+- **Reviews** count only people other than the pull request's author. Bot reviews, such as code review apps, are left out. The first review time is the earliest of those. A pull request whose first review came after it merged counts as merged without review. Reviewer names stay on your machine.
 - **Descriptions and commit messages** are read only to find reverts. They are never sent.
 - **Draft state** is the current one: GitHub's CLI doesn't say when a draft became ready, so review wait starts when the pull request opened.
 
@@ -120,7 +120,7 @@ The hook links each pull request to the one it reverts. It checks these signals 
 
 1. A commit carries the `This reverts commit <sha>` line that `git revert` writes, whatever its subject says.
 2. GitHub's revert button: `Reverts owner/repo#N` in the description, or a `revert-N-…` branch. This counts only when the title or a commit also says revert, because anyone can edit a description.
-3. The change itself is the exact inverse of an earlier merged pull request's. The hook compares a fingerprint of the lines each change adds and removes, so a revert with a rewritten message still matches. This needs both merge commits in your clone. The fingerprints stay in a private cache in the hook's state directory and are never sent.
+3. The change itself is the exact inverse of an earlier merged pull request's. The hook compares a fingerprint of the lines each change adds and removes, and any file mode change such as an executable bit, so a revert with a rewritten message still matches. For a rebase merge, the fingerprint covers every rebased commit, not only the last. This needs both pull requests' commits in your clone. The fingerprints stay in a private cache in the hook's state directory and are never sent.
 4. A `Revert "…"` or `revert:` title and nothing else. This is shown as a possible revert, and doesn't count toward change fail rate.
 
 Only the link leaves your machine: which pull request or commits were reverted, and which signal found it. A revert mixed into other work, or a fix made without reverting, isn't detected.

@@ -1553,11 +1553,23 @@ async fn open_and_closed_pull_requests_feed_lifecycle_figures_but_not_merged_one
     closed.lifecycle.opened_at = Some(minutes(20));
     closed.lifecycle.closed_at = Some(minutes(90));
     closed.lifecycle.details.first_review_at = Some(minutes(80));
+    // Reviewed only after it merged, which still counts as merged without review.
+    let mut reviewed_late = pull_request(6, &dev, minutes(320), &[]);
+    reviewed_late.lifecycle.opened_at = Some(minutes(250));
+    reviewed_late.lifecycle.details.first_review_at = Some(minutes(400));
+    reviewed_late.lifecycle.details.review_count = Some(1);
     // Opened in the window but merged after it, as a previous-window read sees it.
     let mut merged_later = pull_request(5, &dev, minutes(60 * 30), &[]);
     merged_later.lifecycle.opened_at = Some(minutes(10));
     let mut store = FakeStore::with_commits(vec![]);
-    store.pull_requests = Mutex::new(vec![reviewed, unreviewed, open, closed, merged_later]);
+    store.pull_requests = Mutex::new(vec![
+        reviewed,
+        unreviewed,
+        open,
+        closed,
+        reviewed_late,
+        merged_later,
+    ]);
     let report = report(&store, &query()).await;
 
     let merged: Vec<i64> = report
@@ -1567,18 +1579,18 @@ async fn open_and_closed_pull_requests_feed_lifecycle_figures_but_not_merged_one
         .collect();
     assert_eq!(
         merged.len(),
-        2,
+        3,
         "only pull requests merged in the window: {merged:?}"
     );
-    assert_eq!(report.totals.pull_request_count, 2);
+    assert_eq!(report.totals.pull_request_count, 3);
     let lifecycle = &report.pull_request_lifecycle;
-    assert_eq!(lifecycle.opened_count, 5);
-    assert_eq!(lifecycle.merged_count, 2);
+    assert_eq!(lifecycle.opened_count, 6);
+    assert_eq!(lifecycle.merged_count, 3);
     assert_eq!(lifecycle.closed_unmerged_count, 1);
     assert_eq!((lifecycle.open_count, lifecycle.draft_count), (1, 1));
-    assert_eq!(lifecycle.review_known_count, 2);
-    assert_eq!(lifecycle.merged_without_review_count, 1);
-    // Reviews 60 and 60 minutes after opening.
+    assert_eq!(lifecycle.review_known_count, 3);
+    assert_eq!(lifecycle.merged_without_review_count, 2);
+    // Reviews 60, 60 and 150 minutes after opening.
     assert_eq!(lifecycle.median_review_wait_seconds, Some(3600));
 }
 

@@ -499,6 +499,32 @@ describe('AttributionPage', () => {
     expect(ledger.getByText('Possible revert')).toBeInTheDocument()
   })
 
+  it('counts a review left after the merge as merged without review', async () => {
+    const report = attributionReport()
+    const reviewedLate = {
+      ...report.pull_requests[0],
+      review_count: 1,
+      approval_count: 1,
+      first_review_at: '2026-11-11T09:00:00Z',
+    }
+    const reviewed = {
+      ...reviewedLate,
+      number: 43,
+      title: 'Tidy widget search',
+      first_review_at: '2026-11-10T14:00:00Z',
+    }
+    renderPage(attributionReport({ pull_requests: [reviewedLate, reviewed] }), {
+      days: 30,
+      tab: 'pull_requests',
+    })
+
+    const pullRequests = within(await screen.findByRole('table', { name: 'Merged pull requests' }))
+    fireEvent.click(pullRequests.getByText('Add widget search'))
+    expect(screen.getByText('Merged without review; 1 review after')).toBeInTheDocument()
+    fireEvent.click(pullRequests.getByText('Tidy widget search'))
+    expect(screen.getByText('1 review, 1 approving')).toBeInTheDocument()
+  })
+
   it('shows review wait, review-free merges and abandoned work on Delivery', async () => {
     renderPage(attributionReport(), { days: 30, tab: 'delivery' })
 

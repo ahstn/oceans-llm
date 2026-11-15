@@ -4,7 +4,9 @@
 -- (LIBSQL_REBUILT_PARENTS) and the commit rows keep pointing at the same ids.
 --
 -- `state` is `open`, `closed` (without merging) or `merged`; every stored row so far was
--- merged. `opened_at`, `closed_at` and `last_activity_at` (the forge's last change, such as a
+-- merged, and keeps no lifecycle times: the gateway reads a merged row's activity from
+-- `merged_at` when they are absent, as the Postgres migration leaves them. `opened_at`,
+-- `closed_at` and `last_activity_at` (the forge's last change, such as a
 -- review; not the sync time) are indexed for the report window. `details` is a JSON
 -- object the gateway writes and reads: draft flag, first review time, review and comment
 -- counts, size, and the revert link with its evidence. It never holds reviewer logins, file
@@ -48,8 +50,8 @@ INSERT INTO attribution_pull_requests_v82 (
 SELECT
   attribution_pull_request_id, ownership_scope_key, owner_user_id, owner_service_account_id,
   repository, number, title, url, base_ref, head_ref, merge_commit_sha, merged_at,
-  author_user_id, author_email_hash, observed_at, 'merged', NULL, merged_at, NULL,
-  merged_at, created_at, updated_at
+  author_user_id, author_email_hash, observed_at, 'merged', NULL, NULL, NULL,
+  NULL, created_at, updated_at
 FROM attribution_pull_requests;
 
 DROP TABLE attribution_pull_requests;

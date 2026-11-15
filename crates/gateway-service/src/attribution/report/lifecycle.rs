@@ -44,7 +44,8 @@ pub struct AttributionPullRequestLifecycleSummary {
     pub draft_count: i64,
     /// Merged in the window with review data from the hook; the others predate it.
     pub review_known_count: i64,
-    /// Merged in the window with no review by anyone but the author or a bot.
+    /// Merged in the window with no review, before the merge, by anyone but the author or a
+    /// bot.
     pub merged_without_review_count: i64,
     /// Median opened to first human review, for reviews in the window.
     pub median_review_wait_seconds: Option<i64>,
@@ -101,6 +102,18 @@ pub(super) fn merged_time(pull_request: &AttributionPullRequestRecord) -> Offset
     pull_request.merged_at.unwrap_or(pull_request.observed_at)
 }
 
+/// Whether a merged pull request with review data had no human review before it merged. A
+/// review left after the merge doesn't count.
+fn merged_without_review(pull_request: &AttributionPullRequestRecord) -> bool {
+    let details = &pull_request.lifecycle.details;
+    match (details.first_review_at, pull_request.merged_at) {
+        (Some(reviewed), Some(merged)) => details.review_count.is_some() && reviewed > merged,
+        (Some(_), None) => false,
+        // A count without a first review time can't be placed, so only a zero counts.
+        (None, _) => details.review_count == Some(0),
+    }
+}
+
 /// Opened, merged, closed and open counts and review wait over every loaded pull request.
 pub(super) fn summary(
     pull_requests: &[AttributionPullRequestRecord],
@@ -154,10 +167,7 @@ pub(super) fn summary(
                 .count(),
         ),
         merged_without_review_count: count(
-            merged
-                .iter()
-                .filter(|pr| pr.lifecycle.details.review_count == Some(0))
-                .count(),
+            merged.iter().filter(|pr| merged_without_review(pr)).count(),
         ),
         median_review_wait_seconds: median(&mut review_waits),
         ..AttributionPullRequestLifecycleSummary::default()

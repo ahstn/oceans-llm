@@ -12,7 +12,11 @@
 //!    fingerprints stay in a private cache under the state directory.
 //! 4. `title`: a `Revert "…"` or `revert:` title and nothing else. A possible revert only.
 
-use std::{collections::BTreeMap, path::Path, time::Duration};
+use std::{
+    collections::BTreeMap,
+    path::Path,
+    time::{Duration, Instant},
+};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -36,7 +40,14 @@ pub struct Candidate<'a> {
     pub merge_commit_sha: Option<&'a str>,
     pub merged_at: Option<&'a str>,
     pub commit_bodies: Vec<&'a str>,
+    /// The pull request's commit subjects, oldest first. A rebase merge copies them, which is
+    /// how it is told apart from a squash.
+    pub commit_subjects: Vec<&'a str>,
 }
+
+/// `gh` lists at most this many commits per pull request, so a longer rebase merge's range
+/// can't be established.
+const MAX_LISTED_COMMITS: usize = 100;
 
 /// Fingerprints of a merged pull request's change, forwards and inverted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,32 +61,66 @@ pub struct ChangePrints {
 /// Merge commit SHA → fingerprints, for one repository.
 pub type ChangeCache = BTreeMap<String, ChangePrints>;
 
-/// Adds a merged candidate's fingerprints to `cache`, so a revert fetched in the same batch
-/// can match it whichever order the two arrive in.
-pub fn remember(candidate: &Candidate<'_>, directory: &Path, cache: &mut ChangeCache) {
-    if let Some((sha, merged_at)) = candidate.merge_commit_sha.zip(candidate.merged_at) {
-        prints_for(directory, cache, sha, candidate.number, merged_at);
+/// At most this many uncached merge commits are fingerprinted per sync, in fetch order (most
+/// recently updated first). Each costs a few git processes; the cache keeps them, and every
+/// sync fetches the same recent pull requests, so a first sync's backlog fills over the next
+/// few.
+pub const MAX_NEW_FINGERPRINTS: usize = 200;
+/// And for at most this long per sync.
+const FINGERPRINT_TIME_BUDGET: Duration = Duration::from_secs(30);
+
+/// How much new fingerprinting one sync may still do.
+pub struct FingerprintBudget {
+    remaining: usize,
+    deadline: Instant,
+}
+
+impl FingerprintBudget {
+    pub fn new(count: usize) -> Self {
+        Self {
+            remaining: count,
+            deadline: Instant::now() + FINGERPRINT_TIME_BUDGET,
+        }
+    }
+
+    fn take(&mut self) -> bool {
+        if self.remaining == 0 || Instant::now() >= self.deadline {
+            return false;
+        }
+        self.remaining -= 1;
+        true
     }
 }
 
-/// The strongest revert signal for `candidate`, using `cache` for change matching. The
-/// candidate's own fingerprints are added to the cache when git can compute them.
+/// Adds a merged candidate's fingerprints to `cache` when they are not there yet and the budget
+/// allows, so a revert fetched in the same batch can match it whichever order the two arrive
+/// in, and a later sync's revert can match it too.
+pub fn remember(
+    candidate: &Candidate<'_>,
+    directory: &Path,
+    cache: &mut ChangeCache,
+    budget: &mut FingerprintBudget,
+) {
+    let Some((sha, merged_at)) = candidate.merge_commit_sha.zip(candidate.merged_at) else {
+        return;
+    };
+    if !cache.contains_key(sha) && budget.take() {
+        prints_for(directory, cache, candidate, sha, merged_at);
+    }
+}
+
+/// The strongest revert signal for `candidate`. The commit, GitHub and title signals come from
+/// the fetched text; change matching reads only fingerprints `remember` already cached, so it
+/// runs no git.
 pub fn detect(
     candidate: &Candidate<'_>,
     repository_path: &str,
-    directory: &Path,
-    cache: &mut ChangeCache,
+    cache: &ChangeCache,
 ) -> Option<RevertLink> {
     let number = github_revert_number(candidate.body, candidate.head_ref, repository_path)
         .filter(|reverted| *reverted != candidate.number);
     let commit_shas = reverted_commits(&candidate.commit_bodies);
     let titled = is_revert_title(candidate.title);
-    let prints = candidate
-        .merge_commit_sha
-        .zip(candidate.merged_at)
-        .and_then(|(sha, merged_at)| {
-            prints_for(directory, cache, sha, candidate.number, merged_at)
-        });
     if !commit_shas.is_empty() {
         return Some(RevertLink {
             pull_request_number: number,
@@ -90,7 +135,8 @@ pub fn detect(
             evidence: "github_revert".into(),
         });
     }
-    if let Some((sha, prints)) = prints.and_then(|prints| matching_change(cache, &prints)) {
+    let prints = candidate.merge_commit_sha.and_then(|sha| cache.get(sha));
+    if let Some((sha, prints)) = prints.and_then(|prints| matching_change(cache, prints)) {
         return Some(RevertLink {
             pull_request_number: Some(prints.number),
             commit_shas: vec![sha],
@@ -165,19 +211,34 @@ pub fn is_revert_title(title: &str) -> bool {
         || title.starts_with("revert!:")
 }
 
-/// The cached fingerprints for `merge_sha`, computing and caching them when the commit and
-/// its first parent are in the local clone.
+/// Computes and caches the fingerprints for `merge_sha` when the pull request's whole change is
+/// in the local clone.
 fn prints_for(
     directory: &Path,
     cache: &mut ChangeCache,
+    candidate: &Candidate<'_>,
     merge_sha: &str,
-    number: u64,
     merged_at: &str,
-) -> Option<ChangePrints> {
-    if let Some(prints) = cache.get(merge_sha) {
-        return Some(prints.clone());
-    }
-    let parent = format!("{merge_sha}^1");
+) -> Option<()> {
+    let base = change_base(directory, candidate, merge_sha)?;
+    let forward = fingerprint(&diff(directory, &base, merge_sha)?)?;
+    let inverse = fingerprint(&diff(directory, merge_sha, &base)?)?;
+    let prints = ChangePrints {
+        number: candidate.number,
+        merged_at: merged_at.to_owned(),
+        forward,
+        inverse,
+    };
+    cache.insert(merge_sha.to_owned(), prints);
+    Some(())
+}
+
+/// The commit the pull request's whole change starts from: the first parent of a merge
+/// commit or of a squashed commit. A rebase merge's SHA is only the last of the rebased
+/// commits, so when the `N` commits ending at it carry the pull request's `N` subjects in
+/// order, the change starts at `merge~N`. `None` when the commit is missing locally or a
+/// longer rebase than `gh` lists can't be ruled out.
+fn change_base(directory: &Path, candidate: &Candidate<'_>, merge_sha: &str) -> Option<String> {
     let commit = format!("{merge_sha}^{{commit}}");
     git_bytes(
         directory,
@@ -185,16 +246,53 @@ fn prints_for(
         SHORT_GIT_TIMEOUT,
         64,
     )?;
-    let forward = fingerprint(&diff(directory, &parent, merge_sha)?)?;
-    let inverse = fingerprint(&diff(directory, merge_sha, &parent)?)?;
-    let prints = ChangePrints {
-        number,
-        merged_at: merged_at.to_owned(),
-        forward,
-        inverse,
-    };
-    cache.insert(merge_sha.to_owned(), prints.clone());
-    Some(prints)
+    let first_parent = Some(format!("{merge_sha}^1"));
+    let subjects = &candidate.commit_subjects;
+    if subjects.len() < 2 {
+        return first_parent;
+    }
+    let count = subjects.len().to_string();
+    let log = git_bytes(
+        directory,
+        &[
+            "log",
+            "--first-parent",
+            "--format=%P%x00%s",
+            "-n",
+            &count,
+            merge_sha,
+        ],
+        SHORT_GIT_TIMEOUT,
+        1024 * 1024,
+    )?;
+    let log = String::from_utf8_lossy(&log);
+    let commits: Vec<(usize, &str)> = log
+        .lines()
+        .filter_map(|line| line.split_once('\0'))
+        .map(|(parents, subject)| (parents.split_whitespace().count(), subject.trim()))
+        .collect();
+    let rebased = commits.len() == subjects.len()
+        && commits.iter().all(|(parents, _)| *parents == 1)
+        && commits
+            .iter()
+            .rev()
+            .zip(subjects)
+            .all(|((_, subject), expected)| *subject == expected.trim());
+    if !rebased {
+        // A squash or merge commit stands alone. When `gh` listed only the first commits, a
+        // single-parent commit may be a rebase it can't see the end of, so it is skipped.
+        let partial = subjects.len() >= MAX_LISTED_COMMITS
+            && commits.first().is_some_and(|(parents, _)| *parents == 1);
+        return if partial { None } else { first_parent };
+    }
+    let base = format!("{merge_sha}~{count}");
+    git_bytes(
+        directory,
+        &["rev-parse", "--verify", "--quiet", &base],
+        SHORT_GIT_TIMEOUT,
+        128,
+    )?;
+    Some(base)
 }
 
 /// An earlier merged pull request whose change `prints` exactly undoes.
@@ -232,7 +330,8 @@ fn diff(directory: &Path, from: &str, to: &str) -> Option<Vec<u8>> {
 /// exact inverse matches even after unrelated edits nearby. Whitespace is kept: a revert
 /// reproduces the original lines exactly, and whitespace inside a string is content. A binary
 /// file has no lines to compare, so it contributes its `index <from>..<to>` blob ids, which keep
-/// the change's direction: two unrelated edits to one image never match. `None` for an empty
+/// the change's direction: two unrelated edits to one image never match. File mode changes,
+/// such as an executable bit, count with their old and new modes. `None` for an empty
 /// diff, which would match every other empty change.
 pub fn fingerprint(diff: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(diff);
@@ -266,8 +365,13 @@ pub fn fingerprint(diff: &[u8]) -> Option<String> {
                 binary = index.clone().unwrap_or_else(|| line.to_owned());
                 ('b', binary.as_str())
             }
-            // New or deleted file markers.
-            _ if line.starts_with("new file mode") || line.starts_with("deleted file mode") => {
+            // New or deleted file and mode change markers, which keep their direction: a
+            // revert that restores a file's text but not its executable bit doesn't match.
+            _ if line.starts_with("new file mode")
+                || line.starts_with("deleted file mode")
+                || line.starts_with("old mode")
+                || line.starts_with("new mode") =>
+            {
                 ('=', line)
             }
             _ => continue,
@@ -412,6 +516,29 @@ mod tests {
     }
 
     #[test]
+    fn mode_changes_must_be_undone_too() {
+        let edit = |modes: &str| {
+            format!(
+                "diff --git a/run.sh b/run.sh\n{modes}index a1..b2\n--- a/run.sh\n+++ b/run.sh\n@@ -1 +1 @@\n-echo a\n+echo b\n"
+            )
+        };
+        let forward = edit("old mode 100644\nnew mode 100755\n");
+        // The revert's inverse diff carries the same mode change; a text-only revert doesn't.
+        assert_eq!(
+            fingerprint(forward.as_bytes()),
+            fingerprint(edit("old mode 100644\nnew mode 100755\n").as_bytes())
+        );
+        assert_ne!(
+            fingerprint(forward.as_bytes()),
+            fingerprint(edit("").as_bytes())
+        );
+        assert_ne!(
+            fingerprint(forward.as_bytes()),
+            fingerprint(edit("old mode 100755\nnew mode 100644\n").as_bytes())
+        );
+    }
+
+    #[test]
     fn a_change_matches_only_an_earlier_inverse() {
         let mut cache = ChangeCache::new();
         cache.insert(
@@ -444,7 +571,7 @@ mod tests {
 
     #[test]
     fn the_strongest_signal_wins() {
-        let mut cache = ChangeCache::new();
+        let cache = ChangeCache::new();
         let base = Candidate {
             number: 50,
             title: "Revert \"Add widgets\"",
@@ -453,32 +580,33 @@ mod tests {
             merge_commit_sha: None,
             merged_at: None,
             commit_bodies: vec!["This reverts commit 1111111111111111111111111111111111111111."],
+            commit_subjects: vec![],
         };
-        let dir = Path::new("/nonexistent");
-        let link = detect(&base, "acme/widgets", dir, &mut cache).unwrap();
+        let link = detect(&base, "acme/widgets", &cache).unwrap();
         assert_eq!(
             (link.evidence.as_str(), link.pull_request_number),
             ("revert_commit", Some(42))
         );
         let button = Candidate {
             commit_bodies: vec![],
+            commit_subjects: vec![],
             ..base
         };
-        let link = detect(&button, "acme/widgets", dir, &mut cache).unwrap();
+        let link = detect(&button, "acme/widgets", &cache).unwrap();
         assert_eq!(link.evidence, "github_revert");
         // A description claim without a revert title or line is not trusted.
         let claim = Candidate {
             title: "Tidy up",
             ..button
         };
-        assert!(detect(&claim, "acme/widgets", dir, &mut cache).is_none());
+        assert!(detect(&claim, "acme/widgets", &cache).is_none());
         let titled = Candidate {
             body: "",
             head_ref: "main",
             title: "Revert the cache",
             ..claim
         };
-        let link = detect(&titled, "acme/widgets", dir, &mut cache).unwrap();
+        let link = detect(&titled, "acme/widgets", &cache).unwrap();
         assert_eq!(
             (link.evidence.as_str(), link.pull_request_number),
             ("title", None)
@@ -543,6 +671,7 @@ mod tests {
             merge_commit_sha: Some(&revert),
             merged_at: Some("2026-11-03T00:00:00Z"),
             commit_bodies: vec![],
+            commit_subjects: vec![],
         };
         let original_pr = Candidate {
             number: 1,
@@ -552,14 +681,112 @@ mod tests {
             merge_commit_sha: Some(&original),
             merged_at: Some("2026-11-01T00:00:00Z"),
             commit_bodies: vec![],
+            commit_subjects: vec![],
         };
         // Fetched newest first: the revert arrives before its original.
-        remember(&revert_pr, dir, &mut cache);
-        remember(&original_pr, dir, &mut cache);
-        let link = detect(&revert_pr, "acme/widgets", dir, &mut cache).expect("change match");
+        remember(
+            &revert_pr,
+            dir,
+            &mut cache,
+            &mut FingerprintBudget::new(MAX_NEW_FINGERPRINTS),
+        );
+        remember(
+            &original_pr,
+            dir,
+            &mut cache,
+            &mut FingerprintBudget::new(MAX_NEW_FINGERPRINTS),
+        );
+        let link = detect(&revert_pr, "acme/widgets", &cache).expect("change match");
         assert_eq!(link.evidence, "change_match");
         assert_eq!(link.pull_request_number, Some(1));
         assert_eq!(link.commit_shas, std::slice::from_ref(&original));
-        assert!(detect(&original_pr, "acme/widgets", dir, &mut cache).is_none());
+        assert!(detect(&original_pr, "acme/widgets", &cache).is_none());
+    }
+
+    #[test]
+    fn a_rebase_merge_is_fingerprinted_across_all_its_commits() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path();
+        run(dir, &["init", "-q", "-b", "main"]);
+        std::fs::write(dir.join("a.rs"), "fn a() {}\n").unwrap();
+        run(dir, &["add", "."]);
+        run(dir, &["commit", "-qm", "base"]);
+        let base = run(dir, &["rev-parse", "HEAD"]);
+        // Rebase-merged: two commits land on main and the merge SHA is the second.
+        std::fs::write(dir.join("b.rs"), "fn b() {}\n").unwrap();
+        run(dir, &["add", "."]);
+        run(dir, &["commit", "-qm", "Add b"]);
+        std::fs::write(dir.join("c.rs"), "fn c() {}\n").unwrap();
+        run(dir, &["add", "."]);
+        run(dir, &["commit", "-qm", "Add c"]);
+        let rebased = run(dir, &["rev-parse", "HEAD"]);
+        // Squash-merged: two commits on the branch, one commit on main with its own subject.
+        std::fs::write(dir.join("d.rs"), "fn d() {}\n").unwrap();
+        run(dir, &["add", "."]);
+        run(dir, &["commit", "-qm", "Add d (#2)"]);
+        let squashed = run(dir, &["rev-parse", "HEAD"]);
+
+        let original = Candidate {
+            number: 1,
+            title: "Add b and c",
+            body: "",
+            head_ref: "feat",
+            merge_commit_sha: Some(&rebased),
+            merged_at: Some("2026-11-01T00:00:00Z"),
+            commit_bodies: vec![],
+            commit_subjects: vec!["Add b", "Add c"],
+        };
+        assert_eq!(
+            change_base(dir, &original, &rebased),
+            Some(format!("{rebased}~2"))
+        );
+        let squash = Candidate {
+            number: 2,
+            title: "Add d",
+            merge_commit_sha: Some(&squashed),
+            commit_bodies: vec![],
+            commit_subjects: vec!["Start d", "Finish d"],
+            ..original
+        };
+        assert_eq!(
+            change_base(dir, &squash, &squashed),
+            Some(format!("{squashed}^1"))
+        );
+        let partial = Candidate {
+            commit_subjects: vec!["Start d"; MAX_LISTED_COMMITS],
+            ..squash
+        };
+        assert_eq!(change_base(dir, &partial, &squashed), None);
+
+        // One squashed revert of the whole rebased change.
+        run(dir, &["rm", "-q", "b.rs", "c.rs"]);
+        run(dir, &["commit", "-qm", "Drop b and c"]);
+        let revert = run(dir, &["rev-parse", "HEAD"]);
+        let revert_pr = Candidate {
+            number: 3,
+            title: "Drop b and c",
+            body: "",
+            head_ref: "drop",
+            merge_commit_sha: Some(&revert),
+            merged_at: Some("2026-11-03T00:00:00Z"),
+            commit_bodies: vec![],
+            commit_subjects: vec!["Drop b and c"],
+        };
+        let mut cache = ChangeCache::new();
+        let mut budget = FingerprintBudget::new(1);
+        remember(&original, dir, &mut cache, &mut budget);
+        // Out of budget: the revert isn't fingerprinted, so nothing matches yet.
+        remember(&revert_pr, dir, &mut cache, &mut budget);
+        assert!(detect(&revert_pr, "acme/widgets", &cache).is_none());
+        // The next sync fingerprints it; the original is cached and costs nothing.
+        let mut budget = FingerprintBudget::new(1);
+        remember(&original, dir, &mut cache, &mut budget);
+        remember(&revert_pr, dir, &mut cache, &mut budget);
+        let link = detect(&revert_pr, "acme/widgets", &cache).expect("change match");
+        assert_eq!(
+            (link.evidence.as_str(), link.pull_request_number),
+            ("change_match", Some(1))
+        );
+        assert_ne!(base, rebased);
     }
 }

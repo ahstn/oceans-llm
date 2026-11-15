@@ -447,7 +447,15 @@ where
             .merge_commit_sha
             .map(|sha| validate::commit_sha(&sha))
             .transpose()?;
-        let lifecycle = validate_lifecycle(input.number, input.merged_at, input.lifecycle)?;
+        let mut lifecycle = validate_lifecycle(input.number, input.merged_at, input.lifecycle)?;
+        // Always stored, so the store orders and filters by one column: an older hook sends no
+        // forge update time, so its latest lifecycle time stands in, else when it was seen.
+        lifecycle.last_activity_at = lifecycle
+            .last_activity_at
+            .or(input.merged_at)
+            .or(lifecycle.closed_at)
+            .or(lifecycle.opened_at)
+            .or(Some(freshness.observed_at));
         let mut commits = Vec::with_capacity(input.commits.len());
         for commit in input.commits {
             let commit_sha = validate::commit_sha(&commit.sha)?;

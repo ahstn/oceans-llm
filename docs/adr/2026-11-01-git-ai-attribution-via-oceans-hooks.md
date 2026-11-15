@@ -291,10 +291,10 @@ Every tab needs the same joined rows. Daily buckets and session outcomes have to
 
 1. `revert_commit`: a pull request commit carries git's `This reverts commit <sha>` line.
 2. `github_revert`: GitHub's revert button (`Reverts owner/repo#N` in the description, or a `revert-N-…` branch), counted only with a revert title.
-3. `change_match`: the pull request's first-parent change is the exact inverse of an earlier merged pull request's, by a fingerprint of the added and removed lines.
+3. `change_match`: the pull request's whole change is the exact inverse of an earlier merged pull request's, by a fingerprint of the added and removed lines. The change runs from the merge or squash commit's first parent, or, for a rebase merge, from before the first rebased commit: a single-parent merge commit whose last `N` first-parent commits carry the pull request's `N` subjects in order is taken as a rebase.
 4. `title`: a revert title alone. A possible revert, not counted as one.
 
-The gateway stores the lifecycle as `state`, `opened_at` and `closed_at` columns plus a `details` JSON object (migration V82, which makes `merged_at` nullable). The report's commit, spend and delivery figures still use pull requests merged in the window. A new lifecycle summary counts opened, closed-unmerged, open and draft pull requests, merges without review, review wait, confirmed and possible reverts, and time to revert. The report resolves each link by number, or by a reverted commit listed in, or merging, another pull request.
+The gateway stores the lifecycle as `state`, `opened_at` and `closed_at` columns plus a `details` JSON object (migration V82, which makes `merged_at` nullable). The report's commit, spend and delivery figures still use pull requests merged in the window. A new lifecycle summary counts opened, closed-unmerged, open and draft pull requests, merges without review (no human review before the merge), review wait, confirmed and possible reverts, and time to revert. The report resolves each link by number, or by a reverted commit listed in, or merging, another pull request.
 
 ### Why
 
@@ -305,14 +305,14 @@ The gateway stores the lifecycle as `state`, `opened_at` and `closed_at` columns
 ### Trade-offs
 
 - **Draft history:** the CLI reports only the current draft state, so review wait runs from opened, not from ready for review. A GitHub App's `ready_for_review` events would fix that.
-- **Change match needs local history:** a merge commit missing from the clone is skipped, and a revert of a pull request the hook never fingerprinted only matches by its other signals. The fingerprint cache keeps the newest 5,000 merge commits per repository.
+- **Change match needs local history:** a merge commit missing from the clone is skipped, as is a single-parent merge of a pull request with 100 or more commits, since `gh` lists only the first 100 and a rebase can't be ruled out; and a revert of a pull request the hook never fingerprinted only matches by its other signals. The fingerprint cache keeps the newest 5,000 merge commits per repository. A sync fingerprints at most 200 new merge commits, for at most 30 seconds, most recently updated first, so a first sync over a long history stays quick and the backlog fills over the next few syncs; until then a reworded revert of an unfingerprinted pull request isn't matched.
 - **Partial reverts and fix-forwards aren't detected:** only an exact inverse matches. Incident links are the real answer.
 - **Older rows are title-only:** pull requests stored before this change have no link, so a revert title on them reads as a possible revert, and their reverts stop counting toward change fail rate until the hook re-sends them.
 - **Bot reviews are excluded by account type:** GitHub's `Bot` actors are left out, but a bot that reviews from a user account counts as a person.
 - **A 90-day lookback for revert links:** the report loads pull requests from 90 days before the window so a revert resolves an older original and yields a time to revert. Those older rows only resolve links; window figures count activity in the window. A revert of a change older than that resolves only by number, without a time.
-- **Binary files match by blob ids:** a binary change has no lines to compare, so the fingerprint uses its from and to blob ids, which keep the change's direction.
+- **Binary files match by blob ids:** a binary change has no lines to compare, so the fingerprint uses its from and to blob ids, which keep the change's direction. File mode changes count with their old and new modes, so restoring a file's text without its executable bit isn't an exact revert.
 - **More than 100 reviews:** the hook reads the first 100 and sends the counts as unknown when there are more. The first review time is still exact, since reviews come oldest first.
-- **Activity is the forge's, not the sync's:** the hook sends GitHub's `updatedAt`, stored as `last_activity_at`, which orders the report read and decides whether a pull request changed in the window. A routine re-sync of an untouched pull request doesn't count. Rows from older hooks fall back to their merge, close or open time.
+- **Activity is the forge's, not the sync's:** the hook sends GitHub's `updatedAt`, stored as `last_activity_at`, which orders the report read and decides whether a pull request changed in the window. A routine re-sync of an untouched pull request doesn't count. The gateway fills `last_activity_at` on every write, from the hook's value, else the merge, close or open time, else when it was seen; rows stored before V82 keep it empty, and the read falls back to their merge time rather than rewriting the table in the migration.
 - **Exact lines:** the change fingerprint keeps whitespace, since a revert reproduces the original lines exactly and whitespace inside a string is content.
 - **Copies from several owners:** the author's copy keeps attribution, and the state, merge, commits and lifecycle come from the most recently observed copy, so a teammate's sync after the merge isn't overridden by the author's earlier one.
 
