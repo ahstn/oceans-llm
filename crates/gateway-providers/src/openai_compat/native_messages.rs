@@ -38,7 +38,7 @@ impl OpenAiCompatProvider {
             &self.config.default_headers,
         )?;
         apply_openrouter_routing_policy(&mut body, context)?;
-        apply_service_tier(&mut body, context);
+        self.apply_service_tier(&mut body, context, ServiceTierApi::ChatCompletions)?;
         let mut builder = self
             .client
             .post(join_base_url(&self.config.base_url, "messages")?)
@@ -48,7 +48,11 @@ impl OpenAiCompatProvider {
                 builder = builder.header(name, value);
             }
         }
-        builder = crate::anthropic::native::request_headers(builder, context);
+        builder = crate::anthropic::native::request_headers(
+            builder,
+            context,
+            &self.config.default_headers,
+        );
         for (name, value) in &context.extra_headers {
             if !name.eq_ignore_ascii_case("anthropic-beta")
                 && let Some(value) = value.as_str()

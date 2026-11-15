@@ -130,9 +130,26 @@ The [OMP `models.yml` docs](https://github.com/can1357/oh-my-pi/blob/main/docs/m
 
 ## Use fast mode
 
-The gateway accepts a [service tier](/configuration/model-routing/#service-tiers) on each request. OMP's `/fast` command asks for the `priority` tier. OMP sends it as `service_tier: "priority"` only for models it knows as OpenAI models on Chat Completions or Responses, such as `gpt-6-luna`. It doesn't send a tier for Claude or other models through a custom provider.
+The gateway accepts a [service tier](/configuration/model-routing/#service-tiers) on each request. OMP's `/fast` command asks for the `priority` tier. You can also set the tier for each model family in `~/.omp/agent/config.yml`, for example `tier.openai: priority`. What OMP sends depends on the model:
 
-For those models, pick a fast model that your admin published, such as `gpt-6-luna-fast` or `claude-opus-5.5-fast`. The gateway sends every request on that model at the `priority` tier. See [Publish a fast model](/configuration/models-and-routes/#service-tiers).
+- **GPT models.** OMP sends `service_tier: "priority"` for models it knows as OpenAI models on Chat Completions or Responses, such as `gpt-6-luna`.
+- **Claude models on Anthropic Messages.** For a custom provider such as `oceans`, `/fast` and `tier.anthropic` don't turn on Claude fast mode. Set `compat.fastMode: true` on the model in `modelOverrides`. OMP then sends `speed: "fast"`, and the gateway records the request at the `priority` tier.
+- **Gemini and other models on Chat Completions.** OMP sends no tier. OMP doesn't know the tier family of a Gemini model from a custom provider, so it ignores `tier.google`.
+
+```yaml title="~/.omp/agent/models.yml"
+providers:
+  oceans:
+    # ...the settings from the setup above
+    modelOverrides:
+      claude-haiku-5.5:
+        api: anthropic-messages
+        compat:
+          fastMode: true
+```
+
+With `compat.fastMode: true`, OMP sends every request on that model in fast mode. To use the model at standard speed too, remove the setting, or pick a different model.
+
+For models that get no tier from OMP, pick a fast model that your admin published, such as `gpt-6-luna-fast` or `claude-opus-5.5-fast`. The gateway sends every request on that model at the `priority` tier. See [Publish a fast model](/configuration/models-and-routes/#service-tiers).
 
 A request for a tier the model doesn't allow fails with `403` and `service_tier_not_allowed`. Turn off `/fast`, or ask your admin to allow the tier.
 

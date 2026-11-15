@@ -26,7 +26,7 @@ pub use report::{
 };
 
 /// Finds the Oceans user behind an author email. Implemented by the gateway over its store's
-/// normalized-email lookup.
+/// normalized-email lookup and the users' configured `additional_attribution_emails`.
 #[async_trait]
 pub trait AttributionUserLookup: Send + Sync {
     /// `email_normalized` is trimmed and lowercased, as `users.email_normalized` is stored.

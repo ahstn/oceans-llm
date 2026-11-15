@@ -51,6 +51,8 @@ pub struct AppState {
     pub client_config_gateway_base_url: Arc<Option<String>>,
     pub benchmark_model_ids: Arc<HashMap<String, String>>,
     pub budget_defaults: Arc<SeedHumanBudgetDefaults>,
+    /// Config users' `additional_attribution_emails` → their Oceans email, both normalized.
+    pub attribution_email_aliases: Arc<HashMap<String, String>>,
     pub agent_analysis: AgentAnalysisRuntimeCapabilities,
     pub admin_permissions: Arc<ResolvedAdminPermissions>,
     /// Who may publish an MCP server to the organisation catalog.

@@ -212,7 +212,7 @@ const modelPage: ModelPageView = {
       cache_read_cost_per_million_tokens_usd_10000: 3_000,
       pricing_tiers: [],
       pricing_service_tiers: [],
-      available_service_tiers: ['default', 'priority'],
+      available_service_tiers: ['default'],
       context_window_tokens: 200_000,
       input_window_tokens: null,
       output_window_tokens: 64_000,

@@ -481,7 +481,7 @@ async fn ownership_mismatch_and_oversized_batches_fail_whole() {
 }
 
 #[tokio::test]
-async fn service_account_keys_own_their_rows() {
+async fn service_account_keys_own_their_rows_and_match_note_authors_by_email() {
     let service_account = Uuid::new_v4();
     let (store, users) = (FakeStore::default(), FakeUsers::default());
     let scope = format!("service_account:{service_account}");
@@ -496,20 +496,36 @@ async fn service_account_keys_own_their_rows() {
     .await
     .expect("batch");
     assert_eq!(statuses(&outcome), [("n-1", Applied)]);
+    let commit = &store.commits()[0];
     assert_eq!(
-        store.commits()[0].owner,
+        commit.owner,
         AttributionOwner {
-            ownership_scope_key: scope,
+            ownership_scope_key: scope.clone(),
             owner_user_id: None,
             owner_service_account_id: Some(service_account),
         }
     );
+    // No user owns the key, so the note's author emails decide; none is an Oceans user.
+    let email_hash = hash_lineage_candidate(&scope, "git_ai_human", "dev@example.com");
+    assert_eq!(
+        (commit.author_user_id, commit.author_email_hash.as_deref()),
+        (None, Some(email_hash.as_str()))
+    );
+    assert_eq!(
+        commit.sessions[0].human_author_hash.as_deref(),
+        Some(email_hash.as_str())
+    );
 }
 
 #[tokio::test]
-async fn stores_only_hashes_of_session_ids_and_unmatched_emails() {
+async fn user_key_notes_credit_the_key_owner_and_store_only_hashes() {
     let dev = Uuid::new_v4();
-    let (store, users) = (FakeStore::default(), FakeUsers::default());
+    let other = Uuid::new_v4();
+    // The note's author email belongs to another user, and the pull request's to nobody.
+    let (store, users) = (
+        FakeStore::default(),
+        FakeUsers::with(&[("dev@example.com", other)]),
+    );
     let scope = format!("user:{dev}");
     let entries = vec![
         entry("n-1", 1, note(SHA_A, NOTE)),
@@ -518,7 +534,10 @@ async fn stores_only_hashes_of_session_ids_and_unmatched_emails() {
         entry(
             "p-1",
             4,
-            pull_requests(vec![pull_request(12, &[(SHA_A, Some("dev@example.com"))])]),
+            pull_requests(vec![pull_request(
+                12,
+                &[(SHA_A, Some("outside@example.com"))],
+            )]),
         ),
     ];
     ingest(&store, &users, &scope, &user_key(dev), entries)
@@ -532,19 +551,26 @@ async fn stores_only_hashes_of_session_ids_and_unmatched_emails() {
         "dev@example.com",
         "Dev@Example.com",
         "Eloper",
+        "outside@example.com",
     ] {
         assert!(!stored.contains(raw), "stored rows contain {raw}");
     }
-    let email_hash = hash_lineage_candidate(&scope, "git_ai_human", "dev@example.com");
-    let commit = &store.commits()[0];
-    assert_eq!(
-        (commit.author_user_id, commit.author_email_hash.as_deref()),
-        (None, Some(email_hash.as_str()))
-    );
-    assert_eq!(
-        commit.sessions[0].human_author_hash.as_deref(),
-        Some(email_hash.as_str())
-    );
+    for commit in store.commits() {
+        assert_eq!(
+            (commit.author_user_id, commit.author_email_hash.as_deref()),
+            (Some(dev), None)
+        );
+        for session in &commit.sessions {
+            assert_eq!(
+                (
+                    session.human_author_user_id,
+                    session.human_author_hash.as_deref()
+                ),
+                (Some(dev), None)
+            );
+        }
+    }
+    let email_hash = hash_lineage_candidate(&scope, "git_ai_human", "outside@example.com");
     assert_eq!(
         store.pull_requests()[0].author_email_hash.as_deref(),
         Some(email_hash.as_str())
@@ -552,7 +578,7 @@ async fn stores_only_hashes_of_session_ids_and_unmatched_emails() {
     assert_eq!(
         users.lookup_count(),
         1,
-        "one lookup per distinct email per batch"
+        "only the pull request's email is looked up"
     );
 }
 

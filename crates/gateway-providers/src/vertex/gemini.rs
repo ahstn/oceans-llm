@@ -63,6 +63,11 @@ impl GeminiModel {
         self.is_at_least(3, 5)
     }
 
+    /// Gemini 3+ rejects a current-turn `functionCall` that lacks its thought signature.
+    pub(super) const fn validates_call_signatures(self) -> bool {
+        self.major >= 3
+    }
+
     /// Gemini 3.6+ ignores `temperature`/`topP`/`topK` and rejects `presencePenalty`,
     /// `frequencyPenalty`, and `candidateCount` with an API error.
     pub(super) const fn deprecates_sampling(self) -> bool {
@@ -75,9 +80,10 @@ impl GeminiModel {
     }
 
     /// Wire value for one categorical effort, or `None` when the model has no thinking.
+    /// `ReasoningEffort::None` gets the disabled control.
     pub(super) fn thinking_control(self, effort: ReasoningEffort) -> Option<ThinkingControl> {
-        if !self.supports_thinking() {
-            return None;
+        if effort == ReasoningEffort::None || !self.supports_thinking() {
+            return self.disabled_thinking_control();
         }
         if self.uses_thinking_level() {
             return Some(ThinkingControl::Level(self.thinking_level(effort)));
@@ -109,8 +115,10 @@ impl GeminiModel {
     fn thinking_level(self, effort: ReasoningEffort) -> &'static str {
         let pro = matches!(self.tier, GeminiTier::Pro);
         match effort {
-            ReasoningEffort::Minimal if self.supports_minimal_level() => "MINIMAL",
-            ReasoningEffort::Minimal | ReasoningEffort::Low => "LOW",
+            ReasoningEffort::None | ReasoningEffort::Minimal if self.supports_minimal_level() => {
+                "MINIMAL"
+            }
+            ReasoningEffort::None | ReasoningEffort::Minimal | ReasoningEffort::Low => "LOW",
             ReasoningEffort::Medium if pro => "HIGH",
             ReasoningEffort::Medium => "MEDIUM",
             ReasoningEffort::High | ReasoningEffort::XHigh | ReasoningEffort::Max => "HIGH",
@@ -121,7 +129,7 @@ impl GeminiModel {
     fn thinking_budget(self, effort: ReasoningEffort) -> i64 {
         let pro = matches!(self.tier, GeminiTier::Pro);
         match effort {
-            ReasoningEffort::Minimal => 128,
+            ReasoningEffort::None | ReasoningEffort::Minimal => 128,
             ReasoningEffort::Low => 2048,
             ReasoningEffort::Medium => 8192,
             ReasoningEffort::High | ReasoningEffort::XHigh | ReasoningEffort::Max if pro => 32_768,

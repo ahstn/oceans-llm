@@ -285,7 +285,7 @@ impl<'a> ModelView<'a> {
         let service_tiers = servable_service_tiers(
             chat_routes
                 .iter()
-                .map(|((route, provider, _), _)| (*route, *provider)),
+                .map(|((route, provider, caps), _)| (*route, *provider, *caps)),
             allowed,
             snapshot,
             adapter,
@@ -495,6 +495,7 @@ fn model_card(view: &ModelView<'_>) -> ModelCard {
             vision: image_input,
         },
         thinking_policy,
+        reasoning: view.can_reason(),
         native_api_format: primary.and_then(|(route, provider)| native_api_format(provider, route)),
         max_reasoning_effort: reasoning_ceiling.map(reasoning_level),
         service_tiers: selectable_service_tiers(&summary.service_tiers, view.allowed_service_tiers),

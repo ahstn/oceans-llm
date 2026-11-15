@@ -1,6 +1,8 @@
 //! The attribution routes through the real router: ownership, per-entry outcomes, the
 //! ownership check, the body limit and the report.
 
+use std::sync::Arc;
+
 use axum::{
     Router,
     body::{Body, to_bytes},
@@ -38,8 +40,19 @@ struct Reply {
 
 impl Gateway {
     async fn new() -> Self {
-        let (directory, state) = app_state().await;
+        Self::with_attribution_emails(&[]).await
+    }
+
+    /// A gateway whose config gives the signed-in user these `additional_attribution_emails`.
+    async fn with_attribution_emails(emails: &[&str]) -> Self {
+        let (directory, mut state) = app_state().await;
         let (user_id, email, cookie) = signed_in_admin(&state).await;
+        state.attribution_email_aliases = Arc::new(
+            emails
+                .iter()
+                .map(|alias| ((*alias).to_string(), email.clone()))
+                .collect(),
+        );
         let mut gateway = Self {
             router: build_router(state, admin_ui::AdminUiConfig::default()),
             user_id,
@@ -279,6 +292,54 @@ async fn attribution_entries_report_one_outcome_each_and_reach_the_report() {
     assert_eq!(data["users"][0]["user"]["id"], gateway.user_id.to_string());
     assert_private(&reply, &gateway.email);
     assert_private(&report, &gateway.email);
+}
+
+#[tokio::test]
+async fn pull_request_authors_match_additional_attribution_emails() {
+    let gateway = Gateway::with_attribution_emails(&["ada@personal.example"]).await;
+    let merged_at = OffsetDateTime::now_utc() - Duration::hours(1);
+    let commit = |sha: &str, email: &str| json!({"sha": sha, "subject": "Change", "authored_at": null, "author_email": email});
+    let payload = json!({
+        "kind": "pull_requests",
+        "repository": REPOSITORY,
+        "pull_requests": [
+            {
+                "number": 7, "title": "Personal email", "url": null, "base_ref": "main",
+                "head_ref": "personal", "merge_commit_sha": null,
+                "merged_at": merged_at.format(&Rfc3339).unwrap(),
+                "commits": [commit(COMMIT_SHA, "Ada@Personal.example")],
+            },
+            {
+                "number": 8, "title": "Outside email", "url": null, "base_ref": "main",
+                "head_ref": "outside", "merge_commit_sha": null,
+                "merged_at": merged_at.format(&Rfc3339).unwrap(),
+                "commits": [commit(&"a".repeat(40), "bot@outside.example")],
+            },
+        ],
+    });
+    let reply = gateway
+        .post_entries(&gateway.scope(), vec![entry("prs-1", 1, payload)])
+        .await;
+    assert_eq!(
+        reply.body["results"][0]["status"], "applied",
+        "{}",
+        reply.body
+    );
+
+    let report = gateway.report().await;
+    let pull_requests = report.body["data"]["pull_requests"]
+        .as_array()
+        .expect("pull requests");
+    let author = |number: i64| {
+        pull_requests
+            .iter()
+            .find(|pull_request| pull_request["number"] == number)
+            .map(|pull_request| pull_request["author"].clone())
+            .expect("reported pull request")
+    };
+    assert_eq!(author(7)["id"], gateway.user_id.to_string());
+    assert_eq!(author(8), Value::Null);
+    assert!(!report.text.contains("personal.example"), "{}", report.text);
 }
 
 #[tokio::test]

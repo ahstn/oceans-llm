@@ -122,4 +122,77 @@ describe("harness event parsing", () => {
       { name: "oceans_call_tool", status: "error" },
     ]);
   });
+
+  test("treats an OMP tool end without isError as completed", () => {
+    const output = [
+      JSON.stringify({
+        type: "tool_execution_start",
+        toolCallId: "omp-bash",
+        toolName: "bash",
+        args: { command: "bwrap --die-with-parent /bin/sh -c 'date -u +%F'" },
+      }),
+      JSON.stringify({
+        type: "tool_execution_end",
+        toolCallId: "omp-bash",
+        toolName: "bash",
+        result: { content: [{ type: "text", text: "2026-11-13" }] },
+      }),
+      JSON.stringify({
+        type: "agent_end",
+        messages: [
+          { role: "assistant", content: [{ type: "text", text: "2026-11-13" }], stopReason: "stop" },
+        ],
+      }),
+    ].join("\n");
+
+    expect(parseToolCalls(output)).toEqual([
+      {
+        name: "bash",
+        input: { command: "bwrap --die-with-parent /bin/sh -c 'date -u +%F'" },
+        status: "completed",
+      },
+    ]);
+    expect(parseAssistantOutput(output)).toBe("2026-11-13");
+  });
+
+  test("reads Claude Code stream-json tool calls, results and the final result", () => {
+    const output = [
+      JSON.stringify({ type: "system", subtype: "init", tools: ["Read", "Write"] }),
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          content: [
+            { type: "text", text: "Reading the file." },
+            { type: "tool_use", id: "toolu_read", name: "Read", input: { file_path: "/w/source.txt" } },
+            { type: "tool_use", id: "toolu_denied", name: "Write", input: { file_path: "/etc/x" } },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: "user",
+        message: {
+          content: [
+            { type: "tool_result", tool_use_id: "toolu_read", content: "marker" },
+            { type: "tool_result", tool_use_id: "toolu_denied", content: "denied", is_error: true },
+          ],
+        },
+      }),
+      JSON.stringify({ type: "result", subtype: "success", is_error: false, result: " DONE\n" }),
+    ].join("\n");
+
+    expect(parseToolCalls(output)).toEqual([
+      { name: "Read", input: { file_path: "/w/source.txt" }, status: "completed" },
+      { name: "Write", input: { file_path: "/etc/x" }, status: "error" },
+    ]);
+    expect(parseAssistantOutput(output)).toBe("DONE");
+  });
+
+  test("rejects a Claude Code error result", () => {
+    for (const result of [
+      { type: "result", subtype: "error_max_turns", is_error: true },
+      { type: "result", subtype: "success", is_error: true, result: "API Error: 400" },
+    ]) {
+      expect(() => parseAssistantOutput(JSON.stringify(result))).toThrow(/agent error/);
+    }
+  });
 });

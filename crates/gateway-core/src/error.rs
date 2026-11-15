@@ -190,14 +190,18 @@ impl GatewayError {
             | Self::McpCredentialRequired { .. }
             | Self::McpCredentialExpired { .. } => 403,
             Self::Provider(ProviderError::PartialUsage { source, .. }) => match source.as_ref() {
-                ProviderError::InvalidRequest(_) => 400,
+                ProviderError::InvalidRequest(_) | ProviderError::UnsupportedParameter { .. } => {
+                    400
+                }
                 ProviderError::UpstreamHttp { status, .. }
                 | ProviderError::NativeMessagesHttp { status, .. } => *status,
                 ProviderError::Timeout => 504,
                 ProviderError::Transport(_) | ProviderError::PartialUsage { .. } => 502,
                 ProviderError::NotImplemented(_) => 501,
             },
-            Self::Provider(ProviderError::InvalidRequest(_)) => 400,
+            Self::Provider(
+                ProviderError::InvalidRequest(_) | ProviderError::UnsupportedParameter { .. },
+            ) => 400,
             Self::Provider(
                 ProviderError::UpstreamHttp { status, .. }
                 | ProviderError::NativeMessagesHttp { status, .. },
@@ -234,7 +238,9 @@ impl GatewayError {
                 | StoreError::PricingSyncConflict,
             ) => "conflict_error",
             Self::Store(_) => "store_error",
-            Self::Provider(ProviderError::InvalidRequest(_)) => "invalid_request_error",
+            Self::Provider(
+                ProviderError::InvalidRequest(_) | ProviderError::UnsupportedParameter { .. },
+            ) => "invalid_request_error",
             Self::PayloadTooLarge { .. } => "invalid_request_error",
             Self::Provider(_) => "upstream_error",
             Self::NotImplemented(_) => "not_implemented_error",
@@ -295,6 +301,7 @@ impl GatewayError {
                 }
                 ProviderError::NotImplemented(_) => "provider_not_implemented",
                 ProviderError::InvalidRequest(_) => "invalid_request",
+                ProviderError::UnsupportedParameter { .. } => "unsupported_parameter",
             },
             Self::Provider(ProviderError::Timeout) => "upstream_timeout",
             Self::Provider(ProviderError::Transport(_)) => "upstream_transport",
@@ -303,6 +310,7 @@ impl GatewayError {
             ) => "upstream_http_error",
             Self::Provider(ProviderError::NotImplemented(_)) => "provider_not_implemented",
             Self::Provider(ProviderError::InvalidRequest(_)) => "invalid_request",
+            Self::Provider(ProviderError::UnsupportedParameter { .. }) => "unsupported_parameter",
             Self::InvalidRequest(_) | Self::DuplicateUsageRecord { .. } => "invalid_request",
             Self::BatchUsageConflict { .. } => "batch_usage_conflict",
             Self::UnprocessableEntity(_) => "validation_failed",
@@ -315,6 +323,15 @@ impl GatewayError {
             Self::McpCredentialRequired { .. } => "credential_required",
             Self::McpCredentialExpired { .. } => "credential_expired",
             Self::Internal(_) => "internal_error",
+        }
+    }
+
+    /// The request field an `invalid_request_error` names, as OpenAI's error `param`.
+    #[must_use]
+    pub fn param(&self) -> Option<&'static str> {
+        match self {
+            Self::Provider(ProviderError::UnsupportedParameter { param, .. }) => Some(*param),
+            _ => None,
         }
     }
 }

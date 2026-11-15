@@ -40,7 +40,7 @@ pub(super) fn request_headers(
         }
         request = request.header(name, value);
     }
-    request = crate::anthropic::native::request_headers(request, context);
+    request = crate::anthropic::native::request_headers(request, context, default_headers);
     for (name, value) in &context.extra_headers {
         if name.eq_ignore_ascii_case("anthropic-beta") {
             continue;

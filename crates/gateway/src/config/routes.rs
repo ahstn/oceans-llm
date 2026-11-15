@@ -8,9 +8,10 @@ use gateway_core::{
     OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
     OpenRouterProviderRouting, OpenRouterRouteCompatibility, PartialCapabilities,
     ProviderCapabilities, ReasoningEffort, RouteCompatibility, RoutePricingOverride, ServiceTier,
-    enforce_reasoning_effort_map, infer_compatibility_capabilities, route_capability_ceiling,
+    ServiceTierApi, enforce_reasoning_effort_map, infer_compatibility_capabilities,
+    route_capability_ceiling,
 };
-use gateway_providers::BedrockEndpointKind;
+use gateway_providers::{BedrockEndpointKind, ServiceTierProvider, route_service_tiers};
 use serde::{Deserialize, Deserializer, de};
 use serde_json::{Map, Value};
 
@@ -136,7 +137,8 @@ impl ModelRouteConfig {
                 self.provider
             );
         }
-        let capabilities = self.resolved_capabilities(provider);
+        let compatibility = self.compatibility.clone().into_compatibility();
+        let capabilities = self.resolved_capabilities(provider, &compatibility);
         if let Some(ProviderConfig::AwsBedrock(provider)) = provider {
             validate_aws_bedrock_route_compatibility(model_id, self, provider, capabilities)?;
         }
@@ -145,6 +147,7 @@ impl ModelRouteConfig {
         if provider.is_some() {
             self.validate_capabilities_within_ceiling(model_id, provider)?;
         }
+        validate_forced_service_tier(model_id, self, provider, &compatibility, capabilities)?;
         Ok(())
     }
 
@@ -189,13 +192,88 @@ impl ModelRouteConfig {
 
     /// Explicit settings over compatibility inference over defaults. Validation checks this so
     /// omitted fields take their inferred values and only explicit contradictions fail.
-    fn resolved_capabilities(&self, provider: Option<&ProviderConfig>) -> ProviderCapabilities {
+    fn resolved_capabilities(
+        &self,
+        provider: Option<&ProviderConfig>,
+        compatibility: &RouteCompatibility,
+    ) -> ProviderCapabilities {
         let inferred = infer_compatibility_capabilities(
-            &self.compatibility.clone().into_compatibility(),
+            compatibility,
             provider.map_or("", ProviderConfig::provider_type),
         );
         self.capabilities.into_partial().or(inferred).resolve()
     }
+}
+
+/// Rejects a forced non-default `service_tier` that no API the route serves can send. The
+/// check reads [`route_service_tiers`], the table adapters and routing use, so a route that
+/// loads never fails every request with a tier its provider does not sell. An unknown provider
+/// is left to the caller, which reports it by name.
+fn validate_forced_service_tier(
+    model_id: &str,
+    route: &ModelRouteConfig,
+    provider: Option<&ProviderConfig>,
+    compatibility: &RouteCompatibility,
+    capabilities: ProviderCapabilities,
+) -> anyhow::Result<()> {
+    let (Some(tier), Some(provider)) = (route.service_tier, provider) else {
+        return Ok(());
+    };
+    if tier == ServiceTier::Default {
+        return Ok(());
+    }
+    let tier_provider = match provider {
+        ProviderConfig::OpenAiCompat(provider) => ServiceTierProvider::OpenAiCompat {
+            base_url: &provider.base_url,
+        },
+        ProviderConfig::GcpCloudRunOpenAiCompat(provider) => ServiceTierProvider::OpenAiCompat {
+            base_url: &provider.base_url,
+        },
+        ProviderConfig::AnthropicCompat(_) => ServiceTierProvider::AnthropicCompat,
+        ProviderConfig::GcpVertex(provider) => ServiceTierProvider::GcpVertex {
+            location: &provider.location,
+        },
+        ProviderConfig::AwsBedrock(_) => ServiceTierProvider::AwsBedrock,
+        ProviderConfig::GitHubCopilot(_) | ProviderConfig::TypeSafe(_) => {
+            ServiceTierProvider::Untiered
+        }
+    };
+    let apis: Vec<ServiceTierApi> = ServiceTierApi::served_by(capabilities).collect();
+    if apis.iter().any(|&api| {
+        route_service_tiers(tier_provider, &route.upstream_model, compatibility, api)
+            .contains(&tier)
+    }) {
+        return Ok(());
+    }
+    let reason = match provider {
+        _ if apis.is_empty() => {
+            "the route serves neither chat_completions nor responses, the only APIs that take a tier"
+                .to_string()
+        }
+        ProviderConfig::GcpVertex(provider) => format!(
+            "gcp_vertex location `{}` cannot send it for this model",
+            provider.location
+        ),
+        ProviderConfig::OpenAiCompat(_) | ProviderConfig::GcpCloudRunOpenAiCompat(_) => {
+            let apis: Vec<&str> = apis
+                .iter()
+                .map(|api| match api {
+                    ServiceTierApi::ChatCompletions => "chat_completions",
+                    ServiceTierApi::Responses => "responses",
+                })
+                .collect();
+            format!("the route cannot send it on {}", apis.join(" or "))
+        }
+        provider => format!(
+            "{} cannot send it for this model",
+            provider.provider_type()
+        ),
+    };
+    bail!(
+        "model `{model_id}` route `{}` for provider `{}` forces service_tier `{tier}`, but {reason}",
+        route.upstream_model,
+        route.provider
+    );
 }
 
 #[derive(Debug, Clone, Deserialize)]

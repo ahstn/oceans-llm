@@ -141,7 +141,9 @@ where
 
 fn provider_error_type(error: &ProviderError) -> &'static str {
     match error {
-        ProviderError::InvalidRequest(_) => "invalid_request",
+        ProviderError::InvalidRequest(_) | ProviderError::UnsupportedParameter { .. } => {
+            "invalid_request"
+        }
         ProviderError::UpstreamHttp { .. } | ProviderError::NativeMessagesHttp { .. } => {
             "upstream_http"
         }

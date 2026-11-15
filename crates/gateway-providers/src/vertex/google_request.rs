@@ -5,7 +5,7 @@ use super::{
     error::VertexAdapterError,
     gemini::{GeminiModel, ThinkingControl},
     google_content::FunctionIdPolicy,
-    google_conversation::map_google_contents,
+    google_conversation::{UnsignedCallPolicy, map_google_contents},
     google_tools::{convert_openai_tools_for_google, reject_google_strict_tools},
 };
 
@@ -20,10 +20,14 @@ pub(super) fn map_google_request(
         Some(model) if model.supports_function_ids() => FunctionIdPolicy::Include,
         _ => FunctionIdPolicy::Omit,
     };
+    let unsigned_calls = match model {
+        Some(model) if model.validates_call_signatures() => UnsignedCallPolicy::Bypass,
+        _ => UnsignedCallPolicy::Keep,
+    };
 
     reject_google_strict_tools(request.extra.get("tools"))?;
     let mut body = Map::new();
-    map_google_contents(request, function_ids, &mut body)?;
+    map_google_contents(request, function_ids, unsigned_calls, &mut body)?;
 
     let mut generation_config = Map::new();
     let mut thinking = ThinkingRequest::default();

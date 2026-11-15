@@ -283,24 +283,15 @@ describe('AttributionPage', () => {
     expect(kpi('Merged PRs').getByText('Merged in the last 30 days')).toBeInTheDocument()
     expect(kpi('AI lines').getByText('120')).toBeInTheDocument()
     expect(kpi('AI lines').getByText('75% of attested lines · 40 human')).toBeInTheDocument()
-    expect(kpi('Requests').getByText('42')).toBeInTheDocument()
-    expect(kpi('Requests').getByText('2 of 3 AI sessions joined')).toBeInTheDocument()
-    expect(kpi('Attributed cost').getByText('$12.34')).toBeInTheDocument()
-    expect(kpi('Attributed cost').getByText('$1.50 in uncommitted work')).toBeInTheDocument()
-    expect(kpi('Pricing coverage').getByText('95.7%')).toBeInTheDocument()
-    expect(
-      kpi('Pricing coverage').getByRole('progressbar', { name: 'Pricing coverage' }),
-    ).toBeInTheDocument()
+    // Requests, cost, and models have their own pages; the report keeps them to the tables.
+    expect(screen.queryByText('Attributed cost')).not.toBeInTheDocument()
+    expect(screen.queryByText('Pricing coverage')).not.toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Models' })).not.toBeInTheDocument()
 
     const users = within(screen.getByRole('table', { name: 'User activity' }))
     const aliceRow = users.getByRole('row', { name: /Alice Doe/ })
     expect(within(aliceRow).getByText('$12.34')).toBeInTheDocument()
     expect(within(aliceRow).getByText('2 hooked')).toBeInTheDocument()
-
-    const models = within(screen.getByRole('list', { name: 'Models' }))
-    expect(models.getByText('claude-sonnet-5')).toBeInTheDocument()
-    expect(models.getByText('40 requests · 95.2% · 5 uncommitted')).toBeInTheDocument()
-    expect(models.getByText('2 requests · 4.8%')).toBeInTheDocument()
 
     const pullRequests = within(screen.getByRole('table', { name: 'Merged pull requests' }))
     expect(pullRequests.getByRole('link', { name: 'github.com/acme/widgets#42' })).toHaveAttribute(
@@ -343,31 +334,6 @@ describe('AttributionPage', () => {
     )
     expect(within(unjoinedRow).getAllByRole('cell')[10]).toHaveTextContent('—')
     expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
-  })
-
-  it('renders the attributed cost KPI as — when no request was priced', () => {
-    const report = attributionReport()
-    renderPage(
-      attributionReport({
-        totals: {
-          ...report.totals,
-          priced_request_count: 0,
-          unpriced_request_count: 42,
-          priced_cost_usd_10000: 0,
-          uncommitted_cost_usd_10000: 0,
-        },
-        coverage: {
-          ...report.coverage,
-          priced_request_count: 0,
-          unpriced_request_count: 47,
-          priced_cost_usd_10000: 0,
-        },
-      }),
-    )
-
-    expect(kpi('Attributed cost').getByText('—')).toBeInTheDocument()
-    expect(kpi('Attributed cost').getByText('Priced requests only')).toBeInTheDocument()
-    expect(kpi('Pricing coverage').getByText('0%')).toBeInTheDocument()
   })
 
   it('filters to a user from the name button in their row', async () => {
@@ -437,7 +403,6 @@ describe('AttributionPage', () => {
       ATTRIBUTION_DOCS_URL,
     )
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
-    expect(kpi('Attributed cost').getByText('—')).toBeInTheDocument()
   })
 
   it('explains the hook install to a user whose own id the gateway echoes', () => {

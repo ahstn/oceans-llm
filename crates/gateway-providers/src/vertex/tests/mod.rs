@@ -44,6 +44,7 @@ mod provider;
 mod response;
 mod service_tier;
 mod streaming;
+mod thought_signatures;
 
 fn context(upstream_model: &str) -> ProviderRequestContext {
     ProviderRequestContext {

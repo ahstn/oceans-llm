@@ -823,9 +823,34 @@ providers:
 
     let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
     assert!(
-        format!("{error:#}").contains("auth.kind must be `bearer`"),
+        format!("{error:#}").contains("unknown variant `x_api_key`, expected `bearer`"),
         "unexpected error: {error:#}"
     );
+}
+
+#[test]
+fn openai_compat_auth_requires_bearer_kind_and_token() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    for (auth, expected) in [
+        (
+            "kind: x_api_key\n      token: literal.test-openai-key",
+            "unknown variant `x_api_key`, expected `bearer`",
+        ),
+        ("kind: bearer", "missing field `token`"),
+    ] {
+        write_config(
+            &config_path,
+            &format!(
+                "providers:\n  - id: openai\n    type: openai_compat\n    base_url: https://api.openai.com/v1\n    pricing_provider_id: openai\n    auth:\n      {auth}\n"
+            ),
+        );
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        assert!(
+            format!("{error:#}").contains(expected),
+            "unexpected error for {auth}: {error:#}"
+        );
+    }
 }
 
 #[test]
@@ -925,7 +950,7 @@ fn rejects_unknown_provider_fields_and_non_bearer_openai_auth() {
         ),
         (
             "    base_url: https://api.openai.com/v1\n    auth: { kind: basic, token: literal.test }\n",
-            "openai_compat provider `openai` auth.kind must be `bearer`",
+            "unknown variant `basic`, expected `bearer`",
         ),
     ] {
         write_config(

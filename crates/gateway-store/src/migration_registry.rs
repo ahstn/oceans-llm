@@ -504,10 +504,19 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 80,
+        name: "attribution_note_key_owner_authors",
+        checksum: "V80__attribution_note_key_owner_authors.sql",
+        libsql_sql: include_str!("../migrations/V80__attribution_note_key_owner_authors.sql"),
+        postgres_sql: include_str!(
+            "../migrations/postgres/V80__attribution_note_key_owner_authors.sql"
+        ),
+    },
+    MigrationManifest {
+        version: 81,
         name: "batch_jobs_route_index",
-        checksum: "V80__batch_jobs_route_index.sql",
-        libsql_sql: include_str!("../migrations/V80__batch_jobs_route_index.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V80__batch_jobs_route_index.sql"),
+        checksum: "V81__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V81__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V81__batch_jobs_route_index.sql"),
     },
 ];
 

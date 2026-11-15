@@ -223,10 +223,36 @@ env = { GIT_CONFIG_COUNT = "1", GIT_CONFIG_KEY_0 = "color.ui", GIT_CONFIG_VALUE_
 run = "gitleaks git --redact --no-banner"
 
 # Without key names, fnox syncs every secret this checkout sees, the global ones included.
-# Rerun after a key rotates or fnox.toml gains a key; each worktree keeps its own copy.
+# Rerun after a key rotates or fnox.toml gains a key. A worktree set up by `worktree-link`
+# shares the primary checkout's file, so one sync there updates it too.
 [tasks.secrets-sync]
 description = "Cache this checkout's fnox secrets from 1Password, encrypted, in the gitignored fnox.local.toml"
 run = "fnox sync --provider sync-age --local-file --force"
+
+# Claude Code and Codex copy .worktreeinclude entries into a new worktree. omp only carries
+# them when it can clone the checkout copy-on-write, which ext4 can't, so its plain-checkout
+# worktrees start without them. Existing files are never replaced.
+[tasks.worktree-link]
+description = "Symlink each missing .worktreeinclude entry from the primary checkout into this worktree"
+run = """
+set -eu
+primary="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
+here="$(git rev-parse --show-toplevel)"
+if [ "$primary" = "$here" ]; then
+  echo "worktree-link: this is the primary checkout; nothing to do"
+  exit 0
+fi
+grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$here/.worktreeinclude" | while IFS= read -r entry; do
+  if [ -e "$here/$entry" ] || [ -L "$here/$entry" ]; then
+    echo "worktree-link: $entry exists; kept"
+  elif [ -e "$primary/$entry" ]; then
+    ln -s "$primary/$entry" "$here/$entry"
+    echo "worktree-link: $entry -> $primary/$entry"
+  else
+    echo "worktree-link: $entry is not in $primary; skipped"
+  fi
+done
+"""
 
 [tasks.repo-lint]
 description = "Run language-agnostic checks for TOML, spelling, secrets, links, and GitHub Actions"

@@ -1,5 +1,4 @@
 import { EMPTY_VALUE, formatUsd10000 } from '@/lib/format'
-import type { AttributionCoverageView } from '@/types/api'
 
 /** The setup guide for `oceans hook install`, linked from the empty state. */
 export const ATTRIBUTION_DOCS_URL = 'https://oceans-llm.com/harnesses/git-ai-attribution/'
@@ -46,11 +45,6 @@ export function formatAttributedCost(costUsd10000: number, pricedRequestCount: n
 export function aiLineShare(aiLines: number, humanLines: number) {
   const attested = aiLines + humanLines
   return attested > 0 ? aiLines / attested : null
-}
-
-/** Share of requests that carried a price; an empty window counts as fully priced. */
-export function pricingCoverage(coverage: AttributionCoverageView) {
-  return coverage.request_count > 0 ? coverage.priced_request_count / coverage.request_count : 1
 }
 
 /** The abbreviated commit SHA git shows by default. */

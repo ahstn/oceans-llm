@@ -129,11 +129,18 @@ pub enum OpenAiBatchDialectConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OpenAiCompatAuthConfig {
-    /// Only `bearer` is supported, which is also the default.
+    /// Only `bearer` is supported, so it may be omitted.
     #[serde(default)]
-    pub kind: Option<String>,
-    #[serde(default)]
-    pub token: Option<String>,
+    pub kind: OpenAiCompatAuthKindConfig,
+    pub token: String,
+}
+
+/// The only scheme OpenAI-compatible upstreams accept: `Authorization: Bearer <token>`.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenAiCompatAuthKindConfig {
+    #[default]
+    Bearer,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -439,19 +446,6 @@ pub(super) fn infer_pricing_provider_ids(providers: &mut [ProviderConfig]) {
     }
 }
 
-fn validate_bearer_auth_kind(
-    provider_type: &str,
-    provider_id: &str,
-    auth: Option<&OpenAiCompatAuthConfig>,
-) -> anyhow::Result<()> {
-    if let Some(kind) = auth.and_then(|auth| auth.kind.as_deref())
-        && kind != "bearer"
-    {
-        bail!("{provider_type} provider `{provider_id}` auth.kind must be `bearer`");
-    }
-    Ok(())
-}
-
 pub(super) fn validate_providers(providers: &[ProviderConfig]) -> anyhow::Result<()> {
     let mut provider_ids = BTreeSet::new();
     for provider in providers {
@@ -521,7 +515,6 @@ impl OpenAiCompatProviderConfig {
                 self.pricing_provider_id
             );
         }
-        validate_bearer_auth_kind("openai_compat", &self.id, self.auth.as_ref())?;
         if let Some(batch) = &self.batch {
             if let Some(base_url) = batch.base_url.as_deref() {
                 if base_url.trim().is_empty() {
@@ -637,7 +630,6 @@ impl TypeSafeProviderConfig {
                 self.id
             );
         }
-        validate_bearer_auth_kind("typesafe", &self.id, self.auth.as_ref())?;
         if self.pricing_provider_id.trim().is_empty() {
             bail!(
                 "typesafe provider `{}` pricing_provider_id cannot be empty",

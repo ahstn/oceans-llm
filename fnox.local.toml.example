@@ -6,3 +6,5 @@
 [secrets]
 OPENAI_API_KEY = { provider = "op", value = "op://<vault>/<item>/credential" }
 REUI_LICENSE_KEY = { provider = "op", value = "op://<vault>/<item>/credential", if_missing = "warn" }
+OCEANS_HARNESS_VERTEX_PROJECT = { provider = "op", value = "op://<vault>/<item>/project", if_missing = "warn" }
+OCEANS_HARNESS_VERTEX_SA_JSON = { provider = "op", value = "op://<vault>/<item>/credential", if_missing = "warn" }

@@ -470,9 +470,9 @@ fn replays_message_thought_signature_onto_text_part() {
         parts[0],
         json!({ "text": "Checking.", "thoughtSignature": "sig-text" })
     );
-    assert!(
-        parts[1].get("thoughtSignature").is_none(),
-        "message-level signature must not leak onto the function call"
+    assert_eq!(
+        parts[1]["thoughtSignature"], "skip_thought_signature_validator",
+        "message-level signature must not leak onto the unsigned function call"
     );
 }
 
@@ -671,7 +671,10 @@ fn normalizes_google_function_call_response_into_openai_tool_calls() {
         tool_calls[0]["function"]["arguments"],
         "{\"city\":\"London\"}"
     );
-    assert_eq!(tool_calls[0]["thought_signature"], "sig-call");
+    assert_eq!(
+        tool_calls[0]["extra_content"]["google"]["thought_signature"],
+        "sig-call"
+    );
 }
 
 #[test]

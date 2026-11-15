@@ -1,4 +1,7 @@
 # Gitignored files copied into each new Claude Code or Codex worktree, once, at creation.
+# omp worktrees on a filesystem without copy-on-write (such as ext4) don't get them: run
+# `mise run worktree-link` there to symlink each entry from the primary checkout instead.
+# Plain paths only, one per line; `worktree-link` doesn't expand globs.
 # fnox's 1Password references and their encrypted cache (`mise run secrets-sync`), so
 # tasks agents run resolve without 1Password. Rerun the sync in a worktree after a key
 # rotates.

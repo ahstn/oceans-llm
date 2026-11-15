@@ -1,21 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { crc32, deflateSync } from "node:zlib";
 import { OpenCode, type OpenCodeClient } from "@opencode/client";
 import { afterAll, beforeAll, expect, inject, test } from "vitest";
 import { z } from "zod";
 
-import { createHarnessEnvironment, createIsolatedPaths } from "./adapters/isolation.js";
+import { createIsolatedPaths } from "./adapters/isolation.js";
 import { withPrivateServer } from "./adapters/opencode.js";
+import { oceansPluginEnvironment, packOceansPlugin } from "./adapters/opencode-plugin.js";
 import { assertSuccessful, fetchWithTimeout, GatewayAdminClient } from "./gateway-client.js";
-import { runCommand } from "./process.js";
 
 const runtime = inject("gateway");
-const ROOT = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
-const PLUGIN = join(ROOT, "packages/opencode-oceans");
 const PNG = redPng().toString("base64");
 const ListingSchema = z.object({
   data: z.array(
@@ -44,10 +41,7 @@ let packedPlugin: string;
 
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), "oceans-opencode-plugin-"));
-  const archive = join(root, "plugin.tgz");
-  await runCommand("bun", ["pm", "pack", "--filename", archive], { cwd: PLUGIN });
-  await runCommand("tar", ["-xzf", archive, "-C", root], { cwd: root });
-  packedPlugin = join(root, "package");
+  packedPlugin = await packOceansPlugin(root);
 });
 afterAll(async () => {
   if (root) await rm(root, { recursive: true, force: true });
@@ -64,16 +58,22 @@ test("packed Oceans plugin discovers authorized models, native protocols, limits
     );
     expect(models.map((model) => model.id)).toContain(runtime.pluginModels.openai);
     expect(models.map((model) => model.id)).toContain(runtime.pluginModels.anthropic);
+    expect(models.map((model) => model.id)).toContain(runtime.pluginModels.google);
     expect(models.map((model) => model.id)).not.toContain(runtime.pluginModels.hidden);
     expect(listing.data.map((model) => model.id)).not.toContain(runtime.pluginModels.hidden);
-    for (const id of [runtime.pluginModels.openai, runtime.pluginModels.anthropic]) {
+    // OpenAI and Claude models use their native protocols; Gemini uses Chat Completions.
+    const packages = {
+      [runtime.pluginModels.openai]: "@opencode/ai/providers/openai-compatible/responses",
+      [runtime.pluginModels.anthropic]: "@opencode/ai/providers/anthropic-compatible",
+      [runtime.pluginModels.google]: "@opencode/ai/providers/openai-compatible",
+    };
+    for (const [id, sdkPackage] of Object.entries(packages)) {
       const model = models.find((candidate) => candidate.id === id);
       const source = listing.data.find((candidate) => candidate.id === id);
       const rates = rich.data.find((candidate) => candidate.model_group === id);
       expect(model, `OpenCode did not discover ${id}`).toBeDefined();
       expect(source, `Gateway did not list ${id}`).toBeDefined();
       expect(rates, `Gateway did not return rich metadata for ${id}`).toBeDefined();
-      expect(model!.capabilities.input).toEqual(expect.arrayContaining(["text", "image", "pdf"]));
       expect(model!.capabilities.tools).toBe(true);
       expect(model!.capabilities.output).toEqual(["text"]);
       expect(model!.limit).toEqual({
@@ -83,13 +83,21 @@ test("packed Oceans plugin discovers authorized models, native protocols, limits
       });
       expect(model!.cost[0]?.input).toBeCloseTo(rates!.input_cost_per_token * 1_000_000, 8);
       expect(model!.cost[0]?.output).toBeCloseTo(rates!.output_cost_per_token * 1_000_000, 8);
+      expect(model!.package).toBe(sdkPackage);
+      if (id === runtime.pluginModels.google) {
+        // Chat Completions models take the input modalities that the gateway lists.
+        expect(model!.capabilities.input).toEqual(
+          expect.arrayContaining(source!.architecture.input_modalities),
+        );
+        // Vitest can drop console output, so summary lines go straight to stdout.
+        process.stdout.write(
+          `Plugin discovery: ${id}; input ${model!.capabilities.input.join(",")}; variants ${model!.variants.map((variant) => variant.id).join(",")}\n`,
+        );
+        continue;
+      }
+      expect(model!.capabilities.input).toEqual(expect.arrayContaining(["text", "image", "pdf"]));
       expect(model!.variants.map((variant) => variant.id)).toEqual(
         expect.arrayContaining(["low", "high", "fast"]),
-      );
-      expect(model!.package).toBe(
-        id === runtime.pluginModels.openai
-          ? "@opencode/ai/providers/openai-compatible/responses"
-          : "@opencode/ai/providers/anthropic-compatible",
       );
     }
     const anthropic = models.find((model) => model.id === runtime.pluginModels.anthropic)!;
@@ -127,7 +135,7 @@ test.each(cases)(
   async ({ family, model, variant }) => {
     const fast = variant === "fast";
     const requestTag = randomUUID();
-    const admin = new GatewayAdminClient({ ...runtime, model });
+    const admin = new GatewayAdminClient(runtime);
     await admin.login();
     await withPluginHost(model, requestTag, async (client, workspace, wirePath) => {
       const session = await client.session.create({
@@ -172,7 +180,7 @@ test.each(cases)(
           (assistant.tokens?.output ?? 0) + (assistant.tokens?.reasoning ?? 0),
         ).toBeGreaterThan(0);
         expect(assistant.cost).toBeGreaterThanOrEqual(0);
-        const log = await admin.waitForSuccessfulModelLog(requestTag);
+        const log = await admin.waitForSuccessfulModelLog(requestTag, model);
         const detail = await admin.getRequestLogDetail(log.request_log_id);
         const request = LoggedRequestSchema.parse(JSON.parse(await readFile(wirePath, "utf8")));
         // Messages request logs contain the normalized Chat representation, not native wire JSON.
@@ -215,8 +223,8 @@ test.each(cases)(
           expect(Math.abs(assistant.cost! - log.cost_usd_10000! / 10_000)).toBeLessThanOrEqual(
             0.0001,
           );
-        console.info(
-          `Live plugin pass: ${family}/${variant}; ${request.path}; request ${log.request_log_id}; tier ${log.service_tier ?? "none"} -> ${log.served_service_tier ?? "unreported"}; tokens ${log.prompt_tokens}/${log.completion_tokens}; session $${assistant.cost}; oceans $${log.cost_usd_10000! / 10_000}`,
+        process.stdout.write(
+          `Live plugin pass: ${family}/${variant}; ${request.path}; request ${log.request_log_id}; tier ${log.service_tier ?? "none"} -> ${log.served_service_tier ?? "unreported"}; tokens ${log.prompt_tokens}/${log.completion_tokens}; session $${assistant.cost}; oceans $${log.cost_usd_10000! / 10_000}\n`,
         );
       } finally {
         await client.session.remove({ sessionID: session.id });
@@ -245,38 +253,22 @@ async function withPluginHost<T>(
     const pluginDirectory = join(isolated.config, "plugins");
     await mkdir(pluginDirectory, { recursive: true });
     await writeFile(join(pluginDirectory, "wire-probe.ts"), wireProbeSource(wirePath), "utf8");
-    await writeFile(
-      join(isolated.config, "gateways.yml"),
-      `providers:\n  oceans:\n    baseUrl: ${JSON.stringify(runtime.baseUrl)}\n    apiKey: OCEANS_API_KEY\n    discovery: {type: litellm}\n`,
-      "utf8",
-    );
     const isOpenAI = model === runtime.pluginModels.openai;
-    const environment = createHarnessEnvironment(isolated, {
-      OCEANS_API_KEY: runtime.apiKey,
-      XDG_STATE_HOME: join(isolated.home, "state"),
-      OPENCODE_CONFIG_DIR: isolated.config,
-      OPENCODE_DISABLE_AUTOUPDATE: "true",
-      OPENCODE_DISABLE_CLAUDE_CODE: "true",
-      OPENCODE_DISABLE_FILEWATCHER: "true",
-      OPENCODE_DISABLE_FREE_MODELS: "true",
-      OPENCODE_DISABLE_MODELS_FETCH: "true",
-      OPENCODE_CONFIG_CONTENT: JSON.stringify({
-        plugins: [{ package: packedPlugin, options: { configDir: isolated.config } }],
-        providers: {
-          oceans: {
-            headers: { "x-oceans-tags": `harness_run=${requestTag}` },
-            body: isOpenAI ? { max_output_tokens: 2048, store: false } : { max_tokens: 2048 },
-          },
+    const environment = await oceansPluginEnvironment(runtime, isolated, packedPlugin, {
+      providers: {
+        oceans: {
+          headers: { "x-oceans-tags": `harness_run=${requestTag}` },
+          body: isOpenAI ? { max_output_tokens: 2048, store: false } : { max_tokens: 2048 },
         },
-        agents: {
-          build: {
-            // A one-step limit injects an assistant prefill, which current Claude models reject.
-            steps: 2,
-            system: "Answer the user using the provided attachments. Do not call any tools.",
-          },
+      },
+      agents: {
+        build: {
+          // A one-step limit injects an assistant prefill, which current Claude models reject.
+          steps: 2,
+          system: "Answer the user using the provided attachments. Do not call any tools.",
         },
-        permissions: [{ action: "*", effect: "deny", resource: "*" }],
-      }),
+      },
+      permissions: [{ action: "*", effect: "deny", resource: "*" }],
     });
     return await withPrivateServer(workspace, environment, async (server) => {
       const password = server.env.OPENCODE_PASSWORD;

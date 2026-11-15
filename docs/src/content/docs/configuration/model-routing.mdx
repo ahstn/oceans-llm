@@ -81,7 +81,7 @@ Aliases are separate authorisation keys. Access to an alias doesn't grant access
 
 When any model in an alias chain sets `max_reasoning_effort`, the gateway uses the strictest value across the whole chain. For example, an alias capped at `medium` that targets a model capped at `high` has an effective ceiling of `medium`. An uncapped chain member doesn't weaken a cap set elsewhere.
 
-The effort order is `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. The gateway checks every explicit, non-null effort value in the request on its own:
+The effort order is `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. The gateway checks every explicit, non-null effort value in the request on its own:
 
 | Request | Effort paths checked |
 | --- | --- |
@@ -89,12 +89,12 @@ The effort order is `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. The gate
 | Responses | Top level: `reasoning.effort`, `reasoning_effort`, `output_config.effort`, `thinking.effort` and the Bedrock paths. Items in an array `input` are inspected recursively for every path in this table. |
 | Batch items and route `extra_body` | Every path in this table, recursively, including nested `messages` and `input` items |
 
-The Bedrock paths are `effort` under `additionalModelRequestFields.reasoning`, `.output_config` or `.thinking`, plus the snake-case `additional_model_request_fields` form. The Gemini paths are `generationConfig.thinkingConfig.thinkingLevel` and `generation_config.thinking_config.thinking_level`. The checks are in [`reasoning_policy.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-core/src/reasoning_policy.rs).
+The Bedrock paths are `effort` under `additionalModelRequestFields.reasoning`, `.output_config` or `.thinking`, plus the snake-case `additional_model_request_fields` form. The Gemini paths are `generationConfig.thinkingConfig.thinkingLevel` and `generation_config.thinking_config.thinking_level`, plus the two paths of Gemini's OpenAI-compatible endpoint: `google.thinking_config.thinking_level` and `extra_body.google.thinking_config.thinking_level`. Gemini levels such as `LOW`, `MEDIUM`, `HIGH`, `XHIGH` and `MINIMAL` use the same order as the other effort values. The checks are in [`reasoning_policy.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-core/src/reasoning_policy.rs).
 
 The gateway applies these rules while a ceiling is active:
 
 - Known values at or below the ceiling pass unchanged. Matching is case-insensitive.
-- `none` and `off` pass as lower than `minimal`. Provider compatibility still decides whether a field accepts either spelling.
+- `none` and `off` are the lowest value, below `minimal`, so they pass every ceiling, including `none`. Provider compatibility still decides whether a field accepts either spelling.
 - A known value above the ceiling returns `invalid_request`. The gateway doesn't clamp or change it.
 - Unknown strings and non-string effort values also return `invalid_request`, so a new provider value can't bypass policy.
 - Omitted fields and explicit `null` pass.
@@ -371,11 +371,13 @@ Chat Completions, Responses and Anthropic Messages accept a tier for one request
 
 The gateway removes these fields from the request and sends the tier in the form the selected provider expects. See [Service tiers](/configuration/models-and-routes/#service-tiers) for the forms and for the admin settings. When the route sets `service_tier`, the route's tier wins over the caller's.
 
+Route selection checks the tier against the API of the request, the provider's location and the upstream model. For example, a direct OpenAI route sends `ultrafast` on Responses but not on Chat Completions or Messages, a Vertex Gemini route in `us` sends `priority` but not `flex`, and a Claude Sonnet route on `anthropic_compat` or Vertex sends no fast mode. OpenRouter routes send every tier on every API. The full table is in [Service tiers by API](/reference/provider-api-compatibility/#service-tiers-by-api). A route whose forced `service_tier` none of its APIs can send fails config loading.
+
 | Response | Cause |
 | --- | --- |
 | 400 `invalid_request` | Unknown value, a value that isn't a string, or two fields that ask for different tiers |
 | 403 `service_tier_not_allowed` | The model's `service_tiers` doesn't list the tier |
-| 400 `invalid_request`, "no configured route … supports service tier" | No route of the model can send and price the tier |
+| 400 `invalid_request`, "no configured route … supports service tier" | No route of the model can send and price the tier on this API |
 
 The response reports the tier the provider served: `service_tier` in Chat Completions and Responses, and `usage.speed` and `usage.service_tier` in Anthropic Messages. A provider can serve a lower tier than requested. For example, OpenAI can serve a priority request at `default` when it is busy. The request log keeps both tiers, and usage is billed at the served tier. When the provider doesn't report a tier, usage is billed at the requested tier.
 
