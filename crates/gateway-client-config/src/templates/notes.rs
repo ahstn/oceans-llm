@@ -111,7 +111,7 @@ pub(crate) fn claude_code_background_model_note(model_id: &str) -> ClientConfigN
     ClientConfigNote::new(
         ClientConfigNoteKind::ClaudeCodeBackgroundModel,
         format!(
-            "ANTHROPIC_SMALL_FAST_MODEL is set to {model_id}, which always thinks, so the gateway rejects the thinking-off requests Claude Code sends for background work such as WebFetch summaries. Add a Haiku or Sonnet model to this selection, or set ANTHROPIC_SMALL_FAST_MODEL to a gateway model that can turn thinking off."
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL is set to {model_id}, which always thinks, so the gateway rejects the thinking-off requests Claude Code sends for background work such as WebFetch summaries. This setting also controls the haiku alias. Add a model that can turn thinking off to this selection, or set ANTHROPIC_DEFAULT_HAIKU_MODEL to an accessible gateway model that supports thinking off."
         ),
     )
 }

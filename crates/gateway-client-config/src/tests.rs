@@ -1111,7 +1111,7 @@ fn claude_code_shape_includes_gateway_env_and_model_override() {
     assert_eq!(rendered.key, "claude-code");
     assert_eq!(rendered.blocks.len(), 2);
     assert!(setup_value(&rendered, "Configuration").contains("~/.claude/settings.json"));
-    assert!(setup_value(&rendered, "Configuration").contains(".claude/settings.json"));
+    assert!(setup_value(&rendered, "Configuration").contains(".claude/settings.local.json"));
     assert_eq!(
         setup_href(&rendered, "Docs"),
         "https://code.claude.com/docs/en/settings"
@@ -1139,6 +1139,15 @@ fn claude_code_shape_includes_gateway_env_and_model_override() {
         "claude-sonnet"
     );
     assert_eq!(
+        gateway_settings["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"],
+        "claude-sonnet"
+    );
+    assert!(
+        gateway_settings["env"]
+            .get("ANTHROPIC_SMALL_FAST_MODEL")
+            .is_none()
+    );
+    assert_eq!(
         lower_usage_settings["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"],
         "200000"
     );
@@ -1147,6 +1156,20 @@ fn claude_code_shape_includes_gateway_env_and_model_override() {
         "1"
     );
     assert_eq!(lower_usage_settings["env"]["ENABLE_TOOL_SEARCH"], "auto");
+    assert_eq!(
+        lower_usage_settings["env"]["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"],
+        "1"
+    );
+    assert!(
+        lower_usage_settings["env"]
+            .get("CLAUDE_CODE_NO_FLICKER")
+            .is_none()
+    );
+    assert!(
+        lower_usage_settings["env"]
+            .get("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS")
+            .is_none()
+    );
     assert!(
         rendered
             .notes
@@ -1184,7 +1207,7 @@ fn claude_code_background_model_skips_models_that_always_think() {
         "claude-opus-5.5"
     );
     assert_eq!(
-        gateway_settings["env"]["ANTHROPIC_SMALL_FAST_MODEL"],
+        gateway_settings["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"],
         "claude-haiku-5.5"
     );
     assert!(
@@ -1192,6 +1215,49 @@ fn claude_code_background_model_skips_models_that_always_think() {
             .notes
             .iter()
             .any(|note| note.contains("always thinks"))
+    );
+}
+
+#[test]
+fn claude_code_background_model_prefers_selected_haiku_over_compatible_main_model() {
+    let rendered = ClaudeCodeConfigTemplate
+        .render_many(&ClientConfigInputSet::new(vec![
+            claude_input("main", "anthropic/claude-sonnet-4-6"),
+            claude_input("background", "anthropic/claude-haiku-4-5"),
+        ]))
+        .expect("claude code config");
+    let settings: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
+
+    assert_eq!(settings["env"]["ANTHROPIC_MODEL"], "main");
+    assert_eq!(
+        settings["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"],
+        "background"
+    );
+    assert_eq!(settings["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"], "main");
+    assert_eq!(settings["modelOverrides"]["claude-haiku-4-5"], "background");
+}
+
+#[test]
+fn claude_code_background_model_falls_back_to_compatible_non_haiku_model() {
+    let rendered = ClaudeCodeConfigTemplate
+        .render_many(&ClientConfigInputSet::new(vec![
+            claude_input("main", "anthropic/claude-opus-5-5"),
+            claude_input("background", "anthropic/claude-sonnet-4-6"),
+        ]))
+        .expect("claude code config");
+    let settings: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
+
+    assert_eq!(settings["env"]["ANTHROPIC_MODEL"], "main");
+    assert_eq!(
+        settings["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"],
+        "background"
+    );
+    assert_eq!(settings["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"], "main");
+    assert!(
+        rendered
+            .notes
+            .iter()
+            .all(|note| !note.contains("always thinks"))
     );
 }
 
@@ -1207,7 +1273,7 @@ fn claude_code_notes_when_every_model_always_thinks() {
             serde_json::from_str(&rendered.blocks[0].content).expect("json");
 
         assert_eq!(
-            gateway_settings["env"]["ANTHROPIC_SMALL_FAST_MODEL"],
+            gateway_settings["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"],
             model_id
         );
         assert!(
