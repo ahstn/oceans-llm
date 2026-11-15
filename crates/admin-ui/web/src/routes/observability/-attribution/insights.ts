@@ -30,10 +30,13 @@ export const TAB_QUESTIONS: Record<AttributionTab, string> = {
 
 export const ATTRIBUTION_TABS = Object.keys(TAB_LABELS) as AttributionTab[]
 
-/** The tabs the gateway config turns on, in display order. */
+const KNOWN_TABS = new Set<string>(ATTRIBUTION_TABS)
+
+/** The report tabs the gateway config turns on, in the gateway's display order. */
 export function enabledAttributionTabs(session: AuthSessionView | null | undefined) {
-  const enabled = new Set(session?.capabilities.attribution_tabs ?? [])
-  return ATTRIBUTION_TABS.filter((tab) => enabled.has(tab))
+  return (session?.capabilities.attribution_tabs ?? []).filter((tab): tab is AttributionTab =>
+    KNOWN_TABS.has(tab),
+  )
 }
 
 /** The requested tab when it is on, else the first one that is. */
@@ -106,12 +109,15 @@ export type Bucket = {
   uncommittedCost: number
 }
 
-/** Whole buckets of `size` days counted back from the window's last day. */
+/**
+ * Buckets of `size` days counted back from the window's last day. The oldest bucket holds the
+ * remainder, so the buckets add up to the report's totals.
+ */
 export function bucketDays(daily: DayView[], size: number): Bucket[] {
   const buckets: Bucket[] = []
-  const start = daily.length % size
-  for (let index = start; index < daily.length; index += size) {
-    const days = daily.slice(index, index + size)
+  const first = daily.length % size || size
+  for (let start = 0, end = first; start < daily.length; start = end, end += size) {
+    const days = daily.slice(start, end)
     const aiLines = days.reduce((total, day) => total + day.ai_lines, 0)
     const humanLines = days.reduce((total, day) => total + day.human_lines, 0)
     buckets.push({

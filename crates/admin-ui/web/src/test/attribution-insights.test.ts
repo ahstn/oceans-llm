@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest'
 import {
   aiBand,
   attributionReportInput,
+  bucketDays,
   deployBand,
+  enabledAttributionTabs,
   failBand,
   leadBand,
   resolveAttributionTab,
@@ -67,5 +69,39 @@ describe('delivery bands', () => {
     expect(leadBand(24)).toBe('High')
     expect(leadBand(24 * 7)).toBe('Medium')
     expect(leadBand(24 * 30)).toBe('Low')
+  })
+})
+
+describe('day buckets', () => {
+  const day = (index: number) => ({
+    day: `2026-11-${String(index + 1).padStart(2, '0')}`,
+    ai_lines: 1,
+    human_lines: 0,
+    commit_count: 1,
+    merged_pull_request_count: 0,
+    committed: { priced_cost_usd_10000: 10_000 },
+    uncommitted: { priced_cost_usd_10000: 0 },
+  })
+
+  it('keeps the leading partial bucket so the buckets add up to the window', () => {
+    const daily = Array.from({ length: 9 }, (_, index) => day(index)) as unknown as Parameters<
+      typeof bucketDays
+    >[0]
+    const buckets = bucketDays(daily, 7)
+
+    expect(buckets.map((bucket) => [bucket.day, bucket.commits])).toEqual([
+      ['2026-11-01', 2],
+      ['2026-11-03', 7],
+    ])
+    expect(buckets.reduce((total, bucket) => total + bucket.committedCost, 0)).toBe(9)
+  })
+})
+
+describe('enabled tabs', () => {
+  it("follows the gateway's order and leaves out the concepts link and unknown tabs", () => {
+    const session = platformAdminSession()
+    session.capabilities.attribution_tabs = ['delivery', 'concepts', 'impact']
+
+    expect(enabledAttributionTabs(session)).toEqual(['delivery', 'impact'])
   })
 })
