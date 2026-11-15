@@ -1,0 +1,18 @@
+.agents/skills/shadcn/SKILL.md
+  h_2f452a9c375069 85,148,288
+.agents/skills/shadcn/rules/chat.md
+  h_2f452a9c375069 6,18-19,198-452
+skills-lock.json
+  h_2f452a9c375069 2,8,14-26,32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "e366f269a559ff7552ee28beaadd7486a7af150d",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
