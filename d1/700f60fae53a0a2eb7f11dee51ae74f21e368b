@@ -1,0 +1,47 @@
+crates/admin-ui/web/src/routes/observability/-agent-harnesses/harness-attribution.tsx
+  s_0a4447f1aa57dd::t_d4e6d545f58eb5 38-41,55-57,62-64,70-76,130-132,260,269,314
+crates/gateway-service/src/attribution/tests/report.rs
+  s_0a4447f1aa57dd::t_78410470f324fe 1140-1173
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_35241edb9b0e51::t_42ebf195f818ec 3164-3178
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/pull-requests-tab.tsx
+  s_0a4447f1aa57dd::t_202822d0d4c31b 146-150,220,271-281
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/delivery-tab.tsx
+  s_35241edb9b0e51::t_782629359feecf 105-107
+crates/gateway/src/http/attribution/insights.rs
+  s_0a4447f1aa57dd::t_0496763002e481 65-70,147-149
+crates/gateway/openapi/admin-api.json
+  s_35241edb9b0e51::t_d83c058471a069 11873-11876,11884-11898
+crates/admin-ui/web/src/test/attribution-insights.test.ts
+  s_35241edb9b0e51::t_133153dd9b76c1 12,117-133
+crates/admin-ui/web/src/routes/observability/-attribution/insights.ts
+  s_0a4447f1aa57dd::t_24a39add044efc 217-218,220-224,226-227,229-230,233-235
+crates/gateway-service/src/attribution/report/insights.rs
+  s_0a4447f1aa57dd::t_605e0a47886b1d 66-72,282-284,293-298
+crates/admin-ui/web/src/test/routes/agent-harnesses-route.test.tsx
+  s_0a4447f1aa57dd::t_60414da44a252c 268-270,283-285,298-300,329-364,376-378,392-398
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d1700f60fae53a0a2eb7f11dee51ae74f21e368b",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_35241edb9b0e51": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1df6e-42d7-7154-b447-8eb898e02ce3",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
