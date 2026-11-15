@@ -274,6 +274,16 @@ function emptyReport(overrides: Partial<AttributionReportView> = {}): Attributio
   const report = attributionReport()
   return {
     ...report,
+    pull_request_lifecycle: {
+      ...report.pull_request_lifecycle,
+      opened_count: 0,
+      merged_count: 0,
+      closed_unmerged_count: 0,
+      open_count: 0,
+      draft_count: 0,
+      review_known_count: 0,
+      median_review_wait_seconds: null,
+    },
     totals: {
       ...report.totals,
       commit_count: 0,
@@ -543,6 +553,16 @@ describe('AttributionPage', () => {
     expect(
       kpi('Open pull requests').getByText('1 draft, of those updated in the window'),
     ).toBeInTheDocument()
+    expect(kpi('Abandon rate').getByText('1 closed without merging')).toBeInTheDocument()
+  })
+
+  it('shows Delivery for a report with only open and closed pull requests', async () => {
+    renderPage(
+      attributionReport({ users: [], pull_requests: [], changes: [], session_outcomes: [] }),
+      { days: 30, tab: 'delivery' },
+    )
+
+    expect(await screen.findByText('No merged pull requests in this window.')).toBeInTheDocument()
     expect(kpi('Abandon rate').getByText('1 closed without merging')).toBeInTheDocument()
   })
 

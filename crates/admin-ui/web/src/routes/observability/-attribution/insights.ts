@@ -242,6 +242,11 @@ export type BandSummary = {
 
 export type LifecycleView = AttributionReportView['pull_request_lifecycle']
 
+/** Whether pull requests opened, stayed open or closed unmerged in the window. */
+export function hasLifecycleActivity(lifecycle: LifecycleView): boolean {
+  return lifecycle.opened_count + lifecycle.open_count + lifecycle.closed_unmerged_count > 0
+}
+
 /**
  * Review and flow figures from the report's lifecycle summary. Rates are `null` without a
  * denominator; `reviewCoverage` is the share of merged PRs whose hook sent review data.

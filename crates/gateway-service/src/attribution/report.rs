@@ -303,11 +303,19 @@ where
             .is_some_and(|at| at >= query.from);
     let loaded = distinct_pull_requests(pull_requests);
     let mut lifecycle_summary = lifecycle::summary(&loaded, query);
-    let merged = loaded
+    let mut merged = loaded
         .iter()
         .filter(|pull_request| lifecycle::merged_in(query, pull_request))
         .cloned()
         .collect::<Vec<_>>();
+    // The store reads by latest activity; the report's builders expect most recently merged
+    // first, so a commit in two pull requests links the later merge, not the one last
+    // commented on.
+    merged.sort_by(|a, b| {
+        lifecycle::merged_time(b)
+            .cmp(&lifecycle::merged_time(a))
+            .then(b.number.cmp(&a.number))
+    });
     let mut inputs = ReportInputs::new(query, &commits, &facts, &windows);
     inputs.detail = detail;
     // Lookback commits only feed pull request totals, so a cap reached by them matters only

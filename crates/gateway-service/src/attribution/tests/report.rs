@@ -1743,3 +1743,25 @@ async fn a_read_saturated_by_owner_copies_is_reported_truncated() {
         "the cap counted every copy"
     );
 }
+
+#[tokio::test]
+async fn a_shared_commit_links_the_latest_merge_not_the_latest_activity() {
+    let dev = user_owner(Uuid::new_v4());
+    // The original merged first and was commented on later; a promotion PR merged the same
+    // commit after it. The store reads latest activity first, so the original comes first.
+    let mut original = pull_request(5, &dev, minutes(60), &[1]);
+    original.lifecycle.last_activity_at = Some(minutes(600));
+    let mut promotion = pull_request(6, &dev, minutes(120), &[1]);
+    promotion.lifecycle.last_activity_at = Some(minutes(130));
+    let mut store = FakeStore::with_commits(vec![commit(1, &dev, REPOSITORY, minutes(30), vec![])]);
+    store.pull_requests = Mutex::new(vec![original, promotion]);
+    let report = report(&store, &query()).await;
+
+    assert_eq!(report.changes[0].pull_request_number, Some(6));
+    let merged: Vec<i64> = report
+        .pull_requests
+        .iter()
+        .map(|activity| activity.pull_request.number)
+        .collect();
+    assert_eq!(merged, [6, 5], "most recently merged first");
+}

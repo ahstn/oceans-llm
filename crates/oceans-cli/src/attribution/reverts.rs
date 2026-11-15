@@ -344,22 +344,30 @@ pub fn fingerprint(diff: &[u8]) -> Option<String> {
     let mut current: Option<String> = None;
     let mut index: Option<String> = None;
     let mut lines = 0usize;
+    // Inside a hunk every line is content, even one starting `--- ` or `+++ `, such as a
+    // removed `-- x;`; outside one those are the file headers.
+    let mut in_hunk = false;
     for line in text.lines() {
         if let Some(header) = line.strip_prefix("diff --git ") {
             current = Some(header.to_owned());
             index = None;
+            in_hunk = false;
             files.entry(header.to_owned()).or_default();
             continue;
         }
         let Some(path) = current.as_ref() else {
             continue;
         };
-        if let Some(blobs) = line.strip_prefix("index ") {
-            // `index <from>..<to> [mode]`; only the blob ids identify a binary change.
-            index = blobs.split_whitespace().next().map(str::to_owned);
+        if line.starts_with("@@") {
+            in_hunk = true;
             continue;
         }
-        if line.starts_with("+++ ") || line.starts_with("--- ") || line.starts_with("@@") {
+        if !in_hunk && (line.starts_with("+++ ") || line.starts_with("--- ")) {
+            continue;
+        }
+        if let Some(blobs) = line.strip_prefix("index ").filter(|_| !in_hunk) {
+            // `index <from>..<to> [mode]`; only the blob ids identify a binary change.
+            index = blobs.split_whitespace().next().map(str::to_owned);
             continue;
         }
         let binary;
@@ -518,6 +526,24 @@ mod tests {
         assert_ne!(
             fingerprint(edit("a1", "b2").as_bytes()),
             fingerprint(edit("b2", "a1").as_bytes())
+        );
+    }
+
+    #[test]
+    fn hunk_lines_that_look_like_file_headers_still_count() {
+        let edit = |from: &str, to: &str| {
+            format!(
+                "diff --git a/a.js b/a.js\nindex a1..b2 100644\n--- a/a.js\n+++ b/a.js\n@@ -1,2 +1,2 @@\n let x = 0;\n-{from}\n+{to}\n"
+            )
+        };
+        // `-- first;` → `++ first;` is not undone by `-- second;` → `++ first;`.
+        assert_ne!(
+            fingerprint(edit("-- first;", "++ first;").as_bytes()),
+            fingerprint(edit("-- second;", "++ first;").as_bytes())
+        );
+        assert_eq!(
+            fingerprint(edit("-- first;", "++ first;").as_bytes()),
+            fingerprint(edit("-- first;", "++ first;").as_bytes())
         );
     }
 

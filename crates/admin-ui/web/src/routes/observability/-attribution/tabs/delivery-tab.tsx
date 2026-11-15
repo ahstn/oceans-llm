@@ -16,6 +16,7 @@ import {
   bandSummaries,
   flowFigures,
   type LifecycleView,
+  hasLifecycleActivity,
   median,
   pullRequestRows,
   ratio,
@@ -41,8 +42,7 @@ export default function DeliveryTab({ report }: { report: AttributionReportView 
   if (rows.length === 0) {
     const lifecycle = report.pull_request_lifecycle
     // Open, reviewed and abandoned work still has figures when nothing merged.
-    const active =
-      lifecycle.opened_count + lifecycle.open_count + lifecycle.closed_unmerged_count > 0
+    const active = hasLifecycleActivity(lifecycle)
     return (
       <div className="flex flex-col gap-6">
         {active ? <ReviewFlow lifecycle={lifecycle} /> : null}
