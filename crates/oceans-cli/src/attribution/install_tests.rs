@@ -153,6 +153,9 @@ fn the_omp_extension_gets_both_binary_paths() {
     assert!(rendered.contains(r#"const OCEANS_BIN = "/opt/my \"tools\"/oceans";"#));
     assert!(rendered.contains(r#"const GIT_AI_BIN = "C:\\bin\\git-ai.exe";"#));
     assert!(!rendered.contains("__OCEANS_BIN__") && !rendered.contains("__GIT_AI_BIN__"));
+    assert!(rendered.contains("after_provider_response"));
+    assert!(rendered.contains("x-oceans-request-id"));
+    assert!(!rendered.contains("OCEANS_SESSION_ID") && !rendered.contains("process.env"));
 
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("agent/extensions/oceans-git-ai.ts");

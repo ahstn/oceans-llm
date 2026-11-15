@@ -18,8 +18,8 @@ use gateway_service::attribution::{
     AttributionBatchInput, AttributionBatchOutcome, AttributionEntryCandidate,
     AttributionEntryInput, AttributionEntryStatus, AttributionNoteInput, AttributionPayloadInput,
     AttributionPullRequestCommitInput, AttributionPullRequestInput, AttributionPullRequestsInput,
-    AttributionRejectReason, AttributionSessionInput, AttributionUserLookup, attribution_owner,
-    ingest_attribution_batch,
+    AttributionRejectReason, AttributionRequestSessionInput, AttributionSessionInput,
+    AttributionUserLookup, attribution_owner, ingest_attribution_batch,
 };
 use gateway_store::{AnyStore, GatewayStore};
 use serde::{Deserialize, Serialize};
@@ -115,6 +115,13 @@ pub enum AttributionPayloadRequest {
         branch: Option<String>,
         head_sha: Option<String>,
         harness_version: Option<String>,
+    },
+    /// Associate a gateway request with the journal that actually received its response.
+    RequestSession {
+        /// The gateway's request UUID, not a provider response id.
+        request_id: String,
+        /// The raw journal session id. Only an owner-scoped hash is stored.
+        session_id: String,
     },
     /// Merged pull requests of one repository and their commits.
     PullRequests {
@@ -368,6 +375,13 @@ impl AttributionPayloadRequest {
                 branch,
                 head_sha,
                 harness_version,
+            }),
+            Self::RequestSession {
+                request_id,
+                session_id,
+            } => AttributionPayloadInput::RequestSession(AttributionRequestSessionInput {
+                request_id,
+                session_id,
             }),
             Self::PullRequests {
                 repository,

@@ -312,7 +312,10 @@ fn stream_event_is_terminal(value: &Value) -> bool {
 }
 
 fn stream_event_ends_stream(value: &Value) -> bool {
-    value.get("type").and_then(Value::as_str) == Some("message_stop")
+    matches!(
+        value.get("type").and_then(Value::as_str),
+        Some("response.completed" | "response.incomplete" | "response.failed" | "message_stop")
+    )
 }
 
 fn stream_failure_from_value(value: &Value) -> Option<StreamFailureSummary> {

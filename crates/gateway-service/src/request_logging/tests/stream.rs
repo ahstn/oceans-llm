@@ -245,19 +245,38 @@ fn collector_defaults_responses_failure_without_error_details() {
 }
 
 #[test]
-fn collector_waits_for_done_after_responses_completion() {
+fn collector_ends_responses_at_protocol_terminal_event() {
+    for event_type in [
+        "response.completed",
+        "response.incomplete",
+        "response.failed",
+    ] {
+        let mut collector = StreamResponseCollector::default();
+        let chunk = format!(
+            "event: {event_type}\ndata: {{\"type\":\"{event_type}\",\"response\":{{\"usage\":{{\"input_tokens\":2,\"output_tokens\":1,\"total_tokens\":3}}}}}}\n\n"
+        );
+        let terminal = collector.observe_chunk(chunk.as_bytes());
+        assert!(terminal.has_terminal_event, "{event_type}");
+        assert!(terminal.ends_stream, "{event_type}");
+        assert!(terminal.has_usage, "{event_type}");
+        assert_eq!(collector.usage().unwrap()["total_tokens"], 3);
+    }
+}
+
+#[test]
+fn collector_keeps_chat_open_after_finish_reason_for_trailing_usage() {
     let mut collector = StreamResponseCollector::default();
-
-    let completed = collector.observe_chunk(
-        br#"data: {"type":"response.completed","response":{"status":"completed"}}
-
-"#,
+    let finish = collector
+        .observe_chunk(b"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n");
+    assert!(finish.has_terminal_event);
+    assert!(!finish.ends_stream);
+    let usage = collector.observe_chunk(
+        b"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}\n\n",
     );
-    assert!(completed.has_terminal_event);
-    assert!(!completed.ends_stream);
-
-    let done = collector.observe_chunk(b"data: [DONE]\n\n");
-    assert!(done.ends_stream);
+    assert!(usage.has_usage);
+    assert!(!usage.ends_stream);
+    assert_eq!(collector.usage().unwrap()["total_tokens"], 3);
+    assert!(collector.observe_chunk(b"data: [DONE]\n\n").ends_stream);
 }
 
 #[test]

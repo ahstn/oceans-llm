@@ -100,21 +100,6 @@ impl RoutingReceipt {
         Ok(())
     }
 
-    /// Persist a streamed Responses origin before its terminal event is exposed.
-    /// Affinity is refreshed separately when the stream finishes successfully.
-    pub async fn persist_response_origin(
-        &mut self,
-        store: &impl RoutingRepository,
-        response_id: Option<&str>,
-    ) -> Result<(), GatewayError> {
-        self.record_response_origin(store, response_id, OffsetDateTime::now_utc())
-            .await?;
-        if response_id.is_some() {
-            self.response_origin = None;
-        }
-        Ok(())
-    }
-
     async fn record_response_origin(
         &self,
         store: &impl RoutingRepository,

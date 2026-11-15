@@ -255,7 +255,8 @@ pub(crate) fn list_agent_sessions(
     )))
 }
 
-/// Gateway requests linked to the hashes at or before `until`, oldest first, as
+/// Gateway requests linked to explicit journals, note-attested Codex executions, or native sessions,
+/// at or before `until`, oldest first, as
 /// `(ownership_scope_key, session_hash, request_id, occurred_at, model_key, cost_10000,
 /// pricing_status)`. Usage joins on the request and the session's scope, so usage recorded
 /// after the request was linked still counts. `None` when there are no hashes to look up.
@@ -271,19 +272,68 @@ pub(crate) fn list_request_facts(
     let hashes = binds.push(AttributionBind::TextList(session_hashes.to_vec()));
     let until = binds.push(millis(until)?);
     let limit = binds.push(int(i64::from(ATTRIBUTION_MAX_REQUEST_FACTS)));
+    // Codex execution_id can be a turn id. Only an exact same-owner note hash attests that
+    // execution as a journal identity. Consult all stored notes, not this lookup's hash or
+    // time subset, so report windows and chunks make the same identity decision.
+    let execution_attested = "EXISTS (SELECT 1 FROM attribution_commit_session_hashes h \
+        JOIN attribution_commits c ON c.attribution_commit_id = h.attribution_commit_id \
+        WHERE h.session_hash = r.execution_id \
+            AND c.ownership_scope_key = s.ownership_scope_key)";
     Ok(Some(binds.finish(format!(
-        "SELECT s.ownership_scope_key, r.normalized_session_id, r.request_id, r.occurred_at, \
+        "SELECT r.ownership_scope_key, r.session_hash, r.request_id, r.occurred_at, \
          COALESCE(l.resolved_model_key, l.model_key), \
          CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated') \
          THEN u.computed_cost_10000 END, \
          u.pricing_status \
-         FROM agent_session_requests r \
-         JOIN agent_sessions s ON s.agent_session_id = r.agent_session_id \
+         FROM (\
+             SELECT s.ownership_scope_key, m.session_hash, r.request_id, r.occurred_at, \
+                    r.request_log_id \
+             FROM attribution_request_sessions m \
+             JOIN agent_session_requests r ON r.request_id = m.request_id \
+             JOIN agent_sessions s ON s.agent_session_id = r.agent_session_id \
+                 AND s.ownership_scope_key = m.ownership_scope_key \
+             WHERE {explicit_hashes} AND r.occurred_at <= {until} \
+            UNION ALL \
+            SELECT m.ownership_scope_key, m.session_hash, q.request_id, q.occurred_at * 1000, \
+                   q.request_log_id \
+            FROM attribution_request_sessions m \
+            JOIN request_logs q ON q.request_id = m.request_id \
+                AND ((m.owner_service_account_id IS NOT NULL \
+                        AND q.service_account_id = m.owner_service_account_id) \
+                    OR (m.owner_service_account_id IS NULL AND m.owner_user_id IS NOT NULL \
+                        AND q.service_account_id IS NULL AND q.user_id = m.owner_user_id)) \
+            WHERE {explicit_hashes} AND q.occurred_at * 1000 <= {until} \
+                AND NOT EXISTS (SELECT 1 FROM agent_session_requests a \
+                    JOIN agent_sessions s ON s.agent_session_id = a.agent_session_id \
+                    WHERE a.request_id = m.request_id \
+                        AND s.ownership_scope_key = m.ownership_scope_key) \
+             UNION ALL \
+             SELECT s.ownership_scope_key, r.execution_id, r.request_id, r.occurred_at, \
+                    r.request_log_id \
+             FROM agent_session_requests r \
+             JOIN agent_sessions s ON s.agent_session_id = r.agent_session_id \
+             WHERE s.harness_key = 'codex' AND {execution_hashes} \
+                 AND {execution_attested} AND r.occurred_at <= {until} \
+                 AND NOT EXISTS (SELECT 1 FROM attribution_request_sessions m \
+                     WHERE m.ownership_scope_key = s.ownership_scope_key \
+                         AND m.request_id = r.request_id) \
+             UNION ALL \
+             SELECT s.ownership_scope_key, r.normalized_session_id, r.request_id, r.occurred_at, \
+                    r.request_log_id \
+             FROM agent_session_requests r \
+             JOIN agent_sessions s ON s.agent_session_id = r.agent_session_id \
+             WHERE {native_hashes} AND r.occurred_at <= {until} \
+                 AND (s.harness_key <> 'codex' OR NOT {execution_attested}) \
+                 AND NOT EXISTS (SELECT 1 FROM attribution_request_sessions m \
+                     WHERE m.ownership_scope_key = s.ownership_scope_key \
+                         AND m.request_id = r.request_id)\
+         ) r \
          LEFT JOIN usage_cost_events u \
-         ON u.request_id = r.request_id AND u.ownership_scope_key = s.ownership_scope_key \
+         ON u.request_id = r.request_id AND u.ownership_scope_key = r.ownership_scope_key \
          LEFT JOIN request_logs l ON l.request_log_id = r.request_log_id \
-         WHERE {} AND r.occurred_at <= {until} \
          ORDER BY r.occurred_at, r.request_id LIMIT {limit}",
-        dialect.any_of("r.normalized_session_id", &hashes)
+        explicit_hashes = dialect.any_of("m.session_hash", &hashes),
+        execution_hashes = dialect.any_of("r.execution_id", &hashes),
+        native_hashes = dialect.any_of("r.normalized_session_id", &hashes)
     ))))
 }

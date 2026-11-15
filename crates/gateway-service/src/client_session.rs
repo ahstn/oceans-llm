@@ -217,11 +217,11 @@ impl HarnessAdapter {
 
     fn version(self) -> &'static str {
         match self {
-            Self::ClaudeCode => "claude-code-v1",
+            Self::ClaudeCode => "claude-code-v2",
             Self::Codex => "codex-v1",
-            Self::OpenCode => "opencode-v1",
-            Self::Pi => "pi-v1",
-            Self::OhMyPi => "oh-my-pi-v1",
+            Self::OpenCode => "opencode-v2",
+            Self::Pi => "pi-v2",
+            Self::OhMyPi => "oh-my-pi-v2",
         }
     }
 }
@@ -441,11 +441,12 @@ fn extract_session(
     codex_metadata: &[EmbeddedMetadata],
 ) -> SessionResolution {
     match adapter {
-        Some(HarnessAdapter::ClaudeCode) => resolve_session(header_observations(
-            headers,
-            "x-claude-code-session-id",
-            body.policy,
-        )),
+        Some(HarnessAdapter::ClaudeCode) => {
+            let mut observations =
+                header_observations(headers, "x-claude-code-session-id", body.policy);
+            observations.extend(claude_metadata_session(body));
+            resolve_session(observations)
+        }
         Some(HarnessAdapter::Codex) => {
             let mut observations = header_observations(headers, "session-id", body.policy);
             observations.extend(body_observation(
@@ -471,34 +472,51 @@ fn extract_opencode_session(
     body: SessionFields<'_>,
     headers: &BTreeMap<String, String>,
 ) -> SessionResolution {
-    let mut v1 = header_observations(headers, "x-session-id", body.policy);
-    v1.extend(header_observations(
+    if headers
+        .keys()
+        .any(|name| name.eq_ignore_ascii_case("x-opencode-session-id"))
+    {
+        // OpenCode sends the conversation ID separately from cache affinity. Child sessions
+        // can share their parent's affinity, so these are not equivalent identity aliases.
+        return resolve_session(header_observations(
+            headers,
+            "x-opencode-session-id",
+            body.policy,
+        ));
+    }
+    // Older clients expose only affinity headers. Keep their contract, including overlapping
+    // provider groups, but require every supplied legacy alias to agree.
+    let mut observations = header_observations(headers, "x-session-id", body.policy);
+    observations.extend(header_observations(
         headers,
         "x-session-affinity",
         body.policy,
     ));
-    let managed = header_observations(headers, "x-opencode-session", body.policy);
-    if !v1.is_empty() && !managed.is_empty() {
-        return SessionResolution::conflicted();
-    }
-    if managed.is_empty() {
-        resolve_session(v1)
-    } else {
-        resolve_session(managed)
-    }
+    observations.extend(header_observations(
+        headers,
+        "x-opencode-session",
+        body.policy,
+    ));
+    resolve_session(observations)
 }
 
 fn extract_pi_session(
     body: SessionFields<'_>,
     headers: &BTreeMap<String, String>,
 ) -> SessionResolution {
-    let canonical = header_observations(headers, "session_id", body.policy);
-    let corroborating = header_observations(headers, "x-client-request-id", body.policy);
-    if canonical.is_empty() {
+    let mut observations = header_observations(headers, "session-id", body.policy);
+    observations.extend(header_observations(headers, "x-session-id", body.policy));
+    observations.extend(header_observations(headers, "session_id", body.policy));
+    if observations.is_empty() {
+        // With cacheRetention: "none", Pi can send no session header. A request ID or
+        // prompt_cache_key alone is not evidence of a conversation.
         return SessionResolution::default();
     }
-    let mut observations = canonical;
-    observations.extend(corroborating);
+    observations.extend(header_observations(
+        headers,
+        "x-client-request-id",
+        body.policy,
+    ));
     resolve_session(observations)
 }
 
@@ -509,34 +527,60 @@ fn extract_oh_my_pi_session(
     let mut observations = header_observations(headers, "x-claude-code-session-id", body.policy);
     observations.extend(header_observations(headers, "session_id", body.policy));
     observations.extend(body_observation(body, &["session_id"], "body:session_id"));
-    if let Some(user_id) = body
-        .get("metadata")
-        .and_then(|metadata| metadata.get("user_id"))
-    {
-        match user_id.as_str().and_then(parse_bounded_json_object) {
-            Some(metadata) => observations.extend(
-                metadata
-                    .get("session_id")
-                    .map(|value| {
-                        value
-                            .as_str()
-                            .and_then(|value| normalized_identifier(value, false))
-                    })
-                    .map(|value| {
-                        value.map_or(CandidateObservation::Invalid, |value| {
-                            CandidateObservation::Valid {
-                                value,
-                                source: "body:metadata.user_id.session_id".to_string(),
-                            }
-                        })
-                    }),
-            ),
-            None if user_id.as_str() == Some(REDACTED_VALUE)
-                && body.policy == ParsePolicy::Passive => {}
-            None => observations.push(CandidateObservation::Invalid),
-        }
-    }
+    observations.extend(claude_metadata_session(body));
     resolve_session(observations)
+}
+
+fn claude_metadata_session(body: SessionFields<'_>) -> Option<CandidateObservation> {
+    let user_id = body.get("metadata")?.get("user_id")?;
+    let Some(user_id) = user_id.as_str() else {
+        return Some(CandidateObservation::Invalid);
+    };
+    if user_id.len() > MAX_TURN_METADATA_BYTES {
+        return Some(CandidateObservation::Invalid);
+    }
+    if user_id == REDACTED_VALUE {
+        return (body.policy == ParsePolicy::Routing).then_some(CandidateObservation::Invalid);
+    }
+    if user_id.trim_start().starts_with('{') {
+        let Some(value) = parse_bounded_json_object(user_id) else {
+            return Some(CandidateObservation::Invalid);
+        };
+        let session = value.get("session_id")?;
+        let session = match session.as_str() {
+            Some(REDACTED_VALUE) if body.policy == ParsePolicy::Passive => return None,
+            Some(session) => normalized_identifier(session, false),
+            None => None,
+        };
+        return Some(session.map_or(CandidateObservation::Invalid, |value| {
+            CandidateObservation::Valid {
+                value,
+                source: "body:metadata.user_id.session_id".to_string(),
+            }
+        }));
+    }
+    // Claude's legacy wire format encodes device, account and session separately. Only
+    // recognize that shape; arbitrary user IDs (even ones containing `_session_`) are not sessions.
+    let (device, remainder) = user_id.strip_prefix("user_")?.split_once("_account_")?;
+    if device.len() != 64 || !device.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    let (account, session) = remainder.split_once("_session_")?;
+    if !account.is_empty() && !is_legacy_claude_uuid(account) {
+        return None;
+    }
+    Some(if is_legacy_claude_uuid(session) {
+        CandidateObservation::Valid {
+            value: session.to_string(),
+            source: "body:metadata.user_id.session_id".to_string(),
+        }
+    } else {
+        CandidateObservation::Invalid
+    })
+}
+
+fn is_legacy_claude_uuid(value: &str) -> bool {
+    value.len() == 36 && uuid::Uuid::try_parse(value).is_ok()
 }
 
 fn parse_bounded_json_object(value: &str) -> Option<Value> {
@@ -610,14 +654,16 @@ fn extract_lineage(
                 body.policy,
             )),
         ),
-        Some(HarnessAdapter::OpenCode) => (
-            None,
-            resolved_lineage_value(header_observations(
+        Some(HarnessAdapter::OpenCode) => {
+            let mut parent =
+                header_observations(headers, "x-opencode-parent-session-id", body.policy);
+            parent.extend(header_observations(
                 headers,
                 "x-parent-session-id",
                 body.policy,
-            )),
-        ),
+            ));
+            (None, resolved_lineage_value(parent))
+        }
         Some(HarnessAdapter::Codex) => extract_codex_lineage(body, headers, codex_metadata),
         Some(HarnessAdapter::Pi | HarnessAdapter::OhMyPi) | None => (None, None),
     }

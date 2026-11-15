@@ -24,6 +24,8 @@ fn classifies_known_agent_harness_user_agents() {
         ("pi/0.4.0 (darwin; bun/1.2.19; arm64)", "pi", "Pi"),
         ("pi/0.4.0 (linux; node/v22.14.0; x64)", "pi", "Pi"),
         ("pi/0.4.0", "pi", "Pi"),
+        ("pi", "pi", "Pi"),
+        ("PI", "pi", "Pi"),
         ("pi (linux 7.0.0-34-generic; x64)", "pi", "Pi"),
         ("pi (browser)", "pi", "Pi"),
         ("mastra", "mastra", "Mastra"),
@@ -104,6 +106,8 @@ fn classifies_missing_empty_and_unmatched_user_agents_as_unknown() {
         Some("mastra-elasticsearch"),
         Some("mastra-elasticsearch/1.0.0"),
         Some("codex-proxy/1.0.0"),
+        Some("piano/1.0.0"),
+        Some("pi-client/1.0.0"),
     ] {
         assert_eq!(classify_agent_harness(user_agent), AgentHarness::UNKNOWN);
     }

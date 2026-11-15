@@ -3190,6 +3190,13 @@ export interface components {
             session_id: string;
         } | {
             /** @enum {string} */
+            kind: "request_session";
+            /** @description The gateway's request UUID, not a provider response id. */
+            request_id: string;
+            /** @description The raw journal session id. Only an owner-scoped hash is stored. */
+            session_id: string;
+        } | {
+            /** @enum {string} */
             kind: "pull_requests";
             pull_requests: components["schemas"]["AttributionPullRequestRequest"][];
             repository: string;

@@ -48,8 +48,8 @@ pub use attribution::{
     AttributionApplyOutcome, AttributionCommitRecord, AttributionCommitSession,
     AttributionCommitWrite, AttributionFreshness, AttributionOwner, AttributionPullRequestCommit,
     AttributionPullRequestRecord, AttributionPullRequestWrite, AttributionReportQuery,
-    AttributionRepository, AttributionRequestFact, AttributionSessionCommitTime,
-    AttributionSessionEventKind, AttributionSessionEventWrite,
+    AttributionRepository, AttributionRequestFact, AttributionRequestSessionWrite,
+    AttributionSessionCommitTime, AttributionSessionEventKind, AttributionSessionEventWrite,
 };
 pub use audit::{
     AuditActor, AuditActorKind, AuditLogCursor, AuditLogPage, AuditLogQuery, AuditLogRecord,

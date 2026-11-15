@@ -11,8 +11,8 @@ use gateway_core::{
     ApiKeyOwnerKind, AttributionAgentSessionRecord, AttributionApplyOutcome,
     AttributionCommitRecord, AttributionCommitWrite, AttributionOwner,
     AttributionPullRequestRecord, AttributionPullRequestWrite, AttributionReportQuery,
-    AttributionRepository, AttributionRequestFact, AttributionSessionCommitTime,
-    AttributionSessionEventWrite, AuthenticatedApiKey, StoreError,
+    AttributionRepository, AttributionRequestFact, AttributionRequestSessionWrite,
+    AttributionSessionCommitTime, AttributionSessionEventWrite, AuthenticatedApiKey, StoreError,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -66,6 +66,7 @@ struct FakeStore {
     agent_sessions: Vec<AttributionAgentSessionRecord>,
     session_events: Mutex<Vec<AttributionSessionEventWrite>>,
     facts: Vec<AttributionRequestFact>,
+    request_sessions: Mutex<Vec<AttributionRequestSessionWrite>>,
     /// Hash count of every request-fact lookup.
     fact_lookups: Mutex<Vec<usize>>,
 }
@@ -95,8 +96,13 @@ impl FakeStore {
 
     /// Every stored row as JSON, for privacy assertions.
     fn stored_json(&self) -> String {
-        serde_json::to_string(&(self.commits(), self.pull_requests(), self.session_events()))
-            .expect("rows serialize")
+        serde_json::to_string(&(
+            self.commits(),
+            self.pull_requests(),
+            self.session_events(),
+            &*self.request_sessions.lock().expect("request sessions lock"),
+        ))
+        .expect("rows serialize")
     }
 }
 
@@ -206,6 +212,26 @@ impl AttributionRepository for FakeStore {
         }
         events.push(write.clone());
         Ok(AttributionApplyOutcome::Applied)
+    }
+
+    async fn apply_attribution_request_session(
+        &self,
+        write: &AttributionRequestSessionWrite,
+    ) -> Result<AttributionApplyOutcome, StoreError> {
+        let mut mappings = self.request_sessions.lock().expect("request sessions lock");
+        let stored = mappings.iter_mut().find(|stored| {
+            stored.owner.ownership_scope_key == write.owner.ownership_scope_key
+                && stored.request_id == write.request_id
+        });
+        let Some(stored) = stored else {
+            mappings.push(write.clone());
+            return Ok(AttributionApplyOutcome::Applied);
+        };
+        let outcome = write.freshness.decide_against(&stored.freshness);
+        if outcome == AttributionApplyOutcome::Applied {
+            *stored = write.clone();
+        }
+        Ok(outcome)
     }
 
     async fn apply_attribution_pull_request(
@@ -340,11 +366,21 @@ impl AttributionRepository for FakeStore {
             .lock()
             .expect("lookups lock")
             .push(session_hashes.len());
+        let mappings = self.request_sessions.lock().expect("request sessions lock");
         let mut facts = self
             .facts
             .iter()
+            .map(|fact| {
+                let mut fact = fact.clone();
+                if let Some(mapping) = mappings.iter().find(|mapping| {
+                    mapping.owner.ownership_scope_key == fact.ownership_scope_key
+                        && mapping.request_id.to_string() == fact.request_id
+                }) {
+                    fact.session_hash.clone_from(&mapping.session_hash);
+                }
+                fact
+            })
             .filter(|fact| session_hashes.contains(&fact.session_hash) && fact.occurred_at <= until)
-            .cloned()
             .collect::<Vec<_>>();
         facts.sort_by(|left, right| {
             (left.occurred_at, &left.request_id).cmp(&(right.occurred_at, &right.request_id))
@@ -360,7 +396,11 @@ impl AttributionRepository for FakeStore {
         let mut commits = self.commits.lock().expect("commits lock");
         let before = commits.len();
         commits.retain(|commit| commit.owner.ownership_scope_key != ownership_scope_key);
-        Ok((before - commits.len()) as u64)
+        let deleted_commits = before - commits.len();
+        let mut mappings = self.request_sessions.lock().expect("request sessions lock");
+        let before = mappings.len();
+        mappings.retain(|mapping| mapping.owner.ownership_scope_key != ownership_scope_key);
+        Ok((deleted_commits + before - mappings.len()) as u64)
     }
 }
 

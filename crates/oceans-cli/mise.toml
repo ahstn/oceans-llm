@@ -4,8 +4,13 @@
 
 [tasks.test]
 description = "Test the CLI and the shared skill bundle"
+depends = ["test-omp"]
 run = "cargo test --locked -p oceans-cli -p gateway-skills"
 
 [tasks.build]
 description = "Build the Oceans CLI debug binary"
 run = "cargo build --locked -p oceans-cli --bin oceans"
+
+[tasks.test-omp]
+description = "Test the installed OMP attribution extension without provider traffic"
+run = "bun test assets/omp/oceans-git-ai.test.ts"
