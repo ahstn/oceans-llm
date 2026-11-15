@@ -190,6 +190,7 @@ fn validate_session_headers(headers: &HeaderMap) -> Result<(), GatewayError> {
         "x-session-id",
         "x-session-affinity",
         "x-opencode-session",
+        "x-opencode-session-id",
         "x-client-request-id",
         "x-codex-turn-metadata",
     ] {

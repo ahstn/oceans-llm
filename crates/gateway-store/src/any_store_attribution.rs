@@ -3,7 +3,8 @@ use gateway_core::{
     AttributionAgentSessionRecord, AttributionApplyOutcome, AttributionCommitRecord,
     AttributionCommitWrite, AttributionPullRequestRecord, AttributionPullRequestWrite,
     AttributionReportQuery, AttributionRepository, AttributionRequestFact,
-    AttributionSessionCommitTime, AttributionSessionEventWrite, StoreError,
+    AttributionRequestSessionWrite, AttributionSessionCommitTime, AttributionSessionEventWrite,
+    StoreError,
 };
 use time::OffsetDateTime;
 
@@ -32,6 +33,13 @@ impl AttributionRepository for AnyStore {
         write: &AttributionSessionEventWrite,
     ) -> Result<AttributionApplyOutcome, StoreError> {
         dispatch_store!(self, apply_attribution_session_event(write))
+    }
+
+    async fn apply_attribution_request_session(
+        &self,
+        write: &AttributionRequestSessionWrite,
+    ) -> Result<AttributionApplyOutcome, StoreError> {
+        dispatch_store!(self, apply_attribution_request_session(write))
     }
 
     async fn apply_attribution_pull_request(

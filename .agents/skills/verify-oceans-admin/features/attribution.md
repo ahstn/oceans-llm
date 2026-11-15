@@ -11,6 +11,7 @@ Attribution is a read-only report that joins Git AI authorship notes with gatewa
 - `attribution-pull-requests` lists merged pull requests in the `Merged pull requests` table, linked to the forge.
 - `attribution-changes` lists commits in the `Recent changes` table, with a joined or unjoined session badge and `Show more` past 50 rows.
 - `attribution-empty` shows the hook install steps when the window has no data, and `Clear filters` when only the filters exclude everything.
+- `attribution-request-journal` joins a gateway request to the journal ID reported by the OMP response hook, even when its native provider session ID differs.
 
 ## How to get to it (user POV)
 
@@ -38,6 +39,17 @@ Preconditions:
 - **API parity.** With the same session, fetch `GET /api/v1/admin/attribution/report?days=30`. `data.totals.commit_count`, `pull_request_count`, and `ai_lines` must match the `Commits`, `Merged PRs`, and `AI lines` cards, and `data.totals.unmatched_author_commit_count` must be `0`. `data.users` must have one entry per `User activity` row, and the first `data.changes[].commit_sha` must start with the first `Recent changes` SHA.
 - **Proof.** Capture the default 30-day view, the Gina-filtered or `release-runbooks` view, and the API totals.
 
+### Request-to-journal proof
+
+Run this proof when the OMP extension, attribution ingestion or request-fact joins change. Use only the launched worktree stack, its own database and a temporary key with the same owner for inference and attribution. Never install a verification extension into the user's live OMP profile.
+
+1. Build the CLI through `mise run //crates/oceans-cli:build`. Create an isolated OMP profile with the updated extension and an Oceans model pointed at the recorded gateway URL. Use an OMP version with `after_provider_response`, such as 18.20.2. Do not set `OCEANS_SESSION_ID` or inject a journal-valued native session header.
+2. Send one small synthetic request with an output cap of 4096 tokens or less. Follow the live-request policy if it reaches a real provider. Capture only its gateway request ID, journal ID hash, status, model and usage counts; keep raw IDs and credentials out of shared artifacts.
+3. Include a non-UUID `x-request-id` trace value on the canary request. Confirm the response keeps that trace value while `x-oceans-request-id` is a server UUID matching the stored request and usage ledger. An upstream provider request ID must not replace it. Flush the isolated queue with `oceans hook send --foreground`. Confirm the accepted `request_session` mapping stores the current context's journal hash under the inference key's owner. The detached request hook must deliver in-process without starting another sender process.
+4. Send a valid Git AI note for that exact journal with a commit time after the request. Filter Attribution to the proof repository. The commit must show one joined session, that request once and its priced cost once. A different native provider ID must not prevent the join, and a parent journal must not receive a child's mapped request.
+5. Repeat the offline arrival-order, stale/duplicate and cross-owner regression cases. For Codex, prove requests that share a native session but have distinct thread execution IDs join only the notes for their own threads. These cases must not use model, time or account similarity as identity evidence.
+6. Open the filtered Attribution page and the matching Request Logs detail in the real browser. Capture both, with payloads masked, plus sanitized API totals. Revoke the temporary key, then stop only the stack and processes started for the proof.
+
 ## Gotchas
 
 - Unlike Usage Costs, the window and filters live in the URL, so a reload keeps them. The gateway defaults to 7 days, but the page always sends `days` and defaults to 30.
@@ -46,6 +58,6 @@ Preconditions:
 - Outside the seed, notes reach Oceans from `oceans hook` on a developer machine: `oceans login`, `oceans hook install --git-ai --claude` (or `--omp`), then an agent-made commit. The CLI queues entries and sends them in the background; `oceans hook send --foreground` flushes the queue, and `oceans hook queue` shows pending and quarantined entries.
 - A note sent with a user's key always counts for that user. Author emails decide only for pull request commits and for notes from a service account key. They match a user's email, then the `additional_attribution_emails` of a config `users` entry. `Unmatched author` therefore shows only on a pull request, or a service account's commit, whose author email matched no user.
 - Merged pull requests come only from `oceans hook prs`, which uses the local `gh`. There is no server-side GitHub token. A commit's `#N` links only when that PR is in the window's `Merged pull requests`.
-- An unjoined session is one whose ID matched no gateway traffic. Its lines still count, but it adds no requests or cost.
+- A session is joined only through an exact native ID, an evidenced Codex thread execution ID or an explicit request-to-journal mapping. A mapping takes priority over the provider's native session so a child request cannot also count for its parent's journal. Lines still count without a request match, but add no requests or cost.
 - Cost sums priced requests only, so a table row with unpriced or usage-missing requests shows a `N gaps` badge.
 - The report reads at most 1,000 commits, 1,000 pull requests and 1,000 hook-reported sessions. When it hits a read limit, it shows `This report is incomplete`; choose a shorter window or a filter.

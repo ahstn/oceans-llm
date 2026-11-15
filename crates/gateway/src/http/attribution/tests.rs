@@ -420,3 +420,43 @@ async fn attribution_report_rejects_unknown_windows() {
     let reply = gateway.send(request).await;
     assert_eq!(reply.status, StatusCode::BAD_REQUEST, "{}", reply.body);
 }
+
+#[tokio::test]
+async fn request_session_entries_accept_gateway_uuids_before_request_completion() {
+    let gateway = Gateway::new().await;
+    let request_id = Uuid::from_u128(401).to_string();
+    let payload = json!({
+        "kind": "request_session", "request_id": request_id, "session_id": SESSION_ID,
+    });
+    let reply = gateway.post_entries(&gateway.scope(), vec![
+        entry("mapping", 2, payload.clone()),
+        entry("duplicate", 2, payload.clone()),
+        entry("stale", 1, payload),
+        entry("provider-id", 3, json!({
+            "kind": "request_session", "request_id": "msg_provider_123", "session_id": SESSION_ID,
+        })),
+        entry("empty-journal", 4, json!({
+            "kind": "request_session", "request_id": request_id, "session_id": "",
+        })),
+        entry("missing-request", 5, json!({
+            "kind": "request_session", "session_id": SESSION_ID,
+        })),
+    ]).await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+    assert_eq!(
+        reply.body["results"],
+        json!([
+            {"entry_id": "mapping", "status": "applied"},
+            {"entry_id": "duplicate", "status": "duplicate"},
+            {"entry_id": "stale", "status": "stale"},
+            {"entry_id": "provider-id", "status": "rejected", "reason": "invalid_entry"},
+            {"entry_id": "empty-journal", "status": "rejected", "reason": "invalid_entry"},
+            {"entry_id": "missing-request", "status": "rejected", "reason": "invalid_entry"},
+        ])
+    );
+    assert_private(&reply, &gateway.email);
+    let report = gateway.report().await;
+    assert_eq!(report.status, StatusCode::OK, "{}", report.body);
+    assert_eq!(report.body["data"]["totals"]["request_count"], 0);
+    assert_private(&report, &gateway.email);
+}

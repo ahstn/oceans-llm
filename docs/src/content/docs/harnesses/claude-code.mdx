@@ -1,0 +1,145 @@
+---
+title: Claude Code
+description: Connect Claude Code to Oceans with generated settings, discover gateway models and choose a safe background model.
+sidebar:
+  order: 2.5
+---
+
+Use the **Claude Code** tab on the Models page to generate settings for your gateway. Requests go from Claude Code to Oceans over the Anthropic Messages API.
+
+This guide was checked against Claude Code **2.1.325** and the upstream docs linked below. A live request was checked with Haiku 5.5 through Oceans and OpenRouter. This does not mean every model and route has passed a live trial. See [Harness Verification](/harnesses/verification/) for tested pairs.
+
+## Before you start
+
+You need:
+
+- **Claude Code 2.1.325.** This is the version used to check this guide. Check yours with `claude --version`. Follow Anthropic's [setup guide](https://code.claude.com/docs/en/setup) to install or update it.
+- **An Oceans API key** with access to your chosen models. Create one on **API Keys** (`/admin/api-keys`). If you limit its scopes, tick **Inference**. See [API key scopes](/access/identity-and-access/#api-key-scopes).
+- **The gateway URL**, for example `https://api.oceans-llm.com`.
+- **A Claude model served over Anthropic Messages.** Ask your admin if you are unsure which route to use.
+
+The generator can include other models whose routes speak Messages. That API format does not make them supported Claude Code models. Anthropic does not support using non-Claude models in Claude Code.
+
+## Generate and save your settings
+
+<Steps>
+<Step title="Choose your models">
+Open **Models** (`/admin/models`), tick the models you want, then click **Generate config**. For one model, use its row's **Config** button.
+
+Include a model that can turn thinking off for background work, such as a suitable Haiku or Sonnet route. See [Choose a background model](#choose-a-background-model).
+</Step>
+<Step title="Open the Claude Code tab">
+The tab appears when at least one selected model uses Anthropic Messages. Only those models are included in its settings.
+
+![Client config dialog with the Claude Code tab open](/images/screenshot-model-client-config-claude-code.png)
+
+The dialog has two blocks: **Gateway model settings** and optional **Lower token usage settings**.
+</Step>
+<Step title="Merge the gateway block into a private settings file">
+Use `~/.claude/settings.json` for all projects, or `.claude/settings.local.json` for one project. If you create the local file by hand, add it to your Git ignore rules. Keep either file private. Do not put a key in the shared `.claude/settings.json` file.
+
+Merge the generated fields into your existing settings. Keep your permissions, hooks and other settings. If you also use the optional block, merge its entries into the same `env` object. Do not paste two JSON objects next to each other or create two `env` keys. Use strict JSON: no comments or trailing commas.
+
+Replace `<gateway api token>` with your Oceans API key. Claude Code does not expand shell references inside settings `env` values: `"ANTHROPIC_AUTH_TOKEN": "$OCEANS_LLM_API_KEY"` sends that text, not your key.
+
+To keep the key out of the file, remove `ANTHROPIC_AUTH_TOKEN` from all applicable settings `env` objects and set it in the shell that starts Claude Code instead. A settings file value normally overrides the shell value:
+
+```sh
+export ANTHROPIC_AUTH_TOKEN='<Oceans API key>'
+claude
+```
+
+Use your shell's secret-loading method if you do not want the key in shell history. Remove stale credentials and provider flags from your launch environment if they point at a different service.
+</Step>
+<Step title="Start a fresh session">
+Restart Claude Code after changing settings. Run `/status` to inspect the connection, then `/model` to inspect the model picker. Choose a model your key can use.
+</Step>
+</Steps>
+
+## What the gateway block sets
+
+| Setting | Purpose |
+| --- | --- |
+| `ANTHROPIC_AUTH_TOKEN` | Sends your Oceans key as a bearer token. |
+| `ANTHROPIC_BASE_URL` | Sets the gateway root, without `/v1`. |
+| `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY` | Enables gateway model discovery at startup. |
+| `ANTHROPIC_MODEL` | Starts the session on the first selected Messages model. |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | Pins the Haiku alias and background work to the chosen background model. |
+| Other `ANTHROPIC_DEFAULT_*_MODEL` values | Pin the Opus, Sonnet or Fable aliases when those families are selected. |
+| `modelOverrides` | Maps recognised Anthropic model IDs to the selected gateway IDs. |
+
+Claude Code adds paths such as `/v1/messages`, `/v1/messages/count_tokens` and `/v1/models`. Do not append `/v1/messages` to the base URL. The gateway URL in the snippet comes from the [shared snippet configuration](/harnesses/#gateway-base-url).
+
+### Discovery and model overrides
+
+At startup, discovery calls `GET /v1/models?limit=1000` with your credential. Claude Code adds returned IDs that contain `claude` or `anthropic`, ignoring case, to the `/model` picker. A Messages route with a different alias may not appear. You can select a gateway ID explicitly:
+
+```sh
+claude --model '<gateway model id>'
+```
+
+Discovery uses a three-second timeout by default. Redirects fail discovery, so use the final HTTPS URL. Discovery does not run when a `CLAUDE_CODE_USE_*` provider variable selects another provider.
+
+The selected snippet models are not an access allowlist. Discovery can show other models the key can access. Set access limits in Oceans, not by leaving models out of a snippet.
+
+Keep `modelOverrides` when you merge the settings. It maps a known Claude model ID to its gateway ID, so Claude Code can use the right model capabilities. It does not add a model or route to Oceans. Regenerate the snippet when your gateway IDs change.
+
+`ANTHROPIC_MODEL` sets the launch model, not a lock on the session. Use `/model` to switch during a session or `--model` to choose at launch. The generated `ANTHROPIC_MODEL` takes precedence over a saved `/model` choice on the next launch and over a resumed session's model. Remove it if you want Claude Code to use your saved default instead. Managed settings and host apps can also change which settings apply. See Anthropic's [model configuration](https://code.claude.com/docs/en/model-config) and [settings precedence](https://code.claude.com/docs/en/settings).
+
+### Choose a background model
+
+Claude Code uses a small model for tasks such as WebFetch summaries and session titles. These tasks can send `thinking: { "type": "disabled" }`, so they need a route that can accept thinking-off requests.
+
+The generator pins `ANTHROPIC_DEFAULT_HAIKU_MODEL` to the first selected Haiku model that can turn thinking off. If there is no suitable Haiku, it uses the first selected Messages model that can turn thinking off. If none can, it uses the first model and adds a warning. Include a suitable Haiku or Sonnet model and generate again, or set the pin to a gateway model that can turn thinking off.
+
+The pin also changes the `haiku` alias. It can point to a Sonnet model if that is your safe background choice. A Haiku model is not safe just because of its name: check the route's thinking rules. Models that always think, such as Opus 5.5 and Fable 5, can reject these background requests with a 400. See [Model routing and APIs](/configuration/model-routing/).
+
+`ANTHROPIC_SMALL_FAST_MODEL` is deprecated. Remove an old copy rather than keeping it beside the new pin. Host apps that set `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1` can override user provider settings; check the host's config if your background pin does not apply.
+
+## Optional lower token usage
+
+The second block is optional. Review each setting before merging it into the gateway block's `env` object. These are client choices, not gateway budget controls.
+
+| Generated setting | Effect and trade-off |
+| --- | --- |
+| `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` | Turns off 1M context support and removes `[1m]` picker choices. Models that normally use 1M are held to 200K, so long tasks have less room. |
+| `CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000` | Sets the auto-compact window to 200,000 tokens. A smaller window can compact sooner and lose detail. |
+| `CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT=1` | Uses a simpler system prompt. This can change how the agent works. |
+| `ENABLE_TOOL_SEARCH=auto` | Turns on MCP tool search when tool definitions reach 10% of the context window, instead of loading every tool upfront. The route must support it. |
+| `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` | Skips model-generated title requests, terminal title updates and terminal status reports. |
+| `CLAUDE_CODE_ATTRIBUTION_HEADER=0` | Omits the attribution header from the system prompt. |
+| `CLAUDE_CODE_ENABLE_TELEMETRY=0`, `DISABLE_TELEMETRY=1`, `DISABLE_ERROR_REPORTING=1` | Turn off telemetry and error reporting. This reduces reporting traffic, not inference tokens, and can make client problems harder to diagnose. |
+
+Do not disable experimental betas just to save tokens. `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1` is a separate compatibility option for routes that reject beta headers or fields. It removes features, including MCP tool search unless managed settings keep it on. Loading all MCP tools upfront can use more tokens. See Anthropic's [gateway protocol](https://code.claude.com/docs/en/llm-gateway-protocol#disable-pre-release-capabilities).
+
+## Check that requests reach Oceans
+
+1. Run `claude --version` and confirm which CLI you are running.
+2. Start a fresh `claude` session. Run `/status` and `/model` to check the connection and selected model.
+3. Send a short prompt, such as `Reply with OK. Do not use tools.`
+4. Open Oceans **Request Logs** and find the request. Check its model, route, status and token usage. The picker alone does not prove that the request reached the right gateway.
+5. If you use WebFetch or other background features, check those requests too. A successful main prompt does not prove the background pin works.
+
+See [Request logs](/observability/request-logs/) for the log fields. If needed, start `claude --debug` to inspect discovery or connection failures. Treat debug logs as sensitive and redact them before sharing.
+
+## Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| Claude Code asks you to sign in, or uses the wrong service | Check that the settings file loaded, the token is set, and old provider flags are not active. Run `/status`; check managed or host settings too. |
+| 401 or 403 | Use an active Oceans key with Inference scope and access to the model. Check that you did not put a literal `$VARIABLE` reference in JSON. |
+| A model is missing from `/model` | Check the discovery URL, key access and ID filter. Discovery is not a list of every Messages route. Try the exact gateway ID with `--model`. |
+| Model not found or an unsupported-model error | Check the gateway ID and `modelOverrides`, update Claude Code, and use a supported Claude model. Messages support alone is not enough. |
+| The main chat works but a background tool fails with 400 | Check `ANTHROPIC_DEFAULT_HAIKU_MODEL`. Use a route that accepts thinking-off requests. |
+| Token counting returns `501 not_implemented_error` | The route has no upstream count API. This is not a token count of zero. See [Provider API compatibility](/reference/provider-api-compatibility/). |
+| A request rejects a beta header or tool field | Check the route's API support. Consider the experimental-beta compatibility option above, with its feature trade-offs. |
+| A request hits a budget or rate limit | Check Oceans [budgets](/spend/budgets/) and [rate limits](/spend/rate-limits/). Changing client settings does not bypass them. |
+
+## Upstream references
+
+- [Connect to an LLM gateway](https://code.claude.com/docs/en/llm-gateway-connect)
+- [Gateway protocol and model discovery](https://code.claude.com/docs/en/llm-gateway-protocol)
+- [Model configuration](https://code.claude.com/docs/en/model-config)
+- [Settings files and precedence](https://code.claude.com/docs/en/settings)
+- [Settings reference](https://code.claude.com/docs/en/settings-reference)
+- [Environment variables](https://code.claude.com/docs/en/env-vars)

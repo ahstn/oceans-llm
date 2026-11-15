@@ -7,7 +7,8 @@ use gateway_core::{
     AttributionCommitSession, AttributionCommitWrite, AttributionFreshness,
     AttributionPullRequestCommit, AttributionPullRequestRecord, AttributionPullRequestWrite,
     AttributionReportQuery, AttributionRepository, AttributionRequestFact,
-    AttributionSessionCommitTime, AttributionSessionEventWrite, StoreError,
+    AttributionRequestSessionWrite, AttributionSessionCommitTime, AttributionSessionEventWrite,
+    StoreError,
 };
 use time::OffsetDateTime;
 
@@ -346,6 +347,44 @@ impl AttributionRepository for LibsqlStore {
             attribution::insert_agent_session_hashes(DIALECT, &session),
         )
         .await?;
+        commit(transaction).await?;
+        Ok(AttributionApplyOutcome::Applied)
+    }
+
+    async fn apply_attribution_request_session(
+        &self,
+        write: &AttributionRequestSessionWrite,
+    ) -> Result<AttributionApplyOutcome, StoreError> {
+        let transaction = self.begin_transaction().await?;
+        let insert = attribution::insert_request_session(DIALECT, write)?;
+        if execute(&transaction, insert).await? == 0 {
+            let stored = {
+                let mut rows = query(
+                    &transaction,
+                    attribution::select_request_session_freshness(DIALECT, write),
+                )
+                .await?;
+                let row = next_row(&mut rows)
+                    .await?
+                    .ok_or_else(attribution::conflicting_row_missing)?;
+                AttributionFreshness {
+                    installation_id: string(&row, 0)?,
+                    sequence: integer(&row, 1)?,
+                    observed_at: time_at(&row, 2)?,
+                    late_sequenced: flag(&row, 3)?,
+                }
+            };
+            let outcome = attribution::request_session_outcome(write, &stored)?;
+            if outcome != AttributionApplyOutcome::Applied {
+                rollback(transaction).await?;
+                return Ok(outcome);
+            }
+            execute(
+                &transaction,
+                attribution::update_request_session(DIALECT, write)?,
+            )
+            .await?;
+        }
         commit(transaction).await?;
         Ok(AttributionApplyOutcome::Applied)
     }

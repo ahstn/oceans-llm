@@ -30,7 +30,7 @@ fn metadata_keeps_only_policy_permitted_bounded_dimensions() {
         Some("header:x-session-id")
     );
     assert_eq!(metadata.session_limitation, None);
-    assert_eq!(metadata.adapter_version, "opencode-v1");
+    assert_eq!(metadata.adapter_version, "opencode-v2");
     assert_eq!(metadata.execution_id, None);
     assert_eq!(metadata.message_count, Some(1));
     assert_eq!(metadata.supplied_tool_count, Some(1));
@@ -433,6 +433,37 @@ fn metadata_accepts_each_verified_session_alias_with_exact_provenance() {
             "header:x-opencode-session",
         ),
         (
+            "opencode explicit conversation",
+            "opencode",
+            json!({}),
+            BTreeMap::from([(
+                "x-opencode-session-id".to_string(),
+                "known-session".to_string(),
+            )]),
+            "header:x-opencode-session-id",
+        ),
+        (
+            "pi responses header",
+            "pi",
+            json!({}),
+            BTreeMap::from([("Session-Id".to_string(), "known-session".to_string())]),
+            "header:session-id",
+        ),
+        (
+            "pi openrouter header",
+            "pi",
+            json!({}),
+            BTreeMap::from([("X-Session-Id".to_string(), "known-session".to_string())]),
+            "header:x-session-id",
+        ),
+        (
+            "claude body-only metadata",
+            "claude_cli",
+            json!({"metadata": {"user_id": "{\"device_id\":\"device\",\"session_id\":\"known-session\"}"}}),
+            BTreeMap::new(),
+            "body:metadata.user_id.session_id",
+        ),
+        (
             "pi session header",
             "pi",
             json!({}),
@@ -503,6 +534,7 @@ fn matching_equivalent_aliases_preserve_every_source() {
         &BTreeMap::from([
             ("x-session-id".to_string(), "ses_123".to_string()),
             ("x-session-affinity".to_string(), "ses_123".to_string()),
+            ("x-opencode-session".to_string(), "ses_123".to_string()),
         ]),
         true,
         "opencode",
@@ -510,7 +542,7 @@ fn matching_equivalent_aliases_preserve_every_source() {
     assert_eq!(opencode.external_session_id.as_deref(), Some("ses_123"));
     assert_eq!(
         opencode.session_source.as_deref(),
-        Some("header:x-session-id+header:x-session-affinity")
+        Some("header:x-session-id+header:x-session-affinity+header:x-opencode-session")
     );
 
     let pi = extract_request_metadata(
@@ -572,13 +604,13 @@ fn canonical_aliases_take_precedence_over_unrecognized_spoof_fields() {
             "opencode",
             json!({"metadata": {"session_id": "spoof-body"}}),
             BTreeMap::from([
-                ("x-opencode-session".to_string(), "canonical".to_string()),
                 (
-                    "x-opencode-session-id".to_string(),
-                    "spoof-header".to_string(),
+                    "x-opencode-session".to_string(),
+                    "cache-affinity".to_string(),
                 ),
+                ("x-opencode-session-id".to_string(), "canonical".to_string()),
             ]),
-            "header:x-opencode-session",
+            "header:x-opencode-session-id",
         ),
         (
             "pi",
@@ -644,7 +676,7 @@ fn conflicting_session_aliases_decline_correlation_explicitly() {
             json!({}),
             BTreeMap::from([
                 ("x-session-id".to_string(), "session-a".to_string()),
-                ("x-opencode-session".to_string(), "session-a".to_string()),
+                ("x-opencode-session".to_string(), "session-b".to_string()),
             ]),
         ),
         (
@@ -732,7 +764,7 @@ fn malformed_session_candidates_are_rejected_instead_of_truncated() {
         (
             "malformed nested metadata",
             "oh_my_pi",
-            json!({"metadata": {"user_id": "not-json"}}),
+            json!({"metadata": {"user_id": "{not-json"}}),
             BTreeMap::new(),
         ),
     ];
@@ -752,19 +784,19 @@ fn malformed_session_candidates_are_rejected_instead_of_truncated() {
 fn spoofed_or_noncanonical_aliases_never_fabricate_sessions() {
     let fixtures = [
         (
-            "historical opencode alias",
+            "unrecognized opencode alias",
             "opencode",
             json!({}),
             BTreeMap::from([(
-                "x-opencode-session-id".to_string(),
+                "x-opencode-conversation-id".to_string(),
                 "fake-session".to_string(),
             )]),
         ),
         (
-            "generic pi alias",
+            "unrecognized pi alias",
             "pi",
             json!({}),
-            BTreeMap::from([("session-id".to_string(), "fake-session".to_string())]),
+            BTreeMap::from([("x-agent-session-id".to_string(), "fake-session".to_string())]),
         ),
         (
             "pi request id alone",

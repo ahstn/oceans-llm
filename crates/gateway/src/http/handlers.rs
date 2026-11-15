@@ -805,6 +805,12 @@ fn build_provider_context(
 
 struct LoggingBodyStreamState {
     upstream: gateway_core::ProviderStream,
+    finalization: Option<StreamFinalization>,
+}
+
+/// Moved exactly once into an owned task before the first finalization await.
+/// The task never owns or drains the upstream HTTP stream.
+struct StreamFinalization {
     service: std::sync::Arc<AppGatewayService>,
     metrics: std::sync::Arc<crate::observability::GatewayMetrics>,
     auth: AuthenticatedApiKey,
@@ -820,14 +826,37 @@ struct LoggingBodyStreamState {
     icon_metadata: RequestLogIconMetadata,
     started_at: Instant,
     attempt_started_at: OffsetDateTime,
-    finished: bool,
     saw_terminal_event: bool,
     requires_message_stop: bool,
     collector: gateway_service::StreamResponseCollector,
     stream_trace: StreamTrace,
+    #[cfg(test)]
+    test_gate: Option<StreamFinalizationTestGate>,
 }
 
-impl LoggingBodyStreamState {
+#[cfg(test)]
+struct StreamFinalizationTestGate {
+    after_accounting: bool,
+    entered: tokio::sync::oneshot::Sender<()>,
+    resume: tokio::sync::oneshot::Receiver<()>,
+}
+
+#[cfg(test)]
+async fn pause_stream_finalization(
+    gate: &mut Option<StreamFinalizationTestGate>,
+    after_accounting: bool,
+) {
+    if gate
+        .as_ref()
+        .is_some_and(|gate| gate.after_accounting == after_accounting)
+    {
+        let gate = gate.take().expect("matching finalization checkpoint");
+        let _ = gate.entered.send(());
+        let _ = gate.resume.await;
+    }
+}
+
+impl StreamFinalization {
     fn metric_labels(&self) -> ChatMetricLabels<'_> {
         ChatMetricLabels {
             requested_model: &self.requested_model_key,
@@ -840,22 +869,31 @@ impl LoggingBodyStreamState {
 
 impl Drop for LoggingBodyStreamState {
     fn drop(&mut self) {
-        if self.finished {
+        let Some(finalization) = self.finalization.take() else {
             return;
-        }
-        self.finished = true;
-        self.stream_trace
-            .finish("client_cancelled", Some("client_cancelled"));
-        record_cancelled_stream_metrics(self);
-        spawn_cancelled_stream_log(self);
-        spawn_cancelled_stream_token_charge(self);
+        };
+        record_cancelled_stream_metrics(&finalization);
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            tracing::warn!(
+                request_id = %finalization.request_log_context.request_id,
+                provider_key = %finalization.provider_key,
+                "cannot persist cancelled stream outside a Tokio runtime"
+            );
+            return;
+        };
+        // Register the charge synchronously: the next rate-limit check must
+        // wait for it even if this client cancels and immediately retries.
+        spawn_cancelled_stream_token_charge(&finalization);
+        runtime.spawn(
+            finalize_stream(finalization, StreamTermination::ClientCancelled).in_current_span(),
+        );
     }
 }
 
 /// A cancelled stream skips usage accounting, but usage the provider already
 /// reported still counts against token limits, so cancelling a stream cannot
 /// be used to dodge them.
-fn spawn_cancelled_stream_token_charge(state: &LoggingBodyStreamState) {
+fn spawn_cancelled_stream_token_charge(state: &StreamFinalization) {
     let usage = gateway_service::request_logging::usage_summary_from_value(state.collector.usage());
     let Some(total_tokens) = chargeable_tokens(
         usage.total_tokens,
@@ -893,7 +931,7 @@ fn chargeable_tokens(
         .filter(|tokens| *tokens > 0)
 }
 
-fn record_cancelled_stream_metrics(state: &LoggingBodyStreamState) {
+fn record_cancelled_stream_metrics(state: &StreamFinalization) {
     let labels = state.metric_labels();
     state.metrics.record_chat_request(&ChatRequestMetric {
         labels: labels.clone(),
@@ -909,50 +947,6 @@ fn record_cancelled_stream_metrics(state: &LoggingBodyStreamState) {
             ..state.request_log_context.tool_cardinality
         },
     );
-}
-
-fn spawn_cancelled_stream_log(state: &LoggingBodyStreamState) {
-    let Ok(runtime) = tokio::runtime::Handle::try_current() else {
-        tracing::warn!(
-            request_id = %state.request_log_context.request_id,
-            provider_key = %state.provider_key,
-            "cannot persist cancelled stream outside a Tokio runtime"
-        );
-        return;
-    };
-
-    let service = state.service.clone();
-    let auth = state.auth.clone();
-    let context = state.request_log_context.clone();
-    let stream_result = gateway_service::StreamLogResultInput {
-        provider_key: state.provider_key.clone(),
-        icon_metadata: state.icon_metadata.clone(),
-        latency_ms: latency_ms_since(state.started_at),
-        collector: state.collector.clone(),
-        failure: Some(gateway_service::StreamFailureSummary {
-            status_code: 499,
-            error_code: "client_cancelled".to_string(),
-        }),
-        attempts: vec![gateway_service::build_request_attempt(
-            &state.request_log_context,
-            &state.route,
-            1,
-            true,
-            state.attempt_started_at,
-            gateway_service::offset_now(),
-            gateway_service::RequestAttemptOutcome {
-                status: RequestAttemptStatus::StreamError,
-                status_code: Some(499),
-                error_code: Some("client_cancelled".to_string()),
-                error_detail: None,
-                retryable: false,
-                produced_final_response: false,
-            },
-        )],
-    };
-    runtime.spawn(async move {
-        best_effort_log_stream_result(&service, &auth, &context, stream_result).await;
-    });
 }
 
 struct UsageAccountingContext<'a> {
@@ -1170,108 +1164,31 @@ fn wrap_stream_with_request_logging(
     state: LoggingBodyStreamState,
 ) -> impl futures_util::Stream<Item = Result<axum::body::Bytes, std::io::Error>> {
     futures_stream::unfold(state, |mut state| async move {
-        if state.finished {
-            return None;
-        }
+        state.finalization.as_ref()?;
 
         match state.upstream.next().await {
             Some(Ok(chunk)) => {
-                let observation = state.collector.observe_chunk(chunk.as_ref());
-                let ends_stream = observation.ends_stream;
-                state.saw_terminal_event |= observation.has_terminal_event;
-                state.stream_trace.observe_chunk(chunk.len(), observation);
-                // A completed Responses event promises a usable continuation ID.
-                // Stop before forwarding it if its origin cannot be persisted.
-                if observation.has_terminal_event
-                    && state.collector.failure().is_none()
-                    && let Some(receipt) = state.routing_receipt.as_mut()
-                    && let Err(error) = receipt
-                        .persist_response_origin(
-                            state.service.store().as_ref(),
-                            state.collector.response_id(),
-                        )
-                        .await
+                let finalization = state.finalization.as_mut().expect("active stream");
+                let observation = finalization.collector.observe_chunk(chunk.as_ref());
+                finalization.saw_terminal_event |= observation.has_terminal_event;
+                finalization
+                    .stream_trace
+                    .observe_chunk(chunk.len(), observation);
+                if observation.ends_stream
+                    && let Err(error) = state.finalize(StreamTermination::Complete).await
                 {
-                    let result = finalize_stream(&mut state, Some(error))
-                        .await
-                        .map(|()| chunk)
-                        .map_err(|error| std::io::Error::other(error.to_string()));
-                    return Some((result, state));
-                }
-                if ends_stream && let Err(error) = finalize_stream(&mut state, None).await {
                     return Some((Err(std::io::Error::other(error.to_string())), state));
                 }
-
                 Some((Ok(chunk), state))
             }
             Some(Err(error)) => {
-                state.finished = true;
-                state.collector.finish();
-                state
-                    .stream_trace
-                    .finish("stream_transport_error", Some("stream_transport_error"));
-                let error_message = error.to_string();
-                let retryable = error.is_retryable();
-                let gateway_error = GatewayError::from(error);
-                // The provider may have billed tokens before the transport failed.
-                if state.collector.usage().is_some() {
-                    account_stream_usage(&mut state).await;
-                }
-                tracing::warn!(
-                    request_id = %state.request_log_context.request_id,
-                    provider_key = %state.provider_key,
-                    termination_reason = "stream_transport_error",
-                    "chat completion stream terminated with transport error"
-                );
-                best_effort_log_stream_result(
-                    &state.service,
-                    &state.auth,
-                    &state.request_log_context,
-                    gateway_service::StreamLogResultInput {
-                        provider_key: state.provider_key.clone(),
-                        icon_metadata: state.icon_metadata.clone(),
-                        latency_ms: latency_ms_since(state.started_at),
-                        collector: state.collector.clone(),
-                        failure: Some(gateway_service::StreamFailureSummary {
-                            status_code: gateway_error.http_status_code().into(),
-                            error_code: gateway_error.error_code().to_string(),
-                        }),
-                        attempts: vec![gateway_service::build_request_attempt(
-                            &state.request_log_context,
-                            &state.route,
-                            1,
-                            true,
-                            state.attempt_started_at,
-                            gateway_service::offset_now(),
-                            gateway_service::RequestAttemptOutcome {
-                                status: RequestAttemptStatus::StreamError,
-                                status_code: Some(gateway_error.http_status_code().into()),
-                                error_code: Some(gateway_error.error_code().to_string()),
-                                error_detail: Some(error_message.clone()),
-                                retryable,
-                                produced_final_response: false,
-                            },
-                        )],
-                    },
-                )
-                .await;
-                state.metrics.record_chat_request(&ChatRequestMetric {
-                    labels: state.metric_labels(),
-                    status_code: i64::from(gateway_error.http_status_code()),
-                    outcome: gateway_error.error_type(),
-                    latency_seconds: latency_seconds_since(state.started_at),
-                });
-                state.metrics.record_tool_cardinality(
-                    &state.metric_labels(),
-                    state.request_log_context.operation,
-                    &RequestToolCardinality {
-                        invoked_tool_count: Some(state.collector.invoked_tool_count()),
-                        ..state.request_log_context.tool_cardinality
-                    },
-                );
-                Some((Err(std::io::Error::other(error_message)), state))
+                let error = state
+                    .finalize(StreamTermination::Transport(error))
+                    .await
+                    .expect_err("transport failure");
+                Some((Err(std::io::Error::other(error.to_string())), state))
             }
-            None => match finalize_stream(&mut state, None).await {
+            None => match state.finalize(StreamTermination::Complete).await {
                 Ok(()) => None,
                 Err(error) => Some((Err(std::io::Error::other(error.to_string())), state)),
             },
@@ -1279,20 +1196,59 @@ fn wrap_stream_with_request_logging(
     })
 }
 
-async fn finalize_stream(
-    state: &mut LoggingBodyStreamState,
-    origin_error: Option<GatewayError>,
-) -> Result<(), GatewayError> {
-    if state.finished {
-        return Ok(());
+enum StreamTermination {
+    Complete,
+    Transport(ProviderError),
+    ClientCancelled,
+}
+
+impl LoggingBodyStreamState {
+    fn finalize(
+        &mut self,
+        termination: StreamTermination,
+    ) -> impl Future<Output = Result<(), GatewayError>> + use<> {
+        let finalization = self.finalization.take().expect("stream finalized once");
+        // Dropping the join handle detaches, rather than cancels, this bounded
+        // persistence task. No body-owned future can interrupt billing or logging.
+        let task = tokio::spawn(finalize_stream(finalization, termination).in_current_span());
+        async move {
+            task.await.map_err(|error| {
+                GatewayError::Internal(format!("stream finalization task failed: {error}"))
+            })?
+        }
     }
-    state.finished = true;
+}
+
+async fn finalize_stream(
+    mut state: StreamFinalization,
+    termination: StreamTermination,
+) -> Result<(), GatewayError> {
     state.collector.finish();
-    let mut failure = state.collector.failure().cloned();
+    let cancelled = matches!(termination, StreamTermination::ClientCancelled);
+    let (transport, transport_outcome) = match termination {
+        StreamTermination::Transport(error) => {
+            let detail = error.to_string();
+            let retryable = error.is_retryable();
+            (Some(GatewayError::from(error)), Some((detail, retryable)))
+        }
+        StreamTermination::Complete | StreamTermination::ClientCancelled => (None, None),
+    };
+    let mut failure = if cancelled {
+        Some(gateway_service::StreamFailureSummary {
+            status_code: 499,
+            error_code: "client_cancelled".to_string(),
+        })
+    } else if let Some(error) = &transport {
+        Some(gateway_service::StreamFailureSummary {
+            status_code: error.http_status_code().into(),
+            error_code: error.error_code().to_string(),
+        })
+    } else {
+        state.collector.failure().cloned()
+    };
     let completion_error = (state.requires_message_stop
         && !state.saw_terminal_event
-        && failure.is_none()
-        && origin_error.is_none())
+        && failure.is_none())
     .then(|| {
         GatewayError::Provider(ProviderError::Transport(
             "upstream Anthropic stream ended prematurely before message_stop event".to_string(),
@@ -1304,18 +1260,25 @@ async fn finalize_stream(
             error_code: error.error_code().to_string(),
         });
     }
-    // Failed streams can still report billable usage, but must not refresh affinity.
-    if failure.is_none() || state.collector.usage().is_some() {
-        account_stream_usage(state).await;
+    #[cfg(test)]
+    pause_stream_finalization(&mut state.test_gate, false).await;
+    // Cancelled partial streams keep their existing no-ledger semantics. Failed
+    // streams charge only reported usage and never refresh session affinity.
+    if !cancelled && (failure.is_none() || state.collector.usage().is_some()) {
+        account_stream_usage(&state, failure.is_none()).await;
     }
-    let routing_error = if origin_error.is_some() {
-        origin_error
-    } else if failure.is_none() && state.saw_terminal_event {
+    #[cfg(test)]
+    pause_stream_finalization(&mut state.test_gate, true).await;
+    let routing_error = if failure.is_none() {
         match &state.routing_receipt {
             Some(receipt) => receipt
                 .complete(
                     state.service.store().as_ref(),
-                    state.collector.response_id(),
+                    if state.saw_terminal_event {
+                        state.collector.response_id()
+                    } else {
+                        None
+                    },
                 )
                 .await
                 .err(),
@@ -1332,29 +1295,56 @@ async fn finalize_stream(
             error_code: error.error_code().to_string(),
         });
     }
+    let termination_reason = if cancelled {
+        "client_cancelled"
+    } else if transport.is_some() {
+        "stream_transport_error"
+    } else if routing_error.is_some() {
+        "routing_state_error"
+    } else if failure.is_some() {
+        "stream_error_event"
+    } else {
+        "complete"
+    };
     state.stream_trace.finish(
-        if routing_error.is_some() {
-            "routing_state_error"
-        } else if failure.is_some() {
-            "stream_error_event"
-        } else {
-            "complete"
-        },
-        if routing_error.is_some() {
-            Some("routing_state_error")
-        } else {
-            failure.as_ref().map(|_| "stream_error_event")
-        },
+        termination_reason,
+        failure.as_ref().map(|_| termination_reason),
     );
     tracing::info!(
         request_id = %state.request_log_context.request_id,
         provider_key = %state.provider_key,
-        termination_reason = if failure.is_some() { "stream_error_chunk" } else { "complete" },
-        "chat completion stream terminated"
+        termination_reason,
+        "inference stream terminated"
     );
     let tool_cardinality = RequestToolCardinality {
         invoked_tool_count: Some(state.collector.invoked_tool_count()),
         ..state.request_log_context.tool_cardinality
+    };
+    let mut attempt = match failure.as_ref() {
+        Some(failure) => stream_failure_attempt(
+            &state.request_log_context,
+            &state.route,
+            state.attempt_started_at,
+            failure,
+        ),
+        None => success_attempt(
+            &state.request_log_context,
+            &state.route,
+            true,
+            state.attempt_started_at,
+        ),
+    };
+    if let Some((detail, retryable)) = transport_outcome {
+        attempt.error_detail = Some(detail);
+        attempt.retryable = retryable;
+    }
+    let (status_code, outcome) = match failure.as_ref() {
+        Some(_) if transport.is_some() => {
+            let error = transport.as_ref().expect("transport failure");
+            (i64::from(error.http_status_code()), error.error_type())
+        }
+        Some(failure) => (failure.status_code, "upstream_error"),
+        None => (200, "success"),
     };
     best_effort_log_stream_result(
         &state.service,
@@ -1364,49 +1354,40 @@ async fn finalize_stream(
             provider_key: state.provider_key.clone(),
             icon_metadata: state.icon_metadata.clone(),
             latency_ms: latency_ms_since(state.started_at),
-            collector: state.collector.clone(),
-            failure: failure.clone(),
-            attempts: match failure.as_ref() {
-                Some(failure) => vec![stream_failure_attempt(
-                    &state.request_log_context,
-                    &state.route,
-                    state.attempt_started_at,
-                    failure,
-                )],
-                None => vec![success_attempt(
-                    &state.request_log_context,
-                    &state.route,
-                    true,
-                    state.attempt_started_at,
-                )],
-            },
+            collector: state.collector,
+            failure,
+            attempts: vec![attempt],
         },
     )
     .await;
-    let (status_code, outcome) = match failure.as_ref() {
-        Some(failure) => (failure.status_code, "upstream_error"),
-        None => (200, "success"),
-    };
-    state.metrics.record_chat_request(&ChatRequestMetric {
-        labels: state.metric_labels(),
-        status_code,
-        outcome,
-        latency_seconds: latency_seconds_since(state.started_at),
-    });
-    state.metrics.record_tool_cardinality(
-        &state.metric_labels(),
-        state.request_log_context.operation,
-        &tool_cardinality,
-    );
-    match routing_error.or(completion_error) {
+    if !cancelled {
+        let labels = ChatMetricLabels {
+            requested_model: &state.requested_model_key,
+            resolved_model: &state.resolved_model_key,
+            provider_key: &state.provider_key,
+            stream: true,
+        };
+        state.metrics.record_chat_request(&ChatRequestMetric {
+            labels: labels.clone(),
+            status_code,
+            outcome,
+            latency_seconds: latency_seconds_since(state.started_at),
+        });
+        state.metrics.record_tool_cardinality(
+            &labels,
+            state.request_log_context.operation,
+            &tool_cardinality,
+        );
+    }
+    match transport.or(routing_error).or(completion_error) {
         Some(error) => Err(error),
         None => Ok(()),
     }
 }
 
-/// Records the stream's usage against the ledger and budgets. `collector.usage()`
-/// is `None` when the provider reported nothing; the row is then unpriced.
-async fn account_stream_usage(state: &mut LoggingBodyStreamState) {
+/// Records usage against the ledger and budgets. Only successful streams may
+/// estimate missing usage; failed streams charge what the provider reported.
+async fn account_stream_usage(state: &StreamFinalization, successful: bool) {
     let labels = state.metric_labels();
     finalize_successful_usage_accounting_from_parts(
         &state.service,
@@ -1423,9 +1404,13 @@ async fn account_stream_usage(state: &mut LoggingBodyStreamState) {
                 &state.request_log_context,
                 state.collector.served_service_tier(),
             ),
-            usage_estimate: state
-                .request_log_context
-                .usage_estimate(Some(state.collector.output_text_bytes())),
+            usage_estimate: if successful {
+                state
+                    .request_log_context
+                    .usage_estimate(Some(state.collector.output_text_bytes()))
+            } else {
+                gateway_service::UsageEstimateInput::default()
+            },
         },
         state.collector.usage().cloned(),
     )
@@ -2260,31 +2245,33 @@ mod tests {
             );
             let state = LoggingBodyStreamState {
                 upstream,
-                service: self.service.clone(),
-                metrics: self.metrics.clone(),
-                auth: self.auth.clone(),
-                rate_limit_team: Default::default(),
-                request_log_context: context.clone(),
-                requested_model_key: self.resolved.selection.requested_model.model_key.clone(),
-                resolved_model_key: self.resolved.selection.execution_model.model_key.clone(),
-                execution_model: self.resolved.selection.execution_model.clone(),
-                route: self.route.clone(),
-                routing_receipt: None,
-                provider_key: self.route.provider_key.clone(),
-                icon_metadata,
-                started_at: Instant::now(),
-                attempt_started_at: gateway_service::offset_now(),
-                finished: false,
-                saw_terminal_event: false,
-                requires_message_stop: false,
-                collector: self.service.new_stream_response_collector(),
-                stream_trace: StreamTrace::new(
-                    "chat",
-                    request_id,
-                    &self.route,
-                    &self.provider,
-                    Instant::now(),
-                ),
+                finalization: Some(super::StreamFinalization {
+                    service: self.service.clone(),
+                    metrics: self.metrics.clone(),
+                    auth: self.auth.clone(),
+                    rate_limit_team: Default::default(),
+                    request_log_context: context.clone(),
+                    requested_model_key: self.resolved.selection.requested_model.model_key.clone(),
+                    resolved_model_key: self.resolved.selection.execution_model.model_key.clone(),
+                    execution_model: self.resolved.selection.execution_model.clone(),
+                    route: self.route.clone(),
+                    routing_receipt: None,
+                    provider_key: self.route.provider_key.clone(),
+                    icon_metadata,
+                    started_at: Instant::now(),
+                    attempt_started_at: gateway_service::offset_now(),
+                    saw_terminal_event: false,
+                    requires_message_stop: false,
+                    collector: self.service.new_stream_response_collector(),
+                    stream_trace: StreamTrace::new(
+                        "chat",
+                        request_id,
+                        &self.route,
+                        &self.provider,
+                        Instant::now(),
+                    ),
+                    test_gate: None,
+                }),
             };
             (context, state)
         }
@@ -2383,7 +2370,7 @@ mod tests {
             b"data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}],\"usage\":{\"prompt_tokens\":40,\"completion_tokens\":2,\"total_tokens\":42}}\n\n",
         ))]));
         let (_, mut state) = harness.logging_state("stream-cancel-tokens", upstream);
-        state.service = service;
+        state.finalization.as_mut().unwrap().service = service;
         let mut body_stream = Box::pin(wrap_stream_with_request_logging(state));
         assert!(body_stream.next().await.is_some());
         drop(body_stream);
@@ -2399,6 +2386,260 @@ mod tests {
         let decision = limiter.check(&subject).await.expect("check");
         let remaining = decision.status().map(|status| status.remaining);
         assert_eq!(remaining, Some(958));
+    }
+
+    async fn assert_finalization_survives_body_cancellation(
+        harness: &StreamTestHarness,
+        protocol: &str,
+        after_accounting: bool,
+        expected_charged_tokens: i64,
+    ) {
+        use gateway_core::AttributionRepository as _;
+
+        let request_uuid = uuid::Uuid::new_v4();
+        let request_id = request_uuid.to_string();
+        let usage = Bytes::from_static(
+            b"data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2,\"total_tokens\":7}}\n\n",
+        );
+        let frames = match protocol {
+            "response.completed" | "response.incomplete" | "response.failed" => {
+                vec![Ok(Bytes::from(format!(
+                    "event: {protocol}\ndata: {{\"type\":\"{protocol}\",\"response\":{{\"id\":\"resp_finalization\",\"usage\":{{\"input_tokens\":5,\"output_tokens\":2,\"total_tokens\":7}}}}}}\n\n"
+                )))]
+            }
+            "native_messages" => vec![Ok(Bytes::from_static(
+                b"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":5}}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":2}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+            ))],
+            "transport_error" => vec![
+                Ok(usage),
+                Err(ProviderError::Transport("connection reset".to_string())),
+            ],
+            "chat" | "translated_messages" => vec![
+                Ok(usage),
+                Ok(Bytes::from_static(b"data: [DONE]\n\n")),
+            ],
+            _ => panic!("unexpected protocol {protocol}"),
+        };
+        // The provider deliberately never closes. A terminal-event consumer
+        // must not need EOF, nor leave an upstream-draining task behind.
+        let upstream: ProviderStream = Box::pin(stream::iter(frames).chain(stream::pending()));
+        let upstream = if protocol == "translated_messages" {
+            super::anthropic_messages_stream_from_openai(upstream, "fast".to_string())
+        } else {
+            upstream
+        };
+        let (context, mut state) = harness.logging_state(&request_id, upstream);
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (resume_tx, resume_rx) = tokio::sync::oneshot::channel();
+        let finalization = state.finalization.as_mut().unwrap();
+        finalization.requires_message_stop = protocol == "native_messages";
+        finalization.test_gate = Some(super::StreamFinalizationTestGate {
+            after_accounting,
+            entered: entered_tx,
+            resume: resume_rx,
+        });
+        let requests_before = harness.metrics.test_snapshot().requests;
+        let client = tokio::spawn(async move {
+            let body = axum::body::Body::from_stream(wrap_stream_with_request_logging(state));
+            let mut chunks = body.into_data_stream();
+            while chunks.next().await.is_some() {}
+        });
+        tokio::time::timeout(Duration::from_secs(5), entered_rx)
+            .await
+            .expect("protocol terminal starts finalization without EOF")
+            .expect("finalizer reached persistence checkpoint");
+        assert!(!client.is_finished());
+        assert!(
+            harness
+                .service
+                .get_request_log_detail(context.request_log_id)
+                .await
+                .is_err(),
+            "checkpoint precedes request logging"
+        );
+        let ledger = harness
+            .store
+            .get_usage_ledger_by_request_and_scope(&request_id, &harness.ownership_scope_key())
+            .await
+            .unwrap();
+        assert_eq!(ledger.is_some(), after_accounting);
+
+        client.abort();
+        assert!(client.await.unwrap_err().is_cancelled());
+        // The client hook can arrive while persistence is still pending. Its
+        // association must join the eventual request and usage, not be lost.
+        let now = gateway_service::offset_now();
+        let session_hash = format!("{:064x}", request_uuid.as_u128());
+        harness
+            .store
+            .apply_attribution_request_session(&gateway_core::AttributionRequestSessionWrite {
+                owner: gateway_core::AttributionOwner {
+                    ownership_scope_key: harness.ownership_scope_key(),
+                    owner_user_id: harness.auth.owner_user_id,
+                    owner_service_account_id: harness.auth.owner_service_account_id,
+                },
+                request_id: request_uuid,
+                session_hash: session_hash.clone(),
+                freshness: gateway_core::AttributionFreshness {
+                    installation_id: "stream-finalization-test".to_string(),
+                    sequence: 1,
+                    observed_at: now,
+                    late_sequenced: false,
+                },
+                received_at: now,
+            })
+            .await
+            .expect("correlate request while its finalizer is pending");
+        resume_tx
+            .send(())
+            .expect("finalizer outlives response body");
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while harness.metrics.test_snapshot().requests == requests_before {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("owned finalizer completes after body cancellation");
+
+        let failed = matches!(protocol, "response.failed" | "transport_error");
+        let detail = harness
+            .service
+            .get_request_log_detail(context.request_log_id)
+            .await
+            .expect("request log survives cancellation");
+        assert_eq!(detail.log.status_code, Some(if failed { 502 } else { 200 }));
+        assert_eq!(
+            detail.log.error_code.as_deref(),
+            match protocol {
+                "response.failed" => Some("stream_error"),
+                "transport_error" => Some("upstream_transport"),
+                _ => None,
+            }
+        );
+        assert_eq!(
+            (detail.log.prompt_tokens, detail.log.completion_tokens),
+            if failed {
+                (None, None)
+            } else {
+                (Some(5), Some(2))
+            },
+            "reported usage survives cancellation for {protocol}"
+        );
+        assert_eq!(detail.attempts.len(), 1);
+        assert_eq!(
+            detail.attempts[0].status,
+            if failed {
+                RequestAttemptStatus::StreamError
+            } else {
+                RequestAttemptStatus::Success
+            }
+        );
+        let logs = harness
+            .service
+            .list_request_logs(&gateway_core::RequestLogQuery {
+                request_id: Some(request_id.clone()),
+                page: 1,
+                page_size: 10,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(logs.total, 1);
+        assert_eq!(
+            harness.metrics.test_snapshot().requests,
+            requests_before + 1
+        );
+        assert_eq!(
+            harness
+                .metrics
+                .test_snapshot()
+                .request_outcomes
+                .get("client_cancelled"),
+            None,
+            "completed or failed finalization is never reclassified as cancellation"
+        );
+        let ledger = harness
+            .store
+            .get_usage_ledger_by_request_and_scope(&request_id, &harness.ownership_scope_key())
+            .await
+            .unwrap()
+            .expect("usage survives response body cancellation");
+        assert_eq!(ledger.total_tokens, Some(7));
+        let facts = harness
+            .store
+            .list_attribution_request_facts(&[session_hash], gateway_service::offset_now())
+            .await
+            .expect("session correlation can join the persisted request and usage");
+        assert_eq!(facts.len(), 1);
+        assert_eq!(facts[0].request_id, request_id);
+        assert_eq!(facts[0].ownership_scope_key, harness.ownership_scope_key());
+        assert!(facts[0].pricing_status.is_some());
+        let models = ["fast"];
+        let subject = gateway_service::RateLimitSubject::new(
+            gateway_core::RateLimitOperation::Inference,
+            &harness.auth,
+        )
+        .with_models(&models);
+        let decision = harness
+            .service
+            .rate_limiter()
+            .check(&subject)
+            .await
+            .unwrap();
+        assert_eq!(
+            decision.status().map(|status| status.remaining),
+            Some(1_000 - expected_charged_tokens),
+            "each stream charges token limits exactly once"
+        );
+    }
+
+    #[tokio::test]
+    async fn stream_finalization_survives_body_cancellation_at_persistence_checkpoints() {
+        let mut harness = StreamTestHarness::new().await;
+        let limiter = Arc::new(gateway_service::RateLimiter::new(
+            Arc::new(harness.store.clone()),
+            gateway_service::RateLimitSettings {
+                config_policies: vec![gateway_service::ConfiguredRateLimitPolicy {
+                    name: "key tokens".to_string(),
+                    operation: gateway_core::RateLimitOperation::Inference,
+                    scope_kind: gateway_core::RateLimitScopeKind::ApiKey,
+                    model_key: None,
+                    mcp_server_key: None,
+                    metric: gateway_core::RateLimitMetric::Tokens,
+                    period: gateway_core::RateLimitPeriod::Hour,
+                    limit: 1_000,
+                }],
+                ..Default::default()
+            },
+        ));
+        harness.service = Arc::new(
+            GatewayService::new(
+                Arc::new(harness.store.clone()),
+                Arc::new(WeightedRoutePlanner::default()),
+            )
+            .with_rate_limiter(limiter),
+        );
+        let mut charged_tokens = 0;
+        for protocol in [
+            "chat",
+            "response.completed",
+            "response.incomplete",
+            "response.failed",
+            "native_messages",
+            "translated_messages",
+            "transport_error",
+        ] {
+            for after_accounting in [false, true] {
+                charged_tokens += 7;
+                assert_finalization_survives_body_cancellation(
+                    &harness,
+                    protocol,
+                    after_accounting,
+                    charged_tokens,
+                )
+                .await;
+            }
+        }
     }
 
     #[tokio::test]

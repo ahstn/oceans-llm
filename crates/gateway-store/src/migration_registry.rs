@@ -513,10 +513,17 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 81,
+        name: "attribution_request_sessions",
+        checksum: "V81__attribution_request_sessions.sql",
+        libsql_sql: include_str!("../migrations/V81__attribution_request_sessions.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V81__attribution_request_sessions.sql"),
+    },
+    MigrationManifest {
+        version: 82,
         name: "batch_jobs_route_index",
-        checksum: "V81__batch_jobs_route_index.sql",
-        libsql_sql: include_str!("../migrations/V81__batch_jobs_route_index.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V81__batch_jobs_route_index.sql"),
+        checksum: "V82__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V82__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V82__batch_jobs_route_index.sql"),
     },
 ];
 

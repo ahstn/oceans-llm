@@ -1,7 +1,7 @@
 //! Git AI attribution: the `oceans hook` commands. See
 //! `docs/adr/2026-11-01-git-ai-attribution-via-oceans-hooks.md`.
 //!
-//! Hooks (`notes`, `claude`, `omp`, `prs` and background `send`) never fail their caller and
+//! Hooks (`notes`, `claude`, `omp`, `request`, `prs` and background `send`) never fail their caller and
 //! never write to stdout: Claude Code adds a `SessionStart` hook's stdout to the conversation.
 //! Problems go to stderr and the hook exits 0.
 
@@ -52,6 +52,18 @@ pub fn run(command: HookCommand, overrides: Overrides<'_>, json: bool) -> anyhow
         HookCommand::Omp => hook(|| {
             let state = State::from_env(&env)?;
             after_session(hooks::omp(&state, io::stdin().lock())?);
+            Ok(())
+        }),
+        HookCommand::Request => hook(|| {
+            let state = State::from_env(&env)?;
+            let report = hooks::request(&state, io::stdin().lock())?;
+            if report.queued + report.unsequenced > 0 {
+                // OMP already detached this process. Reuse it for delivery; the sender
+                // lock coalesces concurrent hooks before resolving a key or connecting.
+                if let Some(reason) = send(overrides, &env)?.stopped {
+                    bail!("delivery stopped: {reason}");
+                }
+            }
             Ok(())
         }),
         HookCommand::Prs(args) => hook(|| sync_pull_requests(&env, &args)),
@@ -274,7 +286,6 @@ async fn install(args: &InstallArgs, overrides: Overrides<'_>, env: &Env) -> any
     }
     if args.omp {
         report("OMP", install_omp(&oceans, env));
-        println!("{OMP_SESSION_HEADER_HINT}");
     }
     if failed > 0 {
         bail!("{failed} hook target(s) failed to install");
@@ -289,12 +300,6 @@ fn describe(change: Change) -> &'static str {
         Change::Unchanged => "hook already in",
     }
 }
-
-/// The extension keeps `OCEANS_SESSION_ID` current; OMP only sends it once the user's Oceans
-/// provider names it as a header, which `models.yml` holds and the CLI doesn't edit.
-const OMP_SESSION_HEADER_HINT: &str = "OMP: to join requests to commits, add this to your Oceans \
-provider in OMP's models.yml, only on machines with this extension:\n    headers:\n      \
-session_id: OCEANS_SESSION_ID";
 
 fn install_git_ai(oceans: &Path) -> anyhow::Result<(Change, String)> {
     let change = install::git_ai(&shell_word(oceans)?)?;

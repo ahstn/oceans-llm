@@ -17,7 +17,8 @@ pub use ingest::{
     AttributionBatchInput, AttributionBatchOutcome, AttributionEntryCandidate,
     AttributionEntryInput, AttributionEntryResult, AttributionNoteInput, AttributionPayloadInput,
     AttributionPullRequestCommitInput, AttributionPullRequestInput, AttributionPullRequestsInput,
-    AttributionSessionInput, attribution_owner, ingest_attribution_batch,
+    AttributionRequestSessionInput, AttributionSessionInput, attribution_owner,
+    ingest_attribution_batch,
 };
 pub use report::{
     AttributionChangeActivity, AttributionModelActivity, AttributionPullRequestActivity,

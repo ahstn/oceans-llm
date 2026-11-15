@@ -234,6 +234,81 @@ async fn request_log_total(state: &AppState) -> u64 {
 }
 
 #[tokio::test]
+async fn inference_uses_unique_canonical_ids_for_logs_and_preserves_public_trace_ids() {
+    let (_directory, state, _provider, router) = setup(true).await;
+    let mut canonical_ids = BTreeSet::new();
+    for (path, body) in [
+        (
+            "/v1/chat/completions",
+            json!({"model": "fast", "messages": [{"role": "user", "content": "hi"}]}),
+        ),
+        ("/v1/responses", json!({"model": "fast", "input": "hi"})),
+        (
+            "/v1/messages",
+            json!({"model": "fast", "max_tokens": 32, "messages": [{"role": "user", "content": "hi"}]}),
+        ),
+    ] {
+        for trace_id in [
+            None,
+            Some("req-provided"),
+            Some("b6aab11e-aa21-4d5b-a9d9-71e9a8217bf2"),
+        ] {
+            // Even a repeated, syntactically valid client UUID is only a trace ID.
+            for _ in 0..2 {
+                let mut request = Request::builder()
+                    .method("POST")
+                    .uri(path)
+                    .header("content-type", "application/json")
+                    .header("authorization", BEARER);
+                if let Some(trace_id) = trace_id {
+                    request = request.header("x-request-id", trace_id);
+                }
+                let request = request.body(Body::from(body.to_string())).unwrap();
+                let response = router.clone().oneshot(request).await.unwrap();
+                assert_eq!(response.status(), StatusCode::OK, "{path}");
+                let canonical_id = response.headers()["x-oceans-request-id"]
+                    .to_str()
+                    .unwrap()
+                    .to_string();
+                uuid::Uuid::parse_str(&canonical_id).expect("canonical ID is a UUID");
+                if let Some(trace_id) = trace_id {
+                    assert_eq!(response.headers()["x-request-id"], trace_id);
+                    assert_ne!(canonical_id, trace_id);
+                } else {
+                    assert_eq!(response.headers()["x-request-id"], canonical_id);
+                }
+                assert!(canonical_ids.insert(canonical_id.clone()));
+                to_bytes(response.into_body(), usize::MAX).await.unwrap();
+
+                let logs = state
+                    .service
+                    .list_request_logs(&RequestLogQuery {
+                        page: 1,
+                        page_size: 10,
+                        request_id: Some(canonical_id.clone()),
+                        ..Default::default()
+                    })
+                    .await
+                    .unwrap();
+                assert_eq!(logs.total, 1, "response ID must identify its persisted log");
+                let auth = state.service.authenticate(Some(BEARER)).await.unwrap();
+                let scope = format!("service_account:{}", auth.owner_service_account_id.unwrap());
+                assert!(
+                    state
+                        .store
+                        .get_usage_ledger_by_request_and_scope(&canonical_id, &scope)
+                        .await
+                        .unwrap()
+                        .is_some(),
+                    "accounting must use the same canonical ID"
+                );
+            }
+        }
+    }
+    assert_eq!(request_log_total(&state).await, canonical_ids.len() as u64);
+}
+
+#[tokio::test]
 async fn count_tokens_returns_upstream_count_without_accounting() {
     let (_directory, state, provider, router) = setup(true).await;
 

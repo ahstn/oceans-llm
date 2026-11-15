@@ -17,10 +17,52 @@ use super::{
     repo::git_context,
     state::State,
 };
-use crate::process::{RunError, run_captured};
+use crate::process::{RunError, run_captured_with_stderr};
 
 const GH_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_GH_OUTPUT: usize = 64 * 1024 * 1024;
+const MAX_GH_STDERR: usize = 64 * 1024;
+// Each PR can select 100 commits with 100 authors each. 50 PRs would exceed
+// GitHub's 500,000-node GraphQL limit (505,050 nodes).
+const GH_PAGE_SIZE: u32 = 49;
+const PR_QUERY: &str = r#"
+query($owner: String!, $name: String!, $pageSize: Int!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(first: $pageSize, after: $cursor, states: MERGED,
+                 orderBy: {field: CREATED_AT, direction: DESC}) {
+      nodes {
+        number title url mergedAt baseRefName headRefName mergeCommit { oid }
+        commits(first: 100) {
+          nodes { commit {
+            oid messageHeadline authoredDate authors(first: 100) { nodes { email } }
+          } }
+        }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+"#;
+// Keep the same PR/commit shape as `gh pr list --json commits`.
+const PR_PAGE_FILTER: &str = r#".data.repository.pullRequests | {
+  pullRequests: [.nodes[] | .commits = [
+    .commits.nodes[].commit | .authors = .authors.nodes
+  ]], pageInfo
+}"#;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GhPage {
+    pull_requests: Vec<GhPullRequest>,
+    page_info: GhPageInfo,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GhPageInfo {
+    has_next_page: bool,
+    end_cursor: Option<String>,
+}
 /// The gateway's text limits.
 const MAX_TEXT_BYTES: usize = 1024;
 const MAX_REF_BYTES: usize = 256;
@@ -101,12 +143,10 @@ pub fn sync(
     }
     // Marked first, so sessions starting together run `gh` once.
     state.mark_pr_sync(&repository, now)?;
-    let output = match run_gh(directory, &repository, limit) {
+    let fetched = match run_gh(directory, &repository, limit) {
         Ok(output) => output,
         Err(reason) => return Ok(SyncOutcome::Unavailable(reason)),
     };
-    let fetched: Vec<GhPullRequest> = serde_json::from_slice(&output)
-        .map_err(|_| anyhow::anyhow!("gh printed pull requests in an unexpected shape"))?;
     let pull_requests: Vec<PullRequest> = fetched.into_iter().filter_map(pull_request).collect();
     let count = pull_requests.len();
     let payloads = chunk(&repository, pull_requests);
@@ -117,35 +157,73 @@ pub fn sync(
     })
 }
 
-/// Lists `repository`'s merged pull requests. The repository is passed explicitly, so neither
-/// `GH_REPO` nor a fork's gh default repository can stamp another repository's pull requests
-/// with this one's name.
-fn run_gh(directory: &Path, repository: &str, limit: u32) -> Result<Vec<u8>, String> {
-    let mut command = Command::new("gh");
-    command
-        .current_dir(directory)
-        .args([
-            "pr", "list", "--repo", repository, "--state", "merged", "--limit",
-        ])
-        .arg(limit.to_string())
-        .args([
-            "--json",
-            "number,title,url,mergedAt,baseRefName,headRefName,mergeCommit,commits",
-        ])
-        .env("GH_PROMPT_DISABLED", "1")
-        .env("GH_NO_UPDATE_NOTIFIER", "1")
-        .env("NO_COLOR", "1")
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE");
-    match run_captured(&mut command, GH_TIMEOUT, MAX_GH_OUTPUT) {
-        Ok(output) if output.status.success() => Ok(output.stdout),
-        Ok(output) => Err(format!(
-            "gh pr list failed ({}); check gh auth status in this repository",
-            output.status
-        )),
-        Err(RunError::NotFound) => Err("gh is not installed".into()),
-        Err(error) => Err(format!("gh pr list: {error}")),
+/// Pages the repository explicitly, ignoring `GH_REPO` and gh's default repository.
+fn run_gh(directory: &Path, repository: &str, limit: u32) -> Result<Vec<GhPullRequest>, String> {
+    let (host, path) = repository.split_once('/').ok_or("invalid repository")?;
+    let (owner, name) = path.split_once('/').ok_or("invalid repository")?;
+    fetch_pages(limit, |page_size, cursor| {
+        let mut command = Command::new("gh");
+        command
+            .current_dir(directory)
+            .args(["api", "graphql", "--hostname", host, "-f"])
+            .arg(format!("query={PR_QUERY}"))
+            .arg("-f")
+            .arg(format!("owner={owner}"))
+            .arg("-f")
+            .arg(format!("name={name}"))
+            .arg("-F")
+            .arg(format!("pageSize={page_size}"))
+            .args(["--jq", PR_PAGE_FILTER]);
+        if let Some(cursor) = cursor {
+            command.arg("-f").arg(format!("cursor={cursor}"));
+        }
+        command
+            .env("GH_PROMPT_DISABLED", "1")
+            .env("GH_NO_UPDATE_NOTIFIER", "1")
+            .env("NO_COLOR", "1")
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE");
+        match run_captured_with_stderr(&mut command, GH_TIMEOUT, MAX_GH_OUTPUT, MAX_GH_STDERR) {
+            Ok(output) if output.status.success() => serde_json::from_slice(&output.stdout)
+                .map_err(|_| "gh printed pull requests in an unexpected shape".into()),
+            Ok(output) => {
+                let detail = String::from_utf8_lossy(&output.stderr);
+                let detail = detail.trim();
+                Err(if detail.is_empty() {
+                    format!("gh api graphql failed ({})", output.status)
+                } else {
+                    format!("gh api graphql failed ({}): {detail}", output.status)
+                })
+            }
+            Err(RunError::NotFound) => Err("gh is not installed".into()),
+            Err(error) => Err(format!("gh api graphql: {error}")),
+        }
+    })
+}
+
+fn fetch_pages(
+    limit: u32,
+    mut fetch: impl FnMut(u32, Option<&str>) -> Result<GhPage, String>,
+) -> Result<Vec<GhPullRequest>, String> {
+    let mut fetched = Vec::new();
+    let mut cursor: Option<String> = None;
+    while fetched.len() < limit as usize {
+        let page_size = GH_PAGE_SIZE.min(limit - fetched.len() as u32);
+        let page = fetch(page_size, cursor.as_deref())?;
+        fetched.extend(page.pull_requests.into_iter().take(page_size as usize));
+        if !page.page_info.has_next_page {
+            break;
+        }
+        let next = page
+            .page_info
+            .end_cursor
+            .ok_or("gh omitted the next page cursor")?;
+        if cursor.as_ref() == Some(&next) {
+            return Err("gh repeated the pull request page cursor".into());
+        }
+        cursor = Some(next);
     }
+    Ok(fetched)
 }
 
 fn pull_request(fetched: GhPullRequest) -> Option<PullRequest> {
@@ -244,6 +322,79 @@ mod tests {
 
     const SHA_1: &str = "1111111111111111111111111111111111111111";
     const SHA_2: &str = "2222222222222222222222222222222222222222";
+
+    #[test]
+    fn pagination_preserves_the_requested_limit_and_each_pull_request() {
+        for available in [0, 17, 123, 1000] {
+            for limit in [0, 1, 30, 49, 50, 200, 1000] {
+                let mut offset = 0;
+                let result = fetch_pages(limit, |size, cursor| {
+                    assert!((1..=49).contains(&size));
+                    assert_eq!(cursor, (offset > 0).then(|| offset.to_string()).as_deref());
+                    let end = (offset + size).min(available);
+                    let pull_requests = (offset..end)
+                        .map(|number| {
+                            let mut pr = fetched().remove(0);
+                            pr.number = u64::from(number + 1);
+                            pr
+                        })
+                        .collect();
+                    offset = end;
+                    Ok(GhPage {
+                        pull_requests,
+                        page_info: GhPageInfo {
+                            has_next_page: end < available,
+                            end_cursor: Some(end.to_string()),
+                        },
+                    })
+                })
+                .unwrap();
+                assert_eq!(
+                    result.into_iter().map(|pr| pr.number).collect::<Vec<_>>(),
+                    (1..=u64::from(limit.min(available))).collect::<Vec<_>>()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_later_page_failure_returns_the_error_not_partial_results() {
+        let mut calls = 0;
+        let result = fetch_pages(200, |_, _| {
+            calls += 1;
+            if calls == 2 {
+                return Err("GraphQL: API rate limit exceeded".into());
+            }
+            Ok(GhPage {
+                pull_requests: fetched(),
+                page_info: GhPageInfo {
+                    has_next_page: true,
+                    end_cursor: Some("next".into()),
+                },
+            })
+        });
+        assert_eq!(
+            result.err().as_deref(),
+            Some("GraphQL: API rate limit exceeded")
+        );
+        assert_eq!(calls, 2);
+    }
+
+    #[test]
+    fn pagination_rejects_missing_or_repeated_cursors() {
+        for cursor in [None, Some("same".to_owned())] {
+            let result = fetch_pages(200, |_, _| {
+                Ok(GhPage {
+                    pull_requests: fetched(),
+                    page_info: GhPageInfo {
+                        has_next_page: true,
+                        end_cursor: cursor.clone(),
+                    },
+                })
+            });
+            assert!(result.is_err());
+        }
+    }
 
     fn fetched() -> Vec<GhPullRequest> {
         serde_json::from_value(serde_json::json!([

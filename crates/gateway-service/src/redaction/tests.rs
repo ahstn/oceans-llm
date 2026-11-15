@@ -58,6 +58,16 @@ fn diagnostic_headers_keep_only_session_and_lineage_fields() {
     let headers = BTreeMap::from([
         ("Authorization".to_string(), "Bearer secret".to_string()),
         ("Session_Id".to_string(), "session-1".to_string()),
+        ("Session-Id".to_string(), "pi-session".to_string()),
+        ("X-Session-Id".to_string(), "openrouter-session".to_string()),
+        (
+            "X-Opencode-Session-Id".to_string(),
+            "child-session".to_string(),
+        ),
+        (
+            "X-Opencode-Parent-Session-Id".to_string(),
+            "parent-session".to_string(),
+        ),
         ("X-Client-Secret".to_string(), "client-secret".to_string()),
         (
             "X-Client-Request-Id".to_string(),
@@ -79,6 +89,10 @@ fn diagnostic_headers_keep_only_session_and_lineage_fields() {
     let sanitized = sanitize_diagnostic_headers(&headers);
 
     assert_eq!(sanitized["Session_Id"], "session-1");
+    assert_eq!(sanitized["Session-Id"], "pi-session");
+    assert_eq!(sanitized["X-Session-Id"], "openrouter-session");
+    assert_eq!(sanitized["X-Opencode-Session-Id"], "child-session");
+    assert_eq!(sanitized["X-Opencode-Parent-Session-Id"], "parent-session");
     assert_eq!(sanitized["X-Client-Request-Id"], "request-lineage-1");
     assert!(sanitized.get("Authorization").is_none());
     assert!(sanitized.get("X-Client-Secret").is_none());
@@ -93,6 +107,41 @@ fn diagnostic_headers_keep_only_session_and_lineage_fields() {
     assert!(codex_metadata.get("turn_id").is_none());
     assert!(codex_metadata.get("token").is_none());
     assert!(codex_metadata.get("unrelated").is_none());
+}
+
+#[test]
+fn captured_headers_preserve_current_harness_conversations() {
+    let cases = &[
+        (
+            "opencode",
+            &[
+                ("x-opencode-session-id", "ses_child"),
+                ("x-opencode-parent-session-id", "ses_parent"),
+                ("x-session-affinity", "ses_shared_cache"),
+                ("X-Session-Id", "ses_shared_cache"),
+                ("x-opencode-session", "ses_shared_cache"),
+            ][..],
+            "ses_child",
+            Some("ses_parent"),
+        ),
+        ("pi", &[("session-id", "pi-session")], "pi-session", None),
+        ("pi", &[("x-session-id", "pi-session")], "pi-session", None),
+    ];
+    for (harness, supplied, expected, parent) in cases {
+        let headers = supplied
+            .iter()
+            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .collect();
+        let captured = sanitize_diagnostic_headers(&headers)
+            .into_iter()
+            .map(|(name, value)| (name, value.as_str().expect("header string").to_string()))
+            .collect();
+        let metadata =
+            crate::client_session::extract_client_session(&json!({}), &captured, harness);
+        assert_eq!(metadata.session.value.as_deref(), Some(*expected));
+        assert_eq!(metadata.parent_execution_id.as_deref(), *parent);
+        assert_eq!(metadata.session.limitation, None);
+    }
 }
 
 #[test]

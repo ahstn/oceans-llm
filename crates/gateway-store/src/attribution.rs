@@ -7,6 +7,7 @@
 
 mod commits;
 mod pull_requests;
+mod request_sessions;
 mod sessions;
 #[cfg(test)]
 mod tests;
@@ -31,6 +32,10 @@ pub(crate) use pull_requests::{
     PULL_REQUEST_COLUMN_COUNT, delete_pull_request_commits, insert_pull_request,
     insert_pull_request_commits, list_pull_requests, pull_request_outcome,
     select_pull_request_observed_at, update_pull_request,
+};
+pub(crate) use request_sessions::{
+    insert_request_session, request_session_outcome, select_request_session_freshness,
+    update_request_session,
 };
 pub(crate) use sessions::{
     insert_agent_session, insert_agent_session_hashes, list_agent_sessions, list_request_facts,
@@ -272,6 +277,7 @@ pub(crate) fn delete_for_owner(
         "DELETE FROM attribution_pull_requests WHERE ownership_scope_key = {scope}",
         "DELETE FROM attribution_agent_session_hashes WHERE ownership_scope_key = {scope}",
         "DELETE FROM attribution_agent_sessions WHERE ownership_scope_key = {scope}",
+        "DELETE FROM attribution_request_sessions WHERE ownership_scope_key = {scope}",
     ]
     .into_iter()
     .map(|template| {
