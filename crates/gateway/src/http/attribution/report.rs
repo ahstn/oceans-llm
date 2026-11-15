@@ -257,7 +257,7 @@ pub async fn get_attribution_report(
     let (window_start, window_end) = report_window(window_days, OffsetDateTime::now_utc());
     let report_query = AttributionReportQuery {
         from: window_start,
-        to: window_end,
+        to: last_included(window_end),
         user_id,
         repository: repository.clone(),
         limit: ATTRIBUTION_MAX_REPORT_ROWS,
@@ -349,11 +349,17 @@ fn report_window(window_days: u16, now: OffsetDateTime) -> (OffsetDateTime, Offs
     )
 }
 
-/// The window of equal length just before `[start, end]`. The store's bounds are inclusive and
-/// its timestamps whole milliseconds, so it ends 1 ms before `start`: a row at exactly `start`
-/// belongs to the current window only, never to both.
+/// The last instant the store should include for a window ending at the exclusive `end`. The
+/// store's bounds are inclusive and its timestamps whole milliseconds, so this is 1 ms before:
+/// a row at exactly `end` belongs to the next window, as it does in the daily buckets.
+fn last_included(end: OffsetDateTime) -> OffsetDateTime {
+    end - Duration::milliseconds(1)
+}
+
+/// The window of equal length just before `[start, end)`, as store bounds. A row at exactly
+/// `start` belongs to the current window only, never to both.
 fn previous_window(start: OffsetDateTime, end: OffsetDateTime) -> (OffsetDateTime, OffsetDateTime) {
-    (start - (end - start), start - Duration::milliseconds(1))
+    (start - (end - start), last_included(start))
 }
 
 fn report_user(
@@ -599,6 +605,11 @@ mod window_tests {
         );
         let (previous_start, previous_end) = previous_window(start, end);
         assert_eq!(previous_start, start - Duration::days(7));
+        assert_eq!(
+            last_included(end),
+            end - Duration::milliseconds(1),
+            "a row at the next midnight is not in this window's totals"
+        );
         assert!(
             previous_end < start,
             "a row at the current start is not in both windows"
