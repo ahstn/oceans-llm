@@ -303,6 +303,7 @@ describe('AgentHarnessesPage', () => {
     ]
     routeMock.useLoaderData.mockReturnValue({
       data: harnessUsageData,
+      attributionEnabled: true,
       attribution: { window_days: 7, harness_models: harnessModels },
     })
 
@@ -336,6 +337,7 @@ describe('AgentHarnessesPage', () => {
     // One priced session wrote 100 lines for $1; nine unjoined sessions wrote 900 more.
     routeMock.useLoaderData.mockReturnValue({
       data: harnessUsageData,
+      attributionEnabled: true,
       attribution: {
         window_days: 7,
         harness_models: [
@@ -368,12 +370,30 @@ describe('AgentHarnessesPage', () => {
     expect(section.queryByText('$0.10')).not.toBeInTheDocument()
   })
 
+  it('leaves out harness attribution when every Attribution report tab is off', () => {
+    routeMock.useLoaderData.mockReturnValue({
+      data: harnessUsageData,
+      attributionEnabled: false,
+      attribution: null,
+      attributionFailed: false,
+    })
+
+    const view = render(
+      <TooltipProvider>
+        <AgentHarnessesPage />
+      </TooltipProvider>,
+    )
+    expect(view.queryByRole('region', { name: 'Harness attribution' })).not.toBeInTheDocument()
+    expect(view.getByRole('radio', { name: 'Last 7 days' })).toBeInTheDocument()
+  })
+
   it('asks for no previous window when the attribution window changes', async () => {
     vi.mocked(getAttribution).mockResolvedValue({
       data: { window_days: 30, harness_models: [] },
     } as never)
     routeMock.useLoaderData.mockReturnValue({
       data: harnessUsageData,
+      attributionEnabled: true,
       attribution: { window_days: 7, harness_models: [] },
     })
 
@@ -406,6 +426,7 @@ describe('AgentHarnessesPage', () => {
     }
     routeMock.useLoaderData.mockReturnValue({
       data: harnessUsageData,
+      attributionEnabled: true,
       attribution: {
         window_days: 7,
         coverage: {

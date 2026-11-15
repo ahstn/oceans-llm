@@ -32,13 +32,25 @@ import { HarnessAttribution } from './-agent-harnesses/harness-attribution'
 import { formatBucketDay, utcDayTicks } from './-bucket-axis'
 
 export const Route = createFileRoute('/observability/agent-harnesses')({
-  loader: async () => {
+  loader: async ({ context }) => {
+    // With every Attribution report tab turned off, attribution is off for this gateway, so the
+    // page reads no report and leaves the section out.
+    const attributionEnabled = (context.session?.capabilities.attribution_tabs ?? []).some(
+      (tab) => tab !== 'concepts',
+    )
     // Attribution is optional here: the page still shows request activity if the report fails.
     const [usage, attribution] = await Promise.all([
       getObservabilityHarnessUsage({ data: { range: '7d' } }),
-      getAttribution({ data: { days: 7, compare: false } }).catch(() => null),
+      attributionEnabled
+        ? getAttribution({ data: { days: 7, compare: false } }).catch(() => null)
+        : null,
     ])
-    return { ...usage, attribution: attribution?.data ?? null, attributionFailed: !attribution }
+    return {
+      ...usage,
+      attributionEnabled,
+      attribution: attribution?.data ?? null,
+      attributionFailed: attributionEnabled && !attribution,
+    }
   },
   component: AgentHarnessesPage,
 })
@@ -125,10 +137,12 @@ export function AgentHarnessesPage() {
         description="Compare what each harness ships for its cost, and its request activity over time."
       />
 
-      <HarnessAttribution
-        initial={loaderData.attribution}
-        initialFailed={loaderData.attributionFailed}
-      />
+      {loaderData.attributionEnabled ? (
+        <HarnessAttribution
+          initial={loaderData.attribution}
+          initialFailed={loaderData.attributionFailed}
+        />
+      ) : null}
 
       <Card>
         <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
