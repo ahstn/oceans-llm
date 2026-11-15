@@ -613,13 +613,34 @@ async fn provider_failure_does_not_retry_another_route() {
 #[tokio::test]
 async fn duplicate_session_headers_are_rejected_before_provider_dispatch() {
     let harness = RoutingHarness::new(false).await;
+    for name in ["x-oceans-session-id", "x-opencode-session-id"] {
+        let mut headers = HeaderMap::new();
+        headers.append(name, "session-a".parse().unwrap());
+        headers.append(name, "session-b".parse().unwrap());
+
+        let error = harness.chat(headers).await.unwrap_err();
+
+        assert_eq!(error.0.http_status_code(), 400);
+        assert!(error.0.to_string().contains(name));
+        assert!(error.0.to_string().contains("may only be sent once"));
+    }
+    assert!(harness.calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn nontext_opencode_session_header_is_rejected_before_provider_dispatch() {
+    let harness = RoutingHarness::new(false).await;
     let mut headers = session_headers("session-a");
-    headers.append("x-oceans-session-id", "session-b".parse().unwrap());
+    headers.insert(
+        "x-opencode-session-id",
+        axum::http::HeaderValue::from_bytes(b"\xff").unwrap(),
+    );
 
     let error = harness.chat(headers).await.unwrap_err();
 
     assert_eq!(error.0.http_status_code(), 400);
-    assert!(error.0.to_string().contains("may only be sent once"));
+    assert!(error.0.to_string().contains("x-opencode-session-id"));
+    assert!(error.0.to_string().contains("must be valid UTF-8 text"));
     assert!(harness.calls.lock().unwrap().is_empty());
 }
 

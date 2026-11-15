@@ -58,7 +58,11 @@ pub fn run(command: HookCommand, overrides: Overrides<'_>, json: bool) -> anyhow
             let state = State::from_env(&env)?;
             let report = hooks::request(&state, io::stdin().lock())?;
             if report.queued + report.unsequenced > 0 {
-                spawn_sender();
+                // OMP already detached this process. Reuse it for delivery; the sender
+                // lock coalesces concurrent hooks before resolving a key or connecting.
+                if let Some(reason) = send(overrides, &env)?.stopped {
+                    bail!("delivery stopped: {reason}");
+                }
             }
             Ok(())
         }),

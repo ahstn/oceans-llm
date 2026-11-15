@@ -13,7 +13,7 @@ fn hook(root: &Path, args: &[&str], input: &str) -> Output {
         .env("HOME", root)
         .env("XDG_CONFIG_HOME", root.join("config"))
         .env("XDG_STATE_HOME", root.join("state"))
-        // Both the detached sender and explicit send fail before any network access.
+        // In-process delivery and explicit send fail before any network access.
         .env("OCEANS_URL", "not-a-gateway-url")
         .args(args)
         .stdin(Stdio::piped())
@@ -40,7 +40,7 @@ fn request_hook_accepts_the_mapping_and_sender_failure_is_fail_open() {
     let output = hook(root.path(), &["hook", "request"], &input.to_string());
     assert!(output.status.success());
     assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("1c8f3d6a"));
 
     let queue = root.path().join("state/oceans/attribution/queue");
     let files: Vec<_> = fs::read_dir(&queue).unwrap().map(Result::unwrap).collect();

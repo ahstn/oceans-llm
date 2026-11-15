@@ -83,9 +83,9 @@ Each hook records the full path of the `oceans` binary. git-ai has no way to upd
 
 ## How delivery works
 
-The hooks never slow down or fail a commit or an agent session. Each one writes to a local queue and returns at once. Problems go to standard error, and the hook still succeeds.
+The hooks do not wait on network delivery in the commit or agent session. Each one writes to a local queue first. Problems go to standard error, and the hook still succeeds.
 
-A background `oceans hook send` then delivers the queue in order:
+For OMP request mappings, the extension starts one detached `oceans hook request` process. It queues the mapping and delivers through the existing sender in that same process, without starting another process. Concurrent senders share a lock, so only one resolves the key and delivers the queue at a time. Other hooks start a background `oceans hook send`. Both paths deliver in order:
 
 - It resolves the API key only when there's something to send, so a `!` command in the config file doesn't run on every commit.
 - It sends batches of up to 100 entries and 2 MiB.

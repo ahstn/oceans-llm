@@ -56,7 +56,7 @@ use axum::{
 };
 use http::HeaderName;
 use tower_http::{
-    request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
+    request_id::{MakeRequestUuid, PropagateRequestIdLayer, RequestId, SetRequestIdLayer},
     trace::TraceLayer,
 };
 
@@ -585,23 +585,64 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
                 .on_failure(request_tracing::RecordHttpFailure),
         )
         .layer(PropagateRequestIdLayer::new(request_id_header.clone()))
-        .layer(SetRequestIdLayer::new(request_id_header, MakeRequestUuid));
+        .layer(SetRequestIdLayer::new(request_id_header, MakeRequestUuid))
+        .layer(middleware::from_fn(mark_client_request_id));
 
     mount_admin_ui(api_router, admin_ui)
 }
 
-/// Identifies this gateway's request independently of an upstream provider's request ID.
-async fn attribution_request_id_response(
-    request: axum::extract::Request,
+#[derive(Clone, Copy)]
+struct ClientProvidedRequestId;
+
+/// Runs before SetRequestIdLayer so generated trace IDs can remain canonical.
+async fn mark_client_request_id(
+    mut request: axum::extract::Request,
     next: middleware::Next,
 ) -> axum::response::Response {
-    let request_id = request.headers().get("x-request-id").cloned();
-    let mut response = next.run(request).await;
-    if let Some(request_id) = request_id {
-        response
-            .headers_mut()
-            .insert("x-oceans-request-id", request_id);
+    if request.headers().contains_key("x-request-id") {
+        request.extensions_mut().insert(ClientProvidedRequestId);
     }
+    next.run(request).await
+}
+
+/// Assigns a server-owned inference identity without replacing the public trace ID.
+async fn attribution_request_id_response(
+    mut request: axum::extract::Request,
+    next: middleware::Next,
+) -> axum::response::Response {
+    let trace_id = request.headers().get("x-request-id").cloned();
+    // Never reuse a caller-supplied UUID: retries and unrelated requests must not
+    // collide in request logs, accounting, or attribution joins. Without a caller
+    // ID, reuse the server-generated trace ID so existing log lookups still work.
+    let request_id = if request
+        .extensions()
+        .get::<ClientProvidedRequestId>()
+        .is_some()
+    {
+        http::HeaderValue::from_str(&uuid::Uuid::new_v4().to_string())
+            .expect("UUID is a valid header value")
+    } else {
+        request
+            .extensions()
+            .get::<RequestId>()
+            .expect("request ID layer runs before inference routes")
+            .header_value()
+            .clone()
+    };
+    request
+        .extensions_mut()
+        .insert(RequestId::new(request_id.clone()));
+    let mut response = next.run(request).await;
+    // Handlers also expose their canonical ID as x-request-id. Keep that public
+    // tracing header's existing value while exposing the storage ID separately.
+    if response.headers().get("x-request-id") == Some(&request_id)
+        && let Some(trace_id) = trace_id
+    {
+        response.headers_mut().insert("x-request-id", trace_id);
+    }
+    response
+        .headers_mut()
+        .insert("x-oceans-request-id", request_id);
     response
 }
 

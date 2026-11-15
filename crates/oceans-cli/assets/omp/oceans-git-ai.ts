@@ -114,7 +114,7 @@ function run(bin: string, args: string[], stdin: string, detached: boolean): Pro
 	child.stdin?.on("error", () => {});
 	child.stdin?.end(stdin);
 	if (detached) {
-		// Attribution hooks only queue locally; don't hold the session open for them.
+		// Attribution runs out of process; don't hold the session open for delivery.
 		child.on("error", () => {});
 		child.unref();
 		done();

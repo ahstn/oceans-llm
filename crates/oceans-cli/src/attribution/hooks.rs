@@ -1,5 +1,5 @@
-//! Hook inputs from git-ai, Claude Code and OMP. Each hook reads stdin, queues entries and
-//! returns; a detached `oceans hook send` delivers them.
+//! Hook inputs from git-ai, Claude Code and OMP. Inputs are queued before delivery. Most
+//! hooks start a detached sender; OMP's already-detached request hook sends in-process.
 
 use std::{
     fmt,
