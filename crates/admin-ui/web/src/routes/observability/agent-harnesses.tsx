@@ -38,7 +38,7 @@ export const Route = createFileRoute('/observability/agent-harnesses')({
       getObservabilityHarnessUsage({ data: { range: '7d' } }),
       getAttribution({ data: { days: 7 } }).catch(() => null),
     ])
-    return { ...usage, attribution: attribution?.data ?? null }
+    return { ...usage, attribution: attribution?.data ?? null, attributionFailed: !attribution }
   },
   component: AgentHarnessesPage,
 })
@@ -125,7 +125,10 @@ export function AgentHarnessesPage() {
         description="Compare what each harness ships for its cost, and its request activity over time."
       />
 
-      <HarnessAttribution initial={loaderData.attribution} />
+      <HarnessAttribution
+        initial={loaderData.attribution}
+        initialFailed={loaderData.attributionFailed}
+      />
 
       <Card>
         <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

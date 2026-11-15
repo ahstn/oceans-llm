@@ -219,7 +219,7 @@ function BandRow({
   )
 }
 
-/** 90%+ AI against 1–49% AI: the light band is the baseline, as few PRs have no AI at all. */
+/** 90%+ AI against under-50% AI: the light band is the baseline, as few PRs have no AI at all. */
 function bandComparison(bands: BandSummary[]) {
   const light = bands.find((band) => band.key === 'light')
   const agentic = bands.find((band) => band.key === 'agentic')
@@ -229,9 +229,9 @@ function bandComparison(bands: BandSummary[]) {
     !light.medianLeadHours ||
     !agentic.medianLeadHours
   ) {
-    return 'Too few merged pull requests in the 1–49% and 90%+ bands to compare them yet.'
+    return 'Too few merged pull requests in the under-50% and 90%+ bands to compare them yet.'
   }
-  return `90%+ AI pull requests are ${DECIMAL_1.format(agentic.medianSize / light.medianSize)}× the size of 1–49% AI ones and take ${DECIMAL_1.format(agentic.medianLeadHours / light.medianLeadHours)}× as long from first commit to merge. LinearB and Faros see AI move the bottleneck from writing to review.`
+  return `90%+ AI pull requests are ${DECIMAL_1.format(agentic.medianSize / light.medianSize)}× the size of under-50% AI ones and take ${DECIMAL_1.format(agentic.medianLeadHours / light.medianLeadHours)}× as long from first commit to merge. LinearB and Faros see AI move the bottleneck from writing to review.`
 }
 
 /** DORA 2024 bands for deployment frequency, from deploys (here merges) per day. */

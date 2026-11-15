@@ -20,7 +20,7 @@ import { AppIcon } from '@/components/icons/app-icon'
 import { AdminTableHead, AdminTableHeader } from '@/components/shared/admin-table-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Table, TableBody, TableCell, TableHeader, TableRow } from '@/components/ui/table'
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { EMPTY_VALUE, formatCount, formatTimestamp, formatUsd10000 } from '@/lib/format'
 import type { AttributionReportView } from '@/types/api'
@@ -127,26 +127,24 @@ export default function PullRequestsTab({ report }: { report: AttributionReportV
 
             <div className="border-border overflow-x-auto rounded-md border">
               <Table aria-label="Merged pull requests" className="min-w-[60rem]">
-                <TableHeader className="bg-surface-muted">
-                  <TableRow>
-                    <AdminTableHead className="w-10" aria-label="Expand" />
-                    <AdminTableHead>Pull request</AdminTableHead>
-                    <AdminTableHead>AI share</AdminTableHead>
-                    <AdminTableHead>Commits</AdminTableHead>
-                    <AdminTableHead>Harnesses</AdminTableHead>
-                    <AdminTableHead className="text-right">Cost</AdminTableHead>
-                    <AdminTableHead className="text-right">Lead time</AdminTableHead>
-                    <AdminTableHead className="text-right">
-                      <span className="inline-flex items-center gap-1.5">
-                        Durable 30d
-                        <ReadinessBadge
-                          level="new"
-                          note="Needs line survival after merge, from scheduled git ai blame runs."
-                        />
-                      </span>
-                    </AdminTableHead>
-                  </TableRow>
-                </TableHeader>
+                <AdminTableHeader>
+                  <AdminTableHead className="w-10" aria-label="Expand" />
+                  <AdminTableHead>Pull request</AdminTableHead>
+                  <AdminTableHead>AI share</AdminTableHead>
+                  <AdminTableHead>Commits</AdminTableHead>
+                  <AdminTableHead>Harnesses</AdminTableHead>
+                  <AdminTableHead className="text-right">Cost</AdminTableHead>
+                  <AdminTableHead className="text-right">Lead time</AdminTableHead>
+                  <AdminTableHead className="text-right">
+                    <span className="inline-flex items-center gap-1.5">
+                      Durable 30d
+                      <ReadinessBadge
+                        level="new"
+                        note="Needs line survival after merge, from scheduled git ai blame runs."
+                      />
+                    </span>
+                  </AdminTableHead>
+                </AdminTableHeader>
                 <TableBody>
                   {visible.map((row) => {
                     const key = `${row.pr.repository}#${row.pr.number}`

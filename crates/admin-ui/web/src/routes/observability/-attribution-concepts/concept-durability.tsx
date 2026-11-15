@@ -201,9 +201,6 @@ export default function DurabilityConcept({ days }: { days: ConceptWindow }) {
                       <p className="font-medium">{row.band.label}</p>
                       <p className="text-muted-foreground text-xs">{formatCount(row.prs)} PRs</p>
                     </TableCell>
-                    <TableCell className="px-3 py-2 text-right tabular-nums">
-                      {formatCount(row.prs)}
-                    </TableCell>
                     <TableCell className="px-3 py-2">
                       <InlineMeter value={row.durable} tone="var(--chart-2)" className="min-w-20" />
                     </TableCell>

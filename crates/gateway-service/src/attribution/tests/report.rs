@@ -1111,3 +1111,59 @@ async fn shipped_and_total_spend_share_requests_from_before_the_window() {
         .expect("default-branch outcome");
     assert_eq!(shipped.requests.request_count, 3);
 }
+
+#[tokio::test]
+async fn daily_buckets_put_commits_and_uncommitted_spend_on_their_own_dates() {
+    let dev = user_owner(Uuid::new_v4());
+    let start = t0().replace_time(time::Time::MIDNIGHT);
+    let window = AttributionReportQuery {
+        from: start,
+        to: start + Duration::days(2),
+        ..query()
+    };
+    let day_one = start + Duration::hours(10);
+    let day_two = start + Duration::days(1) + Duration::hours(9);
+    let mut store = FakeStore::with_commits(vec![
+        commit(
+            1,
+            &dev,
+            REPOSITORY,
+            day_one,
+            vec![note_session("s_a", &["ha"])],
+        ),
+        commit(
+            2,
+            &dev,
+            REPOSITORY,
+            day_two,
+            vec![note_session("s_b", &["hb"])],
+        ),
+    ]);
+    store.facts = vec![
+        request(&dev, "ha", "a1", day_one - Duration::minutes(5)),
+        request(&dev, "hb", "b1", day_two - Duration::minutes(5)),
+        // After session b's last commit, so uncommitted, on day two.
+        request(&dev, "hb", "b2", day_two + Duration::hours(1)),
+    ];
+    let report = report(&store, &window).await;
+
+    let days = report
+        .daily
+        .iter()
+        .map(|day| {
+            (
+                day.day,
+                day.commit_count,
+                day.committed.request_count,
+                day.uncommitted.request_count,
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        days,
+        vec![
+            (start.date(), 1, 1, 0),
+            ((start + Duration::days(1)).date(), 1, 1, 1),
+        ]
+    );
+}

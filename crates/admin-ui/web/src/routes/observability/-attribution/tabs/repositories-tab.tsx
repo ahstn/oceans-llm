@@ -14,8 +14,8 @@ import {
 } from '@/components/attribution/parts'
 import { formatHours, formatPercent } from '@/components/attribution/format'
 import { Quadrant } from '@/components/attribution/quadrant'
-import { AdminTableHead } from '@/components/shared/admin-table-header'
-import { Table, TableBody, TableCell, TableHeader, TableRow } from '@/components/ui/table'
+import { AdminTableHead, AdminTableHeader } from '@/components/shared/admin-table-header'
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { EMPTY_VALUE, formatCount, formatUsd10000 } from '@/lib/format'
 import type { AttributionReportView } from '@/types/api'
 
@@ -55,7 +55,7 @@ export default function RepositoriesTab({ report }: { report: AttributionReportV
     <div className="flex flex-col gap-6">
       <InsightCard
         title="Agent readiness"
-        description="AI share across, autonomy up, bubble size by spend. Dashed lines mark the average across repositories. Top right is where agents already work well; bottom right is AI code that people keep editing."
+        description="AI share across, autonomy (a commit-composition proxy) up, bubble size by spend. Dashed lines mark the average across repositories. Top right is where agents land work with little human change; bottom right is where people add much of their own to agent commits."
       >
         <div className="grid gap-8 lg:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
           <div className="flex flex-col gap-3">
@@ -122,24 +122,22 @@ export default function RepositoriesTab({ report }: { report: AttributionReportV
         <div className="flex flex-col gap-4">
           <div className="border-border overflow-x-auto rounded-md border">
             <Table aria-label="Repositories" className="min-w-[60rem]">
-              <TableHeader className="bg-surface-muted">
-                <TableRow>
-                  <AdminTableHead>Repository</AdminTableHead>
-                  <AdminTableHead>AI share over the window</AdminTableHead>
-                  <AdminTableHead>Autonomy</AdminTableHead>
-                  <AdminTableHead className="text-right">
-                    <span className="inline-flex items-center gap-1.5">
-                      Generated : committed
-                      <ReadinessBadge
-                        level="new"
-                        note="Needs generated lines per session from git-ai checkpoints."
-                      />
-                    </span>
-                  </AdminTableHead>
-                  <AdminTableHead className="text-right">Cost per PR</AdminTableHead>
-                  <AdminTableHead className="text-right">Lead time</AdminTableHead>
-                </TableRow>
-              </TableHeader>
+              <AdminTableHeader>
+                <AdminTableHead>Repository</AdminTableHead>
+                <AdminTableHead>AI share over the window</AdminTableHead>
+                <AdminTableHead>Autonomy</AdminTableHead>
+                <AdminTableHead className="text-right">
+                  <span className="inline-flex items-center gap-1.5">
+                    Generated : committed
+                    <ReadinessBadge
+                      level="new"
+                      note="Needs generated lines per session from git-ai checkpoints."
+                    />
+                  </span>
+                </AdminTableHead>
+                <AdminTableHead className="text-right">Cost per PR</AdminTableHead>
+                <AdminTableHead className="text-right">Lead time</AdminTableHead>
+              </AdminTableHeader>
               <TableBody>
                 {rows.map((row) => (
                   <TableRow
@@ -186,8 +184,9 @@ export default function RepositoriesTab({ report }: { report: AttributionReportV
             </Table>
           </div>
           <p className="text-muted-foreground text-xs">
-            Autonomy: AI lines in commits where people changed no more than 5% as many lines, over
-            all AI lines.
+            Autonomy is a proxy from commit composition: the share of AI lines that sit in commits
+            where people added no more than 5% as many lines as the agent. Notes count lines per
+            commit, so it can't tell whether people edited the agent's own lines.
           </p>
           {leastAutonomous && plotted.length > 1 ? (
             <Insight>

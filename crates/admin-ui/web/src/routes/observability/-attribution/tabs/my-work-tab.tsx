@@ -145,7 +145,7 @@ export default function MyWorkTab({
               return (
                 <li
                   key={`${pr.repository}#${pr.number}`}
-                  className="grid grid-cols-[minmax(0,1fr)_12rem_6rem] items-center gap-4 py-2.5"
+                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 py-2.5 sm:grid-cols-[minmax(0,1fr)_12rem_6rem]"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium" title={pr.title}>
@@ -156,8 +156,9 @@ export default function MyWorkTab({
                       <span className="whitespace-nowrap">· {formatTimestamp(pr.merged_at)}</span>
                     </p>
                   </div>
+                  {/* On narrow screens the share bar drops to its own full-width row. */}
                   {added > 0 ? (
-                    <div className="flex items-center gap-2">
+                    <div className="order-last col-span-2 flex items-center gap-2 sm:order-none sm:col-span-1">
                       <div className="flex-1">
                         <AiShareBar ai={pr.ai_lines} human={pr.human_lines} size="sm" />
                       </div>
@@ -166,7 +167,9 @@ export default function MyWorkTab({
                       </span>
                     </div>
                   ) : (
-                    <span className="text-muted-foreground text-xs">{EMPTY_VALUE}</span>
+                    <span className="text-muted-foreground order-last col-span-2 text-xs sm:order-none sm:col-span-1">
+                      {EMPTY_VALUE}
+                    </span>
                   )}
                   <span className="text-right text-sm tabular-nums">
                     {formatAttributedCost(pr.priced_cost_usd_10000, pr.priced_request_count)}

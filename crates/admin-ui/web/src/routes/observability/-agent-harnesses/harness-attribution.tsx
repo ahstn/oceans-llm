@@ -69,17 +69,27 @@ function costPer100(cell: Pick<Cell, 'aiLines' | 'costUsd10000' | 'pricedRequest
     : null
 }
 
-export function HarnessAttribution({ initial }: { initial: AttributionReportView | null }) {
+export function HarnessAttribution({
+  initial,
+  initialFailed = false,
+}: {
+  initial: AttributionReportView | null
+  /** The page loader could not read the report, which is not the same as having no sessions. */
+  initialFailed?: boolean
+}) {
   const [report, setReport] = useState(initial)
+  const [failed, setFailed] = useState(initialFailed)
   const [windowDays, setWindowDays] = useState<Window>((initial?.window_days as Window) ?? 7)
   const [isPending, startTransition] = useTransition()
 
   function changeWindow(next: Window) {
-    setWindowDays(next)
     startTransition(async () => {
       try {
         const response = await getAttribution({ data: { days: next } })
+        // The toggle moves only with the report, so a failed load keeps both on the old window.
         setReport(response.data)
+        setWindowDays(next)
+        setFailed(false)
       } catch (error) {
         toast.error(getErrorMessage(error))
       }
@@ -140,7 +150,11 @@ export function HarnessAttribution({ initial }: { initial: AttributionReportView
         </ToggleGroup>
       </div>
 
-      {totals.length === 0 ? (
+      {failed && !report ? (
+        <p className="text-muted-foreground rounded-xl border p-6 text-center text-sm">
+          Attribution could not be loaded. Choose a window to try again.
+        </p>
+      ) : totals.length === 0 ? (
         <p className="text-muted-foreground rounded-xl border p-6 text-center text-sm">
           No attributed agent sessions in this window. Sessions appear once{' '}
           <code className="font-mono">oceans hook install --git-ai</code> reports commits.

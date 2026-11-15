@@ -425,18 +425,17 @@ const LazyModelMixChart = lazy(async () => {
     models: string[]
   }) {
     const top = models.slice(0, 5)
+    // Series keys by rank, not by name: two model keys can differ only in punctuation.
+    const keyOf = new Map(top.map((model, index) => [model, `model_${index + 1}`]))
     const config: ChartConfig = Object.fromEntries(
-      top.map((model, index) => [
-        model.replace(/[^a-z0-9]/gi, '_'),
-        { label: model, color: SERIES[index] },
-      ]),
+      top.map((model, index) => [`model_${index + 1}`, { label: model, color: SERIES[index] }]),
     )
-    const topModels = new Set(top)
     const data = rows.map((row) => {
       const out: Record<string, number | string> = { day: row.day }
       let other = 0
       for (const model of models) {
-        if (topModels.has(model)) out[model.replace(/[^a-z0-9]/gi, '_')] = Number(row[model] ?? 0)
+        const key = keyOf.get(model)
+        if (key) out[key] = Number(row[model] ?? 0)
         else other += Number(row[model] ?? 0)
       }
       if (models.length > 5) out.other = other

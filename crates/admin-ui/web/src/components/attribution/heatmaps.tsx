@@ -4,6 +4,8 @@
 
 import type { CSSProperties, ReactNode } from 'react'
 
+import { AdminTableHead, AdminTableHeader } from '@/components/shared/admin-table-header'
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
 
 const LEVELS = [
@@ -207,27 +209,19 @@ export function MatrixHeatmap<Row extends string, Column extends string>({
   const max = Math.max(...values)
   return (
     <div className="border-border overflow-x-auto rounded-md border">
-      <table className="w-full min-w-[40rem] border-collapse text-sm">
-        <caption className="sr-only">{caption}</caption>
-        <thead className="bg-surface-muted">
-          <tr>
-            <th className="text-muted-foreground px-3 py-2 text-left font-semibold">Harness</th>
-            {columns.map((column) => (
-              <th
-                key={column}
-                className="text-muted-foreground px-2 py-2 text-left font-mono text-xs font-normal"
-              >
-                {columnLabel(column)}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
+      <Table aria-label={caption} className="min-w-[40rem]">
+        <AdminTableHeader>
+          <AdminTableHead>Harness</AdminTableHead>
+          {columns.map((column) => (
+            <AdminTableHead key={column} className="px-2 font-mono text-xs font-normal">
+              {columnLabel(column)}
+            </AdminTableHead>
+          ))}
+        </AdminTableHeader>
+        <TableBody>
           {rows.map((row) => (
-            <tr key={row} className="border-border border-t">
-              <th scope="row" className="px-3 py-2 text-left font-normal">
-                {rowLabel(row)}
-              </th>
+            <TableRow key={row}>
+              <TableCell className="px-3 py-2">{rowLabel(row)}</TableCell>
               {columns.map((column) => {
                 const cell = value(row, column)
                 const position = cell == null || max === min ? 0.5 : (cell - min) / (max - min)
@@ -236,7 +230,7 @@ export function MatrixHeatmap<Row extends string, Column extends string>({
                     ? 0
                     : 1 + Math.min(3, Math.floor((invert ? 1 - position : position) * 4))
                 return (
-                  <td key={column} className="p-1">
+                  <TableCell key={column} className="p-1">
                     <span
                       className={cn(
                         'flex h-9 items-center justify-end rounded-md px-2 text-xs tabular-nums',
@@ -250,13 +244,13 @@ export function MatrixHeatmap<Row extends string, Column extends string>({
                     >
                       {cell == null ? '—' : format(cell)}
                     </span>
-                  </td>
+                  </TableCell>
                 )
               })}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   )
 }

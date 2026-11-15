@@ -4,7 +4,13 @@ import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
 import { PageHeader } from '@/components/layout/page-header'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from '@/components/ui/empty'
 import { Skeleton } from '@/components/ui/skeleton'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import { getAttribution } from '@/server/admin-data.functions'
@@ -13,6 +19,7 @@ import type { AttributionReportView } from '@/types/api'
 import { AttributionFilters, UserFilterButton } from './-attribution/controls'
 import { AttributionFilteredEmpty, AttributionSetupEmpty } from './-attribution/empty-state'
 import {
+  attributionReportInput,
   enabledAttributionTabs,
   resolveAttributionTab,
   TAB_LABELS,
@@ -44,13 +51,8 @@ const TABS: Record<AttributionTab, ComponentType<TabProps>> = {
 export const Route = createFileRoute('/observability/attribution')({
   validateSearch: (search: Record<string, unknown>) => normalizeAttributionSearch(search),
   loaderDeps: ({ search }) => search,
-  loader: ({ deps, context }) => {
-    const { tab: requested, ...filters } = deps
-    // My work is always the signed-in user's own report, whatever the user filter says.
-    const tab = resolveAttributionTab(requested, context.session)
-    const userId = tab === 'my_work' ? context.session?.user.id : filters.user_id
-    return getAttribution({ data: { ...filters, user_id: userId } })
-  },
+  loader: ({ deps, context }) =>
+    getAttribution({ data: attributionReportInput(deps, context.session) }),
   component: AttributionPage,
 })
 
@@ -82,7 +84,9 @@ export function AttributionPage() {
           title="Attribution"
           description="Git AI attribution joined with gateway traffic."
         />
-        <TabsOffEmpty />
+        <TabsOffEmpty
+          conceptsEnabled={session?.capabilities.attribution_tabs.includes('concepts') ?? false}
+        />
       </div>
     )
   }
@@ -215,7 +219,7 @@ function AttributionNav({
   )
 }
 
-function TabsOffEmpty() {
+function TabsOffEmpty({ conceptsEnabled }: { conceptsEnabled: boolean }) {
   return (
     <Empty className="bg-surface-muted rounded-xl border">
       <EmptyHeader>
@@ -225,6 +229,15 @@ function TabsOffEmpty() {
           config.
         </EmptyDescription>
       </EmptyHeader>
+      {conceptsEnabled ? (
+        <EmptyContent>
+          <Button asChild variant="outline">
+            <Link to="/observability/attribution/concepts" search={{ tab: 'impact', days: 30 }}>
+              Open the concepts
+            </Link>
+          </Button>
+        </EmptyContent>
+      ) : null}
     </Empty>
   )
 }

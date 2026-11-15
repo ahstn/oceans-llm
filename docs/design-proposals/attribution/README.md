@@ -33,7 +33,7 @@ Each concept is a candidate tab, in the style of the MCP page's section nav.
 ## Principles drawn from the research
 
 - **Pair every throughput figure with its counterweight.** SPACE and DORA both warn that one metric invites gaming. AI share sits next to 30-day durability, merged PRs next to reverts, lines per dollar next to lead time. DESIGN.md now records this rule.
-- **Use AI-share bands, not a yes/no "AI-assisted" flag.** A PR with one AI line is not agent work. The bands are 0%, 1–49%, 50–89% and 90%+. LinearB and Faros find AI-heavy PRs about 2.6× larger, and they wait far longer for review. The Delivery tab is built to show whether that holds here.
+- **Use AI-share bands, not a yes/no "AI-assisted" flag.** A PR with one AI line is not agent work. The bands are 0%, under 50%, 50–89% and 90%+. LinearB and Faros find AI-heavy PRs about 2.6× larger, and they wait far longer for review. The Delivery tab is built to show whether that holds here.
 - **Spend that never shipped is the gateway's unique view.** Only Oceans sees the requests that never reached a commit. Git AI cites about 38% of spend going to branches that never merge. The Session outcomes tab and the Impact KPI make this the headline.
 - **No individual leaderboards.** DX, DORA and GitClear all warn against them, and heavy AI users were already the most productive before AI (GitClear 2026). Teams, repositories, harnesses and models compare with each other. A person compares only with their own baseline (tab 8).
 - **Show distributions, not means.** Cost per PR is a median; lead time shows p50 and p85; batch size is a histogram.

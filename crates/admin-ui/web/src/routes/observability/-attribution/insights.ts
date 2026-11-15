@@ -45,6 +45,19 @@ export function resolveAttributionTab(
   return requested && enabled.includes(requested) ? requested : enabled[0]
 }
 
+/**
+ * The report request for a tab: the route search without the tab, and on My work always the
+ * signed-in user's own id, whatever user filter the URL carries.
+ */
+export function attributionReportInput<Search extends { tab?: AttributionTab; user_id?: string }>(
+  search: Search,
+  session: AuthSessionView | null | undefined,
+) {
+  const { tab: requested, ...filters } = search
+  const tab = resolveAttributionTab(requested, session)
+  return { ...filters, user_id: tab === 'my_work' ? session?.user.id : filters.user_id }
+}
+
 export type PullRequestView = AttributionReportView['pull_requests'][number]
 export type ChangeView = AttributionReportView['changes'][number]
 export type DayView = AttributionReportView['daily'][number]
@@ -123,16 +136,21 @@ export function chartBucketSize(windowDays: number) {
 }
 
 /** AI share bands: more honest than an AI-assisted yes or no. */
+// `No AI` is exactly zero AI lines; any AI line puts a pull request in a band above it.
 export const AI_BANDS = [
-  { key: 'none', label: 'No AI', min: 0, max: 0.01 },
-  { key: 'light', label: '1–49% AI', min: 0.01, max: 0.5 },
+  { key: 'none', label: 'No AI', min: 0, max: 0 },
+  { key: 'light', label: 'Under 50% AI', min: 0, max: 0.5 },
   { key: 'heavy', label: '50–89% AI', min: 0.5, max: 0.9 },
   { key: 'agentic', label: '90%+ AI', min: 0.9, max: 1.01 },
 ] as const
 export type AiBandKey = (typeof AI_BANDS)[number]['key']
 
 export function aiBand(share: number): AiBandKey {
-  return (AI_BANDS.find((band) => share >= band.min && share < band.max) ?? AI_BANDS[3]).key
+  if (share <= 0) return 'none'
+  const band = AI_BANDS.find(
+    (entry) => entry.key !== 'none' && share >= entry.min && share < entry.max,
+  )
+  return band?.key ?? 'agentic'
 }
 
 export type PullRequestRow = {
