@@ -1,5 +1,7 @@
+mod call_input;
 mod execution;
 
+use call_input::parse_call_tool_input;
 use execution::call_catalog_tool;
 
 use axum::{
@@ -22,9 +24,7 @@ use gateway_mcp::{
         parse_client_message, tools_list_result,
     },
 };
-use gateway_service::{
-    CallMcpToolInput, DescribeMcpToolInput, MAX_SEARCH_LIMIT, McpCatalog, SearchMcpToolsInput,
-};
+use gateway_service::{DescribeMcpToolInput, MAX_SEARCH_LIMIT, McpCatalog, SearchMcpToolsInput};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use time::{Duration, OffsetDateTime};
@@ -395,12 +395,12 @@ async fn call_builtin_tool(
                 .map(serde_json::to_value)
         }
         "call_tool" => {
-            let input: CallMcpToolInput = match serde_json::from_value(arguments) {
+            let input = match parse_call_tool_input(arguments) {
                 Ok(input) => input,
-                Err(error) => {
+                Err(message) => {
                     return json_rpc_response(
                         StatusCode::BAD_REQUEST,
-                        json_rpc_error(Some(id), JSON_RPC_INVALID_PARAMS, error.to_string()),
+                        json_rpc_error(Some(id), JSON_RPC_INVALID_PARAMS, message),
                         None,
                     );
                 }
@@ -488,13 +488,24 @@ fn describe_tool_definition() -> McpTool {
 fn call_tool_definition() -> McpTool {
     McpTool {
         name: "call_tool".to_string(),
-        description: Some("Call one authorized MCP tool by canonical address.".to_string()),
+        description: Some(
+            "Call one authorized MCP tool by canonical address. Put the target tool's arguments in `arguments`, as an object that matches the input schema from describe_tool. If your tool interface can't send an object with arbitrary keys, send the same arguments as a JSON string in `arguments_json` instead, for example {\"query\":\"oceans\"}. Set only one of the two."
+                .to_string(),
+        ),
         input_schema: json!({
             "type": "object",
             "required": ["address"],
             "properties": {
                 "address": {"type": "string", "description": "Canonical tool address returned by search_tools."},
-                "arguments": {"type": "object", "default": {}},
+                "arguments": {
+                    "type": "object",
+                    "default": {},
+                    "description": "The target tool's arguments, as an object that matches its input schema. Leave it empty when you send arguments_json."
+                },
+                "arguments_json": {
+                    "type": "string",
+                    "description": "The target tool's arguments as a JSON-encoded object string, for example {\"query\":\"oceans\"}. Use it instead of arguments when your tool interface can't send an object with arbitrary keys."
+                },
                 "schema_hash": {"type": "string", "description": "Optional expected schema hash."}
             },
             "additionalProperties": false

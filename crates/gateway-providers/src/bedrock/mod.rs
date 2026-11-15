@@ -12,8 +12,8 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use gateway_core::{
     AwsBedrockApiStyle, AwsBedrockRouteCompatibility, CoreChatRequest, CoreEmbeddingsRequest,
     CoreResponsesRequest, ModelRoute, ProviderCapabilities, ProviderClient, ProviderError,
-    ProviderRequestContext, ProviderStream, ServiceTier, core_chat_request_to_openai,
-    core_responses_request_to_openai,
+    ProviderRequestContext, ProviderStream, ServiceTier, ServiceTierApi,
+    core_chat_request_to_openai, core_responses_request_to_openai,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -491,7 +491,11 @@ impl BedrockProvider {
         }
 
         if api_style == AwsBedrockApiStyle::MantleAnthropicMessages {
-            request = crate::anthropic::native::request_headers(request, context);
+            request = crate::anthropic::native::request_headers(
+                request,
+                context,
+                &self.config.default_headers,
+            );
         }
         for (name, value) in &context.extra_headers {
             if anthropic && name.eq_ignore_ascii_case("anthropic-beta") {
@@ -798,14 +802,8 @@ impl ProviderClient for BedrockProvider {
         "aws_bedrock"
     }
 
-    fn service_tiers(&self, route: &ModelRoute) -> &'static [ServiceTier] {
-        route
-            .compatibility
-            .aws_bedrock
-            .as_ref()
-            .map_or(crate::service_tier::DEFAULT_ONLY, |compatibility| {
-                service_tier::api_style_service_tiers(compatibility.api_style)
-            })
+    fn service_tiers(&self, route: &ModelRoute, _api: ServiceTierApi) -> &'static [ServiceTier] {
+        bedrock_service_tiers(&route.compatibility)
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
@@ -998,6 +996,7 @@ pub(crate) use request::{
 };
 pub(crate) use response::normalize_anthropic_messages_response;
 use response::*;
+pub(crate) use service_tier::bedrock_service_tiers;
 
 #[cfg(test)]
 mod tests;

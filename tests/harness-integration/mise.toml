@@ -5,7 +5,11 @@
 description = "Install native coding-harness integration test dependencies"
 sources = ["package-lock.json", "package.json"]
 outputs = ["node_modules/.package-lock.json"]
-run = ["npm ci", "bun node_modules/@opencode/cli/postinstall.mjs"]
+run = [
+  "npm ci",
+  "bun node_modules/@opencode/cli/postinstall.mjs",
+  "node node_modules/@anthropic-ai/claude-code/install.cjs",
+]
 
 [tasks.typecheck]
 description = "Typecheck native coding-harness integration tests"
@@ -13,9 +17,14 @@ depends = ["install"]
 run = "npm run typecheck"
 
 [tasks.test]
-description = "Run Pi and OpenCode live integration tests through Oceans"
+description = "Run the OpenCode, Pi, OMP and Claude Code live integration tests through Oceans"
 depends = ["install"]
 run = "npm test"
+
+[tasks.matrix-test]
+description = "Run only the harness x model x test matrix through Oceans and OpenRouter"
+depends = ["install"]
+run = "npm test -- src/matrix.test.ts"
 
 [tasks.plugin-test]
 description = "Verify packed Oceans discovery plugin with live OpenAI and Anthropic models through OpenRouter"

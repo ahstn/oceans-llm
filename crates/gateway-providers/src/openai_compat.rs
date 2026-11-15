@@ -7,8 +7,9 @@ use gateway_core::{
     OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort,
     OpenAiCompatRouteCompatibility, ProviderBatchRequest, ProviderBatchResult, ProviderBatchState,
     ProviderCapabilities, ProviderClient, ProviderDecisionsResponse, ProviderError,
-    ProviderRequestContext, ProviderStream, ServiceTier, core_chat_request_to_openai,
-    core_embeddings_request_to_openai, core_responses_request_to_openai,
+    ProviderRequestContext, ProviderStream, RouteCompatibility, ServiceTier, ServiceTierApi,
+    core_chat_request_to_openai, core_embeddings_request_to_openai,
+    core_responses_request_to_openai,
 };
 use serde_json::{Map, Value, json};
 
@@ -24,10 +25,13 @@ mod anthropic_messages;
 mod batch;
 mod decisions;
 mod native_messages;
+mod responses_store;
+mod service_tier;
 #[cfg(test)]
 mod service_tier_tests;
 
 pub(crate) use anthropic_messages::normalize_anthropic_messages_for_openai;
+pub(crate) use service_tier::openai_compat_service_tiers;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OpenAiBatchDialect {
@@ -366,10 +370,7 @@ impl OpenAiCompatProvider {
     /// OpenRouter serves image generation at `/images`; OpenAI and other
     /// compatible servers define `POST /images/generations`.
     fn images_endpoint_suffix(&self, context: &ProviderRequestContext) -> &'static str {
-        let openrouter = context.compatibility.openrouter.is_some()
-            || url::Url::parse(&self.config.base_url)
-                .is_ok_and(|url| url.host_str() == Some("openrouter.ai"));
-        if openrouter {
+        if routes_to_openrouter(&self.config.base_url, &context.compatibility) {
             "images"
         } else {
             "images/generations"
@@ -450,8 +451,13 @@ impl OpenAiCompatProvider {
             apply_compatibility_profile,
         )?;
         // Batch items share `prepare_request_body` but run outside the live service tiers.
-        if matches!(endpoint_suffix, "chat/completions" | "responses") {
-            apply_service_tier(&mut body, context);
+        let tier_api = match endpoint_suffix {
+            "chat/completions" => Some(ServiceTierApi::ChatCompletions),
+            "responses" => Some(ServiceTierApi::Responses),
+            _ => None,
+        };
+        if let Some(api) = tier_api {
+            self.apply_service_tier(&mut body, context, api)?;
         }
 
         let url = join_base_url(&self.config.base_url, endpoint_suffix)?;
@@ -491,6 +497,7 @@ impl OpenAiCompatProvider {
         }
         if endpoint_suffix == "responses" {
             crate::replay_id::normalize_openai_responses_replay_ids(&mut body)?;
+            self.apply_responses_store(&mut body, context)?;
         }
         apply_openai_compat_empty_tools_profile(&mut body, context)?;
         if apply_compatibility_profile {
@@ -743,12 +750,11 @@ pub(super) fn apply_openrouter_routing_policy(
     Ok(())
 }
 
-/// OpenAI and OpenRouter take the effective tier as body `service_tier` on Chat Completions,
-/// Responses, and OpenRouter Messages alike. An explicit default sends `default`.
-fn apply_service_tier(body: &mut Value, context: &ProviderRequestContext) {
-    if let (Some(tier), Some(object)) = (context.service_tier, body.as_object_mut()) {
-        object.insert("service_tier".to_string(), Value::from(tier.as_str()));
-    }
+/// Whether a route reaches OpenRouter: through an `openrouter` compatibility block, or a
+/// provider `base_url` on `openrouter.ai`.
+fn routes_to_openrouter(base_url: &str, compatibility: &RouteCompatibility) -> bool {
+    compatibility.openrouter.is_some()
+        || url::Url::parse(base_url).is_ok_and(|url| url.host_str() == Some("openrouter.ai"))
 }
 
 fn apply_openai_compat_profile_to_body(body: &mut Value, profile: &OpenAiCompatRouteCompatibility) {
@@ -857,12 +863,8 @@ impl ProviderClient for OpenAiCompatProvider {
         &self.config.provider_type
     }
 
-    fn service_tiers(&self, route: &ModelRoute) -> &'static [ServiceTier] {
-        if route.compatibility.selects_decisions_api() {
-            crate::service_tier::DEFAULT_ONLY
-        } else {
-            &ServiceTier::ALL
-        }
+    fn service_tiers(&self, route: &ModelRoute, api: ServiceTierApi) -> &'static [ServiceTier] {
+        openai_compat_service_tiers(&self.config.base_url, &route.compatibility, api)
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
@@ -2310,7 +2312,8 @@ mod tests {
         assert_eq!(body_json["input"], request.input);
         assert_eq!(body_json["tools"], request.tools.expect("tools"));
         assert_eq!(body_json["parallel_tool_calls"], Value::Bool(false));
-        assert_eq!(body_json["store"], Value::Bool(true));
+        // `supports_store: false` applies to Responses as well as Chat Completions.
+        assert!(body_json.get("store").is_none());
     }
 
     #[test]

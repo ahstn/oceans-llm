@@ -338,7 +338,11 @@ impl CopilotProvider {
         let req_builder = self.client.post(url).json(&body);
         let req_builder = self.apply_copilot_headers(req_builder, context);
         let req_builder = if native {
-            crate::anthropic::native::request_headers(req_builder, context)
+            crate::anthropic::native::request_headers(
+                req_builder,
+                context,
+                &self.config.default_headers,
+            )
         } else {
             req_builder
         };

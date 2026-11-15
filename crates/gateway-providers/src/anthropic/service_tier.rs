@@ -1,4 +1,5 @@
-//! Claude API speed selection on Messages bodies.
+//! Claude speed selection: the models each platform sells fast mode on, and the Claude API's
+//! form of it on Messages bodies.
 
 use gateway_core::{
     ProviderError, ProviderRequestContext, ServiceTier,
@@ -7,10 +8,56 @@ use gateway_core::{
 use serde_json::{Map, Value};
 
 use super::beta::{normalized_body_betas, put_body_betas};
-use crate::service_tier::{DEFAULT_PRIORITY, checked_service_tier};
+use crate::service_tier::{DEFAULT_ONLY, DEFAULT_PRIORITY, checked_service_tier};
 
 /// Research-preview beta the Claude API requires before Opus 5 and Opus 4.8 accept fast mode.
 const FAST_MODE_BETA: &str = "fast-mode-2026-02-01";
+
+/// Models the Claude API sells fast mode on, besides Opus 5, which [`is_claude_opus_5_0`]
+/// matches. Opus 4.8 fast mode is deprecated and ends on 2026-11-30.
+const CLAUDE_API_FAST_MODE_MODELS: [&str; 4] = [
+    "claude-fable-5-2",
+    "claude-mythos-5-2",
+    "claude-opus-5-5",
+    "claude-opus-4-8",
+];
+
+/// Models Google-managed Vertex AI sells fast mode on.
+const VERTEX_FAST_MODE_MODELS: [&str; 2] = ["claude-fable-5-2", "claude-mythos-5-2"];
+
+/// Where a Claude model runs, which decides the models sold in fast mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ClaudePlatform {
+    /// The Claude API, through `anthropic_compat`.
+    ClaudeApi,
+    /// Google-managed Vertex AI.
+    Vertex,
+}
+
+/// Standard capacity, plus priority (fast mode) on the models `platform` sells it for. Other
+/// models, including rolling aliases such as `claude-opus-latest`, serve the default tier only.
+pub(crate) fn claude_service_tiers(
+    upstream_model: &str,
+    platform: ClaudePlatform,
+) -> &'static [ServiceTier] {
+    let model = normalize_claude_model(upstream_model);
+    let listed = |models: &[&str]| {
+        models
+            .iter()
+            .any(|marker| contains_exact_claude_model_marker(&model, marker))
+    };
+    let fast_mode = match platform {
+        ClaudePlatform::ClaudeApi => {
+            listed(&CLAUDE_API_FAST_MODE_MODELS) || is_claude_opus_5_0(&model)
+        }
+        ClaudePlatform::Vertex => listed(&VERTEX_FAST_MODE_MODELS),
+    };
+    if fast_mode {
+        DEFAULT_PRIORITY
+    } else {
+        DEFAULT_ONLY
+    }
+}
 
 /// Writes the effective tier the way the Claude API takes it. Priority is fast mode,
 /// `speed: "fast"`. An explicit default pins standard capacity with
@@ -20,8 +67,9 @@ pub(crate) fn apply_claude_api_service_tier(
     body: &mut Value,
     context: &ProviderRequestContext,
 ) -> Result<(), ProviderError> {
+    let supported = claude_service_tiers(&context.upstream_model, ClaudePlatform::ClaudeApi);
     let (Some(tier), Some(object)) = (
-        checked_service_tier(context, DEFAULT_PRIORITY)?,
+        checked_service_tier(context, supported)?,
         body.as_object_mut(),
     ) else {
         return Ok(());

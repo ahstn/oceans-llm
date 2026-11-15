@@ -10,8 +10,8 @@ use axum::{
 use futures_util::StreamExt;
 use gateway_core::{
     CoreChatRequest, CoreResponsesRequest, ModelRoute, OpenAiCompatDecisionsApi,
-    OpenAiCompatRouteCompatibility, ProviderClient, ProviderRequestContext, ServiceTier,
-    SseEventParser, served_service_tier,
+    OpenAiCompatRouteCompatibility, ProviderClient, ProviderError, ProviderRequestContext,
+    ServiceTier, ServiceTierApi, SseEventParser, served_service_tier,
 };
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
@@ -79,20 +79,46 @@ fn chat_and_responses_send_the_effective_tier_as_body_service_tier() {
     let provider = provider("https://api.openai.com/v1");
     for tier in ServiceTier::ALL {
         let context = context("gpt-5.5", Some(tier));
-        let chat = provider
-            .build_chat_request(&chat_request(false), &context)
-            .expect("chat request");
-        assert_eq!(body_json(&chat)["service_tier"], tier.as_str());
         let responses = provider
             .build_responses_request(&responses_request(), &context)
             .expect("responses request");
         assert_eq!(body_json(&responses)["service_tier"], tier.as_str());
+        if tier == ServiceTier::Ultrafast {
+            continue;
+        }
+        let chat = provider
+            .build_chat_request(&chat_request(false), &context)
+            .expect("chat request");
+        assert_eq!(body_json(&chat)["service_tier"], tier.as_str());
     }
 
     let untiered = provider
         .build_chat_request(&chat_request(false), &context("gpt-5.5", None))
         .expect("chat request");
     assert!(body_json(&untiered).get("service_tier").is_none());
+}
+
+/// OpenAI's Chat Completions `service_tier` has no `ultrafast`; OpenRouter takes it there.
+#[test]
+fn chat_completions_send_ultrafast_only_to_openrouter() {
+    let context = context("gpt-5.5", Some(ServiceTier::Ultrafast));
+    for base_url in ["https://api.openai.com/v1", "http://vllm.internal/v1"] {
+        let error = provider(base_url)
+            .build_chat_request(&chat_request(false), &context)
+            .expect_err("ultrafast is Responses only");
+        let ProviderError::InvalidRequest(message) = error else {
+            panic!("expected InvalidRequest, got {error:?}");
+        };
+        assert_eq!(
+            message,
+            "provider `openai` route does not support service tier `ultrafast`"
+        );
+    }
+
+    let chat = provider("https://openrouter.ai/api/v1")
+        .build_chat_request(&chat_request(false), &context)
+        .expect("OpenRouter takes ultrafast on Chat Completions");
+    assert_eq!(body_json(&chat)["service_tier"], "ultrafast");
 }
 
 #[test]
@@ -118,7 +144,7 @@ fn openrouter_messages_take_the_tier_as_body_service_tier() {
 }
 
 #[test]
-fn decisions_routes_serve_only_the_default_tier() {
+fn routes_serve_the_tiers_their_api_sells() {
     let mut route: ModelRoute = serde_json::from_value(json!({
         "id": "00000000-0000-0000-0000-000000000001",
         "model_id": "00000000-0000-0000-0000-000000000002",
@@ -129,14 +155,89 @@ fn decisions_routes_serve_only_the_default_tier() {
         "enabled": true
     }))
     .expect("route");
+    let openrouter = provider("https://openrouter.ai/api/v1");
     let provider = provider("https://api.openai.com/v1");
-    assert_eq!(provider.service_tiers(&route), ServiceTier::ALL);
+    let chat = ServiceTierApi::ChatCompletions;
+    assert_eq!(
+        provider.service_tiers(&route, ServiceTierApi::Responses),
+        ServiceTier::ALL
+    );
+    assert_eq!(
+        provider.service_tiers(&route, chat),
+        [
+            ServiceTier::Default,
+            ServiceTier::Flex,
+            ServiceTier::Priority
+        ]
+    );
+    assert_eq!(openrouter.service_tiers(&route, chat), ServiceTier::ALL);
 
     route.compatibility.openai_compat = Some(OpenAiCompatRouteCompatibility {
         decisions_api: Some(OpenAiCompatDecisionsApi::OpenAi),
         ..Default::default()
     });
-    assert_eq!(provider.service_tiers(&route), [ServiceTier::Default]);
+    for api in [chat, ServiceTierApi::Responses] {
+        assert_eq!(provider.service_tiers(&route, api), [ServiceTier::Default]);
+    }
+}
+
+fn responses_with(extra: Value) -> CoreResponsesRequest {
+    let mut request = responses_request();
+    request.extra = serde_json::from_value(extra).expect("extra fields");
+    request
+}
+
+/// OpenRouter's Responses API keeps no state: `store` is dropped, so OpenCode's
+/// `store: false` still works, and a continuation fails before the upstream call.
+#[test]
+fn openrouter_responses_drop_store_and_reject_previous_response_id() {
+    let provider = provider("https://openrouter.ai/api/v1");
+    let context = context("openai/gpt-5.5", None);
+    for store in [false, true] {
+        let request = responses_with(json!({"store": store, "previous_response_id": null}));
+        let built = provider
+            .build_responses_request(&request, &context)
+            .expect("stateless request");
+        assert!(body_json(&built).get("store").is_none(), "store={store}");
+    }
+
+    let error = provider
+        .build_responses_request(
+            &responses_with(json!({"previous_response_id": "resp_123"})),
+            &context,
+        )
+        .expect_err("OpenRouter cannot continue a stored response");
+    let ProviderError::UnsupportedParameter { param, .. } = error else {
+        panic!("expected UnsupportedParameter, got {error:?}");
+    };
+    assert_eq!(param, "previous_response_id");
+}
+
+/// Direct OpenAI keeps `store` and continuations, unless the profile says it takes no `store`.
+#[test]
+fn responses_keep_store_unless_the_profile_drops_it() {
+    let provider = provider("https://api.openai.com/v1");
+    let request = responses_with(json!({"store": true, "previous_response_id": "resp_123"}));
+    let mut context = context("gpt-5.5", None);
+    let body = body_json(
+        &provider
+            .build_responses_request(&request, &context)
+            .expect("request"),
+    );
+    assert_eq!(body["store"], true);
+    assert_eq!(body["previous_response_id"], "resp_123");
+
+    context.compatibility.openai_compat = Some(OpenAiCompatRouteCompatibility {
+        supports_store: false,
+        ..Default::default()
+    });
+    let body = body_json(
+        &provider
+            .build_responses_request(&request, &context)
+            .expect("request"),
+    );
+    assert!(body.get("store").is_none());
+    assert_eq!(body["previous_response_id"], "resp_123");
 }
 
 /// Chat Completions that demands a priority request and reports serving it at the default

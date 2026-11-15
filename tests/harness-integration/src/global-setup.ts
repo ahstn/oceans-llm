@@ -16,13 +16,19 @@ import {
 import { delay, runCommand } from "./process.js";
 import type { GatewayRuntime } from "./types.js";
 
-const GATEWAY_MODEL = "harness-openrouter";
 const ALLOWLISTED_GATEWAY_MODEL = "harness-openrouter-user-allowlist";
 const ALLOWLISTED_USER_EMAIL = "allowlisted.harness@example.com";
-const DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-v4.1-flash";
-const PLUGIN_MODELS = {
+// Vertex AI model keys. The managed gateway adds them only when Vertex credentials are present.
+const VERTEX_MODELS = { google: "gemini-4-hydrogen-vertex" } as const;
+// Bedrock model keys. The managed gateway adds them only when OCEANS_HARNESS_BEDROCK is set.
+const BEDROCK_MODELS = {
+  openai: "gpt-6-luna-bedrock",
+  anthropic: "claude-haiku-5.5-bedrock",
+} as const;
+const PLUGIN_MODELS: GatewayRuntime["pluginModels"] = {
   openai: "gpt-6-luna",
   anthropic: "claude-haiku-5.5",
+  google: "gemini-4-hydrogen",
   textOnly: "harness-plugin-text-only",
   hidden: "harness-plugin-hidden",
 };
@@ -79,8 +85,13 @@ export default async function setup(context: TestProject): Promise<() => Promise
     const baseUrl = `http://127.0.0.1:${port}`;
     const configPath = join(runtimeDir, "gateway.harness.yaml");
     const databasePath = join(runtimeDir, "gateway.harness.db");
-    const upstreamModel = process.env.OPENROUTER_TEST_MODEL ?? DEFAULT_OPENROUTER_MODEL;
-    await writeFile(configPath, gatewayConfig(port, databasePath, upstreamModel), "utf8");
+    const vertexProject = managedVertexProject();
+    const bedrockRegion = managedBedrockRegion();
+    await writeFile(
+      configPath,
+      gatewayConfig(port, databasePath, vertexProject, bedrockRegion),
+      "utf8",
+    );
 
     const runningGateway = startGateway(
       gatewayBinary,
@@ -95,8 +106,11 @@ export default async function setup(context: TestProject): Promise<() => Promise
       adminPassword: MANAGED_ADMIN_PASSWORD,
       apiKey: MANAGED_API_KEY,
       baseUrl,
-      model: GATEWAY_MODEL,
       pluginModels: PLUGIN_MODELS,
+      providerModels: {
+        ...(vertexProject ? { vertex: VERTEX_MODELS } : {}),
+        ...(bedrockRegion ? { bedrock: BEDROCK_MODELS } : {}),
+      },
     };
     await assertGatewayReady(baseUrl, runningGateway.process);
     runtime.allowlistedUser = {
@@ -126,13 +140,16 @@ function externalRuntime(baseUrl: string): GatewayRuntime {
     adminPassword: requiredEnvironment("GATEWAY_ADMIN_PASSWORD"),
     apiKey: requiredEnvironment("OCEANS_API_KEY"),
     baseUrl,
-    model: process.env.OCEANS_TEST_MODEL ?? GATEWAY_MODEL,
     pluginModels: {
       openai: process.env.OCEANS_PLUGIN_OPENAI_MODEL ?? PLUGIN_MODELS.openai,
       anthropic: process.env.OCEANS_PLUGIN_ANTHROPIC_MODEL ?? PLUGIN_MODELS.anthropic,
+      google: process.env.OCEANS_PLUGIN_GOOGLE_MODEL ?? PLUGIN_MODELS.google,
       textOnly: process.env.OCEANS_PLUGIN_TEXT_ONLY_MODEL ?? PLUGIN_MODELS.textOnly,
       hidden: process.env.OCEANS_PLUGIN_HIDDEN_MODEL ?? PLUGIN_MODELS.hidden,
     },
+    providerModels: process.env.OCEANS_VERTEX_GOOGLE_MODEL
+      ? { vertex: { google: process.env.OCEANS_VERTEX_GOOGLE_MODEL } }
+      : {},
     ...(allowlistedUser ? { allowlistedUser } : {}),
   };
 }
@@ -444,7 +461,83 @@ function waitForProcessExit(process: ChildProcess, timeoutMs: number): Promise<b
   });
 }
 
-function gatewayConfig(port: number, databasePath: string, upstreamModel: string): string {
+/**
+ * The Vertex AI project for the managed gateway, or `undefined` when Vertex is not configured. The
+ * gateway authenticates with Application Default Credentials from GOOGLE_APPLICATION_CREDENTIALS.
+ */
+function managedVertexProject(): string | undefined {
+  const project = process.env.OCEANS_HARNESS_VERTEX_PROJECT;
+  return project && process.env.GOOGLE_APPLICATION_CREDENTIALS ? project : undefined;
+}
+
+/**
+ * The AWS region for the managed Bedrock provider, or `undefined` unless OCEANS_HARNESS_BEDROCK
+ * opts in. The gateway signs with credentials from the AWS default chain; harnesses never get them.
+ */
+function managedBedrockRegion(): string | undefined {
+  if (!process.env.OCEANS_HARNESS_BEDROCK) return undefined;
+  return process.env.OCEANS_HARNESS_BEDROCK_REGION ?? process.env.AWS_REGION;
+}
+
+function gatewayConfig(
+  port: number,
+  databasePath: string,
+  vertexProject?: string,
+  bedrockRegion?: string,
+): string {
+  const bedrockProvider = bedrockRegion
+    ? `
+  - id: bedrock
+    type: aws_bedrock
+    region: ${JSON.stringify(bedrockRegion)}
+    endpoint_kind: bedrock_runtime
+    auth:
+      mode: default_chain
+`
+    : "";
+  const bedrockModels = bedrockRegion
+    ? `
+  - id: ${BEDROCK_MODELS.openai}
+    description: OpenAI matrix model on Bedrock
+    routes:
+      - provider: bedrock
+        upstream_model: us.openai.gpt-6-luna
+
+  - id: ${BEDROCK_MODELS.anthropic}
+    description: Anthropic matrix model on Bedrock
+    routes:
+      - provider: bedrock
+        upstream_model: us.anthropic.claude-haiku-5-5
+`
+    : "";
+  const vertexProvider = vertexProject
+    ? `
+  - id: vertex
+    type: gcp_vertex
+    project_id: ${JSON.stringify(vertexProject)}
+    location: global
+    auth:
+      mode: adc
+`
+    : "";
+  const vertexModels = vertexProject
+    ? `
+  - id: ${VERTEX_MODELS.google}
+    description: Google matrix model on Vertex AI
+    routes:
+      - provider: vertex
+        upstream_model: google/gemini-4-hydrogen
+`
+    : "";
+  const upstream = {
+    openai: JSON.stringify(process.env.OPENROUTER_PLUGIN_OPENAI_MODEL ?? "openai/gpt-6-luna"),
+    anthropic: JSON.stringify(
+      process.env.OPENROUTER_PLUGIN_ANTHROPIC_MODEL ?? "anthropic/claude-haiku-5.5",
+    ),
+    google: JSON.stringify(
+      process.env.OPENROUTER_PLUGIN_GOOGLE_MODEL ?? "google/gemini-4-hydrogen",
+    ),
+  };
   return `server:
   bind: "127.0.0.1:${port}"
   log_format: "pretty"
@@ -482,14 +575,14 @@ service_accounts:
     team: harness
     budget:
       cadence: daily
-      amount_usd: "5.0000"
+      amount_usd: "10.0000"
       hard_limit: true
       timezone: UTC
     keys:
       - id: integration
         name: Harness Integration Key
         value: env.HARNESS_OCEANS_API_KEY
-        allowed_models: [${GATEWAY_MODEL}, ${PLUGIN_MODELS.openai}, ${PLUGIN_MODELS.anthropic}, ${PLUGIN_MODELS.textOnly}]
+        allowed_models: [${PLUGIN_MODELS.openai}, ${PLUGIN_MODELS.anthropic}, ${PLUGIN_MODELS.google}, ${PLUGIN_MODELS.textOnly}${vertexProject ? `, ${VERTEX_MODELS.google}` : ""}${bedrockRegion ? `, ${BEDROCK_MODELS.openai}, ${BEDROCK_MODELS.anthropic}` : ""}]
 
 providers:
   - id: openrouter
@@ -499,14 +592,8 @@ providers:
     auth:
       kind: bearer
       token: env.OPENROUTER_API_KEY
-
+${vertexProvider}${bedrockProvider}
 models:
-  - id: ${GATEWAY_MODEL}
-    description: DeepSeek V4 Flash through OpenRouter for harness integration tests
-    routes:
-      - provider: openrouter
-        upstream_model: ${JSON.stringify(upstreamModel)}
-
   - id: ${ALLOWLISTED_GATEWAY_MODEL}
     description: Mixed-case human-user allowlist through OpenRouter
     allowlist:
@@ -514,27 +601,33 @@ models:
         - Allowlisted.Harness@Example.com
     routes:
       - provider: openrouter
-        upstream_model: ${JSON.stringify(upstreamModel)}
+        upstream_model: ${upstream.openai}
 
   - id: ${PLUGIN_MODELS.openai}
-    description: OpenAI Responses discovery and multimodal plugin canary
+    description: OpenAI matrix model and Responses plugin canary
     routes:
       - provider: openrouter
-        upstream_model: ${JSON.stringify(process.env.OPENROUTER_PLUGIN_OPENAI_MODEL ?? "openai/gpt-6-luna")}
+        upstream_model: ${upstream.openai}
 
   - id: ${PLUGIN_MODELS.anthropic}
-    description: Native Anthropic Messages discovery and multimodal plugin canary
+    description: Anthropic matrix model and Messages plugin canary
     max_reasoning_effort: high
     routes:
       - provider: openrouter
-        upstream_model: ${JSON.stringify(process.env.OPENROUTER_PLUGIN_ANTHROPIC_MODEL ?? "anthropic/claude-haiku-5.5")}
+        upstream_model: ${upstream.anthropic}
+
+  - id: ${PLUGIN_MODELS.google}
+    description: Google matrix model on Chat Completions
+    routes:
+      - provider: openrouter
+        upstream_model: ${upstream.google}
 
   - id: ${PLUGIN_MODELS.textOnly}
     description: Restricted capability and effort discovery negative control
     max_reasoning_effort: medium
     routes:
       - provider: openrouter
-        upstream_model: ${JSON.stringify(process.env.OPENROUTER_PLUGIN_ANTHROPIC_MODEL ?? "anthropic/claude-haiku-5.5")}
+        upstream_model: ${upstream.anthropic}
         capabilities:
           vision: false
           tools: false
@@ -543,6 +636,6 @@ models:
     description: Model excluded from the harness API key
     routes:
       - provider: openrouter
-        upstream_model: ${JSON.stringify(process.env.OPENROUTER_PLUGIN_ANTHROPIC_MODEL ?? "anthropic/claude-haiku-5.5")}
-`;
+        upstream_model: ${upstream.anthropic}
+${vertexModels}${bedrockModels}`;
 }

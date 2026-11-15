@@ -546,6 +546,55 @@ models:
 }
 
 #[test]
+fn none_reasoning_effort_ceiling_allows_only_disabled_reasoning() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    let config = |effort: &str| {
+        format!(
+            "providers:\n  - id: openai\n    type: openai_compat\n    base_url: https://api.openai.com/v1\n    pricing_provider_id: openai\nmodels:\n  - id: no-reasoning\n    max_reasoning_effort: none\n    routes:\n      - provider: openai\n        upstream_model: gpt-6\n        extra_body:\n          reasoning_effort: {effort}\n"
+        )
+    };
+
+    write_config(&config_path, &config("none"));
+    let loaded = GatewayConfig::from_path(&config_path).expect("config should load");
+    assert_eq!(
+        loaded.seed_models().expect("seed models")[0].max_reasoning_effort,
+        Some(ReasoningEffort::None)
+    );
+
+    write_config(&config_path, &config("minimal"));
+    let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+    assert!(
+        format!("{error:#}")
+            .contains("reasoning effort `minimal` exceeds the model maximum `none`"),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[test]
+fn rejects_route_gemini_thinking_level_above_model_reasoning_effort_policy() {
+    let tmp = tempdir().expect("tempdir");
+    let config_path = tmp.path().join("gateway.yaml");
+    for extra_body in [
+        "google:\n            thinking_config:\n              thinking_level: HIGH",
+        "extra_body:\n            google:\n              thinking_config:\n                thinking_level: high",
+    ] {
+        write_config(
+            &config_path,
+            &format!(
+                "providers:\n  - id: gemini\n    type: openai_compat\n    base_url: https://generativelanguage.googleapis.com/v1beta/openai\n    pricing_provider_id: google-vertex\nmodels:\n  - id: gemini\n    max_reasoning_effort: low\n    routes:\n      - provider: gemini\n        upstream_model: gemini-4-hydrogen\n        extra_body:\n          {extra_body}\n"
+            ),
+        );
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        assert!(
+            format!("{error:#}")
+                .contains("reasoning effort `high` exceeds the model maximum `low`"),
+            "unexpected error for {extra_body}: {error:#}"
+        );
+    }
+}
+
+#[test]
 fn rejects_target_route_above_alias_reasoning_effort_policy() {
     let tmp = tempdir().expect("tempdir");
     let config_path = tmp.path().join("gateway.yaml");

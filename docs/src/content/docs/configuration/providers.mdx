@@ -29,8 +29,8 @@ The gateway accepts these `type` values. Any other value fails config loading.
 
 Most provider types accept these fields. The per-type sections below list the exceptions.
 
-<Aside type="caution" title="Unknown provider fields are ignored">
-Only `gcp_cloud_run_openai_compat` rejects unknown provider fields. For every other provider type, a misspelled top-level key is silently ignored. Auth blocks with a `mode` field (Cloud Run, Bedrock, GitHub Copilot) do reject unknown auth fields.
+<Aside type="note" title="Unknown provider fields fail config loading">
+Every provider type rejects unknown fields. This includes the fields inside `auth`, `timeouts`, `display` and `batch`. A misspelled key stops the gateway at startup and names the key, so it can't be silently ignored.
 </Aside>
 
 | Field | Default | Notes |
@@ -51,7 +51,7 @@ Secret fields such as `auth.token` take a value source such as `env.NAME` or `li
 
 | Provider type | Auth setting | Secret material |
 | --- | --- | --- |
-| `openai_compat` | `auth.kind`, `auth.token` | Token sent as `Authorization: Bearer` |
+| `openai_compat` | `auth.kind: bearer`, `auth.token` | Token sent as `Authorization: Bearer` |
 | `typesafe` | `auth.kind: bearer`, `auth.token` | TypeSafe API key sent as `Authorization: Bearer` |
 | `anthropic_compat` | `auth.kind: x_api_key` (default) | API key sent in the `x-api-key` header |
 | `anthropic_compat` | `auth.kind: bearer` | Token sent as `Authorization: Bearer` |
@@ -105,8 +105,8 @@ Use `openai_compat` for OpenAI, OpenRouter, and other OpenAI-compatible APIs.
 | --- | --- | --- |
 | `base_url` | required | HTTP or HTTPS URL with a host. |
 | `pricing_provider_id` | required | A supported pricing family. It can't be empty. |
-| `auth.kind` | required when `auth` is set | Free-form label. The gateway always sends `auth.token` as a bearer token. |
-| `auth.token` | none | Secret reference. Omit `auth` for upstreams that need no token. |
+| `auth.kind` | required when `auth` is set | Must be `bearer`. Any other value fails config loading. |
+| `auth.token` | required when `auth` is set | Secret reference, sent as `Authorization: Bearer`. Omit `auth` for upstreams that need no token. |
 | `batch.dialect` | none | `open_ai` or `open_router`. Enables durable provider batches. |
 | `batch.base_url` | none | HTTP or HTTPS URL with a host. Required when `batch.dialect` is `open_router`. |
 
@@ -125,7 +125,7 @@ Use `typesafe` for native System One requests. The adapter calls `/v1/systemone`
 | `base_url` | `https://api.typesafe.ai` | Path must be empty, `/`, or `/v1`. No query or fragment. HTTPS, except plain HTTP to `localhost` or a loopback IP. |
 | `pricing_provider_id` | required | A supported pricing family. Use a route `pricing_override` when the upstream model has no exact catalog entry. |
 | `auth.kind` | required when `auth` is set | Must be `bearer`. |
-| `auth.token` | none | Secret reference such as `env.TYPESAFE_API_KEY`. |
+| `auth.token` | required when `auth` is set | Secret reference such as `env.TYPESAFE_API_KEY`. |
 
 It also takes the [shared fields](#shared-fields). See [TypeSafe](/providers/typesafe/) for a full provider and route example.
 

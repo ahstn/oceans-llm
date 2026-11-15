@@ -4,6 +4,8 @@ import { delay } from "./process.js";
 import type { GatewayRuntime } from "./types.js";
 
 const RequestLogSchema = z.object({
+  agent_harness_key: z.string(),
+  metadata: z.record(z.string(), z.unknown()),
   model_key: z.string(),
   provider_key: z.string(),
   request_log_id: z.string(),
@@ -21,6 +23,7 @@ const RequestLogPageSchema = z.object({
 
 const RequestLogDetailSchema = z.object({
   log: RequestLogSchema,
+  user_agent_raw: z.string().nullable(),
   payload: z
     .object({
       request_json: z.unknown(),
@@ -37,8 +40,9 @@ const RequestLogDetailSchema = z.object({
   ),
 });
 
-type RequestLog = z.infer<typeof RequestLogSchema>;
+export type RequestLog = z.infer<typeof RequestLogSchema>;
 export type RequestLogDetail = z.infer<typeof RequestLogDetailSchema>;
+type AdminCredentials = Pick<GatewayRuntime, "adminEmail" | "adminPassword" | "baseUrl">;
 
 const ClientConfigsSchema = z.object({
   client_configurations: z.array(
@@ -49,27 +53,30 @@ const ClientConfigsSchema = z.object({
   ),
 });
 
-/** Fetches the OpenCode config that Oceans generates for `model`, as shown in the admin UI. */
-export async function fetchGeneratedOpenCodeConfig(
-  runtime: GatewayRuntime,
+/**
+ * Fetches the code blocks of the client config that Oceans generates for `model`, as the admin UI
+ * shows them. `client` is the config key, such as `opencode`, `pi` or `claude-code`.
+ */
+export async function fetchGeneratedClientConfig(
+  runtime: AdminCredentials,
   model: string,
-): Promise<Record<string, unknown>> {
+  client: string,
+): Promise<string[]> {
   const admin = new GatewayAdminClient(runtime);
   await admin.login();
   const { client_configurations } = await admin.generateClientConfigs([model]);
-  const content = client_configurations.find((config) => config.key === "opencode")?.blocks[0]
-    ?.content;
-  if (!content) {
-    throw new Error(`Oceans generated no OpenCode config for model ${model}`);
+  const blocks = client_configurations.find((config) => config.key === client)?.blocks;
+  if (!blocks?.length) {
+    throw new Error(`Oceans generated no ${client} config for model ${model}`);
   }
-  return z.record(z.string(), z.unknown()).parse(JSON.parse(content));
+  return blocks.map((block) => block.content);
 }
 
 export class GatewayAdminClient {
-  readonly #runtime: GatewayRuntime;
+  readonly #runtime: AdminCredentials;
   #cookie: string | undefined;
 
-  constructor(runtime: GatewayRuntime) {
+  constructor(runtime: AdminCredentials) {
     this.#runtime = runtime;
   }
 
@@ -105,10 +112,14 @@ export class GatewayAdminClient {
     return readEnvelope(response, "model client configs", ClientConfigsSchema);
   }
 
-  async waitForSuccessfulModelLog(requestTag: string): Promise<RequestLog> {
+  async waitForSuccessfulModelLog(requestTag: string, model: string): Promise<RequestLog> {
     const deadline = Date.now() + 30_000;
     while (Date.now() < deadline) {
-      const page = await this.#getRequestLogs(requestTag, Math.max(1, deadline - Date.now()));
+      const page = await this.#getRequestLogs(
+        requestTag,
+        Math.max(1, deadline - Date.now()),
+        model,
+      );
       const log = page.items.find((item) => item.status_code === 200);
       if (log) {
         return log;
@@ -117,7 +128,29 @@ export class GatewayAdminClient {
     }
 
     throw new Error(
-      `No successful request log appeared for Oceans model ${this.#runtime.model} and harness tag ${requestTag}`,
+      `No successful request log appeared for Oceans model ${model} and harness tag ${requestTag}`,
+    );
+  }
+
+  /**
+   * Returns every request log of a harness run, for any model, once at least `minimum` are
+   * recorded. Logs are written after their responses finish, so the query repeats once more after
+   * a short wait to include a late log.
+   */
+  async waitForRequestLogs(requestTag: string, minimum: number): Promise<RequestLog[]> {
+    const deadline = Date.now() + 30_000;
+    let found = 0;
+    while (Date.now() < deadline) {
+      found = (await this.#getRequestLogs(requestTag, Math.max(1, deadline - Date.now()))).items
+        .length;
+      if (found >= minimum) {
+        await delay(1_000);
+        return (await this.#getRequestLogs(requestTag, 10_000)).items;
+      }
+      await delay(250);
+    }
+    throw new Error(
+      `Expected at least ${minimum} request logs for harness tag ${requestTag}, found ${found}`,
     );
   }
 
@@ -135,13 +168,16 @@ export class GatewayAdminClient {
   async #getRequestLogs(
     requestTag: string,
     timeoutMs: number,
+    model?: string,
   ): Promise<z.infer<typeof RequestLogPageSchema>> {
     if (!this.#cookie) {
       throw new Error("GatewayAdminClient.login() must be called first");
     }
     const url = new URL("/api/v1/admin/observability/request-logs", this.#runtime.baseUrl);
     url.searchParams.set("page_size", "100");
-    url.searchParams.set("model_key", this.#runtime.model);
+    if (model) {
+      url.searchParams.set("model_key", model);
+    }
     url.searchParams.set("tag_key", "harness_run");
     url.searchParams.set("tag_value", requestTag);
     const response = await fetchWithTimeout(url, { headers: { cookie: this.#cookie } }, timeoutMs);

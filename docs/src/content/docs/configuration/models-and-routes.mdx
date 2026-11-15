@@ -94,7 +94,9 @@ models:
         upstream_model: anthropic/claude-fable-5-1
 ```
 
-Accepted values, from least to most effort: `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Omitting the field or setting `null` means no ceiling. The gateway compares values in this order. It doesn't clamp or rewrite requests.
+Accepted values, from least to most effort: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Omitting the field or setting `null` means no ceiling. The gateway compares values in this order. It doesn't clamp or rewrite requests.
+
+Use `none` for a model that must not reason. With `none`, only requests that send `none` or `off`, or no effort, pass. Every other effort value is rejected. Support for `minimal` depends on the upstream model. For example, OpenRouter doesn't list `minimal` for GPT-6 Luna or Gemini 4 Hydrogen. Use `none` rather than `minimal` as the lowest ceiling for such models.
 
 The ceiling covers categorical effort only. It doesn't cap numeric controls such as `thinking.budget_tokens` or `reasoning.budget_tokens`. It also doesn't govern a default the provider picks when neither the caller nor the route sets effort. If a provider default must respect the ceiling, set it explicitly on the route.
 
@@ -111,7 +113,7 @@ Providers sell some models at more than one capacity tier. The gateway knows fou
 | `default` | `standard` | 1× | The provider's normal tier. |
 | `flex` | none | about 0.5× | Slower and can fail when the provider is busy. |
 | `priority` | `fast` | about 2× | OpenAI Fast, Anthropic fast mode, Gemini and Bedrock priority. |
-| `ultrafast` | none | about 6× | OpenAI only, on a few models. |
+| `ultrafast` | none | about 6× | OpenAI Responses and OpenRouter, on a few models. |
 
 Callers ask for a tier per request. See [Service tiers in requests](/configuration/model-routing/#service-tiers). Admins control tiers in two places.
 
@@ -144,18 +146,21 @@ models:
         service_tier: priority
 ```
 
-Each provider type sends the tier in its own form:
+Each provider type sends the tier in its own form. The tiers can depend on the API, the location and the model:
 
 | Provider type | Tiers | Sent as |
 | --- | --- | --- |
-| `openai_compat` | all, except Decisions routes | `service_tier` in the body |
-| `anthropic_compat` | `default`, `priority` | `speed: "fast"`, with the fast-mode beta header for Opus 5 and Opus 4.8. `default` sends `service_tier: "standard_only"`. |
-| `gcp_vertex` (Claude) | `default`, `priority` | `speed: "fast"` |
-| `gcp_vertex` (Gemini) | `default`, `flex`, `priority` | `X-Vertex-AI-LLM-Shared-Request-Type` header |
+| `openai_compat` to OpenRouter | all, on Chat Completions, Responses and Messages | `service_tier` in the body |
+| `openai_compat`, other hosts | Responses: all. Chat Completions and Messages: all except `ultrafast`, because OpenAI's Chat Completions API has no `ultrafast` value ([Chat Completions reference](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create.md)). | `service_tier` in the body |
+| `anthropic_compat` | `default`. `priority` only on Claude Fable 5.2, Mythos 5.2, Opus 5.5, Opus 5 and Opus 4.8 (until 2026-11-30) ([fast mode](https://platform.claude.com/docs/en/build-with-claude/fast-mode.md)). | `speed: "fast"`, with the fast-mode beta header for Opus 5 and Opus 4.8. `default` sends `service_tier: "standard_only"`. |
+| `gcp_vertex` (Claude) | `default`. `priority` only on Claude Fable 5.2 and Mythos 5.2. | `speed: "fast"` |
+| `gcp_vertex` (Gemini) | `location: global`: `default`, `flex`, `priority`. `us` or `eu`: `default`, `priority`. Other locations: `default`. See [GCP Vertex AI](/providers/gcp-vertex/#service-tiers). | `X-Vertex-AI-LLM-Shared-Request-Type` header |
 | `aws_bedrock` | `default`, `flex`, `priority` | `serviceTier` (Converse), `X-Amzn-Bedrock-Service-Tier` (InvokeModel), or `service_tier` (OpenAI-shaped API styles). Mantle Claude serves `default` only. |
-| `github_copilot`, Decisions | `default` | nothing |
+| `github_copilot`, `typesafe`, Decisions | `default` | nothing |
 
-A route serves a non-default tier only when its provider type supports the tier and the gateway can price it. The gateway can price a tier when the provider reports the cost (OpenRouter), when the catalog or `pricing_override` has a rate for the tier, or when the route has no price at all. A request that no route can serve fails with 400.
+A route serves a non-default tier only when its provider type can send the tier on the request's API and the gateway can price it. The gateway can price a tier when the provider reports the cost (OpenRouter), when the catalog or `pricing_override` has a rate for the tier, or when the route has no price at all. A request that no route can serve fails with 400.
+
+Config loading checks a route's `service_tier` against this table. When no API the route serves can send the tier, the gateway doesn't start, and the error names the model, the route, the provider and the tier. For example, `flex` on `anthropic_compat`, `flex` on a Vertex Gemini route in `us`, and `ultrafast` on a direct OpenAI route with `capabilities.responses: false` all fail. `ultrafast` on a direct OpenAI route that also serves Responses loads, but Chat Completions and Messages requests don't use that route.
 
 Embeddings, image generation, Decisions and batches run at the default tier, so they skip routes that force another tier. A model whose routes all force one can't serve them.
 
@@ -196,8 +201,8 @@ Rules:
 
 Each `models[*].routes[*]` entry sends the model to one provider.
 
-<Aside type="caution" title="Unknown route fields are ignored">
-Route entries aren't checked for unknown fields. A misspelled route key is silently ignored, so check spelling against this table.
+<Aside type="note" title="Unknown route fields fail config loading">
+Route entries reject unknown fields, including the fields inside `capabilities`, `compatibility` and its provider blocks. A misspelled key such as `service_teir` stops the gateway at startup.
 </Aside>
 
 | Field | Default | Notes |

@@ -28,6 +28,7 @@ pub use openai_compat::{
     BearerAuthHeader, CloudRunOpenAiCompatAuth, OpenAiBatchConfig, OpenAiBatchDialect,
     OpenAiCompatConfig, OpenAiCompatProvider,
 };
+pub use service_tier::{ServiceTierProvider, route_service_tiers};
 pub use typesafe::{DEFAULT_TYPESAFE_BASE_URL, TypeSafeConfig, TypeSafeProvider};
 pub use vertex::{
     VertexAuthConfig, VertexBatchConfig, VertexProvider, VertexProviderConfig,

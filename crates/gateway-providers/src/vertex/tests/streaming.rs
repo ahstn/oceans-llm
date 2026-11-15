@@ -122,7 +122,7 @@ async fn google_stream_routes_thoughts_to_reasoning_content() {
 }
 
 #[tokio::test]
-async fn google_stream_surfaces_text_thought_signature_as_provider_metadata() {
+async fn google_stream_surfaces_text_thought_signature_on_the_finish_delta() {
     let rendered = render_google_objects(&[
         json!({ "candidates": [{ "content": { "role": "model", "parts": [
             { "text": "hello", "thoughtSignature": "sig-text" }
@@ -138,6 +138,12 @@ async fn google_stream_surfaces_text_thought_signature_as_provider_metadata() {
         .collect();
     assert_eq!(metadata.len(), 1);
     assert_eq!(metadata[0]["gcp_vertex"]["thought_signature"], "sig-text");
+    let finish = &finish_events(&events)[0]["choices"][0]["delta"];
+    assert_eq!(finish["thought_signature"], "sig-text");
+    assert_eq!(
+        finish["reasoning_details"],
+        json!([{ "type": "reasoning.encrypted", "data": "sig-text", "format": "google-gemini-v1" }])
+    );
 }
 
 #[tokio::test]
@@ -174,16 +180,44 @@ async fn google_stream_tool_call_indexes_are_monotonic_and_keep_thought_signatur
         tool_calls[0]["function"]["arguments"],
         r#"{"city":"London"}"#
     );
-    assert_eq!(tool_calls[0]["thought_signature"], "sig-weather");
+    assert_eq!(
+        tool_calls[0]["extra_content"],
+        json!({ "google": { "thought_signature": "sig-weather" } })
+    );
     assert_eq!(tool_calls[1]["function"]["name"], "time");
-    assert_eq!(tool_calls[1]["thought_signature"], "sig-time");
+    assert_eq!(
+        tool_calls[1]["extra_content"]["google"]["thought_signature"],
+        "sig-time"
+    );
     assert_eq!(tool_calls[2]["function"]["name"], "news");
     assert_eq!(tool_calls[2]["function"]["arguments"], "{}");
-    assert!(tool_calls[2].get("thought_signature").is_none());
+    assert!(tool_calls[2].get("extra_content").is_none());
+
+    // Each signed call's `reasoning_details` entry rides in the call's own delta.
+    let signed: Vec<(Value, Value)> = deltas(&events)
+        .into_iter()
+        .filter_map(|delta| {
+            let detail = delta["reasoning_details"].get(0)?;
+            Some((delta["tool_calls"][0]["id"].clone(), detail.clone()))
+        })
+        .collect();
+    assert_eq!(signed.len(), 2);
+    for (call_id, detail) in &signed {
+        assert_eq!(&detail["id"], call_id);
+        assert_eq!(detail["type"], "reasoning.encrypted");
+        assert_eq!(detail["format"], "google-gemini-v1");
+    }
+    assert_eq!(signed[0].1["data"], "sig-weather");
+    assert_eq!(signed[1].1["data"], "sig-time");
 
     let finish = finish_events(&events);
     assert_eq!(finish.len(), 1);
     assert_eq!(finish[0]["choices"][0]["finish_reason"], "tool_calls");
+    assert!(
+        finish[0]["choices"][0]["delta"]
+            .get("reasoning_details")
+            .is_none()
+    );
     assert!(rendered.ends_with("data: [DONE]\n\n"));
 }
 

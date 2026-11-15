@@ -531,6 +531,7 @@ fn pi_fable_5_1_config_matches_expected_shape() {
             vision: true,
         },
         thinking_policy: Some(ThinkingPolicy::AnthropicSafeEffort),
+        reasoning: false,
         codex_reasoning_effort: None,
         native_api_format: None,
         max_reasoning_effort: None,
@@ -787,6 +788,44 @@ fn pi_gemini_budget_models_map_levels_to_reasoning_effort() {
             "high": "high",
             "xhigh": "high",
             "max": "high"
+        })
+    );
+}
+
+#[test]
+fn pi_reasoning_models_without_a_family_policy_send_reasoning_effort() {
+    let render = |input: &ClientConfigInput| -> Value {
+        let value: Value =
+            serde_json::from_str(&PiConfigTemplate.render(input).blocks[0].content).expect("json");
+        value["providers"]["oceans-llm"]["models"][0].clone()
+    };
+    let mut gpt = non_anthropic_input();
+    gpt.model_id = "gpt-6-luna".into();
+    gpt.upstream_model = Some("openai/gpt-6-luna".into());
+    assert_eq!(render(&gpt)["reasoning"], false);
+    assert!(render(&gpt).get("thinkingLevelMap").is_none());
+
+    gpt.reasoning = true;
+    let model = render(&gpt);
+    assert_eq!(model["reasoning"], true);
+    assert_eq!(
+        model["thinkingLevelMap"],
+        serde_json::json!({
+            "minimal": "low",
+            "low": "low",
+            "medium": "medium",
+            "high": "high"
+        })
+    );
+
+    gpt.max_reasoning_effort = Some(ReasoningLevel::Low);
+    assert_eq!(
+        render(&gpt)["thinkingLevelMap"],
+        serde_json::json!({
+            "minimal": "low",
+            "low": "low",
+            "medium": "low",
+            "high": "low"
         })
     );
 }
@@ -1456,6 +1495,34 @@ fn effort_presets_respect_the_gateway_ceiling() {
         Some(serde_json::json!({
             "off": null, "minimal": null, "low": null, "medium": null,
             "high": null, "xhigh": null, "max": null
+        }))
+    );
+}
+
+#[test]
+fn none_ceiling_offers_only_disabled_reasoning() {
+    let mut claude = input(Some(ThinkingPolicy::AnthropicSafeEffort));
+    claude.max_reasoning_effort = Some(ReasoningLevel::None);
+    let hints = client_hints(&claude).expect("hints");
+    assert_eq!(hints.harnesses.opencode.variants, None);
+    assert_eq!(
+        hints.harnesses.pi.thinking_level_map,
+        Some(serde_json::json!({
+            "off": null, "minimal": null, "low": null, "medium": null,
+            "high": null, "xhigh": null, "max": null
+        }))
+    );
+
+    // Gemini turns thinking off with `none`, which a `none` ceiling accepts.
+    let mut gemini = gemini_input("gemini-2.5-flash", "google/gemini-2.5-flash");
+    gemini.max_reasoning_effort = Some(ReasoningLevel::None);
+    let hints = client_hints(&gemini).expect("hints");
+    assert_eq!(hints.harnesses.opencode.variants, None);
+    assert_eq!(
+        hints.harnesses.pi.thinking_level_map,
+        Some(serde_json::json!({
+            "off": "none", "minimal": "none", "low": "none", "medium": "none",
+            "high": "none", "xhigh": "none", "max": "none"
         }))
     );
 }

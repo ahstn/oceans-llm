@@ -153,6 +153,22 @@ The gateway caps each Vertex route by its `upstream_model` ([`domain.rs`](https:
 
 No Vertex route serves `responses`, `images` or `decisions`. You don't need a `capabilities` block for these limits. Setting `responses: false` and `embeddings: false` on chat routes still makes the intent clear in the config. See [Effective capabilities](/reference/provider-api-compatibility/#effective-capabilities) for how flags are resolved.
 
+## Service tiers
+
+The [service tiers](/configuration/models-and-routes/#service-tiers) a Vertex route can send depend on the publisher, the provider's `location` and the model ([`vertex/mod.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-providers/src/vertex/mod.rs)):
+
+| Route | `flex` | `priority` |
+| --- | --- | --- |
+| `google/...` at `location: global` | Yes | Yes |
+| `google/...` at `us` or `eu` | No | Yes |
+| `google/...` at a regional location, such as `us-central1` | No | No |
+| `anthropic/claude-fable-5-2` or `anthropic/claude-mythos-5-2`, at any location | No | Yes (fast mode) |
+| Any other `anthropic/...` model, such as Opus 5.5, Sonnet or Haiku | No | No |
+
+Google sells Flex PayGo on the `global` endpoint only ([Flex PayGo](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/flex-paygo.md.txt)), and Priority PayGo on `global`, `us` and `eu` ([Priority PayGo](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/priority-paygo.md.txt)). Both lists also depend on the Gemini model, which the gateway doesn't check. On Google-managed Vertex AI, Claude fast mode is available only for Fable 5.2 and Mythos 5.2 ([fast mode](https://platform.claude.com/docs/en/build-with-claude/fast-mode.md)). Opus 5.5 fast mode is on the Claude API, not on Google-managed Vertex AI.
+
+A request for a tier the route can't send skips that route, and fails with 400 when no other route of the model can send it. A route whose `service_tier` forces such a tier fails config loading, and the error names the location for Gemini routes.
+
 ## Claude on Vertex
 
 Claude routes send the Anthropic Messages body with the Vertex transport rules ([`vertex/anthropic.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-providers/src/vertex/anthropic.rs)):
@@ -261,7 +277,7 @@ The gateway builds the Gemini body from the Chat Completions request ([`google_r
 - `temperature`, `top_p`, `top_k`, `presence_penalty`, `frequency_penalty`, `seed`, `n`, `stop`, `logprobs` and `top_logprobs` map to their `generationConfig` fields.
 - `response_format` with `json_object` sets `responseMimeType: application/json`. With `json_schema`, the schema also goes in `responseJsonSchema`.
 - The gateway ignores OpenAI-only fields such as `user`, `store`, `metadata` and `logit_bias`. It copies other unknown top-level fields into the body unchanged.
-- A `flex` or `priority` [service tier](/configuration/models-and-routes/#service-tiers) is sent as the `X-Vertex-AI-LLM-Shared-Request-Type` header. The served tier comes from `usageMetadata.trafficType`.
+- A `flex` or `priority` [service tier](#service-tiers) is sent as the `X-Vertex-AI-LLM-Shared-Request-Type` header, when the location sells it. The served tier comes from `usageMetadata.trafficType`.
 - A caller's native `generationConfig` (or `generation_config`) is deep-merged over the mapped fields. Route `extra_body` is merged last.
 
 ### Tools
@@ -277,7 +293,20 @@ Gemini routes support function tools, assistant `tool_calls`, tool results (`rol
 
 The gateway rejects `parallel_tool_calls: false` on requests with tools, because Gemini can't turn off parallel calls. It also rejects `streamFunctionCallArguments`.
 
-Gemini 3 returns thought signatures. The gateway puts them on each tool call as `thought_signature`, and on the message as `thought_signature` and `provider_metadata.gcp_vertex.thought_signature`. When the caller sends the assistant turn back, the gateway replays the signatures to Vertex.
+### Thought signatures
+
+Gemini 3 and later sign function calls. Vertex rejects a tool loop that sends a call back without its [thought signature](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking/thought-signatures). The gateway returns each signature in the shapes Chat Completions clients keep and send back ([`google_replay.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-providers/src/vertex/google_replay.rs)):
+
+| Gemini signed | The response carries |
+| --- | --- |
+| A `functionCall` part | `extra_content.google.thought_signature` on the tool call, as Google's own [OpenAI-compatible endpoint](https://ai.google.dev/gemini-api/docs/openai) returns it. Also a `reasoning_details` entry `{type: "reasoning.encrypted", id: <tool call id>, data: <signature>, format: "google-gemini-v1"}`, OpenRouter's [shape](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens) for Gemini. |
+| A text or thought part | `thought_signature` and `provider_metadata.gcp_vertex.thought_signature` on the message, and a `reasoning_details` entry with no `id`. |
+
+In streams, a call's `extra_content` and `reasoning_details` entry arrive in the delta that carries the call. A text-part signature arrives on the final `finish_reason` delta.
+
+Send the assistant message back with whichever of these fields your client kept. A tool call's signature goes back on its `functionCall` part. It comes from the call's `extra_content`, or from the `reasoning_details` entry with the call's `id` and `format: "google-gemini-v1"`. A message-level signature goes on the last text part. Pi and OMP send back the `reasoning_details` entry, and OpenCode sends both. `reasoning_details` entries from other model families are ignored. The gateway also still accepts `thought_signature` directly on a tool call, the shape earlier versions returned.
+
+Gemini only checks signatures in the current turn, which starts at the last user message that isn't only tool results. There, the first function call of each step must be signed. If it isn't, for example in history from another provider, the gateway sends Google's documented `skip_thought_signature_validator` value instead of failing. Google warns that this can make the model worse, so keep the signatures the gateway returns. Earlier turns, and Gemini 2.5 and older, get no placeholder.
 
 ### Reasoning effort
 

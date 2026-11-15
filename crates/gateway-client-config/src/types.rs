@@ -28,6 +28,8 @@ pub enum ApiFormat {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ReasoningLevel {
+    /// Reasoning off. As a gateway ceiling, it leaves no effort to offer.
+    None,
     Minimal,
     Low,
     Medium,
@@ -37,7 +39,8 @@ pub enum ReasoningLevel {
 }
 
 impl ReasoningLevel {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
+        Self::None,
         Self::Minimal,
         Self::Low,
         Self::Medium,
@@ -49,6 +52,7 @@ impl ReasoningLevel {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::None => "none",
             Self::Minimal => "minimal",
             Self::Low => "low",
             Self::Medium => "medium",
@@ -58,7 +62,7 @@ impl ReasoningLevel {
         }
     }
 
-    /// `None` for values outside the scale, such as `none`.
+    /// `None` for values outside the scale, such as `off`.
     #[must_use]
     pub fn parse(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|level| level.as_str() == value)
@@ -149,6 +153,10 @@ pub struct ClientConfigInput {
     pub output_window_tokens: Option<i64>,
     pub capabilities: ClientModelCapabilities,
     pub thinking_policy: Option<ThinkingPolicy>,
+    /// The model catalog says the model reasons. Pi then offers a reasoning effort ladder even
+    /// when no thinking policy names the model family, such as an OpenAI GPT model.
+    #[serde(default)]
+    pub reasoning: bool,
     /// An explicit Codex default. A gateway maximum is a ceiling and must not populate this field.
     pub codex_reasoning_effort: Option<CodexReasoningEffort>,
     /// The format the primary route's provider speaks natively, when the provider type makes
@@ -258,6 +266,7 @@ impl Default for ClientConfigInput {
             output_window_tokens: None,
             capabilities: ClientModelCapabilities::default(),
             thinking_policy: None,
+            reasoning: false,
             codex_reasoning_effort: None,
             native_api_format: None,
             max_reasoning_effort: None,

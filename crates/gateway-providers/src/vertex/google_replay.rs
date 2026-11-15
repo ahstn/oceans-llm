@@ -7,8 +7,15 @@ use super::{
     google_content::{FunctionIdPolicy, map_google_parts, parse_openai_tool_arguments},
 };
 
-/// Field the OpenAI shape carries a Gemini thought signature in, on both tool calls and messages.
+/// Field the OpenAI shape carries a Gemini thought signature in: on the message, and on each tool
+/// call under `extra_content.google`, the shape Google's own OpenAI-compatible endpoints use
+/// (<https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking/thought-signatures>).
 pub(super) const THOUGHT_SIGNATURE_FIELD: &str = "thought_signature";
+
+/// `reasoning_details[].format` OpenRouter gives Gemini reasoning
+/// (<https://openrouter.ai/docs/guides/best-practices/reasoning-tokens>).
+const GEMINI_REASONING_FORMAT: &str = "google-gemini-v1";
+const ENCRYPTED_REASONING_TYPE: &str = "reasoning.encrypted";
 
 /// One candidate's parts folded into the OpenAI message shape.
 #[derive(Debug, Default)]
@@ -17,6 +24,7 @@ pub(super) struct CandidateParts {
     pub reasoning: String,
     /// Signature Gemini 3 attaches to a non-function part; replayed on the next turn.
     pub thought_signature: Option<Value>,
+    /// Tool calls; a signed `functionCall` part puts its signature in `extra_content`.
     pub tool_calls: Vec<Value>,
     pub native_parts: Vec<Value>,
 }
@@ -33,7 +41,9 @@ impl CandidateParts {
         };
         parts.native_parts = items.clone();
         for part in items {
-            let signature = part.get("thoughtSignature");
+            let signature = part
+                .get("thoughtSignature")
+                .filter(|value| is_signature(value));
             if let Some(function_call) = part.get("functionCall") {
                 parts
                     .tool_calls
@@ -47,13 +57,32 @@ impl CandidateParts {
                     parts.text.push_str(text);
                 }
             }
-            if let Some(signature) = signature.filter(|s| s.as_str().is_some_and(|s| !s.is_empty()))
-            {
+            if let Some(signature) = signature {
                 parts.thought_signature = Some(signature.clone());
             }
         }
         parts
     }
+
+    /// Every signature in the candidate as `reasoning_details`: one entry per signed call, then
+    /// the text-part signature.
+    pub(super) fn reasoning_details(&self) -> Vec<Value> {
+        self.tool_calls
+            .iter()
+            .filter_map(tool_call_reasoning_detail)
+            .chain(
+                self.thought_signature
+                    .as_ref()
+                    .map(|signature| signature_reasoning_detail(None, signature)),
+            )
+            .collect()
+    }
+}
+
+fn is_signature(value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|signature| !signature.is_empty())
 }
 
 fn tool_call_from_function_call(function_call: &Value, signature: Option<&Value>) -> Value {
@@ -76,9 +105,99 @@ fn tool_call_from_function_call(function_call: &Value, signature: Option<&Value>
         json!({ "name": name, "arguments": arguments }),
     );
     if let Some(signature) = signature {
-        call.insert(THOUGHT_SIGNATURE_FIELD.to_string(), signature.clone());
+        call.insert(
+            "extra_content".to_string(),
+            json!({ "google": { THOUGHT_SIGNATURE_FIELD: signature } }),
+        );
     }
     Value::Object(call)
+}
+
+/// The `reasoning_details` entry for a tool call built from a signed `functionCall` part.
+pub(super) fn tool_call_reasoning_detail(call: &Value) -> Option<Value> {
+    let signature = call
+        .get("extra_content")?
+        .get("google")?
+        .get(THOUGHT_SIGNATURE_FIELD)?;
+    Some(signature_reasoning_detail(call.get("id"), signature))
+}
+
+/// A Gemini signature in OpenRouter's `reasoning_details` shape, which Pi, OMP and OpenCode keep
+/// and send back. `call_id` binds it to the tool call whose part was signed; a text-part
+/// signature has none.
+pub(super) fn signature_reasoning_detail(call_id: Option<&Value>, signature: &Value) -> Value {
+    let mut detail = json!({
+        "type": ENCRYPTED_REASONING_TYPE,
+        "data": signature,
+        "format": GEMINI_REASONING_FORMAT
+    });
+    if let Some(id) = call_id {
+        detail["id"] = id.clone();
+    }
+    detail
+}
+
+/// Signature a client sends back on an assistant tool call: Google's
+/// `extra_content.google.thought_signature`, the top-level field earlier gateway versions
+/// returned, or the `reasoning_details` entry bound to the call ID.
+pub(super) fn replayed_call_signature<'a>(
+    message: &'a CoreChatMessage,
+    call: &'a Map<String, Value>,
+) -> Option<&'a Value> {
+    let extra_content = call
+        .get("extra_content")
+        .and_then(|extra| extra.get("google"))
+        .and_then(|google| google.get(THOUGHT_SIGNATURE_FIELD));
+    [
+        extra_content,
+        call.get(THOUGHT_SIGNATURE_FIELD),
+        call.get("thoughtSignature"),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|signature| is_signature(signature))
+    .or_else(|| {
+        let id = call.get("id").and_then(Value::as_str)?;
+        replayed_detail_signature(message, Some(id))
+    })
+}
+
+/// Text-part signature a client sends back at message level: `thought_signature`,
+/// `provider_metadata.gcp_vertex.thought_signature`, or the `reasoning_details` entry that no
+/// tool call owns.
+pub(super) fn replayed_message_signature(message: &CoreChatMessage) -> Option<&Value> {
+    let metadata = message
+        .extra
+        .get("provider_metadata")
+        .and_then(|metadata| metadata.get("gcp_vertex"))
+        .and_then(|metadata| metadata.get(THOUGHT_SIGNATURE_FIELD));
+    [message.extra.get(THOUGHT_SIGNATURE_FIELD), metadata]
+        .into_iter()
+        .flatten()
+        .find(|signature| is_signature(signature))
+        .or_else(|| replayed_detail_signature(message, None))
+}
+
+/// Gemini signature in an encrypted `reasoning_details` entry whose `id` is `call_id`. Entries
+/// from other model families never qualify, whatever their ID.
+fn replayed_detail_signature<'a>(
+    message: &'a CoreChatMessage,
+    call_id: Option<&str>,
+) -> Option<&'a Value> {
+    let details = message.extra.get("reasoning_details")?.as_array()?;
+    details.iter().rev().find_map(|detail| {
+        let id = match detail.get("id") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(id)) => Some(id.as_str()),
+            Some(_) => return None,
+        };
+        let gemini = detail.get("type").and_then(Value::as_str) == Some(ENCRYPTED_REASONING_TYPE)
+            && detail.get("format").and_then(Value::as_str) == Some(GEMINI_REASONING_FORMAT);
+        (gemini && id == call_id)
+            .then(|| detail.get("data"))
+            .flatten()
+            .filter(|signature| is_signature(signature))
+    })
 }
 
 /// Native parts are opaque replay data; call IDs bind ID-less parts to the public tool calls.

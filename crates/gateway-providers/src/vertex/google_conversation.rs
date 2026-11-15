@@ -9,12 +9,27 @@ use super::{
         FunctionIdPolicy, function_call_part, map_google_parts, map_google_tool_result_part,
         message_content_as_text, parse_openai_tool_arguments, record_google_tool_names,
     },
-    google_replay::{THOUGHT_SIGNATURE_FIELD, validated_native_parts},
+    google_replay::{replayed_call_signature, replayed_message_signature, validated_native_parts},
 };
+
+/// Documented value that skips thought-signature validation for a `functionCall` part the model
+/// didn't sign, such as history from another provider: "When using REST or manual handling" in
+/// <https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking/thought-signatures>,
+/// and the FAQ in <https://ai.google.dev/gemini-api/docs/thought-signatures>.
+const SKIP_THOUGHT_SIGNATURE: &str = "skip_thought_signature_validator";
+
+/// What to do with a current-turn `functionCall` that arrives without a thought signature.
+/// Gemini 3 and later reject the request; earlier models don't check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum UnsignedCallPolicy {
+    Bypass,
+    Keep,
+}
 
 pub(super) fn map_google_contents(
     request: &CoreChatRequest,
     function_ids: FunctionIdPolicy,
+    unsigned_calls: UnsignedCallPolicy,
     body: &mut Map<String, Value>,
 ) -> Result<(), ProviderError> {
     let mut contents = Vec::new();
@@ -86,6 +101,9 @@ pub(super) fn map_google_contents(
     if contents.is_empty() {
         return Err(VertexAdapterError::EmptyMessages.into());
     }
+    if unsigned_calls == UnsignedCallPolicy::Bypass {
+        bypass_unsigned_current_turn_calls(&mut contents);
+    }
     body.insert("contents".to_string(), Value::Array(contents));
 
     if !system_lines.is_empty() {
@@ -128,9 +146,49 @@ fn ordered_tool_results(
     parts.into_iter().map(|(_, part)| part).collect()
 }
 
-/// Maps an assistant turn to `model` parts, replaying the text-part thought signature Gemini 3
-/// returned on the previous turn (`thought_signature` on the message, or
-/// `provider_metadata.gcp_vertex.thought_signature`).
+/// Gemini validates signatures only in the current turn, which starts at the last user content
+/// that isn't only `functionResponse` parts. There the first `functionCall` of every step must be
+/// signed, so an unsigned one gets the documented bypass instead of a 400.
+fn bypass_unsigned_current_turn_calls(contents: &mut [Value]) {
+    fn role(content: &Value) -> Option<&str> {
+        content.get("role").and_then(Value::as_str)
+    }
+    let turn_start = contents
+        .iter()
+        .rposition(|content| {
+            role(content) == Some("user")
+                && content["parts"].as_array().is_some_and(|parts| {
+                    parts
+                        .iter()
+                        .any(|part| part.get("functionResponse").is_none())
+                })
+        })
+        .unwrap_or(0);
+    for content in &mut contents[turn_start..] {
+        if role(content) != Some("model") {
+            continue;
+        }
+        let first_call = content
+            .get_mut("parts")
+            .and_then(Value::as_array_mut)
+            .and_then(|parts| {
+                parts
+                    .iter_mut()
+                    .find(|part| part.get("functionCall").is_some())
+            });
+        if let Some(call) = first_call
+            && !call
+                .get("thoughtSignature")
+                .and_then(Value::as_str)
+                .is_some_and(|signature| !signature.is_empty())
+        {
+            call["thoughtSignature"] = Value::String(SKIP_THOUGHT_SIGNATURE.to_string());
+        }
+    }
+}
+
+/// Maps an assistant turn to `model` parts, replaying the thought signatures Gemini returned on
+/// the previous turn in whichever shape the client kept them.
 fn map_google_assistant_parts(
     message: &CoreChatMessage,
     function_ids: FunctionIdPolicy,
@@ -152,7 +210,7 @@ fn map_google_assistant_parts(
         other => map_google_parts(other, None, function_ids)?,
     };
 
-    if let Some(signature) = message_thought_signature(message) {
+    if let Some(signature) = replayed_message_signature(message) {
         match parts
             .iter_mut()
             .rev()
@@ -186,9 +244,7 @@ fn map_google_assistant_parts(
                 .ok_or(VertexAdapterError::MissingToolCallFunctionName)?;
             let args = parse_openai_tool_arguments(function)?;
             let id = object.get("id").and_then(Value::as_str).unwrap_or_default();
-            let signature = object
-                .get(THOUGHT_SIGNATURE_FIELD)
-                .or_else(|| object.get("thoughtSignature"));
+            let signature = replayed_call_signature(message, object);
             parts.push(function_call_part(id, name, args, function_ids, signature));
         }
     }
@@ -197,18 +253,4 @@ fn map_google_assistant_parts(
         parts.push(json!({ "text": "" }));
     }
     Ok(parts)
-}
-
-fn message_thought_signature(message: &CoreChatMessage) -> Option<&Value> {
-    message
-        .extra
-        .get(THOUGHT_SIGNATURE_FIELD)
-        .or_else(|| {
-            message
-                .extra
-                .get("provider_metadata")?
-                .get("gcp_vertex")?
-                .get(THOUGHT_SIGNATURE_FIELD)
-        })
-        .filter(|signature| signature.as_str().is_some_and(|s| !s.is_empty()))
 }

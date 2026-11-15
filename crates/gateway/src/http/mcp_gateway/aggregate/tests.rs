@@ -12,6 +12,7 @@ use gateway_guardrails::{
     ManagedCheckKind, ManagedOutcome, ManagedService, PolicyMode, ReasonCode,
     test_utils::StubManagedEvaluator,
 };
+use gateway_service::CallMcpToolInput;
 use gateway_store::GatewayStore;
 use serde_json::Map;
 use std::{
@@ -60,6 +61,10 @@ async fn aggregate_tools_list_serializes_only_discovery_tools() {
         ["search_tools", "describe_tool", "call_tool"]
     );
     assert_eq!(tools[2]["inputSchema"]["required"], json!(["address"]));
+    assert_eq!(
+        tools[2]["inputSchema"]["properties"]["arguments_json"]["type"],
+        "string"
+    );
 }
 
 fn search_tool_metadata() -> gateway_core::McpToolMetadata {
@@ -436,6 +441,66 @@ async fn upstream_success_preserves_result_and_records_one_invocation() {
     assert_eq!(payload.arguments_json, json!({"query": "oceans"}));
     assert_eq!(payload.result_json, tool_result);
     server.abort();
+}
+
+/// A strict-mode client sends `{}` in `arguments` and the real arguments as a
+/// JSON string in `arguments_json`; the upstream receives the decoded object.
+#[tokio::test]
+async fn call_tool_sends_arguments_json_to_the_upstream() {
+    let (_directory, state) = crate::http::test_support::app_state().await;
+    let tool_result = json!({
+        "content": [{"type": "text", "text": "Repository found"}],
+        "isError": false,
+    });
+    let (url, requests, server) = spawn_tools_call_upstream("result", tool_result.clone()).await;
+    let auth = seed_authorized_tool(&state, &url, ExternalMcpAuthMode::None).await;
+    let response = call_builtin_tool(
+        &state,
+        &crate::http::request_policy::RequestPolicyContext::default(),
+        &auth,
+        JsonRpcId::Number(24),
+        "call_tool".to_string(),
+        json!({
+            "address": "mcp://repository/tools/search",
+            "arguments": {},
+            "arguments_json": r#"{"query":"oceans"}"#,
+            "schema_hash": null,
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), 16_384).await.expect("body");
+    let body: Value = serde_json::from_slice(&bytes).expect("JSON-RPC response");
+    assert_eq!(
+        body,
+        json!({"jsonrpc": "2.0", "id": 24, "result": tool_result})
+    );
+    assert_eq!(requests.load(Ordering::SeqCst), 3);
+    server.abort();
+}
+
+#[tokio::test]
+async fn call_tool_rejects_invalid_arguments_json_as_invalid_params() {
+    let (_directory, state) = crate::http::test_support::app_state().await;
+    let auth =
+        seed_authorized_tool(&state, "http://127.0.0.1:9/mcp", ExternalMcpAuthMode::None).await;
+    let response = call_builtin_tool(
+        &state,
+        &crate::http::request_policy::RequestPolicyContext::default(),
+        &auth,
+        JsonRpcId::Number(25),
+        "call_tool".to_string(),
+        json!({"address": "mcp://repository/tools/search", "arguments_json": "[]"}),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let bytes = to_bytes(response.into_body(), 16_384).await.expect("body");
+    let body: Value = serde_json::from_slice(&bytes).expect("JSON-RPC response");
+    assert_eq!(body["error"]["code"], JSON_RPC_INVALID_PARAMS);
+    assert_eq!(
+        body["error"]["message"],
+        "arguments_json must encode a JSON object, not an array"
+    );
 }
 
 #[tokio::test]
