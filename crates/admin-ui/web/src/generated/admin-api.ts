@@ -3330,8 +3330,9 @@ export interface components {
             /** Format: int64 */
             commit_count: number;
             /**
-             * @description The first 50 commits with a stored note, oldest first. `attributed_commit_count` counts
-             *     them all.
+             * @description The first 50 commits with a stored note, oldest first, within a budget of 2,000 across the
+             *     report's newest pull requests; older ones past it carry none. `attributed_commit_count`
+             *     counts them all.
              */
             commits: components["schemas"]["AttributionPullRequestCommitView"][];
             /** @description The earliest of the PR's commit author times and its notes' observation times. */

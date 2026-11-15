@@ -171,8 +171,9 @@ pub struct AttributionPullRequestView {
     pub is_revert: bool,
     /// git-ai agent tools the matched notes name.
     pub agent_tools: Vec<String>,
-    /// The first 50 commits with a stored note, oldest first. `attributed_commit_count` counts
-    /// them all.
+    /// The first 50 commits with a stored note, oldest first, within a budget of 2,000 across the
+    /// report's newest pull requests; older ones past it carry none. `attributed_commit_count`
+    /// counts them all.
     pub commits: Vec<AttributionPullRequestCommitView>,
 }
 

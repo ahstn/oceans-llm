@@ -12397,7 +12397,7 @@
                 "items": {
                   "$ref": "#/components/schemas/AttributionPullRequestCommitView"
                 },
-                "description": "The first 50 commits with a stored note, oldest first. `attributed_commit_count` counts\nthem all."
+                "description": "The first 50 commits with a stored note, oldest first, within a budget of 2,000 across the\nreport's newest pull requests; older ones past it carry none. `attributed_commit_count`\ncounts them all."
               },
               "first_commit_at": {
                 "type": [

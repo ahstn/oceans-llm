@@ -44,6 +44,9 @@ const LOOKBACK: Duration = Duration::days(30);
 /// Commit details each pull request carries. The totals use every matched commit; this bounds
 /// the response, since the report caps pull requests but not their commits.
 pub const MAX_PULL_REQUEST_COMMIT_DETAILS: usize = 50;
+/// Commit details one report carries across all its pull requests, newest pull requests first.
+/// Past it, older pull requests keep their totals but carry no commit details.
+pub const MAX_REPORT_COMMIT_DETAILS: usize = 2_000;
 /// Request facts one report holds; past this the coverage reports truncation.
 const MAX_REPORT_REQUEST_FACTS: usize = 200_000;
 /// Label for requests whose log has no model key.
@@ -159,7 +162,8 @@ pub struct AttributionPullRequestActivity {
     /// git-ai agent tools the matched notes name.
     pub agent_tools: Vec<String>,
     /// The first [`MAX_PULL_REQUEST_COMMIT_DETAILS`] matched commits, oldest first, with their
-    /// attribution and requests. `attributed_commit_count` counts them all.
+    /// attribution and requests, within the report's [`MAX_REPORT_COMMIT_DETAILS`] budget.
+    /// `attributed_commit_count` counts them all.
     pub commits: Vec<AttributionPullRequestCommitActivity>,
     /// Listed commits with a stored note; the merge commit when none of them has one.
     pub attributed_commit_count: i64,
@@ -721,6 +725,8 @@ impl<'a> ReportInputs<'a> {
                 .or_default()
                 .push(commit);
         }
+        // Pull requests come newest first, so the detail budget goes to the most recent ones.
+        let mut budget = MAX_REPORT_COMMIT_DETAILS;
         pull_requests
             .into_iter()
             .map(|pull_request| {
@@ -746,11 +752,18 @@ impl<'a> ReportInputs<'a> {
                             .flat_map(|commit| &commit.sessions)
                             .map(|session| session.agent_tool.as_str()),
                     ),
-                    commits: ordered
-                        .iter()
-                        .take(MAX_PULL_REQUEST_COMMIT_DETAILS)
-                        .map(|commit| self.pull_request_commit(commit))
-                        .collect(),
+                    commits: {
+                        let take = ordered
+                            .len()
+                            .min(MAX_PULL_REQUEST_COMMIT_DETAILS)
+                            .min(budget);
+                        budget -= take;
+                        ordered
+                            .iter()
+                            .take(take)
+                            .map(|commit| self.pull_request_commit(commit))
+                            .collect()
+                    },
                     attributed_commit_count: count(matched.len()),
                     ai_lines: matched.iter().map(|commit| commit.ai_lines).sum(),
                     human_lines: matched.iter().map(|commit| commit.human_lines).sum(),

@@ -1204,6 +1204,53 @@ async fn pull_request_commit_details_stop_at_the_cap() {
 }
 
 #[tokio::test]
+async fn the_report_commit_detail_budget_goes_to_the_newest_pull_requests() {
+    use crate::attribution::report::{MAX_PULL_REQUEST_COMMIT_DETAILS, MAX_REPORT_COMMIT_DETAILS};
+
+    let dev = user_owner(Uuid::new_v4());
+    let per_pr = u128::try_from(MAX_PULL_REQUEST_COMMIT_DETAILS).unwrap();
+    let full = u128::try_from(MAX_REPORT_COMMIT_DETAILS).unwrap() / per_pr;
+    // One more pull request than the budget covers, each with a full set of commits.
+    let pull_requests = (0..=full)
+        .map(|index| {
+            let ids = (index * per_pr + 1..=(index + 1) * per_pr).collect::<Vec<_>>();
+            let number = i64::try_from(index).unwrap();
+            (number, ids)
+        })
+        .collect::<Vec<_>>();
+    let commits = pull_requests
+        .iter()
+        .flat_map(|(_, ids)| ids.iter().copied())
+        .map(|id| commit(id, &dev, REPOSITORY, minutes(1), vec![]))
+        .collect();
+    let mut store = FakeStore::with_commits(commits);
+    // Newest first, as the store returns them.
+    store.pull_requests = Mutex::new(
+        pull_requests
+            .iter()
+            .rev()
+            .map(|(number, ids)| pull_request(*number, &dev, minutes(600 - *number), ids))
+            .collect(),
+    );
+    let mut query = query();
+    query.limit = 100_000;
+    let report = report(&store, &query).await;
+
+    let detailed = report
+        .pull_requests
+        .iter()
+        .map(|pull_request| pull_request.commits.len())
+        .sum::<usize>();
+    assert_eq!(detailed, MAX_REPORT_COMMIT_DETAILS);
+    let last = report.pull_requests.last().expect("oldest pull request");
+    assert!(
+        last.commits.is_empty(),
+        "past the budget, details are left out"
+    );
+    assert_eq!(last.attributed_commit_count, i64::try_from(per_pr).unwrap());
+}
+
+#[tokio::test]
 async fn daily_buckets_put_commits_and_uncommitted_spend_on_their_own_dates() {
     let dev = user_owner(Uuid::new_v4());
     let start = t0().replace_time(time::Time::MIDNIGHT);

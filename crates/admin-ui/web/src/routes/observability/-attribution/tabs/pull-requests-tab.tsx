@@ -387,9 +387,11 @@ function PullRequestDetail({ row }: { row: PullRequestRow }) {
           <span>
             {formatCount(pr.attributed_commit_count)} of {formatCount(pr.commit_count)} commits have
             notes
-            {pr.commits.length < pr.attributed_commit_count
-              ? `; the first ${formatCount(pr.commits.length)} are shown`
-              : ''}
+            {pr.commits.length === 0 && pr.attributed_commit_count > 0
+              ? '; commit details are left out of a report this large, so choose a shorter window or a repository'
+              : pr.commits.length < pr.attributed_commit_count
+                ? `; the first ${formatCount(pr.commits.length)} are shown`
+                : ''}
           </span>
         </div>
       </div>
