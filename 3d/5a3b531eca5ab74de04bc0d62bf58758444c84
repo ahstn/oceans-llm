@@ -1,0 +1,47 @@
+crates/oceans-cli/src/attribution/reverts.rs
+  s_9379a6359d74c1::t_a058d8dce8da7e 219,231-235,240,245,252-256,260,264-269,385-407
+crates/oceans-cli/src/attribution/prs.rs
+  s_9379a6359d74c1::t_83dea4ca14fb19 47,65-66,133-135,380-386,403-406,749-763
+crates/gateway-store/migrations/postgres/V82__attribution_pull_request_lifecycle.sql
+  s_0a4447f1aa57dd::t_aeb431f3342248 6-11,18-21,23
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/delivery-tab.tsx
+  s_9379a6359d74c1::t_45be2921f5286d 60-63,65-73
+crates/admin-ui/web/src/test/routes/attribution-route.test.tsx
+  s_9379a6359d74c1::t_b9a8fa4f813c77 513-522
+crates/gateway-service/src/attribution/report.rs
+  s_9379a6359d74c1::t_4678d6669fcfaf 46-49,272-275,278,314-321,350-352,356,361,363-364,368-398
+crates/gateway-service/src/attribution/report/lifecycle.rs
+  s_9379a6359d74c1::t_a255823cf0357b 71-94,114
+crates/gateway-service/src/attribution/tests.rs
+  s_9379a6359d74c1::t_e79ae1203ed67a 301
+crates/gateway-service/src/attribution/tests/report.rs
+  s_9379a6359d74c1::t_2596037cbc9207 1562-1645
+crates/gateway-store/src/attribution/pull_requests.rs
+  s_9379a6359d74c1::t_8f4127e823803c 219-220,231
+docs/adr/2026-11-01-git-ai-attribution-via-oceans-hooks.md
+  s_9379a6359d74c1::t_80a604fbdc031b 312-315
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3d5a3b531eca5ab74de04bc0d62bf58758444c84",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_9379a6359d74c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "24386ac1-62a3-474e-9c88-ccc4d428ec6d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
