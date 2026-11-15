@@ -110,25 +110,9 @@ export function HarnessAttribution({
       coverage.agent_sessions_truncated ||
       coverage.request_facts_truncated),
   )
-  const harnesses = [...new Set(cells.map((cell) => cell.harness))].sort(
-    (a, b) =>
-      cells.filter((cell) => cell.harness === b).reduce((t, c) => t + c.sessions, 0) -
-      cells.filter((cell) => cell.harness === a).reduce((t, c) => t + c.sessions, 0),
-  )
+  const totals = harnessTotals(cells)
+  const harnesses = totals.map((row) => row.harness)
   const models = [...new Set(cells.map((cell) => cell.model))].sort()
-  const totals = harnesses.map((harness) => {
-    const own = cells.filter((cell) => cell.harness === harness)
-    const sum = (pick: (cell: Cell) => number) => own.reduce((total, cell) => total + pick(cell), 0)
-    return {
-      harness,
-      sessions: sum((cell) => cell.sessions),
-      shipped: sum((cell) => cell.shipped),
-      aiLines: sum((cell) => cell.aiLines),
-      pricedSessions: sum((cell) => cell.pricedSessions),
-      pricedLines: sum((cell) => cell.pricedLines),
-      pricedCostUsd10000: sum((cell) => cell.pricedCostUsd10000),
-    }
-  })
   return (
     <section
       aria-label="Harness attribution"
@@ -199,6 +183,25 @@ export function HarnessAttribution({
 }
 
 type HarnessTotal = Omit<Cell, 'model'>
+
+/** One total per harness, summed in a single pass over the cells, most sessions first. */
+function harnessTotals(cells: Cell[]): HarnessTotal[] {
+  const totals = new Map<string, HarnessTotal>()
+  for (const { model: _model, ...cell } of cells) {
+    const total = totals.get(cell.harness)
+    if (!total) {
+      totals.set(cell.harness, { ...cell })
+      continue
+    }
+    total.sessions += cell.sessions
+    total.shipped += cell.shipped
+    total.aiLines += cell.aiLines
+    total.pricedSessions += cell.pricedSessions
+    total.pricedLines += cell.pricedLines
+    total.pricedCostUsd10000 += cell.pricedCostUsd10000
+  }
+  return [...totals.values()].sort((a, b) => b.sessions - a.sessions)
+}
 
 function HarnessTiles({ totals }: { totals: HarnessTotal[] }) {
   return (

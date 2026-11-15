@@ -217,10 +217,12 @@ impl ReportInputs<'_> {
                     continue;
                 }
                 rollup.ai_lines += session.ai_lines;
+                // Commits are visited once each, so a commit already on this rollup can only be the
+                // last one pushed: two of its note sessions joined the same session.
                 if !rollup
                     .commits
-                    .iter()
-                    .any(|seen| seen.attribution_commit_id == commit.attribution_commit_id)
+                    .last()
+                    .is_some_and(|seen| seen.attribution_commit_id == commit.attribution_commit_id)
                 {
                     rollup.commits.push(commit);
                 }
