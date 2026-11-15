@@ -11870,13 +11870,31 @@
               "model_key",
               "session_count",
               "shipped_session_count",
-              "ai_lines"
+              "ai_lines",
+              "fully_priced_session_count",
+              "fully_priced_ai_lines",
+              "fully_priced_cost_usd_10000"
             ],
             "properties": {
               "ai_lines": {
                 "type": "integer",
                 "format": "int64",
                 "description": "AI lines the sessions wrote into the window's commits."
+              },
+              "fully_priced_ai_lines": {
+                "type": "integer",
+                "format": "int64",
+                "description": "AI lines of the fully priced sessions."
+              },
+              "fully_priced_cost_usd_10000": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Priced cost of the fully priced sessions, in 1/10000 USD."
+              },
+              "fully_priced_session_count": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Sessions with requests, every one of them priced. Cost per line uses only these."
               },
               "harness": {
                 "type": "string",

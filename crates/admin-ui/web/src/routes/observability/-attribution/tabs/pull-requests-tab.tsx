@@ -128,7 +128,6 @@ export default function PullRequestsTab({ report }: { report: AttributionReportV
             <div className="border-border overflow-x-auto rounded-md border">
               <Table aria-label="Merged pull requests" className="min-w-[60rem]">
                 <AdminTableHeader>
-                  <AdminTableHead className="w-10" aria-label="Expand" />
                   <AdminTableHead>Pull request</AdminTableHead>
                   <AdminTableHead>AI share</AdminTableHead>
                   <AdminTableHead>Commits</AdminTableHead>
@@ -144,6 +143,11 @@ export default function PullRequestsTab({ report }: { report: AttributionReportV
                       />
                     </span>
                   </AdminTableHead>
+                  {/* Pinned right, so the details stay in reach while the ledger scrolls sideways. */}
+                  <AdminTableHead
+                    className="bg-surface-muted shadow-sticky-edge-end sticky right-0 z-10 w-10"
+                    aria-label="Details"
+                  />
                 </AdminTableHeader>
                 <TableBody>
                   {visible.map((row) => {
@@ -213,18 +217,7 @@ function PullRequestRowView({
   const { pr } = row
   const gaps = pr.unpriced_request_count + pr.usage_missing_request_count
   return (
-    <TableRow data-state={open ? 'selected' : undefined}>
-      <TableCell className="w-10 px-2 py-2">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-expanded={open}
-          aria-label={open ? `Collapse #${pr.number}` : `Expand #${pr.number}`}
-          onClick={onToggle}
-        >
-          <AppIcon icon={open ? ArrowDown01Icon : ArrowRight01Icon} size={16} aria-hidden />
-        </Button>
-      </TableCell>
+    <TableRow className="group hover:bg-surface-muted" data-state={open ? 'selected' : undefined}>
       <TableCell className="px-3 py-2">
         <p className="flex max-w-96 items-center gap-2">
           <span className="truncate font-medium" title={pr.title}>
@@ -275,6 +268,17 @@ function PullRequestRowView({
         {formatHours(toMs(row.leadHours))}
       </TableCell>
       <TableCell className="text-muted-foreground px-3 py-2 text-right">{EMPTY_VALUE}</TableCell>
+      <TableCell className="bg-card shadow-sticky-edge-end group-hover:bg-surface-muted group-data-[state=selected]:bg-muted sticky right-0 z-10 w-10 px-2 py-2">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-expanded={open}
+          aria-label={open ? `Collapse #${pr.number}` : `Expand #${pr.number}`}
+          onClick={onToggle}
+        >
+          <AppIcon icon={open ? ArrowDown01Icon : ArrowRight01Icon} size={16} aria-hidden />
+        </Button>
+      </TableCell>
     </TableRow>
   )
 }

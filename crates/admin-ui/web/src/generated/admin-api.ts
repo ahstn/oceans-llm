@@ -3161,6 +3161,21 @@ export interface components {
              * @description AI lines the sessions wrote into the window's commits.
              */
             ai_lines: number;
+            /**
+             * Format: int64
+             * @description AI lines of the fully priced sessions.
+             */
+            fully_priced_ai_lines: number;
+            /**
+             * Format: int64
+             * @description Priced cost of the fully priced sessions, in 1/10000 USD.
+             */
+            fully_priced_cost_usd_10000: number;
+            /**
+             * Format: int64
+             * @description Sessions with requests, every one of them priced. Cost per line uses only these.
+             */
+            fully_priced_session_count: number;
             /** @description git-ai's tool name (`claude`, `codex`, `pi`), else the hook's harness key. */
             harness: string;
             model_key: string;

@@ -214,21 +214,25 @@ export function bandSummaries(rows: PullRequestRow[]): BandSummary[] {
 }
 
 /** Lead time percentiles for each week of merges, oldest first. */
-export function weeklyLeadTimes(rows: PullRequestRow[], windowEnd: string, weeks: number) {
-  const end = new Date(windowEnd).getTime()
+export function weeklyLeadTimes(rows: PullRequestRow[], windowStart: string, windowEnd: string) {
+  const start = Date.parse(windowStart)
   const week = 7 * 86_400_000
-  return Array.from({ length: weeks }, (_, index) => {
-    const to = end - (weeks - 1 - index) * week
+  const buckets = []
+  // Weeks count back from the window's end; the oldest holds the remaining days, so every merge
+  // in the window lands in a bucket.
+  for (let to = Date.parse(windowEnd); to > start; to -= week) {
+    const from = Math.max(start, to - week)
     const hours = rows.flatMap((row) => {
-      const merged = new Date(row.pr.merged_at).getTime()
-      return merged > to - week && merged <= to && row.leadHours != null ? [row.leadHours] : []
+      const merged = Date.parse(row.pr.merged_at)
+      return merged >= from && merged < to && row.leadHours != null ? [row.leadHours] : []
     })
-    return {
-      day: new Date(to - week + 86_400_000).toISOString().slice(0, 10),
+    buckets.push({
+      day: new Date(from).toISOString().slice(0, 10),
       p50: percentile(hours, 0.5),
       p85: percentile(hours, 0.85),
-    }
-  })
+    })
+  }
+  return buckets.reverse()
 }
 
 const SIZE_EDGES = [0, 25, 50, 100, 200, 400, 800, 1600, Infinity]

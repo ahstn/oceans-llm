@@ -9,6 +9,7 @@ import {
   failBand,
   leadBand,
   resolveAttributionTab,
+  weeklyLeadTimes,
 } from '@/routes/observability/-attribution/insights'
 
 import { platformAdminSession } from './auth-session'
@@ -111,5 +112,22 @@ describe('enabled tabs', () => {
     session.capabilities.attribution_tabs = ['delivery', 'concepts', 'impact']
 
     expect(enabledAttributionTabs(session)).toEqual(['delivery', 'impact'])
+  })
+})
+
+describe('weekly lead times', () => {
+  it('keeps merges from the leading partial week of the window', () => {
+    const merged = (at: string, leadHours: number) =>
+      ({ pr: { merged_at: at }, leadHours }) as unknown as Parameters<typeof weeklyLeadTimes>[0][0]
+    const weeks = weeklyLeadTimes(
+      [merged('2026-11-02T12:00:00Z', 4), merged('2026-11-09T12:00:00Z', 8)],
+      '2026-11-01T00:00:00Z',
+      '2026-11-10T00:00:00Z',
+    )
+
+    expect(weeks.map((week) => [week.day, week.p50])).toEqual([
+      ['2026-11-01', 4],
+      ['2026-11-03', 8],
+    ])
   })
 })

@@ -35,8 +35,10 @@ type Cell = {
   sessions: number
   shipped: number
   aiLines: number
-  costUsd10000: number
-  pricedRequests: number
+  /** Sessions with requests, all of them priced: the only population cost per line uses. */
+  pricedSessions: number
+  pricedLines: number
+  pricedCostUsd10000: number
 }
 
 function merge(rows: HarnessModelRow[]) {
@@ -50,23 +52,28 @@ function merge(rows: HarnessModelRow[]) {
       sessions: 0,
       shipped: 0,
       aiLines: 0,
-      costUsd10000: 0,
-      pricedRequests: 0,
+      pricedSessions: 0,
+      pricedLines: 0,
+      pricedCostUsd10000: 0,
     }
     cell.sessions += row.session_count
     cell.shipped += row.shipped_session_count
     cell.aiLines += row.ai_lines
-    cell.costUsd10000 += row.priced_cost_usd_10000
-    cell.pricedRequests += row.priced_request_count
+    cell.pricedSessions += row.fully_priced_session_count
+    cell.pricedLines += row.fully_priced_ai_lines
+    cell.pricedCostUsd10000 += row.fully_priced_cost_usd_10000
     cells.set(key, cell)
   }
   return [...cells.values()]
 }
 
-/** Priced cost per 100 committed AI lines, or `null` without lines or prices. */
-function costPer100(cell: Pick<Cell, 'aiLines' | 'costUsd10000' | 'pricedRequests'>) {
-  return cell.aiLines > 0 && cell.pricedRequests > 0
-    ? (cell.costUsd10000 / cell.aiLines) * 100
+/**
+ * Cost per 100 committed AI lines over fully priced sessions only, so a session the gateway could
+ * not join or price never reads as free output. `null` without such sessions or their lines.
+ */
+function costPer100(cell: Pick<Cell, 'pricedSessions' | 'pricedLines' | 'pricedCostUsd10000'>) {
+  return cell.pricedSessions > 0 && cell.pricedLines > 0
+    ? (cell.pricedCostUsd10000 / cell.pricedLines) * 100
     : null
 }
 
@@ -120,8 +127,9 @@ export function HarnessAttribution({
       sessions: sum((cell) => cell.sessions),
       shipped: sum((cell) => cell.shipped),
       aiLines: sum((cell) => cell.aiLines),
-      costUsd10000: sum((cell) => cell.costUsd10000),
-      pricedRequests: sum((cell) => cell.pricedRequests),
+      pricedSessions: sum((cell) => cell.pricedSessions),
+      pricedLines: sum((cell) => cell.pricedLines),
+      pricedCostUsd10000: sum((cell) => cell.pricedCostUsd10000),
     }
   })
   return (
@@ -249,7 +257,7 @@ function HarnessModelCard({
 }) {
   const [metric, setMetric] = useState<Metric>('cost')
   const ranked = cells
-    .filter((cell) => cell.sessions >= 3 && costPer100(cell) != null)
+    .filter((cell) => cell.pricedSessions >= 3 && costPer100(cell) != null)
     .sort((a, b) => (costPer100(a) ?? 0) - (costPer100(b) ?? 0))
   const cell = (harness: string, model: string) =>
     cells.find((entry) => entry.harness === harness && entry.model === model)
@@ -258,7 +266,7 @@ function HarnessModelCard({
       title="Harness by model"
       description={
         metric === 'cost'
-          ? 'Gateway cost per 100 committed AI lines. Brightest is cheapest; blank pairs were not used.'
+          ? 'Gateway cost per 100 committed AI lines, from sessions whose requests were all priced. Brightest is cheapest; blank pairs have no such sessions.'
           : metric === 'shipped'
             ? 'Share of sessions whose work merged or reached the default branch. Brightest ships most.'
             : 'Human turns that redirected the agent, per session. Oceans does not count these yet.'
@@ -303,7 +311,7 @@ function HarnessModelCard({
             {formatUsd10000(costPer100(ranked[ranked.length - 1]) ?? 0)} for{' '}
             {ranked[ranked.length - 1].model} in {harnessLabel(ranked[ranked.length - 1].harness)}.
             Check the Shipped view before switching: cheap lines that never merge cost more. Pairs
-            with fewer than 3 sessions are left out of this comparison.
+            with fewer than 3 fully priced sessions are left out of this comparison.
           </Insight>
         ) : null}
         {metric === 'steering' ? (

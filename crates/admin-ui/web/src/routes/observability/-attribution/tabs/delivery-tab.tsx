@@ -44,7 +44,6 @@ export default function DeliveryTab({ report }: { report: AttributionReportView 
   const failRate = ratio(rows.filter((row) => row.pr.is_revert).length, rows.length)
   const bands = bandSummaries(rows)
   const withNotes = rows.filter((row) => row.band != null).length
-  const weeks = Math.max(1, Math.floor(report.window_days / 7))
 
   if (rows.length === 0) {
     return (
@@ -103,7 +102,9 @@ export default function DeliveryTab({ report }: { report: AttributionReportView 
           title="Lead time trend"
           description="First commit to merge, by week of merge. The 85th percentile shows the slow tail that a median hides."
         >
-          <LeadTimeTrendChart rows={weeklyLeadTimes(rows, report.window_end, weeks)} />
+          <LeadTimeTrendChart
+            rows={weeklyLeadTimes(rows, report.window_start, report.window_end)}
+          />
         </InsightCard>
         <InsightCard
           title="Lead time against AI share"

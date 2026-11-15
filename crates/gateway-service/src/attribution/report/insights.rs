@@ -63,6 +63,13 @@ pub struct AttributionHarnessModelActivity {
     /// AI lines the sessions wrote into window commits.
     pub ai_lines: i64,
     pub requests: RequestTally,
+    /// Sessions with requests, every one of them priced. Cost per line uses only these, so a
+    /// session the gateway could not join or price never reads as free output.
+    pub priced_session_count: i64,
+    /// AI lines of the fully priced sessions.
+    pub priced_ai_lines: i64,
+    /// Priced cost of the fully priced sessions, in 1/10000 USD.
+    pub priced_cost_10000: i64,
 }
 
 /// Headline figures for a window, so the UI can compare a window with the one before it.
@@ -272,6 +279,9 @@ impl ReportInputs<'_> {
                     shipped_session_count: 0,
                     ai_lines: 0,
                     requests: RequestTally::default(),
+                    priced_session_count: 0,
+                    priced_ai_lines: 0,
+                    priced_cost_10000: 0,
                 });
             row.session_count += 1;
             row.shipped_session_count += i64::from(matches!(
@@ -280,6 +290,12 @@ impl ReportInputs<'_> {
             ));
             row.ai_lines += session.ai_lines;
             row.requests = row.requests.merged(requests);
+            if requests.request_count > 0 && requests.priced_request_count == requests.request_count
+            {
+                row.priced_session_count += 1;
+                row.priced_ai_lines += session.ai_lines;
+                row.priced_cost_10000 += requests.priced_cost_10000;
+            }
         }
         let outcomes = outcomes
             .into_iter()

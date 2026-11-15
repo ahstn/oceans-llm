@@ -1138,6 +1138,40 @@ async fn a_commit_before_the_window_does_not_set_a_sessions_outcome() {
 }
 
 #[tokio::test]
+async fn harness_cost_per_line_counts_only_fully_priced_sessions() {
+    let dev = user_owner(Uuid::new_v4());
+    // One session's request is priced; the other's request is unpriced.
+    let mut store = FakeStore::with_commits(vec![commit(
+        1,
+        &dev,
+        REPOSITORY,
+        minutes(30),
+        vec![note_session("s_aa", &["h1"]), note_session("s_bb", &["h2"])],
+    )]);
+    let mut unpriced = request(&dev, "h2", "unpriced", minutes(20));
+    unpriced.cost_10000 = None;
+    unpriced.pricing_status = Some("unpriced".to_string());
+    store.facts = vec![request(&dev, "h1", "priced", minutes(10)), unpriced];
+    let report = report(&store, &query()).await;
+
+    let row = report
+        .harness_models
+        .iter()
+        .find(|row| row.harness == "claude" && row.model_key == "claude-sonnet")
+        .expect("claude row");
+    assert_eq!((row.session_count, row.ai_lines), (2, 20));
+    assert_eq!(
+        (
+            row.priced_session_count,
+            row.priced_ai_lines,
+            row.priced_cost_10000
+        ),
+        (1, 10, 100),
+        "the unpriced session's lines never read as free output"
+    );
+}
+
+#[tokio::test]
 async fn daily_buckets_put_commits_and_uncommitted_spend_on_their_own_dates() {
     let dev = user_owner(Uuid::new_v4());
     let start = t0().replace_time(time::Time::MIDNIGHT);

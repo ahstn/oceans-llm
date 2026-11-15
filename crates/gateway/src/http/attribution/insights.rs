@@ -62,6 +62,12 @@ pub struct AttributionHarnessModelView {
     pub ai_lines: i64,
     #[serde(flatten)]
     pub requests: AttributionRequestTallyView,
+    /// Sessions with requests, every one of them priced. Cost per line uses only these.
+    pub fully_priced_session_count: i64,
+    /// AI lines of the fully priced sessions.
+    pub fully_priced_ai_lines: i64,
+    /// Priced cost of the fully priced sessions, in 1/10000 USD.
+    pub fully_priced_cost_usd_10000: i64,
 }
 
 /// A merged pull request's commit that has a stored note.
@@ -138,6 +144,9 @@ impl From<AttributionHarnessModelActivity> for AttributionHarnessModelView {
             shipped_session_count: row.shipped_session_count,
             ai_lines: row.ai_lines,
             requests: row.requests.into(),
+            fully_priced_session_count: row.priced_session_count,
+            fully_priced_ai_lines: row.priced_ai_lines,
+            fully_priced_cost_usd_10000: row.priced_cost_10000,
         }
     }
 }

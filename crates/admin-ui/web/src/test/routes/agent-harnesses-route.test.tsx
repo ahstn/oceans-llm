@@ -265,6 +265,9 @@ describe('AgentHarnessesPage', () => {
         unpriced_request_count: 0,
         usage_missing_request_count: 0,
         priced_cost_usd_10000: 32000,
+        fully_priced_session_count: 3,
+        fully_priced_ai_lines: 400,
+        fully_priced_cost_usd_10000: 32000,
       },
       {
         harness: 'claude_code',
@@ -277,6 +280,9 @@ describe('AgentHarnessesPage', () => {
         unpriced_request_count: 0,
         usage_missing_request_count: 0,
         priced_cost_usd_10000: 4000,
+        fully_priced_session_count: 1,
+        fully_priced_ai_lines: 0,
+        fully_priced_cost_usd_10000: 4000,
       },
       {
         harness: 'codex',
@@ -289,6 +295,9 @@ describe('AgentHarnessesPage', () => {
         unpriced_request_count: 0,
         usage_missing_request_count: 0,
         priced_cost_usd_10000: 2000,
+        fully_priced_session_count: 2,
+        fully_priced_ai_lines: 100,
+        fully_priced_cost_usd_10000: 2000,
       },
     ]
     routeMock.useLoaderData.mockReturnValue({
@@ -317,6 +326,42 @@ describe('AgentHarnessesPage', () => {
     expect(view.getByRole('radio', { name: 'Last 7 days' })).toBeInTheDocument()
   })
 
+  it('prices lines only from sessions whose requests were all priced', () => {
+    // One priced session wrote 100 lines for $1; nine unjoined sessions wrote 900 more.
+    routeMock.useLoaderData.mockReturnValue({
+      data: harnessUsageData,
+      attribution: {
+        window_days: 7,
+        harness_models: [
+          {
+            harness: 'codex',
+            model_key: 'gpt-6-astra',
+            session_count: 10,
+            shipped_session_count: 10,
+            ai_lines: 1_000,
+            request_count: 5,
+            priced_request_count: 5,
+            unpriced_request_count: 0,
+            usage_missing_request_count: 0,
+            priced_cost_usd_10000: 10_000,
+            fully_priced_session_count: 1,
+            fully_priced_ai_lines: 100,
+            fully_priced_cost_usd_10000: 10_000,
+          },
+        ],
+      },
+    })
+
+    const view = render(
+      <TooltipProvider>
+        <AgentHarnessesPage />
+      </TooltipProvider>,
+    )
+    const section = within(view.getByRole('region', { name: 'Harness attribution' }))
+    expect(section.getAllByText('$1.00').length).toBeGreaterThan(0)
+    expect(section.queryByText('$0.10')).not.toBeInTheDocument()
+  })
+
   it('warns and drops the cheapest-pair callout when the attribution report was cut short', () => {
     const row = {
       model_key: 'claude-sonnet-5',
@@ -328,6 +373,9 @@ describe('AgentHarnessesPage', () => {
       unpriced_request_count: 0,
       usage_missing_request_count: 0,
       priced_cost_usd_10000: 9_000,
+      fully_priced_session_count: 3,
+      fully_priced_ai_lines: 300,
+      fully_priced_cost_usd_10000: 9_000,
     }
     routeMock.useLoaderData.mockReturnValue({
       data: harnessUsageData,
@@ -341,7 +389,13 @@ describe('AgentHarnessesPage', () => {
         },
         harness_models: [
           { ...row, harness: 'claude' },
-          { ...row, harness: 'codex', model_key: 'gpt-6-astra', priced_cost_usd_10000: 3_000 },
+          {
+            ...row,
+            harness: 'codex',
+            model_key: 'gpt-6-astra',
+            priced_cost_usd_10000: 3_000,
+            fully_priced_cost_usd_10000: 3_000,
+          },
         ],
       },
     })
