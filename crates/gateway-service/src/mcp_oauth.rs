@@ -1123,6 +1123,7 @@ fn parse_token_response(
         serde_json::from_slice(body).map_err(|_| ProviderError::UpstreamHttp {
             status: status.as_u16(),
             body: "OAuth token endpoint returned an invalid response".to_string(),
+            request_id: None,
         })?;
     if !status.is_success() || parsed.error.is_some() {
         return Err(oauth_endpoint_error(status));
@@ -1204,6 +1205,7 @@ fn oauth_endpoint_error(status: reqwest::StatusCode) -> GatewayError {
         ProviderError::UpstreamHttp {
             status: status.as_u16(),
             body: "OAuth token endpoint failed".to_string(),
+            request_id: None,
         }
         .into()
     } else {

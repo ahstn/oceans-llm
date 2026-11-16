@@ -29,6 +29,7 @@ mod auth;
 mod batch;
 mod bedrock;
 mod budgets;
+mod chatgpt_plan;
 mod environment;
 mod github_copilot;
 mod identity;

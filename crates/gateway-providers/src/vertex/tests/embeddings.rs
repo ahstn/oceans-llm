@@ -699,7 +699,7 @@ async fn vertex_provider_google_embedding_predict_splits_batches_and_reports_par
                 Some(embedding_usage(2 * VERTEX_PREDICT_MAX_INSTANCES as i64))
             );
             match *source {
-                ProviderError::UpstreamHttp { status, body } => {
+                ProviderError::UpstreamHttp { status, body, .. } => {
                     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS.as_u16());
                     assert!(body.contains("quota exhausted"));
                 }
@@ -907,7 +907,7 @@ async fn vertex_provider_google_gemini_embedding_2_returns_partial_usage_after_f
         } => {
             assert_eq!(provider_usage, Some(embedding_usage(4)));
             match *source {
-                ProviderError::UpstreamHttp { status, body } => {
+                ProviderError::UpstreamHttp { status, body, .. } => {
                     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS.as_u16());
                     assert!(body.contains("quota exhausted"));
                 }

@@ -179,9 +179,9 @@ fn validate_forced_service_tier(
             location: &provider.location,
         },
         ProviderConfig::AwsBedrock(_) => ServiceTierProvider::AwsBedrock,
-        ProviderConfig::GitHubCopilot(_) | ProviderConfig::TypeSafe(_) => {
-            ServiceTierProvider::Untiered
-        }
+        ProviderConfig::GitHubCopilot(_)
+        | ProviderConfig::ChatGptPlan(_)
+        | ProviderConfig::TypeSafe(_) => ServiceTierProvider::Untiered,
     };
     let apis: Vec<ServiceTierApi> = ServiceTierApi::served_by(capabilities).collect();
     if apis.iter().any(|&api| {
@@ -230,6 +230,7 @@ const fn provider_type(provider: &ProviderConfig) -> &'static str {
         ProviderConfig::GcpVertex(_) => "gcp_vertex",
         ProviderConfig::AwsBedrock(_) => "aws_bedrock",
         ProviderConfig::GitHubCopilot(_) => "github_copilot",
+        ProviderConfig::ChatGptPlan(_) => "chatgpt_plan",
         ProviderConfig::TypeSafe(_) => "typesafe",
     }
 }

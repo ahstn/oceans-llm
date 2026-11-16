@@ -317,6 +317,22 @@ impl GatewayConfig {
                         secrets,
                     });
                 }
+                ProviderConfig::ChatGptPlan(provider) => {
+                    providers.push(SeedProvider {
+                        provider_key: provider.id.clone(),
+                        provider_type: "chatgpt_plan".to_string(),
+                        config: json!({
+                            "credentials_file": provider.credentials_file,
+                            "base_url": provider.base_url.trim_end_matches('/'),
+                            "pricing_provider_id": provider.pricing_provider_id,
+                            "strip_unsupported_fields": provider.strip_unsupported_fields,
+                            "default_headers": provider.default_headers,
+                            "timeouts": provider.timeouts,
+                            "display": provider.display,
+                        }),
+                        secrets: None,
+                    });
+                }
             }
         }
 

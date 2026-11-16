@@ -1,0 +1,145 @@
+---
+title: ChatGPT plan
+description: Use your own ChatGPT plan through Sign in with ChatGPT and streaming Responses, with one gateway process per credential file.
+sidebar:
+  order: 7
+---
+
+The `chatgpt_plan` provider uses [Sign in with ChatGPT (SIWC)](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference) to send streaming requests to `POST https://api.openai.com/v1/responses`. It uses your ChatGPT account's OAuth access token, not an OpenAI API key.
+
+This is the official public Responses flow. It does **not** use `chatgpt.com/backend-api/codex`, the legacy endpoint used by omp's `openai-codex` provider. Don't reuse that provider's credential file or account/agent headers. Oceans sends the SIWC access token as `Authorization: Bearer`; it doesn't add `ChatGPT-Account-Id`, `originator`, or `OpenAI-Beta`.
+
+<Aside type="caution" title="Personal, single-owner use only">
+There is **one ChatGPT account per provider**. Every gateway API key allowed to use a route on that provider can consume that same account's plan, regardless of who owns the key. Gateway user attribution does not create per-user ChatGPT credentials.
+
+[OpenAI's terms](https://openai.com/policies/terms-of-use/) prohibit making your account available to anyone else. Do not use this provider to share one subscription with other users. **Do not enable it in a multi-user deployment until Oceans supports per-user ChatGPT credentials**, like Copilot's [`github_user` authentication](/providers/github-copilot/#github-user-authentication).
+
+Restrict [model grants](/access/identity-and-access/#model-access) to the account owner's own keys. A key with `all` grants can reach newly added ChatGPT models too; use explicit grants and, where appropriate, a model allowlist. Budgets and rate limits don't make account sharing permissible.
+</Aside>
+
+## Sign in on the gateway host
+
+Use the [Oceans CLI](/harnesses/oceans-cli/) on the host that will own the gateway's credentials:
+
+```bash
+oceans providers login-chatgpt --output ~/.config/oceans/chatgpt-plan/credential.json
+```
+
+Complete the browser sign-in and allow ChatGPT plan use. The CLI saves a protected local credential record, including the issued client registration, verified account identity, access token, and renewable refresh token. Don't paste tokens into YAML or pass them in requests to Oceans.
+
+The gateway must be able to read **and write** the credential file and its parent directory. Refresh atomically replaces the record and rotates the refresh token. Keep it in protected persistent storage, with owner-only permissions (`0600` on Unix), outside source control, logs, and support messages. A read-only secret mount is not suitable.
+
+<Aside type="caution" title="One process owns each renewable session">
+Only one gateway process may own a credential file/session. Two processes refreshing the same session can race the rotating refresh token, even if each has its own local lock. Perform a **separate login for every gateway process**, using independent files and sessions. Don't copy one token set to replicas or point two providers at the same file. Pause inference during reauthorization so login cannot race a refresh; the running gateway detects the atomically replaced credential file without a restart.
+</Aside>
+
+## Configure a provider and static route
+
+```yaml title="gateway.yaml"
+providers:
+  - id: chatgpt-personal
+    type: chatgpt_plan
+    credentials_file: ~/.config/oceans/chatgpt-plan/credential.json
+    base_url: https://api.openai.com/v1
+    pricing_provider_id: openai
+    strip_unsupported_fields: true
+    display:
+      label: ChatGPT plan (personal)
+      icon_key: openai
+
+models:
+  - id: chatgpt/gpt-6-luna
+    description: GPT-6 Luna through my own ChatGPT plan
+    routes:
+      - provider: chatgpt-personal
+        upstream_model: gpt-6-luna
+        capabilities:
+          responses: true
+          stream: true
+          chat_completions: false
+          embeddings: false
+          images: false
+          decisions: false
+```
+
+Choose an `upstream_model` available to the signed-in account. The example is not a promise of entitlement. Routes are static: Oceans does not discover this account's upstream models. The gateway's model list reflects configured routes, not a live SIWC catalog.
+
+`credentials_file` is a **plain mutable path**, with leading `~` expansion. It is not a secret value source: don't prefix it with `env.` or `literal.`. `base_url` defaults to `https://api.openai.com/v1`. Keep that default for OpenAI; an override must use HTTPS, except HTTP on loopback for local mock servers. Don't point it at ChatGPT backend endpoints.
+
+For the complete field reference, see [Providers](/configuration/providers/#chatgpt_plan).
+
+### API-equivalent pricing, not a subscription bill
+
+`pricing_provider_id` is optional and defaults to `openai`. It selects the catalog used for **API-equivalent usage attribution** and gateway budgets. The catalog looks up the route's `upstream_model`; a catalog match does not establish ChatGPT entitlement.
+
+The resulting cost is **not** the ChatGPT subscription charge, an OpenAI invoice, or a measurement of remaining plan quota. Review actual app limits, credits, and access in [ChatGPT Settings → Usage](https://chatgpt.com/settings/usage). Plan usage may be shared across apps. See [Pricing catalog and accounting](/spend/pricing-and-accounting/) for gateway accounting.
+
+## Use it from OMP / OpenCode
+
+Once the provider and route exist in Oceans and your API key has access to the model, it appears through the clients' existing Oceans discovery. No client change, ChatGPT credential file, or harness-specific login is needed.
+
+For [OMP](/harnesses/omp/), keep `discovery.type: litellm` on the Oceans provider. Oceans reports this Responses-only route as the `openai` family in `/model_group/info`, so OMP selects `openai-responses` rather than Chat Completions, even when the configured provider default is `openai-completions`.
+
+The [OpenCode Oceans plugin](/harnesses/opencode/) also selects Responses from that family and the `/v1/models` Responses-only endpoint hints. Generated Pi and OpenCode snippets select the Responses API too; Codex uses `wire_api = "responses"`. Clients still authenticate with their Oceans API key, while the gateway owns the ChatGPT session.
+
+## Send streaming Responses
+
+Callers send the gateway model ID, their own Oceans API key, and `stream: true`:
+
+```bash
+curl --no-buffer http://127.0.0.1:8080/v1/responses \
+  -H "Authorization: Bearer ${OCEANS_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "chatgpt/gpt-6-luna",
+    "input": [{"role": "user", "content": "Say hello."}],
+    "store": false,
+    "stream": true
+  }'
+```
+
+This provider serves **streaming Responses only**. Non-streaming Responses, Chat Completions, Anthropic Messages, embeddings, image generation, Decisions, batches, and stored-response operations are not supported. A route cannot enable them by setting a capability flag. There is no automatic Chat Completions translation or non-streaming aggregation.
+
+Read through the terminal event. The gateway forwards `response.completed` and `response.incomplete`, including reported usage, so clients can distinguish completed inference from an incomplete response. It treats `response.failed`, explicit errors, and streams without a terminal event as errors. A plan-limit failure can arrive after text has started streaming.
+
+### Required rewrites always apply
+
+The adapter forces `store: false` and `stream: true`, converts a string `input` into a user-message array, and changes input message roles from `system` to `developer`. It leaves `instructions` unchanged. Route `extra_body` cannot override these required rewrites. Send the full context needed for each request; do not rely on server-side history.
+
+### Optional unsupported-field stripping
+
+`strip_unsupported_fields: true` is the default. It removes these top-level fields from the merged request body:
+
+```text
+background, conversation, max_output_tokens, max_tool_calls, metadata,
+moderation, multi_agent, previous_response_id, prompt,
+prompt_cache_retention, safety_identifier, temperature, top_logprobs,
+top_p, truncation, user
+```
+
+It also removes unsupported hosted tool types from `tools` and from `additional_tools` input items: image generation, file search, Code Interpreter, native computer use, hosted MCP, and `tool_search`. It additionally removes `programmatic_tool_calling` from top-level `tools`. If no top-level tools remain, it removes `tools` and `tool_choice` together.
+
+Set `strip_unsupported_fields: false` to preserve those optional fields and tools when diagnosing upstream behavior. **This does not disable required rewrites**, enable another API, or permit non-streaming calls. OpenAI can reject the preserved values.
+
+Function/custom tools remain in their supplied shape; Oceans does not wrap flat tools into namespaces. SIWC's preview guidance calls for namespaces or `additional_tools` input items. If OpenAI rejects a flat tool declaration, use a supported declaration rather than retrying the same body. Local tool execution is not the same as a hosted Responses tool. Only the default service tier is supported; the stripping toggle does not enable premium tiers.
+
+See [SIWC preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations) for model-dependent text, image, and file inputs. Audio/video, the Files upload API, and transcription are outside this flow.
+
+## Errors and recovery
+
+- If sign-in did not grant `chatgpt.tokens.use.direct`, enable ChatGPT plan use before sending inference. A valid ID token alone is not enough.
+- For an eligibility or policy failure, check the selected account/workspace and integration restrictions. Don't loop through login or retry an unchanged unsupported request.
+- For a plan usage limit, pause requests and review [ChatGPT Settings → Usage](https://chatgpt.com/settings/usage). Don't infer a reset time or assume the whole plan is empty from the error alone.
+- Preserve the upstream request ID, HTTP status, and error code when diagnosing a failure. Admission errors can have a `detail` message instead of the standard API `error` object.
+- Keep credentials after temporary network or availability failures. If refresh confirms a terminal token failure or revocation, pause inference and run login again. The saved ID token is retained as a reauthorization hint even when expired; access and refresh tokens are cleared.
+- To disconnect the app, use ChatGPT Settings. Deleting a local file alone does not confirm remote revocation.
+
+Oceans does not silently fall back to API-key billing when plan usage fails. See [SIWC errors and recovery](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery) for upstream error meanings.
+
+## See also
+
+- [Providers](/configuration/providers/#chatgpt_plan)
+- [Models and routes](/configuration/models-and-routes/)
+- [Oceans CLI](/harnesses/oceans-cli/)
+- [GitHub Copilot](/providers/github-copilot/)
+- [SIWC models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)

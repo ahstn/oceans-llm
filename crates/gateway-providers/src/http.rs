@@ -165,6 +165,7 @@ pub async fn execute_json_request(
         return Err(ProviderError::UpstreamHttp {
             status: status.as_u16(),
             body: text,
+            request_id: None,
         });
     }
     serde_json::from_str(&text).map_err(|error| ProviderError::Transport(error.to_string()))

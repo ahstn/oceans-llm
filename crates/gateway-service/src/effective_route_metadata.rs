@@ -303,6 +303,15 @@ pub(crate) fn provider_capabilities(
             }
             capabilities
         }
+        "chatgpt_plan" => ProviderCapabilities {
+            responses: true,
+            stream: true,
+            tools: true,
+            vision: true,
+            json_schema: true,
+            developer_role: true,
+            ..ProviderCapabilities::none()
+        },
         "anthropic_compat" => ProviderCapabilities {
             chat_completions: true,
             responses: false,
@@ -369,6 +378,7 @@ pub(crate) fn native_api_format(
         {
             Some(ApiFormat::AnthropicMessages)
         }
+        "chatgpt_plan" => Some(ApiFormat::OpenAiResponses),
         "anthropic_compat" => Some(ApiFormat::AnthropicMessages),
         "gcp_vertex" if route.upstream_model.starts_with("anthropic/") => {
             Some(ApiFormat::AnthropicMessages)

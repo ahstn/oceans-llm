@@ -86,6 +86,7 @@ fn catalog_identity_for_route(provider: &ProviderConnection, route: &ModelRoute)
         "openai_compat"
         | "gcp_cloud_run_openai_compat"
         | "github_copilot"
+        | "chatgpt_plan"
         | "anthropic_compat"
         | "typesafe" => openai_compatible_pricing_target(provider, route),
         "gcp_vertex" => vertex_catalog_target(route),

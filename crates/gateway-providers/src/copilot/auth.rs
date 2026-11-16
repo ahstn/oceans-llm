@@ -186,6 +186,7 @@ impl AccessTokenSource for GitHubAppInstallationTokenSource {
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body: text,
+                request_id: None,
             });
         }
 

@@ -1,6 +1,31 @@
 use super::support::*;
 
 #[tokio::test]
+async fn chatgpt_plan_uses_openai_api_equivalent_pricing_identity() {
+    let catalog = empty_catalog(
+        Arc::new(InMemoryRepo::default()),
+        "http://127.0.0.1:9/api.json".to_string(),
+    );
+    catalog
+        .refresh_if_stale_and_sync()
+        .await
+        .expect("initialize pricing");
+    let mut provider = openai_provider("openai");
+    provider.provider_type = "chatgpt_plan".into();
+    let resolution = catalog
+        .resolve_for_provider_connection(&provider, &route("chatgpt-plan", "gpt-5"), test_time())
+        .await
+        .expect("resolve API-equivalent pricing");
+    match resolution {
+        PricingResolution::Exact { pricing } => {
+            assert_eq!(pricing.pricing_provider_id, "openai");
+            assert_eq!(pricing.model_id, "gpt-5");
+        }
+        other => panic!("unexpected ChatGPT plan pricing: {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn request_time_resolution_only_queries_effective_pricing() {
     let repo = Arc::new(InMemoryRepo::default());
     let catalog = empty_catalog(repo.clone(), "http://127.0.0.1:9/api.json".to_string());

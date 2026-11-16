@@ -90,6 +90,7 @@ fn refuse_get_without_event_stream(
         return Err(ProviderError::UpstreamHttp {
             status: StatusCode::BAD_GATEWAY.as_u16(),
             body: "the MCP server answered the GET stream without text/event-stream".to_string(),
+            request_id: None,
         }
         .into());
     }

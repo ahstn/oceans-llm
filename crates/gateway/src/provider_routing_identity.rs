@@ -7,8 +7,9 @@ use std::{collections::BTreeMap, path::Path};
 
 use gateway_providers::{
     AnthropicCompatAuthKind, AnthropicCompatConfig, BearerAuthHeader, BedrockAuthConfig,
-    BedrockProviderConfig, CloudRunOpenAiCompatAuth, CopilotAuthConfig, CopilotProviderConfig,
-    OpenAiCompatConfig, TypeSafeConfig, VertexAuthConfig, VertexProviderConfig,
+    BedrockProviderConfig, ChatGptPlanConfig, CloudRunOpenAiCompatAuth, CopilotAuthConfig,
+    CopilotProviderConfig, OpenAiCompatConfig, TypeSafeConfig, VertexAuthConfig,
+    VertexProviderConfig,
 };
 use sha2::{Digest, Sha256};
 
@@ -176,6 +177,21 @@ pub fn copilot(config: &CopilotProviderConfig) -> String {
             identity.add("token", token);
         }
     }
+    identity.headers(&config.default_headers);
+    identity.finish()
+}
+
+pub fn chatgpt_plan(config: &ChatGptPlanConfig) -> String {
+    let mut identity = RoutingIdentity::new("chatgpt_plan");
+    identity.add("base_url", &config.base_url);
+    identity.add(
+        "credentials_file",
+        config.credentials_file.as_os_str().as_encoded_bytes(),
+    );
+    identity.add(
+        "strip_unsupported_fields",
+        [u8::from(config.strip_unsupported_fields)],
+    );
     identity.headers(&config.default_headers);
     identity.finish()
 }

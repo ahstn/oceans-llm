@@ -397,6 +397,7 @@ impl OpenAiCompatProvider {
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body: response.text().await.map_err(map_reqwest_error)?,
+                request_id: None,
             });
         }
         let mut chunks = response.bytes_stream();
@@ -487,6 +488,7 @@ async fn response_text(response: reqwest::Response) -> Result<String, ProviderEr
         Err(ProviderError::UpstreamHttp {
             status: status.as_u16(),
             body: text,
+            request_id: None,
         })
     }
 }
@@ -742,10 +744,12 @@ mod tests {
         assert!(submission_is_unknown(&ProviderError::UpstreamHttp {
             status: 503,
             body: "unavailable".to_string(),
+            request_id: None,
         }));
         assert!(!submission_is_unknown(&ProviderError::UpstreamHttp {
             status: 400,
             body: "invalid".to_string(),
+            request_id: None,
         }));
     }
 

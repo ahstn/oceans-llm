@@ -710,6 +710,7 @@ impl BedrockProvider {
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body,
+                request_id: None,
             });
         }
 
@@ -844,6 +845,7 @@ impl ProviderClient for BedrockProvider {
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body: text,
+                request_id: None,
             });
         }
 
@@ -948,6 +950,7 @@ impl ProviderClient for BedrockProvider {
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body: text,
+                request_id: None,
             });
         }
 

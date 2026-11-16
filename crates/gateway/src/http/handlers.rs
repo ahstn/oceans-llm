@@ -628,10 +628,15 @@ async fn guarded_provider_error_attempt(
         ProviderError::NativeMessagesHttp { headers, .. } => Some(headers.clone()),
         _ => None,
     };
+    let upstream_request_id = match &error {
+        ProviderError::UpstreamHttp { request_id, .. } => request_id.clone(),
+        _ => None,
+    };
     let error = match error {
         ProviderError::UpstreamHttp {
             status: http_status,
             body,
+            ..
         }
         | ProviderError::NativeMessagesHttp {
             status: http_status,
@@ -671,6 +676,7 @@ async fn guarded_provider_error_attempt(
                 ProviderError::UpstreamHttp {
                     status: http_status,
                     body,
+                    request_id: upstream_request_id,
                 }
             }
         }
@@ -3148,6 +3154,7 @@ mod tests {
             source: Box::new(ProviderError::UpstreamHttp {
                 status: 429,
                 body: "quota exhausted".to_string(),
+                request_id: None,
             }),
             provider_usage: Some(json!({"prompt_tokens": 4, "total_tokens": 4})),
         });
@@ -3157,7 +3164,7 @@ mod tests {
             Some(Some(json!({"prompt_tokens": 4, "total_tokens": 4})))
         );
         match source {
-            ProviderError::UpstreamHttp { status, body } => {
+            ProviderError::UpstreamHttp { status, body, .. } => {
                 assert_eq!(status, 429);
                 assert_eq!(body, "quota exhausted");
             }
