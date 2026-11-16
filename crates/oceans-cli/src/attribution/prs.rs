@@ -28,29 +28,25 @@ use crate::process::{RunError, run_captured_with_stderr};
 const GH_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_GH_OUTPUT: usize = 64 * 1024 * 1024;
 const MAX_GH_STDERR: usize = 64 * 1024;
-// Each PR selects 100 commits with one author each and 100 reviews, about 300 nodes, so a
-// page stays far below GitHub's 500,000-node GraphQL limit.
+// A listed PR selects 100 reviews and a merged one 100 commits with one author each, so a page
+// stays far below GitHub's 500,000-node GraphQL limit.
 const GH_PAGE_SIZE: u32 = 49;
 // Recently updated first, so a PR that was reviewed, merged or closed since the last sync is
-// fetched again and its stored state moves on.
+// fetched again and its stored state moves on. Only the lifecycle and reviews: the description
+// and commits are read for merged pull requests alone, by `MERGED_QUERY`.
 const PR_QUERY: &str = r#"
 query($owner: String!, $name: String!, $pageSize: Int!, $cursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequests(first: $pageSize, after: $cursor, states: [OPEN, CLOSED, MERGED],
                  orderBy: {field: UPDATED_AT, direction: DESC}) {
       nodes {
-        number title url state isDraft createdAt updatedAt closedAt mergedAt baseRefName headRefName
-        body additions deletions changedFiles mergeCommit { oid }
+        id number title url state isDraft createdAt updatedAt closedAt mergedAt baseRefName
+        headRefName additions deletions changedFiles
         author { __typename login }
         comments { totalCount }
         reviews(first: 100) {
           totalCount
           nodes { state submittedAt author { __typename login } }
-        }
-        commits(first: 100) {
-          nodes { commit {
-            oid messageHeadline messageBody authoredDate authors(first: 1) { nodes { email } }
-          } }
         }
       }
       pageInfo { hasNextPage endCursor }
@@ -58,14 +54,42 @@ query($owner: String!, $name: String!, $pageSize: Int!, $cursor: String) {
   }
 }
 "#;
-// Keep the same PR/commit shape as `gh pr list --json commits`.
 const PR_PAGE_FILTER: &str = r#".data.repository.pullRequests | {
-  pullRequests: [.nodes[] | .commits = [
-    .commits.nodes[].commit | .authors = .authors.nodes
-  ] | .reviewTotal = .reviews.totalCount | .reviews = .reviews.nodes
+  pullRequests: [.nodes[] | .reviewTotal = .reviews.totalCount | .reviews = .reviews.nodes
     | .commentCount = .comments.totalCount | del(.comments)],
   pageInfo
 }"#;
+/// What only a merged pull request needs: its commits and merge commit join notes and
+/// fingerprint the change, and its description and commit messages hold revert links. The
+/// gateway reads open and closed pull requests for their lifecycle alone.
+const MERGED_QUERY: &str = r#"
+query($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    ... on PullRequest {
+      id body mergeCommit { oid }
+      commits(first: 100) {
+        nodes { commit {
+          oid messageHeadline messageBody authoredDate authors(first: 1) { nodes { email } }
+        } }
+      }
+    }
+  }
+}
+"#;
+// Keep the same commit shape as `gh pr list --json commits`.
+const MERGED_FILTER: &str = r#"[.data.nodes[] | select(. != null)
+  | .commits = [.commits.nodes[].commit | .authors = .authors.nodes]]"#;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GhMergedDetails {
+    id: String,
+    #[serde(default)]
+    body: Option<String>,
+    merge_commit: Option<GhCommitRef>,
+    #[serde(default)]
+    commits: Vec<GhCommit>,
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -93,6 +117,9 @@ const MAX_PULL_REQUESTS_PER_PAYLOAD: usize = 100;
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GhPullRequest {
+    /// GitHub's node id, which `MERGED_QUERY` reads a merged pull request's details by.
+    #[serde(default)]
+    id: String,
     number: u64,
     #[serde(default)]
     title: String,
@@ -240,48 +267,102 @@ pub fn sync(
     })
 }
 
-/// Pages the repository explicitly, ignoring `GH_REPO` and gh's default repository.
+/// Pages the repository explicitly, ignoring `GH_REPO` and gh's default repository, then reads
+/// the merged pull requests' details.
 fn run_gh(directory: &Path, repository: &str, limit: u32) -> Result<Vec<GhPullRequest>, String> {
     let (host, path) = repository.split_once('/').ok_or("invalid repository")?;
     let (owner, name) = path.split_once('/').ok_or("invalid repository")?;
-    fetch_pages(limit, |page_size, cursor| {
-        let mut command = Command::new("gh");
-        command
-            .current_dir(directory)
-            .args(["api", "graphql", "--hostname", host, "-f"])
-            .arg(format!("query={PR_QUERY}"))
-            .arg("-f")
-            .arg(format!("owner={owner}"))
-            .arg("-f")
-            .arg(format!("name={name}"))
-            .arg("-F")
-            .arg(format!("pageSize={page_size}"))
-            .args(["--jq", PR_PAGE_FILTER]);
+    let mut fetched = fetch_pages(limit, |page_size, cursor| {
+        let mut fields = vec![
+            format!("owner={owner}"),
+            format!("name={name}"),
+            format!("pageSize={page_size}"),
+        ];
         if let Some(cursor) = cursor {
-            command.arg("-f").arg(format!("cursor={cursor}"));
+            fields.push(format!("cursor={cursor}"));
         }
-        command
-            .env("GH_PROMPT_DISABLED", "1")
-            .env("GH_NO_UPDATE_NOTIFIER", "1")
-            .env("NO_COLOR", "1")
-            .env_remove("GIT_DIR")
-            .env_remove("GIT_WORK_TREE");
-        match run_captured_with_stderr(&mut command, GH_TIMEOUT, MAX_GH_OUTPUT, MAX_GH_STDERR) {
-            Ok(output) if output.status.success() => serde_json::from_slice(&output.stdout)
-                .map_err(|_| "gh printed pull requests in an unexpected shape".into()),
-            Ok(output) => {
-                let detail = String::from_utf8_lossy(&output.stderr);
-                let detail = detail.trim();
-                Err(if detail.is_empty() {
-                    format!("gh api graphql failed ({})", output.status)
-                } else {
-                    format!("gh api graphql failed ({}): {detail}", output.status)
-                })
-            }
-            Err(RunError::NotFound) => Err("gh is not installed".into()),
-            Err(error) => Err(format!("gh api graphql: {error}")),
+        gh_graphql(directory, host, PR_QUERY, &fields, PR_PAGE_FILTER)
+    })?;
+    fill_merged(&mut fetched, |ids| {
+        let fields: Vec<String> = ids.iter().map(|id| format!("ids[]={id}")).collect();
+        gh_graphql(directory, host, MERGED_QUERY, &fields, MERGED_FILTER)
+    })?;
+    Ok(fetched)
+}
+
+/// Runs one `gh api graphql` query. Each field is a string variable (`pageSize` an integer),
+/// and `key[]=value` fields build a list.
+fn gh_graphql<T: serde::de::DeserializeOwned>(
+    directory: &Path,
+    host: &str,
+    query: &str,
+    fields: &[String],
+    filter: &str,
+) -> Result<T, String> {
+    let mut command = Command::new("gh");
+    command
+        .current_dir(directory)
+        .args(["api", "graphql", "--hostname", host, "-f"])
+        .arg(format!("query={query}"));
+    for field in fields {
+        // `-F` types a number; every other value stays a string.
+        let flag = if field.starts_with("pageSize=") {
+            "-F"
+        } else {
+            "-f"
+        };
+        command.arg(flag).arg(field);
+    }
+    command
+        .args(["--jq", filter])
+        .env("GH_PROMPT_DISABLED", "1")
+        .env("GH_NO_UPDATE_NOTIFIER", "1")
+        .env("NO_COLOR", "1")
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE");
+    match run_captured_with_stderr(&mut command, GH_TIMEOUT, MAX_GH_OUTPUT, MAX_GH_STDERR) {
+        Ok(output) if output.status.success() => serde_json::from_slice(&output.stdout)
+            .map_err(|_| "gh printed pull requests in an unexpected shape".into()),
+        Ok(output) => {
+            let detail = String::from_utf8_lossy(&output.stderr);
+            let detail = detail.trim();
+            Err(if detail.is_empty() {
+                format!("gh api graphql failed ({})", output.status)
+            } else {
+                format!("gh api graphql failed ({}): {detail}", output.status)
+            })
         }
-    })
+        Err(RunError::NotFound) => Err("gh is not installed".into()),
+        Err(error) => Err(format!("gh api graphql: {error}")),
+    }
+}
+
+/// Fills each merged pull request's description, merge commit and commits, a page of ids at a
+/// time. Open and closed ones keep none: nothing reads them.
+fn fill_merged(
+    fetched: &mut [GhPullRequest],
+    mut fetch: impl FnMut(&[&str]) -> Result<Vec<GhMergedDetails>, String>,
+) -> Result<(), String> {
+    let ids: Vec<String> = fetched
+        .iter()
+        .filter(|pr| pr.merged_at.is_some() && !pr.id.is_empty())
+        .map(|pr| pr.id.clone())
+        .collect();
+    let mut details = std::collections::HashMap::new();
+    for chunk in ids.chunks(GH_PAGE_SIZE as usize) {
+        let chunk: Vec<&str> = chunk.iter().map(String::as_str).collect();
+        for detail in fetch(&chunk)? {
+            details.insert(detail.id.clone(), detail);
+        }
+    }
+    for pr in fetched.iter_mut() {
+        if let Some(detail) = details.remove(&pr.id) {
+            pr.body = detail.body;
+            pr.merge_commit = detail.merge_commit;
+            pr.commits = detail.commits;
+        }
+    }
+    Ok(())
 }
 
 fn fetch_pages(
@@ -642,6 +723,35 @@ mod tests {
              "commits": [{"oid": SHA_1, "messageHeadline": "x", "authoredDate": "yesterday", "authors": [{"email": ""}]}]},
         ]))
         .unwrap()
+    }
+
+    #[test]
+    fn only_merged_pull_requests_read_their_details() {
+        let mut listed: Vec<GhPullRequest> = serde_json::from_value(serde_json::json!([
+            {"id": "PR_merged", "number": 1, "mergedAt": "2026-11-10T12:00:00Z"},
+            {"id": "PR_open", "number": 2, "state": "OPEN", "mergedAt": null},
+            {"id": "PR_merged_2", "number": 3, "mergedAt": "2026-11-11T12:00:00Z"},
+        ]))
+        .unwrap();
+        let mut asked = Vec::new();
+        fill_merged(&mut listed, |ids| {
+            asked.extend(ids.iter().map(|id| (*id).to_string()));
+            Ok(serde_json::from_value(serde_json::json!([
+                {"id": "PR_merged_2", "body": "Reverts acme/widgets#1", "mergeCommit": {"oid": SHA_1},
+                 "commits": [{"oid": SHA_2, "authors": []}]},
+                {"id": "PR_merged", "body": null, "mergeCommit": null, "commits": []},
+            ]))
+            .unwrap())
+        })
+        .unwrap();
+        assert_eq!(asked, ["PR_merged", "PR_merged_2"]);
+        assert_eq!(listed[2].body.as_deref(), Some("Reverts acme/widgets#1"));
+        assert_eq!(
+            listed[2].merge_commit.as_ref().map(|c| c.oid.as_str()),
+            Some(SHA_1)
+        );
+        assert_eq!(listed[2].commits.len(), 1);
+        assert!(listed[1].commits.is_empty() && listed[1].body.is_none());
     }
 
     #[test]
