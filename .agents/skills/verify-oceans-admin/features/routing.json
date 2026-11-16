@@ -47,6 +47,7 @@
         "dist-workspace.toml",
         "cog.toml",
         "scripts/release.sh",
+        "scripts/release.test.sh",
         "skills-lock.json",
         "rust-analyzer.toml",
         "crates/admin-ui/web/Dockerfile"
