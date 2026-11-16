@@ -1,0 +1,18 @@
+{{- if .Values.rolloutGuard.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "oceans-llm.managementServiceName" . }}
+  labels:
+    {{- include "oceans-llm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  clusterIP: None
+  ports:
+    - name: management
+      port: {{ .Values.rolloutGuard.managementPort }}
+      targetPort: management
+      protocol: TCP
+  selector:
+    {{- include "oceans-llm.gatewaySelectorLabels" . | nindent 4 }}
+{{- end }}

@@ -101,7 +101,8 @@ render mounted-secret \
   --set 'gateway.extraVolumeMounts[0].mountPath=/var/run/skills' \
   --set 'gateway.extraVolumeMounts[0].readOnly=true'
 require_text "$check_dir/mounted-secret/oceans-llm/templates/configmap.yaml" 'access_key_id: file./var/run/skills/access-key'
-test "$(grep -Fc 'mountPath: /var/run/skills' "$check_dir/mounted-secret/oceans-llm/templates/gateway-deployment.yaml")" -eq 2
+# Default pre-install/pre-upgrade migrations do not need a gateway migration waiter.
+test "$(grep -Fc 'mountPath: /var/run/skills' "$check_dir/mounted-secret/oceans-llm/templates/gateway-deployment.yaml")" -eq 1
 for job in migration bootstrap-admin seed-config; do
   job_file="$check_dir/mounted-secret/oceans-llm/templates/jobs/$job-job.yaml"
   require_text "$job_file" 'mountPath: /var/run/skills'

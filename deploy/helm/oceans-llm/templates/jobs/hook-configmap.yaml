@@ -13,5 +13,5 @@ metadata:
     helm.sh/hook-delete-policy: before-hook-creation
 data:
   gateway.yaml: |
-    {{- toYaml .Values.gateway.config | nindent 4 }}
+    {{- include "oceans-llm.gatewayConfig" . | nindent 4 }}
 {{- end }}

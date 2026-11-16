@@ -213,7 +213,19 @@ pub async fn guard_stream(
     }
     let mut buffered = Vec::new();
     let mut collector = state.service.new_stream_response_collector();
-    while let Some(chunk) = upstream.next().await {
+    loop {
+        let chunk = tokio::select! {
+            biased;
+            () = state.shutdown.cut_off_reached() => {
+                collector.finish();
+                return Err(Box::new(GuardStreamError {
+                    error: GatewayError::ServerShutdown,
+                    collector: Some(collector),
+                }));
+            }
+            chunk = upstream.next() => chunk,
+        };
+        let Some(chunk) = chunk else { break };
         let chunk = match chunk {
             Ok(chunk) => chunk,
             Err(error) => {

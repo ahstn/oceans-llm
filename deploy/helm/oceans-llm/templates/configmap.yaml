@@ -7,4 +7,4 @@ metadata:
     {{- include "oceans-llm.labels" . | nindent 4 }}
 data:
   gateway.yaml: |
-    {{- toYaml .Values.gateway.config | nindent 4 }}
+    {{- include "oceans-llm.gatewayConfig" . | nindent 4 }}
