@@ -1,0 +1,21 @@
+crates/oceans-cli/src/attribution/prs.rs
+  s_0a4447f1aa57dd::t_84ee5c3edf0471 350-354
+crates/oceans-cli/src/attribution/reverts.rs
+  s_0a4447f1aa57dd::t_2c1865aa326e76 46-48,125-134,645,695-722,735,745,828,839,893,905,931
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "05cc05fbaafcb88f4017668e6fa530a179f6b075",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
