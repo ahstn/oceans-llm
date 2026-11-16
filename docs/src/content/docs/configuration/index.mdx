@@ -61,7 +61,7 @@ Fields that hold secrets or deployment values take a reference with a prefix:
 | `file./path/to/secret` | The contents of the file, with trailing newlines removed. |
 | `literal.value` | The text after `literal.`, used as is. |
 
-Secret fields (for example `database.url`, `auth.bootstrap_admin.password`, OIDC and OAuth `client_secret`, SMTP `password`, and service-account key `value`) accept only these three forms. A plain value without a prefix is rejected with `unsupported secret reference`. So write `url: literal.postgres://...` or `url: env.POSTGRES_URL`, not a bare URL.
+Secret fields (for example `database.url`, `auth.bootstrap_admin.password`, OIDC and OAuth `client_secret`, SMTP `password`, and service-account key `value`) accept only these three forms. A plain value without a prefix is rejected with `unsupported secret reference`. Write `url: literal.postgres://...` or `url: env.POSTGRES_URL`, not a bare URL.
 
 Some non-secret fields, such as the GitHub OAuth `client_id` and file paths for provider credentials, also accept a plain value. Each field reference says which form it takes.
 
@@ -167,7 +167,7 @@ models:
         upstream_model: google/gemini-2.0-flash
 ```
 
-On a new database, the seeded `ops@example.com` platform admin stops the bootstrap admin from being created, and a seeded password user can't sign in until an admin creates their invite link. So leave that user out for the first start, and sign in as the bootstrap admin. Then add the user back, restart, and create their invite link from `/admin`. See [Start up and first access](/setup/first-access/#the-bootstrap-admin).
+On a new database, the seeded `ops@example.com` platform admin stops the bootstrap admin from being created, and a seeded password user can't sign in until an admin creates their invite link. Leave that user out for the first start, and sign in as the bootstrap admin. Then add the user back, restart, and create their invite link from `/admin`. See [Start up and first access](/setup/first-access/#the-bootstrap-admin).
 
 The checked-in files show fuller setups: [`gateway.yaml`](https://github.com/ahstn/oceans-llm/blob/main/gateway.yaml) (local demo), [`gateway.prod.yaml`](https://github.com/ahstn/oceans-llm/blob/main/gateway.prod.yaml), [`deploy/config/gateway.yaml`](https://github.com/ahstn/oceans-llm/blob/main/deploy/config/gateway.yaml) (container deploys), and [`deploy/selfhost/gateway.yaml`](https://github.com/ahstn/oceans-llm/blob/main/deploy/selfhost/gateway.yaml) (self-hosting with mise). They are opinionated examples, not the full config space.
 

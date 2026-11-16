@@ -20,24 +20,23 @@ checksum = "sha256:f89c9288dbd9bd0579914ea3a72acc14bca1ae3d3112e92bcb29ff5a48b88
 url = "https://awscli.amazonaws.com/AWSCLIV2-2.39.5.pkg"
 
 [[tools.rustfs]]
-version = "1.0.4"
+version = "1.0.5"
 backend = "github:rustfs/rustfs"
-specifiers = ["1.0.4"]
+specifiers = ["1.0.5"]
 
 [tools.rustfs."platforms.linux-arm64"]
-checksum = "sha256:5c2d4dad2685f41635441b685dc4dead225f84bce2a9a365d87f8151ec88a049"
+checksum = "sha256:3d8ef837ebae3488e3b47695accf96f956ea616956971afa209aba152876f423"
 checksum_source = "mise-versions"
-url = "https://github.com/rustfs/rustfs/releases/download/1.0.4/rustfs-linux-aarch64-gnu-v1.0.4.zip"
-url_api = "https://api.github.com/repos/rustfs/rustfs/releases/assets/675521975"
+url = "https://github.com/rustfs/rustfs/releases/download/1.0.5/rustfs-linux-aarch64-gnu-v1.0.5.zip"
+url_api = "https://api.github.com/repos/rustfs/rustfs/releases/assets/732390290"
 
 [tools.rustfs."platforms.linux-x64"]
-checksum = "sha256:4a25e48f5b5ae610a679b5324206962c6fb0eb20a9fa7ab6cb20e178cf6c534b"
-checksum_source = "mise-versions"
-url = "https://github.com/rustfs/rustfs/releases/download/1.0.4/rustfs-linux-x86_64-gnu-v1.0.4.zip"
-url_api = "https://api.github.com/repos/rustfs/rustfs/releases/assets/675522651"
+checksum = "sha256:5addae2f74756bf80104d0975e6347cda843bc2daffdfcd1f0cb80118b95cbd0"
+url = "https://github.com/rustfs/rustfs/releases/download/1.0.5/rustfs-linux-x86_64-gnu-v1.0.5.zip"
+url_api = "https://api.github.com/repos/rustfs/rustfs/releases/assets/732391026"
 
 [tools.rustfs."platforms.macos-arm64"]
-checksum = "sha256:49057482769d7904ef95dc40457d71122f48cbb8e9e0725a0817a3ec6daf8270"
+checksum = "sha256:7c568946ab86df54bb3a7fffee66b4d05896219bec6629f0f7e6366aa69a26ac"
 checksum_source = "mise-versions"
-url = "https://github.com/rustfs/rustfs/releases/download/1.0.4/rustfs-macos-aarch64-v1.0.4.zip"
-url_api = "https://api.github.com/repos/rustfs/rustfs/releases/assets/675523423"
+url = "https://github.com/rustfs/rustfs/releases/download/1.0.5/rustfs-macos-aarch64-v1.0.5.zip"
+url_api = "https://api.github.com/repos/rustfs/rustfs/releases/assets/732391776"

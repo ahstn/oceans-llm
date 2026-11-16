@@ -19,9 +19,18 @@ depends = [":install"]
 run = "bun run build"
 
 [tasks.check]
-description = "Type-check the docs site and run the Nimbus checks against a fresh build"
-depends = [":build"]
+description = "Lint the docs prose, type-check the site and run Nimbus checks against a fresh build"
+depends = [":build", ":lint"]
 run = ["bun run typecheck", "bunx nimbus-docs check"]
+
+[tasks.vale-sync]
+description = "Install the Vale packages declared in the repository configuration"
+run = "vale --no-global --config ../.vale.ini sync"
+
+[tasks.lint]
+description = "Lint docs/src/content with the repository Vale rules"
+depends = [":vale-sync"]
+run = "vale --no-global --config ../.vale.ini src/content"
 
 [tasks.preview]
 description = "Serve the built docs site the way Cloudflare Pages does, with _headers and _redirects"

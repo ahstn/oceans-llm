@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import assert from 'node:assert/strict'
-import { readReadyLine } from '../scripts/smoke'
+import { publishedVersion, readReadyLine } from '../scripts/smoke'
 
 test('readiness waits for a full UTF-8 line across byte chunks and ignores later records', async () => {
   const expected = JSON.stringify({ url: 'http://localhost:1234', label: 'café' })
@@ -29,4 +29,26 @@ test('readiness rejects an incomplete record when the host closes stdout', async
   })
   await assert.rejects(readReadyLine(stream), Error)
   expect(stream.locked).toBe(false)
+})
+
+test('published smoke requires an explicit exact stable version', () => {
+  expect(publishedVersion([])).toBeUndefined()
+  expect(publishedVersion(['--published', '0.1.0'])).toBe('0.1.0')
+  expect(publishedVersion(['--published', '12.34.56'])).toBe('12.34.56')
+  for (const args of [
+    ['--published'],
+    ['--published', ''],
+    ['--published', 'latest'],
+    ['--published', '^0.1.0'],
+    ['--published', 'v0.1.0'],
+    ['--published', '0.1'],
+    ['--published', '01.1.0'],
+    ['--published', '0.1.0-beta.1'],
+    ['--published', '0.1.0+build'],
+    ['--published', '0.1.0\n'],
+    ['--published', '0.1.0', 'extra'],
+    ['0.1.0'],
+  ]) {
+    expect(() => publishedVersion(args)).toThrow('exact stable X.Y.Z version')
+  }
 })

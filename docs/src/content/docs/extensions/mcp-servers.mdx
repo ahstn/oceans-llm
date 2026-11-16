@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-Oceans registers external Streamable HTTP MCP servers and exposes their tools to clients through one gateway. Admins register servers and discover their tools. Clients connect to Oceans with an Oceans API key, never with upstream credentials.
+Oceans registers external Streamable HTTP MCP servers and exposes their tools to clients through one gateway. Admins register servers and discover their tools. Clients connect to Oceans with an Oceans API key; they don't use upstream credentials.
 
 ![Oceans MCP: one gateway connects MCP servers to Engineer and Project Manager personas, with tool checkboxes, and six client harnesses](/images/oceans-mcp-personas.webp)
 
@@ -457,7 +457,7 @@ Discovery is the server's health signal. An admin must refresh discovery after a
 - marks missing tools inactive
 - records a bounded failure summary
 
-There is no separate ping health check and no discovery-run history in the admin UI.
+The admin UI has no separate ping health check or discovery-run history.
 
 A tool's schema hash covers its input schema, title, annotations and output schema. A change to any of them bumps the schema version, and `call_tool` then rejects a stale caller-supplied `schema_hash`. A tool with none of the three optional members keeps the hash of its input schema alone. Invalid optional members, such as a non-object `outputSchema`, are dropped rather than failing discovery. See the [tool metadata and schema hash ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-13-mcp-tool-metadata-and-schema-hash.md).
 

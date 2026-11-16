@@ -99,7 +99,7 @@ mise run selfhost-config-validate
 
 Set `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY`, `GATEWAY_IDENTITY_TOKEN_SECRET`, `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD`, `GATEWAY_API_KEY`, `GATEWAY_PUBLIC_BASE_URL`, and `OPENROUTER_API_KEY`. Point their template item references at the values for this machine, and remove unrelated template entries that the host does not use. Store the public URL, such as `https://hogwarts.<tailnet>.ts.net`, as `GATEWAY_PUBLIC_BASE_URL`. `GATEWAY_IDENTITY_TOKEN_SECRET` signs sessions and invite links; without it the gateway falls back to a development value. If you lose `OCEANS_API_KEY_SECRET_ENCRYPTION_KEY`, stored API keys cannot be decrypted.
 
-`fnox.local.toml` is gitignored and may contain secret-manager references plus an encrypted cache, never plaintext values. Keep the age identity outside the checkout and include both the identity and the source credentials in your recovery plan.
+`fnox.local.toml` is gitignored and may contain secret-manager references plus an encrypted cache. It does not contain plaintext values. Keep the age identity outside the checkout and include both the identity and the source credentials in your recovery plan.
 
 ### Write your gateway config
 

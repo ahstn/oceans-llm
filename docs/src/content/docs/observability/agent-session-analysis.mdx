@@ -20,7 +20,7 @@ Collection and access are separate. The gateway collects session data by default
 | Calibrated scores | `calibrated_score_enabled: true` and a non-empty `calibration_approval_id` | Platform admins, with scores. |
 | Team admin access | The calibrated score fields and `team_admin_enabled: true` | Platform admins, and team owners and admins for their own team. |
 
-A safe first rollout collects facts and keeps the page hidden. Turn on `shadow_diagnostics_enabled` after platform admins agree on access and retention. The gateway checks only that `calibration_approval_id` is set: it doesn't check that any review took place. So set it only after your organisation has reviewed session grouping, score sensitivity, comparison groups and pricing.
+A safe first rollout collects facts and keeps the page hidden. Turn on `shadow_diagnostics_enabled` after platform admins agree on access and retention. The gateway checks only that `calibration_approval_id` is set: it doesn't check that any review took place. Set it only after your organisation has reviewed session grouping, score sensitivity, comparison groups and pricing.
 
 Restart the gateway after any change. Each metric switch under `agent_analysis.metrics` controls one group of diagnostics. Metric, context and cache-profile changes create a new report version, so an admin then [recomputes retained sessions](#recompute-retained-sessions).
 
@@ -55,7 +55,7 @@ The URL stores the filters and the selected `session_id`, so a refresh, the brow
 
 The table shows **Started**, **Harness**, **Model**, **State**, **Score** with its confidence, **Cost**, **Active time**, **Requests**, **Tool calls**, **MCP calls** and **Data quality**. **Data quality** says **Complete** or gives the number of data limits.
 
-![Agent Sessions page with the Session explorer table of finalised opencode and Codex sessions, each showing Score not shown, cost, active time, request and tool counts, and its data limits](/images/agent-sessions-page.png)
+![Agent Sessions page with the Session explorer table of finalised OpenCode and Codex sessions, each showing Score not shown, cost, active time, request and tool counts, and its data limits](/images/agent-sessions-page.png)
 
 Select a row to open the detail sheet. It shows the session score, normalised cost and total time, then any data limits. Below that are these sections:
 
@@ -64,7 +64,7 @@ Select a row to open the detail sheet. It shows the session score, normalised co
 - **Session identity**: the model, harness, gateway session ID and whether the harness sent a session source.
 - **Score components**, **Token and cache use**, **Tools and changes** and **Prompt context**.
 
-A section turned off in `agent_analysis.metrics` says "Disabled by the analysis configuration." A section with no measured data says "Unknown". Missing data stays missing: it isn't shown as zero.
+A section turned off in `agent_analysis.metrics` says "Disabled by the analysis configuration." A section with no measured data says `Unknown`. Missing data stays missing: it isn't shown as zero.
 
 ## How sessions are formed
 
@@ -126,7 +126,7 @@ The default boundary is 220,000 input tokens, with 128,000 tokens reserved for o
 
 ### Skills and file activity
 
-Skill data separates the description tokens that are always loaded from the skill bodies and resources that load when selected. It can show a skill that was selected and then not used. The report stores only bounded names, token estimates and state flags, never skill files. See the [Agent Skills specification](https://agentskills.io/specification) for the skill format.
+Skill data separates the description tokens that are always loaded from the skill bodies and resources that load when selected. It can show a skill that was selected and then not used. The report stores only bounded names, token estimates and state flags; it does not store skill files. See the [Agent Skills specification](https://agentskills.io/specification) for the skill format.
 
 File activity uses opaque file IDs. It shows reads, searches, edits, creates and overwrites, possible rework, checks after writes, and failed file operations. These are operating signals. They don't prove that a change was correct.
 
@@ -163,7 +163,7 @@ Retention works like this:
 - Deleting a user or service account deletes their reports.
 
 <Aside type="caution" title="Request-log purge also removes reports">
-When [request-log purge](/observability/request-logs/#retention-and-purge) runs, it also deletes the analysis data for finalised sessions older than the purge cutoff. That removes their requests, detected activity and reports, then the sessions themselves unless they're queued for analysis. So when purge is on, reports last only as long as the request-log retention window, not the full `report_retention_days`.
+When [request-log purge](/observability/request-logs/#retention-and-purge) runs, it also deletes the analysis data for finalised sessions older than the purge cutoff. That removes their requests, detected activity and reports, then the sessions themselves unless they're queued for analysis. When purge is on, reports last only as long as the request-log retention window, not the full `report_retention_days`.
 </Aside>
 
 ## Limits

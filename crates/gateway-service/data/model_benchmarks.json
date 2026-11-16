@@ -5,7 +5,7 @@
     "benchmark_source_url": "https://artificialanalysis.ai",
     "retrieved_via": "openrouter",
     "source_url": "https://openrouter.ai/api/v1/models?sort=intelligence-high-to-low&limit=200",
-    "updated_at": "2026-11-11T09:48:41Z"
+    "updated_at": "2026-11-16T00:00:37Z"
   },
   "models": {
     "amazon/nova-2-lite-v1": {
@@ -322,11 +322,11 @@
       "name": "DeepSeek: DeepSeek V4 Pro 0423",
       "canonical_slug": "deepseek/deepseek-v4-pro-20260423",
       "artificial_analysis": {
-        "intelligence_index": 12.6,
+        "intelligence_index": 20.8,
         "coding_index": 59.4,
         "agentic_index": 26.3
       },
-      "updated_at": "2026-11-11T09:48:41Z"
+      "updated_at": "2026-11-16T00:00:37Z"
     },
     "deepseek/deepseek-v4-pro-0813": {
       "name": "DeepSeek: DeepSeek V4 Pro 0813",
@@ -478,6 +478,16 @@
       },
       "updated_at": "2026-11-11T09:48:41Z"
     },
+    "google/gemini-4-hydrogen": {
+      "name": "Google: Gemini 4 Hydrogen",
+      "canonical_slug": "google/gemini-4-hydrogen-20261112",
+      "artificial_analysis": {
+        "intelligence_index": 53.9,
+        "coding_index": null,
+        "agentic_index": null
+      },
+      "updated_at": "2026-11-16T00:00:37Z"
+    },
     "google/gemma-3-12b-it": {
       "name": "Google: Gemma 3 12B",
       "canonical_slug": "google/gemma-3-12b-it",
@@ -592,11 +602,11 @@
       "name": "inclusionAI: Ling 3.1 Flash",
       "canonical_slug": "inclusionai/ling-3.1-flash-20261002",
       "artificial_analysis": {
-        "intelligence_index": 41.1,
+        "intelligence_index": 29.6,
         "coding_index": null,
         "agentic_index": null
       },
-      "updated_at": "2026-10-18T12:23:11Z"
+      "updated_at": "2026-11-16T00:00:37Z"
     },
     "liquid/lfm-2.5-2.6b": {
       "name": "LiquidAI: LFM2.5-2.6B",
@@ -1537,6 +1547,16 @@
         "agentic_index": 22.5
       },
       "updated_at": "2026-10-31T20:47:07Z"
+    },
+    "thinkingmachines/inkling-2-small": {
+      "name": "Thinking Machines: Inkling 2 Small",
+      "canonical_slug": "thinkingmachines/inkling-2-small-20261107",
+      "artificial_analysis": {
+        "intelligence_index": 30.6,
+        "coding_index": null,
+        "agentic_index": null
+      },
+      "updated_at": "2026-11-16T00:00:37Z"
     },
     "thinkingmachines/inkling-small": {
       "name": "Thinking Machines: Inkling Small",

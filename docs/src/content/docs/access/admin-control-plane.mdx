@@ -29,7 +29,7 @@ Page grants only control the UI. They don't limit the admin APIs, which apply th
 
 Some pages don't follow page grants:
 
-- **Profile**, **Agent Skills** and **Agent Plugins** are open to every signed-in person. So is **Workspace connections** at `/admin/account/connections`, which isn't in the sidebar.
+- **Profile**, **Agent Skills** and **Agent Plugins** are open to every signed-in person. **Workspace connections** at `/admin/account/connections`, which isn't in the sidebar, is also open to everyone signed in.
 - **Guardrail Settings**, **Guardrails** and **Audit Log** need the `platform_admin` role. The two guardrail pages also need the `mcp_invocations` page.
 - **Rate Limits** needs the `platform_admin` role and the `rate_limits` page.
 - **Batch Requests** follows the `request_logs` page grant.
@@ -99,7 +99,7 @@ The **API Keys** page lists the keys in the person's scope, with each key's owne
 The admin or user selects **Create API key**.
 </Step>
 <Step title="Choose the owner">
-The owner is a user or a service account. There are no team-owned keys: team automation uses a key on a team-owned [service account](/access/service-accounts/). A service account needs an active budget before it can get a key.
+The owner is a user or a service account. Keys can't be owned by teams: team automation uses a key on a team-owned [service account](/access/service-accounts/). A service account needs an active budget before it can get a key.
 </Step>
 <Step title="Choose the models">
 **All models** covers every model the owner may use, now and later. It's for user-owned keys only. **Selected models** grants an explicit list from the current model catalog, and is the only choice for service-account keys.

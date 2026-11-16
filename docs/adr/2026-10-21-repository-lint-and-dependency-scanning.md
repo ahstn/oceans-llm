@@ -11,7 +11,7 @@ The first runs of the new tools found 14 broken documentation links and anchors,
 
 ## Decision
 
-Add nine single-binary tools through mise, pinned in `mise.lock`:
+Add ten single-binary tools through mise, pinned in `mise.lock`:
 
 - zizmor audits GitHub Actions workflows and Dependabot config.
 - tombi formats TOML and validates each file against the schema it declares.
@@ -22,12 +22,14 @@ Add nine single-binary tools through mise, pinned in `mise.lock`:
 - osv-scanner checks every lockfile against OSV.
 - squawk lints new Postgres migrations.
 - kubeconform validates rendered Helm manifests.
+- Vale checks documentation prose.
 
 Dependency scanning gates new vulnerabilities, not the existing backlog. Pull requests fail when they introduce an advisory. The backlog is reported to code scanning weekly and is cleared by dependency upgrades.
 
 ## Implementation
 
 - `mise run repo-lint` runs `toml-check`, `typos`, `secrets-check`, `links-check`, and `actions-audit`. `mise run lint` depends on it and on `rust-deny`. Each config file sits at the repository root, except `.github/zizmor.yml`.
+- `mise run //docs:lint` syncs the packages in `.vale.ini`, then lints `docs/src/content`. Custom rules and the Oceans vocabulary live in `docs/vale/styles`; downloaded packages are ignored. Both commands use `--no-global` so local styles cannot change the result. `mise run //docs:check` includes this check, and `docs-ci.yml` installs Vale before running it. Errors fail the check; warnings remain visible.
 - Every TOML file starts with a `#:schema` directive, so editors and tombi validate it against that schema. `deny.toml`, `dist-workspace.toml`, `rust-analyzer.toml`, and `.squawk.toml` have no published schema; their first line links the configuration reference instead. `tombi.toml` keeps Cargo manifests on TOML 1.0, because the SchemaStore Cargo schema declares TOML 1.1 and tombi would otherwise rewrite dependency tables as multi-line inline tables. It also turns off schema-driven key and array reordering and preserves string quote styles.
 - gitleaks scans every commit since the change base (`secrets-check`), including each commit on a pull request's branch, so a secret added and later removed in the same pull request still fails. `repo-lint.yml` checks out full history for this. The prek hook scans a copy of the staged files with `gitleaks dir` (`secrets-check-staged`), because `gitleaks git --pre-commit --staged` misses some secrets in 8.30.1 (gitleaks/gitleaks#2281). Neither reads the working tree, so gitignored local secrets such as `mise.local.toml` never match. `.gitleaks.toml` extends the default rules and allowlists exact fixture values only: two provider and model identifiers, placeholder `gwk_` keys, one throwaway RSA test key, and fake tokens in redaction tests. A real secret in the same file or field is still reported. With it, the full history (`secrets-check-history`) is clean. The tasks turn off `color.ui`, because coloured `git log -p` output makes gitleaks scan nothing.
 - prek runs each check as its own hook. The typos hook checks staged files only. The existing `lint` hook only fires on Rust and TypeScript changes, so these hooks cover documentation and config commits.
