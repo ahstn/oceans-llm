@@ -88,6 +88,7 @@ const PROVIDER_SETUP: Record<Provider, string> = {
   openrouter: "set OPENROUTER_API_KEY",
   vertex: "set OCEANS_HARNESS_VERTEX_PROJECT and GOOGLE_APPLICATION_CREDENTIALS",
   bedrock: "set OCEANS_HARNESS_BEDROCK=1 and an AWS region, with AWS credentials in the default chain",
+  chatgpt: "set OCEANS_HARNESS_CHATGPT_CREDENTIALS in managed mode or OCEANS_CHATGPT_MODEL in external mode",
 };
 
 function modelKey(provider: Provider, family: (typeof MATRIX_MODELS)[number]): string | undefined {
@@ -153,8 +154,13 @@ async function runMatrixTest(
     expect,
     admin,
     run,
-    // Managed provider ids are the provider names.
-    { harness: row.harness, model, operation, provider },
+    // External provider ids belong to the deployment, not the harness.
+    {
+      harness: row.harness,
+      model,
+      operation,
+      ...(runtime.external && (provider === "chatgpt" || provider === "vertex") ? {} : { provider }),
+    },
     kind === "files" || kind === "bash" ? 2 : 1,
   );
   const setting =

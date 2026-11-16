@@ -24,8 +24,8 @@ export interface ExpectedRequests {
   harness: HarnessKey;
   model: string;
   operation: Operation;
-  /** The gateway provider id of the route. */
-  provider: string;
+  /** The gateway provider id of the route, when known. */
+  provider?: string;
 }
 
 /**
@@ -60,7 +60,7 @@ export async function expectRequestLogs(
       agent_harness_key: expected.harness,
       model_key: expected.model,
       operation: expected.operation,
-      provider_key: expected.provider,
+      provider_key: expected.provider ?? expect.stringMatching(/\S/),
       status_code: 200,
     })),
   );

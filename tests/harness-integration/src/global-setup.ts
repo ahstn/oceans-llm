@@ -1,7 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { TestProject } from "vitest/node";
@@ -25,6 +26,7 @@ const BEDROCK_MODELS = {
   openai: "gpt-6-luna-bedrock",
   anthropic: "claude-haiku-5.5-bedrock",
 } as const;
+const CHATGPT_MODELS = { openai: "chatgpt/gpt-6-luna" } as const;
 const PLUGIN_MODELS: GatewayRuntime["pluginModels"] = {
   openai: "gpt-6-luna",
   anthropic: "claude-haiku-5.5",
@@ -66,6 +68,9 @@ interface ManagedGateway {
 }
 
 export default async function setup(context: TestProject): Promise<() => Promise<void>> {
+  if (process.env.GATEWAY_BASE_URL && process.env.OCEANS_HARNESS_CHATGPT_CREDENTIALS) {
+    throw new Error("OCEANS_HARNESS_CHATGPT_CREDENTIALS is managed-mode only and cannot be used with GATEWAY_BASE_URL; configure OCEANS_CHATGPT_MODEL instead");
+  }
   const externalBaseUrl = process.env.GATEWAY_BASE_URL
     ? normalizeExternalBaseUrl(process.env.GATEWAY_BASE_URL)
     : undefined;
@@ -76,6 +81,7 @@ export default async function setup(context: TestProject): Promise<() => Promise
     return async () => undefined;
   }
 
+  const chatgptCredentials = await managedChatgptCredentials();
   const openRouterApiKey = requiredEnvironment("OPENROUTER_API_KEY");
   const gatewayBinary = await buildGateway();
   const runtimeDir = await mkdtemp(join(tmpdir(), "oceans-harness-integration-"));
@@ -89,7 +95,7 @@ export default async function setup(context: TestProject): Promise<() => Promise
     const bedrockRegion = managedBedrockRegion();
     await writeFile(
       configPath,
-      gatewayConfig(port, databasePath, vertexProject, bedrockRegion),
+      gatewayConfig(port, databasePath, vertexProject, bedrockRegion, chatgptCredentials),
       "utf8",
     );
 
@@ -110,6 +116,7 @@ export default async function setup(context: TestProject): Promise<() => Promise
       providerModels: {
         ...(vertexProject ? { vertex: VERTEX_MODELS } : {}),
         ...(bedrockRegion ? { bedrock: BEDROCK_MODELS } : {}),
+        ...(chatgptCredentials ? { chatgpt: CHATGPT_MODELS } : {}),
       },
     };
     await assertGatewayReady(baseUrl, runningGateway.process);
@@ -130,7 +137,7 @@ export default async function setup(context: TestProject): Promise<() => Promise
   }
 }
 
-function externalRuntime(baseUrl: string): GatewayRuntime {
+export function externalRuntime(baseUrl: string): GatewayRuntime {
   const allowlistedUser = externalAllowlistedUser(
     process.env.OCEANS_ALLOWLISTED_USER_API_KEY,
     process.env.OCEANS_ALLOWLISTED_TEST_MODEL,
@@ -139,6 +146,7 @@ function externalRuntime(baseUrl: string): GatewayRuntime {
     adminEmail: requiredEnvironment("GATEWAY_ADMIN_EMAIL"),
     adminPassword: requiredEnvironment("GATEWAY_ADMIN_PASSWORD"),
     apiKey: requiredEnvironment("OCEANS_API_KEY"),
+    external: true,
     baseUrl,
     pluginModels: {
       openai: process.env.OCEANS_PLUGIN_OPENAI_MODEL ?? PLUGIN_MODELS.openai,
@@ -147,9 +155,14 @@ function externalRuntime(baseUrl: string): GatewayRuntime {
       textOnly: process.env.OCEANS_PLUGIN_TEXT_ONLY_MODEL ?? PLUGIN_MODELS.textOnly,
       hidden: process.env.OCEANS_PLUGIN_HIDDEN_MODEL ?? PLUGIN_MODELS.hidden,
     },
-    providerModels: process.env.OCEANS_VERTEX_GOOGLE_MODEL
-      ? { vertex: { google: process.env.OCEANS_VERTEX_GOOGLE_MODEL } }
-      : {},
+    providerModels: {
+      ...(process.env.OCEANS_VERTEX_GOOGLE_MODEL
+        ? { vertex: { google: process.env.OCEANS_VERTEX_GOOGLE_MODEL } }
+        : {}),
+      ...(process.env.OCEANS_CHATGPT_MODEL
+        ? { chatgpt: { openai: process.env.OCEANS_CHATGPT_MODEL } }
+        : {}),
+    },
     ...(allowlistedUser ? { allowlistedUser } : {}),
   };
 }
@@ -479,12 +492,44 @@ function managedBedrockRegion(): string | undefined {
   return process.env.OCEANS_HARNESS_BEDROCK_REGION ?? process.env.AWS_REGION;
 }
 
-function gatewayConfig(
+export async function managedChatgptCredentials(): Promise<string | undefined> {
+  const value = process.env.OCEANS_HARNESS_CHATGPT_CREDENTIALS;
+  if (!value) return undefined;
+  const path = resolve(value.startsWith("~/") ? join(homedir(), value.slice(2)) : value);
+  try {
+    await access(path, constants.R_OK | constants.W_OK);
+  } catch {
+    throw new Error(`OCEANS_HARNESS_CHATGPT_CREDENTIALS file must exist and be readable and writable: ${path}`);
+  }
+  return path;
+}
+
+export function gatewayConfig(
   port: number,
   databasePath: string,
   vertexProject?: string,
   bedrockRegion?: string,
+  chatgptCredentials?: string,
 ): string {
+  const chatgptProvider = chatgptCredentials
+    ? `
+  - id: chatgpt
+    type: chatgpt_plan
+    credentials_file: ${JSON.stringify(chatgptCredentials)}
+`
+    : "";
+  const chatgptModels = chatgptCredentials
+    ? `
+  - id: ${CHATGPT_MODELS.openai}
+    description: ChatGPT subscription Responses matrix model
+    routes:
+      - provider: chatgpt
+        upstream_model: gpt-6-luna
+        capabilities:
+          responses: true
+          stream: true
+`
+    : "";
   const bedrockProvider = bedrockRegion
     ? `
   - id: bedrock
@@ -582,7 +627,7 @@ service_accounts:
       - id: integration
         name: Harness Integration Key
         value: env.HARNESS_OCEANS_API_KEY
-        allowed_models: [${PLUGIN_MODELS.openai}, ${PLUGIN_MODELS.anthropic}, ${PLUGIN_MODELS.google}, ${PLUGIN_MODELS.textOnly}${vertexProject ? `, ${VERTEX_MODELS.google}` : ""}${bedrockRegion ? `, ${BEDROCK_MODELS.openai}, ${BEDROCK_MODELS.anthropic}` : ""}]
+        allowed_models: [${PLUGIN_MODELS.openai}, ${PLUGIN_MODELS.anthropic}, ${PLUGIN_MODELS.google}, ${PLUGIN_MODELS.textOnly}${vertexProject ? `, ${VERTEX_MODELS.google}` : ""}${bedrockRegion ? `, ${BEDROCK_MODELS.openai}, ${BEDROCK_MODELS.anthropic}` : ""}${chatgptCredentials ? `, ${CHATGPT_MODELS.openai}` : ""}]
 
 providers:
   - id: openrouter
@@ -592,7 +637,7 @@ providers:
     auth:
       kind: bearer
       token: env.OPENROUTER_API_KEY
-${vertexProvider}${bedrockProvider}
+${vertexProvider}${bedrockProvider}${chatgptProvider}
 models:
   - id: ${ALLOWLISTED_GATEWAY_MODEL}
     description: Mixed-case human-user allowlist through OpenRouter
@@ -637,5 +682,5 @@ models:
     routes:
       - provider: openrouter
         upstream_model: ${upstream.anthropic}
-${vertexModels}${bedrockModels}`;
+${vertexModels}${bedrockModels}${chatgptModels}`;
 }
