@@ -193,6 +193,8 @@ database schema is newer than this gateway (postgres): a newer release applied v
 
 Migrations up to `v81` are readable only by a gateway that knows them. Gateways released before this check don't read the record. They fail with `database reset required … outside the active registry` instead. If the older gateway refuses to start against the schema and you need that version, restore the backup taken before the upgrade, then roll back the application. A restore discards writes made after the backup. Don't recreate the database because the error says so, unless you're willing to lose its data.
 
+Release `1.1.0` adds migration `v82` for pull request lifecycle data. Older gateways cannot read pull requests with no merge time. Back up the database and stop older gateway instances before applying this migration. To return to `1.0.0` after it, restore the pre-upgrade database backup before rolling back the application. Helm's application rollback does not undo this migration.
+
 An older gateway never applies its own pending migrations to a database that a newer gateway has migrated. It stops with `cannot apply pending migrations …` instead.
 
 To see whether the upgrade applied migrations, run `gateway migrate --status` with the newer version, before you roll back.

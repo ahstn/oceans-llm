@@ -166,49 +166,49 @@ url = "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/carg
 url_api = "https://api.github.com/repos/EmbarkStudios/cargo-deny/releases/assets/471599057"
 
 [[tools.cargo-dist]]
-version = "0.34.0"
+version = "0.33.0"
 backend = "aqua:axodotdev/cargo-dist"
 
 [tools.cargo-dist."platforms.linux-x64"]
-checksum = "sha256:7fee44ff3ff71ed0064b32d4ec62fee6b58bd37c5887b12a86aedddc5af0c7b5"
-url = "https://github.com/axodotdev/cargo-dist/releases/download/v0.34.0/cargo-dist-x86_64-unknown-linux-gnu.tar.xz"
-url_api = "https://api.github.com/repos/axodotdev/cargo-dist/releases/assets/700690609"
+checksum = "sha256:4b3f0a5f0ebbdb798f6db649d01b32ba1518376b6f7a0502b7d92b75cc2c8293"
+url = "https://github.com/axodotdev/cargo-dist/releases/download/v0.33.0/cargo-dist-x86_64-unknown-linux-gnu.tar.xz"
+url_api = "https://api.github.com/repos/axodotdev/cargo-dist/releases/assets/556576992"
 provenance = "github-attestations"
 
 [tools.cargo-dist."platforms.linux-x64-baseline"]
-checksum = "sha256:7fee44ff3ff71ed0064b32d4ec62fee6b58bd37c5887b12a86aedddc5af0c7b5"
-url = "https://github.com/axodotdev/cargo-dist/releases/download/v0.34.0/cargo-dist-x86_64-unknown-linux-gnu.tar.xz"
-url_api = "https://api.github.com/repos/axodotdev/cargo-dist/releases/assets/700690609"
+checksum = "sha256:4b3f0a5f0ebbdb798f6db649d01b32ba1518376b6f7a0502b7d92b75cc2c8293"
+url = "https://github.com/axodotdev/cargo-dist/releases/download/v0.33.0/cargo-dist-x86_64-unknown-linux-gnu.tar.xz"
+url_api = "https://api.github.com/repos/axodotdev/cargo-dist/releases/assets/556576992"
 provenance = "github-attestations"
 
 [tools.cargo-dist."platforms.linux-x64-musl"]
-checksum = "sha256:f274b9889e93333a52cdcab86b93ab04b875b8ef4eebc7f8589514e0aff827e6"
-url = "https://github.com/axodotdev/cargo-dist/releases/download/v0.34.0/cargo-dist-x86_64-unknown-linux-musl.tar.xz"
-url_api = "https://api.github.com/repos/axodotdev/cargo-dist/releases/assets/700690624"
+checksum = "sha256:b8e95bc76c63375958173ef5ae2dbd8e9211cc1ed03cdee0899702766b4c2a2e"
+url = "https://github.com/axodotdev/cargo-dist/releases/download/v0.33.0/cargo-dist-x86_64-unknown-linux-musl.tar.xz"
+url_api = "https://api.github.com/repos/axodotdev/cargo-dist/releases/assets/556576998"
 provenance = "github-attestations"
 
 [tools.cargo-dist."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:f274b9889e93333a52cdcab86b93ab04b875b8ef4eebc7f8589514e0aff827e6"
-url = "https://github.com/axodotdev/cargo-dist/releases/download/v0.34.0/cargo-dist-x86_64-unknown-linux-musl.tar.xz"
-url_api = "https://api.github.com/repos/axodotdev/cargo-dist/releases/assets/700690624"
+checksum = "sha256:b8e95bc76c63375958173ef5ae2dbd8e9211cc1ed03cdee0899702766b4c2a2e"
+url = "https://github.com/axodotdev/cargo-dist/releases/download/v0.33.0/cargo-dist-x86_64-unknown-linux-musl.tar.xz"
+url_api = "https://api.github.com/repos/axodotdev/cargo-dist/releases/assets/556576998"
 provenance = "github-attestations"
 
 [tools.cargo-dist."platforms.macos-arm64"]
-checksum = "sha256:d1eec30e63eed23e5a5bd48fe96eae314799811bffca254ec1d2264638ba1890"
-url = "https://github.com/axodotdev/cargo-dist/releases/download/v0.34.0/cargo-dist-aarch64-apple-darwin.tar.xz"
-url_api = "https://api.github.com/repos/axodotdev/cargo-dist/releases/assets/700690549"
+checksum = "sha256:7b3cbe25511de01d74c0f5fcb7909edabd379bea9cfa284d93af5a3cdfa3247c"
+url = "https://github.com/axodotdev/cargo-dist/releases/download/v0.33.0/cargo-dist-aarch64-apple-darwin.tar.xz"
+url_api = "https://api.github.com/repos/axodotdev/cargo-dist/releases/assets/556576963"
 provenance = "github-attestations"
 
 [tools.cargo-dist."platforms.windows-x64"]
-checksum = "sha256:7bb53fbc998321f77a3bbb044084a52747c8ed041cf6d6a604802aa57b9c80c6"
-url = "https://github.com/axodotdev/cargo-dist/releases/download/v0.34.0/cargo-dist-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/axodotdev/cargo-dist/releases/assets/700690601"
+checksum = "sha256:9a36d70795e14326a5ec4bf17aee085df00ab85a322739291ea5d4b1b5f693cd"
+url = "https://github.com/axodotdev/cargo-dist/releases/download/v0.33.0/cargo-dist-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/axodotdev/cargo-dist/releases/assets/556576987"
 provenance = "github-attestations"
 
 [tools.cargo-dist."platforms.windows-x64-baseline"]
-checksum = "sha256:7bb53fbc998321f77a3bbb044084a52747c8ed041cf6d6a604802aa57b9c80c6"
-url = "https://github.com/axodotdev/cargo-dist/releases/download/v0.34.0/cargo-dist-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/axodotdev/cargo-dist/releases/assets/700690601"
+checksum = "sha256:9a36d70795e14326a5ec4bf17aee085df00ab85a322739291ea5d4b1b5f693cd"
+url = "https://github.com/axodotdev/cargo-dist/releases/download/v0.33.0/cargo-dist-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/axodotdev/cargo-dist/releases/assets/556576987"
 provenance = "github-attestations"
 
 [[tools.cargo-release]]
@@ -292,15 +292,15 @@ url_api = "https://api.github.com/repos/cli/cli/releases/assets/740719079"
 provenance = "github-attestations"
 
 [tools.gh."platforms.windows-x64"]
-checksum = "sha256:98d0cfa794721665d7973dd728c78aff7bd836d58f10f6d7a03568eccb0a22e0"
-url = "https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_windows_amd64.zip"
-url_api = "https://api.github.com/repos/cli/cli/releases/assets/679195750"
+checksum = "sha256:08c06d10482f12c478018cd259f64acbd5f625712cadf331aad19ba973c879e5"
+url = "https://github.com/cli/cli/releases/download/v2.104.0/gh_2.104.0_windows_amd64.zip"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/740719168"
 provenance = "github-attestations"
 
 [tools.gh."platforms.windows-x64-baseline"]
-checksum = "sha256:98d0cfa794721665d7973dd728c78aff7bd836d58f10f6d7a03568eccb0a22e0"
-url = "https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_windows_amd64.zip"
-url_api = "https://api.github.com/repos/cli/cli/releases/assets/679195750"
+checksum = "sha256:08c06d10482f12c478018cd259f64acbd5f625712cadf331aad19ba973c879e5"
+url = "https://github.com/cli/cli/releases/download/v2.104.0/gh_2.104.0_windows_amd64.zip"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/740719168"
 provenance = "github-attestations"
 
 [[tools.git-cliff]]
@@ -378,16 +378,16 @@ url = "https://github.com/sbdchd/squawk/releases/download/v2.72.0/squawk-darwin-
 url_api = "https://api.github.com/repos/sbdchd/squawk/releases/assets/722958770"
 
 [tools."github:sbdchd/squawk"."platforms.windows-x64"]
-checksum = "sha256:3299e2f9e41ab5d6274cad64a061488a370a0310a02d17e0dcf3845ad779beec"
+checksum = "sha256:dd36bf596181802b8b44512417e5ae5c133ae6be126d7563117f476ccdd9900a"
 checksum_source = "mise-versions"
-url = "https://github.com/sbdchd/squawk/releases/download/v2.71.0/squawk-windows-x64.exe"
-url_api = "https://api.github.com/repos/sbdchd/squawk/releases/assets/688738836"
+url = "https://github.com/sbdchd/squawk/releases/download/v2.72.0/squawk-windows-x64.exe"
+url_api = "https://api.github.com/repos/sbdchd/squawk/releases/assets/722962563"
 
 [tools."github:sbdchd/squawk"."platforms.windows-x64-baseline"]
-checksum = "sha256:3299e2f9e41ab5d6274cad64a061488a370a0310a02d17e0dcf3845ad779beec"
+checksum = "sha256:dd36bf596181802b8b44512417e5ae5c133ae6be126d7563117f476ccdd9900a"
 checksum_source = "mise-versions"
-url = "https://github.com/sbdchd/squawk/releases/download/v2.71.0/squawk-windows-x64.exe"
-url_api = "https://api.github.com/repos/sbdchd/squawk/releases/assets/688738836"
+url = "https://github.com/sbdchd/squawk/releases/download/v2.72.0/squawk-windows-x64.exe"
+url_api = "https://api.github.com/repos/sbdchd/squawk/releases/assets/722962563"
 
 [[tools.gitleaks]]
 version = "8.30.1"
@@ -455,12 +455,12 @@ checksum = "sha256:6f3421de3a8cc2ac578c8cfb33b8edde290dde2871bc1bab12e24f2e5caea
 url = "https://get.helm.sh/helm-v4.3.2-darwin-arm64.tar.gz"
 
 [tools.helm."platforms.windows-x64"]
-checksum = "sha256:5735a2bd59071b814546c6d0a76f29a8fd3ebe06e3a4791dd2784804ae895f34"
-url = "https://get.helm.sh/helm-v4.3.1-windows-amd64.tar.gz"
+checksum = "sha256:03af0db72f7ba1108065365a21e2a9e581a6fdf9fd8191156373e17aab75e4dc"
+url = "https://get.helm.sh/helm-v4.3.2-windows-amd64.tar.gz"
 
 [tools.helm."platforms.windows-x64-baseline"]
-checksum = "sha256:5735a2bd59071b814546c6d0a76f29a8fd3ebe06e3a4791dd2784804ae895f34"
-url = "https://get.helm.sh/helm-v4.3.1-windows-amd64.tar.gz"
+checksum = "sha256:03af0db72f7ba1108065365a21e2a9e581a6fdf9fd8191156373e17aab75e4dc"
+url = "https://get.helm.sh/helm-v4.3.2-windows-amd64.tar.gz"
 
 [[tools.kubeconform]]
 version = "0.8.0"
@@ -610,16 +610,16 @@ url = "https://github.com/google/osv-scanner/releases/download/v2.7.1/osv-scanne
 url_api = "https://api.github.com/repos/google/osv-scanner/releases/assets/726165290"
 
 [tools.osv-scanner."platforms.windows-x64"]
-checksum = "sha256:9964ed64ec9a387391eb4cc006ad5c531154821aef29b793e02c448de4686438"
+checksum = "sha256:7121dcf420aefbbf89a7f0050c4d3094e079ff93afd334dfc96f16b02ec85800"
 checksum_source = "mise-versions"
-url = "https://github.com/google/osv-scanner/releases/download/v2.7.0/osv-scanner_windows_amd64.exe"
-url_api = "https://api.github.com/repos/google/osv-scanner/releases/assets/632251671"
+url = "https://github.com/google/osv-scanner/releases/download/v2.7.1/osv-scanner_windows_amd64.exe"
+url_api = "https://api.github.com/repos/google/osv-scanner/releases/assets/726165294"
 
 [tools.osv-scanner."platforms.windows-x64-baseline"]
-checksum = "sha256:9964ed64ec9a387391eb4cc006ad5c531154821aef29b793e02c448de4686438"
+checksum = "sha256:7121dcf420aefbbf89a7f0050c4d3094e079ff93afd334dfc96f16b02ec85800"
 checksum_source = "mise-versions"
-url = "https://github.com/google/osv-scanner/releases/download/v2.7.0/osv-scanner_windows_amd64.exe"
-url_api = "https://api.github.com/repos/google/osv-scanner/releases/assets/632251671"
+url = "https://github.com/google/osv-scanner/releases/download/v2.7.1/osv-scanner_windows_amd64.exe"
+url_api = "https://api.github.com/repos/google/osv-scanner/releases/assets/726165294"
 
 [[tools.postgres]]
 version = "18.6"
@@ -758,15 +758,15 @@ url_api = "https://api.github.com/repos/tombi-toml/tombi/releases/assets/7318658
 provenance = "github-attestations"
 
 [tools.tombi."platforms.windows-x64"]
-checksum = "sha256:e92d0f276682fb4ccc30d0edca4760151e4ddb0666b4ed71f0f59ac69aa42418"
-url = "https://github.com/tombi-toml/tombi/releases/download/v1.10.0/tombi-cli-1.10.0-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/tombi-toml/tombi/releases/assets/709140325"
+checksum = "sha256:fc059da801b0f6f6dd816eb4ede2a532d1562bc16c56cfe6557a9ecfa81a235a"
+url = "https://github.com/tombi-toml/tombi/releases/download/v1.11.2/tombi-cli-1.11.2-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/tombi-toml/tombi/releases/assets/731865844"
 provenance = "github-attestations"
 
 [tools.tombi."platforms.windows-x64-baseline"]
-checksum = "sha256:e92d0f276682fb4ccc30d0edca4760151e4ddb0666b4ed71f0f59ac69aa42418"
-url = "https://github.com/tombi-toml/tombi/releases/download/v1.10.0/tombi-cli-1.10.0-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/tombi-toml/tombi/releases/assets/709140325"
+checksum = "sha256:fc059da801b0f6f6dd816eb4ede2a532d1562bc16c56cfe6557a9ecfa81a235a"
+url = "https://github.com/tombi-toml/tombi/releases/download/v1.11.2/tombi-cli-1.11.2-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/tombi-toml/tombi/releases/assets/731865844"
 provenance = "github-attestations"
 
 [[tools.typos]]
@@ -802,6 +802,18 @@ checksum_source = "mise-versions"
 url = "https://github.com/crate-ci/typos/releases/download/v1.52.2/typos-v1.52.2-aarch64-apple-darwin.tar.gz"
 url_api = "https://api.github.com/repos/crate-ci/typos/releases/assets/733789873"
 
+[tools.typos."platforms.windows-x64"]
+checksum = "sha256:ab79036832cea0f2a21aa947731d39512250cc0f7a6a2f6add26262738a8cc11"
+checksum_source = "mise-versions"
+url = "https://github.com/crate-ci/typos/releases/download/v1.52.2/typos-v1.52.2-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/crate-ci/typos/releases/assets/733790297"
+
+[tools.typos."platforms.windows-x64-baseline"]
+checksum = "sha256:ab79036832cea0f2a21aa947731d39512250cc0f7a6a2f6add26262738a8cc11"
+checksum_source = "mise-versions"
+url = "https://github.com/crate-ci/typos/releases/download/v1.52.2/typos-v1.52.2-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/crate-ci/typos/releases/assets/733790297"
+
 [[tools.vale]]
 version = "3.24.0"
 backend = "aqua:vale-cli/vale"
@@ -836,17 +848,17 @@ checksum_source = "mise-versions"
 url = "https://github.com/vale-cli/vale/releases/download/v3.24.0/vale_3.24.0_macOS_arm64.tar.gz"
 url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/603879362"
 
-[tools.typos."platforms.windows-x64"]
-checksum = "sha256:7da6eb1932ad86921420a7198dbc9e62a10bcd995144704dc19b81d3fb802182"
+[tools.vale."platforms.windows-x64"]
+checksum = "sha256:3a8884774973b6f2826877e1c6388a5feae4704ef88a9a9c912c77ce186990f3"
 checksum_source = "mise-versions"
-url = "https://github.com/crate-ci/typos/releases/download/v1.52.0/typos-v1.52.0-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/crate-ci/typos/releases/assets/703159242"
+url = "https://github.com/vale-cli/vale/releases/download/v3.24.0/vale_3.24.0_Windows_64-bit.zip"
+url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/603879364"
 
-[tools.typos."platforms.windows-x64-baseline"]
-checksum = "sha256:7da6eb1932ad86921420a7198dbc9e62a10bcd995144704dc19b81d3fb802182"
+[tools.vale."platforms.windows-x64-baseline"]
+checksum = "sha256:3a8884774973b6f2826877e1c6388a5feae4704ef88a9a9c912c77ce186990f3"
 checksum_source = "mise-versions"
-url = "https://github.com/crate-ci/typos/releases/download/v1.52.0/typos-v1.52.0-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/crate-ci/typos/releases/assets/703159242"
+url = "https://github.com/vale-cli/vale/releases/download/v3.24.0/vale_3.24.0_Windows_64-bit.zip"
+url_api = "https://api.github.com/repos/vale-cli/vale/releases/assets/603879364"
 
 [[tools.zizmor]]
 version = "1.32.0"

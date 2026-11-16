@@ -30,7 +30,7 @@ if [[ "$(git rev-parse HEAD)" != "$(git rev-parse FETCH_HEAD)" ]]; then
   exit 1
 fi
 
-tag="$(git-cliff --bumped-version)"
+tag="$(git-cliff --unreleased --bumped-version)"
 if git rev-parse --quiet --verify "refs/tags/$tag" >/dev/null; then
   # Leave the checkout as it was so the next attempt starts clean.
   git restore -- "${refreshed[@]}"
@@ -38,8 +38,15 @@ if git rev-parse --quiet --verify "refs/tags/$tag" >/dev/null; then
   exit 1
 fi
 
+# Fetch GitHub metadata and render the complete changelog before changing Cargo
+# versions. An API failure must leave the release inputs intact for another try.
+changelog="$(mktemp)"
+trap 'rm -f "$changelog"' EXIT
+cp CHANGELOG.md "$changelog"
+git-cliff --unreleased --tag "$tag" --prepend "$changelog"
+
 cargo release version "${tag#v}" --workspace --execute --no-confirm
-git-cliff --unreleased --tag "$tag" --prepend CHANGELOG.md
+cat "$changelog" > CHANGELOG.md
 git commit --all --message "chore(version): $tag"
 git tag "$tag"
 echo "Prepared $tag"

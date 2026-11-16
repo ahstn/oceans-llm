@@ -1,9 +1,9 @@
 {
   "metadata": {
     "source": "vendored_litellm",
-    "etag": "\"c444e41572026611f9a0058b399439360f0745b8337c291ffabe99da639adcdb\"",
-    "fetched_at": "2026-11-16T00:00:38.131793Z",
-    "checksum": "2c45eea16a8a202490684a8ea88e4caf0229ee88fb7b7058e021cb90c2775d6a"
+    "etag": "\"86c6eed4c77e05ccf1c02cae8e693dbe544e792d5caca51fa16a95664d7036e3\"",
+    "fetched_at": "2026-11-16T20:53:47.17863Z",
+    "checksum": "6d5c420a73994ab2467f141898fd13627cf2d6cc79fdcfa9652169207904fea2"
   },
   "providers": {
     "amazon-bedrock": {
@@ -36545,6 +36545,40 @@
         "omni-moderation-2024-09-26": {
           "id": "omni-moderation-2024-09-26",
           "display_name": "omni-moderation-2024-09-26",
+          "release_date": "",
+          "last_updated": "",
+          "metadata": {
+            "reasoning": null,
+            "tool_call": null,
+            "structured_output": null,
+            "attachment": null,
+            "temperature": null,
+            "knowledge": null,
+            "reasoning_options": []
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": null,
+            "input": 32768,
+            "output": 0
+          },
+          "modalities": {
+            "input": [],
+            "output": []
+          }
+        },
+        "omni-moderation-csam-latest": {
+          "id": "omni-moderation-csam-latest",
+          "display_name": "omni-moderation-csam-latest",
           "release_date": "",
           "last_updated": "",
           "metadata": {

@@ -28,9 +28,9 @@ const LAST_STRICT_VERSION: u32 = 81;
 // Every migration after the strict legacy registry must explicitly declare
 // its compatibility here; never infer compatibility from its SQL.
 const READER_COMPATIBILITY: &[(u32, ReaderCompatibility)] = &[
-    // Makes `attribution_pull_requests.merged_at` nullable, which older readers decode as set.
+    // V82 permits unmerged pull requests with no merge time; older readers require it.
     (82, ReaderCompatibility::RequiresReader(82)),
-    // Only adds an index.
+    // V83 only adds an index.
     (83, ReaderCompatibility::Additive),
 ];
 
