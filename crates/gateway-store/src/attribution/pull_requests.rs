@@ -142,7 +142,7 @@ pub(crate) fn update_pull_request(
     write: &AttributionPullRequestWrite,
 ) -> Result<AttributionStatement, StoreError> {
     let mut binds = Binds::new(dialect);
-    let set = binds.assignments(vec![
+    let mut assignments = vec![
         ("title", text(&write.title)),
         ("url", optional_text(write.url.as_deref())),
         ("base_ref", optional_text(write.base_ref.as_deref())),
@@ -162,12 +162,13 @@ pub(crate) fn update_pull_request(
         ("opened_at", optional_millis(write.lifecycle.opened_at)?),
         ("closed_at", optional_millis(write.lifecycle.closed_at)?),
         ("details", optional_text(details_column(write)?.as_deref())),
-        (
-            "last_activity_at",
-            optional_millis(write.lifecycle.last_activity_at)?,
-        ),
         ("updated_at", millis(write.received_at)?),
-    ]);
+    ];
+    // A write with no activity time keeps the stored one rather than clearing it.
+    if let Some(last_activity_at) = write.lifecycle.last_activity_at {
+        assignments.push(("last_activity_at", millis(last_activity_at)?));
+    }
+    let set = binds.assignments(assignments);
     let pull_request = binds.push(text(attribution_pull_request_id));
     Ok(binds.finish(format!(
         "UPDATE attribution_pull_requests SET {set} \

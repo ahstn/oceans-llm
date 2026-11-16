@@ -231,13 +231,15 @@ pub fn github_revert_number(body: &str, head_ref: &str, repository_path: &str) -
         .filter(|number| *number > 0)
 }
 
-/// `Revert "…"`, `Revert …` or a Conventional Commits `revert:` / `revert(scope):` title.
+/// `Revert "…"` as GitHub's revert button writes it, `Revert …`, or a Conventional Commits
+/// `revert:`, `revert!:` or `revert(scope):` type, in any case. The gateway's fallback for
+/// pull requests without a hook verdict (`report::insights::is_revert_title`) keeps the same
+/// rule and test cases; change both together.
 pub fn is_revert_title(title: &str) -> bool {
-    let title = title.trim_start();
-    title.starts_with("Revert ")
-        || title.starts_with("revert:")
-        || title.starts_with("revert(")
-        || title.starts_with("revert!:")
+    let lowered = title.trim_start().to_ascii_lowercase();
+    ["revert ", "revert\"", "revert:", "revert!:", "revert("]
+        .iter()
+        .any(|prefix| lowered.starts_with(prefix))
 }
 
 /// Computes and caches the fingerprints for `merge_sha` when the pull request's whole change is
@@ -543,15 +545,21 @@ mod tests {
     fn revert_titles_cover_git_and_conventional_commits() {
         for title in [
             "Revert \"Add widgets\"",
+            "Revert\"Add widgets\"",
             "Revert the cache",
+            "REVERT the cache",
             "revert: drop flag",
+            "Revert: drop flag",
+            "revert!: drop flag",
             "revert(api): x",
+            "revert(api)!: x",
         ] {
             assert!(is_revert_title(title), "{title}");
         }
         for title in [
             "Reverting is hard",
             "fix: revert-proof cache",
+            "fix: revert detection",
             "Add revert button",
         ] {
             assert!(!is_revert_title(title), "{title}");

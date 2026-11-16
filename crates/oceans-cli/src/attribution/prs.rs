@@ -187,19 +187,20 @@ pub enum SyncOutcome {
     Unavailable(String),
     /// The directory isn't a repository with a usable remote.
     NoRepository,
-    Queued {
-        pull_requests: usize,
-        report: EnqueueReport,
-    },
+    /// Queued this many pull requests; `sync`'s `queued` callback saw the queue's report.
+    Queued { pull_requests: usize },
 }
 
 /// Fetches up to `limit` merged pull requests for the repository in `directory` and queues
 /// them. With `if_stale`, does nothing when the last sync for this repository is newer.
+/// `queued` runs as soon as they are queued, before the slower fingerprinting of new merges,
+/// so delivery can start without waiting for it.
 pub fn sync(
     state: &State,
     directory: &Path,
     limit: u32,
     if_stale: Option<Duration>,
+    queued: impl FnOnce(&EnqueueReport),
 ) -> anyhow::Result<SyncOutcome> {
     let Some(repository) = git_context(directory).repository else {
         return Ok(SyncOutcome::NoRepository);
@@ -229,13 +230,13 @@ pub fn sync(
     let count = pull_requests.len();
     let payloads = chunk(&repository, pull_requests);
     let report = state.enqueue(payloads)?;
+    queued(&report);
     remember_merges(&fetched, directory, &mut cache);
     reverts::trim(&mut cache);
     // The cache only speeds up later matches, so a failed write must not lose the sync.
     let _ = state.save_change_cache(&repository, &cache);
     Ok(SyncOutcome::Queued {
         pull_requests: count,
-        report,
     })
 }
 

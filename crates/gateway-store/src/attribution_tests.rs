@@ -492,7 +492,8 @@ async fn pull_requests_replace_by_observation<S: GatewayStore>(store: &S) {
 }
 
 /// An open pull request is stored without a merge time, lists by its opened time, and moves on
-/// to merged when re-sent; its details JSON round-trips.
+/// to merged when re-sent, keeping its activity time when the re-send has none; its details
+/// JSON round-trips.
 async fn pull_requests_keep_their_lifecycle<S: GatewayStore>(store: &S) {
     let alice = user_owner(store, "alice").await;
     let merged = pull_request(&alice, 9, base(), &["c-1"]);
@@ -545,7 +546,14 @@ async fn pull_requests_keep_their_lifecycle<S: GatewayStore>(store: &S) {
         .await
         .expect("report");
     assert_eq!(listed[0].merged_at, Some(base()));
-    assert_eq!(listed[0].lifecycle, merged.lifecycle);
+    // The merge write carries no activity time, so the stored one stays.
+    assert_eq!(
+        listed[0].lifecycle,
+        AttributionPullRequestLifecycle {
+            last_activity_at: open.lifecycle.last_activity_at,
+            ..merged.lifecycle
+        }
+    );
 }
 
 async fn agent_sessions_merge_events<S: GatewayStore>(store: &S) {
