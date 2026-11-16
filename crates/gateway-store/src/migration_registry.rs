@@ -34,7 +34,9 @@ const LAST_STRICT_VERSION: u32 = 81;
 
 // Every migration after the strict legacy registry must explicitly declare
 // its compatibility here; never infer compatibility from its SQL.
-const READER_COMPATIBILITY: &[(u32, ReaderCompatibility)] = &[];
+// V82 permits unmerged pull requests with no merge time; older readers require it.
+const READER_COMPATIBILITY: &[(u32, ReaderCompatibility)] =
+    &[(82, ReaderCompatibility::RequiresReader(82))];
 
 /// libsql migrations that rebuild a table other tables reference, with that
 /// table. They run with foreign keys off, as SQLite's table-rebuild
