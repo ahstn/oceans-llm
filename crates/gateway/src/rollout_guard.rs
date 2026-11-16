@@ -8,10 +8,19 @@
 //! because a few errors in little traffic say nothing about a release. As a
 //! Helm `post-upgrade` hook its failure fails the release, so
 //! `helm upgrade --rollback-on-failure` rolls back.
+//!
+//! Baselines are collected before the observation window starts. Each poll
+//! resolves and fetches concurrently, with at most 16 in-flight fetches and a
+//! total budget of the smaller of five seconds and the polling interval.
+//! Historical instances are not evidence of current coverage: three consecutive
+//! observation polls with no live snapshots fail immediately, including at the
+//! deadline. One or two missed polls are tolerated, and any replacement process
+//! resets the streak. A window with no snapshots at all still fails.
 
-use std::{collections::HashMap, net::SocketAddr, time::Duration};
+use std::{collections::HashMap, future::Future, net::SocketAddr, time::Duration};
 
 use anyhow::{Context, bail};
+use futures_util::{Stream, StreamExt, stream};
 use tokio::time::Instant;
 use uuid::Uuid;
 
@@ -19,6 +28,8 @@ use crate::{cli::RolloutGuardArgs, http::traffic::TrafficSnapshot};
 
 /// How long one pod gets to answer a poll.
 const POLL_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_CONCURRENT_POLLS: usize = 16;
+const MAX_CONSECUTIVE_MISSED_POLLS: usize = 3;
 
 #[derive(Debug, Clone)]
 pub struct GuardSettings {
@@ -162,10 +173,49 @@ pub async fn watch(settings: &GuardSettings) -> anyhow::Result<WindowTotals> {
         .timeout(POLL_TIMEOUT)
         .build()
         .context("failed building the rollout guard HTTP client")?;
-    let deadline = Instant::now() + settings.window;
+    watch_with_poll(settings, || {
+        poll(
+            &client,
+            &settings.targets,
+            POLL_TIMEOUT.min(settings.interval),
+        )
+    })
+    .await
+}
+
+async fn watch_with_poll<F, Fut>(
+    settings: &GuardSettings,
+    mut poll: F,
+) -> anyhow::Result<WindowTotals>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Vec<TrafficSnapshot>>,
+{
     let mut window = TrafficWindow::default();
+    for snapshot in poll().await {
+        window.observe(snapshot);
+    }
+    // Slow baseline requests must not consume the observation window.
+    let start = Instant::now();
+    let deadline = start + settings.window;
+    let mut next_poll = start + settings.interval;
+    let mut missed_polls = 0;
     loop {
-        for snapshot in poll(&client, &settings.targets).await {
+        tokio::time::sleep_until(next_poll.min(deadline)).await;
+        let snapshots = poll().await;
+        let live_instances = snapshots.len();
+        missed_polls = if live_instances == 0 {
+            missed_polls + 1
+        } else {
+            0
+        };
+        if missed_polls >= MAX_CONSECUTIVE_MISSED_POLLS {
+            bail!(
+                "rollout guard failed: no gateway answered at {} for {missed_polls} consecutive polls",
+                settings.targets.join(", ")
+            );
+        }
+        for snapshot in snapshots {
             window.observe(snapshot);
         }
         let totals = window.totals();
@@ -189,32 +239,66 @@ pub async fn watch(settings: &GuardSettings) -> anyhow::Result<WindowTotals> {
             return Ok(totals);
         }
         println!(
-            "rollout guard: {} pods, {} requests, {} gateway errors, {} upstream errors",
+            "rollout guard: {} live pods, {} observed instances, {} requests, {} gateway errors, {} upstream errors",
+            live_instances,
             window.instance_count(),
             totals.requests,
             totals.gateway_errors,
             totals.upstream_errors
         );
-        tokio::time::sleep(settings.interval.min(deadline - now)).await;
+        next_poll += settings.interval;
+        if next_poll <= now {
+            next_poll = now + settings.interval;
+        }
     }
 }
 
 /// Every snapshot the targets' current addresses return. A headless Service
 /// name resolves to one address per ready pod, so this re-resolves each time.
-async fn poll(client: &reqwest::Client, targets: &[String]) -> Vec<TrafficSnapshot> {
-    let mut snapshots = Vec::new();
-    for target in targets {
-        let addresses: Vec<SocketAddr> = match tokio::net::lookup_host(target.as_str()).await {
-            Ok(addresses) => addresses.collect(),
-            Err(error) => {
-                eprintln!("rollout guard: cannot resolve {target}: {error}");
-                continue;
+async fn poll(
+    client: &reqwest::Client,
+    targets: &[String],
+    timeout: Duration,
+) -> Vec<TrafficSnapshot> {
+    let addresses = stream::iter(targets)
+        .map(|target| async move {
+            match tokio::net::lookup_host(target.as_str()).await {
+                Ok(addresses) => addresses.collect::<Vec<_>>(),
+                Err(error) => {
+                    eprintln!("rollout guard: cannot resolve {target}: {error}");
+                    Vec::new()
+                }
             }
-        };
-        for address in addresses {
-            match fetch(client, address).await {
-                Ok(snapshot) => snapshots.push(snapshot),
-                Err(error) => eprintln!("rollout guard: {address}: {error:#}"),
+        })
+        .buffer_unordered(MAX_CONCURRENT_POLLS)
+        .flat_map(stream::iter);
+    let requests = addresses.map(|address| async move {
+        fetch(client, address)
+            .await
+            .with_context(|| format!("management target {address}"))
+    });
+    collect_snapshots(requests, timeout).await
+}
+
+/// The shared deadline covers DNS, queued requests, and response bodies.
+/// Keep successful responses even when other targets exhaust the budget.
+async fn collect_snapshots<S, F>(requests: S, timeout: Duration) -> Vec<TrafficSnapshot>
+where
+    S: Stream<Item = F>,
+    F: Future<Output = anyhow::Result<TrafficSnapshot>>,
+{
+    let responses = requests.buffer_unordered(MAX_CONCURRENT_POLLS);
+    tokio::pin!(responses);
+    let deadline = Instant::now() + timeout;
+    let mut snapshots = Vec::new();
+    loop {
+        match tokio::time::timeout_at(deadline, responses.next()).await {
+            Ok(Some(Ok(snapshot))) => snapshots.push(snapshot),
+            Ok(Some(Err(error))) => eprintln!("rollout guard: {error:#}"),
+            Ok(None) => break,
+            Err(_) => {
+                eprintln!("rollout guard: poll deadline reached");
+                break;
             }
         }
     }
@@ -236,12 +320,17 @@ async fn fetch(client: &reqwest::Client, address: SocketAddr) -> anyhow::Result<
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, time::Duration};
+    use std::{cell::Cell, sync::Arc, time::Duration};
 
     use axum::http::StatusCode;
+    use futures_util::stream;
+    use tokio::time::Instant;
     use uuid::Uuid;
 
-    use super::{GuardSettings, TrafficWindow, WindowTotals, watch};
+    use super::{
+        GuardSettings, MAX_CONCURRENT_POLLS, TrafficWindow, WindowTotals, collect_snapshots, watch,
+        watch_with_poll,
+    };
     use crate::{
         http::traffic::{TrafficCounters, TrafficSnapshot, management_router},
         shutdown::Shutdown,
@@ -268,6 +357,156 @@ mod tests {
             gateway_errors: gateway,
             upstream_errors: upstream,
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn polls_concurrently_with_a_bounded_limit() {
+        let active = Cell::new(0);
+        let peak = Cell::new(0);
+        let start = Instant::now();
+        let requests = stream::iter((0..MAX_CONCURRENT_POLLS * 2).map(|_| {
+            let active = &active;
+            let peak = &peak;
+            async move {
+                active.set(active.get() + 1);
+                peak.set(peak.get().max(active.get()));
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                active.set(active.get() - 1);
+                Ok(snapshot(Uuid::new_v4(), 0, 0, 0))
+            }
+        }));
+        let snapshots = collect_snapshots(requests, Duration::from_secs(1)).await;
+        assert_eq!(snapshots.len(), MAX_CONCURRENT_POLLS * 2);
+        assert_eq!(peak.get(), MAX_CONCURRENT_POLLS);
+        assert_eq!(active.get(), 0);
+        assert_eq!(start.elapsed(), Duration::from_millis(200));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn poll_deadline_keeps_answers_without_waiting_for_silent_targets() {
+        let requests = stream::iter((0..MAX_CONCURRENT_POLLS * 2).map(|index| async move {
+            if index != 0 {
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
+            Ok(snapshot(Uuid::new_v4(), 0, 0, 0))
+        }));
+        let start = Instant::now();
+        let snapshots = collect_snapshots(requests, Duration::from_millis(100)).await;
+        assert_eq!(snapshots.len(), 1);
+        assert_eq!(start.elapsed(), Duration::from_millis(100));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn takes_baselines_before_starting_the_full_window() {
+        let settings = settings(Vec::new());
+        let instance = Uuid::new_v4();
+        let start = Instant::now();
+        let mut calls = 0;
+        let totals = watch_with_poll(&settings, || {
+            calls += 1;
+            let baseline = calls == 1;
+            async move {
+                if baseline {
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                }
+                vec![snapshot(instance, if baseline { 100 } else { 200 }, 0, 0)]
+            }
+        })
+        .await
+        .expect("healthy window after slow baseline");
+        assert_eq!(totals.requests, 100);
+        assert_eq!(start.elapsed(), Duration::from_secs(5) + settings.window);
+        assert!(calls > 2, "the slow baseline must not skip observations");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn fails_when_all_targets_go_silent_after_baselines() {
+        for window_intervals in [3, 8] {
+            let mut settings = settings(Vec::new());
+            settings.window = settings.interval * window_intervals;
+            let start = Instant::now();
+            let mut calls = 0;
+            let error = watch_with_poll(&settings, || {
+                calls += 1;
+                let snapshots = if calls == 1 {
+                    vec![snapshot(Uuid::new_v4(), 100, 0, 0)]
+                } else {
+                    Vec::new()
+                };
+                std::future::ready(snapshots)
+            })
+            .await
+            .expect_err("historical snapshots do not establish live coverage");
+            assert!(
+                error.to_string().contains("for 3 consecutive polls"),
+                "{error}"
+            );
+            assert_eq!(calls, 4, "baseline plus three missed observation polls");
+            assert_eq!(start.elapsed(), settings.interval * 3);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn single_missed_final_poll_after_live_polls_passes() {
+        let mut settings = settings(Vec::new());
+        settings.window = settings.interval * 3;
+        let instance = Uuid::new_v4();
+        let mut calls = 0;
+        let totals = watch_with_poll(&settings, || {
+            calls += 1;
+            let snapshots = if calls == 4 {
+                Vec::new()
+            } else {
+                vec![snapshot(instance, calls * 100, 0, 0)]
+            };
+            std::future::ready(snapshots)
+        })
+        .await
+        .expect("one transient miss at the deadline is tolerated");
+        assert_eq!(calls, 4);
+        assert_eq!(totals.requests, 200);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn replacement_snapshot_resets_consecutive_missed_polls() {
+        let mut settings = settings(Vec::new());
+        settings.window = settings.interval * 6;
+        let old = Uuid::new_v4();
+        let replacement = Uuid::new_v4();
+        let mut calls = 0;
+        let totals = watch_with_poll(&settings, || {
+            calls += 1;
+            let snapshots = match calls {
+                1 => vec![snapshot(old, 100, 0, 0)],
+                4 => vec![snapshot(replacement, 0, 0, 0)],
+                7 => vec![snapshot(replacement, 100, 0, 0)],
+                _ => Vec::new(),
+            };
+            std::future::ready(snapshots)
+        })
+        .await
+        .expect("each replacement response resets the missed-poll streak");
+        assert_eq!(calls, 7);
+        assert_eq!(totals.requests, 100);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn rolling_replacement_keeps_live_coverage() {
+        let old = Uuid::new_v4();
+        let replacement = Uuid::new_v4();
+        let mut calls = 0;
+        let totals = watch_with_poll(&settings(Vec::new()), || {
+            calls += 1;
+            let current = if calls == 1 {
+                snapshot(old, 100, 0, 0)
+            } else {
+                snapshot(replacement, calls * 100, 0, 0)
+            };
+            std::future::ready(vec![current])
+        })
+        .await
+        .expect("the replacement answers even though the original disappeared");
+        assert!(totals.requests >= 50);
     }
 
     #[test]

@@ -171,7 +171,7 @@ spec:
           readinessProbe:
             {{- include "oceans-llm.renderProbe" (dict "probe" .Values.probes.gateway.readiness "readiness" true) | nindent 12 }}
           {{- end }}
-          {{- with .Values.gateway.lifecycle }}
+          {{- with (include "oceans-llm.gatewayLifecycle" . | fromYaml) }}
           lifecycle:
             {{- toYaml . | nindent 12 }}
           {{- end }}

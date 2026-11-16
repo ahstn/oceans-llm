@@ -174,13 +174,15 @@ waiter. The gateway startup probe checks `/healthz` every two seconds, allowing
 On pod termination, `gateway.lifecycle.preStop.sleep.seconds: 10` gives endpoint
 changes time to propagate before SIGTERM. Native lifecycle sleep requires
 Kubernetes 1.30 or newer; chart rendering is validated against Kubernetes 1.35.
+Set the sleep seconds to `0` to omit the hook, or supply a custom `preStop`
+handler such as `exec` or `httpGet`; the default sleep is then omitted.
 The gateway then drains in-flight requests for
 `gateway.config.server.shutdown_drain_seconds` (default 300). The pod's
 `gateway.terminationGracePeriodSeconds: 330` includes sleep, drain and 20 seconds
 for final writes and shutdown. Rendering fails unless:
 
 ```text
-terminationGracePeriodSeconds >= preStop.sleep.seconds + shutdown_drain_seconds + 20
+terminationGracePeriodSeconds >= rendered preStop sleep seconds + shutdown_drain_seconds + 20
 ```
 
 Increase the grace period together with a longer drain or sleep. Configure
@@ -205,12 +207,35 @@ window; raise the timeout if those settings need longer.
 
 Enable `rolloutGuard.enabled` to add a post-upgrade traffic check, after the
 bootstrap and seed hooks. See [rollout-guard-values.yaml](examples/rollout-guard-values.yaml).
-It resolves ready gateway pods through a private headless management Service and
-polls their process-local traffic counters every 15 seconds for 300 seconds.
+It resolves ready gateway pods through a private headless management Service.
+It first collects baselines, then observes traffic for 300 seconds, polling every
+15 seconds with at most 16 concurrent requests. Each poll, including DNS, has a
+shared deadline of the smaller of five seconds and the polling interval; a slow
+baseline cannot consume the observation window.
 The chart injects `server.management_bind: "0.0.0.0:9090"` into the effective
 gateway config; `rolloutGuard.managementPort` changes the port. A conflicting
-explicit bind is rejected. The Service is not routed through ingress; restrict
-pod-network access to management endpoints using your network policy.
+explicit bind is rejected. The endpoint has no credentials or request contents,
+but exposes process identity, version, start time, drain state and aggregate
+traffic/error counts. It is not routed through ingress.
+
+With the guard enabled, `rolloutGuard.networkPolicy.enabled: true` (the default)
+adds an ingress NetworkPolicy permitting the management TCP port only from this
+release's guard pods in the same namespace. This requires a CNI that enforces
+NetworkPolicy, including `endPort` ranges. Other policies are additive: an
+existing allow-all policy can still expose management. Disable the chart policy
+only if an equivalent external policy protects it.
+Explicit single-port rules keep HTTP and declared sidecar TCP ports open even
+when a CNI ignores `endPort`; undeclared TCP listeners still need range support.
+
+The Deployment declares the main HTTP TCP port (`gateway.containerPort`, also
+used by the default probes), the optional management TCP port, and arbitrary
+ports on `observability.sidecars`; there is no gateway `extraPorts` setting.
+The policy leaves **all other TCP ports**, and all UDP/SCTP ports, open from
+everywhere, including sidecar metrics, custom probe ports and undeclared ports.
+It uses TCP ranges below and above the management port, rather than an allowlist
+that could accidentally isolate extra listeners. Main HTTP or sidecar TCP ports
+sharing the management port are rejected. With the guard disabled no policy or
+management listener is added. No bearer-token Secret is needed.
 
 The guard sums counter deltas across observed instances, separating gateway
 5xx errors from upstream-provider 5xx errors (including upstream transport
@@ -218,9 +243,14 @@ failures and timeouts). HTTP 4xx responses are not errors. Once at least
 `rolloutGuard.minRequests: 50` requests have been observed, it fails when gateway
 errors reach `rolloutGuard.maxGatewayErrorPercent: 5` or upstream errors reach
 `rolloutGuard.maxUpstreamErrorPercent: 25`. With less traffic, the window passes
-without enough evidence to assess error rates; no responding target during the
-entire window fails. Generate representative traffic if a meaningful rollout
-decision is required. The Job has no database credentials or gateway config mount.
+without enough evidence to assess error rates. Three consecutive observation
+polls with no live snapshots fail immediately, including at the deadline.
+One or two missed polls are tolerated, even at the end of the window; any
+responding process, including a replacement, resets the streak. A window with
+no snapshots at all still fails. The final poll can add at most one poll budget
+beyond the observation window. Generate representative traffic if a
+meaningful rollout decision is required. The Job has no database credentials or
+gateway config mount.
 
 Database migrations are forward-only: automatic or manual rollback does not undo
 schema changes. Rolling back after a migration requires that migration to be

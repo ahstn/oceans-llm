@@ -244,6 +244,9 @@ rollout:
 rolloutGuard:
   enabled: false
   managementPort: 9090
+  networkPolicy:
+    # Requires an enforcing CNI; endPort support preserves undeclared TCP ports.
+    enabled: true
   windowSeconds: 300
   intervalSeconds: 15
   minRequests: 50

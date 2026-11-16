@@ -152,7 +152,7 @@ mod tests {
 
     use axum::{
         Router,
-        body::Body,
+        body::{Body, to_bytes},
         http::{Request, StatusCode},
         middleware,
         response::IntoResponse,
@@ -161,13 +161,40 @@ mod tests {
     use gateway_core::{GatewayError, ProviderError};
     use tower::ServiceExt;
 
-    use super::{TrafficCounters, count_responses, mark_upstream_failure};
+    use super::{TrafficCounters, count_responses, management_router, mark_upstream_failure};
+    use crate::shutdown::Shutdown;
 
     fn error_response(error: GatewayError) -> axum::response::Response {
         let status = StatusCode::from_u16(error.http_status_code()).expect("status");
         let mut response = status.into_response();
         mark_upstream_failure(&mut response, &error);
         response
+    }
+
+    #[tokio::test]
+    async fn management_returns_only_process_metadata_and_aggregate_counters() {
+        let counters = Arc::new(TrafficCounters::new());
+        counters.record(StatusCode::BAD_GATEWAY, true);
+        let expected = counters.snapshot(false);
+        let app = management_router(counters.clone(), Shutdown::new());
+        let response = app
+            .oneshot(
+                Request::get("/internal/traffic")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 4096).await.expect("body");
+        let value: serde_json::Value = serde_json::from_slice(&body).expect("snapshot JSON");
+        assert_eq!(value, serde_json::to_value(expected).expect("snapshot"));
+        assert_eq!(value.as_object().expect("object").len(), 7);
+        assert_eq!(
+            counters.snapshot(false).requests,
+            1,
+            "management is uncounted"
+        );
     }
 
     #[tokio::test]

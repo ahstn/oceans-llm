@@ -9,6 +9,10 @@ pub(crate) struct MigrationManifest {
 
 /// The oldest gateway, identified by its registry head (the newest migration
 /// version it knows), that can read a database with this migration applied.
+///
+/// A release that stops depending on schema that a later migration will remove
+/// or change must have a new registry head. If it has no other migration, add
+/// a no-op marker migration and use its version in the later `RequiresReader`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ReaderCompatibility {
     /// Any older gateway keeps working: new tables, nullable columns, indexes.

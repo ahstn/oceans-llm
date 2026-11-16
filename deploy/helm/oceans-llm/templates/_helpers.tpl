@@ -165,10 +165,24 @@ app.kubernetes.io/component: {{ .component }}
 {{- toYaml $config -}}
 {{- end -}}
 
+{{- define "oceans-llm.gatewayLifecycle" -}}
+{{- $lifecycle := deepCopy (.Values.gateway.lifecycle | default dict) -}}
+{{- $preStop := get $lifecycle "preStop" | default dict -}}
+{{- $sleep := get $preStop "sleep" | default dict -}}
+{{- if or (hasKey $preStop "exec") (hasKey $preStop "httpGet") (hasKey $preStop "tcpSocket") (eq (int64 (get $sleep "seconds" | default 0)) 0) -}}
+{{- $_ := unset $preStop "sleep" -}}
+{{- end -}}
+{{- if not $preStop -}}
+{{- $_ := unset $lifecycle "preStop" -}}
+{{- end -}}
+{{- toYaml $lifecycle -}}
+{{- end -}}
+
 {{- define "oceans-llm.validateRollout" -}}
 {{- $server := get .Values.gateway.config "server" | default dict -}}
 {{- $drainSeconds := dig "shutdown_drain_seconds" 300 $server | int64 -}}
-{{- $preStop := get (.Values.gateway.lifecycle | default dict) "preStop" | default dict -}}
+{{- $lifecycle := include "oceans-llm.gatewayLifecycle" . | fromYaml -}}
+{{- $preStop := get $lifecycle "preStop" | default dict -}}
 {{- $sleep := get $preStop "sleep" | default dict -}}
 {{- $preStopSeconds := get $sleep "seconds" | default 0 | int64 -}}
 {{- $minimumGrace := add $preStopSeconds $drainSeconds 20 -}}

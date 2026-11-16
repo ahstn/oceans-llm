@@ -191,7 +191,7 @@ Each migration records the oldest gateway that can still read the database after
 database schema is newer than this gateway (postgres): a newer release applied v<N>, which need a gateway that knows migration v<M> or later; this gateway knows migrations up to v<K>. Deploy the newer release again, or restore the database backup taken before the upgrade
 ```
 
-Migrations up to `v81` are readable only by a gateway that knows them. Gateways released before this check don't read the record at all, and fail with `database reset required … outside the active registry` instead. In every case, if you need the older version, restore the database backup you took before the upgrade, then roll back the application. Don't recreate the database because the error says so, unless you're willing to lose its data.
+Migrations up to `v81` are readable only by a gateway that knows them. Gateways released before this check don't read the record. They fail with `database reset required … outside the active registry` instead. If the older gateway refuses to start against the schema and you need that version, restore the backup taken before the upgrade, then roll back the application. A restore discards writes made after the backup. Don't recreate the database because the error says so, unless you're willing to lose its data.
 
 An older gateway never applies its own pending migrations to a database that a newer gateway has migrated. It stops with `cannot apply pending migrations …` instead.
 

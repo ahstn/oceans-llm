@@ -125,12 +125,12 @@ pub(super) async fn load_libsql_compatibility(
 }
 
 pub(super) async fn load_postgres_compatibility(
-    pool: &sqlx::PgPool,
+    conn: &mut sqlx::PgConnection,
 ) -> anyhow::Result<HashMap<u32, u32>> {
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'gateway_migration_compatibility')",
     )
-    .fetch_one(pool)
+    .fetch_one(&mut *conn)
     .await
     .context("failed checking postgres migration compatibility table")?;
     if !exists {
@@ -138,7 +138,7 @@ pub(super) async fn load_postgres_compatibility(
     }
     let rows =
         sqlx::query("SELECT version, min_reader_version FROM gateway_migration_compatibility")
-            .fetch_all(pool)
+            .fetch_all(&mut *conn)
             .await
             .context("failed reading postgres migration compatibility")?;
     rows.into_iter()

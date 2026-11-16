@@ -100,9 +100,11 @@ impl TestDatabase {
                     .connect(url)
                     .await
                     .expect("postgres pool");
-                let compatibility = load_postgres_compatibility(&pool)
+                let mut conn = pool.acquire().await.expect("postgres connection");
+                let compatibility = load_postgres_compatibility(&mut conn)
                     .await
                     .expect("postgres compatibility");
+                drop(conn);
                 pool.close().await;
                 compatibility
             }

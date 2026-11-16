@@ -38,9 +38,12 @@ For each migration after V81, add an entry to `READER_COMPATIBILITY` in
   head is at least `v`, which must not exceed this migration's own version.
 
 Use expand/contract for destructive changes: release N first stops reading or
-writing the old column (and performs any required transition), with registry
-head `v`. Release N+1 can drop the column with `RequiresReader(v)`, so release N
-remains a safe rollback target. Never mark a destructive change additive.
+writing the old column (and performs any required transition). If it has no
+other migration to give it a new registry head, add a no-op marker migration
+with version `v`. Release N+1 can drop the column with `RequiresReader(v)`,
+using that marker version, so release N remains a safe rollback target while
+older releases that still use the column are rejected. Never mark a destructive
+change additive.
 
 An older gateway can check and run against a compatible newer database;
 applying migrations is a no-op when all its known migrations are already

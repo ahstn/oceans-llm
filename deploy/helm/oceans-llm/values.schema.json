@@ -215,11 +215,18 @@
       "properties": {
         "enabled": { "type": "boolean" },
         "managementPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "networkPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" }
+          }
+        },
         "windowSeconds": { "type": "integer", "minimum": 1 },
         "intervalSeconds": { "type": "integer", "minimum": 1 },
         "minRequests": { "type": "integer", "minimum": 1 },
-        "maxGatewayErrorPercent": { "type": "number", "minimum": 0, "maximum": 100 },
-        "maxUpstreamErrorPercent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "maxGatewayErrorPercent": { "type": "number", "exclusiveMinimum": 0, "maximum": 100 },
+        "maxUpstreamErrorPercent": { "type": "number", "exclusiveMinimum": 0, "maximum": 100 },
         "resources": { "type": "object" },
         "annotations": { "type": "object", "additionalProperties": { "type": "string" } },
         "podAnnotations": { "type": "object", "additionalProperties": { "type": "string" } },

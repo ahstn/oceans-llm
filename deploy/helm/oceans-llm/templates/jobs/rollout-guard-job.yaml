@@ -67,7 +67,7 @@ spec:
           args:
             - rollout-guard
             - --target
-            - {{ printf "%s.%s.svc.cluster.local:%v" (include "oceans-llm.managementServiceName" .) .Release.Namespace .Values.rolloutGuard.managementPort | quote }}
+            - {{ printf "%s.%s.svc:%v" (include "oceans-llm.managementServiceName" .) .Release.Namespace .Values.rolloutGuard.managementPort | quote }}
             - --window-seconds
             - {{ .Values.rolloutGuard.windowSeconds | quote }}
             - --interval-seconds

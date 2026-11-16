@@ -899,13 +899,14 @@ impl Drop for LoggingBodyStreamState {
             );
             return;
         };
-        if matches!(termination, StreamTermination::ClientCancelled) {
-            // Register the charge synchronously: an immediate retry must wait
-            // even when this client cancels before persistence starts.
-            spawn_cancelled_stream_token_charge(&finalization);
-        }
+        let charge = if matches!(termination, StreamTermination::ClientCancelled) {
+            // Register before spawning finalization so an immediate retry waits.
+            spawn_cancelled_stream_token_charge(&finalization)
+        } else {
+            None
+        };
         self.shutdown.tasks().spawn_on(
-            finalize_stream(finalization, termination).in_current_span(),
+            finalize_stream(finalization, termination, charge).in_current_span(),
             &runtime,
         );
     }
@@ -914,15 +915,15 @@ impl Drop for LoggingBodyStreamState {
 /// A cancelled stream skips usage accounting, but usage the provider already
 /// reported still counts against token limits, so cancelling a stream cannot
 /// be used to dodge them.
-fn spawn_cancelled_stream_token_charge(state: &StreamFinalization) {
+fn spawn_cancelled_stream_token_charge(
+    state: &StreamFinalization,
+) -> Option<tokio::task::JoinHandle<()>> {
     let usage = gateway_service::request_logging::usage_summary_from_value(state.collector.usage());
-    let Some(total_tokens) = chargeable_tokens(
+    let total_tokens = chargeable_tokens(
         usage.total_tokens,
         usage.prompt_tokens,
         usage.completion_tokens,
-    ) else {
-        return;
-    };
+    )?;
     let model_keys = [
         state.requested_model_key.as_str(),
         state.resolved_model_key.as_str(),
@@ -930,14 +931,10 @@ fn spawn_cancelled_stream_token_charge(state: &StreamFinalization) {
     let subject = RateLimitSubject::new(RateLimitOperation::Inference, &state.auth)
         .with_models(&model_keys)
         .with_member_team(state.rate_limit_team);
-    // Nothing can await here: the task runs on, and this replica's next
-    // check for the same counters waits for it.
-    drop(
-        state
-            .service
-            .rate_limiter()
-            .record_tokens_detached(&subject, total_tokens),
-    );
+    state
+        .service
+        .rate_limiter()
+        .record_tokens_detached(&subject, total_tokens)
 }
 
 /// The tokens a token limit charges: the reported total, or prompt plus
@@ -1250,7 +1247,7 @@ impl LoggingBodyStreamState {
         let task = self
             .shutdown
             .tasks()
-            .spawn(finalize_stream(finalization, termination).in_current_span());
+            .spawn(finalize_stream(finalization, termination, None).in_current_span());
         async move {
             task.await.map_err(|error| {
                 GatewayError::Internal(format!("stream finalization task failed: {error}"))
@@ -1262,7 +1259,13 @@ impl LoggingBodyStreamState {
 async fn finalize_stream(
     mut state: StreamFinalization,
     termination: StreamTermination,
+    charge: Option<tokio::task::JoinHandle<()>>,
 ) -> Result<(), GatewayError> {
+    if let Some(charge) = charge
+        && let Err(error) = charge.await
+    {
+        tracing::warn!(%error, "cancelled stream token charge task failed");
+    }
     state.collector.finish();
     let cancelled = matches!(termination, StreamTermination::ClientCancelled);
     let shut_down = matches!(termination, StreamTermination::ServerShutdown);
