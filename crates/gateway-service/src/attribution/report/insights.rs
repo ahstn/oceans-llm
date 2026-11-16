@@ -176,17 +176,30 @@ impl ReportInputs<'_> {
         let mut by_hash: HashMap<(&str, &str), usize> = HashMap::new();
         for session in agent_sessions {
             let scope = session.owner.ownership_scope_key.as_str();
-            let index = rollups.len();
-            rollups.push(SessionRollup {
-                reported: reported.contains(&std::ptr::from_ref(*session)),
-                harness: Some(session.harness_key.as_str()),
-                ..SessionRollup::default()
-            });
-            let hashes = session
-                .session_hashes
-                .iter()
-                .chain(std::iter::once(&session.session_hash));
-            for hash in hashes {
+            let hashes = || {
+                session
+                    .session_hashes
+                    .iter()
+                    .chain(std::iter::once(&session.session_hash))
+            };
+            let is_reported = reported.contains(&std::ptr::from_ref(*session));
+            // Hook rows that share an owner-scoped hash are one session: the second row joins the
+            // first rollup, so it isn't counted twice or left as an empty `NoCommit` session.
+            let index = match hashes().find_map(|hash| by_hash.get(&(scope, hash.as_str()))) {
+                Some(&index) => {
+                    rollups[index].reported |= is_reported;
+                    index
+                }
+                None => {
+                    rollups.push(SessionRollup {
+                        reported: is_reported,
+                        harness: Some(session.harness_key.as_str()),
+                        ..SessionRollup::default()
+                    });
+                    rollups.len() - 1
+                }
+            };
+            for hash in hashes() {
                 by_hash.entry((scope, hash.as_str())).or_insert(index);
             }
         }

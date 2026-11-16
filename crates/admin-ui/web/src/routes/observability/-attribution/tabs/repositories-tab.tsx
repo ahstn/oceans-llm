@@ -191,10 +191,11 @@ export default function RepositoriesTab({ report }: { report: AttributionReportV
           {leastAutonomous && plotted.length > 1 ? (
             <Insight>
               <span className="font-mono">{shortRepository(leastAutonomous.repository)}</span> has
-              the lowest autonomy at {formatPercent(leastAutonomous.autonomy)}: most of its AI lines
-              land in commits where people also added a fair share of lines. An AGENTS.md, test
-              fixtures or a skill there is likely to cut its spend more than a model change. Its
-              median lead time is{' '}
+              the lowest autonomy at {formatPercent(leastAutonomous.autonomy)}
+              {(leastAutonomous.autonomy ?? 1) < 0.5
+                ? ': most of its AI lines land in commits where people also added a fair share of lines. An AGENTS.md, test fixtures or a skill there is likely to cut its spend more than a model change.'
+                : ' of the repositories here.'}{' '}
+              Its median lead time is{' '}
               {formatHours(
                 leastAutonomous.medianLeadHours == null
                   ? null

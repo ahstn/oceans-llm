@@ -450,7 +450,8 @@ describe('AttributionPage', () => {
       'https://github.com/acme/widgets/pull/42',
     )
     expect(pullRequests.getByText('Add widget search')).toBeInTheDocument()
-    expect(pullRequests.getByText('1/2')).toBeInTheDocument()
+    // Attributed commits, not the commit details the report carries.
+    expect(pullRequests.getByText('2/2')).toBeInTheDocument()
 
     fireEvent.click(pullRequests.getByRole('button', { name: 'Expand #42' }))
     const commits = within(screen.getByRole('table', { name: 'Commits in #42' }))

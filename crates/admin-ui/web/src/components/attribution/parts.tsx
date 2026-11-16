@@ -24,6 +24,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 
 import { formatPercent, harnessInfo, READINESS, SIGNED_PERCENT, type Readiness } from './format'
+import { sparklinePaths } from './sparkline-path'
 
 // Attribution data roles. AI and human are the two fixed series; their lightness differs (blue
 // against a lighter green) so a stack of them reads without colour. Unattested lines are unknown,
@@ -154,20 +155,10 @@ export function Sparkline({
   const points = values.map((value, index) =>
     value == null ? null : ([index * step, 2 + (1 - (value - min) / span) * (height - 4)] as const),
   )
-  let line = ''
-  let pen = false
-  for (const point of points) {
-    if (!point) {
-      pen = false
-      continue
-    }
-    line += `${pen ? 'L' : 'M'}${point[0].toFixed(2)},${point[1].toFixed(2)}`
-    pen = true
-  }
-  const first = points.find(Boolean)
+  const paths = sparklinePaths(points, height)
   const last = [...points].reverse().find(Boolean)
-  const fill =
-    area && first && last ? `${line}L${last[0]},${height}L${first[0]},${height}Z` : undefined
+  const line = paths.line
+  const fill = area && paths.area ? paths.area : undefined
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
@@ -330,7 +321,7 @@ export function AiShareBar({
           size === 'sm' ? 'h-1.5' : 'h-2.5',
         )}
         role="img"
-        aria-label={`${formatPercent(total ? ai / total : null)} AI, ${formatPercent(total ? human / total : null)} human`}
+        aria-label={`${formatPercent(total ? ai / total : null)} AI, ${formatPercent(total ? human / total : null)} human${unknown > 0 ? `, ${formatPercent(unknown / total)} unattested` : ''}`}
       >
         {segments.map((segment) => (
           <span

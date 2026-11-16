@@ -354,7 +354,7 @@ function CommitStrip({
         })}
       </div>
       <span className="text-muted-foreground text-xs tabular-nums">
-        {commits.length}/{total}
+        {attributed}/{total}
       </span>
     </div>
   )

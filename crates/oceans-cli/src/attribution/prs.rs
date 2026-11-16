@@ -400,8 +400,8 @@ fn lifecycle(fetched: &GhPullRequest) -> PullRequestLifecycle {
     reviewers.sort_unstable();
     reviewers.dedup();
     // Past the first page the counts would read low, and a page of bot reviews would read as
-    // no review at all, so they are sent as unknown. Reviews come oldest first, so a first
-    // review found on the page is still the first.
+    // no review at all, so they are sent as unknown. GitHub does not document the order of
+    // the page either, so the earliest review on it is not known to be the first.
     let complete = fetched
         .review_total
         .is_none_or(|total| total <= fetched.reviews.len() as u64);
@@ -422,6 +422,7 @@ fn lifecycle(fetched: &GhPullRequest) -> PullRequestLifecycle {
             .filter_map(|review| review.submitted_at.as_deref())
             .filter(|time| is_rfc3339(time))
             .min_by_key(|time| OffsetDateTime::parse(time, &Rfc3339).ok())
+            .filter(|_| complete)
             .map(str::to_owned),
         review_count: known(u32::try_from(human_reviews.len()).unwrap_or(u32::MAX)),
         approval_count: known(count("APPROVED")),
@@ -777,7 +778,11 @@ mod tests {
         assert_eq!(pr.lifecycle.review_count, None);
         assert_eq!(pr.lifecycle.approval_count, None);
         assert_eq!(pr.lifecycle.reviewer_count, None);
-        // The first review is on the first page, so it still counts.
+        // An earlier review may be on a later page, so the first review time is unknown too.
+        assert_eq!(pr.lifecycle.first_review_at, None);
+
+        // A complete page still reports its earliest review.
+        let pr = pull_request(lifecycle_fixture().remove(0), None).unwrap();
         assert_eq!(
             pr.lifecycle.first_review_at.as_deref(),
             Some("2026-11-12T11:00:00Z")

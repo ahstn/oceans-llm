@@ -452,6 +452,43 @@ async fn a_hook_session_finds_requests_under_its_own_key_without_namespace_hashe
 }
 
 #[tokio::test]
+async fn hook_rows_sharing_a_session_hash_are_one_session() {
+    use crate::attribution::AttributionSessionOutcome;
+
+    let dev = user_owner(Uuid::new_v4());
+    let mut store = FakeStore::default();
+    // The same session reported under two harness keys: two rows, one shared namespace hash.
+    let first = agent_session(&dev, "h1", minutes(5));
+    let mut second = agent_session(&dev, "h1-omp", minutes(6));
+    second.harness_key = "oh_my_pi".to_string();
+    second.session_hashes = vec!["h1".to_string(), "h1-omp".to_string()];
+    store.agent_sessions = vec![first, second];
+    store.facts = vec![request(&dev, "h1", "r1", minutes(10))];
+    let report = report(&store, &query()).await;
+
+    let outcomes = report
+        .session_outcomes
+        .iter()
+        .map(|tally| {
+            (
+                tally.outcome,
+                tally.session_count,
+                tally.requests.request_count,
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(outcomes, vec![(AttributionSessionOutcome::NoCommit, 1, 1)]);
+    assert_eq!(
+        report
+            .harness_models
+            .iter()
+            .map(|row| row.session_count)
+            .sum::<i64>(),
+        1
+    );
+}
+
+#[tokio::test]
 async fn equal_commit_times_go_to_the_lowest_commit_id() {
     let dev = user_owner(Uuid::new_v4());
     let session = || vec![note_session("s_aa", &["h1"])];

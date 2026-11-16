@@ -93,6 +93,13 @@ impl FingerprintBudget {
         self.remaining -= 1;
         true
     }
+
+    /// Returns a slot taken for a merge that couldn't be fingerprinted, such as one missing from
+    /// the local clone, so a run of those doesn't starve later merges every sync. The time limit
+    /// still bounds the attempts.
+    fn refund(&mut self) {
+        self.remaining += 1;
+    }
 }
 
 /// Adds a merged candidate's fingerprints to `cache` when they are not there yet and the budget
@@ -107,8 +114,11 @@ pub fn remember(
     let Some((sha, merged_at)) = candidate.merge_commit_sha.zip(candidate.merged_at) else {
         return;
     };
-    if !cache.contains_key(sha) && budget.take() {
-        prints_for(directory, cache, candidate, sha, merged_at);
+    if !cache.contains_key(sha)
+        && budget.take()
+        && prints_for(directory, cache, candidate, sha, merged_at).is_none()
+    {
+        budget.refund();
     }
 }
 
@@ -134,8 +144,10 @@ pub fn detect(
         .collect();
     let titled = is_revert_title(candidate.title);
     if !commit_shas.is_empty() {
+        // The description or branch may name another pull request than the one the reverted
+        // commits came from, so the gateway resolves the target from the SHAs alone.
         return Some(RevertLink {
-            pull_request_number: number,
+            pull_request_number: None,
             commit_shas,
             evidence: "revert_commit".into(),
         });
@@ -162,7 +174,8 @@ pub fn detect(
     })
 }
 
-/// The SHAs named by `This reverts commit <sha>` lines, in order and without repeats.
+/// The first `MAX_REVERTED_COMMITS` SHAs named by `This reverts commit <sha>` lines, in order
+/// and without repeats.
 pub fn reverted_commits(bodies: &[&str]) -> Vec<String> {
     const MARKER: &str = "This reverts commit ";
     let mut shas: Vec<String> = Vec::new();
@@ -178,10 +191,12 @@ pub fn reverted_commits(bodies: &[&str]) -> Vec<String> {
                 .to_ascii_lowercase();
             if (7..=40).contains(&sha.len()) && !shas.contains(&sha) {
                 shas.push(sha);
+                if shas.len() == MAX_REVERTED_COMMITS {
+                    return shas;
+                }
             }
         }
     }
-    shas.truncate(MAX_REVERTED_COMMITS);
     shas
 }
 
@@ -224,7 +239,7 @@ pub fn is_revert_title(title: &str) -> bool {
 }
 
 /// Computes and caches the fingerprints for `merge_sha` when the pull request's whole change is
-/// in the local clone.
+/// in the local clone. `None` when nothing was cached.
 fn prints_for(
     directory: &Path,
     cache: &mut ChangeCache,
@@ -339,10 +354,13 @@ fn diff(directory: &Path, from: &str, to: &str) -> Option<Vec<u8>> {
     )
 }
 
-/// A fingerprint of a `-U1` diff: per file, the path and each added, removed or context line
-/// exactly as written, combined in path order. The context line on each side of an edit places
-/// it, so the same lines changed in another function don't match. Line numbers and text blob
-/// ids are left out, so an exact inverse matches even after unrelated edits elsewhere; an edit
+/// A fingerprint of a `-U1` diff: per file, the path, each hunk's function label and each
+/// added, removed or context line exactly as written, combined in path order. The context line
+/// on each side of an edit and the label git gives the hunk (the nearest function line above
+/// it in the old side) place it, so the same lines changed in another function don't match,
+/// even when their neighbouring lines are identical too. Both sides of a match are labelled
+/// from the same file content, the original's new side and the revert's old side. Line
+/// numbers and text blob ids are left out, so an exact inverse matches even after unrelated edits elsewhere; an edit
 /// right next to the change breaks the match, and the revert then falls back to its other
 /// signals. Whitespace is kept: a revert
 /// reproduces the original lines exactly, and whitespace inside a string is content. A binary
@@ -370,8 +388,16 @@ pub fn fingerprint(diff: &[u8]) -> Option<String> {
         let Some(path) = current.as_ref() else {
             continue;
         };
-        if line.starts_with("@@") {
+        if let Some(header) = line.strip_prefix("@@") {
             in_hunk = true;
+            // `@@ -a,b +c,d @@ label`: the line numbers are dropped and the label kept.
+            let label = header
+                .split_once("@@")
+                .map_or("", |(_, label)| label.trim());
+            let hasher = files.entry(path.clone()).or_default();
+            hasher.update(b"@");
+            hasher.update(label.as_bytes());
+            hasher.update(b"\n");
             continue;
         }
         if !in_hunk && (line.starts_with("+++ ") || line.starts_with("--- ")) {
@@ -456,6 +482,39 @@ mod tests {
     }
 
     #[test]
+    fn revert_lines_stop_at_the_commit_limit() {
+        let shas: Vec<String> = (0..MAX_REVERTED_COMMITS + 10)
+            .map(|index| format!("{index:07x}"))
+            .collect();
+        // Every SHA named twice, the repeats after the limit is reached.
+        let body: String = shas
+            .iter()
+            .chain(&shas)
+            .map(|sha| format!("This reverts commit {sha}.\n"))
+            .collect();
+        assert_eq!(
+            reverted_commits(&[body.as_str()]),
+            shas[..MAX_REVERTED_COMMITS]
+        );
+    }
+
+    #[test]
+    fn a_failed_fingerprint_gives_its_slot_back() {
+        let mut budget = FingerprintBudget::new(1);
+        assert!(budget.take());
+        assert!(!budget.take());
+        budget.refund();
+        assert!(budget.take());
+        // A refund doesn't extend the time limit.
+        let mut late = FingerprintBudget {
+            remaining: 0,
+            deadline: Instant::now(),
+        };
+        late.refund();
+        assert!(!late.take());
+    }
+
+    #[test]
     fn github_revert_numbers_come_from_the_body_or_the_branch() {
         let repo = "acme/widgets";
         assert_eq!(
@@ -519,6 +578,26 @@ mod tests {
         );
         assert_eq!(fingerprint(b""), None);
         assert_eq!(fingerprint(b"diff --git a/x b/x\nindex 1..2\n"), None);
+    }
+
+    #[test]
+    fn fingerprints_keep_the_hunk_function_label() {
+        let hunk = |header: &str| {
+            format!(
+                "diff --git a/a.rs b/a.rs\nindex 1..2 100644\n--- a/a.rs\n+++ b/a.rs\n{header}\n     let x = 0;\n-    return 1\n+    return 2\n }}\n"
+            )
+        };
+        let first = hunk("@@ -2,3 +2,3 @@ fn first() {");
+        // The same lines and context in another function.
+        assert_ne!(
+            fingerprint(first.as_bytes()),
+            fingerprint(hunk("@@ -7,3 +7,3 @@ fn second() {").as_bytes())
+        );
+        // The same function further down the file.
+        assert_eq!(
+            fingerprint(first.as_bytes()),
+            fingerprint(hunk("@@ -20,3 +20,3 @@ fn first() {").as_bytes())
+        );
     }
 
     #[test]
@@ -613,7 +692,10 @@ mod tests {
         let write = |first: &str, second: &str| {
             std::fs::write(
                 dir.join("a.rs"),
-                format!("fn first() {{\n    {first}\n}}\n\nfn second() {{\n    {second}\n}}\n"),
+                // Identical lines around each edit, so only the function tells them apart.
+                format!(
+                    "fn first() {{\n    let x = 0;\n    {first}\n}}\n\nfn second() {{\n    let x = 0;\n    {second}\n}}\n"
+                ),
             )
             .unwrap();
         };
@@ -735,9 +817,15 @@ mod tests {
             commit_shas: vec![],
         };
         let link = detect(&base, "acme/widgets", &cache).unwrap();
+        // The description names #42, but the reverted commit may be from another pull request,
+        // so the gateway resolves the target from the SHA.
         assert_eq!(
             (link.evidence.as_str(), link.pull_request_number),
-            ("revert_commit", Some(42))
+            ("revert_commit", None)
+        );
+        assert_eq!(
+            link.commit_shas,
+            ["1111111111111111111111111111111111111111"]
         );
         let button = Candidate {
             commit_bodies: vec![],
@@ -932,7 +1020,19 @@ mod tests {
         };
         let mut cache = ChangeCache::new();
         let mut budget = FingerprintBudget::new(1);
+        // A merge missing from the clone caches nothing and gives its slot back.
+        let missing = Candidate {
+            number: 4,
+            merge_commit_sha: Some("5555555555555555555555555555555555555555"),
+            commit_bodies: vec![],
+            commit_subjects: vec![],
+            commit_shas: vec![],
+            ..original
+        };
+        remember(&missing, dir, &mut cache, &mut budget);
+        assert!(cache.is_empty());
         remember(&original, dir, &mut cache, &mut budget);
+        assert!(cache.contains_key(rebased.as_str()));
         // Out of budget: the revert isn't fingerprinted, so nothing matches yet.
         remember(&revert_pr, dir, &mut cache, &mut budget);
         assert!(detect(&revert_pr, "acme/widgets", &cache).is_none());
