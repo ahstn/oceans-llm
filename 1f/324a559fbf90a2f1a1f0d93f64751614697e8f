@@ -1,0 +1,33 @@
+crates/gateway-core/src/attribution.rs
+  s_0a4447f1aa57dd::t_6381b83cc3700e 312-315,320-323
+crates/gateway-service/src/attribution/ingest.rs
+  s_0a4447f1aa57dd::t_4bb28021ac50a6 107-108,502
+crates/gateway-service/src/attribution/report/insights.rs
+  s_0a4447f1aa57dd::t_b15401f2c5a042 10,177-179,205-207,209,219,224-228
+crates/gateway-service/src/attribution/tests/ingest.rs
+  s_0a4447f1aa57dd::t_47de072947df56 124
+crates/gateway-store/src/attribution/pull_requests.rs
+  s_0a4447f1aa57dd::t_c466f01f1c5f43 164-175
+crates/gateway-store/src/attribution_tests.rs
+  s_0a4447f1aa57dd::t_b7bd937c671a99 269,554-568,570-574,576-582
+crates/gateway/src/http/attribution/ingest.rs
+  s_0a4447f1aa57dd::t_7af2ae87ecfa4c 464-465,518
+crates/gateway/src/local_demo_seed/attribution.rs
+  s_0a4447f1aa57dd::t_efb54aad1d575b 482
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1f324a559fbf90a2f1a1f0d93f64751614697e8f",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
