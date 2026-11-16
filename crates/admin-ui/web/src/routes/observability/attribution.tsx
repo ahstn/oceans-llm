@@ -25,6 +25,7 @@ import {
   attributionReportInput,
   reportShapeTab,
   enabledAttributionTabs,
+  hasLifecycleActivity,
   resolveAttributionTab,
   TAB_LABELS,
   TAB_QUESTIONS,
@@ -320,7 +321,9 @@ function AttributionBody({
     report.users.length === 0 &&
     report.pull_requests.length === 0 &&
     report.changes.length === 0 &&
-    report.session_outcomes.length === 0
+    report.session_outcomes.length === 0 &&
+    // Open or abandoned pull requests are still a report, shown on Delivery.
+    !hasLifecycleActivity(report.pull_request_lifecycle)
   if (empty) {
     if (filtered) return <AttributionFilteredEmpty onClear={onClearFilters} />
     return <AttributionSetupEmpty windowDays={report.window_days} />

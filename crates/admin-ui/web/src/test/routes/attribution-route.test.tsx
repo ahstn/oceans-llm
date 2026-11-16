@@ -69,6 +69,19 @@ function attributionReport(overrides: Partial<AttributionReportView> = {}): Attr
     window_end: '2026-11-12T00:00:00Z',
     user_id: null,
     repository: null,
+    pull_request_lifecycle: {
+      opened_count: 2,
+      merged_count: 1,
+      closed_unmerged_count: 1,
+      open_count: 1,
+      draft_count: 1,
+      review_known_count: 1,
+      merged_without_review_count: 0,
+      median_review_wait_seconds: 5_400,
+      revert_count: 0,
+      possible_revert_count: 0,
+      median_time_to_revert_seconds: null,
+    },
     totals: {
       commit_count: 3,
       pull_request_count: 1,
@@ -261,6 +274,16 @@ function emptyReport(overrides: Partial<AttributionReportView> = {}): Attributio
   const report = attributionReport()
   return {
     ...report,
+    pull_request_lifecycle: {
+      ...report.pull_request_lifecycle,
+      opened_count: 0,
+      merged_count: 0,
+      closed_unmerged_count: 0,
+      open_count: 0,
+      draft_count: 0,
+      review_known_count: 0,
+      median_review_wait_seconds: null,
+    },
     totals: {
       ...report.totals,
       commit_count: 0,
@@ -450,6 +473,97 @@ describe('AttributionPage', () => {
     expect(within(unjoinedRow).getByText('local-model')).toBeInTheDocument()
     expect(within(unjoinedRow).getAllByRole('cell')[10]).toHaveTextContent('—')
     expect(screen.getByText('Showing 2 of 2 changes')).toBeInTheDocument()
+  })
+
+  it('marks reverts by their evidence and links the reverted pull request', async () => {
+    const report = attributionReport()
+    const original = { ...report.pull_requests[0], reverted_by_number: 43 }
+    const revert = {
+      ...report.pull_requests[0],
+      number: 43,
+      title: 'Tidy widget search',
+      revert: {
+        evidence: 'change_match' as const,
+        confirmed: true,
+        reverts_pull_request_number: 42,
+      },
+      is_revert: true,
+    }
+    const possible = {
+      ...report.pull_requests[0],
+      number: 44,
+      title: 'Revert the search tweak',
+      revert: { evidence: 'title' as const, confirmed: false, reverts_pull_request_number: null },
+    }
+    renderPage(attributionReport({ pull_requests: [revert, original, possible] }), {
+      days: 30,
+      tab: 'pull_requests',
+    })
+
+    const ledger = within(await screen.findByRole('table', { name: 'Merged pull requests' }))
+    expect(ledger.getByText('Reverts #42')).toHaveAttribute(
+      'title',
+      "The change exactly undoes the original's",
+    )
+    expect(ledger.getByText('Reverted by #43')).toBeInTheDocument()
+    expect(ledger.getByText('Possible revert')).toBeInTheDocument()
+  })
+
+  it('counts a review left after the merge as merged without review', async () => {
+    const report = attributionReport()
+    const reviewedLate = {
+      ...report.pull_requests[0],
+      review_count: 1,
+      approval_count: 1,
+      first_review_at: '2026-11-11T09:00:00Z',
+    }
+    const reviewed = {
+      ...reviewedLate,
+      number: 43,
+      title: 'Tidy widget search',
+      first_review_at: '2026-11-10T14:00:00Z',
+    }
+    renderPage(attributionReport({ pull_requests: [reviewedLate, reviewed] }), {
+      days: 30,
+      tab: 'pull_requests',
+    })
+
+    const pullRequests = within(await screen.findByRole('table', { name: 'Merged pull requests' }))
+    fireEvent.click(pullRequests.getByText('Add widget search'))
+    expect(screen.getByText('Merged without review; 1 review after')).toBeInTheDocument()
+    fireEvent.click(pullRequests.getByText('Tidy widget search'))
+    expect(screen.getByText('1 review, 1 approving')).toBeInTheDocument()
+  })
+
+  it('shows review wait, review-free merges and abandoned work on Delivery', async () => {
+    renderPage(attributionReport(), { days: 30, tab: 'delivery' })
+
+    expect((await screen.findAllByText('Review wait')).length).toBeGreaterThan(1)
+    expect(kpi('Review wait').getByText('1.5 h')).toBeInTheDocument()
+    expect(kpi('Abandon rate').getByText(/^50(\.0)?%$/)).toBeInTheDocument()
+    expect(
+      kpi('Open pull requests').getByText('1 draft, of those updated in the window'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows open and abandoned work on Delivery when nothing merged', async () => {
+    renderPage(attributionReport({ pull_requests: [] }), { days: 30, tab: 'delivery' })
+
+    expect(await screen.findByText('No merged pull requests in this window.')).toBeInTheDocument()
+    expect(
+      kpi('Open pull requests').getByText('1 draft, of those updated in the window'),
+    ).toBeInTheDocument()
+    expect(kpi('Abandon rate').getByText('1 closed without merging')).toBeInTheDocument()
+  })
+
+  it('shows Delivery for a report with only open and closed pull requests', async () => {
+    renderPage(
+      attributionReport({ users: [], pull_requests: [], changes: [], session_outcomes: [] }),
+      { days: 30, tab: 'delivery' },
+    )
+
+    expect(await screen.findByText('No merged pull requests in this window.')).toBeInTheDocument()
+    expect(kpi('Abandon rate').getByText('1 closed without merging')).toBeInTheDocument()
   })
 
   it('renders unpriced cost as — rather than $0', async () => {

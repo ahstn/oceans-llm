@@ -21,8 +21,8 @@ Any new collection must keep the ADR's privacy rules. Raw external identifiers (
 
 | # | Gap | Unlocks | Proxy today | Best avenue | Effort |
 |---|---|---|---|---|---|
-| 1 | PR lifecycle: opened, draft, reviews, comments, open and closed-unmerged PRs | Review wait, merged without review, abandon rate, PR state badges, "in review" and "closed" Sankey stages | First commit `authored_at` as a stand-in for opened; nothing for reviews | More `gh` fields in `oceans hook prs`, later a GitHub App | S |
-| 2 | Revert and fix-forward detection | Change fail rate proxy, "merged PRs vs reverts" counterweight, revert badge | Title match on merged PRs | Parse `This reverts commit` client-side in `oceans hook prs` | S |
+| 1 | PR lifecycle: opened, draft, reviews, comments, open and closed-unmerged PRs | Review wait, merged without review, abandon rate, PR state badges, "in review" and "closed" Sankey stages | **Collected since 2026-11-16**, except draft history; the Sankey stages still don't use it | `oceans hook prs` (done); a GitHub App for draft history | S |
+| 2 | Revert and fix-forward detection | Change fail rate proxy, "merged PRs vs reverts" counterweight, revert badge | **Reverts collected since 2026-11-16**; fix-forwards still missing | `oceans hook prs` (done); incident links for fix-forwards | S |
 | 3 | Deploy and release events | Deployment frequency, lead time to production, failed deployment recovery time, deployment rework rate | Merge to default branch as "deploy" | GitHub Deployments via the App, or a CI step | M |
 | 4 | Incidents linked to changes | Change failure rate, recovery time, session failure rate | Reverts as failures | Incident tool webhooks plus a service-to-repository map | M-L |
 | 5 | Deleted lines and file counts per commit | Refactor and moved rate, true PR size, net change | AI plus human lines as size; distinct files per note | Count files from notes on the gateway; numstat at session end | S-M |
@@ -37,6 +37,8 @@ Any new collection must keep the ADR's privacy rules. Raw external identifiers (
 
 ### 1. PR lifecycle
 
+> **Done 2026-11-16** for everything but draft history: see the ADR amendment "pull request lifecycle and revert links". Open and closed PRs are stored, the hook sends review and comment counts and the first human review time, and Delivery shows review wait, merged without review, abandon rate and open PRs. The Sankey's review stages are still to do.
+
 **Missing:** `opened_at`, draft state and `ready_for_review` time, first review time, review count, approvals, changes requested, distinct reviewers, comment count, and every PR that is open or closed without merging. `AttributionPullRequestWrite.merged_at` is required, so the record cannot hold an unmerged PR yet.
 
 **Unlocks:** review wait (opened or ready to first review) on Delivery, merged without review rate, abandon rate (closed unmerged over all closed), state badges on the Pull requests ledger, and the "in review" and "closed" stages of the Impact Sankey. Without them the Sankey goes straight from "PR" to "merged" and drops everything else into "uncommitted".
@@ -49,6 +51,8 @@ Any new collection must keep the ADR's privacy rules. Raw external identifiers (
 - **GitHub App** (M-L). `pull_request` (`opened`, `ready_for_review`, `converted_to_draft`, `closed`, `reopened`, `synchronize`) and `pull_request_review` events give exact times and draft transitions. See [GitHub App](#github-app).
 
 ### 2. Revert and fix-forward detection
+
+> **Reverts done 2026-11-16.** The hook checks git's revert line, GitHub's revert button with a revert title, and an exact inverse change (a local fingerprint of added and removed lines, cached in the hook's state directory), before falling back to a title, which counts only as a possible revert. The links resolve on the gateway by PR number or by a reverted commit. Fix-forwards are still missing.
 
 **Missing:** which PRs or commits undo or repair earlier ones. Git AI writes no note for `git revert` (ADR, Hook verification), so a revert is invisible in notes.
 

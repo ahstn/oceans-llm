@@ -234,8 +234,41 @@ export type BandSummary = {
   count: number
   medianSize: number | null
   medianLeadHours: number | null
+  /** Opened to first human review; `null` when no PR in the band has review times. */
+  medianReviewWaitHours: number | null
   revertRate: number | null
   medianCost: number | null
+}
+
+export type LifecycleView = AttributionReportView['pull_request_lifecycle']
+
+/** Whether pull requests opened, stayed open or closed unmerged in the window. */
+export function hasLifecycleActivity(lifecycle: LifecycleView): boolean {
+  return lifecycle.opened_count + lifecycle.open_count + lifecycle.closed_unmerged_count > 0
+}
+
+/**
+ * Review and flow figures from the report's lifecycle summary. Rates are `null` without a
+ * denominator; `reviewCoverage` is the share of merged PRs whose hook sent review data.
+ */
+export function flowFigures(lifecycle: LifecycleView) {
+  const closed = lifecycle.merged_count + lifecycle.closed_unmerged_count
+  return {
+    reviewWaitHours:
+      lifecycle.median_review_wait_seconds == null
+        ? null
+        : lifecycle.median_review_wait_seconds / 3600,
+    mergedWithoutReviewRate: ratio(
+      lifecycle.merged_without_review_count,
+      lifecycle.review_known_count,
+    ),
+    abandonRate: ratio(lifecycle.closed_unmerged_count, closed),
+    reviewCoverage: ratio(lifecycle.review_known_count, lifecycle.merged_count),
+    timeToRevertHours:
+      lifecycle.median_time_to_revert_seconds == null
+        ? null
+        : lifecycle.median_time_to_revert_seconds / 3600,
+  }
 }
 
 export function bandSummaries(rows: PullRequestRow[]): BandSummary[] {
@@ -249,6 +282,11 @@ export function bandSummaries(rows: PullRequestRow[]): BandSummary[] {
       medianSize: median(inBand.map((row) => row.added)),
       medianLeadHours: median(
         inBand.flatMap((row) => (row.leadHours == null ? [] : [row.leadHours])),
+      ),
+      medianReviewWaitHours: median(
+        inBand.flatMap((row) =>
+          row.pr.review_wait_seconds == null ? [] : [row.pr.review_wait_seconds / 3600],
+        ),
       ),
       revertRate: ratio(inBand.filter((row) => row.pr.is_revert).length, inBand.length),
       medianCost: median(priced.map((row) => row.pr.priced_cost_usd_10000)),

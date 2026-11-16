@@ -50,7 +50,7 @@ export default function DurabilityTab({ report }: { report: AttributionReportVie
           value={formatPercent(revertRate, 1)}
           hint={`${formatCount(rows.filter((row) => row.pr.is_revert).length)} of ${formatCount(rows.length)}`}
           readiness="proxy"
-          readinessNote="Matched by title (Revert or revert:)."
+          readinessNote="Found by git's revert line, GitHub's revert button or an exact inverse change; a revert title alone doesn't count."
         />
       </div>
 

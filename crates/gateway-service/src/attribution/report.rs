@@ -31,16 +31,23 @@ use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 mod insights;
+mod lifecycle;
 
 pub use insights::{
     AttributionDayActivity, AttributionHarnessModelActivity, AttributionPeriodSummary,
     AttributionSessionOutcome, AttributionSessionOutcomeTally,
 };
+pub use lifecycle::{AttributionPullRequestLifecycleSummary, AttributionRevertActivity};
 
 /// How far before the window commits and hook-reported sessions are loaded, so a merged PR
 /// finds the notes of commits made before the window opened, and a session that started
 /// before the window still has its requests in the window counted.
 const LOOKBACK: Duration = Duration::days(30);
+/// How far before the window pull requests are loaded when a revert merged in the window names
+/// one the window's read doesn't hold, so it resolves an original merged up to this long
+/// before it. Those older pull requests only resolve links; every window figure counts
+/// activity inside the window. Most windows have no such revert, so the read is skipped.
+const REVERT_LOOKBACK: Duration = Duration::days(90);
 /// Commit details each pull request carries. The totals use every matched commit; this bounds
 /// the response, since the report caps pull requests but not their commits.
 pub const MAX_PULL_REQUEST_COMMIT_DETAILS: usize = 50;
@@ -157,8 +164,12 @@ pub struct AttributionPullRequestActivity {
     pub pull_request: AttributionPullRequestRecord,
     /// The earliest of the PR's commit author times and its matched notes' observation times.
     pub first_commit_at: Option<OffsetDateTime>,
-    /// The title reads as a revert; see `insights::is_revert_title`.
+    /// Reverts another pull request, by evidence stronger than its title.
     pub is_revert: bool,
+    /// What this pull request reverts, including a title-only possible revert.
+    pub revert: Option<AttributionRevertActivity>,
+    /// The merged pull request in the window that reverted this one.
+    pub reverted_by: Option<i64>,
     /// git-ai agent tools the matched notes name.
     pub agent_tools: Vec<String>,
     /// The first [`MAX_PULL_REQUEST_COMMIT_DETAILS`] matched commits, oldest first, with their
@@ -217,6 +228,8 @@ pub struct AttributionReport {
     pub session_outcomes: Vec<AttributionSessionOutcomeTally>,
     /// Most sessions first.
     pub harness_models: Vec<AttributionHarnessModelActivity>,
+    /// Opened, closed, open and reviewed pull requests, and revert figures.
+    pub pull_request_lifecycle: AttributionPullRequestLifecycleSummary,
 }
 
 /// Builds the report for `query`. `query.limit` caps commits and PRs separately.
@@ -276,27 +289,54 @@ where
     let hashes = session_hashes(&commits, &agent_sessions);
     let windows = commit_windows(load_commit_times(store, &hashes, query.to).await?);
     let (facts, request_facts_truncated) = load_request_facts(store, &hashes, query.to).await?;
+    // The cap counts every owner's copy, so saturation is judged before copies are merged.
+    let pull_requests_truncated = pull_requests.len() >= limit;
+    let mut pull_requests = pull_requests;
+    if lifecycle::needs_revert_lookback(&pull_requests, query) {
+        // Only to resolve links: a capped read here leaves a revert's target unknown, not a
+        // window figure short.
+        let before = AttributionReportQuery {
+            from: query.from - REVERT_LOOKBACK,
+            to: query.from,
+            ..query.clone()
+        };
+        pull_requests.extend(store.list_attribution_pull_requests(&before).await?);
+    }
+    let loaded = distinct_pull_requests(pull_requests);
+    let mut lifecycle_summary = lifecycle::summary(&loaded, query);
+    let mut merged = loaded
+        .iter()
+        .filter(|pull_request| lifecycle::merged_in(query, pull_request))
+        .cloned()
+        .collect::<Vec<_>>();
+    // The store reads by latest activity; the report's builders expect most recently merged
+    // first, so a commit in two pull requests links the later merge, not the one last
+    // commented on.
+    merged.sort_by(|a, b| {
+        lifecycle::merged_time(b)
+            .cmp(&lifecycle::merged_time(a))
+            .then(b.number.cmp(&a.number))
+    });
     let mut inputs = ReportInputs::new(query, &commits, &facts, &windows);
     inputs.detail = detail;
     // Lookback commits only feed pull request totals, so a cap reached by them matters only
     // when the window has a pull request.
     let commits_capped = commits.len() >= limit
-        && (!pull_requests.is_empty()
+        && (!merged.is_empty()
             || commits
                 .last()
                 .is_some_and(|commit| commit.first_observed_at >= query.from));
     let coverage = AttributionReportCoverage {
         requests: RequestTally::default(),
         commits_truncated: commits_capped,
-        pull_requests_truncated: pull_requests.len() >= limit,
+        pull_requests_truncated,
         request_facts_truncated,
         agent_sessions_truncated,
     };
-    Ok(inputs.report(
-        distinct_pull_requests(pull_requests),
-        &agent_sessions,
-        coverage,
-    ))
+    let mut report = inputs.report(merged, &agent_sessions, coverage);
+    lifecycle::apply_reverts(&mut report.pull_requests, &loaded, &mut lifecycle_summary);
+    report.pull_request_lifecycle = lifecycle_summary;
+    Ok(report)
 }
 
 /// Whether a hook-reported session was open at some point in the window. A missing start or
@@ -318,31 +358,55 @@ fn reported_in_window(
 }
 
 /// One row per `(repository, number)`, in the stored order. Of the copies that several owners
-/// reported, the one its author reported is kept, else the first.
+/// reported, the one its author reported is kept for attribution, else the first. Its state,
+/// merge, commits and lifecycle come from the most recently observed copy, so a teammate who
+/// synced after the merge isn't overridden by the author's copy from while it was open.
 fn distinct_pull_requests(
     pull_requests: Vec<AttributionPullRequestRecord>,
 ) -> Vec<AttributionPullRequestRecord> {
-    let mut kept: Vec<AttributionPullRequestRecord> = Vec::with_capacity(pull_requests.len());
+    let mut groups: Vec<Vec<AttributionPullRequestRecord>> = Vec::new();
     let mut index: HashMap<(String, i64), usize> = HashMap::new();
     for pull_request in pull_requests {
         let key = (pull_request.repository.clone(), pull_request.number);
         match index.get(&key) {
-            Some(&position) => {
-                let author = pull_request.author_user_id;
-                let reported_by_author = |row: &AttributionPullRequestRecord| {
-                    author.is_some() && row.owner.owner_user_id == author
-                };
-                if !reported_by_author(&kept[position]) && reported_by_author(&pull_request) {
-                    kept[position] = pull_request;
-                }
-            }
+            Some(&position) => groups[position].push(pull_request),
             None => {
-                index.insert(key, kept.len());
-                kept.push(pull_request);
+                index.insert(key, groups.len());
+                groups.push(vec![pull_request]);
             }
         }
     }
-    kept
+    groups
+        .into_iter()
+        .map(|mut copies| {
+            let freshest = copies
+                .iter()
+                .enumerate()
+                .max_by_key(|(position, row)| (row.observed_at, std::cmp::Reverse(*position)))
+                .map_or(0, |(position, _)| position);
+            let attributed = copies
+                .iter()
+                .position(|row| {
+                    row.author_user_id.is_some() && row.owner.owner_user_id == row.author_user_id
+                })
+                .unwrap_or(0);
+            if freshest == attributed {
+                return copies.swap_remove(attributed);
+            }
+            let fresher = copies[freshest].clone();
+            let mut row = copies.swap_remove(attributed);
+            row.title = fresher.title;
+            row.url = fresher.url;
+            row.base_ref = fresher.base_ref;
+            row.head_ref = fresher.head_ref;
+            row.merge_commit_sha = fresher.merge_commit_sha;
+            row.merged_at = fresher.merged_at;
+            row.commits = fresher.commits;
+            row.lifecycle = fresher.lifecycle;
+            row.observed_at = fresher.observed_at;
+            row
+        })
+        .collect()
 }
 
 fn session_hashes(
@@ -590,6 +654,7 @@ impl<'a> ReportInputs<'a> {
             changes,
             session_outcomes,
             harness_models,
+            pull_request_lifecycle: AttributionPullRequestLifecycleSummary::default(),
         }
     }
 
@@ -694,7 +759,7 @@ impl<'a> ReportInputs<'a> {
             ) {
                 let rollup = users.entry(user_id).or_default();
                 rollup.merged_pull_request_count += 1;
-                rollup.touch(pull_request.merged_at);
+                rollup.touch(lifecycle::merged_time(pull_request));
             }
         }
         for session in agent_sessions {
@@ -796,7 +861,10 @@ impl<'a> ReportInputs<'a> {
                 ordered.sort_by_key(|commit| commit.first_observed_at);
                 AttributionPullRequestActivity {
                     first_commit_at: authored.chain(observed).min(),
-                    is_revert: insights::is_revert_title(&pull_request.title),
+                    // Set from the revert links once every pull request is known.
+                    is_revert: false,
+                    revert: None,
+                    reverted_by: None,
                     agent_tools: distinct(
                         matched
                             .iter()

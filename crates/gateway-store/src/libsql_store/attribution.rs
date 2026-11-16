@@ -183,11 +183,18 @@ fn decode_pull_request(row: &libsql::Row) -> Result<AttributionPullRequestRecord
         base_ref: optional_string(row, 8)?,
         head_ref: optional_string(row, 9)?,
         merge_commit_sha: optional_string(row, 10)?,
-        merged_at: time_at(row, 11)?,
+        merged_at: optional_time(optional_integer(row, 11)?)?,
         author_user_id: optional_uuid(optional_string(row, 12)?)?,
         author_email_hash: optional_string(row, 13)?,
         commits: Vec::new(),
         observed_at: time_at(row, 14)?,
+        lifecycle: attribution::decode_lifecycle(
+            &string(row, 15)?,
+            optional_integer(row, 16)?,
+            optional_integer(row, 17)?,
+            optional_string(row, 18)?.as_deref(),
+            optional_integer(row, 19)?,
+        )?,
     })
 }
 
