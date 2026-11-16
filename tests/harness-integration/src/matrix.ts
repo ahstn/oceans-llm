@@ -41,7 +41,18 @@ export interface MatrixHarness {
   readonly mcpModel: ModelFamily;
 }
 
-export const MATRIX_PROVIDERS: readonly Provider[] = ["openrouter", "vertex", "bedrock"];
+export function matrixProviders(env: NodeJS.ProcessEnv): readonly Provider[] {
+  return [
+    "openrouter",
+    "vertex",
+    "bedrock",
+    ...(env.OCEANS_HARNESS_CHATGPT_CREDENTIALS || env.OCEANS_CHATGPT_MODEL
+      ? ["chatgpt" as const]
+      : []),
+  ];
+}
+
+export const MATRIX_PROVIDERS = matrixProviders(process.env);
 export const MATRIX_MODELS: readonly ModelFamily[] = ["openai", "anthropic", "google"];
 
 /**
@@ -68,6 +79,17 @@ const VERTEX_CLAUDE_QUOTA = blocked(
 );
 const BEDROCK_NO_GEMINI = notApplicable("Bedrock offers Google Gemma 3 only, no Gemini models.");
 const VERTEX = { openai: VERTEX_NO_OPENAI, anthropic: VERTEX_CLAUDE_QUOTA, google: run("chat_completions") };
+const CHATGPT_OTHER_MODELS = notApplicable("The ChatGPT subscription route supports only OpenAI models.");
+const CHATGPT_RESPONSES = {
+  openai: run("responses"),
+  anthropic: CHATGPT_OTHER_MODELS,
+  google: CHATGPT_OTHER_MODELS,
+};
+const CHATGPT_NO_CHAT = {
+  ...CHATGPT_RESPONSES,
+  openai: notApplicable("The ChatGPT subscription route requires streaming Responses."),
+};
+const CHATGPT_NO_TIER = notApplicable("The ChatGPT subscription route may reject service-tier overrides.");
 
 const PI_NO_TIER = notApplicable(
   "Pi has no service-tier setting: the generated models.json has no tier field, and Pi 0.87.1 has no tier flag or environment variable (dist/cli/args.js). Its Anthropic Messages provider also ignores the model samplingParams (dist/bundle/chunks/anthropic-messages-*.js).",
@@ -112,6 +134,7 @@ export const MATRIX: readonly MatrixHarness[] = [
       },
       vertex: VERTEX,
       bedrock: bedrock("responses", "messages"),
+      chatgpt: CHATGPT_RESPONSES,
     },
     mcpModel: "openai",
   },
@@ -127,6 +150,7 @@ export const MATRIX: readonly MatrixHarness[] = [
       },
       vertex: VERTEX,
       bedrock: bedrock("chat_completions", "messages"),
+      chatgpt: CHATGPT_NO_CHAT,
     },
     tests: PI_TESTS,
     mcpModel: "openai",
@@ -142,6 +166,7 @@ export const MATRIX: readonly MatrixHarness[] = [
       },
       vertex: VERTEX,
       bedrock: bedrock("responses", "messages"),
+      chatgpt: CHATGPT_RESPONSES,
     },
     tests: {
       google: {
@@ -166,6 +191,7 @@ export const MATRIX: readonly MatrixHarness[] = [
         ),
         google: CLAUDE_MODELS_ONLY,
       },
+      chatgpt: CHATGPT_NO_CHAT,
     },
     tests: {
       anthropic: {
@@ -198,6 +224,7 @@ export function testCell(
   test: MatrixTest,
 ): Cell {
   const cell = row.cells[provider][family];
+  if (provider === "chatgpt" && test === "fast" && runnable(cell)) return CHATGPT_NO_TIER;
   return runnable(cell) === undefined ? cell : (row.tests?.[family]?.[test] ?? cell);
 }
 

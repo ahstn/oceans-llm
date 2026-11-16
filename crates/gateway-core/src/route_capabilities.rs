@@ -135,6 +135,15 @@ pub fn infer_compatibility_capabilities(
             })
             .unwrap_or_default(),
         "openai_compat" if compatibility.selects_decisions_api() => decisions_only(),
+        "chatgpt_plan" => PartialCapabilities {
+            chat_completions: Some(false),
+            responses: Some(true),
+            stream: Some(true),
+            embeddings: Some(false),
+            images: Some(false),
+            decisions: Some(false),
+            ..empty()
+        },
         "typesafe" => decisions_only(),
         _ => PartialCapabilities::default(),
     }
@@ -262,6 +271,21 @@ mod tests {
             capabilities,
             compatibility,
         }
+    }
+
+    #[test]
+    fn chatgpt_plan_infers_responses_streaming_without_other_apis() {
+        let route = route(
+            PartialCapabilities::default(),
+            RouteCompatibility::default(),
+        );
+        let caps = infer_route_capabilities(&route, "chatgpt_plan").resolve();
+        assert!(caps.responses);
+        assert!(caps.stream);
+        assert!(!caps.chat_completions);
+        assert!(!caps.embeddings);
+        assert!(!caps.images);
+        assert!(!caps.decisions);
     }
 
     fn converse() -> RouteCompatibility {

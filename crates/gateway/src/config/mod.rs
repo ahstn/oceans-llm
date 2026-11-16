@@ -83,12 +83,13 @@ pub use permissions::{
 
 pub use providers::{
     AnthropicCompatAuthConfig, AnthropicCompatAuthKindConfig, AnthropicCompatProviderConfig,
-    AwsBedrockAuthConfig, AwsBedrockProviderConfig, GcpCloudRunOpenAiCompatAuthConfig,
-    GcpCloudRunOpenAiCompatAuthHeaderConfig, GcpCloudRunOpenAiCompatProviderConfig,
-    GcpVertexAuthConfig, GcpVertexBatchConfig, GcpVertexProviderConfig, GitHubCopilotAuthConfig,
-    GitHubCopilotProviderConfig, OpenAiBatchDialectConfig, OpenAiBatchProviderConfig,
-    OpenAiCompatAuthConfig, OpenAiCompatAuthKindConfig, OpenAiCompatProviderConfig, ProviderConfig,
-    ProviderDisplayConfig, ProviderTimeouts, TypeSafeProviderConfig,
+    AwsBedrockAuthConfig, AwsBedrockProviderConfig, ChatGptPlanProviderConfig,
+    GcpCloudRunOpenAiCompatAuthConfig, GcpCloudRunOpenAiCompatAuthHeaderConfig,
+    GcpCloudRunOpenAiCompatProviderConfig, GcpVertexAuthConfig, GcpVertexBatchConfig,
+    GcpVertexProviderConfig, GitHubCopilotAuthConfig, GitHubCopilotProviderConfig,
+    OpenAiBatchDialectConfig, OpenAiBatchProviderConfig, OpenAiCompatAuthConfig,
+    OpenAiCompatAuthKindConfig, OpenAiCompatProviderConfig, ProviderConfig, ProviderDisplayConfig,
+    ProviderTimeouts, TypeSafeProviderConfig,
 };
 
 #[derive(Debug, Clone, Deserialize, Default)]

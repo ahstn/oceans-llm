@@ -21,6 +21,8 @@ pub enum ProviderConfig {
     AwsBedrock(AwsBedrockProviderConfig),
     #[serde(rename = "github_copilot")]
     GitHubCopilot(GitHubCopilotProviderConfig),
+    #[serde(rename = "chatgpt_plan")]
+    ChatGptPlan(ChatGptPlanProviderConfig),
     #[serde(rename = "typesafe")]
     TypeSafe(TypeSafeProviderConfig),
 }
@@ -34,6 +36,7 @@ impl ProviderConfig {
             Self::GcpVertex(provider) => &provider.id,
             Self::AwsBedrock(provider) => &provider.id,
             Self::GitHubCopilot(provider) => &provider.id,
+            Self::ChatGptPlan(provider) => &provider.id,
             Self::TypeSafe(provider) => &provider.id,
         }
     }
@@ -46,6 +49,7 @@ impl ProviderConfig {
             Self::GcpVertex(provider) => &provider.default_headers,
             Self::AwsBedrock(provider) => &provider.default_headers,
             Self::GitHubCopilot(provider) => &provider.default_headers,
+            Self::ChatGptPlan(provider) => &provider.default_headers,
             Self::TypeSafe(provider) => &provider.default_headers,
         }
     }
@@ -305,6 +309,38 @@ pub struct AwsBedrockProviderConfig {
     #[serde(default)]
     pub display: Option<ProviderDisplayConfig>,
 }
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChatGptPlanProviderConfig {
+    pub id: String,
+    pub credentials_file: String,
+    #[serde(default = "default_chatgpt_plan_base_url")]
+    pub base_url: String,
+    #[serde(default = "default_chatgpt_plan_pricing_provider_id")]
+    pub pricing_provider_id: String,
+    #[serde(default = "default_strip_unsupported_fields")]
+    pub strip_unsupported_fields: bool,
+    #[serde(default)]
+    pub default_headers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub timeouts: Option<ProviderTimeouts>,
+    #[serde(default)]
+    pub display: Option<ProviderDisplayConfig>,
+}
+
+fn default_chatgpt_plan_base_url() -> String {
+    gateway_providers::DEFAULT_CHATGPT_PLAN_BASE_URL.to_string()
+}
+
+const fn default_strip_unsupported_fields() -> bool {
+    true
+}
+
+fn default_chatgpt_plan_pricing_provider_id() -> String {
+    "openai".to_string()
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GitHubCopilotProviderConfig {
@@ -420,6 +456,7 @@ pub(super) fn validate_providers(providers: &[ProviderConfig]) -> anyhow::Result
             ProviderConfig::GcpVertex(provider) => provider.validate()?,
             ProviderConfig::AwsBedrock(provider) => provider.validate()?,
             ProviderConfig::GitHubCopilot(provider) => provider.validate()?,
+            ProviderConfig::ChatGptPlan(provider) => provider.validate()?,
             ProviderConfig::TypeSafe(provider) => provider.validate()?,
         }
         validate_provider_tier_headers(provider.id(), provider.default_headers())?;
@@ -787,6 +824,62 @@ impl AwsBedrockProviderConfig {
                     }
                 }
             }
+        }
+        validate_provider_display_config(self.id.as_str(), self.display.as_ref())?;
+        Ok(())
+    }
+}
+
+impl ChatGptPlanProviderConfig {
+    fn validate(&self) -> anyhow::Result<()> {
+        if self.id.trim().is_empty() {
+            bail!("chatgpt_plan provider id cannot be empty");
+        }
+        if self.credentials_file.trim().is_empty() {
+            bail!(
+                "chatgpt_plan provider `{}` credentials_file cannot be empty",
+                self.id
+            );
+        }
+        validate_http_url(
+            &self.base_url,
+            &format!("chatgpt_plan provider `{}` base_url", self.id),
+        )?;
+        let parsed = url::Url::parse(&self.base_url)?;
+        if parsed.scheme() != "https" && !is_loopback_http_url(&parsed) {
+            bail!(
+                "chatgpt_plan provider `{}` base_url must use https unless the host is loopback",
+                self.id
+            );
+        }
+        if parsed.query().is_some() || parsed.fragment().is_some() {
+            bail!(
+                "chatgpt_plan provider `{}` base_url cannot include query parameters or fragments",
+                self.id
+            );
+        }
+        if self
+            .default_headers
+            .keys()
+            .any(|name| name.eq_ignore_ascii_case("authorization"))
+        {
+            bail!(
+                "chatgpt_plan provider `{}` default_headers cannot set authorization",
+                self.id
+            );
+        }
+        if self.pricing_provider_id.trim().is_empty() {
+            bail!(
+                "chatgpt_plan provider `{}` pricing_provider_id cannot be empty",
+                self.id
+            );
+        }
+        if !is_supported_pricing_provider_id(&self.pricing_provider_id) {
+            bail!(
+                "chatgpt_plan provider `{}` pricing_provider_id `{}` is not supported",
+                self.id,
+                self.pricing_provider_id
+            );
         }
         validate_provider_display_config(self.id.as_str(), self.display.as_ref())?;
         Ok(())

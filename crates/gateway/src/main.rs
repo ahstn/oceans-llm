@@ -21,8 +21,8 @@ use gateway_core::{
     SkillObjectStore,
 };
 use gateway_providers::{
-    AnthropicCompatProvider, BedrockProvider, CopilotAuthConfig, CopilotProvider,
-    OpenAiCompatProvider, TypeSafeProvider, VertexProvider,
+    AnthropicCompatProvider, BedrockProvider, ChatGptPlanProvider, CopilotAuthConfig,
+    CopilotProvider, OpenAiCompatProvider, TypeSafeProvider, VertexProvider,
 };
 use gateway_service::{
     AnalysisPolicy, DEFAULT_PRICING_CATALOG_REFRESH_INTERVAL, GatewayService, McpCredentialService,
@@ -582,6 +582,13 @@ fn build_provider_registry(
             CopilotProvider::new(provider_config)
         }
         .map_err(|error| anyhow::anyhow!("failed building github_copilot provider: {error}"))?;
+        register_runtime_provider(&mut providers, config, Arc::new(provider), routing_identity);
+    }
+
+    for provider_config in config.chatgpt_plan_provider_configs()? {
+        let routing_identity = provider_routing_identity::chatgpt_plan(&provider_config);
+        let provider = ChatGptPlanProvider::new(provider_config)
+            .map_err(|error| anyhow::anyhow!("failed building chatgpt_plan provider: {error}"))?;
         register_runtime_provider(&mut providers, config, Arc::new(provider), routing_identity);
     }
 

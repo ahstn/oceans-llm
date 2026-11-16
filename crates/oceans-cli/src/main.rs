@@ -1,4 +1,5 @@
 mod attribution;
+mod chatgpt_login;
 mod cli;
 mod client;
 mod config;
@@ -22,6 +23,9 @@ fn main() -> anyhow::Result<()> {
             let client = connect(&overrides, &env)?;
             skills::run(&client, command, cli.json).await
         }),
+        cli::Command::Providers(cli::ProvidersCommand::LoginChatgpt(args)) => {
+            block_on(chatgpt_login::run(args, &env, cli.json))
+        }
         cli::Command::Providers(command) => block_on(async {
             let connection =
                 config::resolve_connection(&overrides, &env, config::KEY_COMMAND_TIMEOUT)?;

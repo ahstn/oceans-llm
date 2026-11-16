@@ -1,8 +1,8 @@
 use anyhow::Context;
 use gateway_providers::{
-    BedrockAuthConfig, BedrockProviderConfig, CloudRunOpenAiCompatAuth, CopilotAuthConfig,
-    CopilotProviderConfig, OpenAiCompatConfig, VertexAuthConfig, VertexBatchConfig,
-    VertexProviderConfig,
+    BedrockAuthConfig, BedrockProviderConfig, ChatGptPlanConfig, CloudRunOpenAiCompatAuth,
+    CopilotAuthConfig, CopilotProviderConfig, OpenAiCompatConfig, VertexAuthConfig,
+    VertexBatchConfig, VertexProviderConfig,
 };
 
 use super::{
@@ -124,6 +124,7 @@ impl GatewayConfig {
                 | ProviderConfig::GcpVertex(_)
                 | ProviderConfig::AwsBedrock(_)
                 | ProviderConfig::GitHubCopilot(_)
+                | ProviderConfig::ChatGptPlan(_)
                 | ProviderConfig::TypeSafe(_) => {}
             }
         }
@@ -354,5 +355,42 @@ impl GatewayConfig {
         }
 
         Ok(configs)
+    }
+
+    pub fn chatgpt_plan_provider_configs(&self) -> anyhow::Result<Vec<ChatGptPlanConfig>> {
+        self.providers
+            .iter()
+            .filter_map(|provider| match provider {
+                ProviderConfig::ChatGptPlan(provider) => Some(provider),
+                _ => None,
+            })
+            .map(|provider| {
+                Ok(ChatGptPlanConfig {
+                    provider_key: provider.id.clone(),
+                    credentials_file: expand_credentials_path(&provider.credentials_file)?,
+                    base_url: provider.base_url.trim_end_matches('/').to_string(),
+                    strip_unsupported_fields: provider.strip_unsupported_fields,
+                    default_headers: provider.default_headers.clone(),
+                    request_timeout_ms: provider
+                        .timeouts
+                        .as_ref()
+                        .map_or(DEFAULT_REQUEST_TIMEOUT_MS, |timeouts| timeouts.total_ms),
+                })
+            })
+            .collect()
+    }
+}
+
+fn expand_credentials_path(value: &str) -> anyhow::Result<std::path::PathBuf> {
+    if value == "~" || value.starts_with("~/") {
+        let home = std::env::var_os("HOME")
+            .ok_or_else(|| anyhow::anyhow!("cannot expand credentials_file `~`: HOME is unset"))?;
+        let mut path = std::path::PathBuf::from(home);
+        if let Some(relative) = value.strip_prefix("~/") {
+            path.push(relative);
+        }
+        Ok(path)
+    } else {
+        Ok(value.into())
     }
 }

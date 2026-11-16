@@ -184,6 +184,51 @@ async fn model_group_info_claims_openai_only_when_every_chat_route_serves_respon
 }
 
 #[tokio::test]
+async fn chatgpt_plan_discovery_uses_openai_responses_without_client_overrides() {
+    for capabilities in [
+        PartialCapabilities::default(),
+        PartialCapabilities::from_capabilities(ProviderCapabilities::all_enabled()),
+    ] {
+        let model = model("chatgpt/gpt-6-luna");
+        let mut route = route();
+        route.model_id = model.id;
+        route.upstream_model = "gpt-6-luna".into();
+        route.capabilities = capabilities;
+        let provider = ProviderConnection {
+            provider_type: "chatgpt_plan".into(),
+            ..provider()
+        };
+        let group = group_info(model.clone(), vec![route.clone()], provider.clone()).await;
+        assert_eq!(group["model_group"], "chatgpt/gpt-6-luna");
+        assert_eq!(group["providers"], json!(["openai"]));
+        assert_eq!(group["mode"], "chat");
+        assert!(params(&group).contains(&"stream"));
+
+        let card = listing_card(
+            model.clone(),
+            ListingRepo {
+                models: vec![model],
+                routes: vec![route],
+                provider,
+            },
+        )
+        .await;
+        assert_eq!(card["owned_by"], "oceans-llm");
+        assert_eq!(card["supported_endpoint_types"], json!(["openai-response"]));
+        let hints = &card["client_hints"];
+        assert_eq!(hints["api_formats"], json!(["openai-responses"]));
+        assert_eq!(hints["preferred_api_format"], "openai-responses");
+        assert_eq!(hints["harnesses"]["pi"]["api"], "openai-responses");
+        assert_eq!(
+            hints["harnesses"]["opencode"]["package"],
+            "@opencode/ai/providers/openai-compatible/responses"
+        );
+        assert_eq!(hints["harnesses"]["codex"]["wire_api"], "responses");
+        assert!(hints["harnesses"].get("claude_code").is_none());
+    }
+}
+
+#[tokio::test]
 async fn model_group_info_reports_unknown_capabilities_as_false() {
     let mut unknown = route();
     unknown.upstream_model = "house-tuned".into();

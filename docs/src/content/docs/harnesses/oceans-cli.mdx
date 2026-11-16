@@ -106,9 +106,12 @@ The config file holds one key for all commands. A key limited to **Attribution**
 | `oceans login` | Checks a key and saves the config file. | This page |
 | `oceans skills` | Lists, uploads, downloads and installs skills. | [Agent Skills](/extensions/skills/#use-the-oceans-cli) |
 | `oceans providers set-copilot-token` | Stores your GitHub token for a Copilot provider. | [GitHub Copilot](/providers/github-copilot/) |
+| `oceans providers login-chatgpt` | Signs in with ChatGPT and saves a local credential file. | [ChatGPT plan](/providers/chatgpt-plan/) |
 | `oceans hook` | Queues Git AI notes, agent sessions and merged pull requests, and sends them to the gateway. | [Git AI attribution](/harnesses/git-ai-attribution/) |
 
 `--url`, `--api-key` and `--json` work with every command. `--json` prints structured output from `login`, `skills`, `providers`, `hook queue` and `hook send --foreground`. Run `oceans --help`, or `--help` after any command, for its options.
+
+For a [ChatGPT plan provider](/providers/chatgpt-plan/), run `oceans providers login-chatgpt` on the gateway host. This opens a browser and prints the sign-in URL; use `--no-browser` to open it yourself. The command does not need an Oceans API key. It saves credentials to `~/.config/oceans/chatgpt-plan/credential.json` (or under `$XDG_CONFIG_HOME`); use `--output PATH` to choose another file and `--port` to choose the preferred loopback callback port. Repeating the command reauthorizes the same account. Protect the credential file and never share the printed sign-in URL, which can contain an identity token hint.
 
 ## Troubleshooting
 

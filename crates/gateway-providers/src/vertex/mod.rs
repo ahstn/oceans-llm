@@ -216,6 +216,7 @@ impl VertexProvider {
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body: text,
+                request_id: None,
             });
         }
         serde_json::from_str(&text)
@@ -467,6 +468,7 @@ impl ProviderClient for VertexProvider {
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body,
+                request_id: None,
             });
         }
 
@@ -540,6 +542,7 @@ impl ProviderClient for VertexProvider {
                     ProviderError::UpstreamHttp {
                         status: status.as_u16(),
                         body: text,
+                        request_id: None,
                     },
                     &outputs,
                     false,

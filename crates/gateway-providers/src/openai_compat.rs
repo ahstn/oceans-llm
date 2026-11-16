@@ -558,6 +558,7 @@ impl OpenAiCompatProvider {
             return Err(ProviderError::UpstreamHttp {
                 status: status.as_u16(),
                 body,
+                request_id: None,
             });
         }
 

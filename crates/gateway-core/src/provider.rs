@@ -223,7 +223,11 @@ pub enum ProviderError {
     #[error("upstream provider transport failure: {0}")]
     Transport(String),
     #[error("upstream provider returned {status}: {body}")]
-    UpstreamHttp { status: u16, body: String },
+    UpstreamHttp {
+        status: u16,
+        body: String,
+        request_id: Option<String>,
+    },
     #[error("upstream provider returned {status}: {body}")]
     NativeMessagesHttp {
         status: u16,

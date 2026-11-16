@@ -50,7 +50,12 @@ fn non_anthropic_input() -> ClientConfigInput {
 
 #[test]
 fn responses_only_models_use_responses_even_with_claude_aliases() {
-    for model_id in ["mantle-gpt", "zen-gpt", "claude-alias"] {
+    for model_id in [
+        "mantle-gpt",
+        "zen-gpt",
+        "claude-alias",
+        "chatgpt/gpt-6-luna",
+    ] {
         let mut input = non_anthropic_input();
         input.model_id = model_id.into();
         input.capabilities.chat_completions = false;
@@ -66,7 +71,12 @@ fn responses_only_models_use_responses_even_with_claude_aliases() {
             provider.get("compat").is_none(),
             "Chat-only flags must not reach the Responses adapter"
         );
-        assert!(configs.iter().any(|config| config.key == "codex"));
+        let codex = configs.iter().find(|config| config.key == "codex").unwrap();
+        let value: TomlValue = toml::from_str(&codex.blocks[0].content).unwrap();
+        assert_eq!(
+            value["model_providers"]["oceans-llm"]["wire_api"].as_str(),
+            Some("responses")
+        );
         assert!(!configs.iter().any(|config| config.key == "claude-code"));
         let opencode = configs
             .iter()

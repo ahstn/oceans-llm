@@ -1,6 +1,7 @@
 pub mod anthropic;
 mod anthropic_compat;
 mod bedrock;
+pub mod chatgpt_plan;
 mod copilot;
 mod decisions;
 mod http;
@@ -20,6 +21,7 @@ pub use anthropic_compat::{
     AnthropicCompatAuth, AnthropicCompatAuthKind, AnthropicCompatConfig, AnthropicCompatProvider,
 };
 pub use bedrock::{BedrockAuthConfig, BedrockEndpointKind, BedrockProvider, BedrockProviderConfig};
+pub use chatgpt_plan::{ChatGptPlanConfig, ChatGptPlanProvider, DEFAULT_CHATGPT_PLAN_BASE_URL};
 pub use copilot::{
     CopilotAuthConfig, CopilotProvider, CopilotProviderConfig, DEFAULT_COPILOT_API_URL,
     DEFAULT_COPILOT_EDITOR_VERSION, DEFAULT_COPILOT_INTEGRATION_ID, DEFAULT_COPILOT_PLUGIN_VERSION,

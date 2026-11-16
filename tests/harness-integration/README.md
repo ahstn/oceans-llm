@@ -37,7 +37,7 @@ Every applicable cell runs five tests:
 
 The fast test is not applicable to every Pi cell (Pi has no tier setting), to OMP with `gemini-4-hydrogen` (OMP sends no tier for a custom Chat Completions Gemini model), and to Claude Code with `claude-haiku-5.5` (Claude Code fast mode is for Opus models only). `src/matrix.ts` has the full reasons.
 
-On OpenRouter, that is 45 runs (10 cells x 5 tests, less 5 not-applicable fast tests). With Vertex AI configured, there are 13 more runs, and the Bedrock opt-in adds 28. Every run sends a new `harness_run` tag, and the test then checks every request log with that tag: status 200, the cell's Oceans model, provider `openrouter`, the cell's operation, the cell's provider (`openrouter`, `vertex` or `bedrock`, the managed provider ids), and the harness key that the gateway takes from the `User-Agent`. The keys are `opencode`, `pi`, `oh_my_pi` and `claude_cli`. The gateway classifies Claude Code model requests (`claude-cli/<version>`) as `claude_cli`. When the key does not match, the failure message shows the raw `User-Agent` from the request-log detail. Each run prints one `Harness run:` line with its operations, harness keys, request count and completed tools. Effort and fast runs add the requested and served tier, and the effort field.
+On OpenRouter, that is 45 runs (10 cells x 5 tests, less 5 not-applicable fast tests). With Vertex AI configured, there are 13 more runs, and the Bedrock opt-in adds 28. Every run sends a new `harness_run` tag, and the test then checks every request log with that tag: status 200, the cell's Oceans model, the cell's operation, the provider id, and the harness key that the gateway takes from the `User-Agent`. Managed provider ids are `openrouter`, `vertex`, `bedrock` and `chatgpt`. For external Vertex and ChatGPT routes, the deployment chooses the provider id, so the test checks that it is nonempty rather than comparing a managed id. Request logs do not expose the provider type, so the external model must be configured on the intended provider type. The harness keys are `opencode`, `pi`, `oh_my_pi` and `claude_cli`. The gateway classifies Claude Code model requests (`claude-cli/<version>`) as `claude_cli`. When the key does not match, the failure message shows the raw `User-Agent` from the request-log detail. Each run prints one `Harness run:` line with its operations, harness keys, request count and completed tools. Effort and fast runs add the requested and served tier, and the effort field.
 
 The three models of one harness and test run at the same time (`maxConcurrency: 3`). Each run has a new, empty workspace with its own home, config, cache and data folders, and its own request tag. Except in the effort tests, models use their default reasoning level.
 
@@ -105,6 +105,12 @@ Optional Bedrock opt-in. Use it only with a scoped IAM user, never with root cre
 - `OCEANS_HARNESS_BEDROCK`: set to `1` to run the blocked Bedrock cells.
 - `OCEANS_HARNESS_BEDROCK_REGION`, else `AWS_REGION`: the Bedrock region.
 
+Optional ChatGPT subscription provider: OpenCode with the plugin and OMP run chat, files, bash and effort over streaming Responses; Pi and Claude Code do not use this route, and the priority service-tier test is skipped. The agent processes never need ChatGPT credentials: they talk only to Oceans. Only the gateway that owns the `chatgpt_plan` provider reads its credential file, whether that is the temporary gateway in managed mode or your deployment in external mode.
+
+For managed mode, first run `oceans providers login-chatgpt` once. It writes `~/.config/oceans/chatgpt-plan/credential.json` by default. Set `OCEANS_HARNESS_CHATGPT_CREDENTIALS` to the existing file's absolute path to add `chatgpt/gpt-6-luna`. Do not set this variable with `GATEWAY_BASE_URL`; use `OCEANS_CHATGPT_MODEL` instead.
+
+The gateway refreshes the credential **in place**, rotating its refresh token; never copy the file or run two gateways on the same credential file at once. Usage counts against the ChatGPT plan's 5-hour and weekly limits. Cost shown is an API-equivalent estimate, not a separate API charge.
+
 Optional upstream overrides:
 
 - `OPENROUTER_PLUGIN_OPENAI_MODEL`: defaults to `openai/gpt-6-luna`. The user-allowlist model uses the same upstream.
@@ -127,6 +133,7 @@ Optional external-mode variables:
 
 - `OCEANS_PLUGIN_OPENAI_MODEL`, `OCEANS_PLUGIN_ANTHROPIC_MODEL` and `OCEANS_PLUGIN_GOOGLE_MODEL`: the matrix model keys. Defaults to `gpt-6-luna`, `claude-haiku-5.5` and `gemini-4-hydrogen`.
 - `OCEANS_VERTEX_GOOGLE_MODEL`: the Oceans model key of `gemini-4-hydrogen` on a Vertex AI route. Without it, the Vertex AI cells skip.
+- `OCEANS_CHATGPT_MODEL`: the Oceans model key of a model routed to a `chatgpt_plan` provider in this deployment. Enables the ChatGPT matrix cells without giving the harness a credential file.
 - `OCEANS_PLUGIN_TEXT_ONLY_MODEL`: defaults to `harness-plugin-text-only`. This Anthropic route must disable vision and tools and cap reasoning at `medium`.
 - `OCEANS_PLUGIN_HIDDEN_MODEL`: defaults to `harness-plugin-hidden`. This model must exist but must not be granted to `OCEANS_API_KEY`.
 - `OCEANS_ALLOWLISTED_USER_API_KEY` and `OCEANS_ALLOWLISTED_TEST_MODEL`: human-user key and allowlisted Oceans model used by the Pi user-allowlist test. Configure both or neither.
@@ -159,6 +166,31 @@ mise exec -- sh -eu -c '
   OPENROUTER_API_KEY="$(fnox --non-interactive --no-daemon get OPENROUTER_API_KEY)"
   export OPENROUTER_API_KEY
   exec npm test --prefix tests/harness-integration -- src/matrix.test.ts -t "chat"
+'
+```
+
+For the ChatGPT route, use the same fnox-safe pattern, setting the credential path after mise loads the environment:
+
+```sh
+mise exec -- sh -eu -c '
+  OPENROUTER_API_KEY="$(fnox --non-interactive --no-daemon get OPENROUTER_API_KEY)"
+  OCEANS_HARNESS_CHATGPT_CREDENTIALS="$HOME/.config/oceans/chatgpt-plan/credential.json"
+  export OPENROUTER_API_KEY OCEANS_HARNESS_CHATGPT_CREDENTIALS
+  exec npm test --prefix tests/harness-integration -- src/matrix.test.ts -t "chatgpt"
+'
+```
+
+For an external gateway, configure the provider and model in that deployment first, then set the model key instead of a credential path. For example, when the external credentials are held in fnox:
+
+```sh
+mise exec -- sh -eu -c '
+  GATEWAY_BASE_URL="https://gateway.example.com"
+  GATEWAY_ADMIN_EMAIL="$(fnox --non-interactive --no-daemon get GATEWAY_ADMIN_EMAIL)"
+  GATEWAY_ADMIN_PASSWORD="$(fnox --non-interactive --no-daemon get GATEWAY_ADMIN_PASSWORD)"
+  OCEANS_API_KEY="$(fnox --non-interactive --no-daemon get OCEANS_API_KEY)"
+  OCEANS_CHATGPT_MODEL="my-chatgpt-model"
+  export GATEWAY_BASE_URL GATEWAY_ADMIN_EMAIL GATEWAY_ADMIN_PASSWORD OCEANS_API_KEY OCEANS_CHATGPT_MODEL
+  exec npm test --prefix tests/harness-integration -- src/matrix.test.ts -t "chatgpt"
 '
 ```
 

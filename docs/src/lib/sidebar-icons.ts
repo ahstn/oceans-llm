@@ -28,6 +28,7 @@ const sidebarIcons: Record<string, string> = {
   "/providers/aws-bedrock": "ph:cloud",
   "/providers/aws-bedrock/openai": "ph:open-ai-logo",
   "/providers/github-copilot": "ph:github-logo",
+  "/providers/chatgpt-plan": "ph:open-ai-logo",
   "/providers/gcp-vertex": "ph:google-logo",
   "/providers/gcp-cloud-run": "ph:cloud-arrow-up",
   "/access/identity-and-access": "ph:users-three",

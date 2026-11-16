@@ -11,7 +11,7 @@ export type Operation = "chat_completions" | "messages" | "responses";
 export type ModelFamily = "openai" | "anthropic" | "google";
 
 /** The upstream provider of a matrix cell. */
-export type Provider = "openrouter" | "vertex" | "bedrock";
+export type Provider = "openrouter" | "vertex" | "bedrock" | "chatgpt";
 
 export interface GatewayRuntime {
   allowlistedUser?: {
@@ -22,6 +22,8 @@ export interface GatewayRuntime {
   adminPassword: string;
   apiKey: string;
   baseUrl: string;
+  /** True for a gateway whose provider IDs are controlled by its deployment. */
+  external?: boolean;
   /** OpenRouter model keys, which the plugin suite also uses. */
   pluginModels: {
     openai: string;

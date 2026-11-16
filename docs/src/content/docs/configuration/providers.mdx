@@ -23,6 +23,7 @@ The gateway accepts these `type` values. Any other value fails config loading.
 | `gcp_vertex` | Google Vertex AI, including Anthropic models on Vertex |
 | `aws_bedrock` | Amazon Bedrock Runtime and Bedrock Mantle |
 | `github_copilot` | The GitHub Copilot API |
+| `chatgpt_plan` | Your own ChatGPT plan through SIWC streaming Responses; single-owner deployments only |
 | `typesafe` | Native TypeSafe System One Decisions |
 
 ## Shared fields
@@ -67,6 +68,7 @@ Secret fields such as `auth.token` take a value source such as `env.NAME` or `li
 | `github_copilot` | `auth.mode: github_user` | Per-user token stored encrypted in the admin UI |
 | `github_copilot` | `auth.mode: github_app` | GitHub App ID, private key, installation ID, and repository ID |
 | `github_copilot` | `auth.mode: bearer` | Shared static token in `auth.token`, for constrained testing only |
+| `chatgpt_plan` | `credentials_file` (no `auth` block) | One local OAuth credential record, refreshed and atomically replaced by the gateway |
 
 ## Routing account scope
 
@@ -235,6 +237,23 @@ providers:
 ```
 
 Every Bedrock route must set `compatibility.aws_bedrock.api_style`, and the style must match `endpoint_kind`. See [Models and routes](/configuration/models-and-routes/#aws-bedrock-route-compatibility) and [AWS Bedrock](/providers/aws-bedrock/).
+
+## `chatgpt_plan`
+
+Use `chatgpt_plan` for your own ChatGPT plan through Sign in with ChatGPT (SIWC). It calls the public Responses API, not ChatGPT's backend endpoints, and supports streaming Responses only.
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `credentials_file` | required | Plain mutable filesystem path to the OAuth credential record. Supports leading `~`; not an `env.*` or `literal.*` value source. The gateway needs read/write access to the file and its parent directory. |
+| `base_url` | `https://api.openai.com/v1` | HTTPS URL; HTTP is allowed only on loopback for local mock servers. The adapter appends `/responses`. |
+| `pricing_provider_id` | `openai` | Optional supported catalog identity. Prices API-equivalent attribution, not subscription billing or remaining plan quota. |
+| `strip_unsupported_fields` | `true` | Removes optional fields/tools unsupported by the SIWC preview. `false` preserves them; required protocol rewrites still apply. |
+
+It also takes the [shared fields](#shared-fields). `default_headers` must not contain `Authorization` (case-insensitive): the OAuth bearer credential is authoritative. There is no `auth` or `batch` block.
+
+Create credentials with `oceans providers login-chatgpt`. Exactly one gateway process may own a credential file/session because refresh tokens rotate; use separate logins for separate processes, not copies of one session.
+
+**This is not per-user authentication.** Every key allowed to use a route on this provider uses the same ChatGPT account. Restrict model grants to the account owner's own keys, and do not enable this provider in a multi-user deployment until per-user credentials exist. See [ChatGPT plan](/providers/chatgpt-plan/) for the terms, security boundary, full setup, and request normalization.
 
 ## `github_copilot`
 

@@ -3028,10 +3028,12 @@ version = "1.0.0"
 dependencies = [
  "anyhow",
  "axum",
+ "base64 0.23.1",
  "clap",
  "futures-util",
  "gateway-skills",
  "indexmap 2.14.1",
+ "jsonwebtoken",
  "libc",
  "reqwest 0.13.5",
  "rpassword",
