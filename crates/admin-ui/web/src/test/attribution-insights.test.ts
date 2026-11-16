@@ -10,6 +10,7 @@ import {
   attributionTabRedirect,
   bucketDays,
   enabledAttributionTabs,
+  flowFigures,
   harnessShares,
   mergedShareByBucket,
   resolveAttributionTab,
@@ -235,5 +236,41 @@ describe('harness names', () => {
     }
     expect(canonicalHarness('claude_code')).toBe('claude')
     expect(harnessLabel('claude')).toBe('Claude Code')
+  })
+})
+
+describe('flow figures', () => {
+  it('turns lifecycle counts into rates, null without a denominator', () => {
+    const lifecycle = {
+      opened_count: 4,
+      merged_count: 3,
+      closed_unmerged_count: 1,
+      open_count: 2,
+      draft_count: 1,
+      review_known_count: 2,
+      merged_without_review_count: 1,
+      median_review_wait_seconds: 7_200,
+      revert_count: 1,
+      possible_revert_count: 0,
+      median_time_to_revert_seconds: 3_600,
+    }
+    expect(flowFigures(lifecycle)).toEqual({
+      reviewWaitHours: 2,
+      mergedWithoutReviewRate: 0.5,
+      abandonRate: 0.25,
+      reviewCoverage: 2 / 3,
+      timeToRevertHours: 1,
+    })
+    const empty = flowFigures({
+      ...lifecycle,
+      merged_count: 0,
+      closed_unmerged_count: 0,
+      review_known_count: 0,
+      median_review_wait_seconds: null,
+      median_time_to_revert_seconds: null,
+    })
+    expect(empty.abandonRate).toBeNull()
+    expect(empty.mergedWithoutReviewRate).toBeNull()
+    expect(empty.reviewWaitHours).toBeNull()
   })
 })

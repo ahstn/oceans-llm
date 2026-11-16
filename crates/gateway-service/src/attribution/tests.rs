@@ -69,6 +69,8 @@ struct FakeStore {
     request_sessions: Mutex<Vec<AttributionRequestSessionWrite>>,
     /// Hash count of every request-fact lookup.
     fact_lookups: Mutex<Vec<usize>>,
+    /// The `(from, to)` of every pull request read.
+    pull_request_reads: Mutex<Vec<(time::OffsetDateTime, time::OffsetDateTime)>>,
 }
 
 impl FakeStore {
@@ -158,6 +160,7 @@ fn pull_request_record(
         base_ref: write.base_ref.clone(),
         head_ref: write.head_ref.clone(),
         merge_commit_sha: write.merge_commit_sha.clone(),
+        lifecycle: write.lifecycle.clone(),
         merged_at: write.merged_at,
         author_user_id: write.author_user_id,
         author_email_hash: write.author_email_hash.clone(),
@@ -289,15 +292,36 @@ impl AttributionRepository for FakeStore {
         &self,
         query: &AttributionReportQuery,
     ) -> Result<Vec<AttributionPullRequestRecord>, StoreError> {
+        self.pull_request_reads
+            .lock()
+            .expect("pull request reads lock")
+            .push((query.from, query.to));
         let mut rows = self
             .pull_requests()
             .into_iter()
             .filter(|pull_request| {
-                in_range(query, pull_request.merged_at)
+                [
+                    pull_request.merged_at,
+                    pull_request.lifecycle.opened_at,
+                    pull_request.lifecycle.closed_at,
+                    pull_request.lifecycle.last_activity_at,
+                ]
+                .into_iter()
+                .flatten()
+                .any(|at| in_range(query, at))
                     && visible_to(query, &pull_request.owner, pull_request.author_user_id)
             })
             .collect::<Vec<_>>();
-        rows.sort_by_key(|row| std::cmp::Reverse(row.merged_at));
+        rows.sort_by_key(|row| {
+            std::cmp::Reverse(
+                row.lifecycle
+                    .last_activity_at
+                    .or(row.merged_at)
+                    .or(row.lifecycle.closed_at)
+                    .or(row.lifecycle.opened_at)
+                    .unwrap_or(row.observed_at),
+            )
+        });
         rows.truncate(query.limit as usize);
         Ok(rows)
     }

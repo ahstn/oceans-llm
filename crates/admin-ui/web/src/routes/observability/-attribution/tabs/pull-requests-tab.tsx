@@ -29,7 +29,14 @@ import { formatAttributedCost, shortSha } from '../shared'
 import { PullRequestLink } from '../cells'
 import { displayRepository } from '../shared'
 import { ChangesTable } from '../changes-table'
-import { AI_BANDS, median, pullRequestRows, type AiBandKey, type PullRequestRow } from '../insights'
+import {
+  AI_BANDS,
+  median,
+  pullRequestRows,
+  type AiBandKey,
+  type PullRequestRow,
+  type PullRequestView,
+} from '../insights'
 import { RowLimitFooter, useRowLimit } from '../row-limit'
 
 type Sort = 'recent' | 'cost' | 'ai'
@@ -229,7 +236,7 @@ function PullRequestRowView({
           <span className="truncate font-medium" title={pr.title}>
             {pr.title}
           </span>
-          {pr.is_revert ? <Badge variant="warning">Revert</Badge> : null}
+          <RevertBadges pr={pr} />
         </p>
         <p className="text-muted-foreground flex flex-wrap items-center gap-x-1 text-xs">
           <span onClick={(event) => event.stopPropagation()}>
@@ -392,13 +399,7 @@ function PullRequestDetail({ row }: { row: PullRequestRow }) {
         </div>
         <div className="text-muted-foreground flex flex-wrap items-center gap-4 text-xs">
           <span>Lead time: {formatHours(toMs(row.leadHours))}</span>
-          <span className="inline-flex items-center gap-1.5">
-            Review wait: {EMPTY_VALUE}
-            <ReadinessBadge
-              level="new"
-              note="Needs the pull request's opened and first review times."
-            />
-          </span>
+          <ReviewFacts pr={pr} />
           <span>
             {formatCount(pr.attributed_commit_count)} of {formatCount(pr.commit_count)} commits have
             notes
@@ -470,5 +471,75 @@ function PullRequestDetail({ row }: { row: PullRequestRow }) {
         </div>
       ) : null}
     </div>
+  )
+}
+
+/**
+ * Whether a merged pull request had no human review before it merged, as the gateway counts it:
+ * a review left after the merge doesn't count.
+ */
+function mergedWithoutReview(pr: PullRequestView): boolean {
+  if (pr.review_count == null) return false
+  if (pr.first_review_at == null) return pr.review_count === 0
+  return Date.parse(pr.first_review_at) > Date.parse(pr.merged_at)
+}
+
+function reviewSummary(pr: PullRequestView): string | null {
+  if (pr.review_count == null) return null
+  const count = `${formatCount(pr.review_count)} ${pr.review_count === 1 ? 'review' : 'reviews'}`
+  if (!mergedWithoutReview(pr)) {
+    return `${count}, ${formatCount(pr.approval_count ?? 0)} approving`
+  }
+  return pr.review_count === 0 ? 'Merged without review' : `Merged without review; ${count} after`
+}
+
+/** Review wait, reviews and size, when the hook sent them. */
+function ReviewFacts({ pr }: { pr: PullRequestView }) {
+  const reviews = reviewSummary(pr)
+  const size =
+    pr.additions == null || pr.deletions == null
+      ? null
+      : `+${formatCount(pr.additions)} −${formatCount(pr.deletions)}${
+          pr.changed_files == null ? '' : ` in ${formatCount(pr.changed_files)} files`
+        }`
+  return (
+    <>
+      <span>
+        Review wait:{' '}
+        {pr.review_wait_seconds == null ? EMPTY_VALUE : formatHours(pr.review_wait_seconds * 1000)}
+      </span>
+      {reviews ? <span>{reviews}</span> : null}
+      {size ? <span className="tabular-nums">{size}</span> : null}
+    </>
+  )
+}
+
+const REVERT_EVIDENCE: Record<NonNullable<PullRequestView['revert']>['evidence'], string> = {
+  revert_commit: "A commit carries git's revert line",
+  github_revert: "GitHub's revert button",
+  change_match: "The change exactly undoes the original's",
+  title: 'Only the title says revert',
+}
+
+/** What this pull request reverts and whether a later one reverted it. */
+function RevertBadges({ pr }: { pr: PullRequestView }) {
+  const revert = pr.revert
+  const target = revert?.reverts_pull_request_number
+  return (
+    <>
+      {revert?.confirmed ? (
+        <Badge variant="warning" title={REVERT_EVIDENCE[revert.evidence]}>
+          {target == null ? 'Revert' : `Reverts #${target}`}
+        </Badge>
+      ) : null}
+      {revert && !revert.confirmed ? (
+        <Badge variant="outline" title={REVERT_EVIDENCE[revert.evidence]}>
+          Possible revert
+        </Badge>
+      ) : null}
+      {pr.reverted_by_number == null ? null : (
+        <Badge variant="destructive">Reverted by #{pr.reverted_by_number}</Badge>
+      )}
+    </>
   )
 }

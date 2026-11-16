@@ -12,6 +12,7 @@ mod payload;
 mod prs;
 mod queue;
 mod repo;
+mod reverts;
 mod sender;
 pub mod state;
 

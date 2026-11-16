@@ -23,8 +23,9 @@ pub use ingest::{
 pub use report::{
     AttributionChangeActivity, AttributionDayActivity, AttributionHarnessModelActivity,
     AttributionModelActivity, AttributionPeriodSummary, AttributionPullRequestActivity,
-    AttributionPullRequestCommitActivity, AttributionReport, AttributionReportCoverage,
-    AttributionReportTotals, AttributionSessionOutcome, AttributionSessionOutcomeTally,
+    AttributionPullRequestCommitActivity, AttributionPullRequestLifecycleSummary,
+    AttributionReport, AttributionReportCoverage, AttributionReportTotals,
+    AttributionRevertActivity, AttributionSessionOutcome, AttributionSessionOutcomeTally,
     AttributionUserActivity, RequestTally, build_attribution_harness_report,
     build_attribution_report, build_attribution_summary,
 };

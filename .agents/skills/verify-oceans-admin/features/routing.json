@@ -577,6 +577,7 @@
         "crates/gateway-store/migrations/**/V79__git_ai_attribution.sql",
         "crates/gateway-store/migrations/**/V80__attribution_note_key_owner_authors.sql",
         "crates/gateway-store/migrations/**/V81__attribution_request_sessions.sql",
+        "crates/gateway-store/migrations/**/V82__attribution_pull_request_lifecycle.sql",
         "crates/oceans-cli/src/attribution/**",
         "crates/oceans-cli/src/{config,process}.rs",
         "crates/oceans-cli/assets/**"

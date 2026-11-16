@@ -1,10 +1,11 @@
 //! Report views behind the Attribution tabs beyond the tables: daily buckets, session outcomes,
 //! harness × model rows, per-PR commits and the period summaries the KPI deltas compare.
 
+use gateway_core::AttributionRevertEvidence;
 use gateway_service::attribution::{
     AttributionDayActivity, AttributionHarnessModelActivity, AttributionPeriodSummary,
-    AttributionPullRequestCommitActivity, AttributionSessionOutcome,
-    AttributionSessionOutcomeTally,
+    AttributionPullRequestCommitActivity, AttributionPullRequestLifecycleSummary,
+    AttributionRevertActivity, AttributionSessionOutcome, AttributionSessionOutcomeTally,
 };
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -102,6 +103,93 @@ pub struct AttributionPeriodSummaryView {
     pub median_lead_time_seconds: Option<i64>,
     /// Merged pull requests whose title reads as a revert.
     pub reverted_pull_request_count: i64,
+}
+
+/// How a revert link was found, strongest first. `title` alone is a possible revert.
+#[derive(Debug, Clone, Copy, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AttributionRevertEvidenceView {
+    /// A pull request commit carries git's `This reverts commit <sha>` line.
+    RevertCommit,
+    /// GitHub's revert button, backed by a revert title.
+    GithubRevert,
+    /// The change is the exact inverse of an earlier merged pull request's.
+    ChangeMatch,
+    /// A revert title and nothing else.
+    Title,
+}
+
+/// What a merged pull request reverts.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AttributionRevertView {
+    pub evidence: AttributionRevertEvidenceView,
+    /// Whether the evidence is stronger than a title.
+    pub confirmed: bool,
+    /// The reverted pull request in the same repository, when it could be resolved.
+    pub reverts_pull_request_number: Option<i64>,
+}
+
+/// Lifecycle figures over every pull request merged, opened or closed in the window.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AttributionPullRequestLifecycleView {
+    pub opened_count: i64,
+    pub merged_count: i64,
+    /// Closed without merging in the window.
+    pub closed_unmerged_count: i64,
+    /// Still open, of those opened or updated in the window.
+    pub open_count: i64,
+    pub draft_count: i64,
+    /// Merged in the window with review data from the hook; older hooks sent none.
+    pub review_known_count: i64,
+    /// Merged in the window with no review by anyone but the author or a bot.
+    pub merged_without_review_count: i64,
+    /// Median opened to first human review, for reviews in the window.
+    pub median_review_wait_seconds: Option<i64>,
+    /// Merged in the window and reverting another pull request, by confirmed evidence.
+    pub revert_count: i64,
+    /// Merged in the window with only a revert title to go on.
+    pub possible_revert_count: i64,
+    /// Median merge of a reverted pull request to the merge of its revert.
+    pub median_time_to_revert_seconds: Option<i64>,
+}
+
+impl From<AttributionRevertActivity> for AttributionRevertView {
+    fn from(revert: AttributionRevertActivity) -> Self {
+        Self {
+            evidence: match revert.evidence {
+                AttributionRevertEvidence::RevertCommit => {
+                    AttributionRevertEvidenceView::RevertCommit
+                }
+                AttributionRevertEvidence::GithubRevert => {
+                    AttributionRevertEvidenceView::GithubRevert
+                }
+                AttributionRevertEvidence::ChangeMatch => {
+                    AttributionRevertEvidenceView::ChangeMatch
+                }
+                AttributionRevertEvidence::Title => AttributionRevertEvidenceView::Title,
+            },
+            confirmed: revert.is_confirmed(),
+            reverts_pull_request_number: revert.reverts_pull_request_number,
+        }
+    }
+}
+
+impl From<AttributionPullRequestLifecycleSummary> for AttributionPullRequestLifecycleView {
+    fn from(summary: AttributionPullRequestLifecycleSummary) -> Self {
+        Self {
+            opened_count: summary.opened_count,
+            merged_count: summary.merged_count,
+            closed_unmerged_count: summary.closed_unmerged_count,
+            open_count: summary.open_count,
+            draft_count: summary.draft_count,
+            review_known_count: summary.review_known_count,
+            merged_without_review_count: summary.merged_without_review_count,
+            median_review_wait_seconds: summary.median_review_wait_seconds,
+            revert_count: summary.revert_count,
+            possible_revert_count: summary.possible_revert_count,
+            median_time_to_revert_seconds: summary.median_time_to_revert_seconds,
+        }
+    }
 }
 
 impl From<AttributionDayActivity> for AttributionDayView {

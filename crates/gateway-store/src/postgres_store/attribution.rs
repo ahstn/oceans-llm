@@ -169,11 +169,18 @@ fn decode_pull_request(row: &PgRow) -> Result<AttributionPullRequestRecord, Stor
         base_ref: get(row, 8)?,
         head_ref: get(row, 9)?,
         merge_commit_sha: get(row, 10)?,
-        merged_at: time_at(row, 11)?,
+        merged_at: optional_time(get(row, 11)?)?,
         author_user_id: optional_uuid(get(row, 12)?)?,
         author_email_hash: get(row, 13)?,
         commits: Vec::new(),
         observed_at: time_at(row, 14)?,
+        lifecycle: attribution::decode_lifecycle(
+            &get::<String>(row, 15)?,
+            get(row, 16)?,
+            get(row, 17)?,
+            get::<Option<String>>(row, 18)?.as_deref(),
+            get(row, 19)?,
+        )?,
     })
 }
 

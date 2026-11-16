@@ -11,8 +11,10 @@ use axum::{
     http::{StatusCode, header::AUTHORIZATION, request::Parts},
 };
 use gateway_core::{
-    ATTRIBUTION_MAX_BATCH_BYTES, ApiKeyOwnerKind, AttributionSessionEventKind, AuthError,
-    AuthenticatedApiKey, GatewayError, SCOPE_ATTRIBUTION_WRITE, StoreError,
+    ATTRIBUTION_MAX_BATCH_BYTES, ApiKeyOwnerKind, AttributionPullRequestDetails,
+    AttributionPullRequestLifecycle, AttributionPullRequestState, AttributionRevertEvidence,
+    AttributionRevertLink, AttributionSessionEventKind, AuthError, AuthenticatedApiKey,
+    GatewayError, SCOPE_ATTRIBUTION_WRITE, StoreError,
 };
 use gateway_service::attribution::{
     AttributionBatchInput, AttributionBatchOutcome, AttributionEntryCandidate,
@@ -123,7 +125,7 @@ pub enum AttributionPayloadRequest {
         /// The raw journal session id. Only an owner-scoped hash is stored.
         session_id: String,
     },
-    /// Merged pull requests of one repository and their commits.
+    /// Pull requests of one repository, open, closed or merged, with their commits.
     PullRequests {
         repository: String,
         pull_requests: Vec<AttributionPullRequestRequest>,
@@ -145,10 +147,60 @@ pub struct AttributionPullRequestRequest {
     pub base_ref: Option<String>,
     pub head_ref: Option<String>,
     pub merge_commit_sha: Option<String>,
-    /// RFC 3339.
-    pub merged_at: String,
+    /// RFC 3339. Required for a merged pull request; absent for an open or closed one.
+    pub merged_at: Option<String>,
     #[serde(default)]
     pub commits: Vec<AttributionPullRequestCommitRequest>,
+    /// Defaults to `merged` when absent, as older hooks sent only merged pull requests.
+    pub state: Option<AttributionPullRequestStateRequest>,
+    pub is_draft: Option<bool>,
+    /// RFC 3339.
+    pub opened_at: Option<String>,
+    /// RFC 3339; when it closed, merged or not.
+    pub closed_at: Option<String>,
+    /// RFC 3339; GitHub's last change to the pull request.
+    pub updated_at: Option<String>,
+    /// RFC 3339; the first review by a person other than the author.
+    pub first_review_at: Option<String>,
+    pub review_count: Option<i64>,
+    pub approval_count: Option<i64>,
+    pub changes_requested_count: Option<i64>,
+    pub reviewer_count: Option<i64>,
+    pub comment_count: Option<i64>,
+    pub additions: Option<i64>,
+    pub deletions: Option<i64>,
+    pub changed_files: Option<i64>,
+    /// What this pull request reverts, as the hook detected it.
+    pub reverts: Option<AttributionRevertLinkRequest>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AttributionPullRequestStateRequest {
+    Open,
+    /// Closed without merging.
+    Closed,
+    Merged,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct AttributionRevertLinkRequest {
+    /// The reverted pull request in the same repository.
+    pub pull_request_number: Option<i64>,
+    /// Reverted commits, full or abbreviated (at least 7 characters).
+    #[serde(default)]
+    pub commit_shas: Vec<String>,
+    pub evidence: AttributionRevertEvidenceRequest,
+}
+
+/// Strongest first; `title` is a possible revert only.
+#[derive(Debug, Clone, Copy, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AttributionRevertEvidenceRequest {
+    RevertCommit,
+    GithubRevert,
+    ChangeMatch,
+    Title,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -404,8 +456,55 @@ impl AttributionPullRequestRequest {
             .into_iter()
             .map(AttributionPullRequestCommitRequest::into_input)
             .collect::<Option<_>>()?;
+        let optional_time = |value: Option<String>| match value.as_deref() {
+            Some(value) => parse_time(value).map(Some),
+            None => Some(None),
+        };
+        let merged_at = optional_time(self.merged_at)?;
+        let state = match self.state {
+            Some(AttributionPullRequestStateRequest::Open) => AttributionPullRequestState::Open,
+            Some(AttributionPullRequestStateRequest::Closed) => AttributionPullRequestState::Closed,
+            Some(AttributionPullRequestStateRequest::Merged) | None => {
+                AttributionPullRequestState::Merged
+            }
+        };
+        let reverts = self.reverts.map(|link| AttributionRevertLink {
+            pull_request_number: link.pull_request_number,
+            commit_shas: link.commit_shas,
+            evidence: match link.evidence {
+                AttributionRevertEvidenceRequest::RevertCommit => {
+                    AttributionRevertEvidence::RevertCommit
+                }
+                AttributionRevertEvidenceRequest::GithubRevert => {
+                    AttributionRevertEvidence::GithubRevert
+                }
+                AttributionRevertEvidenceRequest::ChangeMatch => {
+                    AttributionRevertEvidence::ChangeMatch
+                }
+                AttributionRevertEvidenceRequest::Title => AttributionRevertEvidence::Title,
+            },
+        });
+        let lifecycle = AttributionPullRequestLifecycle {
+            state,
+            opened_at: optional_time(self.opened_at)?,
+            closed_at: optional_time(self.closed_at)?,
+            last_activity_at: optional_time(self.updated_at)?,
+            details: AttributionPullRequestDetails {
+                is_draft: self.is_draft,
+                first_review_at: optional_time(self.first_review_at)?,
+                review_count: self.review_count,
+                approval_count: self.approval_count,
+                changes_requested_count: self.changes_requested_count,
+                reviewer_count: self.reviewer_count,
+                comment_count: self.comment_count,
+                additions: self.additions,
+                deletions: self.deletions,
+                changed_files: self.changed_files,
+                reverts,
+            },
+        };
         Some(AttributionPullRequestInput {
-            merged_at: parse_time(&self.merged_at)?,
+            merged_at,
             number: self.number,
             title: self.title,
             url: self.url,
@@ -413,6 +512,7 @@ impl AttributionPullRequestRequest {
             head_ref: self.head_ref,
             merge_commit_sha: self.merge_commit_sha,
             commits,
+            lifecycle,
         })
     }
 }

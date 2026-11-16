@@ -3,7 +3,7 @@
 // incident data. Merged pull requests are then split by how much of each AI wrote.
 
 import { Histogram, LeadTimeScatter, LeadTimeTrendChart } from '@/components/attribution/charts'
-import { InlineMeter, Insight, InsightCard, ReadinessBadge } from '@/components/attribution/parts'
+import { InlineMeter, Insight, InsightCard, TrendKpi } from '@/components/attribution/parts'
 import { DECIMAL_1, formatHours, formatPercent } from '@/components/attribution/format'
 import { DoraTile } from '@/components/attribution/dora-tile'
 import { AdminTableHeader } from '@/components/shared/admin-table-header'
@@ -14,6 +14,9 @@ import { deployBand, failBand, leadBand } from '@/components/attribution/deliver
 
 import {
   bandSummaries,
+  flowFigures,
+  type LifecycleView,
+  hasLifecycleActivity,
   median,
   pullRequestRows,
   ratio,
@@ -34,15 +37,22 @@ export default function DeliveryTab({ report }: { report: AttributionReportView 
   const failRate = ratio(rows.filter((row) => row.pr.is_revert).length, rows.length)
   const bands = bandSummaries(rows)
   const withNotes = rows.filter((row) => row.band != null).length
+  const flow = flowFigures(report.pull_request_lifecycle)
 
   if (rows.length === 0) {
+    const lifecycle = report.pull_request_lifecycle
+    // Open, reviewed and abandoned work still has figures when nothing merged.
+    const active = hasLifecycleActivity(lifecycle)
     return (
-      <InsightCard title="Delivery" description="No merged pull requests in this window.">
-        <p className="text-muted-foreground py-6 text-center text-sm">
-          Delivery measures start once <code className="font-mono">oceans hook prs</code> reports
-          merged pull requests.
-        </p>
-      </InsightCard>
+      <div className="flex flex-col gap-6">
+        {active ? <ReviewFlow lifecycle={lifecycle} /> : null}
+        <InsightCard title="Delivery" description="No merged pull requests in this window.">
+          <p className="text-muted-foreground py-6 text-center text-sm">
+            Delivery measures start once <code className="font-mono">oceans hook prs</code> reports
+            merged pull requests.
+          </p>
+        </InsightCard>
+      </div>
     )
   }
 
@@ -67,16 +77,22 @@ export default function DeliveryTab({ report }: { report: AttributionReportView 
           label="Change fail rate"
           value={formatPercent(failRate, 1)}
           band={failBand(failRate)}
-          note="Merged pull requests that are reverts"
+          note={
+            report.pull_request_lifecycle.possible_revert_count > 0
+              ? `Merged pull requests that are reverts; ${formatCount(report.pull_request_lifecycle.possible_revert_count)} more only say so in the title`
+              : 'Merged pull requests that are reverts'
+          }
           readiness="proxy"
-          readinessNote="Matched by title (Revert or revert:). Incidents linked to changes would make it real. The bands are Oceans' own, ordered by rate: DORA 2024's change-fail clusters aren't ordered by performance."
+          readinessNote="Reverts found by git's revert line, GitHub's revert button or an exact inverse change; a revert title alone doesn't count. Incidents linked to changes would make it real. The bands are Oceans' own, ordered by rate: DORA 2024's change-fail clusters aren't ordered by performance."
         />
         <DoraTile
           label="Recovery time"
-          value={EMPTY_VALUE}
-          note="Failed change to restored service"
-          readiness="new"
-          readinessNote="Needs incident or failed-deploy events."
+          value={formatHours(
+            flow.timeToRevertHours == null ? null : flow.timeToRevertHours * HOUR_MS,
+          )}
+          note="Merge of a reverted change to its revert, median"
+          readiness="proxy"
+          readinessNote="Time to revert stands in for recovery until incident or failed-deploy events reach Oceans."
         />
         <DoraTile
           label="Deployment rework rate"
@@ -86,6 +102,8 @@ export default function DeliveryTab({ report }: { report: AttributionReportView 
           readinessNote="Needs deploy events tagged as unplanned."
         />
       </div>
+
+      <ReviewFlow lifecycle={report.pull_request_lifecycle} />
 
       <div className="grid gap-6 xl:grid-cols-2">
         <InsightCard title="Lead time trend" description="First commit to merge, by week of merge.">
@@ -198,8 +216,10 @@ function BandRow({
           className="min-w-44"
         />
       </TableCell>
-      <TableCell className="px-3 py-2 text-right">
-        <ReadinessBadge level="new" note="Needs pull request opened and review times." />
+      <TableCell className="px-3 py-2 text-right tabular-nums">
+        {formatHours(
+          band.medianReviewWaitHours == null ? null : band.medianReviewWaitHours * HOUR_MS,
+        )}
       </TableCell>
       <TableCell className="px-3 py-2 text-right tabular-nums">
         {formatPercent(band.revertRate, 1)}
@@ -208,6 +228,46 @@ function BandRow({
         {band.medianCost == null ? EMPTY_VALUE : formatUsd10000(band.medianCost)}
       </TableCell>
     </TableRow>
+  )
+}
+
+/** Review wait, merged without review, abandon rate and open pull requests. */
+function ReviewFlow({ lifecycle }: { lifecycle: LifecycleView }) {
+  const flow = flowFigures(lifecycle)
+  const partial = flow.reviewCoverage != null && flow.reviewCoverage < 1
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <TrendKpi
+        label="Review wait"
+        value={formatHours(flow.reviewWaitHours == null ? null : flow.reviewWaitHours * HOUR_MS)}
+        hint="Opened to first human review, median"
+        readiness="proxy"
+        readinessNote="Starts at opened, not ready for review: the hook sees only a pull request's current draft state."
+      />
+      <TrendKpi
+        label="Merged without review"
+        value={formatPercent(flow.mergedWithoutReviewRate, 1)}
+        hint={
+          partial
+            ? `${formatCount(lifecycle.merged_without_review_count)} of ${formatCount(lifecycle.review_known_count)} with review data`
+            : `${formatCount(lifecycle.merged_without_review_count)} of ${formatCount(lifecycle.review_known_count)} merged`
+        }
+      />
+      <TrendKpi
+        label="Abandon rate"
+        value={formatPercent(flow.abandonRate, 1)}
+        hint={`${formatCount(lifecycle.closed_unmerged_count)} closed without merging`}
+      />
+      <TrendKpi
+        label="Open pull requests"
+        value={formatCount(lifecycle.open_count)}
+        hint={
+          lifecycle.draft_count > 0
+            ? `${formatCount(lifecycle.draft_count)} ${lifecycle.draft_count === 1 ? 'draft' : 'drafts'}, of those updated in the window`
+            : 'Of those updated in the window'
+        }
+      />
+    </div>
   )
 }
 

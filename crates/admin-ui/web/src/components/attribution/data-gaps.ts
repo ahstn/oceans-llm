@@ -18,9 +18,10 @@ export const DATA_GAPS: {
   {
     data: 'Pull request opened, reviews, open and closed pull requests',
     unlocks: 'Review wait, merged without review, abandon rate, in-review stage',
-    avenue: 'More fields from the gh call oceans hook prs already makes, or a GitHub App',
+    avenue:
+      'oceans hook prs sends them as counts and times; a GitHub App would add when a draft became ready',
     effort: 'Small',
-    today: 'new',
+    today: 'live',
   },
   {
     data: 'User turns per agent session',
@@ -30,11 +31,19 @@ export const DATA_GAPS: {
     today: 'new',
   },
   {
-    data: 'Revert and fix-forward links',
-    unlocks: 'Change fail rate by AI share',
-    avenue: 'Revert commit bodies in the PR hook; titles are matched today',
+    data: 'Revert links',
+    unlocks: 'Change fail rate by AI share, time to revert, reverted-by badges',
+    avenue:
+      "oceans hook prs reads git's revert line and GitHub's revert button, and matches exact inverse changes locally",
     effort: 'Small',
-    today: 'proxy',
+    today: 'live',
+  },
+  {
+    data: 'Fix-forward links',
+    unlocks: 'Change failures fixed without a revert',
+    avenue: 'Incident links naming the fixing pull request, or hotfix labels within a time window',
+    effort: 'Medium',
+    today: 'new',
   },
   {
     data: 'Deleted lines and files changed per commit',
