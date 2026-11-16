@@ -6,6 +6,7 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 pub mod ingest;
+pub mod insights;
 pub mod report;
 #[cfg(test)]
 mod tests;

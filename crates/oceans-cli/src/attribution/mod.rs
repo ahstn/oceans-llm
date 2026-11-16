@@ -12,6 +12,7 @@ mod payload;
 mod prs;
 mod queue;
 mod repo;
+mod reverts;
 mod sender;
 pub mod state;
 
@@ -29,7 +30,7 @@ use self::{
     install::Change,
     payload::SessionEvent,
     prs::SyncOutcome,
-    queue::{EntrySummary, QueueListing},
+    queue::{EnqueueReport, EntrySummary, QueueListing},
     sender::{SendOptions, SendReport},
     state::State,
 };
@@ -137,7 +138,12 @@ fn sync_pull_requests(env: &Env, args: &PrsArgs) -> anyhow::Result<()> {
         Some(directory) => directory.clone(),
         None => std::env::current_dir()?,
     };
-    match prs::sync(&state, &directory, args.limit, args.if_stale)? {
+    let deliver = |report: &EnqueueReport| {
+        if report.queued + report.unsequenced > 0 {
+            spawn_sender();
+        }
+    };
+    match prs::sync(&state, &directory, args.limit, args.if_stale, deliver)? {
         SyncOutcome::Fresh => {}
         SyncOutcome::NoRepository => eprintln!(
             "oceans: {} has no git remote that names a repository; nothing to sync",
@@ -146,14 +152,8 @@ fn sync_pull_requests(env: &Env, args: &PrsArgs) -> anyhow::Result<()> {
         SyncOutcome::Unavailable(reason) => {
             eprintln!("oceans: skipped pull request sync: {reason}")
         }
-        SyncOutcome::Queued {
-            pull_requests,
-            report,
-        } => {
+        SyncOutcome::Queued { pull_requests } => {
             eprintln!("oceans: queued {pull_requests} merged pull requests");
-            if report.queued + report.unsequenced > 0 {
-                spawn_sender();
-            }
         }
     }
     Ok(())

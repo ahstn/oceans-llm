@@ -15,7 +15,8 @@ use gateway_core::{
 use gateway_service::attribution::{
     AttributionChangeActivity, AttributionModelActivity, AttributionPullRequestActivity,
     AttributionReport, AttributionReportCoverage, AttributionReportTotals, AttributionUserActivity,
-    RequestTally, build_attribution_report,
+    RequestTally, build_attribution_harness_report, build_attribution_report,
+    build_attribution_summary,
 };
 use gateway_store::{AnyStore, GatewayStore};
 use serde::{Deserialize, Serialize};
@@ -23,7 +24,14 @@ use time::{Duration, OffsetDateTime, Time, UtcOffset};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-use super::AttributionOwnerKind;
+use super::{
+    AttributionOwnerKind,
+    insights::{
+        AttributionDayView, AttributionHarnessModelView, AttributionPeriodSummaryView,
+        AttributionPullRequestCommitView, AttributionPullRequestLifecycleView,
+        AttributionRevertView, AttributionSessionOutcomeView,
+    },
+};
 use crate::http::{
     admin_auth::require_authenticated_session,
     admin_contract::{Envelope, envelope, format_timestamp},
@@ -44,6 +52,26 @@ pub struct AttributionReportRequestQuery {
     pub user_id: Option<String>,
     /// One normalised repository, such as `github.com/acme/widgets`.
     pub repository: Option<String>,
+    /// Also build the window of equal length just before this one, for comparison. Defaults to
+    /// false, so callers that read only this window pay for one build. `true` returns
+    /// `previous_summary`; the Impact and My work tabs ask for it.
+    pub compare: Option<bool>,
+    /// How much of the report to build. Defaults to `full`. `harness` builds only the totals,
+    /// coverage, session outcomes and harness × model rows, for the Agent Harnesses page; the
+    /// other lists come back empty and `compare` is ignored.
+    #[param(inline)]
+    pub shape: Option<AttributionReportShape>,
+}
+
+/// The parts of the report a caller reads.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AttributionReportShape {
+    /// Everything the Attribution tabs read.
+    #[default]
+    Full,
+    /// Totals, coverage, session outcomes and harness × model rows.
+    Harness,
 }
 
 /// Request counts and priced cost, split by pricing outcome as in the spend report.
@@ -153,6 +181,37 @@ pub struct AttributionPullRequestView {
     #[serde(flatten)]
     pub requests: AttributionRequestTallyView,
     pub models: Vec<String>,
+    /// The earliest of the PR's commit author times and its notes' observation times.
+    pub first_commit_at: Option<String>,
+    /// First commit to merge.
+    pub lead_time_seconds: Option<i64>,
+    /// Reverts another pull request, by evidence stronger than its title: git's revert line,
+    /// GitHub's revert button or an exact inverse change. A change-failure proxy.
+    pub is_revert: bool,
+    /// What this pull request reverts, including a title-only possible revert.
+    pub revert: Option<AttributionRevertView>,
+    /// The pull request in this report that reverted this one.
+    pub reverted_by_number: Option<i64>,
+    /// RFC 3339; absent for rows from hooks that sent no lifecycle.
+    pub opened_at: Option<String>,
+    /// RFC 3339; the first review by a person other than the author.
+    pub first_review_at: Option<String>,
+    /// Opened to first human review.
+    pub review_wait_seconds: Option<i64>,
+    /// Human reviews other than the author's; absent when the hook sent no review data.
+    pub review_count: Option<i64>,
+    pub approval_count: Option<i64>,
+    pub changes_requested_count: Option<i64>,
+    pub comment_count: Option<i64>,
+    pub additions: Option<i64>,
+    pub deletions: Option<i64>,
+    pub changed_files: Option<i64>,
+    /// git-ai agent tools the matched notes name.
+    pub agent_tools: Vec<String>,
+    /// The first 50 commits with a stored note, oldest first, within a budget of 2,000 across the
+    /// report's newest pull requests; older ones past it carry none. `attributed_commit_count`
+    /// counts them all.
+    pub commits: Vec<AttributionPullRequestCommitView>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -198,6 +257,20 @@ pub struct AttributionReportView {
     pub models: Vec<AttributionModelView>,
     pub pull_requests: Vec<AttributionPullRequestView>,
     pub changes: Vec<AttributionChangeView>,
+    /// Every UTC day of the window, oldest first.
+    pub daily: Vec<AttributionDayView>,
+    /// Agent sessions by the furthest stage their work reached.
+    pub session_outcomes: Vec<AttributionSessionOutcomeView>,
+    /// Harness × model rows, most sessions first.
+    pub harness_models: Vec<AttributionHarnessModelView>,
+    /// Opened, closed, open and reviewed pull requests, and revert figures.
+    pub pull_request_lifecycle: AttributionPullRequestLifecycleView,
+    pub summary: AttributionPeriodSummaryView,
+    /// The same figures for the window of equal length just before this one.
+    /// `null` unless the request set `compare=true`.
+    pub previous_summary: Option<AttributionPeriodSummaryView>,
+    /// A read cap cut the previous window short, so changes against it are unreliable.
+    pub previous_truncated: bool,
 }
 
 #[utoipa::path(
@@ -219,18 +292,59 @@ pub async fn get_attribution_report(
 ) -> Result<Json<Envelope<AttributionReportView>>, AppError> {
     let current_user = require_authenticated_session(&state, &headers).await?;
     let window_days = parse_window_days(query.days)?;
+    let shape = query.shape.unwrap_or_default();
+    // The harness shape has no previous-window figures to compare against.
+    let compare = shape == AttributionReportShape::Full && query.compare.unwrap_or(false);
     let user_id = report_user(&current_user, query.user_id.as_deref())?;
     let repository = query.repository.filter(|repository| !repository.is_empty());
     let (window_start, window_end) = report_window(window_days, OffsetDateTime::now_utc());
     let report_query = AttributionReportQuery {
         from: window_start,
-        to: window_end,
+        to: last_included(window_end),
         user_id,
         repository: repository.clone(),
         limit: ATTRIBUTION_MAX_REPORT_ROWS,
     };
-    let report = build_attribution_report(state.store.as_ref(), &report_query).await?;
+    let (previous_start, previous_end) = previous_window(window_start, window_end);
+    let previous_query = AttributionReportQuery {
+        from: previous_start,
+        to: previous_end,
+        ..report_query.clone()
+    };
+    let previous_report = async {
+        if compare {
+            build_attribution_summary(state.store.as_ref(), &previous_query)
+                .await
+                .map(Some)
+        } else {
+            Ok(None)
+        }
+    };
+    let (report, previous) = tokio::try_join!(
+        async {
+            match shape {
+                AttributionReportShape::Full => {
+                    build_attribution_report(state.store.as_ref(), &report_query).await
+                }
+                AttributionReportShape::Harness => {
+                    build_attribution_harness_report(state.store.as_ref(), &report_query).await
+                }
+            }
+        },
+        previous_report,
+    )?;
     let names = Names::load(&state.store, &report).await?;
+    let (previous_summary, previous_truncated) = match previous {
+        Some((summary, coverage)) => (
+            Some(summary.into()),
+            coverage.commits_truncated
+                || coverage.pull_requests_truncated
+                || coverage.request_facts_truncated
+                || coverage.agent_sessions_truncated,
+        ),
+        None => (None, false),
+    };
+    let summary = report.summary();
     let AttributionReport {
         totals,
         coverage,
@@ -238,6 +352,10 @@ pub async fn get_attribution_report(
         models,
         pull_requests,
         changes,
+        daily,
+        session_outcomes,
+        harness_models,
+        pull_request_lifecycle,
     } = report;
     Ok(Json(envelope(AttributionReportView {
         window_days,
@@ -260,6 +378,13 @@ pub async fn get_attribution_report(
             .into_iter()
             .map(|change| names.change(change))
             .collect(),
+        daily: daily.into_iter().map(Into::into).collect(),
+        session_outcomes: session_outcomes.into_iter().map(Into::into).collect(),
+        harness_models: harness_models.into_iter().map(Into::into).collect(),
+        pull_request_lifecycle: pull_request_lifecycle.into(),
+        summary: summary.into(),
+        previous_summary,
+        previous_truncated,
     })))
 }
 
@@ -281,6 +406,19 @@ fn report_window(window_days: u16, now: OffsetDateTime) -> (OffsetDateTime, Offs
         window_end - Duration::days(i64::from(window_days)),
         window_end,
     )
+}
+
+/// The last instant the store should include for a window ending at the exclusive `end`. The
+/// store's bounds are inclusive and its timestamps whole milliseconds, so this is 1 ms before:
+/// a row at exactly `end` belongs to the next window, as it does in the daily buckets.
+fn last_included(end: OffsetDateTime) -> OffsetDateTime {
+    end - Duration::milliseconds(1)
+}
+
+/// The window of equal length just before `[start, end)`, as store bounds. A row at exactly
+/// `start` belongs to the current window only, never to both.
+fn previous_window(start: OffsetDateTime, end: OffsetDateTime) -> (OffsetDateTime, OffsetDateTime) {
+    (start - (end - start), last_included(start))
 }
 
 fn report_user(
@@ -381,11 +519,30 @@ impl Names {
     }
 
     fn pull_request(&self, activity: AttributionPullRequestActivity) -> AttributionPullRequestView {
+        let lead_time_seconds = activity.lead_time().map(|lead| lead.whole_seconds());
         let pull_request = activity.pull_request;
+        let lifecycle = pull_request.lifecycle;
+        let details = lifecycle.details;
+        let review_wait_seconds = details
+            .first_review_at
+            .zip(lifecycle.opened_at)
+            .map(|(reviewed, opened)| (reviewed - opened).whole_seconds().max(0));
         AttributionPullRequestView {
             author: pull_request.author_user_id.map(|id| self.user(id)),
             commit_count: count(pull_request.commits.len()),
-            merged_at: format_timestamp(pull_request.merged_at),
+            merged_at: format_timestamp(pull_request.merged_at.unwrap_or(pull_request.observed_at)),
+            revert: activity.revert.map(Into::into),
+            reverted_by_number: activity.reverted_by,
+            opened_at: lifecycle.opened_at.map(format_timestamp),
+            first_review_at: details.first_review_at.map(format_timestamp),
+            review_wait_seconds,
+            review_count: details.review_count,
+            approval_count: details.approval_count,
+            changes_requested_count: details.changes_requested_count,
+            comment_count: details.comment_count,
+            additions: details.additions,
+            deletions: details.deletions,
+            changed_files: details.changed_files,
             repository: pull_request.repository,
             number: pull_request.number,
             title: pull_request.title,
@@ -397,6 +554,11 @@ impl Names {
             human_lines: activity.human_lines,
             requests: activity.requests.into(),
             models: activity.models,
+            first_commit_at: activity.first_commit_at.map(format_timestamp),
+            lead_time_seconds,
+            is_revert: activity.is_revert,
+            agent_tools: activity.agent_tools,
+            commits: activity.commits.into_iter().map(Into::into).collect(),
         }
     }
 
@@ -510,5 +672,25 @@ mod window_tests {
         assert!(parse_window_days(Some(90)).is_ok());
         assert!(parse_window_days(Some(14)).is_err());
         assert_eq!(parse_window_days(None).ok(), Some(7));
+    }
+
+    #[test]
+    fn the_previous_window_ends_before_the_current_one_starts() {
+        let (start, end) = (
+            day(6).midnight().assume_utc(),
+            day(13).midnight().assume_utc(),
+        );
+        let (previous_start, previous_end) = previous_window(start, end);
+        assert_eq!(previous_start, start - Duration::days(7));
+        assert_eq!(
+            last_included(end),
+            end - Duration::milliseconds(1),
+            "a row at the next midnight is not in this window's totals"
+        );
+        assert!(
+            previous_end < start,
+            "a row at the current start is not in both windows"
+        );
+        assert_eq!(start - previous_end, Duration::milliseconds(1));
     }
 }

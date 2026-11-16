@@ -258,6 +258,7 @@
       },
       "paths": [
         "crates/admin-ui/web/src/routes/observability/agent-harnesses.tsx",
+        "crates/admin-ui/web/src/routes/observability/-agent-harnesses/**",
         "crates/admin-ui/web/src/routes/observability/-bucket-axis.ts",
         "crates/admin-ui/web/src/components/icons/**",
         "crates/gateway/src/http/observability.rs",
@@ -561,6 +562,11 @@
       "paths": [
         "crates/admin-ui/web/src/routes/observability/attribution.tsx",
         "crates/admin-ui/web/src/routes/observability/-attribution/**",
+        "crates/admin-ui/web/src/routes/observability/attribution_.concepts.tsx",
+        "crates/admin-ui/web/src/routes/observability/-attribution-concepts/**",
+        "crates/admin-ui/web/src/components/attribution/**",
+        "crates/gateway/src/config/attribution.rs",
+        "crates/admin-ui/web/src/test/attribution-concepts.test.ts",
         "crates/admin-ui/web/src/routes/observability/-usage-costs/shared.ts",
         "crates/gateway/src/http/attribution*.rs",
         "crates/gateway/src/http/attribution/**",
@@ -575,6 +581,7 @@
         "crates/gateway-store/migrations/**/V79__git_ai_attribution.sql",
         "crates/gateway-store/migrations/**/V80__attribution_note_key_owner_authors.sql",
         "crates/gateway-store/migrations/**/V81__attribution_request_sessions.sql",
+        "crates/gateway-store/migrations/**/V82__attribution_pull_request_lifecycle.sql",
         "crates/oceans-cli/src/attribution/**",
         "crates/oceans-cli/src/{config,process}.rs",
         "crates/oceans-cli/assets/**"

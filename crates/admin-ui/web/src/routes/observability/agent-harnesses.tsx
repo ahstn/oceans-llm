@@ -1,4 +1,4 @@
-import { useState, useTransition } from 'react'
+import { Suspense, useState, useTransition } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts'
 import { toast } from 'sonner'
@@ -22,15 +22,36 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { chartAnimation } from '@/lib/chart-motion'
 import { formatTimestamp } from '@/lib/format'
 import {
+  getAttribution,
   getObservabilityHarnessUsage,
   refreshObservabilityHarnessUsage,
 } from '@/server/admin-data.functions'
 import type { HarnessUsageLeaderView, HarnessUsageRange, HarnessUsageView } from '@/types/api'
 
+import {
+  DeferredHarnessAttribution,
+  HarnessAttributionSkeleton,
+} from './-agent-harnesses/harness-attribution'
 import { formatBucketDay, utcDayTicks } from './-bucket-axis'
 
 export const Route = createFileRoute('/observability/agent-harnesses')({
-  loader: () => getObservabilityHarnessUsage({ data: { range: '7d' } }),
+  loader: async ({ context }) => {
+    // With every Attribution report tab turned off, attribution is off for this gateway, so the
+    // page reads no report and leaves the section out.
+    const attributionEnabled = (context.session?.capabilities.attribution_tabs ?? []).some(
+      (tab) => tab !== 'concepts',
+    )
+    // The report is not awaited: request activity renders at once and the attribution section
+    // streams in when it is ready. A failed report resolves to `null`, which the section shows.
+    const attribution = attributionEnabled
+      ? getAttribution({ data: { days: 7, shape: 'harness' } }).then(
+          (response) => response.data,
+          () => null,
+        )
+      : null
+    const usage = await getObservabilityHarnessUsage({ data: { range: '7d' } })
+    return { ...usage, attributionEnabled, attribution }
+  },
   component: AgentHarnessesPage,
 })
 
@@ -113,8 +134,14 @@ export function AgentHarnessesPage() {
       <PageHeader
         section="Observability"
         title="Agent harnesses"
-        description="Compare request activity from user harnesses over time."
+        description="Compare what each harness ships for its cost, and its request activity over time."
       />
+
+      {loaderData.attributionEnabled && loaderData.attribution ? (
+        <Suspense fallback={<HarnessAttributionSkeleton />}>
+          <DeferredHarnessAttribution report={loaderData.attribution} />
+        </Suspense>
+      ) : null}
 
       <Card>
         <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

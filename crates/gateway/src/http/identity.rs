@@ -38,8 +38,8 @@ use crate::{
             AdminIdentityPayload, AdminOauthProviderView, AdminOidcProviderView,
             AdminProviderCredentialStatusView, AdminServiceAccountView,
             AdminServiceAccountsPayload, AdminTeamManagementView, AdminTeamView, AdminTeamsPayload,
-            AuthSessionCapabilitiesView, AuthSessionPermissionsView, AuthSessionUserView,
-            AuthSessionView, ChangePasswordRequest, CompleteInvitationRequest,
+            AttributionTab, AuthSessionCapabilitiesView, AuthSessionPermissionsView,
+            AuthSessionUserView, AuthSessionView, ChangePasswordRequest, CompleteInvitationRequest,
             CompleteInvitationResponse, CreateServiceAccountRequest, CreateTeamRequest,
             CreateUserRequest, CreateUserResponse, Envelope, IdentityActionStatus,
             IdentityDirectoryTeamsPayload, IdentityDirectoryUsersPayload, InvitationView,
@@ -3083,6 +3083,7 @@ async fn build_auth_session_view(
             shadow_diagnostics_visible: agent_analysis_access.shadow_visible,
             calibrated_score_visible: agent_analysis_access.score_visible,
             team_admin_analytics_enabled: state.agent_analysis.team_admin_analytics_enabled,
+            attribution_tabs: AttributionTab::enabled(&state.attribution_pages),
         },
         must_change_password: user.must_change_password,
         permissions: AuthSessionPermissionsView {

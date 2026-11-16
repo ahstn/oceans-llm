@@ -360,6 +360,7 @@ async fn run_serve_with_store(
         budget_defaults: human_budget_defaults,
         attribution_email_aliases: Arc::new(config.attribution_email_aliases()?),
         agent_analysis: agent_analysis.capabilities,
+        attribution_pages: config.attribution.pages,
         admin_permissions,
         mcp_organisation_publishing: config.mcp.registry.organisation_publishing,
         leaderboard_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),

@@ -11,6 +11,7 @@ use gateway_store::StoreConnectionOptions;
 use serde::Deserialize;
 
 mod agent_analysis;
+mod attribution;
 mod auth;
 mod budget_alerts;
 mod budgets;
@@ -39,6 +40,7 @@ pub use agent_analysis::{
     LoadedAgentAnalysis,
 };
 
+pub use attribution::{AttributionConfig, AttributionPagesConfig};
 pub use auth::{
     AuthConfig, AuthOauthConfig, AuthOidcConfig, BootstrapAdminConfig, OauthJitConfig,
     OauthJitMembershipConfig, OauthProviderConfig, OidcJitConfig, OidcJitMembershipConfig,
@@ -114,6 +116,8 @@ pub struct GatewayConfig {
     pub request_logging: RequestLoggingConfig,
     #[serde(default)]
     pub agent_analysis: AgentAnalysisConfig,
+    #[serde(default)]
+    pub attribution: AttributionConfig,
     #[serde(default)]
     pub guardrails: GuardrailConfig,
     #[serde(default)]

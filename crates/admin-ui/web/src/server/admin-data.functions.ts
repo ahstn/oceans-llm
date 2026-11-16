@@ -120,6 +120,8 @@ function validateAttributionReportInput(data: unknown): AttributionReportInput {
     days: input.days as AttributionReportInput['days'],
     user_id: optionalString(input.user_id, 'user_id'),
     repository: optionalString(input.repository, 'repository'),
+    compare: optionalBoolean(input.compare, 'compare'),
+    shape: optionalShape(input.shape),
   }
 }
 
@@ -178,6 +180,18 @@ function optionalPositiveInteger(value: unknown, label: string): number | undefi
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
     throw new Error(`${label} must be a positive integer`)
   }
+  return value
+}
+
+function optionalShape(value: unknown): 'full' | 'harness' | undefined {
+  if (value === undefined) return undefined
+  if (value !== 'full' && value !== 'harness') throw new Error('shape must be full or harness')
+  return value
+}
+
+function optionalBoolean(value: unknown, label: string): boolean | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'boolean') throw new Error(`${label} must be a boolean`)
   return value
 }
 

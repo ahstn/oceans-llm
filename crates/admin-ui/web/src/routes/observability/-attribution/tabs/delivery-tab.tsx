@@ -1,0 +1,287 @@
+// Delivery: DORA measures through an AI lens. Oceans sees merges, not deploys, so deployment
+// frequency and change fail rate are labelled proxies, and recovery and rework wait on deploy and
+// incident data. Merged pull requests are then split by how much of each AI wrote.
+
+import { Histogram, LeadTimeScatter, LeadTimeTrendChart } from '@/components/attribution/charts'
+import { InlineMeter, Insight, InsightCard, TrendKpi } from '@/components/attribution/parts'
+import { DECIMAL_1, formatHours, formatPercent } from '@/components/attribution/format'
+import { DoraTile } from '@/components/attribution/dora-tile'
+import { AdminTableHeader } from '@/components/shared/admin-table-header'
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
+import { EMPTY_VALUE, formatCount, formatUsd10000 } from '@/lib/format'
+import type { AttributionReportView } from '@/types/api'
+import { deployBand, failBand, leadBand } from '@/components/attribution/delivery-bands'
+
+import {
+  bandSummaries,
+  flowFigures,
+  type LifecycleView,
+  hasLifecycleActivity,
+  median,
+  pullRequestRows,
+  ratio,
+  sizeHistogram,
+  weeklyLeadTimes,
+  type BandSummary,
+} from '../insights'
+
+const HOUR_MS = 3_600_000
+
+// A tab is one linear layout read top to bottom; splitting it would scatter the sections.
+// oxlint-disable-next-line eslint/max-lines-per-function
+export default function DeliveryTab({ report }: { report: AttributionReportView }) {
+  const rows = pullRequestRows(report.pull_requests)
+  const leadHours = rows.flatMap((row) => (row.leadHours == null ? [] : [row.leadHours]))
+  const medianLead = median(leadHours)
+  const mergesPerDay = rows.length / report.window_days
+  const failRate = ratio(rows.filter((row) => row.pr.is_revert).length, rows.length)
+  const bands = bandSummaries(rows)
+  const withNotes = rows.filter((row) => row.band != null).length
+  const flow = flowFigures(report.pull_request_lifecycle)
+
+  if (rows.length === 0) {
+    const lifecycle = report.pull_request_lifecycle
+    // Open, reviewed and abandoned work still has figures when nothing merged.
+    const active = hasLifecycleActivity(lifecycle)
+    return (
+      <div className="flex flex-col gap-6">
+        {active ? <ReviewFlow lifecycle={lifecycle} /> : null}
+        <InsightCard title="Delivery" description="No merged pull requests in this window.">
+          <p className="text-muted-foreground py-6 text-center text-sm">
+            Delivery measures start once <code className="font-mono">oceans hook prs</code> reports
+            merged pull requests.
+          </p>
+        </InsightCard>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <DoraTile
+          label="Deployment frequency"
+          value={`${DECIMAL_1.format(mergesPerDay)} / day`}
+          band={deployBand(mergesPerDay)}
+          note="Merged pull requests per day"
+          readiness="proxy"
+          readinessNote="Merges stand in for deploys until deploy events reach Oceans."
+        />
+        <DoraTile
+          label="Lead time for changes"
+          value={formatHours(medianLead == null ? null : medianLead * HOUR_MS)}
+          band={leadBand(medianLead)}
+          note="First commit to merge, median"
+        />
+        <DoraTile
+          label="Change fail rate"
+          value={formatPercent(failRate, 1)}
+          band={failBand(failRate)}
+          note={
+            report.pull_request_lifecycle.possible_revert_count > 0
+              ? `Merged pull requests that are reverts; ${formatCount(report.pull_request_lifecycle.possible_revert_count)} more only say so in the title`
+              : 'Merged pull requests that are reverts'
+          }
+          readiness="proxy"
+          readinessNote="Reverts found by git's revert line, GitHub's revert button or an exact inverse change; a revert title alone doesn't count. Incidents linked to changes would make it real. The bands are Oceans' own, ordered by rate: DORA 2024's change-fail clusters aren't ordered by performance."
+        />
+        <DoraTile
+          label="Recovery time"
+          value={formatHours(
+            flow.timeToRevertHours == null ? null : flow.timeToRevertHours * HOUR_MS,
+          )}
+          note="Merge of a reverted change to its revert, median"
+          readiness="proxy"
+          readinessNote="Time to revert stands in for recovery until incident or failed-deploy events reach Oceans."
+        />
+        <DoraTile
+          label="Deployment rework rate"
+          value={EMPTY_VALUE}
+          note="Unplanned deploys after incidents"
+          readiness="new"
+          readinessNote="Needs deploy events tagged as unplanned."
+        />
+      </div>
+
+      <ReviewFlow lifecycle={report.pull_request_lifecycle} />
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <InsightCard title="Lead time trend" description="First commit to merge, by week of merge.">
+          <LeadTimeTrendChart
+            rows={weeklyLeadTimes(rows, report.window_start, report.window_end)}
+          />
+        </InsightCard>
+        <InsightCard
+          title="Lead time against AI share"
+          description="Merged pull requests sized by attested lines. A cloud rising to the right means AI-heavy work waits longer."
+        >
+          <LeadTimeScatter
+            medianHours={medianLead}
+            points={rows.flatMap((row) =>
+              row.leadHours == null || row.aiShare == null
+                ? []
+                : [
+                    {
+                      aiShare: row.aiShare,
+                      // The log axis can't place zero, so an instant merge sits at one minute;
+                      // the tooltip keeps the measured time.
+                      leadHours: Math.max(1 / 60, row.leadHours),
+                      actualHours: row.leadHours,
+                      lines: row.added,
+                      label: `#${row.pr.number} ${row.pr.title}`,
+                      cost:
+                        row.pr.priced_request_count > 0
+                          ? formatUsd10000(row.pr.priced_cost_usd_10000)
+                          : EMPTY_VALUE,
+                    },
+                  ],
+            )}
+          />
+        </InsightCard>
+      </div>
+
+      <InsightCard
+        title="Delivery by AI share"
+        description="Merged pull requests grouped by how much of their attested code AI wrote. Bands beat a yes or no flag: a pull request with one AI line is not agent work."
+      >
+        <div className="flex flex-col gap-4">
+          <div className="border-border overflow-x-auto rounded-md border">
+            <Table aria-label="Delivery by AI share" className="min-w-[56rem]">
+              <AdminTableHeader
+                columns={[
+                  'AI share',
+                  { label: 'Merged PRs', align: 'right' },
+                  { label: 'Median size', align: 'right' },
+                  'Lead time, median',
+                  { label: 'Review wait', align: 'right' },
+                  { label: 'Reverts', align: 'right' },
+                  { label: 'Cost per PR', align: 'right' },
+                ]}
+              />
+              <TableBody>
+                {bands.map((band) => (
+                  <BandRow key={band.key} band={band} total={withNotes} bands={bands} />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <Insight>
+            {bandComparison(bands)}
+            {rows.length > withNotes
+              ? ` ${formatCount(rows.length - withNotes)} merged pull requests have no notes, so their AI share is unknown and they are left out of these bands.`
+              : ''}
+          </Insight>
+        </div>
+      </InsightCard>
+
+      <InsightCard
+        title="Batch size"
+        description="Attested lines added per merged pull request. DORA's AI capabilities model names small batches as one of the practices that make AI pay off."
+      >
+        <Histogram
+          bins={sizeHistogram(rows)}
+          medianLabel={`Median ${formatCount(median(rows.flatMap((row) => (row.aiShare == null ? [] : [row.added]))) ?? 0)}`}
+        />
+      </InsightCard>
+    </div>
+  )
+}
+
+function BandRow({
+  band,
+  total,
+  bands,
+}: {
+  band: BandSummary
+  total: number
+  bands: BandSummary[]
+}) {
+  const maxLead = Math.max(1, ...bands.map((entry) => entry.medianLeadHours ?? 0))
+  return (
+    <TableRow>
+      <TableCell className="px-3 py-2 font-medium">{band.label}</TableCell>
+      <TableCell className="px-3 py-2 text-right tabular-nums">
+        {formatCount(band.count)}
+        <span className="text-muted-foreground ml-1 text-xs">
+          {formatPercent(ratio(band.count, total))}
+        </span>
+      </TableCell>
+      <TableCell className="px-3 py-2 text-right tabular-nums">
+        {band.medianSize == null ? EMPTY_VALUE : `${formatCount(band.medianSize)} lines`}
+      </TableCell>
+      <TableCell className="px-3 py-2">
+        <InlineMeter
+          value={band.medianLeadHours == null ? null : band.medianLeadHours / maxLead}
+          label={formatHours(band.medianLeadHours == null ? null : band.medianLeadHours * HOUR_MS)}
+          className="min-w-44"
+        />
+      </TableCell>
+      <TableCell className="px-3 py-2 text-right tabular-nums">
+        {formatHours(
+          band.medianReviewWaitHours == null ? null : band.medianReviewWaitHours * HOUR_MS,
+        )}
+      </TableCell>
+      <TableCell className="px-3 py-2 text-right tabular-nums">
+        {formatPercent(band.revertRate, 1)}
+      </TableCell>
+      <TableCell className="px-3 py-2 text-right tabular-nums">
+        {band.medianCost == null ? EMPTY_VALUE : formatUsd10000(band.medianCost)}
+      </TableCell>
+    </TableRow>
+  )
+}
+
+/** Review wait, merged without review, abandon rate and open pull requests. */
+function ReviewFlow({ lifecycle }: { lifecycle: LifecycleView }) {
+  const flow = flowFigures(lifecycle)
+  const partial = flow.reviewCoverage != null && flow.reviewCoverage < 1
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <TrendKpi
+        label="Review wait"
+        value={formatHours(flow.reviewWaitHours == null ? null : flow.reviewWaitHours * HOUR_MS)}
+        hint="Opened to first human review, median"
+        readiness="proxy"
+        readinessNote="Starts at opened, not ready for review: the hook sees only a pull request's current draft state."
+      />
+      <TrendKpi
+        label="Merged without review"
+        value={formatPercent(flow.mergedWithoutReviewRate, 1)}
+        hint={
+          partial
+            ? `${formatCount(lifecycle.merged_without_review_count)} of ${formatCount(lifecycle.review_known_count)} with review data`
+            : `${formatCount(lifecycle.merged_without_review_count)} of ${formatCount(lifecycle.review_known_count)} merged`
+        }
+      />
+      <TrendKpi
+        label="Abandon rate"
+        value={formatPercent(flow.abandonRate, 1)}
+        hint={`${formatCount(lifecycle.closed_unmerged_count)} closed without merging`}
+      />
+      <TrendKpi
+        label="Open pull requests"
+        value={formatCount(lifecycle.open_count)}
+        hint={
+          lifecycle.draft_count > 0
+            ? `${formatCount(lifecycle.draft_count)} ${lifecycle.draft_count === 1 ? 'draft' : 'drafts'}, of those updated in the window`
+            : 'Of those updated in the window'
+        }
+      />
+    </div>
+  )
+}
+
+/** 90%+ AI against under-50% AI: the light band is the baseline, as few PRs have no AI at all. */
+function bandComparison(bands: BandSummary[]) {
+  const light = bands.find((band) => band.key === 'light')
+  const agentic = bands.find((band) => band.key === 'agentic')
+  if (
+    !light?.medianSize ||
+    !agentic?.medianSize ||
+    !light.medianLeadHours ||
+    !agentic.medianLeadHours
+  ) {
+    return 'Too few merged pull requests in the under-50% and 90%+ bands to compare them yet.'
+  }
+  return `90%+ AI pull requests are ${DECIMAL_1.format(agentic.medianSize / light.medianSize)}× the size of under-50% AI ones and take ${DECIMAL_1.format(agentic.medianLeadHours / light.medianLeadHours)}× as long from first commit to merge. LinearB and Faros see AI move the bottleneck from writing to review.`
+}
