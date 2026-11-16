@@ -400,18 +400,6 @@ fn dominant_model<'a>(facts: &[&'a AttributionRequestFact]) -> Option<&'a str> {
         .map(|(model, _)| model)
 }
 
-/// Whether a merged pull request reverts an earlier change, judged from its title: `Revert "…"`
-/// as GitHub's revert button writes it, `Revert …`, or a Conventional Commits `revert:`,
-/// `revert!:` or `revert(scope):` type, in any case. A proxy for change failure until incidents
-/// reach Oceans. The CLI's `attribution::reverts::is_revert_title` keeps the same rule and test
-/// cases, since it doesn't depend on the gateway crates; change both together.
-pub(super) fn is_revert_title(title: &str) -> bool {
-    let lowered = title.trim_start().to_ascii_lowercase();
-    ["revert ", "revert\"", "revert:", "revert!:", "revert("]
-        .iter()
-        .any(|prefix| lowered.starts_with(prefix))
-}
-
 impl AttributionReport {
     /// Headline figures for comparing this window with another.
     #[must_use]
@@ -487,31 +475,6 @@ pub(super) fn median(values: &mut [i64]) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn revert_titles_cover_git_and_conventional_commits() {
-        for title in [
-            "Revert \"Add widgets\"",
-            "Revert\"Add widgets\"",
-            "Revert the cache",
-            "REVERT the cache",
-            "revert: drop flag",
-            "Revert: drop flag",
-            "revert!: drop flag",
-            "revert(api): x",
-            "revert(api)!: x",
-        ] {
-            assert!(is_revert_title(title), "{title}");
-        }
-        for title in [
-            "Reverting is hard",
-            "fix: revert-proof cache",
-            "fix: revert detection",
-            "Add revert button",
-        ] {
-            assert!(!is_revert_title(title), "{title}");
-        }
-    }
 
     #[test]
     fn median_averages_the_two_middle_values() {

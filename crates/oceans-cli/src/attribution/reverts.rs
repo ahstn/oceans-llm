@@ -232,9 +232,8 @@ pub fn github_revert_number(body: &str, head_ref: &str, repository_path: &str) -
 }
 
 /// `Revert "…"` as GitHub's revert button writes it, `Revert …`, or a Conventional Commits
-/// `revert:`, `revert!:` or `revert(scope):` type, in any case. The gateway's fallback for
-/// pull requests without a hook verdict (`report::insights::is_revert_title`) keeps the same
-/// rule and test cases; change both together.
+/// `revert:`, `revert!:` or `revert(scope):` type, in any case. The only title rule: the
+/// gateway reads the hook's `title` evidence and doesn't judge titles itself.
 pub fn is_revert_title(title: &str) -> bool {
     let lowered = title.trim_start().to_ascii_lowercase();
     ["revert ", "revert\"", "revert:", "revert!:", "revert("]

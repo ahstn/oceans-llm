@@ -1091,6 +1091,12 @@ async fn sessions_reach_their_furthest_stage_and_feed_the_tab_insights() {
         pull_requests: Mutex::new(vec![{
             let mut merged = pull_request(7, &dev, minutes(90), &[2]);
             merged.title = "Revert \"Change 6\"".to_string();
+            // The hook links a revert title with nothing else as title evidence.
+            merged.lifecycle.details.reverts = Some(AttributionRevertLink {
+                pull_request_number: None,
+                commit_shas: Vec::new(),
+                evidence: AttributionRevertEvidence::Title,
+            });
             merged.commits[0].authored_at = Some(minutes(35));
             merged
         }]),

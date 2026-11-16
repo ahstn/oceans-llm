@@ -15,7 +15,7 @@ use gateway_core::{
 };
 use time::{Duration, OffsetDateTime};
 
-use super::insights::{is_revert_title, median};
+use super::insights::median;
 use super::{AttributionPullRequestActivity, count};
 
 /// What a merged pull request reverts and how that was found.
@@ -255,21 +255,20 @@ pub(super) fn apply_reverts(
             .reverts
             .as_ref()
             .filter(|link| !reverts_only_own_commits(link, pr));
-        let evidence = match link {
-            Some(link) => link.evidence,
-            None if is_revert_title(&pr.title) => AttributionRevertEvidence::Title,
-            None => continue,
+        // The hook classifies the title as well (`reverts::is_revert_title` in the CLI), so the
+        // gateway keeps no rule of its own: a pull request sent without a link isn't a revert.
+        let Some(link) = link else {
+            continue;
         };
-        let target = link.and_then(|link| {
-            link.pull_request_number.or_else(|| {
-                link.commit_shas.iter().find_map(|reverted| {
-                    shas.range((repository, reverted.as_str())..)
-                        .take_while(|((repo, sha), _)| {
-                            *repo == repository && sha.starts_with(reverted.as_str())
-                        })
-                        .map(|(_, number)| *number)
-                        .find(|number| *number != pr.number)
-                })
+        let evidence = link.evidence;
+        let target = link.pull_request_number.or_else(|| {
+            link.commit_shas.iter().find_map(|reverted| {
+                shas.range((repository, reverted.as_str())..)
+                    .take_while(|((repo, sha), _)| {
+                        *repo == repository && sha.starts_with(reverted.as_str())
+                    })
+                    .map(|(_, number)| *number)
+                    .find(|number| *number != pr.number)
             })
         });
         let target = target.filter(|number| *number != pr.number);
