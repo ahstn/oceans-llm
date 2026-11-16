@@ -780,8 +780,9 @@ mod tests {
     fn a_revert_line_in_a_commit_body_links_the_reverted_commit() {
         let mut fetched = fetched();
         fetched[0].title = "Undo widgets".into();
-        fetched[0].commits[0].message_body =
-            "This reverts commit 2222222222222222222222222222222222222222.".into();
+        // The reverted commit is not one of this pull request's own.
+        const SHIPPED: &str = "3333333333333333333333333333333333333333";
+        fetched[0].commits[0].message_body = format!("This reverts commit {SHIPPED}.");
         let mut cache = reverts::ChangeCache::new();
         let links = revert_links(
             &fetched,
@@ -791,8 +792,18 @@ mod tests {
         );
         let link = links[0].as_ref().expect("revert link");
         assert_eq!(link.evidence, "revert_commit");
-        assert_eq!(link.commit_shas, [SHA_2]);
+        assert_eq!(link.commit_shas, [SHIPPED]);
         assert!(links[1].is_none() && links[2].is_none());
+
+        // Reverting the pull request's own commit (SHA_2) is branch cleanup, not a revert.
+        fetched[0].commits[0].message_body = format!("This reverts commit {SHA_2}.");
+        let links = revert_links(
+            &fetched,
+            "acme/widgets",
+            Path::new("/nonexistent"),
+            &mut cache,
+        );
+        assert!(links[0].is_none());
     }
 
     #[test]
