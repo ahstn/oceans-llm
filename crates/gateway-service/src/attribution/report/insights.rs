@@ -7,7 +7,7 @@
 //! window's requests under any of its hashes, each request counted once. Only window commits set
 //! its lines and outcome.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, hash_map::Entry};
 
 use gateway_core::{AttributionCommitRecord, AttributionRequestFact};
 use time::{Date, Duration, OffsetDateTime};
@@ -174,6 +174,9 @@ impl ReportInputs<'_> {
             .collect::<HashSet<_>>();
         let mut rollups: Vec<SessionRollup<'b>> = Vec::new();
         let mut by_hash: HashMap<(&str, &str), usize> = HashMap::new();
+        // The hashes each rollup holds in `by_hash`, so merging two rollups repoints only the
+        // absorbed one's hashes. Only hook rows merge, so this lives for the first loop alone.
+        let mut members: Vec<Vec<(&str, &str)>> = Vec::new();
         for session in agent_sessions {
             let scope = session.owner.ownership_scope_key.as_str();
             let hashes = || {
@@ -199,11 +202,11 @@ impl ReportInputs<'_> {
                     for &other in others {
                         rollups[index].reported |= rollups[other].reported;
                         rollups[other].reported = false;
-                        for target in by_hash.values_mut() {
-                            if *target == other {
-                                *target = index;
-                            }
+                        let moved = std::mem::take(&mut members[other]);
+                        for key in &moved {
+                            by_hash.insert(*key, index);
                         }
+                        members[index].extend(moved);
                     }
                     index
                 }
@@ -213,11 +216,16 @@ impl ReportInputs<'_> {
                         harness: Some(hook_harness(&session.harness_key)),
                         ..SessionRollup::default()
                     });
+                    members.push(Vec::new());
                     rollups.len() - 1
                 }
             };
             for hash in hashes() {
-                by_hash.entry((scope, hash.as_str())).or_insert(index);
+                let key = (scope, hash.as_str());
+                if let Entry::Vacant(entry) = by_hash.entry(key) {
+                    entry.insert(index);
+                    members[index].push(key);
+                }
             }
         }
         let mut by_note: HashMap<(&str, &str), usize> = HashMap::new();

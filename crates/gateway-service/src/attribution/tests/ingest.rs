@@ -121,6 +121,7 @@ fn pull_request(number: i64, commits: &[(&str, Option<&str>)]) -> AttributionPul
         merge_commit_sha: None,
         merged_at: Some(t0() - Duration::hours(1)),
         lifecycle: gateway_core::AttributionPullRequestLifecycle::default(),
+        lifecycle_reported: true,
         commits: commits
             .iter()
             .map(|(sha, email)| AttributionPullRequestCommitInput {

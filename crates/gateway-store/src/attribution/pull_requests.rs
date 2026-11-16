@@ -159,14 +159,20 @@ pub(crate) fn update_pull_request(
         ),
         ("observed_at", millis(write.observed_at)?),
         ("state", text(write.lifecycle.state.as_str())),
-        ("opened_at", optional_millis(write.lifecycle.opened_at)?),
-        ("closed_at", optional_millis(write.lifecycle.closed_at)?),
-        ("details", optional_text(details_column(write)?.as_deref())),
         ("updated_at", millis(write.received_at)?),
     ];
-    // A write with no activity time keeps the stored one rather than clearing it.
-    if let Some(last_activity_at) = write.lifecycle.last_activity_at {
-        assignments.push(("last_activity_at", millis(last_activity_at)?));
+    // A hook that sends no lifecycle only knows the pull request merged, so the stored times,
+    // review details and revert link stay rather than being cleared.
+    if write.lifecycle_reported {
+        assignments.extend([
+            ("opened_at", optional_millis(write.lifecycle.opened_at)?),
+            ("closed_at", optional_millis(write.lifecycle.closed_at)?),
+            ("details", optional_text(details_column(write)?.as_deref())),
+        ]);
+        // A write with no activity time keeps the stored one rather than clearing it.
+        if let Some(last_activity_at) = write.lifecycle.last_activity_at {
+            assignments.push(("last_activity_at", millis(last_activity_at)?));
+        }
     }
     let set = binds.assignments(assignments);
     let pull_request = binds.push(text(attribution_pull_request_id));

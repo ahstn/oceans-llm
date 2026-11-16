@@ -461,6 +461,8 @@ impl AttributionPullRequestRequest {
             None => Some(None),
         };
         let merged_at = optional_time(self.merged_at)?;
+        // Hooks that send a lifecycle always send its state.
+        let lifecycle_reported = self.state.is_some();
         let state = match self.state {
             Some(AttributionPullRequestStateRequest::Open) => AttributionPullRequestState::Open,
             Some(AttributionPullRequestStateRequest::Closed) => AttributionPullRequestState::Closed,
@@ -513,6 +515,7 @@ impl AttributionPullRequestRequest {
             merge_commit_sha: self.merge_commit_sha,
             commits,
             lifecycle,
+            lifecycle_reported,
         })
     }
 }

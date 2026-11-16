@@ -479,6 +479,7 @@ fn pull_request_write(
                 ..AttributionPullRequestDetails::default()
             },
         },
+        lifecycle_reported: true,
         observed_at: now - pull_request.closed.unwrap_or(pull_request.opened),
         received_at: now,
     })

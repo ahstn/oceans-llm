@@ -309,8 +309,16 @@ pub struct AttributionPullRequestWrite {
     pub author_email_hash: Option<String>,
     pub commits: Vec<AttributionPullRequestCommit>,
     pub lifecycle: AttributionPullRequestLifecycle,
+    /// False for a hook older than the lifecycle fields, which sends merged pull requests with
+    /// no lifecycle: replacing a stored row then keeps its lifecycle and records only the merge.
+    #[serde(default = "lifecycle_reported_default")]
+    pub lifecycle_reported: bool,
     pub observed_at: OffsetDateTime,
     pub received_at: OffsetDateTime,
+}
+
+fn lifecycle_reported_default() -> bool {
+    true
 }
 
 /// Filters shared by the report reads. Bounds are inclusive.

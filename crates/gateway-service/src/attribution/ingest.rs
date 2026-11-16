@@ -104,6 +104,8 @@ pub struct AttributionPullRequestInput {
     pub commits: Vec<AttributionPullRequestCommitInput>,
     /// State, times, counts and the revert link as the hook reduced them; validated here.
     pub lifecycle: AttributionPullRequestLifecycle,
+    /// False when the hook sent no lifecycle; see [`AttributionPullRequestWrite`].
+    pub lifecycle_reported: bool,
 }
 
 pub struct AttributionPullRequestCommitInput {
@@ -497,6 +499,7 @@ where
             author_email_hash,
             commits,
             lifecycle,
+            lifecycle_reported: input.lifecycle_reported,
             observed_at: freshness.observed_at,
             received_at: self.now,
         })

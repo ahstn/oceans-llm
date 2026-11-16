@@ -266,6 +266,7 @@ fn pull_request(
             closed_at: Some(merged_at),
             ..Default::default()
         },
+        lifecycle_reported: true,
         author_user_id: owner.owner_user_id,
         author_email_hash: Some("sha256:email".to_string()),
         commits: commit_shas
@@ -550,13 +551,35 @@ async fn pull_requests_keep_their_lifecycle<S: GatewayStore>(store: &S) {
     assert_eq!(listed[0].merged_at, Some(base()));
     assert_eq!(listed[0].commits.len(), 1);
     // The merge write carries no activity time, so the stored one stays.
+    let after_merge = AttributionPullRequestLifecycle {
+        last_activity_at: open.lifecycle.last_activity_at,
+        ..merged.lifecycle.clone()
+    };
+    assert_eq!(listed[0].lifecycle, after_merge);
+
+    // A hook older than the lifecycle fields re-sends it merged with no lifecycle: the merge
+    // is recorded and the stored lifecycle stays.
+    let legacy = AttributionPullRequestWrite {
+        title: "Retitled".to_string(),
+        lifecycle: AttributionPullRequestLifecycle::default(),
+        lifecycle_reported: false,
+        observed_at: base() + Duration::minutes(1),
+        ..merged.clone()
+    };
     assert_eq!(
-        listed[0].lifecycle,
-        AttributionPullRequestLifecycle {
-            last_activity_at: open.lifecycle.last_activity_at,
-            ..merged.lifecycle
-        }
+        store
+            .apply_attribution_pull_request(&legacy)
+            .await
+            .expect("apply legacy re-send"),
+        AttributionApplyOutcome::Applied
     );
+    let listed = store
+        .list_attribution_pull_requests(&day())
+        .await
+        .expect("report");
+    assert_eq!(listed[0].title, "Retitled");
+    assert_eq!(listed[0].merged_at, Some(base()));
+    assert_eq!(listed[0].lifecycle, after_merge);
 }
 
 async fn agent_sessions_merge_events<S: GatewayStore>(store: &S) {
