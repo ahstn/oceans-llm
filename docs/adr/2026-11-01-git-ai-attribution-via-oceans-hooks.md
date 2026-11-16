@@ -300,7 +300,7 @@ The gateway stores the lifecycle as `state`, `opened_at` and `closed_at` columns
 ### Why
 
 - **The revert line is machine-written.** Studies of reverted commits, and change-failure tools such as Swarmia's, key on git's `This reverts commit` line and GitHub's revert-button markers. Titles are rewritten often enough that a title match both misses reverts and flags non-reverts.
-- **The change match catches reworded reverts.** A revert's change is the inverse of the original's whatever its message says. The fingerprint leaves out line numbers but keeps one context line on each side of an edit, so unrelated edits elsewhere between the two don't break the match, while the same lines changed in another function don't match. It needs nothing beyond the local clone the hook already runs in.
+- **The change match catches reworded reverts.** A revert's change is the inverse of the original's whatever its message says. The fingerprint leaves out line numbers but keeps three context lines on each side of an edit and the hunk's function label, so unrelated edits elsewhere between the two don't break the match, while the same lines changed in another function or method don't match. A false match still needs identical lines for three lines either side within one file. It needs nothing beyond the local clone the hook already runs in.
 - **Counts, not identities.** Review data reduces to counts and times on the developer's machine. Reviewer logins, descriptions, commit messages and fingerprints never leave it, which keeps the ADR's rule that raw external identifiers are not stored.
 
 ### Trade-offs

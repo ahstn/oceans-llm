@@ -30,6 +30,8 @@ const SHORT_GIT_TIMEOUT: Duration = Duration::from_secs(2);
 /// The fingerprint cache keeps this many merge commits per repository, newest first.
 pub const MAX_CACHED_CHANGES: usize = 5_000;
 const MAX_REVERTED_COMMITS: usize = 40;
+/// Context lines around each edit in a fingerprinted diff.
+const CONTEXT_LINES: &str = "-U3";
 
 /// What revert detection needs from one fetched pull request.
 pub struct Candidate<'a> {
@@ -342,9 +344,10 @@ fn diff(directory: &Path, from: &str, to: &str) -> Option<Vec<u8>> {
             "--no-renames",
             "--no-textconv",
             "--full-index",
-            // One line of context places each edit: identical lines changed in two different
-            // functions don't match, while edits further away leave it alone.
-            "-U1",
+            // Three lines of context place each edit. Git can give two methods of one `impl` or
+            // class the same hunk label, so the label alone can't tell them apart; three lines
+            // around the edit usually can, while edits further away leave the match alone.
+            CONTEXT_LINES,
             from,
             to,
             "--",
@@ -354,11 +357,11 @@ fn diff(directory: &Path, from: &str, to: &str) -> Option<Vec<u8>> {
     )
 }
 
-/// A fingerprint of a `-U1` diff: per file, the path, each hunk's function label and each
-/// added, removed or context line exactly as written, combined in path order. The context line
-/// on each side of an edit and the label git gives the hunk (the nearest function line above
-/// it in the old side) place it, so the same lines changed in another function don't match,
-/// even when their neighbouring lines are identical too. Both sides of a match are labelled
+/// A fingerprint of a `-U3` diff: per file, the path, each hunk's function label and each
+/// added, removed or context line exactly as written, combined in path order. The three context
+/// lines on each side of an edit and the label git gives the hunk (the nearest function line
+/// above it in the old side) place it, so the same lines changed in another function don't
+/// match, even when their nearest lines and the hunk label are the same. Both sides of a match are labelled
 /// from the same file content, the original's new side and the revert's old side. Line
 /// numbers and text blob ids are left out, so an exact inverse matches even after unrelated edits elsewhere; an edit
 /// right next to the change breaks the match, and the revert then falls back to its other
@@ -741,6 +744,59 @@ mod tests {
         assert!(detect(&prs[1], "acme/widgets", &cache).is_none());
         let link = detect(&prs[2], "acme/widgets", &cache).expect("change match");
         assert_eq!(link.pull_request_number, Some(1));
+    }
+
+    #[test]
+    fn methods_sharing_a_hunk_label_do_not_match() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path();
+        let write = |first: &str, second: &str| {
+            std::fs::write(
+                dir.join("a.rs"),
+                // Git labels hunks in both methods `impl Example {`, and the lines right around
+                // each edit are identical; only the wider context tells the methods apart.
+                format!(
+                    "impl Example {{\n    fn first(&self) {{\n        alpha();\n        beta();\n        let x = 0;\n        {first}\n    }}\n\n    fn second(&self) {{\n        gamma();\n        delta();\n        let x = 0;\n        {second}\n    }}\n}}\n"
+                ),
+            )
+            .unwrap();
+        };
+        run(dir, &["init", "-q", "-b", "main"]);
+        write("old();", "new();");
+        run(dir, &["add", "."]);
+        run(dir, &["commit", "-qm", "base"]);
+        write("new();", "new();");
+        run(dir, &["commit", "-qam", "first calls new"]);
+        let original = run(dir, &["rev-parse", "HEAD"]);
+        // `second` goes from new to old: the same lines inverted, in the other method.
+        write("new();", "old();");
+        run(dir, &["commit", "-qam", "second calls old"]);
+        let unrelated = run(dir, &["rev-parse", "HEAD"]);
+
+        let candidate = |number, sha: &'static str, merged_at| Candidate {
+            number,
+            title: "Change",
+            body: "",
+            head_ref: "x",
+            merge_commit_sha: Some(sha),
+            merged_at: Some(merged_at),
+            commit_bodies: vec![],
+            commit_subjects: vec![],
+            commit_shas: vec![],
+        };
+        let (original, unrelated): (&'static str, &'static str) =
+            (original.leak(), unrelated.leak());
+        let mut cache = ChangeCache::new();
+        let mut budget = FingerprintBudget::new(MAX_NEW_FINGERPRINTS);
+        let prs = [
+            candidate(1, original, "2026-11-01T00:00:00Z"),
+            candidate(2, unrelated, "2026-11-02T00:00:00Z"),
+        ];
+        for pr in &prs {
+            remember(pr, dir, &mut cache, &mut budget);
+        }
+        assert_eq!(cache.len(), 2, "both merges are fingerprinted");
+        assert!(detect(&prs[1], "acme/widgets", &cache).is_none());
     }
 
     #[test]

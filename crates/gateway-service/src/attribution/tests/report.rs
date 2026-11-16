@@ -489,6 +489,40 @@ async fn hook_rows_sharing_a_session_hash_are_one_session() {
 }
 
 #[tokio::test]
+async fn a_hook_row_bridging_two_others_makes_them_one_session() {
+    use crate::attribution::AttributionSessionOutcome;
+
+    let dev = user_owner(Uuid::new_v4());
+    let mut store = FakeStore::default();
+    // Two older rows stored without namespace hashes, then a row that names both of their keys.
+    let mut first = agent_session(&dev, "a", minutes(5));
+    first.session_hashes = Vec::new();
+    let mut second = agent_session(&dev, "b", minutes(6));
+    second.session_hashes = Vec::new();
+    let mut bridge = agent_session(&dev, "c", minutes(7));
+    bridge.session_hashes = vec!["a".to_string(), "b".to_string()];
+    store.agent_sessions = vec![first, second, bridge];
+    store.facts = vec![
+        request(&dev, "a", "r1", minutes(10)),
+        request(&dev, "b", "r2", minutes(11)),
+    ];
+    let report = report(&store, &query()).await;
+
+    let outcomes = report
+        .session_outcomes
+        .iter()
+        .map(|tally| {
+            (
+                tally.outcome,
+                tally.session_count,
+                tally.requests.request_count,
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(outcomes, vec![(AttributionSessionOutcome::NoCommit, 1, 2)]);
+}
+
+#[tokio::test]
 async fn equal_commit_times_go_to_the_lowest_commit_id() {
     let dev = user_owner(Uuid::new_v4());
     let session = || vec![note_session("s_aa", &["h1"])];

@@ -185,9 +185,26 @@ impl ReportInputs<'_> {
             let is_reported = reported.contains(&std::ptr::from_ref(*session));
             // Hook rows that share an owner-scoped hash are one session: the second row joins the
             // first rollup, so it isn't counted twice or left as an empty `NoCommit` session.
-            let index = match hashes().find_map(|hash| by_hash.get(&(scope, hash.as_str()))) {
-                Some(&index) => {
+            let mut found = hashes()
+                .filter_map(|hash| by_hash.get(&(scope, hash.as_str())).copied())
+                .collect::<Vec<_>>();
+            found.sort_unstable();
+            found.dedup();
+            let index = match found.split_first() {
+                Some((&index, others)) => {
                     rollups[index].reported |= is_reported;
+                    // A row that bridges rollups already made for other rows (older rows stored
+                    // without namespace hashes) merges them into one. Nothing but `reported` has
+                    // been gathered yet, and a rollup left unreported and empty is dropped below.
+                    for &other in others {
+                        rollups[index].reported |= rollups[other].reported;
+                        rollups[other].reported = false;
+                        for target in by_hash.values_mut() {
+                            if *target == other {
+                                *target = index;
+                            }
+                        }
+                    }
                     index
                 }
                 None => {
