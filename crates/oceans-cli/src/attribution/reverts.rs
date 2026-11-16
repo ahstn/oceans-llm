@@ -375,6 +375,9 @@ pub fn fingerprint(diff: &[u8]) -> Option<String> {
             Some(b'+') => ('+', &line[1..]),
             Some(b'-') => ('-', &line[1..]),
             Some(b' ') => (' ', &line[1..]),
+            // `\ No newline at end of file`, after the line it applies to: restoring a file's
+            // text without its final newline isn't an exact revert.
+            Some(b'\\') if in_hunk => ('\\', ""),
             _ if line.starts_with("Binary files ") => {
                 binary = index.clone().unwrap_or_else(|| line.to_owned());
                 ('b', binary.as_str())
@@ -544,6 +547,27 @@ mod tests {
         assert_eq!(
             fingerprint(edit("-- first;", "++ first;").as_bytes()),
             fingerprint(edit("-- first;", "++ first;").as_bytes())
+        );
+    }
+
+    #[test]
+    fn a_missing_final_newline_must_be_undone_too() {
+        let hunk = |body: &str| {
+            format!(
+                "diff --git a/a.txt b/a.txt\nindex a1..b2 100644\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n{body}"
+            )
+        };
+        // `old\n` → `new\n`, then `new\n` → `old` without a newline: the inverse of the second
+        // keeps the marker on `old`, so it doesn't match the first.
+        let original = hunk("-old\n+new\n");
+        let partial_inverse = hunk("-old\n\\ No newline at end of file\n+new\n");
+        assert_ne!(
+            fingerprint(original.as_bytes()),
+            fingerprint(partial_inverse.as_bytes())
+        );
+        assert_eq!(
+            fingerprint(partial_inverse.as_bytes()),
+            fingerprint(partial_inverse.as_bytes())
         );
     }
 
