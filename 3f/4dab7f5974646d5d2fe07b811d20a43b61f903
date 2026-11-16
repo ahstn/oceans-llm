@@ -1,0 +1,14 @@
+crates/oceans-cli/src/attribution/prs.rs
+  h_2f452a9c375069 31-32,35-36,43-44,58,62-92,120-122,270-271,275-280,282,284-333,335-365,728-756
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3f4dab7f5974646d5d2fe07b811d20a43b61f903",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
