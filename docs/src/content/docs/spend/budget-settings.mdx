@@ -65,7 +65,7 @@ The rejection body always has `type: budget_error` and `code: budget_exceeded`. 
 
 Startup fails if a `model_defaults` entry names a model that isn't configured, or if two entries name the same model. The gateway trims model ids before it compares them. Unknown fields in `budgets` fail startup.
 
-Inherited defaults apply to config-seeded users, the bootstrap admin, users created in the admin UI, and JIT OIDC and OAuth users. A `users[*].budget` block overrides `budgets.users.default` for that user. Omitting it means inherit, not "no budget". The precedence rules and what admin edits do to inherited budgets are on [Budgets](/spend/budgets/).
+Inherited defaults apply to config-seeded users, the bootstrap admin, users created in the admin UI, and JIT OIDC and OAuth users. A `users[*].budget` block overrides `budgets.users.default` for that user. Omitting it means inherit, not an absence of budget. The precedence rules and what admin edits do to inherited budgets are on [Budgets](/spend/budgets/).
 
 ## `budget_alerts`
 

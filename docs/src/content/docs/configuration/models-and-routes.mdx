@@ -286,7 +286,7 @@ models:
 
 Omit a flag to let the gateway fill it in. Set it only to override. A route can narrow what the provider supports. It can't expand it. When nothing else sets a flag, `images` and `decisions` default to `false` and every other flag defaults to `true`. The order of sources and the catalog hint rules are described in [Model routing and APIs](/configuration/model-routing/).
 
-Startup validation uses explicit flags, then compatibility inference, then defaults. It doesn't use catalog hints. An omitted flag never fails validation. An explicit flag that contradicts the route's compatibility fails startup. So does `true` for a flag the provider type and compatibility profile cannot serve at all, such as `responses: true` on an `anthropic_compat` route or `tools: true` on a Vertex model without tool support, because the adapter cap would silently drop it.
+Startup validation uses explicit flags, then compatibility inference, then defaults. It doesn't use catalog hints. An omitted flag never fails validation. Startup also fails on an explicit flag that contradicts the route's compatibility, and on `true` for a flag the provider type and compatibility profile cannot serve at all, such as `responses: true` on an `anthropic_compat` route or `tools: true` on a Vertex model without tool support, because the adapter cap would silently drop it.
 
 Rules for specific flags:
 

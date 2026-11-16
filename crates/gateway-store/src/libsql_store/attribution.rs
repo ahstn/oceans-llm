@@ -183,11 +183,18 @@ fn decode_pull_request(row: &libsql::Row) -> Result<AttributionPullRequestRecord
         base_ref: optional_string(row, 8)?,
         head_ref: optional_string(row, 9)?,
         merge_commit_sha: optional_string(row, 10)?,
-        merged_at: time_at(row, 11)?,
+        merged_at: optional_time(optional_integer(row, 11)?)?,
         author_user_id: optional_uuid(optional_string(row, 12)?)?,
         author_email_hash: optional_string(row, 13)?,
         commits: Vec::new(),
         observed_at: time_at(row, 14)?,
+        lifecycle: attribution::decode_lifecycle(
+            &string(row, 15)?,
+            optional_integer(row, 16)?,
+            optional_integer(row, 17)?,
+            optional_string(row, 18)?.as_deref(),
+            optional_integer(row, 19)?,
+        )?,
     })
 }
 
@@ -553,5 +560,63 @@ impl AttributionRepository for LibsqlStore {
         .await?;
         commit(transaction).await?;
         Ok(deleted)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::tempdir;
+    use time::Duration;
+
+    use super::*;
+    use crate::run_migrations;
+
+    /// The report's pull request page finds its rows through the per-column window indexes, so
+    /// its work grows with the pull requests in the window, never with the whole history; only
+    /// those matches are sorted by activity.
+    #[tokio::test]
+    async fn the_pull_request_page_reads_only_the_window_through_its_indexes() {
+        let temporary = tempdir().expect("tempdir");
+        let database_path = temporary.path().join("gateway.db");
+        run_migrations(&database_path).await.expect("migrations");
+        let store = LibsqlStore::new_local(database_path.to_str().expect("database path"))
+            .await
+            .expect("store");
+        let to = OffsetDateTime::now_utc();
+        let query = AttributionReportQuery {
+            from: to - Duration::days(90),
+            to,
+            user_id: None,
+            repository: None,
+            limit: 1_000,
+        };
+        let statement = attribution::list_pull_requests(DIALECT, &query).expect("statement");
+        let params = values(statement.binds).expect("binds");
+        let mut rows = store
+            .connection
+            .query(
+                &format!("EXPLAIN QUERY PLAN {}", statement.sql),
+                libsql::params_from_iter(params),
+            )
+            .await
+            .expect("query plan");
+        let mut plan = String::new();
+        while let Some(row) = rows.next().await.expect("plan row") {
+            let detail: String = row.get(3).expect("plan detail");
+            plan.push_str(&detail);
+            plan.push('\n');
+        }
+        for index in [
+            "idx_attribution_pull_requests_merged",
+            "idx_attribution_pull_requests_opened",
+            "idx_attribution_pull_requests_closed",
+            "idx_attribution_pull_requests_last_activity",
+        ] {
+            assert!(plan.contains(index), "expected {index} in plan:\n{plan}");
+        }
+        assert!(
+            !plan.contains("SCAN attribution_pull_requests"),
+            "the page must not scan every pull request:\n{plan}"
+        );
     }
 }

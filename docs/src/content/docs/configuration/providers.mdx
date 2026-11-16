@@ -43,7 +43,7 @@ Every provider type rejects unknown fields. This includes the fields inside `aut
 | `display.label` | none | Admin UI label. It can't be empty when set. |
 | `display.icon_key` | none (`aws` for `aws_bedrock`) | Admin UI icon. One of `openai`, `openrouter`, `anthropic`, `aws`, `typesafe`, `vertexai` (case-insensitive). |
 
-Every provider HTTP client also has a fixed 10-second connection timeout. There is no separate idle-read timeout. For long reasoning runs, set `timeouts.total_ms` higher, for example `600000`. Upstream and proxy deadlines still apply.
+Every provider HTTP client also has a fixed 10-second connection timeout. It has no separate idle-read timeout. For long reasoning runs, set `timeouts.total_ms` higher, for example `600000`. Upstream and proxy deadlines still apply.
 
 `pricing_provider_id` names the pricing catalog family used to price the provider's routes. Where a type has this field, the value must be one of `openai`, `openrouter`, `opencode`, `github-copilot`, `google-vertex`, `google-vertex-anthropic`, or `amazon-bedrock`. See [Pricing catalog and accounting](/spend/pricing-and-accounting/) for how pricing is resolved.
 
@@ -205,7 +205,7 @@ Use `gcp_vertex` for Google Vertex AI.
 | `batch.dataset` | required when `batch` is set | BigQuery dataset for durable batches. It can't be empty. |
 | `batch.bigquery_project_id` | none | It can't be empty when set. |
 
-It also takes the [shared fields](#shared-fields). There is no `pricing_provider_id` field. The gateway infers pricing from the route's publisher prefix: `google/...` uses Google Vertex pricing and `anthropic/...` uses Anthropic-on-Vertex pricing. Anthropic-on-Vertex pricing is supported only for `location: global`.
+It also takes the [shared fields](#shared-fields). It has no `pricing_provider_id` field. The gateway infers pricing from the route's publisher prefix: `google/...` uses Google Vertex pricing and `anthropic/...` uses Anthropic-on-Vertex pricing. Anthropic-on-Vertex pricing is supported only for `location: global`.
 
 Every Vertex route must set `upstream_model` as `<publisher>/<model_id>`. For embedding and capability rules, see [Models and routes](/configuration/models-and-routes/) and [Google Vertex AI](/providers/gcp-vertex/).
 
@@ -221,7 +221,7 @@ Use `aws_bedrock` for Amazon Bedrock.
 | `auth.mode` | `default_chain` | `default_chain`, `static_credentials`, or `bearer`. Unknown auth fields are rejected. |
 | `routing_account_scope` | none | See [Routing account scope](#routing-account-scope). |
 
-It also takes the [shared fields](#shared-fields). There is no `pricing_provider_id` field.
+It also takes the [shared fields](#shared-fields). It has no `pricing_provider_id` field.
 
 `default_chain` and `static_credentials` use IAM SigV4 signing. Runtime providers sign with service `bedrock`. Mantle providers sign with service `bedrock-mantle`. For `static_credentials`, `access_key_id` and `secret_access_key` are required and `session_token` is optional. None of them can resolve to an empty value.
 

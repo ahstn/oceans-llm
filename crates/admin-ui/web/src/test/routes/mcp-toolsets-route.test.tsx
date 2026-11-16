@@ -166,6 +166,7 @@ function renderToolsetsTab({
 
     return (
       <ToolsetsTab
+        renderHeader={(action) => action}
         toolsets={toolsets}
         servers={servers}
         selectedToolsetId={selectedToolsetId}
@@ -607,6 +608,7 @@ describe('ToolsetsTab Workbench', () => {
       const [seedToolIds, setSeedToolIds] = useState(['tool_1'])
       return (
         <ToolsetsTab
+          renderHeader={(action) => action}
           toolsets={toolsets}
           servers={[server]}
           selectedToolsetId={selectedToolsetId}

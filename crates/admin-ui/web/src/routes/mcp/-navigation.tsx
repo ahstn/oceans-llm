@@ -1,12 +1,44 @@
 import { Link } from '@tanstack/react-router'
+import type { ReactNode } from 'react'
+
+import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
+
+type McpSection = 'servers' | 'toolsets' | 'access'
+
+/** The MCP page header and its section nav, laid out like the Attribution page. */
+export function McpHeader({
+  current,
+  description,
+  actions,
+  showToolsets,
+  showAccess,
+}: {
+  current: McpSection
+  description: ReactNode
+  actions?: ReactNode
+  showToolsets?: boolean
+  showAccess?: boolean
+}) {
+  return (
+    <>
+      <PageHeader
+        section="Agent Extensions"
+        title="MCP Servers"
+        description={description}
+        actions={actions}
+      />
+      <McpNavigation current={current} showToolsets={showToolsets} showAccess={showAccess} />
+    </>
+  )
+}
 
 export function McpNavigation({
   current,
   showToolsets = true,
   showAccess = true,
 }: {
-  current: 'servers' | 'toolsets' | 'access'
+  current: McpSection
   /** Tool sets are platform-managed, so team admins do not see them. */
   showToolsets?: boolean
   /** Access rules are for admins; other users see only the servers. */

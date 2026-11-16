@@ -30,6 +30,9 @@ pub enum Command {
     BootstrapAdmin,
     SeedConfig,
     SeedLocalDemo,
+    /// Watch gateway traffic after a release; exit 1 when server errors rise.
+    /// Needs no config file or database.
+    RolloutGuard(RolloutGuardArgs),
 }
 
 #[derive(Debug, Clone, Copy, Subcommand)]
@@ -139,6 +142,34 @@ pub struct RecomputeAgentAnalysisArgs {
         value_parser = clap::value_parser!(u32).range(1..=1_000)
     )]
     pub limit: u32,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct RolloutGuardArgs {
+    /// A management listener as `host:port`. A headless Service name
+    /// resolves to every ready pod. Repeat for several.
+    #[arg(long = "target", required = true)]
+    pub targets: Vec<String>,
+
+    /// How long to watch.
+    #[arg(long, default_value_t = 300)]
+    pub window_seconds: u64,
+
+    /// How often to read the pods' counters.
+    #[arg(long, default_value_t = 15)]
+    pub interval_seconds: u64,
+
+    /// Requests the window needs before any error rate can fail it.
+    #[arg(long, default_value_t = 50)]
+    pub min_requests: u64,
+
+    /// Fails at or above this share of gateway-caused server errors.
+    #[arg(long, default_value_t = 5.0)]
+    pub max_gateway_error_percent: f64,
+
+    /// Fails at or above this share of upstream-provider server errors.
+    #[arg(long, default_value_t = 25.0)]
+    pub max_upstream_error_percent: f64,
 }
 
 fn parse_request_log_retention_window(value: &str) -> Result<RequestLogRetentionWindow, String> {

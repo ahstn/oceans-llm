@@ -17,7 +17,8 @@ use std::collections::HashMap;
 use anyhow::Context;
 use gateway_core::{
     AttributionCommitSession, AttributionCommitWrite, AttributionFreshness, AttributionOwner,
-    AttributionPullRequestCommit, AttributionPullRequestWrite, AttributionRepository,
+    AttributionPullRequestCommit, AttributionPullRequestDetails, AttributionPullRequestLifecycle,
+    AttributionPullRequestState, AttributionPullRequestWrite, AttributionRepository,
     AttributionSessionEventKind, AttributionSessionEventWrite,
 };
 use gateway_store::AnyStore;
@@ -71,8 +72,15 @@ struct DemoPullRequest {
     number: i64,
     title: &'static str,
     head_ref: &'static str,
-    merge_commit_sha: &'static str,
-    merged: Duration,
+    merge_commit_sha: Option<&'static str>,
+    state: AttributionPullRequestState,
+    /// How long ago it opened, first got a human review, and merged or closed.
+    opened: Duration,
+    reviewed: Option<Duration>,
+    closed: Option<Duration>,
+    review_count: i64,
+    approval_count: i64,
+    is_draft: bool,
     commit_shas: &'static [&'static str],
 }
 
@@ -161,14 +169,22 @@ const DEMO_COMMITS: &[DemoCommit] = &[
     },
 ];
 
+// #42 waited 3 hours for its one approving review; #41 merged with no review. #43 is an open
+// draft and #40 closed without merging, so the lifecycle figures have something to count.
 const DEMO_PULL_REQUESTS: &[DemoPullRequest] = &[
     DemoPullRequest {
         owner: GINA,
         number: 42,
         title: "Rename the observability route to sessions",
         head_ref: "rename-observability-route",
-        merge_commit_sha: "c3e5a7b9d1f3a5c7e9b1d3f5a7c9e1b3d5f7a9c1",
-        merged: Duration::minutes(30),
+        merge_commit_sha: Some("c3e5a7b9d1f3a5c7e9b1d3f5a7c9e1b3d5f7a9c1"),
+        state: AttributionPullRequestState::Merged,
+        opened: Duration::hours(6),
+        reviewed: Some(Duration::hours(3)),
+        closed: Some(Duration::minutes(30)),
+        review_count: 1,
+        approval_count: 1,
+        is_draft: false,
         commit_shas: &[GINA_ROUTE_COMMIT],
     },
     DemoPullRequest {
@@ -176,9 +192,45 @@ const DEMO_PULL_REQUESTS: &[DemoPullRequest] = &[
         number: 41,
         title: "Summarise release blockers on the dashboard",
         head_ref: "release-blockers-summary",
-        merge_commit_sha: "d4f6b8a0c2e4f6a8b0d2c4e6f8a0b2d4c6e8f0a2",
-        merged: Duration::days(1),
+        merge_commit_sha: Some("d4f6b8a0c2e4f6a8b0d2c4e6f8a0b2d4c6e8f0a2"),
+        state: AttributionPullRequestState::Merged,
+        opened: Duration::days(2),
+        reviewed: None,
+        closed: Some(Duration::days(1)),
+        review_count: 0,
+        approval_count: 0,
+        is_draft: false,
         commit_shas: &[ALICE_DASHBOARD_COMMIT, CONTRACTOR_COMMIT],
+    },
+    DemoPullRequest {
+        owner: GINA,
+        number: 43,
+        title: "Add a cost column to the harness table",
+        head_ref: "harness-cost-column",
+        merge_commit_sha: None,
+        state: AttributionPullRequestState::Open,
+        opened: Duration::hours(2),
+        reviewed: None,
+        closed: None,
+        review_count: 0,
+        approval_count: 0,
+        is_draft: true,
+        commit_shas: &[],
+    },
+    DemoPullRequest {
+        owner: ALICE,
+        number: 40,
+        title: "Try a denser pull request ledger",
+        head_ref: "dense-ledger",
+        merge_commit_sha: None,
+        state: AttributionPullRequestState::Closed,
+        opened: Duration::days(4),
+        reviewed: Some(Duration::days(3)),
+        closed: Some(Duration::hours(70)),
+        review_count: 2,
+        approval_count: 0,
+        is_draft: false,
+        commit_shas: &[],
     },
 ];
 
@@ -403,12 +455,32 @@ fn pull_request_write(
         )),
         base_ref: Some("main".to_string()),
         head_ref: Some(pull_request.head_ref.to_string()),
-        merge_commit_sha: Some(pull_request.merge_commit_sha.to_string()),
-        merged_at: now - pull_request.merged,
+        merge_commit_sha: pull_request.merge_commit_sha.map(str::to_string),
+        merged_at: (pull_request.state == AttributionPullRequestState::Merged)
+            .then(|| pull_request.closed.map(|ago| now - ago))
+            .flatten(),
         author_user_id: owner.owner_user_id,
         author_email_hash: None,
         commits,
-        observed_at: now - pull_request.merged,
+        lifecycle: AttributionPullRequestLifecycle {
+            state: pull_request.state,
+            opened_at: Some(now - pull_request.opened),
+            closed_at: pull_request.closed.map(|ago| now - ago),
+            // The latest event the seed knows: the merge or close, else the opening.
+            last_activity_at: Some(now - pull_request.closed.unwrap_or(pull_request.opened)),
+            details: AttributionPullRequestDetails {
+                is_draft: Some(pull_request.is_draft),
+                first_review_at: pull_request.reviewed.map(|ago| now - ago),
+                review_count: Some(pull_request.review_count),
+                approval_count: Some(pull_request.approval_count),
+                changes_requested_count: Some(0),
+                reviewer_count: Some(pull_request.review_count.min(1)),
+                comment_count: Some(pull_request.review_count),
+                ..AttributionPullRequestDetails::default()
+            },
+        },
+        lifecycle_reported: true,
+        observed_at: now - pull_request.closed.unwrap_or(pull_request.opened),
         received_at: now,
     })
 }

@@ -5,6 +5,7 @@ import {
   useTransition,
   type CSSProperties,
   type FormEvent,
+  type ReactNode,
 } from 'react'
 import {
   CheckListIcon,
@@ -102,6 +103,7 @@ export function ServersTab({
   scope = platformMcpScope,
   onSelectServer,
   onAddToToolset,
+  renderHeader,
 }: {
   servers: McpServerView[]
   recommended: RecommendedMcpServerView[]
@@ -109,6 +111,8 @@ export function ServersTab({
   scope?: McpWorkspaceScope
   onSelectServer: (serverId: string | null) => void
   onAddToToolset: (toolIds: string[]) => void
+  /** The page header, given the registry's Browse catalog and Add server actions. */
+  renderHeader: (actions: ReactNode) => ReactNode
 }) {
   const newServerVisibility = scope.platformAdmin ? 'organisation' : 'team'
   const router = useRouter()
@@ -462,6 +466,7 @@ export function ServersTab({
         onRefresh={handleRefreshDiscovery}
         onAdd={scope.readOnly ? undefined : () => openCreateDialog()}
         onCatalog={scope.readOnly ? undefined : () => setCatalogOpen(true)}
+        renderHeader={renderHeader}
       />
 
       <Dialog open={catalogOpen} onOpenChange={setCatalogOpen}>

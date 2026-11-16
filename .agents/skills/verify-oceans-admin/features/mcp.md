@@ -20,7 +20,7 @@ MCP verification follows the admin browser path from server registration to tool
 ## How to get to it (user POV)
 
 - Open `/admin/mcp` and sign in as the seeded platform administrator. The registry is also available at `/admin/mcp?tab=servers`.
-- The `MCP sections` nav switches between `Servers`, `Tool Sets` (`/admin/mcp/toolsets`), and `Access` (`/admin/mcp?tab=access`). `/admin/mcp/servers`, `/admin/mcp/access`, and `?tab=toolsets` all redirect.
+- The page header reads `MCP Servers` under the `Agent Extensions` section label, with each tab's description and actions (`Browse catalog` and `Add server` on Servers, `New tool set` on Tool Sets). Below it, the `MCP sections` nav switches between `Servers`, `Tool Sets` (`/admin/mcp/toolsets`), and `Access` (`/admin/mcp?tab=access`). `/admin/mcp/servers`, `/admin/mcp/access`, and `?tab=toolsets` all redirect.
 - Open `/admin/mcp/toolsets` for the Tool Sets workbench and its `Connection Info` dialog.
 - Open `API Keys` at `/admin/api-keys` to create the temporary caller key, then `/admin/mcp?tab=access` to grant the saved tool set.
 - Connect an MCP client to `/mcp/{server_key}` for one server or `/mcp` for the aggregate catalog.

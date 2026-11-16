@@ -897,6 +897,7 @@ fn mcp_error_response(error: GatewayError) -> Response<Body> {
             .headers_mut()
             .insert(WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
     }
+    crate::http::traffic::mark_upstream_failure(&mut response, &error);
     response
 }
 

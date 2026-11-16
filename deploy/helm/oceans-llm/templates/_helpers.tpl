@@ -57,6 +57,10 @@ app.kubernetes.io/component: admin-ui
 {{- printf "%s-gateway" (include "oceans-llm.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "oceans-llm.managementServiceName" -}}
+{{- printf "%s-management" ((include "oceans-llm.gatewayServiceName" .) | trunc 52 | trimSuffix "-") -}}
+{{- end -}}
+
 {{- define "oceans-llm.adminUiServiceName" -}}
 {{- printf "%s-admin-ui" (include "oceans-llm.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
@@ -90,8 +94,12 @@ app.kubernetes.io/component: admin-ui
 {{- end -}}
 
 {{- define "oceans-llm.migrationHook" -}}
-{{- if or (eq .Values.database.mode "cloudnativepg") .Values.externalSecrets.enabled -}}
-{{- "post-install,post-upgrade" -}}
+{{- $requiresPostInstall := or (eq .Values.database.mode "cloudnativepg") .Values.externalSecrets.enabled -}}
+{{- if and $requiresPostInstall (ne .Values.migrations.hook "pre-install,pre-upgrade") (contains "pre-install" .Values.migrations.hook) -}}
+{{- fail "database.mode=cloudnativepg or externalSecrets.enabled cannot use migrations.hook with pre-install because the Cluster/Secret does not exist yet; use post-install,pre-upgrade for Helm, or pre-upgrade for Argo CD after provisioning dependencies in a separate earlier sync" -}}
+{{- end -}}
+{{- if and (eq .Values.migrations.hook "pre-install,pre-upgrade") $requiresPostInstall -}}
+{{- "post-install,pre-upgrade" -}}
 {{- else -}}
 {{- .Values.migrations.hook -}}
 {{- end -}}
@@ -147,7 +155,49 @@ app.kubernetes.io/component: admin-ui
 app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 
+{{- define "oceans-llm.gatewayConfig" -}}
+{{- $config := deepCopy .Values.gateway.config -}}
+{{- if .Values.rolloutGuard.enabled -}}
+{{- $server := get $config "server" | default dict -}}
+{{- $_ := set $server "management_bind" (printf "0.0.0.0:%v" .Values.rolloutGuard.managementPort) -}}
+{{- $_ := set $config "server" $server -}}
+{{- end -}}
+{{- toYaml $config -}}
+{{- end -}}
+
+{{- define "oceans-llm.gatewayLifecycle" -}}
+{{- $lifecycle := deepCopy (.Values.gateway.lifecycle | default dict) -}}
+{{- $preStop := get $lifecycle "preStop" | default dict -}}
+{{- $sleep := get $preStop "sleep" | default dict -}}
+{{- if or (hasKey $preStop "exec") (hasKey $preStop "httpGet") (hasKey $preStop "tcpSocket") (eq (int64 (get $sleep "seconds" | default 0)) 0) -}}
+{{- $_ := unset $preStop "sleep" -}}
+{{- end -}}
+{{- if not $preStop -}}
+{{- $_ := unset $lifecycle "preStop" -}}
+{{- end -}}
+{{- toYaml $lifecycle -}}
+{{- end -}}
+
+{{- define "oceans-llm.validateRollout" -}}
+{{- $server := get .Values.gateway.config "server" | default dict -}}
+{{- $drainSeconds := dig "shutdown_drain_seconds" 300 $server | int64 -}}
+{{- $lifecycle := include "oceans-llm.gatewayLifecycle" . | fromYaml -}}
+{{- $preStop := get $lifecycle "preStop" | default dict -}}
+{{- $sleep := get $preStop "sleep" | default dict -}}
+{{- $preStopSeconds := get $sleep "seconds" | default 0 | int64 -}}
+{{- $minimumGrace := add $preStopSeconds $drainSeconds 20 -}}
+{{- if lt (int64 .Values.gateway.terminationGracePeriodSeconds) $minimumGrace -}}
+{{- fail (printf "gateway.terminationGracePeriodSeconds (%v) must be at least gateway.lifecycle.preStop.sleep.seconds (%v) + gateway.config.server.shutdown_drain_seconds (%v; default 300) + 20 = %v; increase gateway.terminationGracePeriodSeconds or reduce the preStop sleep/drain settings" .Values.gateway.terminationGracePeriodSeconds $preStopSeconds $drainSeconds $minimumGrace) -}}
+{{- end -}}
+{{- $managementBind := get $server "management_bind" -}}
+{{- $expectedBind := printf "0.0.0.0:%v" .Values.rolloutGuard.managementPort -}}
+{{- if and .Values.rolloutGuard.enabled $managementBind (ne $managementBind $expectedBind) -}}
+{{- fail (printf "rolloutGuard.enabled requires gateway.config.server.management_bind=%s; remove the existing management_bind or set it to this address" $expectedBind) -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "oceans-llm.validateValues" -}}
+{{- include "oceans-llm.validateRollout" . -}}
 {{- $configJson := toJson .Values.gateway.config -}}
 {{- if and (not .Values.gateway.allowLiteralSecretsInConfig) (contains "literal." $configJson) -}}
 {{- fail "gateway.config contains literal.* references; use env.* references backed by secrets, or set gateway.allowLiteralSecretsInConfig=true to opt in" -}}
@@ -267,6 +317,9 @@ initialDelaySeconds: {{ $probe.initialDelaySeconds }}
 periodSeconds: {{ $probe.periodSeconds }}
 timeoutSeconds: {{ $probe.timeoutSeconds }}
 failureThreshold: {{ $probe.failureThreshold }}
+{{- if and (not .readiness) (hasKey $probe "terminationGracePeriodSeconds") }}
+terminationGracePeriodSeconds: {{ $probe.terminationGracePeriodSeconds }}
+{{- end }}
 {{- end -}}
 
 {{/*

@@ -110,7 +110,7 @@ Where you run them depends on the setup:
       --values values.yaml
     ```
 
-    Don't add `--wait`. Migrations run after install, and gateway pods wait for them, so `--wait` never finishes.
+    With the default `database.mode: external`, migrations run before the workloads, so you can add `--wait`. With `database.mode: cloudnativepg` or `externalSecrets.enabled`, the first migration runs after install, because the database or Secret doesn't exist before. Gateway pods wait for it, so don't add `--wait` to that first install.
   </Step>
   <Step title="Watch the migration Job">
     ```sh
@@ -158,16 +158,21 @@ Before any upgrade, read the release notes and back up the database. Migrations 
      --values values.yaml
    ```
 
-3. Apply it:
+3. Apply it. `--rollback-on-failure` (Helm 4; `--atomic` in Helm 3) rolls back to the previous release if a hook Job fails or the pods don't become ready before `--timeout`:
 
    ```sh
    helm upgrade oceans-llm oci://ghcr.io/ahstn/charts/oceans-llm \
      --namespace <namespace> \
      --version <version> \
-     --values values.yaml
+     --values values.yaml \
+     --wait \
+     --rollback-on-failure \
+     --timeout 15m
    ```
 
-4. Confirm the `oceans-llm-migrate` Job completed, and read its logs.
+   Migrations run in a `pre-upgrade` hook, before any pod changes. If they fail, the old pods keep serving. Old pods drain for up to `gateway.config.server.shutdown_drain_seconds` (default `300`) before they stop.
+
+4. Confirm the `oceans-llm-migrate` Job completed, and read its logs. With `rolloutGuard.enabled`, also read the `oceans-llm-rollout-guard` Job. It watches the new pods' error rates for `rolloutGuard.windowSeconds` and fails the upgrade if they pass the limits. See [Safe upgrades](/setup/kubernetes-and-helm/#safe-upgrades-and-rollback).
 5. Watch the rollout, then check `/readyz`, admin sign-in, and one real `/v1/*` request:
 
    ```sh
@@ -178,13 +183,17 @@ If the upgrade fails after the chart renders but before the pods are healthy, lo
 
 ## Roll back
 
-A rollback changes the application, not the database. An older gateway refuses a database that has migrations it doesn't know about. The startup migration, every `gateway migrate` command, and the Helm init container fail with an error like this:
+A rollback changes the application, not the database. Migrations only go forward, so after a rollback the older gateway reads a database that a newer gateway migrated.
+
+Each migration records the oldest gateway that can still read the database after it. If the older gateway is new enough, it starts and serves as usual, and `gateway migrate --status` lists the newer migrations as `[applied by a newer gateway; readable by this one]`. If it isn't, the startup migration, every `gateway migrate` command, and the Helm init container fail with an error like this:
 
 ```text
-database reset required for postgres: found historical migration v<N> outside the active registry; recreate the database and rerun migrations
+database schema is newer than this gateway (postgres): a newer release applied v<N>, which need a gateway that knows migration v<M> or later; this gateway knows migrations up to v<K>. Deploy the newer release again, or restore the database backup taken before the upgrade
 ```
 
-So if the upgrade applied a migration, restore the database backup you took before the upgrade, then roll back the application. Don't recreate the database because the error says so, unless you're willing to lose its data.
+Migrations up to `v81` are readable only by a gateway that knows them. Gateways released before this check don't read the record. They fail with `database reset required … outside the active registry` instead. If the older gateway refuses to start against the schema and you need that version, restore the backup taken before the upgrade, then roll back the application. A restore discards writes made after the backup. Don't recreate the database because the error says so, unless you're willing to lose its data.
+
+An older gateway never applies its own pending migrations to a database that a newer gateway has migrated. It stops with `cannot apply pending migrations …` instead.
 
 To see whether the upgrade applied migrations, run `gateway migrate --status` with the newer version, before you roll back.
 
@@ -196,7 +205,7 @@ helm rollback oceans-llm <revision> --namespace <namespace>
 kubectl rollout status deploy/oceans-llm-gateway -n <namespace>
 ```
 
-Then check `/readyz`, admin sign-in, and one real `/v1/*` request. `helm rollback` doesn't run the migration Job, which is a `post-install,post-upgrade` hook by default.
+Then check `/readyz`, admin sign-in, and one real `/v1/*` request. `helm rollback` doesn't run the migration Job or the rollout guard. Both are upgrade hooks.
 
 ### Docker Compose
 
@@ -227,7 +236,7 @@ Start with the least destructive step.
 
 If the error says `database reset required`, the command found history it can't upgrade in place. [Topology and operations](/setup/deploy-and-operations/#database-and-migrations) lists the causes. If the cause is an older gateway running against a newer database, see [Roll back](#roll-back). Otherwise, recreate the database, then run the migrations, the config seed, and the bootstrap admin again on the new one.
 
-If a PostgreSQL index migration fails with `canceling statement due to statement timeout` or `lock timeout`, the table was too large or too busy to index within the migration's time limit. Migrations run in a transaction, so they can't build indexes concurrently. Build the index online with the statement from the migration file, with `CONCURRENTLY` added. For `V82__batch_jobs_route_index`, that's `CREATE INDEX CONCURRENTLY IF NOT EXISTS batch_jobs_route_idx ON batch_jobs (route_id);`. Then run the migrations again. The migration finds the index and does nothing.
+If a PostgreSQL index migration fails with `canceling statement due to statement timeout` or `lock timeout`, the table was too large or too busy to index within the migration's time limit. Migrations run in a transaction, so they can't build indexes concurrently. Build the index online with the statement from the migration file, with `CONCURRENTLY` added. For `V83__batch_jobs_route_index`, that's `CREATE INDEX CONCURRENTLY IF NOT EXISTS batch_jobs_route_idx ON batch_jobs (route_id);`. Then run the migrations again. The migration finds the index and does nothing.
 
 For any other error, stop and read it before you retry. Don't assume a manual repair is safer than recreating the database.
 

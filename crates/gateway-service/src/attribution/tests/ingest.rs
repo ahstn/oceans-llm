@@ -119,7 +119,9 @@ fn pull_request(number: i64, commits: &[(&str, Option<&str>)]) -> AttributionPul
         base_ref: Some("main".to_string()),
         head_ref: Some(format!("feature/{number}")),
         merge_commit_sha: None,
-        merged_at: t0() - Duration::hours(1),
+        merged_at: Some(t0() - Duration::hours(1)),
+        lifecycle: gateway_core::AttributionPullRequestLifecycle::default(),
+        lifecycle_reported: true,
         commits: commits
             .iter()
             .map(|(sha, email)| AttributionPullRequestCommitInput {
@@ -162,6 +164,75 @@ fn statuses(outcome: &AttributionBatchOutcome) -> Vec<(&str, AttributionEntrySta
 }
 
 use AttributionEntryStatus::{Applied, Duplicate, Rejected, Stale};
+
+#[tokio::test]
+async fn pull_request_lifecycle_must_agree_with_its_merge_time() {
+    use crate::attribution::AttributionRejectReason::InvalidEntry;
+    use gateway_core::{
+        AttributionPullRequestState, AttributionRevertEvidence, AttributionRevertLink,
+    };
+    let dev = Uuid::new_v4();
+    let (store, users) = (FakeStore::default(), FakeUsers::with(&[]));
+    let scope = format!("user:{dev}");
+    let mut open = pull_request(20, &[]);
+    open.merged_at = None;
+    open.lifecycle.state = AttributionPullRequestState::Open;
+    let mut open_with_merge = pull_request(21, &[]);
+    open_with_merge.lifecycle.state = AttributionPullRequestState::Open;
+    let mut merged_without_time = pull_request(22, &[]);
+    merged_without_time.merged_at = None;
+    let mut negative = pull_request(23, &[]);
+    negative.lifecycle.details.review_count = Some(-1);
+    let mut self_revert = pull_request(24, &[]);
+    self_revert.lifecycle.details.reverts = Some(AttributionRevertLink {
+        pull_request_number: Some(24),
+        commit_shas: vec![],
+        evidence: AttributionRevertEvidence::GithubRevert,
+    });
+    let mut bad_sha = pull_request(25, &[]);
+    bad_sha.lifecycle.details.reverts = Some(AttributionRevertLink {
+        pull_request_number: None,
+        commit_shas: vec!["xyz1234".to_string()],
+        evidence: AttributionRevertEvidence::RevertCommit,
+    });
+    let mut revert = pull_request(26, &[]);
+    revert.lifecycle.details.reverts = Some(AttributionRevertLink {
+        pull_request_number: None,
+        commit_shas: vec!["abcdef1".to_string()],
+        evidence: AttributionRevertEvidence::RevertCommit,
+    });
+    let entries = [
+        open,
+        open_with_merge,
+        merged_without_time,
+        negative,
+        self_revert,
+        bad_sha,
+        revert,
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, pr)| {
+        let id = format!("p-{index}");
+        entry(&id, index as i64 + 1, pull_requests(vec![pr]))
+    })
+    .collect::<Vec<_>>();
+    let outcome = ingest(&store, &users, &scope, &user_key(dev), entries)
+        .await
+        .expect("batch");
+    assert_eq!(
+        statuses(&outcome),
+        [
+            ("p-0", Applied),
+            ("p-1", Rejected(InvalidEntry)),
+            ("p-2", Rejected(InvalidEntry)),
+            ("p-3", Rejected(InvalidEntry)),
+            ("p-4", Rejected(InvalidEntry)),
+            ("p-5", Rejected(InvalidEntry)),
+            ("p-6", Applied),
+        ]
+    );
+}
 
 #[tokio::test]
 async fn applies_notes_sessions_and_pull_requests() {

@@ -11,7 +11,7 @@ This page explains how budgets work and how admins manage them. The YAML fields 
 
 ## Budget types
 
-Users and service accounts are the only budget owners. There are three budget types:
+Users and service accounts are the only budget owners. The gateway supports three budget types:
 
 | Type | What it limits |
 | --- | --- |
@@ -21,7 +21,7 @@ Users and service accounts are the only budget owners. There are three budget ty
 
 Teams are not budget owners. A team groups users, owns service accounts and labels service account spend in reports, but it has no budget of its own.
 
-There is no shared budget for a model across the whole platform. To cap an expensive model, an admin sets `budgets.users.model_defaults`. This gives every user their own budget for that model, so one user's spend doesn't use up another user's cap. Service accounts are not affected: their spend counts only against their own budget. That's why the setting lives under `budgets.users` and not under `models[*]`, where it would read like one cap for everyone. The [budget principal taxonomy ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-05-27-budget-principal-taxonomy.md) explains the choice.
+No model has a shared budget across the whole platform. To cap an expensive model, an admin sets `budgets.users.model_defaults`. This gives every user their own budget for that model, so one user's spend doesn't use up another user's cap. Service accounts are not affected: their spend counts only against their own budget. That's why the setting lives under `budgets.users` and not under `models[*]`, where it would read like one cap for everyone. The [budget principal taxonomy ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-05-27-budget-principal-taxonomy.md) explains the choice.
 
 MCP tool grants are a separate access control (see [MCP tool access](/extensions/mcp-tool-access/)). MCP token overhead figures estimate context-window use. They are not spend and don't count against budgets.
 
@@ -54,7 +54,7 @@ A soft budget never rejects traffic. Use it to get alerts and reports before you
 
 A hard budget can go over its limit. When a provider has answered, the money is already spent, so the gateway always records the cost. The request that goes over the limit still returns its result. The next request from the same caller is rejected. This is the same for normal requests, streamed responses and batch results.
 
-The check before the provider call reads spend that is already recorded. It doesn't reserve money for requests that are still running. Every request that starts while the window still has room is let through. So a caller that runs 10 requests at the same time can go over the limit by up to the cost of those 10 requests. Set the cap with this in mind.
+The check before the provider call reads spend that is already recorded. It doesn't reserve money for requests that are still running. Every request that starts while the window still has room is let through. A caller that runs 10 requests at the same time can therefore go over the limit by up to the cost of those 10 requests. Set the cap with this in mind.
 
 For streamed responses, the gateway records spend when the stream ends, from the last usage the provider reported. If the provider sends an error event or the upstream connection fails after it reported usage, that usage still counts. If the client disconnects before the stream ends, the gateway doesn't record budget spend for that request. [Streaming requests](/reference/request-lifecycle/#streaming-requests) lists each outcome.
 
@@ -77,7 +77,7 @@ Each hard budget can block the request on its own. A user with room in their use
 
 For a request made with a service account's API key, the gateway checks only the service account budget. User model budgets never apply to service accounts.
 
-A user model budget matches the gateway model that serves the request. If a caller sends an alias, that is the model the alias resolves to, not the alias itself. So set model budgets, and `budgets.users.model_defaults` entries, on the target model, not on an alias.
+A user model budget matches the gateway model that serves the request. If a caller sends an alias, that is the model the alias resolves to, not the alias itself. Set model budgets, and `budgets.users.model_defaults` entries, on the target model, not on an alias.
 
 <Aside type="caution" title="Upstream model budgets">
 The admin UI and API can also create a user model budget for an exact upstream model name. This budget matches only ledger rows that have no gateway model. Every request path in the current gateway records the gateway model, so an upstream model budget doesn't match new traffic. Use a gateway model budget instead.
@@ -267,7 +267,7 @@ An admin can raise a user's budget for a limited time without editing it. This h
 - **How much:** more than `0` and at most 3 times the base budget.
 - **How long:** until the end of the calendar month in UTC (the default), or for 7 days from when the admin adds it.
 
-The increase adds to the base budget for hard limit checks and for alerts. A budget has at most one active increase. A new increase replaces the current one: it doesn't add to it. Editing the budget keeps the increase. Removing the budget ends it. There is no way to cancel an increase: it lasts until it expires or a newer increase replaces it. The gateway checks the 85% rule and the cap when it gets the request. If the budget or its increase changes while the gateway handles the request, it rejects the request so the admin can check the new limit. The [temporary budget increases ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-12-temporary-budget-increases.md) explains the design.
+The increase adds to the base budget for hard limit checks and for alerts. A budget has at most one active increase. A new increase replaces the current one: it doesn't add to it. Editing the budget keeps the increase. Removing the budget ends it. An increase cannot be cancelled: it lasts until it expires or a newer increase replaces it. The gateway checks the 85% rule and the cap when it gets the request. If the budget or its increase changes while the gateway handles the request, it rejects the request so the admin can check the new limit. The [temporary budget increases ADR](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-10-12-temporary-budget-increases.md) explains the design.
 
 <Steps>
 <Step title="Open the dialog">

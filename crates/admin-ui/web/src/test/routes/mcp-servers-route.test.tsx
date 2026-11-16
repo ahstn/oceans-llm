@@ -201,6 +201,7 @@ function renderServersTab(
     const [selectedServerId, setSelectedServerId] = useState<string | null>(initialSelectedServerId)
     return (
       <ServersTab
+        renderHeader={(actions) => actions}
         servers={servers}
         recommended={[recommended]}
         selectedServerId={selectedServerId}
@@ -1284,7 +1285,6 @@ describe('ServersTab', () => {
       readOnly: true,
     })
 
-    expect(screen.getByText('The MCP servers your access lets you connect to.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Add server' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Browse catalog' })).not.toBeInTheDocument()
     const registry = within(screen.getByTestId('mcp-server-list'))

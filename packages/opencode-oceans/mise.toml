@@ -40,6 +40,12 @@ description = "Exercise plugin integration against a local mock gateway"
 depends = ["install"]
 run = "bun run smoke"
 
+[tasks.smoke-published]
+description = "Exercise an exact public npm plugin version against a local mock gateway"
+depends = ["install"]
+usage = 'arg "<version>" help="Exact stable npm version, e.g. 0.1.0"'
+run = 'bun scripts/smoke.ts --published "$usage_version"'
+
 [tasks.check]
 description = "Typecheck, test, lint, format-check, and smoke-test the OpenCode plugin"
 depends = ["typecheck", "test", "lint", "fmt-check"]

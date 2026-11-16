@@ -1,4 +1,4 @@
-import type { ComponentProps, ComponentType } from 'react'
+import type { ComponentProps, ComponentType, ReactNode } from 'react'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { McpWorkspacePage } from '@/routes/mcp/index'
@@ -16,6 +16,7 @@ type NavigationOptions = {
   replace?: boolean
 }
 type ToolsetsProps = {
+  renderHeader: (action: ReactNode) => ReactNode
   selectedToolsetId: string | null
   seedToolIds: string[]
   onSelectToolset: (toolsetId: string | null) => void
@@ -64,17 +65,27 @@ vi.mock('@/server/admin-data.functions', () => ({
 }))
 
 vi.mock('@/routes/mcp/-servers-tab', () => ({
-  ServersTab: ({ onAddToToolset }: { onAddToToolset: (toolIds: string[]) => void }) => (
-    <button type="button" onClick={() => onAddToToolset(['tool_1', 'tool_2'])}>
-      Add to toolset
-    </button>
+  // The route draws the page header through the tab, so the mock renders it too.
+  ServersTab: ({
+    onAddToToolset,
+    renderHeader,
+  }: {
+    onAddToToolset: (toolIds: string[]) => void
+    renderHeader: (actions: ReactNode) => ReactNode
+  }) => (
+    <>
+      {renderHeader(null)}
+      <button type="button" onClick={() => onAddToToolset(['tool_1', 'tool_2'])}>
+        Add to toolset
+      </button>
+    </>
   ),
 }))
 
 vi.mock('@/routes/mcp/-toolsets-tab', () => ({
   ToolsetsTab: (props: ToolsetsProps) => {
     toolsetsPropsMock(props)
-    return null
+    return <>{props.renderHeader(null)}</>
   },
 }))
 
@@ -159,6 +170,16 @@ describe('MCP navigation', () => {
     expect(toolsetsPropsMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ selectedToolsetId: 'toolset_1', seedToolIds: ['tool_1'] }),
     )
+  })
+
+  it('heads the servers tab with the shared MCP page header above the section nav', () => {
+    render(<McpWorkspacePage />)
+
+    expect(screen.getByRole('heading', { name: 'MCP Servers', level: 1 })).toBeInTheDocument()
+    expect(
+      screen.getByText('Manage the connections that bring tools into your gateway.'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: 'MCP sections' })).toBeInTheDocument()
   })
 
   it('sends a server tool selection to the dedicated Tool Sets page', () => {

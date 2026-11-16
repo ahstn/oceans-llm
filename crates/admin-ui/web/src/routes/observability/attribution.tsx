@@ -1,40 +1,85 @@
-import { useTransition, type ReactNode } from 'react'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { LinkSquare02Icon } from '@hugeicons/core-free-icons'
+import { lazy, Suspense, useTransition, type ComponentType } from 'react'
+import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router'
 
+import { AppIcon } from '@/components/icons/app-icon'
 import { PageHeader } from '@/components/layout/page-header'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from '@/components/ui/empty'
+import { Skeleton } from '@/components/ui/skeleton'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
 import { getAttribution } from '@/server/admin-data.functions'
 import type { AttributionReportView } from '@/types/api'
 
-import { ChangesTable } from './-attribution/changes-table'
 import { AttributionFilters, UserFilterButton } from './-attribution/controls'
 import { AttributionFilteredEmpty, AttributionSetupEmpty } from './-attribution/empty-state'
-import { AttributionKpis } from './-attribution/kpis'
-import { PullRequestsTable } from './-attribution/pull-requests-table'
 import {
+  attributionReportDeps,
+  attributionReportInput,
+  reportShapeTab,
+  enabledAttributionTabs,
+  hasLifecycleActivity,
+  resolveAttributionTab,
+  TAB_LABELS,
+  TAB_QUESTIONS,
+  attributionTabRedirect,
+  type AttributionTab,
+} from './-attribution/insights'
+import {
+  ATTRIBUTION_DOCS_URL,
   normalizeAttributionSearch,
   toAttributionWindow,
   type AttributionSearch,
 } from './-attribution/shared'
-import { UserActivityTable } from './-attribution/user-activity-table'
+
+type TabProps = {
+  report: AttributionReportView
+  onSelectUser?: (userId: string) => void
+  name: string
+}
+
+// Each tab loads on its own, so Recharts stays out of the route chunk.
+const TABS: Record<AttributionTab, ComponentType<TabProps>> = {
+  impact: lazy(() => import('./-attribution/tabs/impact-tab')),
+  delivery: lazy(() => import('./-attribution/tabs/delivery-tab')),
+  pull_requests: lazy(() => import('./-attribution/tabs/pull-requests-tab')),
+  repositories: lazy(() => import('./-attribution/tabs/repositories-tab')),
+  durability: lazy(() => import('./-attribution/tabs/durability-tab')),
+  my_work: lazy(() => import('./-attribution/tabs/my-work-tab')),
+}
 
 export const Route = createFileRoute('/observability/attribution')({
   validateSearch: (search: Record<string, unknown>) => normalizeAttributionSearch(search),
-  loaderDeps: ({ search }) => search,
-  loader: ({ deps }) => getAttribution({ data: deps }),
+  loaderDeps: ({ search }) => attributionReportDeps(search),
+  beforeLoad: ({ search, context }) => {
+    const next = attributionTabRedirect(search, context.session)
+    if (next) throw redirect({ to: '/observability/attribution', search: next, replace: true })
+  },
+  loader: ({ deps: { report, ...filters }, context }) => {
+    const tab = reportShapeTab(report, context.session)
+    const input = attributionReportInput({ ...filters, tab }, context.session)
+    return input ? getAttribution({ data: input }) : null
+  },
   component: AttributionPage,
 })
 
-// Git AI attribution joined with gateway traffic: KPIs, then users, PRs, and commits.
+// Git AI attribution joined with gateway traffic, as tabs the gateway config turns on.
 export function AttributionPage() {
-  const { data: report } = Route.useLoaderData()
+  const loaded = Route.useLoaderData()
   const { session } = Route.useRouteContext()
   const search = Route.useSearch()
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const isPlatformAdmin = isPlatformAdminSession(session)
+  const tabs = enabledAttributionTabs(session)
+  const tab = resolveAttributionTab(search.tab, session)
 
   function updateSearch(next: Partial<AttributionSearch>) {
     startTransition(async () => {
@@ -45,55 +90,61 @@ export function AttributionPage() {
     })
   }
 
+  if (!tab || !loaded) {
+    return (
+      <div className="flex min-w-0 flex-1 flex-col gap-6">
+        <PageHeader
+          section="Observability"
+          title="Attribution"
+          description="Git AI attribution joined with gateway traffic."
+        />
+        <TabsOffEmpty
+          conceptsEnabled={session?.capabilities.attribution_tabs.includes('concepts') ?? false}
+        />
+      </div>
+    )
+  }
+
+  const report = loaded.data
   // The report echoes the filters it applied, and the controls show those, so they always describe
-  // the rendered report. For non-admins the gateway echoes their own id, which is not a filter.
-  const filtered = Boolean((isPlatformAdmin && report.user_id) || report.repository)
-  const selectedUser = report.users.find((row) => row.user.id === report.user_id)?.user
+  // the rendered report. For non-admins, and on My work, the gateway echoes their own id, which is
+  // not a filter.
+  const userFiltered = isPlatformAdmin && tab !== 'my_work' && Boolean(report.user_id)
 
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-6">
       <PageHeader
         section="Observability"
         title="Attribution"
-        description={
-          isPlatformAdmin
-            ? 'See how much of each commit AI wrote, the pull requests it reached, and the agent requests and cost behind it, for every user.'
-            : 'See how much of your commits AI wrote, the pull requests they reached, and the agent requests and cost behind them.'
-        }
+        description={TAB_QUESTIONS[tab]}
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            {isPlatformAdmin && report.user_id ? (
-              <UserFilterButton
-                name={selectedUser?.name ?? 'Selected user'}
-                isPending={isPending}
-                onClear={() => updateSearch({ user_id: undefined })}
-              />
-            ) : null}
-            <AttributionFilters
-              windowDays={toAttributionWindow(String(report.window_days)) ?? search.days}
-              repository={report.repository ?? undefined}
-              repositories={repositoryOptions(report)}
-              isPending={isPending}
-              onWindowChange={(days) => updateSearch({ days })}
-              onRepositoryChange={(repository) => updateSearch({ repository })}
-              onRefresh={() =>
-                startTransition(async () => {
-                  await router.invalidate()
-                })
-              }
-            />
-          </div>
+          <AttributionActions
+            report={report}
+            fallbackDays={search.days}
+            userFiltered={userFiltered}
+            isPending={isPending}
+            onUpdate={updateSearch}
+            onRefresh={() =>
+              startTransition(async () => {
+                await router.invalidate()
+              })
+            }
+          />
         }
       />
-
-      <TruncationAlert coverage={report.coverage} />
-
-      <AttributionKpis report={report} pending={isPending} />
-
+      <AttributionNav
+        tabs={tabs}
+        tab={tab}
+        search={search}
+        conceptsEnabled={session?.capabilities.attribution_tabs.includes('concepts') ?? false}
+      />
+      <TruncationAlert report={report} />
       <AttributionBody
+        tab={tab}
         report={report}
         isPending={isPending}
-        filtered={filtered}
+        filtered={userFiltered || Boolean(report.repository)}
+        name={session?.user.name ?? 'You'}
         onClearFilters={() => updateSearch({ user_id: undefined, repository: undefined })}
         onSelectUser={
           isPlatformAdmin
@@ -105,118 +156,201 @@ export function AttributionPage() {
   )
 }
 
-/** Warns when a capped read left rows out of the totals. */
-function TruncationAlert({ coverage }: { coverage: AttributionReportView['coverage'] }) {
+/** The user filter (when one applies), window, repository and refresh controls. */
+function AttributionActions({
+  report,
+  fallbackDays,
+  userFiltered,
+  isPending,
+  onUpdate,
+  onRefresh,
+}: {
+  report: AttributionReportView
+  fallbackDays: AttributionSearch['days']
+  userFiltered: boolean
+  isPending: boolean
+  onUpdate: (next: Partial<AttributionSearch>) => void
+  onRefresh: () => void
+}) {
+  const selectedUser = report.users.find((row) => row.user.id === report.user_id)?.user
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {userFiltered ? (
+        <UserFilterButton
+          name={selectedUser?.name ?? 'Selected user'}
+          isPending={isPending}
+          onClear={() => onUpdate({ user_id: undefined })}
+        />
+      ) : null}
+      <AttributionFilters
+        windowDays={toAttributionWindow(String(report.window_days)) ?? fallbackDays}
+        repository={report.repository ?? undefined}
+        repositories={repositoryOptions(report)}
+        isPending={isPending}
+        onWindowChange={(days) => onUpdate({ days })}
+        onRepositoryChange={(repository) => onUpdate({ repository })}
+        onRefresh={onRefresh}
+      />
+      <Button variant="outline" size="sm" asChild>
+        <a href={ATTRIBUTION_DOCS_URL} target="_blank" rel="noopener noreferrer">
+          Setup
+          <AppIcon icon={LinkSquare02Icon} data-icon="inline-end" aria-hidden />
+        </a>
+      </Button>
+    </div>
+  )
+}
+
+/** The enabled tabs, like MCP's section nav, plus the concepts link when its flag is on. */
+function AttributionNav({
+  tabs,
+  tab,
+  search,
+  conceptsEnabled,
+}: {
+  tabs: AttributionTab[]
+  tab: AttributionTab
+  search: AttributionSearch
+  conceptsEnabled: boolean
+}) {
+  return (
+    <nav
+      aria-label="Attribution sections"
+      className="flex flex-wrap items-center gap-2 border-b pb-4"
+    >
+      {tabs.map((entry) => (
+        <Button key={entry} asChild variant={entry === tab ? 'secondary' : 'ghost'}>
+          <Link
+            to="/observability/attribution"
+            search={{ ...search, tab: entry }}
+            aria-current={entry === tab ? 'page' : undefined}
+          >
+            {TAB_LABELS[entry]}
+          </Link>
+        </Button>
+      ))}
+      {conceptsEnabled ? (
+        <Button asChild variant="link" className="ml-auto">
+          <Link to="/observability/attribution/concepts" search={{ tab: 'impact', days: 30 }}>
+            Concepts
+          </Link>
+        </Button>
+      ) : null}
+    </nav>
+  )
+}
+
+function TabsOffEmpty({ conceptsEnabled }: { conceptsEnabled: boolean }) {
+  return (
+    <Empty className="bg-surface-muted rounded-xl border">
+      <EmptyHeader>
+        <EmptyTitle>
+          {conceptsEnabled
+            ? 'Every report tab is turned off'
+            : 'Every Attribution tab is turned off'}
+        </EmptyTitle>
+        <EmptyDescription>
+          Turn tabs on under <code className="font-mono">attribution.pages</code> in the gateway
+          config.{conceptsEnabled ? ' The concept mockups are still on.' : ''}
+        </EmptyDescription>
+      </EmptyHeader>
+      {conceptsEnabled ? (
+        <EmptyContent>
+          <Button asChild variant="outline">
+            <Link to="/observability/attribution/concepts" search={{ tab: 'impact', days: 30 }}>
+              Open the concepts
+            </Link>
+          </Button>
+        </EmptyContent>
+      ) : null}
+    </Empty>
+  )
+}
+
+/** Warns when a capped read left rows out of the totals, or out of the previous window. */
+function TruncationAlert({ report }: { report: AttributionReportView }) {
+  const { coverage } = report
   const truncated =
     coverage.commits_truncated ||
     coverage.pull_requests_truncated ||
     coverage.agent_sessions_truncated ||
     coverage.request_facts_truncated
-  if (!truncated) return null
+  if (truncated) {
+    return (
+      <Alert>
+        <AlertTitle>This report is incomplete</AlertTitle>
+        <AlertDescription>
+          The window holds more commits, pull requests, agent sessions, or requests than one report
+          reads, so some are left out of these totals. Choose a shorter window, or filter by user or
+          repository.
+        </AlertDescription>
+      </Alert>
+    )
+  }
+  if (!report.previous_truncated) return null
   return (
     <Alert>
-      <AlertTitle>This report is incomplete</AlertTitle>
+      <AlertTitle>No comparison with the previous window</AlertTitle>
       <AlertDescription>
-        The window holds more commits, pull requests, agent sessions, or requests than one report
-        reads, so some are left out of these totals. Choose a shorter window, or filter by user or
-        repository.
+        The previous window holds more rows than one report reads, so changes against it would be
+        wrong and are hidden. Choose a shorter window, or filter by user or repository.
       </AlertDescription>
     </Alert>
   )
 }
 
-/** The report sections, or an empty state that tells filtered-out apart from not set up. */
+/** The tab, or an empty state that tells filtered-out apart from not set up. */
 function AttributionBody({
+  tab,
   report,
   isPending,
   filtered,
+  name,
   onClearFilters,
   onSelectUser,
 }: {
+  tab: AttributionTab
   report: AttributionReportView
   isPending: boolean
   filtered: boolean
+  name: string
   onClearFilters: () => void
   onSelectUser?: (userId: string) => void
 }) {
   const empty =
-    report.users.length === 0 && report.pull_requests.length === 0 && report.changes.length === 0
-  if (!empty) {
-    return <AttributionSections report={report} isPending={isPending} onSelectUser={onSelectUser} />
+    report.users.length === 0 &&
+    report.pull_requests.length === 0 &&
+    report.changes.length === 0 &&
+    report.session_outcomes.length === 0 &&
+    // Open or abandoned pull requests are still a report, shown on Delivery.
+    !hasLifecycleActivity(report.pull_request_lifecycle)
+  if (empty) {
+    if (filtered) return <AttributionFilteredEmpty onClear={onClearFilters} />
+    return <AttributionSetupEmpty windowDays={report.window_days} />
   }
-  if (filtered) return <AttributionFilteredEmpty onClear={onClearFilters} />
-  return <AttributionSetupEmpty windowDays={report.window_days} />
-}
-
-function AttributionSections({
-  report,
-  isPending,
-  onSelectUser,
-}: {
-  report: AttributionReportView
-  isPending: boolean
-  /** Platform admins only: the report covers every user, so a row can narrow it to one. */
-  onSelectUser?: (userId: string) => void
-}) {
+  const Tab = TABS[tab]
   return (
     <div
-      className={
-        isPending ? 'flex flex-col gap-6 opacity-60 transition-opacity' : 'flex flex-col gap-6'
-      }
+      className={isPending ? 'min-w-0 opacity-60 transition-opacity' : 'min-w-0'}
       aria-busy={isPending}
     >
-      <ReportCard
-        title="User activity"
-        description={
-          onSelectUser
-            ? "Activity per user. A commit hooked with a user's API key counts for that user. Other commits, and merged pull requests, count for their author's email. Select a user's name to filter the report to them."
-            : "Activity per user. A commit hooked with a user's API key counts for that user. Other commits, and merged pull requests, count for their author's email."
-        }
-      >
-        <UserActivityTable
-          users={report.users}
-          selectedUserId={report.user_id}
-          onSelectUser={onSelectUser}
-        />
-      </ReportCard>
-      <ReportCard
-        title="Merged pull requests"
-        description={
-          <>
-            Pull requests reported by <code className="font-mono">oceans hook prs</code>, with the
-            lines, requests, and cost of their original commits.
-          </>
-        }
-      >
-        <PullRequestsTable pullRequests={report.pull_requests} />
-      </ReportCard>
-      <ReportCard
-        title="Recent changes"
-        description="Each commit gets the requests its AI sessions made since their previous commit. Sessions with no matching gateway traffic are unjoined: their lines count, but they bring no requests or cost."
-      >
-        <ChangesTable changes={report.changes} pullRequests={report.pull_requests} />
-      </ReportCard>
+      <Suspense fallback={<TabSkeleton />}>
+        <Tab report={report} onSelectUser={onSelectUser} name={name} />
+      </Suspense>
     </div>
   )
 }
 
-function ReportCard({
-  title,
-  description,
-  children,
-}: {
-  title: string
-  description: ReactNode
-  children: ReactNode
-}) {
+function TabSkeleton() {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent>{children}</CardContent>
-    </Card>
+    <div className="flex flex-col gap-6" aria-busy>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {['a', 'b', 'c', 'd'].map((key) => (
+          <Skeleton key={key} className="h-32 rounded-xl" />
+        ))}
+      </div>
+      <Skeleton className="h-80 rounded-xl" />
+    </div>
   )
 }
 

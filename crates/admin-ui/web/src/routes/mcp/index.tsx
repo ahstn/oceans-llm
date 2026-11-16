@@ -15,7 +15,7 @@ import type { AdminTeamOption, ApiKeyOwnerUserView, AuthSessionView } from '@/ty
 import { getMcpTagRules } from '@/server/mcp-policy-data.functions'
 import { AccessTab } from './-access-tab'
 import { ServersTab } from './-servers-tab'
-import { McpNavigation } from './-navigation'
+import { McpHeader } from './-navigation'
 import type { McpWorkspaceScope } from './-scope'
 import { normalizeToolsetsSearch, type ToolsetsSearch } from './-search'
 
@@ -117,6 +117,19 @@ export function McpWorkspacePage() {
         scope={scope}
         onSelectServer={(serverId) => applySearch({ server_id: serverId ?? undefined })}
         onAddToToolset={handleAddToToolset}
+        renderHeader={(actions) => (
+          <McpHeader
+            current="servers"
+            description={
+              data.readOnly
+                ? 'The MCP servers your access lets you connect to.'
+                : 'Manage the connections that bring tools into your gateway.'
+            }
+            actions={actions}
+            showToolsets={data.platformAdmin}
+            showAccess={!data.readOnly}
+          />
+        )}
       />
     ) : (
       <Card className="min-w-0">
@@ -148,20 +161,17 @@ export function McpWorkspacePage() {
 
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-6">
-      <McpNavigation
-        current={tab === 'access' ? 'access' : 'servers'}
-        showToolsets={data.platformAdmin}
-        showAccess={!data.readOnly}
-      />
       {tab === 'access' ? (
-        <header className="flex flex-col gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight">Access</h1>
-          <p className="text-muted-foreground text-sm">
-            {data.platformAdmin
+        <McpHeader
+          current="access"
+          description={
+            data.platformAdmin
               ? 'Manage who can use your MCP tools and tool sets.'
-              : "Manage who in your team can use your team's MCP tools."}
-          </p>
-        </header>
+              : "Manage who in your team can use your team's MCP tools."
+          }
+          showToolsets={data.platformAdmin}
+          showAccess={!data.readOnly}
+        />
       ) : null}
       {workspaceContent}
     </div>

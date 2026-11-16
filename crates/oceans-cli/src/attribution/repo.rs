@@ -192,6 +192,20 @@ pub fn git_context(directory: &Path) -> GitContext {
 }
 
 fn git(directory: &Path, args: &[&str]) -> Option<String> {
+    let output = git_bytes(directory, args, GIT_TIMEOUT, MAX_GIT_OUTPUT)?;
+    let text = String::from_utf8(output).ok()?;
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_owned())
+}
+
+/// Runs `git -C directory args` without the caller's repository variables and returns its
+/// stdout, or `None` when git fails, times out, or prints more than `max_output` bytes.
+pub(super) fn git_bytes(
+    directory: &Path,
+    args: &[&str],
+    timeout: Duration,
+    max_output: usize,
+) -> Option<Vec<u8>> {
     let mut command = Command::new("git");
     command.arg("-C").arg(directory).args(args);
     for name in GIT_REPOSITORY_VARS {
@@ -200,13 +214,8 @@ fn git(directory: &Path, args: &[&str]) -> Option<String> {
     command
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_OPTIONAL_LOCKS", "0");
-    let output = run_captured(&mut command, GIT_TIMEOUT, MAX_GIT_OUTPUT).ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let text = String::from_utf8(output.stdout).ok()?;
-    let text = text.trim();
-    (!text.is_empty()).then(|| text.to_owned())
+    let output = run_captured(&mut command, timeout, max_output).ok()?;
+    output.status.success().then_some(output.stdout)
 }
 
 #[cfg(test)]

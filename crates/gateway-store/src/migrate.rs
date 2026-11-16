@@ -12,6 +12,16 @@ use crate::{
     migration_registry::{MIGRATION_REGISTRY, MigrationBackend, MigrationManifest},
 };
 
+mod compatibility;
+#[cfg(test)]
+mod tests;
+
+pub use compatibility::NewerAppliedMigration;
+use compatibility::{
+    ensure_no_pending_with_newer, load_libsql_compatibility, load_postgres_compatibility,
+    registry_head, validate_newer_migrations,
+};
+
 #[derive(Debug, Clone)]
 pub struct MigrationStatusEntry {
     pub version: u32,
@@ -24,6 +34,7 @@ pub struct MigrationStatusEntry {
 pub struct MigrationStatus {
     pub backend: &'static str,
     pub entries: Vec<MigrationStatusEntry>,
+    pub newer_applied: Vec<NewerAppliedMigration>,
 }
 
 impl MigrationStatus {
@@ -44,6 +55,7 @@ struct AppliedMigrationRecord {
 struct LoadedMigrationState {
     applied_history: Vec<AppliedMigrationRecord>,
     has_existing_app_tables: bool,
+    compatibility: HashMap<u32, u32>,
 }
 
 const ACTIVE_APPLICATION_TABLES: &[&str] = &[
@@ -192,10 +204,11 @@ pub async fn status_migrations_with_options(
         ),
     };
 
-    validate_migration_history(
+    let newer_applied = validate_migration_history(
         backend,
         &migration_state.applied_history,
         migration_state.has_existing_app_tables,
+        &migration_state.compatibility,
     )?;
     let applied_versions = applied_versions(&migration_state.applied_history);
 
@@ -209,7 +222,11 @@ pub async fn status_migrations_with_options(
         })
         .collect();
 
-    Ok(MigrationStatus { backend, entries })
+    Ok(MigrationStatus {
+        backend,
+        entries,
+        newer_applied,
+    })
 }
 
 pub async fn check_migrations_with_options(
@@ -234,10 +251,19 @@ async fn run_libsql_migrations(path: &Path, hook: MigrationTestHook) -> anyhow::
     let conn = db.connect().context("failed opening libsql connection")?;
 
     ensure_libsql_history_table(&conn).await?;
-    let applied_history = load_libsql_history_from_connection(&conn).await?;
-    let has_existing_app_tables = libsql_has_existing_application_tables(&conn).await?;
-    validate_migration_history("libsql", &applied_history, has_existing_app_tables)?;
+    let LoadedMigrationState {
+        applied_history,
+        has_existing_app_tables,
+        compatibility,
+    } = load_libsql_migration_state(path).await?;
+    let newer = validate_migration_history(
+        "libsql",
+        &applied_history,
+        has_existing_app_tables,
+        &compatibility,
+    )?;
     let applied_versions = applied_versions(&applied_history);
+    ensure_no_pending_with_newer("libsql", &applied_versions, &newer)?;
 
     for migration in MIGRATION_REGISTRY {
         if applied_versions.contains(&migration.version) {
@@ -330,6 +356,20 @@ async fn apply_libsql_migration(
             ensure_libsql_children_have_parent(&tx, migration.version, parent).await?;
         }
         hook.maybe_fail_after_apply(migration.version)?;
+        tx.execute(
+            "INSERT INTO gateway_migration_compatibility (version, min_reader_version) VALUES (?1, ?2)",
+            libsql::params![
+                i64::from(migration.version),
+                i64::from(migration.min_reader_version())
+            ],
+        )
+        .await
+        .with_context(|| {
+            format!(
+                "failed recording reader compatibility for migration {}",
+                migration.version
+            )
+        })?;
 
         tracing::debug!(
             backend = "libsql",
@@ -412,10 +452,19 @@ async fn run_postgres_migrations(url: &str, hook: MigrationTestHook) -> anyhow::
         .context("failed opening postgres connection pool for migrations")?;
 
     ensure_postgres_history_table(&pool).await?;
-    let applied_history = load_postgres_history_from_pool(&pool).await?;
-    let has_existing_app_tables = postgres_has_existing_application_tables(&pool).await?;
-    validate_migration_history("postgres", &applied_history, has_existing_app_tables)?;
+    let LoadedMigrationState {
+        applied_history,
+        has_existing_app_tables,
+        compatibility,
+    } = load_postgres_migration_state(url).await?;
+    let newer = validate_migration_history(
+        "postgres",
+        &applied_history,
+        has_existing_app_tables,
+        &compatibility,
+    )?;
     let applied_versions = applied_versions(&applied_history);
+    ensure_no_pending_with_newer("postgres", &applied_versions, &newer)?;
 
     for migration in MIGRATION_REGISTRY {
         if applied_versions.contains(&migration.version) {
@@ -452,6 +501,19 @@ async fn run_postgres_migrations(url: &str, hook: MigrationTestHook) -> anyhow::
                     format!("failed applying postgres migration {}", migration.version)
                 })?;
             hook.maybe_fail_after_apply(migration.version)?;
+            sqlx::query(
+                "INSERT INTO gateway_migration_compatibility (version, min_reader_version) VALUES ($1, $2)",
+            )
+            .bind(i64::from(migration.version))
+            .bind(i64::from(migration.min_reader_version()))
+            .execute(&mut *tx)
+            .await
+            .with_context(|| {
+                format!(
+                    "failed recording postgres reader compatibility for migration {}",
+                    migration.version
+                )
+            })?;
 
             tracing::debug!(
                 backend = "postgres",
@@ -550,7 +612,8 @@ fn validate_migration_history(
     backend: &'static str,
     applied_history: &[AppliedMigrationRecord],
     has_existing_app_tables: bool,
-) -> anyhow::Result<()> {
+    compatibility: &HashMap<u32, u32>,
+) -> anyhow::Result<Vec<NewerAppliedMigration>> {
     if applied_history.is_empty() && has_existing_app_tables {
         bail!(
             "database reset required for {backend}: refinery_schema_history is empty but existing application tables were found; recreate the database and rerun migrations"
@@ -564,6 +627,9 @@ fn validate_migration_history(
 
     for applied in applied_history {
         let Some(expected) = registry_by_version.get(&applied.version) else {
+            if applied.version > registry_head() {
+                continue;
+            }
             bail!(
                 "database reset required for {backend}: found historical migration v{} outside the active registry; recreate the database and rerun migrations",
                 applied.version
@@ -582,7 +648,7 @@ fn validate_migration_history(
         }
     }
 
-    Ok(())
+    validate_newer_migrations(backend, applied_history, compatibility)
 }
 
 fn applied_versions(applied_history: &[AppliedMigrationRecord]) -> HashSet<u32> {
@@ -603,6 +669,15 @@ async fn ensure_libsql_history_table(conn: &libsql::Connection) -> anyhow::Resul
     )
     .await
     .context("failed ensuring refinery schema history table")?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS gateway_migration_compatibility (
+            version INTEGER PRIMARY KEY,
+            min_reader_version INTEGER NOT NULL
+        )",
+        (),
+    )
+    .await
+    .context("failed ensuring migration compatibility table")?;
     Ok(())
 }
 
@@ -620,27 +695,67 @@ async fn ensure_postgres_history_table(pool: &sqlx::PgPool) -> anyhow::Result<()
     .execute(pool)
     .await
     .context("failed ensuring refinery schema history table")?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS gateway_migration_compatibility (
+            version BIGINT PRIMARY KEY,
+            min_reader_version BIGINT NOT NULL
+        )",
+    )
+    .execute(pool)
+    .await
+    .context("failed ensuring migration compatibility table")?;
     Ok(())
 }
 
 async fn load_libsql_migration_state(path: &Path) -> anyhow::Result<LoadedMigrationState> {
+    if !path
+        .try_exists()
+        .with_context(|| format!("failed checking local libsql database `{}`", path.display()))?
+    {
+        return Ok(LoadedMigrationState {
+            applied_history: Vec::new(),
+            has_existing_app_tables: false,
+            compatibility: HashMap::new(),
+        });
+    }
     let db = libsql::Builder::new_local(path)
+        .flags(libsql::OpenFlags::SQLITE_OPEN_READ_ONLY)
         .build()
         .await
         .with_context(|| format!("failed opening local libsql database `{}`", path.display()))?;
     let conn = db.connect().context("failed opening libsql connection")?;
 
-    let applied_history = if libsql_history_table_exists(&conn).await? {
-        load_libsql_history_from_connection(&conn).await?
-    } else {
-        Vec::new()
-    };
-    let has_existing_app_tables = libsql_has_existing_application_tables(&conn).await?;
-
-    Ok(LoadedMigrationState {
-        applied_history,
-        has_existing_app_tables,
-    })
+    conn.execute("BEGIN", ())
+        .await
+        .context("failed starting libsql migration state snapshot")?;
+    let result = async {
+        let applied_history = if libsql_history_table_exists(&conn).await? {
+            load_libsql_history_from_connection(&conn).await?
+        } else {
+            Vec::new()
+        };
+        Ok::<_, anyhow::Error>(LoadedMigrationState {
+            applied_history,
+            has_existing_app_tables: libsql_has_existing_application_tables(&conn).await?,
+            compatibility: load_libsql_compatibility(&conn).await?,
+        })
+    }
+    .await;
+    match result {
+        Ok(state) => {
+            if let Err(error) = conn.execute("COMMIT", ()).await {
+                let _ = conn.execute("ROLLBACK", ()).await;
+                return Err(error).context("failed committing libsql migration state snapshot");
+            }
+            Ok(state)
+        }
+        Err(error) => {
+            if let Err(rollback_error) = conn.execute("ROLLBACK", ()).await {
+                tracing::warn!(%rollback_error, "failed rolling back libsql migration state snapshot");
+            }
+            Err(error)
+        }
+    }
 }
 
 async fn load_libsql_history_from_connection(
@@ -740,26 +855,39 @@ async fn load_postgres_migration_state(url: &str) -> anyhow::Result<LoadedMigrat
         .await
         .context("failed opening postgres connection pool for migration status")?;
 
-    let applied_history = if postgres_history_table_exists(&pool).await? {
-        load_postgres_history_from_pool(&pool).await?
+    let mut tx = pool
+        .begin()
+        .await
+        .context("failed starting postgres migration state snapshot")?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        .execute(&mut *tx)
+        .await
+        .context("failed setting postgres migration state snapshot isolation")?;
+    let applied_history = if postgres_history_table_exists(&mut tx).await? {
+        load_postgres_history_from_pool(&mut tx).await?
     } else {
         Vec::new()
     };
-    let has_existing_app_tables = postgres_has_existing_application_tables(&pool).await?;
+    let has_existing_app_tables = postgres_has_existing_application_tables(&mut tx).await?;
+    let compatibility = load_postgres_compatibility(&mut tx).await?;
+    tx.commit()
+        .await
+        .context("failed committing postgres migration state snapshot")?;
 
     pool.close().await;
     Ok(LoadedMigrationState {
         applied_history,
         has_existing_app_tables,
+        compatibility,
     })
 }
 
 async fn load_postgres_history_from_pool(
-    pool: &sqlx::PgPool,
+    conn: &mut sqlx::PgConnection,
 ) -> anyhow::Result<Vec<AppliedMigrationRecord>> {
     let rows =
         sqlx::query("SELECT version, name, checksum FROM refinery_schema_history ORDER BY version")
-            .fetch_all(pool)
+            .fetch_all(&mut *conn)
             .await
             .context("failed reading applied postgres migration history")?;
 
@@ -781,7 +909,7 @@ async fn load_postgres_history_from_pool(
         .collect()
 }
 
-async fn postgres_history_table_exists(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
+async fn postgres_history_table_exists(conn: &mut sqlx::PgConnection) -> anyhow::Result<bool> {
     let exists: bool = sqlx::query_scalar(
         r#"
         SELECT EXISTS (
@@ -792,13 +920,15 @@ async fn postgres_history_table_exists(pool: &sqlx::PgPool) -> anyhow::Result<bo
         )
         "#,
     )
-    .fetch_one(pool)
+    .fetch_one(&mut *conn)
     .await
     .context("failed checking postgres migration history table")?;
     Ok(exists)
 }
 
-async fn postgres_has_existing_application_tables(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
+async fn postgres_has_existing_application_tables(
+    conn: &mut sqlx::PgConnection,
+) -> anyhow::Result<bool> {
     let rows = sqlx::query_scalar::<_, String>(
         r#"
         SELECT table_name
@@ -806,7 +936,7 @@ async fn postgres_has_existing_application_tables(pool: &sqlx::PgPool) -> anyhow
         WHERE table_schema = 'public'
         "#,
     )
-    .fetch_all(pool)
+    .fetch_all(&mut *conn)
     .await
     .context("failed checking postgres application tables")?;
 

@@ -49,6 +49,14 @@ export function platformAdminSession(pages = allAdminPages): AuthSessionView {
       shadow_diagnostics_visible: true,
       calibrated_score_visible: true,
       team_admin_analytics_enabled: false,
+      attribution_tabs: [
+        'impact',
+        'delivery',
+        'pull_requests',
+        'repositories',
+        'durability',
+        'my_work',
+      ],
     },
     must_change_password: false,
     permissions: {
@@ -77,6 +85,14 @@ export function regularUserSession(pages = sharedAdminPages): AuthSessionView {
       shadow_diagnostics_visible: false,
       calibrated_score_visible: false,
       team_admin_analytics_enabled: false,
+      attribution_tabs: [
+        'impact',
+        'delivery',
+        'pull_requests',
+        'repositories',
+        'durability',
+        'my_work',
+      ],
     },
     must_change_password: false,
     permissions: {

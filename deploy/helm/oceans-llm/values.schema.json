@@ -10,6 +10,23 @@
         "replicaCount": { "type": "integer", "minimum": 1 },
         "image": { "$ref": "#/definitions/image" },
         "containerPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 1 },
+        "lifecycle": {
+          "type": "object",
+          "properties": {
+            "preStop": {
+              "type": "object",
+              "properties": {
+                "sleep": {
+                  "type": "object",
+                  "properties": {
+                    "seconds": { "type": "integer", "minimum": 0 }
+                  }
+                }
+              }
+            }
+          }
+        },
         "configMountPath": { "type": "string", "minLength": 1 },
         "configDir": {
           "type": "object",
@@ -33,7 +50,16 @@
         },
         "config": {
           "type": "object",
-          "description": "Structured gateway.yaml content rendered into the ConfigMap."
+          "description": "Structured gateway.yaml content rendered into the ConfigMap.",
+          "properties": {
+            "server": {
+              "type": "object",
+              "properties": {
+                "shutdown_drain_seconds": { "type": "integer", "minimum": 0 },
+                "management_bind": { "type": "string" }
+              }
+            }
+          }
         },
         "extraEnv": { "$ref": "#/definitions/envList" },
         "extraEnvFrom": { "type": "array" },
@@ -190,7 +216,34 @@
       "type": "object",
       "additionalProperties": true,
       "properties": {
-        "strategy": { "type": "object" }
+        "strategy": { "type": "object" },
+        "minReadySeconds": { "type": "integer", "minimum": 0 },
+        "progressDeadlineSeconds": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "rolloutGuard": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "managementPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "networkPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" }
+          }
+        },
+        "windowSeconds": { "type": "integer", "minimum": 1 },
+        "intervalSeconds": { "type": "integer", "minimum": 1 },
+        "minRequests": { "type": "integer", "minimum": 1 },
+        "maxGatewayErrorPercent": { "type": "number", "exclusiveMinimum": 0, "maximum": 100 },
+        "maxUpstreamErrorPercent": { "type": "number", "exclusiveMinimum": 0, "maximum": 100 },
+        "resources": { "type": "object" },
+        "annotations": { "type": "object", "additionalProperties": { "type": "string" } },
+        "podAnnotations": { "type": "object", "additionalProperties": { "type": "string" } },
+        "hookDeletePolicy": { "type": "string" },
+        "ttlSecondsAfterFinished": { "type": "integer", "minimum": 0 }
       }
     },
     "observability": {
@@ -247,8 +300,9 @@
           "type": "object",
           "additionalProperties": true,
           "properties": {
+            "startup": { "$ref": "#/definitions/probe" },
             "liveness": { "$ref": "#/definitions/probe" },
-            "readiness": { "$ref": "#/definitions/probe" }
+            "readiness": { "$ref": "#/definitions/readinessProbe" }
           }
         },
         "adminUi": {
@@ -256,7 +310,7 @@
           "additionalProperties": true,
           "properties": {
             "liveness": { "$ref": "#/definitions/probe" },
-            "readiness": { "$ref": "#/definitions/probe" }
+            "readiness": { "$ref": "#/definitions/readinessProbe" }
           }
         }
       }
@@ -311,6 +365,12 @@
         "resources": { "type": "object" }
       }
     },
+    "readinessProbe": {
+      "allOf": [
+        { "$ref": "#/definitions/probe" },
+        { "not": { "required": ["terminationGracePeriodSeconds"] } }
+      ]
+    },
     "probe": {
       "type": "object",
       "required": ["enabled"],
@@ -321,7 +381,8 @@
         "initialDelaySeconds": { "type": "integer", "minimum": 0 },
         "periodSeconds": { "type": "integer", "minimum": 1 },
         "timeoutSeconds": { "type": "integer", "minimum": 1 },
-        "failureThreshold": { "type": "integer", "minimum": 1 }
+        "failureThreshold": { "type": "integer", "minimum": 1 },
+        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 1 }
       },
       "allOf": [
         {
