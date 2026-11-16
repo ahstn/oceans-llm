@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [1.1.0](https://github.com/ahstn/oceans-llm/compare/v1.0.0...v1.1.0) - 2026-11-16
+
+### :rocket: New features
+- Safe Helm upgrades with graceful drain, reader-compatible migrations and a rollout guard by @ahstn in [#673](https://github.com/ahstn/oceans-llm/pull/673)
+- *(attribution)* Sync the pull request lifecycle and detect reverts by @ahstn in [#661](https://github.com/ahstn/oceans-llm/pull/661)
+- *(attribution)* Tabbed Attribution page with config flags and harness attribution by @ahstn in [#659](https://github.com/ahstn/oceans-llm/pull/659)
+
+### Changed
+- Fix Vale errors and add CI prose checks by @ahstn in [#675](https://github.com/ahstn/oceans-llm/pull/675)
+
 ## [1.0.0](https://github.com/ahstn/oceans-llm/compare/v0.49.0...v1.0.0) - 2026-11-16
 
 ### :rocket: New features

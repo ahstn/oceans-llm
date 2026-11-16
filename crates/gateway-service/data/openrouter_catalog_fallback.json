@@ -2,8 +2,8 @@
   "metadata": {
     "source": "vendored_openrouter",
     "etag": null,
-    "fetched_at": "2026-11-16T20:53:47.628784Z",
-    "checksum": "f1d09d92d16b0d50daae7e53c8aed0aab34ce9a6cfc36aded4ca29acfcae19c9"
+    "fetched_at": "2026-11-16T21:28:46.288693Z",
+    "checksum": "a852d3cbef6ba5e14f971c765319083b6842b6eed39c7fdf0c104f856201c6ac"
   },
   "providers": {
     "openrouter": {
@@ -8428,7 +8428,8 @@
           "modalities": {
             "input": [
               "text",
-              "image"
+              "image",
+              "video"
             ],
             "output": [
               "decisions"
@@ -8467,7 +8468,8 @@
           "modalities": {
             "input": [
               "text",
-              "image"
+              "image",
+              "video"
             ],
             "output": [
               "decisions"
@@ -13445,9 +13447,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.3610",
-            "output": "5.4070",
-            "cache_read": "0.1150",
+            "input": "0.3780",
+            "output": "5.6720",
+            "cache_read": "0.1210",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -19523,7 +19525,7 @@
           "limit": {
             "context": 2000000,
             "input": null,
-            "output": 128000
+            "output": 64000
           },
           "modalities": {
             "input": [
@@ -19566,7 +19568,7 @@
           "limit": {
             "context": 2000000,
             "input": null,
-            "output": 128000
+            "output": 64000
           },
           "modalities": {
             "input": [
@@ -25801,7 +25803,7 @@
           "limit": {
             "context": 1000000,
             "input": null,
-            "output": 128000
+            "output": 64000
           },
           "modalities": {
             "input": [

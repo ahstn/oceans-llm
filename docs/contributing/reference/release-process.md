@@ -72,8 +72,8 @@ The command completes these steps:
 1. Refresh the vendored models.dev, OpenRouter, and LiteLLM catalog snapshots and the Artificial Analysis intelligence, coding, and agentic indexes. These run as `mise` dependencies of the release task.
 2. Check that `main` matches `origin/main` and has no tracked changes other than those snapshots.
 3. Ask git-cliff to calculate the next version from the merged pull requests.
-4. Update workspace Cargo versions.
-5. Add the new section to the top of `CHANGELOG.md`.
+4. Render the updated changelog in a temporary file, including GitHub author data.
+5. Update workspace Cargo versions and replace `CHANGELOG.md` with the rendered file.
 6. Create the release commit and `vX.Y.Z` tag.
 7. Push `main` and the tag to GitHub.
 8. Start the tag workflow, which publishes the release after its required jobs pass.
@@ -149,7 +149,9 @@ If the release changed behavior for admins or users, confirm that the canonical 
 
 ## Failure Recovery
 
-If the command fails before it pushes the tag, inspect the local commit, tag, and worktree before you rerun it. The script refuses to run on a dirty worktree. When there is nothing to release, it restores the refreshed snapshots before it exits. To start over, delete any local `vX.Y.Z` tag it created and reset `main` to `origin/main`.
+If GitHub metadata lookup or changelog rendering fails, Cargo versions and `CHANGELOG.md` stay unchanged. The refreshed snapshots remain in the worktree; rerun `mise run release` when GitHub is available.
+
+If a later step fails before it pushes the tag, inspect the local commit, tag, and worktree before you rerun it. The script refuses to run on a dirty worktree. Preserve changes you need before you undo a partial release. When there is nothing to release, it restores the refreshed snapshots before it exits.
 
 If the tag was pushed but a required CI job failed, correct the problem and rerun the failed jobs for that tag when the source is valid. A failed prerequisite prevents the final GitHub release job. Images or charts that were already pushed remain published; there is no rollback across registries.
 

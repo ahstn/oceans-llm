@@ -45,7 +45,7 @@ postgres = { version = "18", os = ["macos"] }
 gh = "latest"
 helm = "latest"
 git-cliff = "2.14.2"
-cargo-dist = "0.34.0"
+cargo-dist = "0.33.0"
 cargo-release = "1.1.7"
 actionlint = "1.7.12"
 shellcheck = "0.11.0"
@@ -392,9 +392,10 @@ run = [
   # Check generated shell commands without applying repository shell style rules.
   "actionlint -shellcheck= .github/workflows/release.yml",
   "actionlint .github/workflows/release-product.yml .github/workflows/release-cli-check.yml",
-  "shellcheck scripts/check-cli-release.sh scripts/check-release-provenance.test.sh scripts/check-release-workflow.sh scripts/release.sh scripts/workflow-checkouts.sh",
+  "shellcheck scripts/check-cli-release.sh scripts/check-release-provenance.test.sh scripts/check-release-workflow.sh scripts/release.sh scripts/release.test.sh scripts/workflow-checkouts.sh",
   "scripts/check-release-workflow.sh",
   "scripts/check-release-provenance.test.sh",
+  "bash scripts/release.test.sh",
 ]
 
 [tasks.dist-plan]
