@@ -76,7 +76,7 @@ Each harness then adds `/v1` or not, based on the API style it uses. For a gatew
 | Pi | `openai-completions` | `https://api.oceans-llm.com/v1` |
 | Pi | `openai-responses` | `https://api.oceans-llm.com/v1` |
 
-The gateway accepts inference requests with or without the `/v1` prefix. `/chat/completions`, `/responses`, `/embeddings`, `/decisions`, `/models`, `/messages` and `/messages/count_tokens` behave the same as their `/v1` forms. So a harness set to either the gateway root or the `/v1` URL reaches the same endpoints. Don't add `/v1` twice, as in `https://api.oceans-llm.com/v1/v1`.
+The gateway accepts inference requests with or without the `/v1` prefix. `/chat/completions`, `/responses`, `/embeddings`, `/decisions`, `/models`, `/messages` and `/messages/count_tokens` behave the same as their `/v1` forms. A harness set to either the gateway root or the `/v1` URL reaches the same endpoints. Don't add `/v1` twice, as in `https://api.oceans-llm.com/v1/v1`.
 
 ### How the API style is chosen
 

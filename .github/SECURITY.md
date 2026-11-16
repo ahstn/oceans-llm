@@ -20,9 +20,7 @@ is no fixed response deadline. Reporters will be credited with their consent.
 
 ## Supported versions
 
-Security fixes are made for the latest release. If you are using an older
-version, please include it in your report and check whether the issue also
-affects the latest release when practical.
+Security fixes are made for the latest Oceans product release and, separately, the latest published [`@ahstn/opencode-oceans` npm release](https://www.npmjs.com/package/@ahstn/opencode-oceans). These have independent versions. If you use an older version, include it in your report and check whether the issue also affects the latest relevant release when practical.
 
 ## In scope
 
@@ -33,4 +31,5 @@ Examples of issues we want to hear about include:
 - Exposure of API keys, provider credentials, request data, or other sensitive
   information.
 - Bypasses of access controls for models, MCP servers, or tools.
+- Vulnerabilities in the OpenCode plugin, including discovery, gateway credentials, and its npm distribution.
 - Vulnerabilities in Oceans deployment artifacts or release processes.

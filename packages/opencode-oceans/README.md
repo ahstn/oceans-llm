@@ -10,19 +10,7 @@ Requires Bun **1.4.4 or newer**, OpenCode **2.2.6**, and its supplied Effect **4
 `@opencode/plugin` and `effect` are peers, not bundled dependencies. Node.js alone cannot load this
 source-only package.
 
-GitHub Packages requires authentication **even for public npm packages**. Create a GitHub personal
-access token **(classic)** with `read:packages`, and provide it to the process running OpenCode:
-
-```sh
-export GITHUB_PACKAGES_TOKEN='your-token'
-```
-
-Add these lines to your user `~/.npmrc` (keep the variable reference, not the token value):
-
-```ini
-@ahstn:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}
-```
+Install from the [public npm registry](https://www.npmjs.com/package/@ahstn/opencode-oceans). No npm account, GitHub token or registry login is needed.
 
 Configure `~/.config/opencode/opencode.jsonc`:
 
@@ -33,9 +21,9 @@ Configure `~/.config/opencode/opencode.jsonc`:
 }
 ```
 
-OpenCode installs configured packages. You can alternatively run
-`opencode plugin add @ahstn/opencode-oceans@0.1.0`. Use an exact version for reproducibility. The
-registry token above downloads the plugin; it is **not** your gateway API key.
+OpenCode installs configured packages. You can alternatively run `opencode plugin add @ahstn/opencode-oceans@0.1.0`. Use an exact version for reproducibility. Your gateway API key is still required for model discovery and inference, not package downloads.
+
+If installation fails, check the exact version, Bun and OpenCode versions, and whether your registry or mirror can reach the public npm package. Package downloads need no registry login; discovery and inference still need your gateway API key.
 
 To use another gateway configuration directory, replace the plugin string with an object:
 
@@ -164,6 +152,7 @@ mise run //opencode:fmt
 mise run //opencode:smoke         # packed plugin in OpenCode 2.2.6; local fixture, no paid calls
 mise run //opencode:check
 mise run //opencode:pack          # checks, then source tarball in dist/
+mise run //opencode:smoke-published -- 0.1.0  # anonymous npm install and local fixture
 ```
 
 TypeScript 7.0.2 and `@effect/tsgo` 0.67.4 follow Effect's current TS7 recommendation. `tsconfig.json`
@@ -181,19 +170,9 @@ formatter options match `actions/.oxfmtrc.json` (oxfmt has no `extends` configur
 
 ## Release
 
-The `OpenCode Oceans plugin` workflow checks pull requests and relevant `main` changes. Publishing is
-manual only: update the package version and lockfile, create the matching existing tag
-`opencode-oceans-v0.1.0`, and dispatch `.github/workflows/opencode-oceans.yml` **from main** with that
-tag. The workflow validates the tag against the package version and checks the tagged commit before
-publishing that exact commit with `bun publish --access public --tag latest` to GitHub Packages. Only
-the publish job receives `packages: write`. No npmjs.org publication or bundled build is produced.
+The plugin has its own versions and `opencode-oceans-vX.Y.Z` tags, separate from Oceans product releases. Maintainers stage releases with npm trusted publishing and review them before human 2FA approval. See the [plugin release runbook](https://github.com/ahstn/oceans-llm/blob/main/docs/contributing/reference/release-process.md#opencode-plugin-releases) for the full procedure and recovery steps.
 
-Non-release checks use the triggering commit SHA, so reruns do not check a newer branch revision.
-
-GitHub initially creates npm packages as private, regardless of npm access flags: after the first
-publication, a package administrator must set this package's visibility to **public** in GitHub
-Packages settings. The repository link in `package.json` associates the package with this repository.
-Public visibility still does not remove GitHub's installation-token requirement.
+The source smoke in `//opencode:check` packs this checkout and runs it against a local fixture. The separate `//opencode:smoke-published` command installs an exact version anonymously from public npm and uses a local fixture without paid requests. It checks the distribution after approval, not the source package before release.
 
 ## References
 
@@ -206,7 +185,8 @@ Public visibility still does not remove GitHub's installation-token requirement.
 - [LiteLLM model metadata and management endpoints](https://docs.litellm.ai/docs/proxy/model_management)
 - [Effect language service: TS7 migration notice](https://github.com/Effect-TS/language-service)
 - [Effect TS7 LSP, CLI diagnostics, and supported versions](https://github.com/Effect-TS/tsgo)
-- [GitHub npm registry authentication and initial visibility](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-npm-registry)
+- [npm staged publishing and 2FA approval](https://docs.npmjs.com/staged-publishing/)
+- [npm trusted publishers, stage-only access and provenance](https://docs.npmjs.com/trusted-publishers/)
 - [Bun source packaging and publishing](https://bun.sh/docs/pm/cli/publish)
 
 Licensed under AGPL-3.0-only; see [LICENSE](./LICENSE).

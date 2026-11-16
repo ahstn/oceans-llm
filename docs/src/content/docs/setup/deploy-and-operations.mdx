@@ -15,7 +15,7 @@ The gateway is the only thing callers and admins talk to:
 - It proxies `/admin*` to the admin UI's server, at the address in `ADMIN_UI_UPSTREAM`.
 - The admin UI's server calls back into the gateway's APIs, at `ADMIN_GATEWAY_ORIGIN`.
 
-So the admin UI and the API share one origin. That's a product rule, not a local convenience: sessions, cookies, and same-origin checks on write requests all depend on it. Expose the gateway, and keep the admin UI reachable only from the gateway. The Helm chart, for example, renders an ingress for the gateway service and never for the admin UI.
+The admin UI and the API therefore share one origin. That's a product rule, not a local convenience: sessions, cookies, and same-origin checks on write requests all depend on it. Expose the gateway, and keep the admin UI reachable only from the gateway. The Helm chart, for example, renders an ingress for the gateway service and never for the admin UI.
 
 ### Admin UI request limits
 

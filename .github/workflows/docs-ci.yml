@@ -6,6 +6,7 @@ on:
       - "docs/**"
       - "crates/gateway/openapi/admin-api.json"
       - ".github/workflows/docs-ci.yml"
+      - ".vale.ini"
       - "mise.toml"
       - "mise.lock"
   push:
@@ -33,12 +34,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup mise, Node.js and Bun
+      - name: Setup mise, Node.js, Bun and Vale
         uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
-          install_args: node bun
+          install_args: node bun vale
 
-      # Builds the site, then runs astro check and nimbus-docs check against it.
+      # Lints prose and builds the site, then runs astro check and nimbus-docs check.
       # Deploys are manual: mise run //docs:deploy.
       - name: Build and check docs site
         run: mise run //docs:check

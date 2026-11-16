@@ -14,8 +14,8 @@ const packageRoot = path.resolve(import.meta.dir, '..')
 const require = createRequire(import.meta.url)
 const cliRoot = path.dirname(require.resolve('@opencode/cli/package.json'))
 
-async function command(args: string[], cwd: string) {
-  const child = Bun.spawn(args, { cwd, stdout: 'pipe', stderr: 'pipe' })
+async function command(args: string[], cwd: string, env: Record<string, string | undefined>) {
+  const child = Bun.spawn(args, { cwd, env, stdout: 'pipe', stderr: 'pipe' })
   const [stdout, stderr, code] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
@@ -114,14 +114,38 @@ export async function readReadyLine(stream: ReadableStream<Uint8Array>): Promise
   throw new Error('Host readiness stream ended before a complete line')
 }
 
+export function publishedVersion(args: string[]): string | undefined {
+  if (args.length === 0) return undefined
+  if (
+    args.length !== 2 ||
+    args[0] !== '--published' ||
+    !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?![\s\S])/.test(args[1] ?? '')
+  ) {
+    throw new Error('Usage: smoke.ts [--published <exact stable X.Y.Z version>]')
+  }
+  return args[1]
+}
+
+async function assertInstalledVersion(root: string, version: string) {
+  const manifests = new Bun.Glob('**/node_modules/@ahstn/opencode-oceans/package.json')
+  let installed = 0
+  for await (const manifest of manifests.scan({ cwd: root, dot: true, followSymlinks: true })) {
+    const metadata = await Bun.file(path.join(root, manifest)).json()
+    assert.equal(metadata.name, '@ahstn/opencode-oceans')
+    assert.equal(metadata.version, version, `Unexpected installed plugin at ${manifest}`)
+    installed++
+  }
+  assert.ok(installed > 0, 'OpenCode did not install the requested npm plugin')
+}
+
 if (import.meta.main) {
+  const version = publishedVersion(process.argv.slice(2))
   const root = await mkdtemp(path.join(tmpdir(), 'opencode-oceans-smoke-'))
   const { server, requests } = gateway()
   let host: Subprocess<'pipe', 'pipe', 'pipe'> | undefined
+  let stderr: Promise<string> | undefined
+  let passed = false
   try {
-    const archive = path.join(root, 'plugin.tgz')
-    await command([process.execPath, 'pm', 'pack', '--filename', archive], packageRoot)
-    await command(['tar', '-xzf', archive, '-C', root], packageRoot)
     await mkdir(path.join(root, 'workspace'))
     const configDir = path.join(root, 'config')
     await mkdir(configDir)
@@ -129,10 +153,6 @@ if (import.meta.main) {
       path.join(configDir, 'gateways.yml'),
       `providers:\n  oceans:\n    baseUrl: ${server.url.origin}\n    apiKey: OCEANS_SMOKE_KEY\n    discovery: {type: litellm}\n`,
     )
-    // Execute the upstream installer with Bun; it links the already-installed native host binary.
-    await command([process.execPath, path.join(cliRoot, 'postinstall.mjs')], packageRoot)
-    const binary = path.join(cliRoot, 'bin', 'opencode.exe')
-    assert.equal((await command([binary, '--version'], packageRoot)).trim(), 'opencode v2.2.6')
     const password = crypto.randomUUID()
     const env = {
       PATH: process.env.PATH,
@@ -143,6 +163,10 @@ if (import.meta.main) {
       XDG_DATA_HOME: path.join(root, 'data'),
       XDG_CACHE_HOME: path.join(root, 'cache'),
       XDG_STATE_HOME: path.join(root, 'state'),
+      NPM_CONFIG_USERCONFIG: path.join(root, '.npmrc'),
+      NPM_CONFIG_GLOBALCONFIG: path.join(root, 'global.npmrc'),
+      NPM_CONFIG_REGISTRY: 'https://registry.npmjs.org',
+      BUN_CONFIG_NO_CLEAR_TERMINAL: '1',
       OPENCODE_PASSWORD: password,
       OCEANS_SMOKE_KEY: 'synthetic-key',
       OPENCODE_CONFIG_DIR: configDir,
@@ -152,18 +176,44 @@ if (import.meta.main) {
       OPENCODE_DISABLE_FREE_MODELS: 'true',
       OPENCODE_DISABLE_MODELS_FETCH: 'true',
       OPENCODE_CONFIG_CONTENT: JSON.stringify({
-        plugins: [{ package: path.join(root, 'package'), options: { configDir } }],
+        plugins: [
+          {
+            package: version ? `@ahstn/opencode-oceans@${version}` : path.join(root, 'package'),
+            options: { configDir },
+          },
+        ],
         agents: { build: { steps: 1 } },
       }),
     }
-    host = Bun.spawn([binary, 'serve', '--stdio', '--port', '0'], {
-      cwd: path.join(root, 'workspace'),
-      env,
-      stdin: 'pipe',
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    const stderr = new Response(host.stderr).text()
+    await Bun.write(path.join(root, '.npmrc'), 'registry=https://registry.npmjs.org/\n')
+    await Bun.write(path.join(root, 'global.npmrc'), '')
+    await Bun.write(
+      path.join(root, '.bunfig.toml'),
+      '[install]\nregistry = "https://registry.npmjs.org"\n',
+    )
+    if (!version) {
+      const archive = path.join(root, 'plugin.tgz')
+      await command([process.execPath, 'pm', 'pack', '--filename', archive], packageRoot, env)
+      await command(['tar', '-xzf', archive, '-C', root], packageRoot, env)
+    }
+    // Execute the upstream installer with Bun; it links the already-installed native host binary.
+    await command([process.execPath, path.join(cliRoot, 'postinstall.mjs')], root, env)
+    const binary = path.join(cliRoot, 'bin', 'opencode.exe')
+    assert.equal((await command([binary, '--version'], root, env)).trim(), 'opencode v2.2.6')
+    if (version) {
+      await command([binary, 'plugin', 'add', `@ahstn/opencode-oceans@${version}`], root, env)
+    }
+    host = Bun.spawn(
+      [binary, 'serve', '--stdio', '--port', '0', '--print-logs', '--log-level', 'debug'],
+      {
+        cwd: path.join(root, 'workspace'),
+        env,
+        stdin: 'pipe',
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+    )
+    stderr = new Response(host.stderr).text()
     const readiness = await Promise.race([
       readReadyLine(host.stdout),
       host.exited.then(async (code) => {
@@ -181,10 +231,15 @@ if (import.meta.main) {
       headers: { authorization: `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}` },
     })
     await exercise(client, requests, path.join(root, 'workspace'))
-    console.log('PASS packed source package loaded by OpenCode 2.2.6; no external model calls')
+    if (version) await assertInstalledVersion(root, version)
+    passed = true
+    console.log(
+      `PASS ${version ? `published @ahstn/opencode-oceans@${version}` : 'packed source package'} loaded by OpenCode 2.2.6; no external model calls`,
+    )
   } finally {
     host?.kill()
     if (host) await host.exited
+    if (!passed && stderr) console.error(await stderr)
     await server.stop(true)
     await rm(root, { recursive: true, force: true })
   }

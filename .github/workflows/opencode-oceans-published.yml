@@ -1,0 +1,53 @@
+name: OpenCode Oceans published package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Exact public npm version (X.Y.Z); run after npm approval, from main"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  MISE_TASK_RUN_AUTO_INSTALL: "false"
+  MISE_EXEC_AUTO_INSTALL: "false"
+
+jobs:
+  smoke:
+    if: github.ref == 'refs/heads/main' && github.repository == 'ahstn/oceans-llm'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout verification source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Setup mise and Bun
+        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+        with:
+          install_args: bun
+
+      - name: Verify anonymous install in OpenCode
+        env:
+          PACKAGE_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          mise run //opencode:smoke-published -- "$PACKAGE_VERSION" | tee npm-smoke.log
+
+      - name: Upload published package evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: opencode-oceans-published-smoke
+          path: npm-smoke.log
+          if-no-files-found: error
+          retention-days: 30

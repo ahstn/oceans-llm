@@ -11,7 +11,7 @@ The gateway keeps skill metadata in its database and each version's ZIP archive 
 
 ## Who can do what
 
-Every authenticated user and API-key caller can read every skill and every version. There are no team grants, key grants, or private skills.
+Every authenticated user and API-key caller can read every skill and every version. Skills have no team grants or key grants and can't be private.
 
 To publish, a user claims a namespace. Each user gets one, and it can't change after it's claimed. A skill's address is the namespace plus the skill name, such as `alice/code-review`, so `bob/code-review` can exist beside it. Ownership follows the user's ID, so changing a display name doesn't move a skill.
 
@@ -112,7 +112,7 @@ On a self-hosted machine, select the `selfhost`, `rustfs`, and `selfhost-rustfs`
 
 The Oceans chart can install the official RustFS chart as an optional dependency. You supply a CSI StorageClass and capacity through the RustFS values; Oceans doesn't install or manage a CSI driver. The dependency doesn't create the bucket or an application identity either, so create both before turning uploads on.
 
-The [chart README](https://github.com/ahstn/oceans-llm/blob/main/deploy/helm/oceans-llm/README.md) has the dependency settings. There are complete example values for [external S3](https://github.com/ahstn/oceans-llm/blob/main/deploy/helm/oceans-llm/examples/skills-s3-values.yaml), [distributed RustFS](https://github.com/ahstn/oceans-llm/blob/main/deploy/helm/oceans-llm/examples/skills-rustfs-values.yaml), and [standalone RustFS for development](https://github.com/ahstn/oceans-llm/blob/main/deploy/helm/oceans-llm/examples/skills-rustfs-standalone-values.yaml). External S3, or a RustFS release you manage yourself, uses the same gateway config without the dependency.
+The [chart README](https://github.com/ahstn/oceans-llm/blob/main/deploy/helm/oceans-llm/README.md) has the dependency settings and complete example values for [external S3](https://github.com/ahstn/oceans-llm/blob/main/deploy/helm/oceans-llm/examples/skills-s3-values.yaml), [distributed RustFS](https://github.com/ahstn/oceans-llm/blob/main/deploy/helm/oceans-llm/examples/skills-rustfs-values.yaml), and [standalone RustFS for development](https://github.com/ahstn/oceans-llm/blob/main/deploy/helm/oceans-llm/examples/skills-rustfs-standalone-values.yaml). External S3, or a RustFS release you manage yourself, uses the same gateway config without the dependency.
 
 ### Import the bundled skills
 

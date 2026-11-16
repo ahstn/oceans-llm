@@ -119,7 +119,7 @@ Native Messages routes keep:
 
 Top-level `system` and system turns inside `messages` stay separate. The gateway rewrites the response model to the requested gateway model. Configured guardrail transformations and route overrides still apply. Budget checks, usage accounting and request logs use the native response. The gateway doesn't rebuild it from Chat Completions.
 
-Stream guardrails inspect each non-empty, complete `tool_use.input` object in a native start frame, separately from later JSON deltas. So a complete input can't skip inspection by omitting deltas or by sending a different delta payload. A transformed start-frame input stays a JSON object. Empty opening objects keep their normal delta behaviour.
+Stream guardrails inspect each non-empty, complete `tool_use.input` object in a native start frame, separately from later JSON deltas. A complete input therefore can't skip inspection by omitting deltas or by sending a different delta payload. A transformed start-frame input stays a JSON object. Empty opening objects keep their normal delta behaviour.
 
 OpenRouter Claude routes always use `/api/v1/messages`, for both native Messages and Chat Completions callers. `anthropic_compat` providers use `/v1/messages`. Vertex and Bedrock keep their own native endpoints. Generic `openai_compat` routes still translate Messages through Chat Completions.
 
@@ -192,7 +192,7 @@ Counting writes no request log, usage-ledger row or budget charge, and an exhaus
 
 ## Route compatibility metadata
 
-Compatibility is route metadata, not provider metadata. One provider endpoint can serve several upstream model families, and two routes to the same provider can need different transforms. So the transforms travel with the selected route. The gateway stores them in `model_routes.compatibility_json`, seeded from the route's `compatibility` block.
+Compatibility is route metadata, not provider metadata. One provider endpoint can serve several upstream model families, and two routes to the same provider can need different transforms. The transforms therefore travel with the selected route. The gateway stores them in `model_routes.compatibility_json`, seeded from the route's `compatibility` block.
 
 A route's `compatibility` block can hold one or more of these profiles ([`crates/gateway-core/src/domain.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-core/src/domain.rs)):
 
@@ -458,7 +458,7 @@ Returned `additionalModelResponseFields` stay under `provider_metadata.aws_bedro
 
 ### Reasoning in responses
 
-Chat Completions content stays answer text and tool calls only. Claude `thinking` and `redacted_thinking` blocks, and Converse `reasoningContent` text, signatures and redacted data, never go into `message.content` or `delta.content`. The gateway keeps them under `choices[*].message.provider_metadata.aws_bedrock.reasoning`, and under `choices[*].delta.provider_metadata.aws_bedrock.reasoning` for ConverseStream. The public Messages endpoint keeps the same split when it runs through chat-backed execution.
+Chat Completions content stays answer text and tool calls only. Claude `thinking` and `redacted_thinking` blocks, and Converse `reasoningContent` text, signatures and redacted data, do not go into `message.content` or `delta.content`. The gateway keeps them under `choices[*].message.provider_metadata.aws_bedrock.reasoning`, and under `choices[*].delta.provider_metadata.aws_bedrock.reasoning` for ConverseStream. The public Messages endpoint keeps the same split when it runs through chat-backed execution.
 
 Some models default thinking display to `omitted`. Then a stream can open an empty thinking block, send only a signature delta, and then start normal text.
 

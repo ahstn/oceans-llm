@@ -1,6 +1,6 @@
 ---
 title: OpenCode
-description: Connect OpenCode to Oceans with the opencode-oceans plugin, which finds your models on the gateway, or with a generated opencode.json snippet.
+description: Connect OpenCode to Oceans with the Oceans plugin, which finds your models on the gateway, or with a generated configuration snippet.
 sidebar:
   order: 1
 ---
@@ -25,26 +25,9 @@ You need:
 
 ## Set up the plugin
 
-The plugin is [`@ahstn/opencode-oceans`](https://github.com/ahstn/oceans-llm/tree/main/packages/opencode-oceans). It's published to GitHub Packages, which needs a GitHub token to download any package, even a public one.
+The plugin is [`@ahstn/opencode-oceans`](https://www.npmjs.com/package/@ahstn/opencode-oceans) on the public npm registry. You don't need an npm account, a GitHub token or a registry login to install it.
 
 <Steps>
-<Step title="Create a GitHub token for the package registry">
-In GitHub, create a personal access token (classic) with the `read:packages` scope. Then make it available to the shell that starts OpenCode:
-
-```sh
-export GITHUB_PACKAGES_TOKEN='<GitHub token>'
-```
-
-This token only downloads the plugin. It isn't your Oceans API key.
-</Step>
-<Step title="Point the @ahstn scope at GitHub Packages">
-Add these lines to your user `~/.npmrc`. Keep the `${GITHUB_PACKAGES_TOKEN}` reference as written, so the file never holds the token itself:
-
-```ini title="~/.npmrc"
-@ahstn:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}
-```
-</Step>
 <Step title="Add the plugin to OpenCode">
 Add the plugin to your user config, `~/.config/opencode/opencode.jsonc` (or `opencode.json`). Pin the exact version:
 
@@ -201,7 +184,7 @@ The two can differ, for example when the gateway applies long-context pricing or
 
 | Problem | What to check |
 | --- | --- |
-| OpenCode can't install the plugin | `GITHUB_PACKAGES_TOKEN` is set in the shell that starts OpenCode, the token has `read:packages`, and `~/.npmrc` has both lines from the setup. |
+| OpenCode can't install the plugin | Check the exact version and that your registry or mirror can reach the [public npm package](https://www.npmjs.com/package/@ahstn/opencode-oceans). Check Bun and OpenCode versions. No npm or GitHub login is needed. |
 | No Oceans models appear | The file is `gateways.yml` in the OpenCode config folder, the entry has `discovery.type: litellm`, and a `gateways.local.yml` doesn't replace it. Restart OpenCode, then look for the warning `Oceans discovery failed` in its logs. |
 | The warning gives `HTTP 401` | The API key is missing, wrong or revoked. Check the variable that `apiKey` names, or the key saved in OpenCode. |
 | The warning gives `HTTP 403` | The key has limited scopes without **Inference**. |

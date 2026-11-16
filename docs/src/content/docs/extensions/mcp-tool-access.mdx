@@ -95,7 +95,7 @@ The preview expands the subject in the same way as a real request:
 - An API key brings its owner and team. It also applies the key's scopes and server list, so it can't be combined with another subject.
 - A user or service account brings its team.
 
-So the preview shows the grants and exclude rules of those subjects too. A key with neither `mcp:aggregate` nor `mcp:proxy`, or with a server list that leaves out the server, previews no tools. The preview accepts either MCP scope, so it doesn't tell you which endpoint the key can use.
+The preview therefore shows the grants and exclude rules of those subjects too. A key with neither `mcp:aggregate` nor `mcp:proxy`, or with a server list that leaves out the server, previews no tools. The preview accepts either MCP scope, so it doesn't tell you which endpoint the key can use.
 
 A preview for a key that can't authenticate, or for a disabled service account, returns `400`. A service account with no active budget previews no tools.
 
@@ -120,7 +120,7 @@ Tag rules, admin tags, annotation overrides and tool reviews are platform-manage
 
 ## Tag rules
 
-A tag rule grants or denies tools by what they do, not by name. For example: "team X may use every read-only tool on server Y", or "service account Z may never use a destructive tool on any server". Only platform admins manage tag rules.
+A tag rule grants or denies tools by what they do, not by name. For example, team X may use every read-only tool on server Y, or service account Z may never use a destructive tool on any server. Only platform admins manage tag rules.
 
 Each rule has:
 
@@ -157,7 +157,7 @@ Every tool has derived tags. The gateway computes them from the tool's effective
 
 These follow the MCP protocol defaults, which fail safe. An include rule for `read_only` matches only tools whose effective hint says they're read-only. A tool that declares no hints counts as `destructive` and `open_world`, so exclude rules catch it.
 
-Hints are claims made by the upstream server. On a server without [tool approval](#tool-versions-and-approval), discovery serves whatever the upstream declares. Without a safeguard, a new tool could give itself access by claiming `readOnlyHint`. So an include rule on a derived tag selects a tool only when an admin vouched for its hints, in one of two ways:
+Hints are claims made by the upstream server. On a server without [tool approval](#tool-versions-and-approval), discovery serves whatever the upstream declares. Without a safeguard, a new tool could give itself access by claiming `readOnlyHint`. An include rule on a derived tag therefore selects a tool only when an admin vouched for its hints, in one of two ways:
 
 - The admin [overrode](#annotation-overrides) the tag's own hint to `true`.
 - The admin approved the served version, on a server with approval turned on.
@@ -320,7 +320,7 @@ Request bodies, and responses the gateway rewrites, are limited to 4 MiB. A larg
 
 ### Other methods on the direct endpoint
 
-Resources, prompts and completions can return server data, just as tools can. So the direct endpoint classifies every JSON-RPC method before it contacts the upstream server:
+Resources, prompts and completions can return server data, just as tools can. The direct endpoint therefore classifies every JSON-RPC method before it contacts the upstream server:
 
 | Method | What the gateway does |
 | --- | --- |
@@ -332,7 +332,7 @@ Resources, prompts and completions can return server data, just as tools can. So
 | Any other method | Denies it with HTTP `403` and JSON-RPC code `-32601`, and records it with error code `mcp_method_not_allowed`. |
 | `POST` with an empty or malformed body, or `GET` or `DELETE` with a body | Rejects it with HTTP `400` and JSON-RPC code `-32600`. |
 
-The gateway doesn't proxy MCP tasks. A task's result comes back through `tasks/result`, which names no tool, so the gateway couldn't check grants or guardrails on it. `tasks/*` methods count as "any other method". The gateway also removes the task capability and tool hints above, so clients call tools directly.
+The gateway doesn't proxy MCP tasks. A task's result comes back through `tasks/result`, which names no tool, so the gateway couldn't check grants or guardrails on it. `tasks/*` methods count as **any other method**. The gateway also removes the task capability and tool hints above, so clients call tools directly.
 
 Resources and prompts have no grant model of their own. Being able to use any tool on the server is the minimum bar for reading its resources or prompts. Use the server's tool grants to decide who may use the server at all.
 
@@ -352,7 +352,7 @@ On the `GET` event stream, the gateway drops JSON-RPC responses, so only server 
 
 ### Credential errors
 
-For `tools/call`, and for the resource, prompt and completion methods, the gateway checks access before it resolves the upstream credential. So a caller without access doesn't learn whether a credential exists.
+For `tools/call`, and for the resource, prompt and completion methods, the gateway checks access before it resolves the upstream credential. A caller without access therefore doesn't learn whether a credential exists.
 
 <Aside type="caution" title="Some methods resolve credentials without a grant">
 `initialize`, the forwarded lifecycle methods and `tools/list` resolve the upstream credential without first checking for a grant. On a server that needs a per-caller credential, a caller with no grant can see a `credential_required` or `credential_expired` error from these methods.
@@ -366,4 +366,4 @@ Service-account MCP credentials and service-account budgets are separate control
 
 MCP token-overhead estimates are context-window telemetry. They estimate how many prompt tokens the caller's granted tool definitions may use. They aren't billing data and don't count toward spend budgets. Results aren't estimated.
 
-For an inference request from a key with an MCP scope, the gateway looks up the caller's tool set, cached for 30 seconds, and runs the estimate in the background. So the estimate can lag a grant change by up to 30 seconds. When too many estimates are already running, the gateway skips the estimate for that request. [Request logs](/observability/request-logs/) show the tool counts and estimates.
+For an inference request from a key with an MCP scope, the gateway looks up the caller's tool set, cached for 30 seconds, and runs the estimate in the background. The estimate can therefore lag a grant change by up to 30 seconds. When too many estimates are already running, the gateway skips the estimate for that request. [Request logs](/observability/request-logs/) show the tool counts and estimates.
