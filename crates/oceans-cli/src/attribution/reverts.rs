@@ -96,8 +96,8 @@ impl FingerprintBudget {
 }
 
 /// Adds a merged candidate's fingerprints to `cache` when they are not there yet and the budget
-/// allows, so a revert fetched in the same batch can match it whichever order the two arrive
-/// in, and a later sync's revert can match it too.
+/// allows. Syncs run this after queuing, so a revert links to an original fingerprinted here on
+/// the next sync, which fetches the same recent pull requests again.
 pub fn remember(
     candidate: &Candidate<'_>,
     directory: &Path,

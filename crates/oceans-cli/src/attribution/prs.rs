@@ -90,7 +90,7 @@ const MAX_COMMITS_PER_PULL_REQUEST: usize = 250;
 const MAX_PAYLOAD_BYTES: usize = 1024 * 1024;
 const MAX_PULL_REQUESTS_PER_PAYLOAD: usize = 100;
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GhPullRequest {
     number: u64,
@@ -138,7 +138,7 @@ struct GhPullRequest {
     review_total: Option<u64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct GhActor {
     #[serde(rename = "__typename", default)]
     kind: String,
@@ -146,7 +146,7 @@ struct GhActor {
     login: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GhReview {
     #[serde(default)]
@@ -155,12 +155,12 @@ struct GhReview {
     author: Option<GhActor>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct GhCommitRef {
     oid: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GhCommit {
     oid: String,
@@ -174,7 +174,7 @@ struct GhCommit {
     authors: Vec<GhAuthor>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct GhAuthor {
     #[serde(default)]
     email: Option<String>,
@@ -216,18 +216,23 @@ pub fn sync(
     };
     let repository_path = repository.split_once('/').map_or("", |(_, path)| path);
     let mut cache = state.change_cache(&repository);
-    let links = revert_links(&fetched, repository_path, directory, &mut cache);
-    reverts::trim(&mut cache);
-    // The cache only speeds up later matches, so a failed write must not lose the sync.
-    let _ = state.save_change_cache(&repository, &cache);
+    // Detection reads only fingerprints already cached, so the pull requests are queued before
+    // any git runs. A revert whose original is fingerprinted below links on a later sync, which
+    // fetches the same recent pull requests again.
+    let links = revert_links(&fetched, repository_path, &cache);
     let pull_requests: Vec<PullRequest> = fetched
-        .into_iter()
+        .iter()
+        .cloned()
         .zip(links)
         .filter_map(|(fetched, link)| pull_request(fetched, link))
         .collect();
     let count = pull_requests.len();
     let payloads = chunk(&repository, pull_requests);
     let report = state.enqueue(payloads)?;
+    remember_merges(&fetched, directory, &mut cache);
+    reverts::trim(&mut cache);
+    // The cache only speeds up later matches, so a failed write must not lose the sync.
+    let _ = state.save_change_cache(&repository, &cache);
     Ok(SyncOutcome::Queued {
         pull_requests: count,
         report,
@@ -303,23 +308,26 @@ fn fetch_pages(
     Ok(fetched)
 }
 
-/// Each fetched pull request's revert link. Merged pull requests are fingerprinted first, within
-/// a per-sync budget, so a revert matches its original whichever order the two arrive in.
+/// Each fetched pull request's revert link, from its text and the fingerprints already cached.
+/// It runs no git, so it never delays queuing the sync.
 fn revert_links(
     fetched: &[GhPullRequest],
     repository_path: &str,
-    directory: &Path,
-    cache: &mut reverts::ChangeCache,
+    cache: &reverts::ChangeCache,
 ) -> Vec<Option<RevertLink>> {
-    let candidates: Vec<Candidate<'_>> = fetched.iter().map(candidate).collect();
-    let mut budget = reverts::FingerprintBudget::new(reverts::MAX_NEW_FINGERPRINTS);
-    for candidate in &candidates {
-        reverts::remember(candidate, directory, cache, &mut budget);
-    }
-    candidates
+    fetched
         .iter()
-        .map(|candidate| reverts::detect(candidate, repository_path, cache))
+        .map(|fetched| reverts::detect(&candidate(fetched), repository_path, cache))
         .collect()
+}
+
+/// Fingerprints the fetched merged pull requests not cached yet, within the per-sync count and
+/// time budget, so later syncs can match a revert to its original in either order.
+fn remember_merges(fetched: &[GhPullRequest], directory: &Path, cache: &mut reverts::ChangeCache) {
+    let mut budget = reverts::FingerprintBudget::new(reverts::MAX_NEW_FINGERPRINTS);
+    for fetched in fetched {
+        reverts::remember(&candidate(fetched), directory, cache, &mut budget);
+    }
 }
 
 fn candidate(fetched: &GhPullRequest) -> Candidate<'_> {
@@ -783,13 +791,8 @@ mod tests {
         // The reverted commit is not one of this pull request's own.
         const SHIPPED: &str = "3333333333333333333333333333333333333333";
         fetched[0].commits[0].message_body = format!("This reverts commit {SHIPPED}.");
-        let mut cache = reverts::ChangeCache::new();
-        let links = revert_links(
-            &fetched,
-            "acme/widgets",
-            Path::new("/nonexistent"),
-            &mut cache,
-        );
+        let cache = reverts::ChangeCache::new();
+        let links = revert_links(&fetched, "acme/widgets", &cache);
         let link = links[0].as_ref().expect("revert link");
         assert_eq!(link.evidence, "revert_commit");
         assert_eq!(link.commit_shas, [SHIPPED]);
@@ -797,12 +800,7 @@ mod tests {
 
         // Reverting the pull request's own commit (SHA_2) is branch cleanup, not a revert.
         fetched[0].commits[0].message_body = format!("This reverts commit {SHA_2}.");
-        let links = revert_links(
-            &fetched,
-            "acme/widgets",
-            Path::new("/nonexistent"),
-            &mut cache,
-        );
+        let links = revert_links(&fetched, "acme/widgets", &cache);
         assert!(links[0].is_none());
     }
 
