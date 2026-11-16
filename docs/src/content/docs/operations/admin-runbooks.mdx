@@ -184,7 +184,7 @@ A rollback changes the application, not the database. An older gateway refuses a
 database reset required for postgres: found historical migration v<N> outside the active registry; recreate the database and rerun migrations
 ```
 
-So if the upgrade applied a migration, restore the database backup you took before the upgrade, then roll back the application. Don't recreate the database because the error says so, unless you're willing to lose its data.
+If the upgrade applied a migration, restore the database backup you took before the upgrade, then roll back the application. Don't recreate the database because the error says so, unless you're willing to lose its data.
 
 To see whether the upgrade applied migrations, run `gateway migrate --status` with the newer version, before you roll back.
 

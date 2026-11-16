@@ -174,7 +174,7 @@ Responses created before origin tracking can't continue through a routing pool u
 
 ### No failover
 
-The gateway runs one selected route. It doesn't retry another route after an upstream error and doesn't fan a request out to several providers. Session affinity doesn't add failover. Weights of `3` and `1` at one priority mean weighted first choice, not "try the first provider three times". Make each selectable route a valid target and monitor provider failures on their own.
+The gateway runs one selected route. It doesn't retry another route after an upstream error and doesn't fan a request out to several providers. Session affinity doesn't add failover. Weights of `3` and `1` at one priority mean weighted first choice, not three attempts at the first provider. Make each selectable route a valid target and monitor provider failures on their own.
 
 ## Capability gating
 
