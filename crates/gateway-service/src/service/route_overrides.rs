@@ -168,7 +168,7 @@ where
     /// overrides add no catalog lookups before readiness. The returned routes feed
     /// [`Self::warn_on_redundant_route_overrides`] without reading the route table again.
     pub async fn validate_route_overrides(&self) -> Result<OverriddenRoutes, GatewayError> {
-        let mut routes = self.collect_overridden_routes().await?;
+        let mut routes = self.collect_overridden_routes(true).await?;
         let Some(conflict) = self
             .context_conflicts(&mut routes)
             .await?
@@ -217,7 +217,8 @@ where
     pub(super) async fn warn_on_route_context_override_conflicts(
         &self,
     ) -> Result<(), GatewayError> {
-        let mut routes = self.collect_overridden_routes().await?;
+        // This periodic check reads only context overrides, so it keeps no pricing-only routes.
+        let mut routes = self.collect_overridden_routes(false).await?;
         for conflict in self.context_conflicts(&mut routes).await? {
             warn!(
                 route_id = %conflict.route_id,
@@ -231,9 +232,12 @@ where
         Ok(())
     }
 
-    /// Enabled routes with a pricing or context override, with their model keys, in one pass
-    /// over models and routes.
-    async fn collect_overridden_routes(&self) -> Result<OverriddenRoutes, GatewayError> {
+    /// Enabled routes with a context override, and with a pricing override when
+    /// `include_pricing`, with their model keys, in one pass over models and routes.
+    async fn collect_overridden_routes(
+        &self,
+        include_pricing: bool,
+    ) -> Result<OverriddenRoutes, GatewayError> {
         let mut routes = Vec::new();
         for model in self.store.list_models().await? {
             for route in self.store.list_routes_for_model(model.id).await? {
@@ -241,7 +245,9 @@ where
                 if !route.enabled || route.weight <= 0.0 {
                     continue;
                 }
-                if route.context_window_tokens.is_some() || route.pricing_override.is_some() {
+                if route.context_window_tokens.is_some()
+                    || (include_pricing && route.pricing_override.is_some())
+                {
                     routes.push((model.model_key.clone(), route));
                 }
             }
