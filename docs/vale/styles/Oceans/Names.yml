@@ -1,0 +1,16 @@
+extends: substitution
+message: "Use '%s' instead of '%s'."
+level: warning
+ignorecase: true
+action:
+  name: replace
+swap:
+  '\bchat[ -]+gpt\b': ChatGPT
+  '\bopen[ -]+code\b': OpenCode
+  '\bopen[ -]+router\b': OpenRouter
+  '\bdeep[ -]+swe\b': DeepSWE
+  '\bdeep[ -]+seek\b': DeepSeek
+  '\bgit[ -]+hub\b': GitHub
+  '\bclaudecode\b': Claude Code
+  '\bclaudeopus\b': Claude Opus
+  '\bclaudesonnet\b': Claude Sonnet
