@@ -1,0 +1,104 @@
+.agents/skills/verify-oceans-admin/features/attribution.md
+  h_2f452a9c375069 29-30,34
+.agents/skills/verify-oceans-admin/features/routing.json
+  h_2f452a9c375069 580
+crates/admin-ui/web/src/components/attribution/data-gaps.ts
+  h_2f452a9c375069 21-22,24,34-37,39-46
+crates/admin-ui/web/src/generated/admin-api.ts
+  h_2f452a9c375069 3313-3361,3363-3366,3368-3375,3377-3380,3382,3384-3385,3388-3395,3397-3398,3401-3402,3404-3405,3410-3411,3420-3425,3433-3434,3437-3438,3442-3445,3456-3457,3459-3474,3491-3492,3520-3550,4264-4265
+crates/admin-ui/web/src/routes/observability/-attribution/insights.ts
+  h_2f452a9c375069 237-238,243-273,286-290
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/delivery-tab.tsx
+  h_2f452a9c375069 6,17-19,40,43-45,47-55,80-84,86,90-95,106-107,219-222,234-273
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/durability-tab.tsx
+  h_2f452a9c375069 53
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/pull-requests-tab.tsx
+  h_2f452a9c375069 32-39,239,402,476-545
+crates/admin-ui/web/src/routes/observability/attribution.tsx
+  h_2f452a9c375069 28,324-326
+crates/admin-ui/web/src/test/attribution-insights.test.ts
+  h_2f452a9c375069 13,241-276
+crates/admin-ui/web/src/test/routes/attribution-route.test.tsx
+  h_2f452a9c375069 72-84,277-286,478-568
+crates/gateway-core/src/attribution.rs
+  h_2f452a9c375069 177-292,305-306,311,360-361,365,452
+crates/gateway-core/src/lib.rs
+  h_2f452a9c375069 50-51,53-54
+crates/gateway-service/src/attribution.rs
+  h_2f452a9c375069 26-28
+crates/gateway-service/src/attribution/ingest.rs
+  h_2f452a9c375069 11-14,102-103,105-106,450-458,499,506-556
+crates/gateway-service/src/attribution/report.rs
+  h_2f452a9c375069 34,40,46-50,167,169-172,231-232,318-345,351,358,362-365,387-389,393,398,400-401,405-435,693,798,900-903
+crates/gateway-service/src/attribution/report/insights.rs
+  h_2f452a9c375069 95,152-154,438,444
+crates/gateway-service/src/attribution/report/lifecycle.rs
+  h_2f452a9c375069 1-285
+crates/gateway-service/src/attribution/tests.rs
+  h_2f452a9c375069 72-73,163,295-298,303-311,315-324
+crates/gateway-service/src/attribution/tests/ingest.rs
+  h_2f452a9c375069 122-123,167-235
+crates/gateway-service/src/attribution/tests/report.rs
+  h_2f452a9c375069 6-7,116-120,285,400,1089-1096,1107-1110,1508-1826
+crates/gateway-store/migrations/V82__attribution_pull_request_lifecycle.sql
+  h_2f452a9c375069 1-71
+crates/gateway-store/migrations/postgres/V82__attribution_pull_request_lifecycle.sql
+  h_2f452a9c375069 1-33
+crates/gateway-store/src/attribution.rs
+  h_2f452a9c375069 32
+crates/gateway-store/src/attribution/pull_requests.rs
+  h_2f452a9c375069 1,7-8,16,22,24-64,89,93-97,154,161-168,228-231,240,245-247,249,252-257
+crates/gateway-store/src/attribution_tests.rs
+  h_2f452a9c375069 9-15,66-67,264-268,301,494-550
+crates/gateway-store/src/libsql_store/attribution.rs
+  h_2f452a9c375069 186,191-197
+crates/gateway-store/src/migration_registry.rs
+  h_2f452a9c375069 13-16,524-532
+crates/gateway-store/src/postgres_store/attribution.rs
+  h_2f452a9c375069 172,177-183
+crates/gateway/openapi/admin-api.json
+  h_2f452a9c375069 12156,12332-12406,12411,12414-12427,12434-12461,12468-12481,12488-12493,12501-12505,12511-12553,12557-12563,12572-12579,12602-12608,12620-12626,12648-12668,12680-12686,12694-12700,12713,12736-12742,12746-12780,12819,12868-12871,12956-13026,15674,15723-15726
+crates/gateway/src/http/attribution/ingest.rs
+  h_2f452a9c375069 14-17,128,150-151,154-203,459-505,507,515
+crates/gateway/src/http/attribution/insights.rs
+  h_2f452a9c375069 4,7-8,108-194
+crates/gateway/src/http/attribution/report.rs
+  h_2f452a9c375069 31-32,188-189,191-208,266-267,358,384,524-529,533-545
+crates/gateway/src/http/attribution/tests.rs
+  h_2f452a9c375069 297-361
+crates/gateway/src/local_demo_seed/attribution.rs
+  h_2f452a9c375069 20-21,75-83,172-173,180-187,195-202,205-234,458-461,465-482
+crates/oceans-cli/src/attribution/mod.rs
+  h_2f452a9c375069 15
+crates/oceans-cli/src/attribution/payload.rs
+  h_2f452a9c375069 74-77,79-133
+crates/oceans-cli/src/attribution/prs.rs
+  h_2f452a9c375069 1-5,17-20,23,31-32,34-35,39-40,42-49,52,65-67,109-155,169-171,217-227,306-435,470-471,634-637,659-662,691-792
+crates/oceans-cli/src/attribution/queue_tests.rs
+  h_2f452a9c375069 50-53
+crates/oceans-cli/src/attribution/repo.rs
+  h_2f452a9c375069 195-208,217-218
+crates/oceans-cli/src/attribution/reverts.rs
+  h_2f452a9c375069 1-902
+crates/oceans-cli/src/attribution/state.rs
+  h_2f452a9c375069 370-398
+docs/adr/2026-11-01-git-ai-attribution-via-oceans-hooks.md
+  h_2f452a9c375069 284,287-320
+docs/internal/2026-11-15-attribution-data-gaps.md
+  h_2f452a9c375069 24-25,40-41,55-56
+docs/src/content/docs/harnesses/git-ai-attribution.mdx
+  h_2f452a9c375069 21,107,109-126,135,179-180,185
+mise.lock
+  h_2f452a9c375069 37-48,83-94,119-126,156-167,202-213,248-259,294-305,335-346,380-391,421-432,457-464,494-505,535-546,571-578,608-619,662-673,710-721,756-767,801-812,846-857
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "122e93214b5c100171922f1c360a95a6c396b8d6",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
