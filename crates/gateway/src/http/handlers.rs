@@ -885,7 +885,12 @@ impl Drop for LoggingBodyStreamState {
         let Some(finalization) = self.finalization.take() else {
             return;
         };
-        record_cancelled_stream_metrics(&finalization);
+        let termination = if self.shutdown.is_cut_off() {
+            StreamTermination::ServerShutdown
+        } else {
+            record_cancelled_stream_metrics(&finalization);
+            StreamTermination::ClientCancelled
+        };
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
             tracing::warn!(
                 request_id = %finalization.request_log_context.request_id,
@@ -894,11 +899,13 @@ impl Drop for LoggingBodyStreamState {
             );
             return;
         };
-        // Register the charge synchronously: the next rate-limit check must
-        // wait for it even if this client cancels and immediately retries.
-        spawn_cancelled_stream_token_charge(&finalization);
+        if matches!(termination, StreamTermination::ClientCancelled) {
+            // Register the charge synchronously: an immediate retry must wait
+            // even when this client cancels before persistence starts.
+            spawn_cancelled_stream_token_charge(&finalization);
+        }
         self.shutdown.tasks().spawn_on(
-            finalize_stream(finalization, StreamTermination::ClientCancelled).in_current_span(),
+            finalize_stream(finalization, termination).in_current_span(),
             &runtime,
         );
     }
@@ -2429,6 +2436,89 @@ mod tests {
         assert_eq!(detail.log.error_code.as_deref(), Some("server_shutdown"));
         let snapshot = harness.metrics.test_snapshot();
         assert_eq!(snapshot.request_outcomes.get("server_shutdown"), Some(&1));
+    }
+
+    #[tokio::test]
+    async fn shutdown_joins_backpressured_stream_before_waiting_for_usage_and_logs() {
+        use tokio::io::AsyncWriteExt;
+
+        let harness = StreamTestHarness::new().await;
+        let (writing_tx, writing_rx) = tokio::sync::oneshot::channel();
+        let upstream: ProviderStream = Box::pin(
+            stream::iter([Ok(Bytes::from_static(
+                b"data: {\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2,\"total_tokens\":7}}\n\n",
+            ))])
+            .chain(stream::once(async move {
+                writing_tx.send(()).unwrap();
+                // Much larger than the socket buffers: a client that never
+                // reads keeps hyper from polling the body again at cutoff.
+                Ok(Bytes::from(vec![b'x'; 32 * 1024 * 1024]))
+            }))
+            .chain(stream::pending()),
+        );
+        let (context, mut state) = harness.logging_state("backpressured-shutdown", upstream);
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (resume_tx, resume_rx) = tokio::sync::oneshot::channel();
+        state.finalization.as_mut().unwrap().test_gate = Some(super::StreamFinalizationTestGate {
+            after_accounting: false,
+            entered: entered_tx,
+            resume: resume_rx,
+        });
+        let state = Arc::new(std::sync::Mutex::new(Some(state)));
+        let app = axum::Router::new().route("/", axum::routing::get(move || {
+            let state = state.lock().unwrap().take().unwrap();
+            async move { axum::body::Body::from_stream(wrap_stream_with_request_logging(state)) }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut client = tokio::net::TcpStream::connect(listener.local_addr().unwrap())
+            .await
+            .unwrap();
+        let serving = tokio::spawn({
+            let shutdown = harness.shutdown.clone();
+            async move { shutdown.serve(listener, app).await }
+        });
+        client
+            .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .await
+            .unwrap();
+        writing_rx.await.expect("hyper polled the large response");
+        harness.shutdown.begin_drain();
+        harness.shutdown.cut_off();
+        tokio::time::timeout(Duration::from_secs(10), serving)
+            .await
+            .expect("connections are forcibly closed")
+            .unwrap()
+            .unwrap();
+        entered_rx
+            .await
+            .expect("dropping the connection registered finalization");
+        assert!(!harness.shutdown.tasks().is_empty());
+        let finishing = tokio::spawn({
+            let shutdown = harness.shutdown.clone();
+            async move { shutdown.finish_tasks().await }
+        });
+        resume_tx
+            .send(())
+            .expect("usage write survives connection teardown");
+        assert!(finishing.await.unwrap());
+        let detail = harness
+            .service
+            .get_request_log_detail(context.request_log_id)
+            .await
+            .unwrap();
+        assert_eq!(detail.log.status_code, Some(503));
+        assert_eq!(detail.log.error_code.as_deref(), Some("server_shutdown"));
+        let ledger = harness
+            .store
+            .get_usage_ledger_by_request_and_scope(
+                "backpressured-shutdown",
+                &harness.ownership_scope_key(),
+            )
+            .await
+            .unwrap()
+            .expect("reported usage was charged before shutdown finished");
+        assert_eq!(ledger.total_tokens, Some(7));
+        drop(client);
     }
 
     #[tokio::test]

@@ -139,6 +139,8 @@ pub enum GatewayError {
         model_key: String,
         service_tier: crate::service_tier::ServiceTier,
     },
+    #[error("the gateway shut down before the response was ready; retry the request")]
+    ServerShutdown,
     #[error("internal error: {0}")]
     Internal(String),
 }
@@ -209,6 +211,7 @@ impl GatewayError {
             Self::Provider(ProviderError::Timeout) => 504,
             Self::Provider(ProviderError::Transport(_)) => 502,
             Self::Route(RouteError::NoRoutesAvailable(_)) => 503,
+            Self::ServerShutdown => 503,
             Self::Store(StoreError::Unavailable(_)) => 503,
             Self::Auth(AuthError::HashVerification(_))
             | Self::Store(_)
@@ -247,6 +250,7 @@ impl GatewayError {
             Self::McpUpstreamAuthRequired { .. }
             | Self::McpCredentialRequired { .. }
             | Self::McpCredentialExpired { .. } => "authentication_error",
+            Self::ServerShutdown => "server_error",
             Self::Internal(_) => "internal_error",
         }
     }
@@ -322,6 +326,7 @@ impl GatewayError {
             Self::McpUpstreamAuthRequired { .. } => "mcp_upstream_auth_required",
             Self::McpCredentialRequired { .. } => "credential_required",
             Self::McpCredentialExpired { .. } => "credential_expired",
+            Self::ServerShutdown => "server_shutdown",
             Self::Internal(_) => "internal_error",
         }
     }

@@ -30,6 +30,8 @@ cron.workspace = true
 http.workspace = true
 http-body.workspace = true
 http-body-util.workspace = true
+hyper = { version = "1", features = ["server"] }
+hyper-util = { version = "0.1", features = ["server-auto", "service", "tokio"] }
 ipnet.workspace = true
 lettre.workspace = true
 openidconnect.workspace = true
@@ -57,6 +59,7 @@ uuid.workspace = true
 tower.workspace = true
 async-trait.workspace = true
 gateway-guardrails = { workspace = true, features = ["test-utils"] }
+libsql.workspace = true
 serial_test = "4"
 tempfile = "3"
 tokio = { workspace = true, features = ["test-util"] }

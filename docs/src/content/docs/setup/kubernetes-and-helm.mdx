@@ -137,7 +137,7 @@ The guard runs only on `helm upgrade`, after `--wait`. It doesn't run on install
 
 ### Migrations and rollback
 
-A rollback changes the pods, not the database. The older gateway can serve a database that a newer one migrated only if each newer migration records that the older version can read it. Otherwise the older pods fail their migration check, and you must restore the backup taken before the upgrade. Take one before every upgrade. See [Roll back](/operations/admin-runbooks/#roll-back).
+A rollback changes the pods, not the database. Each gateway checks schema compatibility at startup, even when it does not run migrations. The older gateway can serve a database that a newer one migrated only if each newer migration records that the older version can read it. Otherwise the older pods fail the check, and you must restore the backup taken before the upgrade. Take one before every upgrade. See [Roll back](/operations/admin-runbooks/#roll-back).
 
 ## Traffic, scaling, and scheduling
 

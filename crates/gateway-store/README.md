@@ -14,6 +14,7 @@ For the runtime policy and the rollout rationale, see [`docs/adr/2026-03-09-runt
 - Each migration version is applied inside an explicit per-migration transaction on both backends.
 - Migration SQL, the `refinery_schema_history` insert, and the reader-compatibility row are in the same transaction boundary.
 - Existing known `refinery_schema_history` rows are validated against the active registry before `status`, `check`, or `apply`. Newer versions are accepted only when their stored reader requirements permit this binary.
+- The gateway also checks compatibility at startup when migrations are disabled. Pending migrations do not block startup.
 - Databases carrying pre-baseline `V1` through `V16` history are not upgraded in place; recreate them before moving onto the `V17` baseline release.
 - Any failure during SQL application or history recording must roll back both schema/data changes and history state for that version.
 - Migration ordering and idempotency semantics are unchanged; failed versions remain pending until retried successfully.

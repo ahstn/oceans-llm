@@ -704,7 +704,18 @@ async fn ensure_postgres_history_table(pool: &sqlx::PgPool) -> anyhow::Result<()
 }
 
 async fn load_libsql_migration_state(path: &Path) -> anyhow::Result<LoadedMigrationState> {
+    if !path
+        .try_exists()
+        .with_context(|| format!("failed checking local libsql database `{}`", path.display()))?
+    {
+        return Ok(LoadedMigrationState {
+            applied_history: Vec::new(),
+            has_existing_app_tables: false,
+            compatibility: HashMap::new(),
+        });
+    }
     let db = libsql::Builder::new_local(path)
+        .flags(libsql::OpenFlags::SQLITE_OPEN_READ_ONLY)
         .build()
         .await
         .with_context(|| format!("failed opening local libsql database `{}`", path.display()))?;

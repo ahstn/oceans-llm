@@ -628,32 +628,56 @@ async fn end_listen_streams_on_drain(
     axum::response::Response::from_parts(parts, axum::body::Body::from_stream(body))
 }
 
-/// Answers 503 when the drain limit passes before a handler has a response,
-/// such as a slow non-streaming upstream call or a guardrail that buffers a
-/// whole stream. Responses already sent end through their own body streams.
+/// Answers 503 at the cutoff without cancelling in-progress usage or logging.
+/// A client disconnect still aborts its handler; only shutdown detaches it into
+/// the bounded finalization wait. Responses already sent own their body streams.
 async fn respond_before_cutoff(
     axum::extract::State(shutdown): axum::extract::State<crate::shutdown::Shutdown>,
     request: axum::extract::Request,
     next: middleware::Next,
 ) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    use tracing::Instrument;
+
+    if shutdown.is_cut_off() {
+        return shutdown_response();
+    }
+    let handler_shutdown = shutdown.clone();
+    let mut handler = tokio_util::task::AbortOnDropHandle::new(
+        shutdown.tasks().spawn(
+            async move {
+                let response = next.run(request).await;
+                if handler_shutdown.is_cut_off() {
+                    // Drop any newly created stream body while the handler is
+                    // still tracked, before the finalization wait can see empty.
+                    drop(response);
+                    shutdown_response()
+                } else {
+                    response
+                }
+            }
+            .in_current_span(),
+        ),
+    );
     tokio::select! {
-        response = next.run(request) => response,
+        response = &mut handler => response.unwrap_or_else(|error| {
+            tracing::error!(%error, panic = error.is_panic(), "request handler task failed");
+            error::AppError(gateway_core::GatewayError::Internal(
+                "request handler task failed".to_string(),
+            )).into_response()
+        }),
         () = shutdown.cut_off_reached() => {
             tracing::warn!("shutdown drain limit reached before the response was ready");
-            let body = serde_json::json!({
-                "error": {
-                    "message": "the gateway shut down before the response was ready; retry the request",
-                    "type": "server_error",
-                    "code": handlers::SERVER_SHUTDOWN,
-                    "param": null,
-                }
-            });
-            axum::response::IntoResponse::into_response((
-                http::StatusCode::SERVICE_UNAVAILABLE,
-                axum::Json(body),
-            ))
+            drop(handler.detach());
+            shutdown_response()
         }
     }
+}
+
+fn shutdown_response() -> axum::response::Response {
+    axum::response::IntoResponse::into_response(error::AppError(
+        gateway_core::GatewayError::ServerShutdown,
+    ))
 }
 
 #[derive(Clone, Copy)]
@@ -862,5 +886,76 @@ mod tests {
             .expect("body");
         let body: serde_json::Value = serde_json::from_slice(&body).expect("JSON body");
         assert_eq!(body["error"]["code"], "server_shutdown");
+    }
+
+    #[tokio::test]
+    async fn client_disconnect_still_cancels_the_handler_before_cutoff() {
+        use tower::ServiceExt;
+
+        struct Dropped(Option<tokio::sync::oneshot::Sender<()>>);
+        impl Drop for Dropped {
+            fn drop(&mut self) {
+                let _ = self.0.take().unwrap().send(());
+            }
+        }
+        let shutdown = crate::shutdown::Shutdown::new();
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel();
+        let gate = std::sync::Arc::new(std::sync::Mutex::new(Some((entered_tx, dropped_tx))));
+        let router = Router::new()
+            .route(
+                "/",
+                get(move || {
+                    let (entered, dropped) = gate.lock().unwrap().take().unwrap();
+                    async move {
+                        let _guard = Dropped(Some(dropped));
+                        entered.send(()).unwrap();
+                        std::future::pending::<&'static str>().await
+                    }
+                }),
+            )
+            .layer(middleware::from_fn_with_state(
+                shutdown.clone(),
+                respond_before_cutoff,
+            ));
+        let pending = tokio::spawn(router.oneshot(request(http::Method::GET, "/")));
+        entered_rx.await.unwrap();
+        pending.abort();
+        assert!(pending.await.unwrap_err().is_cancelled());
+        dropped_rx
+            .await
+            .expect("client cancellation aborts the provider-owning handler");
+        assert!(shutdown.finish_tasks().await);
+    }
+
+    #[tokio::test]
+    async fn handler_panics_become_counted_gateway_errors() {
+        use tower::ServiceExt;
+
+        async fn panicking_handler() -> &'static str {
+            panic!("test handler panic");
+        }
+        let shutdown = crate::shutdown::Shutdown::new();
+        let counters = std::sync::Arc::new(traffic::TrafficCounters::new());
+        let router = Router::new()
+            .route("/", get(panicking_handler))
+            .layer(middleware::from_fn_with_state(
+                shutdown.clone(),
+                respond_before_cutoff,
+            ))
+            .layer(middleware::from_fn_with_state(
+                counters.clone(),
+                traffic::count_responses,
+            ));
+        let response = router
+            .oneshot(request(http::Method::GET, "/"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), http::StatusCode::INTERNAL_SERVER_ERROR);
+        let snapshot = counters.snapshot(false);
+        assert_eq!(snapshot.requests, 1);
+        assert_eq!(snapshot.gateway_errors, 1);
+        assert_eq!(snapshot.upstream_errors, 0);
+        assert!(shutdown.finish_tasks().await);
     }
 }

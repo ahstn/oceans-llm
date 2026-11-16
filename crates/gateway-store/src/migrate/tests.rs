@@ -5,6 +5,8 @@ use super::*;
 use crate::tests::{
     PostgresTestDatabase, create_postgres_test_database, drop_postgres_test_database,
 };
+#[path = "test_support.rs"]
+mod test_support;
 
 struct TestDatabase {
     options: StoreConnectionOptions,
@@ -77,14 +79,8 @@ impl TestDatabase {
     }
 
     async fn add_newer(&self, version: u32, minimum: Option<u32>) {
-        self.execute(&format!(
-            "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) VALUES ({version}, 'future_{version}', 0, 'future-checksum')"
-        )).await;
-        if let Some(minimum) = minimum {
-            self.execute(&format!(
-                "INSERT INTO gateway_migration_compatibility (version, min_reader_version) VALUES ({version}, {minimum})"
-            )).await;
-        }
+        self.execute(&test_support::newer_migration_sql(version, minimum))
+            .await;
     }
 
     async fn compatibility(&self) -> HashMap<u32, u32> {

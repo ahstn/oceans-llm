@@ -143,13 +143,18 @@ async fn maybe_run_migrations(
     database_options: &gateway_store::StoreConnectionOptions,
     enabled: bool,
 ) -> anyhow::Result<()> {
-    if !enabled {
-        return Ok(());
+    if enabled {
+        run_migrations_with_options(database_options)
+            .await
+            .context("failed to run database migrations")?;
+    } else {
+        let status = status_migrations_with_options(database_options).await?;
+        let pending = status.pending_count();
+        if pending > 0 {
+            tracing::warn!(pending, "database migrations are pending");
+        }
     }
-
-    run_migrations_with_options(database_options)
-        .await
-        .context("failed to run database migrations")
+    Ok(())
 }
 
 async fn seed_config<S>(store: &S, config: &GatewayConfig) -> anyhow::Result<()>
@@ -389,21 +394,15 @@ async fn serve_until_shutdown(
     drain: Duration,
 ) -> anyhow::Result<()> {
     shutdown.listen_for_signals(drain)?;
-    // Peer addresses feed request policy and the request IP on admin audit entries.
-    let server = axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-    )
-    .with_graceful_shutdown(shutdown.clone().drain_started());
-    shutdown
-        .serve(server.into_future())
+    let result = shutdown
+        .serve(listener, app)
         .await
-        .context("gateway server stopped unexpectedly")?;
+        .context("gateway server stopped unexpectedly");
     if !shutdown.finish_tasks().await {
         tracing::warn!("stream usage or request-log writes were still running at exit");
     }
     tracing::info!("gateway stopped");
-    Ok(())
+    result
 }
 
 /// Binds `server.management_bind`, when set, for `gateway rollout-guard`.
@@ -867,6 +866,149 @@ mod tests {
     use tempfile::tempdir;
 
     use super::validate_config_file;
+
+    mod migration_test_support {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../gateway-store/src/migrate/test_support.rs"
+        ));
+    }
+
+    async fn newer_database(
+        path: &std::path::Path,
+        compatible: bool,
+    ) -> gateway_store::StoreConnectionOptions {
+        let options = gateway_store::StoreConnectionOptions::Libsql {
+            path: path.to_owned(),
+        };
+        gateway_store::run_migrations_with_options(&options)
+            .await
+            .unwrap();
+        let status = gateway_store::status_migrations_with_options(&options)
+            .await
+            .unwrap();
+        let version = status.entries.last().unwrap().version + 1;
+        let minimum = if compatible { 0 } else { version };
+        let database = libsql::Builder::new_local(path).build().await.unwrap();
+        database
+            .connect()
+            .unwrap()
+            .execute_batch(&migration_test_support::newer_migration_sql(
+                version,
+                Some(minimum),
+            ))
+            .await
+            .unwrap();
+        options
+    }
+
+    #[tokio::test]
+    async fn disabled_migrations_reject_incompatible_newer_schema() {
+        let dir = tempdir().unwrap();
+        let options = newer_database(&dir.path().join("gateway.db"), false).await;
+        let error = super::maybe_run_migrations(&options, false)
+            .await
+            .unwrap_err();
+        assert!(format!("{error:#}").contains("database schema is newer than this gateway"));
+    }
+
+    #[tokio::test]
+    async fn disabled_migrations_accept_compatible_newer_schema() {
+        let dir = tempdir().unwrap();
+        let options = newer_database(&dir.path().join("gateway.db"), true).await;
+        super::maybe_run_migrations(&options, false).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn disabled_migrations_leave_current_database_unchanged() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("gateway.db");
+        let options = gateway_store::StoreConnectionOptions::Libsql { path: path.clone() };
+        gateway_store::run_migrations_with_options(&options)
+            .await
+            .unwrap();
+        let before = std::fs::read(&path).unwrap();
+        super::maybe_run_migrations(&options, false).await.unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn disabled_migrations_read_wal_database_after_clean_close() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("gateway.db");
+        let options = gateway_store::StoreConnectionOptions::Libsql { path: path.clone() };
+        gateway_store::run_migrations_with_options(&options)
+            .await
+            .unwrap();
+        {
+            let database = libsql::Builder::new_local(&path).build().await.unwrap();
+            let connection = database.connect().unwrap();
+            let mut rows = connection
+                .query("PRAGMA journal_mode=WAL", ())
+                .await
+                .unwrap();
+            let row = rows.next().await.unwrap().unwrap();
+            assert_eq!(row.get::<String>(0).unwrap(), "wal");
+        }
+        assert!(!path.with_extension("db-wal").exists());
+        assert!(!path.with_extension("db-shm").exists());
+        super::maybe_run_migrations(&options, false).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn disabled_migrations_allow_fresh_database_without_creating_it() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("gateway.db");
+        let options = gateway_store::StoreConnectionOptions::Libsql { path: path.clone() };
+        super::maybe_run_migrations(&options, false).await.unwrap();
+        assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn disabled_migrations_allow_empty_database_without_creating_tables() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("gateway.db");
+        let database = libsql::Builder::new_local(&path).build().await.unwrap();
+        database
+            .connect()
+            .unwrap()
+            .execute_batch("CREATE TABLE scratch_table (id INTEGER); DROP TABLE scratch_table;")
+            .await
+            .unwrap();
+        drop(database);
+        let before = std::fs::read(&path).unwrap();
+        let options = gateway_store::StoreConnectionOptions::Libsql { path: path.clone() };
+        super::maybe_run_migrations(&options, false).await.unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn disabled_migrations_allow_pending_history() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("gateway.db");
+        let options = gateway_store::StoreConnectionOptions::Libsql { path: path.clone() };
+        gateway_store::run_migrations_with_options(&options)
+            .await
+            .unwrap();
+        let database = libsql::Builder::new_local(&path).build().await.unwrap();
+        database
+            .connect()
+            .unwrap()
+            .execute_batch(
+                "DELETE FROM gateway_migration_compatibility WHERE version = (SELECT MAX(version) FROM refinery_schema_history);
+                 DELETE FROM refinery_schema_history WHERE version = (SELECT MAX(version) FROM refinery_schema_history);",
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            gateway_store::status_migrations_with_options(&options)
+                .await
+                .unwrap()
+                .pending_count(),
+            1
+        );
+        super::maybe_run_migrations(&options, false).await.unwrap();
+    }
 
     #[test]
     fn unscoped_ambient_provider_remains_available_only_to_legacy_routing() {

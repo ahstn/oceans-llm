@@ -395,6 +395,9 @@ async fn dispatch_decisions(
         .await;
         return Err(AppError(error));
     }
+    if state.shutdown.is_cut_off() {
+        return Err(AppError(GatewayError::ServerShutdown));
+    }
 
     let mut context = build_provider_context(
         &request_id,

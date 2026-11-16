@@ -6,17 +6,50 @@
 //! end so their clients reconnect elsewhere. In-flight requests and inference
 //! streams continue until `server.shutdown_drain_seconds` passes or a second
 //! signal arrives. Then the cutoff ends the remaining inference streams with
-//! an error, and the process waits briefly for their usage and request-log
-//! writes before it exits.
+//! an error. Connections get five seconds to close before they are aborted and
+//! joined, dropping even bodies blocked by a client that stopped reading.
+//! Only then do tracked handlers, usage and request-log writes get up to ten
+//! seconds to finish. These 5 + 10 seconds fit the chart's 20-second allowance
+//! after its preStop (10 seconds) and drain (300 seconds), within 330 seconds.
 
 use std::{future::Future, time::Duration};
 
+use axum::{Extension, Router, extract::ConnectInfo};
+use hyper::rt::Executor;
+use hyper_util::{rt::TokioIo, server::conn::auto::Builder, service::TowerToHyperService};
+use tokio::net::TcpListener;
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 
 /// How long connections get to close after the cutoff ends their streams.
 const CUTOFF_GRACE: Duration = Duration::from_secs(5);
 /// How long tracked usage and request-log writes get once serving stops.
 const FINALIZATION_GRACE: Duration = Duration::from_secs(10);
+
+/// Hyper also spawns HTTP/2 stream and upgrade tasks through its executor.
+/// Track and cancel those with the connections, rather than leaving body
+/// ownership in detached Tokio tasks.
+#[derive(Clone, Default)]
+struct ConnectionExecutor {
+    tasks: TaskTracker,
+    abort: CancellationToken,
+}
+
+impl<F> Executor<F> for ConnectionExecutor
+where
+    F: Future + Send + 'static,
+    F::Output: Send,
+{
+    fn execute(&self, future: F) {
+        let abort = self.abort.clone();
+        self.tasks.spawn(async move {
+            tokio::select! {
+                biased;
+                () = abort.cancelled() => {}
+                _ = future => {}
+            }
+        });
+    }
+}
 
 /// The gateway's shutdown state, shared by the listener, readiness, and
 /// every response that outlives its handler. Cloning shares the state.
@@ -59,6 +92,11 @@ impl Shutdown {
         self.cutoff.cancelled().await;
     }
 
+    #[must_use]
+    pub fn is_cut_off(&self) -> bool {
+        self.cutoff.is_cancelled()
+    }
+
     /// Tasks the gateway waits for before it exits, such as stream usage
     /// accounting and request logging.
     #[must_use]
@@ -66,22 +104,55 @@ impl Shutdown {
         &self.tasks
     }
 
-    /// Runs `server` until it finishes draining its connections, or until
-    /// [`CUTOFF_GRACE`] after the cutoff, whichever comes first.
-    pub async fn serve<F>(&self, server: F) -> std::io::Result<()>
-    where
-        F: Future<Output = std::io::Result<()>>,
-    {
+    /// Owns every accepted connection, including its response bodies. Before
+    /// returning, closes and joins even connections blocked on socket writes,
+    /// so their drop finalizers are registered before `finish_tasks` starts.
+    /// Uses axum's TCP accept retry and resource-error backoff policy.
+    pub async fn serve(&self, mut listener: TcpListener, app: Router) -> std::io::Result<()> {
+        let connections = ConnectionExecutor::default();
+        loop {
+            tokio::select! {
+                biased;
+                () = self.draining.cancelled() => break,
+                (socket, peer) = axum::serve::Listener::accept(&mut listener) => {
+                    let service = app.clone().layer(Extension(ConnectInfo(peer)));
+                    let shutdown = self.clone();
+                    let executor = connections.clone();
+                    connections.execute(async move {
+                        let mut builder = Builder::new(executor);
+                        builder.http2().enable_connect_protocol();
+                        let connection = builder.serve_connection_with_upgrades(
+                            TokioIo::new(socket), TowerToHyperService::new(service),
+                        );
+                        tokio::pin!(connection);
+                        let result = tokio::select! {
+                            result = &mut connection => result,
+                            () = shutdown.draining.cancelled() => {
+                                connection.as_mut().graceful_shutdown();
+                                connection.await
+                            }
+                        };
+                        if let Err(error) = result {
+                            tracing::debug!(%error, "connection closed with an error");
+                        }
+                    });
+                }
+            }
+        }
+        drop(listener);
+        connections.tasks.close();
         tokio::select! {
-            result = server => result,
+            () = connections.tasks.wait() => {}
             () = async {
                 self.cut_off_reached().await;
                 tokio::time::sleep(CUTOFF_GRACE).await;
             } => {
                 tracing::warn!("connections were still open after the shutdown cutoff; closing them");
-                Ok(())
+                connections.abort.cancel();
+                connections.tasks.wait().await;
             }
         }
+        Ok(())
     }
 
     /// Waits up to [`FINALIZATION_GRACE`] for tracked tasks. Returns whether
@@ -150,27 +221,6 @@ mod tests {
     use std::time::Duration;
 
     use super::Shutdown;
-
-    #[tokio::test(start_paused = true)]
-    async fn serve_returns_shortly_after_the_cutoff_when_connections_stay_open() {
-        let shutdown = Shutdown::new();
-        let server = std::future::pending::<std::io::Result<()>>();
-        let serving = tokio::spawn({
-            let shutdown = shutdown.clone();
-            async move { shutdown.serve(server).await }
-        });
-
-        tokio::time::sleep(Duration::from_secs(60)).await;
-        assert!(
-            !serving.is_finished(),
-            "a drain without a cutoff keeps serving"
-        );
-
-        shutdown.cut_off();
-        tokio::time::sleep(super::CUTOFF_GRACE + Duration::from_millis(1)).await;
-        assert!(shutdown.is_draining());
-        serving.await.expect("serve task").expect("serve result");
-    }
 
     #[tokio::test(start_paused = true)]
     async fn finish_tasks_waits_for_tracked_work_but_not_forever() {
