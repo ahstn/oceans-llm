@@ -36,7 +36,9 @@ pub async fn run(
     gateway: &str,
     as_json: bool,
 ) -> anyhow::Result<()> {
-    let ProvidersCommand::SetCopilotToken(args) = command;
+    let ProvidersCommand::SetCopilotToken(args) = command else {
+        unreachable!("ChatGPT login is dispatched without a gateway")
+    };
     let stdin = io::stdin();
     let token = read_token(&args, stdin.lock(), stdin.is_terminal())?;
     let provider_key = store_token(client, args.provider.as_deref(), &token).await?;

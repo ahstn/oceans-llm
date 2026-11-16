@@ -146,6 +146,21 @@ fn parse_age(value: &str) -> Result<Duration, String> {
 pub enum ProvidersCommand {
     /// Store your GitHub token for a Copilot provider's GitHub user authentication.
     SetCopilotToken(CopilotTokenArgs),
+    /// Sign in with ChatGPT and save credentials for a ChatGPT plan provider.
+    LoginChatgpt(ChatgptLoginArgs),
+}
+
+#[derive(Args)]
+pub struct ChatgptLoginArgs {
+    /// Credential file path (default: $XDG_CONFIG_HOME/oceans/chatgpt-plan/credential.json).
+    #[arg(long, value_name = "PATH")]
+    pub output: Option<PathBuf>,
+    /// Preferred loopback callback port; a free port is used if this one is busy.
+    #[arg(long, default_value_t = 1455)]
+    pub port: u16,
+    /// Print the authorization URL without opening a browser.
+    #[arg(long)]
+    pub no_browser: bool,
 }
 
 #[derive(Args)]

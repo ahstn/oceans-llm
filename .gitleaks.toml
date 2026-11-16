@@ -22,13 +22,14 @@ regexes = [
 # characters of its modulus, which only this key has. Matches report partial
 # captures of the key, so the whole value cannot be anchored.
 [[allowlists]]
-description = "Throwaway RSA key shared by the token and Copilot tests"
+description = "Throwaway RSA key shared by the token, Copilot, and CLI login tests"
 targetRules = ["private-key"]
 condition = "AND"
 # `(^|/)` because the staged-file scan reports paths under a temporary directory.
 paths = [
   '''(^|/)crates/gateway-providers/src/token\.rs$''',
   '''(^|/)crates/gateway-providers/src/copilot/tests\.rs$''',
+  '''(^|/)crates/oceans-cli/src/chatgpt_test_key\.pem$''',
 ]
 regexes = ['''MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCo1WHWzHdosbKK''']
 
