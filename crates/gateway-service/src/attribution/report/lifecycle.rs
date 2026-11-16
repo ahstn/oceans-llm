@@ -201,6 +201,21 @@ pub(super) fn summary(
 /// Resolves each merged pull request's revert link against every loaded pull request: by the
 /// reverted number, else by a reverted commit listed in, or merging, another pull request.
 /// Marks confirmed reverts and their originals, and fills the summary's revert figures.
+/// Whether a `revert_commit` link names only commits listed in this pull request.
+fn reverts_only_own_commits(
+    link: &AttributionRevertLink,
+    pr: &AttributionPullRequestRecord,
+) -> bool {
+    link.evidence == AttributionRevertEvidence::RevertCommit
+        && link.pull_request_number.is_none()
+        && !link.commit_shas.is_empty()
+        && link.commit_shas.iter().all(|reverted| {
+            pr.commits
+                .iter()
+                .any(|commit| commit.commit_sha.starts_with(reverted.as_str()))
+        })
+}
+
 pub(super) fn apply_reverts(
     activities: &mut [AttributionPullRequestActivity],
     loaded: &[AttributionPullRequestRecord],
@@ -232,7 +247,14 @@ pub(super) fn apply_reverts(
     for activity in activities.iter_mut() {
         let pr = &activity.pull_request;
         let repository = pr.repository.as_str();
-        let link = pr.lifecycle.details.reverts.as_ref();
+        // A revert of commits the pull request itself added is branch cleanup, not a revert of
+        // shipped work. Current CLIs leave such links out; ones synced earlier can still carry one.
+        let link = pr
+            .lifecycle
+            .details
+            .reverts
+            .as_ref()
+            .filter(|link| !reverts_only_own_commits(link, pr));
         let evidence = match link {
             Some(link) => link.evidence,
             None if is_revert_title(&pr.title) => AttributionRevertEvidence::Title,

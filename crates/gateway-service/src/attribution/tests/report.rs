@@ -1560,6 +1560,32 @@ async fn revert_links_resolve_to_the_reverted_pull_request() {
 }
 
 #[tokio::test]
+async fn a_revert_of_the_pull_requests_own_commit_is_not_a_revert() {
+    let dev = user_owner(Uuid::new_v4());
+    // The branch added a commit and reverted it before merging; an older CLI still sent the link.
+    let mut cleanup = pull_request(8, &dev, minutes(120), &[21, 22]);
+    cleanup.commits[0].commit_sha = "fedcba9876543210fedcba9876543210fedcba98".to_string();
+    cleanup.lifecycle.details.reverts = Some(AttributionRevertLink {
+        pull_request_number: None,
+        commit_shas: vec!["fedcba98".to_string()],
+        evidence: AttributionRevertEvidence::RevertCommit,
+    });
+    let mut store = FakeStore::with_commits(vec![]);
+    store.pull_requests = Mutex::new(vec![cleanup]);
+    let report = report(&store, &query()).await;
+
+    let activity = &report.pull_requests[0];
+    assert!(!activity.is_revert);
+    assert!(activity.revert.is_none());
+    let lifecycle = &report.pull_request_lifecycle;
+    assert_eq!(
+        (lifecycle.revert_count, lifecycle.possible_revert_count),
+        (0, 0)
+    );
+    assert_eq!(report.summary().reverted_pull_request_count, 0);
+}
+
+#[tokio::test]
 async fn the_revert_lookback_is_read_only_for_a_target_outside_the_window() {
     let dev = user_owner(Uuid::new_v4());
     let original = pull_request(5, &dev, minutes(30), &[11]);

@@ -43,6 +43,9 @@ pub struct Candidate<'a> {
     /// The pull request's commit subjects, oldest first. A rebase merge copies them, which is
     /// how it is told apart from a squash.
     pub commit_subjects: Vec<&'a str>,
+    /// The pull request's own commit SHAs. A `git revert` of one of them undoes work the branch
+    /// itself added, not a shipped change, so it is not revert evidence.
+    pub commit_shas: Vec<&'a str>,
 }
 
 /// `gh` lists at most this many commits per pull request, so a longer rebase merge's range
@@ -119,7 +122,16 @@ pub fn detect(
 ) -> Option<RevertLink> {
     let number = github_revert_number(candidate.body, candidate.head_ref, repository_path)
         .filter(|reverted| *reverted != candidate.number);
-    let commit_shas = reverted_commits(&candidate.commit_bodies);
+    // A revert of a commit the same pull request added is branch cleanup, not a revert.
+    let commit_shas: Vec<String> = reverted_commits(&candidate.commit_bodies)
+        .into_iter()
+        .filter(|reverted| {
+            !candidate
+                .commit_shas
+                .iter()
+                .any(|own| own.to_ascii_lowercase().starts_with(reverted.as_str()))
+        })
+        .collect();
     let titled = is_revert_title(candidate.title);
     if !commit_shas.is_empty() {
         return Some(RevertLink {
@@ -630,6 +642,7 @@ mod tests {
             merged_at: Some(merged_at),
             commit_bodies: vec![],
             commit_subjects: vec![],
+            commit_shas: vec![],
         };
         let (original, unrelated, revert): (&'static str, &'static str, &'static str) =
             (original.leak(), unrelated.leak(), revert.leak());
@@ -680,6 +693,34 @@ mod tests {
     }
 
     #[test]
+    fn a_revert_of_the_pull_requests_own_commit_is_not_a_revert() {
+        let own = "2222222222222222222222222222222222222222";
+        let cleanup = Candidate {
+            number: 9,
+            title: "Add search",
+            body: "",
+            head_ref: "feat/search",
+            merge_commit_sha: None,
+            merged_at: None,
+            commit_bodies: vec!["", "This reverts commit 2222222."],
+            commit_subjects: vec!["Add a draft", "Revert \"Add a draft\""],
+            commit_shas: vec![own, "3333333333333333333333333333333333333333"],
+        };
+        assert_eq!(detect(&cleanup, "acme/widgets", &ChangeCache::new()), None);
+        // A revert of a commit from elsewhere in the same pull request still counts.
+        let shipped = Candidate {
+            commit_bodies: vec!["This reverts commit 4444444444444444444444444444444444444444."],
+            ..cleanup
+        };
+        let link = detect(&shipped, "acme/widgets", &ChangeCache::new()).expect("revert");
+        assert_eq!(link.evidence, "revert_commit");
+        assert_eq!(
+            link.commit_shas,
+            vec!["4444444444444444444444444444444444444444"]
+        );
+    }
+
+    #[test]
     fn the_strongest_signal_wins() {
         let cache = ChangeCache::new();
         let base = Candidate {
@@ -691,6 +732,7 @@ mod tests {
             merged_at: None,
             commit_bodies: vec!["This reverts commit 1111111111111111111111111111111111111111."],
             commit_subjects: vec![],
+            commit_shas: vec![],
         };
         let link = detect(&base, "acme/widgets", &cache).unwrap();
         assert_eq!(
@@ -700,6 +742,7 @@ mod tests {
         let button = Candidate {
             commit_bodies: vec![],
             commit_subjects: vec![],
+            commit_shas: vec![],
             ..base
         };
         let link = detect(&button, "acme/widgets", &cache).unwrap();
@@ -782,6 +825,7 @@ mod tests {
             merged_at: Some("2026-11-03T00:00:00Z"),
             commit_bodies: vec![],
             commit_subjects: vec![],
+            commit_shas: vec![],
         };
         let original_pr = Candidate {
             number: 1,
@@ -792,6 +836,7 @@ mod tests {
             merged_at: Some("2026-11-01T00:00:00Z"),
             commit_bodies: vec![],
             commit_subjects: vec![],
+            commit_shas: vec![],
         };
         // Fetched newest first: the revert arrives before its original.
         remember(
@@ -845,6 +890,7 @@ mod tests {
             merged_at: Some("2026-11-01T00:00:00Z"),
             commit_bodies: vec![],
             commit_subjects: vec!["Add b", "Add c"],
+            commit_shas: vec![],
         };
         assert_eq!(
             change_base(dir, &original, &rebased),
@@ -856,6 +902,7 @@ mod tests {
             merge_commit_sha: Some(&squashed),
             commit_bodies: vec![],
             commit_subjects: vec!["Start d", "Finish d"],
+            commit_shas: vec![],
             ..original
         };
         assert_eq!(
@@ -881,6 +928,7 @@ mod tests {
             merged_at: Some("2026-11-03T00:00:00Z"),
             commit_bodies: vec![],
             commit_subjects: vec!["Drop b and c"],
+            commit_shas: vec![],
         };
         let mut cache = ChangeCache::new();
         let mut budget = FingerprintBudget::new(1);

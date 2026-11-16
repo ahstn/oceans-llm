@@ -347,6 +347,11 @@ fn candidate(fetched: &GhPullRequest) -> Candidate<'_> {
             .iter()
             .map(|commit| commit.message_headline.as_str())
             .collect(),
+        commit_shas: fetched
+            .commits
+            .iter()
+            .map(|commit| commit.oid.as_str())
+            .collect(),
     }
 }
 
