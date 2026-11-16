@@ -1,9 +1,9 @@
 {
   "metadata": {
     "source": "vendored_models_dev",
-    "etag": "\"deeda196813750adfeaeb342b677a4cb\"",
-    "fetched_at": "2026-11-16T00:00:37.517912Z",
-    "checksum": "279ec776aaecc87249c744260f91b9824bc3170921039759d93e039727630685"
+    "etag": "\"ca086f881439f693fcd34f013aac9447\"",
+    "fetched_at": "2026-11-16T20:53:46.6716Z",
+    "checksum": "beb645cb6d81c024bd0205d2bedd2aa1dff5c902e6f5388a5c819f8d4537552b"
   },
   "providers": {
     "amazon-bedrock": {
@@ -23347,6 +23347,53 @@
             ]
           }
         },
+        "hy4-flash-free": {
+          "id": "hy4-flash-free",
+          "display_name": "Hy4 flash Free",
+          "release_date": "2026-11-16",
+          "last_updated": "2026-11-16",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": null,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "none",
+                  "high"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": "0.0000",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": 983040,
+            "output": 65536
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
         "iceman-free": {
           "id": "iceman-free",
           "display_name": "Iceman Free",
@@ -27760,8 +27807,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.3200",
-            "output": "0.8900",
+            "input": "0.2574",
+            "output": "1.0287",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -27771,7 +27818,7 @@
           "limit": {
             "context": 163840,
             "input": null,
-            "output": 16384
+            "output": 16000
           },
           "modalities": {
             "input": [
@@ -28099,9 +28146,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0434",
-            "output": "0.3000",
-            "cache_read": "0.0350",
+            "input": "0.0600",
+            "output": "0.1800",
+            "cache_read": "0.0150",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -28110,7 +28157,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 943718
+            "output": 384000
           },
           "modalities": {
             "input": [
@@ -28291,9 +28338,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.3000",
-            "output": "1.2000",
-            "cache_read": "0.0060",
+            "input": "0.1400",
+            "output": "0.4200",
+            "cache_read": "0.0042",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -28302,7 +28349,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 943718
+            "output": 393216
           },
           "modalities": {
             "input": [
@@ -28340,9 +28387,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0380",
-            "output": "0.5000",
-            "cache_read": "0.0100",
+            "input": "0.1500",
+            "output": "0.6000",
+            "cache_read": "0.0030",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -28351,7 +28398,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 943718
+            "output": 393216
           },
           "modalities": {
             "input": [
@@ -30322,7 +30369,7 @@
           "cost": {
             "conditions": {},
             "input": "0.0600",
-            "output": "0.2500",
+            "output": "0.1500",
             "cache_read": "0.0150",
             "cache_write": null,
             "input_audio": null,
@@ -30507,6 +30554,49 @@
           "modalities": {
             "input": [
               "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "inclusionai/ling-3.2-flash:free": {
+          "id": "inclusionai/ling-3.2-flash:free",
+          "display_name": "Ling 3.2 Flash (free)",
+          "release_date": "2026-11-13",
+          "last_updated": "2026-11-13",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "toggle"
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0000",
+            "output": "0.0000",
+            "cache_read": null,
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": null,
+            "output": 262144
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
             ],
             "output": [
               "text"
@@ -30958,8 +31048,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0500",
-            "output": "0.3300",
+            "input": "0.0509",
+            "output": "0.3350",
             "cache_read": null,
             "cache_write": null,
             "input_audio": null,
@@ -30969,7 +31059,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 117964
+            "output": 72000
           },
           "modalities": {
             "input": [
@@ -31660,9 +31750,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2700",
-            "output": "0.9500",
-            "cache_read": "0.0300",
+            "input": "0.2950",
+            "output": "1.2000",
+            "cache_read": "0.0600",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -31671,7 +31761,7 @@
           "limit": {
             "context": 198000,
             "input": null,
-            "output": 32768
+            "output": 176947
           },
           "modalities": {
             "input": [
@@ -33024,8 +33114,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "2.0000",
-            "output": "10.0000",
+            "input": "0.2403",
+            "output": "8.4023",
             "cache_read": "0.2000",
             "cache_write": null,
             "input_audio": null,
@@ -33739,7 +33829,7 @@
           "cost": {
             "conditions": {},
             "input": "0.1500",
-            "output": "0.4700",
+            "output": "0.5000",
             "cache_read": "0.0200",
             "cache_write": null,
             "input_audio": null,
@@ -33749,7 +33839,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 943718
+            "output": 235929
           },
           "modalities": {
             "input": [
@@ -36507,9 +36597,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0300",
-            "output": "0.1300",
-            "cache_read": "0.0300",
+            "input": "0.0750",
+            "output": "0.3000",
+            "cache_read": "0.0375",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -36518,7 +36608,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 117964
+            "output": 65536
           },
           "modalities": {
             "input": [
@@ -36889,7 +36979,7 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0500",
+            "input": "0.0600",
             "output": "0.5000",
             "cache_read": "0.0030",
             "cache_write": null,
@@ -37803,7 +37893,7 @@
           "metadata": {
             "reasoning": false,
             "tool_call": true,
-            "structured_output": true,
+            "structured_output": false,
             "attachment": false,
             "temperature": true,
             "knowledge": "2025-04",
@@ -38041,45 +38131,6 @@
             ]
           }
         },
-        "qwen/qwen3-vl-30b-a3b-thinking": {
-          "id": "qwen/qwen3-vl-30b-a3b-thinking",
-          "display_name": "Qwen3 VL 30B A3B Thinking",
-          "release_date": "2025-10-06",
-          "last_updated": "2025-10-06",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": true,
-            "attachment": true,
-            "temperature": true,
-            "knowledge": "2025-03-31",
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.2900",
-            "output": "1.0000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 262144,
-            "input": null,
-            "output": 235929
-          },
-          "modalities": {
-            "input": [
-              "text",
-              "image"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "qwen/qwen3-vl-8b-instruct": {
           "id": "qwen/qwen3-vl-8b-instruct",
           "display_name": "Qwen3 VL 8B Instruct",
@@ -38271,9 +38322,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.6000",
-            "output": "3.6000",
-            "cache_read": "0.1200",
+            "input": "0.4500",
+            "output": "3.0000",
+            "cache_read": "0.2200",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -38282,7 +38333,7 @@
           "limit": {
             "context": 262144,
             "input": null,
-            "output": 64000
+            "output": 81920
           },
           "modalities": {
             "input": [
@@ -38315,9 +38366,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1410",
-            "output": "0.2080",
-            "cache_read": "0.1270",
+            "input": "0.1220",
+            "output": "0.1800",
+            "cache_read": "0.1100",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -38922,7 +38973,7 @@
             "output_image": null
           },
           "limit": {
-            "context": 1048575,
+            "context": 1024000,
             "input": null,
             "output": 235929
           },
@@ -39127,6 +39178,56 @@
               "text",
               "image",
               "audio",
+              "video"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "qwen/qwen4-max": {
+          "id": "qwen/qwen4-max",
+          "display_name": "Qwen4 Max",
+          "release_date": "2026-11-16",
+          "last_updated": "2026-11-16",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "effort",
+                "values": [
+                  "none",
+                  "low",
+                  "high",
+                  "xhigh"
+                ]
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "1.5000",
+            "output": "4.5000",
+            "cache_read": "0.0750",
+            "cache_write": "1.8750",
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1000000,
+            "input": null,
+            "output": 131072
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image",
               "video"
             ],
             "output": [
@@ -39785,44 +39886,6 @@
             ]
           }
         },
-        "stepfun/step-3.5-flash": {
-          "id": "stepfun/step-3.5-flash",
-          "display_name": "Step 3.5 Flash",
-          "release_date": "2026-01-29",
-          "last_updated": "2026-02-13",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": true,
-            "structured_output": false,
-            "attachment": false,
-            "temperature": true,
-            "knowledge": "2025-01",
-            "reasoning_options": []
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.1000",
-            "output": "0.3000",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 262144,
-            "input": null,
-            "output": 65536
-          },
-          "modalities": {
-            "input": [
-              "text"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
         "stepfun/step-3.7-flash": {
           "id": "stepfun/step-3.7-flash",
           "display_name": "Step 3.7 Flash",
@@ -39915,48 +39978,6 @@
               "text",
               "image",
               "video"
-            ],
-            "output": [
-              "text"
-            ]
-          }
-        },
-        "tencent/hunyuan-a13b-instruct": {
-          "id": "tencent/hunyuan-a13b-instruct",
-          "display_name": "Hunyuan A13B Instruct",
-          "release_date": "2025-07-08",
-          "last_updated": "2025-07-08",
-          "metadata": {
-            "reasoning": true,
-            "tool_call": false,
-            "structured_output": true,
-            "attachment": false,
-            "temperature": true,
-            "knowledge": "2025-03-31",
-            "reasoning_options": [
-              {
-                "type": "toggle"
-              }
-            ]
-          },
-          "cost": {
-            "conditions": {},
-            "input": "0.1400",
-            "output": "0.5700",
-            "cache_read": null,
-            "cache_write": null,
-            "input_audio": null,
-            "output_audio": null,
-            "output_image": null
-          },
-          "limit": {
-            "context": 131072,
-            "input": null,
-            "output": 117964
-          },
-          "modalities": {
-            "input": [
-              "text"
             ],
             "output": [
               "text"
@@ -40207,6 +40228,49 @@
           "limit": {
             "context": 1048576,
             "input": 983010,
+            "output": 65536
+          },
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "tencent/hy4-flash": {
+          "id": "tencent/hy4-flash",
+          "display_name": "Hy4 flash",
+          "release_date": "2026-11-16",
+          "last_updated": "2026-11-16",
+          "metadata": {
+            "reasoning": true,
+            "tool_call": true,
+            "structured_output": true,
+            "attachment": true,
+            "temperature": true,
+            "knowledge": null,
+            "reasoning_options": [
+              {
+                "type": "toggle"
+              }
+            ]
+          },
+          "cost": {
+            "conditions": {},
+            "input": "0.0350",
+            "output": "0.1405",
+            "cache_read": "0.0015",
+            "cache_write": null,
+            "input_audio": null,
+            "output_audio": null,
+            "output_image": null
+          },
+          "limit": {
+            "context": 1048576,
+            "input": 983040,
             "output": 65536
           },
           "modalities": {
@@ -41559,9 +41623,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2000",
-            "output": "1.1000",
-            "cache_read": "0.0300",
+            "input": "0.1300",
+            "output": "0.8500",
+            "cache_read": "0.0250",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -41730,9 +41794,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.6000",
-            "output": "2.2000",
-            "cache_read": "0.1100",
+            "input": "0.4000",
+            "output": "1.7500",
+            "cache_read": "0.0800",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -41909,7 +41973,7 @@
           "limit": {
             "context": 204800,
             "input": null,
-            "output": 131072
+            "output": 182476
           },
           "modalities": {
             "input": [
@@ -41992,9 +42056,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0840",
-            "output": "3.6000",
-            "cache_read": "0.0790",
+            "input": "0.0699",
+            "output": "1.4000",
+            "cache_read": "0.0689",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -42492,7 +42556,7 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0380",
+            "input": "0.0360",
             "output": "0.5000",
             "cache_read": "0.0100",
             "cache_write": null,
