@@ -1,0 +1,22 @@
+ARN
+Anthropic
+AWS
+ChatGPT
+Claude Code
+Claude Opus
+Claude Sonnet
+Codex
+DeepSWE
+DeepSeek
+EKS
+GCP
+GitHub
+IAM
+IRSA
+LLM
+Oceans LLM
+OpenCode
+OpenRouter
+Pi
+RFC
+SSE

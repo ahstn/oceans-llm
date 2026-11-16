@@ -119,7 +119,7 @@ When the counter store fails in `open` mode, the gateway admits the request with
 
 - The gateway checks a request once, before the provider call. It makes one provider attempt and doesn't retry or fall back to another route ([issue #118](https://github.com/ahstn/oceans-llm/issues/118)). See [Request lifecycle and failure modes](/reference/request-lifecycle/).
 - A client retry is a new request, so it's counted again. The OpenAI and Anthropic Python SDKs retry `429` with backoff by default and read `Retry-After`.
-- Budget rejections use `422` by default, so `429` from this gateway normally means "slow down". If `budgets.exceeded_status_code` is set to `429`, a `429` can also be a budget rejection. Check `error.code`: it's `rate_limited` for a rate limit and `budget_exceeded` for a budget. See [hard and soft limits](/spend/budgets/#hard-and-soft-budgets).
+- Budget rejections use `422` by default, so `429` from this gateway normally means the caller must slow down. If `budgets.exceeded_status_code` is set to `429`, a `429` can also be a budget rejection. Check `error.code`: it's `rate_limited` for a rate limit and `budget_exceeded` for a budget. See [hard and soft limits](/spend/budgets/#hard-and-soft-budgets).
 - Each key can have at most 8 token counts in flight on each gateway instance. The gateway checks that cap before rate limits, and it also returns `429`.
 
 ## Storage and replicas
@@ -228,7 +228,7 @@ Platform admins manage admin policies on the **Rate Limits** page of the admin U
 - `PATCH /api/v1/admin/rate-limits/<policy_id>` updates a policy.
 - `DELETE /api/v1/admin/rate-limits/<policy_id>` deletes a policy.
 
-Admin policies can target one key, user, team, or MCP server, and admins can pause them without deleting them. Config policies appear on the same page as read-only entries. Admins can't enable a policy that would take its operation past 100 enabled policies.
+Admin policies can target one key, user, team, or MCP server, and admins can pause them without deleting them. Config policies appear alongside them as read-only entries. Admins can't enable a policy that would take its operation past 100 enabled policies.
 
 An admin change applies straight away on the replica that handled it, and on every other replica within `policy_refresh_seconds`. Changing a policy's operation, model or MCP server filter, period, or metric starts its counters from zero. Changing the limit or the name keeps them.
 

@@ -189,7 +189,7 @@ Redaction needs both `enabled: true` on the policy and `secret_redaction.enabled
 | --- | --- | --- |
 | `provider_tokens` | On | Tokens with a known prefix: AI providers (OpenAI, Anthropic, Google, Groq, xAI, OpenRouter, Hugging Face, and others), GitHub, GitLab, AWS access key IDs, Slack, Stripe, package registries, JWTs, and PEM private keys. |
 | `credentials` | On | Values that need context: the password in a connection URI, `Authorization: Bearer` tokens, values assigned to names that contain `password`, `secret`, `token`, `api_key`, or `private_key` at a word boundary, and provider-specific assignments such as `AWS_SECRET_ACCESS_KEY=...`. |
-| `generic` | Off | The gitleaks `generic-api-key` rule: high-entropy values assigned to names such as `key`, `token`, or `secret`. Expect more false positives. |
+| `generic` | Off | The gitleaks `generic-api-key` rule: high-entropy values assigned to names such as `key`, `token`, or `secret`. Expect an increase in false positives. |
 
 "Default" means the tier is in the default `tiers` list. No tier runs until redaction is turned on.
 
@@ -227,7 +227,7 @@ Each redacted request produces one `transformed` decision per matched rule, in t
 
 ### Durable batches
 
-Batch items are redacted when the batch worker submits them (see [batch admission](/configuration/model-routing/#batch-admission)). The worker stores the redacted item requests before it calls the provider, and before it marks a batch failed. So batch results return the redacted requests, failed batches included. If the prompt check rejects one item, the worker still redacts the other items. Cancelling a queued batch also redacts its stored items. Until one of these happens, stored items keep the original requests.
+Batch items are redacted when the batch worker submits them (see [batch admission](/configuration/model-routing/#batch-admission)). The worker stores the redacted item requests before it calls the provider, and before it marks a batch failed. Batch results therefore return the redacted requests, failed batches included. If the prompt check rejects one item, the worker still redacts the other items. Cancelling a queued batch also redacts its stored items. Until one of these happens, stored items keep the original requests.
 
 Managed-check transformations are stored only after the provider accepts the batch, so a retried submission doesn't transform its own earlier output again.
 
@@ -235,7 +235,7 @@ Managed-check transformations are stored only after the provider accepts the bat
 
 When any enabled policy redacts secrets, the gateway runs the same detection on captured [request-log](/observability/request-logs/) payloads: requests, responses, stream events, provider attempt details, and MCP invocations. It uses every tier that any redacting policy turns on, and disables a rule only if every redacting policy disables it.
 
-So secrets in responses are redacted in the logs, even though the caller still gets the response as the model produced it. Streamed responses are scanned one event at a time, so a secret that the provider splits across two stream events isn't redacted in the log.
+Secrets in responses are therefore redacted in the logs, even though the caller still gets the response as the model produced it. Streamed responses are scanned one event at a time, so a secret that the provider splits across two stream events isn't redacted in the log.
 
 ## Managed checks
 
@@ -390,7 +390,7 @@ On the per-server route, `/mcp/<server_key>`, the gateway buffers a guarded resu
 | The result is still open when the timeout passes. | `stream.buffer_timeout` | `504` |
 | The result's SSE data is invalid, or a JSON-RPC response has both `result` and `error`. | `stream.unparseable` | `403` |
 
-In `deny` mode the gateway answers with a JSON-RPC guardrail error. So a tool that holds its event stream open can't hold the caller's connection open too. In `audit` mode the gateway releases the result as it received it, including the bytes it had already buffered.
+In `deny` mode the gateway answers with a JSON-RPC guardrail error. A tool that holds its event stream open therefore can't hold the caller's connection open too. In `audit` mode the gateway releases the result as it received it, including the bytes it had already buffered.
 
 Some failures are upstream errors, not guardrail decisions. The caller gets `502` with `upstream_transport`, and the invocation is logged as a gateway error:
 

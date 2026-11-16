@@ -22,7 +22,7 @@ The **Control-plane changes** table has these columns:
 | **Actor** | Who made the change: a user, an API key or the system. |
 | **IP address** | The address of the request. See [Request IP](#request-ip). |
 
-An admin selects a row to open the entry. The entry also shows the **User agent**, **Before** and **After** (redacted summaries of the target's state) and **Details** (extra context, including the request ID). A value the gateway didn't record shows as "Not recorded".
+An admin selects a row to open the entry. The entry also shows the **User agent**, **Before** and **After** (redacted summaries of the target's state) and **Details** (extra context, including the request ID). A value the gateway didn't record shows as **Not recorded**.
 
 The **Actor** column names the person, not how they acted. A user can act through a session, an invitation link or an identity provider callback, and all of these show as a user. Sign-in entries (`session.created`) and invite redemptions (`user.invite_redeemed`) record the sign-in method in **Details**.
 
