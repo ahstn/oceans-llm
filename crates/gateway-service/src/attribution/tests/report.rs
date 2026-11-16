@@ -489,6 +489,35 @@ async fn hook_rows_sharing_a_session_hash_are_one_session() {
 }
 
 #[tokio::test]
+async fn a_hook_session_keeps_its_harness_when_a_note_joins_it() {
+    let dev = user_owner(Uuid::new_v4());
+    // git-ai's `pi` preset also covers Oh My Pi; the OMP hook row says which one it was.
+    let mut omp = agent_session(&dev, "omp", minutes(5));
+    omp.harness_key = "oh_my_pi".to_string();
+    let mut pi_note = note_session("s_omp", &["omp"]);
+    pi_note.agent_tool = "pi".to_string();
+    // A Claude Code hook session reads as git-ai's `claude`, joined to a note or not.
+    let claude_hook_only = agent_session(&dev, "cc", minutes(6));
+    let mut store = FakeStore::with_commits(vec![commit(
+        1,
+        &dev,
+        "github.com/acme/widgets",
+        minutes(30),
+        vec![pi_note],
+    )]);
+    store.agent_sessions = vec![omp, claude_hook_only];
+    let report = report(&store, &query()).await;
+
+    let mut harnesses = report
+        .harness_models
+        .iter()
+        .map(|row| (row.harness.as_str(), row.session_count))
+        .collect::<Vec<_>>();
+    harnesses.sort_unstable();
+    assert_eq!(harnesses, vec![("claude", 1), ("oh_my_pi", 1)]);
+}
+
+#[tokio::test]
 async fn a_hook_row_bridging_two_others_makes_them_one_session() {
     use crate::attribution::AttributionSessionOutcome;
 
@@ -1139,7 +1168,8 @@ async fn sessions_reach_their_furthest_stage_and_feed_the_tab_insights() {
         .iter()
         .find(|row| row.harness == "claude" && row.model_key == "claude-sonnet")
         .expect("claude row by request model");
-    assert_eq!((claude.session_count, claude.shipped_session_count), (2, 2));
+    // The idle Claude Code hook session joins the row too, so one harness reads as one row.
+    assert_eq!((claude.session_count, claude.shipped_session_count), (3, 2));
     assert_eq!(claude.ai_lines, 20);
 
     let day = &report.daily[0];

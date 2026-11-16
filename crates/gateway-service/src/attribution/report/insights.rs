@@ -210,7 +210,7 @@ impl ReportInputs<'_> {
                 None => {
                     rollups.push(SessionRollup {
                         reported: is_reported,
-                        harness: Some(session.harness_key.as_str()),
+                        harness: Some(hook_harness(&session.harness_key)),
                         ..SessionRollup::default()
                     });
                     rollups.len() - 1
@@ -243,8 +243,9 @@ impl ReportInputs<'_> {
                     by_hash.entry((scope, hash.as_str())).or_insert(index);
                 }
                 let rollup = &mut rollups[index];
-                // The note names the harness the way git-ai does, so prefer it.
-                rollup.harness = Some(session.agent_tool.as_str());
+                // The hook names the exact harness, which git-ai's shared presets can't: its `pi`
+                // covers Pi and Oh My Pi. So the note's tool only names a session with no hook row.
+                rollup.harness = rollup.harness.or(Some(session.agent_tool.as_str()));
                 rollup.note_model = rollup.note_model.or(session.agent_model.as_deref());
                 if !in_window {
                     continue;
@@ -398,6 +399,15 @@ fn dominant_model<'a>(facts: &[&'a AttributionRequestFact]) -> Option<&'a str> {
         .into_iter()
         .max_by(|left, right| left.1.cmp(&right.1).then(right.0.cmp(left.0)))
         .map(|(model, _)| model)
+}
+
+/// A hook's harness key in the report's vocabulary: git-ai's `claude` for the Claude Code hook,
+/// so one harness doesn't split into two rows. Every other hook key already names its harness.
+fn hook_harness(key: &str) -> &str {
+    match key {
+        "claude_code" => "claude",
+        other => other,
+    }
 }
 
 impl AttributionReport {
