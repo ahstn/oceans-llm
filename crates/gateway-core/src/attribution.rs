@@ -449,7 +449,9 @@ pub trait AttributionRepository {
         query: &AttributionReportQuery,
     ) -> Result<Vec<AttributionCommitRecord>, StoreError>;
 
-    /// PRs merged, opened or closed in range, newest first, with their commits.
+    /// PRs merged, opened, closed or changed on the forge in range, latest activity first. Only
+    /// merged ones carry their commits: the report reads open and closed ones for their
+    /// lifecycle alone, and a long branch's commit list would be read only to be dropped.
     async fn list_attribution_pull_requests(
         &self,
         query: &AttributionReportQuery,

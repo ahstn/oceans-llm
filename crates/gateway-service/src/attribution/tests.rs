@@ -10,9 +10,10 @@ use gateway_core::{
     ATTRIBUTION_MAX_HASHES_PER_LOOKUP, ATTRIBUTION_MAX_REQUEST_FACTS, ApiKeyModelGrantMode,
     ApiKeyOwnerKind, AttributionAgentSessionRecord, AttributionApplyOutcome,
     AttributionCommitRecord, AttributionCommitWrite, AttributionOwner,
-    AttributionPullRequestRecord, AttributionPullRequestWrite, AttributionReportQuery,
-    AttributionRepository, AttributionRequestFact, AttributionRequestSessionWrite,
-    AttributionSessionCommitTime, AttributionSessionEventWrite, AuthenticatedApiKey, StoreError,
+    AttributionPullRequestRecord, AttributionPullRequestState, AttributionPullRequestWrite,
+    AttributionReportQuery, AttributionRepository, AttributionRequestFact,
+    AttributionRequestSessionWrite, AttributionSessionCommitTime, AttributionSessionEventWrite,
+    AuthenticatedApiKey, StoreError,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -323,6 +324,12 @@ impl AttributionRepository for FakeStore {
             )
         });
         rows.truncate(query.limit as usize);
+        // As the stores read them: only merged pull requests carry their commits.
+        for row in &mut rows {
+            if row.lifecycle.state != AttributionPullRequestState::Merged {
+                row.commits.clear();
+            }
+        }
         Ok(rows)
     }
 

@@ -229,7 +229,8 @@ pub(crate) fn insert_pull_request_commits(
 /// A page of pull requests merged, opened, closed or changed on the forge in range (a review
 /// or push counts; a routine re-sync doesn't), latest activity first, each
 /// followed by its commits in list order: one row per commit, or one row with NULL commit
-/// columns for an empty list.
+/// columns for an empty list. Only merged pull requests join their commits; the report reads
+/// open and closed ones for their lifecycle alone.
 pub(crate) fn list_pull_requests(
     dialect: Dialect,
     query: &AttributionReportQuery,
@@ -250,6 +251,7 @@ pub(crate) fn list_pull_requests(
          SELECT {page_columns}, {JOINED_PULL_REQUEST_COMMIT_COLUMNS} FROM page \
          LEFT JOIN attribution_pull_request_commits c \
          ON c.attribution_pull_request_id = page.attribution_pull_request_id \
+         AND page.state = 'merged' \
          ORDER BY page.activity_at DESC, page.attribution_pull_request_id DESC, c.ordinal",
         page_columns = PULL_REQUEST_COLUMNS
             .split(", ")

@@ -533,6 +533,8 @@ async fn pull_requests_keep_their_lifecycle<S: GatewayStore>(store: &S) {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].merged_at, None);
     assert_eq!(listed[0].lifecycle, open.lifecycle);
+    // The report reads an open pull request for its lifecycle, so its commits aren't joined.
+    assert!(listed[0].commits.is_empty());
 
     assert_eq!(
         store
@@ -546,6 +548,7 @@ async fn pull_requests_keep_their_lifecycle<S: GatewayStore>(store: &S) {
         .await
         .expect("report");
     assert_eq!(listed[0].merged_at, Some(base()));
+    assert_eq!(listed[0].commits.len(), 1);
     // The merge write carries no activity time, so the stored one stays.
     assert_eq!(
         listed[0].lifecycle,

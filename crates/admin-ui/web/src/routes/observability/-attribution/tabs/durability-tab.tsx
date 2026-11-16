@@ -1,6 +1,7 @@
 // Durability: does AI-written code last? Line survival, churn and rework need data Oceans does not
-// collect yet, so most of this tab carries "Needs new data" pills as a standing reminder. Reverts
-// are matched by pull request title today. The collection plan lives in
+// collect yet, so most of this tab carries "Data" pills as a standing reminder. Reverts are the
+// report's confirmed ones (`is_revert`): a revert commit line, GitHub's revert button or an exact
+// inverse change; a revert title alone isn't counted. The collection plan lives in
 // docs/internal/2026-11-15-attribution-data-gaps.md.
 
 import { InsightCard, ReadinessBadge, TrendKpi } from '@/components/attribution/parts'
