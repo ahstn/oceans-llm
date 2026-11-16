@@ -1022,22 +1022,10 @@ providers:
 
 #[test]
 fn every_provider_type_has_a_capability_baseline_and_route_policy() {
-    // Adding a `ProviderConfig` variant breaks this match, which forces the new type into
-    // `TYPES`, and so into a decision on its baseline and whether routes narrow it.
+    // `TYPES` must list exactly the provider types serde accepts, read from its error for an
+    // unknown type, so a new `ProviderConfig` variant fails this test until it is given a
+    // baseline and a route policy here.
     use crate::config::ProviderConfig;
-
-    fn listed(provider: &ProviderConfig) -> &'static str {
-        match provider {
-            ProviderConfig::OpenAiCompat(_)
-            | ProviderConfig::GcpCloudRunOpenAiCompat(_)
-            | ProviderConfig::AnthropicCompat(_)
-            | ProviderConfig::GcpVertex(_)
-            | ProviderConfig::AwsBedrock(_)
-            | ProviderConfig::GitHubCopilot(_)
-            | ProviderConfig::TypeSafe(_) => provider.provider_type(),
-        }
-    }
-    let _ = listed;
 
     /// Whether `narrow_for_route_profile` has a rule for the type. A type without one serves
     /// its baseline on every route.
@@ -1060,6 +1048,24 @@ fn every_provider_type_has_a_capability_baseline_and_route_policy() {
         ("github_copilot", NarrowsPerRoute),
         ("typesafe", Baseline),
     ];
+
+    let error = serde_yaml::from_str::<ProviderConfig>("type: not_a_provider")
+        .expect_err("unknown provider type")
+        .to_string();
+    let (_, expected) = error
+        .split_once("expected one of ")
+        .unwrap_or_else(|| panic!("serde lists the provider types: {error}"));
+    let mut accepted = expected
+        .split(',')
+        .filter_map(|name| name.trim().split('`').nth(1))
+        .collect::<Vec<_>>();
+    accepted.sort_unstable();
+    let mut listed = TYPES.map(|(provider_type, _)| provider_type);
+    listed.sort_unstable();
+    assert_eq!(
+        accepted, listed,
+        "`TYPES` must list every provider type, with its route policy"
+    );
 
     let none = gateway_core::ProviderCapabilities::none();
     let compatibility = gateway_core::RouteCompatibility::default();

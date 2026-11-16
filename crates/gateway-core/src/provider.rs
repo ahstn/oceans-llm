@@ -223,7 +223,7 @@ impl ProviderCapabilities {
             // without an entry here cannot validate or advertise APIs its client lacks. The
             // gateway config test
             // `every_provider_type_has_a_capability_baseline_and_route_policy` lists every
-            // config type and fails to compile when one is added.
+            // provider type serde accepts and fails when one is added without an entry.
             _ => Self::none(),
         }
     }
