@@ -477,3 +477,36 @@ async fn request_session_entries_accept_gateway_uuids_before_request_completion(
     assert_eq!(report.body["data"]["totals"]["request_count"], 0);
     assert_private(&report, &gateway.email);
 }
+
+#[tokio::test]
+async fn attribution_report_harness_shape_builds_only_the_harness_view() {
+    let gateway = Gateway::new().await;
+    let request = gateway
+        .with_cookie(
+            Request::builder()
+                .uri("/api/v1/admin/attribution/report?days=7&shape=harness&compare=true"),
+        )
+        .body(Body::empty())
+        .unwrap();
+    let reply = gateway.send(request).await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+    let data = &reply.body["data"];
+    assert!(data["harness_models"].is_array());
+    for list in ["changes", "pull_requests", "users", "models", "daily"] {
+        assert_eq!(
+            data[list],
+            json!([]),
+            "{list} is built only for the full shape"
+        );
+    }
+    assert!(
+        data["previous_summary"].is_null(),
+        "the harness shape ignores compare"
+    );
+
+    let unknown = gateway
+        .with_cookie(Request::builder().uri("/api/v1/admin/attribution/report?shape=everything"))
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(gateway.send(unknown).await.status, StatusCode::BAD_REQUEST);
+}

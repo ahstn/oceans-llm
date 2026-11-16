@@ -15,7 +15,8 @@ use gateway_core::{
 use gateway_service::attribution::{
     AttributionChangeActivity, AttributionModelActivity, AttributionPullRequestActivity,
     AttributionReport, AttributionReportCoverage, AttributionReportTotals, AttributionUserActivity,
-    RequestTally, build_attribution_report, build_attribution_summary,
+    RequestTally, build_attribution_harness_report, build_attribution_report,
+    build_attribution_summary,
 };
 use gateway_store::{AnyStore, GatewayStore};
 use serde::{Deserialize, Serialize};
@@ -54,6 +55,22 @@ pub struct AttributionReportRequestQuery {
     /// false, so callers that read only this window pay for one build. `true` returns
     /// `previous_summary`; the Impact and My work tabs ask for it.
     pub compare: Option<bool>,
+    /// How much of the report to build. Defaults to `full`. `harness` builds only the totals,
+    /// coverage, session outcomes and harness × model rows, for the Agent Harnesses page; the
+    /// other lists come back empty and `compare` is ignored.
+    #[param(inline)]
+    pub shape: Option<AttributionReportShape>,
+}
+
+/// The parts of the report a caller reads.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AttributionReportShape {
+    /// Everything the Attribution tabs read.
+    #[default]
+    Full,
+    /// Totals, coverage, session outcomes and harness × model rows.
+    Harness,
 }
 
 /// Request counts and priced cost, split by pricing outcome as in the spend report.
@@ -253,7 +270,9 @@ pub async fn get_attribution_report(
 ) -> Result<Json<Envelope<AttributionReportView>>, AppError> {
     let current_user = require_authenticated_session(&state, &headers).await?;
     let window_days = parse_window_days(query.days)?;
-    let compare = query.compare.unwrap_or(false);
+    let shape = query.shape.unwrap_or_default();
+    // The harness shape has no previous-window figures to compare against.
+    let compare = shape == AttributionReportShape::Full && query.compare.unwrap_or(false);
     let user_id = report_user(&current_user, query.user_id.as_deref())?;
     let repository = query.repository.filter(|repository| !repository.is_empty());
     let (window_start, window_end) = report_window(window_days, OffsetDateTime::now_utc());
@@ -280,7 +299,16 @@ pub async fn get_attribution_report(
         }
     };
     let (report, previous) = tokio::try_join!(
-        build_attribution_report(state.store.as_ref(), &report_query),
+        async {
+            match shape {
+                AttributionReportShape::Full => {
+                    build_attribution_report(state.store.as_ref(), &report_query).await
+                }
+                AttributionReportShape::Harness => {
+                    build_attribution_harness_report(state.store.as_ref(), &report_query).await
+                }
+            }
+        },
         previous_report,
     )?;
     let names = Names::load(&state.store, &report).await?;

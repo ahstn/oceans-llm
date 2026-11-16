@@ -6404,6 +6404,12 @@ export interface operations {
                  *     `previous_summary`; the Impact and My work tabs ask for it.
                  */
                 compare?: boolean | null;
+                /**
+                 * @description How much of the report to build. Defaults to `full`. `harness` builds only the totals,
+                 *     coverage, session outcomes and harness × model rows, for the Agent Harnesses page; the
+                 *     other lists come back empty and `compare` is ignored.
+                 */
+                shape?: null | ("full" | "harness");
             };
             header?: never;
             path?: never;

@@ -288,6 +288,27 @@
                 "null"
               ]
             }
+          },
+          {
+            "name": "shape",
+            "in": "query",
+            "description": "How much of the report to build. Defaults to `full`. `harness` builds only the totals,\ncoverage, session outcomes and harness × model rows, for the Agent Harnesses page; the\nother lists come back empty and `compare` is ignored.",
+            "required": false,
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "string",
+                  "description": "The parts of the report a caller reads.",
+                  "enum": [
+                    "full",
+                    "harness"
+                  ]
+                }
+              ]
+            }
           }
         ],
         "responses": {

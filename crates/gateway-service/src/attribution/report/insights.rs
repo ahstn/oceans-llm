@@ -276,7 +276,7 @@ impl ReportInputs<'_> {
             entry.0 += 1;
             entry.1 = entry.1.merged(requests);
             // A summary-only build reads the outcomes, for shipped spend, but not the harness rows.
-            if !self.detail {
+            if self.shape == super::Shape::Summary {
                 continue;
             }
 

@@ -116,7 +116,7 @@ export function HarnessAttribution({
   function changeWindow(next: Window) {
     startTransition(async () => {
       try {
-        const response = await getAttribution({ data: { days: next, compare: false } })
+        const response = await getAttribution({ data: { days: next, shape: 'harness' } })
         // The toggle moves only with the report, so a failed load keeps both on the old window.
         setReport(response.data)
         setWindowDays(next)

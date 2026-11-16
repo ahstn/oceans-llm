@@ -44,7 +44,7 @@ export const Route = createFileRoute('/observability/agent-harnesses')({
     // The report is not awaited: request activity renders at once and the attribution section
     // streams in when it is ready. A failed report resolves to `null`, which the section shows.
     const attribution = attributionEnabled
-      ? getAttribution({ data: { days: 7, compare: false } }).then(
+      ? getAttribution({ data: { days: 7, shape: 'harness' } }).then(
           (response) => response.data,
           () => null,
         )

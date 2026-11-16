@@ -25,7 +25,8 @@ pub use report::{
     AttributionModelActivity, AttributionPeriodSummary, AttributionPullRequestActivity,
     AttributionPullRequestCommitActivity, AttributionReport, AttributionReportCoverage,
     AttributionReportTotals, AttributionSessionOutcome, AttributionSessionOutcomeTally,
-    AttributionUserActivity, RequestTally, build_attribution_report, build_attribution_summary,
+    AttributionUserActivity, RequestTally, build_attribution_harness_report,
+    build_attribution_report, build_attribution_summary,
 };
 
 /// Finds the Oceans user behind an author email. Implemented by the gateway over its store's

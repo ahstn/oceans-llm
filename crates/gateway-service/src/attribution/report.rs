@@ -227,7 +227,20 @@ pub async fn build_attribution_report<S>(
 where
     S: AttributionRepository + Sync,
 {
-    build_report(store, query, true).await
+    build_report(store, query, Shape::Full).await
+}
+
+/// Only what the Agent Harnesses page reads for `query`: totals, coverage, session outcomes and
+/// harness × model rows. It reads what the full report reads, but builds no changes, users,
+/// models, daily buckets or pull request rows.
+pub async fn build_attribution_harness_report<S>(
+    store: &S,
+    query: &AttributionReportQuery,
+) -> Result<AttributionReport, StoreError>
+where
+    S: AttributionRepository + Sync,
+{
+    build_report(store, query, Shape::Harness).await
 }
 
 /// The headline summary and read coverage for `query`, for comparing one window with another.
@@ -241,14 +254,27 @@ pub async fn build_attribution_summary<S>(
 where
     S: AttributionRepository + Sync,
 {
-    let report = build_report(store, query, false).await?;
+    let report = build_report(store, query, Shape::Summary).await?;
     Ok((report.summary(), report.coverage))
+}
+
+/// How much of the report to aggregate. Every shape reads the same rows, since each depends on
+/// the request allocation; the smaller ones skip the rollups their caller never reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Shape {
+    /// Everything the Attribution tabs read.
+    Full,
+    /// What [`AttributionReport::summary`] reads: totals, coverage, pull request activity
+    /// without per-commit details, and session outcomes.
+    Summary,
+    /// What the Agent Harnesses page reads: totals, coverage, session outcomes and harness rows.
+    Harness,
 }
 
 async fn build_report<S>(
     store: &S,
     query: &AttributionReportQuery,
-    detail: bool,
+    shape: Shape,
 ) -> Result<AttributionReport, StoreError>
 where
     S: AttributionRepository + Sync,
@@ -277,7 +303,7 @@ where
     let windows = commit_windows(load_commit_times(store, &hashes, query.to).await?);
     let (facts, request_facts_truncated) = load_request_facts(store, &hashes, query.to).await?;
     let mut inputs = ReportInputs::new(query, &commits, &facts, &windows);
-    inputs.detail = detail;
+    inputs.shape = shape;
     // Lookback commits only feed pull request totals, so a cap reached by them matters only
     // when the window has a pull request.
     let commits_capped = commits.len() >= limit
@@ -460,10 +486,8 @@ struct ReportInputs<'a> {
     uncommitted: Vec<&'a AttributionRequestFact>,
     /// `(scope, hash)` pairs that matched at least one request.
     joined: HashSet<(&'a str, &'a str)>,
-    /// Whether to build the detail rows. A summary-only build computes only what
-    /// [`AttributionReport::summary`] reads: totals, coverage, pull request activity without
-    /// per-commit details, and session outcomes.
-    detail: bool,
+    /// Which rollups to build; see [`Shape`].
+    shape: Shape,
 }
 
 impl<'a> ReportInputs<'a> {
@@ -516,7 +540,7 @@ impl<'a> ReportInputs<'a> {
             by_commit,
             uncommitted,
             joined,
-            detail: true,
+            shape: Shape::Full,
         }
     }
 
@@ -555,7 +579,7 @@ impl<'a> ReportInputs<'a> {
             ..coverage
         };
         let numbers = pull_request_numbers(&pull_requests);
-        let changes = if self.detail {
+        let changes = if self.shape == Shape::Full {
             self.changes(&numbers)
         } else {
             Vec::new()
@@ -569,14 +593,26 @@ impl<'a> ReportInputs<'a> {
         let overlapping = agent_sessions.iter().collect::<Vec<_>>();
         let (session_outcomes, harness_models) =
             self.session_insights(&overlapping, &reported, &merged_commits);
-        if !self.detail {
-            return AttributionReport {
-                totals,
-                coverage,
-                pull_requests: self.pull_requests(pull_requests),
-                session_outcomes,
-                ..AttributionReport::default()
-            };
+        match self.shape {
+            Shape::Summary => {
+                return AttributionReport {
+                    totals,
+                    coverage,
+                    pull_requests: self.pull_requests(pull_requests),
+                    session_outcomes,
+                    ..AttributionReport::default()
+                };
+            }
+            Shape::Harness => {
+                return AttributionReport {
+                    totals,
+                    coverage,
+                    session_outcomes,
+                    harness_models,
+                    ..AttributionReport::default()
+                };
+            }
+            Shape::Full => {}
         }
         let users = self.users(&pull_requests, &reported);
         let pull_requests = self.pull_requests(pull_requests);
@@ -773,7 +809,7 @@ impl<'a> ReportInputs<'a> {
                 .push(commit);
         }
         // Pull requests come newest first, so the detail budget goes to the most recent ones.
-        let mut budget = if self.detail {
+        let mut budget = if self.shape == Shape::Full {
             MAX_REPORT_COMMIT_DETAILS
         } else {
             0

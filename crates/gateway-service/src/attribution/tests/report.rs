@@ -1301,6 +1301,34 @@ async fn the_summary_build_matches_the_full_reports_summary() {
 }
 
 #[tokio::test]
+async fn the_harness_build_keeps_only_what_agent_harnesses_reads() {
+    use crate::attribution::build_attribution_harness_report;
+
+    let dev = user_owner(Uuid::new_v4());
+    let mut store = FakeStore::with_commits(vec![commit(
+        1,
+        &dev,
+        REPOSITORY,
+        minutes(30),
+        vec![note_session("s_aa", &["h1"])],
+    )]);
+    store.pull_requests = Mutex::new(vec![pull_request(7, &dev, minutes(60), &[1])]);
+    store.facts = vec![request(&dev, "h1", "inside", minutes(10))];
+    let full = report(&store, &query()).await;
+    let harness = build_attribution_harness_report(&store, &query())
+        .await
+        .expect("harness report builds");
+
+    assert!(!full.harness_models.is_empty());
+    assert_eq!(harness.harness_models, full.harness_models);
+    assert_eq!(harness.session_outcomes, full.session_outcomes);
+    assert_eq!(harness.coverage, full.coverage);
+    assert_eq!(harness.totals, full.totals);
+    assert!(harness.changes.is_empty() && harness.users.is_empty());
+    assert!(harness.daily.is_empty() && harness.pull_requests.is_empty());
+}
+
+#[tokio::test]
 async fn daily_buckets_put_commits_and_uncommitted_spend_on_their_own_dates() {
     let dev = user_owner(Uuid::new_v4());
     let start = t0().replace_time(time::Time::MIDNIGHT);

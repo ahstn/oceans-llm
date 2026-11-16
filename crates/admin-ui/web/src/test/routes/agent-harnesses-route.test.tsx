@@ -404,7 +404,7 @@ describe('AgentHarnessesPage', () => {
     expect(view.getByRole('radio', { name: 'Last 7 days' })).toBeInTheDocument()
   })
 
-  it('asks for no previous window when the attribution window changes', async () => {
+  it('asks for the harness-only report when the attribution window changes', async () => {
     vi.mocked(getAttribution).mockResolvedValue({
       data: { window_days: 30, harness_models: [] },
     } as never)
@@ -428,7 +428,7 @@ describe('AgentHarnessesPage', () => {
     fireEvent.click(view.getByRole('radio', { name: 'Attribution for the last 30 days' }))
 
     await waitFor(() =>
-      expect(getAttribution).toHaveBeenCalledWith({ data: { days: 30, compare: false } }),
+      expect(getAttribution).toHaveBeenCalledWith({ data: { days: 30, shape: 'harness' } }),
     )
   })
 
