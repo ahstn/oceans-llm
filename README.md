@@ -186,3 +186,4 @@ mise run admin-contract-check
 ```
 
 For the full maintainer workflow, use [Admin API Contract Workflow](docs/contributing/reference/admin-api-contract-workflow.md).
+Verified by verify-pi run-8643949621234126a12d4890c5b9c63c.
