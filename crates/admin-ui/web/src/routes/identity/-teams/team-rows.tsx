@@ -243,7 +243,10 @@ export function TeamDetail({
   actions: TeamListActions
 }) {
   return (
-    <div className="grid min-w-0 grid-cols-1 gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_17rem]">
+    <div
+      data-testid="team-detail"
+      className="grid min-w-0 grid-cols-1 gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_17rem]"
+    >
       <div className="flex min-w-0 flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-medium">

@@ -492,6 +492,52 @@ describe('TeamsPage', () => {
     )
   })
 
+  it('keeps tag chips and roster actions inside narrow containers', async () => {
+    const [coreTeam, ...rest] = rosterPayload.teams
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...rosterPayload,
+        teams: [
+          {
+            ...coreTeam,
+            tags: [
+              { key: 'cost-center', value: 'platform-engineering-shared' },
+              { key: 'owner', value: 'infrastructure-reliability' },
+              { key: 'region', value: 'eu-west' },
+            ],
+          },
+          ...rest,
+        ],
+      } satisfies IdentityTeamsPayload,
+    })
+
+    const { TeamsPage } = await import('@/routes/identity/teams')
+    render(<TeamsPage />)
+
+    // A minmax(0, 1fr) track stops long content widening the mobile cards past the viewport.
+    expect(screen.getByTestId('team-cards')).toHaveClass('grid-cols-1')
+    // Chips shrink and truncate rather than pushing +N out of the card.
+    for (const chip of screen.getAllByRole('button', {
+      name: 'Filter by cost-center:platform-engineering-shared',
+    })) {
+      expect(chip).toHaveClass('min-w-0')
+      expect(chip).not.toHaveClass('shrink-0')
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Core Platform' }))
+    for (const detail of screen.getAllByTestId('team-detail')) {
+      expect(detail).toHaveClass('min-w-0', 'grid-cols-1')
+    }
+    // The roster scrolls sideways, with its action column pinned right.
+    for (const roster of screen.getAllByRole('table', { name: 'Members of Core Platform' })) {
+      expect(roster.parentElement).toHaveClass('overflow-x-auto')
+      expect(roster.querySelector('th[aria-label="Actions"]')).toHaveClass('sticky', 'right-0')
+      for (const action of within(roster).getAllByRole('button', { name: /^Actions for / })) {
+        expect(action.closest('td')).toHaveClass('sticky', 'right-0', 'bg-card')
+      }
+    }
+  })
+
   it('expands a team from anywhere on its row', async () => {
     routeMock.useLoaderData.mockReturnValue({ data: rosterPayload })
 

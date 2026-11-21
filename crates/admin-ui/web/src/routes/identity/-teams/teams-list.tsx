@@ -107,7 +107,7 @@ export function TeamsList({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-3 md:hidden">
+          <div data-testid="team-cards" className="grid grid-cols-1 gap-3 md:hidden">
             {visible.map((team) => (
               <TeamCard
                 key={team.id}
