@@ -25,6 +25,7 @@ import { GeneratedAvatar } from '@/components/ui/generated-avatar'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group'
 import { Table, TableBody } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { formatCount } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { EntityTag } from '@/routes/identity/-entity-tag-utils'
@@ -67,6 +68,9 @@ export function TeamsList({
 }) {
   const [expandedTeamIds, setExpandedTeamIds] = useState<ReadonlySet<string>>(() => new Set())
   const [filters, setFilters] = useState<TeamFilters>(emptyTeamFilters)
+  // Cards and table both stay in the DOM, switched by CSS, but an expanded roster mounts only in
+  // the visible layout. Rosters open on a click, after hydration, so this never changes SSR markup.
+  const isMobile = useIsMobile()
   const visible = useMemo(() => filterTeams(teams, filters), [teams, filters])
 
   function toggleExpanded(teamId: string) {
@@ -113,6 +117,7 @@ export function TeamsList({
                 key={team.id}
                 team={team}
                 isExpanded={expandedTeamIds.has(team.id)}
+                showDetail={isMobile}
                 canOpenUsers={canOpenUsers}
                 onToggle={() => toggleExpanded(team.id)}
                 onSelectTag={addTagFilter}
@@ -150,7 +155,7 @@ export function TeamsList({
                         onSelectTag={addTagFilter}
                         actions={actions}
                       />
-                      {isExpanded ? (
+                      {isExpanded && !isMobile ? (
                         <TeamDetailRow id={detailId}>
                           <TeamDetail team={team} canOpenUsers={canOpenUsers} actions={actions} />
                         </TeamDetailRow>
@@ -328,6 +333,7 @@ function AppliedFilter({
 function TeamCard({
   team,
   isExpanded,
+  showDetail,
   canOpenUsers,
   onToggle,
   onSelectTag,
@@ -335,6 +341,8 @@ function TeamCard({
 }: {
   team: TeamManagementView
   isExpanded: boolean
+  /** Whether this card is the visible layout, so its expanded roster should mount. */
+  showDetail: boolean
   canOpenUsers: boolean
   onToggle: () => void
   onSelectTag: (tag: EntityTag) => void
@@ -386,7 +394,7 @@ function TeamCard({
         {team.member_count === 1 ? 'member' : 'members'}
       </Button>
 
-      {isExpanded ? (
+      {isExpanded && showDetail ? (
         <div id={detailId} className="border-border -mx-4 -mb-4 border-t">
           <TeamDetail team={team} canOpenUsers={canOpenUsers} actions={actions} />
         </div>

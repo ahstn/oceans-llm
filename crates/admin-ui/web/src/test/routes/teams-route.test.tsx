@@ -273,8 +273,10 @@ describe('TeamsPage', () => {
       'aria-expanded',
       'true',
     )
-    // The card and the table share expanded state; CSS shows one of them per breakpoint.
-    expect(screen.getAllByRole('table', { name: 'Members of Core Platform' })).toHaveLength(2)
+    // Cards and table share expanded state, but the roster mounts only in the visible layout.
+    const teamTable = screen.getByRole('table', { name: 'Teams' })
+    expect(screen.getAllByRole('table', { name: 'Members of Core Platform' })).toHaveLength(1)
+    expect(within(teamTable).getByRole('table', { name: 'Members of Core Platform' })).toBeVisible()
     expect(screen.getAllByLabelText('User avatar for Jane Admin').length).toBeGreaterThan(0)
 
     // An owner's actions stay in the menu, disabled, with the reason beside them.
@@ -539,6 +541,28 @@ describe('TeamsPage', () => {
       for (const action of within(roster).getAllByRole('button', { name: /^Actions for / })) {
         expect(action.closest('td')).toHaveClass('sticky', 'right-0', 'bg-card')
       }
+    }
+  })
+
+  it('mounts an expanded roster only in the mobile card on narrow screens', async () => {
+    const width = window.innerWidth
+    window.innerWidth = 375
+    try {
+      routeMock.useLoaderData.mockReturnValue({ data: rosterPayload })
+      const { TeamsPage } = await import('@/routes/identity/teams')
+      render(<TeamsPage />)
+
+      fireEvent.click(screen.getAllByRole('button', { name: /^Show \d+ members?$/ })[0])
+      const rosters = screen.getAllByRole('table', { name: /^Members of / })
+      expect(rosters).toHaveLength(1)
+      expect(rosters[0].closest('article')).not.toBeNull()
+      expect(
+        within(screen.getByRole('table', { name: 'Teams' })).queryByRole('table', {
+          name: /^Members of /,
+        }),
+      ).not.toBeInTheDocument()
+    } finally {
+      window.innerWidth = width
     }
   })
 

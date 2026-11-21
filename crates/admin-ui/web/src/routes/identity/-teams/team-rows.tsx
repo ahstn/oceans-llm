@@ -201,14 +201,22 @@ function TeamAdminsSummary({
 }
 
 const STACK_LIMIT = 4
+const TITLE_LIMIT = 10
 
 /** Up to four member avatars, overlapped, then the count of the rest. */
+/** Names the first few members for the hover title, so huge rosters don't build a huge string. */
+function memberStackTitle(members: TeamMemberView[], count: number) {
+  const names = members.slice(0, TITLE_LIMIT).map((member) => member.name)
+  const rest = count - names.length
+  return rest > 0 ? `${names.join(', ')} and ${formatCount(rest)} more` : names.join(', ')
+}
+
 export function MemberStack({ members, count }: { members: TeamMemberView[]; count: number }) {
   if (count === 0) return <span className="text-muted-foreground text-xs">No members</span>
   const extra = count - Math.min(members.length, STACK_LIMIT)
   return (
     <div className="flex items-center gap-2">
-      <span className="flex items-center" title={members.map((member) => member.name).join(', ')}>
+      <span className="flex items-center" title={memberStackTitle(members, count)}>
         {members.slice(0, STACK_LIMIT).map((member, index) => (
           <GeneratedAvatar
             key={member.id}
