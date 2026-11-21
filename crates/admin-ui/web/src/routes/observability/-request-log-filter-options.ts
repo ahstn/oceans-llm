@@ -59,11 +59,15 @@ export function customModelKey(search: string) {
 export function useModelFilterOptions(enabled: boolean): FilterOptionsState {
   const [state, setState] = useState<FilterOptionsState>({ status: 'idle', options: [] })
   const inFlight = useRef(false)
+  const wasEnabled = useRef(false)
 
   useEffect(() => {
-    if (enabled && state.status === 'idle') startModelLoad(inFlight, setState)
-    // Removing the chip forgets a failed load, so adding it again loads afresh.
-    if (!enabled && state.status === 'error') setState({ status: 'idle', options: [] })
+    // Adding the Model chip again retries a load that failed while it was shown before.
+    const becameEnabled = enabled && !wasEnabled.current
+    wasEnabled.current = enabled
+    if (enabled && (state.status === 'idle' || (becameEnabled && state.status === 'error'))) {
+      startModelLoad(inFlight, setState)
+    }
   }, [enabled, state.status])
 
   // A failed load is not final: reopening the picker tries again.
