@@ -97,8 +97,8 @@ export function EntityTagChip({
 }) {
   const content = (
     <>
-      <span className="bg-foreground/3 text-muted-foreground flex items-center pr-1.5 pl-2">
-        {tag.key}
+      <span className="bg-foreground/3 text-muted-foreground flex max-w-28 min-w-0 shrink-0 items-center pr-1.5 pl-2">
+        <span className="truncate">{tag.key}</span>
       </span>
       <span className="border-border flex min-w-0 items-center border-l pr-2 pl-1.5">
         <span className="truncate">{tag.value}</span>
@@ -106,7 +106,7 @@ export function EntityTagChip({
     </>
   )
   const className =
-    'border-border inline-flex h-5 max-w-52 shrink-0 items-stretch overflow-hidden rounded-full border font-mono text-xs whitespace-nowrap transition-colors'
+    'border-border inline-flex h-5 max-w-52 min-w-0 items-stretch overflow-hidden rounded-full border font-mono text-xs whitespace-nowrap transition-colors'
   if (!onSelect) {
     return (
       <span className={className} title={`${tag.key}:${tag.value}`}>

@@ -13,7 +13,7 @@ import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
 import { AppIcon } from '@/components/icons/app-icon'
-import { AdminTableHeader } from '@/components/shared/admin-table-header'
+import { AdminTableHead, AdminTableHeader } from '@/components/shared/admin-table-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -240,7 +240,7 @@ export function TeamDetail({
   actions: TeamListActions
 }) {
   return (
-    <div className="grid min-w-0 gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_17rem]">
+    <div className="grid min-w-0 grid-cols-1 gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_17rem]">
       <div className="flex min-w-0 flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-medium">
@@ -344,10 +344,19 @@ function MemberTable({ team, actions }: { team: TeamManagementView; actions: Tea
   return (
     <div className="border-border bg-card overflow-hidden rounded-md border">
       <Table aria-label={`Members of ${team.name}`} className="text-left">
-        <AdminTableHeader columns={['Member', 'Role', 'Status', { label: '', key: 'actions' }]} />
+        <AdminTableHeader>
+          <AdminTableHead>Member</AdminTableHead>
+          <AdminTableHead>Role</AdminTableHead>
+          <AdminTableHead>Status</AdminTableHead>
+          {/* Pinned right, so Transfer and Remove stay in reach when the roster scrolls sideways. */}
+          <AdminTableHead
+            className="bg-surface-muted shadow-sticky-edge-end sticky right-0 z-10 w-12"
+            aria-label="Actions"
+          />
+        </AdminTableHeader>
         <TableBody>
           {team.members.map((member) => (
-            <TableRow key={member.id}>
+            <TableRow key={member.id} className="group">
               <TableCell className="px-3 py-1.5">
                 <div className="flex min-w-0 items-center gap-2.5">
                   <GeneratedAvatar kind="user" name={member.name || member.email} size={24} />
@@ -365,7 +374,7 @@ function MemberTable({ team, actions }: { team: TeamManagementView; actions: Tea
               <TableCell className="w-28 px-3 py-1.5">
                 <Badge variant={statusBadgeVariant(member.status)}>{member.status}</Badge>
               </TableCell>
-              <TableCell className="w-12 px-2 py-1.5 text-right">
+              <TableCell className="bg-card shadow-sticky-edge-end group-hover:bg-surface-muted sticky right-0 z-10 w-12 px-2 py-1.5 text-right">
                 <MemberActionsMenu teamId={team.id} member={member} actions={actions} />
               </TableCell>
             </TableRow>
