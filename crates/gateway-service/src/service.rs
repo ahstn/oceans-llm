@@ -1140,19 +1140,8 @@ where
         )
         .await?;
 
-        let overruns = self
-            .budget_guard
-            .record_incurred_usage(auth, &record)
-            .await?;
-        warn_budget_overruns(&overruns, request_id, &record.ownership_scope_key);
-        if let Err(error) = self.budget_alerts.evaluate_after_usage(auth, &record).await {
-            warn!(
-                request_id = %request_id,
-                ownership_scope_key = %record.ownership_scope_key,
-                error = %error,
-                "budget alert evaluation failed after usage ledger insert"
-            );
-        }
+        self.budget_guard.record_incurred_usage(&record).await?;
+        self.observe_budgets_after_usage(auth, &record).await;
 
         let recorded = RecordedChatUsage {
             pricing_status: record.pricing_status,
@@ -1416,10 +1405,8 @@ where
             requested_service_tier: None,
             served_service_tier: None,
         };
-        match self.budget_guard.record_incurred_usage(auth, &record).await {
-            Ok(overruns) => {
-                warn_budget_overruns(&overruns, &record.request_id, &record.ownership_scope_key);
-            }
+        match self.budget_guard.record_incurred_usage(&record).await {
+            Ok(()) => {}
             Err(GatewayError::DuplicateUsageRecord { .. }) => {
                 // Two workers finalized the same batch; accept only an identical cost.
                 let existing = self
@@ -1438,10 +1425,47 @@ where
             }
             Err(error) => return Err(error),
         }
-        if let Err(error) = self.budget_alerts.evaluate_after_usage(auth, &record).await {
-            warn!(batch_id = %job.batch_id, error = %error, "budget alert evaluation failed after batch usage insert");
-        }
+        self.observe_budgets_after_usage(auth, &record).await;
         Ok(())
+    }
+
+    /// Logs the hard budgets a recorded charge overran and raises its budget alerts, from one
+    /// window spend read per budget. The ledger row is already stored, so a failure here only
+    /// loses the log line or the alert.
+    async fn observe_budgets_after_usage(
+        &self,
+        auth: &AuthenticatedApiKey,
+        record: &UsageLedgerRecord,
+    ) {
+        let spend = match self.budget_guard.spend_after_usage(auth, record).await {
+            Ok(spend) => spend,
+            Err(error) => {
+                warn!(
+                    request_id = %record.request_id,
+                    ownership_scope_key = %record.ownership_scope_key,
+                    error = %error,
+                    "budget spend read failed after usage ledger insert"
+                );
+                return;
+            }
+        };
+        warn_budget_overruns(
+            &spend.overruns,
+            &record.request_id,
+            &record.ownership_scope_key,
+        );
+        if let Err(error) = self
+            .budget_alerts
+            .evaluate_after_usage(record, &spend.budgets)
+            .await
+        {
+            warn!(
+                request_id = %record.request_id,
+                ownership_scope_key = %record.ownership_scope_key,
+                error = %error,
+                "budget alert evaluation failed after usage ledger insert"
+            );
+        }
     }
 }
 
@@ -1708,12 +1732,13 @@ mod tests {
 
     use async_trait::async_trait;
     use gateway_core::{
-        ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord, ApiKeyRepository, AuthenticatedApiKey,
-        BatchEndpoint, BatchJobRecord, BatchPricingStatus, BatchStatus, BudgetAlertRepository,
-        BudgetCadence, BudgetRecord, BudgetRepository, BudgetScope, BudgetSettings, BudgetSource,
-        GatewayError, GatewayModel, IdentityRepository, McpToolInvocationDetail,
+        ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRecord, ApiKeyRepository, AuthMode,
+        AuthenticatedApiKey, BatchEndpoint, BatchJobRecord, BatchPricingStatus, BatchStatus,
+        BudgetAlertDeliveryRecord, BudgetAlertRecord, BudgetAlertRepository, BudgetCadence,
+        BudgetRecord, BudgetRepository, BudgetScope, BudgetSettings, BudgetSource, GatewayError,
+        GatewayModel, GlobalRole, IdentityRepository, McpToolInvocationDetail,
         McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
-        McpToolInvocationRecord, McpToolInvocationRepository, ModelPricingRecord,
+        McpToolInvocationRecord, McpToolInvocationRepository, ModelAccessMode, ModelPricingRecord,
         ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4, OpenAiCompatDecisionsApi,
         OpenAiCompatRouteCompatibility, PricingCatalogCacheRecord, PricingCatalogRepository,
         PricingLimits, PricingModalities, PricingProvenance, ProviderBatchResult,
@@ -1721,7 +1746,7 @@ mod tests {
         RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult,
         RequestLogQuery, RequestLogRecord, RequestLogRepository, RouteError, RoutePlanner,
         RoutePricingOverride, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord,
-        UsageLedgerRecord, UsagePricingStatus, UserRecord,
+        UsageLedgerRecord, UsagePricingStatus, UserRecord, UserStatus,
     };
     use serde_json::{Map, json};
     use time::OffsetDateTime;
@@ -2083,9 +2108,11 @@ mod tests {
     #[derive(Clone, Default)]
     struct UsageAccountingRepo {
         events: Arc<Mutex<Vec<UsageLedgerRecord>>>,
+        alerts: Arc<Mutex<Vec<BudgetAlertRecord>>>,
         models: Vec<GatewayModel>,
         routes: Vec<ModelRoute>,
         budget: Option<BudgetRecord>,
+        users: Vec<UserRecord>,
         provider: Option<ProviderConnection>,
         pricing: Option<ModelPricingRecord>,
         pricing_lookup_fails: bool,
@@ -2114,7 +2141,16 @@ mod tests {
     }
 
     #[async_trait]
-    impl BudgetAlertRepository for UsageAccountingRepo {}
+    impl BudgetAlertRepository for UsageAccountingRepo {
+        async fn create_budget_alert_with_deliveries(
+            &self,
+            alert: &BudgetAlertRecord,
+            _deliveries: &[BudgetAlertDeliveryRecord],
+        ) -> Result<bool, StoreError> {
+            self.alerts.lock().expect("alerts lock").push(alert.clone());
+            Ok(true)
+        }
+    }
 
     #[async_trait]
     impl BudgetRepository for UsageAccountingRepo {
@@ -2341,8 +2377,12 @@ mod tests {
 
     #[async_trait]
     impl IdentityRepository for UsageAccountingRepo {
-        async fn get_user_by_id(&self, _user_id: Uuid) -> Result<Option<UserRecord>, StoreError> {
-            Ok(None)
+        async fn get_user_by_id(&self, user_id: Uuid) -> Result<Option<UserRecord>, StoreError> {
+            Ok(self
+                .users
+                .iter()
+                .find(|user| user.user_id == user_id)
+                .cloned())
         }
 
         async fn get_team_by_id(&self, _team_id: Uuid) -> Result<Option<TeamRecord>, StoreError> {
@@ -3029,6 +3069,98 @@ mod tests {
             } if projected_cost_usd == Money4::from_scaled(20_000)
                 && limit_usd == Money4::from_scaled(20_000)
         ));
+    }
+
+    #[tokio::test]
+    async fn budget_alert_fires_once_when_recorded_spend_crosses_the_threshold() {
+        // Each request costs $2 against a $5 soft budget, which alerts at 20% remaining.
+        let auth = auth();
+        let user_id = auth.owner_user_id.expect("user owner");
+        let model_id = Uuid::new_v4();
+        let model = model(model_id);
+        let mut route = vertex_embedding_route(model_id);
+        route.upstream_model = "gpt-5".to_string();
+        route.pricing_override = Some(RoutePricingOverride {
+            input_cost_per_million_tokens: Money4::from_scaled(10_000),
+            output_cost_per_million_tokens: Money4::from_scaled(20_000),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+            cache_write_1h_cost_per_million_tokens: None,
+            image_output_cost_per_million_tokens: None,
+            service_tiers: Vec::new(),
+        });
+        let occurred_at = OffsetDateTime::now_utc();
+        let scope = BudgetScope::User { user_id };
+        let budget = BudgetRecord {
+            budget_id: Uuid::new_v4(),
+            scope_key: scope.scope_key(),
+            scope,
+            settings: BudgetSettings {
+                cadence: BudgetCadence::Daily,
+                amount_usd: Money4::from_scaled(50_000),
+                hard_limit: false,
+                timezone: "UTC".to_string(),
+            },
+            source: BudgetSource::manual(),
+            is_active: true,
+            created_at: occurred_at,
+            updated_at: occurred_at,
+        };
+        let repo = Arc::new(UsageAccountingRepo {
+            budget: Some(budget),
+            users: vec![UserRecord {
+                user_id,
+                name: "User".to_string(),
+                email: "user@example.com".to_string(),
+                email_normalized: "user@example.com".to_string(),
+                global_role: GlobalRole::User,
+                auth_mode: AuthMode::Password,
+                status: UserStatus::Active,
+                must_change_password: false,
+                request_logging_enabled: true,
+                model_access_mode: ModelAccessMode::All,
+                tags: Vec::new(),
+                created_at: occurred_at,
+                updated_at: occurred_at,
+            }],
+            provider: Some(openai_provider(&route.provider_key)),
+            ..Default::default()
+        });
+        let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
+
+        // $4 of $5 leaves 20% after the second request; the third starts below it.
+        for (request_id, alerts_after) in
+            [("req_alert_1", 0), ("req_alert_2", 1), ("req_alert_3", 1)]
+        {
+            let recorded = service
+                .record_chat_usage(
+                    &auth,
+                    &model,
+                    &route,
+                    request_id,
+                    Some(json!({
+                        "prompt_tokens": 1_000_000,
+                        "completion_tokens": 500_000,
+                        "total_tokens": 1_500_000
+                    })),
+                    gateway_core::ServiceTierOutcome::default(),
+                    UsageEstimateInput::default(),
+                    occurred_at,
+                )
+                .await
+                .expect("usage should be recorded");
+            assert_eq!(recorded.cost_usd, Some(2.0));
+            assert_eq!(
+                repo.alerts.lock().expect("alerts lock").len(),
+                alerts_after,
+                "alerts after {request_id}"
+            );
+        }
+
+        let alerts = repo.alerts.lock().expect("alerts lock");
+        assert_eq!(alerts[0].spend_before_usd, Money4::from_scaled(20_000));
+        assert_eq!(alerts[0].spend_after_usd, Money4::from_scaled(40_000));
+        assert_eq!(alerts[0].remaining_budget_usd, Money4::from_scaled(10_000));
     }
 
     #[tokio::test]
