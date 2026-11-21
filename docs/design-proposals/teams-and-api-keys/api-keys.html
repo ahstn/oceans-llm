@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>API keys: dialog button groups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared.js?v=3"></script>
+<link rel="stylesheet" href="styles.css?v=3" />
+<style>
+  .dialog { background: #0e2133; border: 1px solid rgb(236 240 247 / 0.1); border-radius: 0.9rem; box-shadow: 0 24px 64px -16px rgb(0 0 0 / 0.7); }
+  .field-label { font-size: 0.875rem; font-weight: 500; }
+  .field-desc { font-size: 0.8rem; color: #94a7bb; }
+  .section-title { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #94a7bb; }
+  .check { width: 1rem; height: 1rem; border-radius: 0.25rem; border: 1px solid rgb(236 240 247 / 0.2); display: grid; place-items: center; flex-shrink: 0; margin-top: 0.125rem; }
+  .check[data-on='true'] { background: #bb9af7; border-color: #bb9af7; }
+  .check[data-on='true']::after { content: ''; width: 0.5rem; height: 0.3rem; border: solid #040c15; border-width: 0 0 2px 2px; transform: rotate(-45deg) translate(1px, -1px); }
+  [data-when] { display: none; }
+  [data-when].show { display: flex; }
+</style>
+</head>
+<body class="min-h-screen">
+<div class="panel-glow min-h-screen">
+<main class="mx-auto flex max-w-[84rem] flex-col gap-8 px-8 py-8">
+
+  <header class="flex flex-col gap-1">
+    <p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Proposal · API keys</p>
+    <h1 class="text-2xl font-medium tracking-tight">Dialog button groups</h1>
+    <p class="max-w-3xl text-sm text-muted-foreground">Every mode switch in the create and manage dialogs uses the Client config pill group from Models (<code class="font-mono text-xs">ToggleGroup variant="checked" size="sm" spacing={1}</code>). Secret actions use the outline <code class="font-mono text-xs">size="sm"</code> buttons from the Models toolbar.</p>
+  </header>
+
+  <!-- Before / after strip -->
+  <section class="card grid gap-0 overflow-hidden md:grid-cols-2">
+    <div class="flex flex-col gap-4 border-b border-border p-5 md:border-r md:border-b-0" style="background:#0e2133">
+      <div class="flex items-center justify-between"><h2 class="font-medium">Today</h2><span class="badge badge-warning">No visible selection</span></div>
+      <div class="flex flex-col gap-1.5"><span class="field-label">Capabilities</span>
+        <div class="flex"><button class="toggle-default" data-state="on">Full access</button><button class="toggle-default">Limited</button></div></div>
+      <div class="flex flex-col gap-1.5"><span class="field-label">MCP servers</span>
+        <div class="flex"><button class="toggle-default" data-state="on">All granted servers</button><button class="toggle-default">Selected servers</button></div></div>
+      <p class="text-xs text-muted-foreground">The default variant marks the "on" item with <code class="font-mono">bg-muted</code>, which is darker than the dialog's popover surface, so neither option looks selected. <code class="font-mono">-scope-fields.tsx</code> still uses it; Model grant mode already moved to <code class="font-mono">checked</code> in <code class="font-mono">5ea97678</code>.</p>
+    </div>
+    <div class="flex flex-col gap-4 p-5" style="background:#0e2133">
+      <div class="flex items-center justify-between"><h2 class="font-medium">Proposed</h2><span class="badge badge-success">Matches Client config</span></div>
+      <div class="flex flex-col gap-1.5"><span class="field-label">Capabilities</span>
+        <div class="pills"><button class="pill" data-state="on">__SHIELD__Full access</button><button class="pill">__SLIDERS__Limited</button></div></div>
+      <div class="flex flex-col gap-1.5"><span class="field-label">MCP servers</span>
+        <div class="pills"><button class="pill" data-state="on">__SERVER__All granted servers</button><button class="pill">__LIST__Selected servers</button></div></div>
+      <p class="text-xs text-muted-foreground">Lilac border and wash for the checked item, a neutral wash on hover, and the leading icon tinted primary when on, as the harness icons are in Client config. Icons are optional; drop them to match Model grant mode exactly.</p>
+    </div>
+  </section>
+
+  <!-- The two dialogs, open side by side -->
+  <section class="grid items-start gap-8 lg:grid-cols-2">
+
+    <!-- CREATE -->
+    <div class="dialog flex max-h-[54rem] flex-col" data-scope="create">
+      <div class="flex items-start justify-between gap-4 px-6 pt-6">
+        <div class="flex flex-col gap-1">
+          <h2 class="text-lg font-medium tracking-tight">Create API key</h2>
+          <p class="text-sm text-muted-foreground">Keys are created with an explicit owner and model grant mode. The raw secret is only shown once after creation.</p>
+        </div>
+        <button class="btn btn-ghost btn-icon-sm text-muted-foreground" aria-label="Close">__X__</button>
+      </div>
+
+      <div class="flex flex-col gap-6 overflow-y-auto px-6 py-5">
+        <div class="flex flex-col gap-2">
+          <label class="field-label" for="key-name">Name</label>
+          <label class="input"><input id="key-name" placeholder="Production web" /></label>
+          <p class="field-desc">Use a name that makes rotation and revocation obvious later.</p>
+        </div>
+
+        <div class="flex flex-col gap-3">
+          <span class="section-title">Owner</span>
+          <div class="flex flex-col gap-2">
+            <span class="field-label">Owner type <span class="badge badge-outline ml-1 text-muted-foreground">optional change</span></span>
+            <div class="pills" data-group="owner">
+              <button class="pill" data-value="user" data-state="on">__USER__User</button>
+              <button class="pill" data-value="service_account">__BOT__Service account</button>
+            </div>
+          </div>
+          <div class="flex flex-col gap-2">
+            <span class="field-label" data-owner-label>Owner user</span>
+            <button class="input justify-between text-left text-muted-foreground"><span data-owner-placeholder>Select a user</span>__UNFOLD__</button>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-3 border-t border-border pt-5">
+          <span class="section-title">Access</span>
+          <div class="flex flex-col gap-2">
+            <span class="field-label">Model grant mode</span>
+            <div class="pills" data-group="models">
+              <button class="pill" data-value="all" data-state="on">__GRID__All models</button>
+              <button class="pill" data-value="explicit">__LIST__Selected models</button>
+            </div>
+            <p class="field-desc" data-when="models:all">This key can use every current and future gateway model allowed by its owner.</p>
+            <div class="flex-col gap-2" data-when="models:explicit">
+              <button class="input justify-between text-left"><span>3 models selected</span>__UNFOLD__</button>
+              <div class="flex flex-wrap gap-1.5"><span class="badge badge-outline font-mono">claude-sonnet-5-5</span><span class="badge badge-outline font-mono">gpt-5.2</span><span class="badge badge-outline font-mono">gemini-3-pro</span></div>
+            </div>
+            <p class="field-desc" data-owner-hint>Service-account-owned keys require selected models.</p>
+          </div>
+
+          <div class="flex flex-col gap-2">
+            <span class="field-label">Capabilities</span>
+            <div class="pills" data-group="caps">
+              <button class="pill" data-value="full" data-state="on">__SHIELD__Full access</button>
+              <button class="pill" data-value="limited">__SLIDERS__Limited</button>
+            </div>
+            <p class="field-desc" data-when="caps:full">This key can call every route its owner can, including Skills and provider credentials.</p>
+            <div class="flex-col gap-2.5 rounded-md border border-border p-3" data-when="caps:limited">
+              <p class="field-desc">This key can only call the routes for the capabilities selected below.</p>
+              <div data-scopes class="flex flex-col gap-2.5"></div>
+            </div>
+          </div>
+
+          <div class="flex flex-col gap-2">
+            <span class="field-label">MCP servers</span>
+            <div class="pills" data-group="mcp">
+              <button class="pill" data-value="all" data-state="on">__SERVER__All granted servers</button>
+              <button class="pill" data-value="selected">__LIST__Selected servers</button>
+            </div>
+            <div class="flex-col gap-2 rounded-md border border-border p-3" data-when="mcp:selected" data-servers></div>
+            <p class="field-desc">The owner still needs a grant before a listed server shows any tools.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 border-t border-border px-6 py-4">
+        <button class="btn btn-secondary">Cancel</button>
+        <button class="btn btn-primary">Create API key</button>
+      </div>
+    </div>
+
+    <!-- MANAGE -->
+    <div class="dialog flex max-h-[54rem] flex-col" data-scope="manage">
+      <div class="flex items-start justify-between gap-4 px-6 pt-6">
+        <div class="flex flex-col gap-1">
+          <h2 class="text-lg font-medium tracking-tight">Manage API key</h2>
+          <p class="text-sm text-muted-foreground">Change what this key can reach. Changes apply as soon as you save.</p>
+        </div>
+        <button class="btn btn-ghost btn-icon-sm text-muted-foreground" aria-label="Close">__X__</button>
+      </div>
+
+      <div class="flex flex-col gap-6 overflow-y-auto px-6 py-5">
+        <section class="flex flex-col gap-3">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex min-w-0 flex-col gap-0.5"><p class="font-medium">ml-batch-scoring</p><p class="font-mono text-xs text-muted-foreground">oc_8f2a••••••••</p></div>
+            <span class="badge badge-success">active</span>
+          </div>
+          <dl class="flex flex-col divide-y divide-border text-sm">
+            <div class="grid grid-cols-[7rem_minmax(0,1fr)] py-2"><dt class="text-muted-foreground">Owner</dt><dd class="flex items-center gap-2">__BOT__ml-batch <span class="text-xs text-muted-foreground">service account</span></dd></div>
+            <div class="grid grid-cols-[7rem_minmax(0,1fr)] py-2"><dt class="text-muted-foreground">Created</dt><dd class="tabular-nums">2026-10-02 14:31</dd></div>
+            <div class="grid grid-cols-[7rem_minmax(0,1fr)] py-2"><dt class="text-muted-foreground">Last used</dt><dd class="tabular-nums">12 minutes ago</dd></div>
+          </dl>
+        </section>
+
+        <section class="flex flex-col gap-2 border-t border-border pt-5">
+          <span class="section-title">Credential secret</span>
+          <div class="flex items-center gap-2">
+            <div class="input flex-1 font-mono text-xs"><span data-secret class="truncate text-muted-foreground">oc_8f2a••••••••••••••••••••••••••••</span></div>
+            <div class="flex gap-2">
+              <button class="btn btn-outline btn-sm" data-reveal>__EYE__<span>Reveal</span></button>
+              <button class="btn btn-outline btn-sm" disabled data-copy>__COPY__Copy</button>
+            </div>
+          </div>
+          <p class="field-desc">Service-account-owned keys can be revealed for this owner scope. Copy enables once revealed.</p>
+        </section>
+
+        <section class="flex flex-col gap-3 border-t border-border pt-5">
+          <span class="section-title">Access</span>
+          <div class="flex flex-col gap-2">
+            <span class="field-label">Model grant mode</span>
+            <div class="pills" data-group="models">
+              <button class="pill" data-value="all" disabled style="opacity:.5">__GRID__All models</button>
+              <button class="pill" data-value="explicit" data-state="on">__LIST__Selected models</button>
+            </div>
+            <div class="flex-col gap-2 show" data-when="models:explicit">
+              <button class="input justify-between text-left"><span>2 models selected</span>__UNFOLD__</button>
+            </div>
+            <p class="field-desc">Service-account-owned keys require selected models.</p>
+          </div>
+          <div class="flex flex-col gap-2">
+            <span class="field-label">Capabilities</span>
+            <div class="pills" data-group="caps">
+              <button class="pill" data-value="full">__SHIELD__Full access</button>
+              <button class="pill" data-value="limited" data-state="on">__SLIDERS__Limited</button>
+            </div>
+            <p class="field-desc" data-when="caps:full">This key can call every route its owner can, including Skills and provider credentials.</p>
+            <div class="flex-col gap-2.5 rounded-md border border-border p-3" data-when="caps:limited">
+              <p class="field-desc">This key can only call the routes for the capabilities selected below.</p>
+              <div data-scopes data-selected="inference" class="flex flex-col gap-2.5"></div>
+            </div>
+          </div>
+          <div class="flex flex-col gap-2">
+            <span class="field-label">MCP servers</span>
+            <div class="pills" data-group="mcp">
+              <button class="pill" data-value="all" data-state="on">__SERVER__All granted servers</button>
+              <button class="pill" data-value="selected">__LIST__Selected servers</button>
+            </div>
+            <div class="flex-col gap-2 rounded-md border border-border p-3" data-when="mcp:selected" data-servers></div>
+          </div>
+        </section>
+
+        <section class="flex items-center justify-between gap-4 rounded-md border border-border p-3" style="border-color:rgb(251 113 133 / 0.25)">
+          <div class="flex flex-col gap-0.5"><span class="text-sm font-medium">Revoke this key</span><span class="field-desc">Takes effect immediately and cannot be undone.</span></div>
+          <button class="btn btn-destructive btn-sm">Revoke key</button>
+        </section>
+      </div>
+
+      <div class="flex justify-end gap-2 border-t border-border px-6 py-4">
+        <button class="btn btn-secondary">Cancel</button>
+        <button class="btn btn-primary">Save changes</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card flex flex-col gap-3 p-5">
+    <h2 class="font-medium tracking-tight">What changed</h2>
+    <ol class="grid gap-2.5 text-sm text-muted-foreground md:grid-cols-2">
+      <li class="flex gap-2"><span class="num">1</span><span><b class="font-medium text-foreground">Capabilities and MCP servers</b> switch to the <code class="font-mono text-xs">checked</code> pill group, so all three mode switches look alike and show their state. This is the core fix: two <code class="font-mono text-xs">ToggleGroup</code>s in <code class="font-mono text-xs">-scope-fields.tsx</code>.</span></li>
+      <li class="flex gap-2"><span class="num">2</span><span><b class="font-medium text-foreground">Owner type becomes a pill group</b> too (optional). It's a two-option choice that today needs a Select and two clicks.</span></li>
+      <li class="flex gap-2"><span class="num">3</span><span><b class="font-medium text-foreground">Fields group under Owner and Access</b> headings, with the same uppercase section label as the Teams detail rail.</span></li>
+      <li class="flex gap-2"><span class="num">4</span><span><b class="font-medium text-foreground">Secret actions are one row:</b> the masked key with outline <code class="font-mono text-xs">sm</code> Reveal and Copy beside it, rather than full-width secondary buttons that change place after reveal.</span></li>
+      <li class="flex gap-2"><span class="num">5</span><span><b class="font-medium text-foreground">Lifecycle shrinks to one row</b> with a <code class="font-mono text-xs">destructive sm</code> button, which still opens the existing confirm.</span></li>
+      <li class="flex gap-2"><span class="num">6</span><span><b class="font-medium text-foreground">Footers match:</b> secondary Cancel and the primary action, in a bordered footer that stays put while the body scrolls.</span></li>
+    </ol>
+  </section>
+</main>
+</div>
+
+<script>
+const swaps = { __SHIELD__: ICONS.shield, __SLIDERS__: ICONS.sliders, __SERVER__: ICONS.server, __LIST__: ICONS.list, __GRID__: ICONS.grid,
+  __USER__: ICONS.user, __BOT__: ICONS.bot, __X__: ICONS.x, __UNFOLD__: ICONS.unfold, __EYE__: ICONS.eye, __COPY__: ICONS.copy }
+document.body.innerHTML = document.body.innerHTML.replace(/__[A-Z]+__/g, (token) => swaps[token] ?? token)
+
+const SCOPES = [
+  ['inference', 'Inference', 'Model calls, model listing, batches, and guardrail checks.'],
+  ['mcp:aggregate', 'MCP aggregate', 'The /mcp endpoint: search_tools, describe_tool, and call_tool.'],
+  ['mcp:proxy', 'MCP proxy', 'Per-server /mcp/{server_key} routes.'],
+  ['attribution:write', 'Attribution', 'Git AI attribution uploads from the oceans CLI hooks, and its ownership lookup.'],
+]
+const SERVERS = [['github', 'GitHub'], ['linear', 'Linear'], ['sentry', 'Sentry']]
+
+for (const box of document.querySelectorAll('[data-scopes]')) {
+  const on = new Set((box.dataset.selected ?? '').split(',').filter(Boolean))
+  box.innerHTML = SCOPES.map(([key, label, desc]) => `
+    <button type="button" class="flex items-start gap-2.5 text-left" data-check>
+      <span class="check" data-on="${on.has(key)}"></span>
+      <span class="flex flex-col gap-0.5"><span class="text-sm font-medium">${label} <code class="font-mono text-xs font-normal text-muted-foreground">${key}</code></span><span class="field-desc">${desc}</span></span>
+    </button>`).join('')
+}
+for (const box of document.querySelectorAll('[data-servers]')) {
+  box.innerHTML = SERVERS.map(([key, label], i) => `
+    <button type="button" class="flex items-center gap-2.5 text-left text-sm" data-check><span class="check !mt-0" data-on="${i === 0}"></span>${label} <code class="font-mono text-xs text-muted-foreground">${key}</code></button>`).join('')
+}
+
+function sync(dialog) {
+  for (const group of dialog.querySelectorAll('[data-group]')) {
+    const on = group.querySelector('[data-state="on"]')?.dataset.value
+    for (const el of dialog.querySelectorAll(`[data-when^="${group.dataset.group}:"]`)) {
+      el.classList.toggle('show', el.dataset.when === `${group.dataset.group}:${on}`)
+    }
+  }
+  const owner = dialog.querySelector('[data-group="owner"] [data-state="on"]')?.dataset.value
+  if (!owner) return
+  const service = owner === 'service_account'
+  dialog.querySelector('[data-owner-label]').textContent = service ? 'Owner service account' : 'Owner user'
+  dialog.querySelector('[data-owner-placeholder]').textContent = service ? 'Select a service account' : 'Select a user'
+  dialog.querySelector('[data-owner-hint]').textContent = service
+    ? 'Service-account-owned keys require selected models.'
+    : 'Service-account-owned keys require selected models. User-owned keys can track the full gateway model catalog.'
+  const allModels = dialog.querySelector('[data-group="models"] [data-value="all"]')
+  allModels.disabled = service
+  allModels.style.opacity = service ? '.5' : ''
+}
+
+document.addEventListener('click', (event) => {
+  const pill = event.target.closest('.pill')
+  if (pill && !pill.disabled && pill.closest('[data-group]')) {
+    const group = pill.closest('[data-group]')
+    for (const p of group.querySelectorAll('.pill')) p.dataset.state = p === pill ? 'on' : 'off'
+    if (group.dataset.group === 'owner' && pill.dataset.value === 'service_account') {
+      for (const p of group.closest('.dialog').querySelectorAll('[data-group="models"] .pill')) p.dataset.state = p.dataset.value === 'explicit' ? 'on' : 'off'
+    }
+    sync(group.closest('.dialog'))
+    return
+  }
+  const check = event.target.closest('[data-check]')
+  if (check) { const box = check.querySelector('.check'); box.dataset.on = box.dataset.on !== 'true'; return }
+  const reveal = event.target.closest('[data-reveal]')
+  if (reveal) {
+    const dialog = reveal.closest('.dialog')
+    const secret = dialog.querySelector('[data-secret]')
+    const shown = secret.dataset.shown === 'true'
+    secret.dataset.shown = !shown
+    secret.textContent = shown ? 'oc_8f2a••••••••••••••••••••••••••••' : 'oc_8f2a7c19d04e4b6fa1e95c3b0d72e8aa'
+    secret.classList.toggle('text-muted-foreground', shown)
+    reveal.querySelector('span').textContent = shown ? 'Reveal' : 'Hide'
+    dialog.querySelector('[data-copy]').disabled = shown
+  }
+})
+for (const dialog of document.querySelectorAll('.dialog')) sync(dialog)
+</script>
+</body>
+</html>
