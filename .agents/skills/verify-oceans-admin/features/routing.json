@@ -672,7 +672,8 @@
         "crates/gateway/src/local_demo_seed/budget_pressure.rs",
         "crates/gateway-store/src/budget_increases.rs",
         "crates/gateway-store/src/postgres_store/budget*.rs",
-        "crates/gateway-store/migrations/**/V56__budget_increases.sql"
+        "crates/gateway-store/migrations/**/V56__budget_increases.sql",
+        "crates/gateway-store/migrations/**/V83__usage_budget_spend_indexes.sql"
       ]
     },
     {
