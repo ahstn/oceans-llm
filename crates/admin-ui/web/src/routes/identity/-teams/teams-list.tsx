@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import {
   Cancel01Icon,
   FilterHorizontalIcon,
@@ -67,7 +67,7 @@ export function TeamsList({
 }) {
   const [expandedTeamIds, setExpandedTeamIds] = useState<ReadonlySet<string>>(() => new Set())
   const [filters, setFilters] = useState<TeamFilters>(emptyTeamFilters)
-  const visible = filterTeams(teams, filters)
+  const visible = useMemo(() => filterTeams(teams, filters), [teams, filters])
 
   function toggleExpanded(teamId: string) {
     setExpandedTeamIds((current) => {
@@ -181,7 +181,7 @@ function TeamListToolbar({
   filters: TeamFilters
   onChange: (filters: TeamFilters) => void
 }) {
-  const tagOptions = teamTagOptions(teams)
+  const tagOptions = useMemo(() => teamTagOptions(teams), [teams])
   const applied = new Set(filters.tags.map(tagFilterId))
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">

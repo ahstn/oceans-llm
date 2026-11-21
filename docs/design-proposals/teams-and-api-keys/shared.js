@@ -44,7 +44,7 @@ function avatar(name, size = 28, ring = false) {
   const first = h % 5
   const a = AVATAR_COLORS[first]
   // Always a different second stop, so no avatar collapses to one dark blue disc.
-  const b = AVATAR_COLORS[(first + 1 + ((h >> 3) % 4)) % 5]
+  const b = AVATAR_COLORS[(first + 1 + ((h >>> 3) % 4)) % 5]
   const angle = h % 360
   return `<span class="inline-block shrink-0 rounded-full ${ring ? 'ring-2 ring-card' : ''}" style="width:${size}px;height:${size}px;background:linear-gradient(${angle}deg,${a},${b})" aria-hidden="true"></span>`
 }

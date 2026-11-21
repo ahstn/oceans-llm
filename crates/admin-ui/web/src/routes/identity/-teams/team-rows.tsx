@@ -95,8 +95,11 @@ export function TeamTableRow({
       <TableCell className="w-40 px-3 py-2">
         <MemberStack members={team.members} count={team.member_count} />
       </TableCell>
-      <TableCell className="w-88 px-3 py-2" onClick={stopRowToggle}>
-        <EntityTagChips tags={team.tags} onSelect={onSelectTag} />
+      <TableCell className="w-88 px-3 py-2">
+        {/* Only the chips and their popover keep clicks; blank space in the cell still toggles. */}
+        <div className="inline-flex max-w-full" onClick={stopRowToggle}>
+          <EntityTagChips tags={team.tags} onSelect={onSelectTag} />
+        </div>
       </TableCell>
       <TableCell className="w-24 px-3 py-2">
         <Badge variant={statusBadgeVariant(team.status)}>{team.status}</Badge>

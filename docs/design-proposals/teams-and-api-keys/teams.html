@@ -244,10 +244,17 @@ function detail(team) {
 
 function visibleTeams() {
   const q = state.query.trim().toLowerCase()
+  const withoutAdmins = state.filters.some((f) => f.kind === 'admins')
+  // Tag filters on one key match any of their values; different keys must all match.
+  const valuesByKey = new Map()
+  for (const f of state.filters) {
+    if (f.kind === 'tag') valuesByKey.set(f.key, (valuesByKey.get(f.key) ?? new Set()).add(f.value))
+  }
   return teams
     .filter((t) => state.status === 'all' || t.status === state.status)
     .filter((t) => !q || t.name.toLowerCase().includes(q) || t.key.includes(q))
-    .filter((t) => state.filters.every((f) => f.kind === 'admins' ? t.admins.length === 0 : t.tags.some(([k, v]) => k === f.key && v === f.value)))
+    .filter((t) => !withoutAdmins || t.admins.length === 0)
+    .filter((t) => [...valuesByKey].every(([key, values]) => t.tags.some(([k, v]) => k === key && values.has(v))))
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 

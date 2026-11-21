@@ -479,6 +479,17 @@ describe('TeamsPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove env filter' }))
     expect(screen.getByText('Showing 2 of 2 teams')).toBeInTheDocument()
+
+    // Blank space in the Tags cell still toggles the row; only the chips keep their clicks.
+    const teamTable = screen.getByRole('table', { name: 'Teams' })
+    const tagCell = within(teamTable)
+      .getByRole('button', { name: 'Filter by env:prod' })
+      .closest('td')!
+    fireEvent.click(tagCell)
+    expect(screen.getByRole('button', { name: 'Collapse Core Platform' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
   })
 
   it('expands a team from anywhere on its row', async () => {

@@ -256,6 +256,17 @@ for (const box of document.querySelectorAll('[data-servers]')) {
     <button type="button" class="flex items-center gap-2.5 text-left text-sm" data-check><span class="check !mt-0" data-on="${i === 0}"></span>${label} <code class="font-mono text-xs text-muted-foreground">${key}</code></button>`).join('')
 }
 
+/** Mirrors the visual state into aria-pressed, so screen readers hear which options are on. */
+function syncPressed() {
+  for (const button of document.querySelectorAll('.pill, .toggle-default')) {
+    button.setAttribute('aria-pressed', String(button.dataset.state === 'on'))
+  }
+  for (const button of document.querySelectorAll('[data-check]')) {
+    button.setAttribute('aria-pressed', button.querySelector('.check').dataset.on)
+  }
+}
+syncPressed()
+
 function sync(dialog) {
   for (const group of dialog.querySelectorAll('[data-group]')) {
     const on = group.querySelector('[data-state="on"]')?.dataset.value
@@ -285,10 +296,11 @@ document.addEventListener('click', (event) => {
       for (const p of group.closest('.dialog').querySelectorAll('[data-group="models"] .pill')) p.dataset.state = p.dataset.value === 'explicit' ? 'on' : 'off'
     }
     sync(group.closest('.dialog'))
+    syncPressed()
     return
   }
   const check = event.target.closest('[data-check]')
-  if (check) { const box = check.querySelector('.check'); box.dataset.on = box.dataset.on !== 'true'; return }
+  if (check) { const box = check.querySelector('.check'); box.dataset.on = box.dataset.on !== 'true'; syncPressed(); return }
   const reveal = event.target.closest('[data-reveal]')
   if (reveal) {
     const dialog = reveal.closest('.dialog')
