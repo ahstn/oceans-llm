@@ -96,7 +96,9 @@ function TeamAdministration({
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
             <CardTitle>Team list</CardTitle>
-            <CardDescription>Select a team to review its members and settings.</CardDescription>
+            <CardDescription>
+              Expand a team for its members, admins, and tags. Choose a tag to filter by it.
+            </CardDescription>
           </div>
           <Button type="button" onClick={teamEditor.openCreate}>
             Add team

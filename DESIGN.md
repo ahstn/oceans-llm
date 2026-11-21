@@ -304,6 +304,7 @@ Where motion appears:
 
 - **Style:** badges are compact pills (`h-5`, `rounded-4xl`, `0.75rem` text) with variants for success, warning, destructive, outline and secondary.
 - **State:** badge colour communicates state, not decoration. Status badges take a status variant, never the default lilac, and must stay readable at table density.
+- **Tags:** an entity's `key:value` tags render with `EntityTagChips` (`src/routes/identity/-entity-tags.tsx`). Each tag is one mono pill, with the key muted on a faint wash and the value in ink. Rows show two, then a `+N` pill whose popover lists every tag, so a row stays one line however many tags it carries. A chip that filters by its tag is a button and takes the lilac action hover; an inert chip has none. Chips shrink and truncate rather than overflow, and the full pair stays in the title and accessible name. Teams is the reference.
 
 ### Cards / Containers
 
@@ -351,6 +352,28 @@ Admin tables draw their header row with `AdminTableHeader`, and detail dialogs w
 The helpers live in `src/lib/format.ts` (`formatCount`, `formatDuration`, `formatTimestamp`, `formatUsd10000`, `formatUsd10000Precise`, `EMPTY_VALUE`), and `CompactCount` renders a compact count with its tooltip. Use them rather than a local formatter.
 
 **Wide tables.** A table never hides its last column without a cue. When a table can be wider than its card, pin its action column to the right edge with `sticky right-0`, the card's background and `shadow-sticky-edge-end`, the mirror of the `shadow-sticky-edge` that a column pinned left uses (as on the models table). If the action is the only one on the row, making the whole row open it works too. A table with no action column is sized to fit its card at 1440 px.
+
+**Expandable rows.** When a row holds more than fits on one line, it expands in place rather than opening a dialog. The merged pull requests table on Attribution and the Teams list are the references.
+
+- Clicking anywhere on the row toggles it, and a chevron button carries `aria-expanded`. Controls inside the row (chips, links, the actions menu) stop the click, so using them never toggles the row.
+- Row actions go in a `⋯` menu in the pinned action column, not as buttons repeated on every row.
+- The detail opens in a full-width cell on `bg-muted/40`. A table nested inside it follows the same table rules, including its own pinned action column.
+- Summaries stay compact in the collapsed row: an avatar stack with a `+N` count rather than a list of names.
+
+**Filters.** Filters sit in a toolbar directly above the data they narrow:
+
+- Search in an `InputGroup`, a `Filter` dropdown of checkbox items, and a status `ToggleGroup` (outline, since it sits on a card).
+- Each applied filter shows as a removable `field is value ×` chip, with a Clear button once any filter applies. Long values truncate, and the remove button never shrinks.
+- Filters on the same key match any of their values; filters on different keys must all match.
+- When nothing matches, the empty state says so and offers to clear the filters. A footer counts what is shown (`Showing 3 of 9 teams`).
+
+**Narrow screens.** Below `md`, a table becomes a list of cards with the same filters, menus and detail.
+
+- A card expands from a full-width `Show N members`-style button at its foot, not from a tap anywhere on the card. Cards are mostly chips, menus and links, so a whole-card target would collide with them and with scrolling on touch.
+
+- Both layouts stay in the DOM and switch with `md:` classes, so the server-rendered markup never depends on the viewport. Anything that mounts on a click, such as an expanded roster, renders only in the visible layout (`useIsMobile`).
+- Card grids take `grid-cols-1`, a `minmax(0, 1fr)` track, so long content truncates instead of widening the page. Every flex or grid child that holds text takes `min-w-0`.
+- Check new data surfaces at 375 px, and cover the containment classes with a route test, as `crates/admin-ui/web/AGENTS.md` asks.
 
 ### Charts
 
