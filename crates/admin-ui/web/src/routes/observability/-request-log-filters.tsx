@@ -46,11 +46,11 @@ import type { RequestLogFiltersInput } from '@/types/api'
 import {
   customModelKey,
   customStatusCode,
-  FilterValuePicker,
   readyStatusCodeOptions,
   useModelFilterOptions,
   type FilterOptionsState,
-} from './-request-log-filter-picker'
+} from './-request-log-filter-options'
+import { FilterValuePicker } from './-request-log-filter-picker'
 
 export type RequestLogFilterValues = Pick<
   RequestLogFiltersInput,

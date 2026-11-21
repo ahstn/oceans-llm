@@ -159,6 +159,7 @@ function ArchiveField({
       <input
         ref={inputRef}
         id="skill-archive"
+        aria-label="ZIP archive"
         type="file"
         accept=".zip,application/zip"
         className="sr-only"
