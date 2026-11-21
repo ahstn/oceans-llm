@@ -1,5 +1,5 @@
 import type * as React from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -133,6 +133,11 @@ const rosterPayload: IdentityTeamsPayload = {
   oauth_providers: [],
 }
 
+/** Opens a Radix dropdown from its trigger; jsdom has no pointer events, so use the keyboard. */
+function openMenu(name: string) {
+  fireEvent.keyDown(screen.getAllByRole('button', { name })[0], { key: 'Enter' })
+}
+
 describe('TeamsPage', () => {
   beforeEach(() => {
     routeMock.useLoaderData.mockReset()
@@ -255,22 +260,30 @@ describe('TeamsPage', () => {
     ).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Transfer' })).not.toBeInTheDocument()
 
-    const showMembersButtons = screen.getAllByRole('button', { name: 'Show 1 member' })
-    expect(showMembersButtons[0]).toHaveAttribute('aria-expanded', 'false')
-    expect(showMembersButtons[0].querySelector('[data-icon="inline-start"]')).toBeInTheDocument()
+    const expandButton = screen.getByRole('button', { name: 'Expand Core Platform' })
+    expect(expandButton).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getAllByRole('button', { name: 'Show 1 member' })[0]).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
 
-    fireEvent.click(showMembersButtons[0])
+    fireEvent.click(expandButton)
 
-    const hideMembersButton = screen.getAllByRole('button', { name: 'Hide 1 member' })[0]
-    expect(hideMembersButton).toHaveAttribute('aria-expanded', 'true')
-    expect(hideMembersButton.querySelector('[data-icon="inline-start"]')).toBeInTheDocument()
-    expect(
-      screen.getAllByText('Owner memberships cannot be removed or transferred in this slice.')
-        .length,
-    ).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: 'Collapse Core Platform' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    // The card and the table share expanded state; CSS shows one of them per breakpoint.
+    expect(screen.getAllByRole('table', { name: 'Members of Core Platform' })).toHaveLength(2)
     expect(screen.getAllByLabelText('User avatar for Jane Admin').length).toBeGreaterThan(0)
-    expect(screen.getAllByRole('button', { name: 'Transfer' })[0]).toBeDisabled()
-    expect(screen.getAllByRole('button', { name: 'Remove' })[0]).toBeDisabled()
+
+    // An owner's actions stay in the menu, disabled, with the reason beside them.
+    openMenu('Actions for Jane Admin')
+    expect(
+      screen.getByText('Owner memberships cannot be removed or transferred in this slice.'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Transfer' })).toHaveAttribute('data-disabled')
+    expect(screen.getByRole('menuitem', { name: 'Remove' })).toHaveAttribute('data-disabled')
   })
 
   it('badges an inactive team and member roles in neutral variants', async () => {
@@ -302,7 +315,7 @@ describe('TeamsPage', () => {
     }
 
     // A role is a category, so it takes neither a status colour nor the lilac action colour.
-    fireEvent.click(screen.getAllByRole('button', { name: 'Show 2 members' })[0])
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Core Platform' }))
     for (const badge of screen.getAllByText('owner')) {
       expect(badge).toHaveAttribute('data-variant', 'secondary')
     }
@@ -335,7 +348,8 @@ describe('TeamsPage', () => {
     const { TeamsPage } = await import('@/routes/identity/teams')
     render(<TeamsPage />)
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Edit team' })[0])
+    openMenu('Actions for Core Platform')
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit team' }))
     expect(screen.getByRole('heading', { name: 'Edit team' })).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: ' Platform ' } })
     fireEvent.submit(screen.getByRole('button', { name: 'Save changes' }).closest('form')!)
@@ -361,8 +375,9 @@ describe('TeamsPage', () => {
     const { TeamsPage } = await import('@/routes/identity/teams')
     render(<TeamsPage />)
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Show 2 members' })[0])
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[1])
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Core Platform' }))
+    openMenu('Actions for Ben Member')
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Remove' }))
     expect(
       screen.getByText(
         'Remove Ben Member from Core Platform. This only changes future membership-derived access.',
@@ -394,7 +409,8 @@ describe('TeamsPage', () => {
     const { TeamsPage } = await import('@/routes/identity/teams')
     render(<TeamsPage />)
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Add members' })[0])
+    openMenu('Actions for Core Platform')
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Add members' }))
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: ' Taylor Member ' } })
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'taylor@example.com' } })
     fireEvent.submit(screen.getByRole('button', { name: 'Invite member' }).closest('form')!)
@@ -420,5 +436,83 @@ describe('TeamsPage', () => {
     expect(screen.getByText('Member invite ready')).toBeInTheDocument()
     expect(screen.getByText('Share this invite before 2026-03-14T12:00:00Z.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument()
+  })
+
+  it('shows two tags per row, the rest behind +N, and filters by a chosen tag', async () => {
+    const [coreTeam, researchTeam] = rosterPayload.teams
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        ...rosterPayload,
+        teams: [
+          {
+            ...coreTeam,
+            tags: [
+              { key: 'cost-center', value: 'platform' },
+              { key: 'env', value: 'prod' },
+              { key: 'owner', value: 'infra' },
+              { key: 'region', value: 'eu-west' },
+            ],
+          },
+          { ...researchTeam, tags: [{ key: 'env', value: 'staging' }] },
+        ],
+      } satisfies IdentityTeamsPayload,
+    })
+
+    const { TeamsPage } = await import('@/routes/identity/teams')
+    render(<TeamsPage />)
+
+    // The fourth tag only appears in the overflow popover.
+    expect(
+      screen.queryByRole('button', { name: 'Filter by region:eu-west' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Show all 4 tags' }).length).toBeGreaterThan(0)
+    expect(screen.getByText('Showing 2 of 2 teams')).toBeInTheDocument()
+
+    // Choosing a tag filters the list without expanding the row it sits in.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Filter by env:prod' })[0])
+    expect(screen.getByText('Showing 1 of 2 teams')).toBeInTheDocument()
+    expect(screen.queryByText('Research')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Expand Core Platform' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove env filter' }))
+    expect(screen.getByText('Showing 2 of 2 teams')).toBeInTheDocument()
+  })
+
+  it('expands a team from anywhere on its row', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: rosterPayload })
+
+    const { TeamsPage } = await import('@/routes/identity/teams')
+    render(<TeamsPage />)
+
+    const teamTable = screen.getByRole('table', { name: 'Teams' })
+    fireEvent.click(within(teamTable).getByText('core-platform'))
+    expect(screen.getByRole('button', { name: 'Collapse Core Platform' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    expect(within(teamTable).getByRole('table', { name: 'Members of Core Platform' })).toBeVisible()
+  })
+
+  it('narrows the list to teams without admins, and by search', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: rosterPayload })
+
+    const { TeamsPage } = await import('@/routes/identity/teams')
+    render(<TeamsPage />)
+
+    openMenu('Filter')
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Without admins' }))
+    // The menu stays open for more picks; close it to reach the page again.
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+    expect(screen.getByText('Showing 1 of 2 teams')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remove Admins filter' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+    fireEvent.change(screen.getByLabelText('Search teams'), { target: { value: 'nothing-here' } })
+    expect(screen.getByText('No teams match these filters.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(screen.getByText('Showing 2 of 2 teams')).toBeInTheDocument()
   })
 })
