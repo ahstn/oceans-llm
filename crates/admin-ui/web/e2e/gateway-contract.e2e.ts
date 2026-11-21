@@ -756,7 +756,9 @@ test('admin ui can create, manage, and revoke an api key that gates live gateway
   await row.getByRole('button', { name: 'Manage' }).click()
 
   const dialog = page.getByRole('dialog', { name: 'Manage API key' })
-  await expect(dialog.getByText(maskedPrefix ?? '')).toBeVisible()
+  // The masked key shows in the summary and again in the service-account secret row.
+  await expect(dialog.getByTestId('manage-api-key-summary').getByText(maskedPrefix)).toBeVisible()
+  await expect(dialog.getByTestId('manage-api-key-secret')).toContainText(maskedPrefix)
   await expect(dialog.getByText('Seed API Keys')).toBeVisible()
   await expect(dialog).not.toContainText('system-legacy')
   await expect(dialog).toContainText('Never')
