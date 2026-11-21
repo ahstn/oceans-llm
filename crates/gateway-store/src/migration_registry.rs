@@ -16,13 +16,6 @@ pub(crate) struct MigrationManifest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ReaderCompatibility {
     /// Any older gateway keeps working: new tables, nullable columns, indexes.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "no migration is additive yet; remove once one declares it"
-        )
-    )]
     Additive,
     /// Requires a gateway whose registry head is at least this version.
     /// For expand/contract, first stop using a column in release N with head v,
@@ -35,8 +28,11 @@ const LAST_STRICT_VERSION: u32 = 81;
 // Every migration after the strict legacy registry must explicitly declare
 // its compatibility here; never infer compatibility from its SQL.
 // V82 permits unmerged pull requests with no merge time; older readers require it.
-const READER_COMPATIBILITY: &[(u32, ReaderCompatibility)] =
-    &[(82, ReaderCompatibility::RequiresReader(82))];
+// V83 only replaces indexes.
+const READER_COMPATIBILITY: &[(u32, ReaderCompatibility)] = &[
+    (82, ReaderCompatibility::RequiresReader(82)),
+    (83, ReaderCompatibility::Additive),
+];
 
 /// libsql migrations that rebuild a table other tables reference, with that
 /// table. They run with foreign keys off, as SQLite's table-rebuild
@@ -578,6 +574,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         postgres_sql: include_str!(
             "../migrations/postgres/V82__attribution_pull_request_lifecycle.sql"
         ),
+    },
+    MigrationManifest {
+        version: 83,
+        name: "usage_budget_spend_indexes",
+        checksum: "V83__usage_budget_spend_indexes.sql",
+        libsql_sql: include_str!("../migrations/V83__usage_budget_spend_indexes.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V83__usage_budget_spend_indexes.sql"),
     },
 ];
 
