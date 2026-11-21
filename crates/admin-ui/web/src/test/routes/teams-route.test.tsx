@@ -468,8 +468,9 @@ describe('TeamsPage', () => {
     expect(screen.getAllByRole('button', { name: 'Show all 4 tags' }).length).toBeGreaterThan(0)
     expect(screen.getByText('Showing 2 of 2 teams')).toBeInTheDocument()
 
-    // Choosing a tag filters the list without expanding the row it sits in.
-    fireEvent.click(screen.getAllByRole('button', { name: 'Filter by env:prod' })[0])
+    // Choosing a tag in the desktop row filters the list without expanding that row.
+    const teamTable = screen.getByRole('table', { name: 'Teams' })
+    fireEvent.click(within(teamTable).getByRole('button', { name: 'Filter by env:prod' }))
     expect(screen.getByText('Showing 1 of 2 teams')).toBeInTheDocument()
     expect(screen.queryByText('Research')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Expand Core Platform' })).toHaveAttribute(
@@ -481,7 +482,6 @@ describe('TeamsPage', () => {
     expect(screen.getByText('Showing 2 of 2 teams')).toBeInTheDocument()
 
     // Blank space in the Tags cell still toggles the row; only the chips keep their clicks.
-    const teamTable = screen.getByRole('table', { name: 'Teams' })
     const tagCell = within(teamTable)
       .getByRole('button', { name: 'Filter by env:prod' })
       .closest('td')!
