@@ -298,6 +298,7 @@ Where motion appears:
 
 - **On cards:** `ToggleGroup` with the `outline` variant. Hover and pressed take `bg-muted`, one step lighter than the card.
 - **On popovers and dialogs:** the `checked` variant. `bg-muted` is darker than `--popover`, so hover takes a neutral ink wash with a stronger hairline, and the checked item takes a lilac ring and tint with ink text. A leading icon turns lilac with `group-data-[state=on]/toggle:text-primary`. The Client config harness picker on Models is the reference.
+- **Mode switches in dialogs:** a two- or three-way choice in a form dialog is a `checked` pill group (`size="sm"`, `spacing={1}`), not a `Select` and never the default variant, whose `bg-muted` on state disappears on `--popover`. Every mode switch in the API key dialogs (Owner type, Model grant mode, Capabilities, MCP servers) is the second reference.
 
 ### Chips
 
@@ -316,6 +317,14 @@ Where motion appears:
 - **Style:** compact `h-8` controls with a transparent or dim background, a 1px input line and `rounded-lg` corners.
 - **Focus:** `focus-visible:border-ring` and `focus-visible:ring-3` in lilac are required; focus must stay visible in dense forms.
 - **Error / Disabled:** invalid fields shift to the destructive border and ring; disabled fields dim and block pointer events.
+
+### Dialogs
+
+- **Width:** `DialogContent` caps at `sm:max-w-sm` (384px). A form dialog widens with a `max-w-*` token; an arbitrary `w-[…]` loses to the cap without warning.
+- **Two columns:** a form dialog with a second concern splits from `lg` up, at `lg:max-w-5xl`: the record's own fields on the left, the second concern on the right behind a `border-l`. Below `lg` the columns stack in that order. Create and Manage API key are the reference, with owner and model access on the left and scopes on the right.
+- **Footer:** the body scrolls and `DialogFooter` stays below it, with secondary Cancel then the primary action.
+- **Secrets:** a stored secret shows masked in one row beside outline `sm` Reveal and Copy. Copy waits for the reveal, and Reveal turns into Hide. A revealed secret wraps in full (`break-all`); only the masked form truncates. The Manage API key credential secret is the reference.
+- **Lifecycle actions:** one row at the end of the body, spanning both columns: a title and a one-line consequence on the left, a `destructive` `sm` button on the right. "Revoke this key" in Manage API key is the reference.
 
 ### Navigation
 
