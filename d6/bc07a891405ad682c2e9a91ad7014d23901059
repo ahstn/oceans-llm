@@ -1,0 +1,20 @@
+DESIGN.md
+  s_014b27f5de2de2::t_deb4caafe77f9d 301
+  s_014b27f5de2de2::t_3d7286659c1906 321-328
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d6bc07a891405ad682c2e9a91ad7014d23901059",
+  "prompts": {},
+  "sessions": {
+    "s_014b27f5de2de2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "091a9787-f7b8-441c-b00d-e8c35cef2c67",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
