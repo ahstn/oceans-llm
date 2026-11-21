@@ -1,3 +1,7 @@
+SET LOCAL lock_timeout = '5s';
+-- Longer than other migrations' 60s: each index build reads every usage_cost_events row.
+SET LOCAL statement_timeout = '15min';
+
 -- Budget checks add up a scope's priced spend over its budget window on every priced
 -- request: once before the provider call and once after the ledger insert. The indexes
 -- they used found a scope's rows but held neither the cost nor the pricing status, so
