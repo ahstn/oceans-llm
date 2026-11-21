@@ -187,18 +187,13 @@ export function RequestLogToolbar({
     onApply(pickFilterParams(next))
   }
 
-  // Picked values have no draft stage, so they apply as soon as they are chosen. A half-typed
-  // tag pair stays a draft instead of blocking the pick.
+  // Picked values have no draft stage, so they apply as soon as they are chosen. Only the picked
+  // param navigates: other chips' drafts, such as a half-typed tag pair, stay local until they
+  // commit on their own.
   function pick(param: FilterParam, value: string) {
-    const next = { ...drafts, [param]: value }
-    setDrafts(next)
-    const patch = pickFilterParams(next)
-    if (isPartialTag(next)) {
-      delete patch.tag_key
-      delete patch.tag_value
-    }
-    if (!sameFilters({ ...filters, ...patch }, filters)) {
-      onApply(patch)
+    setDrafts((current) => ({ ...current, [param]: value }))
+    if (normalizedParam(value) !== normalizedParam(filters[param])) {
+      onApply({ [param]: normalizedParam(value) })
     }
   }
 

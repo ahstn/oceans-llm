@@ -813,6 +813,27 @@ describe('RequestLogsPage picker filters', () => {
     expect(scope.getByTestId('request-log-filter-tag-key')).toHaveValue('feature')
   })
 
+  it('navigates with only the picked value', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+
+    const view = renderPage()
+    const scope = within(view.container)
+    await addFilter(scope, 'Service')
+    fireEvent.change(await scope.findByTestId('request-log-filter-service'), {
+      target: { value: 'checkout' },
+    })
+    await addFilter(scope, 'Status')
+    fireEvent.click(await screen.findByRole('option', { name: /429\s*Too Many Requests/ }))
+
+    await waitForListTransition()
+    // Opening the menu blurs Service, which commits it as usual. The pick itself carries only
+    // its own param, so it can never send another chip's uncommitted draft.
+    const pickCall = navigateMock.mock.calls.length - 1
+    expect(navigatedSearch(pickCall)).toEqual(
+      expect.objectContaining({ status_code: 429, service: undefined }),
+    )
+  })
+
   it('accepts a typed status code only when it is a valid HTTP status', async () => {
     routeMock.useSearch.mockReturnValue({ status_code: 429 })
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
