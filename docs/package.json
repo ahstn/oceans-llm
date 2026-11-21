@@ -31,9 +31,9 @@
   "devDependencies": {
     "@astrojs/check": "^0.9.8",
     "@astrojs/language-server": "2.16.13",
-    "@tailwindcss/vite": "^4.1.4",
+    "@tailwindcss/vite": "^4.3.5",
     "pagefind": "^1.5.2",
-    "tailwindcss": "^4.1.4",
+    "tailwindcss": "^4.3.5",
     "typescript": "^5.8.3",
     "wrangler": "^4.95.0"
   },
