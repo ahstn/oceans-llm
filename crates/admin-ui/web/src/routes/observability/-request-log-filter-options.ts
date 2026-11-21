@@ -15,6 +15,8 @@ export interface FilterOption {
 export interface FilterOptionsState {
   status: 'idle' | 'loading' | 'ready' | 'error'
   options: FilterOption[]
+  /** Loads the options again after a failure; the picker calls it when it reopens. */
+  retry?: () => void
 }
 
 /** Status codes the gateway and its providers commonly return; any other code can be typed. */
@@ -56,18 +58,32 @@ export function customModelKey(search: string) {
  */
 export function useModelFilterOptions(enabled: boolean): FilterOptionsState {
   const [state, setState] = useState<FilterOptionsState>({ status: 'idle', options: [] })
-  const requested = useRef(false)
+  const inFlight = useRef(false)
 
   useEffect(() => {
-    if (!enabled || requested.current) return
-    requested.current = true
-    setState({ status: 'loading', options: [] })
-    loadAllModels()
-      .then((models) => setState({ status: 'ready', options: modelFilterOptions(models) }))
-      .catch(() => setState({ status: 'error', options: [] }))
-  }, [enabled])
+    if (enabled && state.status === 'idle') startModelLoad(inFlight, setState)
+  }, [enabled, state.status])
 
-  return state
+  // A failed load is not final: reopening the picker tries again.
+  const retry = () => {
+    if (state.status === 'error') startModelLoad(inFlight, setState)
+  }
+  return { ...state, retry }
+}
+
+function startModelLoad(
+  inFlight: { current: boolean },
+  setState: (state: FilterOptionsState) => void,
+) {
+  if (inFlight.current) return
+  inFlight.current = true
+  setState({ status: 'loading', options: [] })
+  loadAllModels()
+    .then((models) => setState({ status: 'ready', options: modelFilterOptions(models) }))
+    .catch(() => setState({ status: 'error', options: [] }))
+    .finally(() => {
+      inFlight.current = false
+    })
 }
 
 function modelFilterOptions(models: ModelView[]): FilterOption[] {

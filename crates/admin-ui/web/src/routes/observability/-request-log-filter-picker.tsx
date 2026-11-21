@@ -69,6 +69,7 @@ export function FilterValuePicker({
       onOpenChange={(next) => {
         setOpen(next)
         if (!next) setSearch('')
+        if (next && options.status === 'error') options.retry?.()
       }}
     >
       <PopoverTrigger asChild>
@@ -102,7 +103,7 @@ export function FilterValuePicker({
               {options.status === 'loading' || options.status === 'idle'
                 ? 'Loading…'
                 : options.status === 'error'
-                  ? 'Could not load options. Type a value instead.'
+                  ? 'Could not load options. Reopen to try again, or type a value.'
                   : 'No matches.'}
             </CommandEmpty>
             {options.options.length > 0 ? (
