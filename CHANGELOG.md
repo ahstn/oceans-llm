@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- Update `lettre` to fix SMTP issues in budget alert delivery.
+- Require HTTPS and reject redirects when exchanging Google credentials from a file.
+- Update Undici in the GitHub review action.
+
 
 ## [1.1.0](https://github.com/ahstn/oceans-llm/compare/v1.0.0...v1.1.0) - 2026-11-16
 

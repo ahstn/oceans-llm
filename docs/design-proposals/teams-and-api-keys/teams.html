@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Teams: ledger redesign</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="shared.js?v=3"></script>
+<link rel="stylesheet" href="styles.css?v=4" />
+</head>
+<body class="min-h-screen">
+<div class="panel-glow min-h-screen">
+<main class="mx-auto flex max-w-[84rem] flex-col gap-6 px-8 py-8">
+
+  <!-- PageHeader, unchanged -->
+  <header class="flex items-end justify-between gap-4">
+    <div class="flex flex-col gap-1">
+      <p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Identity</p>
+      <h1 class="text-2xl font-medium tracking-tight">Teams</h1>
+      <p class="text-sm text-muted-foreground">Review teams, their administrators, and their members.</p>
+    </div>
+    <button class="btn btn-primary">Add team</button>
+  </header>
+
+  <!-- InsightCard, as on Attribution › Pull requests -->
+  <section class="card flex flex-col gap-4 p-5">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div class="flex flex-col gap-0.5">
+        <h2 class="font-medium tracking-tight">Team list</h2>
+        <p class="text-sm text-muted-foreground">Expand a row for its members, admins, and every tag. Click a tag to filter by it.</p>
+      </div>
+    </div>
+
+    <!-- Toolbar: search, ReUI Filters (tag + admins), status -->
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div class="flex min-w-0 flex-wrap items-center gap-2">
+        <label class="input input-sm w-60 text-muted-foreground">
+          <span aria-hidden="true">__SEARCH__</span>
+          <input id="search" placeholder="Search teams or keys" class="text-foreground placeholder:text-muted-foreground" />
+        </label>
+        <button class="btn btn-outline btn-sm" id="add-filter" aria-haspopup="menu">
+          <span aria-hidden="true">__PLUS__</span>Filter
+        </button>
+        <div id="filter-chips" class="flex flex-wrap items-center gap-2"></div>
+      </div>
+      <div class="seg" role="group" aria-label="Filter by status" id="status">
+        <button data-value="all" data-state="on">All</button>
+        <button data-value="active">Active</button>
+        <button data-value="inactive">Inactive</button>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto rounded-md border border-border">
+      <table aria-label="Teams" class="min-w-[60rem]">
+        <thead>
+          <tr>
+            <th>Team</th>
+            <th>Admins</th>
+            <th>Members</th>
+            <th>Tags</th>
+            <th>Status</th>
+            <th class="sticky-end w-[5.5rem]" aria-label="Actions"></th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="flex items-center justify-between text-xs text-muted-foreground">
+      <span id="count"></span>
+      <button class="btn btn-ghost btn-xs">Show more</button>
+    </div>
+  </section>
+
+  <!-- Design notes -->
+  <section class="grid gap-4 lg:grid-cols-2">
+    <div class="card flex flex-col gap-3 p-5">
+      <h2 class="font-medium tracking-tight">What changed</h2>
+      <ol class="flex flex-col gap-2.5 text-sm text-muted-foreground">
+        <li class="flex gap-2"><span class="num">1</span><span><b class="font-medium text-foreground">PR-ledger anatomy.</b> InsightCard with a toolbar, one bordered table, a pinned right column, and a row-limit footer.</span></li>
+        <li class="flex gap-2"><span class="num">2</span><span><b class="font-medium text-foreground">The row is the toggle.</b> Clicking anywhere expands it, like the PR rows. "Show 1 member" buttons go away; avatar stacks show who is on the team at a glance.</span></li>
+        <li class="flex gap-2"><span class="num">3</span><span><b class="font-medium text-foreground">Actions move into a ⋯ menu</b> in the pinned column (Edit team, Add members, Copy key), so the two always-visible buttons per row are gone.</span></li>
+        <li class="flex gap-2"><span class="num">4</span><span><b class="font-medium text-foreground">Members become a nested table</b> in a <code class="font-mono text-xs">bg-muted/40</code> detail panel, like the PR commit table. Transfer and Remove sit in a per-member menu, with a side rail for every tag, the admins, and the team key.</span></li>
+        <li class="flex gap-2"><span class="num">5</span><span><b class="font-medium text-foreground">"No admins" becomes a filter</b> in the Filter menu.</span></li>
+      </ol>
+    </div>
+    <div class="card flex flex-col gap-3 p-5">
+      <h2 class="font-medium tracking-tight">Tag display options</h2>
+      <p class="text-sm text-muted-foreground">Teams carry up to five <code class="font-mono text-xs">key:value</code> tags. The row has to stay one line tall.</p>
+      <div class="flex flex-col divide-y divide-border rounded-md border border-border text-sm">
+        <div class="flex flex-col gap-2 p-3">
+          <div class="flex items-center justify-between"><span class="font-medium">A · Two chips, then +N <span class="badge badge-success ml-1">Recommended</span></span></div>
+          <div class="flex items-center gap-1.5" id="opt-a"></div>
+          <p class="text-xs text-muted-foreground">One line every time. The first two tags in saved order stay visible; the rest are one hover away. Chips are filter shortcuts.</p>
+        </div>
+        <div class="flex flex-col gap-2 p-3">
+          <span class="font-medium">B · Count only</span>
+          <div><span class="badge badge-outline gap-1.5"><span aria-hidden="true">__TAG__</span>5 tags</span></div>
+          <p class="text-xs text-muted-foreground">The quietest row, but you can't scan for <code class="font-mono">cost-center</code> without hovering every row.</p>
+        </div>
+        <div class="flex flex-col gap-2 p-3">
+          <span class="font-medium">C · Promote a tag key to a column</span>
+          <div class="flex items-center gap-3 text-xs"><span class="text-muted-foreground">Columns ▸</span><span class="pill" data-state="on">cost-center</span><span class="pill">owner</span><span class="pill">env</span></div>
+          <p class="text-xs text-muted-foreground">A Columns popover, as on Models, turns an org-wide key into a sortable column. Pairs well with A, and is a follow-up once tag keys settle.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+</div>
+
+<div id="popover" class="popover hidden" role="menu"></div>
+
+<script>
+for (const [token, icon] of [['__SEARCH__', ICONS.search], ['__PLUS__', ICONS.plus], ['__TAG__', ICONS.tag]]) {
+  document.body.innerHTML = document.body.innerHTML.replaceAll(token, icon)
+}
+
+const people = {
+  maya: ['Maya Chen', 'maya.chen@example.com'], priya: ['Priya Raman', 'priya.raman@example.com'],
+  leo: ['Leo Hart', 'leo.hart@example.com'], sam: ['Sam Ortiz', 'sam.ortiz@example.com'],
+  noor: ['Noor Haddad', 'noor.haddad@example.com'], jun: ['Jun Park', 'jun.park@example.com'],
+  ada: ['Ada Okafor', 'ada.okafor@example.com'], ben: ['Ben Ito', 'ben.ito@example.com'],
+  cleo: ['Cleo Varga', 'cleo.varga@example.com'], dev: ['Dev Mehta', 'dev.mehta@example.com'],
+  eli: ['Eli Brandt', 'eli.brandt@example.com'], fay: ['Fay Lund', 'fay.lund@example.com'],
+  gus: ['Gus Moreau', 'gus.moreau@example.com'], hana: ['Hana Sato', 'hana.sato@example.com'],
+  ivo: ['Ivo Petrov', 'ivo.petrov@example.com'], jade: ['Jade Kim', 'jade.kim@example.com'],
+}
+const member = (id, role = 'member', status = 'active') => ({ id, name: people[id][0], email: people[id][1], role, status })
+
+const teams = [
+  { name: 'Platform Infrastructure', key: 'platform-infra', status: 'active', admins: ['maya'],
+    members: [member('maya', 'owner'), member('ada'), member('ben'), member('cleo'), member('dev', 'member', 'invited'), member('eli')],
+    tags: [['cost-center', 'platform'], ['owner', 'infra'], ['env', 'prod'], ['slack', '#plat-oncall']] },
+  { name: 'FinOps', key: 'finops', status: 'active', admins: [],
+    members: [member('fay')], tags: [['cost-center', 'finance']] },
+  { name: 'Machine Learning', key: 'machine-learning', status: 'active', admins: ['priya', 'leo'],
+    members: [member('priya', 'owner'), member('leo'), member('gus'), member('hana'), member('ivo'), member('jade'), member('ada'), member('cleo'), member('ben')],
+    tags: [['cost-center', 'ml'], ['gateway', 'ml-platform'], ['repo', 'ml-serving-and-feature-store'], ['region', 'eu-west'], ['owner', 'data']] },
+  { name: 'Growth Web', key: 'growth-web', status: 'active', admins: ['sam'],
+    members: [member('sam', 'owner'), member('jade'), member('eli'), member('fay')],
+    tags: [['cost-center', 'growth'], ['env', 'prod']] },
+  { name: 'Data Engineering', key: 'data-eng', status: 'active', admins: [],
+    members: [member('gus'), member('hana'), member('ivo')], tags: [] },
+  { name: 'Security', key: 'security', status: 'active', admins: ['noor'],
+    members: [member('noor', 'owner'), member('dev')], tags: [['owner', 'security'], ['compliance', 'soc2']] },
+  { name: 'Mobile', key: 'mobile', status: 'active', admins: ['jun'],
+    members: [member('jun', 'owner'), member('ben'), member('cleo'), member('eli'), member('gus'), member('jade'), member('ivo')],
+    tags: [['cost-center', 'mobile'], ['platform', 'ios-android'], ['env', 'prod']] },
+  { name: 'Support Tools', key: 'support-tools', status: 'inactive', admins: [],
+    members: [member('fay'), member('hana'), member('ada'), member('dev'), member('leo')], tags: [['cost-center', 'support']] },
+  { name: 'Research Sandbox', key: 'research-sandbox', status: 'inactive', admins: [],
+    members: [], tags: [['env', 'sandbox'], ['expires', '2026-12']] },
+]
+
+const state = { status: 'all', query: '', filters: [], expanded: new Set(['machine-learning']) }
+
+function tagChip(key, value, clickable = true) {
+  const tagName = clickable ? 'button' : 'span'
+  const attrs = clickable ? ` type="button" data-tag-key="${key}" data-tag-value="${value}" title="Filter by ${key}:${value}"` : ` title="${key}:${value}"`
+  return `<${tagName} class="tag"${attrs}><span class="k">${key}</span><span class="v">${value}</span></${tagName}>`
+}
+
+function tagsCell(tags) {
+  if (tags.length === 0) return '<span class="text-xs text-muted-foreground">—</span>'
+  const shown = tags.slice(0, 2).map(([k, v]) => tagChip(k, v)).join('')
+  const rest = tags.length - 2
+  const more = rest > 0 ? `<button type="button" class="tag-more" data-more-tags="${tags.map((t) => t.join('=')).join('|')}">+${rest}</button>` : ''
+  return `<div class="flex items-center gap-1.5">${shown}${more}</div>`
+}
+
+function avatarStack(ids, max = 4) {
+  const faces = ids.slice(0, max).map((id, i) => `<span class="${i ? '-ml-1.5' : ''}" title="${people[id][0]}">${avatar(people[id][0], 22, true)}</span>`).join('')
+  return `<span class="flex items-center">${faces}</span>`
+}
+
+function adminsCell(team) {
+  if (team.admins.length === 0) return '<span class="text-xs text-muted-foreground">No admins</span>'
+  const first = people[team.admins[0]][0]
+  const rest = team.admins.length - 1
+  return `<span class="flex items-center gap-2">${avatarStack(team.admins, 2)}<span class="truncate">${first}</span>${rest ? `<span class="text-xs text-muted-foreground">+${rest}</span>` : ''}</span>`
+}
+
+function membersCell(team) {
+  if (team.members.length === 0) return '<span class="text-xs text-muted-foreground">No members</span>'
+  const extra = team.members.length > 4 ? `<span class="text-xs text-muted-foreground tabular-nums">+${team.members.length - 4}</span>` : ''
+  return `<span class="flex items-center gap-2">${avatarStack(team.members.map((m) => m.id))}${extra}</span>`
+}
+
+function statusBadge(status) {
+  return status === 'active' ? '<span class="badge badge-success">active</span>' : '<span class="badge badge-outline text-muted-foreground">inactive</span>'
+}
+
+function roleBadge(role) {
+  return role === 'owner' ? '<span class="badge badge-secondary">owner</span>' : `<span class="badge badge-outline">${role}</span>`
+}
+
+function detail(team) {
+  const memberRows = team.members.map((m) => `
+    <tr>
+      <td class="!py-1.5"><span class="flex items-center gap-2.5">${avatar(m.name, 24)}<span class="flex min-w-0 flex-col"><span class="truncate font-medium">${m.name}</span><span class="truncate text-xs text-muted-foreground">${m.email}</span></span></span></td>
+      <td class="!py-1.5">${roleBadge(m.role)}</td>
+      <td class="!py-1.5">${m.status === 'active' ? '<span class="text-muted-foreground">Active</span>' : '<span class="badge badge-warning">invited</span>'}</td>
+      <td class="!py-1.5 text-right">
+        <button class="btn btn-ghost btn-icon-sm text-muted-foreground" data-member-menu="${m.role}" aria-label="Member actions for ${m.name}" ${m.role === 'owner' ? 'title="Owner memberships cannot be transferred or removed"' : ''}>${ICONS.more}</button>
+      </td>
+    </tr>`).join('')
+
+  const table = team.members.length === 0
+    ? `<div class="flex flex-col items-center gap-2 rounded-md border border-dashed border-border px-4 py-8 text-center"><p class="text-sm">No members yet</p><button class="btn btn-outline btn-sm">${ICONS.plus}Add members</button></div>`
+    : `<div class="overflow-hidden rounded-md border border-border bg-card"><table aria-label="Members of ${team.name}">
+        <thead><tr><th class="!py-1.5">Member</th><th class="!py-1.5">Role</th><th class="!py-1.5">Status</th><th class="!py-1.5 w-10" aria-label="Actions"></th></tr></thead>
+        <tbody>${memberRows}</tbody></table></div>`
+
+  const tagList = team.tags.length === 0
+    ? '<p class="text-xs text-muted-foreground">No tags. Edit the team to add up to five.</p>'
+    : `<dl class="flex flex-col gap-1.5">${team.tags.map(([k, v]) => `<div class="grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-2 text-xs"><dt class="truncate font-mono text-muted-foreground">${k}</dt><dd class="truncate font-mono" title="${v}">${v}</dd></div>`).join('')}</dl>`
+
+  const adminList = team.admins.length === 0
+    ? '<p class="text-xs text-muted-foreground">No admins. Platform admins manage this team.</p>'
+    : team.admins.map((id) => `<a href="#" class="flex items-center gap-2 rounded-md px-1 py-0.5 text-sm hover:bg-muted" onclick="event.stopPropagation()">${avatar(people[id][0], 20)}<span>${people[id][0]}</span></a>`).join('')
+
+  return `
+  <tr class="detail"><td colspan="6" class="!p-0" style="background:rgb(12 31 49 / 0.4)">
+    <div class="grid gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_17rem]">
+      <div class="flex min-w-0 flex-col gap-2">
+        <div class="flex items-center justify-between gap-2">
+          <h3 class="text-sm font-medium">Members <span class="font-normal text-muted-foreground tabular-nums">· ${team.members.length}</span></h3>
+          ${team.members.length ? `<button class="btn btn-outline btn-sm">${ICONS.plus}Add members</button>` : ''}
+        </div>
+        ${table}
+      </div>
+      <aside class="flex flex-col gap-4 lg:border-l lg:border-border lg:pl-5">
+        <div class="flex flex-col gap-2"><h3 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tags</h3>${tagList}</div>
+        <div class="flex flex-col gap-1.5"><h3 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Admins</h3>${adminList}</div>
+        <div class="flex flex-col gap-1.5"><h3 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Team key</h3>
+          <div class="flex items-center justify-between gap-2"><code class="truncate font-mono text-xs">${team.key}</code><button class="btn btn-ghost btn-icon-sm text-muted-foreground" aria-label="Copy team key">${ICONS.copy}</button></div>
+        </div>
+      </aside>
+    </div>
+  </td></tr>`
+}
+
+function visibleTeams() {
+  const q = state.query.trim().toLowerCase()
+  const withoutAdmins = state.filters.some((f) => f.kind === 'admins')
+  // Tag filters on one key match any of their values; different keys must all match.
+  const valuesByKey = new Map()
+  for (const f of state.filters) {
+    if (f.kind === 'tag') valuesByKey.set(f.key, (valuesByKey.get(f.key) ?? new Set()).add(f.value))
+  }
+  return teams
+    .filter((t) => state.status === 'all' || t.status === state.status)
+    .filter((t) => !q || t.name.toLowerCase().includes(q) || t.key.includes(q))
+    .filter((t) => !withoutAdmins || t.admins.length === 0)
+    .filter((t) => [...valuesByKey].every(([key, values]) => t.tags.some(([k, v]) => k === key && values.has(v))))
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+function render() {
+  const list = visibleTeams()
+  document.getElementById('rows').innerHTML = list.length === 0
+    ? '<tr><td colspan="6" class="!py-10 text-center text-sm text-muted-foreground">No teams match these filters. <button class="underline underline-offset-4 hover:text-foreground" data-clear-filters>Clear filters</button></td></tr>'
+    : list.map((team) => {
+      const open = state.expanded.has(team.key)
+      return `
+      <tr class="row group" data-team="${team.key}" ${open ? 'data-state="selected"' : ''} aria-expanded="${open}">
+        <td>
+          <span class="flex min-w-0 items-center gap-3">${avatar(team.name, 28)}
+            <span class="flex min-w-0 flex-col"><span class="truncate font-medium">${team.name}</span>
+            <span class="truncate font-mono text-xs text-muted-foreground">${team.key}</span></span>
+          </span>
+        </td>
+        <td class="w-52">${adminsCell(team)}</td>
+        <td class="w-40">${membersCell(team)}</td>
+        <td class="w-[22rem]">${tagsCell(team.tags)}</td>
+        <td class="w-24">${statusBadge(team.status)}</td>
+        <td class="sticky-end">
+          <span class="flex items-center justify-end gap-0.5">
+            <button class="btn btn-ghost btn-icon-sm text-muted-foreground" data-team-menu="${team.key}" aria-haspopup="menu" aria-label="Actions for ${team.name}">${ICONS.more}</button>
+            <button class="btn btn-ghost btn-icon-sm" aria-expanded="${open}" aria-label="${open ? 'Collapse' : 'Expand'} ${team.name}">${open ? ICONS.chevronDown : ICONS.chevronRight}</button>
+          </span>
+        </td>
+      </tr>${open ? detail(team) : ''}`
+    }).join('')
+
+  document.getElementById('count').textContent = `Showing ${list.length} of ${teams.length} teams`
+  document.getElementById('filter-chips').innerHTML = state.filters.map((f, i) => `
+    <span class="inline-flex h-7 items-center overflow-hidden rounded-[0.45rem] border border-input text-[0.8rem]">
+      <span class="flex items-center gap-1.5 px-2 text-muted-foreground">${f.kind === 'admins' ? ICONS.shield + 'Admins' : ICONS.tag + `<span class="font-mono">${f.key}</span>`}</span>
+      <span class="border-l border-input px-2 text-muted-foreground">is</span>
+      <span class="border-l border-input px-2 ${f.kind === 'admins' ? '' : 'font-mono'}">${f.kind === 'admins' ? 'none' : f.value}</span>
+      <button class="flex h-full items-center border-l border-input px-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" data-remove-filter="${i}" aria-label="Remove filter">${ICONS.x}</button>
+    </span>`).join('') + (state.filters.length ? '<button class="btn btn-ghost btn-sm text-muted-foreground" data-clear-filters>Clear</button>' : '')
+
+  for (const [selector, key] of [['#status', 'status']]) {
+    for (const button of document.querySelectorAll(`${selector} > button`)) {
+      button.dataset.state = button.dataset.value === state[key] ? 'on' : 'off'
+    }
+  }
+}
+
+const popover = document.getElementById('popover')
+function openPopover(anchor, html, align = 'end') {
+  popover.innerHTML = html
+  popover.classList.remove('hidden')
+  const rect = anchor.getBoundingClientRect()
+  const width = popover.offsetWidth
+  popover.style.top = `${rect.bottom + 4}px`
+  popover.style.left = `${align === 'end' ? rect.right - width : rect.left}px`
+}
+function closePopover() { popover.classList.add('hidden') }
+
+function addFilter(filter) {
+  const exists = state.filters.some((f) => f.kind === filter.kind && f.key === filter.key && f.value === filter.value)
+  if (!exists) state.filters.push(filter)
+  closePopover()
+  render()
+}
+
+document.addEventListener('click', (event) => {
+  const target = event.target.closest('button, tr.row, a')
+  if (!target) { closePopover(); return }
+  if (target.closest('#popover')) {
+    if (target.dataset.tagKey) addFilter({ kind: 'tag', key: target.dataset.tagKey, value: target.dataset.tagValue })
+    else if (target.dataset.filterAdmins != null) addFilter({ kind: 'admins' })
+    else closePopover()
+    return
+  }
+  if (target.dataset.tagKey) { event.stopPropagation(); addFilter({ kind: 'tag', key: target.dataset.tagKey, value: target.dataset.tagValue }); return }
+  if (target.dataset.moreTags) {
+    const tags = target.dataset.moreTags.split('|').map((t) => t.split('='))
+    openPopover(target, `<div class="flex flex-col gap-1.5 p-1.5"><p class="text-xs text-muted-foreground">${tags.length} tags · click to filter</p>${tags.map(([k, v]) => `<div>${tagChip(k, v)}</div>`).join('')}</div>`, 'start')
+    return
+  }
+  if (target.dataset.teamMenu) {
+    openPopover(target, `<button class="menu-item">Edit team</button><button class="menu-item">Add members</button><button class="menu-item">Copy team key</button>`)
+    return
+  }
+  if (target.dataset.memberMenu) {
+    const owner = target.dataset.memberMenu === 'owner'
+    openPopover(target, owner
+      ? '<p class="px-2 py-1.5 text-xs text-muted-foreground">Owner memberships cannot be<br/>transferred or removed.</p>'
+      : '<button class="menu-item">Open user</button><button class="menu-item">Transfer to team…</button><div class="menu-sep"></div><button class="menu-item danger">Remove from team</button>')
+    return
+  }
+  if (target.id === 'add-filter') {
+    const pairs = [...new Map(teams.flatMap((t) => t.tags).map(([k, v]) => [`${k}=${v}`, [k, v]])).values()].sort()
+    openPopover(target, `<p class="px-2 pt-1 pb-1.5 text-xs text-muted-foreground">Filter teams by</p>
+      <button class="menu-item" data-filter-admins>${ICONS.shield}Has no admins</button><div class="menu-sep"></div>
+      <div class="flex max-h-64 flex-col gap-1 overflow-y-auto p-1">${pairs.map(([k, v]) => `<div>${tagChip(k, v)}</div>`).join('')}</div>`, 'start')
+    return
+  }
+  if (target.dataset.removeFilter != null) { state.filters.splice(Number(target.dataset.removeFilter), 1); render(); return }
+  if (target.dataset.clearFilters != null) { state.filters = []; render(); return }
+  const seg = target.closest('#status')
+  if (seg) { state[seg.id] = target.dataset.value; render(); return }
+  const row = target.closest('tr.row')
+  if (row) {
+    closePopover()
+    const key = row.dataset.team
+    state.expanded.has(key) ? state.expanded.delete(key) : state.expanded.add(key)
+    render()
+    return
+  }
+  closePopover()
+})
+document.getElementById('search').addEventListener('input', (event) => { state.query = event.target.value; render() })
+
+document.getElementById('opt-a').innerHTML = tagsCell([['cost-center', 'ml'], ['gateway', 'ml-platform'], ['repo', 'ml-serving'], ['region', 'eu-west'], ['owner', 'data']])
+render()
+</script>
+</body>
+</html>

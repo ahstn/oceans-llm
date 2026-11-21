@@ -720,8 +720,7 @@ test('admin ui can create, manage, and revoke an api key that gates live gateway
   await page.goto('/admin/api-keys')
   await page.getByRole('button', { name: 'Create API key' }).click()
   await page.getByLabel('Name').fill(keyName)
-  await page.getByRole('combobox', { name: 'Owner type' }).click()
-  await page.getByRole('option', { name: 'Service account' }).click()
+  await page.getByRole('radio', { name: 'Service account' }).click()
   await page.getByRole('combobox', { name: 'Owner service account' }).click()
   await page.getByRole('option', { name: /Seed API Keys/ }).click()
   await page.getByRole('button', { name: /Select models/ }).click()
@@ -757,7 +756,9 @@ test('admin ui can create, manage, and revoke an api key that gates live gateway
   await row.getByRole('button', { name: 'Manage' }).click()
 
   const dialog = page.getByRole('dialog', { name: 'Manage API key' })
-  await expect(dialog.getByText(maskedPrefix ?? '')).toBeVisible()
+  // The masked key shows in the summary and again in the service-account secret row.
+  await expect(dialog.getByTestId('manage-api-key-summary').getByText(maskedPrefix)).toBeVisible()
+  await expect(dialog.getByTestId('manage-api-key-secret')).toContainText(maskedPrefix)
   await expect(dialog.getByText('Seed API Keys')).toBeVisible()
   await expect(dialog).not.toContainText('system-legacy')
   await expect(dialog).toContainText('Never')
