@@ -1,0 +1,23 @@
+crates/admin-ui/web/src/routes/identity/-teams/teams-list.tsx
+  s_f9a2dc193f7af4::t_a9d38b899a51df 110
+crates/admin-ui/web/src/routes/identity/-teams/team-rows.tsx
+  s_f9a2dc193f7af4::t_a9d38b899a51df 246-249
+crates/admin-ui/web/src/test/routes/teams-route.test.tsx
+  s_f9a2dc193f7af4::t_04b22ac938feb6 495-540
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c024bed47c47d627c075588b53a0f4d9eaa178b8",
+  "prompts": {},
+  "sessions": {
+    "s_f9a2dc193f7af4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f47da735-08a7-4f2b-a249-ef2ca3735b63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
