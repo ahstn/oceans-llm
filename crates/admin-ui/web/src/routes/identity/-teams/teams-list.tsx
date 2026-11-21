@@ -296,18 +296,26 @@ function AppliedFilter({
   onRemove: () => void
 }) {
   return (
-    <span className="border-input inline-flex h-7 items-stretch overflow-hidden rounded-lg border text-xs">
-      <span className="text-muted-foreground flex items-center gap-1.5 px-2">
-        <AppIcon icon={icon} size={14} aria-hidden />
-        <span className={mono ? 'font-mono' : undefined}>{field}</span>
+    // Long tag values truncate inside the chip; the remove button never shrinks out of view.
+    <span
+      className="border-input inline-flex h-7 max-w-full min-w-0 items-stretch overflow-hidden rounded-lg border text-xs"
+      title={`${field} is ${value}`}
+    >
+      <span className="text-muted-foreground flex max-w-32 min-w-0 shrink-0 items-center gap-1.5 px-2">
+        <AppIcon icon={icon} size={14} aria-hidden className="shrink-0" />
+        <span className={cn('truncate', mono && 'font-mono')}>{field}</span>
       </span>
-      <span className="border-input text-muted-foreground flex items-center border-l px-2">is</span>
-      <span className={cn('border-input flex items-center border-l px-2', mono && 'font-mono')}>
-        {value}
+      <span className="border-input text-muted-foreground flex shrink-0 items-center border-l px-2">
+        is
+      </span>
+      <span
+        className={cn('border-input flex min-w-0 items-center border-l px-2', mono && 'font-mono')}
+      >
+        <span className="truncate">{value}</span>
       </span>
       <button
         type="button"
-        className="border-input text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring/50 flex items-center border-l px-1.5 transition-colors outline-none focus-visible:ring-3 focus-visible:ring-inset"
+        className="border-input text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring/50 flex shrink-0 items-center border-l px-1.5 transition-colors outline-none focus-visible:ring-3 focus-visible:ring-inset"
         aria-label={`Remove ${field} filter`}
         onClick={onRemove}
       >

@@ -473,6 +473,10 @@ describe('TeamsPage', () => {
     fireEvent.click(within(teamTable).getByRole('button', { name: 'Filter by env:prod' }))
     expect(screen.getByText('Showing 1 of 2 teams')).toBeInTheDocument()
     expect(screen.queryByText('Research')).not.toBeInTheDocument()
+    // The applied chip truncates long values but never shrinks its remove button away.
+    const removeEnv = screen.getByRole('button', { name: 'Remove env filter' })
+    expect(removeEnv).toHaveClass('shrink-0')
+    expect(removeEnv.parentElement).toHaveClass('max-w-full', 'min-w-0')
     expect(screen.getByRole('button', { name: 'Expand Core Platform' })).toHaveAttribute(
       'aria-expanded',
       'false',
