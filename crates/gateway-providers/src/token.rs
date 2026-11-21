@@ -11,6 +11,7 @@ use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
 use tokio::sync::Mutex;
+use url::Url;
 
 use crate::http::map_reqwest_error;
 
@@ -102,10 +103,7 @@ pub struct ServiceAccountTokenSource {
 
 impl ServiceAccountTokenSource {
     pub fn new(credentials_path: PathBuf, scope: String) -> Result<Self, ProviderError> {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(20))
-            .build()
-            .map_err(map_reqwest_error)?;
+        let client = token_client()?;
 
         Ok(Self {
             credentials_path,
@@ -130,12 +128,10 @@ pub struct AdcTokenSource {
 
 impl AdcTokenSource {
     pub fn new(scope: String) -> Result<Self, ProviderError> {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(20))
-            .build()
-            .map_err(map_reqwest_error)?;
-
-        Ok(Self { scope, client })
+        Ok(Self {
+            scope,
+            client: token_client()?,
+        })
     }
 }
 
@@ -212,12 +208,10 @@ pub struct AdcIdTokenSource {
 
 impl AdcIdTokenSource {
     pub fn new(audience: String) -> Result<Self, ProviderError> {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(20))
-            .build()
-            .map_err(map_reqwest_error)?;
-
-        Ok(Self { audience, client })
+        Ok(Self {
+            audience,
+            client: token_client()?,
+        })
     }
 }
 
@@ -290,10 +284,7 @@ pub struct ServiceAccountIdTokenSource {
 
 impl ServiceAccountIdTokenSource {
     pub fn new(credentials_path: PathBuf, audience: String) -> Result<Self, ProviderError> {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(20))
-            .build()
-            .map_err(map_reqwest_error)?;
+        let client = token_client()?;
 
         Ok(Self {
             credentials_path,
@@ -309,6 +300,28 @@ impl AccessTokenSource for ServiceAccountIdTokenSource {
         let credentials = read_service_account_credentials(&self.credentials_path)?;
         fetch_service_account_id_token(&self.client, &credentials, &self.audience).await
     }
+}
+
+fn token_client_builder() -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        // Never forward a credential request to a different endpoint.
+        .redirect(reqwest::redirect::Policy::none())
+}
+
+fn token_client() -> Result<reqwest::Client, ProviderError> {
+    token_client_builder().build().map_err(map_reqwest_error)
+}
+
+fn oauth_token_url(token_uri: Option<&str>) -> Result<Url, ProviderError> {
+    let invalid_uri =
+        || ProviderError::InvalidRequest("Google OAuth token_uri must be an HTTPS URL".to_string());
+    let url =
+        Url::parse(token_uri.unwrap_or(DEFAULT_OAUTH_TOKEN_URL)).map_err(|_| invalid_uri())?;
+    if url.scheme() != "https" {
+        return Err(invalid_uri());
+    }
+    Ok(url)
 }
 
 fn default_adc_file_path() -> Option<PathBuf> {
@@ -410,16 +423,13 @@ async fn fetch_service_account_token(
     credentials: &ServiceAccountCredentials,
     scope: &str,
 ) -> Result<AccessToken, ProviderError> {
-    let token_uri = credentials
-        .token_uri
-        .clone()
-        .unwrap_or_else(|| DEFAULT_OAUTH_TOKEN_URL.to_string());
+    let token_uri = oauth_token_url(credentials.token_uri.as_deref())?;
     let now = OffsetDateTime::now_utc();
 
     let claims = ServiceAccountClaims {
         iss: &credentials.client_email,
         scope,
-        aud: &token_uri,
+        aud: token_uri.as_str(),
         iat: now.unix_timestamp(),
         exp: (now + Duration::hours(1)).unix_timestamp(),
     };
@@ -427,7 +437,7 @@ async fn fetch_service_account_token(
     let assertion = sign_service_account_jwt(credentials, &claims)?;
 
     let response = client
-        .post(&token_uri)
+        .post(token_uri)
         .form(&[
             ("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
             ("assertion", assertion.as_str()),
@@ -444,15 +454,12 @@ async fn fetch_service_account_id_token(
     credentials: &ServiceAccountCredentials,
     audience: &str,
 ) -> Result<AccessToken, ProviderError> {
-    let token_uri = credentials
-        .token_uri
-        .clone()
-        .unwrap_or_else(|| DEFAULT_OAUTH_TOKEN_URL.to_string());
+    let token_uri = oauth_token_url(credentials.token_uri.as_deref())?;
     let now = OffsetDateTime::now_utc();
 
     let claims = ServiceAccountIdTokenClaims {
         iss: &credentials.client_email,
-        aud: &token_uri,
+        aud: token_uri.as_str(),
         target_audience: audience,
         iat: now.unix_timestamp(),
         exp: (now + Duration::hours(1)).unix_timestamp(),
@@ -461,7 +468,7 @@ async fn fetch_service_account_id_token(
     let assertion = sign_service_account_jwt(credentials, &claims)?;
 
     let response = client
-        .post(&token_uri)
+        .post(token_uri)
         .form(&[
             ("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
             ("assertion", assertion.as_str()),
@@ -484,10 +491,7 @@ async fn fetch_authorized_user_token(
         ));
     }
 
-    let token_uri = credentials
-        .token_uri
-        .clone()
-        .unwrap_or_else(|| DEFAULT_OAUTH_TOKEN_URL.to_string());
+    let token_uri = oauth_token_url(credentials.token_uri.as_deref())?;
 
     let response = client
         .post(token_uri)
@@ -648,7 +652,7 @@ async fn parse_oauth_id_token_response(
 #[cfg(test)]
 mod tests {
     use std::{
-        env, fs,
+        fs,
         path::PathBuf,
         sync::{
             Arc,
@@ -661,11 +665,13 @@ mod tests {
         Form, Json, Router,
         extract::Query,
         http::{HeaderMap, StatusCode},
+        response::Redirect,
         routing::{get, post},
     };
+    use axum_server::tls_rustls::RustlsConfig;
     use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    use rcgen::{CertifiedKey, generate_simple_self_signed};
     use serde_json::json;
-    use serial_test::serial;
     use tempfile::tempdir;
     use tokio::net::TcpListener;
 
@@ -673,6 +679,7 @@ mod tests {
         AccessToken, AccessTokenSource, AdcTokenSource, CachedAccessTokenSource, Duration,
         OffsetDateTime, ServiceAccountIdTokenSource, ServiceAccountTokenSource,
         StaticBearerTokenSource, fetch_metadata_server_id_token, id_token_expires_at,
+        oauth_token_url, token_client_builder,
     };
     use crate::token::CLOUD_PLATFORM_SCOPE;
 
@@ -781,6 +788,62 @@ UQ2sSTSfuLHz2F1jr5+pRNL2
         assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 
+    async fn serve_token_endpoint(app: Router) -> (String, reqwest::Client) {
+        let CertifiedKey { cert, signing_key } =
+            generate_simple_self_signed(vec!["127.0.0.1".to_string()]).expect("certificate");
+        let tls = RustlsConfig::from_pem(
+            cert.pem().into_bytes(),
+            signing_key.serialize_pem().into_bytes(),
+        )
+        .await
+        .expect("TLS config");
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let server = axum_server::from_tcp_rustls(listener, tls).expect("server");
+        tokio::spawn(async move {
+            server.serve(app.into_make_service()).await.expect("serve");
+        });
+        let client = token_client_builder()
+            .no_proxy()
+            .tls_certs_merge([
+                reqwest::Certificate::from_der(cert.der()).expect("trust certificate")
+            ])
+            .build()
+            .expect("token client");
+        (format!("https://{addr}"), client)
+    }
+
+    #[test]
+    fn oauth_token_url_requires_https() {
+        assert_eq!(
+            oauth_token_url(None).expect("default token URL").as_str(),
+            "https://oauth2.googleapis.com/token"
+        );
+        for invalid in ["http://oauth.example/token", "file:///token", "/token"] {
+            assert!(matches!(
+                oauth_token_url(Some(invalid)),
+                Err(gateway_core::ProviderError::InvalidRequest(_))
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn token_client_does_not_follow_redirects() {
+        let app = Router::new()
+            .route(
+                "/redirect",
+                post(|| async { Redirect::temporary("/token") }),
+            )
+            .route("/token", post(|| async { StatusCode::OK }));
+        let (base, client) = serve_token_endpoint(app).await;
+        let response = client
+            .post(format!("{base}/redirect"))
+            .send()
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+    }
+
     #[tokio::test]
     async fn service_account_file_loading_path() {
         let app = Router::new().route(
@@ -788,11 +851,7 @@ UQ2sSTSfuLHz2F1jr5+pRNL2
             post(|| async { Json(json!({"access_token": "sa-token", "expires_in": 3600})) }),
         );
 
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let addr = listener.local_addr().expect("addr");
-        tokio::spawn(async move {
-            axum::serve(listener, app).await.expect("serve");
-        });
+        let (base, client) = serve_token_endpoint(app).await;
 
         let tmp = tempdir().expect("tempdir");
         let credentials_path = tmp.path().join("service-account.json");
@@ -802,17 +861,18 @@ UQ2sSTSfuLHz2F1jr5+pRNL2
                 "type": "service_account",
                 "client_email": "gateway-test@example.iam.gserviceaccount.com",
                 "private_key": TEST_RSA_PRIVATE_KEY,
-                "token_uri": format!("http://{addr}/token")
+                "token_uri": format!("{base}/token")
             })
             .to_string(),
         )
         .expect("write credentials");
 
-        let source = ServiceAccountTokenSource::new(
+        let mut source = ServiceAccountTokenSource::new(
             PathBuf::from(&credentials_path),
             CLOUD_PLATFORM_SCOPE.to_string(),
         )
         .expect("source");
+        source.client = client;
         let token = source.fetch_token().await.expect("token");
         assert_eq!(token.token, "sa-token");
     }
@@ -855,7 +915,10 @@ UQ2sSTSfuLHz2F1jr5+pRNL2
             axum::serve(listener, app).await.expect("serve");
         });
 
-        let client = reqwest::Client::new();
+        let client = token_client_builder()
+            .no_proxy()
+            .build()
+            .expect("token client");
         let token = fetch_metadata_server_id_token(
             &client,
             "https://service.run.app/",
@@ -906,11 +969,7 @@ UQ2sSTSfuLHz2F1jr5+pRNL2
         }
 
         let app = Router::new().route("/token", post(token));
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let addr = listener.local_addr().expect("addr");
-        tokio::spawn(async move {
-            axum::serve(listener, app).await.expect("serve");
-        });
+        let (base, client) = serve_token_endpoint(app).await;
 
         let tmp = tempdir().expect("tempdir");
         let credentials_path = tmp.path().join("service-account.json");
@@ -920,17 +979,18 @@ UQ2sSTSfuLHz2F1jr5+pRNL2
                 "type": "service_account",
                 "client_email": "gateway-test@example.iam.gserviceaccount.com",
                 "private_key": TEST_RSA_PRIVATE_KEY,
-                "token_uri": format!("http://{addr}/token")
+                "token_uri": format!("{base}/token")
             })
             .to_string(),
         )
         .expect("write credentials");
 
-        let source = ServiceAccountIdTokenSource::new(
+        let mut source = ServiceAccountIdTokenSource::new(
             PathBuf::from(&credentials_path),
             "https://service.run.app/".to_string(),
         )
         .expect("source");
+        source.client = client;
         let token = source.fetch_token().await.expect("id token");
 
         assert!(token.token.contains("."));
@@ -938,17 +998,12 @@ UQ2sSTSfuLHz2F1jr5+pRNL2
     }
 
     #[tokio::test]
-    #[serial]
     async fn adc_token_acquisition_path_from_authorized_user_file() {
         let app = Router::new().route(
             "/token",
             post(|| async { Json(json!({"access_token": "adc-token", "expires_in": 3600})) }),
         );
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let addr = listener.local_addr().expect("addr");
-        tokio::spawn(async move {
-            axum::serve(listener, app).await.expect("serve");
-        });
+        let (base, client) = serve_token_endpoint(app).await;
 
         let tmp = tempdir().expect("tempdir");
         let credentials_path = tmp.path().join("adc.json");
@@ -959,28 +1014,18 @@ UQ2sSTSfuLHz2F1jr5+pRNL2
                 "client_id": "cid",
                 "client_secret": "csecret",
                 "refresh_token": "rtok",
-                "token_uri": format!("http://{addr}/token")
+                "token_uri": format!("{base}/token")
             })
             .to_string(),
         )
         .expect("write adc");
 
-        let old = env::var("GOOGLE_APPLICATION_CREDENTIALS").ok();
-        unsafe {
-            env::set_var(
-                "GOOGLE_APPLICATION_CREDENTIALS",
-                credentials_path.as_os_str(),
-            )
-        };
-
-        let source = AdcTokenSource::new(CLOUD_PLATFORM_SCOPE.to_string()).expect("source");
-        let token = source.fetch_token().await.expect("token");
+        let mut source = AdcTokenSource::new(CLOUD_PLATFORM_SCOPE.to_string()).expect("source");
+        source.client = client;
+        let token = source
+            .fetch_from_adc_file(&credentials_path)
+            .await
+            .expect("token");
         assert_eq!(token.token, "adc-token");
-
-        if let Some(old) = old {
-            unsafe { env::set_var("GOOGLE_APPLICATION_CREDENTIALS", old) };
-        } else {
-            unsafe { env::remove_var("GOOGLE_APPLICATION_CREDENTIALS") };
-        }
     }
 }

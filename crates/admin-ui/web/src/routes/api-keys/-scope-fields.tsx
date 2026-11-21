@@ -45,6 +45,10 @@ export function ApiKeyScopeFields({
         <FieldLabel>Capabilities</FieldLabel>
         <ToggleGroup
           type="single"
+          variant="checked"
+          size="sm"
+          spacing={1}
+          className="max-w-full min-w-0 flex-wrap"
           value={value.scopes === null ? 'full' : 'limited'}
           onValueChange={(mode) => {
             if (mode === 'full') {
@@ -140,6 +144,10 @@ function McpServerListField({
       <FieldLabel>MCP servers</FieldLabel>
       <ToggleGroup
         type="single"
+        variant="checked"
+        size="sm"
+        spacing={1}
+        className="max-w-full min-w-0 flex-wrap"
         value={value === null ? 'all' : 'selected'}
         onValueChange={(mode) => {
           if (mode === 'all') {
