@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react'
-import { SearchIcon } from '@hugeicons/core-free-icons'
+import { useState, type FormEvent, type ReactNode } from 'react'
+import { Copy01Icon, SearchIcon, ViewIcon, ViewOffSlashIcon } from '@hugeicons/core-free-icons'
 
 import { AppIcon } from '@/components/icons/app-icon'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -67,8 +67,37 @@ import { type ApiKeyScopesValue, formatScopeSummary, scopesOf } from '@/lib/api-
 
 import { ApiKeyScopeFields } from './-scope-fields'
 
+// DialogContent caps width at sm:max-w-sm (384px). These forms take one wider column, then two
+// from lg up so scopes sit beside the key's owner and model access.
 const apiKeyDialogContentClassName =
-  'flex max-h-[calc(100dvh-2rem)] w-[min(760px,calc(100vw-32px))] flex-col overflow-hidden sm:max-h-[80vh]'
+  'flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden sm:max-h-[80vh] sm:max-w-xl lg:max-w-5xl'
+
+/** The key's own fields first, then its scopes; side by side from lg up, stacked below. */
+function ApiKeyDialogBody({
+  children,
+  footer,
+  scopes,
+}: {
+  children: ReactNode
+  footer?: ReactNode
+  scopes: ReactNode
+}) {
+  return (
+    <div
+      data-testid="api-key-dialog-body"
+      className="grid min-h-0 flex-1 content-start gap-6 overflow-y-auto pr-1 lg:grid-cols-2"
+    >
+      <div className="flex min-w-0 flex-col gap-6">{children}</div>
+      <div
+        data-testid="api-key-dialog-scopes"
+        className="border-border flex min-w-0 flex-col gap-6 border-t pt-6 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"
+      >
+        {scopes}
+      </div>
+      {footer ? <div className="min-w-0 lg:col-span-2">{footer}</div> : null}
+    </div>
+  )
+}
 
 export function CreatedApiKeyAlert({
   result,
@@ -356,7 +385,18 @@ export function CreateApiKeyDialog({
         </DialogHeader>
 
         <form className="flex min-h-0 flex-1 flex-col gap-6" onSubmit={onSubmit}>
-          <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pr-1">
+          <ApiKeyDialogBody
+            scopes={
+              <ApiKeyScopeFields
+                availableScopes={availableScopes}
+                disabled={false}
+                idPrefix="create-api-key"
+                mcpServers={mcpServers}
+                value={scopesOf(form)}
+                onChange={onScopesChange}
+              />
+            }
+          >
             <FieldGroup>
               <Field>
                 <FieldLabel htmlFor="api-key-name">Name</FieldLabel>
@@ -372,22 +412,33 @@ export function CreateApiKeyDialog({
                 </FieldDescription>
               </Field>
 
-              <Field>
-                <FieldLabel>Owner type</FieldLabel>
-                <Select value={form.owner_kind} onValueChange={onOwnerKindChange}>
-                  <SelectTrigger aria-label="Owner type">
-                    <SelectValue placeholder="Select an owner type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="user">User</SelectItem>
-                      {serviceAccountOptions.length > 0 ? (
-                        <SelectItem value="service_account">Service account</SelectItem>
-                      ) : null}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </Field>
+              {/* With no service accounts in scope, a user owner is the only choice. */}
+              {serviceAccountOptions.length > 0 || form.owner_kind === 'service_account' ? (
+                <Field>
+                  <FieldLabel>Owner type</FieldLabel>
+                  <ToggleGroup
+                    type="single"
+                    variant="checked"
+                    size="sm"
+                    spacing={1}
+                    className="max-w-full min-w-0 flex-wrap"
+                    value={form.owner_kind}
+                    onValueChange={(value) => {
+                      if (value === 'user' || value === 'service_account') {
+                        onOwnerKindChange(value)
+                      }
+                    }}
+                    aria-label="Owner type"
+                  >
+                    <ToggleGroupItem value="user" aria-label="User">
+                      User
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="service_account" aria-label="Service account">
+                      Service account
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </Field>
+              ) : null}
 
               <Field>
                 <FieldLabel>
@@ -454,16 +505,7 @@ export function CreateApiKeyDialog({
                 </FieldDescription>
               </Field>
             )}
-
-            <ApiKeyScopeFields
-              availableScopes={availableScopes}
-              disabled={false}
-              idPrefix="create-api-key"
-              mcpServers={mcpServers}
-              value={scopesOf(form)}
-              onChange={onScopesChange}
-            />
-          </div>
+          </ApiKeyDialogBody>
 
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
@@ -600,12 +642,29 @@ function ManageApiKeyForm({
       className="flex min-h-0 flex-1 flex-col gap-6"
       onSubmit={canUpdate ? onSubmit : (event) => event.preventDefault()}
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto pr-1">
+      <ApiKeyDialogBody
+        scopes={
+          <ApiKeyScopeFields
+            availableScopes={availableScopes}
+            disabled={!editable}
+            idPrefix="manage-api-key"
+            mcpServers={mcpServers}
+            value={scopes}
+            onChange={onScopesChange}
+          />
+        }
+        footer={
+          actions.includes('revoke_api_key') ? (
+            <ManageApiKeyLifecycle isActive={isActive} isPending={isPending} onRevoke={onRevoke} />
+          ) : null
+        }
+      >
         <ManageApiKeySummary target={target} />
 
         {showSecret ? (
           <ManageApiKeySecret
             isPending={isPending}
+            maskedKey={maskApiKeyPrefix(target.prefix)}
             revealedKey={revealedKey}
             onCopy={onCopy}
             onReveal={onReveal}
@@ -630,20 +689,7 @@ function ManageApiKeyForm({
           onModelGrantModeChange={onModelGrantModeChange}
           onModelToggle={onModelToggle}
         />
-
-        <ApiKeyScopeFields
-          availableScopes={availableScopes}
-          disabled={!editable}
-          idPrefix="manage-api-key"
-          mcpServers={mcpServers}
-          value={scopes}
-          onChange={onScopesChange}
-        />
-
-        {actions.includes('revoke_api_key') ? (
-          <ManageApiKeyLifecycle isActive={isActive} isPending={isPending} onRevoke={onRevoke} />
-        ) : null}
-      </div>
+      </ApiKeyDialogBody>
 
       <ManageApiKeyFooter
         canUpdate={canUpdate}
@@ -719,54 +765,86 @@ function ManageApiKeySummary({ target }: { target: ApiKeyView }) {
 
 function ManageApiKeySecret({
   isPending,
+  maskedKey,
   revealedKey,
   onCopy,
   onReveal,
 }: {
   isPending: boolean
+  maskedKey: string
   revealedKey: string | null
   onCopy: (value: string, successMessage: string) => void | Promise<void>
   onReveal: () => void | Promise<void>
 }) {
+  // Hiding is local: the fetched secret stays in memory until the dialog closes.
+  const [hidden, setHidden] = useState(false)
+  const shown = revealedKey !== null && !hidden
+
   return (
     <section
       data-testid="manage-api-key-secret"
-      className="border-border flex flex-col gap-3 border-b pb-4"
+      className="border-border flex flex-col gap-2 border-b pb-4"
     >
-      <div className="flex flex-col gap-1">
-        <h3 className="text-foreground text-sm font-semibold">Credential secret</h3>
-        <p className="text-subtle-foreground text-sm">
-          Service-account-owned keys can be revealed for this owner scope.
-        </p>
-      </div>
-
-      {revealedKey ? (
-        <div className="flex flex-col gap-3">
-          <div className="border-border bg-surface-muted rounded-md border p-3">
+      <h3 className="text-foreground text-sm font-semibold">Credential secret</h3>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <div className="border-border bg-surface-muted flex h-8 min-w-0 flex-1 items-center rounded-md border px-3">
+          {shown ? (
             <p
               data-testid="manage-api-key-raw-key"
-              className="text-foreground font-mono text-xs break-all"
+              className="text-foreground truncate font-mono text-xs"
             >
               {revealedKey}
             </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => onCopy(revealedKey, 'API key copied')}
-            >
-              Copy API key
-            </Button>
-          </div>
+          ) : (
+            <p className="text-muted-foreground truncate font-mono text-xs">{maskedKey}</p>
+          )}
         </div>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="secondary" onClick={onReveal} disabled={isPending}>
-            {isPending ? 'Revealing...' : 'Reveal API key'}
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            aria-label={shown ? 'Hide API key' : 'Reveal API key'}
+            disabled={isPending}
+            onClick={() => {
+              if (revealedKey === null) {
+                setHidden(false)
+                void onReveal()
+              } else {
+                setHidden(shown)
+              }
+            }}
+          >
+            <AppIcon
+              icon={shown ? ViewOffSlashIcon : ViewIcon}
+              size={14}
+              stroke={1.5}
+              data-icon="inline-start"
+            />
+            {shown ? 'Hide' : isPending && revealedKey === null ? 'Revealing...' : 'Reveal'}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            aria-label="Copy API key"
+            disabled={revealedKey === null}
+            onClick={() => {
+              if (revealedKey !== null) {
+                void onCopy(revealedKey, 'API key copied')
+              }
+            }}
+          >
+            <AppIcon icon={Copy01Icon} size={14} stroke={1.5} data-icon="inline-start" />
+            Copy
           </Button>
         </div>
-      )}
+      </div>
+      <p className="text-subtle-foreground text-sm">
+        Service-account-owned keys can be revealed for this owner scope. Copy enables once revealed.
+      </p>
     </section>
   )
 }
@@ -831,23 +909,30 @@ function ManageApiKeyLifecycle({
   onRevoke: () => void | Promise<void>
 }) {
   return (
-    <section className="border-border flex flex-col gap-3 rounded-lg border p-4">
-      <div className="flex flex-col gap-1">
-        <h3 className="text-foreground text-sm font-semibold">Lifecycle actions</h3>
+    <section
+      data-testid="manage-api-key-lifecycle"
+      className="border-border flex min-w-0 items-center justify-between gap-4 border-t pt-4"
+    >
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <h3 className="text-foreground text-sm font-semibold">Revoke this key</h3>
         <p className="text-subtle-foreground text-sm">
-          Revocation takes effect immediately and cannot be undone in this slice.
+          {isActive
+            ? 'Revocation takes effect immediately and cannot be undone.'
+            : 'This key has already been revoked.'}
         </p>
       </div>
-
       {isActive ? (
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="destructive" onClick={onRevoke} disabled={isPending}>
-            {isPending ? 'Revoking...' : 'Revoke key'}
-          </Button>
-        </div>
-      ) : (
-        <p className="text-subtle-foreground text-sm">This key has already been revoked.</p>
-      )}
+        <Button
+          type="button"
+          variant="destructive"
+          size="sm"
+          className="shrink-0"
+          onClick={onRevoke}
+          disabled={isPending}
+        >
+          {isPending ? 'Revoking...' : 'Revoke key'}
+        </Button>
+      ) : null}
     </section>
   )
 }
