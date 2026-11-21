@@ -8,6 +8,7 @@ import type { RequestLogView } from '@/types/api'
 import { RequestLogsPage } from '@/routes/observability/request-logs'
 
 const getObservabilityRequestLogDetailMock = vi.fn()
+const getModelsMock = vi.fn()
 const navigateMock = vi.fn()
 
 // Hoisted with the mocks: the route module reads it as it loads.
@@ -36,6 +37,7 @@ vi.mock('@/server/admin-data.functions', () => ({
   getRequestLogs: vi.fn(),
   getObservabilityRequestLogDetail: (...args: unknown[]) =>
     getObservabilityRequestLogDetailMock(...args),
+  getModels: (...args: unknown[]) => getModelsMock(...args),
 }))
 
 const items: RequestLogView[] = [
@@ -118,6 +120,7 @@ function resetMocks() {
   routeMock.useSearch.mockReset()
   getObservabilityRequestLogDetailMock.mockReset()
   navigateMock.mockReset()
+  getModelsMock.mockReset()
   routeMock.useSearch.mockReturnValue({})
   vi.stubGlobal('ResizeObserver', ResizeObserverMock)
 }
@@ -739,6 +742,73 @@ describe('RequestLogsPage filter chips', () => {
 
     expect(scope.getByTestId('request-log-filter-provider-key')).toHaveValue('openai')
     expect(scope.getByTestId('request-log-filter-env')).toHaveValue('staging')
+  })
+})
+
+describe('RequestLogsPage picker filters', () => {
+  beforeEach(resetMocks)
+
+  async function addFilter(scope: ReturnType<typeof within>, name: string) {
+    fireEvent.keyDown(scope.getByRole('button', { name: /Filters/ }), { key: 'Enter' })
+    fireEvent.click(await screen.findByRole('menuitem', { name }))
+  }
+
+  it('picks a model from the gateway catalog', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+    getModelsMock.mockResolvedValue({
+      data: {
+        total: 2,
+        items: [
+          { id: 'gpt-4.1-mini', model_id: 'uuid-1', provider_label: 'OpenAI', alias_of: null },
+          { id: 'fast', model_id: 'uuid-2', provider_label: 'OpenAI', alias_of: 'gpt-4.1-mini' },
+        ],
+      },
+    })
+
+    const view = renderPage()
+    const scope = within(view.container)
+    expect(getModelsMock).not.toHaveBeenCalled()
+
+    await addFilter(scope, 'Model')
+    fireEvent.click(await screen.findByRole('option', { name: /fast\s*alias of gpt-4\.1-mini/ }))
+
+    await waitForListTransition()
+    expect(getModelsMock).toHaveBeenCalledOnce()
+    expect(navigatedSearch(0)).toEqual(expect.objectContaining({ model_key: 'fast' }))
+    expect(scope.getByTestId('request-log-filter-model-key')).toHaveTextContent('fast')
+  })
+
+  it('filters by a listed status code and stores it as a number', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+
+    const view = renderPage()
+    const scope = within(view.container)
+    await addFilter(scope, 'Status')
+    fireEvent.click(await screen.findByRole('option', { name: /429\s*Too Many Requests/ }))
+
+    await waitForListTransition()
+    expect(navigatedSearch(0).status_code).toBe(429)
+    expect(getModelsMock).not.toHaveBeenCalled()
+  })
+
+  it('accepts a typed status code only when it is a valid HTTP status', async () => {
+    routeMock.useSearch.mockReturnValue({ status_code: 429 })
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+
+    const view = renderPage()
+    const trigger = within(view.container).getByTestId('request-log-filter-status-code')
+    expect(trigger).toHaveTextContent('429Too Many Requests')
+
+    fireEvent.click(trigger)
+    const search = await screen.findByRole('combobox', { name: 'Search status values' })
+    fireEvent.change(search, { target: { value: '5x9' } })
+    expect(screen.queryByRole('option', { name: /Filter by/ })).not.toBeInTheDocument()
+
+    fireEvent.change(search, { target: { value: '529' } })
+    fireEvent.click(await screen.findByRole('option', { name: 'Filter by “529”' }))
+
+    await waitForListTransition()
+    expect(navigatedSearch(0, { status_code: 429 }).status_code).toBe(529)
   })
 })
 

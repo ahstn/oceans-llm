@@ -1,4 +1,5 @@
-import { getBudgetAlertHistory, getModels, getSpendBudgets } from '@/server/admin-data.functions'
+import { loadAllModels } from '@/lib/model-catalog'
+import { getBudgetAlertHistory, getSpendBudgets } from '@/server/admin-data.functions'
 import type {
   BudgetAlertHistoryView,
   BudgetScopeRequest,
@@ -22,25 +23,6 @@ export type SpendControlsLoaderData = {
   /** `null` for team admins: alert history is platform-wide. */
   alerts: { data: BudgetAlertHistoryView } | null
   models: ModelView[]
-}
-
-/** The admin models endpoint clamps `page_size` to this. */
-const MODEL_PAGE_SIZE = 100
-
-type ModelPage = { data: { items: ModelView[]; total: number } }
-
-function getModelPage(page: number) {
-  return getModels({ data: { page, page_size: MODEL_PAGE_SIZE } }) as Promise<ModelPage>
-}
-
-/** Budgets can point at any model, so the selector needs the whole catalog, not one page. */
-async function loadAllModels(): Promise<ModelView[]> {
-  const first = await getModelPage(1)
-  const pageCount = Math.ceil(first.data.total / MODEL_PAGE_SIZE)
-  const rest = await Promise.all(
-    Array.from({ length: Math.max(0, pageCount - 1) }, (_, index) => getModelPage(index + 2)),
-  )
-  return [first, ...rest].flatMap((page) => page.data.items)
 }
 
 /**
