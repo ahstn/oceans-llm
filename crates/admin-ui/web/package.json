@@ -73,7 +73,7 @@
     "tailwindcss": "4.3.5",
     "tsrs": "0.25.0-ts7.1.0-beta",
     "typescript": "6.0.3",
-    "vite": "8.3.7",
+    "vite": "8.3.8",
     "vite-tsconfig-paths": "6.1.1",
     "vitest": "5.1.0"
   }
