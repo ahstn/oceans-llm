@@ -40,6 +40,9 @@ ignore = [
   { id = "RUSTSEC-2024-0449", reason = "baseline: unsafe-libyaml is unmaintained" },
   { id = "RUSTSEC-2025-0134", reason = "baseline: rustls-pemfile is unmaintained" },
   { id = "RUSTSEC-2025-0141", reason = "baseline: bincode is unmaintained" },
+  # Temporary maintenance exception; remove when the gateway and its dependencies drop Chrono.
+  # https://github.com/ahstn/oceans-llm/issues/698
+  { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained; waiting for chrono-free cron and SSO dependencies" },
 ]
 
 [licenses]

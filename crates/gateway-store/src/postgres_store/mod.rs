@@ -84,7 +84,7 @@ use gateway_core::{
     UserRecord, UserSessionRecord, UserStatus,
 };
 use sqlx::{
-    PgPool, Row,
+    Connection, PgPool, Row,
     postgres::{PgPoolOptions, PgRow},
 };
 use time::OffsetDateTime;
@@ -97,6 +97,9 @@ use crate::{
 
 use support::*;
 
+/// How long a pooled connection may sit idle before it is checked with a ping on checkout.
+const IDLE_CONNECTION_PING_AFTER: std::time::Duration = std::time::Duration::from_secs(60);
+
 #[derive(Clone)]
 pub struct PostgresStore {
     pool: PgPool,
@@ -104,8 +107,20 @@ pub struct PostgresStore {
 
 impl PostgresStore {
     pub async fn connect(url: &str, max_connections: u32) -> anyhow::Result<Self> {
+        // sqlx pings every connection it hands out by default, which doubles the round trips of
+        // each query. Only a connection that sat idle long enough for a proxy or failover to drop
+        // it needs that check.
         let pool = PgPoolOptions::new()
             .max_connections(max_connections.max(1))
+            .test_before_acquire(false)
+            .before_acquire(|conn, meta| {
+                Box::pin(async move {
+                    if meta.idle_for >= IDLE_CONNECTION_PING_AFTER {
+                        conn.ping().await?;
+                    }
+                    Ok(true)
+                })
+            })
             .connect(url)
             .await
             .with_context(|| "failed opening postgres connection pool".to_string())?;

@@ -57,7 +57,7 @@ http-body = "1"
 http-body-util = "0.1"
 ipnet = "2.12"
 itertools = "0.14"
-lettre = { version = "0.11", default-features = false, features = [
+lettre = { version = "0.11.24", default-features = false, features = [
   "builder",
   "hostname",
   "pool",
