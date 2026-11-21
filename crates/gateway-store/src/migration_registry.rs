@@ -30,8 +30,10 @@ const LAST_STRICT_VERSION: u32 = 81;
 const READER_COMPATIBILITY: &[(u32, ReaderCompatibility)] = &[
     // V82 permits unmerged pull requests with no merge time; older readers require it.
     (82, ReaderCompatibility::RequiresReader(82)),
-    // V83 only adds an index.
+    // V83 only replaces indexes.
     (83, ReaderCompatibility::Additive),
+    // V84 only adds an index.
+    (84, ReaderCompatibility::Additive),
 ];
 
 /// libsql migrations that rebuild a table other tables reference, with that
@@ -577,10 +579,17 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 83,
+        name: "usage_budget_spend_indexes",
+        checksum: "V83__usage_budget_spend_indexes.sql",
+        libsql_sql: include_str!("../migrations/V83__usage_budget_spend_indexes.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V83__usage_budget_spend_indexes.sql"),
+    },
+    MigrationManifest {
+        version: 84,
         name: "batch_jobs_route_index",
-        checksum: "V83__batch_jobs_route_index.sql",
-        libsql_sql: include_str!("../migrations/V83__batch_jobs_route_index.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V83__batch_jobs_route_index.sql"),
+        checksum: "V84__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V84__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V84__batch_jobs_route_index.sql"),
     },
 ];
 
