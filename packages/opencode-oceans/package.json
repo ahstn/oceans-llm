@@ -36,16 +36,16 @@
     "pack": "bun pm pack --destination dist"
   },
   "devDependencies": {
-    "@effect/tsgo": "0.67.4",
-    "@opencode/cli": "2.3.0",
-    "@opencode/client": "2.3.0",
-    "@opencode/plugin": "2.3.0",
+    "@effect/tsgo": "0.69.0",
+    "@opencode/cli": "2.2.6",
+    "@opencode/client": "2.2.6",
+    "@opencode/plugin": "2.2.6",
     "@types/node": "26.6.6",
     "bun-types": "1.4.4",
-    "effect": "4.1.4",
-    "oxfmt": "0.75.0",
-    "oxlint": "1.90.0",
-    "oxlint-tsgolint": "7.0.2005",
+    "effect": "4.1.0",
+    "oxfmt": "0.78.0",
+    "oxlint": "1.93.0",
+    "oxlint-tsgolint": "7.0.2007",
     "typescript": "7.0.2"
   },
   "peerDependencies": {
