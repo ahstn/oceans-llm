@@ -1,0 +1,37 @@
+crates/admin-ui/web/src/routes/api-keys/-scope-fields.tsx
+  s_014b27f5de2de2::t_85a417b42da5c7 48-51,147-150
+.agents/skills/verify-oceans-admin/features/api-keys.md
+  s_014b27f5de2de2::t_b1fdb61fff1542 31,38-39
+  s_014b27f5de2de2::t_74a62ec333d0cc 30
+crates/admin-ui/web/e2e/gateway-contract.e2e.ts
+  s_014b27f5de2de2::t_40c25936f195d4 723
+crates/admin-ui/web/src/routes/api-keys/-components.tsx
+  s_014b27f5de2de2::t_be9e504698f1d4 914,916,929
+  s_014b27f5de2de2::t_8b01997860058a 415-441
+  s_014b27f5de2de2::t_14dd9870578083 1,70-71,73-100,388-399,508,645-661,692
+  s_014b27f5de2de2::t_234b3bde2ba194 2
+  s_014b27f5de2de2::t_51e742286ba364 667,768,774,779-782,786,788-791,794,798-800,802-841,844-847,912-913,915,917,919-921,925-928,930-935
+crates/admin-ui/web/src/test/routes/api-keys-route.test.tsx
+  s_014b27f5de2de2::t_4d3c526cbe83aa 305,307-317,733-738
+  s_014b27f5de2de2::t_5d6d45b7b1c414 304,306
+  s_014b27f5de2de2::t_9317b1bbafd202 322,794
+  s_014b27f5de2de2::t_be9e504698f1d4 739-740
+  s_014b27f5de2de2::t_0617d2e2861179 274,299-303,318-321,323-346,684-688,705-713,732,741,743,745-747,749,793,795
+  s_014b27f5de2de2::t_7aed1863e323e2 759-760
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "332171359a08a29669a6444c062e0c09b296e6e9",
+  "prompts": {},
+  "sessions": {
+    "s_014b27f5de2de2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "091a9787-f7b8-441c-b00d-e8c35cef2c67",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
