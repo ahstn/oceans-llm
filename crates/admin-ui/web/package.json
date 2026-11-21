@@ -68,7 +68,7 @@
     "oxfmt": "0.78.0",
     "oxlint": "1.93.0",
     "oxlint-tsgolint": "7.0.2006",
-    "playwright": "1.65.0",
+    "playwright": "1.65.1",
     "postcss": "8.5.32",
     "tailwindcss": "4.3.5",
     "tsrs": "0.25.0-ts7.1.0-beta",
