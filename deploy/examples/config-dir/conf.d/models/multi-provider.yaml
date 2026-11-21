@@ -1,0 +1,16 @@
+# Models whose routes span more than one provider file. Route ids default to the provider key.
+models:
+  gpt-6-astra:
+    description: GPT-6 Astra split 9:1 across two OpenAI accounts
+    routing:
+      strategy: weighted_random
+    routes:
+      - provider: openai-prod
+        upstream_model: gpt-6-astra
+        weight: 9.0
+      - provider: openai-secondary
+        upstream_model: gpt-6-astra
+        weight: 1.0
+
+  gpt-fast:
+    alias_of: gpt-5.6-luna

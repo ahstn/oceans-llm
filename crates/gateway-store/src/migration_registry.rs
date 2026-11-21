@@ -27,11 +27,13 @@ const LAST_STRICT_VERSION: u32 = 81;
 
 // Every migration after the strict legacy registry must explicitly declare
 // its compatibility here; never infer compatibility from its SQL.
-// V82 permits unmerged pull requests with no merge time; older readers require it.
-// V83 only replaces indexes.
 const READER_COMPATIBILITY: &[(u32, ReaderCompatibility)] = &[
+    // V82 permits unmerged pull requests with no merge time; older readers require it.
     (82, ReaderCompatibility::RequiresReader(82)),
+    // V83 only replaces indexes.
     (83, ReaderCompatibility::Additive),
+    // V84 only adds an index.
+    (84, ReaderCompatibility::Additive),
 ];
 
 /// libsql migrations that rebuild a table other tables reference, with that
@@ -581,6 +583,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         checksum: "V83__usage_budget_spend_indexes.sql",
         libsql_sql: include_str!("../migrations/V83__usage_budget_spend_indexes.sql"),
         postgres_sql: include_str!("../migrations/postgres/V83__usage_budget_spend_indexes.sql"),
+    },
+    MigrationManifest {
+        version: 84,
+        name: "batch_jobs_route_index",
+        checksum: "V84__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V84__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V84__batch_jobs_route_index.sql"),
     },
 ];
 

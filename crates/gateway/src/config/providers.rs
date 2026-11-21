@@ -38,6 +38,20 @@ impl ProviderConfig {
         }
     }
 
+    /// The provider type's config and storage name, e.g. `openai_compat`.
+    #[must_use]
+    pub const fn provider_type(&self) -> &'static str {
+        match self {
+            Self::OpenAiCompat(_) => "openai_compat",
+            Self::GcpCloudRunOpenAiCompat(_) => "gcp_cloud_run_openai_compat",
+            Self::AnthropicCompat(_) => "anthropic_compat",
+            Self::GcpVertex(_) => "gcp_vertex",
+            Self::AwsBedrock(_) => "aws_bedrock",
+            Self::GitHubCopilot(_) => "github_copilot",
+            Self::TypeSafe(_) => "typesafe",
+        }
+    }
+
     fn default_headers(&self) -> &BTreeMap<String, String> {
         match self {
             Self::OpenAiCompat(provider) => &provider.default_headers,
@@ -115,14 +129,17 @@ pub enum OpenAiBatchDialectConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OpenAiCompatAuthConfig {
+    /// Only `bearer` is supported, so it may be omitted.
+    #[serde(default)]
     pub kind: OpenAiCompatAuthKindConfig,
     pub token: String,
 }
 
 /// The only scheme OpenAI-compatible upstreams accept: `Authorization: Bearer <token>`.
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum OpenAiCompatAuthKindConfig {
+    #[default]
     Bearer,
 }
 
@@ -396,6 +413,39 @@ impl GcpVertexProviderConfig {
     }
 }
 
+const INFERRED_PRICING_PROVIDER_HOSTS: &str = "api.openai.com, openrouter.ai, and opencode.ai";
+
+/// Pricing catalog id implied by a well-known provider host.
+fn inferred_pricing_provider_id(base_url: &str) -> Option<&'static str> {
+    let parsed = url::Url::parse(base_url.trim()).ok()?;
+    match parsed.host_str()? {
+        "api.openai.com" => Some("openai"),
+        "openrouter.ai" => Some("openrouter"),
+        "opencode.ai" => Some("opencode"),
+        _ => None,
+    }
+}
+
+/// Fills an omitted `pricing_provider_id` from the base URL host where the host decides it.
+pub(super) fn infer_pricing_provider_ids(providers: &mut [ProviderConfig]) {
+    for provider in providers {
+        let (pricing_provider_id, base_url) = match provider {
+            ProviderConfig::OpenAiCompat(provider) => {
+                (&mut provider.pricing_provider_id, &provider.base_url)
+            }
+            ProviderConfig::AnthropicCompat(provider) => {
+                (&mut provider.pricing_provider_id, &provider.base_url)
+            }
+            _ => continue,
+        };
+        if pricing_provider_id.trim().is_empty()
+            && let Some(inferred) = inferred_pricing_provider_id(base_url)
+        {
+            *pricing_provider_id = inferred.to_string();
+        }
+    }
+}
+
 pub(super) fn validate_providers(providers: &[ProviderConfig]) -> anyhow::Result<()> {
     let mut provider_ids = BTreeSet::new();
     for provider in providers {
@@ -453,8 +503,9 @@ impl OpenAiCompatProviderConfig {
         }
         if self.pricing_provider_id.trim().is_empty() {
             bail!(
-                "openai_compat provider `{}` pricing_provider_id cannot be empty",
-                self.id
+                "openai_compat provider `{}` pricing_provider_id cannot be empty; it is inferred only for {} base URLs",
+                self.id,
+                INFERRED_PRICING_PROVIDER_HOSTS
             );
         }
         if !is_supported_pricing_provider_id(&self.pricing_provider_id) {
@@ -528,8 +579,9 @@ impl AnthropicCompatProviderConfig {
         }
         if self.pricing_provider_id.trim().is_empty() {
             bail!(
-                "anthropic_compat provider `{}` pricing_provider_id cannot be empty",
-                self.id
+                "anthropic_compat provider `{}` pricing_provider_id cannot be empty; it is inferred only for {} base URLs",
+                self.id,
+                INFERRED_PRICING_PROVIDER_HOSTS
             );
         }
         if !is_supported_pricing_provider_id(&self.pricing_provider_id) {

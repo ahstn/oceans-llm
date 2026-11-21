@@ -28,6 +28,18 @@
           }
         },
         "configMountPath": { "type": "string", "minLength": 1 },
+        "configDir": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mountPath": { "type": "string", "minLength": 1 },
+            "configMaps": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 253 }
+            }
+          }
+        },
         "allowLiteralSecretsInConfig": { "type": "boolean" },
         "clientConfigGatewayBaseUrl": {
           "oneOf": [

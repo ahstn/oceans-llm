@@ -24,15 +24,13 @@ gateway:
         password: env.GATEWAY_BOOTSTRAP_ADMIN_PASSWORD
         require_password_change: true
     providers:
-      - id: openai-prod
+      openai-prod:
         type: openai_compat
         base_url: https://api.openai.com/v1
-        pricing_provider_id: openai
         auth:
-          kind: bearer
           token: env.OPENAI_API_KEY
     models:
-      - id: openai-fast
-        routes:
-          - provider: openai-prod
-            upstream_model: gpt-5
+      openai-fast:
+        route:
+          provider: openai-prod
+          upstream_model: gpt-5
