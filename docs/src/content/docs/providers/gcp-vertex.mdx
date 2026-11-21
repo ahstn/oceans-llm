@@ -84,6 +84,8 @@ With `adc`, the gateway looks for credentials in this order:
 
 An ADC file must have `type` set to `service_account` or `authorized_user`. Other credential types, such as `external_account` for workload identity federation, fail with `unsupported ADC credential type`. On Google Cloud, prefer `adc` with an attached identity, so no key file is needed.
 
+If a credential file sets `token_uri`, use an HTTPS URL. The gateway does not follow redirects during the token exchange.
+
 ```yaml title="gateway.yaml"
 providers:
   - id: vertex-service-account
