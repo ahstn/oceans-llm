@@ -802,6 +802,29 @@ describe('RequestLogsPage picker filters', () => {
     expect(getModelsMock).toHaveBeenCalledTimes(2)
   })
 
+  it('reloads a failed model catalog when the Model chip is added again', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+    getModelsMock.mockRejectedValueOnce(new Error('session expired')).mockResolvedValueOnce({
+      data: { total: 1, items: [{ id: 'gpt-4.1-mini', model_id: 'uuid-1', alias_of: null }] },
+    })
+
+    const view = renderPage()
+    const scope = within(view.container)
+    await addFilter(scope, 'Model')
+    expect(await screen.findByText(/Could not load options/)).toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Search model values' }), {
+      key: 'Escape',
+    })
+    fireEvent.click(scope.getByRole('button', { name: 'Remove Model filter' }))
+    await waitFor(() =>
+      expect(scope.queryByTestId('request-log-filter-model-key')).not.toBeInTheDocument(),
+    )
+
+    await addFilter(scope, 'Model')
+    expect(await screen.findByRole('option', { name: 'gpt-4.1-mini' })).toBeInTheDocument()
+    expect(getModelsMock).toHaveBeenCalledTimes(2)
+  })
+
   it('filters by a listed status code and stores it as a number', async () => {
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
 

@@ -62,6 +62,8 @@ export function useModelFilterOptions(enabled: boolean): FilterOptionsState {
 
   useEffect(() => {
     if (enabled && state.status === 'idle') startModelLoad(inFlight, setState)
+    // Removing the chip forgets a failed load, so adding it again loads afresh.
+    if (!enabled && state.status === 'error') setState({ status: 'idle', options: [] })
   }, [enabled, state.status])
 
   // A failed load is not final: reopening the picker tries again.
