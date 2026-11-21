@@ -693,9 +693,11 @@ describe('ApiKeysPage', () => {
     expect(revealGatewayApiKeySecretMock).toHaveBeenCalledWith({
       data: { apiKeyId: 'api_key_1' },
     })
-    expect(await within(dialog).findByTestId('manage-api-key-raw-key')).toHaveTextContent(
-      'gwk_service_account.secret-value',
-    )
+    const rawKey = await within(dialog).findByTestId('manage-api-key-raw-key')
+    expect(rawKey).toHaveTextContent('gwk_service_account.secret-value')
+    // The revealed key wraps so it stays fully readable; only the masked prefix truncates.
+    expect(rawKey).toHaveClass('break-all')
+    expect(rawKey).not.toHaveClass('truncate')
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Copy API key' }))
 

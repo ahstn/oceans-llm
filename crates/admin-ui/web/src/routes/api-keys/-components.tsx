@@ -787,11 +787,11 @@ function ManageApiKeySecret({
     >
       <h3 className="text-foreground text-sm font-semibold">Credential secret</h3>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <div className="border-border bg-surface-muted flex h-8 min-w-0 flex-1 items-center rounded-md border px-3">
+        <div className="border-border bg-surface-muted flex min-h-8 min-w-0 flex-1 items-center rounded-md border px-3 py-1.5">
           {shown ? (
             <p
               data-testid="manage-api-key-raw-key"
-              className="text-foreground truncate font-mono text-xs"
+              className="text-foreground font-mono text-xs break-all"
             >
               {revealedKey}
             </p>
