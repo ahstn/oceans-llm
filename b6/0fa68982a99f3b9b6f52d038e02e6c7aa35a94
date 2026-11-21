@@ -1,0 +1,20 @@
+crates/admin-ui/web/e2e/agent-sessions.e2e.ts
+  s_0062c7eb4aa535::t_241d88e9d488e0 61,75-90
+  s_0062c7eb4aa535::t_eadd5bcb802a52 113,121-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b60fa68982a99f3b9b6f52d038e02e6c7aa35a94",
+  "prompts": {},
+  "sessions": {
+    "s_0062c7eb4aa535": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6aebfdba-1a3e-48d1-86d2-4f691fc94c8a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
