@@ -791,6 +791,28 @@ describe('RequestLogsPage picker filters', () => {
     expect(getModelsMock).not.toHaveBeenCalled()
   })
 
+  it('applies a picked status while a tag pair is still incomplete', async () => {
+    routeMock.useSearch.mockReturnValue({ status_code: 200 })
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+
+    const view = renderPage()
+    const scope = within(view.container)
+    await addFilter(scope, 'Tag')
+    fireEvent.change(await scope.findByTestId('request-log-filter-tag-key'), {
+      target: { value: 'feature' },
+    })
+
+    fireEvent.click(scope.getByTestId('request-log-filter-status-code'))
+    fireEvent.click(await screen.findByRole('option', { name: /429\s*Too Many Requests/ }))
+
+    await waitForListTransition()
+    const next = navigatedSearch(0, { status_code: 200 })
+    expect(next.status_code).toBe(429)
+    expect(next.tag_key).toBeUndefined()
+    // The half-typed key stays in its chip for the user to finish.
+    expect(scope.getByTestId('request-log-filter-tag-key')).toHaveValue('feature')
+  })
+
   it('accepts a typed status code only when it is a valid HTTP status', async () => {
     routeMock.useSearch.mockReturnValue({ status_code: 429 })
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
