@@ -318,6 +318,7 @@ Where motion appears:
 - **Style:** compact `h-8` controls with a transparent or dim background, a 1px input line and `rounded-lg` corners.
 - **Focus:** `focus-visible:border-ring` and `focus-visible:ring-3` in lilac are required; focus must stay visible in dense forms.
 - **Error / Disabled:** invalid fields shift to the destructive border and ring; disabled fields dim and block pointer events.
+- **Files:** never show the native file control, which reads as one box with its own "No file chosen" text. Keep the `<input type="file">` as `sr-only` so the field label still names it, open it from an outline `sm` button, and put a status line beside the button: `No file selected`, then the file name and size. Only the name truncates. The skill upload dialog is the reference.
 
 ### Dialogs
 
@@ -364,6 +365,7 @@ The helpers live in `src/lib/format.ts` (`formatCount`, `formatDuration`, `forma
 
 - Search in an `InputGroup`, a `Filter` dropdown of checkbox items, and a status `ToggleGroup` (outline, since it sits on a card).
 - Each applied filter shows as a removable `field is value ×` chip, with a Clear button once any filter applies. Long values truncate, and the remove button never shrinks.
+- A field whose values the gateway already knows, such as models or status codes, picks from a searchable list (`Popover` with `Command`) instead of free text, and applies as soon as a value is picked. It still accepts a typed value that older data may hold, such as a retired model key or an unlisted status code. The request log Model and Status filters are the reference.
 - Filters on the same key match any of their values; filters on different keys must all match.
 - When nothing matches, the empty state says so and offers to clear the filters. A footer counts what is shown (`Showing 3 of 9 teams`).
 
