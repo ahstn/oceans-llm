@@ -126,9 +126,14 @@ test('correlates a live agent request and exposes it through the admin session e
     `/admin/observability/agent-sessions?session_source_hash=${encodeURIComponent(session.session_source_hash ?? '')}`,
   )
   await expect(page.getByRole('heading', { name: 'Agent sessions' })).toBeVisible()
-  await expect(page.getByText('fast').first()).toBeVisible()
-  await expect(page.getByText('Open').first()).toBeVisible()
-  await page.getByText('fast').first().click()
+  // The URL filter shows as a chip, and the desktop table (not the hidden card list) shows the row.
+  await expect(page.getByTestId('agent-session-filter-session-source-hash')).toHaveValue(
+    session.session_source_hash ?? '',
+  )
+  const table = page.getByTestId('agent-session-table')
+  await expect(table.getByText('fast').first()).toBeVisible()
+  await expect(table.getByText('Open').first()).toBeVisible()
+  await table.getByText('fast').first().click()
   await expect(page.getByText('Agent session details')).toBeVisible()
   await expect(page.getByText(externalSessionId)).toHaveCount(0)
   await expect(page.getByText('Calibration data')).toBeVisible()

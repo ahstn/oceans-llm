@@ -353,6 +353,8 @@ The helpers live in `src/lib/format.ts` (`formatCount`, `formatDuration`, `forma
 
 **Wide tables.** A table never hides its last column without a cue. When a table can be wider than its card, pin its action column to the right edge with `sticky right-0`, the card's background and `shadow-sticky-edge-end`, the mirror of the `shadow-sticky-edge` that a column pinned left uses (as on the models table). If the action is the only one on the row, making the whole row open it works too. A table with no action column is sized to fit its card at 1440 px.
 
+**Column toggles.** A table with optional or secondary columns puts a `Columns` button beside its other toolbar buttons. It opens a `Table columns` popover with one checkbox per column (`ColumnVisibilityPopover` in `src/components/data/`). The column that identifies a row, such as Started, never hides. The button shows from `md` up, because narrow screens show cards instead of the table. Models and Agent Sessions are the references.
+
 **Expandable rows.** When a row holds more than fits on one line, it expands in place rather than opening a dialog. The merged pull requests table on Attribution and the Teams list are the references.
 
 - Clicking anywhere on the row toggles it, and a chevron button carries `aria-expanded`. Controls inside the row (chips, links, the actions menu) stop the click, so using them never toggles the row.
@@ -366,6 +368,9 @@ The helpers live in `src/lib/format.ts` (`formatCount`, `formatDuration`, `forma
 - Each applied filter shows as a removable `field is value ×` chip, with a Clear button once any filter applies. Long values truncate, and the remove button never shrinks.
 - Filters on the same key match any of their values; filters on different keys must all match.
 - When nothing matches, the empty state says so and offers to clear the filters. A footer counts what is shown (`Showing 3 of 9 teams`).
+- A long list of filters groups its fields in the `Filter by` menu under short labels (Session, Score, Owner, Source, Start date), and only applied or newly added filters show as chips. Agent Sessions is the reference.
+- A day picks from recent days (`Today`, `7 days ago`) or takes a typed `YYYY-MM-DD`, and reads `16 Oct 2026` in its chip. Never show a native date input. A closed set, such as a session state, takes only its listed values.
+- A page whose API has no free-text search leaves the search box out rather than searching only the loaded page.
 
 **Narrow screens.** Below `md`, a table becomes a list of cards with the same filters, menus and detail.
 

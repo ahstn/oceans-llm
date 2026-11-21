@@ -6,15 +6,18 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { AgentSessionsPage } from '@/routes/observability/agent-sessions'
 import type { AgentSessionDetailView, AgentSessionSummaryView } from '@/types/api'
 
-const { getAgentSessionDetailMock, navigateMock, routeMock } = vi.hoisted(() => ({
-  getAgentSessionDetailMock: vi.fn(),
-  navigateMock: vi.fn(),
-  routeMock: {
-    useLoaderData: vi.fn(),
-    useRouteContext: vi.fn(),
-    useSearch: vi.fn(),
-  },
-}))
+const { getAgentSessionDetailMock, getHarnessUsageMock, getModelsMock, navigateMock, routeMock } =
+  vi.hoisted(() => ({
+    getAgentSessionDetailMock: vi.fn(),
+    getHarnessUsageMock: vi.fn(),
+    getModelsMock: vi.fn(),
+    navigateMock: vi.fn(),
+    routeMock: {
+      useLoaderData: vi.fn(),
+      useRouteContext: vi.fn(),
+      useSearch: vi.fn(),
+    },
+  }))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -45,6 +48,8 @@ vi.mock('@tanstack/react-virtual', () => ({
 vi.mock('@/server/admin-data.functions', () => ({
   getAgentSessions: vi.fn(),
   getObservabilityAgentSessionDetail: (...args: unknown[]) => getAgentSessionDetailMock(...args),
+  getObservabilityHarnessUsage: (...args: unknown[]) => getHarnessUsageMock(...args),
+  getModels: (...args: unknown[]) => getModelsMock(...args),
 }))
 
 const session: AgentSessionSummaryView = {
@@ -389,6 +394,26 @@ const detail: AgentSessionDetailView = {
   },
 }
 
+/** Filter navigations merge a patch into the latest search; replay one against `previous`. */
+function navigatedSearch(callIndex: number, previous: Record<string, unknown> = {}) {
+  const search = navigateMock.mock.calls[callIndex][0].search as (
+    previous: Record<string, unknown>,
+  ) => Record<string, unknown>
+  return search(previous)
+}
+
+function openFilterMenu() {
+  fireEvent.keyDown(
+    within(screen.getByTestId('agent-session-toolbar')).getByRole('button', { name: /^Filters/ }),
+    { key: 'Enter' },
+  )
+}
+
+async function addFilter(label: string) {
+  openFilterMenu()
+  fireEvent.click(await screen.findByRole('menuitem', { name: label }))
+}
+
 function setCapabilities(calibratedScoreVisible: boolean, platformAdmin = false) {
   routeMock.useRouteContext.mockReturnValue({
     session: {
@@ -441,9 +466,14 @@ describe('AgentSessionsPage', () => {
 
     expect(screen.getByRole('heading', { name: 'Agent sessions' })).toBeInTheDocument()
     expect(screen.getByText('1 session')).toBeInTheDocument()
-    expect(screen.getByText('Opencode')).toBeInTheDocument()
-    expect(document.querySelector('[data-agent-harness-icon="opencode"]')).toBeInTheDocument()
-    expect(screen.getByText('Score not shown')).toBeInTheDocument()
+    const table = within(screen.getByTestId('agent-session-table'))
+    expect(table.getByText('Opencode')).toBeInTheDocument()
+    expect(
+      screen
+        .getByTestId('agent-session-table')
+        .querySelector('[data-agent-harness-icon="opencode"]'),
+    ).toBeInTheDocument()
+    expect(table.getByText('Score not shown')).toBeInTheDocument()
     expect(screen.queryByText('82')).not.toBeInTheDocument()
     const sessionRow = screen.getByRole('row', { name: /Opencode/ })
     expect(sessionRow).toHaveTextContent('8')
@@ -549,7 +579,7 @@ describe('AgentSessionsPage', () => {
     })
   })
 
-  it('clears active filters through route search', async () => {
+  it('clears active filters through route search and keeps the page size', async () => {
     routeMock.useSearch.mockReturnValue({
       page: 3,
       page_size: 25,
@@ -557,13 +587,16 @@ describe('AgentSessionsPage', () => {
     })
 
     render(<AgentSessionsPage />)
-    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+    fireEvent.click(
+      within(screen.getByTestId('agent-session-toolbar')).getByRole('button', {
+        name: 'Clear',
+      }),
+    )
 
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith({
-        to: '/observability/agent-sessions',
-        search: { page: 1, page_size: 50 },
-      })
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
+    expect(navigatedSearch(0, { page: 3, page_size: 25, harness_key: 'opencode' })).toEqual({
+      page: 1,
+      page_size: 25,
     })
   })
 
@@ -786,5 +819,348 @@ describe('AgentSessionsPage', () => {
 
     expect(await screen.findByText('Some history is not shown')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Event stream/ })).toHaveTextContent('1+ request')
+  })
+})
+
+describe('AgentSessionsPage filters', () => {
+  beforeEach(() => {
+    routeMock.useLoaderData.mockReset()
+    routeMock.useSearch.mockReset()
+    navigateMock.mockReset()
+    getHarnessUsageMock.mockReset()
+    getModelsMock.mockReset()
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [session], page: 1, page_size: 50, total: 1 },
+    })
+    routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50 })
+    setCapabilities(false)
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    )
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('shows a toolbar with a count and no always-visible filter fields', () => {
+    render(<AgentSessionsPage />)
+
+    const toolbar = within(screen.getByTestId('agent-session-toolbar'))
+    expect(toolbar.getByRole('status')).toHaveTextContent('Showing 1 of 1')
+    expect(toolbar.getByRole('button', { name: 'Filters' })).toBeInTheDocument()
+    expect(toolbar.getByRole('button', { name: 'Columns' })).toBeInTheDocument()
+    expect(screen.queryByTestId('agent-session-filter-chips')).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(document.querySelector('input[type="date"]')).toBeNull()
+  })
+
+  it('groups every filter under a Filter by menu', async () => {
+    render(<AgentSessionsPage />)
+
+    openFilterMenu()
+    const menu = await screen.findByRole('menu')
+    expect(within(menu).getByText('Filter by')).toBeInTheDocument()
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent),
+    ).toEqual([
+      'State',
+      'Outcome',
+      'Harness',
+      'Model',
+      'Operation',
+      'Caller class',
+      'Score maturity',
+      'Score confidence',
+      'Minimum coverage',
+      'User ID',
+      'Team ID',
+      'Service account ID',
+      'Session source ID',
+      'Session source hash',
+      'Request tag',
+      'Started after',
+      'Started before',
+    ])
+  })
+
+  it('renders URL filters as removable chips with readable values', () => {
+    routeMock.useSearch.mockReturnValue({
+      page: 2,
+      page_size: 25,
+      lifecycle: 'finalized',
+      minimum_coverage_percent: 75,
+      started_after: '2026-07-01T00:00:00.000Z',
+      user_id: 'user_1',
+      request_tag_key: 'team',
+      request_tag_value: 'platform',
+    })
+
+    render(<AgentSessionsPage />)
+
+    const toolbar = within(screen.getByTestId('agent-session-toolbar'))
+    expect(toolbar.getByRole('button', { name: /^Filters/ })).toHaveTextContent('5')
+    expect(toolbar.getByTestId('agent-session-filter-lifecycle')).toHaveTextContent('Finalized')
+    expect(toolbar.getByTestId('agent-session-filter-minimum-coverage-percent')).toHaveTextContent(
+      '75%',
+    )
+    expect(toolbar.getByTestId('agent-session-filter-started-after')).toHaveTextContent(
+      '1 Jul 2026',
+    )
+    expect(toolbar.getByTestId('agent-session-filter-user-id')).toHaveValue('user_1')
+    expect(toolbar.getByTestId('agent-session-filter-request-tag-key')).toHaveValue('team')
+    expect(toolbar.getByTestId('agent-session-filter-request-tag-value')).toHaveValue('platform')
+    // Chips span the row on narrow screens instead of overflowing it.
+    expect(toolbar.getByTestId('agent-session-filter-chip-request_tag')).toHaveClass(
+      'w-full',
+      'sm:w-auto',
+    )
+  })
+
+  it('applies a picked state at once and returns to the first page', async () => {
+    routeMock.useSearch.mockReturnValue({ page: 3, page_size: 25 })
+    render(<AgentSessionsPage />)
+
+    await addFilter('State')
+    fireEvent.click(await screen.findByRole('option', { name: 'Finalized' }))
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
+    expect(navigateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ to: '/observability/agent-sessions' }),
+    )
+    expect(navigatedSearch(0, { page: 3, page_size: 25 })).toEqual({
+      page: 1,
+      page_size: 25,
+      lifecycle: 'finalized',
+    })
+  })
+
+  it('does not accept a typed value for a closed set such as the state', async () => {
+    render(<AgentSessionsPage />)
+
+    await addFilter('State')
+    fireEvent.change(await screen.findByPlaceholderText('Search states…'), {
+      target: { value: 'paused' },
+    })
+
+    expect(screen.queryByText(/Filter by “paused”/)).not.toBeInTheDocument()
+  })
+
+  it('picks a model from the catalog by its key and still accepts a retired key', async () => {
+    getModelsMock.mockResolvedValue({
+      data: {
+        items: [
+          {
+            id: 'claude-opus-4-1',
+            model_id: 'uuid-1',
+            alias_of: null,
+            provider_label: 'Anthropic',
+          },
+        ],
+        total: 1,
+      },
+    })
+    render(<AgentSessionsPage />)
+
+    await addFilter('Model')
+    expect(await screen.findByRole('option', { name: /claude-opus-4-1/ })).toBeInTheDocument()
+    expect(getModelsMock).toHaveBeenCalledWith({ data: { page: 1, page_size: 100 } })
+
+    fireEvent.change(screen.getByPlaceholderText('Search models…'), {
+      target: { value: 'retired-model' },
+    })
+    fireEvent.click(await screen.findByRole('option', { name: 'Filter by “retired-model”' }))
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
+    expect(navigatedSearch(0, { page: 1, page_size: 50 })).toEqual(
+      expect.objectContaining({ requested_model_key: 'retired-model' }),
+    )
+  })
+
+  it('offers harnesses that sent recent traffic', async () => {
+    getHarnessUsageMock.mockResolvedValue({
+      data: {
+        leaders: [
+          { agent_harness_key: 'opencode', agent_harness_label: 'Opencode' },
+          { agent_harness_key: 'claude_code', agent_harness_label: 'Claude Code' },
+        ],
+      },
+    })
+    render(<AgentSessionsPage />)
+
+    await addFilter('Harness')
+    fireEvent.click(await screen.findByRole('option', { name: /Claude Code/ }))
+
+    expect(getHarnessUsageMock).toHaveBeenCalledWith({ data: { range: '31d' } })
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
+    expect(navigatedSearch(0)).toEqual(expect.objectContaining({ harness_key: 'claude_code' }))
+  })
+
+  it('keeps the harness filter usable when its list cannot load', async () => {
+    getHarnessUsageMock.mockRejectedValue(new Error('forbidden'))
+    render(<AgentSessionsPage />)
+
+    await addFilter('Harness')
+    expect(
+      await screen.findByText('Could not load options. Type a value instead.'),
+    ).toBeInTheDocument()
+    fireEvent.change(screen.getByPlaceholderText('Search or type a harness key…'), {
+      target: { value: 'gemini_cli' },
+    })
+    fireEvent.click(await screen.findByRole('option', { name: 'Filter by “gemini_cli”' }))
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
+    expect(navigatedSearch(0)).toEqual(expect.objectContaining({ harness_key: 'gemini_cli' }))
+  })
+
+  it('turns typed start days into whole-day UTC bounds', async () => {
+    render(<AgentSessionsPage />)
+
+    await addFilter('Started after')
+    fireEvent.change(await screen.findByPlaceholderText('Search or type YYYY-MM-DD…'), {
+      target: { value: '2026-02-30' },
+    })
+    expect(screen.queryByText(/Filter by/)).not.toBeInTheDocument()
+    fireEvent.change(screen.getByPlaceholderText('Search or type YYYY-MM-DD…'), {
+      target: { value: '2026-07-01' },
+    })
+    fireEvent.click(await screen.findByRole('option', { name: 'Filter by “1 Jul 2026”' }))
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
+    expect(navigatedSearch(0)).toEqual(
+      expect.objectContaining({ started_after: '2026-07-01T00:00:00.000Z' }),
+    )
+
+    await addFilter('Started before')
+    fireEvent.change(
+      await screen.findByRole('combobox', { name: /Search started before values/ }),
+      { target: { value: '2026-07-31' } },
+    )
+    fireEvent.click(await screen.findByRole('option', { name: 'Filter by “31 Jul 2026”' }))
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(2))
+    expect(navigatedSearch(1)).toEqual(
+      expect.objectContaining({ started_before: '2026-07-31T23:59:59.999Z' }),
+    )
+  })
+
+  it('accepts a typed coverage percentage and the route turns it into a number', async () => {
+    render(<AgentSessionsPage />)
+
+    await addFilter('Minimum coverage')
+    fireEvent.change(await screen.findByPlaceholderText('Search or type a percentage…'), {
+      target: { value: '101' },
+    })
+    expect(screen.queryByText(/Filter by/)).not.toBeInTheDocument()
+    fireEvent.change(screen.getByPlaceholderText('Search or type a percentage…'), {
+      target: { value: '60%' },
+    })
+    fireEvent.click(await screen.findByRole('option', { name: 'Filter by “60%”' }))
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
+    expect(navigatedSearch(0)).toEqual(expect.objectContaining({ minimum_coverage_percent: 60 }))
+  })
+
+  it('commits an ID chip on Enter and waits for both halves of a tag', async () => {
+    render(<AgentSessionsPage />)
+
+    await addFilter('Request tag')
+    const tagKey = await screen.findByTestId('agent-session-filter-request-tag-key')
+    fireEvent.change(tagKey, { target: { value: 'team' } })
+    fireEvent.keyDown(tagKey, { key: 'Enter' })
+    expect(
+      screen.getByText('Provide both a tag key and tag value to filter sessions by a request tag.'),
+    ).toBeInTheDocument()
+    expect(navigateMock).not.toHaveBeenCalled()
+
+    await addFilter('User ID')
+    const userId = await screen.findByTestId('agent-session-filter-user-id')
+    fireEvent.change(userId, { target: { value: ' user_1 ' } })
+    fireEvent.keyDown(userId, { key: 'Enter' })
+
+    // The user ID applies; the half-typed tag stays a draft.
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
+    const next = navigatedSearch(0)
+    expect(next).toEqual(expect.objectContaining({ user_id: 'user_1' }))
+    expect(next).not.toHaveProperty('request_tag_key')
+  })
+
+  it('removes one chip and keeps the other filters', async () => {
+    const search = { page: 2, page_size: 25, harness_key: 'opencode', team_id: 'team_1' }
+    routeMock.useSearch.mockReturnValue(search)
+    render(<AgentSessionsPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Team ID filter' }))
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
+    expect(navigatedSearch(0, search)).toEqual({
+      page: 1,
+      page_size: 25,
+      harness_key: 'opencode',
+    })
+  })
+
+  it('offers to clear the filters when nothing matches', async () => {
+    routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50, operation: 'images' })
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [], page: 1, page_size: 50, total: 0 },
+    })
+    render(<AgentSessionsPage />)
+
+    const table = within(screen.getByTestId('agent-session-table'))
+    expect(table.getByText('No agent sessions match these filters.')).toBeInTheDocument()
+    fireEvent.click(table.getByRole('button', { name: 'Clear filters' }))
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
+    expect(navigatedSearch(0, { page: 1, page_size: 50, operation: 'images' })).toEqual({
+      page: 1,
+      page_size: 50,
+    })
+  })
+
+  it('hides and restores table columns from the Columns popover', async () => {
+    render(<AgentSessionsPage />)
+
+    const table = within(screen.getByTestId('agent-session-table'))
+    const headers = () => table.getAllByRole('columnheader').map((header) => header.textContent)
+    expect(headers()).toHaveLength(11)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Columns' }))
+    expect(await screen.findByRole('heading', { name: 'Table columns' })).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Started' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'MCP calls' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Data quality' }))
+
+    expect(headers()).not.toContain('MCP calls')
+    expect(headers()).not.toContain('Data quality')
+    const cells = within(table.getByRole('row', { name: /Opencode/ })).getAllByRole('cell')
+    expect(cells).toHaveLength(9)
+    expect(navigateMock).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'MCP calls' }))
+    expect(headers()).toContain('MCP calls')
+  })
+
+  it('renders sessions as cards below md that open details from a button', async () => {
+    render(<AgentSessionsPage />)
+
+    const cards = screen.getByTestId('agent-session-cards')
+    expect(cards).toHaveClass('grid-cols-1', 'md:hidden')
+    expect(screen.getByTestId('agent-session-table')).toHaveClass('hidden', 'md:block', 'min-w-0')
+    const card = within(cards).getByRole('article', { name: /Session started/ })
+    expect(card).toHaveClass('min-w-0')
+    fireEvent.click(within(card).getByRole('button', { name: 'View session' }))
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/observability/agent-sessions',
+        search: expect.objectContaining({ session_id: 'session_1' }),
+      })
+    })
   })
 })

@@ -316,6 +316,8 @@
       "paths": [
         "crates/admin-ui/web/src/routes/observability/agent-sessions.tsx",
         "crates/admin-ui/web/src/components/observability/**",
+        "crates/admin-ui/web/src/components/data/filter-*.{ts,tsx}",
+        "crates/admin-ui/web/src/components/data/column-visibility-popover.tsx",
         "crates/gateway/src/http/observability/agent_sessions.rs",
         "crates/gateway/src/http/observability/agent_sessions/**",
         "crates/gateway/src/agent_analysis_recompute.rs",
