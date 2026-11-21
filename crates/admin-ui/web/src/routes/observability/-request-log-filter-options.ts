@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { loadAllModels } from '@/lib/model-catalog'
 import type { ModelView } from '@/types/api'
@@ -15,8 +15,8 @@ export interface FilterOption {
 export interface FilterOptionsState {
   status: 'idle' | 'loading' | 'ready' | 'error'
   options: FilterOption[]
-  /** Loads the options again after a failure; the picker calls it when it reopens. */
-  retry?: () => void
+  /** Loads options that are not loaded yet or failed before; called when the picker is used. */
+  load?: () => void
 }
 
 /** Status codes the gateway and its providers commonly return; any other code can be typed. */
@@ -53,28 +53,18 @@ export function customModelKey(search: string) {
 }
 
 /**
- * Loads the gateway model catalog the first time a model filter is shown, so the request list
- * does not fetch every model page on each filter navigation.
+ * Loads the gateway model catalog on first use (adding the Model chip or opening its picker), so
+ * a page opened with `model_key` already in the URL does not fetch the catalog. A failed load is
+ * tried again on the next use.
  */
-export function useModelFilterOptions(enabled: boolean): FilterOptionsState {
+export function useModelFilterOptions(): FilterOptionsState {
   const [state, setState] = useState<FilterOptionsState>({ status: 'idle', options: [] })
   const inFlight = useRef(false)
-  const wasEnabled = useRef(false)
 
-  useEffect(() => {
-    // Adding the Model chip again retries a load that failed while it was shown before.
-    const becameEnabled = enabled && !wasEnabled.current
-    wasEnabled.current = enabled
-    if (enabled && (state.status === 'idle' || (becameEnabled && state.status === 'error'))) {
-      startModelLoad(inFlight, setState)
-    }
-  }, [enabled, state.status])
-
-  // A failed load is not final: reopening the picker tries again.
-  const retry = () => {
-    if (state.status === 'error') startModelLoad(inFlight, setState)
+  const load = () => {
+    if (state.status === 'idle' || state.status === 'error') startModelLoad(inFlight, setState)
   }
-  return { ...state, retry }
+  return { ...state, load }
 }
 
 function startModelLoad(

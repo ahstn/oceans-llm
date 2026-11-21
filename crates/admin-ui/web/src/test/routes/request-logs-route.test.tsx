@@ -825,6 +825,24 @@ describe('RequestLogsPage picker filters', () => {
     expect(getModelsMock).toHaveBeenCalledTimes(2)
   })
 
+  it('shows a deep-linked model without loading the catalog until the picker opens', async () => {
+    routeMock.useSearch.mockReturnValue({ model_key: 'retired-model' })
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+    getModelsMock.mockResolvedValue({
+      data: { total: 1, items: [{ id: 'gpt-4.1-mini', model_id: 'uuid-1', alias_of: null }] },
+    })
+
+    const view = renderPage()
+    const trigger = within(view.container).getByTestId('request-log-filter-model-key')
+    expect(trigger).toHaveTextContent('retired-model')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(getModelsMock).not.toHaveBeenCalled()
+
+    fireEvent.click(trigger)
+    expect(await screen.findByRole('option', { name: 'gpt-4.1-mini' })).toBeInTheDocument()
+    expect(getModelsMock).toHaveBeenCalledOnce()
+  })
+
   it('filters by a listed status code and stores it as a number', async () => {
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
 

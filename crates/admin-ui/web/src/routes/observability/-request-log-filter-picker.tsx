@@ -69,7 +69,7 @@ export function FilterValuePicker({
       onOpenChange={(next) => {
         setOpen(next)
         if (!next) setSearch('')
-        if (next && options.status === 'error') options.retry?.()
+        if (next) options.load?.()
       }}
     >
       <PopoverTrigger asChild>

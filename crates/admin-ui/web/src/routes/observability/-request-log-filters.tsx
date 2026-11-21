@@ -167,9 +167,7 @@ export function RequestLogToolbar({
   )
   const activeCount = filterFields.filter((field) => isFieldActive(filters, field.key)).length
   const hasPartialTagFilter = isPartialTag(drafts)
-  const modelOptions = useModelFilterOptions(
-    visibleFields.some((field) => field.key === 'model_key'),
-  )
+  const modelOptions = useModelFilterOptions()
   const pickerOptions: Record<PickerFieldKey, FilterOptionsState> = {
     model_key: modelOptions,
     status_code: readyStatusCodeOptions,
@@ -178,6 +176,8 @@ export function RequestLogToolbar({
   function addField(key: FilterFieldKey) {
     setAddedFields((current) => (current.includes(key) ? current : [...current, key]))
     setFocusField(key)
+    // The new chip's picker opens itself, so this is the catalog's first use.
+    if (key === 'model_key') modelOptions.load?.()
   }
 
   function commit(next: RequestLogFilterPatch = drafts) {
