@@ -360,6 +360,8 @@ The helpers live in `src/lib/format.ts` (`formatCount`, `formatDuration`, `forma
 
 **Narrow screens.** Below `md`, a table becomes a list of cards with the same filters, menus and detail.
 
+- A card expands from a full-width `Show N members`-style button at its foot, not from a tap anywhere on the card. Cards are mostly chips, menus and links, so a whole-card target would collide with them and with scrolling on touch.
+
 - Both layouts stay in the DOM and switch with `md:` classes, so the server-rendered markup never depends on the viewport. Anything that mounts on a click, such as an expanded roster, renders only in the visible layout (`useIsMobile`).
 - Card grids take `grid-cols-1`, a `minmax(0, 1fr)` track, so long content truncates instead of widening the page. Every flex or grid child that holds text takes `min-w-0`.
 - Check new data surfaces at 375 px, and cover the containment classes with a route test, as `crates/admin-ui/web/AGENTS.md` asks.
