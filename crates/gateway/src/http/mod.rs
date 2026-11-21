@@ -46,6 +46,7 @@ mod spend_budget_listing;
 pub mod state;
 #[cfg(test)]
 pub(crate) mod test_support;
+pub mod traffic;
 
 use admin_ui::{AdminUiConfig, mount_admin_ui};
 use axum::{
@@ -94,6 +95,8 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
     admin_ui.trusted_proxies = state.trusted_proxies.clone();
     let request_id_header = HeaderName::from_static("x-request-id");
     let identity_guard_state = state.clone();
+    let traffic = state.traffic.clone();
+    let shutdown = state.shutdown.clone();
 
     let inference_router = Router::new()
         .route("/v1/messages", post(v1_messages))
@@ -141,7 +144,11 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             state.clone(),
             request_policy::request_policy,
         ))
-        .layer(mcp_client_oauth::mcp_transport_cors());
+        .layer(mcp_client_oauth::mcp_transport_cors())
+        .layer(middleware::from_fn_with_state(
+            state.shutdown.clone(),
+            end_listen_streams_on_drain,
+        ));
 
     let api_router = Router::new()
         .route("/healthz", get(healthz))
@@ -589,6 +596,88 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
         .layer(middleware::from_fn(mark_client_request_id));
 
     mount_admin_ui(api_router, admin_ui)
+        .layer(middleware::from_fn_with_state(
+            shutdown,
+            respond_before_cutoff,
+        ))
+        .layer(middleware::from_fn_with_state(
+            traffic,
+            traffic::count_responses,
+        ))
+}
+
+/// Ends MCP `GET` event streams once the gateway starts draining, so their
+/// clients reconnect to another replica. Streams that answer a request keep
+/// running until the drain limit.
+async fn end_listen_streams_on_drain(
+    axum::extract::State(shutdown): axum::extract::State<crate::shutdown::Shutdown>,
+    request: axum::extract::Request,
+    next: middleware::Next,
+) -> axum::response::Response {
+    use futures_util::StreamExt;
+
+    let listen = request.method() == http::Method::GET;
+    let response = next.run(request).await;
+    if !listen || !mcp_gateway::stream_reach::is_event_stream(&response) {
+        return response;
+    }
+    let (parts, body) = response.into_parts();
+    let body = body
+        .into_data_stream()
+        .take_until(Box::pin(shutdown.drain_started()));
+    axum::response::Response::from_parts(parts, axum::body::Body::from_stream(body))
+}
+
+/// Answers 503 at the cutoff without cancelling in-progress usage or logging.
+/// A client disconnect still aborts its handler; only shutdown detaches it into
+/// the bounded finalization wait. Responses already sent own their body streams.
+async fn respond_before_cutoff(
+    axum::extract::State(shutdown): axum::extract::State<crate::shutdown::Shutdown>,
+    request: axum::extract::Request,
+    next: middleware::Next,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    use tracing::Instrument;
+
+    if shutdown.is_cut_off() {
+        return shutdown_response();
+    }
+    let handler_shutdown = shutdown.clone();
+    let mut handler = tokio_util::task::AbortOnDropHandle::new(
+        shutdown.tasks().spawn(
+            async move {
+                let response = next.run(request).await;
+                if handler_shutdown.is_cut_off() {
+                    // Drop any newly created stream body while the handler is
+                    // still tracked, before the finalization wait can see empty.
+                    drop(response);
+                    shutdown_response()
+                } else {
+                    response
+                }
+            }
+            .in_current_span(),
+        ),
+    );
+    tokio::select! {
+        response = &mut handler => response.unwrap_or_else(|error| {
+            tracing::error!(%error, panic = error.is_panic(), "request handler task failed");
+            error::AppError(gateway_core::GatewayError::Internal(
+                "request handler task failed".to_string(),
+            )).into_response()
+        }),
+        () = shutdown.cut_off_reached() => {
+            tracing::warn!("shutdown drain limit reached before the response was ready");
+            drop(handler.detach());
+            shutdown_response()
+        }
+    }
+}
+
+fn shutdown_response() -> axum::response::Response {
+    axum::response::IntoResponse::into_response(error::AppError(
+        gateway_core::GatewayError::ServerShutdown,
+    ))
 }
 
 #[derive(Clone, Copy)]
@@ -705,5 +794,168 @@ mod tests {
     #[test]
     fn unsampled_remote_parent_overrides_full_root_sample_ratio() {
         assert_remote_parent_sampling("00", 1.0, false);
+    }
+
+    fn event_stream() -> axum::response::Response {
+        use futures_util::StreamExt;
+
+        let first = futures_util::stream::once(async {
+            Ok::<_, std::convert::Infallible>(axum::body::Bytes::from_static(b"data: ready\n\n"))
+        });
+        axum::response::Response::builder()
+            .header(http::header::CONTENT_TYPE, "text/event-stream")
+            .body(axum::body::Body::from_stream(
+                first.chain(futures_util::stream::pending()),
+            ))
+            .expect("response")
+    }
+
+    fn shutdown_router(shutdown: &crate::shutdown::Shutdown) -> Router {
+        Router::new()
+            .route(
+                "/events",
+                get(|| async { event_stream() }).post(|| async { event_stream() }),
+            )
+            .route("/slow", get(std::future::pending::<&'static str>))
+            .layer(middleware::from_fn_with_state(
+                shutdown.clone(),
+                end_listen_streams_on_drain,
+            ))
+            .layer(middleware::from_fn_with_state(
+                shutdown.clone(),
+                respond_before_cutoff,
+            ))
+    }
+
+    fn request(method: http::Method, uri: &str) -> http::Request<axum::body::Body> {
+        http::Request::builder()
+            .method(method)
+            .uri(uri)
+            .body(axum::body::Body::empty())
+            .expect("request")
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn draining_ends_listen_streams_but_not_request_streams() {
+        use futures_util::StreamExt;
+        use tower::ServiceExt;
+
+        let shutdown = crate::shutdown::Shutdown::new();
+        let router = shutdown_router(&shutdown);
+        let mut listen = router
+            .clone()
+            .oneshot(request(http::Method::GET, "/events"))
+            .await
+            .expect("listen response")
+            .into_body()
+            .into_data_stream();
+        let mut answer = router
+            .oneshot(request(http::Method::POST, "/events"))
+            .await
+            .expect("request response")
+            .into_body()
+            .into_data_stream();
+        assert!(listen.next().await.is_some());
+        assert!(answer.next().await.is_some());
+
+        shutdown.begin_drain();
+
+        assert!(listen.next().await.is_none(), "the listen stream ends");
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_secs(60), answer.next())
+                .await
+                .is_err(),
+            "a stream that answers a request continues until the cutoff"
+        );
+    }
+
+    #[tokio::test]
+    async fn cutoff_answers_requests_that_have_no_response_yet() {
+        use tower::ServiceExt;
+
+        let shutdown = crate::shutdown::Shutdown::new();
+        let pending =
+            tokio::spawn(shutdown_router(&shutdown).oneshot(request(http::Method::GET, "/slow")));
+        tokio::task::yield_now().await;
+        shutdown.cut_off();
+
+        let response = pending.await.expect("task").expect("response");
+        assert_eq!(response.status(), http::StatusCode::SERVICE_UNAVAILABLE);
+        let body = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .expect("body");
+        let body: serde_json::Value = serde_json::from_slice(&body).expect("JSON body");
+        assert_eq!(body["error"]["code"], "server_shutdown");
+    }
+
+    #[tokio::test]
+    async fn client_disconnect_still_cancels_the_handler_before_cutoff() {
+        use tower::ServiceExt;
+
+        struct Dropped(Option<tokio::sync::oneshot::Sender<()>>);
+        impl Drop for Dropped {
+            fn drop(&mut self) {
+                let _ = self.0.take().unwrap().send(());
+            }
+        }
+        let shutdown = crate::shutdown::Shutdown::new();
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel();
+        let gate = std::sync::Arc::new(std::sync::Mutex::new(Some((entered_tx, dropped_tx))));
+        let router = Router::new()
+            .route(
+                "/",
+                get(move || {
+                    let (entered, dropped) = gate.lock().unwrap().take().unwrap();
+                    async move {
+                        let _guard = Dropped(Some(dropped));
+                        entered.send(()).unwrap();
+                        std::future::pending::<&'static str>().await
+                    }
+                }),
+            )
+            .layer(middleware::from_fn_with_state(
+                shutdown.clone(),
+                respond_before_cutoff,
+            ));
+        let pending = tokio::spawn(router.oneshot(request(http::Method::GET, "/")));
+        entered_rx.await.unwrap();
+        pending.abort();
+        assert!(pending.await.unwrap_err().is_cancelled());
+        dropped_rx
+            .await
+            .expect("client cancellation aborts the provider-owning handler");
+        assert!(shutdown.finish_tasks().await);
+    }
+
+    #[tokio::test]
+    async fn handler_panics_become_counted_gateway_errors() {
+        use tower::ServiceExt;
+
+        async fn panicking_handler() -> &'static str {
+            panic!("test handler panic");
+        }
+        let shutdown = crate::shutdown::Shutdown::new();
+        let counters = std::sync::Arc::new(traffic::TrafficCounters::new());
+        let router = Router::new()
+            .route("/", get(panicking_handler))
+            .layer(middleware::from_fn_with_state(
+                shutdown.clone(),
+                respond_before_cutoff,
+            ))
+            .layer(middleware::from_fn_with_state(
+                counters.clone(),
+                traffic::count_responses,
+            ));
+        let response = router
+            .oneshot(request(http::Method::GET, "/"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), http::StatusCode::INTERNAL_SERVER_ERROR);
+        let snapshot = counters.snapshot(false);
+        assert_eq!(snapshot.requests, 1);
+        assert_eq!(snapshot.gateway_errors, 1);
+        assert_eq!(snapshot.upstream_errors, 0);
+        assert!(shutdown.finish_tasks().await);
     }
 }

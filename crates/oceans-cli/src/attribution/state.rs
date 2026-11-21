@@ -367,6 +367,35 @@ impl State {
         )
     }
 
+    /// The private change-fingerprint cache for `repository`; empty when missing or unreadable.
+    pub fn change_cache(&self, repository: &str) -> super::reverts::ChangeCache {
+        fs::read(self.change_cache_path(repository))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default()
+    }
+
+    pub fn save_change_cache(
+        &self,
+        repository: &str,
+        cache: &super::reverts::ChangeCache,
+    ) -> anyhow::Result<()> {
+        let bytes = serde_json::to_vec(cache)?;
+        self.write_atomic(
+            &self.root.join(PR_SYNC_DIR),
+            &self.change_cache_path(repository),
+            &bytes,
+        )
+    }
+
+    fn change_cache_path(&self, repository: &str) -> PathBuf {
+        let mut path = self.pr_sync_path(repository);
+        // Versioned with the fingerprint: v2 adds rebase ranges, file modes and context lines,
+        // so fingerprints cached by an earlier build would never match new ones.
+        path.set_extension("changes.v2.json");
+        path
+    }
+
     fn pr_sync_path(&self, repository: &str) -> PathBuf {
         let digest = format!("{:x}", Sha256::digest(repository.as_bytes()));
         self.root.join(PR_SYNC_DIR).join(&digest[..16])

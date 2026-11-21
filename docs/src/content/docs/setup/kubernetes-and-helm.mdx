@@ -86,17 +86,58 @@ GATEWAY_SEED_CONFIG=false
 
 The chart runs them as Helm hook Jobs instead, so replicated pods never race to change the database:
 
-- **Migrations** run on every install and upgrade. This is on by default, in the `post-install,post-upgrade` phase, so the Job can read the `ConfigMap` and Secrets the chart renders.
+- **Migrations** run on every install and upgrade. By default they run in the `pre-install,pre-upgrade` phase, before any pod changes, so a failed migration leaves the old pods serving. The chart creates the hook's own ServiceAccount, `ConfigMap` and inline Secret first. With `database.mode: cloudnativepg` or `externalSecrets.enabled`, the default becomes `post-install,pre-upgrade`, because the database or generated Secret doesn't exist before the first install. Upgrades still migrate first.
 - **Bootstrap admin** runs with `bootstrapAdminJob.enabled=true`. It also needs `gateway.config.auth.bootstrap_admin.enabled: true`.
 - **Config seeding** runs with `seedConfigJob.enabled=true`.
 
-While migrations run after install, each gateway pod has an init container that waits for them. It runs `gateway config validate`, then `gateway migrate --check` until the schema is current or `gateway.migrationWaiter.timeoutSeconds` passes. Invalid config stops it before it starts waiting. `gateway.migrationWaiter.enabled` overrides the automatic choice.
+When migrations run after install, each gateway pod has an init container that waits for them. It runs `gateway config validate`, then `gateway migrate --check` until the schema is current or `gateway.migrationWaiter.timeoutSeconds` passes. Invalid config stops it before it starts waiting. `gateway.migrationWaiter.enabled` overrides the automatic choice.
 
 <Aside type="caution" title="Don't combine --wait with post-install migrations">
-  With `helm install --wait`, Helm waits for every pod to be ready before it runs post-install hooks. Gateway pods wait for the migration Job, which is a post-install hook, so neither can finish and the install times out. Leave out `--wait`, or watch the rollout separately.
+  With `helm install --wait`, Helm waits for every pod to be ready before it runs post-install hooks. With CloudNativePG or External Secrets, gateway pods wait for the migration Job, which is a post-install hook on the first install, so neither can finish and the install times out. Leave out `--wait` for that first install, or watch the rollout separately.
 </Aside>
 
+Argo CD runs `pre-upgrade` hooks as PreSync and `post-install` hooks as PostSync, and it doesn't tell installs from upgrades. With CloudNativePG or External Secrets, create the database and Secret in an earlier sync, then set `migrations.hook: pre-upgrade`. Plain Helm would skip migrations on install with that value, so use it only with Argo CD. The [chart README](https://github.com/ahstn/oceans-llm/blob/main/deploy/helm/oceans-llm/README.md#startup-jobs) has the details.
+
 Each Job keeps `before-hook-creation` as its `hookDeletePolicy` and `ttlSecondsAfterFinished: 300`. A finished Job stays for five minutes for its logs, and Helm deletes the old one before it creates the next. Add `hook-succeeded` to the Job's `hookDeletePolicy`, such as `migrations.hookDeletePolicy`, to delete successful Jobs straight away.
+
+## Safe upgrades and rollback
+
+The chart replaces gateway pods one batch at a time and never takes a pod away before its replacement is ready: `rollout.maxUnavailable: 0`, `rollout.maxSurge: 25%`, and `rollout.minReadySeconds: 10`. A startup probe on `/healthz` gives a new pod up to 60 seconds to start before liveness checks begin.
+
+When a pod stops, it first sleeps for `gateway.lifecycle.preStop.sleep.seconds` (default `10`), so that Services and ingress stop sending it new requests. Then the gateway drains in-flight requests and streams for `gateway.config.server.shutdown_drain_seconds` (default `300`); see [the `server` settings](/configuration/#server). `gateway.terminationGracePeriodSeconds` (default `330`) must be at least the sleep plus the drain plus 20 seconds, or rendering fails. Set your ingress or load balancer timeouts high enough for long streams too.
+
+Upgrade with `--wait --rollback-on-failure` (Helm 4) or `--atomic` (Helm 3), and a `--timeout` long enough for migrations, the rollout, and the rollout guard window:
+
+```sh
+helm upgrade oceans-llm oci://ghcr.io/ahstn/charts/oceans-llm \
+  --namespace <namespace> \
+  --version <version> \
+  --values values.yaml \
+  --wait \
+  --rollback-on-failure \
+  --timeout 15m
+```
+
+Helm then rolls back to the previous release if a hook Job fails, or if the new pods don't become ready in time.
+
+### Rollout guard
+
+Pods can become ready and still fail requests. Set `rolloutGuard.enabled: true` to add a `post-upgrade` Job that watches the new pods' real traffic before Helm marks the upgrade successful. The chart then sets `server.management_bind` to port `rolloutGuard.managementPort` (default `9090`) and adds a headless Service for it. The ingress doesn't route to it. This unauthenticated endpoint exposes process identity, version, start time, drain state and aggregate counters, but no credentials or request contents. By default, `rolloutGuard.networkPolicy.enabled: true` restricts its TCP port to this release's guard pods in the same namespace, leaving every other TCP port and all UDP/SCTP ports open to everyone, including HTTP, probes and sidecar metrics. This requires a CNI enforcing NetworkPolicy; explicit single-port rules preserve HTTP and declared sidecar TCP ports if the CNI ignores `endPort`, but undeclared TCP listeners still require range support. Other policies are additive and must not also allow management access. Disable the chart policy only when an equivalent external policy protects the endpoint.
+
+The Job runs `gateway rollout-guard`. It collects baselines before starting `rolloutGuard.windowSeconds` (default `300`), then reads each ready gateway pod's counters every `rolloutGuard.intervalSeconds` (default `15`). Polls fetch at most 16 pods concurrently and share a DNS/request deadline of the smaller of five seconds and the interval. It counts every response except health checks, and splits 5xx errors by cause:
+
+| Counter | What it counts | Fails at |
+| --- | --- | --- |
+| Gateway errors | 5xx responses that the gateway caused | `rolloutGuard.maxGatewayErrorPercent` (default `5`) |
+| Upstream errors | 5xx responses, timeouts and transport failures from providers or upstream MCP servers | `rolloutGuard.maxUpstreamErrorPercent` (default `25`) |
+
+`4xx` responses count as traffic, not as errors. The guard decides only after `rolloutGuard.minRequests` (default `50`) requests. It fails as soon as a rate reaches its limit, and then `--rollback-on-failure` rolls the release back. With less traffic, the window passes, because there isn't enough evidence to judge. Three consecutive observation polls with no live snapshots fail immediately, including at the deadline. One or two missed polls, even at the end of the window, are tolerated; any responding process, including a replacement, resets the streak. A window with no snapshots at all still fails. The final poll can add at most one poll budget beyond the window. The guard needs no API key or database access.
+
+The guard runs only on `helm upgrade`, after `--wait`. It doesn't run on install or on `helm rollback`, and without `--wait` it can watch the old pods. Each guard run adds its window to the upgrade, so raise `--timeout` with it. See [`examples/rollout-guard-values.yaml`](https://github.com/ahstn/oceans-llm/blob/main/deploy/helm/oceans-llm/examples/rollout-guard-values.yaml).
+
+### Migrations and rollback
+
+A rollback changes the pods, not the database. Each gateway checks schema compatibility at startup, even when it does not run migrations. The older gateway can serve a database that a newer one migrated only if each newer migration records that the older version can read it. Otherwise the older pods fail the check, and you must restore the backup taken before the upgrade. Take one before every upgrade. See [Roll back](/operations/admin-runbooks/#roll-back).
 
 ## Traffic, scaling, and scheduling
 

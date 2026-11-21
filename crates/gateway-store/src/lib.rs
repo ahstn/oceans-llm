@@ -39,8 +39,8 @@ mod store;
 
 pub use libsql_store::LibsqlStore;
 pub use migrate::{
-    MigrationStatus, MigrationStatusEntry, check_migrations_with_options, run_migrations,
-    run_migrations_with_options, status_migrations_with_options,
+    MigrationStatus, MigrationStatusEntry, NewerAppliedMigration, check_migrations_with_options,
+    run_migrations, run_migrations_with_options, status_migrations_with_options,
 };
 pub use postgres_store::PostgresStore;
 pub use seed::seed_local_demo_batches;
@@ -6780,6 +6780,19 @@ pub(crate) mod tests {
         let history_count: i64 = history_row.get(0).expect("history count");
         assert_eq!(history_count, 0);
 
+        let mut compatibility_rows = conn
+            .query("SELECT COUNT(*) FROM gateway_migration_compatibility", ())
+            .await
+            .expect("compatibility count query");
+        let compatibility_count: i64 = compatibility_rows
+            .next()
+            .await
+            .expect("compatibility row fetch")
+            .expect("compatibility row")
+            .get(0)
+            .expect("compatibility count");
+        assert_eq!(compatibility_count, 0);
+
         let mut table_rows = conn
             .query(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'providers'",
@@ -13396,6 +13409,13 @@ pub(crate) mod tests {
             .await
             .expect("history count");
         assert_eq!(history_count, 0);
+
+        let compatibility_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM gateway_migration_compatibility")
+                .fetch_one(&pool)
+                .await
+                .expect("compatibility count");
+        assert_eq!(compatibility_count, 0);
 
         let providers_exists: bool = sqlx::query_scalar(
             "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'providers')",

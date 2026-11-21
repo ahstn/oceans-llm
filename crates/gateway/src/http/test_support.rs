@@ -63,6 +63,7 @@ pub async fn app_state() -> (tempfile::TempDir, AppState) {
             calibrated_score_visible: false,
             team_admin_analytics_enabled: false,
         },
+        attribution_pages: crate::config::AttributionPagesConfig::default(),
         admin_permissions: Arc::new(PermissionsConfig::default().resolve().expect("permissions")),
         mcp_organisation_publishing: gateway_service::McpOrganisationPublishing::default(),
         leaderboard_cache: Arc::new(ResponseCache::new(Duration::from_secs(1))),
@@ -70,6 +71,8 @@ pub async fn app_state() -> (tempfile::TempDir, AppState) {
         mcp_telemetry_cache: Arc::new(ResponseCache::new(Duration::from_secs(30))),
         count_tokens_limiter: Arc::default(),
         trusted_proxies: crate::http::client_ip::TrustedProxies::default(),
+        shutdown: crate::shutdown::Shutdown::new(),
+        traffic: Arc::new(crate::http::traffic::TrafficCounters::new()),
     };
     (directory, state)
 }

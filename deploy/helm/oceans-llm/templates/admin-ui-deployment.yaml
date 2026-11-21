@@ -86,7 +86,7 @@ spec:
           {{- end }}
           {{- if .Values.probes.adminUi.readiness.enabled }}
           readinessProbe:
-            {{- include "oceans-llm.renderProbe" (dict "probe" .Values.probes.adminUi.readiness) | nindent 12 }}
+            {{- include "oceans-llm.renderProbe" (dict "probe" .Values.probes.adminUi.readiness "readiness" true) | nindent 12 }}
           {{- end }}
           {{- with .Values.adminUi.lifecycle }}
           lifecycle:

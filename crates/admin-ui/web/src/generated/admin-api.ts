@@ -3115,6 +3115,23 @@ export interface components {
             /** @description Some requests were left out because a lookup or the report hit its cap. */
             request_facts_truncated: boolean;
         };
+        /** @description One UTC day of the window. Committed requests count on their commit's day. */
+        AttributionDayView: {
+            /** Format: int64 */
+            ai_lines: number;
+            /** Format: int64 */
+            commit_count: number;
+            /** @description Requests allocated to the day's commits. */
+            committed: components["schemas"]["AttributionRequestTallyView"];
+            /** @description `YYYY-MM-DD`. */
+            day: string;
+            /** Format: int64 */
+            human_lines: number;
+            /** Format: int64 */
+            merged_pull_request_count: number;
+            /** @description Requests after their session's last commit, by the day they happened. */
+            uncommitted: components["schemas"]["AttributionRequestTallyView"];
+        };
         AttributionEntryRequest: {
             /** @description 1-64 characters of `[A-Za-z0-9._-]`, unique per installation. */
             entry_id: string;
@@ -3137,6 +3154,39 @@ export interface components {
          * @enum {string}
          */
         AttributionEntryStatusView: "applied" | "duplicate" | "stale" | "rejected";
+        /** @description Agent sessions of one harness on one model. */
+        AttributionHarnessModelView: components["schemas"]["AttributionRequestTallyView"] & {
+            /**
+             * Format: int64
+             * @description AI lines the sessions wrote into the window's commits.
+             */
+            ai_lines: number;
+            /**
+             * Format: int64
+             * @description AI lines of the fully priced sessions.
+             */
+            fully_priced_ai_lines: number;
+            /**
+             * Format: int64
+             * @description Priced cost of the fully priced sessions, in 1/10000 USD.
+             */
+            fully_priced_cost_usd_10000: number;
+            /**
+             * Format: int64
+             * @description Sessions with requests, every one of them priced. Cost per line uses only these.
+             */
+            fully_priced_session_count: number;
+            /** @description git-ai's tool name (`claude`, `codex`, `pi`), else the hook's harness key. */
+            harness: string;
+            model_key: string;
+            /** Format: int64 */
+            session_count: number;
+            /**
+             * Format: int64
+             * @description Sessions whose work was merged or reached the default branch.
+             */
+            shipped_session_count: number;
+        };
         AttributionModelView: components["schemas"]["AttributionRequestTallyView"] & {
             /**
              * Format: int64
@@ -3201,6 +3251,46 @@ export interface components {
             pull_requests: components["schemas"]["AttributionPullRequestRequest"][];
             repository: string;
         };
+        /** @description Headline figures for one window. */
+        AttributionPeriodSummaryView: {
+            /** Format: int64 */
+            ai_lines: number;
+            /** Format: int64 */
+            commit_count: number;
+            /** Format: int64 */
+            human_lines: number;
+            /**
+             * Format: int64
+             * @description Median first commit to merge.
+             */
+            median_lead_time_seconds?: number | null;
+            /** Format: int64 */
+            median_pull_request_cost_usd_10000?: number | null;
+            /**
+             * Format: int64
+             * @description Lines of the commits in merged pull requests.
+             */
+            merged_ai_lines: number;
+            /** Format: int64 */
+            merged_human_lines: number;
+            /** Format: int64 */
+            merged_pull_request_count: number;
+            /**
+             * Format: int64
+             * @description Priced cost of every counted request, committed or not.
+             */
+            priced_cost_usd_10000: number;
+            /**
+             * Format: int64
+             * @description Merged pull requests whose title reads as a revert.
+             */
+            reverted_pull_request_count: number;
+            /**
+             * Format: int64
+             * @description Priced cost of sessions whose work was merged or reached the default branch.
+             */
+            shipped_cost_usd_10000: number;
+        };
         AttributionPullRequestCommitRequest: {
             /** @description Matched to an Oceans user or stored as a hash bound to the key's owner. */
             author_email?: string | null;
@@ -3209,21 +3299,116 @@ export interface components {
             sha: string;
             subject?: string | null;
         };
-        AttributionPullRequestRequest: {
-            base_ref?: string | null;
-            commits?: components["schemas"]["AttributionPullRequestCommitRequest"][];
-            head_ref?: string | null;
-            merge_commit_sha?: string | null;
-            /** @description RFC 3339. */
-            merged_at: string;
-            /** Format: int64 */
-            number: number;
-            title: string;
-            url?: string | null;
-        };
-        AttributionPullRequestView: components["schemas"]["AttributionRequestTallyView"] & {
+        /** @description A merged pull request's commit that has a stored note. */
+        AttributionPullRequestCommitView: components["schemas"]["AttributionRequestTallyView"] & {
+            agent_tools: string[];
             /** Format: int64 */
             ai_lines: number;
+            commit_sha: string;
+            committed_at: string;
+            /** Format: int64 */
+            human_lines: number;
+            models: string[];
+        };
+        /** @description Lifecycle figures over every pull request merged, opened or closed in the window. */
+        AttributionPullRequestLifecycleView: {
+            /**
+             * Format: int64
+             * @description Closed without merging in the window.
+             */
+            closed_unmerged_count: number;
+            /** Format: int64 */
+            draft_count: number;
+            /**
+             * Format: int64
+             * @description Median opened to first human review, for reviews in the window.
+             */
+            median_review_wait_seconds?: number | null;
+            /**
+             * Format: int64
+             * @description Median merge of a reverted pull request to the merge of its revert.
+             */
+            median_time_to_revert_seconds?: number | null;
+            /** Format: int64 */
+            merged_count: number;
+            /**
+             * Format: int64
+             * @description Merged in the window with no review by anyone but the author or a bot.
+             */
+            merged_without_review_count: number;
+            /**
+             * Format: int64
+             * @description Still open, of those opened or updated in the window.
+             */
+            open_count: number;
+            /** Format: int64 */
+            opened_count: number;
+            /**
+             * Format: int64
+             * @description Merged in the window with only a revert title to go on.
+             */
+            possible_revert_count: number;
+            /**
+             * Format: int64
+             * @description Merged in the window and reverting another pull request, by confirmed evidence.
+             */
+            revert_count: number;
+            /**
+             * Format: int64
+             * @description Merged in the window with review data from the hook; older hooks sent none.
+             */
+            review_known_count: number;
+        };
+        AttributionPullRequestRequest: {
+            /** Format: int64 */
+            additions?: number | null;
+            /** Format: int64 */
+            approval_count?: number | null;
+            base_ref?: string | null;
+            /** Format: int64 */
+            changed_files?: number | null;
+            /** Format: int64 */
+            changes_requested_count?: number | null;
+            /** @description RFC 3339; when it closed, merged or not. */
+            closed_at?: string | null;
+            /** Format: int64 */
+            comment_count?: number | null;
+            commits?: components["schemas"]["AttributionPullRequestCommitRequest"][];
+            /** Format: int64 */
+            deletions?: number | null;
+            /** @description RFC 3339; the first review by a person other than the author. */
+            first_review_at?: string | null;
+            head_ref?: string | null;
+            is_draft?: boolean | null;
+            merge_commit_sha?: string | null;
+            /** @description RFC 3339. Required for a merged pull request; absent for an open or closed one. */
+            merged_at?: string | null;
+            /** Format: int64 */
+            number: number;
+            /** @description RFC 3339. */
+            opened_at?: string | null;
+            reverts?: null | components["schemas"]["AttributionRevertLinkRequest"];
+            /** Format: int64 */
+            review_count?: number | null;
+            /** Format: int64 */
+            reviewer_count?: number | null;
+            state?: null | components["schemas"]["AttributionPullRequestStateRequest"];
+            title: string;
+            /** @description RFC 3339; GitHub's last change to the pull request. */
+            updated_at?: string | null;
+            url?: string | null;
+        };
+        /** @enum {string} */
+        AttributionPullRequestStateRequest: "open" | "closed" | "merged";
+        AttributionPullRequestView: components["schemas"]["AttributionRequestTallyView"] & {
+            /** Format: int64 */
+            additions?: number | null;
+            /** @description git-ai agent tools the matched notes name. */
+            agent_tools: string[];
+            /** Format: int64 */
+            ai_lines: number;
+            /** Format: int64 */
+            approval_count?: number | null;
             /**
              * Format: int64
              * @description Listed commits with a stored note; the merge commit when none of them has one.
@@ -3232,15 +3417,61 @@ export interface components {
             author?: null | components["schemas"]["AttributionUserRefView"];
             base_ref?: string | null;
             /** Format: int64 */
+            changed_files?: number | null;
+            /** Format: int64 */
+            changes_requested_count?: number | null;
+            /** Format: int64 */
+            comment_count?: number | null;
+            /** Format: int64 */
             commit_count: number;
+            /**
+             * @description The first 50 commits with a stored note, oldest first, within a budget of 2,000 across the
+             *     report's newest pull requests; older ones past it carry none. `attributed_commit_count`
+             *     counts them all.
+             */
+            commits: components["schemas"]["AttributionPullRequestCommitView"][];
+            /** Format: int64 */
+            deletions?: number | null;
+            /** @description The earliest of the PR's commit author times and its notes' observation times. */
+            first_commit_at?: string | null;
+            /** @description RFC 3339; the first review by a person other than the author. */
+            first_review_at?: string | null;
             head_ref?: string | null;
             /** Format: int64 */
             human_lines: number;
+            /**
+             * @description Reverts another pull request, by evidence stronger than its title: git's revert line,
+             *     GitHub's revert button or an exact inverse change. A change-failure proxy.
+             */
+            is_revert: boolean;
+            /**
+             * Format: int64
+             * @description First commit to merge.
+             */
+            lead_time_seconds?: number | null;
             merged_at: string;
             models: string[];
             /** Format: int64 */
             number: number;
+            /** @description RFC 3339; absent for rows from hooks that sent no lifecycle. */
+            opened_at?: string | null;
             repository: string;
+            revert?: null | components["schemas"]["AttributionRevertView"];
+            /**
+             * Format: int64
+             * @description The pull request in this report that reverted this one.
+             */
+            reverted_by_number?: number | null;
+            /**
+             * Format: int64
+             * @description Human reviews other than the author's; absent when the hook sent no review data.
+             */
+            review_count?: number | null;
+            /**
+             * Format: int64
+             * @description Opened to first human review.
+             */
+            review_wait_seconds?: number | null;
             title: string;
             url?: string | null;
         };
@@ -3249,9 +3480,21 @@ export interface components {
         AttributionReportView: {
             changes: components["schemas"]["AttributionChangeView"][];
             coverage: components["schemas"]["AttributionCoverageView"];
+            /** @description Every UTC day of the window, oldest first. */
+            daily: components["schemas"]["AttributionDayView"][];
+            /** @description Harness × model rows, most sessions first. */
+            harness_models: components["schemas"]["AttributionHarnessModelView"][];
             models: components["schemas"]["AttributionModelView"][];
+            previous_summary?: null | components["schemas"]["AttributionPeriodSummaryView"];
+            /** @description A read cap cut the previous window short, so changes against it are unreliable. */
+            previous_truncated: boolean;
+            /** @description Opened, closed, open and reviewed pull requests, and revert figures. */
+            pull_request_lifecycle: components["schemas"]["AttributionPullRequestLifecycleView"];
             pull_requests: components["schemas"]["AttributionPullRequestView"][];
             repository?: string | null;
+            /** @description Agent sessions by the furthest stage their work reached. */
+            session_outcomes: components["schemas"]["AttributionSessionOutcomeView"][];
+            summary: components["schemas"]["AttributionPeriodSummaryView"];
             totals: components["schemas"]["AttributionTotalsView"];
             /** @description The user the rows are limited to, if any. */
             user_id?: string | null;
@@ -3274,8 +3517,55 @@ export interface components {
             /** Format: int64 */
             usage_missing_request_count: number;
         };
+        /**
+         * @description Strongest first; `title` is a possible revert only.
+         * @enum {string}
+         */
+        AttributionRevertEvidenceRequest: "revert_commit" | "github_revert" | "change_match" | "title";
+        /**
+         * @description How a revert link was found, strongest first. `title` alone is a possible revert.
+         * @enum {string}
+         */
+        AttributionRevertEvidenceView: "revert_commit" | "github_revert" | "change_match" | "title";
+        AttributionRevertLinkRequest: {
+            /** @description Reverted commits, full or abbreviated (at least 7 characters). */
+            commit_shas?: string[];
+            evidence: components["schemas"]["AttributionRevertEvidenceRequest"];
+            /**
+             * Format: int64
+             * @description The reverted pull request in the same repository.
+             */
+            pull_request_number?: number | null;
+        };
+        /** @description What a merged pull request reverts. */
+        AttributionRevertView: {
+            /** @description Whether the evidence is stronger than a title. */
+            confirmed: boolean;
+            evidence: components["schemas"]["AttributionRevertEvidenceView"];
+            /**
+             * Format: int64
+             * @description The reverted pull request in the same repository, when it could be resolved.
+             */
+            reverts_pull_request_number?: number | null;
+        };
         /** @enum {string} */
         AttributionSessionEventRequest: "start" | "end";
+        /**
+         * @description The furthest stage an agent session's work reached, counting only commits in the window.
+         * @enum {string}
+         */
+        AttributionSessionOutcomeKind: "merged" | "default_branch" | "unmerged" | "no_commit";
+        AttributionSessionOutcomeView: components["schemas"]["AttributionRequestTallyView"] & {
+            outcome: components["schemas"]["AttributionSessionOutcomeKind"];
+            /** Format: int64 */
+            session_count: number;
+        };
+        /**
+         * @description A tab of the admin Attribution page. `attribution.pages` in the gateway config turns each on
+         *     or off.
+         * @enum {string}
+         */
+        AttributionTab: "impact" | "delivery" | "pull_requests" | "repositories" | "durability" | "my_work" | "concepts";
         AttributionTotalsView: components["schemas"]["AttributionRequestTallyView"] & {
             /**
              * Format: int64
@@ -3386,6 +3676,8 @@ export interface components {
         };
         AuthSessionCapabilitiesView: {
             agent_analysis: boolean;
+            /** @description Attribution tabs the gateway config turns on, in display order. */
+            attribution_tabs: components["schemas"]["AttributionTab"][];
             calibrated_score_visible: boolean;
             passive_analysis_enabled: boolean;
             platform_admin: boolean;
@@ -3961,9 +4253,21 @@ export interface components {
             data: {
                 changes: components["schemas"]["AttributionChangeView"][];
                 coverage: components["schemas"]["AttributionCoverageView"];
+                /** @description Every UTC day of the window, oldest first. */
+                daily: components["schemas"]["AttributionDayView"][];
+                /** @description Harness × model rows, most sessions first. */
+                harness_models: components["schemas"]["AttributionHarnessModelView"][];
                 models: components["schemas"]["AttributionModelView"][];
+                previous_summary?: null | components["schemas"]["AttributionPeriodSummaryView"];
+                /** @description A read cap cut the previous window short, so changes against it are unreliable. */
+                previous_truncated: boolean;
+                /** @description Opened, closed, open and reviewed pull requests, and revert figures. */
+                pull_request_lifecycle: components["schemas"]["AttributionPullRequestLifecycleView"];
                 pull_requests: components["schemas"]["AttributionPullRequestView"][];
                 repository?: string | null;
+                /** @description Agent sessions by the furthest stage their work reached. */
+                session_outcomes: components["schemas"]["AttributionSessionOutcomeView"][];
+                summary: components["schemas"]["AttributionPeriodSummaryView"];
                 totals: components["schemas"]["AttributionTotalsView"];
                 /** @description The user the rows are limited to, if any. */
                 user_id?: string | null;
@@ -6242,6 +6546,18 @@ export interface operations {
                 user_id?: string | null;
                 /** @description One normalised repository, such as `github.com/acme/widgets`. */
                 repository?: string | null;
+                /**
+                 * @description Also build the window of equal length just before this one, for comparison. Defaults to
+                 *     false, so callers that read only this window pay for one build. `true` returns
+                 *     `previous_summary`; the Impact and My work tabs ask for it.
+                 */
+                compare?: boolean | null;
+                /**
+                 * @description How much of the report to build. Defaults to `full`. `harness` builds only the totals,
+                 *     coverage, session outcomes and harness × model rows, for the Agent Harnesses page; the
+                 *     other lists come back empty and `compare` is ignored.
+                 */
+                shape?: null | ("full" | "harness");
             };
             header?: never;
             path?: never;

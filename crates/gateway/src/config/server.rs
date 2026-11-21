@@ -1,4 +1,7 @@
-use std::net::{IpAddr, SocketAddr};
+use std::{
+    net::{IpAddr, SocketAddr},
+    time::Duration,
+};
 
 use ipnet::IpNet;
 
@@ -23,6 +26,14 @@ pub struct ServerConfig {
     /// resolves a client IP. Empty means the socket peer is the client.
     #[serde(default)]
     pub trusted_proxies: Vec<String>,
+    /// How long in-flight requests and streams may run after a shutdown
+    /// signal before the gateway ends them.
+    #[serde(default = "default_shutdown_drain_seconds")]
+    pub shutdown_drain_seconds: u64,
+    /// Optional second listener for in-cluster tooling. It serves only
+    /// `/healthz` and `/internal/traffic`; keep it off public ingress.
+    #[serde(default)]
+    pub management_bind: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -35,6 +46,8 @@ impl Default for ServerConfig {
             otel_trace_sample_ratio: default_otel_trace_sample_ratio(),
             otel_export_interval_secs: default_otel_export_interval_secs(),
             trusted_proxies: Vec::new(),
+            shutdown_drain_seconds: default_shutdown_drain_seconds(),
+            management_bind: None,
         }
     }
 }
@@ -42,6 +55,11 @@ impl Default for ServerConfig {
 impl ServerConfig {
     pub(super) fn validate(&self) -> anyhow::Result<()> {
         self.bind_address()?;
+        if let Some(management) = self.management_address()?
+            && management == self.bind_address()?
+        {
+            bail!("server.management_bind must differ from server.bind");
+        }
         validate_otel_endpoint("server.otel_endpoint", self.otel_endpoint.as_deref())?;
         validate_otel_endpoint(
             "server.otel_metrics_endpoint",
@@ -77,6 +95,23 @@ impl ServerConfig {
             .parse()
             .with_context(|| format!("server.bind `{}` is not a valid socket address", self.bind))
     }
+
+    /// `server.management_bind`, when set.
+    pub fn management_address(&self) -> anyhow::Result<Option<SocketAddr>> {
+        self.management_bind
+            .as_deref()
+            .map(|bind| {
+                bind.parse().with_context(|| {
+                    format!("server.management_bind `{bind}` is not a valid socket address")
+                })
+            })
+            .transpose()
+    }
+
+    #[must_use]
+    pub fn shutdown_drain(&self) -> Duration {
+        Duration::from_secs(self.shutdown_drain_seconds)
+    }
 }
 
 fn validate_otel_endpoint(field: &str, endpoint: Option<&str>) -> anyhow::Result<()> {
@@ -98,6 +133,12 @@ fn default_bind() -> String {
 
 fn default_log_format() -> String {
     "pretty".to_string()
+}
+
+/// Matches the default provider request timeout, so a stream that started
+/// before the signal can normally finish.
+const fn default_shutdown_drain_seconds() -> u64 {
+    300
 }
 
 const fn default_otel_export_interval_secs() -> u64 {

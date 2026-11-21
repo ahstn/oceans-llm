@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useMemo, useState, type ReactNode } from 'react'
 import { Add01Icon, ArrowDown01Icon, Layers01Icon, Search01Icon } from '@hugeicons/core-free-icons'
 import { AppIcon } from '@/components/icons/app-icon'
 import { McpServerIconMark } from '@/components/mcp/mcp-server-mark'
@@ -43,6 +43,8 @@ export interface ToolsetMembershipState {
 }
 
 export interface ToolsetWorkbenchProps {
+  /** The page header, given the New tool set action for its right-hand side. */
+  renderHeader: (action: ReactNode) => ReactNode
   toolsets: McpToolsetView[]
   servers: McpServerView[]
   tools: McpToolView[]
@@ -88,76 +90,76 @@ export function ToolsetWorkbench(props: ToolsetWorkbenchProps) {
   }, [props.servers, props.tools])
 
   return (
-    <section className="flex min-w-0 flex-col gap-6" aria-label="Tool Sets workbench">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex min-w-0 flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight">Tool Sets</h1>
-            <Badge variant="secondary">{props.toolsets.length}</Badge>
-          </div>
-          <p className="text-muted-foreground text-sm">
-            Bring the right tools together for each team and workflow.
-          </p>
-        </div>
-        <Button type="button" onClick={props.onCreate} disabled={props.busy}>
+    <>
+      {props.renderHeader(
+        <Button type="button" size="sm" onClick={props.onCreate} disabled={props.busy}>
           <AppIcon icon={Add01Icon} data-icon="inline-start" aria-hidden />
           New tool set
-        </Button>
-      </header>
-      <Card className="min-w-0">
-        <CardHeader>
-          <CardTitle>Tool set workbench</CardTitle>
-          <CardDescription>Choose a set and update its tool selection.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex min-w-0 flex-col gap-6">
-          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <InputGroup className="w-full sm:max-w-xs">
-              <InputGroupAddon>
-                <AppIcon icon={Search01Icon} aria-hidden />
-              </InputGroupAddon>
-              <InputGroupInput
-                aria-label="Search tool sets"
-                placeholder="Search tool sets…"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </InputGroup>
-            <ToggleGroup
-              type="single"
-              value={filter}
-              onValueChange={(value) => {
-                if (value) setFilter(value)
-              }}
-              spacing={1}
-              variant="outline"
-              aria-label="Tool set status"
+        </Button>,
+      )}
+      <section className="flex min-w-0 flex-col gap-6" aria-label="Tool Sets workbench">
+        <Card className="min-w-0">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              Tool set workbench
+              <Badge variant="secondary">{props.toolsets.length}</Badge>
+            </CardTitle>
+            <CardDescription>Choose a set and update its tool selection.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex min-w-0 flex-col gap-6">
+            <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <InputGroup className="w-full sm:max-w-xs">
+                <InputGroupAddon>
+                  <AppIcon icon={Search01Icon} aria-hidden />
+                </InputGroupAddon>
+                <InputGroupInput
+                  aria-label="Search tool sets"
+                  placeholder="Search tool sets…"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              </InputGroup>
+              <ToggleGroup
+                type="single"
+                value={filter}
+                onValueChange={(value) => {
+                  if (value) setFilter(value)
+                }}
+                spacing={1}
+                variant="outline"
+                aria-label="Tool set status"
+              >
+                <ToggleGroupItem value="all">All sets</ToggleGroupItem>
+                <ToggleGroupItem value="active">Active</ToggleGroupItem>
+                <ToggleGroupItem value="disabled">Disabled</ToggleGroupItem>
+              </ToggleGroup>
+            </div>
+            <div
+              className="grid min-w-0 items-start gap-7 lg:grid-cols-[20rem_minmax(0,1fr)]"
+              data-testid="toolset-workbench-layout"
             >
-              <ToggleGroupItem value="all">All sets</ToggleGroupItem>
-              <ToggleGroupItem value="active">Active</ToggleGroupItem>
-              <ToggleGroupItem value="disabled">Disabled</ToggleGroupItem>
-            </ToggleGroup>
-          </div>
-          <div
-            className="grid min-w-0 items-start gap-7 lg:grid-cols-[20rem_minmax(0,1fr)]"
-            data-testid="toolset-workbench-layout"
-          >
-            <ToolsetNavigator {...props} visibleSets={visibleSets} selectableIds={selectableIds} />
-            {selected ? (
-              <ToolsetWorkspace {...props} selected={selected} selectableIds={selectableIds} />
-            ) : (
-              <Empty className="min-w-0 border">
-                <EmptyHeader>
-                  <EmptyTitle>Choose a tool set</EmptyTitle>
-                  <EmptyDescription>
-                    Select a set to choose its tools, or create a new one.
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    </section>
+              <ToolsetNavigator
+                {...props}
+                visibleSets={visibleSets}
+                selectableIds={selectableIds}
+              />
+              {selected ? (
+                <ToolsetWorkspace {...props} selected={selected} selectableIds={selectableIds} />
+              ) : (
+                <Empty className="min-w-0 border">
+                  <EmptyHeader>
+                    <EmptyTitle>Choose a tool set</EmptyTitle>
+                    <EmptyDescription>
+                      Select a set to choose its tools, or create a new one.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+    </>
   )
 }
 

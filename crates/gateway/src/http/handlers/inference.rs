@@ -32,6 +32,8 @@ pub(super) struct InferenceExecution<'a> {
     pub guard_context: InferenceGuardContext,
     routing_receipt: Option<RoutingReceipt>,
     icon_metadata: RequestLogIconMetadata,
+    #[cfg(test)]
+    pub(super) test_gate: std::sync::Mutex<Option<StreamFinalizationTestGate>>,
 }
 
 impl<'a> InferenceRequest<'a> {
@@ -154,6 +156,9 @@ impl<'a> InferenceRequest<'a> {
             .await;
             return Err(AppError(error));
         }
+        if self.state.shutdown.is_cut_off() {
+            return Err(AppError(GatewayError::ServerShutdown));
+        }
 
         Ok(InferenceExecution {
             request: self,
@@ -163,6 +168,8 @@ impl<'a> InferenceRequest<'a> {
             guard_context,
             routing_receipt: receipt,
             icon_metadata,
+            #[cfg(test)]
+            test_gate: std::sync::Mutex::new(None),
         })
     }
 }
@@ -404,6 +411,7 @@ impl InferenceExecution<'_> {
                 #[cfg(test)]
                 test_gate: None,
             }),
+            shutdown: state.shutdown.clone(),
         });
 
         let mut response = Response::builder()
@@ -448,6 +456,10 @@ impl InferenceExecution<'_> {
         let labels = self.labels();
         // Read before the response guard and any Messages translation rewrite the body.
         let served_service_tier = gateway_core::served_service_tier(&value);
+        #[cfg(test)]
+        let mut test_gate = self.test_gate.lock().unwrap().take();
+        #[cfg(test)]
+        pause_stream_finalization(&mut test_gate, false).await;
         finalize_successful_usage_accounting(
             state,
             UsageAccountingContext {
@@ -465,6 +477,8 @@ impl InferenceExecution<'_> {
             usage_value_from_response(&value),
         )
         .await;
+        #[cfg(test)]
+        pause_stream_finalization(&mut test_gate, true).await;
         let completion = async {
             guard_model_response(state, guard_context, &mut value).await?;
             if let Some(receipt) = &self.routing_receipt {

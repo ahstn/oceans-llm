@@ -1,0 +1,16 @@
+database:
+  mode: external
+  external:
+    existingSecret:
+      name: oceans-llm-postgres
+      key: POSTGRES_URL
+
+secrets:
+  existingSecret:
+    name: oceans-llm-env
+
+gateway:
+  replicaCount: 2
+
+rolloutGuard:
+  enabled: true

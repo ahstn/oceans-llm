@@ -29,7 +29,7 @@ pub(crate) use commits::{
     update_commit,
 };
 pub(crate) use pull_requests::{
-    PULL_REQUEST_COLUMN_COUNT, delete_pull_request_commits, insert_pull_request,
+    PULL_REQUEST_COLUMN_COUNT, decode_lifecycle, delete_pull_request_commits, insert_pull_request,
     insert_pull_request_commits, list_pull_requests, pull_request_outcome,
     select_pull_request_observed_at, update_pull_request,
 };

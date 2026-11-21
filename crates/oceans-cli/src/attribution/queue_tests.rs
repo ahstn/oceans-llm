@@ -47,7 +47,10 @@ fn concurrent_hooks_get_unique_increasing_sequences() {
         .map(|_| {
             let path = Arc::clone(&path);
             thread::spawn(move || {
-                let state = State::open(path.to_path_buf()).unwrap();
+                let mut state = State::open(path.to_path_buf()).unwrap();
+                // This checks sequencing under contention, not the 1 s fallback to
+                // `unsequenced/`, which slow CI file locking (Windows) can otherwise reach.
+                state.lock_timeout = Duration::from_secs(30);
                 let payloads = (0..5).map(|_| note('a', "note")).collect();
                 assert_eq!(state.enqueue(payloads).unwrap().queued, 5);
             })

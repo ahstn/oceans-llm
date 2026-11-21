@@ -139,9 +139,18 @@ pub async fn healthz() -> Json<serde_json::Value> {
     Json(json!({ "status": "ok" }))
 }
 
-pub async fn readyz(State(state): State<AppState>) -> Result<Json<serde_json::Value>, AppError> {
+/// Ready while the database answers. A draining gateway reports 503 so load
+/// balancers outside Kubernetes stop sending it work too.
+pub async fn readyz(State(state): State<AppState>) -> Result<Response, AppError> {
+    if state.shutdown.is_draining() {
+        return Ok((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "status": "draining" })),
+        )
+            .into_response());
+    }
     state.service.check_readiness().await?;
-    Ok(Json(json!({ "status": "ready" })))
+    Ok(Json(json!({ "status": "ready" })).into_response())
 }
 
 pub async fn api_health() -> Json<serde_json::Value> {
@@ -212,21 +221,22 @@ pub async fn v1_model_group_info(
 }
 
 fn anthropic_error_response(error: GatewayError) -> Response {
-    if let Some(response) = native_messages::upstream_error_response(&error) {
-        return response;
-    }
-    let status =
-        StatusCode::from_u16(error.http_status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    let mut response = Json(json!({
-        "type": "error",
-        "error": {
-            "type": error.error_type(),
-            "message": error.to_string(),
-            "code": error.error_code(),
-        }
-    }))
-    .into_response();
-    *response.status_mut() = status;
+    let mut response = native_messages::upstream_error_response(&error).unwrap_or_else(|| {
+        let status = StatusCode::from_u16(error.http_status_code())
+            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        let mut response = Json(json!({
+            "type": "error",
+            "error": {
+                "type": error.error_type(),
+                "message": error.to_string(),
+                "code": error.error_code(),
+            }
+        }))
+        .into_response();
+        *response.status_mut() = status;
+        response
+    });
+    super::traffic::mark_upstream_failure(&mut response, &error);
     response
 }
 
@@ -806,6 +816,9 @@ fn build_provider_context(
 struct LoggingBodyStreamState {
     upstream: gateway_core::ProviderStream,
     finalization: Option<StreamFinalization>,
+    /// Ends the stream at the shutdown cutoff and tracks finalization, so the
+    /// gateway waits for usage and logging before it exits.
+    shutdown: crate::shutdown::Shutdown,
 }
 
 /// Moved exactly once into an owned task before the first finalization await.
@@ -872,7 +885,12 @@ impl Drop for LoggingBodyStreamState {
         let Some(finalization) = self.finalization.take() else {
             return;
         };
-        record_cancelled_stream_metrics(&finalization);
+        let termination = if self.shutdown.is_cut_off() {
+            StreamTermination::ServerShutdown
+        } else {
+            record_cancelled_stream_metrics(&finalization);
+            StreamTermination::ClientCancelled
+        };
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
             tracing::warn!(
                 request_id = %finalization.request_log_context.request_id,
@@ -881,11 +899,15 @@ impl Drop for LoggingBodyStreamState {
             );
             return;
         };
-        // Register the charge synchronously: the next rate-limit check must
-        // wait for it even if this client cancels and immediately retries.
-        spawn_cancelled_stream_token_charge(&finalization);
-        runtime.spawn(
-            finalize_stream(finalization, StreamTermination::ClientCancelled).in_current_span(),
+        let charge = if matches!(termination, StreamTermination::ClientCancelled) {
+            // Register before spawning finalization so an immediate retry waits.
+            spawn_cancelled_stream_token_charge(&finalization)
+        } else {
+            None
+        };
+        self.shutdown.tasks().spawn_on(
+            finalize_stream(finalization, termination, charge).in_current_span(),
+            &runtime,
         );
     }
 }
@@ -893,15 +915,15 @@ impl Drop for LoggingBodyStreamState {
 /// A cancelled stream skips usage accounting, but usage the provider already
 /// reported still counts against token limits, so cancelling a stream cannot
 /// be used to dodge them.
-fn spawn_cancelled_stream_token_charge(state: &StreamFinalization) {
+fn spawn_cancelled_stream_token_charge(
+    state: &StreamFinalization,
+) -> Option<tokio::task::JoinHandle<()>> {
     let usage = gateway_service::request_logging::usage_summary_from_value(state.collector.usage());
-    let Some(total_tokens) = chargeable_tokens(
+    let total_tokens = chargeable_tokens(
         usage.total_tokens,
         usage.prompt_tokens,
         usage.completion_tokens,
-    ) else {
-        return;
-    };
+    )?;
     let model_keys = [
         state.requested_model_key.as_str(),
         state.resolved_model_key.as_str(),
@@ -909,14 +931,10 @@ fn spawn_cancelled_stream_token_charge(state: &StreamFinalization) {
     let subject = RateLimitSubject::new(RateLimitOperation::Inference, &state.auth)
         .with_models(&model_keys)
         .with_member_team(state.rate_limit_team);
-    // Nothing can await here: the task runs on, and this replica's next
-    // check for the same counters waits for it.
-    drop(
-        state
-            .service
-            .rate_limiter()
-            .record_tokens_detached(&subject, total_tokens),
-    );
+    state
+        .service
+        .rate_limiter()
+        .record_tokens_detached(&subject, total_tokens)
 }
 
 /// The tokens a token limit charges: the reported total, or prompt plus
@@ -1166,7 +1184,21 @@ fn wrap_stream_with_request_logging(
     futures_stream::unfold(state, |mut state| async move {
         state.finalization.as_ref()?;
 
-        match state.upstream.next().await {
+        // Upstream chunks win over the cutoff, so a stream that is finishing
+        // when the drain limit passes still completes.
+        let next = tokio::select! {
+            biased;
+            item = state.upstream.next() => Some(item),
+            () = state.shutdown.cut_off_reached() => None,
+        };
+        let Some(next) = next else {
+            let error = state
+                .finalize(StreamTermination::ServerShutdown)
+                .await
+                .expect_err("shutdown cutoff");
+            return Some((Err(std::io::Error::other(error.to_string())), state));
+        };
+        match next {
             Some(Ok(chunk)) => {
                 let finalization = state.finalization.as_mut().expect("active stream");
                 let observation = finalization.collector.observe_chunk(chunk.as_ref());
@@ -1200,6 +1232,8 @@ enum StreamTermination {
     Complete,
     Transport(ProviderError),
     ClientCancelled,
+    /// The shutdown drain limit passed before the stream finished.
+    ServerShutdown,
 }
 
 impl LoggingBodyStreamState {
@@ -1210,7 +1244,10 @@ impl LoggingBodyStreamState {
         let finalization = self.finalization.take().expect("stream finalized once");
         // Dropping the join handle detaches, rather than cancels, this bounded
         // persistence task. No body-owned future can interrupt billing or logging.
-        let task = tokio::spawn(finalize_stream(finalization, termination).in_current_span());
+        let task = self
+            .shutdown
+            .tasks()
+            .spawn(finalize_stream(finalization, termination, None).in_current_span());
         async move {
             task.await.map_err(|error| {
                 GatewayError::Internal(format!("stream finalization task failed: {error}"))
@@ -1222,21 +1259,35 @@ impl LoggingBodyStreamState {
 async fn finalize_stream(
     mut state: StreamFinalization,
     termination: StreamTermination,
+    charge: Option<tokio::task::JoinHandle<()>>,
 ) -> Result<(), GatewayError> {
+    if let Some(charge) = charge
+        && let Err(error) = charge.await
+    {
+        tracing::warn!(%error, "cancelled stream token charge task failed");
+    }
     state.collector.finish();
     let cancelled = matches!(termination, StreamTermination::ClientCancelled);
+    let shut_down = matches!(termination, StreamTermination::ServerShutdown);
     let (transport, transport_outcome) = match termination {
         StreamTermination::Transport(error) => {
             let detail = error.to_string();
             let retryable = error.is_retryable();
             (Some(GatewayError::from(error)), Some((detail, retryable)))
         }
-        StreamTermination::Complete | StreamTermination::ClientCancelled => (None, None),
+        StreamTermination::Complete
+        | StreamTermination::ClientCancelled
+        | StreamTermination::ServerShutdown => (None, None),
     };
     let mut failure = if cancelled {
         Some(gateway_service::StreamFailureSummary {
             status_code: 499,
             error_code: "client_cancelled".to_string(),
+        })
+    } else if shut_down {
+        Some(gateway_service::StreamFailureSummary {
+            status_code: 503,
+            error_code: SERVER_SHUTDOWN.to_string(),
         })
     } else if let Some(error) = &transport {
         Some(gateway_service::StreamFailureSummary {
@@ -1297,6 +1348,8 @@ async fn finalize_stream(
     }
     let termination_reason = if cancelled {
         "client_cancelled"
+    } else if shut_down {
+        SERVER_SHUTDOWN
     } else if transport.is_some() {
         "stream_transport_error"
     } else if routing_error.is_some() {
@@ -1343,6 +1396,7 @@ async fn finalize_stream(
             let error = transport.as_ref().expect("transport failure");
             (i64::from(error.http_status_code()), error.error_type())
         }
+        Some(_) if shut_down => (503, SERVER_SHUTDOWN),
         Some(failure) => (failure.status_code, "upstream_error"),
         None => (200, "success"),
     };
@@ -1379,11 +1433,20 @@ async fn finalize_stream(
             &tool_cardinality,
         );
     }
+    if shut_down {
+        return Err(GatewayError::Internal(
+            "the gateway shut down before the stream finished".to_string(),
+        ));
+    }
     match transport.or(routing_error).or(completion_error) {
         Some(error) => Err(error),
         None => Ok(()),
     }
 }
+
+/// Error code, request-log error code and stream termination reason for a
+/// request the shutdown cutoff ended.
+pub(super) const SERVER_SHUTDOWN: &str = "server_shutdown";
 
 /// Records usage against the ledger and budgets. Only successful streams may
 /// estimate missing usage; failed streams charge what the provider reported.
@@ -2169,6 +2232,7 @@ mod tests {
         route: ModelRoute,
         provider: StaticProvider,
         metrics: Arc<GatewayMetrics>,
+        shutdown: crate::shutdown::Shutdown,
     }
 
     impl StreamTestHarness {
@@ -2219,6 +2283,7 @@ mod tests {
                     capabilities: ProviderCapabilities::all_enabled(),
                 },
                 metrics: Arc::new(GatewayMetrics::new()),
+                shutdown: crate::shutdown::Shutdown::new(),
             }
         }
 
@@ -2272,6 +2337,7 @@ mod tests {
                     ),
                     test_gate: None,
                 }),
+                shutdown: self.shutdown.clone(),
             };
             (context, state)
         }
@@ -2336,6 +2402,126 @@ mod tests {
             .await
             .expect("read usage ledger");
         assert!(ledger.is_none());
+    }
+
+    #[tokio::test]
+    async fn shutdown_cutoff_ends_an_open_stream_with_an_error_and_logs_it() {
+        let harness = StreamTestHarness::new().await;
+        let request_id = "stream-shutdown-test";
+        let upstream: ProviderStream = Box::pin(
+            stream::iter([Ok(Bytes::from_static(
+                b"data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n",
+            ))])
+            .chain(stream::pending()),
+        );
+        let (context, state) = harness.logging_state(request_id, upstream);
+        let mut body_stream = Box::pin(wrap_stream_with_request_logging(state));
+
+        assert!(matches!(body_stream.next().await, Some(Ok(_))));
+        harness.shutdown.cut_off();
+        let ended = body_stream.next().await.expect("an item at the cutoff");
+        assert!(
+            ended.is_err(),
+            "the client must see an error, not a clean end"
+        );
+        assert!(body_stream.next().await.is_none());
+        assert!(
+            harness.shutdown.finish_tasks().await,
+            "shutdown waits for the stream's finalization"
+        );
+
+        let detail = harness
+            .service
+            .get_request_log_detail(context.request_log_id)
+            .await
+            .expect("request log persisted before shutdown returned");
+        assert_eq!(detail.log.status_code, Some(503));
+        assert_eq!(detail.log.error_code.as_deref(), Some("server_shutdown"));
+        let snapshot = harness.metrics.test_snapshot();
+        assert_eq!(snapshot.request_outcomes.get("server_shutdown"), Some(&1));
+    }
+
+    #[tokio::test]
+    async fn shutdown_joins_backpressured_stream_before_waiting_for_usage_and_logs() {
+        use tokio::io::AsyncWriteExt;
+
+        let harness = StreamTestHarness::new().await;
+        let (writing_tx, writing_rx) = tokio::sync::oneshot::channel();
+        let upstream: ProviderStream = Box::pin(
+            stream::iter([Ok(Bytes::from_static(
+                b"data: {\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2,\"total_tokens\":7}}\n\n",
+            ))])
+            .chain(stream::once(async move {
+                writing_tx.send(()).unwrap();
+                // Much larger than the socket buffers: a client that never
+                // reads keeps hyper from polling the body again at cutoff.
+                Ok(Bytes::from(vec![b'x'; 32 * 1024 * 1024]))
+            }))
+            .chain(stream::pending()),
+        );
+        let (context, mut state) = harness.logging_state("backpressured-shutdown", upstream);
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (resume_tx, resume_rx) = tokio::sync::oneshot::channel();
+        state.finalization.as_mut().unwrap().test_gate = Some(super::StreamFinalizationTestGate {
+            after_accounting: false,
+            entered: entered_tx,
+            resume: resume_rx,
+        });
+        let state = Arc::new(std::sync::Mutex::new(Some(state)));
+        let app = axum::Router::new().route("/", axum::routing::get(move || {
+            let state = state.lock().unwrap().take().unwrap();
+            async move { axum::body::Body::from_stream(wrap_stream_with_request_logging(state)) }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut client = tokio::net::TcpStream::connect(listener.local_addr().unwrap())
+            .await
+            .unwrap();
+        let serving = tokio::spawn({
+            let shutdown = harness.shutdown.clone();
+            async move { shutdown.serve(listener, app).await }
+        });
+        client
+            .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .await
+            .unwrap();
+        writing_rx.await.expect("hyper polled the large response");
+        harness.shutdown.begin_drain();
+        harness.shutdown.cut_off();
+        tokio::time::timeout(Duration::from_secs(10), serving)
+            .await
+            .expect("connections are forcibly closed")
+            .unwrap()
+            .unwrap();
+        entered_rx
+            .await
+            .expect("dropping the connection registered finalization");
+        assert!(!harness.shutdown.tasks().is_empty());
+        let finishing = tokio::spawn({
+            let shutdown = harness.shutdown.clone();
+            async move { shutdown.finish_tasks().await }
+        });
+        resume_tx
+            .send(())
+            .expect("usage write survives connection teardown");
+        assert!(finishing.await.unwrap());
+        let detail = harness
+            .service
+            .get_request_log_detail(context.request_log_id)
+            .await
+            .unwrap();
+        assert_eq!(detail.log.status_code, Some(503));
+        assert_eq!(detail.log.error_code.as_deref(), Some("server_shutdown"));
+        let ledger = harness
+            .store
+            .get_usage_ledger_by_request_and_scope(
+                "backpressured-shutdown",
+                &harness.ownership_scope_key(),
+            )
+            .await
+            .unwrap()
+            .expect("reported usage was charged before shutdown finished");
+        assert_eq!(ledger.total_tokens, Some(7));
+        drop(client);
     }
 
     #[tokio::test]

@@ -12,6 +12,10 @@ ingress:
   enabled: true
   className: nginx
   annotations:
+    # ingress-nginx was retired in March 2026; these annotations are for existing installations.
+    # Keep proxy timeouts at least as long as the gateway termination grace period.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "330"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "330"
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
   hosts:
     - host: oceans-llm.example.com

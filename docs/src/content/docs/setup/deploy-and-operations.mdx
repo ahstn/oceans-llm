@@ -31,6 +31,8 @@ Use PostgreSQL for production and anything that looks like it. The libsql file d
 
 The gateway applies migrations at startup by default, or when you run `gateway migrate --apply`. Helm installs run them in a Job instead; see [Kubernetes and Helm](/setup/kubernetes-and-helm/#startup-jobs).
 
+The gateway checks schema compatibility at startup even when migrations are disabled. It warns about pending migrations but still starts.
+
 Every migration command checks the database's recorded history against the migrations this version knows about before it does anything. Some databases can't be upgraded in place and must be recreated:
 
 - Databases that still carry the history from before the current baseline, migrations `V1` to `V16`.
@@ -38,6 +40,8 @@ Every migration command checks the database's recorded history against the migra
 - Databases where a recorded migration's name or checksum doesn't match this version's.
 
 In each case, the command stops with a `database reset required` error rather than guessing.
+
+A database that a newer gateway migrated is a different case. After a rollback, the older gateway starts only if every newer migration says that it can still read the database. Otherwise it stops with `database schema is newer than this gateway`, and never applies migrations of its own. See [Roll back](/operations/admin-runbooks/#roll-back).
 
 ## Telemetry
 
