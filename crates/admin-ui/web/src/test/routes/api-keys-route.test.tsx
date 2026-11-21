@@ -271,8 +271,7 @@ describe('ApiKeysPage', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Create API key' })[0])
     const dialog = screen.getByRole('dialog', { name: 'Create API key' })
     fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Deploy Worker' } })
-    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Owner type' }))
-    fireEvent.click(screen.getByRole('option', { name: 'Service account' }))
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Service account' }))
     fireEvent.click(within(dialog).getByRole('combobox', { name: 'Owner service account' }))
     fireEvent.click(screen.getByRole('option', { name: /Deploy Bot/ }))
     await toggleModelSelection(dialog, 'fast')
@@ -295,6 +294,54 @@ describe('ApiKeysPage', () => {
         mcp_server_keys: null,
       },
     })
+  })
+
+  it('marks the selected option in every create dialog pill group', () => {
+    render(<ApiKeysPage />)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Create API key' })[0])
+    const dialog = screen.getByRole('dialog', { name: 'Create API key' })
+    // The API key forms override DialogContent's 384px cap so fields wrap less.
+    expect(dialog).toHaveClass('sm:max-w-xl', 'lg:max-w-5xl')
+    expect(dialog).not.toHaveClass('sm:max-w-sm')
+    // From lg up, owner and model access sit on the left and scopes on the right.
+    expect(within(dialog).getByTestId('api-key-dialog-body')).toHaveClass(
+      'lg:grid-cols-2',
+      'overflow-y-auto',
+    )
+    const scopesColumn = within(dialog).getByTestId('api-key-dialog-scopes')
+    expect(scopesColumn).toHaveClass('min-w-0')
+    expect(within(scopesColumn).getByRole('radiogroup', { name: 'Capabilities' })).toBeVisible()
+    expect(within(scopesColumn).getByRole('radiogroup', { name: 'MCP servers' })).toBeVisible()
+    expect(within(scopesColumn).queryByLabelText('Name')).toBeNull()
+    expect(within(scopesColumn).queryByRole('radiogroup', { name: 'Model grant mode' })).toBeNull()
+
+    // The default variant's on state is invisible on the dialog surface; every mode switch
+    // uses the lilac checked pills (DESIGN.md "Toggles").
+    for (const group of ['Owner type', 'Model grant mode', 'Capabilities', 'MCP servers']) {
+      expect(within(dialog).getByRole('radiogroup', { name: group })).toHaveAttribute(
+        'data-variant',
+        'checked',
+      )
+    }
+    expect(within(dialog).getByRole('radio', { name: 'User' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    expect(within(dialog).getByRole('radio', { name: 'Full access' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Limited' }))
+    expect(within(dialog).getByRole('radio', { name: 'Limited' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    expect(within(dialog).getByRole('radio', { name: 'Full access' })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    )
   })
 
   it('shows full access for keys without scopes', () => {
@@ -634,7 +681,11 @@ describe('ApiKeysPage', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Manage' })[0])
 
     const dialog = screen.getByRole('dialog', { name: 'Manage API key' })
-    expect(within(dialog).getByText('Credential secret')).toBeInTheDocument()
+    const secret = within(dialog).getByTestId('manage-api-key-secret')
+    expect(within(secret).getByText('Credential secret')).toBeInTheDocument()
+    // Masked key, Reveal, and Copy share one row; Copy waits for the secret.
+    expect(within(secret).getByText('gwk_prod_liv****')).toBeInTheDocument()
+    expect(within(secret).getByRole('button', { name: 'Copy API key' })).toBeDisabled()
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Reveal API key' }))
 
@@ -642,15 +693,26 @@ describe('ApiKeysPage', () => {
     expect(revealGatewayApiKeySecretMock).toHaveBeenCalledWith({
       data: { apiKeyId: 'api_key_1' },
     })
-    expect(await within(dialog).findByTestId('manage-api-key-raw-key')).toHaveTextContent(
-      'gwk_service_account.secret-value',
-    )
+    const rawKey = await within(dialog).findByTestId('manage-api-key-raw-key')
+    expect(rawKey).toHaveTextContent('gwk_service_account.secret-value')
+    // The revealed key wraps so it stays fully readable; only the masked prefix truncates.
+    expect(rawKey).toHaveClass('break-all')
+    expect(rawKey).not.toHaveClass('truncate')
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Copy API key' }))
 
     await waitFor(() =>
       expect(writeClipboardTextMock).toHaveBeenCalledWith('gwk_service_account.secret-value'),
     )
+
+    // Hide masks the secret again without another fetch, and Copy still works.
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Hide API key' }))
+    expect(within(dialog).queryByTestId('manage-api-key-raw-key')).toBeNull()
+    expect(within(secret).getByText('gwk_prod_liv****')).toBeInTheDocument()
+    expect(within(secret).getByRole('button', { name: 'Copy API key' })).toBeEnabled()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reveal API key' }))
+    expect(within(dialog).getByTestId('manage-api-key-raw-key')).toBeInTheDocument()
+    expect(revealGatewayApiKeySecretMock).toHaveBeenCalledTimes(1)
   })
 
   it('revokes from the manage dialog lifecycle section', async () => {
@@ -669,11 +731,24 @@ describe('ApiKeysPage', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Manage' })[0])
 
     const dialog = screen.getByRole('dialog', { name: 'Manage API key' })
+    const lifecycle = within(dialog).getByTestId('manage-api-key-lifecycle')
+    // Scopes take the right column; the revoke row spans both columns below them.
+    const scopesColumn = within(dialog).getByTestId('api-key-dialog-scopes')
+    expect(within(scopesColumn).getByRole('radiogroup', { name: 'Capabilities' })).toBeVisible()
+    expect(within(scopesColumn).queryByRole('radiogroup', { name: 'Model grant mode' })).toBeNull()
+    expect(scopesColumn).not.toContainElement(lifecycle)
+    expect(lifecycle.parentElement).toHaveClass('lg:col-span-2')
+    // One row: the description shrinks beside the button instead of wrapping it below.
+    expect(lifecycle).not.toHaveClass('flex-wrap')
+    expect(within(lifecycle).getByText('Revoke this key')).toBeInTheDocument()
     expect(
-      within(dialog).getByText(/Revocation takes effect immediately and cannot be undone/),
+      within(lifecycle).getByText(/Revocation takes effect immediately and cannot be undone/),
     ).toBeInTheDocument()
+    const revokeButton = within(lifecycle).getByRole('button', { name: 'Revoke key' })
+    expect(revokeButton).toHaveAttribute('data-variant', 'destructive')
+    expect(revokeButton).toHaveAttribute('data-size', 'sm')
 
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Revoke key' }))
+    fireEvent.click(revokeButton)
 
     await waitFor(() => expect(revokeGatewayApiKeyMock).toHaveBeenCalledTimes(1))
     expect(revokeGatewayApiKeyMock).toHaveBeenCalledWith({
@@ -683,6 +758,8 @@ describe('ApiKeysPage', () => {
   })
 
   it('lets regular users create and manage their own keys', () => {
+    // The server only lists service accounts the session may own keys for.
+    routeMock.useLoaderData.mockReturnValue({ data: { ...basePayload, service_accounts: [] } })
     routeMock.useRouteContext.mockReturnValue({
       session: {
         must_change_password: false,
@@ -715,7 +792,9 @@ describe('ApiKeysPage', () => {
     expect(within(createDialog).getByRole('combobox', { name: 'Owner user' })).toHaveTextContent(
       'Jane Admin',
     )
-    expect(within(createDialog).queryByRole('option', { name: 'Service account' })).toBeNull()
+    // Without service accounts in scope, the owner type has only one answer and is hidden.
+    expect(within(createDialog).queryByRole('radiogroup', { name: 'Owner type' })).toBeNull()
+    expect(within(createDialog).queryByRole('radio', { name: 'Service account' })).toBeNull()
 
     fireEvent.click(within(createDialog).getByRole('button', { name: 'Cancel' }))
     fireEvent.click(screen.getAllByRole('button', { name: 'Manage' })[0])
