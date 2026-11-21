@@ -1,0 +1,21 @@
+crates/admin-ui/web/src/test/routes/request-logs-route.test.tsx
+  s_f9a2dc193f7af4::t_0d82823e04b178 794-815
+crates/admin-ui/web/src/routes/observability/-request-log-filters.tsx
+  s_f9a2dc193f7af4::t_0d82823e04b178 190-191,195-202
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "adbe977a0f83b080aaf5d0a08649dfac7e3a0ced",
+  "prompts": {},
+  "sessions": {
+    "s_f9a2dc193f7af4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f47da735-08a7-4f2b-a249-ef2ca3735b63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
