@@ -2,16 +2,16 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use async_trait::async_trait;
 use gateway_core::{
-    ApiKeyOwnerKind, AuthenticatedApiKey, BudgetAlertChannel, BudgetAlertDeliveryRecord,
-    BudgetAlertDeliveryStatus, BudgetAlertDispatchTask, BudgetAlertRecord, BudgetAlertRepository,
-    BudgetCadence, BudgetRecord, BudgetRepository, BudgetScope, GatewayError, IdentityRepository,
-    MembershipRole, Money4, UsageLedgerRecord, UserStatus, budget_window_utc,
+    ApiKeyOwnerKind, BudgetAlertChannel, BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus,
+    BudgetAlertDispatchTask, BudgetAlertRecord, BudgetAlertRepository, BudgetCadence, BudgetRecord,
+    BudgetRepository, BudgetScope, GatewayError, IdentityRepository, MembershipRole, Money4,
+    UsageLedgerRecord, UserStatus, budget_window_utc,
 };
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::budget_scopes::{applicable_budget_scopes, effective_budget_limit};
+use crate::{budget_guard::BudgetSpend, budget_scopes::effective_budget_limit};
 
 pub const BUDGET_ALERT_THRESHOLD_BPS: i32 = 2_000;
 
@@ -85,33 +85,18 @@ where
         Self { repo, sender }
     }
 
+    /// Raises alerts for the budgets a recorded charge crossed into the threshold, from the
+    /// window spend [`crate::budget_guard::BudgetGuard::spend_after_usage`] already read.
     pub async fn evaluate_after_usage(
         &self,
-        api_key: &AuthenticatedApiKey,
         ledger: &UsageLedgerRecord,
+        budgets: &[BudgetSpend],
     ) -> Result<(), GatewayError> {
-        if !ledger.pricing_status.counts_toward_spend() {
-            return Ok(());
-        }
-
-        for scope in applicable_budget_scopes(
-            api_key,
-            ledger.model_id,
-            if ledger.model_id.is_none() {
-                Some(ledger.upstream_model.as_str())
-            } else {
-                None
-            },
-        )? {
-            let Some(budget) = self.repo.get_active_budget_by_scope(&scope).await? else {
-                continue;
-            };
-            let (window_start, window_end) =
-                usage_window_bounds(budget.settings.cadence, ledger.occurred_at);
-            let spent_after = self
-                .repo
-                .sum_usage_cost_for_budget_scope_in_window(&scope, window_start, window_end)
-                .await?;
+        for BudgetSpend {
+            budget,
+            spent_usd: spent_after,
+        } in budgets
+        {
             let spent_before = spent_after
                 .checked_sub(ledger.computed_cost_usd)
                 .ok_or_else(|| {
@@ -119,9 +104,9 @@ where
                         "budget threshold spend subtraction overflow".to_string(),
                     )
                 })?;
-            let owner = self.resolve_budget_owner(&budget).await?;
-            let budget_amount = if alert_possible_against_base(&budget, spent_after) {
-                effective_budget_limit(self.repo.as_ref(), &budget, ledger.occurred_at).await?
+            let owner = self.resolve_budget_owner(budget).await?;
+            let budget_amount = if alert_possible_against_base(budget, *spent_after) {
+                effective_budget_limit(self.repo.as_ref(), budget, ledger.occurred_at).await?
             } else {
                 budget.settings.amount_usd
             };
@@ -132,7 +117,7 @@ where
                 budget_amount,
                 occurred_at: ledger.occurred_at,
                 spent_before,
-                spent_after,
+                spent_after: *spent_after,
                 immediate_on_existing_threshold: false,
             })
             .await?;
@@ -400,14 +385,6 @@ fn build_delivery_records(
 fn is_at_or_below_threshold(remaining_budget: Money4, total_budget: Money4) -> bool {
     i128::from(remaining_budget.as_scaled_i64()) * 10_000
         <= i128::from(total_budget.as_scaled_i64()) * i128::from(BUDGET_ALERT_THRESHOLD_BPS)
-}
-
-fn usage_window_bounds(
-    cadence: BudgetCadence,
-    occurred_at: OffsetDateTime,
-) -> (OffsetDateTime, OffsetDateTime) {
-    let window = budget_window_utc(cadence, occurred_at);
-    (window.period_start, window.observed_end)
 }
 
 fn render_budget_alert_email(task: &BudgetAlertDispatchTask) -> Result<String, GatewayError> {

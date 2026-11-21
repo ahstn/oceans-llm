@@ -49,6 +49,7 @@ Every section is optional. The gateway rejects unknown top-level keys, so a miss
 | `guardrails` | Request and tool-call guardrail packs | [Gateway guardrails](/operations/gateway-guardrails/) |
 | `request_logging` | Request-log payload capture and purge | [`request_logging`](#request_logging) |
 | `agent_analysis` | Agent session analysis collection and access | [`agent_analysis`](#agent_analysis) |
+| `attribution` | Which tabs of the Attribution page the admin UI shows | [`attribution`](#attribution) |
 
 ## Value sources
 
@@ -60,7 +61,7 @@ Fields that hold secrets or deployment values take a reference with a prefix:
 | `file./path/to/secret` | The contents of the file, with trailing newlines removed. |
 | `literal.value` | The text after `literal.`, used as is. |
 
-Secret fields (for example `database.url`, `auth.bootstrap_admin.password`, OIDC and OAuth `client_secret`, SMTP `password`, and service-account key `value`) accept only these three forms. A plain value without a prefix is rejected with `unsupported secret reference`. So write `url: literal.postgres://...` or `url: env.POSTGRES_URL`, not a bare URL.
+Secret fields (for example `database.url`, `auth.bootstrap_admin.password`, OIDC and OAuth `client_secret`, SMTP `password`, and service-account key `value`) accept only these three forms. A plain value without a prefix is rejected with `unsupported secret reference`. Write `url: literal.postgres://...` or `url: env.POSTGRES_URL`, not a bare URL.
 
 Some non-secret fields, such as the GitHub OAuth `client_id` and file paths for provider credentials, also accept a plain value. Each field reference says which form it takes.
 
@@ -166,7 +167,7 @@ models:
         upstream_model: google/gemini-2.0-flash
 ```
 
-On a new database, the seeded `ops@example.com` platform admin stops the bootstrap admin from being created, and a seeded password user can't sign in until an admin creates their invite link. So leave that user out for the first start, and sign in as the bootstrap admin. Then add the user back, restart, and create their invite link from `/admin`. See [Start up and first access](/setup/first-access/#the-bootstrap-admin).
+On a new database, the seeded `ops@example.com` platform admin stops the bootstrap admin from being created, and a seeded password user can't sign in until an admin creates their invite link. Leave that user out for the first start, and sign in as the bootstrap admin. Then add the user back, restart, and create their invite link from `/admin`. See [Start up and first access](/setup/first-access/#the-bootstrap-admin).
 
 The checked-in files show fuller setups: [`gateway.yaml`](https://github.com/ahstn/oceans-llm/blob/main/gateway.yaml) (local demo), [`gateway.prod.yaml`](https://github.com/ahstn/oceans-llm/blob/main/gateway.prod.yaml), [`deploy/config/gateway.yaml`](https://github.com/ahstn/oceans-llm/blob/main/deploy/config/gateway.yaml) (container deploys), and [`deploy/selfhost/gateway.yaml`](https://github.com/ahstn/oceans-llm/blob/main/deploy/selfhost/gateway.yaml) (self-hosting with mise). They are opinionated examples, not the full config space.
 
@@ -201,8 +202,14 @@ Route defaults (`priority`, `weight`, `enabled`, capability flags) are on [Model
 | `otel_trace_sample_ratio` | `1.0` | `0.0` through `1.0` inclusive. |
 | `otel_export_interval_secs` | `30` | Metrics export interval. |
 | `trusted_proxies` | `[]` | IP addresses or CIDR ranges. |
+| `shutdown_drain_seconds` | `300` | How long in-flight requests and streams get to finish after SIGTERM. |
+| `management_bind` | unset | Socket address for the private management listener. Must differ from `bind`. |
 
 The gateway trusts the `X-Forwarded-For` header only when the connection comes from an address in `trusted_proxies`. It uses the resolved client IP for rate limits and admin audit entries. With an empty list, the socket peer is the client. See [Rate limits](/spend/rate-limits/) for how client IPs affect limits.
+
+On the first SIGTERM or Ctrl-C, the gateway starts to drain. It stops accepting new connections, `/readyz` returns `503` with `{"status":"draining"}` on connections that are still open, and MCP event streams that wait for server messages close so that their clients reconnect to another replica. Requests and streams that are already in flight continue. When `shutdown_drain_seconds` passes, or a second signal arrives, the gateway ends what remains. A request that has no response yet gets `503` with the error code `server_shutdown`. An open inference stream ends with a transport error, and its request log records `503 server_shutdown` with the usage that the provider already reported. The process then waits up to 10 seconds for usage and request-log writes before it exits. Set your container stop timeout, or the Kubernetes `terminationGracePeriodSeconds`, higher than the drain.
+
+`management_bind` starts a second listener with only `/healthz` and `/internal/traffic`. `/internal/traffic` returns this process's response counters since it started: `requests`, `gateway_errors` (5xx responses that the gateway caused) and `upstream_errors` (5xx responses caused by a provider or upstream MCP server, including timeouts). It does not count `4xx` responses as errors, and it does not count health checks. The Helm rollout guard reads these counters. The listener has no authentication, so keep it off public networks.
 
 For OTLP settings in a deployment, see [Topology and operations](/setup/deploy-and-operations/). For collector and Datadog setup, see [Export traces and metrics](/observability/export-traces-and-metrics/).
 
@@ -313,6 +320,24 @@ After a change to metrics, context or cache profiles, an admin queues retained s
 
 For what the analysis shows and who can see it, see [Agent session analysis](/observability/agent-session-analysis/). Team admins also need the `agent_sessions` page in [`permissions`](/access/access-settings/).
 
+## `attribution`
+
+`attribution.pages` turns each tab of the **Attribution** page on or off. Every tab is on by default except `repositories`, whose readiness quadrant waits on line survival data, and `concepts`, the design mockups on sample data. Turning a tab off hides it from everyone; ingestion and the report API are unchanged.
+
+```yaml
+attribution:
+  pages:
+    impact: true
+    delivery: true
+    pull_requests: true
+    repositories: false
+    durability: true
+    my_work: true
+    concepts: false
+```
+
+With every tab off, the page explains how to turn one back on. Unknown fields in `attribution` fail startup. See [Git AI attribution](/harnesses/git-ai-attribution/#read-the-attribution-page).
+
 ## Benchmark catalog
 
 The admin Models page shows the Artificial Analysis Intelligence, Coding and Agentic indices for each model. The scores come from a snapshot in the repository, [`crates/gateway-service/data/model_benchmarks.json`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-service/data/model_benchmarks.json). The gateway makes no benchmark network calls at runtime and needs no API key.
@@ -339,7 +364,7 @@ Scores change only when a release ships a refreshed snapshot. The attribution to
 The gateway validates the whole file before it starts. A failure stops startup (and `config validate`) with the field name in the error. Validation covers:
 
 - YAML syntax and field types, including enum values.
-- Unknown keys at the top level and in `auth`, `permissions`, `budgets`, `agent_analysis`, `models` entries, `teams`, `users` (including `membership`) and `service_accounts`.
+- Unknown keys at the top level and in `auth`, `permissions`, `budgets`, `agent_analysis`, `attribution`, `models` entries, `teams`, `users` (including `membership`) and `service_accounts`.
 - `server`, `database`, `request_logging`, `budget_alerts` and `agent_analysis` rules on this page and on [Budget settings](/spend/budget-settings/).
 - Guardrails, permissions, OIDC and OAuth providers, and MCP settings.
 - Provider fields, model and alias references, and route wiring.

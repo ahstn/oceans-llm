@@ -8,9 +8,10 @@ use std::collections::{BTreeSet, HashMap};
 use gateway_core::{
     ATTRIBUTION_MAX_BATCH_ENTRIES, ApiKeyOwnerKind, AttributionApplyOutcome,
     AttributionCommitSession, AttributionCommitWrite, AttributionFreshness, AttributionOwner,
-    AttributionPullRequestCommit, AttributionPullRequestWrite, AttributionRepository,
-    AttributionRequestSessionWrite, AttributionSessionEventKind, AttributionSessionEventWrite,
-    AuthError, AuthenticatedApiKey, GatewayError, StoreError,
+    AttributionPullRequestCommit, AttributionPullRequestLifecycle, AttributionPullRequestState,
+    AttributionPullRequestWrite, AttributionRepository, AttributionRequestSessionWrite,
+    AttributionSessionEventKind, AttributionSessionEventWrite, AuthError, AuthenticatedApiKey,
+    GatewayError, StoreError,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -98,8 +99,13 @@ pub struct AttributionPullRequestInput {
     pub base_ref: Option<String>,
     pub head_ref: Option<String>,
     pub merge_commit_sha: Option<String>,
-    pub merged_at: OffsetDateTime,
+    /// Required for a merged pull request, and absent otherwise.
+    pub merged_at: Option<OffsetDateTime>,
     pub commits: Vec<AttributionPullRequestCommitInput>,
+    /// State, times, counts and the revert link as the hook reduced them; validated here.
+    pub lifecycle: AttributionPullRequestLifecycle,
+    /// False when the hook sent no lifecycle; see [`AttributionPullRequestWrite`].
+    pub lifecycle_reported: bool,
 }
 
 pub struct AttributionPullRequestCommitInput {
@@ -443,6 +449,15 @@ where
             .merge_commit_sha
             .map(|sha| validate::commit_sha(&sha))
             .transpose()?;
+        let mut lifecycle = validate_lifecycle(input.number, input.merged_at, input.lifecycle)?;
+        // An older hook sends no forge update time, so its latest lifecycle time stands in. The
+        // sync time never does: re-syncing an untouched pull request isn't activity. With no
+        // time at all, the store keeps the one it has.
+        lifecycle.last_activity_at = lifecycle
+            .last_activity_at
+            .or(input.merged_at)
+            .or(lifecycle.closed_at)
+            .or(lifecycle.opened_at);
         let mut commits = Vec::with_capacity(input.commits.len());
         for commit in input.commits {
             let commit_sha = validate::commit_sha(&commit.sha)?;
@@ -483,10 +498,63 @@ where
             author_user_id,
             author_email_hash,
             commits,
+            lifecycle,
+            lifecycle_reported: input.lifecycle_reported,
             observed_at: freshness.observed_at,
             received_at: self.now,
         })
     }
+}
+
+/// At most this many reverted commits per pull request, as the hook sends.
+const MAX_REVERTED_COMMITS: usize = 40;
+
+/// A merged pull request has a merge time and an open or closed one has none; counts are not
+/// negative; a revert link names valid commits or a pull request other than this one.
+fn validate_lifecycle(
+    number: i64,
+    merged_at: Option<OffsetDateTime>,
+    mut lifecycle: AttributionPullRequestLifecycle,
+) -> Result<AttributionPullRequestLifecycle, EntryError> {
+    let merged = lifecycle.state == AttributionPullRequestState::Merged;
+    if merged != merged_at.is_some() {
+        return Err(AttributionRejectReason::InvalidEntry.into());
+    }
+    let details = &lifecycle.details;
+    let counts = [
+        details.review_count,
+        details.approval_count,
+        details.changes_requested_count,
+        details.reviewer_count,
+        details.comment_count,
+        details.additions,
+        details.deletions,
+        details.changed_files,
+    ];
+    if counts.into_iter().flatten().any(|count| count < 0) {
+        return Err(AttributionRejectReason::InvalidEntry.into());
+    }
+    if let Some(link) = lifecycle.details.reverts.as_mut() {
+        if link.commit_shas.len() > MAX_REVERTED_COMMITS
+            || link
+                .pull_request_number
+                .is_some_and(|reverted| reverted < 1 || reverted == number)
+        {
+            return Err(AttributionRejectReason::InvalidEntry.into());
+        }
+        // Abbreviated SHAs from `This reverts commit` lines are kept; the report matches them
+        // by prefix.
+        for sha in &link.commit_shas {
+            let valid = (7..=64).contains(&sha.len())
+                && sha
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
+            if !valid {
+                return Err(AttributionRejectReason::InvalidEntry.into());
+            }
+        }
+    }
+    Ok(lifecycle)
 }
 
 impl AttributionEntryInput {

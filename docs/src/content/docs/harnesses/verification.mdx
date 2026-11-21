@@ -86,7 +86,7 @@ Each cell runs five tests. Each test starts the harness in a new workspace, with
 | Effort | Replies to a prompt with an exact word, at the `low` reasoning effort. | The reply has the word, and each request asked for `low`. See [Reasoning effort and fast mode](#reasoning-effort-and-fast-mode). |
 | Fast | Replies to a prompt with an exact word, in fast mode. | The reply has the word, and each request asked for the `priority` tier. |
 
-The file and bash tests need more than one model request: the harness sends the tool result back to the model. So they also check that the gateway keeps tool calls intact between requests.
+The file and bash tests need more than one model request: the harness sends the tool result back to the model. They also check that the gateway keeps tool calls intact between requests.
 
 For every test, the suite then finds the requests in the gateway's request logs by their `harness_run` [request tag](/observability/tagging/), and checks that:
 

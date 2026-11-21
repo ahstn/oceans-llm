@@ -572,6 +572,218 @@ async fn inference_endpoints_normalize_models_and_account_for_success() {
     }
 }
 
+async fn checkpoint_completion(
+    state: AppState,
+    gate: super::StreamFinalizationTestGate,
+) -> Result<Response, AppError> {
+    use super::inference::{InferenceRequest, InferenceResponseFormat};
+
+    let auth = state
+        .service
+        .authenticate(Some("Bearer gwk_streamtest.cancel-secret"))
+        .await?;
+    let resolved = state.service.resolve_request(&auth, "fast").await?;
+    let request: gateway_core::ChatCompletionsRequest = serde_json::from_value(json!({
+        "model": "fast", "messages": [{"role": "user", "content": "hello"}],
+    }))
+    .unwrap();
+    let mut core_request = gateway_core::openai_chat_request_to_core(&request);
+    let context = state.service.begin_chat_request_log(
+        "inference-test",
+        "fast",
+        "fast",
+        &request,
+        &Default::default(),
+        Default::default(),
+    );
+    let selected = super::SelectedProviderRoute {
+        route: resolved.routes[0].clone(),
+        provider: Arc::new(RecordingProvider::default()),
+        receipt: None,
+        expected_provider_credential_id: None,
+    };
+    let execution = InferenceRequest {
+        state: &state,
+        auth: &auth,
+        resolved: &resolved,
+        rate_limit_team: Default::default(),
+        request_id: "inference-test",
+        request_started_at: std::time::Instant::now(),
+        stream: false,
+        endpoint: super::RoutingEndpoint::ChatCompletions,
+        requested_service_tier: None,
+        request_log_context: context,
+    }
+    .prepare(Ok(selected), &mut core_request)
+    .await?;
+    *execution.test_gate.lock().unwrap() = Some(gate);
+    execution
+        .complete_response(
+            json!({
+                "id": "chat-test", "model": "fast",
+                "choices": [{"message": {"role": "assistant", "content": "hello"}}],
+                "usage": {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3},
+            }),
+            time::OffsetDateTime::now_utc(),
+            InferenceResponseFormat::OpenAi,
+        )
+        .await
+}
+
+#[tokio::test]
+async fn cutoff_preserves_non_stream_usage_and_logging_at_persistence_checkpoints() {
+    use axum::{Router, body::Body, middleware, routing::get};
+    use tower::ServiceExt;
+
+    for after_accounting in [false, true] {
+        let (_directory, state, _provider) = setup().await;
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (resume_tx, resume_rx) = tokio::sync::oneshot::channel();
+        let gate = Arc::new(Mutex::new(Some(super::StreamFinalizationTestGate {
+            after_accounting,
+            entered: entered_tx,
+            resume: resume_rx,
+        })));
+        let handler_state = state.clone();
+        let router = Router::new()
+            .route(
+                "/",
+                get(move || {
+                    checkpoint_completion(
+                        handler_state.clone(),
+                        gate.lock().unwrap().take().unwrap(),
+                    )
+                }),
+            )
+            .layer(middleware::from_fn_with_state(
+                state.shutdown.clone(),
+                crate::http::respond_before_cutoff,
+            ));
+        let pending = tokio::spawn(
+            router.oneshot(
+                axum::http::Request::builder()
+                    .uri("/")
+                    .body(Body::empty())
+                    .unwrap(),
+            ),
+        );
+        entered_rx
+            .await
+            .expect("handler reached persistence checkpoint");
+        state.shutdown.cut_off();
+        assert_eq!(pending.await.unwrap().unwrap().status(), 503);
+        assert!(
+            !state.shutdown.tasks().is_empty(),
+            "unfinished accounting is tracked"
+        );
+        let finishing = tokio::spawn({
+            let shutdown = state.shutdown.clone();
+            async move { shutdown.finish_tasks().await }
+        });
+        resume_tx
+            .send(())
+            .expect("cutoff did not cancel persistence");
+        assert!(finishing.await.unwrap());
+        let detail = request_detail(&state).await;
+        assert_eq!(detail.log.status_code, Some(200));
+        let scope = format!("service_account:{}", detail.log.service_account_id.unwrap());
+        let usage = state
+            .store
+            .get_usage_ledger_by_request_and_scope("inference-test", &scope)
+            .await
+            .unwrap()
+            .expect("usage survived handler cutoff");
+        assert_eq!(usage.total_tokens, Some(3));
+    }
+}
+
+#[tokio::test]
+async fn cutoff_accounts_for_usage_buffered_by_stream_guardrails() {
+    use futures_util::{StreamExt, stream};
+
+    let (_directory, state, _) = setup().await;
+    let auth = state
+        .service
+        .authenticate(Some("Bearer gwk_streamtest.cancel-secret"))
+        .await
+        .unwrap();
+    let resolved = state.service.resolve_request(&auth, "fast").await.unwrap();
+    let route = resolved.routes[0].clone();
+    let request: gateway_core::ChatCompletionsRequest = serde_json::from_value(json!({
+        "model": "fast", "messages": [{"role": "user", "content": "hello"}],
+    }))
+    .unwrap();
+    let icon_metadata = super::request_log_icon_metadata(
+        &route,
+        resolved.provider_connections.get(&route.provider_key),
+        "fast",
+        "fast",
+    );
+    let context = state.service.begin_chat_request_log(
+        "inference-test",
+        "fast",
+        "fast",
+        &request,
+        &Default::default(),
+        Default::default(),
+    );
+    let (buffered_tx, buffered_rx) = tokio::sync::oneshot::channel();
+    let upstream: ProviderStream = Box::pin(stream::iter([Ok(axum::body::Bytes::from_static(
+        b"data: {\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}\n\n",
+    ))]).chain(stream::once(async move {
+        buffered_tx.send(()).unwrap();
+        std::future::pending().await
+    })));
+    let guard = super::InferenceGuardContext {
+        route_key: "fast/vertex".to_string(),
+        request_id: "inference-test".to_string(),
+        associated_prompt: None,
+        enabled: true,
+        stream_buffer_bytes: 1024 * 1024,
+    };
+    let work = state.shutdown.tasks().spawn({
+        let state = state.clone();
+        async move {
+            super::enforce_guarded_stream_after_provider(
+                &state,
+                &auth,
+                Default::default(),
+                &resolved,
+                &context,
+                &route,
+                icon_metadata,
+                std::time::Instant::now(),
+                time::OffsetDateTime::now_utc(),
+                &guard,
+                upstream,
+            )
+            .await
+        }
+    });
+    buffered_rx
+        .await
+        .expect("guardrail collector has observed usage");
+    state.shutdown.cut_off();
+    assert!(state.shutdown.finish_tasks().await);
+    let error = work
+        .await
+        .unwrap()
+        .err()
+        .expect("buffering stops at cutoff");
+    assert_eq!(error.0.error_code(), "server_shutdown");
+    let detail = request_detail(&state).await;
+    assert_eq!(detail.log.status_code, Some(503));
+    assert_eq!(detail.log.error_code.as_deref(), Some("server_shutdown"));
+    let scope = format!("service_account:{}", detail.log.service_account_id.unwrap());
+    let usage = state
+        .store
+        .get_usage_ledger_by_request_and_scope("inference-test", &scope)
+        .await
+        .unwrap()
+        .expect("buffered usage was charged");
+    assert_eq!(usage.total_tokens, Some(3));
+}
+
 #[tokio::test]
 async fn inference_endpoints_log_stream_start_failure_without_charging() {
     for endpoint in [Endpoint::Chat, Endpoint::Responses, Endpoint::Messages] {

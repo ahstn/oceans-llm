@@ -5,6 +5,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- Update `lettre` to fix SMTP issues in budget alert delivery.
+- Require HTTPS and reject redirects when exchanging Google credentials from a file.
+- Update Undici in the GitHub review action.
+
+
+## [1.1.0](https://github.com/ahstn/oceans-llm/compare/v1.0.0...v1.1.0) - 2026-11-16
+
+### Upgrade note
+
+Migration `v82` requires the new gateway because older versions cannot read pull requests with no merge time. Back up the database and stop older gateway instances before the upgrade. To return to `1.0.0` after this migration, restore the pre-upgrade database backup before rolling back the application.
+
+### :rocket: New features
+- Safe Helm upgrades with graceful drain, reader-compatible migrations and a rollout guard by @ahstn in [#673](https://github.com/ahstn/oceans-llm/pull/673)
+- *(attribution)* Sync the pull request lifecycle and detect reverts by @ahstn in [#661](https://github.com/ahstn/oceans-llm/pull/661)
+- *(attribution)* Tabbed Attribution page with config flags and harness attribution by @ahstn in [#659](https://github.com/ahstn/oceans-llm/pull/659)
+
+### Changed
+- Fix Vale errors and add CI prose checks by @ahstn in [#675](https://github.com/ahstn/oceans-llm/pull/675)
+
+## [1.0.0](https://github.com/ahstn/oceans-llm/compare/v0.49.0...v1.0.0) - 2026-11-16
+
+### :rocket: New features
+- *(gateway)* Service tiers and fast models by @ahstn in [#634](https://github.com/ahstn/oceans-llm/pull/634)
+- *(attribution)* Git-ai attribution through oceans hooks by @ahstn in [#617](https://github.com/ahstn/oceans-llm/pull/617)
+- *(opencode)* Distribute plugin through public npm by @ahstn in [#660](https://github.com/ahstn/oceans-llm/pull/660)
+
+### :bug: Bug fixes
+- *(gateway)* Enforce reasoning ceiling on mid-conversation effort updates by @ahstn in [#637](https://github.com/ahstn/oceans-llm/pull/637)
+- *(security)* Daybreak login, admin proxy fixes and CI trust boundaries by @ahstn in [#642](https://github.com/ahstn/oceans-llm/pull/642)
+- *(gateway)* Close provider spend leaks and adapter 400s from audit first wave by @ahstn in [#651](https://github.com/ahstn/oceans-llm/pull/651)
+- *(admin-ui)* Match dialog selectors to model config pills by @ahstn in [#653](https://github.com/ahstn/oceans-llm/pull/653)
+- *(attribution)* Credit hooked commits to the key owner and trim cost cards by @ahstn in [#654](https://github.com/ahstn/oceans-llm/pull/654)
+- *(gateway)* [**breaking**] Align provider config with vendor APIs and verify a harness x model x provider matrix by @ahstn in [#656](https://github.com/ahstn/oceans-llm/pull/656)
+- *(client-config)* Refresh Claude Code settings and setup guide by @ahstn in [#657](https://github.com/ahstn/oceans-llm/pull/657)
+- *(attribution)* Repair PR sync and request session tracking by @ahstn in [#658](https://github.com/ahstn/oceans-llm/pull/658)
+
+### Changed
+- *(deps)* Bump uuid from 1.29.0 to 1.29.2 in the utilities group across 1 directory by @dependabot[bot] in [#631](https://github.com/ahstn/oceans-llm/pull/631)
+- *(deps)* Bump crc32fast from 1.5.1 to 1.5.5 by @dependabot[bot] in [#639](https://github.com/ahstn/oceans-llm/pull/639)
+- *(deps)* Bump zip from 9.4.1 to 9.5.0 by @dependabot[bot] in [#635](https://github.com/ahstn/oceans-llm/pull/635)
+- *(deps-dev)* Bump the styling group across 1 directory with 2 updates by @dependabot[bot] in [#624](https://github.com/ahstn/oceans-llm/pull/624)
+- *(deps-dev)* Bump the testing group across 1 directory with 2 updates by @dependabot[bot] in [#626](https://github.com/ahstn/oceans-llm/pull/626)
+- *(deps-dev)* Bump the build-tools group across 1 directory with 2 updates by @dependabot[bot] in [#636](https://github.com/ahstn/oceans-llm/pull/636)
+- *(deps-dev)* Bump the code-quality group across 1 directory with 4 updates by @dependabot[bot] in [#627](https://github.com/ahstn/oceans-llm/pull/627)
+- *(deps)* Bump the tanstack group across 1 directory with 4 updates by @dependabot[bot] in [#623](https://github.com/ahstn/oceans-llm/pull/623)
+- *(deps)* Bump the aws-sdk group across 1 directory with 3 updates by @dependabot[bot] in [#640](https://github.com/ahstn/oceans-llm/pull/640)
+- *(deps-dev)* Bump the review-agent-tooling group across 1 directory with 3 updates by @dependabot[bot] in [#629](https://github.com/ahstn/oceans-llm/pull/629)
+- *(deps)* Bump the pi group across 1 directory with 5 updates by @dependabot[bot] in [#628](https://github.com/ahstn/oceans-llm/pull/628)
+- *(deps)* Bump rpassword from 7.5.4 to 7.5.5 by @dependabot[bot] in [#646](https://github.com/ahstn/oceans-llm/pull/646)
+- *(deps)* Bump zip from 9.5.0 to 9.5.1 by @dependabot[bot] in [#647](https://github.com/ahstn/oceans-llm/pull/647)
+- *(deps)* Bump the aws-sdk group across 1 directory with 2 updates by @dependabot[bot] in [#643](https://github.com/ahstn/oceans-llm/pull/643)
+- *(deps)* Bump docker/login-action from 4.7.0 to 4.8.0 in the docker-actions group across 1 directory by @dependabot[bot] in [#644](https://github.com/ahstn/oceans-llm/pull/644)
+- *(deps)* Bump jdx/mise-action from 5.2.4 to 5.2.6 by @dependabot[bot] in [#645](https://github.com/ahstn/oceans-llm/pull/645)
+- Delete unreferenced pub items across core, providers, guardrails and service by @ahstn in [#648](https://github.com/ahstn/oceans-llm/pull/648)
 
 ## [0.49.0](https://github.com/ahstn/oceans-llm/compare/v0.48.0...v0.49.0) - 2026-11-11
 

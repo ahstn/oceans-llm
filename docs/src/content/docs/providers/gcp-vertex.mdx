@@ -48,7 +48,7 @@ Apply the config, then open **Models** in the admin UI. Each Vertex route shows 
 </Step>
 </Steps>
 
-![The admin Models page. The Provider and Model column shows anthropic/claude-fable-5-1, anthropic/claude-opus-4-7 and anthropic/claude-sonnet-4-6 routes, each labelled Google Vertex AI.](/images/screenshot-models-2.png)
+![The admin Models page. The Provider and Model column shows three Claude routes, each labelled Google Vertex AI.](/images/screenshot-models-2.png)
 
 <Aside type="caution" title="project_id is a plain string">
 `project_id` doesn't accept `env.` or `literal.` references. The gateway uses the value as written in the Vertex URL. Write the project ID itself, for example `project_id: my-gcp-project`.
@@ -83,6 +83,8 @@ With `adc`, the gateway looks for credentials in this order:
 3. The Google Cloud metadata server, which serves the attached service account or GKE Workload Identity.
 
 An ADC file must have `type` set to `service_account` or `authorized_user`. Other credential types, such as `external_account` for workload identity federation, fail with `unsupported ADC credential type`. On Google Cloud, prefer `adc` with an attached identity, so no key file is needed.
+
+If a credential file sets `token_uri`, use an HTTPS URL. The gateway does not follow redirects during the token exchange.
 
 ```yaml title="gateway.yaml"
 providers:
@@ -125,7 +127,7 @@ Every Vertex route sets `upstream_model` as `<publisher>/<model_id>`. The gatewa
 
 A value without a slash, or with an empty part, fails config loading with `gcp_vertex routes require upstream_model in <publisher>/<model_id> format`. Any other publisher, such as `meta/...`, loads but fails at request time with `vertex publisher ... is not supported`.
 
-There is no `pricing_provider_id` on Vertex providers. Anthropic-on-Vertex pricing works only for `location: global`. Claude routes on other locations are recorded as `unpriced` ([`pricing_catalog/target.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-service/src/pricing_catalog/target.rs)). See [Pricing catalog and accounting](/spend/pricing-and-accounting/).
+Vertex providers have no `pricing_provider_id`. Anthropic-on-Vertex pricing works only for `location: global`. Claude routes on other locations are recorded as `unpriced` ([`pricing_catalog/target.rs`](https://github.com/ahstn/oceans-llm/blob/main/crates/gateway-service/src/pricing_catalog/target.rs)). See [Pricing catalog and accounting](/spend/pricing-and-accounting/).
 
 Example routes:
 
@@ -320,7 +322,7 @@ Gemini only checks signatures in the current turn, which starts at the last user
 | Gemini 2.5 | `thinkingBudget`: `minimal` 128, `low` 2048, `medium` 8192, `high` and higher 24576 (32768 on Pro). |
 | Gemini 2.0 and older, or an ID the gateway can't parse | No thinking. Any `reasoning_effort`, including `none`, fails with `400 invalid_request_error`. Omit the field. |
 
-With an effort, the gateway also sets `includeThoughts: true`. Thought text then comes back as `reasoning_content` on the message, or on `delta` in streams, never in `content`. Thinking tokens count in `completion_tokens` and in `completion_tokens_details.reasoning_tokens`.
+With an effort, the gateway also sets `includeThoughts: true`. Thought text then comes back as `reasoning_content` on the message, or on `delta` in streams; it does not come back in `content`. Thinking tokens count in `completion_tokens` and in `completion_tokens_details.reasoning_tokens`.
 
 `reasoning_effort: "none"` (or `"off"`) turns thinking down as far as the model allows, with `includeThoughts: false`:
 

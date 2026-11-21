@@ -303,6 +303,10 @@ export async function getAttributionReport(params: {
   days: 7 | 30 | 90
   user_id?: string
   repository?: string
+  /** `true` also builds the previous window, for tabs that show changes against it. */
+  compare?: boolean
+  /** `harness` builds only what the Agent Harnesses page reads. */
+  shape?: 'full' | 'harness'
 }): Promise<ApiEnvelope<AttributionReportView>> {
   const client = createGatewayApiClient()
   return unwrapGatewayResponse(
@@ -312,6 +316,8 @@ export async function getAttributionReport(params: {
           days: params.days,
           user_id: params.user_id,
           repository: params.repository,
+          compare: params.compare,
+          shape: params.shape,
         },
       },
     }),

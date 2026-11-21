@@ -1,0 +1,62 @@
+{{- if and .Values.rolloutGuard.enabled .Values.rolloutGuard.networkPolicy.enabled }}
+{{- $managementPort := int .Values.rolloutGuard.managementPort }}
+{{- if eq (int .Values.gateway.containerPort) $managementPort }}
+{{- fail "rolloutGuard.managementPort must differ from gateway.containerPort" }}
+{{- end }}
+{{- range .Values.observability.sidecars }}
+{{- range .ports }}
+{{- if and (eq (default "TCP" .protocol) "TCP") (eq (int .containerPort) $managementPort) }}
+{{- fail "sidecar TCP ports must differ from rolloutGuard.managementPort" }}
+{{- end }}
+{{- end }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "oceans-llm.managementServiceName" . }}
+  labels:
+    {{- include "oceans-llm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "oceans-llm.gatewaySelectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "oceans-llm.name" . }}
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: rollout-guard
+      ports:
+        - protocol: TCP
+          port: {{ $managementPort }}
+    # Preserve ingress to every other port, including arbitrary sidecars and
+    # ports not declared in the pod spec. An omitted `from` allows all sources.
+    - ports:
+        # Explicit ports remain open when a CNI ignores endPort.
+        - protocol: TCP
+          port: {{ .Values.gateway.containerPort }}
+        {{- range .Values.observability.sidecars }}
+        {{- range .ports }}
+        {{- if eq (default "TCP" .protocol) "TCP" }}
+        - protocol: TCP
+          port: {{ .containerPort }}
+        {{- end }}
+        {{- end }}
+        {{- end }}
+        {{- if gt $managementPort 1 }}
+        - protocol: TCP
+          port: 1
+          endPort: {{ sub $managementPort 1 }}
+        {{- end }}
+        {{- if lt $managementPort 65535 }}
+        - protocol: TCP
+          port: {{ add $managementPort 1 }}
+          endPort: 65535
+        {{- end }}
+        - protocol: UDP
+        - protocol: SCTP
+{{- end }}

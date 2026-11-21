@@ -21,6 +21,22 @@ pub struct BudgetOverrun {
     pub limit_usd: Money4,
 }
 
+/// An active budget a recorded charge counts toward, and its window's spend
+/// with that charge included.
+#[derive(Debug, Clone)]
+pub struct BudgetSpend {
+    pub budget: BudgetRecord,
+    pub spent_usd: Money4,
+}
+
+/// What a recorded charge did to the budgets it counts toward.
+#[derive(Debug, Clone, Default)]
+pub struct BudgetSpendAfterUsage {
+    pub budgets: Vec<BudgetSpend>,
+    /// Every hard budget the charge pushed past its cap.
+    pub overruns: Vec<BudgetOverrun>,
+}
+
 #[derive(Clone)]
 pub struct BudgetGuard<R> {
     repo: Arc<R>,
@@ -77,11 +93,10 @@ where
 
     /// Record spend that the provider has already incurred.
     ///
-    /// Unlike the pre-provider check this never rejects on budget: the money is
-    /// spent, so dropping the row would only hide it from the ledger and let the
-    /// window stay under its cap. Every hard budget that the charge pushes over
-    /// its cap is returned so callers can log it; the next request is blocked by
-    /// `enforce_pre_provider_budget`.
+    /// This never rejects on budget: the money is spent, so dropping the row
+    /// would only hide it from the ledger and let the window stay under its cap.
+    /// [`Self::spend_after_usage`] then reports the budgets the charge overran;
+    /// `enforce_pre_provider_budget` blocks the next request.
     ///
     /// Returns `DuplicateUsageRecord` when the `(request_id, owner)` pair is
     /// already in the ledger.
@@ -92,43 +107,55 @@ where
     )]
     pub async fn record_incurred_usage(
         &self,
-        api_key: &AuthenticatedApiKey,
         ledger: &UsageLedgerRecord,
-    ) -> Result<Vec<BudgetOverrun>, GatewayError> {
+    ) -> Result<(), GatewayError> {
         if ledger.computed_cost_usd.is_negative() {
             return Err(GatewayError::InvalidRequest(
                 "computed_cost_usd must be >= 0".to_string(),
             ));
         }
-
-        let mut overruns = Vec::new();
-        if ledger.pricing_status.counts_toward_spend() {
-            for scope in applicable_budget_scopes(
-                api_key,
-                ledger.model_id,
-                Some(ledger.upstream_model.as_str()),
-            )? {
-                let Some(budget) = self.repo.get_active_budget_by_scope(&scope).await? else {
-                    continue;
-                };
-                if let Some(overrun) = self
-                    .projected_overrun(
-                        &scope,
-                        &budget,
-                        ledger.occurred_at,
-                        ledger.computed_cost_usd,
-                    )
-                    .await?
-                {
-                    overruns.push(overrun);
-                }
-            }
-        }
-
         if !self.repo.insert_usage_ledger_if_absent(ledger).await? {
             return Err(duplicate_request_error(&ledger.request_id));
         }
-        Ok(overruns)
+        Ok(())
+    }
+
+    /// Reads the window spend of each active budget the recorded `ledger` counts
+    /// toward, once, with the charge included. Budget alerts reuse these figures:
+    /// each read adds up the whole window, so it is the costly part of recording.
+    #[tracing::instrument(name = "gateway.budget.spend_after_usage", skip_all)]
+    pub async fn spend_after_usage(
+        &self,
+        api_key: &AuthenticatedApiKey,
+        ledger: &UsageLedgerRecord,
+    ) -> Result<BudgetSpendAfterUsage, GatewayError> {
+        let mut spend = BudgetSpendAfterUsage::default();
+        if !ledger.pricing_status.counts_toward_spend() {
+            return Ok(spend);
+        }
+        for scope in applicable_budget_scopes(
+            api_key,
+            ledger.model_id,
+            Some(ledger.upstream_model.as_str()),
+        )? {
+            let Some(budget) = self.repo.get_active_budget_by_scope(&scope).await? else {
+                continue;
+            };
+            let (window_start, window_end) =
+                budget_window_bounds_utc(budget.settings.cadence, ledger.occurred_at);
+            let spent_usd = self
+                .repo
+                .sum_usage_cost_for_budget_scope_in_window(&scope, window_start, window_end)
+                .await?;
+            if let Some(overrun) = self
+                .hard_overrun(&budget, spent_usd, ledger.occurred_at)
+                .await?
+            {
+                spend.overruns.push(overrun);
+            }
+            spend.budgets.push(BudgetSpend { budget, spent_usd });
+        }
+        Ok(spend)
     }
 
     async fn reject_if_pre_provider_exceeded(
@@ -164,35 +191,21 @@ where
         Ok(())
     }
 
-    async fn projected_overrun(
+    async fn hard_overrun(
         &self,
-        scope: &BudgetScope,
         budget: &BudgetRecord,
+        spent: Money4,
         occurred_at: OffsetDateTime,
-        cost_usd: Money4,
     ) -> Result<Option<BudgetOverrun>, GatewayError> {
-        if !budget.settings.hard_limit {
-            return Ok(None);
-        }
-        let (window_start, window_end) =
-            budget_window_bounds_utc(budget.settings.cadence, occurred_at);
-        let spent = self
-            .repo
-            .sum_usage_cost_for_budget_scope_in_window(scope, window_start, window_end)
-            .await?;
-        let projected = spent.saturating_add(cost_usd);
-        if projected <= budget.settings.amount_usd {
+        if !budget.settings.hard_limit || spent <= budget.settings.amount_usd {
             return Ok(None);
         }
         let limit = effective_budget_limit(self.repo.as_ref(), budget, occurred_at).await?;
-        if projected > limit {
-            return Ok(Some(BudgetOverrun {
-                scope_key: budget.scope_key.clone(),
-                spent_usd: projected,
-                limit_usd: limit,
-            }));
-        }
-        Ok(None)
+        Ok((spent > limit).then(|| BudgetOverrun {
+            scope_key: budget.scope_key.clone(),
+            spent_usd: spent,
+            limit_usd: limit,
+        }))
     }
 }
 
@@ -227,7 +240,7 @@ mod tests {
     use time::OffsetDateTime;
     use uuid::Uuid;
 
-    use super::{BudgetExceededStatus, BudgetGuard};
+    use super::{BudgetExceededStatus, BudgetGuard, BudgetOverrun};
 
     /// Scope-aware fake: budgets and prior spend are keyed by `scope_key`, and
     /// recorded ledger rows count toward every scope they match, so the tests
@@ -612,6 +625,16 @@ mod tests {
             .await
     }
 
+    /// Records `row` as callers do, then returns the hard budgets it overran.
+    async fn record(
+        guard: &BudgetGuard<InMemoryBudgetRepo>,
+        auth: &AuthenticatedApiKey,
+        row: &UsageLedgerRecord,
+    ) -> Result<Vec<BudgetOverrun>, GatewayError> {
+        guard.record_incurred_usage(row).await?;
+        Ok(guard.spend_after_usage(auth, row).await?.overruns)
+    }
+
     fn assert_budget_exceeded(error: &GatewayError, expected_scope_key: &str) {
         match error {
             GatewayError::BudgetExceeded {
@@ -688,19 +711,19 @@ mod tests {
             .await
             .expect("increase leaves headroom");
 
-        let overruns = guard
-            .record_incurred_usage(
+        let overruns = record(
+            &guard,
+            &auth,
+            &ledger(
                 &auth,
-                &ledger(
-                    &auth,
-                    "req_increased",
-                    None,
-                    UsagePricingStatus::Priced,
-                    usd(30),
-                ),
-            )
-            .await
-            .expect("usage recorded");
+                "req_increased",
+                None,
+                UsagePricingStatus::Priced,
+                usd(30),
+            ),
+        )
+        .await
+        .expect("usage recorded");
         assert_eq!(overruns.len(), 1);
         assert_eq!(overruns[0].limit_usd, usd(120));
     }
@@ -758,19 +781,19 @@ mod tests {
         precheck(&guard, &auth, "req_under_base", Uuid::new_v4())
             .await
             .expect("under the base budget");
-        let overruns = guard
-            .record_incurred_usage(
+        let overruns = record(
+            &guard,
+            &auth,
+            &ledger(
                 &auth,
-                &ledger(
-                    &auth,
-                    "req_under_base",
-                    None,
-                    UsagePricingStatus::Priced,
-                    usd(5),
-                ),
-            )
-            .await
-            .expect("usage recorded");
+                "req_under_base",
+                None,
+                UsagePricingStatus::Priced,
+                usd(5),
+            ),
+        )
+        .await
+        .expect("usage recorded");
         assert!(overruns.is_empty());
         assert_eq!(repo.increase_lookups.load(Ordering::Relaxed), 0);
     }
@@ -797,19 +820,19 @@ mod tests {
             .await
             .expect("soft model cap must not block");
 
-        let overruns = guard
-            .record_incurred_usage(
+        let overruns = record(
+            &guard,
+            &auth,
+            &ledger(
                 &auth,
-                &ledger(
-                    &auth,
-                    "req_soft",
-                    Some(model_id),
-                    UsagePricingStatus::Priced,
-                    usd(1),
-                ),
-            )
-            .await
-            .expect("recording succeeds");
+                "req_soft",
+                Some(model_id),
+                UsagePricingStatus::Priced,
+                usd(1),
+            ),
+        )
+        .await
+        .expect("recording succeeds");
         assert!(overruns.is_empty(), "soft budgets never report overruns");
         assert_eq!(repo.inserted().len(), 1);
     }
@@ -832,19 +855,19 @@ mod tests {
             .await
             .expect("under the cap before the provider runs");
 
-        let overruns = guard
-            .record_incurred_usage(
+        let overruns = record(
+            &guard,
+            &auth,
+            &ledger(
                 &auth,
-                &ledger(
-                    &auth,
-                    "req_1",
-                    Some(model_id),
-                    UsagePricingStatus::Priced,
-                    usd(5),
-                ),
-            )
-            .await
-            .expect("incurred spend is always recorded");
+                "req_1",
+                Some(model_id),
+                UsagePricingStatus::Priced,
+                usd(5),
+            ),
+        )
+        .await
+        .expect("incurred spend is always recorded");
         assert_eq!(overruns.len(), 1);
         assert_eq!(overruns[0].scope_key, user_scope.scope_key());
         assert_eq!(overruns[0].spent_usd, usd(84));
@@ -870,19 +893,19 @@ mod tests {
         let guard = BudgetGuard::new(repo);
         let auth = user_auth(user_id);
 
-        let overruns = guard
-            .record_incurred_usage(
+        let overruns = record(
+            &guard,
+            &auth,
+            &ledger(
                 &auth,
-                &ledger(
-                    &auth,
-                    "req_1",
-                    Some(model_id),
-                    UsagePricingStatus::Priced,
-                    usd(3),
-                ),
-            )
-            .await
-            .expect("recorded");
+                "req_1",
+                Some(model_id),
+                UsagePricingStatus::Priced,
+                usd(3),
+            ),
+        )
+        .await
+        .expect("recorded");
         assert_eq!(overruns.len(), 1, "only the model cap is exceeded");
         assert_eq!(overruns[0].scope_key, model_scope.scope_key());
 
@@ -905,19 +928,19 @@ mod tests {
         let guard = BudgetGuard::new(repo.clone());
         let auth = user_auth(user_id);
 
-        let overruns = guard
-            .record_incurred_usage(
+        let overruns = record(
+            &guard,
+            &auth,
+            &ledger(
                 &auth,
-                &ledger(
-                    &auth,
-                    "req_unpriced",
-                    None,
-                    UsagePricingStatus::Unpriced,
-                    usd(0),
-                ),
-            )
-            .await
-            .expect("unpriced rows are still stored for reporting");
+                "req_unpriced",
+                None,
+                UsagePricingStatus::Unpriced,
+                usd(0),
+            ),
+        )
+        .await
+        .expect("unpriced rows are still stored for reporting");
         assert!(overruns.is_empty());
         assert_eq!(repo.inserted().len(), 1);
     }
@@ -982,8 +1005,7 @@ mod tests {
             .expect("events lock")
             .push(row.clone());
 
-        let error = guard
-            .record_incurred_usage(&auth, &row)
+        let error = record(&guard, &auth, &row)
             .await
             .expect_err("duplicate request id should be rejected");
 

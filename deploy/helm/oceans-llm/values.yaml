@@ -17,6 +17,7 @@ gateway:
   podLabels: {}
   podAnnotations: {}
   containerPort: 8080
+  terminationGracePeriodSeconds: 330
   configMountPath: /app/gateway.yaml
   allowLiteralSecretsInConfig: false
   clientConfigGatewayBaseUrl: ""
@@ -70,7 +71,10 @@ gateway:
   extraEnvFrom: []
   extraVolumes: []
   extraVolumeMounts: []
-  lifecycle: {}
+  lifecycle:
+    preStop:
+      sleep:
+        seconds: 10
   podSecurityContext:
     seccompProfile:
       type: RuntimeDefault
@@ -176,7 +180,7 @@ externalSecrets:
 
 migrations:
   enabled: true
-  hook: post-install,post-upgrade
+  hook: pre-install,pre-upgrade
   hookDeletePolicy: before-hook-creation
   annotations: {}
   podAnnotations: {}
@@ -232,8 +236,27 @@ rollout:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxUnavailable: 25%
+      maxUnavailable: 0
       maxSurge: 25%
+  minReadySeconds: 10
+  progressDeadlineSeconds: 900
+
+rolloutGuard:
+  enabled: false
+  managementPort: 9090
+  networkPolicy:
+    # Requires an enforcing CNI; endPort support preserves undeclared TCP ports.
+    enabled: true
+  windowSeconds: 300
+  intervalSeconds: 15
+  minRequests: 50
+  maxGatewayErrorPercent: 5
+  maxUpstreamErrorPercent: 25
+  resources: {}
+  annotations: {}
+  podAnnotations: {}
+  hookDeletePolicy: before-hook-creation
+  ttlSecondsAfterFinished: 300
 
 observability:
   env: []
@@ -259,6 +282,14 @@ podDisruptionBudget:
 
 probes:
   gateway:
+    startup:
+      enabled: true
+      path: /healthz
+      initialDelaySeconds: 0
+      periodSeconds: 2
+      timeoutSeconds: 2
+      failureThreshold: 30
+      terminationGracePeriodSeconds: 30
     liveness:
       enabled: true
       path: /healthz
@@ -266,6 +297,7 @@ probes:
       periodSeconds: 10
       timeoutSeconds: 2
       failureThreshold: 3
+      terminationGracePeriodSeconds: 30
     readiness:
       enabled: true
       path: /readyz

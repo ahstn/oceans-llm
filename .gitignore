@@ -20,6 +20,13 @@ docs/node_modules/
 
 # Vale
 /styles/
+/docs/vale/styles/.vale-config/
+/docs/vale/styles/AiTells/
+/docs/vale/styles/Google/
+/docs/vale/styles/Harper/
+/docs/vale/styles/proselint/
+/docs/vale/styles/write-good/
+/docs/vale/styles/config/dictionaries/
 
 # Local development db
 gateway.db*

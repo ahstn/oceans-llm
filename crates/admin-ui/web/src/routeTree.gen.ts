@@ -45,6 +45,7 @@ import { Route as ObservabilityUsageCostsRouteImport } from './routes/observabil
 import { Route as ProfileIndexRouteImport } from './routes/profile/index'
 import { Route as SkillsIndexRouteImport } from './routes/skills/index'
 import { Route as SkillsIdRouteImport } from './routes/skills/$id'
+import { Route as ObservabilityAttributionConceptsRouteImport } from './routes/observability/attribution_.concepts'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -232,6 +233,12 @@ const SkillsIdRoute = SkillsIdRouteImport.update({
   path: '/skills/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ObservabilityAttributionConceptsRoute =
+  ObservabilityAttributionConceptsRouteImport.update({
+    id: '/observability/attribution_/concepts',
+    path: '/observability/attribution/concepts',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -270,6 +277,7 @@ export interface FileRoutesByFullPath {
   '/mcp/': typeof McpIndexRoute
   '/profile/': typeof ProfileIndexRoute
   '/skills/': typeof SkillsIndexRoute
+  '/observability/attribution/concepts': typeof ObservabilityAttributionConceptsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -308,6 +316,7 @@ export interface FileRoutesByTo {
   '/mcp': typeof McpIndexRoute
   '/profile': typeof ProfileIndexRoute
   '/skills': typeof SkillsIndexRoute
+  '/observability/attribution/concepts': typeof ObservabilityAttributionConceptsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -347,6 +356,7 @@ export interface FileRoutesById {
   '/mcp/': typeof McpIndexRoute
   '/profile/': typeof ProfileIndexRoute
   '/skills/': typeof SkillsIndexRoute
+  '/observability/attribution_/concepts': typeof ObservabilityAttributionConceptsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -387,6 +397,7 @@ export interface FileRouteTypes {
     | '/mcp/'
     | '/profile/'
     | '/skills/'
+    | '/observability/attribution/concepts'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -425,6 +436,7 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/profile'
     | '/skills'
+    | '/observability/attribution/concepts'
   id:
     | '__root__'
     | '/'
@@ -463,6 +475,7 @@ export interface FileRouteTypes {
     | '/mcp/'
     | '/profile/'
     | '/skills/'
+    | '/observability/attribution_/concepts'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -502,6 +515,7 @@ export interface RootRouteChildren {
   McpIndexRoute: typeof McpIndexRoute
   ProfileIndexRoute: typeof ProfileIndexRoute
   SkillsIndexRoute: typeof SkillsIndexRoute
+  ObservabilityAttributionConceptsRoute: typeof ObservabilityAttributionConceptsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -758,6 +772,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SkillsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/observability/attribution_/concepts': {
+      id: '/observability/attribution_/concepts'
+      path: '/observability/attribution/concepts'
+      fullPath: '/observability/attribution/concepts'
+      preLoaderRoute: typeof ObservabilityAttributionConceptsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -798,6 +819,7 @@ const rootRouteChildren: RootRouteChildren = {
   McpIndexRoute: McpIndexRoute,
   ProfileIndexRoute: ProfileIndexRoute,
   SkillsIndexRoute: SkillsIndexRoute,
+  ObservabilityAttributionConceptsRoute: ObservabilityAttributionConceptsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

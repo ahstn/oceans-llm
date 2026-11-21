@@ -47,9 +47,11 @@ pub use attribution::{
     ATTRIBUTION_MAX_REPORT_ROWS, ATTRIBUTION_MAX_REQUEST_FACTS, AttributionAgentSessionRecord,
     AttributionApplyOutcome, AttributionCommitRecord, AttributionCommitSession,
     AttributionCommitWrite, AttributionFreshness, AttributionOwner, AttributionPullRequestCommit,
-    AttributionPullRequestRecord, AttributionPullRequestWrite, AttributionReportQuery,
+    AttributionPullRequestDetails, AttributionPullRequestLifecycle, AttributionPullRequestRecord,
+    AttributionPullRequestState, AttributionPullRequestWrite, AttributionReportQuery,
     AttributionRepository, AttributionRequestFact, AttributionRequestSessionWrite,
-    AttributionSessionCommitTime, AttributionSessionEventKind, AttributionSessionEventWrite,
+    AttributionRevertEvidence, AttributionRevertLink, AttributionSessionCommitTime,
+    AttributionSessionEventKind, AttributionSessionEventWrite,
 };
 pub use audit::{
     AuditActor, AuditActorKind, AuditLogCursor, AuditLogPage, AuditLogQuery, AuditLogRecord,

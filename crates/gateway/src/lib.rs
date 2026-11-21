@@ -5,3 +5,5 @@ pub mod email;
 pub mod http;
 pub mod observability;
 pub mod provider_routing_identity;
+pub mod rollout_guard;
+pub mod shutdown;

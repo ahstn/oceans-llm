@@ -14,10 +14,12 @@ use crate::http::{
     handlers::{CountTokensLimiter, McpTelemetrySnapshot},
     mcp_client_oauth::OauthStreamWatcher,
     response_cache::ResponseCache,
+    traffic::TrafficCounters,
 };
 use crate::{
-    config::{AgentAnalysisRuntimeCapabilities, ResolvedAdminPermissions},
+    config::{AgentAnalysisRuntimeCapabilities, AttributionPagesConfig, ResolvedAdminPermissions},
     observability::GatewayMetrics,
+    shutdown::Shutdown,
 };
 
 pub type AppGatewayService = GatewayService<AnyStore, WeightedRoutePlanner>;
@@ -54,6 +56,8 @@ pub struct AppState {
     /// Config users' `additional_attribution_emails` → their Oceans email, both normalized.
     pub attribution_email_aliases: Arc<HashMap<String, String>>,
     pub agent_analysis: AgentAnalysisRuntimeCapabilities,
+    /// Which Attribution tabs the admin UI shows.
+    pub attribution_pages: AttributionPagesConfig,
     pub admin_permissions: Arc<ResolvedAdminPermissions>,
     /// Who may publish an MCP server to the organisation catalog.
     pub mcp_organisation_publishing: gateway_service::McpOrganisationPublishing,
@@ -64,4 +68,8 @@ pub struct AppState {
     /// API key or OAuth grant id, kept briefly so requests skip re-resolving it.
     pub mcp_telemetry_cache: Arc<ResponseCache<uuid::Uuid, Arc<McpTelemetrySnapshot>>>,
     pub trusted_proxies: TrustedProxies,
+    /// Draining state; streams and readiness follow it.
+    pub shutdown: Shutdown,
+    /// Response counts that `gateway rollout-guard` reads.
+    pub traffic: Arc<TrafficCounters>,
 }

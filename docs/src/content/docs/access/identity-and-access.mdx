@@ -153,7 +153,7 @@ The gateway lets a request use a model only if every layer allows it:
 
 The layers intersect. `all` on a key never gets past a team, service-account, user or model restriction. A refusal returns `403 model_not_granted`.
 
-Restrictions on a user, team or service account answer "which models may this identity use?". A model `allowlist` answers "which users and teams may use this model?". Both must pass.
+Restrictions on a user, team or service account determine which models that identity may use. A model `allowlist` determines which users and teams may use that model. Both must pass.
 
 New users, teams and service accounts start with `all`. The gateway enforces `restricted`, but there is no admin UI, API or config field to set it yet.
 
@@ -236,7 +236,7 @@ Seeding doesn't create team-owned API keys. Non-human access comes from service 
 - A user can belong to only one team.
 - `owner` memberships can't be removed, transferred or assigned through the admin UI.
 - SSO doesn't map identity-provider groups or claims to roles.
-- There is no admin UI to list or end a user's sessions, apart from deactivation.
+- Apart from deactivation, the admin UI can't list or end a user's sessions.
 - User, team and service-account model restrictions can't be set yet.
 
 The design choices are in the ADRs for [configurable admin page permissions](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-08-05-configurable-admin-page-permissions.md), [team service accounts](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-05-10-team-service-accounts.md) and [admin identity lifecycle](https://github.com/ahstn/oceans-llm/blob/main/docs/adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md).

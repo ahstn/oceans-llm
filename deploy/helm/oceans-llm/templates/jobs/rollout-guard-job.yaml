@@ -1,0 +1,85 @@
+{{- if .Values.rolloutGuard.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-rollout-guard" (include "oceans-llm.fullname" .) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "oceans-llm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rollout-guard
+  annotations:
+    {{- with .Values.rolloutGuard.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    helm.sh/hook: post-upgrade
+    helm.sh/hook-weight: "30"
+    helm.sh/hook-delete-policy: {{ .Values.rolloutGuard.hookDeletePolicy | quote }}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ add .Values.rolloutGuard.windowSeconds 120 }}
+  ttlSecondsAfterFinished: {{ .Values.rolloutGuard.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "oceans-llm.jobPodLabels" (dict "Chart" .Chart "Release" .Release "Values" .Values "component" "rollout-guard") | nindent 8 }}
+      {{- with .Values.rolloutGuard.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "oceans-llm.serviceAccountName" . }}
+      {{- with .Values.gateway.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduling.priorityClassName }}
+      priorityClassName: {{ . | quote }}
+      {{- end }}
+      {{- with .Values.scheduling.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduling.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduling.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scheduling.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: rollout-guard
+          image: {{ include "oceans-llm.gatewayImage" . | quote }}
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          {{- with .Values.gateway.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          command: ["gateway"]
+          args:
+            - rollout-guard
+            - --target
+            - {{ printf "%s.%s.svc:%v" (include "oceans-llm.managementServiceName" .) .Release.Namespace .Values.rolloutGuard.managementPort | quote }}
+            - --window-seconds
+            - {{ .Values.rolloutGuard.windowSeconds | quote }}
+            - --interval-seconds
+            - {{ .Values.rolloutGuard.intervalSeconds | quote }}
+            - --min-requests
+            - {{ .Values.rolloutGuard.minRequests | quote }}
+            - --max-gateway-error-percent
+            - {{ .Values.rolloutGuard.maxGatewayErrorPercent | quote }}
+            - --max-upstream-error-percent
+            - {{ .Values.rolloutGuard.maxUpstreamErrorPercent | quote }}
+          {{- with .Values.rolloutGuard.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

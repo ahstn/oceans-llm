@@ -38,8 +38,8 @@ use crate::{
             AdminIdentityPayload, AdminOauthProviderView, AdminOidcProviderView,
             AdminProviderCredentialStatusView, AdminServiceAccountView,
             AdminServiceAccountsPayload, AdminTeamManagementView, AdminTeamView, AdminTeamsPayload,
-            AuthSessionCapabilitiesView, AuthSessionPermissionsView, AuthSessionUserView,
-            AuthSessionView, ChangePasswordRequest, CompleteInvitationRequest,
+            AttributionTab, AuthSessionCapabilitiesView, AuthSessionPermissionsView,
+            AuthSessionUserView, AuthSessionView, ChangePasswordRequest, CompleteInvitationRequest,
             CompleteInvitationResponse, CreateServiceAccountRequest, CreateTeamRequest,
             CreateUserRequest, CreateUserResponse, Envelope, IdentityActionStatus,
             IdentityDirectoryTeamsPayload, IdentityDirectoryUsersPayload, InvitationView,
@@ -2965,6 +2965,9 @@ fn session_cookie_secure(headers: &HeaderMap) -> bool {
             .is_some_and(|origin| origin.starts_with("https://"))
 }
 
+/// How stale `user_sessions.last_seen_at` may get before a request refreshes it.
+const SESSION_LAST_SEEN_RESOLUTION: Duration = Duration::minutes(1);
+
 pub(crate) async fn resolve_session_user(
     state: &AppState,
     headers: &HeaderMap,
@@ -3002,10 +3005,14 @@ pub(crate) async fn resolve_session_user_with_session_id(
         return Ok(None);
     }
 
-    state
-        .store
-        .touch_user_session(current_session.session.session_id, now)
-        .await?;
+    // Each admin page load authenticates several gateway calls; a write per call adds a database
+    // round trip to every one of them for a timestamp only coarse activity needs.
+    if now - current_session.session.last_seen_at >= SESSION_LAST_SEEN_RESOLUTION {
+        state
+            .store
+            .touch_user_session(current_session.session.session_id, now)
+            .await?;
+    }
     Ok(Some((user, current_session.session.session_id)))
 }
 
@@ -3083,6 +3090,7 @@ async fn build_auth_session_view(
             shadow_diagnostics_visible: agent_analysis_access.shadow_visible,
             calibrated_score_visible: agent_analysis_access.score_visible,
             team_admin_analytics_enabled: state.agent_analysis.team_admin_analytics_enabled,
+            attribution_tabs: AttributionTab::enabled(&state.attribution_pages),
         },
         must_change_password: user.must_change_password,
         permissions: AuthSessionPermissionsView {

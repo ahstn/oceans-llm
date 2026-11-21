@@ -174,8 +174,122 @@ pub struct AttributionPullRequestCommit {
     pub author_email_hash: Option<String>,
 }
 
-/// A merged pull request reported by `oceans hook prs`. Replaces the stored PR and its commit
-/// list for `(ownership_scope_key, repository, number)` when `observed_at` is later.
+/// Where a pull request stands. Rows stored before lifecycle data arrived are all merged.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AttributionPullRequestState {
+    Open,
+    /// Closed without merging.
+    Closed,
+    #[default]
+    Merged,
+}
+
+impl AttributionPullRequestState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Closed => "closed",
+            Self::Merged => "merged",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "open" => Some(Self::Open),
+            "closed" => Some(Self::Closed),
+            "merged" => Some(Self::Merged),
+            _ => None,
+        }
+    }
+}
+
+/// How a revert link was found, strongest first. Only the first three are confirmed reverts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AttributionRevertEvidence {
+    /// A pull request commit carries git's `This reverts commit <sha>` line.
+    RevertCommit,
+    /// GitHub's revert button, backed by a revert title.
+    GithubRevert,
+    /// The change is the exact inverse of an earlier merged pull request's.
+    ChangeMatch,
+    /// A revert title and nothing else: a possible revert.
+    Title,
+}
+
+impl AttributionRevertEvidence {
+    /// Whether the link is strong enough to count as a revert, not just a possible one.
+    pub fn is_confirmed(self) -> bool {
+        !matches!(self, Self::Title)
+    }
+}
+
+/// What a pull request reverts: a pull request in the same repository, commits the report maps
+/// to their pull requests, or both.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttributionRevertLink {
+    pub pull_request_number: Option<i64>,
+    #[serde(default)]
+    pub commit_shas: Vec<String>,
+    pub evidence: AttributionRevertEvidence,
+}
+
+/// Lifecycle counts, size and the revert link, reduced on the developer's machine. Stored as
+/// one JSON object; it never holds reviewer logins, file paths or description text.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttributionPullRequestDetails {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_draft: Option<bool>,
+    /// The first review by a person other than the author.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "time::serde::rfc3339::option"
+    )]
+    pub first_review_at: Option<OffsetDateTime>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_count: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval_count: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changes_requested_count: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewer_count: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment_count: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub additions: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deletions: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changed_files: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reverts: Option<AttributionRevertLink>,
+}
+
+impl AttributionPullRequestDetails {
+    pub fn is_empty(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+/// A pull request's state, its opened and closed times, and the reduced details.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttributionPullRequestLifecycle {
+    pub state: AttributionPullRequestState,
+    pub opened_at: Option<OffsetDateTime>,
+    /// When it closed, merged or not.
+    pub closed_at: Option<OffsetDateTime>,
+    /// The forge's last change to the pull request (GitHub's `updatedAt`), not when Oceans last
+    /// synced it: a routine re-sync of an untouched pull request is not activity.
+    pub last_activity_at: Option<OffsetDateTime>,
+    pub details: AttributionPullRequestDetails,
+}
+
+/// A pull request reported by `oceans hook prs`: open, closed without merging, or merged.
+/// Replaces the stored PR and its commit list for `(ownership_scope_key, repository, number)`
+/// when `observed_at` is later.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttributionPullRequestWrite {
     /// Used only when inserting; a replacement keeps the stored id.
@@ -188,13 +302,23 @@ pub struct AttributionPullRequestWrite {
     pub base_ref: Option<String>,
     pub head_ref: Option<String>,
     pub merge_commit_sha: Option<String>,
-    pub merged_at: OffsetDateTime,
+    /// Set exactly when `lifecycle.state` is merged.
+    pub merged_at: Option<OffsetDateTime>,
     /// Matched from the first commit author email that belongs to an Oceans user.
     pub author_user_id: Option<Uuid>,
     pub author_email_hash: Option<String>,
     pub commits: Vec<AttributionPullRequestCommit>,
+    pub lifecycle: AttributionPullRequestLifecycle,
+    /// False for a hook older than the lifecycle fields, which sends merged pull requests with
+    /// no lifecycle: replacing a stored row then keeps its lifecycle and records only the merge.
+    #[serde(default = "lifecycle_reported_default")]
+    pub lifecycle_reported: bool,
     pub observed_at: OffsetDateTime,
     pub received_at: OffsetDateTime,
+}
+
+fn lifecycle_reported_default() -> bool {
+    true
 }
 
 /// Filters shared by the report reads. Bounds are inclusive.
@@ -241,10 +365,12 @@ pub struct AttributionPullRequestRecord {
     pub base_ref: Option<String>,
     pub head_ref: Option<String>,
     pub merge_commit_sha: Option<String>,
-    pub merged_at: OffsetDateTime,
+    /// Set exactly when `lifecycle.state` is merged.
+    pub merged_at: Option<OffsetDateTime>,
     pub author_user_id: Option<Uuid>,
     pub author_email_hash: Option<String>,
     pub commits: Vec<AttributionPullRequestCommit>,
+    pub lifecycle: AttributionPullRequestLifecycle,
     pub observed_at: OffsetDateTime,
 }
 
@@ -331,7 +457,9 @@ pub trait AttributionRepository {
         query: &AttributionReportQuery,
     ) -> Result<Vec<AttributionCommitRecord>, StoreError>;
 
-    /// PRs with `merged_at` in range, newest first, with their commits.
+    /// PRs merged, opened, closed or changed on the forge in range, latest activity first. Only
+    /// merged ones carry their commits: the report reads open and closed ones for their
+    /// lifecycle alone, and a long branch's commit list would be read only to be dropped.
     async fn list_attribution_pull_requests(
         &self,
         query: &AttributionReportQuery,

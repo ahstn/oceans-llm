@@ -1,0 +1,9 @@
+extends: existence
+message: "Use the canonical model name instead of '%s'."
+level: warning
+scope: raw
+nonword: true
+tokens:
+  - '\b5[.]6(?:Sol|[ -]*(?:s[oO][lL]|SO[lL]|SoL))\b'
+  - '\b5[.]6(?:Terra|[ -]*(?:t[eE][rR][rR][aA]|TE[rR][rR][aA]|TeR[rR][aA]|TerR[aA]|TerrA))\b'
+  - '\b5[.]6(?:Luna|[ -]*(?:l[uU][nN][aA]|LU[nN][aA]|LunA))\b'
