@@ -87,9 +87,10 @@ export default async function setup(context: TestProject): Promise<() => Promise
   const openRouterApiKey = requiredEnvironment("OPENROUTER_API_KEY");
   const gatewayBinary = await buildGateway();
   const runtimeDir = await mkdtemp(join(tmpdir(), "oceans-harness-integration-"));
-  const canary = await startCanaryProvider();
+  let canary: CanaryProvider | undefined;
   let managed: ManagedGateway | undefined;
   try {
+    canary = await startCanaryProvider();
     const port = await availablePort();
     const baseUrl = `http://127.0.0.1:${port}`;
     const configPath = join(runtimeDir, "gateway.harness.yaml");
@@ -139,8 +140,7 @@ export default async function setup(context: TestProject): Promise<() => Promise
     if (managed) {
       await stopManagedGateway(managed);
     } else {
-      await canary.close();
-      await rm(runtimeDir, { force: true, recursive: true });
+      await releaseRuntime(canary, runtimeDir).catch(() => undefined);
     }
     throw error;
   }
@@ -435,18 +435,47 @@ async function availablePort(): Promise<number> {
   return address.port;
 }
 
+/** Stops the gateway, then always closes the canary and removes the runtime directory. */
 async function stopManagedGateway(managed: ManagedGateway): Promise<void> {
-  if (!hasProcessExited(managed.process)) {
-    managed.process.kill("SIGTERM");
-    if (!(await waitForProcessExit(managed.process, 5_000))) {
-      managed.process.kill("SIGKILL");
-      if (!(await waitForProcessExit(managed.process, 5_000))) {
-        throw new Error("Managed gateway did not exit after SIGKILL");
-      }
+  // The directory holds the gateway's database, so it is removed only after the gateway stops.
+  const [stopped] = await Promise.allSettled([stopGatewayProcess(managed.process)]);
+  const [released] = await Promise.allSettled([releaseRuntime(managed.canary, managed.runtimeDir)]);
+  // A gateway that would not stop is the error to report, ahead of a cleanup failure.
+  for (const result of [stopped, released]) {
+    if (result.status === "rejected") {
+      throw result.reason;
     }
   }
-  await managed.canary.close();
-  await rm(managed.runtimeDir, { force: true, recursive: true });
+}
+
+async function stopGatewayProcess(process: ChildProcess): Promise<void> {
+  if (hasProcessExited(process)) {
+    return;
+  }
+  process.kill("SIGTERM");
+  if (await waitForProcessExit(process, 5_000)) {
+    return;
+  }
+  process.kill("SIGKILL");
+  if (!(await waitForProcessExit(process, 5_000))) {
+    throw new Error("Managed gateway did not exit after SIGKILL");
+  }
+}
+
+/** Closes the canary and removes the runtime directory. A failure of one does not skip the other. */
+async function releaseRuntime(
+  canary: CanaryProvider | undefined,
+  runtimeDir: string,
+): Promise<void> {
+  const results = await Promise.allSettled([
+    canary?.close(),
+    rm(runtimeDir, { force: true, recursive: true }),
+  ]);
+  for (const result of results) {
+    if (result.status === "rejected") {
+      throw result.reason;
+    }
+  }
 }
 
 function hasProcessExited(process: ChildProcess): boolean {
