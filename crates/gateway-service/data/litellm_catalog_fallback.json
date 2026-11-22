@@ -1,9 +1,9 @@
 {
   "metadata": {
     "source": "vendored_litellm",
-    "etag": "\"9ea4bada3e6ad262e34405cd7abcc51c53279a8e2d69ddcbfce7ee16ee654091\"",
-    "fetched_at": "2026-11-21T22:34:21.155258Z",
-    "checksum": "41a3e30cb63e0462165f4374d2356a0f34fa7dc4526a6a5ac030d7dca1be8f57"
+    "etag": "\"5210955656eb727bcb7a0839ead18b544bb8dbd9b2148fff8eaa7a02a9d5ff47\"",
+    "fetched_at": "2026-11-22T10:24:58.629483Z",
+    "checksum": "421f1e943585e8dc71faa07c0974b87c7485b9c6d48a89305f6e1496963ccf89"
   },
   "providers": {
     "amazon-bedrock": {
@@ -56805,7 +56805,13 @@
             "attachment": null,
             "temperature": null,
             "knowledge": null,
-            "reasoning_options": []
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": false,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
           },
           "cost": {
             "conditions": {},
@@ -56845,7 +56851,13 @@
             "attachment": null,
             "temperature": null,
             "knowledge": null,
-            "reasoning_options": []
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": false,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
           },
           "cost": {
             "conditions": {},
@@ -57306,7 +57318,13 @@
             "attachment": null,
             "temperature": null,
             "knowledge": null,
-            "reasoning_options": []
+            "reasoning_options": [],
+            "api_endpoints": {
+              "chat_completions": false,
+              "responses": false,
+              "embeddings": false,
+              "images": false
+            }
           },
           "cost": {
             "conditions": {},

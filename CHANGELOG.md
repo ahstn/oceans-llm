@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [1.3.0](https://github.com/ahstn/oceans-llm/compare/v1.2.0...v1.3.0) - 2026-11-22
+
+### :rocket: New features
+- *(admin-ui)* Chip filters and column toggle for agent sessions by @ahstn in [#704](https://github.com/ahstn/oceans-llm/pull/704)
+
+### Changed
+- *(deps-dev)* Bump the opencode-runtime group across 1 directory with 4 updates by @dependabot[bot] in [#664](https://github.com/ahstn/oceans-llm/pull/664)
+
 ## [1.2.0](https://github.com/ahstn/oceans-llm/compare/v1.1.0...v1.2.0) - 2026-11-22
 
 ### :rocket: New features
