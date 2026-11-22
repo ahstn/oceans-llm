@@ -56,7 +56,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Update API key last-used times at most once a minute to reduce database row-lock waits.
 - Keep active budgets and budget window spend in memory for up to 5 seconds, so requests no longer add up the ledger before and after each provider call.
 - Load direct MCP calls for an agent session report in one query instead of two queries per request.
-- Replace the agent-session report identity with a generation-aware unique index before removing the old Postgres constraint.
 
 ### Security
 
