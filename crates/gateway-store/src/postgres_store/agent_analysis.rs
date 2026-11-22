@@ -1,14 +1,16 @@
 use super::*;
+use crate::agent_session_input::{PreparedInput, PreparedRequest, PreparedSet};
+mod input;
 use crate::shared::{
-    agent_observation_set_matches, agent_session_analysis_matches, agent_session_identity_matches,
-    agent_session_request_matches, agent_session_source_identity_matches, datetime_to_unix_millis,
-    parse_uuid, unix_millis_to_datetime, unix_to_datetime,
+    agent_session_analysis_matches, agent_session_identity_matches, agent_session_request_matches,
+    agent_session_source_identity_matches, datetime_to_unix_millis, parse_uuid,
+    unix_millis_to_datetime, unix_to_datetime,
 };
 use gateway_core::{
     AgentAnalysisDesiredVersions, AgentAnalysisQueueRecord, AgentAnalysisQueueRepository,
-    AgentAnalysisQueueStatus, AgentObservationSetAppendResult, AgentObservationSetRecord,
-    AgentRequestLogLinkRecord, AgentSessionAnalysisRecord, AgentSessionListPage,
-    AgentSessionListQuery, AgentSessionRecord, AgentSessionReportRepository,
+    AgentAnalysisQueueStatus, AgentObservationSetRecord, AgentRequestLogLinkRecord,
+    AgentSessionAnalysisRecord, AgentSessionInput, AgentSessionInputAppendResult,
+    AgentSessionListPage, AgentSessionListQuery, AgentSessionRecord, AgentSessionReportRepository,
     AgentSessionRequestLinkRecord, AgentSessionSourceRecord, AgentSessionTraceRecord,
     AgentSessionTraceRepository, Confidence, InferredObservation, MAX_AGENT_SESSION_PAGE_SIZE,
     SessionLifecycleState,
@@ -32,15 +34,6 @@ fn parse_confidence(value: &str) -> Result<Confidence, StoreError> {
 fn parse_lifecycle(value: &str) -> Result<SessionLifecycleState, StoreError> {
     serde_json::from_value(serde_json::Value::String(value.to_string()))
         .map_err(|error| StoreError::Serialization(error.to_string()))
-}
-
-fn nested_fact_count(set: &AgentObservationSetRecord) -> usize {
-    set.observations.iter().fold(0, |total, observation| {
-        total
-            .saturating_add(observation.facts.supplied_tools.len())
-            .saturating_add(observation.facts.supplied_skills.len())
-            .saturating_add(observation.facts.file_interactions.len())
-    })
 }
 
 fn parse_optional_uuid(value: Option<String>) -> Result<Option<Uuid>, StoreError> {

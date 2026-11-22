@@ -123,8 +123,12 @@ impl AgentAnalysisQueueRepository for PostgresStore {
     ) -> Result<u64, StoreError> {
         let mut transaction = self.pool.begin().await.map_err(to_query_error)?;
         let request_cutoff_millis = datetime_to_unix_millis(request_cutoff)?;
+        sqlx::query("SELECT agent_session_id FROM agent_sessions WHERE lifecycle = 'finalized' AND input_watermark_at < $1 ORDER BY agent_session_id FOR NO KEY UPDATE")
+            .bind(request_cutoff_millis).fetch_all(&mut *transaction).await.map_err(to_query_error)?;
         let observations = sqlx::query("DELETE FROM agent_inferred_observation_sets WHERE agent_session_id IN (SELECT agent_session_id FROM agent_sessions WHERE lifecycle = 'finalized' AND input_watermark_at < $1)").bind(request_cutoff_millis).execute(&mut *transaction).await.map_err(to_query_error)?.rows_affected();
         let requests = sqlx::query("DELETE FROM agent_session_requests WHERE agent_session_id IN (SELECT agent_session_id FROM agent_sessions WHERE lifecycle = 'finalized' AND input_watermark_at < $1)").bind(request_cutoff_millis).execute(&mut *transaction).await.map_err(to_query_error)?.rows_affected();
+        sqlx::query("UPDATE agent_sessions SET request_count = 0, next_ordinal = 0, nested_fact_count = 0, input_generation = input_generation + 1 WHERE lifecycle = 'finalized' AND input_watermark_at < $1")
+            .bind(request_cutoff_millis).execute(&mut *transaction).await.map_err(to_query_error)?;
         let sessions = sqlx::query("DELETE FROM agent_sessions WHERE lifecycle = 'finalized' AND input_watermark_at < $1 AND NOT EXISTS (SELECT 1 FROM agent_session_analyses a WHERE a.agent_session_id = agent_sessions.agent_session_id) AND NOT EXISTS (SELECT 1 FROM agent_analysis_recompute_queue q WHERE q.agent_session_id = agent_sessions.agent_session_id)")
             .bind(request_cutoff_millis)
             .execute(&mut *transaction)

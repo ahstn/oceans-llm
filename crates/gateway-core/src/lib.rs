@@ -25,9 +25,10 @@ pub mod traits;
 
 pub use agent_analysis::{
     AgentAnalysisDesiredVersions, AgentAnalysisQueueRecord, AgentAnalysisQueueRepository,
-    AgentAnalysisQueueStatus, AgentObservationSetAppendResult, AgentObservationSetRecord,
-    AgentRequestLogLinkRecord, AgentSessionAnalysisRecord, AgentSessionAnalysisRepository,
-    AgentSessionListPage, AgentSessionListQuery, AgentSessionRecord, AgentSessionReportRepository,
+    AgentAnalysisQueueStatus, AgentObservationSetRecord, AgentRequestLogLinkRecord,
+    AgentSessionAnalysisRecord, AgentSessionAnalysisRepository, AgentSessionInput,
+    AgentSessionInputAppendResult, AgentSessionListPage, AgentSessionListQuery,
+    AgentSessionObservationInput, AgentSessionRecord, AgentSessionReportRepository,
     AgentSessionRequestLinkRecord, AgentSessionSourceRecord, AgentSessionTraceRecord,
     AgentSessionTraceRepository, MAX_AGENT_SESSION_NESTED_FACTS, MAX_AGENT_SESSION_PAGE_SIZE,
     MAX_AGENT_SESSION_REQUESTS,

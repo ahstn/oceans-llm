@@ -139,30 +139,32 @@ impl AgentAnalysisQueueRepository for LibsqlStore {
         request_cutoff: OffsetDateTime,
     ) -> Result<u64, StoreError> {
         let request_cutoff_millis = datetime_to_unix_millis(request_cutoff)?;
-        let observations = self.connection.execute(
+        let transaction = self.begin_transaction().await?;
+        let observations = transaction.execute(
             "DELETE FROM agent_inferred_observation_sets WHERE agent_session_id IN (SELECT agent_session_id FROM agent_sessions WHERE lifecycle = 'finalized' AND input_watermark_at < ?1)",
             [request_cutoff_millis],
         ).await.map_err(to_query_error)?;
-        let requests = self.connection.execute(
+        let requests = transaction.execute(
             "DELETE FROM agent_session_requests WHERE agent_session_id IN (SELECT agent_session_id FROM agent_sessions WHERE lifecycle = 'finalized' AND input_watermark_at < ?1)",
             [request_cutoff_millis],
         ).await.map_err(to_query_error)?;
-        let sessions = self
-            .connection
-            .execute(
+        transaction.execute(
+            "UPDATE agent_sessions SET request_count = 0, next_ordinal = 0, nested_fact_count = 0, input_generation = input_generation + 1 WHERE lifecycle = 'finalized' AND input_watermark_at < ?1",
+            [request_cutoff_millis],
+        ).await.map_err(to_query_error)?;
+        let sessions = transaction.execute(
                 "DELETE FROM agent_sessions WHERE lifecycle = 'finalized' AND input_watermark_at < ?1 AND NOT EXISTS (SELECT 1 FROM agent_session_analyses a WHERE a.agent_session_id = agent_sessions.agent_session_id) AND NOT EXISTS (SELECT 1 FROM agent_analysis_recompute_queue q WHERE q.agent_session_id = agent_sessions.agent_session_id)",
                 [request_cutoff_millis],
             )
             .await
             .map_err(to_query_error)?;
-        let session_sources = self
-            .connection
-            .execute(
+        let session_sources = transaction.execute(
                 "DELETE FROM agent_session_sources WHERE last_seen_at < ?1 AND NOT EXISTS (SELECT 1 FROM agent_sessions s WHERE s.agent_session_source_id = agent_session_sources.agent_session_source_id)",
                 [request_cutoff.unix_timestamp()],
             )
             .await
             .map_err(to_query_error)?;
+        transaction.commit().await.map_err(to_query_error)?;
         Ok(observations
             .saturating_add(requests)
             .saturating_add(sessions)

@@ -88,7 +88,7 @@ pub(super) fn scope_file_identifiers(
 
 pub(crate) async fn record_prepared_passive_request<S>(
     store: &S,
-    input: PreparedPassiveRequestRecord,
+    mut input: PreparedPassiveRequestRecord,
     desired_versions: &AgentAnalysisDesiredVersions,
 ) -> Result<Uuid, GatewayError>
 where
@@ -202,56 +202,6 @@ where
                 .await?;
         }
     }
-    let mut window_cas_attempts = 0_usize;
-    while let Some(existing_session) = open_session.as_ref() {
-        if store
-            .count_agent_session_requests(existing_session.agent_session_id)
-            .await?
-            < gateway_core::MAX_AGENT_SESSION_REQUESTS
-        {
-            break;
-        }
-        if window_cas_attempts >= MAX_SESSION_WINDOW_CAS_ATTEMPTS {
-            return Err(GatewayError::Internal(
-                "agent session window changed too often while enforcing the request limit"
-                    .to_string(),
-            ));
-        }
-        window_cas_attempts = window_cas_attempts.saturating_add(1);
-        let expected_watermark = existing_session.input_watermark_at;
-        let mut finalized = existing_session.clone();
-        finalized.lifecycle = SessionLifecycleState::Finalized;
-        finalized.ended_at = Some(expected_watermark);
-        finalized.finalized_reason = Some("request_limit".to_string());
-        finalized.updated_at = input.completed_at;
-        if store
-            .finalize_agent_session_if_unchanged(&finalized, expected_watermark)
-            .await?
-        {
-            store
-                .mark_agent_session_analyses_stale(finalized.agent_session_id, None)
-                .await?;
-            enqueue_analysis_with_versions(
-                store,
-                finalized.agent_session_id,
-                "session_finalized",
-                &expected_watermark.unix_timestamp_nanos().to_string(),
-                input.completed_at,
-                desired_versions,
-            )
-            .await?;
-            open_session = None;
-        } else {
-            open_session = store
-                .get_open_agent_session(
-                    &ownership_scope_key,
-                    session_source_id,
-                    &input.harness_key,
-                    &input.boundary_group_key,
-                )
-                .await?;
-        }
-    }
     let build_new_session = || {
         let confidence = if session_source_id.is_some() {
             Confidence::High
@@ -349,10 +299,68 @@ where
         completed_at: Some(input.completed_at),
         terminal_success,
     };
+    let session_correlation = if input.metadata.external_session_id.is_some() {
+        "observed"
+    } else {
+        input
+            .metadata
+            .session_limitation
+            .map_or("unobserved", SessionCorrelationLimitation::as_str)
+    };
+    let coverage = json!({
+        "request_metadata": input.metadata.body_inspected,
+        "session_correlation": session_correlation,
+        "response_payload": input.response_payload_available,
+        "response_payload_truncated": input.payload_truncated,
+        "nested_facts_truncated": false,
+    });
+    let observation_set_id = stable_uuid(
+        OBSERVATION_SET_ID_NAMESPACE,
+        &json!({
+            "session": session.agent_session_id,
+            "request": input.request_id,
+            "parser": OBSERVATION_PARSER_VERSION,
+            "watermark": input.completed_at.unix_timestamp_nanos(),
+        })
+        .to_string(),
+    );
+    let mut observations = std::mem::take(&mut input.observations);
+    assign_observation_ids(session.agent_session_id, &mut observations);
+    let mut observation_set = AgentObservationSetRecord {
+        observation_set_id,
+        agent_session_id: session.agent_session_id,
+        parser_version: OBSERVATION_PARSER_VERSION.to_string(),
+        source_watermark_at: input.completed_at,
+        coverage: coverage.clone(),
+        created_at: input.completed_at,
+        observations,
+    };
+    let mut truncated_coverage = coverage;
+    truncated_coverage["nested_facts_truncated"] = Value::Bool(true);
+    let mut truncated_observations = observation_set.observations.clone();
+    truncate_nested_facts(&mut truncated_observations);
+    assign_observation_ids(session.agent_session_id, &mut truncated_observations);
+    let mut truncated_observation_set = AgentObservationSetRecord {
+        coverage: truncated_coverage,
+        observations: truncated_observations,
+        observation_set_id,
+        agent_session_id: session.agent_session_id,
+        parser_version: OBSERVATION_PARSER_VERSION.to_string(),
+        source_watermark_at: input.completed_at,
+        created_at: input.completed_at,
+    };
     let mut append_attempts = 0_usize;
-    loop {
-        match store.append_agent_session_request(&request_link).await {
-            Ok(_) => break,
+    let append_result = loop {
+        let session_input = gateway_core::AgentSessionInput {
+            request: Some(&request_link),
+            observations: Some(gateway_core::AgentSessionObservationInput {
+                set: &observation_set,
+                truncated_set: &truncated_observation_set,
+                maximum_nested_facts: MAX_AGENT_SESSION_NESTED_FACTS,
+            }),
+        };
+        match store.append_agent_session_input(session_input).await {
+            Ok(result) => break result,
             Err(StoreError::AgentSessionWindowClosed(closed_session_id))
                 if closed_session_id == session.agent_session_id.to_string()
                     && append_attempts < MAX_SESSION_WINDOW_CAS_ATTEMPTS =>
@@ -405,64 +413,21 @@ where
                 };
                 request_link.agent_session_id = session.agent_session_id;
                 request_link.correlation_confidence = session.boundary_confidence;
+                rebind_observation_set(
+                    &mut observation_set,
+                    session.agent_session_id,
+                    &input.request_id,
+                );
+                rebind_observation_set(
+                    &mut truncated_observation_set,
+                    session.agent_session_id,
+                    &input.request_id,
+                );
             }
             Err(error) => return Err(error.into()),
         }
-    }
+    };
 
-    let session_correlation = if input.metadata.external_session_id.is_some() {
-        "observed"
-    } else {
-        input
-            .metadata
-            .session_limitation
-            .map_or("unobserved", SessionCorrelationLimitation::as_str)
-    };
-    let coverage = json!({
-        "request_metadata": input.metadata.body_inspected,
-        "session_correlation": session_correlation,
-        "response_payload": input.response_payload_available,
-        "response_payload_truncated": input.payload_truncated,
-        "nested_facts_truncated": false,
-    });
-    let observation_set_id = stable_uuid(
-        OBSERVATION_SET_ID_NAMESPACE,
-        &json!({
-            "session": session.agent_session_id,
-            "request": input.request_id,
-            "parser": OBSERVATION_PARSER_VERSION,
-            "watermark": input.completed_at.unix_timestamp_nanos(),
-        })
-        .to_string(),
-    );
-    let mut observations = input.observations;
-    assign_observation_ids(session.agent_session_id, &mut observations);
-    let observation_set = AgentObservationSetRecord {
-        observation_set_id,
-        agent_session_id: session.agent_session_id,
-        parser_version: OBSERVATION_PARSER_VERSION.to_string(),
-        source_watermark_at: input.completed_at,
-        coverage: coverage.clone(),
-        created_at: input.completed_at,
-        observations,
-    };
-    let mut truncated_coverage = coverage;
-    truncated_coverage["nested_facts_truncated"] = Value::Bool(true);
-    let mut truncated_observations = observation_set.observations.clone();
-    truncate_nested_facts(&mut truncated_observations);
-    assign_observation_ids(session.agent_session_id, &mut truncated_observations);
-    let truncated_observation_set = AgentObservationSetRecord {
-        coverage: truncated_coverage,
-        observations: truncated_observations,
-        ..observation_set.clone()
-    };
-    let append_result = store
-        .append_bounded_agent_observation_set(
-            &observation_set,
-            &truncated_observation_set,
-            MAX_AGENT_SESSION_NESTED_FACTS,
-        )
-        .await?;
     let stored_coverage = if append_result.nested_facts_truncated {
         truncated_observation_set.coverage
     } else {
@@ -492,6 +457,21 @@ where
     )
     .await?;
     Ok(session.agent_session_id)
+}
+
+fn rebind_observation_set(set: &mut AgentObservationSetRecord, session_id: Uuid, request_id: &str) {
+    set.agent_session_id = session_id;
+    set.observation_set_id = stable_uuid(
+        OBSERVATION_SET_ID_NAMESPACE,
+        &json!({
+            "session": session_id,
+            "request": request_id,
+            "parser": OBSERVATION_PARSER_VERSION,
+            "watermark": set.source_watermark_at.unix_timestamp_nanos(),
+        })
+        .to_string(),
+    );
+    assign_observation_ids(session_id, &mut set.observations);
 }
 
 fn truncate_nested_facts(observations: &mut [InferredObservation]) {

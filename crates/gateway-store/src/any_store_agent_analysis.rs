@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use gateway_core::{
-    AgentAnalysisQueueRecord, AgentAnalysisQueueRepository, AgentObservationSetAppendResult,
-    AgentRequestLogLinkRecord, AgentSessionAnalysisRecord, AgentSessionListPage,
-    AgentSessionListQuery, AgentSessionRecord, AgentSessionReportRepository,
-    AgentSessionRequestLinkRecord, AgentSessionSourceRecord, AgentSessionTraceRecord,
-    AgentSessionTraceRepository, RequestAttemptRecord, StoreError,
+    AgentAnalysisQueueRecord, AgentAnalysisQueueRepository, AgentRequestLogLinkRecord,
+    AgentSessionAnalysisRecord, AgentSessionInput, AgentSessionInputAppendResult,
+    AgentSessionListPage, AgentSessionListQuery, AgentSessionRecord, AgentSessionReportRepository,
+    AgentSessionSourceRecord, AgentSessionTraceRecord, AgentSessionTraceRepository,
+    RequestAttemptRecord, StoreError,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -83,20 +83,13 @@ impl AgentSessionTraceRepository for AnyStore {
         }
     }
 
-    async fn append_agent_session_request(
+    async fn append_agent_session_input(
         &self,
-        link: &AgentSessionRequestLinkRecord,
-    ) -> Result<bool, StoreError> {
+        input: AgentSessionInput<'_>,
+    ) -> Result<AgentSessionInputAppendResult, StoreError> {
         match self {
-            Self::Libsql(store) => store.append_agent_session_request(link).await,
-            Self::Postgres(store) => store.append_agent_session_request(link).await,
-        }
-    }
-
-    async fn count_agent_session_requests(&self, session_id: Uuid) -> Result<u64, StoreError> {
-        match self {
-            Self::Libsql(store) => store.count_agent_session_requests(session_id).await,
-            Self::Postgres(store) => store.count_agent_session_requests(session_id).await,
+            Self::Libsql(store) => store.append_agent_session_input(input).await,
+            Self::Postgres(store) => store.append_agent_session_input(input).await,
         }
     }
     async fn list_agent_session_request_attempts(
@@ -113,36 +106,6 @@ impl AgentSessionTraceRepository for AnyStore {
             Self::Postgres(store) => {
                 store
                     .list_agent_session_request_attempts(session_id, limit)
-                    .await
-            }
-        }
-    }
-
-    async fn append_agent_observation_set(
-        &self,
-        set: &gateway_core::AgentObservationSetRecord,
-    ) -> Result<bool, StoreError> {
-        match self {
-            Self::Libsql(store) => store.append_agent_observation_set(set).await,
-            Self::Postgres(store) => store.append_agent_observation_set(set).await,
-        }
-    }
-
-    async fn append_bounded_agent_observation_set(
-        &self,
-        set: &gateway_core::AgentObservationSetRecord,
-        truncated_set: &gateway_core::AgentObservationSetRecord,
-        maximum_nested_facts: usize,
-    ) -> Result<AgentObservationSetAppendResult, StoreError> {
-        match self {
-            Self::Libsql(store) => {
-                store
-                    .append_bounded_agent_observation_set(set, truncated_set, maximum_nested_facts)
-                    .await
-            }
-            Self::Postgres(store) => {
-                store
-                    .append_bounded_agent_observation_set(set, truncated_set, maximum_nested_facts)
                     .await
             }
         }

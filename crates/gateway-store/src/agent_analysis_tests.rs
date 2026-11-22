@@ -13,9 +13,7 @@ use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 use crate::tests::{create_postgres_test_database, drop_postgres_test_database};
-use crate::{
-    LibsqlStore, PostgresStore, StoreConnectionOptions, run_migrations, run_migrations_with_options,
-};
+use crate::{LibsqlStore, PostgresStore, StoreConnectionOptions};
 
 mod contracts;
 #[tokio::test]
@@ -23,7 +21,10 @@ mod contracts;
 async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     let temporary = tempdir().expect("tempdir");
     let database_path = temporary.path().join("gateway.db");
-    run_migrations(&database_path).await.expect("migrations");
+    let options = StoreConnectionOptions::Libsql {
+        path: database_path.clone(),
+    };
+    contracts::install_legacy_schema(&options).await;
     let store = LibsqlStore::new_local(database_path.to_str().expect("database path"))
         .await
         .expect("store");
@@ -178,6 +179,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         created_at: now,
         updated_at: now,
     };
+    contracts::counter_backfill(&store, &session, &options).await;
     assert!(
         store
             .insert_agent_session_if_absent(&session)
@@ -217,15 +219,17 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     };
     assert!(
         store
-            .append_agent_session_request(&request_link)
+            .append_agent_session_input(gateway_core::AgentSessionInput::request(&request_link))
             .await
             .expect("request link")
+            .request_inserted
     );
     assert!(
         !store
-            .append_agent_session_request(&request_link)
+            .append_agent_session_input(gateway_core::AgentSessionInput::request(&request_link))
             .await
             .expect("idempotent request link")
+            .request_inserted
     );
     let conflicting_request_link = AgentSessionRequestLinkRecord {
         terminal_success: Some(false),
@@ -233,7 +237,9 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     };
     assert!(matches!(
         store
-            .append_agent_session_request(&conflicting_request_link)
+            .append_agent_session_input(gateway_core::AgentSessionInput::request(
+                &conflicting_request_link
+            ))
             .await,
         Err(StoreError::Conflict(_))
     ));
@@ -298,22 +304,30 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     };
     assert!(
         store
-            .append_agent_observation_set(&observation_set)
+            .append_agent_session_input(gateway_core::AgentSessionInput::observations(
+                &observation_set
+            ))
             .await
             .expect("observations")
+            .observations_inserted
     );
     assert!(
         !store
-            .append_agent_observation_set(&observation_set)
+            .append_agent_session_input(gateway_core::AgentSessionInput::observations(
+                &observation_set
+            ))
             .await
             .expect("exact observation set replay")
+            .observations_inserted
     );
     assert!(matches!(
         store
-            .append_agent_observation_set(&AgentObservationSetRecord {
-                coverage: serde_json::json!({"payload": "conflicting"}),
-                ..observation_set.clone()
-            })
+            .append_agent_session_input(gateway_core::AgentSessionInput::observations(
+                &AgentObservationSetRecord {
+                    coverage: serde_json::json!({"payload": "conflicting"}),
+                    ..observation_set.clone()
+                }
+            ))
             .await,
         Err(StoreError::Conflict(_))
     ));
@@ -346,16 +360,24 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         ..bounded_set.clone()
     };
     let bounded_result = store
-        .append_bounded_agent_observation_set(&bounded_set, &truncated_set, 0)
+        .append_agent_session_input(gateway_core::AgentSessionInput::bounded_observations(
+            &bounded_set,
+            &truncated_set,
+            0,
+        ))
         .await
         .expect("bounded observation set");
-    assert!(bounded_result.inserted);
+    assert!(bounded_result.observations_inserted);
     assert!(bounded_result.nested_facts_truncated);
     let bounded_replay = store
-        .append_bounded_agent_observation_set(&bounded_set, &truncated_set, 0)
+        .append_agent_session_input(gateway_core::AgentSessionInput::bounded_observations(
+            &bounded_set,
+            &truncated_set,
+            0,
+        ))
         .await
         .expect("bounded observation replay");
-    assert!(!bounded_replay.inserted);
+    assert!(!bounded_replay.observations_inserted);
     assert!(bounded_replay.nested_facts_truncated);
 
     let second_observation_set = AgentObservationSetRecord {
@@ -376,9 +398,12 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     };
     assert!(
         store
-            .append_agent_observation_set(&second_observation_set)
+            .append_agent_session_input(gateway_core::AgentSessionInput::observations(
+                &second_observation_set
+            ))
             .await
             .expect("second observations")
+            .observations_inserted
     );
     let third_observation_set = AgentObservationSetRecord {
         observation_set_id: Uuid::new_v4(),
@@ -398,9 +423,12 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     };
     assert!(
         store
-            .append_agent_observation_set(&third_observation_set)
+            .append_agent_session_input(gateway_core::AgentSessionInput::observations(
+                &third_observation_set
+            ))
             .await
             .expect("third observations")
+            .observations_inserted
     );
 
     let report = agent_session_analysis::analyze_session(
@@ -780,23 +808,30 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         )
         .await
         .expect("request-limit fixtures");
+    store.connection().execute(
+        "UPDATE agent_sessions SET request_count = 1000, next_ordinal = 1000 WHERE agent_session_id = ?1",
+        [limit_session.agent_session_id.to_string()],
+    ).await.expect("request-limit fixture counters");
     let request_limit_error = store
-        .append_agent_session_request(&AgentSessionRequestLinkRecord {
-            agent_session_id: limit_session.agent_session_id,
-            request_id: "limit-overflow".to_string(),
-            request_log_id: None,
-            usage_event_id: None,
-            ordinal: 0,
-            execution_id: None,
-            parent_execution_id: None,
-            normalized_session_id: None,
-            correlation_confidence: Confidence::High,
-            limitation_codes: vec![],
-            occurred_at: now,
-            completed_at: Some(now),
-            terminal_success: Some(true),
-        })
+        .append_agent_session_input(gateway_core::AgentSessionInput::request(
+            &AgentSessionRequestLinkRecord {
+                agent_session_id: limit_session.agent_session_id,
+                request_id: "limit-overflow".to_string(),
+                request_log_id: None,
+                usage_event_id: None,
+                ordinal: 0,
+                execution_id: None,
+                parent_execution_id: None,
+                normalized_session_id: None,
+                correlation_confidence: Confidence::High,
+                limitation_codes: vec![],
+                occurred_at: now,
+                completed_at: Some(now),
+                terminal_success: Some(true),
+            },
+        ))
         .await
+        .map(|result| result.request_inserted)
         .expect_err("request limit must close the current window");
     assert!(matches!(
         request_limit_error,
@@ -852,6 +887,8 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .expect("purge expired reports and queue");
     assert!(expired >= 1);
     contracts::finalization_is_irreversible(&store, &session).await;
+    contracts::atomic_input_invariants(&store, &session).await;
+    contracts::concurrent_open_window(&store, &session).await;
 
     store
         .connection()
@@ -895,9 +932,7 @@ async fn postgres_agent_session_dimensions_round_trip_and_filter() {
         url: test_db.database_url.clone(),
         max_connections: 2,
     };
-    run_migrations_with_options(&options)
-        .await
-        .expect("postgres migrations");
+    contracts::install_legacy_schema(&options).await;
     let store = PostgresStore::connect(&test_db.database_url, 2)
         .await
         .expect("postgres store");
@@ -977,6 +1012,7 @@ async fn postgres_agent_session_dimensions_round_trip_and_filter() {
         created_at: now,
         updated_at: now,
     };
+    contracts::counter_backfill(&store, &session, &options).await;
     assert!(
         store
             .insert_agent_session_if_absent(&session)
@@ -1014,6 +1050,9 @@ async fn postgres_agent_session_dimensions_round_trip_and_filter() {
     assert_eq!(page.total, 1);
     assert_eq!(page.items[0].session, session);
     contracts::finalization_is_irreversible(&store, &session).await;
+    contracts::atomic_input_invariants(&store, &session).await;
+    contracts::concurrent_open_window(&store, &session).await;
+    contracts::postgres_input_allows_foreign_key_readers(&store, &session).await;
 
     store.pool().close().await;
     drop_postgres_test_database(&test_db).await;

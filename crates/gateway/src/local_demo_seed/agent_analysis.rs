@@ -123,26 +123,30 @@ pub(super) async fn seed_demo_agent_session(
         Confidence::Medium
     };
     store
-        .append_agent_session_request(&AgentSessionRequestLinkRecord {
-            agent_session_id,
-            request_id: fixture.request_id.to_string(),
-            request_log_id: Some(demo_request_log_uuid(fixture.request_id)),
-            usage_event_id: Some(demo_usage_event_uuid(fixture.request_id)),
-            ordinal: 0,
-            execution_id: None,
-            parent_execution_id: None,
-            normalized_session_id: session.map(|session| session.normalized_session_id.to_string()),
-            correlation_confidence,
-            limitation_codes: request_limitations(
-                fixture,
-                response_payload_truncated,
-                session.is_none(),
-            ),
-            occurred_at: occurred_at - time::Duration::milliseconds(fixture.latency_ms.max(1)),
-            completed_at: Some(occurred_at),
-            terminal_success: Some(fixture.error_code.is_none() && fixture.status_code < 400),
-        })
+        .append_agent_session_input(gateway_core::AgentSessionInput::request(
+            &AgentSessionRequestLinkRecord {
+                agent_session_id,
+                request_id: fixture.request_id.to_string(),
+                request_log_id: Some(demo_request_log_uuid(fixture.request_id)),
+                usage_event_id: Some(demo_usage_event_uuid(fixture.request_id)),
+                ordinal: 0,
+                execution_id: None,
+                parent_execution_id: None,
+                normalized_session_id: session
+                    .map(|session| session.normalized_session_id.to_string()),
+                correlation_confidence,
+                limitation_codes: request_limitations(
+                    fixture,
+                    response_payload_truncated,
+                    session.is_none(),
+                ),
+                occurred_at: occurred_at - time::Duration::milliseconds(fixture.latency_ms.max(1)),
+                completed_at: Some(occurred_at),
+                terminal_success: Some(fixture.error_code.is_none() && fixture.status_code < 400),
+            },
+        ))
         .await
+        .map(|result| result.request_inserted)
         .with_context(|| format!("failed linking demo agent session `{session_key}`"))?;
 
     let coverage = request_coverage(fixture, response_payload_truncated, session.is_some());
@@ -213,16 +217,19 @@ pub(super) async fn seed_demo_agent_session(
     };
     let observation_set_id = local_demo_uuid("agent_observation_set", session_key);
     store
-        .append_agent_observation_set(&AgentObservationSetRecord {
-            observation_set_id,
-            agent_session_id,
-            parser_version: versions.observation_parser_version,
-            source_watermark_at: ended_at,
-            coverage,
-            created_at: ended_at,
-            observations,
-        })
+        .append_agent_session_input(gateway_core::AgentSessionInput::observations(
+            &AgentObservationSetRecord {
+                observation_set_id,
+                agent_session_id,
+                parser_version: versions.observation_parser_version,
+                source_watermark_at: ended_at,
+                coverage,
+                created_at: ended_at,
+                observations,
+            },
+        ))
         .await
+        .map(|result| result.observations_inserted)
         .with_context(|| {
             format!("failed inserting observations for demo agent session `{session_key}`")
         })?;
