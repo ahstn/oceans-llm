@@ -1,4 +1,24 @@
 use super::*;
+use agent_session_analysis::{
+    cohort::COHORT_VERSION,
+    versions::{AnalysisVersions, VersionCompatibility},
+};
+
+pub(super) fn analysis_versions(versions: &AgentAnalysisDesiredVersions) -> AnalysisVersions<'_> {
+    AnalysisVersions {
+        report_schema_version: &versions.report_schema_version,
+        boundary_policy_version: &versions.boundary_policy_version,
+        observation_parser_version: &versions.observation_parser_version,
+        report_observation_parser_version: &versions.observation_parser_version,
+        analyzer_version: &versions.analyzer_version,
+        score_policy_version: &versions.score_policy_version,
+        pricing_policy_version: &versions.pricing_policy_version,
+        cohort_version: &versions.cohort_version,
+        configuration_version: &versions.configuration_version,
+        score_maturity: versions.score_maturity,
+        calibration_approval_id: versions.calibration_approval_id.as_deref(),
+    }
+}
 
 pub async fn enqueue_analysis<S>(
     store: &S,
@@ -213,25 +233,21 @@ where
 pub(super) fn ensure_supported_versions(
     requested: &AgentAnalysisDesiredVersions,
 ) -> Result<(), GatewayError> {
-    let mut supported_base = desired_versions();
-    supported_base.score_maturity = agent_session_analysis::ScoreMaturity::Experimental;
-    supported_base.calibration_approval_id = None;
-    supported_base.configuration_version.clear();
-    let mut requested_base = requested.clone();
-    requested_base.score_maturity = agent_session_analysis::ScoreMaturity::Experimental;
-    requested_base.calibration_approval_id = None;
-    requested_base.configuration_version.clear();
-    if requested_base != supported_base {
+    let supported = desired_versions();
+    let requested_versions = analysis_versions(requested);
+    if !requested_versions.is_compatible_with(
+        analysis_versions(&supported),
+        VersionCompatibility::Supported,
+    ) {
+        let mut supported_base = supported;
+        supported_base.score_maturity = agent_session_analysis::ScoreMaturity::Experimental;
+        supported_base.calibration_approval_id = None;
+        supported_base.configuration_version.clear();
         return Err(GatewayError::Internal(format!(
             "unsupported agent analysis version tuple: requested {requested:?}, supported {supported_base:?}"
         )));
     }
-    if requested.score_maturity == agent_session_analysis::ScoreMaturity::Calibrated
-        && requested
-            .calibration_approval_id
-            .as_deref()
-            .is_none_or(str::is_empty)
-    {
+    if !requested_versions.has_required_calibration_approval() {
         return Err(GatewayError::Internal(
             "calibrated agent analysis requires an approval identity".to_string(),
         ));
@@ -263,13 +279,8 @@ pub fn desired_versions() -> AgentAnalysisDesiredVersions {
 
 #[must_use]
 pub fn desired_versions_for_policy(policy: &AnalysisPolicy) -> AgentAnalysisDesiredVersions {
-    let configuration_version = if policy.configuration_version.is_empty() {
-        hash_identifier(
-            &serde_json::to_string(policy).expect("analysis policy serialization is infallible"),
-        )
-    } else {
-        policy.configuration_version.clone()
-    };
+    let configuration_version = agent_session_analysis::versions::configuration_version(policy)
+        .expect("analysis policy serialization is infallible");
     AgentAnalysisDesiredVersions {
         report_schema_version: agent_session_analysis::REPORT_SCHEMA_VERSION.to_string(),
         boundary_policy_version: SESSION_BOUNDARY_POLICY_VERSION.to_string(),

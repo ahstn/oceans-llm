@@ -1,4 +1,13 @@
+use super::worker::analysis_versions;
 use super::*;
+use agent_session_analysis::{
+    cohort::{
+        COHORT_LOOKBACK, CohortCandidate, CohortSelection, CohortSession, MAX_COHORT_SCAN_PAGES,
+        NO_COHORT_FALLBACK_LEVEL, SelectedCohort, no_cohort_snapshot_digest,
+    },
+    observations::normalize_legacy_tool_inventory_limitations,
+    versions::AnalysisVersions,
+};
 use gateway_core::McpToolInvocationBatchQuery;
 
 pub(super) async fn generate_report<S>(
@@ -217,16 +226,17 @@ where
             || versions.cohort_version.clone(),
             |value| value.reference.cohort_version.clone(),
         ),
-        cohort_fallback_level: cohort
-            .as_ref()
-            .map_or(7, |value| value.reference.fallback_level),
+        cohort_fallback_level: cohort.as_ref().map_or(NO_COHORT_FALLBACK_LEVEL, |value| {
+            value.reference.fallback_level
+        }),
         cohort_sample_size: cohort.as_ref().map_or(0, |value| {
             value.reference.successful_costs_10000.len() as u64
         }),
-        cohort_snapshot_digest: cohort.as_ref().map_or_else(
-            || hash_identifier("no-cohort"),
-            |value| value.snapshot_digest.clone(),
-        ),
+        cohort_snapshot_digest: cohort
+            .as_ref()
+            .map_or_else(no_cohort_snapshot_digest, |value| {
+                value.snapshot_digest.clone()
+            }),
         direct_mcp_snapshot_digest,
         analyzed_at: now,
         report,
@@ -336,20 +346,6 @@ fn response_payload_was_captured(coverage: &Value) -> bool {
         || coverage_flag(coverage, "response_payload_truncated")
 }
 
-fn normalize_legacy_tool_inventory_limitations(observations: &mut [InferredObservation]) {
-    for observation in observations {
-        if observation.kind == InferredObservationKind::SessionMetadataClassified
-            && tool_inventory_is_estimated(
-                observation.facts.supplied_tool_count,
-                observation.facts.supplied_tools.len(),
-            ) == Some(false)
-        {
-            observation
-                .limitations
-                .retain(|code| *code != LimitationCode::ToolInventoryPotentialOnly);
-        }
-    }
-}
 fn session_usage_fact(record: &UsageLedgerRecord) -> SessionUsageFact {
     let priced = record.pricing_status == UsagePricingStatus::Priced;
     let reasoning_tokens = provider_reasoning_tokens(&record.provider_usage);
@@ -372,7 +368,7 @@ fn session_usage_fact(record: &UsageLedgerRecord) -> SessionUsageFact {
             record.output_cost_per_million_tokens,
         )
         .zip(component_cost(Some(image_tokens), Some(image_rate)))
-        .map(|(text, image)| text + image),
+        .and_then(|(text, image)| text.checked_add(image)),
         _ => component_cost(
             record.completion_tokens,
             record.output_cost_per_million_tokens,
@@ -438,20 +434,18 @@ fn provider_reasoning_tokens(provider_usage: &Value) -> Option<i64> {
         })
 }
 
-struct LoadedCohort {
-    reference: CohortReference,
-    snapshot_digest: String,
-}
-
 async fn load_successful_harness_cohort<S>(
     store: &S,
     current: &AgentSessionTraceRecord,
     versions: &AgentAnalysisDesiredVersions,
-) -> Result<Option<LoadedCohort>, GatewayError>
+) -> Result<Option<SelectedCohort>, GatewayError>
 where
     S: AgentSessionAnalysisRepository + Sync,
 {
-    let mut samples: [Vec<(Uuid, i64, i64)>; 4] = std::array::from_fn(|_| Vec::new());
+    let mut selection = CohortSelection::new(
+        cohort_session(&current.session),
+        analysis_versions(versions),
+    );
     let mut page_number = 1;
     while page_number <= MAX_COHORT_SCAN_PAGES {
         let page = store
@@ -467,83 +461,45 @@ where
             })
             .await?;
         let item_count = page.items.len();
-        for candidate in page.items {
-            if candidate.session.agent_session_id == current.session.agent_session_id {
-                continue;
-            }
-            let Some(analysis) = candidate.latest_analysis else {
+        for candidate in &page.items {
+            let Some(analysis) = &candidate.latest_analysis else {
                 continue;
             };
-            if analysis.report.report_schema_version != versions.report_schema_version
-                || analysis.boundary_policy_version != versions.boundary_policy_version
-                || analysis.observation_parser_version != versions.observation_parser_version
-                || analysis.report.analyzer_version != versions.analyzer_version
-                || analysis.report.score_policy_version != versions.score_policy_version
-                || analysis.pricing_policy_version != versions.pricing_policy_version
-                || analysis.report.configuration_version != versions.configuration_version
-                || analysis.report.gateway_outcome != GatewayOutcomeState::Succeeded
-            {
-                continue;
-            }
-            let (Some(cost), active_time) = (
-                analysis.report.components.actual_cost_10000,
-                analysis.report.components.active_time_ms,
-            ) else {
-                continue;
-            };
-            let sample = (analysis.analysis_id, cost, active_time);
-            if samples[3].len() < MAX_COHORT_SAMPLES_PER_LEVEL {
-                samples[3].push(sample);
-            }
-            if candidate.session.requested_model_key == current.session.requested_model_key {
-                if samples[2].len() < MAX_COHORT_SAMPLES_PER_LEVEL {
-                    samples[2].push(sample);
-                }
-                if candidate.session.operation == current.session.operation
-                    && candidate.session.caller_class == current.session.caller_class
-                {
-                    if samples[1].len() < MAX_COHORT_SAMPLES_PER_LEVEL {
-                        samples[1].push(sample);
-                    }
-                    if candidate.session.boundary_group_key == current.session.boundary_group_key
-                        && samples[0].len() < MAX_COHORT_SAMPLES_PER_LEVEL
-                    {
-                        samples[0].push(sample);
-                    }
-                }
-            }
+            selection.consider(CohortCandidate {
+                session: cohort_session(&candidate.session),
+                analysis_id: analysis.analysis_id,
+                versions: AnalysisVersions::from_report(
+                    &analysis.report,
+                    &analysis.boundary_policy_version,
+                    &analysis.observation_parser_version,
+                    &analysis.pricing_policy_version,
+                    &analysis.cohort_version,
+                ),
+                gateway_outcome: analysis.report.gateway_outcome,
+                actual_cost_10000: analysis.report.components.actual_cost_10000,
+                active_time_ms: analysis.report.components.active_time_ms,
+            });
         }
         if item_count < gateway_core::MAX_AGENT_SESSION_PAGE_SIZE as usize {
             break;
         }
         page_number = page_number.saturating_add(1);
     }
-    let Some((fallback_level, mut samples)) = samples
-        .into_iter()
-        .enumerate()
-        .find(|(_, samples)| samples.len() >= agent_session_analysis::MIN_EXACT_COHORT_SIZE)
-    else {
-        return Ok(None);
-    };
-    samples.sort_unstable_by_key(|sample| sample.0);
-    let snapshot_digest = hash_identifier(
-        &serde_json::to_string(&samples)
-            .map_err(|error| GatewayError::Internal(error.to_string()))?,
-    );
-    let (costs, active_times): (Vec<_>, Vec<_>) = samples
-        .into_iter()
-        .map(|(_, cost, active_time)| (cost, active_time))
-        .unzip();
-    Ok(Some(LoadedCohort {
-        reference: CohortReference {
-            cohort_version: COHORT_VERSION.to_string(),
-            fallback_level: u8::try_from(fallback_level).unwrap_or(3),
-            successful_costs_10000: costs,
-            successful_active_time_ms: active_times,
-        },
-        snapshot_digest,
-    }))
+    selection
+        .finish()
+        .map_err(|error| GatewayError::Internal(error.to_string()))
 }
+
+fn cohort_session(session: &AgentSessionRecord) -> CohortSession<'_> {
+    CohortSession {
+        session_id: session.agent_session_id,
+        requested_model_key: &session.requested_model_key,
+        operation: &session.operation,
+        caller_class: &session.caller_class,
+        boundary_group_key: &session.boundary_group_key,
+    }
+}
+
 fn unix_timestamp_millis(value: OffsetDateTime) -> i64 {
     i64::try_from(value.unix_timestamp_nanos().div_euclid(1_000_000)).unwrap_or_else(|_| {
         if value < OffsetDateTime::UNIX_EPOCH {
@@ -556,42 +512,14 @@ fn unix_timestamp_millis(value: OffsetDateTime) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        normalize_legacy_tool_inventory_limitations, provider_reasoning_tokens,
-        response_payload_was_captured,
-    };
+    use super::{provider_reasoning_tokens, response_payload_was_captured, session_usage_fact};
     use agent_session_analysis::{
-        BoundedObservationFacts, BoundedToolDefinitionFact, EvidenceQuality, InferredObservation,
-        InferredObservationKind, LimitationCode,
+        AnalysisPolicy, Confidence, SessionLifecycleState, SessionRequestFact, SessionTrace,
+        TraceEvidence, analyze_session,
     };
+    use gateway_core::{Money4, Money9, UsageLedgerRecord, UsagePricingStatus};
     use time::OffsetDateTime;
     use uuid::Uuid;
-
-    fn metadata_observation(
-        supplied_tool_count: u32,
-        retained_tools: usize,
-    ) -> InferredObservation {
-        InferredObservation {
-            observation_id: Uuid::nil(),
-            kind: InferredObservationKind::SessionMetadataClassified,
-            source_request_id: "request".to_string(),
-            parser_version: "passive-observations-v3".to_string(),
-            evidence: EvidenceQuality::Direct,
-            occurred_at: OffsetDateTime::UNIX_EPOCH,
-            facts: BoundedObservationFacts {
-                supplied_tool_count: Some(supplied_tool_count),
-                supplied_tools: (0..retained_tools)
-                    .map(|index| BoundedToolDefinitionFact {
-                        name: format!("tool-{index}"),
-                        server_key: None,
-                        token_estimate: 1,
-                    })
-                    .collect(),
-                ..BoundedObservationFacts::default()
-            },
-            limitations: vec![LimitationCode::ToolInventoryPotentialOnly],
-        }
-    }
 
     #[test]
     fn reads_reasoning_tokens_from_openai_usage_shapes() {
@@ -639,23 +567,78 @@ mod tests {
     }
 
     #[test]
-    fn legacy_tool_inventory_notice_is_kept_only_for_incomplete_inventory() {
-        let complete = metadata_observation(1, 1);
-        let incomplete = metadata_observation(2, 1);
-        let mut unknown = metadata_observation(0, 0);
-        unknown.facts.supplied_tool_count = None;
-        let mut observations = vec![complete, incomplete, unknown];
-
-        normalize_legacy_tool_inventory_limitations(&mut observations);
-
-        assert!(observations[0].limitations.is_empty());
+    fn overflowing_output_components_do_not_prevent_a_consumer_report() {
+        let record = UsageLedgerRecord {
+            usage_event_id: Uuid::nil(),
+            request_id: "overflow-output".to_string(),
+            ownership_scope_key: "test".to_string(),
+            api_key_id: Uuid::nil(),
+            user_id: None,
+            team_id: None,
+            service_account_id: None,
+            actor_user_id: None,
+            model_id: None,
+            model_route_id: None,
+            provider_key: "provider".to_string(),
+            upstream_model: "model".to_string(),
+            prompt_tokens: Some(0),
+            uncached_input_tokens: Some(0),
+            cache_read_tokens: Some(0),
+            cache_write_tokens: Some(0),
+            cache_write_1h_tokens: None,
+            completion_tokens: Some(2_000_000),
+            image_output_tokens: Some(1_000_000),
+            total_tokens: Some(2_000_000),
+            provider_usage: serde_json::json!({}),
+            pricing_status: UsagePricingStatus::Priced,
+            unpriced_reason: None,
+            pricing_row_id: None,
+            pricing_provider_id: None,
+            pricing_model_id: None,
+            pricing_source: None,
+            pricing_source_etag: None,
+            pricing_source_fetched_at: None,
+            pricing_last_updated: None,
+            input_cost_per_million_tokens: None,
+            output_cost_per_million_tokens: Some(Money4::from_scaled(i64::MAX)),
+            cache_read_cost_per_million_tokens: None,
+            cache_write_cost_per_million_tokens: None,
+            cache_write_1h_cost_per_million_tokens: None,
+            image_output_cost_per_million_tokens: Some(Money4::from_scaled(i64::MAX)),
+            pricing_tier_above_input_tokens: None,
+            computed_cost_usd: Money9::from_nanos(12_300_000),
+            occurred_at: OffsetDateTime::UNIX_EPOCH,
+            requested_service_tier: None,
+            served_service_tier: None,
+        };
+        let usage = session_usage_fact(&record);
+        assert_eq!(usage.output_cost_10000, None);
+        let report = analyze_session(
+            &SessionTrace {
+                requests: vec![SessionRequestFact {
+                    request_id: record.request_id,
+                    ordinal: 1,
+                    occurred_at: record.occurred_at,
+                    completed_at: Some(record.occurred_at),
+                    terminal_success: Some(true),
+                    usage: Some(usage),
+                    attempts: Vec::new(),
+                }],
+                activity_intervals: Vec::new(),
+                observations: Vec::new(),
+                lifecycle: SessionLifecycleState::Finalized,
+                boundary_confidence: Confidence::High,
+                evidence: TraceEvidence::default(),
+            },
+            &AnalysisPolicy::default(),
+            None,
+        )
+        .expect("overflowing optional component costs must not invalidate a report");
+        let consumer_report = serde_json::to_value(report).unwrap();
+        assert_eq!(consumer_report["components"]["actual_cost_10000"], 123);
         assert_eq!(
-            observations[1].limitations,
-            vec![LimitationCode::ToolInventoryPotentialOnly]
-        );
-        assert_eq!(
-            observations[2].limitations,
-            vec![LimitationCode::ToolInventoryPotentialOnly]
+            consumer_report["diagnostics"]["token_and_cache"]["output_tokens"],
+            2_000_000
         );
     }
 }

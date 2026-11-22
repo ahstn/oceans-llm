@@ -1,3 +1,4 @@
+use agent_session_analysis::FileOperation;
 use anyhow::Context;
 use gateway_core::{
     AgentObservationSetRecord, AgentRequestLogLinkRecord, AgentSessionRecord,
@@ -465,12 +466,12 @@ fn demo_observations(
     let file_interactions = session_request
         .and_then(|request| {
             let operation = match request.observation_kind {
-                InferredObservationKind::FileReadSuspected => "read",
-                InferredObservationKind::FileSearchSuspected => "search",
-                InferredObservationKind::FileCreateSuspected => "create",
-                InferredObservationKind::FileEditSuspected => "edit",
-                InferredObservationKind::FileOverwriteSuspected => "overwrite",
-                InferredObservationKind::VerificationResultClassified => "verify",
+                InferredObservationKind::FileReadSuspected => FileOperation::Read,
+                InferredObservationKind::FileSearchSuspected => FileOperation::Search,
+                InferredObservationKind::FileCreateSuspected => FileOperation::Create,
+                InferredObservationKind::FileEditSuspected => FileOperation::Edit,
+                InferredObservationKind::FileOverwriteSuspected => FileOperation::Overwrite,
+                InferredObservationKind::VerificationResultClassified => FileOperation::Verify,
                 _ => return None,
             };
             Some(BoundedFileInteractionFact {
@@ -479,7 +480,7 @@ fn demo_observations(
                     request.session.key,
                     request.step.saturating_sub(1) / 2
                 ),
-                operation: operation.to_string(),
+                operation,
                 tool_name: Some(request.tool_name.to_string()),
                 succeeded: Some(fixture.error_code.is_none()),
                 error_signature: fixture.error_code.map(str::to_string),

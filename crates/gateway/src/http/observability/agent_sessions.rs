@@ -285,7 +285,7 @@ pub async fn get_agent_session_detail(
                         .take(file_interaction_count)
                         .map(|file| AgentFileInteractionFactView {
                             opaque_file_id: file.opaque_file_id.clone(),
-                            operation: file.operation.clone(),
+                            operation: file.operation.as_str().to_string(),
                             tool_name: file.tool_name.clone(),
                             succeeded: file.succeeded,
                             error_signature: file.error_signature.clone(),

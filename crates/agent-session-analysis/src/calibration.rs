@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Confidence, GatewayOutcomeState};
+use crate::{Confidence, GatewayOutcomeState, math::percentile};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CalibrationSample {
@@ -102,22 +102,14 @@ impl std::fmt::Display for CalibrationError {
 
 impl std::error::Error for CalibrationError {}
 
-fn percentile(mut values: Vec<i64>, numerator: usize, denominator: usize) -> Option<i64> {
-    if values.is_empty() || denominator == 0 {
-        return None;
-    }
+fn distribution(mut values: Vec<i64>) -> CalibrationDistribution {
     values.sort_unstable();
-    let index = ((values.len() - 1) * numerator).div_ceil(denominator);
-    values.get(index).copied()
-}
-
-fn distribution(values: Vec<i64>) -> CalibrationDistribution {
     CalibrationDistribution {
         count: values.len(),
-        minimum: values.iter().min().copied(),
-        p50: percentile(values.clone(), 1, 2),
-        p90: percentile(values.clone(), 9, 10),
-        maximum: values.iter().max().copied(),
+        minimum: values.first().copied(),
+        p50: percentile(&values, 1, 2),
+        p90: percentile(&values, 9, 10),
+        maximum: values.last().copied(),
     }
 }
 
@@ -189,7 +181,8 @@ pub fn assess_calibration(
         .checked_div(reviewed_session_count)
         .and_then(|value| u16::try_from(value).ok())
         .unwrap_or(10_000);
-    let median_coverage_percent = percentile(coverages, 1, 2)
+    coverages.sort_unstable();
+    let median_coverage_percent = percentile(&coverages, 1, 2)
         .and_then(|value| u8::try_from(value).ok())
         .unwrap_or(0);
     let grouping_review_passed =
@@ -282,5 +275,15 @@ mod tests {
             assess_calibration(&[invalid], &CalibrationPolicy::default(), 0),
             Err(CalibrationError::InvalidCoverage { value: 101, .. })
         ));
+    }
+
+    #[test]
+    fn distributions_preserve_ceiling_rank_percentiles_for_unsorted_samples() {
+        let distribution = distribution(vec![40, 10, 30, 20]);
+        assert_eq!(distribution.count, 4);
+        assert_eq!(distribution.minimum, Some(10));
+        assert_eq!(distribution.p50, Some(30));
+        assert_eq!(distribution.p90, Some(40));
+        assert_eq!(distribution.maximum, Some(40));
     }
 }

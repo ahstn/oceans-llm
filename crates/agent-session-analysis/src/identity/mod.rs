@@ -6,6 +6,7 @@ use serde_json::Value;
 
 mod adapters;
 pub mod harness;
+pub mod hashing;
 
 use adapters::{codex_turn_metadata, extract_lineage, extract_session};
 

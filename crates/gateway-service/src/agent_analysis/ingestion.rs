@@ -40,7 +40,13 @@ pub(crate) struct PreparedPassiveRequestRecord {
 
 impl PassiveRequestRecord<'_> {
     pub(crate) fn prepare(&self) -> PreparedPassiveRequestRecord {
-        let mut observations = observations_for_response(self);
+        let mut observations = observations_for_response(&ResponseObservationInput {
+            request_id: self.request_id,
+            metadata: self.metadata,
+            response_body: self.response_body,
+            occurred_at: self.occurred_at,
+            completed_at: self.completed_at,
+        });
         scope_file_identifiers(
             &mut observations,
             usage_ownership_scope_key(self.auth).ok().as_deref(),
@@ -62,26 +68,6 @@ impl PassiveRequestRecord<'_> {
             completed_at: self.completed_at,
             terminal_success: self.terminal_success,
             payload_truncated: self.payload_truncated,
-        }
-    }
-}
-pub(super) fn scope_file_identifiers(
-    observations: &mut [InferredObservation],
-    ownership_scope: Option<&str>,
-) {
-    for observation in observations {
-        if let Some(ownership_scope) = ownership_scope {
-            for interaction in &mut observation.facts.file_interactions {
-                interaction.opaque_file_id = hash_identifier(
-                    &json!({
-                        "ownership_scope": ownership_scope,
-                        "file_identifier": interaction.opaque_file_id,
-                    })
-                    .to_string(),
-                );
-            }
-        } else {
-            observation.facts.file_interactions.clear();
         }
     }
 }
@@ -313,15 +299,10 @@ where
         "response_payload_truncated": input.payload_truncated,
         "nested_facts_truncated": false,
     });
-    let observation_set_id = stable_uuid(
-        OBSERVATION_SET_ID_NAMESPACE,
-        &json!({
-            "session": session.agent_session_id,
-            "request": input.request_id,
-            "parser": OBSERVATION_PARSER_VERSION,
-            "watermark": input.completed_at.unix_timestamp_nanos(),
-        })
-        .to_string(),
+    let observation_set_id = observation_set_id(
+        session.agent_session_id,
+        &input.request_id,
+        input.completed_at,
     );
     let mut observations = std::mem::take(&mut input.observations);
     assign_observation_ids(session.agent_session_id, &mut observations);
@@ -441,209 +422,8 @@ where
 
 fn rebind_observation_set(set: &mut AgentObservationSetRecord, session_id: Uuid, request_id: &str) {
     set.agent_session_id = session_id;
-    set.observation_set_id = stable_uuid(
-        OBSERVATION_SET_ID_NAMESPACE,
-        &json!({
-            "session": session_id,
-            "request": request_id,
-            "parser": OBSERVATION_PARSER_VERSION,
-            "watermark": set.source_watermark_at.unix_timestamp_nanos(),
-        })
-        .to_string(),
-    );
+    set.observation_set_id = observation_set_id(session_id, request_id, set.source_watermark_at);
     assign_observation_ids(session_id, &mut set.observations);
-}
-
-fn truncate_nested_facts(observations: &mut [InferredObservation]) {
-    for observation in observations {
-        observation.facts.supplied_tools.clear();
-        observation.facts.supplied_skills.clear();
-        observation.facts.file_interactions.clear();
-        if !observation
-            .limitations
-            .contains(&LimitationCode::PayloadTruncated)
-        {
-            observation
-                .limitations
-                .push(LimitationCode::PayloadTruncated);
-        }
-    }
-}
-
-fn assign_observation_ids(agent_session_id: Uuid, observations: &mut [InferredObservation]) {
-    for (index, observation) in observations.iter_mut().enumerate() {
-        observation.observation_id = stable_uuid(
-            OBSERVATION_ID_NAMESPACE,
-            &json!({
-                "session": agent_session_id,
-                "request": observation.source_request_id,
-                "parser": OBSERVATION_PARSER_VERSION,
-                "index": index,
-                "kind": observation.kind,
-                "facts": observation.facts,
-            })
-            .to_string(),
-        );
-    }
-}
-
-pub(super) fn observations_for_response(
-    input: &PassiveRequestRecord<'_>,
-) -> Vec<InferredObservation> {
-    let mut observations = Vec::new();
-    if input.metadata.message_count.is_some()
-        || input.metadata.prompt_bytes.is_some()
-        || input.metadata.supplied_tool_count.is_some()
-        || !input.metadata.supplied_skills.is_empty()
-        || !input.metadata.file_interactions.is_empty()
-        || input.metadata.reasoning_config_hash.is_some()
-        || input.metadata.cache_requested.is_some()
-    {
-        observations.push(InferredObservation {
-            observation_id: Uuid::nil(),
-            kind: InferredObservationKind::SessionMetadataClassified,
-            source_request_id: input.request_id.to_string(),
-            parser_version: OBSERVATION_PARSER_VERSION.to_string(),
-            evidence: EvidenceQuality::Direct,
-            occurred_at: input.occurred_at,
-            facts: BoundedObservationFacts {
-                message_count: input.metadata.message_count,
-                prompt_bytes: input.metadata.prompt_bytes,
-                supplied_tool_count: input.metadata.supplied_tool_count,
-                tool_schema_bytes: input.metadata.tool_schema_bytes,
-                supplied_tools: input.metadata.supplied_tools.clone(),
-                supplied_skills: input.metadata.supplied_skills.clone(),
-                file_interactions: input.metadata.file_interactions.clone(),
-                reasoning_config_hash: input.metadata.reasoning_config_hash.clone(),
-                cache_requested: input.metadata.cache_requested,
-                ..Default::default()
-            },
-            limitations: tool_inventory_limitations(input.metadata),
-        });
-    }
-    if let Some(response) = input.response_body {
-        let (finish_reason, incomplete_reason) = response_finish_reasons(response);
-        if finish_reason.is_some() || incomplete_reason.is_some() {
-            observations.push(InferredObservation {
-                observation_id: Uuid::nil(),
-                kind: InferredObservationKind::ResponseFinishClassified,
-                source_request_id: input.request_id.to_string(),
-                parser_version: OBSERVATION_PARSER_VERSION.to_string(),
-                evidence: EvidenceQuality::Direct,
-                occurred_at: input.completed_at,
-                facts: BoundedObservationFacts {
-                    finish_reason,
-                    incomplete_reason,
-                    ..Default::default()
-                },
-                limitations: Vec::new(),
-            });
-        }
-        let (calls, scan_truncated) = distinct_named_tool_calls(response, MAX_INFERRED_TOOL_CALLS);
-        let first_observation = observations.len();
-        observations.extend(
-            calls
-                .into_iter()
-                .map(|call| classify_tool_call(input, call)),
-        );
-        if scan_truncated {
-            if let Some(observation) = observations.get_mut(first_observation) {
-                observation
-                    .limitations
-                    .push(LimitationCode::PayloadTruncated);
-            } else {
-                observations.push(InferredObservation {
-                    observation_id: Uuid::nil(),
-                    kind: InferredObservationKind::ToolCallClassified,
-                    source_request_id: input.request_id.to_string(),
-                    parser_version: OBSERVATION_PARSER_VERSION.to_string(),
-                    evidence: EvidenceQuality::Unavailable,
-                    occurred_at: input.completed_at,
-                    facts: BoundedObservationFacts::default(),
-                    limitations: vec![LimitationCode::PayloadTruncated],
-                });
-            }
-        }
-    }
-    observations
-}
-
-pub(super) fn tool_inventory_limitations(metadata: &PassiveRequestMetadata) -> Vec<LimitationCode> {
-    if tool_inventory_is_estimated(metadata.supplied_tool_count, metadata.supplied_tools.len())
-        == Some(true)
-    {
-        vec![LimitationCode::ToolInventoryPotentialOnly]
-    } else {
-        Vec::new()
-    }
-}
-
-pub(super) fn response_finish_reasons(response: &Value) -> (Option<String>, Option<String>) {
-    let finish_reason = [
-        "/choices/0/finish_reason",
-        "/stop_reason",
-        "/candidates/0/finishReason",
-        "/response/choices/0/finish_reason",
-        "/response/stop_reason",
-    ]
-    .into_iter()
-    .find_map(|path| response.pointer(path).and_then(Value::as_str))
-    .map(|value| value.chars().take(64).collect());
-    let incomplete_reason = [
-        "/incomplete_details/reason",
-        "/response/incomplete_details/reason",
-        "/incompleteDetails/reason",
-    ]
-    .into_iter()
-    .find_map(|path| response.pointer(path).and_then(Value::as_str))
-    .map(|value| value.chars().take(64).collect());
-    (finish_reason, incomplete_reason)
-}
-
-pub(super) fn classify_tool_call(
-    input: &PassiveRequestRecord<'_>,
-    call: ToolCall<'_>,
-) -> InferredObservation {
-    let name = call.name.unwrap_or_default();
-    let normalized = name.to_ascii_lowercase();
-    // Tools the provider runs, hosted ones such as `web_search` and remote MCP servers, never
-    // touch the caller's files. Client-run `mcp__<server>__<tool>` calls still may.
-    let kind = if call.kind != ToolCallKind::Client {
-        InferredObservationKind::ToolCallClassified
-    } else if normalized.contains("search") || normalized.contains("grep") {
-        InferredObservationKind::FileSearchSuspected
-    } else if normalized.contains("read") {
-        InferredObservationKind::FileReadSuspected
-    } else if normalized.contains("overwrite") {
-        InferredObservationKind::FileOverwriteSuspected
-    } else if normalized.contains("edit") || normalized.contains("patch") {
-        InferredObservationKind::FileEditSuspected
-    } else if normalized.contains("create") || normalized.contains("write") {
-        InferredObservationKind::FileCreateSuspected
-    } else if normalized.contains("test")
-        || normalized.contains("check")
-        || normalized.contains("lint")
-        || normalized.contains("build")
-    {
-        InferredObservationKind::VerificationResultClassified
-    } else {
-        InferredObservationKind::ToolCallClassified
-    };
-    // Tool arguments may contain sensitive paths, so classification reads only
-    // the tool name and never persists a path-derived identifier.
-    InferredObservation {
-        observation_id: Uuid::nil(),
-        kind,
-        source_request_id: input.request_id.to_string(),
-        parser_version: OBSERVATION_PARSER_VERSION.to_string(),
-        evidence: EvidenceQuality::InferredHigh,
-        occurred_at: input.completed_at,
-        facts: BoundedObservationFacts {
-            tool_name: Some(name.chars().take(MAX_TOOL_NAME_CHARS).collect()),
-            ..Default::default()
-        },
-        limitations: vec![LimitationCode::SemanticVerificationUnavailable],
-    }
 }
 
 fn caller_class(auth: &AuthenticatedApiKey) -> &'static str {
@@ -657,19 +437,12 @@ fn caller_class(auth: &AuthenticatedApiKey) -> &'static str {
 }
 
 pub(crate) fn session_boundary_group_key(tags: &RequestTags) -> String {
-    let mut bespoke = tags
-        .bespoke
-        .iter()
-        .map(|tag| (tag.key.as_str(), tag.value.as_str()))
-        .collect::<Vec<_>>();
-    bespoke.sort_unstable();
-    hash_identifier(
-        &json!({
-            "service": tags.service,
-            "component": tags.component,
-            "environment": tags.env,
-            "bespoke": bespoke,
-        })
-        .to_string(),
+    agent_session_analysis::identity::hashing::boundary_group_key(
+        tags.service.as_deref(),
+        tags.component.as_deref(),
+        tags.env.as_deref(),
+        tags.bespoke
+            .iter()
+            .map(|tag| (tag.key.as_str(), tag.value.as_str())),
     )
 }

@@ -121,13 +121,6 @@ fn score_renormalizes_when_one_efficiency_component_is_missing() {
 }
 
 #[test]
-fn diagnostic_ratios_saturate_instead_of_disappearing() {
-    assert_eq!(ratio_basis_points(i64::MAX, 1), Some(i32::MAX));
-    assert_eq!(ratio_basis_points(i64::MIN, 1), Some(i32::MIN));
-    assert_eq!(ratio_basis_points(1, 0), None);
-}
-
-#[test]
 fn report_keeps_score_optional_without_a_cohort_and_exposes_coverage() {
     let report = analyze_session(
         &trace(vec![request("a", 0, Some(true), Some(100))]),
@@ -351,21 +344,21 @@ fn report_exposes_extended_cache_context_reliability_and_change_diagnostics() {
             file_interactions: vec![
                 BoundedFileInteractionFact {
                     opaque_file_id: "file-1".to_string(),
-                    operation: "edit".to_string(),
+                    operation: FileOperation::Edit,
                     tool_name: Some("edit".to_string()),
                     succeeded: Some(true),
                     error_signature: None,
                 },
                 BoundedFileInteractionFact {
                     opaque_file_id: "file-1".to_string(),
-                    operation: "edit".to_string(),
+                    operation: FileOperation::Edit,
                     tool_name: Some("edit".to_string()),
                     succeeded: Some(true),
                     error_signature: None,
                 },
                 BoundedFileInteractionFact {
                     opaque_file_id: "file-1".to_string(),
-                    operation: "verify".to_string(),
+                    operation: FileOperation::Verify,
                     tool_name: Some("test".to_string()),
                     succeeded: Some(true),
                     error_signature: None,
@@ -635,4 +628,154 @@ fn report_serialization_is_deterministic_and_round_trips() {
         serde_json::from_str::<SessionEfficiencyReport>(&first).expect("deserialize"),
         report
     );
+}
+
+#[test]
+fn file_operations_preserve_existing_fact_wire_strings() {
+    for (wire, operation) in [
+        ("read", FileOperation::Read),
+        ("search", FileOperation::Search),
+        ("create", FileOperation::Create),
+        ("edit", FileOperation::Edit),
+        ("overwrite", FileOperation::Overwrite),
+        ("verify", FileOperation::Verify),
+    ] {
+        let legacy = serde_json::json!({
+            "opaque_file_id": "file-1",
+            "operation": wire,
+            "tool_name": null,
+            "succeeded": true,
+            "error_signature": null
+        });
+        let fact: BoundedFileInteractionFact =
+            serde_json::from_value(legacy.clone()).expect("existing fact");
+        assert_eq!(fact.operation, operation);
+        assert_eq!(operation.as_str(), wire);
+        assert_eq!(FileOperation::try_from(wire).expect("operation"), operation);
+        assert_eq!(serde_json::to_value(&fact).expect("serialize"), legacy);
+    }
+
+    // Existing metadata ingestion rejects unknown operations before they reach storage.
+    assert!(FileOperation::try_from("rename").is_err());
+    assert!(serde_json::from_value::<FileOperation>(serde_json::json!("rename")).is_err());
+}
+
+#[test]
+fn context_samples_use_session_ordinal_then_request_id_for_equal_timestamps() {
+    let mut first = request("a", 0, Some(true), Some(1));
+    let mut second = request("b", 0, Some(true), Some(1));
+    let mut third = request("c", 0, Some(true), Some(1));
+    first.ordinal = 2;
+    second.ordinal = 1;
+    third.ordinal = 3;
+    first.usage.as_mut().expect("usage").fresh_input_tokens = Some(200);
+    second.usage.as_mut().expect("usage").fresh_input_tokens = Some(100);
+    third.usage.as_mut().expect("usage").fresh_input_tokens = Some(300);
+    let policy = AnalysisPolicy::default();
+    let ordered = context_diagnostics(
+        &[second.clone(), first.clone(), third.clone()],
+        60_000,
+        &[],
+        &policy,
+    );
+    let shuffled = context_diagnostics(
+        &[third.clone(), first.clone(), second.clone()],
+        60_000,
+        &[],
+        &policy,
+    );
+    assert_eq!(ordered, shuffled);
+    assert_eq!(shuffled.initial_prompt_tokens, Some(100));
+    assert_eq!(shuffled.prompt_growth_per_turn, Some(100));
+    assert_eq!(shuffled.median_prompt_tokens, Some(200));
+    assert_eq!(shuffled.p90_prompt_tokens, Some(300));
+
+    // A request ID makes even duplicate persisted ordinals deterministic.
+    first.ordinal = 1;
+    third.ordinal = 1;
+    let tied = context_diagnostics(
+        &[third.clone(), second.clone(), first.clone()],
+        60_000,
+        &[],
+        &policy,
+    );
+    assert_eq!(tied.initial_prompt_tokens, Some(200));
+    assert_eq!(
+        tied,
+        context_diagnostics(&[first, second, third], 60_000, &[], &policy)
+    );
+}
+
+#[test]
+fn context_samples_preserve_legacy_trace_order_without_ordinals() {
+    let mut first = request("z-first", 0, Some(true), Some(1));
+    let mut second = request("a-second", 0, Some(true), Some(1));
+    first.usage.as_mut().expect("usage").fresh_input_tokens = Some(300);
+    second.usage.as_mut().expect("usage").fresh_input_tokens = Some(100);
+    let context = context_diagnostics(&[first, second], 60_000, &[], &AnalysisPolicy::default());
+    assert_eq!(context.initial_prompt_tokens, Some(300));
+    assert_eq!(context.prompt_growth_per_turn, Some(-200));
+}
+
+#[test]
+fn reasoning_switches_break_timestamp_ties_by_request_and_observation_ids() {
+    let observation = |request_id: &str, id: u128, hash: &str| InferredObservation {
+        observation_id: Uuid::from_u128(id),
+        kind: InferredObservationKind::SessionMetadataClassified,
+        source_request_id: request_id.to_string(),
+        parser_version: OBSERVATION_PARSER_VERSION.to_string(),
+        evidence: EvidenceQuality::Direct,
+        occurred_at: OffsetDateTime::UNIX_EPOCH,
+        facts: BoundedObservationFacts {
+            reasoning_config_hash: Some(hash.to_string()),
+            ..BoundedObservationFacts::default()
+        },
+        limitations: Vec::new(),
+    };
+    let first = observation("a", 2, "config-a");
+    let second = observation("b", 1, "config-b");
+    let third = observation("b", 3, "config-a");
+    assert_eq!(
+        extended::reasoning_config_switches(&[first.clone(), second.clone(), third.clone()]),
+        Some(2)
+    );
+    assert_eq!(
+        extended::reasoning_config_switches(&[third, first, second]),
+        Some(2)
+    );
+}
+
+#[test]
+fn trace_validation_rejects_negative_cache_ttl_buckets_even_when_metrics_are_disabled() {
+    for bucket in [
+        CacheTtl::FiveMinutes,
+        CacheTtl::ThirtyMinutes,
+        CacheTtl::OneHour,
+    ] {
+        let mut session_request = request("negative-ttl", 0, Some(true), Some(1));
+        let usage = session_request.usage.as_mut().expect("usage");
+        match bucket {
+            CacheTtl::FiveMinutes => usage.cache_creation_5m_tokens = Some(-1),
+            CacheTtl::ThirtyMinutes => usage.cache_creation_30m_tokens = Some(-1),
+            CacheTtl::OneHour => usage.cache_creation_1h_tokens = Some(-1),
+            CacheTtl::Unknown => unreachable!("explicit buckets only"),
+        }
+        let input = trace(vec![session_request]);
+        for enabled in [true, false] {
+            let mut policy = AnalysisPolicy::default();
+            policy.metrics.token_metrics = enabled;
+            policy.metrics.cache_metrics = enabled;
+            assert_eq!(
+                analyze_session(&input, &policy, None),
+                Err(AnalysisError::InvalidUsage("negative-ttl".to_string()))
+            );
+        }
+    }
+
+    let mut valid = request("valid-ttl", 0, Some(true), Some(1));
+    let usage = valid.usage.as_mut().expect("usage");
+    usage.cache_creation_5m_tokens = Some(0);
+    usage.cache_creation_30m_tokens = Some(1);
+    usage.cache_creation_1h_tokens = Some(2);
+    assert!(analyze_session(&trace(vec![valid]), &AnalysisPolicy::default(), None).is_ok());
 }

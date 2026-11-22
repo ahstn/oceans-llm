@@ -1,6 +1,7 @@
 use std::io::{self, Write};
 
-use serde::Serialize;
+use agent_session_analysis::observations::request::serialized_size;
+
 use serde_json::{Value, json};
 
 use crate::redaction::MAX_INLINE_REQUEST_BYTES;
@@ -45,22 +46,6 @@ impl BoundingFacts {
 }
 
 #[derive(Default)]
-struct CountingWriter {
-    bytes: usize,
-}
-
-impl Write for CountingWriter {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        self.bytes = self.bytes.saturating_add(buffer.len());
-        Ok(buffer.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-#[derive(Default)]
 struct PrefixCountingWriter {
     bytes: usize,
     prefix: Vec<u8>,
@@ -90,15 +75,6 @@ impl Write for PrefixCountingWriter {
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
-}
-
-pub(crate) fn serialized_size<T>(value: &T) -> Result<usize, serde_json::Error>
-where
-    T: Serialize + ?Sized,
-{
-    let mut writer = CountingWriter::default();
-    serde_json::to_writer(&mut writer, value)?;
-    Ok(writer.bytes)
 }
 
 pub(crate) fn bound_request_payload(value: Value, max_bytes: usize) -> (Value, bool) {

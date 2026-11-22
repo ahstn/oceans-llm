@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 
-use crate::payload_bounding::serialized_size;
+use agent_session_analysis::observations::request::serialized_size;
 
 /// The sizes that estimate a request's tokens.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

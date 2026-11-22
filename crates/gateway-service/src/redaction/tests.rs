@@ -9,7 +9,8 @@ use super::{
     sanitize_diagnostic_headers, truncate_large_payload_fields,
     truncate_large_payload_fields_with_count,
 };
-use crate::payload_bounding::{bound_request_payload_after_known_fields, serialized_size};
+use crate::payload_bounding::bound_request_payload_after_known_fields;
+use agent_session_analysis::observations::request::serialized_size;
 
 #[test]
 fn request_policy_enforces_the_absolute_inline_ceiling() {
