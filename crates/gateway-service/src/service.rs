@@ -69,6 +69,10 @@ pub struct BatchUsageInput<'a> {
     pub provider_usage: Option<&'a Value>,
     pub pricing_status: BatchPricingStatus,
     pub cost_usd: Option<Money9>,
+    /// What a gateway before V84 stored for the same results: each part of the
+    /// charge rounded half-up to $0.0001 on its own. A retry accepts a ledger row
+    /// with this value as the same charge.
+    pub pre_v84_cost_usd: Option<Money9>,
     pub occurred_at: OffsetDateTime,
 }
 
@@ -1317,6 +1321,7 @@ where
             provider_usage,
             pricing_status,
             cost_usd,
+            pre_v84_cost_usd,
             occurred_at,
         } = input;
         if matches!(
@@ -1337,7 +1342,7 @@ where
             .get_usage_ledger_by_request_and_scope(&request_id, &ownership_scope_key)
             .await?
         {
-            if is_same_batch_charge(existing.computed_cost_usd, cost_usd) {
+            if is_same_batch_charge(existing.computed_cost_usd, cost_usd, pre_v84_cost_usd) {
                 return Ok(());
             }
             return Err(GatewayError::BatchUsageConflict {
@@ -1426,7 +1431,7 @@ where
                     )
                     .await?;
                 if existing.is_none_or(|existing| {
-                    !is_same_batch_charge(existing.computed_cost_usd, cost_usd)
+                    !is_same_batch_charge(existing.computed_cost_usd, cost_usd, pre_v84_cost_usd)
                 }) {
                     return Err(GatewayError::BatchUsageConflict {
                         batch_id: job.batch_id.to_string(),
@@ -1777,11 +1782,10 @@ pub(crate) fn scaled_cost_for_tokens(
     )
 }
 
-/// Whether a stored batch charge is the one a retry priced. Before V84 the
-/// ledger kept the charge rounded half-up to $0.0001; a retry prices it exactly,
-/// so a row written before the upgrade matches the rounded value.
-fn is_same_batch_charge(stored: Money9, priced: Money9) -> bool {
-    stored == priced || Money9::from_money4(priced.round_half_up_to_money4()) == Some(stored)
+/// Whether a stored batch charge is the one a retry priced: the exact charge, or
+/// the value a gateway before V84 stored for the same results.
+fn is_same_batch_charge(stored: Money9, priced: Money9, pre_v84: Option<Money9>) -> bool {
+    stored == priced || pre_v84 == Some(stored)
 }
 
 fn unpriced_reason_string(reason: &PricingUnpricedReason) -> String {
@@ -2064,6 +2068,7 @@ mod tests {
                     provider_usage: None,
                     pricing_status: BatchPricingStatus::ProviderReported,
                     cost_usd: Some(Money9::from_nanos(20_000_000)),
+                    pre_v84_cost_usd: None,
                     occurred_at,
                 },
             )

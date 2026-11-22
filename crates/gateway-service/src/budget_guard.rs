@@ -317,7 +317,7 @@ mod tests {
         ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthenticatedApiKey, BudgetCadence,
         BudgetIncreaseRecord, BudgetModelSelector, BudgetRecord, BudgetRepository, BudgetScope,
         BudgetSettings, BudgetSource, GatewayError, Money4, Money9, StoreError, UsageLedgerRecord,
-        UsagePricingStatus, budget_window_utc,
+        UsagePricingStatus,
     };
     use serde_json::json;
     use time::OffsetDateTime;
@@ -703,13 +703,23 @@ mod tests {
         request_id: &str,
         model_id: Uuid,
     ) -> Result<(), GatewayError> {
+        precheck_at(guard, auth, request_id, model_id, OffsetDateTime::now_utc()).await
+    }
+
+    async fn precheck_at(
+        guard: &BudgetGuard<InMemoryBudgetRepo>,
+        auth: &AuthenticatedApiKey,
+        request_id: &str,
+        model_id: Uuid,
+        occurred_at: OffsetDateTime,
+    ) -> Result<(), GatewayError> {
         guard
             .enforce_pre_provider_budget(
                 auth,
                 request_id,
                 Some(model_id),
                 Some("gpt-4o-mini"),
-                OffsetDateTime::now_utc(),
+                occurred_at,
             )
             .await
     }
@@ -783,8 +793,9 @@ mod tests {
         );
         let guard = BudgetGuard::new(repo);
         let auth = user_auth(user_id);
-        let now = OffsetDateTime::now_utc();
-        let day_start = budget_window_utc(BudgetCadence::Daily, now).period_start;
+        // A past day, so no clock read can move a check into another window.
+        let start =
+            OffsetDateTime::from_unix_timestamp(1_768_471_200).expect("2026-01-15 10:00 UTC");
         // A slow request started first; a quick one started and finished meanwhile.
         let mut slow = ledger(
             &auth,
@@ -793,7 +804,7 @@ mod tests {
             UsagePricingStatus::Priced,
             Money4::ZERO,
         );
-        slow.occurred_at = std::cmp::max(now - time::Duration::seconds(4), day_start);
+        slow.occurred_at = start;
         slow.computed_cost_usd = Money9::from_nanos(400_000_000);
         let mut quick = ledger(
             &auth,
@@ -802,7 +813,7 @@ mod tests {
             UsagePricingStatus::Priced,
             Money4::ZERO,
         );
-        quick.occurred_at = std::cmp::min(slow.occurred_at + time::Duration::seconds(2), now);
+        quick.occurred_at = start + time::Duration::seconds(2);
         quick.computed_cost_usd = Money9::from_nanos(700_000_000);
         guard
             .record_incurred_usage(&auth, &quick)
@@ -813,9 +824,15 @@ mod tests {
             .await
             .expect("record slow charge");
 
-        let error = precheck(&guard, &auth, "after-both", model_id)
-            .await
-            .expect_err("$1.10 of $1 is spent");
+        let error = precheck_at(
+            &guard,
+            &auth,
+            "after-both",
+            model_id,
+            start + time::Duration::seconds(10),
+        )
+        .await
+        .expect_err("$1.10 of $1 is spent");
         assert_budget_exceeded(&error, &scope.scope_key());
     }
 
