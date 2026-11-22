@@ -1,0 +1,19 @@
+docs/src/landing/content.ts
+  s_c12b95ba4434ae::t_d6e1d44c62c67c 23-24,80,260-292,308,340-341,379
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "7f45ef86b17f2fda4b80925979fd56162757c437",
+  "prompts": {},
+  "sessions": {
+    "s_c12b95ba4434ae": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a204cb-2911-700c-9eba-2eed33ad7aad",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
