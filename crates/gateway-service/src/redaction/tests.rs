@@ -136,11 +136,14 @@ fn captured_headers_preserve_current_harness_conversations() {
             .into_iter()
             .map(|(name, value)| (name, value.as_str().expect("header string").to_string()))
             .collect();
-        let metadata =
-            crate::client_session::extract_client_session(&json!({}), &captured, harness);
-        assert_eq!(metadata.session.value.as_deref(), Some(*expected));
+        let metadata = agent_session_analysis::identity::extract_client_session(
+            &json!({}),
+            &captured,
+            harness,
+        );
+        assert_eq!(metadata.session_value.as_deref(), Some(*expected));
         assert_eq!(metadata.parent_execution_id.as_deref(), *parent);
-        assert_eq!(metadata.session.limitation, None);
+        assert_eq!(metadata.session_limitation, None);
     }
 }
 

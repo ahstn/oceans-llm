@@ -1847,6 +1847,7 @@ name = "gateway"
 version = "1.2.0"
 dependencies = [
  "admin-ui",
+ "agent-session-analysis",
  "anyhow",
  "async-stream",
  "async-trait",

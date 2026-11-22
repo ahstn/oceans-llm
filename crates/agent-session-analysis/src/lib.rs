@@ -1,5 +1,6 @@
 pub mod calibration;
 mod extended;
+pub mod identity;
 pub mod tool_calls;
 
 pub use extended::{

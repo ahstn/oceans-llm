@@ -8,6 +8,7 @@ license = "AGPL-3.0-only"
 
 [dependencies]
 admin-ui.workspace = true
+agent-session-analysis.workspace = true
 anyhow.workspace = true
 base64.workspace = true
 async-stream = "0.3"

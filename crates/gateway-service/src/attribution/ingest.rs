@@ -21,7 +21,7 @@ use super::validate::{self, MAX_BRANCH_BYTES, MAX_HARNESS_VERSION_BYTES, MAX_TIT
 use super::{AttributionEntryStatus, AttributionRejectReason, AttributionUserLookup};
 use crate::agent_analysis::hash_lineage_candidate;
 use crate::budget_scopes::usage_ownership_scope_key;
-use crate::client_session::{
+use agent_session_analysis::identity::{
     OCEANS_SESSION_NAMESPACE, SESSION_HASH_NAMESPACES, is_external_session_id,
 };
 

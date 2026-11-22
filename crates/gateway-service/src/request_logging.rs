@@ -32,11 +32,11 @@ mod harness;
 mod stream;
 mod tool_cardinality;
 
+use agent_session_analysis::identity::harness::classify_agent_harness;
 pub use attempts::{
     RequestAttemptOutcome, build_request_attempt, failed_attempt_outcome, offset_now,
     successful_attempt_outcome,
 };
-pub use harness::{AgentHarness, classify_agent_harness};
 pub use stream::{
     StreamChunkObservation, StreamFailureSummary, StreamLogResultInput, StreamResponseCollector,
 };

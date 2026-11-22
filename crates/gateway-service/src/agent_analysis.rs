@@ -32,31 +32,12 @@ const MAX_IDLE_FINALIZATION_PAGES: usize = 100;
 const MAX_COHORT_SCAN_PAGES: u32 = 25;
 const MAX_COHORT_SAMPLES_PER_LEVEL: usize = 2_000;
 const COHORT_LOOKBACK: Duration = Duration::days(90);
-pub(crate) const SESSION_ANALYSIS_DIAGNOSTIC_HEADERS: &[&str] = &[
-    "session-id",
-    "session_id",
-    "thread-id",
-    "x-claude-code-agent-id",
-    "x-claude-code-parent-agent-id",
-    "x-claude-code-session-id",
-    "x-client-request-id",
-    "x-codex-parent-thread-id",
-    "x-codex-turn-metadata",
-    "x-litellm-session-id",
-    "x-oceans-session-id",
-    "x-opencode-parent-session-id",
-    "x-opencode-session",
-    "x-opencode-session-id",
-    "x-parent-session-id",
-    "x-session-affinity",
-    "x-session-id",
-];
 use uuid::Uuid;
 
-#[cfg(test)]
-use crate::client_session::MAX_EXTERNAL_IDENTIFIER_BYTES;
-pub(crate) use crate::client_session::SessionCorrelationLimitation;
 use crate::{budget_scopes::usage_ownership_scope_key, service::scaled_cost_for_tokens};
+#[cfg(test)]
+use agent_session_analysis::identity::MAX_EXTERNAL_IDENTIFIER_BYTES;
+use agent_session_analysis::identity::SessionCorrelationLimitation;
 
 pub const COHORT_VERSION: &str = "successful-boundary-group-v2";
 pub const PRICING_POLICY_VERSION: &str = "usage-ledger-cache-v1";

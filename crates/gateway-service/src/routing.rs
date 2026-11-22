@@ -9,7 +9,8 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
-use crate::{ResolvedGatewayRequest, client_session::extract_routing_session};
+use crate::ResolvedGatewayRequest;
+use agent_session_analysis::identity::extract_routing_session;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RoutingEndpoint {
@@ -155,7 +156,8 @@ pub async fn select_route(
     // Parse the session even for a continuation, so conflicting identifiers cannot
     // silently become valid when the caller adds previous_response_id.
     let affinity_key = if policy.affinity.is_some() && request.endpoint.supports_affinity() {
-        extract_routing_session(request.extra, request.headers, request.harness_key)?
+        extract_routing_session(request.extra, request.headers, request.harness_key)
+            .map_err(|limitation| GatewayError::InvalidRequest(limitation.to_string()))?
             .map(|session| digest(&[&owner_key, session.namespace, &session.value]))
     } else {
         None

@@ -1,7 +1,7 @@
 use super::*;
 use serde_json::json;
 
-use crate::request_logging::classify_agent_harness;
+use super::harness::classify_agent_harness;
 
 fn header_map(headers: &[(&str, &str)]) -> BTreeMap<String, String> {
     headers
@@ -14,7 +14,7 @@ fn routing_session(
     body: Value,
     headers: &[(&str, &str)],
     harness: &str,
-) -> Result<Option<RoutingSession>, GatewayError> {
+) -> Result<Option<RoutingSession>, SessionCorrelationLimitation> {
     let extra = serde_json::from_value(body).expect("request extensions");
     extract_routing_session(&extra, &header_map(headers), harness)
 }
@@ -31,8 +31,8 @@ fn assert_adapter_session(
 ) {
     let passive = passive_session(body.clone(), headers, harness);
     let routing = routing_session(body, headers, harness).expect("valid adapter metadata");
-    assert_eq!(passive.session.value.as_deref(), expected, "{harness}");
-    assert_eq!(passive.session.limitation, None, "{harness}");
+    assert_eq!(passive.session_value.as_deref(), expected, "{harness}");
+    assert_eq!(passive.session_limitation, None, "{harness}");
     assert_eq!(
         routing.as_ref().map(|session| session.value.as_str()),
         expected
@@ -50,12 +50,12 @@ fn assert_adapter_limitation(
     limitation: SessionCorrelationLimitation,
 ) {
     let passive = passive_session(body.clone(), headers, harness);
-    assert_eq!(passive.session.value, None, "{harness}");
+    assert_eq!(passive.session_value, None, "{harness}");
     assert_eq!(passive.session_namespace, None, "{harness}");
-    assert_eq!(passive.session.limitation, Some(limitation), "{harness}");
+    assert_eq!(passive.session_limitation, Some(limitation), "{harness}");
     assert!(matches!(
         routing_session(body, headers, harness),
-        Err(GatewayError::InvalidRequest(_))
+        Err(error) if error == limitation
     ));
 }
 
@@ -88,7 +88,7 @@ fn canonical_id_must_agree_with_harness_id() {
             &headers,
             "codex"
         ),
-        Err(GatewayError::InvalidRequest(message)) if message.contains("conflicting")
+        Err(error) if error.to_string().contains("conflicting")
     ));
 }
 
@@ -195,7 +195,7 @@ fn routing_rejects_malformed_ids_without_echoing_them() {
     ] {
         let error = routing_session(json!({}), &[("x-oceans-session-id", value)], "codex")
             .expect_err("invalid canonical ID");
-        assert!(matches!(error, GatewayError::InvalidRequest(_)));
+        assert_eq!(error, SessionCorrelationLimitation::MalformedCandidate);
         if !value.is_empty() {
             assert!(!error.to_string().contains(value));
         }
@@ -292,9 +292,9 @@ fn passive_metadata_keeps_existing_redaction_and_lineage_behavior() {
         ("x-codex-turn-metadata", "malformed"),
     ];
     let passive = passive_session(body, &headers, "codex");
-    assert_eq!(passive.session.value.as_deref(), Some("session-a"));
+    assert_eq!(passive.session_value.as_deref(), Some("session-a"));
     assert_eq!(
-        passive.session.source.as_deref(),
+        passive.session_source.as_deref(),
         Some("body:client_metadata.session_id")
     );
     assert_eq!(passive.session_namespace, Some("codex"));
@@ -312,16 +312,16 @@ fn passive_reads_the_canonical_header_for_every_harness() {
             harness,
         );
         assert_eq!(
-            passive.session.value.as_deref(),
+            passive.session_value.as_deref(),
             Some("session-a"),
             "{harness}"
         );
         assert_eq!(
-            passive.session.source.as_deref(),
+            passive.session_source.as_deref(),
             Some("header:x-oceans-session-id"),
             "{harness}"
         );
-        assert_eq!(passive.session.limitation, None, "{harness}");
+        assert_eq!(passive.session_limitation, None, "{harness}");
         assert_eq!(
             passive.session_namespace,
             Some(OCEANS_SESSION_NAMESPACE),
@@ -348,9 +348,9 @@ fn passive_canonical_id_must_agree_with_harness_id() {
         ],
         "claude_cli",
     );
-    assert_eq!(agreeing.session.value.as_deref(), Some("session-a"));
+    assert_eq!(agreeing.session_value.as_deref(), Some("session-a"));
     assert_eq!(
-        agreeing.session.source.as_deref(),
+        agreeing.session_source.as_deref(),
         Some("header:x-oceans-session-id+header:x-claude-code-session-id")
     );
     assert_eq!(agreeing.session_namespace, Some(OCEANS_SESSION_NAMESPACE));
@@ -397,9 +397,9 @@ fn passive_canonical_id_must_agree_with_harness_id() {
     ];
     for (name, harness, headers, limitation) in cases {
         let passive = passive_session(json!({}), &headers, harness);
-        assert_eq!(passive.session.value, None, "{name}");
-        assert_eq!(passive.session.source, None, "{name}");
-        assert_eq!(passive.session.limitation, Some(limitation), "{name}");
+        assert_eq!(passive.session_value, None, "{name}");
+        assert_eq!(passive.session_source, None, "{name}");
+        assert_eq!(passive.session_limitation, Some(limitation), "{name}");
         assert_eq!(passive.session_namespace, None, "{name}");
     }
 }
@@ -415,9 +415,9 @@ fn claude_cli_uses_the_claude_code_adapter() {
         ],
         "claude_cli",
     );
-    assert_eq!(passive.session.value.as_deref(), Some("session-a"));
+    assert_eq!(passive.session_value.as_deref(), Some("session-a"));
     assert_eq!(
-        passive.session.source.as_deref(),
+        passive.session_source.as_deref(),
         Some("header:x-claude-code-session-id")
     );
     assert_eq!(passive.session_namespace, Some("claude_code"));
@@ -444,9 +444,9 @@ fn codex_exec_requests_are_read_as_codex_sessions() {
         ],
         harness.key,
     );
-    assert_eq!(passive.session.value.as_deref(), Some(session));
+    assert_eq!(passive.session_value.as_deref(), Some(session));
     assert_eq!(
-        passive.session.source.as_deref(),
+        passive.session_source.as_deref(),
         Some("header:session-id+header:x-codex-turn-metadata.session_id")
     );
     assert_eq!(passive.session_namespace, Some("codex"));
@@ -475,7 +475,7 @@ fn opencode_child_conversation_is_not_its_cache_affinity() {
     );
     let passive = passive_session(json!({}), &headers, harness);
     assert_eq!(
-        passive.session.source.as_deref(),
+        passive.session_source.as_deref(),
         Some("header:x-opencode-session-id")
     );
     assert_eq!(passive.parent_execution_id.as_deref(), Some("ses_parent"));
@@ -527,8 +527,8 @@ fn opencode_explicit_identity_cannot_be_replaced_by_affinity() {
         ],
         "opencode",
     );
-    assert_eq!(passive.session.value, None);
-    assert_eq!(passive.session.limitation, None);
+    assert_eq!(passive.session_value, None);
+    assert_eq!(passive.session_limitation, None);
     let lineage = passive_session(
         json!({}),
         &[
@@ -538,7 +538,7 @@ fn opencode_explicit_identity_cannot_be_replaced_by_affinity() {
         ],
         "opencode",
     );
-    assert_eq!(lineage.session.value.as_deref(), Some("ses_child"));
+    assert_eq!(lineage.session_value.as_deref(), Some("ses_child"));
     assert_eq!(lineage.parent_execution_id, None);
 }
 
@@ -690,8 +690,8 @@ fn claude_redacted_metadata_is_missing_only_for_passive_analysis() {
                 &[("x-claude-code-session-id", "session-a")],
                 harness,
             );
-            assert_eq!(passive.session.value.as_deref(), Some("session-a"));
-            assert_eq!(passive.session.limitation, None);
+            assert_eq!(passive.session_value.as_deref(), Some("session-a"));
+            assert_eq!(passive.session_limitation, None);
             assert!(
                 routing_session(
                     body.clone(),
@@ -701,8 +701,8 @@ fn claude_redacted_metadata_is_missing_only_for_passive_analysis() {
                 .is_err()
             );
             let without_header = passive_session(body, &[], harness);
-            assert_eq!(without_header.session.value, None);
-            assert_eq!(without_header.session.limitation, None);
+            assert_eq!(without_header.session_value, None);
+            assert_eq!(without_header.session_limitation, None);
         }
     }
 }
@@ -814,7 +814,7 @@ fn codex_parent_alias_conflicts_and_invalid_ids_do_not_fall_back() {
             "x-codex-turn-metadata": "{\"forked_from_thread_id\":\"fallback\"}"
         }});
         let passive = passive_session(body, &[("x-codex-parent-thread-id", "parent")], "codex");
-        assert_eq!(passive.session.value.as_deref(), Some("session"));
+        assert_eq!(passive.session_value.as_deref(), Some("session"));
         assert_eq!(passive.parent_execution_id, None);
     }
     let passive = passive_session(

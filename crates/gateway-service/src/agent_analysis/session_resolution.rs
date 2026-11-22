@@ -76,7 +76,8 @@ pub(crate) fn extract_request_metadata(
     harness_key: &str,
 ) -> PassiveRequestMetadata {
     let body = if inspect_body { body } else { &Value::Null };
-    let client = crate::client_session::extract_client_session(body, headers, harness_key);
+    let client =
+        agent_session_analysis::identity::extract_client_session(body, headers, harness_key);
     let message_count = body
         .get("messages")
         .and_then(Value::as_array)
@@ -101,10 +102,10 @@ pub(crate) fn extract_request_metadata(
     let cache_requested = cache_control_requested(body);
 
     PassiveRequestMetadata {
-        external_session_id: client.session.value,
+        external_session_id: client.session_value,
         session_namespace: client.session_namespace,
-        session_source: client.session.source,
-        session_limitation: client.session.limitation,
+        session_source: client.session_source,
+        session_limitation: client.session_limitation,
         body_inspected: inspect_body,
         execution_id: client.execution_id,
         parent_execution_id: client.parent_execution_id,
