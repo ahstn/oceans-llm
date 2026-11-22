@@ -133,6 +133,18 @@ export function formatTimestamp(
   return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}, ${time} UTC`
 }
 
+/** A UTC calendar day, as the date part of `formatTimestamp`: `16 Oct 2026`. */
+export function formatUtcDate(value: Date | string | null | undefined) {
+  if (value == null || value === '') {
+    return EMPTY_VALUE
+  }
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return EMPTY_VALUE
+  }
+  return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`
+}
+
 const EXPIRY_FORMATTER = new Intl.DateTimeFormat('en-US', {
   month: 'short',
   day: 'numeric',

@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [1.3.0](https://github.com/ahstn/oceans-llm/compare/v1.2.0...v1.3.0) - 2026-11-22
+
+### :rocket: New features
+- *(admin-ui)* Chip filters and column toggle for agent sessions by @ahstn in [#704](https://github.com/ahstn/oceans-llm/pull/704)
+
+### Changed
+- *(deps-dev)* Bump the opencode-runtime group across 1 directory with 4 updates by @dependabot[bot] in [#664](https://github.com/ahstn/oceans-llm/pull/664)
+
+## [1.2.0](https://github.com/ahstn/oceans-llm/compare/v1.1.0...v1.2.0) - 2026-11-22
+
+### :rocket: New features
+- *(admin-ui)* Redesign teams list as an expandable ledger with tag chips by @ahstn in [#699](https://github.com/ahstn/oceans-llm/pull/699)
+
+### :bug: Bug fixes
+- *(security)* Patch gateway auth and vulnerable dependencies by @ahstn in [#695](https://github.com/ahstn/oceans-llm/pull/695)
+- *(admin-ui)* Show API key dialog selections and split scopes into a column by @ahstn in [#700](https://github.com/ahstn/oceans-llm/pull/700)
+
+### Changed
+- *(deps)* Bump openapi-sampler from 1.7.4 to 1.7.10 in /docs in the api-client group across 1 directory by @dependabot[bot] in [#666](https://github.com/ahstn/oceans-llm/pull/666)
+- *(gateway)* Cut budget-check and admin session database load by @ahstn in [#696](https://github.com/ahstn/oceans-llm/pull/696)
+- *(deps)* Bump the aws-sdk group across 1 directory with 3 updates by @dependabot[bot] in [#694](https://github.com/ahstn/oceans-llm/pull/694)
+- *(deps)* Bump hono from 4.12.30 to 4.13.18 in /tests/harness-integration by @dependabot[bot] in [#652](https://github.com/ahstn/oceans-llm/pull/652)
+- *(deps)* Bump google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml from 2.7.0 to 2.7.1 by @dependabot[bot] in [#690](https://github.com/ahstn/oceans-llm/pull/690)
+- *(deps)* Bump google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml from 2.7.0 to 2.7.1 by @dependabot[bot] in [#691](https://github.com/ahstn/oceans-llm/pull/691)
+- *(deps)* Bump jdx/mise-action from 5.2.6 to 5.2.7 by @dependabot[bot] in [#667](https://github.com/ahstn/oceans-llm/pull/667)
+- *(deps-dev)* Bump the review-agent-tooling group across 1 directory with 3 updates by @dependabot[bot] in [#663](https://github.com/ahstn/oceans-llm/pull/663)
+- *(deps)* Bump bytes from 1.12.1 to 1.12.2 in the async-runtime group across 1 directory by @dependabot[bot] in [#688](https://github.com/ahstn/oceans-llm/pull/688)
+- *(deps)* Bump indexmap from 2.14.1 to 2.14.2 by @dependabot[bot] in [#672](https://github.com/ahstn/oceans-llm/pull/672)
+- *(deps)* Bump regex from 1.13.1 to 1.13.2 by @dependabot[bot] in [#692](https://github.com/ahstn/oceans-llm/pull/692)
+- *(deps)* Bump libc from 0.2.189 to 0.2.191 by @dependabot[bot] in [#671](https://github.com/ahstn/oceans-llm/pull/671)
+- *(deps)* Bump the pi group across 1 directory with 4 updates by @dependabot[bot] in [#662](https://github.com/ahstn/oceans-llm/pull/662)
+- *(deps)* Bump hyper-util from 0.1.20 to 0.1.21 by @dependabot[bot] in [#678](https://github.com/ahstn/oceans-llm/pull/678)
+- *(deps)* Bump tokio-util from 0.7.19 to 0.7.20 by @dependabot[bot] in [#680](https://github.com/ahstn/oceans-llm/pull/680)
+- *(deps)* Bump zip from 9.5.1 to 9.8.0 by @dependabot[bot] in [#693](https://github.com/ahstn/oceans-llm/pull/693)
+- *(deps)* Bump hyper from 1.11.1 to 1.12.0 by @dependabot[bot] in [#679](https://github.com/ahstn/oceans-llm/pull/679)
+- *(deps)* Bump the utilities group across 1 directory with 3 updates by @dependabot[bot] in [#697](https://github.com/ahstn/oceans-llm/pull/697)
+- *(deps-dev)* Bump vite from 8.3.7 to 8.3.8 in /crates/admin-ui/web in the build-tools group across 1 directory by @dependabot[bot] in [#650](https://github.com/ahstn/oceans-llm/pull/650)
+- *(deps-dev)* Bump playwright from 1.65.0 to 1.65.1 in /crates/admin-ui/web in the testing group across 1 directory by @dependabot[bot] in [#668](https://github.com/ahstn/oceans-llm/pull/668)
+- *(deps-dev)* Bump the plugin-tooling group across 1 directory with 4 updates by @dependabot[bot] in [#669](https://github.com/ahstn/oceans-llm/pull/669)
+- *(deps-dev)* Bump the styling group across 2 directories with 3 updates by @dependabot[bot] in [#665](https://github.com/ahstn/oceans-llm/pull/665)
+- *(deps-dev)* Bump the code-quality group across 1 directory with 3 updates by @dependabot[bot] in [#681](https://github.com/ahstn/oceans-llm/pull/681)
+
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
 ## [Unreleased]
 
 ### Security

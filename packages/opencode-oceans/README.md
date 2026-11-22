@@ -1,12 +1,12 @@
 # @ahstn/opencode-oceans
 
 Discover Oceans and LiteLLM gateway models in OpenCode without copying model inventories into
-`opencode.json`. This is a Bun-native TypeScript, Effect plugin for **OpenCode 2.2.6**. It uses
+`opencode.json`. This is a Bun-native TypeScript, Effect plugin for **OpenCode 2.3.0**. It uses
 OpenCode's native provider adapters and catalog; it does not proxy inference requests.
 
 ## Install
 
-Requires Bun **1.4.4 or newer**, OpenCode **2.2.6**, and its supplied Effect **4.1.0** runtime.
+Requires Bun **1.4.4 or newer**, OpenCode **2.3.0**, and its supplied Effect **4.1.0** runtime.
 `@opencode/plugin` and `effect` are peers, not bundled dependencies. Node.js alone cannot load this
 source-only package.
 
@@ -149,7 +149,7 @@ mise run //opencode:test
 mise run //opencode:lint
 mise run //opencode:fmt-check
 mise run //opencode:fmt
-mise run //opencode:smoke         # packed plugin in OpenCode 2.2.6; local fixture, no paid calls
+mise run //opencode:smoke         # packed plugin in OpenCode 2.3.0; local fixture, no paid calls
 mise run //opencode:check
 mise run //opencode:pack          # checks, then source tarball in dist/
 mise run //opencode:smoke-published -- 0.1.0  # anonymous npm install and local fixture
