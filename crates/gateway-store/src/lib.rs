@@ -10404,7 +10404,7 @@ pub(crate) mod tests {
             .await
             .expect("nanos spend report");
         assert_eq!(daily.len(), 1);
-        assert_eq!(daily[0].priced_cost_usd, Money4::from_scaled(28));
+        assert_eq!(daily[0].priced_cost_usd, Money9::from_nanos(2_800_000));
     }
 
     #[tokio::test]
@@ -11651,7 +11651,7 @@ pub(crate) mod tests {
             .iter()
             .find(|row| row.day_start.unix_timestamp() == day_one_bucket)
             .expect("day one aggregate");
-        assert_eq!(first.priced_cost_usd, Money4::from_scaled(11_000));
+        assert_eq!(first.priced_cost_usd, Money9::from_nanos(1_100_000_000));
         assert_eq!(first.priced_request_count, 1);
         assert_eq!(first.unpriced_request_count, 1);
         assert_eq!(first.usage_missing_request_count, 1);
@@ -11659,7 +11659,7 @@ pub(crate) mod tests {
             .iter()
             .find(|row| row.day_start.unix_timestamp() == day_two_bucket)
             .expect("day two aggregate");
-        assert_eq!(second.priced_cost_usd, Money4::from_scaled(22_000));
+        assert_eq!(second.priced_cost_usd, Money9::from_nanos(2_200_000_000));
         assert_eq!(second.priced_request_count, 1);
         assert_eq!(second.unpriced_request_count, 1);
         assert_eq!(second.usage_missing_request_count, 1);
@@ -11723,7 +11723,10 @@ pub(crate) mod tests {
             .await
             .expect("user daily aggregates");
         assert_eq!(user_daily.len(), 1);
-        assert_eq!(user_daily[0].priced_cost_usd, Money4::from_scaled(11_000));
+        assert_eq!(
+            user_daily[0].priced_cost_usd,
+            Money9::from_nanos(1_100_000_000)
+        );
         let user_owners = store
             .list_usage_owner_aggregates(
                 window_start,
@@ -12875,7 +12878,7 @@ pub(crate) mod tests {
             .iter()
             .find(|row| row.day_start.unix_timestamp() == day_one_bucket)
             .expect("day one aggregate");
-        assert_eq!(first.priced_cost_usd, Money4::from_scaled(11_000));
+        assert_eq!(first.priced_cost_usd, Money9::from_nanos(1_100_000_000));
         assert_eq!(first.priced_request_count, 1);
         assert_eq!(first.unpriced_request_count, 1);
         assert_eq!(first.usage_missing_request_count, 1);
@@ -12883,7 +12886,7 @@ pub(crate) mod tests {
             .iter()
             .find(|row| row.day_start.unix_timestamp() == day_two_bucket)
             .expect("day two aggregate");
-        assert_eq!(second.priced_cost_usd, Money4::from_scaled(22_000));
+        assert_eq!(second.priced_cost_usd, Money9::from_nanos(2_200_000_000));
         assert_eq!(second.priced_request_count, 1);
         assert_eq!(second.unpriced_request_count, 1);
         assert_eq!(second.usage_missing_request_count, 1);
@@ -12947,7 +12950,10 @@ pub(crate) mod tests {
             .await
             .expect("user daily aggregates");
         assert_eq!(user_daily.len(), 1);
-        assert_eq!(user_daily[0].priced_cost_usd, Money4::from_scaled(11_000));
+        assert_eq!(
+            user_daily[0].priced_cost_usd,
+            Money9::from_nanos(1_100_000_000)
+        );
         let user_owners = store
             .list_usage_owner_aggregates(
                 window_start,

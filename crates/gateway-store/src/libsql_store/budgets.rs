@@ -664,7 +664,7 @@ impl BudgetRepository for LibsqlStore {
             let usage_missing_request_count: i64 = row.get(4).map_err(to_query_error)?;
             output.push(SpendDailyAggregateRecord {
                 day_start: unix_to_datetime(day_start)?,
-                priced_cost_usd: Money9::from_nanos(priced_cost_nanos).round_half_up_to_money4(),
+                priced_cost_usd: Money9::from_nanos(priced_cost_nanos),
                 priced_request_count,
                 unpriced_request_count,
                 usage_missing_request_count,

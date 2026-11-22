@@ -677,8 +677,7 @@ impl BudgetRepository for PostgresStore {
                 day_start: unix_to_datetime(day_start)?,
                 priced_cost_usd: Money9::from_nanos(
                     row.try_get::<i64, _>(1).map_err(to_query_error)?,
-                )
-                .round_half_up_to_money4(),
+                ),
                 priced_request_count: row.try_get(2).map_err(to_query_error)?,
                 unpriced_request_count: row.try_get(3).map_err(to_query_error)?,
                 usage_missing_request_count: row.try_get(4).map_err(to_query_error)?,

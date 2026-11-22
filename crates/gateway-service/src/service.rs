@@ -69,11 +69,56 @@ pub struct BatchUsageInput<'a> {
     pub provider_usage: Option<&'a Value>,
     pub pricing_status: BatchPricingStatus,
     pub cost_usd: Option<Money9>,
-    /// What a gateway before V84 stored for the same results: each part of the
-    /// charge rounded half-up to $0.0001 on its own. A retry accepts a ledger row
-    /// with this value as the same charge.
-    pub pre_v84_cost_usd: Option<Money9>,
+    /// What a gateway before V84 may have stored for the same results. A retry
+    /// accepts a ledger row with such a value as the same charge.
+    pub pre_v84_cost_usd: Option<PreV84Charge>,
     pub occurred_at: OffsetDateTime,
+}
+
+/// Nano-dollars in one $0.0001 step.
+const NANOS_PER_MONEY4: i64 = Money9::SCALE / Money4::SCALE;
+
+/// The values a gateway before V84 may have stored for a batch charge. It rounded
+/// each part half-up to $0.0001 from the part's exact value. Rounding the part's
+/// nano-dollar value instead gives the same result, except when the nano-dollar
+/// value is exactly $0.00005 past a step: the exact value may have been up to half
+/// a nano-dollar lower, which rounded down. Each such part may lower the stored
+/// value by one step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PreV84Charge {
+    highest: Money9,
+    boundary_parts: i64,
+}
+
+impl PreV84Charge {
+    /// The charge made of `parts`, or `None` without parts.
+    pub fn of_parts(parts: impl IntoIterator<Item = Money9>) -> Result<Option<Self>, GatewayError> {
+        let overflow = || GatewayError::Internal("batch cost overflow".to_string());
+        let mut charge: Option<Self> = None;
+        for part in parts {
+            let rounded =
+                Money9::from_money4(part.round_half_up_to_money4()).ok_or_else(overflow)?;
+            let at_boundary = part.as_nanos().rem_euclid(NANOS_PER_MONEY4) == NANOS_PER_MONEY4 / 2;
+            let sum = charge.unwrap_or(Self {
+                highest: Money9::ZERO,
+                boundary_parts: 0,
+            });
+            charge = Some(Self {
+                highest: sum.highest.checked_add(rounded).ok_or_else(overflow)?,
+                boundary_parts: sum.boundary_parts + i64::from(at_boundary),
+            });
+        }
+        Ok(charge)
+    }
+
+    fn matches(self, stored: Money9) -> bool {
+        let Some(below) = self.highest.as_nanos().checked_sub(stored.as_nanos()) else {
+            return false;
+        };
+        below >= 0
+            && below % NANOS_PER_MONEY4 == 0
+            && below / NANOS_PER_MONEY4 <= self.boundary_parts
+    }
 }
 
 #[derive(Debug)]
@@ -1783,9 +1828,9 @@ pub(crate) fn scaled_cost_for_tokens(
 }
 
 /// Whether a stored batch charge is the one a retry priced: the exact charge, or
-/// the value a gateway before V84 stored for the same results.
-fn is_same_batch_charge(stored: Money9, priced: Money9, pre_v84: Option<Money9>) -> bool {
-    stored == priced || pre_v84 == Some(stored)
+/// a value a gateway before V84 may have stored for the same results.
+fn is_same_batch_charge(stored: Money9, priced: Money9, pre_v84: Option<PreV84Charge>) -> bool {
+    stored == priced || pre_v84.is_some_and(|charge| charge.matches(stored))
 }
 
 fn unpriced_reason_string(reason: &PricingUnpricedReason) -> String {
@@ -1837,7 +1882,37 @@ mod tests {
         usage::{CacheUsageNormalization, UsageEstimateInput, usage_summary_from_value},
     };
 
-    use super::{BatchUsageInput, GatewayService, aggregate_batch_usage};
+    use super::{
+        BatchUsageInput, GatewayService, PreV84Charge, aggregate_batch_usage, is_same_batch_charge,
+    };
+
+    #[test]
+    fn a_pre_v84_batch_charge_matches_its_rounding_of_each_part() {
+        let charge = |parts: &[i64]| {
+            PreV84Charge::of_parts(parts.iter().copied().map(Money9::from_nanos))
+                .expect("no overflow")
+        };
+        let same = |stored: i64, priced: i64, pre_v84| {
+            is_same_batch_charge(
+                Money9::from_nanos(stored),
+                Money9::from_nanos(priced),
+                pre_v84,
+            )
+        };
+        // Two $0.00006 parts: each rounded to $0.0001 on its own.
+        let parts = charge(&[60_000, 60_000]);
+        assert!(same(200_000, 120_000, parts));
+        assert!(!same(100_000, 120_000, parts), "not the total rounded once");
+        // $0.0000499995 prices to 50,000 nanos, but before V84 rounded down to $0.0000.
+        let boundary = charge(&[60_000, 50_000]);
+        assert!(same(100_000, 110_000, boundary));
+        assert!(same(200_000, 110_000, boundary));
+        assert!(
+            !same(0, 110_000, boundary),
+            "only the boundary part may round down"
+        );
+        assert!(same(0, 0, charge(&[])), "an unpriced batch stores zero");
+    }
 
     #[test]
     fn batch_pricing_halves_openai_cache_reads_but_not_vertex_cache_reads() {
@@ -3159,9 +3234,15 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn budget_alert_fires_once_when_recorded_spend_crosses_the_threshold() {
-        // Each request costs $2 against a $5 soft budget, which alerts at 20% remaining.
+    /// A user with a $5 soft daily budget, which alerts at 20% remaining, and a route
+    /// where each [`record_alert_test_usage`] call costs $2.
+    fn alert_fixture() -> (
+        AuthenticatedApiKey,
+        GatewayModel,
+        ModelRoute,
+        Arc<UsageAccountingRepo>,
+        OffsetDateTime,
+    ) {
         let auth = auth();
         let user_id = auth.owner_user_id.expect("user owner");
         let model_id = Uuid::new_v4();
@@ -3214,30 +3295,50 @@ mod tests {
             provider: Some(openai_provider(&route.provider_key)),
             ..Default::default()
         });
+        (auth, model, route, repo, occurred_at)
+    }
+
+    async fn record_alert_test_usage(
+        service: &GatewayService<UsageAccountingRepo, PassThroughPlanner>,
+        (auth, model, route, occurred_at): (
+            &AuthenticatedApiKey,
+            &GatewayModel,
+            &ModelRoute,
+            OffsetDateTime,
+        ),
+        request_id: &str,
+    ) {
+        let recorded = service
+            .record_chat_usage(
+                auth,
+                model,
+                route,
+                request_id,
+                Some(json!({
+                    "prompt_tokens": 1_000_000,
+                    "completion_tokens": 500_000,
+                    "total_tokens": 1_500_000
+                })),
+                gateway_core::ServiceTierOutcome::default(),
+                UsageEstimateInput::default(),
+                occurred_at,
+            )
+            .await
+            .expect("usage should be recorded");
+        assert_eq!(recorded.cost_usd, Some(2.0));
+    }
+
+    #[tokio::test]
+    async fn budget_alert_fires_once_when_recorded_spend_crosses_the_threshold() {
+        let (auth, model, route, repo, occurred_at) = alert_fixture();
         let service = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
 
         // $4 of $5 leaves 20% after the second request; the third starts below it.
         for (request_id, alerts_after) in
             [("req_alert_1", 0), ("req_alert_2", 1), ("req_alert_3", 1)]
         {
-            let recorded = service
-                .record_chat_usage(
-                    &auth,
-                    &model,
-                    &route,
-                    request_id,
-                    Some(json!({
-                        "prompt_tokens": 1_000_000,
-                        "completion_tokens": 500_000,
-                        "total_tokens": 1_500_000
-                    })),
-                    gateway_core::ServiceTierOutcome::default(),
-                    UsageEstimateInput::default(),
-                    occurred_at,
-                )
-                .await
-                .expect("usage should be recorded");
-            assert_eq!(recorded.cost_usd, Some(2.0));
+            record_alert_test_usage(&service, (&auth, &model, &route, occurred_at), request_id)
+                .await;
             assert_eq!(
                 repo.alerts.lock().expect("alerts lock").len(),
                 alerts_after,
@@ -3249,6 +3350,34 @@ mod tests {
         assert_eq!(alerts[0].spend_before_usd, Money4::from_scaled(20_000));
         assert_eq!(alerts[0].spend_after_usd, Money4::from_scaled(40_000));
         assert_eq!(alerts[0].remaining_budget_usd, Money4::from_scaled(10_000));
+    }
+
+    #[tokio::test]
+    async fn budget_alert_fires_when_a_reload_shows_the_threshold_already_passed() {
+        let (auth, model, route, repo, occurred_at) = alert_fixture();
+        let request = (&auth, &model, &route, occurred_at);
+        let replica_a = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
+        record_alert_test_usage(&replica_a, request, "req_replica_a").await;
+        // Another replica's $2.50, which no charge seen by replica B crosses into.
+        {
+            let mut events = repo.events.lock().expect("events lock");
+            let mut other = events[0].clone();
+            other.usage_event_id = Uuid::new_v4();
+            other.request_id = "req_other_replica".to_string();
+            other.computed_cost_usd = Money9::from_nanos(2_500_000_000);
+            events.push(other);
+        }
+        let replica_b = GatewayService::new(repo.clone(), Arc::new(PassThroughPlanner));
+
+        // Replica B loads $4.50 of $5 before its own $2: past the threshold already.
+        record_alert_test_usage(&replica_b, request, "req_replica_b_1").await;
+        assert_eq!(repo.alerts.lock().expect("alerts lock").len(), 1);
+        record_alert_test_usage(&replica_b, request, "req_replica_b_2").await;
+        assert_eq!(
+            repo.alerts.lock().expect("alerts lock").len(),
+            1,
+            "later charges in the window do not ask the store again"
+        );
     }
 
     #[tokio::test]

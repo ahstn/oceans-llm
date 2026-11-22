@@ -10,7 +10,7 @@ use gateway_core::{
     BatchRepository, BatchStatus, ModelRepository, Money9, ProviderBatchRequest,
     ProviderBatchRequestItem, ProviderBatchResult, ProviderBatchSubmission, ProviderError,
 };
-use gateway_service::{BatchPricer, BatchPricingPolicy, BatchUsageInput};
+use gateway_service::{BatchPricer, BatchPricingPolicy, BatchUsageInput, PreV84Charge};
 use serde_json::json;
 use time::OffsetDateTime;
 use tracing::{error, info, warn};
@@ -630,11 +630,11 @@ fn validate_result_custom_ids(
 struct BatchCharge {
     status: BatchPricingStatus,
     cost_usd: Option<Money9>,
-    /// What a gateway before V84 stored for the same results, so a retry after
-    /// the upgrade accepts that ledger row. That gateway rounded each part half-up
-    /// to $0.0001: each reported cost, or the batch-level reported cost, and the
-    /// local total once.
-    pre_v84_cost_usd: Option<Money9>,
+    /// What a gateway before V84 may have stored for the same results, so a retry
+    /// after the upgrade accepts that ledger row. That gateway rounded each part
+    /// half-up to $0.0001: each reported cost, or the batch-level reported cost,
+    /// and the local total once.
+    pre_v84_cost_usd: Option<PreV84Charge>,
 }
 
 async fn price_results(
@@ -646,8 +646,8 @@ async fn price_results(
 ) -> Result<BatchCharge, gateway_core::GatewayError> {
     if state.provider_cost_usd.is_some() || results.iter().all(|result| result.cost_usd.is_some()) {
         let pre_v84_cost_usd = match state.provider_cost_usd {
-            Some(batch_cost) => Some(round_as_pre_v84(batch_cost)?),
-            None => sum_rounded_as_pre_v84(results.iter().filter_map(|result| result.cost_usd))?,
+            Some(batch_cost) => PreV84Charge::of_parts([batch_cost])?,
+            None => PreV84Charge::of_parts(results.iter().filter_map(|result| result.cost_usd))?,
         };
         if state.provider_cost_usd.is_none() {
             state.provider_cost_usd =
@@ -718,14 +718,7 @@ async fn price_results(
     let local_cost = pricer.price_usages(results.iter().zip(&locally_priced).filter_map(
         |(result, locally_priced)| locally_priced.then_some(result.provider_usage.as_ref()),
     ))?;
-    let pre_v84_cost_usd = sum_costs(
-        [
-            sum_rounded_as_pre_v84(reported_costs())?,
-            local_cost.map(round_as_pre_v84).transpose()?,
-        ]
-        .into_iter()
-        .flatten(),
-    )?;
+    let pre_v84_cost_usd = PreV84Charge::of_parts(reported_costs().chain(local_cost))?;
     state.provider_cost_usd = sum_costs([reported_cost, local_cost].into_iter().flatten())?;
     let status = if successful > 0 && priced == successful {
         BatchPricingStatus::Priced
@@ -739,19 +732,6 @@ async fn price_results(
         cost_usd: state.provider_cost_usd,
         pre_v84_cost_usd,
     })
-}
-
-/// `cost` rounded half-up to $0.0001, as a gateway before V84 stored it.
-fn round_as_pre_v84(cost: Money9) -> Result<Money9, gateway_core::GatewayError> {
-    Money9::from_money4(cost.round_half_up_to_money4())
-        .ok_or_else(|| gateway_core::GatewayError::Internal("batch cost overflow".to_string()))
-}
-
-fn sum_rounded_as_pre_v84(
-    costs: impl Iterator<Item = Money9>,
-) -> Result<Option<Money9>, gateway_core::GatewayError> {
-    let rounded = costs.map(round_as_pre_v84).collect::<Result<Vec<_>, _>>()?;
-    sum_costs(rounded.into_iter())
 }
 
 fn sum_costs(
@@ -925,11 +905,6 @@ mod tests {
             Some(Money9::from_nanos(42_001))
         );
         assert_eq!(charge.cost_usd, provider_state.provider_cost_usd);
-        assert_eq!(
-            charge.pre_v84_cost_usd,
-            Some(Money9::ZERO),
-            "$0.000042 reported and $0.000000001 local each rounded to $0.0000"
-        );
     }
 
     fn completed_provider_state(request_count: i64) -> ProviderBatchState {
@@ -966,11 +941,7 @@ mod tests {
         .await
         .expect("reported batch pricing");
         assert_eq!(charge.cost_usd, Some(Money9::from_nanos(120_000)));
-        assert_eq!(
-            charge.pre_v84_cost_usd,
-            Some(Money9::from_nanos(200_000)),
-            "each $0.00006 part rounded to $0.0001 on its own"
-        );
+        // A gateway before V84 rounded each $0.00006 part to $0.0001 on its own.
         let record = |charge: BatchCharge| {
             super::record_batch_usage(
                 &state.service,

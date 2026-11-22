@@ -1070,7 +1070,8 @@ pub struct BudgetAlertHistoryPage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpendDailyAggregateRecord {
     pub day_start: OffsetDateTime,
-    pub priced_cost_usd: Money4,
+    /// Exact, so a sum over days rounds to $0.0001 only once.
+    pub priced_cost_usd: Money9,
     pub priced_request_count: i64,
     pub unpriced_request_count: i64,
     pub usage_missing_request_count: i64,

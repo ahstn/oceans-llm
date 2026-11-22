@@ -1,4 +1,7 @@
-use std::{collections::BTreeSet, sync::Arc};
+use std::{
+    collections::{BTreeSet, HashMap},
+    sync::{Arc, Mutex},
+};
 
 use async_trait::async_trait;
 use gateway_core::{
@@ -14,6 +17,9 @@ use uuid::Uuid;
 use crate::{budget_guard::BudgetSpend, budget_scopes::effective_budget_limit};
 
 pub const BUDGET_ALERT_THRESHOLD_BPS: i32 = 2_000;
+
+/// Entries in [`AlertedWindows`] above which ended windows are dropped.
+const ALERTED_WINDOWS_PRUNE_AT: usize = 4_096;
 
 #[derive(Debug, Clone)]
 pub struct BudgetAlertEmail {
@@ -53,6 +59,36 @@ impl BudgetAlertSender for SinkBudgetAlertSender {
 pub struct BudgetAlertService<R> {
     repo: Arc<R>,
     sender: Arc<dyn BudgetAlertSender>,
+    alerted_windows: Arc<AlertedWindows>,
+}
+
+/// Budget windows (budget, window start) for which this process already asked the
+/// store to create the threshold alert, with each window's end for pruning.
+///
+/// Spend comes from a cached total, and another replica's charges reach it only on
+/// a reload. A reload can therefore show a window already past the threshold
+/// without any charge seen here crossing it. The first charge this process sees
+/// past the threshold in a window still asks the store, which keeps one alert per
+/// window; later charges in that window skip the write.
+#[derive(Default)]
+struct AlertedWindows(Mutex<HashMap<(Uuid, OffsetDateTime), OffsetDateTime>>);
+
+impl AlertedWindows {
+    fn contains(&self, key: &(Uuid, OffsetDateTime)) -> bool {
+        self.0
+            .lock()
+            .expect("alerted windows lock poisoned")
+            .contains_key(key)
+    }
+
+    fn insert(&self, key: (Uuid, OffsetDateTime), window_end: OffsetDateTime) {
+        let mut windows = self.0.lock().expect("alerted windows lock poisoned");
+        if windows.len() >= ALERTED_WINDOWS_PRUNE_AT {
+            let now = OffsetDateTime::now_utc();
+            windows.retain(|_, end| *end > now);
+        }
+        windows.insert(key, window_end);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -82,7 +118,11 @@ where
 {
     #[must_use]
     pub fn new(repo: Arc<R>, sender: Arc<dyn BudgetAlertSender>) -> Self {
-        Self { repo, sender }
+        Self {
+            repo,
+            sender,
+            alerted_windows: Arc::default(),
+        }
     }
 
     /// Raises alerts for the budgets a recorded charge crossed into the threshold, from the
@@ -217,17 +257,20 @@ where
             remaining_budget_floor_zero(evaluation.budget_amount, evaluation.spent_before);
         let remaining_after =
             remaining_budget_floor_zero(evaluation.budget_amount, evaluation.spent_after);
-
-        let crossed_threshold = is_at_or_below_threshold(remaining_after, evaluation.budget_amount)
-            && !is_at_or_below_threshold(remaining_before, evaluation.budget_amount);
-        let already_below_threshold = evaluation.immediate_on_existing_threshold
-            && is_at_or_below_threshold(remaining_after, evaluation.budget_amount);
-
-        if !crossed_threshold && !already_below_threshold {
+        if !is_at_or_below_threshold(remaining_after, evaluation.budget_amount) {
+            return Ok(());
+        }
+        let crossed_threshold =
+            !is_at_or_below_threshold(remaining_before, evaluation.budget_amount);
+        let window = budget_window_utc(evaluation.cadence, evaluation.occurred_at);
+        let window_key = (evaluation.budget_id, window.period_start);
+        if !crossed_threshold
+            && !evaluation.immediate_on_existing_threshold
+            && self.alerted_windows.contains(&window_key)
+        {
             return Ok(());
         }
 
-        let window = budget_window_utc(evaluation.cadence, evaluation.occurred_at);
         let created_at = OffsetDateTime::now_utc();
         let alert = BudgetAlertRecord {
             budget_alert_id: Uuid::new_v4(),
@@ -252,14 +295,11 @@ where
         };
 
         let deliveries = build_delivery_records(&alert, &evaluation.owner.recipients, created_at);
-        let inserted = self
-            .repo
+        // The store keeps one alert per budget window, so `false` means it exists.
+        self.repo
             .create_budget_alert_with_deliveries(&alert, &deliveries)
             .await?;
-        if !inserted {
-            return Ok(());
-        }
-
+        self.alerted_windows.insert(window_key, window.period_end);
         Ok(())
     }
 

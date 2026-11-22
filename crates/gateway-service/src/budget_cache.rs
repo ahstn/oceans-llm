@@ -27,14 +27,15 @@ pub const BUDGET_CACHE_TTL: Duration = Duration::from_secs(5);
 
 /// Most entries kept per map. One human request uses at most two scopes and
 /// three cadences, so this covers thousands of active owners. A full map drops
-/// expired entries, then other entries no task is using, down to
-/// [`EVICTED_FILL`] of this. An entry in use is never dropped, so the map can
-/// exceed this only by the entries of requests in flight.
+/// expired entries, then other entries no task is using, down to three-fourths
+/// of this. An entry in use is never dropped, so the map can exceed this only by
+/// the entries of requests in flight.
 const MAX_CACHED_ENTRIES: usize = 16_384;
 
-/// Fill, as a fraction of capacity (numerator over 4), that eviction stops at, so
-/// a full map scans its entries once per quarter of its capacity in new keys.
-const EVICTED_FILL: usize = 3;
+/// The share of capacity, in fourths, that eviction stops at. A map that cannot
+/// drop enough entries scans again only after it grows by the other fourth, so a
+/// map full of entries in use does not scan on every new key.
+const EVICTED_FILL_FOURTHS: usize = 3;
 
 /// Every cadence a charge can count toward.
 const CADENCES: [BudgetCadence; 3] = [
@@ -202,50 +203,68 @@ impl<T> Drop for ForgetOnDrop<'_, T> {
 /// the same slot, so one gate orders all loads and charges of that key.
 struct SlotMap<K, T> {
     capacity: usize,
-    slots: Mutex<HashMap<K, Arc<Slot<T>>>>,
+    inner: Mutex<SlotMapInner<K, T>>,
+}
+
+struct SlotMapInner<K, T> {
+    slots: HashMap<K, Arc<Slot<T>>>,
+    /// Size at which the next new key scans for entries to drop.
+    scan_at: usize,
 }
 
 impl<K: Eq + Hash, T: Clone> SlotMap<K, T> {
     fn new(capacity: usize) -> Self {
         Self {
             capacity,
-            slots: Mutex::new(HashMap::new()),
+            inner: Mutex::new(SlotMapInner {
+                slots: HashMap::new(),
+                scan_at: capacity,
+            }),
         }
     }
 
     fn slot(&self, key: K, ttl: Duration) -> Arc<Slot<T>> {
-        let mut slots = self.slots.lock().expect("budget cache lock poisoned");
-        if let Some(slot) = slots.get(&key) {
+        let mut inner = self.inner.lock().expect("budget cache lock poisoned");
+        if let Some(slot) = inner.slots.get(&key) {
             return Arc::clone(slot);
         }
-        if slots.len() >= self.capacity {
+        if inner.slots.len() >= inner.scan_at {
+            let target = self.capacity * EVICTED_FILL_FOURTHS / 4;
             // The map holds one reference; any other is a task loading the slot or
             // recording a charge through it, and its slot must stay the only one.
             // References are only cloned under this lock, so none appears here.
             let in_use = |slot: &Arc<Slot<T>>| Arc::strong_count(slot) > 1;
-            slots.retain(|_, slot| in_use(slot) || slot.is_fresh(ttl));
-            let mut excess = slots.len().saturating_sub(self.capacity * EVICTED_FILL / 4);
-            slots.retain(|_, slot| {
+            inner
+                .slots
+                .retain(|_, slot| in_use(slot) || slot.is_fresh(ttl));
+            let mut excess = inner.slots.len().saturating_sub(target);
+            inner.slots.retain(|_, slot| {
                 if excess == 0 || in_use(slot) {
                     return true;
                 }
                 excess -= 1;
                 false
             });
+            inner.scan_at = self
+                .capacity
+                .max(inner.slots.len() + (self.capacity - target));
         }
-        Arc::clone(slots.entry(key).or_default())
+        Arc::clone(inner.slots.entry(key).or_default())
     }
 
     fn clear(&self) {
-        self.slots
-            .lock()
-            .expect("budget cache lock poisoned")
-            .clear();
+        let mut inner = self.inner.lock().expect("budget cache lock poisoned");
+        inner.slots.clear();
+        inner.scan_at = self.capacity;
     }
 
     #[cfg(test)]
     fn len(&self) -> usize {
-        self.slots.lock().expect("budget cache lock poisoned").len()
+        self.inner
+            .lock()
+            .expect("budget cache lock poisoned")
+            .slots
+            .len()
     }
 }
 
@@ -384,6 +403,18 @@ mod tests {
         cache.spend.slot(key(), cache.ttl).fresh(Duration::MAX)
     }
 
+    /// How long a runnable future must stay pending to count as waiting.
+    const WAITING: Duration = Duration::from_millis(50);
+
+    /// Polls `future` for [`WAITING`], letting other tasks run, and asserts that it
+    /// is still pending. The future stays usable afterwards.
+    async fn assert_waits<F: std::future::Future + Unpin>(future: &mut F, why: &str) {
+        assert!(
+            tokio::time::timeout(WAITING, future).await.is_err(),
+            "{why}"
+        );
+    }
+
     #[tokio::test]
     async fn fresh_window_spend_answers_without_a_reload() {
         let cache = BudgetCache::new(Duration::from_secs(60));
@@ -453,17 +484,12 @@ mod tests {
             }
         });
         read.notified().await;
-        let recorder = tokio::spawn({
+        let mut recorder = tokio::spawn({
             let (cache, ledger) = (Arc::clone(&cache), Arc::clone(&ledger));
             async move { charge(&cache, &ledger, 100).await }
         });
-        tokio::task::yield_now().await;
-        assert_eq!(
-            ledger.load(Ordering::SeqCst),
-            0,
-            "the ledger write waits for the reload"
-        );
-
+        assert_waits(&mut recorder, "the ledger write waits for the reload").await;
+        assert_eq!(ledger.load(Ordering::SeqCst), 0);
         release.notify_one();
         assert_eq!(
             reload.await.expect("reload task").expect("reload"),
@@ -507,7 +533,7 @@ mod tests {
             }
         });
         written.notified().await;
-        let reload = tokio::spawn({
+        let mut reload = tokio::spawn({
             let (cache, ledger) = (Arc::clone(&cache), Arc::clone(&ledger));
             async move {
                 cache
@@ -517,11 +543,7 @@ mod tests {
                     .await
             }
         });
-        tokio::task::yield_now().await;
-        assert!(
-            !reload.is_finished(),
-            "the reload waits for the ledger write"
-        );
+        assert_waits(&mut reload, "the reload waits for the ledger write").await;
 
         release.notify_one();
         assert!(
@@ -562,7 +584,7 @@ mod tests {
             }
         });
         started.notified().await;
-        let waiting = tokio::spawn({
+        let mut waiting = tokio::spawn({
             let cache = Arc::clone(&cache);
             async move {
                 cache
@@ -570,11 +592,7 @@ mod tests {
                     .await
             }
         });
-        tokio::task::yield_now().await;
-        assert!(
-            !waiting.is_finished(),
-            "no expired value while the reload runs"
-        );
+        assert_waits(&mut waiting, "no expired value while the reload runs").await;
 
         release.notify_one();
         assert_eq!(
@@ -653,7 +671,7 @@ mod tests {
                 .await
                 .expect("churn the full cache");
         }
-        let reader = tokio::spawn({
+        let mut reader = tokio::spawn({
             let (cache, ledger) = (Arc::clone(&cache), Arc::clone(&ledger));
             async move {
                 cache
@@ -663,11 +681,7 @@ mod tests {
                     .await
             }
         });
-        tokio::task::yield_now().await;
-        assert!(
-            !reader.is_finished(),
-            "the reader waits for the charge in flight"
-        );
+        assert_waits(&mut reader, "the reader waits for the charge in flight").await;
         assert!(
             cache.spend.len() <= 2 + CADENCES.len(),
             "only slots in use exceed the cap"
@@ -717,17 +731,19 @@ mod tests {
         );
 
         prime().await;
+        let entered = Arc::new(Notify::new());
         let cancelled = tokio::spawn({
-            let cache = Arc::clone(&cache);
+            let (cache, entered) = (Arc::clone(&cache), Arc::clone(&entered));
             async move {
                 cache
                     .record_charge(&[SCOPE.to_string()], at(), Money9::from_nanos(100), || {
+                        entered.notify_one();
                         std::future::pending::<Result<bool, GatewayError>>()
                     })
                     .await
             }
         });
-        tokio::task::yield_now().await;
+        entered.notified().await;
         cancelled.abort();
         assert!(cancelled.await.expect_err("task aborted").is_cancelled());
         assert_eq!(
@@ -786,7 +802,7 @@ mod tests {
             }
         });
         written.notified().await;
-        let readers: Vec<_> = (0..2)
+        let mut readers: Vec<_> = (0..2)
             .map(|_| {
                 let (cache, ledger, loads) =
                     (Arc::clone(&cache), Arc::clone(&ledger), Arc::clone(&loads));
@@ -801,7 +817,9 @@ mod tests {
                 })
             })
             .collect();
-        tokio::task::yield_now().await;
+        for reader in &mut readers {
+            assert_waits(reader, "both readers queue behind the charge").await;
+        }
 
         release.notify_one();
         assert!(
@@ -842,7 +860,7 @@ mod tests {
         let loads = Arc::new(AtomicUsize::new(0));
         let (release, released) = tokio::sync::watch::channel(false);
 
-        let readers: Vec<_> = (0..50)
+        let mut readers: Vec<_> = (0..50)
             .map(|_| {
                 let cache = Arc::clone(&cache);
                 let loads = Arc::clone(&loads);
@@ -858,7 +876,7 @@ mod tests {
                 })
             })
             .collect();
-        tokio::task::yield_now().await;
+        assert_waits(&mut readers[0], "readers wait for the shared load").await;
         release.send(true).expect("readers listening");
 
         for reader in readers {
