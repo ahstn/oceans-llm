@@ -117,7 +117,14 @@ impl TracedResponse {
         };
         Box::pin(async_stream::stream! {
             let mut stream = response.bytes_stream();
-            while let Some(chunk) = stream.next().await {
+            // The exported span ends when it is last exited, not when it is dropped.
+            // Enter it on every body poll so the span covers the whole stream.
+            while let Some(chunk) = futures_util::future::poll_fn(|cx| {
+                let _entered = span.enter();
+                stream.poll_next_unpin(cx)
+            })
+            .await
+            {
                 if let Err(error) = &chunk {
                     timing.finish();
                     record_reqwest_error(&span, error);

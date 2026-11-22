@@ -97,12 +97,12 @@ pub async fn v1_messages_count_tokens(
     headers: HeaderMap,
     policy: RequestPolicyContext,
     InferenceAuth(auth): InferenceAuth,
-    request: Result<Json<AnthropicMessagesRequest>, JsonRejection>,
+    request: Result<TracedJson<AnthropicMessagesRequest>, JsonRejection>,
 ) -> Response {
     // Anthropic clients parse every failure as an error envelope, including a body
     // that is not valid JSON or has the wrong shape.
     let request = match request {
-        Ok(Json(request)) => request,
+        Ok(TracedJson(request)) => request,
         Err(rejection) => return anthropic_error_response(json_rejection_error(&rejection)),
     };
     match count_tokens_inner(state, request_id, headers, policy, auth, request).await {

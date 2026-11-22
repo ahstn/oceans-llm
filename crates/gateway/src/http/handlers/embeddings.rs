@@ -12,7 +12,7 @@ pub async fn v1_embeddings(
     headers: HeaderMap,
     policy: RequestPolicyContext,
     InferenceAuth(auth): InferenceAuth,
-    Json(request): Json<EmbeddingsRequest>,
+    TracedJson(request): TracedJson<EmbeddingsRequest>,
 ) -> Result<Response, AppError> {
     execute_json_operation(state, request_id, headers, policy, auth, request).await
 }

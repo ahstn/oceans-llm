@@ -10,16 +10,59 @@ use std::{
 use axum::{
     Json,
     body::{Body, Bytes, HttpBody},
-    extract::Request,
+    extract::{
+        FromRequest, Request,
+        rejection::{JsonRejection, MissingJsonContentType},
+    },
     middleware::Next,
     response::{IntoResponse, Response},
 };
 use gateway_core::{GatewayError, OpenAiErrorBody, OpenAiErrorEnvelope};
-use http::StatusCode;
+use http::{HeaderMap, StatusCode, header::CONTENT_TYPE};
 use http_body::{Frame, SizeHint};
-use serde::Serialize;
+use serde::{Serialize, de::DeserializeOwned};
+use tracing::Instrument as _;
 
 pub(super) const DEFAULT_MAX_BYTES: usize = 64 * 1024 * 1024;
+
+/// [`Json`] with the body read and the JSON decode in separate spans. Reading
+/// waits on the client's upload; decoding is gateway CPU time.
+pub struct TracedJson<T>(pub T);
+
+impl<T, S> FromRequest<S> for TracedJson<T>
+where
+    T: DeserializeOwned,
+    S: Send + Sync,
+{
+    type Rejection = JsonRejection;
+
+    async fn from_request(request: Request, state: &S) -> Result<Self, Self::Rejection> {
+        if !json_content_type(request.headers()) {
+            return Err(MissingJsonContentType::default().into());
+        }
+        let bytes = Bytes::from_request(request, state)
+            .instrument(tracing::info_span!("gateway.request.read_body"))
+            .await?;
+        let _decode = tracing::info_span!(
+            "gateway.request.decode",
+            gateway.request.body.received_bytes = bytes.len(),
+        )
+        .entered();
+        Json::from_bytes(&bytes).map(|Json(value)| Self(value))
+    }
+}
+
+/// The same `Content-Type` test as [`Json`]: `application/json` or `application/*+json`.
+fn json_content_type(headers: &HeaderMap) -> bool {
+    headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<mime::Mime>().ok())
+        .is_some_and(|mime| {
+            mime.type_() == "application"
+                && (mime.subtype() == "json" || mime.suffix().is_some_and(|name| name == "json"))
+        })
+}
 
 #[derive(Serialize)]
 struct BodyLimitResponse {

@@ -10,6 +10,7 @@ use gateway_guardrails::{
 };
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
+use tracing::Instrument as _;
 
 use crate::http::{
     guardrail_events::{
@@ -142,6 +143,7 @@ fn batch_associated_prompt(request: &Value) -> Option<String> {
     (!associated_prompt.is_empty()).then_some(associated_prompt)
 }
 
+#[tracing::instrument(name = "gateway.guardrails.response", skip_all)]
 pub async fn guard_model_response(
     state: &AppState,
     context: &InferenceGuardContext,
@@ -258,7 +260,12 @@ pub async fn guard_stream(
         buffered.extend_from_slice(&chunk);
     }
     collector.finish();
+    // Only the evaluation: the wait for upstream chunks above belongs to the upstream span.
     let guarded = guard_sse_payload(state, context, &buffered)
+        .instrument(tracing::info_span!(
+            "gateway.guardrails.stream",
+            gateway.guardrails.buffered_bytes = buffered.len(),
+        ))
         .await
         .map_err(|error| {
             Box::new(GuardStreamError {

@@ -13,7 +13,7 @@ pub async fn v1_images(
     headers: HeaderMap,
     policy: RequestPolicyContext,
     InferenceAuth(auth): InferenceAuth,
-    Json(request): Json<ImagesRequest>,
+    TracedJson(request): TracedJson<ImagesRequest>,
 ) -> Result<Response, AppError> {
     // Rejected before model resolution, like a body that fails to parse: no
     // request metric sample, request log or rate-limit slot.
