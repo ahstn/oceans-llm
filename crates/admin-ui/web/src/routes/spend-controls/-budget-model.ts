@@ -3,7 +3,7 @@ import { getBudgetAlertHistory, getSpendBudgets } from '@/server/admin-data.func
 import type {
   BudgetAlertHistoryView,
   BudgetScopeRequest,
-  ModelView,
+  ModelOptionView,
   SpendBudgetServiceAccountView,
   SpendBudgetUserModelView,
   SpendBudgetUserView,
@@ -22,7 +22,7 @@ export type SpendControlsLoaderData = {
   budgets: { data: SpendBudgetsView }
   /** `null` for team admins: alert history is platform-wide. */
   alerts: { data: BudgetAlertHistoryView } | null
-  models: ModelView[]
+  models: ModelOptionView[]
 }
 
 /**
@@ -213,12 +213,12 @@ export function userModelTarget(budget: SpendBudgetUserModelView, label: string)
 // ---------------------------------------------------------------------------
 
 /**
- * Human label for a model budget scope. `ModelView.model_id` is the UUID the budget
- * stores; `ModelView.id` is the model key shown in the UI. Falls back to the raw id.
+ * Human label for a model budget scope. `ModelOptionView.model_id` is the UUID the budget
+ * stores; `ModelOptionView.id` is the model key shown in the UI. Falls back to the raw id.
  */
 export function formatUserModelSelector(
   budget: SpendBudgetUserModelView,
-  models: readonly ModelView[] = [],
+  models: readonly ModelOptionView[] = [],
 ) {
   if (budget.model_id) {
     const key = models.find((model) => model.model_id === budget.model_id)?.id

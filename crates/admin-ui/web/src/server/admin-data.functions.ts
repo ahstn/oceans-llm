@@ -6,6 +6,7 @@ import {
   generateModelClientConfigs,
   listApiKeys,
   listModels,
+  listModelOptions,
   deactivateUser,
   changePassword,
   completeInvitation,
@@ -399,6 +400,10 @@ export const getModels = createServerFn({ method: 'GET' })
   .handler(async ({ data }) => {
     return listModels(data)
   })
+
+export const getModelOptions = createServerFn({ method: 'GET' }).handler(async () => {
+  return listModelOptions()
+})
 
 export const getModelClientConfigs = createServerFn({ method: 'POST' })
   .validator((data: Parameters<typeof generateModelClientConfigs>[0]) => data)

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { loadAllModels } from '@/lib/model-catalog'
-import type { ModelView } from '@/types/api'
+import type { ModelOptionView } from '@/types/api'
 
 // Option lists for the request log filter pickers, kept apart from the picker component so the
 // component module exports only components.
@@ -85,7 +85,7 @@ function startModelLoad(
     })
 }
 
-function modelFilterOptions(models: ModelView[]): FilterOption[] {
+function modelFilterOptions(models: ModelOptionView[]): FilterOption[] {
   const byKey = new Map<string, FilterOption>()
   for (const model of models) {
     // `id` is the model key that requests name and logs store; `model_id` is its internal UUID.

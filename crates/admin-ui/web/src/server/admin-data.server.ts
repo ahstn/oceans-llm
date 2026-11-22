@@ -79,6 +79,7 @@ import type {
   RecommendedMcpServersPayload,
   GenerateModelClientConfigsInput,
   GenerateModelClientConfigsResponse,
+  ModelOptionListView,
   ModelPageView,
   RefreshModelPricingCatalogResponse,
   PasswordInviteResult,
@@ -227,6 +228,12 @@ export async function listModels(params?: {
       },
     }),
   )
+}
+
+/** Every model, aliases included, with only the fields selectors show. */
+export async function listModelOptions(): Promise<ApiEnvelope<ModelOptionListView>> {
+  const client = createGatewayApiClient()
+  return unwrapGatewayResponse(await client.GET('/api/v1/admin/models/options'))
 }
 
 export async function generateModelClientConfigs(
