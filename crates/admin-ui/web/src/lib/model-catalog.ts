@@ -13,13 +13,18 @@ function getModelPage(page: number, signal?: AbortSignal) {
 /** At most this many page requests run at once, so a large catalog does not burst the API. */
 const MAX_CONCURRENT_PAGES = 4
 
-/** Every gateway model, aliases included, for selectors that must offer the whole catalog. */
-export async function loadAllModels(): Promise<ModelView[]> {
-  const first = await getModelPage(1)
+/**
+ * Every gateway model, aliases included, for selectors that must offer the whole catalog.
+ * Aborting `signal` cancels the load, such as when the selector unmounts.
+ */
+export async function loadAllModels(signal?: AbortSignal): Promise<ModelView[]> {
+  const pending = new AbortController()
+  if (signal?.aborted) pending.abort()
+  signal?.addEventListener('abort', () => pending.abort(), { once: true })
+  const first = await getModelPage(1, pending.signal)
   const pageCount = Math.ceil(first.data.total / MODEL_PAGE_SIZE)
   const rest: ModelPage[] = []
   let nextPage = 2
-  const pending = new AbortController()
   // Each worker fetches one page at a time until none are left. After any failure the load is
   // already lost, so the workers stop claiming pages and the pages still in flight are cancelled.
   async function drain(): Promise<void> {

@@ -825,6 +825,20 @@ describe('RequestLogsPage picker filters', () => {
     expect(getModelsMock).toHaveBeenCalledTimes(2)
   })
 
+  it('cancels a model catalog load still running when the page unmounts', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+    getModelsMock.mockImplementation(() => new Promise(() => {}))
+
+    const view = renderPage()
+    await addFilter(within(view.container), 'Model')
+    await waitFor(() => expect(getModelsMock).toHaveBeenCalledOnce())
+    const [{ signal }] = getModelsMock.mock.calls[0]
+    expect(signal.aborted).toBe(false)
+
+    view.unmount()
+    expect(signal.aborted).toBe(true)
+  })
+
   it('shows a deep-linked model without loading the catalog until the picker opens', async () => {
     routeMock.useSearch.mockReturnValue({ model_key: 'retired-model' })
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })

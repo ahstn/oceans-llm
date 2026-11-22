@@ -46,4 +46,25 @@ describe('loadAllModels', () => {
     const signals = getModels.mock.calls.slice(1).map(([options]) => options.signal)
     expect(signals.every((signal) => signal?.aborted)).toBe(true)
   })
+
+  it('cancels every page in flight and claims no more when the caller aborts', async () => {
+    const caller = new AbortController()
+    getModels.mockImplementation(
+      ({ data, signal }: { data: { page: number }; signal: AbortSignal }) => {
+        if (data.page === 1) return Promise.resolve({ data: { total: 2000, items: [] } })
+        // Later pages hang until aborted, as a slow request does.
+        return new Promise((_, reject) => {
+          signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+        })
+      },
+    )
+
+    const load = loadAllModels(caller.signal)
+    await vi.waitFor(() => expect(getModels).toHaveBeenCalledTimes(5))
+    caller.abort()
+
+    await expect(load).rejects.toThrow('aborted')
+    expect(getModels).toHaveBeenCalledTimes(5)
+    expect(getModels.mock.calls.every(([options]) => options.signal.aborted)).toBe(true)
+  })
 })

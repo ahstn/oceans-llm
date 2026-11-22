@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { loadAllModels } from '@/lib/model-catalog'
 import type { ModelView } from '@/types/api'
@@ -55,11 +55,13 @@ export function customModelKey(search: string) {
 /**
  * Loads the gateway model catalog on first use (adding the Model chip or opening its picker), so
  * a page opened with `model_key` already in the URL does not fetch the catalog. A failed load is
- * tried again on the next use.
+ * tried again on the next use. A load still running when the toolbar unmounts is cancelled.
  */
 export function useModelFilterOptions(): FilterOptionsState {
   const [state, setState] = useState<FilterOptionsState>({ status: 'idle', options: [] })
-  const inFlight = useRef(false)
+  const inFlight = useRef<AbortController | null>(null)
+
+  useEffect(() => () => inFlight.current?.abort(), [])
 
   const load = () => {
     if (state.status === 'idle' || state.status === 'error') startModelLoad(inFlight, setState)
@@ -68,17 +70,18 @@ export function useModelFilterOptions(): FilterOptionsState {
 }
 
 function startModelLoad(
-  inFlight: { current: boolean },
+  inFlight: { current: AbortController | null },
   setState: (state: FilterOptionsState) => void,
 ) {
   if (inFlight.current) return
-  inFlight.current = true
+  const controller = new AbortController()
+  inFlight.current = controller
   setState({ status: 'loading', options: [] })
-  loadAllModels()
+  loadAllModels(controller.signal)
     .then((models) => setState({ status: 'ready', options: modelFilterOptions(models) }))
     .catch(() => setState({ status: 'error', options: [] }))
     .finally(() => {
-      inFlight.current = false
+      inFlight.current = null
     })
 }
 
