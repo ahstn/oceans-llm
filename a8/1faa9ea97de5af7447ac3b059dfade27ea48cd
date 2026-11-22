@@ -1,0 +1,82 @@
+crates/admin-ui/web/src/routes/spend-controls/-budget-model.ts
+  s_bea5708eb838de::t_58fd0fdb362d97 6,216-217,221
+  s_bea5708eb838de::t_cffb3cc4e45efb 25
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_bea5708eb838de::t_569b94e3144282 895-915,2325-2342,4202-4208,8403-8418,8420-8421
+  s_bea5708eb838de::t_4f6a207eda793e 8419
+crates/admin-ui/web/src/types/live-api.ts
+  s_bea5708eb838de::t_cffb3cc4e45efb 113-114
+crates/admin-ui/web/src/routes/observability/-request-log-filter-options.ts
+  s_bea5708eb838de::t_58fd0fdb362d97 88
+  s_bea5708eb838de::t_cffb3cc4e45efb 4
+crates/gateway/src/http/models.rs
+  s_bea5708eb838de::t_3db90492bd344c 10-11,19-24,60-92
+  s_bea5708eb838de::t_7eec63689f398d 93
+crates/gateway/src/http/model_options_tests.rs
+  s_bea5708eb838de::t_063292517b9b89 8
+  s_bea5708eb838de::t_5337204db14c7f 1-7,9-86,88-183
+  s_bea5708eb838de::t_086f0a92c842fa 87
+crates/gateway/src/http/mod.rs
+  s_bea5708eb838de::t_68a7d603034173 187
+  s_bea5708eb838de::t_2b599916dd27a4 27-28
+crates/admin-ui/web/src/server/admin-data.functions.ts
+  s_bea5708eb838de::t_6f8709b9d92b0a 9
+  s_bea5708eb838de::t_cffb3cc4e45efb 404-406
+  s_bea5708eb838de::t_a0fdaa9dcabb4f 407
+crates/gateway-service/src/lib.rs
+  s_bea5708eb838de::t_2ac764e367e6fe 62-63
+crates/admin-ui/web/src/lib/model-catalog.ts
+  s_bea5708eb838de::t_cffb3cc4e45efb 1-2,10-12
+  s_bea5708eb838de::t_b245831a0b4b56 6-8
+crates/admin-ui/web/src/lib/model-catalog.test.ts
+  s_bea5708eb838de::t_7137ac7832141f 14-15,31
+  s_bea5708eb838de::t_cffb3cc4e45efb 5-6,10,13,16-17,21-22,25,30,32,40-41,43-44,46
+  s_bea5708eb838de::t_b245831a0b4b56 27-29,33,42,45
+crates/admin-ui/web/src/routes/spend-controls.tsx
+  s_bea5708eb838de::t_cffb3cc4e45efb 493
+  s_bea5708eb838de::t_58fd0fdb362d97 42
+crates/gateway-service/src/admin_models/options.rs
+  s_bea5708eb838de::t_304689f28c45fc 1-61
+docs/adr/2026-11-22-admin-model-options-listing.md
+  s_bea5708eb838de::t_ce1f705804c8c4 1-40
+crates/gateway-service/src/admin_models.rs
+  s_bea5708eb838de::t_c8bee9cd7dc7fd 1880-1883
+  s_bea5708eb838de::t_76d8b4e134cfcd 592-602
+  s_bea5708eb838de::t_812bcc352915b1 386-409,1933
+  s_bea5708eb838de::t_01240bf297537c 1275,1435-1436,1857-1879,1884-1932
+  s_bea5708eb838de::t_2ac764e367e6fe 20,22
+  s_bea5708eb838de::t_5912608f52d295 351-353
+crates/admin-ui/web/src/test/routes/spend-controls-route.test.tsx
+  s_bea5708eb838de::t_cffb3cc4e45efb 23-30,182,259-263,265-268
+  s_bea5708eb838de::t_7137ac7832141f 15,47-49,264,269
+crates/gateway/src/http/admin_contract.rs
+  s_bea5708eb838de::t_68a7d603034173 701-720,2189
+crates/admin-ui/web/src/server/admin-data.server.ts
+  s_bea5708eb838de::t_b245831a0b4b56 82
+  s_bea5708eb838de::t_6f8709b9d92b0a 233,237-238
+  s_bea5708eb838de::t_cffb3cc4e45efb 234-236
+crates/admin-ui/web/src/test/routes/request-logs-route.test.tsx
+  s_bea5708eb838de::t_5098635da9c4a3 40,758,844
+  s_bea5708eb838de::t_cffb3cc4e45efb 11,123,769,775,782,801,806,824,829,833-834,852,856,869
+  s_bea5708eb838de::t_3d8652cdef27ba 783,807,845
+crates/admin-ui/web/src/routes/spend-controls/-user-model-form.tsx
+  s_bea5708eb838de::t_cffb3cc4e45efb 15,27,44
+crates/gateway/openapi/admin-api.json
+  s_bea5708eb838de::t_343cd222fb7c4d 3465-3490,8687-8736,15321-15347
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a81faa9ea97de5af7447ac3b059dfade27ea48cd",
+  "prompts": {},
+  "sessions": {
+    "s_bea5708eb838de": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "13a0bec7-7a0c-4c7e-bd3f-413f37de54d6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
