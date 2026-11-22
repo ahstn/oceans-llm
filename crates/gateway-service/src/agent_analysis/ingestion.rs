@@ -188,21 +188,28 @@ async fn acquire_session_window<S>(
     desired_versions: &AgentAnalysisDesiredVersions,
 ) -> Result<AgentSessionRecord, GatewayError>
 where
-    S: AgentSessionAnalysisRepository + Sync,
+    S: gateway_core::AgentSessionTraceRepository + Sync,
 {
-    let mut open_session = store
-        .get_open_agent_session(
-            &ownership.ownership_scope_key,
-            ownership.session_source_id,
-            &input.harness_key,
-            &input.boundary_group_key,
-        )
-        .await?;
-    if let Some(session) = open_session.as_ref()
-        && input.occurred_at - session.input_watermark_at >= SESSION_IDLE_GAP
-    {
+    for _ in 0..MAX_SESSION_WINDOW_CAS_ATTEMPTS {
+        let session = if let Some(session) = store
+            .get_open_agent_session(
+                &ownership.ownership_scope_key,
+                ownership.session_source_id,
+                &input.harness_key,
+                &input.boundary_group_key,
+            )
+            .await?
+        {
+            session
+        } else {
+            insert_or_load_session_window(store, input, ownership, "open agent session disappeared")
+                .await?
+        };
+        if input.occurred_at - session.input_watermark_at < SESSION_IDLE_GAP {
+            return Ok(session);
+        }
         let expected_input_watermark_at = session.input_watermark_at;
-        let mut finalized_session = session.clone();
+        let mut finalized_session = session;
         finalized_session.lifecycle = SessionLifecycleState::Finalized;
         finalized_session.ended_at = Some(expected_input_watermark_at);
         finalized_session.input_watermark_at = input.completed_at;
@@ -217,32 +224,18 @@ where
             input.completed_at,
             desired_versions,
         );
-        if store
+        store
             .finalize_agent_session_if_unchanged(
                 &finalized_session,
                 expected_input_watermark_at,
                 Some(&analysis),
             )
-            .await?
-        {
-            open_session = None;
-        } else {
-            open_session = store
-                .get_open_agent_session(
-                    &ownership.ownership_scope_key,
-                    ownership.session_source_id,
-                    &input.harness_key,
-                    &input.boundary_group_key,
-                )
-                .await?;
-        }
+            .await?;
+        // Both a lost finalisation race and a lost creation race can expose another idle window.
     }
-    if let Some(session) = open_session {
-        Ok(session)
-    } else {
-        insert_or_load_session_window(store, input, ownership, "open agent session disappeared")
-            .await
-    }
+    Err(GatewayError::Internal(
+        "agent session window changed too often while enforcing the idle gap".to_string(),
+    ))
 }
 
 async fn insert_or_load_session_window<S>(
@@ -252,7 +245,7 @@ async fn insert_or_load_session_window<S>(
     disappeared_message: &'static str,
 ) -> Result<AgentSessionRecord, GatewayError>
 where
-    S: AgentSessionAnalysisRepository + Sync,
+    S: gateway_core::AgentSessionTraceRepository + Sync,
 {
     let confidence = if ownership.session_source_id.is_some() {
         Confidence::High
@@ -416,7 +409,7 @@ async fn append_passive_request<S>(
     desired_versions: &AgentAnalysisDesiredVersions,
 ) -> Result<Uuid, GatewayError>
 where
-    S: AgentSessionAnalysisRepository + Sync,
+    S: gateway_core::AgentSessionTraceRepository + Sync,
 {
     let PreparedSessionInput {
         mut request_link,
@@ -448,25 +441,7 @@ where
                     && append_attempts < MAX_SESSION_WINDOW_CAS_ATTEMPTS =>
             {
                 append_attempts = append_attempts.saturating_add(1);
-                session = if let Some(open_session) = store
-                    .get_open_agent_session(
-                        &ownership.ownership_scope_key,
-                        ownership.session_source_id,
-                        &input.harness_key,
-                        &input.boundary_group_key,
-                    )
-                    .await?
-                {
-                    open_session
-                } else {
-                    insert_or_load_session_window(
-                        store,
-                        input,
-                        ownership,
-                        "replacement agent session disappeared",
-                    )
-                    .await?
-                };
+                session = acquire_session_window(store, input, ownership, desired_versions).await?;
                 request_link.agent_session_id = session.agent_session_id;
                 request_link.correlation_confidence = session.boundary_confidence;
                 rebind_observation_set(
@@ -529,3 +504,6 @@ pub(crate) fn session_boundary_group_key(tags: &RequestTags) -> String {
             .map(|tag| (tag.key.as_str(), tag.value.as_str())),
     )
 }
+
+#[cfg(test)]
+mod tests;

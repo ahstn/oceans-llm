@@ -29,6 +29,6 @@ Input generation advances once for each committed input change and on finalisati
 
 The session row still serialises writers for a busy conversation. This is necessary for window capacity, persisted ordering and a shared nested-fact budget, but its lock no longer covers whole-history counting or JSON serialisation. Scalar counters require migration and transactional maintenance on every mutation path.
 
-A new input and its observations now commit or roll back together. Request-log annotation and durable analysis scheduling remain separate service concerns. Generation-aware job coalescing and guarded report publication are the next part of this decision; they must not clear a newer dirty generation when an older lease finishes.
+A new input and its observations now commit or roll back together. Production ingestion also schedules durable analysis in that transaction. A queue-write failure rolls back the input. Request-log annotation runs after the commit. [Generation-fenced analysis](./2026-11-22-generation-fenced-agent-session-analysis.md) defines job coalescing and guarded report publication.
 
 Contract coverage runs on both libSQL and PostgreSQL. It covers migration backfill with non-contiguous ordinals, duplicate replay, capacity, combined nested budget, rollback on an observation conflict, concurrent open-window creation and irreversible finalisation. A PostgreSQL contract also holds a foreign-key-compatible reader lock while appending input, so replacing the writer lock with an incompatible mode causes a failure.

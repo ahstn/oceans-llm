@@ -17,6 +17,9 @@ pub const REDACTED_VALUE: &str = "[REDACTED]";
 pub const MAX_EXTERNAL_IDENTIFIER_BYTES: usize = 256;
 
 /// Headers validated for duplicate and non-text values during routing.
+///
+/// With routing affinity enabled, every listed header must be single-valued text, even if the
+/// selected harness does not consume it. Validation runs before harness-specific extraction.
 pub const ROUTING_SESSION_HEADERS: &[&str] = &[
     "x-oceans-session-id",
     "session-id",
