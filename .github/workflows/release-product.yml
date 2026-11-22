@@ -185,7 +185,6 @@ jobs:
           IMAGE: ghcr.io/ahstn/${{ matrix.image }}
           PLATFORMS: ${{ matrix.platforms }}
           METADATA: ${{ steps.meta.outputs.json }}
-          RELEASE_TAG: ${{ fromJSON(inputs.plan).announcement_tag }}
         working-directory: ${{ runner.temp }}/digests
         run: |
           set -euo pipefail
@@ -199,19 +198,15 @@ jobs:
             fi
             sources+=("$IMAGE@$(<"$arch")")
           done
-          # Read the digest back through the release tag, the one tag no other release shares (two
-          # releases of one commit share `sha-` and `latest`). metadata-action publishes it with
-          # characters outside [A-Za-z0-9._-] replaced, so `v1.2.1+build.1` becomes `v1.2.1-build.1`.
-          release_ref="$IMAGE:$(sed -E 's/[^A-Za-z0-9._-]+/-/g' <<< "$RELEASE_TAG")"
-          if ! jq -e --arg ref "$release_ref" '.tags | index($ref)' <<< "$METADATA" > /dev/null; then
-            echo "::error::$release_ref is not among the tags to publish"
-            exit 1
-          fi
           tags=()
           while IFS= read -r tag; do tags+=(--tag "$tag"); done < <(jq -r '.tags[]' <<< "$METADATA")
+          # Take the digest from the index bytes this run pushes, not from a tag that another
+          # release of the same commit could overwrite. `--dry-run` prints exactly those bytes.
+          index="$(docker buildx imagetools create --dry-run "${tags[@]}" "${sources[@]}")"
+          digest="sha256:$(printf '%s' "$index" | sha256sum | cut -d' ' -f1)"
           docker buildx imagetools create "${tags[@]}" "${sources[@]}"
-          docker buildx imagetools inspect "$release_ref"
-          digest="$(docker buildx imagetools inspect "$release_ref" --format '{{json .Manifest}}' | jq -r .digest)"
+          # Fails if the registry does not hold an index with that digest.
+          docker buildx imagetools inspect "$IMAGE@$digest"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Attest image provenance
