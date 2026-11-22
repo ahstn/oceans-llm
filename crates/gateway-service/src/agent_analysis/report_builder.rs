@@ -1,6 +1,7 @@
 use super::worker::analysis_versions;
 use super::*;
 use agent_session_analysis::{
+    InferredObservation, ObservationSetId,
     cohort::{
         COHORT_LOOKBACK, CohortCandidate, CohortSelection, CohortSession, MAX_COHORT_SCAN_PAGES,
         NO_COHORT_FALLBACK_LEVEL, SelectedCohort, no_cohort_snapshot_digest,
@@ -51,6 +52,133 @@ where
         )));
     }
 
+    let Some(ReportObservations {
+        observation_set_id,
+        observations,
+        request_metadata_count,
+        response_payload_count,
+        truncated_payload_count,
+    }) = load_report_observations(store, &trace, &versions.observation_parser_version).await?
+    else {
+        return Ok(());
+    };
+    let RequestEvidence {
+        requests,
+        intervals,
+    } = load_request_evidence(store, &trace, configured_policy).await?;
+
+    let DirectMcpEvidence {
+        intervals: direct_mcp_intervals,
+        invocations: direct_tool_invocations,
+        snapshot_digest: direct_mcp_snapshot_digest,
+    } = load_direct_mcp_evidence(store, &trace.session, &trace.requests).await?;
+    let cohort = load_successful_harness_cohort(store, &trace, versions).await?;
+    let report = agent_session_analysis::analyze_session(
+        &SessionTrace {
+            requests,
+            activity_intervals: intervals,
+            observations,
+            lifecycle: trace.session.lifecycle,
+            boundary_confidence: trace.session.boundary_confidence,
+            evidence: TraceEvidence {
+                session_observed: trace.session.agent_session_source_id.is_some(),
+                request_metadata_count,
+                response_payload_count,
+                truncated_payload_count,
+                direct_mcp_intervals,
+                tool_invocations: direct_tool_invocations,
+            },
+        },
+        &AnalysisPolicy {
+            report_schema_version: versions.report_schema_version.clone(),
+            analyzer_version: versions.analyzer_version.clone(),
+            score_policy_version: versions.score_policy_version.clone(),
+            observation_parser_version: versions.observation_parser_version.clone(),
+            configuration_version: versions.configuration_version.clone(),
+            orchestration_gap: configured_policy.orchestration_gap,
+            maturity: versions.score_maturity,
+            calibration_approval_id: versions.calibration_approval_id.clone(),
+            metrics: configured_policy.metrics.clone(),
+            context_input_boundary_tokens: configured_policy.context_input_boundary_tokens,
+            context_reserved_output_tokens: configured_policy.context_reserved_output_tokens,
+            context_penalty_points_per_repeated_excess: configured_policy
+                .context_penalty_points_per_repeated_excess,
+            cache_profiles: configured_policy.cache_profiles.clone(),
+        },
+        cohort.as_ref().map(|value| &value.reference),
+    )
+    .map_err(|error| GatewayError::Internal(error.to_string()))?;
+    let analysis = AgentSessionAnalysisRecord {
+        analysis_id: stable_uuid(
+            ANALYSIS_ID_NAMESPACE,
+            &json!({
+                "session": agent_session_id,
+                "watermark": trace.session.input_watermark_at.unix_timestamp_nanos(),
+                "generation": trace.input_generation,
+                "observation_set": observation_set_id,
+                "versions": versions,
+                "cohort_snapshot": cohort.as_ref().map(|value| &value.snapshot_digest),
+                "direct_mcp_snapshot": direct_mcp_snapshot_digest,
+            })
+            .to_string(),
+        ),
+        agent_session_id,
+        configuration_version: versions.configuration_version.clone(),
+        boundary_policy_version: versions.boundary_policy_version.clone(),
+        input_watermark_at: trace.session.input_watermark_at,
+        input_generation: trace.input_generation,
+        observation_set_id,
+        observation_parser_version: versions.observation_parser_version.clone(),
+        pricing_policy_version: versions.pricing_policy_version.clone(),
+        cohort_version: cohort.as_ref().map_or_else(
+            || versions.cohort_version.clone(),
+            |value| value.reference.cohort_version.clone(),
+        ),
+        cohort_fallback_level: cohort.as_ref().map_or(NO_COHORT_FALLBACK_LEVEL, |value| {
+            value.reference.fallback_level
+        }),
+        cohort_sample_size: cohort.as_ref().map_or(0, |value| {
+            value.reference.successful_costs_10000.len() as u64
+        }),
+        cohort_snapshot_digest: cohort
+            .as_ref()
+            .map_or_else(no_cohort_snapshot_digest, |value| {
+                value.snapshot_digest.clone()
+            }),
+        direct_mcp_snapshot_digest,
+        analyzed_at: now,
+        report,
+        stale: false,
+        superseded_by_analysis_id: None,
+        expires_at: now + report_retention,
+        ownership_scope_key: trace.session.ownership_scope_key.clone(),
+        user_id: trace.session.user_id,
+        service_account_id: trace.session.service_account_id,
+    };
+    store
+        .append_agent_session_analysis(&analysis, Some(lease))
+        .await?;
+    Ok(())
+}
+
+struct ReportObservations {
+    observation_set_id: ObservationSetId,
+    observations: Vec<InferredObservation>,
+    request_metadata_count: u32,
+    response_payload_count: u32,
+    truncated_payload_count: u32,
+}
+
+/// No matching parser observations retain an existing analysis without publishing another.
+async fn load_report_observations<S>(
+    store: &S,
+    trace: &AgentSessionTraceRecord,
+    parser_version: &str,
+) -> Result<Option<ReportObservations>, GatewayError>
+where
+    S: AgentSessionAnalysisRepository + Sync,
+{
+    let agent_session_id = trace.session.agent_session_id;
     let all_observation_sets = store.load_agent_observation_sets(agent_session_id).await?;
     if all_observation_sets.is_empty() {
         return Err(GatewayError::Internal(
@@ -64,10 +192,10 @@ where
     }
     let observation_sets = all_observation_sets
         .into_iter()
-        .filter(|set| set.parser_version == versions.observation_parser_version)
+        .filter(|set| set.parser_version == parser_version)
         .collect::<Vec<_>>();
     if observation_sets.is_empty() && trace.latest_analysis.is_some() {
-        return Ok(());
+        return Ok(None);
     }
     if observation_sets.is_empty() {
         return Err(GatewayError::Internal(
@@ -94,7 +222,29 @@ where
         observation_coverage_count(&observation_sets, usize::MAX, |coverage| {
             coverage_flag(coverage, "response_payload_truncated")
         });
+    Ok(Some(ReportObservations {
+        observation_set_id: observation_set.observation_set_id,
+        observations,
+        request_metadata_count,
+        response_payload_count,
+        truncated_payload_count,
+    }))
+}
 
+struct RequestEvidence {
+    requests: Vec<SessionRequestFact>,
+    intervals: Vec<ActivityInterval>,
+}
+
+async fn load_request_evidence<S>(
+    store: &S,
+    trace: &AgentSessionTraceRecord,
+    configured_policy: &AnalysisPolicy,
+) -> Result<RequestEvidence, GatewayError>
+where
+    S: AgentSessionAnalysisRepository + BudgetRepository + Sync,
+{
+    let agent_session_id = trace.session.agent_session_id;
     let mut attempts_by_request = BTreeMap::<String, Vec<RequestAttemptFact>>::new();
     if configured_policy.metrics.reliability_metrics {
         let attempt_limit = u32::try_from(MAX_RELIABILITY_EVENTS).unwrap_or(u32::MAX);
@@ -158,99 +308,10 @@ where
             attempts,
         });
     }
-
-    let DirectMcpEvidence {
-        intervals: direct_mcp_intervals,
-        invocations: direct_tool_invocations,
-        snapshot_digest: direct_mcp_snapshot_digest,
-    } = load_direct_mcp_evidence(store, &trace.session, &trace.requests).await?;
-    let cohort = load_successful_harness_cohort(store, &trace, versions).await?;
-    let report = agent_session_analysis::analyze_session(
-        &SessionTrace {
-            requests,
-            activity_intervals: intervals,
-            observations,
-            lifecycle: trace.session.lifecycle,
-            boundary_confidence: trace.session.boundary_confidence,
-            evidence: TraceEvidence {
-                session_observed: trace.session.agent_session_source_id.is_some(),
-                request_metadata_count,
-                response_payload_count,
-                truncated_payload_count,
-                direct_mcp_intervals,
-                tool_invocations: direct_tool_invocations,
-            },
-        },
-        &AnalysisPolicy {
-            report_schema_version: versions.report_schema_version.clone(),
-            analyzer_version: versions.analyzer_version.clone(),
-            score_policy_version: versions.score_policy_version.clone(),
-            observation_parser_version: versions.observation_parser_version.clone(),
-            configuration_version: versions.configuration_version.clone(),
-            orchestration_gap: configured_policy.orchestration_gap,
-            maturity: versions.score_maturity,
-            calibration_approval_id: versions.calibration_approval_id.clone(),
-            metrics: configured_policy.metrics.clone(),
-            context_input_boundary_tokens: configured_policy.context_input_boundary_tokens,
-            context_reserved_output_tokens: configured_policy.context_reserved_output_tokens,
-            context_penalty_points_per_repeated_excess: configured_policy
-                .context_penalty_points_per_repeated_excess,
-            cache_profiles: configured_policy.cache_profiles.clone(),
-        },
-        cohort.as_ref().map(|value| &value.reference),
-    )
-    .map_err(|error| GatewayError::Internal(error.to_string()))?;
-    let analysis = AgentSessionAnalysisRecord {
-        analysis_id: stable_uuid(
-            ANALYSIS_ID_NAMESPACE,
-            &json!({
-                "session": agent_session_id,
-                "watermark": trace.session.input_watermark_at.unix_timestamp_nanos(),
-                "generation": trace.input_generation,
-                "observation_set": observation_set.observation_set_id,
-                "versions": versions,
-                "cohort_snapshot": cohort.as_ref().map(|value| &value.snapshot_digest),
-                "direct_mcp_snapshot": direct_mcp_snapshot_digest,
-            })
-            .to_string(),
-        ),
-        agent_session_id,
-        configuration_version: versions.configuration_version.clone(),
-        boundary_policy_version: versions.boundary_policy_version.clone(),
-        input_watermark_at: trace.session.input_watermark_at,
-        input_generation: trace.input_generation,
-        observation_set_id: observation_set.observation_set_id,
-        observation_parser_version: versions.observation_parser_version.clone(),
-        pricing_policy_version: versions.pricing_policy_version.clone(),
-        cohort_version: cohort.as_ref().map_or_else(
-            || versions.cohort_version.clone(),
-            |value| value.reference.cohort_version.clone(),
-        ),
-        cohort_fallback_level: cohort.as_ref().map_or(NO_COHORT_FALLBACK_LEVEL, |value| {
-            value.reference.fallback_level
-        }),
-        cohort_sample_size: cohort.as_ref().map_or(0, |value| {
-            value.reference.successful_costs_10000.len() as u64
-        }),
-        cohort_snapshot_digest: cohort
-            .as_ref()
-            .map_or_else(no_cohort_snapshot_digest, |value| {
-                value.snapshot_digest.clone()
-            }),
-        direct_mcp_snapshot_digest,
-        analyzed_at: now,
-        report,
-        stale: false,
-        superseded_by_analysis_id: None,
-        expires_at: now + report_retention,
-        ownership_scope_key: trace.session.ownership_scope_key.clone(),
-        user_id: trace.session.user_id,
-        service_account_id: trace.session.service_account_id,
-    };
-    store
-        .append_agent_session_analysis(&analysis, Some(lease))
-        .await?;
-    Ok(())
+    Ok(RequestEvidence {
+        requests,
+        intervals,
+    })
 }
 
 struct DirectMcpEvidence {

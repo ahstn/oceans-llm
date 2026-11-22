@@ -119,5 +119,4 @@ impl<'a> CohortSelection<'a> {
 }
 
 #[cfg(test)]
-#[path = "cohort_tests.rs"]
 mod tests;

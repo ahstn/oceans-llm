@@ -72,6 +72,19 @@ impl PassiveRequestRecord<'_> {
     }
 }
 
+struct PassiveRequestOwnership {
+    ownership_scope_key: String,
+    analytics_team_id: Option<Uuid>,
+    session_source_id: Option<Uuid>,
+    normalized_session_id: Option<String>,
+}
+
+struct PreparedSessionInput {
+    request_link: AgentSessionRequestLinkRecord,
+    observation_set: AgentObservationSetRecord,
+    truncated_observation_set: AgentObservationSetRecord,
+}
+
 pub(crate) async fn record_prepared_passive_request<S>(
     store: &S,
     mut input: PreparedPassiveRequestRecord,
@@ -79,6 +92,27 @@ pub(crate) async fn record_prepared_passive_request<S>(
 ) -> Result<Uuid, GatewayError>
 where
     S: AgentSessionAnalysisRepository + BudgetRepository + IdentityRepository + Sync,
+{
+    let mut ownership = resolve_passive_request_ownership(store, &input).await?;
+    let session = acquire_session_window(store, &input, &ownership, desired_versions).await?;
+    let session_input = prepare_session_input(store, &mut input, &mut ownership, &session).await?;
+    append_passive_request(
+        store,
+        &input,
+        &ownership,
+        session,
+        session_input,
+        desired_versions,
+    )
+    .await
+}
+
+async fn resolve_passive_request_ownership<S>(
+    store: &S,
+    input: &PreparedPassiveRequestRecord,
+) -> Result<PassiveRequestOwnership, GatewayError>
+where
+    S: AgentSessionAnalysisRepository + IdentityRepository + Sync,
 {
     let ownership_scope_key = usage_ownership_scope_key(&input.auth)?;
     let analytics_team_id = if let Some(user_id) = input.auth.owner_user_id {
@@ -137,13 +171,29 @@ where
     } else {
         None
     };
-    let session_source_id = session_source
-        .as_ref()
-        .map(|record| record.agent_session_source_id);
+    Ok(PassiveRequestOwnership {
+        ownership_scope_key,
+        analytics_team_id,
+        session_source_id: session_source
+            .as_ref()
+            .map(|record| record.agent_session_source_id),
+        normalized_session_id,
+    })
+}
+
+async fn acquire_session_window<S>(
+    store: &S,
+    input: &PreparedPassiveRequestRecord,
+    ownership: &PassiveRequestOwnership,
+    desired_versions: &AgentAnalysisDesiredVersions,
+) -> Result<AgentSessionRecord, GatewayError>
+where
+    S: AgentSessionAnalysisRepository + Sync,
+{
     let mut open_session = store
         .get_open_agent_session(
-            &ownership_scope_key,
-            session_source_id,
+            &ownership.ownership_scope_key,
+            ownership.session_source_id,
             &input.harness_key,
             &input.boundary_group_key,
         )
@@ -179,78 +229,97 @@ where
         } else {
             open_session = store
                 .get_open_agent_session(
-                    &ownership_scope_key,
-                    session_source_id,
+                    &ownership.ownership_scope_key,
+                    ownership.session_source_id,
                     &input.harness_key,
                     &input.boundary_group_key,
                 )
                 .await?;
         }
     }
-    let build_new_session = || {
-        let confidence = if session_source_id.is_some() {
-            Confidence::High
-        } else {
-            Confidence::Medium
-        };
-        AgentSessionRecord {
-            agent_session_id: stable_uuid(
-                SESSION_ID_NAMESPACE,
-                &json!({
-                    "scope": ownership_scope_key,
-                    "session": session_source_id,
-                    "harness": input.harness_key,
-                    "boundary": input.boundary_group_key,
-                    "first_request": input.request_id,
-                })
-                .to_string(),
-            ),
-            agent_session_source_id: session_source_id,
-            ownership_scope_key: ownership_scope_key.clone(),
-            api_key_id: input.auth.id,
-            user_id: input.auth.owner_user_id,
-            team_id: analytics_team_id,
-            service_account_id: input.auth.owner_service_account_id,
-            actor_user_id: None,
-            harness_key: input.harness_key.clone(),
-            requested_model_key: input.requested_model_key.clone(),
-            operation: input.operation.clone(),
-            caller_class: caller_class(&input.auth).to_string(),
-            request_tags: input.request_tags.clone(),
-            boundary_group_key: input.boundary_group_key.clone(),
-            boundary_policy_version: SESSION_BOUNDARY_POLICY_VERSION.to_string(),
-            lifecycle: SessionLifecycleState::Open,
-            boundary_confidence: confidence,
-            started_at: input.occurred_at,
-            ended_at: None,
-            input_watermark_at: input.completed_at,
-            finalized_reason: None,
-            created_at: input.completed_at,
-            updated_at: input.completed_at,
-        }
-    };
-    let mut session = if let Some(session) = open_session {
-        session
+    if let Some(session) = open_session {
+        Ok(session)
     } else {
-        let session = build_new_session();
-        if store.insert_agent_session_if_absent(&session).await? {
-            session
-        } else {
-            store
-                .get_open_agent_session(
-                    &ownership_scope_key,
-                    session_source_id,
-                    &input.harness_key,
-                    &input.boundary_group_key,
-                )
-                .await?
-                .ok_or_else(|| {
-                    GatewayError::Internal("open agent session disappeared".to_string())
-                })?
-        }
+        insert_or_load_session_window(store, input, ownership, "open agent session disappeared")
+            .await
+    }
+}
+
+async fn insert_or_load_session_window<S>(
+    store: &S,
+    input: &PreparedPassiveRequestRecord,
+    ownership: &PassiveRequestOwnership,
+    disappeared_message: &'static str,
+) -> Result<AgentSessionRecord, GatewayError>
+where
+    S: AgentSessionAnalysisRepository + Sync,
+{
+    let confidence = if ownership.session_source_id.is_some() {
+        Confidence::High
+    } else {
+        Confidence::Medium
     };
+    let session = AgentSessionRecord {
+        agent_session_id: stable_uuid(
+            SESSION_ID_NAMESPACE,
+            &json!({
+                "scope": ownership.ownership_scope_key,
+                "session": ownership.session_source_id,
+                "harness": input.harness_key,
+                "boundary": input.boundary_group_key,
+                "first_request": input.request_id,
+            })
+            .to_string(),
+        ),
+        agent_session_source_id: ownership.session_source_id,
+        ownership_scope_key: ownership.ownership_scope_key.clone(),
+        api_key_id: input.auth.id,
+        user_id: input.auth.owner_user_id,
+        team_id: ownership.analytics_team_id,
+        service_account_id: input.auth.owner_service_account_id,
+        actor_user_id: None,
+        harness_key: input.harness_key.clone(),
+        requested_model_key: input.requested_model_key.clone(),
+        operation: input.operation.clone(),
+        caller_class: caller_class(&input.auth).to_string(),
+        request_tags: input.request_tags.clone(),
+        boundary_group_key: input.boundary_group_key.clone(),
+        boundary_policy_version: SESSION_BOUNDARY_POLICY_VERSION.to_string(),
+        lifecycle: SessionLifecycleState::Open,
+        boundary_confidence: confidence,
+        started_at: input.occurred_at,
+        ended_at: None,
+        input_watermark_at: input.completed_at,
+        finalized_reason: None,
+        created_at: input.completed_at,
+        updated_at: input.completed_at,
+    };
+    if store.insert_agent_session_if_absent(&session).await? {
+        Ok(session)
+    } else {
+        store
+            .get_open_agent_session(
+                &ownership.ownership_scope_key,
+                ownership.session_source_id,
+                &input.harness_key,
+                &input.boundary_group_key,
+            )
+            .await?
+            .ok_or_else(|| GatewayError::Internal(disappeared_message.to_string()))
+    }
+}
+
+async fn prepare_session_input<S>(
+    store: &S,
+    input: &mut PreparedPassiveRequestRecord,
+    ownership: &mut PassiveRequestOwnership,
+    session: &AgentSessionRecord,
+) -> Result<PreparedSessionInput, GatewayError>
+where
+    S: BudgetRepository + Sync,
+{
     let usage_event_id = store
-        .get_usage_ledger_by_request_and_scope(&input.request_id, &ownership_scope_key)
+        .get_usage_ledger_by_request_and_scope(&input.request_id, &ownership.ownership_scope_key)
         .await?
         .map(|usage| usage.usage_event_id);
     let terminal_success = if input.terminal_success == Some(false) && usage_event_id.is_some() {
@@ -259,7 +328,7 @@ where
         input.terminal_success
     };
     let mut limitations = Vec::new();
-    if session_source_id.is_none() {
+    if ownership.session_source_id.is_none() {
         limitations.push(LimitationCode::SessionUnobserved);
     }
     if input.metadata.session_limitation.is_some() {
@@ -268,8 +337,10 @@ where
     if usage_event_id.is_none() {
         limitations.push(LimitationCode::UsageUnavailable);
     }
-    let (execution_id, parent_execution_id) = input.metadata.hashed_lineage(&ownership_scope_key);
-    let mut request_link = AgentSessionRequestLinkRecord {
+    let (execution_id, parent_execution_id) = input
+        .metadata
+        .hashed_lineage(&ownership.ownership_scope_key);
+    let request_link = AgentSessionRequestLinkRecord {
         agent_session_id: session.agent_session_id,
         request_id: input.request_id.clone(),
         request_log_id: input.request_log_id,
@@ -277,7 +348,7 @@ where
         ordinal: 0,
         execution_id,
         parent_execution_id,
-        normalized_session_id,
+        normalized_session_id: ownership.normalized_session_id.take(),
         correlation_confidence: session.boundary_confidence,
         limitation_codes: limitations,
         occurred_at: input.occurred_at,
@@ -306,7 +377,7 @@ where
     );
     let mut observations = std::mem::take(&mut input.observations);
     assign_observation_ids(session.agent_session_id, &mut observations);
-    let mut observation_set = AgentObservationSetRecord {
+    let observation_set = AgentObservationSetRecord {
         observation_set_id,
         agent_session_id: session.agent_session_id,
         parser_version: OBSERVATION_PARSER_VERSION.to_string(),
@@ -320,7 +391,7 @@ where
     let mut truncated_observations = observation_set.observations.clone();
     truncate_nested_facts(&mut truncated_observations);
     assign_observation_ids(session.agent_session_id, &mut truncated_observations);
-    let mut truncated_observation_set = AgentObservationSetRecord {
+    let truncated_observation_set = AgentObservationSetRecord {
         coverage: truncated_coverage,
         observations: truncated_observations,
         observation_set_id,
@@ -329,6 +400,29 @@ where
         source_watermark_at: input.completed_at,
         created_at: input.completed_at,
     };
+    Ok(PreparedSessionInput {
+        request_link,
+        observation_set,
+        truncated_observation_set,
+    })
+}
+
+async fn append_passive_request<S>(
+    store: &S,
+    input: &PreparedPassiveRequestRecord,
+    ownership: &PassiveRequestOwnership,
+    mut session: AgentSessionRecord,
+    prepared: PreparedSessionInput,
+    desired_versions: &AgentAnalysisDesiredVersions,
+) -> Result<Uuid, GatewayError>
+where
+    S: AgentSessionAnalysisRepository + Sync,
+{
+    let PreparedSessionInput {
+        mut request_link,
+        mut observation_set,
+        mut truncated_observation_set,
+    } = prepared;
     let mut append_attempts = 0_usize;
     let append_result = loop {
         let analysis = super::worker::analysis_request(
@@ -356,8 +450,8 @@ where
                 append_attempts = append_attempts.saturating_add(1);
                 session = if let Some(open_session) = store
                     .get_open_agent_session(
-                        &ownership_scope_key,
-                        session_source_id,
+                        &ownership.ownership_scope_key,
+                        ownership.session_source_id,
                         &input.harness_key,
                         &input.boundary_group_key,
                     )
@@ -365,24 +459,13 @@ where
                 {
                     open_session
                 } else {
-                    let candidate = build_new_session();
-                    if store.insert_agent_session_if_absent(&candidate).await? {
-                        candidate
-                    } else {
-                        store
-                            .get_open_agent_session(
-                                &ownership_scope_key,
-                                session_source_id,
-                                &input.harness_key,
-                                &input.boundary_group_key,
-                            )
-                            .await?
-                            .ok_or_else(|| {
-                                GatewayError::Internal(
-                                    "replacement agent session disappeared".to_string(),
-                                )
-                            })?
-                    }
+                    insert_or_load_session_window(
+                        store,
+                        input,
+                        ownership,
+                        "replacement agent session disappeared",
+                    )
+                    .await?
                 };
                 request_link.agent_session_id = session.agent_session_id;
                 request_link.correlation_confidence = session.boundary_confidence;
@@ -410,7 +493,7 @@ where
         store
             .link_request_log_to_agent_session(&AgentRequestLogLinkRecord {
                 request_log_id,
-                agent_session_source_id: session_source_id,
+                agent_session_source_id: ownership.session_source_id,
                 agent_session_id: session.agent_session_id,
                 analysis_source: "passive".to_string(),
                 coverage: stored_coverage,
