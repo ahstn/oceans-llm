@@ -35,11 +35,11 @@ impl PostgresStore {
         }
         let mut nested_delta = 0;
         if let Some(observations) = &prepared.observations {
-            if let Some(existing) = load_set(&mut transaction, &observations.full.id).await? {
+            if let Some(existing) = load_set(&mut transaction, &observations.id).await? {
                 result.nested_facts_truncated = observations.replay_kind(&existing)?;
             } else {
                 let (selected, truncated) = observations.select(state.nested_fact_count)?;
-                insert_set(&mut transaction, &prepared.session_id, selected).await?;
+                insert_set(&mut transaction, &prepared.session_id, &selected).await?;
                 result.observations_inserted = true;
                 result.nested_facts_truncated = truncated;
                 nested_delta = selected.nested_facts;

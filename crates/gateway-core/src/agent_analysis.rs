@@ -370,6 +370,14 @@ pub trait AgentSessionTraceRepository {
         agent_session_id: AgentSessionId,
     ) -> Result<Vec<AgentObservationSetRecord>, StoreError>;
 
+    /// Loads only the requested parser's sets and child observations, filtering before the
+    /// 1,001-set overflow sentinel limit. Historical parser versions do not consume that limit.
+    async fn load_agent_observation_sets_for_parser(
+        &self,
+        agent_session_id: AgentSessionId,
+        parser_version: &str,
+    ) -> Result<Vec<AgentObservationSetRecord>, StoreError>;
+
     async fn link_request_log_to_agent_session(
         &self,
         link: &AgentRequestLogLinkRecord,

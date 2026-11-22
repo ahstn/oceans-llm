@@ -70,7 +70,7 @@ DELETE FROM agent_analysis_recompute_queue
 WHERE queue_item_id IN (
   SELECT queue_item_id FROM (
     SELECT queue_item_id, ROW_NUMBER() OVER (
-      PARTITION BY agent_session_id ORDER BY updated_at DESC, created_at DESC, queue_item_id DESC
+      PARTITION BY agent_session_id ORDER BY created_at DESC, queue_item_id DESC
     ) AS position FROM agent_analysis_recompute_queue
   ) ranked WHERE position > 1
 );

@@ -6,8 +6,27 @@ impl PostgresStore {
         &self,
         session_id: Uuid,
     ) -> Result<Vec<AgentObservationSetRecord>, StoreError> {
+        self.load_session_observation_sets_matching(session_id, None)
+            .await
+    }
+
+    pub(super) async fn load_session_observation_sets_for_parser(
+        &self,
+        session_id: Uuid,
+        parser_version: &str,
+    ) -> Result<Vec<AgentObservationSetRecord>, StoreError> {
+        self.load_session_observation_sets_matching(session_id, Some(parser_version))
+            .await
+    }
+
+    async fn load_session_observation_sets_matching(
+        &self,
+        session_id: Uuid,
+        parser_version: Option<&str>,
+    ) -> Result<Vec<AgentObservationSetRecord>, StoreError> {
         let rows = sqlx::query(LOAD_SETS_SQL)
             .bind(session_id.to_string())
+            .bind(parser_version)
             .fetch_all(&self.pool)
             .await
             .map_err(to_query_error)?;
@@ -54,7 +73,8 @@ impl PostgresStore {
 
 const LOAD_SETS_SQL: &str = r"
 SELECT observation_set_id, parser_version, source_watermark_at, coverage_json, created_at
-FROM agent_inferred_observation_sets WHERE agent_session_id = $1
+FROM agent_inferred_observation_sets
+WHERE agent_session_id = $1 AND ($2::text IS NULL OR parser_version = $2)
 ORDER BY source_watermark_at, created_at, observation_set_id LIMIT 1001
 ";
 

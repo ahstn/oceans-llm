@@ -18,6 +18,8 @@ use crate::{LibsqlStore, PostgresStore, StoreConnectionOptions};
 mod contracts;
 mod generation;
 mod hydration;
+mod observation_loading;
+pub(crate) mod trace_snapshot;
 #[tokio::test]
 #[serial]
 async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
@@ -929,6 +931,8 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     contracts::concurrent_open_window(&store, &session).await;
     generation::generation_jobs(&store, &session).await;
     hydration::bulk_hydration(&store, &session).await;
+    observation_loading::parser_filtered_loading(&store, &session).await;
+    trace_snapshot::generation_snapshot(&store, &session).await;
 
     store
         .connection()
@@ -1095,6 +1099,9 @@ async fn postgres_agent_session_dimensions_round_trip_and_filter() {
     contracts::postgres_input_allows_foreign_key_readers(&store, &session).await;
     generation::generation_jobs(&store, &session).await;
     hydration::bulk_hydration(&store, &session).await;
+    observation_loading::parser_filtered_loading(&store, &session).await;
+    trace_snapshot::generation_snapshot(&store, &session).await;
+    generation::postgres_owner_deletion_locks_sessions_first(&store, &session).await;
 
     store.pool().close().await;
     drop_postgres_test_database(&test_db).await;

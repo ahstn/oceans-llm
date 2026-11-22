@@ -179,6 +179,15 @@ impl AgentAnalysisQueueRepository for PostgresStore {
         ownership_scope_key: &str,
     ) -> Result<u64, StoreError> {
         let mut transaction = self.pool.begin().await.map_err(to_query_error)?;
+        // Publication locks the session before report/queue rows. Deletion must
+        // use the same order, including a stable order across owner sessions.
+        sqlx::query(
+            "SELECT agent_session_id FROM agent_sessions WHERE ownership_scope_key = $1 ORDER BY agent_session_id FOR NO KEY UPDATE",
+        )
+        .bind(ownership_scope_key)
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(to_query_error)?;
         let reports =
             sqlx::query("DELETE FROM agent_session_analyses WHERE ownership_scope_key = $1")
                 .bind(ownership_scope_key)

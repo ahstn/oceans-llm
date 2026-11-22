@@ -141,6 +141,25 @@ impl AgentSessionTraceRepository for AnyStore {
         }
     }
 
+    async fn load_agent_observation_sets_for_parser(
+        &self,
+        session_id: Uuid,
+        parser_version: &str,
+    ) -> Result<Vec<gateway_core::AgentObservationSetRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => {
+                store
+                    .load_agent_observation_sets_for_parser(session_id, parser_version)
+                    .await
+            }
+            Self::Postgres(store) => {
+                store
+                    .load_agent_observation_sets_for_parser(session_id, parser_version)
+                    .await
+            }
+        }
+    }
+
     async fn link_request_log_to_agent_session(
         &self,
         link: &AgentRequestLogLinkRecord,

@@ -243,6 +243,15 @@ impl AgentSessionTraceRepository for LibsqlStore {
         self.load_session_observation_sets(agent_session_id).await
     }
 
+    async fn load_agent_observation_sets_for_parser(
+        &self,
+        agent_session_id: Uuid,
+        parser_version: &str,
+    ) -> Result<Vec<AgentObservationSetRecord>, StoreError> {
+        self.load_session_observation_sets_for_parser(agent_session_id, parser_version)
+            .await
+    }
+
     async fn link_request_log_to_agent_session(
         &self,
         link: &AgentRequestLogLinkRecord,
@@ -273,8 +282,11 @@ impl AgentSessionTraceRepository for LibsqlStore {
             return Ok(None);
         };
         let session = decode_session(&session_row)?;
-        let input_generation = session_row.get(23).map_err(to_query_error)?;
+        let input_generation: i64 = session_row.get(23).map_err(to_query_error)?;
+        drop(session_row);
         drop(session_rows);
+        #[cfg(test)]
+        crate::agent_analysis_tests::trace_snapshot::after_session_read(agent_session_id).await;
         let session_source = if let Some(session_source_id) = session.agent_session_source_id {
             let sql = format!(
                 "SELECT {SESSION_SOURCE_COLUMNS} FROM agent_session_sources WHERE agent_session_source_id = ?1"
@@ -308,11 +320,14 @@ impl AgentSessionTraceRepository for LibsqlStore {
         drop(request_rows);
         let latest_observation_set = self.load_observation_set(agent_session_id).await?;
         let analysis_sql = format!(
-            "SELECT {ANALYSIS_COLUMNS} FROM agent_session_analyses WHERE agent_session_id = ?1 AND stale = 0 AND input_generation = (SELECT input_generation FROM agent_sessions WHERE agent_session_id = ?1) ORDER BY analyzed_at DESC, analysis_id DESC LIMIT 1"
+            "SELECT {ANALYSIS_COLUMNS} FROM agent_session_analyses WHERE agent_session_id = ?1 AND stale = 0 AND input_generation = ?2 ORDER BY analyzed_at DESC, analysis_id DESC LIMIT 1"
         );
         let mut analysis_rows = self
             .connection
-            .query(&analysis_sql, [agent_session_id.to_string()])
+            .query(
+                &analysis_sql,
+                libsql::params![agent_session_id.to_string(), input_generation],
+            )
             .await
             .map_err(to_query_error)?;
         let latest_analysis = analysis_rows

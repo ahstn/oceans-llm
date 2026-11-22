@@ -3,8 +3,10 @@ use super::contracts::{
 };
 use gateway_core::{
     AgentAnalysisDesiredVersions, AgentAnalysisLease, AgentAnalysisQueueRecord,
-    AgentAnalysisQueueStatus, AgentSessionAnalysisRecord, AgentSessionAnalysisRepository,
-    AgentSessionInput, AgentSessionRecord, AgentSessionTraceRecord, SessionLifecycleState,
+    AgentAnalysisQueueRepository, AgentAnalysisQueueStatus, AgentSessionAnalysisRecord,
+    AgentSessionAnalysisRepository, AgentSessionInput, AgentSessionRecord,
+    AgentSessionReportRepository, AgentSessionTraceRecord, AgentSessionTraceRepository,
+    SessionLifecycleState,
 };
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
@@ -44,22 +46,69 @@ pub(super) async fn generation_jobs(
         .await
         .unwrap()
         .unwrap();
-    let report = analysis_fixture(
+    let mut report = analysis_fixture(
         &trace,
         &claimed.desired_versions,
         session.input_watermark_at,
     );
+    for name in ["read\0file", r"literal\u0000", "slash\\\0file"] {
+        report
+            .report
+            .diagnostics
+            .skills
+            .items
+            .push(agent_session_analysis::SkillDiagnosticItem {
+                name: name.to_string(),
+                ..Default::default()
+            });
+    }
     assert!(
         store
             .append_agent_session_analysis(&report, Some(lease(&claimed)))
             .await
             .unwrap()
     );
+    assert_nul_diagnostics_survive_listing(store, &session, &report).await;
     schedule_failure_rolls_back(store, &session, &job).await;
     late_input_reruns_a_fenced_lease(store, &session, &claimed, &report).await;
     manual_requests_and_finalization(store, &session, &job).await;
     expired_lease_is_fenced(store, &session, &job).await;
     finalization_schedules_initial_job(store, template).await;
+}
+
+async fn assert_nul_diagnostics_survive_listing(
+    store: &impl AgentSessionAnalysisRepository,
+    session: &AgentSessionRecord,
+    report: &AgentSessionAnalysisRecord,
+) {
+    let page = store
+        .list_agent_sessions(&gateway_core::AgentSessionListQuery {
+            ownership_scope_key: Some(session.ownership_scope_key.clone()),
+            score_confidence: Some(report.report.confidence),
+            gateway_outcome: Some(report.report.gateway_outcome),
+            score_maturity: Some(report.report.maturity),
+            minimum_coverage_percent: Some(report.report.coverage.overall_percent),
+            ..Default::default()
+        })
+        .await
+        .expect("report filters tolerate escaped NUL in unrelated diagnostics");
+    let listed = page
+        .items
+        .iter()
+        .find(|item| item.session.agent_session_id == session.agent_session_id)
+        .unwrap();
+    assert_eq!(
+        listed
+            .latest_analysis
+            .as_ref()
+            .unwrap()
+            .report
+            .diagnostics
+            .skills
+            .items,
+        report.report.diagnostics.skills.items,
+        "listing must preserve diagnostics, not the sanitized filtering projection"
+    );
 }
 
 async fn schedule_failure_rolls_back(
@@ -405,7 +454,7 @@ fn lease(job: &AgentAnalysisQueueRecord) -> AgentAnalysisLease<'_> {
     }
 }
 
-fn job_fixture(session: &AgentSessionRecord) -> AgentAnalysisQueueRecord {
+pub(super) fn job_fixture(session: &AgentSessionRecord) -> AgentAnalysisQueueRecord {
     let policy = agent_session_analysis::AnalysisPolicy::default();
     AgentAnalysisQueueRecord {
         queue_item_id: Uuid::new_v4(),
@@ -437,7 +486,7 @@ fn job_fixture(session: &AgentSessionRecord) -> AgentAnalysisQueueRecord {
     }
 }
 
-fn analysis_fixture(
+pub(super) fn analysis_fixture(
     trace: &AgentSessionTraceRecord,
     versions: &AgentAnalysisDesiredVersions,
     now: OffsetDateTime,
@@ -569,4 +618,102 @@ async fn finalization_schedules_initial_job(
         .complete_agent_analysis(lease(&claimed), session.input_watermark_at)
         .await
         .unwrap();
+}
+
+pub(super) async fn postgres_owner_deletion_locks_sessions_first(
+    store: &crate::PostgresStore,
+    template: &AgentSessionRecord,
+) {
+    let mut session = open_fixture(template);
+    session.ownership_scope_key = format!("deletion-lock-order:{}", session.agent_session_id);
+    session.agent_session_source_id = None;
+    store
+        .insert_agent_session_if_absent(&session)
+        .await
+        .unwrap();
+    let request = request_fixture(&session);
+    let observations = observation_fixture(&request, 0);
+    store
+        .append_agent_session_input(AgentSessionInput {
+            request: Some(&request),
+            observations: AgentSessionInput::observations(&observations).observations,
+            analysis: None,
+        })
+        .await
+        .unwrap();
+    let trace = store
+        .load_agent_session_trace(session.agent_session_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let report = analysis_fixture(
+        &trace,
+        &job_fixture(&session).desired_versions,
+        session.input_watermark_at,
+    );
+    assert!(
+        store
+            .append_agent_session_analysis(&report, None)
+            .await
+            .unwrap()
+    );
+
+    // Hold the same first lock as publication. Deletion must wait here, without
+    // taking a report lock that would prevent publication from completing.
+    let mut publication = store.pool().begin().await.unwrap();
+    sqlx::query(
+        "SELECT agent_session_id FROM agent_sessions WHERE agent_session_id = $1 FOR NO KEY UPDATE",
+    )
+    .bind(session.agent_session_id.to_string())
+    .execute(&mut *publication)
+    .await
+    .unwrap();
+    let deletion_pid = sqlx::query_scalar::<_, i32>("SELECT pg_backend_pid()")
+        .fetch_one(store.pool())
+        .await
+        .unwrap();
+    let deletion = store.delete_agent_analysis_for_owner(&session.ownership_scope_key);
+    tokio::pin!(deletion);
+    let waiting = async {
+        loop {
+            let blocked = sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE pid = $1 AND NOT granted)",
+            )
+            .bind(deletion_pid)
+            .fetch_one(&mut *publication)
+            .await
+            .unwrap();
+            if blocked {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::select! {
+            result = &mut deletion => panic!("deletion must wait for the session lock: {result:?}"),
+            () = waiting => {}
+        }
+    })
+    .await
+    .expect("deletion reaches its conflicting session lock");
+    sqlx::query(
+        "SELECT analysis_id FROM agent_session_analyses WHERE analysis_id = $1 FOR UPDATE NOWAIT",
+    )
+    .bind(report.analysis_id.to_string())
+    .execute(&mut *publication)
+    .await
+    .expect("deletion must not hold a report row before locking its session");
+    publication.commit().await.unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), &mut deletion)
+        .await
+        .expect("deletion completes after publication releases the session")
+        .unwrap();
+    assert!(
+        store
+            .load_agent_session_trace(session.agent_session_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
 }

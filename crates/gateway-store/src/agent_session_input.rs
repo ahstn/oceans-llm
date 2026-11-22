@@ -39,9 +39,15 @@ pub(crate) struct PreparedRequest<'a> {
 }
 
 pub(crate) struct PreparedObservations<'a> {
-    pub full: PreparedSet<'a>,
-    pub truncated: Option<PreparedSet<'a>>,
+    pub id: String,
+    full: ValidatedSet<'a>,
+    truncated: Option<ValidatedSet<'a>>,
     pub maximum_nested_facts: i64,
+}
+
+struct ValidatedSet<'a> {
+    record: &'a AgentObservationSetRecord,
+    nested_facts: i64,
 }
 
 pub(crate) struct PreparedSet<'a> {
@@ -85,9 +91,10 @@ impl<'a> PreparedInput<'a> {
                     ));
                 }
                 Ok(PreparedObservations {
-                    full: PreparedSet::new(sets.set)?,
+                    id: sets.set.observation_set_id.to_string(),
+                    full: ValidatedSet::new(sets.set)?,
                     truncated: (!std::ptr::eq(sets.set, sets.truncated_set))
-                        .then(|| PreparedSet::new(sets.truncated_set))
+                        .then(|| ValidatedSet::new(sets.truncated_set))
                         .transpose()?,
                     maximum_nested_facts: i64::try_from(
                         sets.maximum_nested_facts
@@ -139,11 +146,10 @@ impl<'a> PreparedRequest<'a> {
     }
 }
 
-impl<'a> PreparedSet<'a> {
+impl<'a> ValidatedSet<'a> {
     fn new(record: &'a AgentObservationSetRecord) -> Result<Self, StoreError> {
         let mut ids = HashSet::with_capacity(record.observations.len());
         let mut nested_facts = 0_i64;
-        let mut rows = Vec::with_capacity(record.observations.len());
         for observation in &record.observations {
             if !ids.insert(observation.observation_id)
                 || observation.parser_version != record.parser_version
@@ -159,13 +165,26 @@ impl<'a> PreparedSet<'a> {
                 .saturating_add(facts.supplied_skills.len())
                 .saturating_add(facts.file_interactions.len());
             nested_facts = nested_facts.saturating_add(i64::try_from(count).unwrap_or(i64::MAX));
+        }
+        Ok(Self {
+            record,
+            nested_facts,
+        })
+    }
+}
+
+impl<'a> PreparedSet<'a> {
+    fn new(set: &ValidatedSet<'a>) -> Result<Self, StoreError> {
+        let record = set.record;
+        let mut rows = Vec::with_capacity(record.observations.len());
+        for observation in &record.observations {
             rows.push(PreparedObservation {
                 id: observation.observation_id.to_string(),
                 kind: enum_name(observation.kind)?,
                 request_id: &observation.source_request_id,
                 evidence: enum_name(observation.evidence)?,
                 occurred_at: observation.occurred_at.unix_timestamp(),
-                facts: serialize_json(facts)?,
+                facts: serialize_json(&observation.facts)?,
                 limitations: serialize_json(&observation.limitations)?,
             });
         }
@@ -175,13 +194,13 @@ impl<'a> PreparedSet<'a> {
             id: record.observation_set_id.to_string(),
             coverage: serialize_json(&record.coverage)?,
             watermark: datetime_to_unix_millis(record.source_watermark_at)?,
-            nested_facts,
+            nested_facts: set.nested_facts,
             rows,
         })
     }
 }
 
-impl PreparedObservations<'_> {
+impl<'a> PreparedObservations<'a> {
     pub fn replay_kind(&self, existing: &AgentObservationSetRecord) -> Result<bool, StoreError> {
         if crate::shared::agent_observation_set_matches(existing, self.full.record) {
             return Ok(false);
@@ -199,9 +218,9 @@ impl PreparedObservations<'_> {
         )))
     }
 
-    pub fn select(&self, prior_nested_facts: i64) -> Result<(&PreparedSet<'_>, bool), StoreError> {
+    pub fn select(&self, prior_nested_facts: i64) -> Result<(PreparedSet<'a>, bool), StoreError> {
         if prior_nested_facts.saturating_add(self.full.nested_facts) <= self.maximum_nested_facts {
-            return Ok((&self.full, false));
+            return Ok((PreparedSet::new(&self.full)?, false));
         }
         let truncated = self.truncated.as_ref().unwrap_or(&self.full);
         if truncated.nested_facts
@@ -214,7 +233,7 @@ impl PreparedObservations<'_> {
                 "truncated observations exceed the nested-fact budget".to_string(),
             ));
         }
-        Ok((truncated, true))
+        Ok((PreparedSet::new(truncated)?, true))
     }
 }
 

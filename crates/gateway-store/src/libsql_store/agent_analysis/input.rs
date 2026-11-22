@@ -6,15 +6,7 @@ impl LibsqlStore {
         &self,
         input: AgentSessionInput<'_>,
     ) -> Result<AgentSessionInputAppendResult, StoreError> {
-        let mut prepared = PreparedInput::new(input)?;
-        let mut writes = prepared.observations.as_mut().map(|sets| {
-            (
-                SetWrites::new(&mut sets.full, &prepared.session_id),
-                sets.truncated
-                    .as_mut()
-                    .map(|set| SetWrites::new(set, &prepared.session_id)),
-            )
-        });
+        let prepared = PreparedInput::new(input)?;
         let transaction = self.begin_transaction().await?;
         let state = load_state(&transaction, &prepared.session_id).await?;
         let mut result = AgentSessionInputAppendResult::default();
@@ -33,19 +25,12 @@ impl LibsqlStore {
         }
         let mut nested_delta = 0;
         if let Some(observations) = &prepared.observations {
-            if let Some(existing) = load_set(&transaction, &observations.full.id).await? {
+            if let Some(existing) = load_set(&transaction, &observations.id).await? {
                 result.nested_facts_truncated = observations.replay_kind(&existing)?;
             } else {
-                let (selected, truncated) = observations.select(state.nested_fact_count)?;
-                let (full, fallback) = writes.take().ok_or_else(|| {
-                    StoreError::Unexpected("observation writes were not prepared".to_string())
-                })?;
-                let selected_writes = if truncated {
-                    fallback.unwrap_or(full)
-                } else {
-                    full
-                };
-                insert_set(&transaction, selected_writes).await?;
+                let (mut selected, truncated) = observations.select(state.nested_fact_count)?;
+                let writes = SetWrites::new(&mut selected, &prepared.session_id);
+                insert_set(&transaction, writes).await?;
                 result.observations_inserted = true;
                 result.nested_facts_truncated = truncated;
                 nested_delta = selected.nested_facts;

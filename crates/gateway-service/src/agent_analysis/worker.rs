@@ -187,31 +187,28 @@ where
         store.complete_agent_analysis(lease, now).await?;
         return Ok(true);
     }
-    let report = generate_report(store, &queue, now, report_retention, policy);
-    tokio::pin!(report);
-    let lease_interval = std::time::Duration::from_secs(20);
-    let mut heartbeat =
-        tokio::time::interval_at(tokio::time::Instant::now() + lease_interval, lease_interval);
-    let result = loop {
-        tokio::select! {
-            result = &mut report => break result,
-            _ = heartbeat.tick() => {
-                let renewed_at = OffsetDateTime::now_utc();
-                if !store
-                    .renew_agent_analysis_lease(
-                        lease,
-                        renewed_at,
-                        renewed_at + Duration::minutes(1),
-                    )
-                    .await?
-                {
-                    break Err(GatewayError::Internal(
-                        "agent analysis lease was lost during report generation".to_string(),
-                    ));
-                }
+    // Renewal storage errors propagate directly; report errors and lease loss fail the job.
+    let report = async {
+        Ok::<_, GatewayError>(generate_report(store, &queue, now, report_retention, policy).await)
+    };
+    let heartbeat = async {
+        let lease_interval = std::time::Duration::from_secs(20);
+        let mut heartbeat =
+            tokio::time::interval_at(tokio::time::Instant::now() + lease_interval, lease_interval);
+        loop {
+            heartbeat.tick().await;
+            let renewed_at = OffsetDateTime::now_utc();
+            if !store
+                .renew_agent_analysis_lease(lease, renewed_at, renewed_at + Duration::minutes(1))
+                .await?
+            {
+                return Ok(Err(GatewayError::Internal(
+                    "agent analysis lease was lost during report generation".to_string(),
+                )));
             }
         }
     };
+    let result = run_report_with_heartbeat(report, heartbeat).await?;
     match result {
         Ok(()) => {
             store
@@ -229,6 +226,22 @@ where
         }
     }
 }
+
+async fn run_report_with_heartbeat<T>(
+    report: impl Future<Output = T>,
+    heartbeat: impl Future<Output = T>,
+) -> T {
+    // Publication can hold the queue lock renewal needs. Poll both until either finishes,
+    // then drop both owned futures before the caller performs any other queue writes.
+    tokio::select! {
+        biased;
+        result = heartbeat => result,
+        result = report => result,
+    }
+}
+
+#[cfg(test)]
+mod tests;
 
 pub(super) fn ensure_supported_versions(
     requested: &AgentAnalysisDesiredVersions,

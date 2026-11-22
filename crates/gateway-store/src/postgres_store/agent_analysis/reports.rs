@@ -98,7 +98,7 @@ impl AgentSessionReportRepository for PostgresStore {
         let score_confidence = query.score_confidence.map(enum_name).transpose()?;
         let gateway_outcome = query.gateway_outcome.map(enum_name).transpose()?;
         let score_maturity = query.score_maturity.map(enum_name).transpose()?;
-        let from_sql = "agent_sessions t LEFT JOIN agent_session_sources s ON s.agent_session_source_id = t.agent_session_source_id LEFT JOIN agent_session_analyses latest_analysis ON latest_analysis.analysis_id = (SELECT a.analysis_id FROM agent_session_analyses a WHERE a.agent_session_id = t.agent_session_id AND a.stale = 0 AND a.input_generation = t.input_generation ORDER BY a.analyzed_at DESC, a.analysis_id DESC LIMIT 1)";
+        let from_sql = SESSION_LIST_FROM_SQL;
         let where_sql = concat!(
             "($1::text IS NULL OR t.ownership_scope_key = $1)",
             " AND ($2::text IS NULL OR t.user_id = $2)",
@@ -109,14 +109,14 @@ impl AgentSessionReportRepository for PostgresStore {
             " AND ($7::bigint IS NULL OR t.started_at >= $7)",
             " AND ($8::bigint IS NULL OR t.started_at < $8)",
             " AND ($9::bigint IS NULL OR t.input_watermark_at < $9)",
-            " AND ($10::text IS NULL OR (latest_analysis.report_json::jsonb ->> 'confidence') = $10)",
+            " AND ($10::text IS NULL OR (latest_report.fields ->> 'confidence') = $10)",
             " AND ($11::text IS NULL OR t.agent_session_source_id = $11)",
             " AND ($12::text IS NULL OR t.requested_model_key = $12)",
             " AND ($13::text IS NULL OR t.operation = $13)",
             " AND ($14::text IS NULL OR t.caller_class = $14)",
-            " AND ($15::text IS NULL OR (latest_analysis.report_json::jsonb ->> 'gateway_outcome') = $15)",
-            " AND ($16::text IS NULL OR (latest_analysis.report_json::jsonb ->> 'maturity') = $16)",
-            " AND ($17::smallint IS NULL OR (latest_analysis.report_json::jsonb #>> '{coverage,overall_percent}')::smallint >= $17)",
+            " AND ($15::text IS NULL OR (latest_report.fields ->> 'gateway_outcome') = $15)",
+            " AND ($16::text IS NULL OR (latest_report.fields ->> 'maturity') = $16)",
+            " AND ($17::smallint IS NULL OR (latest_report.fields #>> '{coverage,overall_percent}')::smallint >= $17)",
             " AND ($18::text IS NULL OR s.normalized_session_hash = $18)",
             " AND (($19::text IS NULL AND $20::text IS NULL) OR ($19::text IS NOT NULL AND (",
             "((t.request_tags_json::jsonb ->> $19) IS NOT NULL",
@@ -308,4 +308,26 @@ const SUPERSEDE_ANALYSES_SQL: &str = r"
 UPDATE agent_session_analyses SET stale = 1, superseded_by_analysis_id = $2
 WHERE agent_session_id = $1 AND analysis_id <> $2 AND stale = 0
   AND (input_generation < $3 OR (input_generation = $3 AND analyzed_at <= $4))
+";
+
+// Diagnostics retain JSON strings from client metadata, including escaped NUL.
+// Only the filtering projection replaces NUL escapes; literal "\\u0000" stays
+// unchanged, and decoding report_json still returns every original string.
+const SESSION_LIST_FROM_SQL: &str = r"
+agent_sessions t
+LEFT JOIN agent_session_sources s ON s.agent_session_source_id = t.agent_session_source_id
+LEFT JOIN agent_session_analyses latest_analysis ON latest_analysis.analysis_id = (
+    SELECT a.analysis_id FROM agent_session_analyses a
+    WHERE a.agent_session_id = t.agent_session_id
+      AND a.stale = 0 AND a.input_generation = t.input_generation
+    ORDER BY a.analyzed_at DESC, a.analysis_id DESC LIMIT 1
+)
+LEFT JOIN LATERAL (
+    SELECT (CASE WHEN strpos(latest_analysis.report_json, '\u0000') = 0
+        THEN latest_analysis.report_json
+        ELSE regexp_replace(
+            latest_analysis.report_json, '(?<!\\)((?:\\\\)*)\\u0000', '\1\\ufffd', 'g'
+        )
+    END)::jsonb AS fields
+) latest_report ON TRUE
 ";

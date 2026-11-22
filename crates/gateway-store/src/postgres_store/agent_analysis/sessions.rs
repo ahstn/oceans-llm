@@ -246,6 +246,15 @@ impl AgentSessionTraceRepository for PostgresStore {
         self.load_session_observation_sets(agent_session_id).await
     }
 
+    async fn load_agent_observation_sets_for_parser(
+        &self,
+        agent_session_id: Uuid,
+        parser_version: &str,
+    ) -> Result<Vec<AgentObservationSetRecord>, StoreError> {
+        self.load_session_observation_sets_for_parser(agent_session_id, parser_version)
+            .await
+    }
+
     async fn link_request_log_to_agent_session(
         &self,
         link: &AgentRequestLogLinkRecord,
@@ -283,7 +292,9 @@ impl AgentSessionTraceRepository for PostgresStore {
             return Ok(None);
         };
         let session = decode_session(&session_row)?;
-        let input_generation = session_row.try_get(23).map_err(to_query_error)?;
+        let input_generation: i64 = session_row.try_get(23).map_err(to_query_error)?;
+        #[cfg(test)]
+        crate::agent_analysis_tests::trace_snapshot::after_session_read(agent_session_id).await;
         let session_source = if let Some(session_source_id) = session.agent_session_source_id {
             let sql = format!(
                 "SELECT {SESSION_SOURCE_COLUMNS} FROM agent_session_sources WHERE agent_session_source_id = $1"
@@ -313,10 +324,11 @@ impl AgentSessionTraceRepository for PostgresStore {
             .collect::<Result<Vec<_>, _>>()?;
         let latest_observation_set = self.load_observation_set(agent_session_id).await?;
         let analysis_sql = format!(
-            "SELECT {ANALYSIS_COLUMNS} FROM agent_session_analyses WHERE agent_session_id = $1 AND stale = 0 AND input_generation = (SELECT input_generation FROM agent_sessions WHERE agent_session_id = $1) ORDER BY analyzed_at DESC, analysis_id DESC LIMIT 1"
+            "SELECT {ANALYSIS_COLUMNS} FROM agent_session_analyses WHERE agent_session_id = $1 AND stale = 0 AND input_generation = $2 ORDER BY analyzed_at DESC, analysis_id DESC LIMIT 1"
         );
         let latest_analysis = sqlx::query(&analysis_sql)
             .bind(agent_session_id.to_string())
+            .bind(input_generation)
             .fetch_optional(&self.pool)
             .await
             .map_err(to_query_error)?

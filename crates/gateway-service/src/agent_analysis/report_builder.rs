@@ -179,21 +179,19 @@ where
     S: AgentSessionAnalysisRepository + Sync,
 {
     let agent_session_id = trace.session.agent_session_id;
-    let all_observation_sets = store.load_agent_observation_sets(agent_session_id).await?;
-    if all_observation_sets.is_empty() {
-        return Err(GatewayError::Internal(
-            "agent session has no observation set".to_string(),
-        ));
-    }
-    if all_observation_sets.len() > gateway_core::MAX_AGENT_SESSION_REQUESTS as usize {
+    let observation_sets = store
+        .load_agent_observation_sets_for_parser(agent_session_id, parser_version)
+        .await?;
+    if observation_sets.len() > gateway_core::MAX_AGENT_SESSION_REQUESTS as usize {
         return Err(GatewayError::Internal(format!(
             "agent session `{agent_session_id}` exceeds the bounded observation-set limit"
         )));
     }
-    let observation_sets = all_observation_sets
-        .into_iter()
-        .filter(|set| set.parser_version == parser_version)
-        .collect::<Vec<_>>();
+    if observation_sets.is_empty() && trace.latest_observation_set.is_none() {
+        return Err(GatewayError::Internal(
+            "agent session has no observation set".to_string(),
+        ));
+    }
     if observation_sets.is_empty() && trace.latest_analysis.is_some() {
         return Ok(None);
     }
@@ -202,14 +200,10 @@ where
             "agent session has no observations for the requested parser version".to_string(),
         ));
     }
-    let observation_set = observation_sets
+    let observation_set_id = observation_sets
         .last()
-        .expect("observation sets are known to be non-empty");
-    let mut observations = observation_sets
-        .iter()
-        .flat_map(|set| set.observations.iter().cloned())
-        .collect::<Vec<_>>();
-    normalize_legacy_tool_inventory_limitations(&mut observations);
+        .expect("observation sets are known to be non-empty")
+        .observation_set_id;
     let request_metadata_count =
         observation_coverage_count(&observation_sets, trace.requests.len(), |coverage| {
             coverage_flag(coverage, "request_metadata")
@@ -222,8 +216,13 @@ where
         observation_coverage_count(&observation_sets, usize::MAX, |coverage| {
             coverage_flag(coverage, "response_payload_truncated")
         });
+    let mut observations = observation_sets
+        .into_iter()
+        .flat_map(|set| set.observations)
+        .collect::<Vec<_>>();
+    normalize_legacy_tool_inventory_limitations(&mut observations);
     Ok(Some(ReportObservations {
-        observation_set_id: observation_set.observation_set_id,
+        observation_set_id,
         observations,
         request_metadata_count,
         response_payload_count,

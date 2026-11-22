@@ -287,15 +287,13 @@ const LEGACY_SET_SQL: &str = "
         observation_set_id, agent_session_id, parser_version,
         source_watermark_at, coverage_json, created_at
     ) VALUES ($1, $2, 'contract', $3, '{}', $4)";
-const LEGACY_OBSERVATION_SQL: &str = r#"
+const LEGACY_OBSERVATION_SQL: &str = "
     INSERT INTO agent_inferred_observations (
         observation_id, observation_set_id, agent_session_id, kind,
         source_request_id, evidence, occurred_at, facts_json, limitation_codes_json
     ) VALUES (
-        $1, $2, $3, 'session_metadata_classified', 'legacy-a', 'direct', $4,
-        '{"supplied_tools":[{"name":"a","token_estimate":1},{"name":"b","token_estimate":1},{"name":"c","token_estimate":1}]}',
-        '[]'
-    )"#;
+        $1, $2, $3, 'session_metadata_classified', 'legacy-a', 'direct', $4, $5, '[]'
+    )";
 const DELETE_SESSION_SQL: &str = "DELETE FROM agent_sessions WHERE agent_session_id = $1";
 
 pub(super) async fn counter_backfill(
@@ -327,10 +325,26 @@ pub(super) async fn counter_backfill(
             &[Id(set_id), Id(id), Integer(millis), Integer(seconds)],
         )
         .await;
+    let facts = serde_json::json!({
+        "supplied_tools": [
+            {"name": "read\0file", "token_estimate": 1},
+            {"name": r"literal\u0000", "token_estimate": 1},
+            {"name": "slash\\\0file", "token_estimate": 1},
+        ]
+    });
+    let facts_json = crate::shared::serialize_json(&facts).unwrap();
+    assert!(facts_json.contains(r"\u0000"));
+    assert!(!facts_json.contains('\0'));
     store
         .fixture_sql(
             LEGACY_OBSERVATION_SQL,
-            &[Id(observation_id), Id(set_id), Id(id), Integer(seconds)],
+            &[
+                Id(observation_id),
+                Id(set_id),
+                Id(id),
+                Integer(seconds),
+                Text(&facts_json),
+            ],
         )
         .await;
     install_legacy_history(store, &session, set_id).await;
@@ -353,6 +367,11 @@ pub(super) async fn counter_backfill(
             queued_jobs: 1,
         }
     );
+    let sets = store.load_agent_observation_sets(id).await.unwrap();
+    let tools = &sets[0].observations[0].facts.supplied_tools;
+    assert_eq!(tools[0].name, "read\0file");
+    assert_eq!(tools[1].name, r"literal\u0000");
+    assert_eq!(tools[2].name, "slash\\\0file");
     let migrated = store
         .claim_agent_analysis(
             "upgrade-worker",
@@ -645,7 +664,7 @@ const LEGACY_QUEUE_SQL: &str = "
         queue_item_id, agent_session_id, reason, desired_versions_json, status,
         lease_owner, lease_expires_at, attempts, max_attempts, available_at,
         created_at, updated_at
-    ) VALUES ($1, $2, 'new_input', $3, $4, 'legacy-worker', $5, 3, 3, $6, $6, $5)";
+    ) VALUES ($1, $2, 'new_input', $3, $4, 'legacy-worker', $5, 3, 3, $6, $7, $5)";
 
 async fn install_legacy_history(
     store: &impl CounterStore,
@@ -694,7 +713,8 @@ async fn install_legacy_history(
             &[Id(report_ids[1]), Id(report_ids[0])],
         )
         .await;
-    for (index, status) in [(1, "leased"), (2, "completed")] {
+    // The older request finishes after the newer policy was requested.
+    for (index, status) in [(1, "completed"), (2, "pending")] {
         let queue_id = Uuid::new_v4();
         let versions = serde_json::json!({
             "report_schema_version": "legacy", "boundary_policy_version": "legacy",
@@ -702,7 +722,7 @@ async fn install_legacy_history(
             "score_policy_version": "legacy", "pricing_policy_version": "legacy", "cohort_version": "legacy",
             "configuration_version": format!("legacy-v{index}"),
         }).to_string();
-        let updated = seconds + index;
+        let updated = seconds + 10 - index;
         store
             .fixture_sql(
                 LEGACY_QUEUE_SQL,
@@ -713,6 +733,7 @@ async fn install_legacy_history(
                     Text(status),
                     Integer(updated),
                     Integer(seconds),
+                    Integer(seconds + index),
                 ],
             )
             .await;

@@ -143,6 +143,14 @@ impl AgentSessionTraceRepository for WindowStore {
         panic!("report generation is outside the retry test")
     }
 
+    async fn load_agent_observation_sets_for_parser(
+        &self,
+        _id: Uuid,
+        _parser_version: &str,
+    ) -> Result<Vec<AgentObservationSetRecord>, StoreError> {
+        panic!("report generation is outside the retry test")
+    }
+
     async fn link_request_log_to_agent_session(
         &self,
         _link: &AgentRequestLogLinkRecord,
