@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use agent_session_analysis::{
     ActivityInterval, AnalysisPolicy, BoundedFileInteractionFact, BoundedSkillFact,
@@ -15,9 +15,8 @@ use gateway_core::{
     AuthenticatedApiKey, BoundedObservationFacts, BoundedToolDefinitionFact, BudgetRepository,
     Confidence, EvidenceQuality, GatewayError, GatewayOutcomeState, IdentityRepository,
     InferredObservation, InferredObservationKind, LimitationCode, MAX_AGENT_SESSION_NESTED_FACTS,
-    MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, McpToolInvocationQuery, McpToolInvocationRepository, Money4,
-    RequestLogRepository, RequestTags, SessionLifecycleState, StoreError, UsageLedgerRecord,
-    UsagePricingStatus,
+    McpToolInvocationRepository, Money4, RequestLogRepository, RequestTags, SessionLifecycleState,
+    StoreError, UsageLedgerRecord, UsagePricingStatus,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -30,7 +29,6 @@ const MAX_FILE_INTERACTION_FACTS: usize = 256;
 const MAX_RELIABILITY_EVENTS: usize = 2_048;
 const MAX_SESSION_WINDOW_CAS_ATTEMPTS: usize = 8;
 const MAX_IDLE_FINALIZATION_PAGES: usize = 100;
-const MAX_DIRECT_MCP_SCAN_PAGES: u32 = 100;
 const MAX_COHORT_SCAN_PAGES: u32 = 25;
 const MAX_COHORT_SAMPLES_PER_LEVEL: usize = 2_000;
 const COHORT_LOOKBACK: Duration = Duration::days(90);

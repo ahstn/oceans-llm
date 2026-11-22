@@ -21469,7 +21469,15 @@
               "null"
             ],
             "format": "int64",
-            "description": "Computed request cost in USD scaled by 10,000. Null when no usage was recorded or the\nrequest could not be priced."
+            "description": "Computed request cost in USD scaled by 10,000, rounded half up from the ledger.\nNull when no usage was recorded or the request could not be priced."
+          },
+          "cost_usd_nanos": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Computed request cost in USD nanos (one billionth of a dollar), from the ledger.\nNull when no usage was recorded or the request could not be priced."
           },
           "error_code": {
             "type": [

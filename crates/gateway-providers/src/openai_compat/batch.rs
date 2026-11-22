@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use bytes::{Bytes, BytesMut};
 use futures_util::StreamExt;
 use gateway_core::{
-    BatchCapabilities, BatchStatus, Money4, ProviderBatchRequest, ProviderBatchResult,
+    BatchCapabilities, BatchStatus, Money9, ProviderBatchRequest, ProviderBatchResult,
     ProviderBatchState, ProviderBatchSubmission, ProviderError,
 };
 use reqwest::multipart::{Form, Part};
@@ -557,12 +557,12 @@ fn timestamp(value: &Value, keys: &[&str]) -> Option<OffsetDateTime> {
     })
 }
 
-fn parse_money(value: &Value) -> Option<Money4> {
+fn parse_money(value: &Value) -> Option<Money9> {
     match value {
-        Value::String(text) => Money4::from_reported_cost_str(text).ok(),
+        Value::String(text) => Money9::from_reported_cost_str(text).ok(),
         // serde_json prints a float as its shortest round-trip decimal, possibly
         // in exponent form such as `4.23e-5`.
-        Value::Number(number) => Money4::from_reported_cost_str(&number.to_string()).ok(),
+        Value::Number(number) => Money9::from_reported_cost_str(&number.to_string()).ok(),
         _ => None,
     }
 }
@@ -665,7 +665,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use gateway_core::{
-        BatchEndpoint, BatchStatus, Money4, OpenAiCompatEmptyTools, OpenAiCompatRouteCompatibility,
+        BatchEndpoint, BatchStatus, Money9, OpenAiCompatEmptyTools, OpenAiCompatRouteCompatibility,
         ProviderBatchRequest, ProviderBatchRequestItem, ProviderBatchSubmission, ProviderError,
         ProviderRequestContext, RouteCompatibility,
     };
@@ -761,7 +761,10 @@ mod tests {
         .expect("state");
         assert_eq!(state.status, BatchStatus::Completed);
         assert_eq!(state.request_count, 2);
-        assert_eq!(state.provider_cost_usd, Some(Money4::from_scaled(125)));
+        assert_eq!(
+            state.provider_cost_usd,
+            Some(Money9::from_nanos(12_500_000))
+        );
 
         let result = parse_openai_result(&json!({
             "custom_id": "row-1",
@@ -833,33 +836,37 @@ mod tests {
         }));
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].custom_id, "row-1");
-        assert_eq!(results[0].cost_usd, Some(Money4::from_scaled(25)));
+        assert_eq!(results[0].cost_usd, Some(Money9::from_nanos(2_500_000)));
     }
 
     #[test]
-    fn reported_costs_beyond_four_places_round_half_up() {
+    fn reported_costs_preserve_nanos_instead_of_rounding_to_four_places() {
         let state = parse_state(&json!({
             "id": "batch_456",
             "status": "completed",
             "usage": {"cost": 0.000423}
         }))
         .expect("state");
-        assert_eq!(state.provider_cost_usd, Some(Money4::from_scaled(4)));
+        assert_eq!(state.provider_cost_usd, Some(Money9::from_nanos(423_000)));
 
         let results = parse_openrouter_results(&json!({
             "requests": [
                 {"custom_id": "row-1", "usage": {"cost": 0.000423}},
                 {"custom_id": "row-2", "usage": {"cost": "0.000050"}},
-                {"custom_id": "row-3", "response": {"usage": {"cost": 4.2e-5}}}
+                {"custom_id": "row-3", "response": {"usage": {"cost": 4.2e-5}}},
+                {"custom_id": "row-nano", "usage": {"cost": "0.000000001"}},
+                {"custom_id": "row-half-nano", "usage": {"cost": "0.0000000005"}}
             ]
         }));
         let costs: Vec<_> = results.iter().map(|result| result.cost_usd).collect();
         assert_eq!(
             costs,
             [
-                Some(Money4::from_scaled(4)),
-                Some(Money4::from_scaled(1)),
-                Some(Money4::from_scaled(0)),
+                Some(Money9::from_nanos(423_000)),
+                Some(Money9::from_nanos(50_000)),
+                Some(Money9::from_nanos(42_000)),
+                Some(Money9::from_nanos(1)),
+                Some(Money9::from_nanos(1)),
             ]
         );
 
@@ -868,6 +875,6 @@ mod tests {
             "response": {"body": {"usage": {"cost": 0.012345}}}
         }))
         .expect("result");
-        assert_eq!(result.cost_usd, Some(Money4::from_scaled(123)));
+        assert_eq!(result.cost_usd, Some(Money9::from_nanos(12_345_000)));
     }
 }

@@ -1,4 +1,10 @@
-import { EMPTY_VALUE, formatCount, formatTimestamp, formatUsd10000Precise } from '@/lib/format'
+import {
+  EMPTY_VALUE,
+  formatCount,
+  formatTimestamp,
+  formatUsd10000Precise,
+  formatUsdNanos,
+} from '@/lib/format'
 import type { RequestLogView } from '@/types/api'
 
 export function callerPrimary(item: RequestLogView): string | null {
@@ -43,8 +49,9 @@ export function statusCodeBadgeVariant(
   return statusCode >= 400 ? 'warning' : 'success'
 }
 
-export function formatRequestCost(costUsd10000: number | null | undefined) {
-  return costUsd10000 == null ? EMPTY_VALUE : formatUsd10000Precise(costUsd10000)
+export function formatRequestCost(item: Pick<RequestLogView, 'cost_usd_10000' | 'cost_usd_nanos'>) {
+  if (item.cost_usd_nanos != null) return formatUsdNanos(item.cost_usd_nanos)
+  return item.cost_usd_10000 == null ? EMPTY_VALUE : formatUsd10000Precise(item.cost_usd_10000)
 }
 
 export function cacheHitLabel(cachedTokens: number, promptTokens: number | null | undefined) {

@@ -1,5 +1,6 @@
 //! Usage pricing from provider-reported costs and image output rates.
 
+use gateway_core::Money9;
 use serde_json::Value;
 
 use super::*;
@@ -63,8 +64,8 @@ async fn image_output_usage_is_charged_at_the_configured_image_rate() {
         event.image_output_cost_per_million_tokens,
         Some(Money4::from_scaled(300_000))
     );
-    // $0.0003 input + $0.0003 for 170 text tokens + $0.0336 for 1,120 image tokens.
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(342));
+    // $0.00025 input + $0.000255 for 170 text tokens + $0.0336 for 1,120 image tokens.
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(34_105_000));
 }
 
 #[tokio::test]
@@ -83,8 +84,8 @@ async fn image_output_usage_without_an_image_rate_keeps_output_pricing() {
     assert_eq!(event.pricing_status, UsagePricingStatus::Priced);
     assert_eq!(event.image_output_tokens, Some(1_120));
     assert_eq!(event.image_output_cost_per_million_tokens, None);
-    // $0.0003 input + $0.0019 for all 1,290 completion tokens at the output rate.
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(22));
+    // $0.00025 input + $0.001935 for all 1,290 completion tokens at the output rate.
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(2_185_000));
 }
 
 #[tokio::test]
@@ -103,7 +104,7 @@ async fn provider_reported_usage_cost_wins_over_configured_pricing() {
 
     assert_eq!(event.pricing_status, UsagePricingStatus::Priced);
     assert_eq!(event.pricing_source.as_deref(), Some("provider_reported"));
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(123));
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(12_300_000));
     assert_eq!(event.image_output_tokens, Some(1_120));
     assert_eq!(event.input_cost_per_million_tokens, None);
     assert_eq!(event.output_cost_per_million_tokens, None);
@@ -134,7 +135,7 @@ async fn byok_usage_cost_is_charged_without_route_pricing() {
 
     assert_eq!(event.pricing_status, UsagePricingStatus::Priced);
     assert_eq!(event.pricing_source.as_deref(), Some("provider_reported"));
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(69));
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(6_940_000));
     assert_eq!(event.image_output_tokens, Some(229));
 }
 
@@ -148,8 +149,69 @@ async fn reported_usage_cost_is_charged_without_token_counts() {
 
     assert_eq!(event.pricing_status, UsagePricingStatus::Priced);
     assert_eq!(event.pricing_source.as_deref(), Some("provider_reported"));
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(5_000));
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(500_000_000));
     assert_eq!(event.total_tokens, None);
+}
+
+#[tokio::test]
+async fn openrouter_reported_sub_money4_cost_reaches_the_ledger_exactly() {
+    for cost in [json!(0.0000028), json!("0.0000028")] {
+        let usage = json!({
+            "prompt_tokens": 4,
+            "completion_tokens": 2,
+            "total_tokens": 6,
+            "cost": cost
+        });
+        let event =
+            recorded_usage_event(&vertex_embedding_route(Uuid::new_v4()), usage.clone()).await;
+
+        assert_eq!(event.pricing_status, UsagePricingStatus::Priced);
+        assert_eq!(event.pricing_source.as_deref(), Some("provider_reported"));
+        assert_eq!(event.computed_cost_usd, Money9::from_nanos(2_800));
+        assert_eq!(event.provider_usage, usage);
+    }
+}
+
+#[tokio::test]
+async fn mixed_token_buckets_round_only_the_total_to_nanos() {
+    for (rate_scaled, expected_nanos) in [(1, 1), (5, 3)] {
+        let rate = Money4::from_scaled(rate_scaled);
+        let mut route = image_model_route(Some(rate));
+        route.pricing_override = Some(RoutePricingOverride {
+            input_cost_per_million_tokens: rate,
+            output_cost_per_million_tokens: rate,
+            cache_read_cost_per_million_tokens: Some(rate),
+            cache_write_cost_per_million_tokens: Some(rate),
+            cache_write_1h_cost_per_million_tokens: Some(rate),
+            image_output_cost_per_million_tokens: Some(rate),
+            service_tiers: Vec::new(),
+        });
+        let event = recorded_usage_event(
+            &route,
+            json!({
+                "input_tokens": 1,
+                "output_tokens": 2,
+                "cache_read_input_tokens": 1,
+                "cache_creation_input_tokens": 2,
+                "cache_creation": {
+                    "ephemeral_5m_input_tokens": 1,
+                    "ephemeral_1h_input_tokens": 1
+                },
+                "output_tokens_details": {"image_tokens": 1}
+            }),
+        )
+        .await;
+
+        assert_eq!(event.pricing_status, UsagePricingStatus::Priced);
+        assert_eq!(event.uncached_input_tokens, Some(1));
+        assert_eq!(event.cache_read_tokens, Some(1));
+        assert_eq!(event.cache_write_tokens, Some(2));
+        assert_eq!(event.cache_write_1h_tokens, Some(1));
+        assert_eq!(event.image_output_tokens, Some(1));
+        // Six one-token buckets contribute 0.1 or 0.5 nanos each: the total rounds
+        // half up to 1 or 3 nanos, rather than rounding each bucket to 0 or 1.
+        assert_eq!(event.computed_cost_usd, Money9::from_nanos(expected_nanos));
+    }
 }
 
 #[tokio::test]
@@ -167,7 +229,7 @@ async fn malformed_reported_usage_cost_falls_back_to_route_pricing() {
 
     assert_eq!(event.pricing_status, UsagePricingStatus::Priced);
     assert_eq!(event.pricing_source.as_deref(), Some("configured_override"));
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(22));
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(2_185_000));
 }
 
 #[test]

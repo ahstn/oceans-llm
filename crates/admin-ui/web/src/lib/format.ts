@@ -49,6 +49,18 @@ export function formatUsd10000Precise(amountUsd10000: number) {
   return PRECISE_CURRENCY_FORMATTER.format(amountUsd10000 / 10_000)
 }
 
+const NANOS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 4,
+  maximumFractionDigits: 9,
+})
+
+/** A request cost in USD nanos, keeping tiny charges visible without trailing zeroes beyond Money4. */
+export function formatUsdNanos(amountUsdNanos: number) {
+  return NANOS_CURRENCY_FORMATTER.format(amountUsdNanos / 1_000_000_000)
+}
+
 const COUNT_FORMATTER = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 })
 const COMPACT_COUNT_FORMATTER = new Intl.NumberFormat('en-US', {
   notation: 'compact',

@@ -185,7 +185,7 @@ async fn load_budget(
         source: budget_source_to_view(&budget.source),
         period_start: format_timestamp(window.period_start),
         period_end: format_timestamp(window.period_end),
-        spent_usd_10000: spent.as_scaled_i64(),
+        spent_usd_10000: spent.round_half_up_to_money4().as_scaled_i64(),
         active_increase: active_increase.as_ref().map(budget_increase_to_view),
     }))
 }

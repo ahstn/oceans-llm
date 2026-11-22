@@ -8,7 +8,7 @@ use gateway_core::{
     ApiKeyOwnerKind, BudgetAlertChannel, BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery,
     BudgetAlertRepository, BudgetCadence, BudgetModelSelector, BudgetRecord, BudgetRepository,
     BudgetScope, BudgetSettings, BudgetSource, GatewayError, GlobalRole, IdentityRepository,
-    ModelRepository, Money4, SpendModelTokenDailyRecord, SpendOwnerTokenDailyRecord,
+    ModelRepository, Money4, Money9, SpendModelTokenDailyRecord, SpendOwnerTokenDailyRecord,
     TokenUsageBuckets, UserStatus, budget_window_utc,
 };
 use gateway_service::{AuditEvent, admin_audit::actions};
@@ -470,6 +470,7 @@ pub async fn upsert_budget(
         .store
         .set_manual_budget(&scope, &settings, now)
         .await?;
+    state.service.invalidate_budget_cache();
     let budget = save.budget;
     if save.changed {
         state
@@ -496,7 +497,9 @@ pub async fn upsert_budget(
         scope_key: budget.scope_key.clone(),
         budget: budget_to_settings_view(&budget),
         budget_source: budget_source_to_view(&budget.source),
-        current_window_spend_usd_10000: current_window_spend.as_scaled_i64(),
+        current_window_spend_usd_10000: current_window_spend
+            .round_half_up_to_money4()
+            .as_scaled_i64(),
     })))
 }
 
@@ -535,6 +538,7 @@ pub async fn deactivate_budget(
         .store
         .deactivate_active_budget_returning(&scope, OffsetDateTime::now_utc())
         .await?;
+    state.service.invalidate_budget_cache();
     if let Some(budget) = &deactivated {
         state
             .audit()
@@ -714,7 +718,7 @@ pub(super) async fn current_window_spend(
     state: &AppState,
     budget: &BudgetRecord,
     now: OffsetDateTime,
-) -> Result<Money4, AppError> {
+) -> Result<Money9, AppError> {
     let (window_start, window_end) = budget_window_bounds_utc(budget.settings.cadence, now);
     Ok(state
         .store

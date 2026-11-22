@@ -3,20 +3,20 @@
 
 use std::borrow::Cow;
 
-use gateway_core::{Money4, UsageLedgerRecord, UsagePricingStatus};
+use gateway_core::{Money9, UsageLedgerRecord, UsagePricingStatus};
 use serde_json::Value;
 
 /// Ledger `pricing_source` for costs taken from the provider's usage report.
 const PROVIDER_REPORTED_PRICING_SOURCE: &str = "provider_reported";
 
-/// Fractional digits in a Money4 amount.
-const MONEY4_PLACES: u32 = 4;
-const _: () = assert!(Money4::SCALE == 10_i64.pow(MONEY4_PLACES));
+/// Fractional digits in a nano-dollar ledger charge.
+const MONEY9_PLACES: u32 = 9;
+const _: () = assert!(Money9::SCALE == 10_i64.pow(MONEY9_PLACES));
 
 /// Most fractional digits a reported amount may carry; `10^38` fits in `i128`.
 const MAX_FRACTION_DIGITS: u32 = 38;
 
-/// The provider-billed cost of a request, rounded half up to Money4 once.
+/// The provider-billed cost of a request, rounded half up to Money9 once.
 ///
 /// `cost` is what OpenRouter charges. On bring-your-own-key requests
 /// (`is_byok: true`) that is only OpenRouter's fee, and the upstream provider
@@ -24,7 +24,7 @@ const MAX_FRACTION_DIGITS: u32 = 38;
 /// request cost is their sum. Returns `Ok(None)` when no cost is reported, and
 /// `Err` when a reported cost is malformed or a BYOK report lacks its upstream
 /// part; callers then price the request from token rates.
-pub(super) fn provider_reported_cost(usage: &Value) -> Result<Option<Money4>, String> {
+pub(super) fn provider_reported_cost(usage: &Value) -> Result<Option<Money9>, String> {
     let Some(cost) = usage.get("cost").filter(|cost| !cost.is_null()) else {
         return Ok(None);
     };
@@ -40,14 +40,14 @@ pub(super) fn provider_reported_cost(usage: &Value) -> Result<Option<Money4>, St
             .ok_or("reported cost overflowed")?;
     }
     total
-        .round_half_up_to_money4()
+        .round_half_up_to_money9()
         .map(Some)
         .ok_or_else(|| "reported cost overflowed".to_string())
 }
 
 /// Charges a provider-reported cost. It is the provider's own bill, so it wins
 /// over the route override and the catalog, and the event keeps no token rates.
-pub(super) fn apply_provider_reported_cost(record: &mut UsageLedgerRecord, cost_usd: Money4) {
+pub(super) fn apply_provider_reported_cost(record: &mut UsageLedgerRecord, cost_usd: Money9) {
     record.pricing_status = UsagePricingStatus::Priced;
     record.pricing_source = Some(PROVIDER_REPORTED_PRICING_SOURCE.to_string());
     record.computed_cost_usd = cost_usd;
@@ -135,19 +135,19 @@ impl ReportedAmount {
         })
     }
 
-    /// Rounds half up to Money4. Only non-negative amounts get here.
-    fn round_half_up_to_money4(self) -> Option<Money4> {
-        let scaled = match self.scale.checked_sub(MONEY4_PLACES) {
+    /// Rounds half up to nano-dollars. Only non-negative amounts get here.
+    fn round_half_up_to_money9(self) -> Option<Money9> {
+        let scaled = match self.scale.checked_sub(MONEY9_PLACES) {
             None | Some(0) => self
                 .units
-                .checked_mul(10_i128.checked_pow(MONEY4_PLACES - self.scale)?)?,
+                .checked_mul(10_i128.checked_pow(MONEY9_PLACES - self.scale)?)?,
             Some(excess_places) => {
                 let divisor = 10_i128.checked_pow(excess_places)?;
                 let remainder = self.units % divisor;
                 self.units / divisor + i128::from(remainder >= divisor - remainder)
             }
         };
-        i64::try_from(scaled).ok().map(Money4::from_scaled)
+        i64::try_from(scaled).ok().map(Money9::from_nanos)
     }
 }
 
@@ -157,7 +157,7 @@ mod tests {
 
     use super::*;
 
-    fn reported(usage: Value) -> Result<Option<Money4>, String> {
+    fn reported(usage: Value) -> Result<Option<Money9>, String> {
         provider_reported_cost(&usage)
     }
 
@@ -184,7 +184,7 @@ mod tests {
                 "upstream_inference_completions_cost": 0.00687
             }
         });
-        assert_eq!(reported(usage), Ok(Some(Money4::from_scaled(69))));
+        assert_eq!(reported(usage), Ok(Some(Money9::from_nanos(6_940_000))));
 
         // The fee and the upstream bill are summed before the single rounding.
         let usage = json!({
@@ -192,7 +192,7 @@ mod tests {
             "is_byok": true,
             "cost_details": {"upstream_inference_cost": "0.00002"}
         });
-        assert_eq!(reported(usage), Ok(Some(Money4::from_scaled(1))));
+        assert_eq!(reported(usage), Ok(Some(Money9::from_nanos(50_000))));
     }
 
     #[test]
@@ -202,29 +202,31 @@ mod tests {
             "is_byok": false,
             "cost_details": {"upstream_inference_cost": 0.0123}
         });
-        assert_eq!(reported(usage), Ok(Some(Money4::from_scaled(123))));
+        assert_eq!(reported(usage), Ok(Some(Money9::from_nanos(12_300_000))));
 
         let usage = json!({"cost": "0.0123", "cost_details": {"upstream_inference_cost": 1}});
-        assert_eq!(reported(usage), Ok(Some(Money4::from_scaled(123))));
+        assert_eq!(reported(usage), Ok(Some(Money9::from_nanos(12_300_000))));
     }
 
     #[test]
     fn reported_usage_cost_rounds_the_exact_decimal_half_up() {
         for (cost, expected_scaled) in [
-            // `f64` arithmetic gets 0.00015 * 10_000 = 1.4999999999999998.
-            (json!(0.00015), 2),
-            (json!("0.00005"), 1),
-            (json!("0.000049999"), 0),
-            (json!("0.12345"), 1_235),
-            (json!("1.5e-4"), 2),
-            (json!("2.5E+0"), 25_000),
-            (json!(1e-7), 0),
-            (json!(12), 120_000),
-            (json!(" 0.5000000 "), 5_000),
+            (json!(0.00015), 150_000),
+            (json!("0.00005"), 50_000),
+            (json!("0.000049999"), 49_999),
+            (json!("0.0000028"), 2_800),
+            (json!("0.0000000005"), 1),
+            (json!("0.00000000049"), 0),
+            (json!("0.12345"), 123_450_000),
+            (json!("1.5e-4"), 150_000),
+            (json!("2.5E+0"), 2_500_000_000),
+            (json!(1e-7), 100),
+            (json!(12), 12_000_000_000),
+            (json!(" 0.5000000 "), 500_000_000),
         ] {
             assert_eq!(
                 reported(json!({"cost": cost.clone()})),
-                Ok(Some(Money4::from_scaled(expected_scaled))),
+                Ok(Some(Money9::from_nanos(expected_scaled))),
                 "cost {cost}"
             );
         }

@@ -364,12 +364,16 @@ impl ApiKeyRepository for PostgresStore {
 
     async fn touch_api_key_last_used(&self, api_key_id: Uuid) -> Result<(), StoreError> {
         let now = OffsetDateTime::now_utc().unix_timestamp();
-        sqlx::query("UPDATE api_keys SET last_used_at = $1 WHERE id = $2")
-            .bind(now)
-            .bind(api_key_id.to_string())
-            .execute(&self.pool)
-            .await
-            .map_err(to_query_error)?;
+        sqlx::query(
+            "UPDATE api_keys SET last_used_at = $1 WHERE id = $2 \
+             AND (last_used_at IS NULL OR last_used_at <= $3)",
+        )
+        .bind(now)
+        .bind(api_key_id.to_string())
+        .bind(now - gateway_core::traits::API_KEY_LAST_USED_INTERVAL_SECONDS)
+        .execute(&self.pool)
+        .await
+        .map_err(to_query_error)?;
         Ok(())
     }
 

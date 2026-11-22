@@ -31,7 +31,7 @@ impl BudgetRepository for LibsqlStore {
     async fn sum_usage_cost_by_budget_scope(
         &self,
         windows: &[gateway_core::BudgetScopeWindow<'_>],
-    ) -> Result<std::collections::HashMap<String, Money4>, StoreError> {
+    ) -> Result<std::collections::HashMap<String, Money9>, StoreError> {
         super::budget_batch::sum_usage_cost_by_budget_scope(self, windows).await
     }
 
@@ -372,7 +372,7 @@ impl BudgetRepository for LibsqlStore {
                     input_cost_per_million_tokens_10000,
                     output_cost_per_million_tokens_10000,
                     cache_read_cost_per_million_tokens_10000,
-                    cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
+                    cache_write_cost_per_million_tokens_10000, computed_cost_nanos, occurred_at,
                     uncached_input_tokens, cache_read_tokens, cache_write_tokens,
                     image_output_tokens, image_output_cost_per_million_tokens_10000,
                     pricing_tier_above_input_tokens, requested_service_tier, served_service_tier,
@@ -418,7 +418,7 @@ impl BudgetRepository for LibsqlStore {
                     input_cost_per_million_tokens_10000,
                     output_cost_per_million_tokens_10000,
                     cache_read_cost_per_million_tokens_10000,
-                    cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
+                    cache_write_cost_per_million_tokens_10000, computed_cost_nanos, occurred_at,
                     uncached_input_tokens, cache_read_tokens, cache_write_tokens,
                     image_output_tokens, image_output_cost_per_million_tokens_10000,
                     pricing_tier_above_input_tokens, requested_service_tier, served_service_tier,
@@ -461,7 +461,7 @@ impl BudgetRepository for LibsqlStore {
                     input_cost_per_million_tokens_10000,
                     output_cost_per_million_tokens_10000,
                     cache_read_cost_per_million_tokens_10000,
-                    cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
+                    cache_write_cost_per_million_tokens_10000, computed_cost_nanos, occurred_at,
                     uncached_input_tokens, cache_read_tokens, cache_write_tokens,
                     image_output_tokens, image_output_cost_per_million_tokens_10000,
                     pricing_tier_above_input_tokens, requested_service_tier, served_service_tier,
@@ -492,7 +492,7 @@ impl BudgetRepository for LibsqlStore {
         scope: &BudgetScope,
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
-    ) -> Result<Money4, StoreError> {
+    ) -> Result<Money9, StoreError> {
         sum_usage_cost_for_budget_scope(&self.connection, scope, window_start, window_end).await
     }
 
@@ -538,7 +538,7 @@ impl BudgetRepository for LibsqlStore {
                 SELECT
                     (occurred_at / 86400) * 86400 AS day_start,
                     COALESCE(SUM(CASE WHEN pricing_status IN ('priced', 'legacy_estimated')
-                        THEN computed_cost_10000 ELSE 0 END), 0) AS priced_cost_10000,
+                        THEN computed_cost_nanos ELSE 0 END), 0) AS priced_cost_nanos,
                     SUM(CASE WHEN pricing_status IN ('priced', 'legacy_estimated') THEN 1 ELSE 0 END)
                         AS priced_request_count,
                     SUM(CASE WHEN pricing_status = 'unpriced' THEN 1 ELSE 0 END)
@@ -574,7 +574,7 @@ impl BudgetRepository for LibsqlStore {
                 SELECT
                     (occurred_at / 86400) * 86400 AS day_start,
                     COALESCE(SUM(CASE WHEN pricing_status IN ('priced', 'legacy_estimated')
-                        THEN computed_cost_10000 ELSE 0 END), 0) AS priced_cost_10000,
+                        THEN computed_cost_nanos ELSE 0 END), 0) AS priced_cost_nanos,
                     SUM(CASE WHEN pricing_status IN ('priced', 'legacy_estimated') THEN 1 ELSE 0 END)
                         AS priced_request_count,
                     SUM(CASE WHEN pricing_status = 'unpriced' THEN 1 ELSE 0 END)
@@ -610,7 +610,7 @@ impl BudgetRepository for LibsqlStore {
                 SELECT
                     (occurred_at / 86400) * 86400 AS day_start,
                     COALESCE(SUM(CASE WHEN pricing_status IN ('priced', 'legacy_estimated')
-                        THEN computed_cost_10000 ELSE 0 END), 0) AS priced_cost_10000,
+                        THEN computed_cost_nanos ELSE 0 END), 0) AS priced_cost_nanos,
                     SUM(CASE WHEN pricing_status IN ('priced', 'legacy_estimated') THEN 1 ELSE 0 END)
                         AS priced_request_count,
                     SUM(CASE WHEN pricing_status = 'unpriced' THEN 1 ELSE 0 END)
@@ -658,13 +658,13 @@ impl BudgetRepository for LibsqlStore {
         let mut output = Vec::new();
         while let Some(row) = rows.next().await.map_err(to_query_error)? {
             let day_start: i64 = row.get(0).map_err(to_query_error)?;
-            let priced_cost_10000: i64 = row.get(1).map_err(to_query_error)?;
+            let priced_cost_nanos: i64 = row.get(1).map_err(to_query_error)?;
             let priced_request_count: i64 = row.get(2).map_err(to_query_error)?;
             let unpriced_request_count: i64 = row.get(3).map_err(to_query_error)?;
             let usage_missing_request_count: i64 = row.get(4).map_err(to_query_error)?;
             output.push(SpendDailyAggregateRecord {
                 day_start: unix_to_datetime(day_start)?,
-                priced_cost_usd: Money4::from_scaled(priced_cost_10000),
+                priced_cost_usd: Money9::from_nanos(priced_cost_nanos).round_half_up_to_money4(),
                 priced_request_count,
                 unpriced_request_count,
                 usage_missing_request_count,
@@ -692,7 +692,7 @@ impl BudgetRepository for LibsqlStore {
                     u.user_id AS owner_id,
                     users.name AS owner_name,
                     COALESCE(SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated')
-                        THEN u.computed_cost_10000 ELSE 0 END), 0) AS priced_cost_10000,
+                        THEN u.computed_cost_nanos ELSE 0 END), 0) AS priced_cost_nanos,
                     SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated') THEN 1 ELSE 0 END)
                         AS priced_request_count,
                     SUM(CASE WHEN u.pricing_status = 'unpriced' THEN 1 ELSE 0 END)
@@ -706,7 +706,7 @@ impl BudgetRepository for LibsqlStore {
                   AND u.user_id IS NOT NULL
                   AND (?3 IS NULL OR u.user_id = ?3)
                 GROUP BY u.user_id, users.name
-                ORDER BY priced_cost_10000 DESC, owner_name ASC
+                ORDER BY priced_cost_nanos DESC, owner_name ASC
                 "#
             }
             Some(ApiKeyOwnerKind::ServiceAccount) => {
@@ -716,7 +716,7 @@ impl BudgetRepository for LibsqlStore {
                     u.service_account_id AS owner_id,
                     service_accounts.service_account_name AS owner_name,
                     COALESCE(SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated')
-                        THEN u.computed_cost_10000 ELSE 0 END), 0) AS priced_cost_10000,
+                        THEN u.computed_cost_nanos ELSE 0 END), 0) AS priced_cost_nanos,
                     SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated') THEN 1 ELSE 0 END)
                         AS priced_request_count,
                     SUM(CASE WHEN u.pricing_status = 'unpriced' THEN 1 ELSE 0 END)
@@ -730,7 +730,7 @@ impl BudgetRepository for LibsqlStore {
                   AND u.service_account_id IS NOT NULL
                   AND (?3 IS NULL OR u.user_id = ?3)
                 GROUP BY u.service_account_id, service_accounts.service_account_name
-                ORDER BY priced_cost_10000 DESC, owner_name ASC
+                ORDER BY priced_cost_nanos DESC, owner_name ASC
                 "#
             }
             None => {
@@ -741,7 +741,7 @@ impl BudgetRepository for LibsqlStore {
                         u.user_id AS owner_id,
                         users.name AS owner_name,
                         COALESCE(SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated')
-                            THEN u.computed_cost_10000 ELSE 0 END), 0) AS priced_cost_10000,
+                            THEN u.computed_cost_nanos ELSE 0 END), 0) AS priced_cost_nanos,
                         SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated') THEN 1 ELSE 0 END)
                             AS priced_request_count,
                         SUM(CASE WHEN u.pricing_status = 'unpriced' THEN 1 ELSE 0 END)
@@ -761,7 +761,7 @@ impl BudgetRepository for LibsqlStore {
                         u.service_account_id AS owner_id,
                         service_accounts.service_account_name AS owner_name,
                         COALESCE(SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated')
-                            THEN u.computed_cost_10000 ELSE 0 END), 0) AS priced_cost_10000,
+                            THEN u.computed_cost_nanos ELSE 0 END), 0) AS priced_cost_nanos,
                         SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated') THEN 1 ELSE 0 END)
                             AS priced_request_count,
                         SUM(CASE WHEN u.pricing_status = 'unpriced' THEN 1 ELSE 0 END)
@@ -776,7 +776,7 @@ impl BudgetRepository for LibsqlStore {
                       AND (?3 IS NULL OR u.user_id = ?3)
                     GROUP BY u.service_account_id, service_accounts.service_account_name
                 )
-                ORDER BY priced_cost_10000 DESC, owner_name ASC
+                ORDER BY priced_cost_nanos DESC, owner_name ASC
                 "#
             }
         };
@@ -798,7 +798,7 @@ impl BudgetRepository for LibsqlStore {
         while let Some(row) = rows.next().await.map_err(to_query_error)? {
             let owner_kind: String = row.get(0).map_err(to_query_error)?;
             let owner_id: String = row.get(1).map_err(to_query_error)?;
-            let priced_cost_10000: i64 = row.get(3).map_err(to_query_error)?;
+            let priced_cost_nanos: i64 = row.get(3).map_err(to_query_error)?;
             let priced_request_count: i64 = row.get(4).map_err(to_query_error)?;
             let unpriced_request_count: i64 = row.get(5).map_err(to_query_error)?;
             let usage_missing_request_count: i64 = row.get(6).map_err(to_query_error)?;
@@ -808,7 +808,7 @@ impl BudgetRepository for LibsqlStore {
                 })?,
                 owner_id: parse_uuid(&owner_id)?,
                 owner_name: row.get(2).map_err(to_query_error)?,
-                priced_cost_usd: Money4::from_scaled(priced_cost_10000),
+                priced_cost_usd: Money9::from_nanos(priced_cost_nanos).round_half_up_to_money4(),
                 priced_request_count,
                 unpriced_request_count,
                 usage_missing_request_count,
@@ -831,7 +831,7 @@ impl BudgetRepository for LibsqlStore {
                 SELECT
                     COALESCE(g.model_key, u.upstream_model) AS model_key,
                     COALESCE(SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated')
-                        THEN u.computed_cost_10000 ELSE 0 END), 0) AS priced_cost_10000,
+                        THEN u.computed_cost_nanos ELSE 0 END), 0) AS priced_cost_nanos,
                     SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated') THEN 1 ELSE 0 END)
                         AS priced_request_count,
                     SUM(CASE WHEN u.pricing_status = 'unpriced' THEN 1 ELSE 0 END)
@@ -845,7 +845,7 @@ impl BudgetRepository for LibsqlStore {
                   AND u.user_id IS NOT NULL
                   AND (?3 IS NULL OR u.user_id = ?3)
                 GROUP BY model_key
-                ORDER BY priced_cost_10000 DESC, model_key ASC
+                ORDER BY priced_cost_nanos DESC, model_key ASC
                 "#
             }
             Some(ApiKeyOwnerKind::ServiceAccount) => {
@@ -853,7 +853,7 @@ impl BudgetRepository for LibsqlStore {
                 SELECT
                     COALESCE(g.model_key, u.upstream_model) AS model_key,
                     COALESCE(SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated')
-                        THEN u.computed_cost_10000 ELSE 0 END), 0) AS priced_cost_10000,
+                        THEN u.computed_cost_nanos ELSE 0 END), 0) AS priced_cost_nanos,
                     SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated') THEN 1 ELSE 0 END)
                         AS priced_request_count,
                     SUM(CASE WHEN u.pricing_status = 'unpriced' THEN 1 ELSE 0 END)
@@ -867,7 +867,7 @@ impl BudgetRepository for LibsqlStore {
                   AND u.service_account_id IS NOT NULL
                   AND (?3 IS NULL OR u.user_id = ?3)
                 GROUP BY model_key
-                ORDER BY priced_cost_10000 DESC, model_key ASC
+                ORDER BY priced_cost_nanos DESC, model_key ASC
                 "#
             }
             None => {
@@ -875,7 +875,7 @@ impl BudgetRepository for LibsqlStore {
                 SELECT
                     COALESCE(g.model_key, u.upstream_model) AS model_key,
                     COALESCE(SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated')
-                        THEN u.computed_cost_10000 ELSE 0 END), 0) AS priced_cost_10000,
+                        THEN u.computed_cost_nanos ELSE 0 END), 0) AS priced_cost_nanos,
                     SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated') THEN 1 ELSE 0 END)
                         AS priced_request_count,
                     SUM(CASE WHEN u.pricing_status = 'unpriced' THEN 1 ELSE 0 END)
@@ -888,7 +888,7 @@ impl BudgetRepository for LibsqlStore {
                   AND u.occurred_at < ?2
                   AND (?3 IS NULL OR u.user_id = ?3)
                 GROUP BY model_key
-                ORDER BY priced_cost_10000 DESC, model_key ASC
+                ORDER BY priced_cost_nanos DESC, model_key ASC
                 "#
             }
         };
@@ -908,13 +908,13 @@ impl BudgetRepository for LibsqlStore {
 
         let mut output = Vec::new();
         while let Some(row) = rows.next().await.map_err(to_query_error)? {
-            let priced_cost_10000: i64 = row.get(1).map_err(to_query_error)?;
+            let priced_cost_nanos: i64 = row.get(1).map_err(to_query_error)?;
             let priced_request_count: i64 = row.get(2).map_err(to_query_error)?;
             let unpriced_request_count: i64 = row.get(3).map_err(to_query_error)?;
             let usage_missing_request_count: i64 = row.get(4).map_err(to_query_error)?;
             output.push(SpendModelAggregateRecord {
                 model_key: row.get(0).map_err(to_query_error)?,
-                priced_cost_usd: Money4::from_scaled(priced_cost_10000),
+                priced_cost_usd: Money9::from_nanos(priced_cost_nanos).round_half_up_to_money4(),
                 priced_request_count,
                 unpriced_request_count,
                 usage_missing_request_count,
@@ -1165,7 +1165,7 @@ impl BudgetRepository for LibsqlStore {
                         COALESCE(SUM(u.completion_tokens), 0) AS completion_tokens,
                         COALESCE(SUM(u.total_tokens), 0) AS total_tokens,
                         COUNT(*) AS request_count,
-                        COALESCE(SUM(u.computed_cost_10000), 0) AS computed_cost_10000
+                        COALESCE(SUM(u.computed_cost_nanos), 0) AS computed_cost_nanos
                     FROM usage_cost_events u
                     INNER JOIN users ON users.user_id = u.user_id
                     LEFT JOIN gateway_models g ON g.id = u.model_id
@@ -1205,7 +1205,7 @@ impl BudgetRepository for LibsqlStore {
                         COALESCE(SUM(u.completion_tokens), 0) AS completion_tokens,
                         COALESCE(SUM(u.total_tokens), 0) AS total_tokens,
                         COUNT(*) AS request_count,
-                        COALESCE(SUM(u.computed_cost_10000), 0) AS computed_cost_10000
+                        COALESCE(SUM(u.computed_cost_nanos), 0) AS computed_cost_nanos
                     FROM usage_cost_events u
                     INNER JOIN service_accounts ON service_accounts.service_account_id = u.service_account_id
                     INNER JOIN teams ON teams.team_id = service_accounts.team_id
@@ -1244,7 +1244,7 @@ impl BudgetRepository for LibsqlStore {
             let model_id: Option<String> = row.get(5).map_err(to_query_error)?;
             let pricing_status: String = row.get(9).map_err(to_query_error)?;
             let pricing_row_id: Option<String> = row.get(10).map_err(to_query_error)?;
-            let computed_cost_10000: i64 = row.get(18).map_err(to_query_error)?;
+            let computed_cost_nanos: i64 = row.get(18).map_err(to_query_error)?;
             output.push(FocusExportAggregateRecord {
                 day_start: unix_to_datetime(row.get(0).map_err(to_query_error)?)?,
                 owner_kind: ApiKeyOwnerKind::from_db(&owner_kind).ok_or_else(|| {
@@ -1270,7 +1270,8 @@ impl BudgetRepository for LibsqlStore {
                 completion_tokens: row.get(15).map_err(to_query_error)?,
                 total_tokens: row.get(16).map_err(to_query_error)?,
                 request_count: row.get(17).map_err(to_query_error)?,
-                computed_cost_usd: Money4::from_scaled(computed_cost_10000),
+                computed_cost_usd: Money9::from_nanos(computed_cost_nanos)
+                    .round_half_up_to_money4(),
             });
         }
         Ok(output)
@@ -1339,7 +1340,7 @@ impl BudgetRepository for LibsqlStore {
                         u.user_id AS user_id,
                         users.name AS user_name,
                         COALESCE(SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated')
-                            THEN u.computed_cost_10000 ELSE 0 END), 0) AS priced_cost_10000,
+                            THEN u.computed_cost_nanos ELSE 0 END), 0) AS priced_cost_nanos,
                         COUNT(*) AS total_request_count
                     FROM usage_cost_events u
                     INNER JOIN users ON users.user_id = u.user_id
@@ -1352,7 +1353,7 @@ impl BudgetRepository for LibsqlStore {
                     SELECT *
                     FROM user_totals
                     ORDER BY
-                        priced_cost_10000 DESC,
+                        priced_cost_nanos DESC,
                         total_request_count DESC,
                         user_name ASC,
                         user_id ASC
@@ -1364,7 +1365,7 @@ impl BudgetRepository for LibsqlStore {
                         COALESCE(g.model_key, u.upstream_model) AS model_key,
                         COUNT(*) AS request_count,
                         COALESCE(SUM(CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated')
-                            THEN u.computed_cost_10000 ELSE 0 END), 0) AS priced_cost_10000
+                            THEN u.computed_cost_nanos ELSE 0 END), 0) AS priced_cost_nanos
                     FROM usage_cost_events u
                     LEFT JOIN gateway_models g ON g.id = u.model_id
                     WHERE u.occurred_at >= ?1
@@ -1378,7 +1379,7 @@ impl BudgetRepository for LibsqlStore {
                         model_key,
                         ROW_NUMBER() OVER (
                             PARTITION BY user_id
-                            ORDER BY request_count DESC, priced_cost_10000 DESC, model_key ASC
+                            ORDER BY request_count DESC, priced_cost_nanos DESC, model_key ASC
                         ) AS model_rank
                     FROM model_totals
                 ),
@@ -1421,7 +1422,7 @@ impl BudgetRepository for LibsqlStore {
                 SELECT
                     limited_users.user_id,
                     limited_users.user_name,
-                    limited_users.priced_cost_10000,
+                    limited_users.priced_cost_nanos,
                     limited_users.total_request_count,
                     ranked_models.model_key,
                     ranked_harnesses.agent_harness_key,
@@ -1440,7 +1441,7 @@ impl BudgetRepository for LibsqlStore {
                 LEFT JOIN tool_totals
                     ON tool_totals.user_id = limited_users.user_id
                 ORDER BY
-                    limited_users.priced_cost_10000 DESC,
+                    limited_users.priced_cost_nanos DESC,
                     limited_users.total_request_count DESC,
                     limited_users.user_name ASC,
                     limited_users.user_id ASC
@@ -1461,7 +1462,8 @@ impl BudgetRepository for LibsqlStore {
             output.push(UsageLeaderboardUserRecord {
                 user_id: parse_uuid(&row.get::<String>(0).map_err(to_query_error)?)?,
                 user_name: row.get(1).map_err(to_query_error)?,
-                priced_cost_usd: Money4::from_scaled(row.get::<i64>(2).map_err(to_query_error)?),
+                priced_cost_usd: Money9::from_nanos(row.get::<i64>(2).map_err(to_query_error)?)
+                    .round_half_up_to_money4(),
                 total_request_count: row.get(3).map_err(to_query_error)?,
                 top_model_key: row.get(4).map_err(to_query_error)?,
                 most_used_harness: harness_key
@@ -1503,7 +1505,7 @@ impl BudgetRepository for LibsqlStore {
                     user_id,
                     (occurred_at / ?3) * ?3 AS bucket_start,
                     COALESCE(SUM(CASE WHEN pricing_status IN ('priced', 'legacy_estimated')
-                        THEN computed_cost_10000 ELSE 0 END), 0) AS priced_cost_10000
+                        THEN computed_cost_nanos ELSE 0 END), 0) AS priced_cost_nanos
                 FROM usage_cost_events
                 WHERE occurred_at >= ?1
                   AND occurred_at < ?2
@@ -1526,7 +1528,8 @@ impl BudgetRepository for LibsqlStore {
             output.push(UsageLeaderboardBucketRecord {
                 user_id: parse_uuid(&row.get::<String>(0).map_err(to_query_error)?)?,
                 bucket_start: unix_to_datetime(row.get::<i64>(1).map_err(to_query_error)?)?,
-                priced_cost_usd: Money4::from_scaled(row.get::<i64>(2).map_err(to_query_error)?),
+                priced_cost_usd: Money9::from_nanos(row.get::<i64>(2).map_err(to_query_error)?)
+                    .round_half_up_to_money4(),
             });
         }
 
@@ -1552,7 +1555,7 @@ impl BudgetRepository for LibsqlStore {
                     input_cost_per_million_tokens_10000,
                     output_cost_per_million_tokens_10000,
                     cache_read_cost_per_million_tokens_10000,
-                    cache_write_cost_per_million_tokens_10000, computed_cost_10000, occurred_at,
+                    cache_write_cost_per_million_tokens_10000, computed_cost_nanos, occurred_at,
                     uncached_input_tokens, cache_read_tokens, cache_write_tokens,
                     image_output_tokens, image_output_cost_per_million_tokens_10000,
                     pricing_tier_above_input_tokens, requested_service_tier, served_service_tier,
@@ -1604,7 +1607,7 @@ impl BudgetRepository for LibsqlStore {
                     event
                         .cache_write_cost_per_million_tokens
                         .map(Money4::as_scaled_i64),
-                    event.computed_cost_usd.as_scaled_i64(),
+                    event.computed_cost_usd.as_nanos(),
                     event.occurred_at.unix_timestamp(),
                     event.uncached_input_tokens,
                     event.cache_read_tokens,
@@ -1658,7 +1661,7 @@ async fn sum_usage_cost_for_budget_scope(
     scope: &BudgetScope,
     window_start: OffsetDateTime,
     window_end: OffsetDateTime,
-) -> Result<Money4, StoreError> {
+) -> Result<Money9, StoreError> {
     let (predicate, owner_id, extra_value) = match scope {
         BudgetScope::User { user_id } => ("user_id = ?1", user_id.to_string(), None),
         BudgetScope::ServiceAccount { service_account_id } => (
@@ -1685,7 +1688,7 @@ async fn sum_usage_cost_for_budget_scope(
     };
 
     let query = format!(
-        "SELECT COALESCE(SUM(computed_cost_10000), 0)
+        "SELECT COALESCE(SUM(computed_cost_nanos), 0)
          FROM usage_cost_events
          WHERE {predicate}
            AND pricing_status IN ('priced', 'legacy_estimated')
@@ -1724,11 +1727,11 @@ async fn sum_usage_cost_for_budget_scope(
         .await
         .map_err(|error| StoreError::Query(error.to_string()))?
     else {
-        return Ok(Money4::ZERO);
+        return Ok(Money9::ZERO);
     };
 
-    let sum_10000: i64 = row.get(0).map_err(to_query_error)?;
-    Ok(Money4::from_scaled(sum_10000))
+    let sum_nanos: i64 = row.get(0).map_err(to_query_error)?;
+    Ok(Money9::from_nanos(sum_nanos))
 }
 
 /// Reads the six token columns emitted by the spend token-series queries, starting at `offset`.

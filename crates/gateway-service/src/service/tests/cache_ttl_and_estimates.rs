@@ -1,6 +1,7 @@
 //! Cache writes billed by TTL, and estimated costs for requests that the rates or the
 //! provider's usage leave open.
 
+use gateway_core::Money9;
 use serde_json::Value;
 
 use super::*;
@@ -105,7 +106,7 @@ async fn one_hour_cache_writes_without_a_rate_bill_at_twice_the_input_rate() {
     );
     // 1,000 input tokens at $3, 2,000 1-hour writes at $6 and 100 output tokens at $15
     // per million: $0.003 + $0.012 + $0.0015.
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(165));
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(16_500_000));
 }
 
 #[tokio::test]
@@ -119,7 +120,7 @@ async fn one_hour_cache_writes_bill_at_the_catalog_rate() {
         event.cache_write_1h_cost_per_million_tokens,
         Some(Money4::from_scaled(50_000))
     );
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(145));
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(14_500_000));
 }
 
 #[tokio::test]
@@ -148,9 +149,9 @@ async fn bedrock_cache_writes_bill_each_ttl_at_its_own_rate() {
     assert_eq!(event.prompt_tokens, Some(8_000));
     assert_eq!(event.cache_write_tokens, Some(3_000));
     assert_eq!(event.cache_write_1h_tokens, Some(2_000));
-    // In $0.0001 units: input 30, reads 12, 5-minute writes 38 (37.5 rounded half up),
-    // 1-hour writes 120 and output 15.
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(215));
+    // $0.003 input + $0.0012 reads + $0.00375 5-minute writes + $0.012 1-hour writes
+    // + $0.0015 output, retaining each bucket's precision until the final sum.
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(21_450_000));
 }
 
 #[tokio::test]
@@ -176,7 +177,7 @@ async fn a_cache_read_without_a_rate_is_estimated_at_the_input_rate() {
         Some(Money4::from_scaled(10_000))
     );
     // 600 uncached and 400 cached tokens at $1 and 500 output tokens at $2 per million.
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(20));
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(2_000_000));
 }
 
 #[tokio::test]
@@ -203,7 +204,7 @@ async fn missing_usage_is_estimated_from_the_request_and_response_sizes() {
         event.input_cost_per_million_tokens,
         Some(Money4::from_scaled(10_000))
     );
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(20));
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(2_003_000));
 }
 
 #[tokio::test]
@@ -225,7 +226,7 @@ async fn usage_with_only_a_total_is_estimated_from_the_sizes() {
     assert_eq!(event.pricing_status, UsagePricingStatus::LegacyEstimated);
     assert_eq!(event.prompt_tokens, Some(1_001));
     assert_eq!(event.completion_tokens, Some(501));
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(20));
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(2_003_000));
 }
 
 #[tokio::test]
@@ -244,7 +245,7 @@ async fn missing_usage_stays_unbilled_without_a_request_size_or_rates() {
         assert_eq!(event.unpriced_reason, None);
         assert_eq!(event.prompt_tokens, None);
         assert_eq!(event.completion_tokens, None);
-        assert_eq!(event.computed_cost_usd, Money4::ZERO);
+        assert_eq!(event.computed_cost_usd, Money9::ZERO);
     }
 }
 
@@ -281,5 +282,5 @@ async fn regional_vertex_anthropic_usage_is_estimated_at_the_global_rates_plus_t
         Some(Money4::from_scaled(22_000))
     );
     // 1,000 input tokens at $1.10 and 500 output tokens at $2.20 per million.
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(22));
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(2_200_000));
 }

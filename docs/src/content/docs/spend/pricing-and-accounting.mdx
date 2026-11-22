@@ -36,6 +36,12 @@ When an event has more than one reason, Oceans joins them with `;`. A response w
 
 For budget setup, alerts and precedence, see [Budgets](/spend/budgets/).
 
+### Cost precision
+
+The usage ledger stores costs as integer USD nanos: one nano is `$0.000000001`. Spend totals and budget windows add these amounts before rounding, so many tiny requests still count toward spend.
+
+Existing report and budget amounts use four decimal places. Oceans rounds the summed cost half up once when returning one of those amounts, not each request before adding it. Request logs also return `cost_usd_nanos` and show small charges such as `$0.0000028`; the older `cost_usd_10000` field remains a rounded view of the same ledger cost.
+
 ## How Oceans picks a price
 
 For each request, the gateway uses the first of these that applies:
@@ -152,7 +158,7 @@ Rules for the values:
 - Unquoted numbers, including whole numbers such as `30`, are rejected at config load. This stops float conversion from changing an admin-authored rate.
 - An omitted optional rate stays absent. It doesn't inherit the catalog value. A cache bucket without a rate is charged from the input rate (see [Cache-token accounting](#cache-token-accounting)).
 
-Oceans calculates each token subtotal with integer fixed-point arithmetic, rounds it half up to the nearest `$0.0001`, and adds it to the request cost.
+Oceans calculates token subtotals with integer fixed-point arithmetic and stores the request cost in USD nanos, rather than rounding each subtotal to `$0.0001`.
 
 An override wins over the catalog for its route, even when a conflicting catalog row exists or no row can be found. A provider-reported cost wins over the override. Catalog refresh never changes overrides or historical spend.
 
@@ -175,7 +181,7 @@ The spend event stores the image token count and the image rate used. Batch pric
 
 When a provider's usage includes `cost`, Oceans records that amount as the request cost with `pricing_source: provider_reported`. OpenRouter reports this in `usage.cost`. The reported cost wins over route overrides and catalog rates, so a negotiated rate or markup in `pricing_override` doesn't apply to those responses.
 
-On bring-your-own-key requests (`usage.is_byok: true`), `cost` is only OpenRouter's fee. The upstream provider bills `cost_details.upstream_inference_cost` to your own key. Oceans adds both as exact decimals and rounds the total half up once to the nearest `$0.0001`.
+On bring-your-own-key requests (`usage.is_byok: true`), `cost` is only OpenRouter's fee. The upstream provider bills `cost_details.upstream_inference_cost` to your own key. Oceans adds both as exact decimals and stores the total in USD nanos.
 
 A reported cost is charged even when the usage has no token counts. Oceans ignores the reported cost with a warning, and prices from token rates as usual, when:
 

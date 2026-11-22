@@ -7,11 +7,12 @@ use gateway_core::{
     BatchJobRecord, BatchPricingStatus, BudgetAlertRepository, BudgetExceededStatus, BudgetRecord,
     BudgetRepository, ChatCompletionsRequest, ContextPricingTier, GatewayError, GatewayModel,
     IdentityRepository, McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationQuery,
-    McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, PricingCatalogRepository,
-    PricingResolution, PricingUnpricedReason, ProviderBatchResult, ProviderRepository,
-    RequestLogDetail, RequestLogPage, RequestLogPurgeResult, RequestLogQuery, RequestLogRepository,
-    RequestLogRetentionWindow, RequestTags, ResponsesRequest, RouteError, RoutePlanner,
-    ServiceTier, ServiceTierOutcome, StoreHealth, UsageLedgerRecord, UsagePricingStatus,
+    McpToolInvocationRepository, ModelRepository, ModelRoute, Money4, Money9,
+    PricingCatalogRepository, PricingResolution, PricingUnpricedReason, ProviderBatchResult,
+    ProviderRepository, RequestLogDetail, RequestLogPage, RequestLogPurgeResult, RequestLogQuery,
+    RequestLogRepository, RequestLogRetentionWindow, RequestTags, ResponsesRequest, RouteError,
+    RoutePlanner, ServiceTier, ServiceTierOutcome, StoreHealth, UsageLedgerRecord,
+    UsagePricingStatus,
 };
 use serde_json::{Value, json};
 use time::{Duration, OffsetDateTime};
@@ -67,7 +68,7 @@ pub struct BatchUsageInput<'a> {
     pub results: &'a [ProviderBatchResult],
     pub provider_usage: Option<&'a Value>,
     pub pricing_status: BatchPricingStatus,
-    pub cost_usd: Option<Money4>,
+    pub cost_usd: Option<Money9>,
     pub occurred_at: OffsetDateTime,
 }
 
@@ -971,10 +972,16 @@ where
         self.budget_alerts.dispatch_pending_deliveries(limit).await
     }
 
+    /// Makes the next budget check read active budgets from the store. Call it
+    /// after a budget is created, changed or deactivated.
+    pub fn invalidate_budget_cache(&self) {
+        self.budget_guard.invalidate_cached_budgets();
+    }
+
     pub async fn evaluate_budget_alert_after_budget_upsert(
         &self,
         budget: &BudgetRecord,
-        current_spend: Money4,
+        current_spend: Money9,
         occurred_at: OffsetDateTime,
     ) -> Result<(), GatewayError> {
         self.budget_alerts
@@ -1125,7 +1132,7 @@ where
             cache_write_1h_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
             pricing_tier_above_input_tokens: None,
-            computed_cost_usd: Money4::ZERO,
+            computed_cost_usd: Money9::ZERO,
             occurred_at,
             requested_service_tier: service_tiers.requested,
             served_service_tier: service_tiers.served,
@@ -1140,7 +1147,9 @@ where
         )
         .await?;
 
-        self.budget_guard.record_incurred_usage(&record).await?;
+        self.budget_guard
+            .record_incurred_usage(auth, &record)
+            .await?;
         self.observe_budgets_after_usage(auth, &record).await;
 
         let recorded = RecordedChatUsage {
@@ -1322,7 +1331,7 @@ where
         }
         let request_id = format!("batch:{}", job.batch_id);
         let ownership_scope_key = usage_ownership_scope_key(auth)?;
-        let cost_usd = cost_usd.unwrap_or(Money4::ZERO);
+        let cost_usd = cost_usd.unwrap_or(Money9::ZERO);
         if let Some(existing) = self
             .store
             .get_usage_ledger_by_request_and_scope(&request_id, &ownership_scope_key)
@@ -1405,7 +1414,7 @@ where
             requested_service_tier: None,
             served_service_tier: None,
         };
-        match self.budget_guard.record_incurred_usage(&record).await {
+        match self.budget_guard.record_incurred_usage(auth, &record).await {
             Ok(()) => {}
             Err(GatewayError::DuplicateUsageRecord { .. }) => {
                 // Two workers finalized the same batch; accept only an identical cost.
@@ -1586,11 +1595,11 @@ fn add_optional(left: Option<i64>, right: Option<i64>) -> Result<Option<i64>, Ga
     }
 }
 
-fn money_to_f64(value: Money4) -> Option<f64> {
-    if value == Money4::ZERO {
+fn money_to_f64(value: Money9) -> Option<f64> {
+    if value == Money9::ZERO {
         None
     } else {
-        Some(value.as_scaled_i64() as f64 / Money4::SCALE as f64)
+        Some(value.as_nanos() as f64 / Money9::SCALE as f64)
     }
 }
 
@@ -1610,35 +1619,62 @@ pub(crate) fn select_context_tier(
 
 /// The cost of `record`'s tokens at the rates on it. Without valid cache counters, every
 /// prompt token bills at the input rate.
-fn token_cost(record: &UsageLedgerRecord) -> Result<Money4, GatewayError> {
+fn token_cost(
+    record: &UsageLedgerRecord,
+    rate_numerator: i64,
+    rate_denominator: i64,
+) -> Result<Money9, GatewayError> {
     let image_rate = record.image_output_cost_per_million_tokens;
     let (text_output_tokens, image_output_tokens) = output_token_buckets(record, image_rate);
     let output = [
-        (text_output_tokens, record.output_cost_per_million_tokens),
-        (image_output_tokens, image_rate),
+        (
+            text_output_tokens,
+            record.output_cost_per_million_tokens,
+            RATE_QUARTERS,
+        ),
+        (image_output_tokens, image_rate, RATE_QUARTERS),
     ];
     let input_rate = record.input_cost_per_million_tokens;
     if record.uncached_input_tokens.is_none() {
-        let input = (record.prompt_tokens, input_rate);
-        return sum_component_costs(std::iter::once(input).chain(output));
+        let input = (record.prompt_tokens, input_rate, RATE_QUARTERS);
+        return sum_component_costs(
+            std::iter::once(input).chain(output),
+            rate_numerator,
+            rate_denominator,
+        );
     }
     let (cache_write_5m_tokens, cache_write_1h_tokens) = cache_write_buckets(record);
     let input = [
-        (record.uncached_input_tokens, input_rate),
+        (record.uncached_input_tokens, input_rate, RATE_QUARTERS),
         (
             record.cache_read_tokens,
-            record.cache_read_cost_per_million_tokens,
+            record.cache_read_cost_per_million_tokens.or(input_rate),
+            RATE_QUARTERS,
         ),
         (
             Some(cache_write_5m_tokens),
-            record.cache_write_cost_per_million_tokens,
+            record.cache_write_cost_per_million_tokens.or(input_rate),
+            if record.cache_write_cost_per_million_tokens.is_some() {
+                RATE_QUARTERS
+            } else {
+                CACHE_WRITE_RATE_QUARTERS
+            },
         ),
         (
             Some(cache_write_1h_tokens),
-            record.cache_write_1h_cost_per_million_tokens,
+            record.cache_write_1h_cost_per_million_tokens.or(input_rate),
+            if record.cache_write_1h_cost_per_million_tokens.is_some() {
+                RATE_QUARTERS
+            } else {
+                CACHE_WRITE_1H_RATE_QUARTERS
+            },
         ),
     ];
-    sum_component_costs(input.into_iter().chain(output))
+    sum_component_costs(
+        input.into_iter().chain(output),
+        rate_numerator,
+        rate_denominator,
+    )
 }
 
 /// Splits completion tokens into text and image buckets. Only an image output
@@ -1669,43 +1705,74 @@ fn cache_write_buckets(record: &UsageLedgerRecord) -> (i64, i64) {
     )
 }
 
-/// Adds each priced component's subtotal, each rounded half up to Money4.
+/// Rate quarters preserve the exact 1.25-times fallback write rate.
+const RATE_QUARTERS: i128 = 4;
+/// Five-minute cache writes cost five quarters of the input rate.
+const CACHE_WRITE_RATE_QUARTERS: i128 = 5;
+/// One-hour cache writes cost twice the input rate.
+const CACHE_WRITE_1H_RATE_QUARTERS: i128 = 8;
+
+/// Adds exact component numerators, then rounds the charge once to nano-dollars.
 fn sum_component_costs(
-    components: impl IntoIterator<Item = (Option<i64>, Option<Money4>)>,
-) -> Result<Money4, GatewayError> {
-    components
-        .into_iter()
-        .try_fold(Money4::ZERO, |total, (tokens, rate)| {
-            let component = match (tokens, rate) {
-                (Some(tokens), Some(rate)) => scaled_cost_for_tokens(tokens, rate)?,
-                _ => Money4::ZERO,
-            };
-            total
-                .checked_add(component)
-                .ok_or_else(|| GatewayError::Internal("usage cost overflow".to_string()))
-        })
+    components: impl IntoIterator<Item = (Option<i64>, Option<Money4>, i128)>,
+    rate_numerator: i64,
+    rate_denominator: i64,
+) -> Result<Money9, GatewayError> {
+    let numerator =
+        components
+            .into_iter()
+            .try_fold(0_i128, |total, (tokens, rate, quarters)| {
+                let component = match (tokens, rate) {
+                    (Some(tokens), Some(rate)) => token_cost_numerator(tokens, rate)?
+                        .checked_mul(quarters)
+                        .ok_or_else(|| GatewayError::Internal("usage cost overflow".to_string()))?,
+                    _ => 0,
+                };
+                total
+                    .checked_add(component)
+                    .ok_or_else(|| GatewayError::Internal("usage cost overflow".to_string()))
+            })?;
+    let numerator = numerator
+        .checked_mul(i128::from(rate_numerator))
+        .ok_or_else(|| GatewayError::Internal("usage cost overflow".to_string()))?;
+    round_token_cost(
+        numerator,
+        TOKEN_COST_NANOS_DIVISOR * RATE_QUARTERS * i128::from(rate_denominator),
+    )
 }
 
-pub(crate) fn scaled_cost_for_tokens(
-    tokens: i64,
-    rate_per_million: Money4,
-) -> Result<Money4, GatewayError> {
+/// The exact token-rate numerator contains tenths of one nano-dollar.
+const TOKEN_COST_NANOS_DIVISOR: i128 = 10;
+
+fn token_cost_numerator(tokens: i64, rate_per_million: Money4) -> Result<i128, GatewayError> {
     if tokens < 0 {
         return Err(GatewayError::Internal(
             "token count cannot be negative".to_string(),
         ));
     }
-
-    let numerator = i128::from(tokens)
+    i128::from(tokens)
         .checked_mul(i128::from(rate_per_million.as_scaled_i64()))
-        .ok_or_else(|| GatewayError::Internal("usage cost overflow".to_string()))?;
+        .ok_or_else(|| GatewayError::Internal("usage cost overflow".to_string()))
+}
+
+fn round_token_cost(numerator: i128, divisor: i128) -> Result<Money9, GatewayError> {
     let rounded = numerator
-        .checked_add(500_000)
+        .checked_add(divisor / 2)
         .ok_or_else(|| GatewayError::Internal("usage cost overflow".to_string()))?
-        / 1_000_000;
-    let scaled = i64::try_from(rounded)
-        .map_err(|_| GatewayError::Internal("usage cost overflow".to_string()))?;
-    Ok(Money4::from_scaled(scaled))
+        / divisor;
+    i64::try_from(rounded)
+        .map(Money9::from_nanos)
+        .map_err(|_| GatewayError::Internal("usage cost overflow".to_string()))
+}
+
+pub(crate) fn scaled_cost_for_tokens(
+    tokens: i64,
+    rate_per_million: Money4,
+) -> Result<Money9, GatewayError> {
+    round_token_cost(
+        token_cost_numerator(tokens, rate_per_million)?,
+        TOKEN_COST_NANOS_DIVISOR,
+    )
 }
 
 fn unpriced_reason_string(reason: &PricingUnpricedReason) -> String {
@@ -1739,14 +1806,14 @@ mod tests {
         GatewayModel, GlobalRole, IdentityRepository, McpToolInvocationDetail,
         McpToolInvocationPage, McpToolInvocationPayloadRecord, McpToolInvocationQuery,
         McpToolInvocationRecord, McpToolInvocationRepository, ModelAccessMode, ModelPricingRecord,
-        ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4, OpenAiCompatDecisionsApi,
-        OpenAiCompatRouteCompatibility, PricingCatalogCacheRecord, PricingCatalogRepository,
-        PricingLimits, PricingModalities, PricingProvenance, ProviderBatchResult,
-        ProviderCapabilities, ProviderConnection, ProviderRepository, ProviderRequestContext,
-        RequestLogDetail, RequestLogPage, RequestLogPayloadRecord, RequestLogPurgeResult,
-        RequestLogQuery, RequestLogRecord, RequestLogRepository, RouteError, RoutePlanner,
-        RoutePricingOverride, StoreError, StoreHealth, TeamMembershipRecord, TeamRecord,
-        UsageLedgerRecord, UsagePricingStatus, UserRecord, UserStatus,
+        ModelPricingSyncChanges, ModelRepository, ModelRoute, Money4, Money9,
+        OpenAiCompatDecisionsApi, OpenAiCompatRouteCompatibility, PricingCatalogCacheRecord,
+        PricingCatalogRepository, PricingLimits, PricingModalities, PricingProvenance,
+        ProviderBatchResult, ProviderCapabilities, ProviderConnection, ProviderRepository,
+        ProviderRequestContext, RequestLogDetail, RequestLogPage, RequestLogPayloadRecord,
+        RequestLogPurgeResult, RequestLogQuery, RequestLogRecord, RequestLogRepository, RouteError,
+        RoutePlanner, RoutePricingOverride, StoreError, StoreHealth, TeamMembershipRecord,
+        TeamRecord, UsageLedgerRecord, UsagePricingStatus, UserRecord, UserStatus,
     };
     use serde_json::{Map, json};
     use time::OffsetDateTime;
@@ -1779,12 +1846,12 @@ mod tests {
         assert_eq!(
             compute_batch_usage_cost(&usage, rates, BatchPricingPolicy::HalfAllTokenRates,)
                 .expect("OpenAI price"),
-            Some(Money4::from_scaled(195))
+            Some(Money9::from_nanos(19_500_000))
         );
         assert_eq!(
             compute_batch_usage_cost(&usage, rates, BatchPricingPolicy::VertexHalfNonCachedRates,)
                 .expect("Vertex price"),
-            Some(Money4::from_scaled(240))
+            Some(Money9::from_nanos(24_000_000))
         );
     }
 
@@ -1806,17 +1873,17 @@ mod tests {
             image_output: Some(Money4::from_scaled(300_000)),
         };
 
-        // (200 * $1.50 + 1000 * $30) / 1M, halved: $0.01515 rounds to $0.0152.
+        // (200 * $1.50 + 1000 * $30) / 1M, halved: exactly $0.01515.
         assert_eq!(
             compute_batch_usage_cost(&usage, rates, BatchPricingPolicy::HalfAllTokenRates)
                 .expect("image batch price"),
-            Some(Money4::from_scaled(152))
+            Some(Money9::from_nanos(15_150_000))
         );
         rates.image_output = None;
         assert_eq!(
             compute_batch_usage_cost(&usage, rates, BatchPricingPolicy::HalfAllTokenRates)
                 .expect("text batch price"),
-            Some(Money4::from_scaled(9))
+            Some(Money9::from_nanos(900_000))
         );
     }
 
@@ -1840,7 +1907,7 @@ mod tests {
         assert_eq!(
             compute_batch_usage_cost(&usage, rates, BatchPricingPolicy::HalfAllTokenRates)
                 .expect("batch price"),
-            Some(Money4::ZERO)
+            Some(Money9::from_nanos(25_000))
         );
     }
 
@@ -1857,7 +1924,7 @@ mod tests {
                     "output_tokens": 20,
                 })),
                 completed_at: None,
-                cost_usd: Some(Money4::from_scaled(10)),
+                cost_usd: Some(Money9::from_nanos(1_000_000)),
             },
             ProviderBatchResult {
                 custom_id: "without-usage".to_string(),
@@ -1866,7 +1933,7 @@ mod tests {
                 provider_request_id: Some("request-2".to_string()),
                 provider_usage: None,
                 completed_at: None,
-                cost_usd: Some(Money4::from_scaled(10)),
+                cost_usd: Some(Money9::from_nanos(1_000_000)),
             },
         ];
 
@@ -1887,7 +1954,7 @@ mod tests {
             provider_request_id: Some("request-1".to_string()),
             provider_usage: None,
             completed_at: None,
-            cost_usd: Some(Money4::from_scaled(10)),
+            cost_usd: Some(Money9::from_nanos(1_000_000)),
         }];
         let provider_usage = json!({
             "input_tokens": 240,
@@ -1987,7 +2054,7 @@ mod tests {
                     results: &[],
                     provider_usage: None,
                     pricing_status: BatchPricingStatus::ProviderReported,
-                    cost_usd: Some(Money4::from_scaled(200)),
+                    cost_usd: Some(Money9::from_nanos(20_000_000)),
                     occurred_at,
                 },
             )
@@ -1997,7 +2064,7 @@ mod tests {
         {
             let events = repo.events.lock().expect("events lock");
             assert_eq!(events.len(), 1);
-            assert_eq!(events[0].computed_cost_usd, Money4::from_scaled(200));
+            assert_eq!(events[0].computed_cost_usd, Money9::from_nanos(20_000_000));
         }
         let error = service
             .enforce_pre_provider_budget(
@@ -2180,7 +2247,7 @@ mod tests {
         async fn sum_usage_cost_by_budget_scope(
             &self,
             _windows: &[gateway_core::BudgetScopeWindow<'_>],
-        ) -> Result<std::collections::HashMap<String, Money4>, StoreError> {
+        ) -> Result<std::collections::HashMap<String, Money9>, StoreError> {
             unreachable!("batch operations are not used by this fixture")
         }
 
@@ -2293,8 +2360,8 @@ mod tests {
             scope: &BudgetScope,
             window_start: OffsetDateTime,
             window_end: OffsetDateTime,
-        ) -> Result<Money4, StoreError> {
-            let mut total = Money4::ZERO;
+        ) -> Result<Money9, StoreError> {
+            let mut total = Money9::ZERO;
             for event in self
                 .events
                 .lock()
@@ -2536,6 +2603,13 @@ mod tests {
                 page_size: 50,
                 total: 0,
             })
+        }
+
+        async fn list_mcp_tool_invocations_by_request_ids(
+            &self,
+            _query: &gateway_core::McpToolInvocationBatchQuery<'_>,
+        ) -> Result<Vec<McpToolInvocationRecord>, StoreError> {
+            Ok(Vec::new())
         }
 
         async fn get_mcp_tool_invocation_detail(
@@ -3047,7 +3121,7 @@ mod tests {
                 Some(Money4::from_scaled(1_000))
             );
             assert_eq!(event.cache_write_cost_per_million_tokens, None);
-            assert_eq!(event.computed_cost_usd, Money4::from_scaled(20_000));
+            assert_eq!(event.computed_cost_usd, Money9::from_nanos(2_000_000_000));
         }
 
         let error = service
@@ -3252,7 +3326,7 @@ mod tests {
             event.provider_usage["output_tokens_details"]["reasoning_tokens"],
             1_500
         );
-        assert_eq!(event.computed_cost_usd, Money4::from_scaled(300));
+        assert_eq!(event.computed_cost_usd, Money9::from_nanos(30_000_000));
     }
 
     #[tokio::test]
@@ -3300,7 +3374,7 @@ mod tests {
         assert_eq!(recorded.uncached_input_tokens, Some(2));
         assert_eq!(recorded.cache_read_tokens, Some(3_340));
         assert_eq!(recorded.cache_write_tokens, Some(276));
-        assert_eq!(recorded.cost_usd, Some(0.0012));
+        assert_eq!(recorded.cost_usd, Some(0.001287));
 
         let events = repo.events.lock().expect("events lock");
         let event = events.first().expect("usage event");
@@ -3308,7 +3382,7 @@ mod tests {
             event.provider_usage["input_tokens_details"]["cached_tokens"],
             3_340
         );
-        assert_eq!(event.computed_cost_usd, Money4::from_scaled(12));
+        assert_eq!(event.computed_cost_usd, Money9::from_nanos(1_287_000));
     }
 
     #[test]
@@ -3506,8 +3580,8 @@ mod tests {
             "5-minute writes estimate at 1.25 times the $1 input rate"
         );
         // 500 uncached at $1 + 1,000 reads at $0.10 + 500 writes at $1.25 + 10 output at
-        // $2, each rounded: 5 + 1 + 6 + 0.
-        assert_eq!(events[0].computed_cost_usd, Money4::from_scaled(12));
+        // $2: exactly $0.001245, with no per-bucket Money4 rounding.
+        assert_eq!(events[0].computed_cost_usd, Money9::from_nanos(1_245_000));
     }
 
     #[tokio::test]
@@ -3558,7 +3632,7 @@ mod tests {
                 .is_some_and(|reason| reason.starts_with("invalid_cache_token_usage:"))
         );
         assert_eq!(events[0].uncached_input_tokens, None);
-        assert_eq!(events[0].computed_cost_usd, Money4::from_scaled(1_200));
+        assert_eq!(events[0].computed_cost_usd, Money9::from_nanos(120_000_000));
     }
 
     #[tokio::test]

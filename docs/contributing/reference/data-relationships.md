@@ -130,8 +130,8 @@ Model-centric overlays:
   - Constraint: one active budget per canonical `scope_key`
   - Notes: supported scope kinds are `user`, `service_account`, and `user_model`; teams are not budget principals
 - `usage_cost_events`
-  - Key columns: `usage_event_id`, `request_id`, `ownership_scope_key`, `api_key_id`, `user_id`, `team_id`, `actor_user_id`, `model_id`, `provider_key`, `upstream_model`, `pricing_status`, `unpriced_reason`, `pricing_row_id`, `pricing_provider_id`, `computed_cost_10000`, `provider_usage`, `occurred_at`
-  - Notes: this is the canonical spend ledger used for enforcement and reporting
+  - Key columns: `usage_event_id`, `request_id`, `ownership_scope_key`, `api_key_id`, `user_id`, `team_id`, `actor_user_id`, `model_id`, `provider_key`, `upstream_model`, `pricing_status`, `unpriced_reason`, `pricing_row_id`, `pricing_provider_id`, `computed_cost_nanos`, `provider_usage`, `occurred_at`
+  - Notes: this is the canonical spend ledger used for enforcement and reporting; charges and spend sums use nano-dollars, then round once for display
 - `request_logs`
   - Key columns: `request_log_id`, `request_id`, `api_key_id`, `user_id`, `team_id`, `model_key`, `resolved_model_key`, `provider_key`, `caller_service`, `caller_component`, `caller_env`, `status_code`, `referenced_mcp_server_count`, `exposed_tool_count`, `invoked_tool_count`, `filtered_tool_count`, `user_agent_raw`, `agent_harness_key`, `agent_harness_label`, `metadata_json`, `occurred_at`
   - Notes: one summary row per final request outcome; `metadata_json.payload_policy` records the capture mode and limits used for the row when request logging is enabled; tool-cardinality columns are nullable typed facts, with historical or not-yet-observable dimensions left `null`; agent harness usage groups by `agent_harness_key` while preserving bounded raw `User-Agent` detail evidence

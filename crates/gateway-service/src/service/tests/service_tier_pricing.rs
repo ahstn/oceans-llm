@@ -1,7 +1,7 @@
 //! Usage priced at the billed service tier: served, else requested, else default.
 
 use gateway_core::{
-    ContextPricingTier, RoutePricingOverride, RouteServiceTierPricing, ServiceTier,
+    ContextPricingTier, Money9, RoutePricingOverride, RouteServiceTierPricing, ServiceTier,
     ServiceTierOutcome, ServiceTierPricing,
 };
 use serde_json::Value;
@@ -93,26 +93,32 @@ async fn recorded_usage(
     events.first().expect("usage event").clone()
 }
 
-fn assert_priced(event: &UsageLedgerRecord, input: i64, output: i64, cost: i64) {
+fn assert_priced(event: &UsageLedgerRecord, input: i64, output: i64, cost_nanos: i64) {
     assert_eq!(event.pricing_status, UsagePricingStatus::Priced);
     assert_eq!(event.unpriced_reason, None);
     assert_eq!(event.input_cost_per_million_tokens, money(input));
     assert_eq!(event.output_cost_per_million_tokens, money(output));
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(cost));
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(cost_nanos));
 }
 
 fn assert_unpriced(event: &UsageLedgerRecord, reason: &str) {
     assert_eq!(event.pricing_status, UsagePricingStatus::Unpriced);
     assert_eq!(event.unpriced_reason.as_deref(), Some(reason));
-    assert_eq!(event.computed_cost_usd, Money4::ZERO);
+    assert_eq!(event.computed_cost_usd, Money9::ZERO);
 }
 
-fn assert_estimated(event: &UsageLedgerRecord, reason: &str, input: i64, output: i64, cost: i64) {
+fn assert_estimated(
+    event: &UsageLedgerRecord,
+    reason: &str,
+    input: i64,
+    output: i64,
+    cost_nanos: i64,
+) {
     assert_eq!(event.pricing_status, UsagePricingStatus::LegacyEstimated);
     assert_eq!(event.unpriced_reason.as_deref(), Some(reason));
     assert_eq!(event.input_cost_per_million_tokens, money(input));
     assert_eq!(event.output_cost_per_million_tokens, money(output));
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(cost));
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(cost_nanos));
 }
 
 #[tokio::test]
@@ -126,7 +132,7 @@ async fn priority_usage_bills_the_catalog_priority_schedule() {
     .await;
 
     // 1,000 input at $2 ($0.002) + 500 output at $4 ($0.002).
-    assert_priced(&event, 20_000, 40_000, 40);
+    assert_priced(&event, 20_000, 40_000, 4_000_000);
     assert_eq!(event.requested_service_tier, Some(ServiceTier::Priority));
 }
 
@@ -141,7 +147,7 @@ async fn a_tier_the_catalog_has_no_schedule_for_is_estimated_at_the_default_rate
     .await;
 
     // 1,000 input at $1 ($0.001) + 500 output at $2 ($0.001).
-    assert_estimated(&event, PRIORITY_ESTIMATE, 10_000, 20_000, 20);
+    assert_estimated(&event, PRIORITY_ESTIMATE, 10_000, 20_000, 2_000_000);
 }
 
 #[tokio::test]
@@ -169,7 +175,7 @@ async fn a_served_default_tier_bills_the_default_schedule() {
     .await;
 
     // 1,000 input at $1 ($0.001) + 500 output at $2 ($0.001).
-    assert_priced(&event, 10_000, 20_000, 20);
+    assert_priced(&event, 10_000, 20_000, 2_000_000);
 }
 
 #[tokio::test]
@@ -195,7 +201,7 @@ async fn a_cache_bucket_without_a_tier_rate_is_estimated_from_the_tier_input_rat
         "estimated_missing_cache_read_rate",
         20_000,
         40_000,
-        40,
+        4_000_000,
     );
     assert_eq!(event.cache_read_cost_per_million_tokens, money(20_000));
 }
@@ -217,7 +223,7 @@ async fn image_output_the_base_rates_apart_is_estimated_at_the_default_rates() {
     .await;
 
     // 1,000 input at $1 ($0.001) + 200 text at $2 ($0.0004) + 300 image at $40 ($0.012).
-    assert_estimated(&event, PRIORITY_ESTIMATE, 10_000, 20_000, 134);
+    assert_estimated(&event, PRIORITY_ESTIMATE, 10_000, 20_000, 13_400_000);
 }
 
 #[tokio::test]
@@ -234,11 +240,11 @@ async fn a_base_context_tier_needs_a_twin_in_the_service_tier() {
     pricing.context_tiers = vec![base_context.clone()];
 
     let below = recorded_usage(&route(), pricing.clone(), PRIORITY, usage(1_000)).await;
-    assert_priced(&below, 20_000, 40_000, 40);
+    assert_priced(&below, 20_000, 40_000, 4_000_000);
     let above = recorded_usage(&route(), pricing.clone(), PRIORITY, usage(1_200)).await;
     // Without a twin, the default tier's context tier estimates it: 1,200 input at $3
     // ($0.0036) + 500 output at $2 ($0.001).
-    assert_estimated(&above, PRIORITY_ESTIMATE, 30_000, 20_000, 46);
+    assert_estimated(&above, PRIORITY_ESTIMATE, 30_000, 20_000, 4_600_000);
     assert_eq!(above.pricing_tier_above_input_tokens, Some(1_000));
 
     let mut with_twin = priority_schedule();
@@ -249,7 +255,7 @@ async fn a_base_context_tier_needs_a_twin_in_the_service_tier() {
     pricing.service_tiers = vec![with_twin];
     let twinned = recorded_usage(&route(), pricing, PRIORITY, usage(1_200)).await;
     // 1,200 input at $6 ($0.0072) + 500 output at the tier's $4 ($0.002).
-    assert_priced(&twinned, 60_000, 40_000, 92);
+    assert_priced(&twinned, 60_000, 40_000, 9_200_000);
     assert_eq!(twinned.pricing_tier_above_input_tokens, Some(1_000));
 }
 
@@ -269,7 +275,7 @@ async fn override_rates_price_the_routes_own_tier_and_its_entries_the_others() {
 
     let own = recorded_usage(&forced, pricing_record(None), served(None), usage(1_000)).await;
     // 1,000 input at $5 ($0.005) + 500 output at $10 ($0.005).
-    assert_priced(&own, 50_000, 100_000, 100);
+    assert_priced(&own, 50_000, 100_000, 10_000_000);
     let default = recorded_usage(
         &forced,
         pricing_record(None),
@@ -277,7 +283,7 @@ async fn override_rates_price_the_routes_own_tier_and_its_entries_the_others() {
         usage(1_000),
     )
     .await;
-    assert_priced(&default, 10_000, 20_000, 20);
+    assert_priced(&default, 10_000, 20_000, 2_000_000);
     let flex = recorded_usage(
         &forced,
         pricing_record(None),
@@ -286,7 +292,13 @@ async fn override_rates_price_the_routes_own_tier_and_its_entries_the_others() {
     )
     .await;
     // No flex entry: the override's own rates estimate it.
-    assert_estimated(&flex, "estimated_service_tier:flex", 50_000, 100_000, 100);
+    assert_estimated(
+        &flex,
+        "estimated_service_tier:flex",
+        50_000,
+        100_000,
+        10_000_000,
+    );
 }
 
 #[tokio::test]
@@ -296,5 +308,5 @@ async fn an_override_without_an_entry_estimates_a_requested_tier_at_its_own_rate
 
     let event = recorded_usage(&route, pricing_record(None), PRIORITY, usage(1_000)).await;
 
-    assert_estimated(&event, PRIORITY_ESTIMATE, 50_000, 100_000, 100);
+    assert_estimated(&event, PRIORITY_ESTIMATE, 50_000, 100_000, 10_000_000);
 }

@@ -120,7 +120,7 @@ against the chosen FOCUS v1.2 schema during implementation.
 | `ChargeCategory` | `Usage` | v1 exports usage charges only. |
 | `ChargeClass` | empty/null unless correction support exists | Corrections are not modeled in v1. |
 | `BillingCurrency` | `USD` | Current ledger stores computed USD cost. |
-| `BilledCost` | summed `computed_cost_10000 / 10000` | For priced and legacy-estimated rows only. |
+| `BilledCost` | Sum `computed_cost_nanos`, then round once to four USD decimal places | For priced and legacy-estimated rows only. |
 | `EffectiveCost` | same as `BilledCost` | No separate amortization/commitment modeling in v1. |
 | `ListCost` | same as `BilledCost` initially | No independent list-price ledger field in v1. |
 | `ContractedCost` | same as `BilledCost` initially | No independent contracted-rate ledger field in v1. |

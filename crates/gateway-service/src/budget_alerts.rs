@@ -5,7 +5,7 @@ use gateway_core::{
     ApiKeyOwnerKind, BudgetAlertChannel, BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus,
     BudgetAlertDispatchTask, BudgetAlertRecord, BudgetAlertRepository, BudgetCadence, BudgetRecord,
     BudgetRepository, BudgetScope, GatewayError, IdentityRepository, MembershipRole, Money4,
-    UsageLedgerRecord, UserStatus, budget_window_utc,
+    Money9, UsageLedgerRecord, UserStatus, budget_window_utc,
 };
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tracing::{info, warn};
@@ -71,8 +71,8 @@ struct AlertEvaluation {
     cadence: BudgetCadence,
     budget_amount: Money4,
     occurred_at: OffsetDateTime,
-    spent_before: Money4,
-    spent_after: Money4,
+    spent_before: Money9,
+    spent_after: Money9,
     immediate_on_existing_threshold: bool,
 }
 
@@ -128,7 +128,7 @@ where
     pub async fn evaluate_after_budget_upsert(
         &self,
         budget: &BudgetRecord,
-        current_spend: Money4,
+        current_spend: Money9,
         occurred_at: OffsetDateTime,
     ) -> Result<(), GatewayError> {
         let owner = self.resolve_budget_owner(budget).await?;
@@ -240,9 +240,13 @@ where
             threshold_bps: BUDGET_ALERT_THRESHOLD_BPS,
             window_start: window.period_start,
             window_end: window.period_end,
-            spend_before_usd: evaluation.spent_before,
-            spend_after_usd: evaluation.spent_after,
-            remaining_budget_usd: remaining_after,
+            spend_before_usd: evaluation.spent_before.round_half_up_to_money4(),
+            spend_after_usd: evaluation.spent_after.round_half_up_to_money4(),
+            remaining_budget_usd: evaluation
+                .budget_amount
+                .checked_sub(evaluation.spent_after.round_half_up_to_money4())
+                .filter(|remaining| !remaining.is_negative())
+                .unwrap_or(Money4::ZERO),
             created_at,
             updated_at: created_at,
         };
@@ -336,11 +340,10 @@ where
     }
 }
 
-fn remaining_budget_floor_zero(budget_amount: Money4, spend: Money4) -> Money4 {
-    match budget_amount.checked_sub(spend) {
-        Some(remaining) if !remaining.is_negative() => remaining,
-        Some(_) | None => Money4::ZERO,
-    }
+fn remaining_budget_floor_zero(budget_amount: Money4, spend: Money9) -> i128 {
+    (i128::from(budget_amount.as_scaled_i64()) * i128::from(Money9::SCALE / Money4::SCALE)
+        - i128::from(spend.as_nanos()))
+    .max(0)
 }
 
 fn build_delivery_records(
@@ -382,9 +385,11 @@ fn build_delivery_records(
         .collect()
 }
 
-fn is_at_or_below_threshold(remaining_budget: Money4, total_budget: Money4) -> bool {
-    i128::from(remaining_budget.as_scaled_i64()) * 10_000
-        <= i128::from(total_budget.as_scaled_i64()) * i128::from(BUDGET_ALERT_THRESHOLD_BPS)
+fn is_at_or_below_threshold(remaining_budget: i128, total_budget: Money4) -> bool {
+    remaining_budget * i128::from(Money4::SCALE)
+        <= i128::from(total_budget.as_scaled_i64())
+            * i128::from(Money9::SCALE / Money4::SCALE)
+            * i128::from(BUDGET_ALERT_THRESHOLD_BPS)
 }
 
 fn render_budget_alert_email(task: &BudgetAlertDispatchTask) -> Result<String, GatewayError> {
@@ -410,7 +415,7 @@ fn render_budget_alert_email(task: &BudgetAlertDispatchTask) -> Result<String, G
 
 /// Whether `spent` reaches the alert threshold against the base budget. An increase only
 /// raises the limit, so when this is false no alert can fire and the increase lookup is skipped.
-fn alert_possible_against_base(budget: &BudgetRecord, spent: Money4) -> bool {
+fn alert_possible_against_base(budget: &BudgetRecord, spent: Money9) -> bool {
     let base = budget.settings.amount_usd;
     is_at_or_below_threshold(remaining_budget_floor_zero(base, spent), base)
 }
@@ -419,7 +424,7 @@ fn alert_possible_against_base(budget: &BudgetRecord, spent: Money4) -> bool {
 mod tests {
     use gateway_core::{
         BudgetCadence, BudgetModelSelector, BudgetRecord, BudgetScope, BudgetSettings,
-        BudgetSource, Money4,
+        BudgetSource, Money4, Money9,
     };
     use time::OffsetDateTime;
     use uuid::Uuid;
@@ -448,15 +453,19 @@ mod tests {
         };
         assert!(!alert_possible_against_base(
             &budget,
-            Money4::from_scaled(790_000)
+            Money9::from_nanos(79_000_000_000)
+        ));
+        assert!(!alert_possible_against_base(
+            &budget,
+            Money9::from_nanos(79_999_999_999)
         ));
         assert!(alert_possible_against_base(
             &budget,
-            Money4::from_scaled(800_000)
+            Money9::from_nanos(80_000_000_000)
         ));
         assert!(alert_possible_against_base(
             &budget,
-            Money4::from_scaled(1_200_000)
+            Money9::from_nanos(120_000_000_000)
         ));
     }
 

@@ -202,7 +202,7 @@ function RequestLogMobileList({
                 </span>
               </MobileField>
               <MobileField label="Caller">{callerPrimary(item) ?? 'Unknown'}</MobileField>
-              <MobileField label="Cost">{formatRequestCost(item.cost_usd_10000)}</MobileField>
+              <MobileField label="Cost">{formatRequestCost(item)}</MobileField>
               <MobileField label="Latency">{formatDuration(item.latency_ms)}</MobileField>
               <MobileField label="Tokens">
                 <TokensWithCache item={item} />
@@ -348,7 +348,7 @@ function RequestLogDesktopRow({
         </Badge>
       </span>
       <span className="text-subtle-foreground px-3 text-right tabular-nums">
-        {formatRequestCost(item.cost_usd_10000)}
+        {formatRequestCost(item)}
       </span>
       <span className="text-subtle-foreground px-3 text-right whitespace-nowrap tabular-nums">
         {formatDuration(item.latency_ms)}

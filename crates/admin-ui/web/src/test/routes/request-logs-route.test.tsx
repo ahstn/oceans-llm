@@ -252,6 +252,26 @@ describe('RequestLogsPage table', () => {
     expect(screen.getAllByText('Unknown')).toHaveLength(1)
   })
 
+  it('prefers nanos in the list and detail sheet for tiny request charges', async () => {
+    const tinyItem: RequestLogView = {
+      ...items[0],
+      cost_usd_10000: 0,
+      cost_usd_nanos: 2_800,
+    }
+    routeMock.useLoaderData.mockReturnValue({ data: { items: [tinyItem], total: 1 } })
+    getObservabilityRequestLogDetailMock.mockResolvedValue({
+      data: { log: tinyItem, user_agent_raw: null, payload: null, attempts: [] },
+    })
+
+    renderPage()
+    expect(screen.getAllByText('$0.0000028')).toHaveLength(2)
+    expect(screen.queryByText('$0.0000')).not.toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Inspect' })[0])
+
+    const metrics = within(await screen.findByTestId('request-log-key-metrics'))
+    expect(metrics.getByText('$0.0000028')).toBeInTheDocument()
+  })
+
   it('shows a cache-hit indicator with cached token share and em dash fallbacks', async () => {
     const uncachedLegacyItem: RequestLogView = {
       ...items[0],

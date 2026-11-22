@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use gateway_core::{
     ApiKeyRecord, ApiKeySecretStorageKind, AuthMode, BatchEndpoint, BatchJobRecord,
     BatchPollUpdate, BatchPricingStatus, BatchStatus, BudgetScope, BudgetSource, GatewayModel,
-    GlobalRole, IdentityUserRecord, MembershipRole, ModelRoute, Money4, NewBatchItem, NewBatchJob,
+    GlobalRole, IdentityUserRecord, MembershipRole, ModelRoute, Money9, NewBatchItem, NewBatchJob,
     OauthProviderRecord, OidcProviderRecord, ProviderBatchResult, ProviderBatchState,
     ProviderRequestContext, SeedApiKeySecretMaterial, SeedManagedServiceAccountApiKey,
     SeedServiceAccount, SeedTeam, SeedUser, ServiceTier, StoreError, TeamRecord, UserStatus,
@@ -195,7 +195,7 @@ where
                         "output_tokens": 724,
                         "total_tokens": 2584
                     })),
-                    provider_cost_usd: Some(Money4::from_scaled(184)),
+                    provider_cost_usd: Some(Money9::from_money4(gateway_core::Money4::from_scaled(184)).expect("demo cost fits nanos")),
                     error: None,
                     submitted_at: Some(created_at + time::Duration::minutes(1)),
                     completed_at: Some(completed_at),
@@ -212,7 +212,7 @@ where
                         provider_request_id: Some("req_local_demo_retention".to_string()),
                         provider_usage: Some(json!({"input_tokens": 920, "output_tokens": 338})),
                         completed_at: Some(completed_at - time::Duration::minutes(2)),
-                        cost_usd: Some(Money4::from_scaled(89)),
+                        cost_usd: Some(Money9::from_money4(gateway_core::Money4::from_scaled(89)).expect("demo cost fits nanos")),
                     },
                     ProviderBatchResult {
                         custom_id: "risk-review".to_string(),
@@ -225,7 +225,7 @@ where
                         provider_request_id: Some("req_local_demo_risks".to_string()),
                         provider_usage: Some(json!({"input_tokens": 940, "output_tokens": 386})),
                         completed_at: Some(completed_at),
-                        cost_usd: Some(Money4::from_scaled(95)),
+                        cost_usd: Some(Money9::from_money4(gateway_core::Money4::from_scaled(95)).expect("demo cost fits nanos")),
                     },
                 ],
                 next_poll_at: None,

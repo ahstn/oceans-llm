@@ -7,7 +7,7 @@ use std::{
 use futures_util::{StreamExt, stream};
 use gateway_core::{
     AdminApiKeyRepository, AuthenticatedApiKey, BatchPollUpdate, BatchPricingStatus,
-    BatchRepository, BatchStatus, ModelRepository, Money4, ProviderBatchRequest,
+    BatchRepository, BatchStatus, ModelRepository, Money9, ProviderBatchRequest,
     ProviderBatchRequestItem, ProviderBatchResult, ProviderBatchSubmission, ProviderError,
 };
 use gateway_service::{BatchPricer, BatchPricingPolicy, BatchUsageInput};
@@ -521,7 +521,7 @@ async fn record_batch_usage(
     results: &[ProviderBatchResult],
     provider_usage: Option<&serde_json::Value>,
     pricing_status: BatchPricingStatus,
-    cost_usd: Option<Money4>,
+    cost_usd: Option<Money9>,
     occurred_at: OffsetDateTime,
 ) -> Result<(), gateway_core::GatewayError> {
     let key = service
@@ -707,10 +707,10 @@ async fn price_results(
 }
 
 fn sum_costs(
-    costs: impl Iterator<Item = Money4>,
-) -> Result<Option<Money4>, gateway_core::GatewayError> {
+    costs: impl Iterator<Item = Money9>,
+) -> Result<Option<Money9>, gateway_core::GatewayError> {
     let mut seen = false;
-    let mut total = Money4::ZERO;
+    let mut total = Money9::ZERO;
     for cost in costs {
         seen = true;
         total = total.checked_add(cost).ok_or_else(|| {
@@ -777,11 +777,11 @@ mod tests {
 
     use async_trait::async_trait;
     use gateway_core::{
-        BatchAccessScope, BatchEndpoint, BatchJobRecord, BatchPricingStatus, BatchRepository,
-        BatchStatus, CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, NewBatchItem,
-        NewBatchJob, ProviderBatchRequest, ProviderBatchResult, ProviderBatchState,
-        ProviderBatchSubmission, ProviderCapabilities, ProviderClient, ProviderError,
-        ProviderRequestContext, ProviderStream,
+        BatchAccessScope, BatchEndpoint, BatchJobRecord, BatchPricingSnapshot, BatchPricingStatus,
+        BatchRepository, BatchStatus, BatchTokenRates, CoreChatRequest, CoreEmbeddingsRequest,
+        CoreResponsesRequest, Money4, Money9, NewBatchItem, NewBatchJob, ProviderBatchRequest,
+        ProviderBatchResult, ProviderBatchState, ProviderBatchSubmission, ProviderCapabilities,
+        ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
     };
     use gateway_guardrails::{
         FailureDisposition, GuardPhase, GuardrailEngine, ManagedCheckConfig, ManagedCheckKind,
@@ -793,8 +793,8 @@ mod tests {
     use uuid::Uuid;
 
     use super::{
-        prepare_submitted_state, process_job, redact_unsubmitted_batch, run_once, submit_job,
-        validate_result_custom_ids,
+        BatchPricingPolicy, prepare_submitted_state, price_results, process_job,
+        redact_unsubmitted_batch, run_once, submit_job, sum_costs, validate_result_custom_ids,
     };
     use crate::http::{
         state::AppState,
@@ -818,6 +818,77 @@ mod tests {
             .into_iter()
             .map(str::to_string)
             .collect()
+    }
+
+    #[test]
+    fn batch_cost_sums_preserve_nanos_and_reject_overflow() {
+        assert_eq!(
+            sum_costs([Money9::from_nanos(42_000), Money9::from_nanos(42_000)].into_iter())
+                .expect("exact total"),
+            Some(Money9::from_nanos(84_000))
+        );
+        assert_eq!(sum_costs(std::iter::empty()).expect("empty total"), None);
+        assert!(
+            sum_costs([Money9::from_nanos(i64::MAX), Money9::from_nanos(1)].into_iter()).is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn batch_pricing_combines_reported_nanos_with_once_rounded_local_total() {
+        let (_directory, state) = app_state().await;
+        seed_stream_cancellation_test(&state.store).await;
+        let (mut job, _) = queued_batch(&state, "not-a-secret").await;
+        job.request_count = 3;
+        job.pricing_snapshot = Some(BatchPricingSnapshot {
+            rates: Some(BatchTokenRates {
+                input: Some(Money4::from_scaled(1)),
+                output: Some(Money4::from_scaled(1)),
+                cache_read: None,
+                cache_write: None,
+                cache_write_1h: None,
+                image_output: None,
+            }),
+            context_tiers: Vec::new(),
+            policy: BatchPricingPolicy::HalfAllTokenRates,
+        });
+        let mut provider_state = ProviderBatchState {
+            provider_batch_id: "provider-batch".to_string(),
+            status: BatchStatus::Completed,
+            request_count: 3,
+            completed_count: 3,
+            failed_count: 0,
+            provider_usage: None,
+            provider_cost_usd: None,
+            error: None,
+            submitted_at: None,
+            completed_at: Some(OffsetDateTime::now_utc()),
+        };
+        let mut reported = result("reported");
+        reported.cost_usd = Some(Money9::from_nanos(42_000));
+        let mut local = result("local-1");
+        local.provider_usage = Some(json!({"prompt_tokens": 5, "completion_tokens": 5}));
+        let mut second_local = local.clone();
+        second_local.custom_id = "local-2".to_string();
+        let mut results = [reported, local, second_local];
+
+        assert_eq!(
+            price_results(
+                &state.service,
+                "openai_compat",
+                &job,
+                &mut provider_state,
+                &mut results,
+            )
+            .await
+            .expect("mixed batch pricing"),
+            BatchPricingStatus::Priced
+        );
+        assert_eq!(results[1].cost_usd, Some(Money9::from_nanos(1)));
+        assert_eq!(results[2].cost_usd, Some(Money9::from_nanos(1)));
+        assert_eq!(
+            provider_state.provider_cost_usd,
+            Some(Money9::from_nanos(42_001))
+        );
     }
 
     #[test]

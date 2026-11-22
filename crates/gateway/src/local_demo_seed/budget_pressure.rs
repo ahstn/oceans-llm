@@ -97,7 +97,7 @@ pub(super) async fn seed_demo_budget_pressure(
             .await
             .with_context(|| format!("failed summing spend for `{}`", target.email))?;
         let goal = budget.settings.amount_usd.as_scaled_i64() * target.percent_of_limit / 100;
-        let top_up = goal - spent.as_scaled_i64();
+        let top_up = goal - spent.round_half_up_to_money4().as_scaled_i64();
         if top_up <= 0 {
             continue;
         }

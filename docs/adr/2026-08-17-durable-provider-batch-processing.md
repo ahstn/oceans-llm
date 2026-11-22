@@ -31,6 +31,8 @@ Batch list, detail, result, and cancellation operations use the same ownership s
 
 The worker prices terminal normalized results and writes one idempotent usage ledger event for the batch. The event contains the final provider usage returned by the terminal inspection. A priced status without a cost is invalid.
 
+Batch accounting carries provider-reported and locally computed charges as integer USD nanos (`Money9`) through the worker and into the usage ledger. Local pricing applies the batch discount with checked `i128` arithmetic, aggregates the unrounded token-component numerators across items, and rounds the total half-up once to nanos. Reported item charges sum in nanos without four-decimal rounding. The `batch_jobs` and `batch_items` cost columns remain four-decimal display values (`Money4`), rounded half-up only when each exact total is persisted; the ledger never derives its charge from those display columns.
+
 ## Consequences
 
 Benefits:

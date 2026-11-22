@@ -4,6 +4,8 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
 use tokio::sync::Semaphore;
 
+use crate::credential_verification::{self, BlockingCredentialError, constant_time_eq};
+
 use super::error::OauthError;
 
 /// Argon2 runs at most this many at a time for the public OAuth endpoints.
@@ -52,14 +54,7 @@ pub(crate) fn hash_client_secret(secret: &str) -> String {
 pub(crate) fn client_secret_matches(secret: &str, stored: &str) -> Option<bool> {
     let expected = stored.strip_prefix(CLIENT_SECRET_HASH_PREFIX)?;
     let actual = oauth_token_hash(secret);
-    Some(
-        expected.len() == actual.len()
-            && expected
-                .bytes()
-                .zip(actual.bytes())
-                .fold(0u8, |acc, (left, right)| acc | (left ^ right))
-                == 0,
-    )
+    Some(constant_time_eq(expected.as_bytes(), actual.as_bytes()))
 }
 
 /// Runs Argon2 work for client authentication.
@@ -79,9 +74,7 @@ where
     run_limited(slots, ARGON2_SLOT_WAIT, work).await
 }
 
-/// Runs `work` on the blocking pool once a slot frees up. The slot moves into
-/// the blocking task, so a caller that disconnects mid-hash cannot release it
-/// while the hash is still running.
+/// Maps shared blocking-admission failures to the public OAuth error contract.
 async fn run_limited<T, F>(
     slots: &'static Semaphore,
     wait: Duration,
@@ -91,16 +84,19 @@ where
     T: Send + 'static,
     F: FnOnce() -> T + Send + 'static,
 {
-    let slot = tokio::time::timeout(wait, slots.acquire())
+    credential_verification::run_limited(slots, wait, work)
         .await
-        .map_err(|_| OauthError::temporarily_unavailable("the authorization server is busy"))?
-        .map_err(|_| OauthError::server_error("credential hashing is unavailable"))?;
-    tokio::task::spawn_blocking(move || {
-        let _slot = slot;
-        work()
-    })
-    .await
-    .map_err(|_| OauthError::server_error("credential hashing failed"))
+        .map_err(|error| match error {
+            BlockingCredentialError::Busy => {
+                OauthError::temporarily_unavailable("the authorization server is busy")
+            }
+            BlockingCredentialError::Unavailable => {
+                OauthError::server_error("credential hashing is unavailable")
+            }
+            BlockingCredentialError::Failed => {
+                OauthError::server_error("credential hashing failed")
+            }
+        })
 }
 
 /// RFC 7636 S256: `BASE64URL(SHA256(code_verifier)) == code_challenge`.
@@ -128,15 +124,6 @@ pub(crate) fn is_valid_s256_challenge(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-}
-
-fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
-    left.len() == right.len()
-        && left
-            .iter()
-            .zip(right)
-            .fold(0_u8, |acc, (a, b)| acc | (a ^ b))
-            == 0
 }
 
 #[cfg(test)]
