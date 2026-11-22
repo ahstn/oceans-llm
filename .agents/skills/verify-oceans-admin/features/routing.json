@@ -16,6 +16,7 @@
         "crates/admin-ui/web/e2e/**",
         "crates/admin-ui/web/src/test/**",
         "crates/gateway-store/src/agent_analysis_tests.rs",
+        "crates/gateway-store/src/agent_analysis_tests/**",
         "crates/gateway-store/src/budget_reconciliation_tests.rs",
         "**/test_*.py"
       ]
@@ -327,6 +328,8 @@
         "crates/gateway-store/src/libsql_store/agent_analysis.rs",
         "crates/gateway-store/src/libsql_store/agent_analysis/**",
         "crates/gateway-store/src/any_store_agent_analysis.rs",
+        "crates/gateway-store/src/agent_session_input.rs",
+        "crates/gateway-store/src/agent_session_jobs.rs",
         "crates/gateway/src/local_demo_seed/agent_*.rs"
       ]
     },
