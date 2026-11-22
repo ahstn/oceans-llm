@@ -1475,16 +1475,31 @@ fn parse_arguments(value: &Value) -> Value {
         .unwrap_or_else(|| value.clone())
 }
 
+/// The command of a shell tool call, when the call carries it in exactly one place.
+///
+/// A call with a second command field (`{"command": "echo ok", "script": "rm -rf /"}`) returns
+/// `None`, so the caller evaluates the whole tool call and the packs inspect every field. The
+/// decision must not depend on which field the tool goes on to run.
 fn shell_command(name: &str, arguments: &Value) -> Option<String> {
     if !is_shell_tool(name) {
         return None;
     }
-    arguments
-        .get("command")
-        .or_else(|| arguments.get("cmd"))
-        .or_else(|| arguments.get("script"))
-        .and_then(shell_action_command)
+    let nested_command = ["input", "arguments"].iter().any(|field| {
+        arguments
+            .get(field)
+            .and_then(|inner| inner.get("command"))
+            .is_some()
+    });
+    let mut commands = SHELL_COMMAND_FIELDS
+        .iter()
+        .filter_map(|field| arguments.get(field));
+    match (commands.next(), commands.next(), nested_command) {
+        (Some(command), None, false) => shell_action_command(command),
+        _ => None,
+    }
 }
+
+const SHELL_COMMAND_FIELDS: [&str; 3] = ["command", "cmd", "script"];
 
 fn transformed_tool_arguments(output: &EvaluationPayload, original: &Value) -> Option<Value> {
     match output {
@@ -1498,7 +1513,7 @@ fn transformed_tool_arguments(output: &EvaluationPayload, original: &Value) -> O
 }
 
 fn replace_shell_command(arguments: &mut Value, replacement: &str) -> bool {
-    for field in ["command", "cmd", "script"] {
+    for field in SHELL_COMMAND_FIELDS {
         if let Some(slot) = arguments.get_mut(field)
             && (slot.is_string() || slot.is_array())
         {
@@ -1758,6 +1773,17 @@ mod tests {
             shell_command("execute_sql", &json!({"command": "SELECT 1"})),
             None
         );
+    }
+
+    #[test]
+    fn leaves_a_shell_tool_call_with_two_command_fields_to_the_tool_call_checks() {
+        for arguments in [
+            json!({"command": "echo ok", "script": "rm -rf /"}),
+            json!({"cmd": "echo ok", "command": "rm -rf /"}),
+            json!({"command": "echo ok", "input": {"command": "rm -rf /"}}),
+        ] {
+            assert_eq!(shell_command("bash", &arguments), None, "{arguments}");
+        }
     }
 
     #[test]

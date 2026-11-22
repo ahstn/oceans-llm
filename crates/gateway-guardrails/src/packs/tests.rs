@@ -837,6 +837,24 @@ fn shell_tools_are_recognized_by_the_words_of_their_name() {
 }
 
 #[test]
+fn core_packs_inspect_every_command_field_of_a_shell_tool_call() {
+    for arguments in [
+        json!({"command": "echo ok", "script": "rm -rf /"}),
+        json!({"script": "echo ok", "cmd": "rm -rf /"}),
+        json!({"command": "echo ok", "input": {"command": "rm -rf /"}}),
+    ] {
+        let matched = evaluate(
+            "core.filesystem",
+            EvaluationPayload::ToolCall {
+                name: "bash".into(),
+                arguments: arguments.clone(),
+            },
+        );
+        assert!(matched.is_some(), "{arguments}");
+    }
+}
+
+#[test]
 fn core_packs_inspect_a_shell_tool_call_whatever_the_tool_is_named() {
     for (name, arguments) in [
         ("exec", json!({"command": "rm -rf /"})),
