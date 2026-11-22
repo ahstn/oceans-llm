@@ -1,0 +1,21 @@
+crates/admin-ui/web/src/components/observability/agent-sessions/session-table.tsx
+  s_58af86ccab2b62::t_e68f5665099f1f 20-25,27,35-37,41,45,56,60,65,70,75,80,85,90,94-100
+crates/admin-ui/web/src/components/observability/agent-sessions/session-columns.ts
+  s_58af86ccab2b62::t_e68f5665099f1f 3-19,21-23,26,28-29,31-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "97e673e085fa9b1fa84b5406ca977e908054c273",
+  "prompts": {},
+  "sessions": {
+    "s_58af86ccab2b62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7d3661c3-b312-4ff2-91f6-bf3d3fbea446",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
