@@ -40,6 +40,22 @@ const RequestLogDetailSchema = z.object({
   ),
 });
 
+const GuardrailDecisionSchema = z.object({
+  action: z.string(),
+  content_hash: z.string(),
+  decision_id: z.string(),
+  effective_scope: z.string(),
+  evaluator: z.string(),
+  pack_id: z.string().nullable(),
+  phase: z.string(),
+  reason_code: z.string(),
+  request_id: z.string().nullable(),
+  rule_id: z.string().nullable(),
+  transformed: z.boolean(),
+});
+const GuardrailDecisionPageSchema = z.object({ items: z.array(GuardrailDecisionSchema) });
+
+export type GuardrailDecision = z.infer<typeof GuardrailDecisionSchema>;
 export type RequestLog = z.infer<typeof RequestLogSchema>;
 export type RequestLogDetail = z.infer<typeof RequestLogDetailSchema>;
 type AdminCredentials = Pick<GatewayRuntime, "adminEmail" | "adminPassword" | "baseUrl">;
@@ -152,6 +168,24 @@ export class GatewayAdminClient {
     throw new Error(
       `Expected at least ${minimum} request logs for harness tag ${requestTag}, found ${found}`,
     );
+  }
+
+  /**
+   * Returns the newest guardrail decisions that match `filters`, which are the query parameters
+   * of `GET /api/v1/admin/guardrails/decisions`, such as `request_id`, `phase` and `action`.
+   */
+  async listGuardrailDecisions(filters: Record<string, string>): Promise<GuardrailDecision[]> {
+    if (!this.#cookie) {
+      throw new Error("GatewayAdminClient.login() must be called first");
+    }
+    const url = new URL("/api/v1/admin/guardrails/decisions", this.#runtime.baseUrl);
+    url.searchParams.set("page_size", "500");
+    for (const [name, value] of Object.entries(filters)) {
+      url.searchParams.set(name, value);
+    }
+    const response = await fetchWithTimeout(url, { headers: { cookie: this.#cookie } });
+    return (await readEnvelope(response, "guardrail decision query", GuardrailDecisionPageSchema))
+      .items;
   }
 
   async getRequestLogDetail(requestLogId: string): Promise<RequestLogDetail> {

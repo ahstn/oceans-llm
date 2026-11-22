@@ -201,6 +201,7 @@ fn match_shell_tool(pack: &str, name: &str, arguments: &Value) -> Option<Matched
     for path in [
         "$.command",
         "$.cmd",
+        "$.script",
         "$.input.command",
         "$.arguments.command",
     ] {
@@ -229,11 +230,52 @@ fn match_tool_call_pack(pack: &str, name: &str, arguments: &Value) -> Option<Mat
     match_mcp_pack(pack, &call)
 }
 
-fn is_shell_tool(name: &str) -> bool {
-    matches!(
-        normalize_identity(name).as_str(),
-        "shell" | "bash" | "terminal" | "run_command" | "execute_command" | "computer.run_command"
-    )
+/// Whether a tool name belongs to a tool that runs a shell command, such as `bash`,
+/// `local_shell_call`, `exec_command`, `runTerminalCmd` or `computer.run_command`.
+///
+/// Harnesses and MCP servers name their shell tools freely, so this reads the words of the
+/// name instead of matching a fixed list: a shell word anywhere, or `run`/`execute` followed
+/// by `command`/`cmd`. A tool that matches is only inspected, never denied for its name.
+pub fn is_shell_tool(name: &str) -> bool {
+    const SHELL_WORDS: &[&str] = &[
+        "bash",
+        "exec",
+        "powershell",
+        "pwsh",
+        "sh",
+        "shell",
+        "terminal",
+        "zsh",
+    ];
+    let words = identity_words(name);
+    words
+        .iter()
+        .any(|word| SHELL_WORDS.contains(&word.as_str()))
+        || words.windows(2).any(|pair| {
+            matches!(pair[0].as_str(), "run" | "execute")
+                && matches!(pair[1].as_str(), "command" | "cmd")
+        })
+}
+
+/// The lowercase words of a tool name, split at punctuation and at camelCase capitals.
+fn identity_words(name: &str) -> Vec<String> {
+    let mut words = vec![String::new()];
+    let mut previous_lowercase = false;
+    for character in name.chars() {
+        if !character.is_ascii_alphanumeric() {
+            words.push(String::new());
+        } else {
+            if character.is_ascii_uppercase() && previous_lowercase {
+                words.push(String::new());
+            }
+            if let Some(word) = words.last_mut() {
+                word.push(character.to_ascii_lowercase());
+            }
+        }
+        previous_lowercase = character.is_ascii_lowercase() || character.is_ascii_digit();
+    }
+    words.retain(|word| !word.is_empty());
+    words
 }
 
 fn match_shell_pack(pack: &str, command: &str) -> Option<MatchedRule> {

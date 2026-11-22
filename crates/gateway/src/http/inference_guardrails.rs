@@ -5,8 +5,8 @@ use futures_util::{StreamExt, stream};
 use gateway_core::{GatewayError, ProviderStream};
 use gateway_guardrails::{
     DecisionAction, DecisionRecord, EvaluationInput, EvaluationPayload, GuardPhase,
-    GuardrailEvaluation, PolicyResolver, PolicyTarget, UninspectedContent, redact_prompt_secrets,
-    uninspected_content_decision,
+    GuardrailEvaluation, PolicyResolver, PolicyTarget, UninspectedContent, is_shell_tool,
+    redact_prompt_secrets, uninspected_content_decision,
 };
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
@@ -1476,15 +1476,7 @@ fn parse_arguments(value: &Value) -> Value {
 }
 
 fn shell_command(name: &str, arguments: &Value) -> Option<String> {
-    const SHELL_TOOL_NAMES: &[&str] = &[
-        "bash",
-        "shell",
-        "shell_call",
-        "local_shell_call",
-        "shell_command",
-        "terminal.exec",
-    ];
-    if !SHELL_TOOL_NAMES.contains(&name.to_ascii_lowercase().as_str()) {
+    if !is_shell_tool(name) {
         return None;
     }
     arguments
@@ -1745,6 +1737,26 @@ mod tests {
         assert_eq!(
             shell_command(&calls[3].0, &calls[3].1).as_deref(),
             Some("kill 1")
+        );
+    }
+
+    #[test]
+    fn reads_the_command_of_a_shell_tool_whatever_it_is_named() {
+        for name in [
+            "exec_command",
+            "runTerminalCmd",
+            "run_shell_command",
+            "terminal.exec",
+        ] {
+            assert_eq!(
+                shell_command(name, &json!({"command": "rm -rf /"})).as_deref(),
+                Some("rm -rf /"),
+                "{name}"
+            );
+        }
+        assert_eq!(
+            shell_command("execute_sql", &json!({"command": "SELECT 1"})),
+            None
         );
     }
 

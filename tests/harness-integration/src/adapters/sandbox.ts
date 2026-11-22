@@ -68,7 +68,9 @@ function confineShell(command) {
       shellQuote(workspace) + " /workspace --chdir /workspace /bin/sh -c " + shellQuote(command);
   }
   if (process.platform === "darwin") {
-    const profile = '(version 1)(deny default)(allow process*)(allow sysctl-read)(allow mach-lookup)(allow file-read* (subpath "/System") (subpath "/usr") (subpath "/bin") (subpath "/dev") (subpath ' +
+    // The literal "/" lets dyld read the root directory itself. Without it, every process aborts
+    // at launch on macOS 27. It does not open anything below the root.
+    const profile = '(version 1)(deny default)(allow process*)(allow sysctl-read)(allow mach-lookup)(allow file-read* (literal "/") (subpath "/System") (subpath "/usr") (subpath "/bin") (subpath "/dev") (subpath ' +
       JSON.stringify(workspace) + '))(allow file-write* (subpath ' + JSON.stringify(workspace) + '))';
     return "/usr/bin/sandbox-exec -p " + shellQuote(profile) + " /bin/sh -c " + shellQuote(command);
   }
