@@ -322,7 +322,8 @@ depends = [
 run = [
   "cargo test -p gateway-guardrails",
   "cargo test -p gateway-store decision_event_persistence_load_gate_stays_within_release_budget",
-  "npm run test --prefix tests/harness-integration -- guardrails-hook.test.ts guardrails-policy.test.ts",
+  # The policy tests skip on an external gateway, so the gate always uses the managed one.
+  "env -u GATEWAY_BASE_URL npm run test --prefix tests/harness-integration -- guardrails-hook.test.ts guardrails-policy.test.ts",
   "E2E_GATEWAY_PORT=49380 E2E_UI_PORT=49381 E2E_UPSTREAM_PORT=49382 E2E_BASE_URL=http://127.0.0.1:49380 bun run --cwd crates/admin-ui/web playwright test e2e/guardrails.e2e.ts",
 ]
 
