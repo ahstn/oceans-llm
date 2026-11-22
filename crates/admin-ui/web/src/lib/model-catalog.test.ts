@@ -29,4 +29,18 @@ describe('loadAllModels', () => {
       Array.from({ length: 11 }, (_, index) => `model-${index + 1}`),
     )
   })
+
+  it('stops claiming pages once one page fails', async () => {
+    getModels.mockImplementation(async ({ data }: { data: { page: number } }) => {
+      await new Promise((resolve) => setTimeout(resolve, 1))
+      if (data.page === 2) throw new Error('gateway unavailable')
+      return { data: { total: 2000, items: [{ id: `model-${data.page}` }] } }
+    })
+
+    await expect(loadAllModels()).rejects.toThrow('gateway unavailable')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    // Page 1, then the first batch of four (pages 2–5). No worker claims page 6 or later.
+    expect(getModels).toHaveBeenCalledTimes(5)
+  })
 })

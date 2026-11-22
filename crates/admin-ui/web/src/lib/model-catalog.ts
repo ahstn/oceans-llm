@@ -19,11 +19,18 @@ export async function loadAllModels(): Promise<ModelView[]> {
   const pageCount = Math.ceil(first.data.total / MODEL_PAGE_SIZE)
   const rest: ModelPage[] = []
   let nextPage = 2
-  // Each worker fetches one page at a time until none are left.
+  let failed = false
+  // Each worker fetches one page at a time until none are left. After any failure the load is
+  // already lost, so the workers stop claiming pages instead of fetching ones that are discarded.
   async function drain(): Promise<void> {
-    if (nextPage > pageCount) return
+    if (failed || nextPage > pageCount) return
     const page = nextPage++
-    rest[page - 2] = await getModelPage(page)
+    try {
+      rest[page - 2] = await getModelPage(page)
+    } catch (error) {
+      failed = true
+      throw error
+    }
     return drain()
   }
   const workers = Math.min(MAX_CONCURRENT_PAGES, Math.max(0, pageCount - 1))
