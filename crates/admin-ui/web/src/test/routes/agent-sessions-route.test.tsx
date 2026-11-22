@@ -1258,6 +1258,16 @@ describe('AgentSessionsPage filters', () => {
     expect(screen.getByTestId('agent-session-table')).toHaveClass('hidden', 'md:block', 'min-w-0')
     const card = within(cards).getByRole('article', { name: /Session started/ })
     expect(card).toHaveClass('min-w-0')
+    // Card facts come from the table's column definitions, labels included.
+    expect(
+      within(card)
+        .getAllByRole('term')
+        .map((term) => term.textContent),
+    ).toEqual(['Score', 'Cost', 'Active time', 'Requests', 'Data quality'])
+    // Between md and the table's minimum width, the table scrolls inside its own container.
+    expect(
+      screen.getByTestId('agent-session-table').querySelector('[data-slot="table-container"]'),
+    ).toHaveClass('overflow-x-auto')
     fireEvent.click(within(card).getByRole('button', { name: 'View session' }))
 
     await waitFor(() => {

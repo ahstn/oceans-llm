@@ -29,6 +29,8 @@ interface SessionColumnRenderer {
   numeric?: boolean
   /** The column's share of the table's minimum width, so hidden columns give width back. */
   minWidthRem: number
+  /** Shown as a labelled fact on the narrow-screen card; other columns sit in its header or not at all. */
+  cardFact?: boolean
   cell: (session: AgentSessionSummaryView, showScore: boolean) => ReactNode
 }
 
@@ -58,21 +60,25 @@ const sessionColumnRenderers: Record<SessionColumnId, SessionColumnRenderer> = {
     cell: (session) => <StateBadge value={session.lifecycle} />,
   },
   score: {
+    cardFact: true,
     numeric: true,
     minWidthRem: 7,
     cell: (session, showScore) => <ScoreValue session={session} showScore={showScore} />,
   },
   cost: {
+    cardFact: true,
     numeric: true,
     minWidthRem: 4,
     cell: (session) => formatUsdTotal(session.normalized_cost_usd),
   },
   activeTime: {
+    cardFact: true,
     numeric: true,
     minWidthRem: 5,
     cell: (session) => formatDuration(session.active_time_ms),
   },
   requests: {
+    cardFact: true,
     numeric: true,
     minWidthRem: 4,
     cell: (session) => <CompactCount value={session.request_count} unit="requests" />,
@@ -88,6 +94,7 @@ const sessionColumnRenderers: Record<SessionColumnId, SessionColumnRenderer> = {
     cell: (session) => <CompactCount value={session.mcp_call_count} unit="MCP calls" />,
   },
   dataQuality: {
+    cardFact: true,
     minWidthRem: 6,
     cell: (session) => <DataQuality session={session} />,
   },
@@ -98,6 +105,8 @@ const sessionColumns = sessionColumnIds.map((key) => ({
   label: sessionColumnLabel(key),
   ...sessionColumnRenderers[key],
 }))
+
+const sessionCardFacts = sessionColumns.filter((column) => column.cardFact)
 
 interface SessionTableProps {
   items: AgentSessionSummaryView[]
@@ -212,26 +221,20 @@ function SessionCards({
         >
           <div className="flex min-w-0 items-start justify-between gap-3">
             <div className="flex min-w-0 flex-col gap-0.5">
-              <HarnessLabel session={session} />
+              {sessionColumnRenderers.harness.cell(session, showScore)}
               <p className="min-w-0 truncate text-sm">{session.requested_model_key}</p>
               <p className="text-muted-foreground text-xs whitespace-nowrap tabular-nums">
                 {formatTimestamp(session.started_at)}
               </p>
             </div>
-            <StateBadge value={session.lifecycle} />
+            {sessionColumnRenderers.state.cell(session, showScore)}
           </div>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-            <SessionFact label="Score">
-              <ScoreValue session={session} showScore={showScore} />
-            </SessionFact>
-            <SessionFact label="Cost">{formatUsdTotal(session.normalized_cost_usd)}</SessionFact>
-            <SessionFact label="Active time">{formatDuration(session.active_time_ms)}</SessionFact>
-            <SessionFact label="Requests">
-              <CompactCount value={session.request_count} unit="requests" />
-            </SessionFact>
-            <SessionFact label="Data quality">
-              <DataQuality session={session} />
-            </SessionFact>
+            {sessionCardFacts.map((column) => (
+              <SessionFact key={column.key} label={column.label}>
+                {column.cell(session, showScore)}
+              </SessionFact>
+            ))}
           </dl>
           <Button
             type="button"
