@@ -111,8 +111,9 @@ where
     /// `enforce_pre_provider_budget` blocks the next request.
     ///
     /// Returns `DuplicateUsageRecord` when the `(request_id, owner)` pair is
-    /// already in the ledger. A stored charge that counts toward spend is added
-    /// to the cached totals of every budget window of `api_key`'s scopes.
+    /// already in the ledger. A charge that counts toward spend is written
+    /// through the budget cache, which adds it to the cached totals of every
+    /// budget window of `api_key`'s scopes exactly once.
     #[tracing::instrument(
         name = "gateway.usage.ledger",
         skip_all,
@@ -128,21 +129,38 @@ where
                 "computed_cost_usd must be >= 0".to_string(),
             ));
         }
-        if !self.repo.insert_usage_ledger_if_absent(ledger).await? {
-            return Err(duplicate_request_error(&ledger.request_id));
-        }
-        if ledger.pricing_status.counts_toward_spend() {
-            for scope in applicable_budget_scopes(
+        let insert = || async { Ok(self.repo.insert_usage_ledger_if_absent(ledger).await?) };
+        let scopes = if ledger.pricing_status.counts_toward_spend() {
+            applicable_budget_scopes(
                 api_key,
                 ledger.model_id,
                 Some(ledger.upstream_model.as_str()),
-            )? {
-                self.cache.add_charge_to_scope(
-                    &scope.scope_key(),
-                    ledger.occurred_at,
-                    ledger.computed_cost_usd,
-                );
+            )
+            .map(Some)
+        } else {
+            Ok(None)
+        };
+        let written = match scopes {
+            Ok(Some(scopes)) => {
+                let scope_keys: Vec<String> = scopes.iter().map(BudgetScope::scope_key).collect();
+                self.cache
+                    .record_charge(
+                        &scope_keys,
+                        ledger.occurred_at,
+                        ledger.computed_cost_usd,
+                        insert,
+                    )
+                    .await?
             }
+            Ok(None) => insert().await?,
+            Err(error) => {
+                // The money is spent: keep the row even when its scopes are invalid.
+                insert().await?;
+                return Err(error.into());
+            }
+        };
+        if !written {
+            return Err(duplicate_request_error(&ledger.request_id));
         }
         Ok(())
     }
@@ -241,7 +259,9 @@ where
             .await
     }
 
-    /// Spend in the budget's window that contains `occurred_at`, up to now.
+    /// Spend in the budget's window that contains `occurred_at`, up to now. The
+    /// cached total stands for the whole window so far, so a load reads through
+    /// the current time (capped at the window's end), not through `occurred_at`.
     async fn window_spend(
         &self,
         scope: &BudgetScope,
@@ -257,12 +277,16 @@ where
                     occurred_at,
                 ),
                 || async {
+                    let observed_end = std::cmp::min(
+                        OffsetDateTime::now_utc() + time::Duration::SECOND,
+                        window.period_end,
+                    );
                     Ok(self
                         .repo
                         .sum_usage_cost_for_budget_scope_in_window(
                             scope,
                             window.period_start,
-                            window.observed_end,
+                            observed_end,
                         )
                         .await?)
                 },
@@ -293,7 +317,7 @@ mod tests {
         ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthenticatedApiKey, BudgetCadence,
         BudgetIncreaseRecord, BudgetModelSelector, BudgetRecord, BudgetRepository, BudgetScope,
         BudgetSettings, BudgetSource, GatewayError, Money4, Money9, StoreError, UsageLedgerRecord,
-        UsagePricingStatus,
+        UsagePricingStatus, budget_window_utc,
     };
     use serde_json::json;
     use time::OffsetDateTime;
@@ -509,8 +533,8 @@ mod tests {
         async fn sum_usage_cost_for_budget_scope_in_window(
             &self,
             scope: &BudgetScope,
-            _window_start: OffsetDateTime,
-            _window_end: OffsetDateTime,
+            window_start: OffsetDateTime,
+            window_end: OffsetDateTime,
         ) -> Result<Money9, StoreError> {
             let prior = self
                 .prior_spend
@@ -523,7 +547,10 @@ mod tests {
                 .expect("events lock")
                 .iter()
                 .filter(|event| {
-                    event.pricing_status.counts_toward_spend() && event_matches_scope(event, scope)
+                    event.pricing_status.counts_toward_spend()
+                        && event_matches_scope(event, scope)
+                        && event.occurred_at >= window_start
+                        && event.occurred_at < window_end
                 })
                 .fold(Money9::ZERO, |sum, event| {
                     sum.saturating_add(event.computed_cost_usd)
@@ -742,6 +769,53 @@ mod tests {
         let error = precheck(&guard, &auth, "cap-reached", model_id)
             .await
             .expect_err("exact spend reaches the cap");
+        assert_budget_exceeded(&error, &scope.scope_key());
+    }
+
+    #[tokio::test]
+    async fn a_late_completion_caches_the_whole_window_so_far() {
+        let user_id = Uuid::new_v4();
+        let model_id = Uuid::new_v4();
+        let scope = BudgetScope::User { user_id };
+        let repo = Arc::new(
+            InMemoryBudgetRepo::default()
+                .with_budget(budget(scope.clone(), usd(1), true), Money4::ZERO),
+        );
+        let guard = BudgetGuard::new(repo);
+        let auth = user_auth(user_id);
+        let now = OffsetDateTime::now_utc();
+        let day_start = budget_window_utc(BudgetCadence::Daily, now).period_start;
+        // A slow request started first; a quick one started and finished meanwhile.
+        let mut slow = ledger(
+            &auth,
+            "slow",
+            Some(model_id),
+            UsagePricingStatus::Priced,
+            Money4::ZERO,
+        );
+        slow.occurred_at = std::cmp::max(now - time::Duration::seconds(4), day_start);
+        slow.computed_cost_usd = Money9::from_nanos(400_000_000);
+        let mut quick = ledger(
+            &auth,
+            "quick",
+            Some(model_id),
+            UsagePricingStatus::Priced,
+            Money4::ZERO,
+        );
+        quick.occurred_at = std::cmp::min(slow.occurred_at + time::Duration::seconds(2), now);
+        quick.computed_cost_usd = Money9::from_nanos(700_000_000);
+        guard
+            .record_incurred_usage(&auth, &quick)
+            .await
+            .expect("record quick charge");
+
+        record(&guard, &auth, &slow)
+            .await
+            .expect("record slow charge");
+
+        let error = precheck(&guard, &auth, "after-both", model_id)
+            .await
+            .expect_err("$1.10 of $1 is spent");
         assert_budget_exceeded(&error, &scope.scope_key());
     }
 

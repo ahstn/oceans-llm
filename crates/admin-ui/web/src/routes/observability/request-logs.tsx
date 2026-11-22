@@ -40,8 +40,9 @@ export const Route = createFileRoute('/observability/request-logs')({
 const requestLogRowEstimatePx = 56
 const requestLogDesktopPreviewRows = 12
 const requestLogDesktopTableHeightPx = requestLogRowEstimatePx * requestLogDesktopPreviewRows
+// Cost fits nano-dollar values such as `$12.345678912` (88px in 14px Geist) plus px-3.
 const requestLogGridColumns =
-  'grid grid-cols-[minmax(13.5rem,0.8fr)_minmax(12rem,1.3fr)_minmax(11rem,1.1fr)_76px_96px_92px_96px_160px_104px]'
+  'grid grid-cols-[minmax(13.5rem,0.8fr)_minmax(12rem,1.3fr)_minmax(11rem,1.1fr)_76px_112px_92px_96px_160px_104px]'
 // The Inspect column stays pinned to the right edge so it is never scrolled out of view.
 const requestLogActionCell = 'bg-card shadow-sticky-edge-end sticky right-0 z-10 px-3'
 
@@ -347,7 +348,7 @@ function RequestLogDesktopRow({
           {item.status_code ?? EMPTY_VALUE}
         </Badge>
       </span>
-      <span className="text-subtle-foreground px-3 text-right tabular-nums">
+      <span className="text-subtle-foreground px-3 text-right whitespace-nowrap tabular-nums">
         {formatRequestCost(item)}
       </span>
       <span className="text-subtle-foreground px-3 text-right whitespace-nowrap tabular-nums">

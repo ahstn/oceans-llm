@@ -891,6 +891,35 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn batch_retry_accepts_a_charge_stored_rounded_before_v84() {
+        let (_directory, state) = app_state().await;
+        seed_stream_cancellation_test(&state.store).await;
+        let (job, _) = queued_batch(&state, "not-a-secret").await;
+        let results = [result("one")];
+        let record = |cost_nanos: i64| {
+            super::record_batch_usage(
+                &state.service,
+                &job,
+                &results,
+                None,
+                BatchPricingStatus::Priced,
+                Some(Money9::from_nanos(cost_nanos)),
+                OffsetDateTime::now_utc(),
+            )
+        };
+        // $0.00006 stored as $0.0001 before V84, then V84 scaled it to nanos.
+        record(100_000).await.expect("first finalization");
+
+        record(60_000)
+            .await
+            .expect("a retry pricing the same charge exactly is accepted");
+        assert!(matches!(
+            record(250_000).await,
+            Err(gateway_core::GatewayError::BatchUsageConflict { .. })
+        ));
+    }
+
     #[test]
     fn terminal_partial_results_accept_the_exact_processed_subset() {
         let results = vec![result("one"), result("three")];

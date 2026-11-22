@@ -2,11 +2,12 @@
 //!
 //! Without it, every chargeable request reads each applicable active budget and
 //! adds up the ledger for its window, before and after the provider call. The
-//! cache keeps both for [`BUDGET_CACHE_TTL`]: a recorded charge is added to the
-//! cached window spend, and an expired entry is reloaded from the database, which
-//! stays the source of truth. One task reloads an entry while the others keep
-//! using the expired value, so an expiry under load costs one query, not one per
-//! request.
+//! cache keeps both for at most [`BUDGET_CACHE_TTL`]. An expired entry is
+//! reloaded from the database, which stays the source of truth: one task loads
+//! it and concurrent readers wait for that load, so an expiry under load costs
+//! one query, not one per request. A charge is recorded through
+//! [`BudgetCache::record_charge`], which orders the ledger write against reloads
+//! so each charge is counted exactly once in this process.
 
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -22,9 +23,18 @@ use time::OffsetDateTime;
 /// replica or by config seeding.
 pub const BUDGET_CACHE_TTL: Duration = Duration::from_secs(5);
 
-/// Entries kept per map before expired ones are pruned. One human request uses at
-/// most two scopes, so this covers thousands of active owners.
+/// Most entries kept per map. One human request uses at most two scopes and
+/// three cadences, so this covers thousands of active owners. Past it, entries
+/// that are neither fresh nor in use are pruned, at most once per TTL, and a key
+/// that still does not fit is answered without caching.
 const MAX_CACHED_ENTRIES: usize = 16_384;
+
+/// Every cadence a charge can count toward.
+const CADENCES: [BudgetCadence; 3] = [
+    BudgetCadence::Daily,
+    BudgetCadence::Weekly,
+    BudgetCadence::Monthly,
+];
 
 /// Identifies one enforcement window of one budget scope.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -61,10 +71,15 @@ pub(crate) struct BudgetCache {
 impl BudgetCache {
     #[must_use]
     pub(crate) fn new(ttl: Duration) -> Self {
+        Self::with_capacity(ttl, MAX_CACHED_ENTRIES)
+    }
+
+    #[must_use]
+    fn with_capacity(ttl: Duration, capacity: usize) -> Self {
         Self {
             ttl,
-            budgets: SlotMap::default(),
-            spend: SlotMap::default(),
+            budgets: SlotMap::new(capacity),
+            spend: SlotMap::new(capacity),
         }
     }
 
@@ -102,32 +117,47 @@ impl BudgetCache {
             .await
     }
 
-    /// Adds a charge that was just written to the ledger to the cached total of
-    /// each window of `scope_key` that contains `occurred_at`, whatever its
-    /// cadence. A window that is not cached is skipped: its next load reads the
-    /// charge from the ledger.
-    pub(crate) fn add_charge_to_scope(
+    /// Runs `write`, the ledger insert of `charge`, and when it stores the row,
+    /// adds the charge to the cached total of every window of `scope_keys` that
+    /// contains `occurred_at`, whatever its cadence.
+    ///
+    /// No reload of those windows reads the ledger while the write runs, so a
+    /// reload either sees the committed row or runs before it and gets the charge
+    /// added afterwards: never both, never neither. A window that is not cached
+    /// keeps no total, and its next load reads the row.
+    pub(crate) async fn record_charge<F, Fut>(
         &self,
-        scope_key: &str,
+        scope_keys: &[String],
         occurred_at: OffsetDateTime,
         charge: Money9,
-    ) {
-        for cadence in [
-            BudgetCadence::Daily,
-            BudgetCadence::Weekly,
-            BudgetCadence::Monthly,
-        ] {
-            self.add_charge(
-                &SpendWindowKey::containing(scope_key, cadence, occurred_at),
-                charge,
-            );
+        write: F,
+    ) -> Result<bool, GatewayError>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<bool, GatewayError>>,
+    {
+        let mut slots: Vec<_> = scope_keys
+            .iter()
+            .flat_map(|scope_key| {
+                CADENCES.map(|cadence| SpendWindowKey::containing(scope_key, cadence, occurred_at))
+            })
+            .map(|key| self.spend.slot(key, self.ttl))
+            .collect();
+        // One global order for the shared gates, so recorders and reloads cannot
+        // wait on each other in a cycle.
+        slots.sort_unstable_by_key(|slot| Arc::as_ptr(slot) as usize);
+        slots.dedup_by(|a, b| Arc::ptr_eq(a, b));
+        let mut gates = Vec::with_capacity(slots.len());
+        for slot in &slots {
+            gates.push(slot.gate.read().await);
         }
-    }
-
-    fn add_charge(&self, key: &SpendWindowKey, charge: Money9) {
-        if let Some(slot) = self.spend.existing(key) {
-            slot.update(|spent| *spent = spent.saturating_add(charge));
+        let written = write().await?;
+        if written {
+            for slot in &slots {
+                slot.update(|spent| *spent = spent.saturating_add(charge));
+            }
         }
+        Ok(written)
     }
 
     /// Forgets every cached active budget, so the next read sees a budget that
@@ -144,53 +174,77 @@ impl Default for BudgetCache {
 }
 
 struct SlotMap<K, T> {
-    slots: Mutex<HashMap<K, Arc<Slot<T>>>>,
+    capacity: usize,
+    inner: Mutex<SlotMapInner<K, T>>,
 }
 
-impl<K, T> Default for SlotMap<K, T> {
-    fn default() -> Self {
-        Self {
-            slots: Mutex::new(HashMap::new()),
-        }
-    }
+struct SlotMapInner<K, T> {
+    slots: HashMap<K, Arc<Slot<T>>>,
+    pruned_at: Option<Instant>,
 }
 
 impl<K: Eq + Hash, T: Clone> SlotMap<K, T> {
-    fn slot(&self, key: K, ttl: Duration) -> Arc<Slot<T>> {
-        let mut slots = self.slots.lock().expect("budget cache lock poisoned");
-        if slots.len() >= MAX_CACHED_ENTRIES && !slots.contains_key(&key) {
-            slots.retain(|_, slot| slot.is_fresh(ttl) || slot.is_loading());
+    fn new(capacity: usize) -> Self {
+        Self {
+            capacity,
+            inner: Mutex::new(SlotMapInner {
+                slots: HashMap::new(),
+                pruned_at: None,
+            }),
         }
-        Arc::clone(slots.entry(key).or_default())
     }
 
-    fn existing(&self, key: &K) -> Option<Arc<Slot<T>>> {
-        self.slots
-            .lock()
-            .expect("budget cache lock poisoned")
-            .get(key)
-            .cloned()
+    fn slot(&self, key: K, ttl: Duration) -> Arc<Slot<T>> {
+        let mut inner = self.inner.lock().expect("budget cache lock poisoned");
+        if let Some(slot) = inner.slots.get(&key) {
+            return Arc::clone(slot);
+        }
+        if inner.slots.len() >= self.capacity {
+            if inner.pruned_at.is_none_or(|at| at.elapsed() >= ttl) {
+                // A slot another task holds is loading or recording a charge.
+                inner
+                    .slots
+                    .retain(|_, slot| slot.is_fresh(ttl) || Arc::strong_count(slot) > 1);
+                inner.pruned_at = Some(Instant::now());
+            }
+            if inner.slots.len() >= self.capacity {
+                return Arc::new(Slot::default());
+            }
+        }
+        Arc::clone(inner.slots.entry(key).or_default())
     }
 
     fn clear(&self) {
-        self.slots
+        self.inner
             .lock()
             .expect("budget cache lock poisoned")
+            .slots
             .clear();
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.inner
+            .lock()
+            .expect("budget cache lock poisoned")
+            .slots
+            .len()
     }
 }
 
 struct Slot<T> {
     cached: Mutex<Option<Cached<T>>>,
-    /// Held by the one task that loads this slot.
-    load: tokio::sync::Mutex<()>,
+    /// Held exclusively by the one task that loads this slot, from its read until
+    /// it stores the value, and shared by each task recording a charge, from
+    /// before its ledger write until it adds the charge.
+    gate: tokio::sync::RwLock<()>,
 }
 
 impl<T> Default for Slot<T> {
     fn default() -> Self {
         Self {
             cached: Mutex::new(None),
-            load: tokio::sync::Mutex::new(()),
+            gate: tokio::sync::RwLock::new(()),
         }
     }
 }
@@ -209,17 +263,9 @@ impl<T: Clone> Slot<T> {
         if let Some(value) = self.fresh(ttl) {
             return Ok(value);
         }
-        let _loading = match self.load.try_lock() {
-            Ok(guard) => guard,
-            Err(_) => {
-                // Another task is reloading: an expired value is good enough meanwhile.
-                if let Some(value) = self.any() {
-                    return Ok(value);
-                }
-                self.load.lock().await
-            }
-        };
-        // The task that held the lock may have loaded a fresh value.
+        // Concurrent readers queue here behind the one load; an expired value is
+        // never served.
+        let _gate = self.gate.write().await;
         if let Some(value) = self.fresh(ttl) {
             return Ok(value);
         }
@@ -240,14 +286,6 @@ impl<T: Clone> Slot<T> {
             .map(|cached| cached.value.clone())
     }
 
-    fn any(&self) -> Option<T> {
-        self.cached
-            .lock()
-            .expect("budget cache lock poisoned")
-            .as_ref()
-            .map(|cached| cached.value.clone())
-    }
-
     fn update(&self, change: impl FnOnce(&mut T)) {
         if let Some(cached) = self
             .cached
@@ -262,24 +300,24 @@ impl<T: Clone> Slot<T> {
     fn is_fresh(&self, ttl: Duration) -> bool {
         self.fresh(ttl).is_some()
     }
-
-    fn is_loading(&self) -> bool {
-        self.load.try_lock().is_err()
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
+
+    use tokio::sync::Notify;
 
     use super::*;
 
+    const SCOPE: &str = "budget:v1:user:00000000-0000-0000-0000-000000000001";
+
+    fn at() -> OffsetDateTime {
+        OffsetDateTime::from_unix_timestamp(1_795_305_600 + 60).expect("valid timestamp")
+    }
+
     fn key() -> SpendWindowKey {
-        SpendWindowKey {
-            scope_key: "budget:v1:user:00000000-0000-0000-0000-000000000001".to_string(),
-            cadence: BudgetCadence::Daily,
-            period_start: 1_795_305_600,
-        }
+        SpendWindowKey::containing(SCOPE, BudgetCadence::Daily, at())
     }
 
     async fn spend(cache: &BudgetCache, loads: &AtomicUsize, ledger: Money9) -> Money9 {
@@ -290,6 +328,28 @@ mod tests {
             })
             .await
             .expect("load succeeds")
+    }
+
+    /// Records `nanos` as a ledger row in `ledger` and in the cache.
+    async fn charge(cache: &BudgetCache, ledger: &AtomicI64, nanos: i64) {
+        let written = cache
+            .record_charge(
+                &[SCOPE.to_string()],
+                at(),
+                Money9::from_nanos(nanos),
+                || async {
+                    ledger.fetch_add(nanos, Ordering::SeqCst);
+                    Ok(true)
+                },
+            )
+            .await
+            .expect("charge recorded");
+        assert!(written);
+    }
+
+    /// The cached daily total, whatever its age.
+    fn cached_total(cache: &BudgetCache) -> Option<Money9> {
+        cache.spend.slot(key(), cache.ttl).fresh(Duration::MAX)
     }
 
     #[tokio::test]
@@ -312,16 +372,22 @@ mod tests {
     async fn recorded_charges_add_to_the_cached_window_only() {
         let cache = BudgetCache::new(Duration::from_secs(60));
         let loads = AtomicUsize::new(0);
+        let ledger = AtomicI64::new(0);
 
         // Not cached yet: the charge is left for the ledger load to include.
-        cache.add_charge(&key(), Money9::from_nanos(2_800));
+        charge(&cache, &ledger, 2_800).await;
         assert_eq!(
-            spend(&cache, &loads, Money9::from_nanos(2_800)).await,
+            spend(
+                &cache,
+                &loads,
+                Money9::from_nanos(ledger.load(Ordering::SeqCst))
+            )
+            .await,
             Money9::from_nanos(2_800)
         );
 
         for _ in 0..1_000 {
-            cache.add_charge(&key(), Money9::from_nanos(2_800));
+            charge(&cache, &ledger, 2_800).await;
         }
         assert_eq!(
             spend(&cache, &loads, Money9::ZERO).await,
@@ -329,6 +395,187 @@ mod tests {
             "1,001 charges of $0.0000028"
         );
         assert_eq!(loads.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn a_charge_recorded_during_a_reload_counts_once_when_the_reload_reads_first() {
+        let cache = Arc::new(BudgetCache::new(Duration::ZERO));
+        let ledger = Arc::new(AtomicI64::new(0));
+        let (read, release) = (Arc::new(Notify::new()), Arc::new(Notify::new()));
+        let reload = tokio::spawn({
+            let (cache, ledger, read, release) = (
+                Arc::clone(&cache),
+                Arc::clone(&ledger),
+                Arc::clone(&read),
+                Arc::clone(&release),
+            );
+            async move {
+                cache
+                    .window_spend(&key(), || async move {
+                        let snapshot = ledger.load(Ordering::SeqCst);
+                        read.notify_one();
+                        release.notified().await;
+                        Ok(Money9::from_nanos(snapshot))
+                    })
+                    .await
+            }
+        });
+        read.notified().await;
+        let recorder = tokio::spawn({
+            let (cache, ledger) = (Arc::clone(&cache), Arc::clone(&ledger));
+            async move { charge(&cache, &ledger, 100).await }
+        });
+        tokio::task::yield_now().await;
+        assert_eq!(
+            ledger.load(Ordering::SeqCst),
+            0,
+            "the ledger write waits for the reload"
+        );
+
+        release.notify_one();
+        assert_eq!(
+            reload.await.expect("reload task").expect("reload"),
+            Money9::ZERO
+        );
+        recorder.await.expect("recorder task");
+        assert_eq!(cached_total(&cache), Some(Money9::from_nanos(100)));
+        assert_eq!(ledger.load(Ordering::SeqCst), 100);
+    }
+
+    #[tokio::test]
+    async fn a_charge_recorded_during_a_reload_counts_once_when_the_write_runs_first() {
+        let cache = Arc::new(BudgetCache::new(Duration::ZERO));
+        let ledger = Arc::new(AtomicI64::new(0));
+        cache
+            .window_spend(&key(), || async { Ok(Money9::ZERO) })
+            .await
+            .expect("prime the cache");
+        let (written, release) = (Arc::new(Notify::new()), Arc::new(Notify::new()));
+        let recorder = tokio::spawn({
+            let (cache, ledger, written, release) = (
+                Arc::clone(&cache),
+                Arc::clone(&ledger),
+                Arc::clone(&written),
+                Arc::clone(&release),
+            );
+            async move {
+                cache
+                    .record_charge(
+                        &[SCOPE.to_string()],
+                        at(),
+                        Money9::from_nanos(100),
+                        || async move {
+                            ledger.fetch_add(100, Ordering::SeqCst);
+                            written.notify_one();
+                            release.notified().await;
+                            Ok(true)
+                        },
+                    )
+                    .await
+            }
+        });
+        written.notified().await;
+        let reload = tokio::spawn({
+            let (cache, ledger) = (Arc::clone(&cache), Arc::clone(&ledger));
+            async move {
+                cache
+                    .window_spend(&key(), || async move {
+                        Ok(Money9::from_nanos(ledger.load(Ordering::SeqCst)))
+                    })
+                    .await
+            }
+        });
+        tokio::task::yield_now().await;
+        assert!(
+            !reload.is_finished(),
+            "the reload waits for the ledger write"
+        );
+
+        release.notify_one();
+        assert!(
+            recorder
+                .await
+                .expect("recorder task")
+                .expect("charge recorded")
+        );
+        assert_eq!(
+            reload.await.expect("reload task").expect("reload"),
+            Money9::from_nanos(100)
+        );
+        assert_eq!(cached_total(&cache), Some(Money9::from_nanos(100)));
+    }
+
+    #[tokio::test]
+    async fn a_reload_in_progress_never_serves_the_expired_value() {
+        let cache = Arc::new(BudgetCache::new(Duration::ZERO));
+        cache
+            .window_spend(&key(), || async { Ok(Money9::from_nanos(1)) })
+            .await
+            .expect("prime the cache");
+        let (started, release) = (Arc::new(Notify::new()), Arc::new(Notify::new()));
+        let slow = tokio::spawn({
+            let (cache, started, release) = (
+                Arc::clone(&cache),
+                Arc::clone(&started),
+                Arc::clone(&release),
+            );
+            async move {
+                cache
+                    .window_spend(&key(), || async move {
+                        started.notify_one();
+                        release.notified().await;
+                        Ok(Money9::from_nanos(5))
+                    })
+                    .await
+            }
+        });
+        started.notified().await;
+        let waiting = tokio::spawn({
+            let cache = Arc::clone(&cache);
+            async move {
+                cache
+                    .window_spend(&key(), || async { Ok(Money9::from_nanos(9)) })
+                    .await
+            }
+        });
+        tokio::task::yield_now().await;
+        assert!(
+            !waiting.is_finished(),
+            "no expired value while the reload runs"
+        );
+
+        release.notify_one();
+        assert_eq!(
+            slow.await.expect("slow task").expect("reload"),
+            Money9::from_nanos(5)
+        );
+        assert_eq!(
+            waiting.await.expect("waiting task").expect("reload"),
+            Money9::from_nanos(9)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_full_cache_answers_new_keys_without_growing() {
+        let cache = BudgetCache::with_capacity(Duration::from_secs(60), 2);
+        let loads = AtomicUsize::new(0);
+        for scope in ["a", "b", "c", "c"] {
+            let key = SpendWindowKey::containing(scope, BudgetCadence::Daily, at());
+            let spent = cache
+                .window_spend(&key, || async {
+                    loads.fetch_add(1, Ordering::SeqCst);
+                    Ok(Money9::from_nanos(7))
+                })
+                .await
+                .expect("load succeeds");
+            assert_eq!(spent, Money9::from_nanos(7));
+        }
+        assert_eq!(cache.spend.len(), 2);
+        assert_eq!(
+            loads.load(Ordering::SeqCst),
+            4,
+            "the key past the cap is loaded on each read"
+        );
     }
 
     #[tokio::test]

@@ -1337,7 +1337,7 @@ where
             .get_usage_ledger_by_request_and_scope(&request_id, &ownership_scope_key)
             .await?
         {
-            if existing.computed_cost_usd == cost_usd {
+            if is_same_batch_charge(existing.computed_cost_usd, cost_usd) {
                 return Ok(());
             }
             return Err(GatewayError::BatchUsageConflict {
@@ -1425,7 +1425,9 @@ where
                         &record.ownership_scope_key,
                     )
                     .await?;
-                if existing.is_none_or(|existing| existing.computed_cost_usd != cost_usd) {
+                if existing.is_none_or(|existing| {
+                    !is_same_batch_charge(existing.computed_cost_usd, cost_usd)
+                }) {
                     return Err(GatewayError::BatchUsageConflict {
                         batch_id: job.batch_id.to_string(),
                     });
@@ -1773,6 +1775,13 @@ pub(crate) fn scaled_cost_for_tokens(
         token_cost_numerator(tokens, rate_per_million)?,
         TOKEN_COST_NANOS_DIVISOR,
     )
+}
+
+/// Whether a stored batch charge is the one a retry priced. Before V84 the
+/// ledger kept the charge rounded half-up to $0.0001; a retry prices it exactly,
+/// so a row written before the upgrade matches the rounded value.
+fn is_same_batch_charge(stored: Money9, priced: Money9) -> bool {
+    stored == priced || Money9::from_money4(priced.round_half_up_to_money4()) == Some(stored)
 }
 
 fn unpriced_reason_string(reason: &PricingUnpricedReason) -> String {
