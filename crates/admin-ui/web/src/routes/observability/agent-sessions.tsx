@@ -5,6 +5,7 @@ import { ColumnVisibilityPopover } from '@/components/data/column-visibility-pop
 import {
   clearedSessionFilters,
   hasSessionFilters,
+  sessionFilterParams,
 } from '@/components/observability/agent-sessions/session-filter-fields'
 import {
   SessionFilterToolbar,
@@ -263,36 +264,23 @@ function normalizeSearch(search: Record<string, unknown>): AgentSessionRouteSear
     page: positiveInteger(search.page, 1),
     page_size: positiveInteger(search.page_size, 50, 100),
   }
-  for (const field of [
-    'user_id',
-    'team_id',
-    'service_account_id',
-    'harness_key',
-    'requested_model_key',
-    'operation',
-    'caller_class',
-    'gateway_outcome',
-    'score_maturity',
-    'score_confidence',
-    'session_source_id',
-    'session_source_hash',
-    'request_tag_key',
-    'request_tag_value',
-    'lifecycle',
-    'started_after',
-    'started_before',
-    'session_id',
-  ] as const) {
-    const value = search[field]
-    if (typeof value === 'string' && value.trim()) {
-      result[field] = value.trim()
+  // Filter params come from the chip registry, so every URL filter has a chip and vice versa.
+  for (const param of sessionFilterParams) {
+    if (param === 'minimum_coverage_percent') {
+      const percent = integerInRange(search[param], 0, 100)
+      if (percent !== undefined) result[param] = percent
+      continue
     }
+    const value = trimmedText(search[param])
+    if (value) result[param] = value
   }
-  const minimumCoveragePercent = integerInRange(search.minimum_coverage_percent, 0, 100)
-  if (minimumCoveragePercent !== undefined) {
-    result.minimum_coverage_percent = minimumCoveragePercent
-  }
+  const sessionId = trimmedText(search.session_id)
+  if (sessionId) result.session_id = sessionId
   return result
+}
+
+function trimmedText(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 function positiveInteger(value: unknown, fallback: number, maximum = Number.MAX_SAFE_INTEGER) {

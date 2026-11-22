@@ -971,7 +971,10 @@ describe('AgentSessionsPage filters', () => {
 
     await addFilter('Model')
     expect(await screen.findByRole('option', { name: /claude-opus-4-1/ })).toBeInTheDocument()
-    expect(getModelsMock).toHaveBeenCalledWith({ data: { page: 1, page_size: 100 } })
+    expect(getModelsMock).toHaveBeenCalledWith({
+      data: { page: 1, page_size: 100 },
+      signal: expect.any(AbortSignal),
+    })
 
     fireEvent.change(screen.getByPlaceholderText('Search models…'), {
       target: { value: 'retired-model' },
@@ -998,7 +1001,10 @@ describe('AgentSessionsPage filters', () => {
     await addFilter('Harness')
     fireEvent.click(await screen.findByRole('option', { name: /Claude Code/ }))
 
-    expect(getHarnessUsageMock).toHaveBeenCalledWith({ data: { range: '31d' } })
+    expect(getHarnessUsageMock).toHaveBeenCalledWith({
+      data: { range: '31d' },
+      signal: expect.any(AbortSignal),
+    })
     await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
     expect(navigatedSearch(0)).toEqual(expect.objectContaining({ harness_key: 'claude_code' }))
   })
@@ -1046,6 +1052,22 @@ describe('AgentSessionsPage filters', () => {
     await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(2))
     expect(navigatedSearch(1)).toEqual(
       expect.objectContaining({ started_before: '2026-07-31T23:59:59.999Z' }),
+    )
+  })
+
+  it('finds a preset day by its typed date', async () => {
+    const today = new Date().toISOString().slice(0, 10)
+    render(<AgentSessionsPage />)
+
+    await addFilter('Started after')
+    fireEvent.change(await screen.findByPlaceholderText('Search or type YYYY-MM-DD…'), {
+      target: { value: today },
+    })
+    fireEvent.click(await screen.findByRole('option', { name: /Today/ }))
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
+    expect(navigatedSearch(0)).toEqual(
+      expect.objectContaining({ started_after: `${today}T00:00:00.000Z` }),
     )
   })
 
@@ -1103,6 +1125,37 @@ describe('AgentSessionsPage filters', () => {
       page_size: 25,
       harness_key: 'opencode',
     })
+  })
+
+  it('removes a chip whose value is still being applied', async () => {
+    render(<AgentSessionsPage />)
+
+    await addFilter('User ID')
+    const userId = await screen.findByTestId('agent-session-filter-user-id')
+    fireEvent.change(userId, { target: { value: 'user_1' } })
+    // Blur applies the value; the mocked navigation never settles, so the URL keeps no user ID.
+    fireEvent.blur(userId)
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove User ID filter' }))
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(2))
+    expect(navigatedSearch(1, navigatedSearch(0))).not.toHaveProperty('user_id')
+    expect(screen.queryByTestId('agent-session-filter-chip-user_id')).not.toBeInTheDocument()
+  })
+
+  it('returns focus to the Filters button when its menu closes without a pick', async () => {
+    render(<AgentSessionsPage />)
+
+    openFilterMenu()
+    fireEvent.keyDown(await screen.findByRole('menu'), { key: 'Escape' })
+
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('agent-session-toolbar')).getByRole('button', {
+          name: /^Filters/,
+        }),
+      ).toHaveFocus(),
+    )
   })
 
   it('offers to clear the filters when nothing matches', async () => {

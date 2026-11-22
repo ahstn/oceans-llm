@@ -117,7 +117,11 @@ export function FilterValuePicker({
                 {options.options.map((option) => (
                   <CommandItem
                     key={option.value}
-                    value={[option.label, option.hint].filter(Boolean).join(' ')}
+                    // Match the raw value too, so a typed `2026-11-21` still finds a preset day.
+                    value={option.value}
+                    keywords={[option.label, option.hint].filter((word): word is string =>
+                      Boolean(word),
+                    )}
                     data-checked={option.value === value}
                     onSelect={() => choose(option.value)}
                   >

@@ -87,16 +87,21 @@ export function SessionFilterToolbar({
   const [addedFields, setAddedFields] = useState<SessionFilterFieldKey[]>([])
   const [focusField, setFocusField] = useState<SessionFilterFieldKey | null>(null)
   const [syncedFilters, setSyncedFilters] = useState(filters)
+  // The filters most recently sent to `onApply`. Until its navigation settles, `filters` still
+  // holds the earlier URL, so changes are compared against what was sent instead.
+  const [appliedFilters, setAppliedFilters] = useState<SessionFilterPatch>(filters)
 
   // Adopt URL-backed filter changes (navigation, Back/Forward, Clear) without discarding chip
   // edits that were typed while a previous navigation was still loading.
   if (syncedFilters !== filters) {
     setSyncedFilters(filters)
+    setAppliedFilters(filters)
     setDrafts((current) => rebaseDrafts(current, syncedFilters, filters))
   }
 
+  const addedFieldSet = new Set(addedFields)
   const visibleFields = sessionFilterFields.filter(
-    (field) => isFieldActive(filters, field.key) || addedFields.includes(field.key),
+    (field) => isFieldActive(filters, field.key) || addedFieldSet.has(field.key),
   )
   const activeCount = sessionFilterFields.filter((field) =>
     isFieldActive(filters, field.key),
@@ -115,7 +120,9 @@ export function SessionFilterToolbar({
       delete patch.request_tag_key
       delete patch.request_tag_value
     }
-    if (!sameFilters({ ...filters, ...patch }, filters)) {
+    const nextApplied = { ...appliedFilters, ...patch }
+    if (!sameFilters(nextApplied, appliedFilters)) {
+      setAppliedFilters(nextApplied)
       onApply(patch)
     }
   }
@@ -141,6 +148,7 @@ export function SessionFilterToolbar({
     const cleared = pickFilterParams({})
     setAddedFields([])
     setDrafts((current) => ({ ...current, ...cleared }))
+    setAppliedFilters((current) => ({ ...current, ...cleared }))
     onApply(cleared)
   }
 
@@ -232,8 +240,8 @@ function usePickerOptions(visibleFields: SessionFilterField[]) {
 }
 
 /** Harnesses that sent traffic in the last 31 days; older keys can still be typed. */
-async function loadHarnessOptions(): Promise<FilterOption[]> {
-  const usage = await getObservabilityHarnessUsage({ data: { range: '31d' } })
+async function loadHarnessOptions(signal: AbortSignal): Promise<FilterOption[]> {
+  const usage = await getObservabilityHarnessUsage({ data: { range: '31d' }, signal })
   return usage.data.leaders
     .map((leader) => ({
       value: leader.agent_harness_key,
@@ -252,14 +260,19 @@ function FilterFieldMenu({
   onSelect: (key: SessionFilterFieldKey) => void
   children: ReactNode
 }) {
+  const pickedField = useRef(false)
+  const visibleKeys = new Set(visibleFields.map((field) => field.key))
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
-      {/* Keep focus on the newly added chip instead of returning it to the trigger. */}
+      {/* After a pick, focus moves to the new chip; Escape still returns it to the trigger. */}
       <DropdownMenuContent
         align="end"
         className="w-56"
-        onCloseAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => {
+          if (pickedField.current) event.preventDefault()
+          pickedField.current = false
+        }}
       >
         <DropdownMenuLabel>Filter by</DropdownMenuLabel>
         {sessionFilterGroups.map((group, index) => (
@@ -269,8 +282,11 @@ function FilterFieldMenu({
               {group.fields.map((field) => (
                 <DropdownMenuItem
                   key={field.key}
-                  disabled={visibleFields.some((visible) => visible.key === field.key)}
-                  onSelect={() => onSelect(field.key)}
+                  disabled={visibleKeys.has(field.key)}
+                  onSelect={() => {
+                    pickedField.current = true
+                    onSelect(field.key)
+                  }}
                 >
                   <AppIcon icon={field.icon} size={16} stroke={1.5} aria-hidden />
                   {field.label}
