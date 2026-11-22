@@ -206,7 +206,7 @@ export function SessionFilterToolbar({
               <AppIcon icon={Add01Icon} size={14} stroke={1.5} aria-hidden />
             </Button>
           </FilterFieldMenu>
-          <Button type="button" variant="ghost" size="sm" onClick={clearAll} disabled={isPending}>
+          <Button type="button" variant="ghost" size="sm" onClick={clearAll}>
             Clear
           </Button>
         </div>

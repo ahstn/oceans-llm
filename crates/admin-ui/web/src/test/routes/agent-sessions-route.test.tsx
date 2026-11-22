@@ -1143,6 +1143,25 @@ describe('AgentSessionsPage filters', () => {
     expect(screen.queryByTestId('agent-session-filter-chip-user_id')).not.toBeInTheDocument()
   })
 
+  it('clears filters while a blur commit is still navigating', async () => {
+    navigateMock.mockImplementation(() => new Promise(() => {}))
+    render(<AgentSessionsPage />)
+
+    await addFilter('User ID')
+    const userId = await screen.findByTestId('agent-session-filter-user-id')
+    fireEvent.change(userId, { target: { value: 'user_1' } })
+    fireEvent.blur(userId)
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Loading…'))
+
+    const clear = screen.getByRole('button', { name: 'Clear' })
+    expect(clear).toBeEnabled()
+    fireEvent.click(clear)
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(2))
+    expect(navigatedSearch(1, navigatedSearch(0))).not.toHaveProperty('user_id')
+  })
+
   it('returns focus to the Filters button when its menu closes without a pick', async () => {
     render(<AgentSessionsPage />)
 
