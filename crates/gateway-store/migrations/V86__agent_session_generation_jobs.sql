@@ -1,3 +1,5 @@
+-- Rebuild to replace the report identity with the same generation-aware unique
+-- key as the Postgres V86 index; keep historical rows but mark their reports stale.
 ALTER TABLE agent_session_analyses RENAME TO agent_session_analyses_v85;
 CREATE TABLE agent_session_analyses (
   analysis_id TEXT PRIMARY KEY,

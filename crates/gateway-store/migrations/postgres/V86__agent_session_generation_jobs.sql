@@ -3,14 +3,23 @@ SET LOCAL statement_timeout = '15min';
 
 ALTER TABLE agent_session_analyses
   ADD COLUMN input_generation BIGINT NOT NULL DEFAULT 0 CHECK (input_generation >= 0);
-ALTER TABLE agent_session_analyses DROP CONSTRAINT agent_session_analyses_report_identity_key;
-ALTER TABLE agent_session_analyses
-  ADD CONSTRAINT agent_session_analyses_report_identity_key UNIQUE (
+-- Like V83, this build runs in the migration transaction, not CONCURRENTLY.
+-- The preceding ADD COLUMN holds its table lock until commit. These are
+-- low-volume, expiring per-session reports, not per-request ingestion rows;
+-- schedule the upgrade for a quiet time if a deployment has a large report cache.
+-- Build the replacement before removing the old uniqueness guarantee.
+-- Writers use ON CONFLICT DO NOTHING, so a unique index needs no constraint attachment.
+CREATE UNIQUE INDEX agent_session_analyses_report_generation_key
+  ON agent_session_analyses (
     agent_session_id, report_schema_version, boundary_policy_version, input_watermark_at,
     observation_set_id, observation_parser_version, analyzer_version, score_policy_version,
     pricing_policy_version, cohort_version, cohort_fallback_level, cohort_sample_size,
     cohort_snapshot_digest, direct_mcp_snapshot_digest, configuration_version, input_generation
   );
+-- Only the report identity changes: no foreign key references this unique key.
+-- The replacement above already enforces uniqueness including input_generation.
+-- squawk-ignore ban-drop-constraint
+ALTER TABLE agent_session_analyses DROP CONSTRAINT agent_session_analyses_report_identity_key;
 DROP INDEX idx_agent_session_analyses_latest;
 CREATE INDEX idx_agent_session_analyses_latest
   ON agent_session_analyses(agent_session_id, input_generation, stale, analyzed_at DESC, analysis_id DESC);
