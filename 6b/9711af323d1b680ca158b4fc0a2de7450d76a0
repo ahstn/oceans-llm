@@ -1,0 +1,23 @@
+crates/admin-ui/web/src/test/routes/agent-sessions-route.test.tsx
+  s_58af86ccab2b62::t_1dd0adebae473d 405-419,1146,1179
+  s_58af86ccab2b62::t_bd2ae200127123 1152,1162-1175
+  s_58af86ccab2b62::t_be112fc944a434 1176-1177
+crates/admin-ui/web/src/components/observability/agent-sessions/session-filter-toolbar.tsx
+  s_58af86ccab2b62::t_bd2ae200127123 90-92,94,125-126,153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6b9711af323d1b680ca158b4fc0a2de7450d76a0",
+  "prompts": {},
+  "sessions": {
+    "s_58af86ccab2b62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7d3661c3-b312-4ff2-91f6-bf3d3fbea446",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
