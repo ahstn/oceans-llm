@@ -1,0 +1,21 @@
+mise.toml
+  s_ceb902b5ae2ad1::t_60c0c6330d01dd 325-326
+tests/harness-integration/README.md
+  s_ceb902b5ae2ad1::t_60c0c6330d01dd 90,92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b614659811e77c1eac9768971a0304f1587a5c01",
+  "prompts": {},
+  "sessions": {
+    "s_ceb902b5ae2ad1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "813ff0b9-4f52-4fd3-a512-a7b14a6a9045",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
