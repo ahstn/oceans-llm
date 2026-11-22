@@ -43,6 +43,7 @@ const proof = createProofRecorder({
 const browser = await chromium.launch({ headless: true });
 const results = {};
 let apiKeyId;
+let temporaryKeyName;
 let rawKey;
 let page;
 let details;
@@ -52,7 +53,7 @@ try {
   page = await (await browser.newContext({ viewport: { width: 1440, height: 1000 } })).newPage();
   await signIn(page);
   ({ apiKeyId, rawKey } = await createTemporaryKey(page));
-  proof.pass("temporary-key-created", { observed: grantedModels.join(",") });
+  proof.pass("temporary-key-created", { observed: `UI-created inference key: ${grantedModels.join(",")}` });
 
   await checkDiscovery();
   await checkNegativeRequests();
@@ -114,6 +115,10 @@ try {
   failure = error;
 } finally {
   try {
+    if (page && !apiKeyId && temporaryKeyName) {
+      const catalog = await adminJson(page, "/api/v1/admin/api-keys");
+      apiKeyId = catalog.items.find((key) => key.name === temporaryKeyName)?.id;
+    }
     if (page && apiKeyId) await revokeTemporaryKey(page, apiKeyId, rawKey);
   } catch (error) {
     proof.add({ id: "temporary-key-revoked-and-rejected", status: "fail", note: safeMessage(error) });
@@ -263,7 +268,7 @@ async function checkModelInfo() {
 async function openModelInfo(modelId) {
   // Search and the largest page keep the row on page 1 however many models are configured.
   await page.goto(`${baseURL}/admin/models?q=${encodeURIComponent(modelId)}&page_size=100`, {
-    waitUntil: "domcontentloaded",
+    waitUntil: "networkidle",
   });
   const row = page.getByTestId(`models-desktop-cell-${modelId}`).locator("xpath=ancestor::tr");
   await row.getByRole("button", { name: "Info" }).click();
@@ -380,26 +385,41 @@ async function signIn(currentPage) {
 
 async function createTemporaryKey(currentPage) {
   const catalog = await adminJson(currentPage, "/api/v1/admin/api-keys");
-  const owner = catalog.users.find((user) => user.email === "alice@platform.local") ?? catalog.users[0];
-  assert(owner, "API key catalog has no allowed user owner");
+  const owner = catalog.users.find((user) => user.email === "alice@platform.local");
+  assert(owner, "API key catalog has no seeded Alice owner");
   for (const model of grantedModels) {
     assert(catalog.models.some((entry) => entry.key === model), `gateway model ${model} is missing`);
   }
-  const created = await adminJson(currentPage, "/api/v1/admin/api-keys", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      name: `Service tier verification ${Date.now()}`,
-      owner_kind: "user",
-      owner_user_id: owner.id,
-      owner_team_id: null,
-      owner_service_account_id: null,
-      model_grant_mode: "explicit",
-      model_keys: grantedModels,
-    }),
-  });
-  assert(created.raw_key?.startsWith("gwk_"), "temporary raw key is missing");
-  return { apiKeyId: created.api_key.id, rawKey: created.raw_key };
+  temporaryKeyName = `Service tier ${requiredEnv("OCEANS_VERIFY_RUN_ID")} ${Date.now()}`;
+  await currentPage.getByRole("button", { name: "Create API key", exact: true }).click();
+  const dialog = currentPage.getByRole("dialog", { name: "Create API key" });
+  await dialog.getByLabel("Name", { exact: true }).fill(temporaryKeyName);
+  await dialog.getByRole("combobox", { name: "Owner user" }).click();
+  await currentPage.getByRole("option").filter({ hasText: owner.email }).click();
+  await dialog.getByRole("radio", { name: "Selected models", exact: true }).check();
+  await dialog.getByRole("button", { name: "Select models ▼", exact: true }).click();
+  for (const model of grantedModels) {
+    const escaped = model.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    await currentPage.getByRole("option", { name: new RegExp(`^${escaped}(?:\\s|$)`) }).click();
+  }
+  await currentPage.keyboard.press("Escape");
+  await dialog.getByRole("radio", { name: "Limited", exact: true }).check();
+  await dialog.getByRole("checkbox", { name: /^Inference inference / }).check();
+  await capture(currentPage, "service-tiers-key-form");
+  await fs.writeFile(path.join(evidenceDir, "service-tiers-key-form.aria.txt"), await dialog.ariaSnapshot());
+  proof.artifact("service-tiers-key-form.aria.txt");
+  await dialog.getByRole("button", { name: "Create API key", exact: true }).click();
+  await currentPage.getByTestId("new-api-key-raw-key").waitFor();
+  const saved = await adminJson(currentPage, "/api/v1/admin/api-keys");
+  const created = saved.items.find((key) => key.name === temporaryKeyName);
+  assert(created, "UI-created key is missing from the saved catalog");
+  apiKeyId = created.id;
+  rawKey = (await currentPage.getByTestId("new-api-key-raw-key").innerText()).trim();
+  assert(rawKey.startsWith("gwk_"), "temporary raw key is missing");
+  await currentPage.getByRole("button", { name: "Dismiss", exact: true }).click();
+  assertEqual(JSON.stringify(created.model_keys.toSorted()), JSON.stringify(grantedModels.toSorted()), "saved model grants");
+  assertEqual(JSON.stringify(created.scopes), JSON.stringify(["inference"]), "saved inference scope");
+  return { apiKeyId, rawKey };
 }
 
 async function revokeTemporaryKey(currentPage, id, key) {
@@ -414,6 +434,7 @@ async function revokeTemporaryKey(currentPage, id, key) {
     { keyId: id, limitMs: timeoutMs },
   );
   assertEqual(status, 200, "temporary API key revocation");
+  assert(key, "temporary key revoked, but its secret was not captured for the authentication check");
   const rejected = await fetch(`${baseURL}/v1/models`, {
     headers: { authorization: `Bearer ${key}` },
     signal: AbortSignal.timeout(timeoutMs),
