@@ -807,10 +807,17 @@ fn shell_tools_are_recognized_by_the_words_of_their_name() {
         "computer.run_command",
         "mcp__desktop__run_command",
         "PowerShell",
+        "EXECCommand",
+        "runCMD",
+        "BASHTool",
+        "command",
+        "cmd",
+        "Command",
     ] {
         assert!(is_shell_tool(name), "{name}");
     }
-    // A shell word inside a longer word, or `run`/`execute` without a command, is not a shell.
+    // A shell word inside a longer word, `run`/`execute` without a command, or `command` beside
+    // another word, is not a shell.
     for name in [
         "read",
         "write_file",
@@ -821,6 +828,9 @@ fn shell_tools_are_recognized_by_the_words_of_their_name() {
         "bashful",
         "refresh",
         "command_palette",
+        "slash_command",
+        "HTTPServer",
+        "naïve_tool",
     ] {
         assert!(!is_shell_tool(name), "{name}");
     }
@@ -830,6 +840,8 @@ fn shell_tools_are_recognized_by_the_words_of_their_name() {
 fn core_packs_inspect_a_shell_tool_call_whatever_the_tool_is_named() {
     for (name, arguments) in [
         ("exec", json!({"command": "rm -rf /"})),
+        ("command", json!({"command": "rm -rf /"})),
+        ("EXECCommand", json!({"command": "rm -rf /"})),
         ("runTerminalCmd", json!({"command": "rm -rf /"})),
         ("run_shell_command", json!({"cmd": "rm -rf /"})),
         ("execute_bash", json!({"script": "rm -rf /"})),

@@ -234,8 +234,9 @@ fn match_tool_call_pack(pack: &str, name: &str, arguments: &Value) -> Option<Mat
 /// `local_shell_call`, `exec_command`, `runTerminalCmd` or `computer.run_command`.
 ///
 /// Harnesses and MCP servers name their shell tools freely, so this reads the words of the
-/// name instead of matching a fixed list: a shell word anywhere, or `run`/`execute` followed
-/// by `command`/`cmd`. A tool that matches is only inspected, never denied for its name.
+/// name instead of matching a fixed list: a shell word anywhere, `run`/`execute` followed by
+/// `command`/`cmd`, or a name that is only `command` or `cmd`. A tool that matches is only
+/// inspected, never denied for its name.
 pub fn is_shell_tool(name: &str) -> bool {
     const SHELL_WORDS: &[&str] = &[
         "bash",
@@ -247,19 +248,24 @@ pub fn is_shell_tool(name: &str) -> bool {
         "terminal",
         "zsh",
     ];
+    const COMMAND_WORDS: &[&str] = &["command", "cmd"];
     let mut previous_runs = false;
-    for word in identity_words(name) {
+    let mut only_command = false;
+    for (index, word) in identity_words(name).enumerate() {
         let is = |candidate: &&str| word.eq_ignore_ascii_case(candidate);
-        if SHELL_WORDS.iter().any(is) || (previous_runs && ["command", "cmd"].iter().any(is)) {
+        let command = COMMAND_WORDS.iter().any(is);
+        if SHELL_WORDS.iter().any(is) || (previous_runs && command) {
             return true;
         }
         previous_runs = ["run", "execute"].iter().any(is);
+        only_command = index == 0 && command;
     }
-    false
+    only_command
 }
 
-/// The words of a tool name, split at punctuation and at camelCase capitals. The words keep
-/// their case and borrow from the name, so reading them allocates nothing.
+/// The words of a tool name, split at punctuation, at camelCase capitals, and before the last
+/// capital of an acronym that a word follows (`EXECCommand` is `EXEC`, `Command`). The words
+/// keep their case and borrow from the name, so reading them allocates nothing.
 fn identity_words(name: &str) -> impl Iterator<Item = &str> {
     let mut rest = name;
     std::iter::from_fn(move || {
@@ -267,16 +273,21 @@ fn identity_words(name: &str) -> impl Iterator<Item = &str> {
         if rest.is_empty() {
             return None;
         }
-        let mut previous_lowercase = false;
-        let end = rest
-            .char_indices()
-            .find(|&(_, character)| {
-                let boundary = !character.is_ascii_alphanumeric()
-                    || (character.is_ascii_uppercase() && previous_lowercase);
-                previous_lowercase = character.is_ascii_lowercase() || character.is_ascii_digit();
-                boundary
+        let bytes = rest.as_bytes();
+        let end = (1..bytes.len())
+            .find(|&index| {
+                let (previous, current) = (bytes[index - 1], bytes[index]);
+                let acronym_end = previous.is_ascii_uppercase()
+                    && bytes
+                        .get(index + 1)
+                        .is_some_and(|next| next.is_ascii_lowercase());
+                !current.is_ascii_alphanumeric()
+                    || (current.is_ascii_uppercase()
+                        && (previous.is_ascii_lowercase()
+                            || previous.is_ascii_digit()
+                            || acronym_end))
             })
-            .map_or(rest.len(), |(index, _)| index);
+            .unwrap_or(bytes.len());
         let (word, tail) = rest.split_at(end);
         rest = tail;
         Some(word)
