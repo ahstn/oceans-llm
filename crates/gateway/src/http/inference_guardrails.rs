@@ -1781,6 +1781,7 @@ mod tests {
             json!({"command": "echo ok", "script": "rm -rf /"}),
             json!({"cmd": "echo ok", "command": "rm -rf /"}),
             json!({"command": "echo ok", "input": {"command": "rm -rf /"}}),
+            json!({"command": ["rm -rf /"], "script": "echo ok"}),
         ] {
             assert_eq!(shell_command("bash", &arguments), None, "{arguments}");
         }

@@ -1,4 +1,4 @@
-use std::{fmt, str::FromStr};
+use std::{borrow::Cow, fmt, str::FromStr};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
@@ -205,8 +205,8 @@ fn match_shell_tool(pack: &str, name: &str, arguments: &Value) -> Option<Matched
         "$.input.command",
         "$.arguments.command",
     ] {
-        if let Some(command) = first_string(arguments, path)
-            && let Some(matched) = match_shell_pack(pack, command)
+        if let Some(command) = shell_command_text(arguments, path)
+            && let Some(matched) = match_shell_pack(pack, &command)
         {
             return Some(MatchedRule {
                 matched_field: path.to_string(),
@@ -1238,6 +1238,24 @@ fn notion_rule_id(tool: &str) -> &'static str {
         "move-object"
     } else {
         "destructive-page"
+    }
+}
+
+/// The shell command at `path`: a string, or a list of strings read as one command per line.
+fn shell_command_text<'a>(value: &'a Value, path: &str) -> Option<Cow<'a, str>> {
+    match JsonPath::parse(path)
+        .ok()?
+        .select(value)
+        .into_iter()
+        .next()?
+    {
+        Value::String(command) => Some(Cow::Borrowed(command)),
+        Value::Array(commands) => commands
+            .iter()
+            .map(Value::as_str)
+            .collect::<Option<Vec<_>>>()
+            .map(|commands| Cow::Owned(commands.join("\n"))),
+        _ => None,
     }
 }
 

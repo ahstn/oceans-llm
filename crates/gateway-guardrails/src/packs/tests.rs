@@ -842,6 +842,9 @@ fn core_packs_inspect_every_command_field_of_a_shell_tool_call() {
         json!({"command": "echo ok", "script": "rm -rf /"}),
         json!({"script": "echo ok", "cmd": "rm -rf /"}),
         json!({"command": "echo ok", "input": {"command": "rm -rf /"}}),
+        json!({"command": ["rm -rf /"], "script": "echo ok"}),
+        json!({"command": "echo ok", "cmd": ["echo ok", "rm -rf /"]}),
+        json!({"command": ["echo ok", "rm -rf /"]}),
     ] {
         let matched = evaluate(
             "core.filesystem",
