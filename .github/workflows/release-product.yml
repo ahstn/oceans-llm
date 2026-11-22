@@ -41,10 +41,14 @@ jobs:
              "timeout": 30, "arches": ["amd64", "arm64"]}
           ]'
           runners='{"amd64": "ubuntu-latest", "arm64": "ubuntu-24.04-arm"}'
+          # An architecture with no runner label fails here rather than when GitHub schedules it.
+          builds="$(jq -c --argjson runners "$runners" '[.[] | . as $image | .arches[]
+            | ($runners[.] // error("no runner label for architecture \(.)")) as $runner
+            | $image + {arch: ., platform: "linux/\(.)", runner: $runner} | del(.arches)]' <<< "$inventory")"
+          images="$(jq -c '[.[] | {image, platforms: (.arches | join(" "))}]' <<< "$inventory")"
           {
-            echo "builds=$(jq -c --argjson runners "$runners" '[.[] | . as $image | .arches[]
-              | $image + {arch: ., platform: "linux/\(.)", runner: $runners[.]} | del(.arches)]' <<< "$inventory")"
-            echo "images=$(jq -c '[.[] | {image, platforms: (.arches | join(" "))}]' <<< "$inventory")"
+            echo "builds=$builds"
+            echo "images=$images"
           } >> "$GITHUB_OUTPUT"
 
   build-images:
