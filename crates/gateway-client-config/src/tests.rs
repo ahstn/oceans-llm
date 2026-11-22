@@ -1656,3 +1656,58 @@ fn opencode_offers_no_tier_variants_when_the_gateway_fixes_the_tier() {
         assert_eq!(hints.harnesses.opencode.variants, None);
     }
 }
+
+#[test]
+fn opencode_offers_the_reasoning_effort_ladder_for_reasoning_models_without_a_policy() {
+    let mut deepseek = non_anthropic_input();
+    deepseek.model_id = "deepseek/deepseek-v4.1-flash-1017".into();
+    deepseek.upstream_model = Some("deepseek/deepseek-v4.1-flash-1017".into());
+    deepseek.service_tiers = vec![
+        ServiceTier::Default,
+        ServiceTier::Flex,
+        ServiceTier::Priority,
+    ];
+    let tiers = [
+        serde_json::json!({"id": "flex", "settings": {"serviceTier": "flex"}}),
+        serde_json::json!({"id": "fast", "settings": {"serviceTier": "priority"}}),
+    ];
+    let effort =
+        |level: &str| serde_json::json!({"id": level, "settings": {"reasoningEffort": level}});
+
+    // The catalog does not say it reasons: tiers only.
+    let hints = client_hints(&deepseek).expect("hints");
+    assert_eq!(
+        hints.harnesses.opencode.variants,
+        Some(Value::Array(tiers.to_vec()))
+    );
+
+    deepseek.reasoning = true;
+    let mut expected: Vec<Value> = ["low", "medium", "high"].map(effort).to_vec();
+    expected.extend(tiers.clone());
+    let hints = client_hints(&deepseek).expect("hints");
+    assert_eq!(
+        hints.harnesses.opencode.variants,
+        Some(Value::Array(expected.clone()))
+    );
+    let rendered = OpenCodeConfigTemplate.render(&deepseek);
+    let value: Value = serde_json::from_str(&rendered.blocks[0].content).expect("json");
+    assert_eq!(
+        value["providers"]["oceans-llm"]["models"]["deepseek/deepseek-v4.1-flash-1017"]["variants"],
+        Value::Array(expected)
+    );
+    assert_eq!(
+        value["providers"]["oceans-llm"]["models"]["deepseek/deepseek-v4.1-flash-1017"]["capabilities"]
+            ["reasoning"],
+        serde_json::json!({"supported": true})
+    );
+
+    // The gateway ceiling drops efforts above it rather than clamping them.
+    deepseek.max_reasoning_effort = Some(ReasoningLevel::Medium);
+    let mut capped: Vec<Value> = ["low", "medium"].map(effort).to_vec();
+    capped.extend(tiers);
+    let hints = client_hints(&deepseek).expect("hints");
+    assert_eq!(
+        hints.harnesses.opencode.variants,
+        Some(Value::Array(capped))
+    );
+}

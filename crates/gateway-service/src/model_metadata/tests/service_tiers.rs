@@ -205,6 +205,21 @@ fn tiered_model(allowed: Option<Vec<ServiceTier>>) -> GatewayModel {
     }
 }
 
+/// The OpenCode variants that pick a tier. The fixture model reasons, so the hint also
+/// lists effort variants, which other tests cover.
+fn tier_variants(card: &serde_json::Value) -> serde_json::Value {
+    card["client_hints"]["harnesses"]["opencode"]["variants"]
+        .as_array()
+        .map(|variants| {
+            variants
+                .iter()
+                .filter(|variant| variant["settings"].get("serviceTier").is_some())
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn offers_service_tier(group: &serde_json::Value) -> bool {
     group["supported_openai_params"]
         .as_array()
@@ -227,7 +242,7 @@ async fn discovery_lists_the_tiers_a_model_serves() {
     assert_eq!(metadata["service_tiers"], every_tier);
     assert_eq!(metadata["routes"][0]["service_tier"], json!(null));
     assert_eq!(
-        card["client_hints"]["harnesses"]["opencode"]["variants"],
+        tier_variants(&card),
         json!([
             {"id": "flex", "settings": {"serviceTier": "flex"}},
             {"id": "fast", "settings": {"serviceTier": "priority"}},
@@ -245,7 +260,7 @@ async fn discovery_lists_the_tiers_a_model_serves() {
     assert!(offers_service_tier(&group));
     assert_eq!(metadata["service_tiers"], json!(["default", "priority"]));
 
-    // A forced tier leaves nothing to choose, so the OpenCode hints add no variant.
+    // A forced tier leaves nothing to choose, so the OpenCode hints add no tier variant.
     let (card, group, metadata) = listings(
         tiered_model(None),
         vec![route_on(&openrouter, Some(Priority))],
@@ -255,11 +270,7 @@ async fn discovery_lists_the_tiers_a_model_serves() {
     assert_eq!(card["service_tiers"], json!(["priority"]));
     assert!(offers_service_tier(&group));
     assert_eq!(metadata["routes"][0]["service_tier"], json!("priority"));
-    assert!(
-        card["client_hints"]["harnesses"]["opencode"]
-            .get("variants")
-            .is_none()
-    );
+    assert_eq!(tier_variants(&card), json!([]));
 }
 
 #[tokio::test]
@@ -281,7 +292,7 @@ async fn variants_offer_only_tiers_the_allow_list_lets_a_caller_request() {
     assert_eq!(metadata["service_tiers"], served);
     assert!(offers_service_tier(&group));
     assert_eq!(
-        card["client_hints"]["harnesses"]["opencode"]["variants"],
+        tier_variants(&card),
         json!([{"id": "flex", "settings": {"serviceTier": "flex"}}])
     );
 }
