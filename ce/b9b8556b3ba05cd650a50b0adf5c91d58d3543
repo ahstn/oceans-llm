@@ -1,0 +1,239 @@
+crates/admin-ui/Cargo.toml
+  s_dd118f467446e0::t_3488031582319c 5
+crates/agent-session-analysis/src/identity/tests.rs
+  s_dd118f467446e0::t_3488031582319c 1-828
+crates/gateway-core/src/agent_analysis.rs
+  s_dd118f467446e0::t_3488031582319c 107,129,136-146,204,215-222,251,261-312,345,348,350-351,353-354,356,358-361,368,370-371,373-375,378,394,398,409,424,431,437
+docs/adr/2026-11-22-generation-fenced-agent-session-analysis.md
+  s_dd118f467446e0::t_3488031582319c 1-61
+docs/src/content/docs/observability/request-logs.mdx
+  s_dd118f467446e0::t_3488031582319c 167
+crates/agent-session-analysis/Cargo.toml
+  s_dd118f467446e0::t_3488031582319c 5,12
+crates/agent-session-analysis/src/extended.rs
+  s_dd118f467446e0::t_3488031582319c 5,65-98,102,343-344,352-353,357,590,744
+crates/agent-session-analysis/src/lib.rs
+  s_dd118f467446e0::t_3488031582319c 2,4-6,8,12-14,17,45-52,704-706,757,760-761,766-776,779-781,783,790,868-874,876-881
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_dd118f467446e0::t_3488031582319c 19,333-334
+crates/gateway-service/src/agent_analysis/worker.rs
+  s_dd118f467446e0::t_3488031582319c 2-21,56,58,63-97,109-110,112,124,130-136,139-141,171-175,187,190-207,211,215,223,230-245,249-258,263,295-296
+crates/gateway-store/src/agent_session_jobs.rs
+  s_dd118f467446e0::t_3488031582319c 1-35
+crates/gateway-store/src/postgres_store/agent_analysis/queue.rs
+  s_dd118f467446e0::t_3488031582319c 9-11,21,26-30,36-43,59,63-72,77,80-87,98,104,106,108-118,150-151,154-155,182-190,217-325
+docs/adr/2026-11-22-atomic-agent-session-input.md
+  s_dd118f467446e0::t_3488031582319c 1-34
+crates/gateway-service/src/agent_analysis/ingestion.rs
+  s_dd118f467446e0::t_3488031582319c 43-49,74-85,90,95-115,174-210,212,218-231,234,236-251,253,255-313,315,324,333-336,344,366-369,371,390-394,396-461,471,481-484,498-504,507-509
+crates/agent-session-analysis/src/cohort/tests.rs
+  s_dd118f467446e0::t_3488031582319c 1-197
+crates/agent-session-analysis/src/cohort.rs
+  s_dd118f467446e0::t_3488031582319c 1-122
+crates/gateway-service/src/request_logging/tests/harness.rs
+  s_dd118f467446e0::t_3488031582319c 3
+crates/gateway-guardrails/Cargo.toml
+  s_dd118f467446e0::t_3488031582319c 5
+crates/gateway-store/migrations/postgres/V86__agent_session_generation_jobs.sql
+  s_dd118f467446e0::t_3488031582319c 1-54
+crates/agent-session-analysis/src/versions/tests.rs
+  s_dd118f467446e0::t_3488031582319c 1-103
+docs/src/landing/Pillars.astro
+  s_dd118f467446e0::t_3488031582319c 6-8,69-114
+crates/agent-session-analysis/src/observations/mod.rs
+  s_dd118f467446e0::t_3488031582319c 1-108
+crates/gateway-service/src/payload_bounding.rs
+  s_dd118f467446e0::t_3488031582319c 3-4
+crates/gateway-service/src/request_logging.rs
+  s_dd118f467446e0::t_3488031582319c 16-18,20,34,448
+crates/gateway-store/src/postgres_store/agent_analysis/observations.rs
+  s_dd118f467446e0::t_3488031582319c 1-87
+crates/agent-session-analysis/src/identity/hashing.rs
+  s_dd118f467446e0::t_3488031582319c 1-88
+crates/gateway-store/migrations/postgres/V85__agent_session_input_counters.sql
+  s_dd118f467446e0::t_3488031582319c 1-32
+crates/gateway-client-config/Cargo.toml
+  s_dd118f467446e0::t_3488031582319c 5
+crates/gateway/src/http/handlers/routing.rs
+  s_dd118f467446e0::t_3488031582319c 7,185
+crates/gateway/src/http/observability/agent_sessions/presenter.rs
+  s_dd118f467446e0::t_3488031582319c 304-308,321-322,325-340
+crates/agent-session-analysis/src/observations/request/tests.rs
+  s_dd118f467446e0::t_3488031582319c 1-899
+crates/gateway-service/src/payload_bounding/tests.rs
+  s_dd118f467446e0::t_3488031582319c 1,6
+crates/gateway-service/src/routing.rs
+  s_dd118f467446e0::t_3488031582319c 12-13,159-160
+crates/gateway-service/src/usage/estimate.rs
+  s_dd118f467446e0::t_3488031582319c 6
+crates/gateway-store/src/agent_analysis_tests/observation_loading.rs
+  s_dd118f467446e0::t_3488031582319c 1-161
+crates/gateway-skills/Cargo.toml
+  s_dd118f467446e0::t_3488031582319c 5
+crates/agent-session-analysis/src/math.rs
+  s_dd118f467446e0::t_3488031582319c 1-69
+crates/gateway-service/src/attribution/tests/report.rs
+  s_dd118f467446e0::t_3488031582319c 16
+crates/gateway-store/src/agent_analysis_tests/trace_snapshot.rs
+  s_dd118f467446e0::t_3488031582319c 1-108
+crates/gateway-store/src/agent_session_input.rs
+  s_dd118f467446e0::t_3488031582319c 1-246
+crates/gateway-store/src/libsql_store/agent_analysis/input.rs
+  s_dd118f467446e0::t_3488031582319c 1-258
+crates/gateway-store/src/libsql_store/agent_analysis.rs
+  s_dd118f467446e0::t_3488031582319c 2-5,7-9,12-18,37,155,195,212-226
+crates/gateway-store/src/postgres_store/agent_analysis.rs
+  s_dd118f467446e0::t_3488031582319c 2-5,7-9,12-18,37,152,192,209-210
+docs/src/content/docs/harnesses/git-ai-attribution.mdx
+  s_dd118f467446e0::t_3488031582319c 212,215
+crates/gateway-store/src/postgres_store/agent_analysis/reports.rs
+  s_dd118f467446e0::t_3488031582319c 8,10-21,23-39,56-67,69-70,72-85,87,101,112,117-119,159-173,205,213,215-268,270-273,275-333
+mise.selfhost.toml
+  s_dd118f467446e0::t_3488031582319c 63-65
+docs/internal/2026-11-15-attribution-data-gaps.md
+  s_dd118f467446e0::t_3488031582319c 18
+crates/gateway-service/Cargo.toml
+  s_dd118f467446e0::t_3488031582319c 5
+crates/gateway-store/src/agent_analysis_tests.rs
+  s_dd118f467446e0::t_3488031582319c 16,18-22,28-31,186,226,229,233,236,244-246,311-313,316,320-322,325,329-334,367-371,374,377-381,384,405-407,410,430-432,435,457-459,479,485-491,497-504,512-521,528-531,533-553,556-565,583-593,764,782-786,790-793,803,813-816,823,851-854,856-872,874,922,929-935,979,1059,1096-1104
+crates/agent-session-analysis/src/observations/response/tests.rs
+  s_dd118f467446e0::t_3488031582319c 1-171
+crates/agent-session-analysis/src/versions.rs
+  s_dd118f467446e0::t_3488031582319c 1-100
+crates/gateway-store/src/agent_analysis_tests/hydration.rs
+  s_dd118f467446e0::t_3488031582319c 1-122
+crates/agent-session-analysis/src/observations/response.rs
+  s_dd118f467446e0::t_3488031582319c 1-180
+crates/gateway-store/src/migration_registry.rs
+  s_dd118f467446e0::t_0ee0b1b08a3820 39-40,611-613,615-617
+  s_dd118f467446e0::t_3488031582319c 37-38,600-610
+crates/agent-session-analysis/src/identity/harness.rs
+  s_dd118f467446e0::t_3488031582319c 1-127
+crates/gateway/Cargo.toml
+  s_dd118f467446e0::t_3488031582319c 5,11
+crates/gateway-store/src/agent_analysis_tests/generation.rs
+  s_dd118f467446e0::t_3488031582319c 1-719
+crates/gateway-store/src/lib.rs
+  s_dd118f467446e0::t_3488031582319c 6-7,12979,12982,12986,12989,12997-12999
+crates/gateway/src/http/observability.rs
+  s_dd118f467446e0::t_3488031582319c 13-21
+crates/gateway-store/src/libsql_store/agent_analysis/sessions.rs
+  s_dd118f467446e0::t_3488031582319c 134,136-150,152-157,159-166,168,172,175,177-188,192-197,201-205,207,239,241-243,246,249,251,273-275,285-289,320,323,327-330,342
+crates/gateway-store/src/postgres_store/agent_analysis/summaries.rs
+  s_dd118f467446e0::t_3488031582319c 1-49
+docs/adr/2026-07-21-passive-agent-session-analysis.md
+  s_dd118f467446e0::t_3488031582319c 96-99
+crates/gateway-store/src/agent_analysis_tests/contracts.rs
+  s_dd118f467446e0::t_3488031582319c 1-741
+crates/gateway-store/src/shared.rs
+  s_dd118f467446e0::t_3488031582319c 413-416,424-426,444
+CHANGELOG.md
+  s_dd118f467446e0::t_3488031582319c 9-21
+crates/gateway-store/migrations/V85__agent_session_input_counters.sql
+  s_dd118f467446e0::t_3488031582319c 1-10
+crates/gateway-core/src/lib.rs
+  s_dd118f467446e0::t_3488031582319c 27-28,30-34
+crates/oceans-cli/Cargo.toml
+  s_dd118f467446e0::t_3488031582319c 5
+crates/gateway/src/http/observability/agent_sessions.rs
+  s_dd118f467446e0::t_3488031582319c 152-161,288,361-374
+crates/gateway-store/src/libsql_store/agent_analysis/queue.rs
+  s_dd118f467446e0::t_3488031582319c 9-13,25,30,37,63,69,71-72,74-75,85,88-89,100,106,108,110-111,142-143,147,151-155,161,167,207-256
+docs/adr/2026-11-22-request-path-database-load.md
+  s_dd118f467446e0::t_3488031582319c 45-48
+docs/src/landing/landing.css
+  s_dd118f467446e0::t_3488031582319c 372-412
+crates/agent-session-analysis/src/observations/request.rs
+  s_dd118f467446e0::t_3488031582319c 1-320
+crates/gateway/src/agent_analysis_recompute.rs
+  s_dd118f467446e0::t_3488031582319c 1,6,76,99,106,108-130
+crates/gateway-service/src/agent_analysis/ingestion/tests.rs
+  s_dd118f467446e0::t_3488031582319c 1-297
+crates/gateway-store/Cargo.toml
+  s_dd118f467446e0::t_3488031582319c 5
+crates/agent-session-analysis/src/observations/tests.rs
+  s_dd118f467446e0::t_3488031582319c 1-114
+crates/gateway-store/src/libsql_store/agent_analysis/summaries.rs
+  s_dd118f467446e0::t_3488031582319c 1-55
+crates/gateway-client-ip/Cargo.toml
+  s_dd118f467446e0::t_3488031582319c 5
+crates/gateway-store/src/postgres_store/agent_analysis/sessions.rs
+  s_dd118f467446e0::t_3488031582319c 147,149-160,162-169,173-182,186,189,191-210,212,242,244-246,249,252,254-255,283-285,295-297,327,331,340,348-355
+Cargo.toml
+  s_dd118f467446e0::t_3488031582319c 92
+crates/agent-session-analysis/src/calibration.rs
+  s_dd118f467446e0::t_3488031582319c 3,105,109-112,184-185,279-287
+  s_dd118f467446e0::t_9675e3eb54beb5 288
+.agents/skills/verify-oceans-admin/scripts/drive-service-tiers.mjs
+  s_dd118f467446e0::t_3488031582319c 46,56,118-121,271,388-389,393-422,437
+crates/gateway-service/src/attribution/tests/ingest.rs
+  s_dd118f467446e0::t_3488031582319c 17
+crates/gateway-service/src/redaction/tests.rs
+  s_dd118f467446e0::t_3488031582319c 12-13,140-145,147
+crates/agent-session-analysis/src/identity/adapters.rs
+  s_dd118f467446e0::t_3488031582319c 1-303
+crates/gateway-core/Cargo.toml
+  s_dd118f467446e0::t_3488031582319c 5
+crates/gateway-mcp/Cargo.toml
+  s_dd118f467446e0::t_3488031582319c 5
+crates/gateway-service/src/agent_analysis/report_builder.rs
+  s_dd118f467446e0::t_3488031582319c 1,3-11,16,28-37,55-185,190-194,196,203,205-206,219-231,233-246,310-313,431,501,505-508,524-525,528-541,548-550,552-562,575,577-578,580,630-698,700-701
+crates/gateway-store/migrations/V86__agent_session_generation_jobs.sql
+  s_dd118f467446e0::t_3488031582319c 1-84
+crates/gateway/src/local_demo_seed/agent_analysis.rs
+  s_dd118f467446e0::t_3488031582319c 1,127-148,150,199,221-231,233,469-474,483
+crates/gateway-service/src/agent_analysis/worker/tests.rs
+  s_dd118f467446e0::t_3488031582319c 1-83
+crates/gateway-service/src/redaction.rs
+  s_dd118f467446e0::t_3488031582319c 5
+crates/gateway-store/src/any_store_agent_analysis.rs
+  s_dd118f467446e0::t_3488031582319c 3-6,71,76-80,85-89,95,97-98,100-101,104-108,110-111,114,134,136-137,139-140,144,146-148,152,157,189,192-193,234,241,246,254,258-259,265,273,278
+crates/gateway-store/src/postgres_store/agent_analysis/input.rs
+  s_dd118f467446e0::t_3488031582319c 1-274
+docs/adr/2026-11-01-git-ai-attribution-via-oceans-hooks.md
+  s_dd118f467446e0::t_3488031582319c 58
+crates/gateway-service/src/agent_analysis.rs
+  s_dd118f467446e0::t_3488031582319c 4,7-16,23-24
+docs/src/landing/content.ts
+  s_dd118f467446e0::t_3488031582319c 23-24,80,188-193,264-295,311,343-344,382
+docs/src/content/docs/operations/admin-runbooks.mdx
+  s_dd118f467446e0::t_0ee0b1b08a3820 241
+crates/agent-session-analysis/src/tests.rs
+  s_dd118f467446e0::t_3488031582319c 347,354,361,632-781
+crates/gateway-store/src/libsql_store/agent_analysis/reports.rs
+  s_dd118f467446e0::t_3488031582319c 8,10-43,45-46,50-51,53-55,57-78,80,94,164-180,214,222,224-278,280-283
+crates/gateway-service/data/openrouter_catalog_fallback.json
+  s_dd118f467446e0::t_3488031582319c 5-6,11542-11544,13632-13634,19323-19325,19334,25912-25914,27834-27836,28138-28139,28149,28613,28615,29287-29288
+crates/agent-session-analysis/src/identity/harness/tests.rs
+  s_dd118f467446e0::t_3488031582319c 1-130
+crates/agent-session-analysis/src/identity/mod.rs
+  s_dd118f467446e0::t_3488031582319c 1-483
+crates/gateway-providers/Cargo.toml
+  s_dd118f467446e0::t_3488031582319c 5
+crates/gateway-service/src/attribution/ingest.rs
+  s_dd118f467446e0::t_3488031582319c 23-25
+crates/gateway-store/src/attribution_tests.rs
+  s_dd118f467446e0::t_3488031582319c 821,823
+crates/gateway-store/src/libsql_store/agent_analysis/observations.rs
+  s_dd118f467446e0::t_3488031582319c 1-86
+Cargo.lock
+  s_dd118f467446e0::t_fee46dfaaf7ef1 7,58,62,1848,1851,1906,1916,1926,1946,1967,1982,2016,2048,2067,3137
+crates/gateway-service/data/pricing_catalog_fallback.json
+  s_dd118f467446e0::t_8167809c34cab4 4-6,34076-34078,37799-37801,41512-41514,42950-42952,43118-43120,43761,43763
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ceb9b8556b3ba05cd650a50b0adf5c91d58d3543",
+  "prompts": {},
+  "sessions": {
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
