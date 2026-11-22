@@ -1,14 +1,24 @@
 import { useEffect, useState, useTransition } from 'react'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 
+import { ColumnVisibilityPopover } from '@/components/data/column-visibility-popover'
 import {
-  ClearFiltersButton,
-  SessionFilters,
-} from '@/components/observability/agent-sessions/session-filters'
+  clearedSessionFilters,
+  hasSessionFilters,
+  sessionFilterParams,
+} from '@/components/observability/agent-sessions/session-filter-fields'
+import {
+  SessionFilterToolbar,
+  type SessionFilterPatch,
+} from '@/components/observability/agent-sessions/session-filter-toolbar'
 import {
   DetailSkeleton,
   SessionDetail,
 } from '@/components/observability/agent-sessions/session-detail'
+import {
+  defaultVisibleSessionColumns,
+  toggleableSessionColumns,
+} from '@/components/observability/agent-sessions/session-columns'
 import { SessionTable } from '@/components/observability/agent-sessions/session-table'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -40,25 +50,6 @@ export const Route = createFileRoute('/observability/agent-sessions')({
   component: AgentSessionsPage,
 })
 
-const sessionFilterFields = [
-  'lifecycle',
-  'gateway_outcome',
-  'score_maturity',
-  'score_confidence',
-  'minimum_coverage_percent',
-  'harness_key',
-  'requested_model_key',
-  'operation',
-  'caller_class',
-  'user_id',
-  'team_id',
-  'service_account_id',
-  'session_source_id',
-  'session_source_hash',
-  'request_tag_key',
-  'request_tag_value',
-] as const satisfies readonly (keyof AgentSessionFiltersInput)[]
-
 // Session filtering, selection, and detail loading form one explorer workflow.
 // oxlint-disable-next-line eslint/max-lines-per-function
 export function AgentSessionsPage() {
@@ -72,6 +63,9 @@ export function AgentSessionsPage() {
   const [detailPending, setDetailPending] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [detailRetry, setDetailRetry] = useState(0)
+  const [visibleColumns, setVisibleColumns] = useState(defaultVisibleSessionColumns)
+  // Remounting the toolbar drops chips that were added but never filled in.
+  const [toolbarKey, setToolbarKey] = useState(0)
   const showScore = session?.capabilities.calibrated_score_visible ?? false
 
   useEffect(() => {
@@ -111,8 +105,22 @@ export function AgentSessionsPage() {
     })
   }
 
-  function updateFilter(key: keyof AgentSessionFiltersInput, value: string | undefined) {
-    updateRouteSearch({ ...search, page: 1, [key]: value })
+  // Patches merge into the latest location so two chip commits that land close together cannot
+  // overwrite each other with stale filter values. Any filter change returns to the first page.
+  function applyFilters(patch: SessionFilterPatch) {
+    startListTransition(async () => {
+      await router.navigate({
+        to: '/observability/agent-sessions',
+        search: (previous) =>
+          normalizeSearch({ ...(previous as Record<string, unknown>), ...patch, page: 1 }),
+        resetScroll: false,
+      })
+    })
+  }
+
+  function clearFilters() {
+    applyFilters(clearedSessionFilters)
+    setToolbarKey((key) => key + 1)
   }
 
   function openDetail(session: AgentSessionSummaryView) {
@@ -147,19 +155,30 @@ export function AgentSessionsPage() {
         <CardHeader className="gap-1 border-b">
           <CardTitle className="text-base">Session explorer</CardTitle>
           <CardDescription>
-            Filter sessions by owner, harness, score confidence, state, or start date.
+            Filter sessions, then select one to review its requests, tools, and data quality.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 pt-5">
-          <div className="flex items-start gap-2">
-            <div className="min-w-0 flex-1">
-              <SessionFilters search={search} onChange={updateFilter} />
-            </div>
-            <ClearFiltersButton
-              visible={hasActiveSearch(search)}
-              onClear={() => updateRouteSearch({ page: 1, page_size: 50 })}
-            />
-          </div>
+          <SessionFilterToolbar
+            key={toolbarKey}
+            filters={search}
+            shownCount={sessionPage.items.length}
+            totalCount={sessionPage.total}
+            isPending={isListPending}
+            onApply={applyFilters}
+            actions={
+              <div className="hidden md:block">
+                <ColumnVisibilityPopover
+                  description="Show or hide session table columns. Started always shows."
+                  columns={toggleableSessionColumns}
+                  visible={visibleColumns}
+                  onVisibleChange={(key, visible) =>
+                    setVisibleColumns((current) => ({ ...current, [key]: visible }))
+                  }
+                />
+              </div>
+            }
+          />
 
           {hasUnavailableCallMetrics ? (
             <Alert>
@@ -179,6 +198,14 @@ export function AgentSessionsPage() {
             pageSize={search.page_size ?? 50}
             showScore={showScore}
             loading={isListPending}
+            visibleColumns={visibleColumns}
+            emptyAction={
+              hasSessionFilters(search) ? (
+                <Button type="button" variant="outline" size="sm" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              ) : null
+            }
             onOpen={openDetail}
             onPageChange={(page, pageSize) =>
               updateRouteSearch({ ...search, page, page_size: pageSize })
@@ -237,36 +264,23 @@ function normalizeSearch(search: Record<string, unknown>): AgentSessionRouteSear
     page: positiveInteger(search.page, 1),
     page_size: positiveInteger(search.page_size, 50, 100),
   }
-  for (const field of [
-    'user_id',
-    'team_id',
-    'service_account_id',
-    'harness_key',
-    'requested_model_key',
-    'operation',
-    'caller_class',
-    'gateway_outcome',
-    'score_maturity',
-    'score_confidence',
-    'session_source_id',
-    'session_source_hash',
-    'request_tag_key',
-    'request_tag_value',
-    'lifecycle',
-    'started_after',
-    'started_before',
-    'session_id',
-  ] as const) {
-    const value = search[field]
-    if (typeof value === 'string' && value.trim()) {
-      result[field] = value.trim()
+  // Filter params come from the chip registry, so every URL filter has a chip and vice versa.
+  for (const param of sessionFilterParams) {
+    if (param === 'minimum_coverage_percent') {
+      const percent = integerInRange(search[param], 0, 100)
+      if (percent !== undefined) result[param] = percent
+      continue
     }
+    const value = trimmedText(search[param])
+    if (value) result[param] = value
   }
-  const minimumCoveragePercent = integerInRange(search.minimum_coverage_percent, 0, 100)
-  if (minimumCoveragePercent !== undefined) {
-    result.minimum_coverage_percent = minimumCoveragePercent
-  }
+  const sessionId = trimmedText(search.session_id)
+  if (sessionId) result.session_id = sessionId
   return result
+}
+
+function trimmedText(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 function positiveInteger(value: unknown, fallback: number, maximum = Number.MAX_SAFE_INTEGER) {
@@ -278,12 +292,4 @@ function integerInRange(value: unknown, minimum: number, maximum: number) {
   if (value === null || value === undefined || value === '') return undefined
   const parsed = typeof value === 'number' ? value : Number(value)
   return Number.isInteger(parsed) && parsed >= minimum && parsed <= maximum ? parsed : undefined
-}
-
-function hasActiveSearch(search: AgentSessionFiltersInput) {
-  return Boolean(
-    sessionFilterFields.some((field) => search[field] !== null && search[field] !== undefined) ||
-    search.started_after ||
-    search.started_before,
-  )
 }

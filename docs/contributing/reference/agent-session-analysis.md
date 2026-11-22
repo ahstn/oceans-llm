@@ -126,16 +126,11 @@ The backend list route is `/api/v1/admin/observability/agent-sessions`; detail i
 
 The maintenance command `gateway recompute-agent-analysis` scans retained finalized sessions with missing or stale latest reports and enqueues the desired version tuple. `--session-id` narrows to one UUID and `--limit` is bounded to `1..=1000`. Queue IDs preserve idempotency; the command does not calculate reports inline.
 
-## ReUI Contract
+## Admin UI Contract
 
-The route reuses the installed ReUI `DataGrid`, `DataGridTable`, `DataGridPagination`, `Filters`, and `DateSelector` components. The application-owned `agent-session-date-filter.tsx` composes `DateSelector` in a shadcn Popover, stages changes until Apply, supports single-sided and bounded date filters, and converts local calendar days to UTC query boundaries. The TanStack table is manually paginated from the gateway response. Filters and selection are URL-backed; text-filter drafts update locally and debounce only navigation so controlled inputs never drop keystrokes. Keep registry component source intact except for upstream compatibility fixes; application-specific layout and copy belong outside registry files.
+The route renders an admin table (`AdminTableHeader`) from `md` up and a card list below it, both from the same page response. The table is manually paginated from the gateway response, and a `Columns` popover (`ColumnVisibilityPopover`) hides any column except `Started`.
 
-ReUI references:
-
-- [Data Grid API and preview](https://reui.io/components/data-grid)
-- [Filters API and preview](https://reui.io/components/filters)
-- [Date Selector API and preview](https://reui.io/components/date-selector)
-- [Dense grid example](https://reui.io/preview/base/components/c-data-grid-3)
+Filters follow the shared toolbar pattern in `DESIGN.md`: a `Filters` menu adds removable chips, and every filter is URL-backed. Known values pick from a searchable list (`FilterValuePicker`): state, outcome, score maturity and confidence, operation, caller class, coverage, harnesses from the last 31 days of harness usage, and models from the model catalog `id`. Start days pick a recent day or take a typed `YYYY-MM-DD` and become UTC query bounds (`started_after` at the start of the day, `started_before` at its end). ID, hash, and request-tag chips are text and apply on Enter or blur. Selection is URL-backed through `session_id`.
 
 ## Verification
 
