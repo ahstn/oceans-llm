@@ -1,4 +1,6 @@
-use super::contracts::{CounterStore, observation_fixture, open_fixture, request_fixture};
+use super::contracts::{
+    CounterStore, SessionCounters, observation_fixture, open_fixture, request_fixture,
+};
 use gateway_core::{
     AgentAnalysisDesiredVersions, AgentAnalysisLease, AgentAnalysisQueueRecord,
     AgentAnalysisQueueStatus, AgentSessionAnalysisRecord, AgentSessionAnalysisRepository,
@@ -82,7 +84,15 @@ async fn schedule_failure_rolls_back(
             .await
             .is_err()
     );
-    assert_eq!(store.counters(session.agent_session_id).await, (1, 1, 0, 1));
+    assert_eq!(
+        store.counters(session.agent_session_id).await,
+        SessionCounters {
+            request_count: 1,
+            next_ordinal: 1,
+            nested_fact_count: 0,
+            input_generation: 1,
+        }
+    );
     let trace = store
         .load_agent_session_trace(session.agent_session_id)
         .await

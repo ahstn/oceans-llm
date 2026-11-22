@@ -454,7 +454,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         input_watermark_at: session.input_watermark_at,
         input_generation: contracts::CounterStore::counters(&store, session.agent_session_id)
             .await
-            .3,
+            .input_generation,
         observation_set_id: third_observation_set.observation_set_id,
         observation_parser_version: third_observation_set.parser_version.clone(),
         pricing_policy_version: "cache-aware-v1".to_string(),

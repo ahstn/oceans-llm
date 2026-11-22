@@ -1,3 +1,4 @@
+use FixtureParam::{Integer, Text, Uuid as Id};
 use gateway_core::{
     AgentSessionRecord, AgentSessionRequestLinkRecord, AgentSessionTraceRepository,
     SessionLifecycleState, StoreError,
@@ -86,55 +87,115 @@ pub(super) async fn finalization_is_irreversible(
     assert_eq!(after.requests, before.requests);
 }
 
+const COUNTERS_SQL: &str = "
+    SELECT request_count, next_ordinal, nested_fact_count, input_generation
+    FROM agent_sessions WHERE agent_session_id = $1";
+const MIGRATION_HISTORY_SQL: &str = "
+    SELECT COUNT(*) AS reports, COALESCE(SUM(stale), 0) AS stale_reports,
+        COUNT(superseded_by_analysis_id) AS superseded_reports,
+        (SELECT COUNT(*) FROM agent_analysis_recompute_queue
+         WHERE agent_session_id = $1) AS queued_jobs
+    FROM agent_session_analyses WHERE agent_session_id = $1";
+
+#[derive(Debug, PartialEq, Eq, sqlx::FromRow)]
+pub(super) struct SessionCounters {
+    pub request_count: i64,
+    pub next_ordinal: i64,
+    pub nested_fact_count: i64,
+    pub input_generation: i64,
+}
+
+#[derive(Debug, PartialEq, Eq, sqlx::FromRow)]
+pub(super) struct MigrationHistory {
+    reports: i64,
+    stale_reports: i64,
+    superseded_reports: i64,
+    queued_jobs: i64,
+}
+
+pub(super) enum FixtureParam<'a> {
+    Uuid(Uuid),
+    Text(&'a str),
+    Integer(i64),
+}
+
 pub(super) trait CounterStore: AgentSessionTraceRepository + Sync {
-    async fn counters(&self, session_id: Uuid) -> (i64, i64, i64, i64);
-    async fn migration_history(&self, session_id: Uuid) -> (i64, i64, i64, i64);
-    async fn fixture_sql(&self, sql: &str);
+    async fn counters(&self, session_id: Uuid) -> SessionCounters;
+    async fn migration_history(&self, session_id: Uuid) -> MigrationHistory;
+    async fn fixture_sql(&self, sql: &'static str, params: &[FixtureParam<'_>]);
 }
 
 impl CounterStore for crate::LibsqlStore {
-    async fn counters(&self, session_id: Uuid) -> (i64, i64, i64, i64) {
-        let mut rows = self.connection().query(
-            "SELECT request_count, next_ordinal, nested_fact_count, input_generation FROM agent_sessions WHERE agent_session_id = ?1",
-            [session_id.to_string()],
-        ).await.unwrap();
+    async fn counters(&self, session_id: Uuid) -> SessionCounters {
+        let mut rows = self
+            .connection()
+            .query(COUNTERS_SQL, [session_id.to_string()])
+            .await
+            .unwrap();
         let row = rows.next().await.unwrap().unwrap();
-        (
-            row.get(0).unwrap(),
-            row.get(1).unwrap(),
-            row.get(2).unwrap(),
-            row.get(3).unwrap(),
-        )
+        SessionCounters {
+            request_count: row.get(0).unwrap(),
+            next_ordinal: row.get(1).unwrap(),
+            nested_fact_count: row.get(2).unwrap(),
+            input_generation: row.get(3).unwrap(),
+        }
     }
-    async fn migration_history(&self, session_id: Uuid) -> (i64, i64, i64, i64) {
-        let mut rows = self.connection().query(
-            "SELECT COUNT(*), COALESCE(SUM(stale), 0), COUNT(superseded_by_analysis_id), (SELECT COUNT(*) FROM agent_analysis_recompute_queue WHERE agent_session_id = ?1) FROM agent_session_analyses WHERE agent_session_id = ?1",
-            [session_id.to_string()],
-        ).await.unwrap();
+
+    async fn migration_history(&self, session_id: Uuid) -> MigrationHistory {
+        let mut rows = self
+            .connection()
+            .query(MIGRATION_HISTORY_SQL, [session_id.to_string()])
+            .await
+            .unwrap();
         let row = rows.next().await.unwrap().unwrap();
-        (
-            row.get(0).unwrap(),
-            row.get(1).unwrap(),
-            row.get(2).unwrap(),
-            row.get(3).unwrap(),
-        )
+        MigrationHistory {
+            reports: row.get(0).unwrap(),
+            stale_reports: row.get(1).unwrap(),
+            superseded_reports: row.get(2).unwrap(),
+            queued_jobs: row.get(3).unwrap(),
+        }
     }
-    async fn fixture_sql(&self, sql: &str) {
-        self.connection().execute_batch(sql).await.unwrap();
+
+    async fn fixture_sql(&self, sql: &'static str, params: &[FixtureParam<'_>]) {
+        let params = params
+            .iter()
+            .map(|param| match param {
+                FixtureParam::Uuid(value) => libsql::Value::Text(value.to_string()),
+                FixtureParam::Text(value) => libsql::Value::Text((*value).to_owned()),
+                FixtureParam::Integer(value) => libsql::Value::Integer(*value),
+            })
+            .collect::<Vec<_>>();
+        self.connection().execute(sql, params).await.unwrap();
     }
 }
 
 impl CounterStore for crate::PostgresStore {
-    async fn counters(&self, session_id: Uuid) -> (i64, i64, i64, i64) {
-        sqlx::query_as("SELECT request_count, next_ordinal, nested_fact_count, input_generation FROM agent_sessions WHERE agent_session_id = $1")
-            .bind(session_id.to_string()).fetch_one(self.pool()).await.unwrap()
+    async fn counters(&self, session_id: Uuid) -> SessionCounters {
+        sqlx::query_as(COUNTERS_SQL)
+            .bind(session_id.to_string())
+            .fetch_one(self.pool())
+            .await
+            .unwrap()
     }
-    async fn migration_history(&self, session_id: Uuid) -> (i64, i64, i64, i64) {
-        sqlx::query_as("SELECT COUNT(*), COALESCE(SUM(stale), 0), COUNT(superseded_by_analysis_id), (SELECT COUNT(*) FROM agent_analysis_recompute_queue WHERE agent_session_id = $1) FROM agent_session_analyses WHERE agent_session_id = $1")
-            .bind(session_id.to_string()).fetch_one(self.pool()).await.unwrap()
+
+    async fn migration_history(&self, session_id: Uuid) -> MigrationHistory {
+        sqlx::query_as(MIGRATION_HISTORY_SQL)
+            .bind(session_id.to_string())
+            .fetch_one(self.pool())
+            .await
+            .unwrap()
     }
-    async fn fixture_sql(&self, sql: &str) {
-        sqlx::raw_sql(sql).execute(self.pool()).await.unwrap();
+
+    async fn fixture_sql(&self, sql: &'static str, params: &[FixtureParam<'_>]) {
+        let mut query = sqlx::query(sql);
+        for param in params {
+            query = match param {
+                FixtureParam::Uuid(value) => query.bind(value.to_string()),
+                FixtureParam::Text(value) => query.bind(*value),
+                FixtureParam::Integer(value) => query.bind(*value),
+            };
+        }
+        query.execute(self.pool()).await.unwrap();
     }
 }
 
@@ -216,6 +277,27 @@ pub(super) async fn install_legacy_schema(options: &crate::StoreConnectionOption
     .expect_err("V85 rolls back, leaving a real V84 database for upgrade");
 }
 
+const LEGACY_REQUEST_SQL: &str = "
+    INSERT INTO agent_session_requests (
+        agent_session_id, request_id, ordinal, correlation_confidence,
+        limitation_codes_json, occurred_at, completed_at, terminal_success
+    ) VALUES ($1, $2, $3, 'high', '[]', $4, $4, TRUE)";
+const LEGACY_SET_SQL: &str = "
+    INSERT INTO agent_inferred_observation_sets (
+        observation_set_id, agent_session_id, parser_version,
+        source_watermark_at, coverage_json, created_at
+    ) VALUES ($1, $2, 'contract', $3, '{}', $4)";
+const LEGACY_OBSERVATION_SQL: &str = r#"
+    INSERT INTO agent_inferred_observations (
+        observation_id, observation_set_id, agent_session_id, kind,
+        source_request_id, evidence, occurred_at, facts_json, limitation_codes_json
+    ) VALUES (
+        $1, $2, $3, 'session_metadata_classified', 'legacy-a', 'direct', $4,
+        '{"supplied_tools":[{"name":"a","token_estimate":1},{"name":"b","token_estimate":1},{"name":"c","token_estimate":1}]}',
+        '[]'
+    )"#;
+const DELETE_SESSION_SQL: &str = "DELETE FROM agent_sessions WHERE agent_session_id = $1";
+
 pub(super) async fn counter_backfill(
     store: &(impl CounterStore + gateway_core::AgentAnalysisQueueRepository),
     template: &AgentSessionRecord,
@@ -229,23 +311,48 @@ pub(super) async fn counter_backfill(
     let id = session.agent_session_id;
     let millis = i64::try_from(session.started_at.unix_timestamp_nanos() / 1_000_000).unwrap();
     for (request, ordinal) in [("legacy-a", 2), ("legacy-b", 7)] {
-        store.fixture_sql(&format!(
-            "INSERT INTO agent_session_requests (agent_session_id, request_id, ordinal, correlation_confidence, limitation_codes_json, occurred_at, completed_at, terminal_success) VALUES ('{id}', '{request}', {ordinal}, 'high', '[]', {millis}, {millis}, TRUE)"
-        )).await;
+        store
+            .fixture_sql(
+                LEGACY_REQUEST_SQL,
+                &[Id(id), Text(request), Integer(ordinal), Integer(millis)],
+            )
+            .await;
     }
     let set_id = Uuid::new_v4();
     let observation_id = Uuid::new_v4();
     let seconds = session.started_at.unix_timestamp();
-    store.fixture_sql(&format!(
-        "INSERT INTO agent_inferred_observation_sets (observation_set_id, agent_session_id, parser_version, source_watermark_at, coverage_json, created_at) VALUES ('{set_id}', '{id}', 'contract', {millis}, '{{}}', {seconds})"
-    )).await;
-    store.fixture_sql(&format!(
-        "INSERT INTO agent_inferred_observations (observation_id, observation_set_id, agent_session_id, kind, source_request_id, evidence, occurred_at, facts_json, limitation_codes_json) VALUES ('{observation_id}', '{set_id}', '{id}', 'session_metadata_classified', 'legacy-a', 'direct', {seconds}, '{{\"supplied_tools\":[{{\"name\":\"a\",\"token_estimate\":1}},{{\"name\":\"b\",\"token_estimate\":1}},{{\"name\":\"c\",\"token_estimate\":1}}]}}', '[]')"
-    )).await;
+    store
+        .fixture_sql(
+            LEGACY_SET_SQL,
+            &[Id(set_id), Id(id), Integer(millis), Integer(seconds)],
+        )
+        .await;
+    store
+        .fixture_sql(
+            LEGACY_OBSERVATION_SQL,
+            &[Id(observation_id), Id(set_id), Id(id), Integer(seconds)],
+        )
+        .await;
     install_legacy_history(store, &session, set_id).await;
     crate::run_migrations_with_options(options).await.unwrap();
-    assert_eq!(store.counters(id).await, (2, 8, 3, 3));
-    assert_eq!(store.migration_history(id).await, (2, 2, 1, 1));
+    assert_eq!(
+        store.counters(id).await,
+        SessionCounters {
+            request_count: 2,
+            next_ordinal: 8,
+            nested_fact_count: 3,
+            input_generation: 3,
+        }
+    );
+    assert_eq!(
+        store.migration_history(id).await,
+        MigrationHistory {
+            reports: 2,
+            stale_reports: 2,
+            superseded_reports: 1,
+            queued_jobs: 1,
+        }
+    );
     let migrated = store
         .claim_agent_analysis(
             "upgrade-worker",
@@ -264,7 +371,15 @@ pub(super) async fn counter_backfill(
         .append_agent_session_input(gateway_core::AgentSessionInput::request(&request))
         .await
         .unwrap();
-    assert_eq!(store.counters(id).await, (3, 9, 3, 4));
+    assert_eq!(
+        store.counters(id).await,
+        SessionCounters {
+            request_count: 3,
+            next_ordinal: 9,
+            nested_fact_count: 3,
+            input_generation: 4,
+        }
+    );
     let trace = store.load_agent_session_trace(id).await.unwrap().unwrap();
     assert_eq!(
         trace
@@ -275,11 +390,7 @@ pub(super) async fn counter_backfill(
             .ordinal,
         8
     );
-    store
-        .fixture_sql(&format!(
-            "DELETE FROM agent_sessions WHERE agent_session_id = '{id}'"
-        ))
-        .await;
+    store.fixture_sql(DELETE_SESSION_SQL, &[Id(id)]).await;
 }
 
 pub(super) async fn atomic_input_invariants(
@@ -310,13 +421,23 @@ pub(super) async fn atomic_input_invariants(
     assert!(result.request_inserted && result.observations_inserted);
     assert_eq!(
         store.counters(session.agent_session_id).await,
-        (1, 1, 2048, 1)
+        SessionCounters {
+            request_count: 1,
+            next_ordinal: 1,
+            nested_fact_count: 2048,
+            input_generation: 1,
+        }
     );
     let replay = store.append_agent_session_input(input).await.unwrap();
     assert!(!replay.request_inserted && !replay.observations_inserted);
     assert_eq!(
         store.counters(session.agent_session_id).await,
-        (1, 1, 2048, 1)
+        SessionCounters {
+            request_count: 1,
+            next_ordinal: 1,
+            nested_fact_count: 2048,
+            input_generation: 1,
+        }
     );
 
     let second = request_fixture(&session);
@@ -346,7 +467,12 @@ pub(super) async fn atomic_input_invariants(
     );
     assert_eq!(
         store.counters(session.agent_session_id).await,
-        (2, 2, 2048, 2)
+        SessionCounters {
+            request_count: 2,
+            next_ordinal: 2,
+            nested_fact_count: 2048,
+            input_generation: 2,
+        }
     );
     assert_atomic_rollback(store, &session, &observations).await;
 
@@ -376,7 +502,12 @@ pub(super) async fn atomic_input_invariants(
     );
     assert_eq!(
         store.counters(session.agent_session_id).await,
-        (1000, 1000, 2048, 1001)
+        SessionCounters {
+            request_count: 1000,
+            next_ordinal: 1000,
+            nested_fact_count: 2048,
+            input_generation: 1001,
+        }
     );
     let trace = store
         .load_agent_session_trace(session.agent_session_id)
@@ -409,7 +540,12 @@ async fn assert_atomic_rollback(
     assert!(store.append_agent_session_input(input).await.is_err());
     assert_eq!(
         store.counters(session.agent_session_id).await,
-        (2, 2, 2048, 2)
+        SessionCounters {
+            request_count: 2,
+            next_ordinal: 2,
+            nested_fact_count: 2048,
+            input_generation: 2,
+        }
     );
     let trace = store
         .load_agent_session_trace(session.agent_session_id)
@@ -489,6 +625,28 @@ pub(super) async fn postgres_input_allows_foreign_key_readers(
     foreign_key_reader.commit().await.unwrap();
 }
 
+const LEGACY_REPORT_SQL: &str = "
+    INSERT INTO agent_session_analyses (
+        analysis_id, agent_session_id, report_schema_version, boundary_policy_version,
+        input_watermark_at, observation_set_id, observation_parser_version,
+        analyzer_version, score_policy_version, pricing_policy_version, cohort_version,
+        cohort_fallback_level, cohort_sample_size, cohort_snapshot_digest,
+        direct_mcp_snapshot_digest, analyzed_at, report_json, stale, expires_at,
+        ownership_scope_key, configuration_version
+    ) VALUES (
+        $1, $2, 'legacy', 'legacy', $3, $4, 'contract', 'legacy', 'legacy', 'legacy',
+        $5, 7, 0, 'none', 'none', $6, $7, 0, $6, $8, ''
+    )";
+const LEGACY_SUPERSEDE_SQL: &str = "
+    UPDATE agent_session_analyses SET superseded_by_analysis_id = $1
+    WHERE analysis_id = $2";
+const LEGACY_QUEUE_SQL: &str = "
+    INSERT INTO agent_analysis_recompute_queue (
+        queue_item_id, agent_session_id, reason, desired_versions_json, status,
+        lease_owner, lease_expires_at, attempts, max_attempts, available_at,
+        created_at, updated_at
+    ) VALUES ($1, $2, 'new_input', $3, $4, 'legacy-worker', $5, 3, 3, $6, $6, $5)";
+
 async fn install_legacy_history(
     store: &impl CounterStore,
     session: &AgentSessionRecord,
@@ -511,15 +669,31 @@ async fn install_legacy_history(
         None,
     )
     .unwrap();
-    let json = serde_json::to_string(&report).unwrap().replace('\'', "''");
+    let json = serde_json::to_string(&report).unwrap();
     let report_ids = [Uuid::new_v4(), Uuid::new_v4()];
     for (index, analysis_id) in report_ids.iter().enumerate() {
-        store.fixture_sql(&format!(
-            "INSERT INTO agent_session_analyses (analysis_id, agent_session_id, report_schema_version, boundary_policy_version, input_watermark_at, observation_set_id, observation_parser_version, analyzer_version, score_policy_version, pricing_policy_version, cohort_version, cohort_fallback_level, cohort_sample_size, cohort_snapshot_digest, direct_mcp_snapshot_digest, analyzed_at, report_json, stale, expires_at, ownership_scope_key, configuration_version) VALUES ('{analysis_id}', '{id}', 'legacy', 'legacy', {watermark}, '{set_id}', 'contract', 'legacy', 'legacy', 'legacy', 'legacy-{index}', 7, 0, 'none', 'none', {seconds}, '{json}', 0, {seconds}, '{}', '')",
-            session.ownership_scope_key,
-        )).await;
+        store
+            .fixture_sql(
+                LEGACY_REPORT_SQL,
+                &[
+                    Id(*analysis_id),
+                    Id(id),
+                    Integer(watermark),
+                    Id(set_id),
+                    Text(&format!("legacy-{index}")),
+                    Integer(seconds),
+                    Text(&json),
+                    Text(&session.ownership_scope_key),
+                ],
+            )
+            .await;
     }
-    store.fixture_sql(&format!("UPDATE agent_session_analyses SET superseded_by_analysis_id = '{}' WHERE analysis_id = '{}'", report_ids[1], report_ids[0])).await;
+    store
+        .fixture_sql(
+            LEGACY_SUPERSEDE_SQL,
+            &[Id(report_ids[1]), Id(report_ids[0])],
+        )
+        .await;
     for (index, status) in [(1, "leased"), (2, "completed")] {
         let queue_id = Uuid::new_v4();
         let versions = serde_json::json!({
@@ -529,8 +703,18 @@ async fn install_legacy_history(
             "configuration_version": format!("legacy-v{index}"),
         }).to_string();
         let updated = seconds + index;
-        store.fixture_sql(&format!(
-            "INSERT INTO agent_analysis_recompute_queue (queue_item_id, agent_session_id, reason, desired_versions_json, status, lease_owner, lease_expires_at, attempts, max_attempts, available_at, created_at, updated_at) VALUES ('{queue_id}', '{id}', 'new_input', '{versions}', '{status}', 'legacy-worker', {updated}, 3, 3, {seconds}, {seconds}, {updated})"
-        )).await;
+        store
+            .fixture_sql(
+                LEGACY_QUEUE_SQL,
+                &[
+                    Id(queue_id),
+                    Id(id),
+                    Text(&versions),
+                    Text(status),
+                    Integer(updated),
+                    Integer(seconds),
+                ],
+            )
+            .await;
     }
 }
