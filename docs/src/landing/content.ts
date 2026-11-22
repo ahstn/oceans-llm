@@ -185,8 +185,12 @@ export interface Pillar {
     backdrop: ImageMetadata;
     /** Mirror the backdrop so neighbouring stages don't repeat. */
     flip?: boolean;
-    /** `window` gets app chrome and bleeds off the stage; `panel` sits inside it. */
-    kind: "window" | "panel";
+    /**
+     * `window` gets app chrome and bleeds off the stage; `panel` sits inside it.
+     * `stack` puts `main` above the backdrop's top edge and each float below
+     * it as a full panel, placed by its `class` (see `.lp-stage-stack-*`).
+     */
+    kind: "window" | "panel" | "stack";
     title?: string;
     main: Shot;
     floats: FloatShot[];
@@ -275,17 +279,16 @@ export const pillars: Pillar[] = [
     link: { label: "Git AI attribution", href: "/harnesses/git-ai-attribution/" },
     stage: {
       backdrop: stageBands,
-      kind: "window",
-      title: "Attribution",
+      kind: "stack",
       main: {
         src: shotAttribution,
-        alt: "Attribution page Impact tab with AI share of merged code, cost per merged pull request, merged pull requests and spend that shipped",
+        alt: "Attribution Impact tab: AI share of merged code, cost per merged pull request, merged pull requests and spend that shipped, above charts of who wrote the code and spend against output",
       },
       floats: [
         {
           src: cropAttributionPr,
           alt: "Merged pull request row expanded to show its commit, the agent that wrote it, review wait and cost",
-          class: "left-[4%] bottom-[6%] w-[58%]",
+          class: "lp-stage-stack-second",
         },
       ],
     },
