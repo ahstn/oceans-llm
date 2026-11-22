@@ -42,5 +42,8 @@ describe('loadAllModels', () => {
 
     // Page 1, then the first batch of four (pages 2–5). No worker claims page 6 or later.
     expect(getModels).toHaveBeenCalledTimes(5)
+    // The pages still in flight when page 2 failed are cancelled.
+    const signals = getModels.mock.calls.slice(1).map(([options]) => options.signal)
+    expect(signals.every((signal) => signal?.aborted)).toBe(true)
   })
 })
