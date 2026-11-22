@@ -12,6 +12,7 @@ This proof packs the checkout, not the npm release. After approval, the independ
 - `user-allowlist` proves that a human user whose normalized email is on a model allowlist can call the model from Pi.
 - `plugin-discovery` loads the packed plugin in a private OpenCode server and checks the discovered models (including Gemini on `openai-compatible`), hidden-model exclusion, native SDK packages, limits, prices, capability restrictions, and the `low`, `high` and `fast` variants.
 - `plugin-live` sends six requests with an image and a PDF: `low`, `high` and `fast` for `gpt-6-luna` (Responses) and `claude-haiku-5.5` (Messages). It checks the native wire fields, the requested and served tier in the request log, and token and cost parity with OpenCode.
+- `guardrail-policy` runs `src/guardrails-policy.test.ts` against the temporary gateway's `deny`-mode policy and a local canary provider that records what the gateway sends upstream. It makes no paid calls. It checks that `POST /api/v1/guardrails/evaluate` denies destructive and secret-printing shell commands, that the Pi, OMP, Claude Code and OpenCode hooks block them, that fake secrets in Chat Completions, Messages and Responses requests reach the provider as `[REDACTED:<rule_id>]`, that a destructive tool call from the model gets `403 guardrail_policy_denied`, and that a real Pi run sends no secret upstream and cannot run `rm -rf` through its hook.
 - `offline` runs the guardrail hook, event parser, process and setup tests.
 
 ## How to get to it (user POV)
@@ -44,4 +45,5 @@ Preconditions:
 - OpenAI can serve a priority request at `default` when it is short of capacity. The `fast` case then checks cost parity instead of a higher Oceans cost.
 - Pi sends a GPT effort only when the generated `models.json` marks the model `reasoning: true`. If the Pi GPT `effort` test finds no `reasoning_effort`, check the generated Pi config before the harness.
 - OMP sends Claude fast mode to the custom `oceans` provider only with `compat.fastMode: true` on the model override; `tier.anthropic: priority` alone sends nothing. Claude Code fast mode is Opus-only: `/fast on` switches the model to Opus, so Haiku requests carry no tier.
+- The temporary gateway's default guardrail policy is `deny` with redaction, for every route. A matrix run that fails with `403 guardrail_policy_denied` was stopped by a pack: read the reason code in the error, then the decision under `Guardrails`.
 - Changes to `tests/harness-integration/**` are routed to the "tests only" skip rule. Run this proof by hand when you change the suite.

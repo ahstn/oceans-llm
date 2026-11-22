@@ -1197,3 +1197,68 @@ async fn stream_transforms_invalidate_later_replay_snapshots_without_losing_usag
     assert!(rendered.contains("\"total_tokens\":13"));
     assert!(rendered.ends_with("data: [DONE]\n\n"));
 }
+
+/// A shell tool call may carry a list-valued command beside a second command field. Whichever
+/// field the tool runs, the destructive one must be inspected.
+fn multi_field_array_commands() -> [Value; 2] {
+    [
+        json!({"command": ["rm -rf /tmp/work"], "script": "echo ok"}),
+        json!({"command": "echo ok", "script": ["echo ok", "rm -rf /tmp/work"]}),
+    ]
+}
+
+async fn filesystem_deny_state() -> (tempfile::TempDir, AppState) {
+    let (directory, mut state) = stream_state(PolicyMode::Deny).await;
+    Arc::make_mut(&mut state.guardrail_config).default.packs =
+        vec![gateway_guardrails::PackId::new("core.filesystem").expect("pack")];
+    (directory, state)
+}
+
+#[tokio::test]
+async fn denies_a_response_tool_call_with_an_array_command_beside_another_command_field() {
+    for arguments in multi_field_array_commands() {
+        let (_directory, state) = filesystem_deny_state().await;
+        let mut response = json!({
+            "choices": [{"message": {
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "id": "call-1", "type": "function",
+                    "function": {"name": "bash", "arguments": arguments.to_string()}
+                }]
+            }}]
+        });
+
+        let error = guard_model_response(&state, &stream_guard_context(1 << 20), &mut response)
+            .await
+            .expect_err("every command field of a response tool call must be inspected");
+
+        let GatewayError::GuardrailDenied { reason_code, .. } = error else {
+            panic!("expected destructive command denial for {arguments}, got {error:?}");
+        };
+        assert_eq!(reason_code, "filesystem.recursive_force_remove");
+    }
+}
+
+#[tokio::test]
+async fn denies_a_streamed_tool_call_with_an_array_command_beside_another_command_field() {
+    for arguments in multi_field_array_commands() {
+        let (_directory, state) = filesystem_deny_state().await;
+        let events = native_complete_tool_events(arguments.clone());
+        let source = native_stream(&events, ("\n", "\n", "\n"));
+        let upstream: ProviderStream =
+            Box::pin(stream::iter([Ok(Bytes::from(source.into_bytes()))]));
+
+        let Err(failure) = guard_stream(&state, &stream_guard_context(1 << 20), upstream).await
+        else {
+            panic!("streamed tool call {arguments} bypassed generated-tool-call guardrails");
+        };
+        let GatewayError::GuardrailDenied { reason_code, .. } = failure.error else {
+            panic!(
+                "expected destructive command denial for {arguments}, got {:?}",
+                failure.error
+            );
+        };
+        assert_eq!(reason_code, "filesystem.recursive_force_remove");
+    }
+}

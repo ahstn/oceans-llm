@@ -200,6 +200,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
  */
 export function claudeCodeHookSource(workspace: string): string {
   return `${sandboxHelpersSource(workspace)}
+import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 function decision(permissionDecision, permissionDecisionReason, updatedInput) {
@@ -244,8 +245,13 @@ export async function decidePreToolUse(event) {
   return decision("deny", "The Oceans harness allows only Read, Write, Edit, Bash and Oceans MCP tools");
 }
 
-// An exception exits non-zero, and onFailure "block" then blocks the call.
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// An exception exits non-zero, and onFailure "block" then blocks the call. Node resolves symbolic
+// links in import.meta.url but not in argv, and the macOS temporary folder is behind one. Without
+// realpathSync the hook would print no decision there, and Claude Code would run the tool unchecked.
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href
+) {
   let event = "";
   for await (const chunk of process.stdin) {
     event += chunk;

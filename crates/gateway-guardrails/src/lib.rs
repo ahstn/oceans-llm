@@ -26,7 +26,9 @@ pub use model::{
     EvaluationInput, EvaluationPayload, FailureDisposition, GuardPhase, GuardrailEvaluation,
     ManagedDecisionMetadata, ManagedService, MatchedRule, PolicyMode, ReasonCode,
 };
-pub use packs::{BUILT_IN_PACK_IDS, BuiltInEvaluator, PackId, PackMetadata, PackRegistry};
+pub use packs::{
+    BUILT_IN_PACK_IDS, BuiltInEvaluator, PackId, PackMetadata, PackRegistry, is_shell_tool,
+};
 pub use policy::{
     BedrockManagedAuthConfig, BedrockManagedConfig, EffectivePolicy, GuardrailConfig,
     GuardrailConfigError, ManagedCheckConfig, ManagedCheckKind, ModelArmorAuthConfig,
