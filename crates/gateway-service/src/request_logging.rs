@@ -13,13 +13,12 @@ use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::agent_analysis::{
-    PassiveRequestMetadata, extract_request_metadata, serialized_request_prompt_bytes,
-};
-use crate::payload_bounding::{
-    bound_request_payload, bound_request_payload_after_known_fields, serialized_size,
-};
+use crate::payload_bounding::{bound_request_payload, bound_request_payload_after_known_fields};
 use crate::usage::UsageEstimateInput;
+use agent_session_analysis::observations::request::{
+    PassiveRequestMetadata, extract_request_metadata, serialized_request_prompt_bytes,
+    serialized_size,
+};
 
 use crate::redaction::{
     RequestLogPayloadCaptureMode, RequestLogPayloadPolicy, redact_json_value_with_policy,
@@ -32,11 +31,11 @@ mod harness;
 mod stream;
 mod tool_cardinality;
 
+use agent_session_analysis::identity::harness::classify_agent_harness;
 pub use attempts::{
     RequestAttemptOutcome, build_request_attempt, failed_attempt_outcome, offset_now,
     successful_attempt_outcome,
 };
-pub use harness::{AgentHarness, classify_agent_harness};
 pub use stream::{
     StreamChunkObservation, StreamFailureSummary, StreamLogResultInput, StreamResponseCollector,
 };
@@ -446,7 +445,7 @@ where
         let (request_json, request_payload_truncated) = if large_field_count == 0 {
             bound_request_payload(storage_request, self.payload_policy.request_max_bytes)
         } else {
-            let original_storage_size = crate::payload_bounding::serialized_size(&redacted).ok();
+            let original_storage_size = serialized_size(&redacted).ok();
             bound_request_payload_after_known_fields(
                 storage_request,
                 self.payload_policy.request_max_bytes,

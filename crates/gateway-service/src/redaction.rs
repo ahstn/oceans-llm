@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, fmt, sync::Arc};
 
 use serde_json::{Map, Value, json};
 
-use crate::agent_analysis::SESSION_ANALYSIS_DIAGNOSTIC_HEADERS;
+use agent_session_analysis::identity::{REDACTED_VALUE, SESSION_ANALYSIS_DIAGNOSTIC_HEADERS};
 
 mod large_fields;
 
@@ -193,7 +193,6 @@ const DEFAULT_STREAM_MAX_EVENTS: usize = 128;
 const PAYLOAD_POLICY_VERSION: &str = "builtin:v2";
 const SECRET_MASK: &str = "********";
 pub const MAX_INLINE_REQUEST_BYTES: usize = 256 * 1024;
-pub(crate) const REDACTED_VALUE: &str = "[REDACTED]";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum RequestLogPayloadCaptureMode {

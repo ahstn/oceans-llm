@@ -34,8 +34,10 @@ const READER_COMPATIBILITY: &[(u32, ReaderCompatibility)] = &[
     (83, ReaderCompatibility::Additive),
     // V84 changes usage charges to nanodollars and requires nanos-aware readers.
     (84, ReaderCompatibility::RequiresReader(84)),
-    // V85 only adds an index.
-    (85, ReaderCompatibility::Additive),
+    (85, ReaderCompatibility::RequiresReader(85)),
+    (86, ReaderCompatibility::RequiresReader(86)),
+    // V87 only adds an index.
+    (87, ReaderCompatibility::Additive),
 ];
 
 /// libsql migrations that rebuild a table other tables reference, with that
@@ -595,10 +597,24 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 85,
+        name: "agent_session_input_counters",
+        checksum: "V85__agent_session_input_counters.sql",
+        libsql_sql: include_str!("../migrations/V85__agent_session_input_counters.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V85__agent_session_input_counters.sql"),
+    },
+    MigrationManifest {
+        version: 86,
+        name: "agent_session_generation_jobs",
+        checksum: "V86__agent_session_generation_jobs.sql",
+        libsql_sql: include_str!("../migrations/V86__agent_session_generation_jobs.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V86__agent_session_generation_jobs.sql"),
+    },
+    MigrationManifest {
+        version: 87,
         name: "batch_jobs_route_index",
-        checksum: "V85__batch_jobs_route_index.sql",
-        libsql_sql: include_str!("../migrations/V85__batch_jobs_route_index.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V85__batch_jobs_route_index.sql"),
+        checksum: "V87__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V87__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V87__batch_jobs_route_index.sql"),
     },
 ];
 

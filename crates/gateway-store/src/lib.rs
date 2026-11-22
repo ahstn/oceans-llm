@@ -3,6 +3,8 @@
 //! Split plan: keep this root as a narrow export surface and move the large
 //! backend integration test module into domain-focused files under
 //! `tests/` or private test submodules as store domains continue to grow.
+mod agent_session_input;
+mod agent_session_jobs;
 mod any_store_agent_analysis;
 mod any_store_attribution;
 mod any_store_audit_logs;
@@ -12974,15 +12976,17 @@ pub(crate) mod tests {
         };
         assert!(
             store
-                .append_agent_session_request(&request_link)
+                .append_agent_session_input(gateway_core::AgentSessionInput::request(&request_link))
                 .await
                 .expect("insert agent task request")
+                .request_inserted
         );
         assert!(
             !store
-                .append_agent_session_request(&request_link)
+                .append_agent_session_input(gateway_core::AgentSessionInput::request(&request_link))
                 .await
                 .expect("repeat identical agent task request")
+                .request_inserted
         );
         let conflicting_request_link = AgentSessionRequestLinkRecord {
             terminal_success: Some(false),
@@ -12990,7 +12994,9 @@ pub(crate) mod tests {
         };
         assert!(matches!(
             store
-                .append_agent_session_request(&conflicting_request_link)
+                .append_agent_session_input(gateway_core::AgentSessionInput::request(
+                    &conflicting_request_link
+                ))
                 .await,
             Err(StoreError::Conflict(_))
         ));

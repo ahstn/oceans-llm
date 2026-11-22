@@ -1,17 +1,21 @@
 use super::*;
+use crate::agent_session_input::{PreparedInput, PreparedRequest, PreparedSet};
+mod input;
+mod observations;
+mod summaries;
 use crate::shared::{
-    agent_observation_set_matches, agent_session_analysis_matches, agent_session_identity_matches,
-    agent_session_request_matches, agent_session_source_identity_matches, datetime_to_unix_millis,
-    parse_uuid, unix_millis_to_datetime, unix_to_datetime,
+    agent_session_analysis_matches, agent_session_identity_matches, agent_session_request_matches,
+    agent_session_source_identity_matches, datetime_to_unix_millis, parse_uuid,
+    unix_millis_to_datetime, unix_to_datetime,
 };
 use gateway_core::{
-    AgentAnalysisDesiredVersions, AgentAnalysisQueueRecord, AgentAnalysisQueueRepository,
-    AgentAnalysisQueueStatus, AgentObservationSetAppendResult, AgentObservationSetRecord,
-    AgentRequestLogLinkRecord, AgentSessionAnalysisRecord, AgentSessionListPage,
-    AgentSessionListQuery, AgentSessionRecord, AgentSessionReportRepository,
-    AgentSessionRequestLinkRecord, AgentSessionSourceRecord, AgentSessionTraceRecord,
-    AgentSessionTraceRepository, Confidence, InferredObservation, MAX_AGENT_SESSION_PAGE_SIZE,
-    SessionLifecycleState,
+    AgentAnalysisDesiredVersions, AgentAnalysisLease, AgentAnalysisQueueRecord,
+    AgentAnalysisQueueRepository, AgentAnalysisQueueStatus, AgentObservationSetRecord,
+    AgentRequestLogLinkRecord, AgentSessionAnalysisRecord, AgentSessionInput,
+    AgentSessionInputAppendResult, AgentSessionListPage, AgentSessionListQuery, AgentSessionRecord,
+    AgentSessionReportRepository, AgentSessionRequestLinkRecord, AgentSessionSourceRecord,
+    AgentSessionSummaryRecord, AgentSessionTraceRecord, AgentSessionTraceRepository, Confidence,
+    InferredObservation, MAX_AGENT_SESSION_PAGE_SIZE, SessionLifecycleState,
 };
 use serde::Serialize;
 use sqlx::Row;
@@ -30,17 +34,8 @@ fn parse_confidence(value: &str) -> Result<Confidence, StoreError> {
 }
 
 fn parse_lifecycle(value: &str) -> Result<SessionLifecycleState, StoreError> {
-    serde_json::from_value(serde_json::Value::String(value.to_string()))
+    SessionLifecycleState::try_from(value)
         .map_err(|error| StoreError::Serialization(error.to_string()))
-}
-
-fn nested_fact_count(set: &AgentObservationSetRecord) -> usize {
-    set.observations.iter().fold(0, |total, observation| {
-        total
-            .saturating_add(observation.facts.supplied_tools.len())
-            .saturating_add(observation.facts.supplied_skills.len())
-            .saturating_add(observation.facts.file_interactions.len())
-    })
 }
 
 fn parse_optional_uuid(value: Option<String>) -> Result<Option<Uuid>, StoreError> {
@@ -154,6 +149,7 @@ fn decode_analysis(row: &PgRow) -> Result<AgentSessionAnalysisRecord, StoreError
         configuration_version: row.try_get(23).map_err(to_query_error)?,
         boundary_policy_version: row.try_get(3).map_err(to_query_error)?,
         input_watermark_at: unix_millis_to_datetime(row.try_get(4).map_err(to_query_error)?)?,
+        input_generation: row.try_get(24).map_err(to_query_error)?,
         observation_set_id: parse_uuid(&row.try_get::<String, _>(5).map_err(to_query_error)?)?,
         observation_parser_version: row.try_get(6).map_err(to_query_error)?,
         pricing_policy_version: row.try_get(9).map_err(to_query_error)?,
@@ -193,6 +189,7 @@ fn decode_queue(row: &PgRow) -> Result<AgentAnalysisQueueRecord, StoreError> {
             StoreError::Serialization(format!("unknown agent analysis queue status `{status}`"))
         })?,
         lease_owner: row.try_get(5).map_err(to_query_error)?,
+        lease_epoch: row.try_get(14).map_err(to_query_error)?,
         lease_expires_at: lease_expires_at.map(unix_to_datetime).transpose()?,
         attempts: u32::try_from(row.try_get::<i32, _>(7).map_err(to_query_error)?)
             .map_err(|error| StoreError::Serialization(error.to_string()))?,
@@ -209,8 +206,8 @@ fn decode_queue(row: &PgRow) -> Result<AgentAnalysisQueueRecord, StoreError> {
 const SESSION_SOURCE_COLUMNS: &str = "agent_session_source_id, ownership_scope_key, api_key_id, user_id, team_id, service_account_id, actor_user_id, normalized_session_hash, adapter_namespace, adapter_version, source_provenance, harness_key, harness_label, first_seen_at, last_seen_at, created_at, updated_at";
 const SESSION_COLUMNS: &str = "agent_session_id, agent_session_source_id, ownership_scope_key, api_key_id, user_id, team_id, service_account_id, actor_user_id, requested_model_key, operation, caller_class, request_tags_json, harness_key, boundary_group_key, boundary_policy_version, lifecycle, boundary_confidence, started_at, ended_at, input_watermark_at, finalized_reason, created_at, updated_at";
 const REQUEST_COLUMNS: &str = "agent_session_id, request_id, request_log_id, usage_event_id, ordinal, execution_id, parent_execution_id, normalized_session_id, correlation_confidence, limitation_codes_json, occurred_at, completed_at, terminal_success";
-const ANALYSIS_COLUMNS: &str = "analysis_id, agent_session_id, report_schema_version, boundary_policy_version, input_watermark_at, observation_set_id, observation_parser_version, analyzer_version, score_policy_version, pricing_policy_version, cohort_version, cohort_fallback_level, cohort_sample_size, cohort_snapshot_digest, direct_mcp_snapshot_digest, report_json, analyzed_at, superseded_by_analysis_id, stale, expires_at, ownership_scope_key, user_id, service_account_id, configuration_version";
-const QUEUE_COLUMNS: &str = "queue_item_id, agent_session_id, reason, desired_versions_json, status, lease_owner, lease_expires_at, attempts, max_attempts, last_error, available_at, created_at, updated_at, completed_at";
+const ANALYSIS_COLUMNS: &str = "analysis_id, agent_session_id, report_schema_version, boundary_policy_version, input_watermark_at, observation_set_id, observation_parser_version, analyzer_version, score_policy_version, pricing_policy_version, cohort_version, cohort_fallback_level, cohort_sample_size, cohort_snapshot_digest, direct_mcp_snapshot_digest, report_json, analyzed_at, superseded_by_analysis_id, stale, expires_at, ownership_scope_key, user_id, service_account_id, configuration_version, input_generation";
+const QUEUE_COLUMNS: &str = "queue_item_id, agent_session_id, reason, desired_versions_json, status, lease_owner, lease_expires_at, attempts, max_attempts, last_error, available_at, created_at, updated_at, completed_at, lease_epoch";
 
 impl PostgresStore {
     async fn query_session_source_by_natural_key(
@@ -272,39 +269,6 @@ impl PostgresStore {
             observation_set_id,
             agent_session_id: parse_uuid(&row.try_get::<String, _>(1).map_err(to_query_error)?)?,
             parser_version,
-            source_watermark_at: unix_millis_to_datetime(row.try_get(3).map_err(to_query_error)?)?,
-            coverage: serde_json::from_str(&coverage_json)
-                .map_err(|error| StoreError::Serialization(error.to_string()))?,
-            created_at: unix_to_datetime(row.try_get(5).map_err(to_query_error)?)?,
-            observations,
-        }))
-    }
-    async fn query_observation_set_by_id(
-        &self,
-        observation_set_id: Uuid,
-    ) -> Result<Option<AgentObservationSetRecord>, StoreError> {
-        let row = sqlx::query("SELECT observation_set_id, agent_session_id, parser_version, source_watermark_at, coverage_json, created_at FROM agent_inferred_observation_sets WHERE observation_set_id = $1")
-            .bind(observation_set_id.to_string())
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(to_query_error)?;
-        let Some(row) = row else {
-            return Ok(None);
-        };
-        let coverage_json: String = row.try_get(4).map_err(to_query_error)?;
-        let observation_rows = sqlx::query("SELECT o.observation_id, o.kind, o.source_request_id, o.evidence, o.occurred_at, o.facts_json, o.limitation_codes_json, s.parser_version FROM agent_inferred_observations o JOIN agent_inferred_observation_sets s ON s.observation_set_id = o.observation_set_id WHERE o.observation_set_id = $1 ORDER BY o.occurred_at, o.observation_id")
-            .bind(observation_set_id.to_string())
-            .fetch_all(&self.pool)
-            .await
-            .map_err(to_query_error)?;
-        let mut observations = Vec::with_capacity(observation_rows.len());
-        for observation_row in observation_rows {
-            observations.push(decode_observation(&observation_row)?);
-        }
-        Ok(Some(AgentObservationSetRecord {
-            observation_set_id,
-            agent_session_id: parse_uuid(&row.try_get::<String, _>(1).map_err(to_query_error)?)?,
-            parser_version: row.try_get(2).map_err(to_query_error)?,
             source_watermark_at: unix_millis_to_datetime(row.try_get(3).map_err(to_query_error)?)?,
             coverage: serde_json::from_str(&coverage_json)
                 .map_err(|error| StoreError::Serialization(error.to_string()))?,

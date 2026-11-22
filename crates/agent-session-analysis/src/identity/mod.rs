@@ -2,12 +2,58 @@
 
 use std::collections::BTreeMap;
 
-use gateway_core::GatewayError;
 use serde_json::Value;
 
-use crate::redaction::REDACTED_VALUE;
+mod adapters;
+pub mod harness;
+pub mod hashing;
 
-pub(crate) const MAX_EXTERNAL_IDENTIFIER_BYTES: usize = 256;
+use adapters::{codex_turn_metadata, extract_lineage, extract_session};
+
+/// Shared wire marker written by service redaction and recognized by identity parsing.
+pub const REDACTED_VALUE: &str = "[REDACTED]";
+
+/// Maximum accepted length of an external session or lineage identifier, in bytes.
+pub const MAX_EXTERNAL_IDENTIFIER_BYTES: usize = 256;
+
+/// Headers validated for duplicate and non-text values during routing.
+///
+/// With routing affinity enabled, every listed header must be single-valued text, even if the
+/// selected harness does not consume it. Validation runs before harness-specific extraction.
+pub const ROUTING_SESSION_HEADERS: &[&str] = &[
+    "x-oceans-session-id",
+    "session-id",
+    "session_id",
+    "x-claude-code-session-id",
+    "x-session-id",
+    "x-session-affinity",
+    "x-opencode-session",
+    "x-opencode-session-id",
+    "x-client-request-id",
+    "x-codex-turn-metadata",
+    "x-litellm-session-id",
+];
+
+/// Headers retained for diagnostics; unlike routing validation these include lineage headers.
+pub const SESSION_ANALYSIS_DIAGNOSTIC_HEADERS: &[&str] = &[
+    "session-id",
+    "session_id",
+    "thread-id",
+    "x-claude-code-agent-id",
+    "x-claude-code-parent-agent-id",
+    "x-claude-code-session-id",
+    "x-client-request-id",
+    "x-codex-parent-thread-id",
+    "x-codex-turn-metadata",
+    "x-litellm-session-id",
+    "x-oceans-session-id",
+    "x-opencode-parent-session-id",
+    "x-opencode-session",
+    "x-opencode-session-id",
+    "x-parent-session-id",
+    "x-session-affinity",
+    "x-session-id",
+];
 const MAX_TURN_METADATA_BYTES: usize = 4_096;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -45,9 +91,11 @@ impl<'a> SessionFields<'a> {
     }
 }
 
-pub(crate) struct ClientSessionMetadata {
-    pub session: SessionResolution,
-    /// Namespace `session.value` is hashed under: [`OCEANS_SESSION_NAMESPACE`] when the canonical
+pub struct ClientSessionMetadata {
+    pub session_value: Option<String>,
+    pub session_source: Option<String>,
+    pub session_limitation: Option<SessionCorrelationLimitation>,
+    /// Namespace `session_value` is hashed under: [`OCEANS_SESSION_NAMESPACE`] when the canonical
     /// header names the session, otherwise the harness adapter's. `None` without a session.
     pub session_namespace: Option<&'static str>,
     pub execution_id: Option<String>,
@@ -59,7 +107,7 @@ pub(crate) struct ClientSessionMetadata {
 }
 
 /// Passive analysis never rejects a request: an unusable session ID becomes a limitation.
-pub(crate) fn extract_client_session(
+pub fn extract_client_session(
     body: &Value,
     headers: &BTreeMap<String, String>,
     harness_key: &str,
@@ -78,7 +126,9 @@ pub(crate) fn extract_client_session(
     );
     let (execution_id, parent_execution_id) = extract_lineage(body, headers, adapter, &metadata);
     ClientSessionMetadata {
-        session,
+        session_value: session.value,
+        session_source: session.source,
+        session_limitation: session.limitation,
         session_namespace,
         execution_id,
         parent_execution_id,
@@ -88,17 +138,17 @@ pub(crate) fn extract_client_session(
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct RoutingSession {
+pub struct RoutingSession {
     pub namespace: &'static str,
     pub value: String,
 }
 
 /// Unlike passive analysis, an unusable session ID rejects routing.
-pub(crate) fn extract_routing_session(
+pub fn extract_routing_session(
     extra: &BTreeMap<String, Value>,
     headers: &BTreeMap<String, String>,
     harness_key: &str,
-) -> Result<Option<RoutingSession>, GatewayError> {
+) -> Result<Option<RoutingSession>, SessionCorrelationLimitation> {
     let body = SessionFields::new(|key| extra.get(key), ParsePolicy::Routing);
     let adapter = harness_adapter(harness_key);
     let (metadata, malformed) = if adapter == Some(HarnessAdapter::Codex) {
@@ -107,9 +157,7 @@ pub(crate) fn extract_routing_session(
         (Vec::new(), false)
     };
     if malformed {
-        return Err(invalid_routing_session(
-            SessionCorrelationLimitation::MalformedCandidate,
-        ));
+        return Err(SessionCorrelationLimitation::MalformedCandidate);
     }
     let (session, namespace) = select_session(
         canonical_session(body, headers),
@@ -117,7 +165,7 @@ pub(crate) fn extract_routing_session(
         adapter,
     );
     if let Some(limitation) = session.limitation {
-        return Err(invalid_routing_session(limitation));
+        return Err(limitation);
     }
     Ok(session
         .value
@@ -180,18 +228,6 @@ fn canonical_session(
     ))
 }
 
-fn invalid_routing_session(limitation: SessionCorrelationLimitation) -> GatewayError {
-    let message = match limitation {
-        SessionCorrelationLimitation::ConflictingAliases => {
-            "conflicting routing session identifiers"
-        }
-        SessionCorrelationLimitation::MalformedCandidate => {
-            "invalid routing session identifier: expected 1 to 256 ASCII letters, digits, '.', '_', ':', or '-' and valid bounded harness metadata"
-        }
-    };
-    GatewayError::InvalidRequest(message.to_string())
-}
-
 /// A harness whose own session and lineage IDs the gateway reads. Several harness keys can
 /// share one adapter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,12 +266,12 @@ impl HarnessAdapter {
 const OCEANS_SESSION_HEADER: &str = "x-oceans-session-id";
 
 /// Namespace of sessions named by the canonical [`OCEANS_SESSION_HEADER`].
-pub(crate) const OCEANS_SESSION_NAMESPACE: &str = "oceans";
+pub const OCEANS_SESSION_NAMESPACE: &str = "oceans";
 
 /// Every namespace a passive session hash can be computed under: each harness adapter's,
 /// plus the canonical header's. A caller that knows a raw session id but not which harness
 /// the gateway classified its traffic as matches against all of them.
-pub(crate) const SESSION_HASH_NAMESPACES: [&str; 6] = [
+pub const SESSION_HASH_NAMESPACES: [&str; 6] = [
     HarnessAdapter::ClaudeCode.namespace(),
     HarnessAdapter::Codex.namespace(),
     HarnessAdapter::OpenCode.namespace(),
@@ -258,18 +294,27 @@ fn harness_adapter(harness_key: &str) -> Option<HarnessAdapter> {
 }
 
 /// Whether `value` is a session id the gateway would accept from a request.
-pub(crate) fn is_external_session_id(value: &str) -> bool {
+pub fn is_external_session_id(value: &str) -> bool {
     normalized_identifier(value, false).is_some()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SessionCorrelationLimitation {
+pub enum SessionCorrelationLimitation {
     ConflictingAliases,
     MalformedCandidate,
 }
 
+impl std::fmt::Display for SessionCorrelationLimitation {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::ConflictingAliases => "conflicting routing session identifiers",
+            Self::MalformedCandidate => "invalid routing session identifier: expected 1 to 256 ASCII letters, digits, '.', '_', ':', or '-' and valid bounded harness metadata",
+        })
+    }
+}
+
 impl SessionCorrelationLimitation {
-    pub(crate) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::ConflictingAliases => "conflicting_aliases",
             Self::MalformedCandidate => "malformed_candidate",
@@ -284,10 +329,10 @@ enum CandidateObservation {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct SessionResolution {
-    pub value: Option<String>,
-    pub source: Option<String>,
-    pub limitation: Option<SessionCorrelationLimitation>,
+struct SessionResolution {
+    value: Option<String>,
+    source: Option<String>,
+    limitation: Option<SessionCorrelationLimitation>,
 }
 
 impl SessionResolution {
@@ -432,297 +477,6 @@ fn resolve_session(observations: Vec<CandidateObservation>) -> SessionResolution
         source: Some(sources.join("+")),
         limitation: None,
     }
-}
-
-fn extract_session(
-    body: SessionFields<'_>,
-    headers: &BTreeMap<String, String>,
-    adapter: Option<HarnessAdapter>,
-    codex_metadata: &[EmbeddedMetadata],
-) -> SessionResolution {
-    match adapter {
-        Some(HarnessAdapter::ClaudeCode) => {
-            let mut observations =
-                header_observations(headers, "x-claude-code-session-id", body.policy);
-            observations.extend(claude_metadata_session(body));
-            resolve_session(observations)
-        }
-        Some(HarnessAdapter::Codex) => {
-            let mut observations = header_observations(headers, "session-id", body.policy);
-            observations.extend(body_observation(
-                body,
-                &["client_metadata", "session_id"],
-                "body:client_metadata.session_id",
-            ));
-            observations.extend(
-                codex_metadata.iter().filter_map(|metadata| {
-                    metadata_observation(metadata, "session_id", body.policy)
-                }),
-            );
-            resolve_session(observations)
-        }
-        Some(HarnessAdapter::OpenCode) => extract_opencode_session(body, headers),
-        Some(HarnessAdapter::Pi) => extract_pi_session(body, headers),
-        Some(HarnessAdapter::OhMyPi) => extract_oh_my_pi_session(body, headers),
-        None => SessionResolution::default(),
-    }
-}
-
-fn extract_opencode_session(
-    body: SessionFields<'_>,
-    headers: &BTreeMap<String, String>,
-) -> SessionResolution {
-    if headers
-        .keys()
-        .any(|name| name.eq_ignore_ascii_case("x-opencode-session-id"))
-    {
-        // OpenCode sends the conversation ID separately from cache affinity. Child sessions
-        // can share their parent's affinity, so these are not equivalent identity aliases.
-        return resolve_session(header_observations(
-            headers,
-            "x-opencode-session-id",
-            body.policy,
-        ));
-    }
-    // Older clients expose only affinity headers. Keep their contract, including overlapping
-    // provider groups, but require every supplied legacy alias to agree.
-    let mut observations = header_observations(headers, "x-session-id", body.policy);
-    observations.extend(header_observations(
-        headers,
-        "x-session-affinity",
-        body.policy,
-    ));
-    observations.extend(header_observations(
-        headers,
-        "x-opencode-session",
-        body.policy,
-    ));
-    resolve_session(observations)
-}
-
-fn extract_pi_session(
-    body: SessionFields<'_>,
-    headers: &BTreeMap<String, String>,
-) -> SessionResolution {
-    let mut observations = header_observations(headers, "session-id", body.policy);
-    observations.extend(header_observations(headers, "x-session-id", body.policy));
-    observations.extend(header_observations(headers, "session_id", body.policy));
-    if observations.is_empty() {
-        // With cacheRetention: "none", Pi can send no session header. A request ID or
-        // prompt_cache_key alone is not evidence of a conversation.
-        return SessionResolution::default();
-    }
-    observations.extend(header_observations(
-        headers,
-        "x-client-request-id",
-        body.policy,
-    ));
-    resolve_session(observations)
-}
-
-fn extract_oh_my_pi_session(
-    body: SessionFields<'_>,
-    headers: &BTreeMap<String, String>,
-) -> SessionResolution {
-    let mut observations = header_observations(headers, "x-claude-code-session-id", body.policy);
-    observations.extend(header_observations(headers, "session_id", body.policy));
-    observations.extend(body_observation(body, &["session_id"], "body:session_id"));
-    observations.extend(claude_metadata_session(body));
-    resolve_session(observations)
-}
-
-fn claude_metadata_session(body: SessionFields<'_>) -> Option<CandidateObservation> {
-    let user_id = body.get("metadata")?.get("user_id")?;
-    let Some(user_id) = user_id.as_str() else {
-        return Some(CandidateObservation::Invalid);
-    };
-    if user_id.len() > MAX_TURN_METADATA_BYTES {
-        return Some(CandidateObservation::Invalid);
-    }
-    if user_id == REDACTED_VALUE {
-        return (body.policy == ParsePolicy::Routing).then_some(CandidateObservation::Invalid);
-    }
-    if user_id.trim_start().starts_with('{') {
-        let Some(value) = parse_bounded_json_object(user_id) else {
-            return Some(CandidateObservation::Invalid);
-        };
-        let session = value.get("session_id")?;
-        let session = match session.as_str() {
-            Some(REDACTED_VALUE) if body.policy == ParsePolicy::Passive => return None,
-            Some(session) => normalized_identifier(session, false),
-            None => None,
-        };
-        return Some(session.map_or(CandidateObservation::Invalid, |value| {
-            CandidateObservation::Valid {
-                value,
-                source: "body:metadata.user_id.session_id".to_string(),
-            }
-        }));
-    }
-    // Claude's legacy wire format encodes device, account and session separately. Only
-    // recognize that shape; arbitrary user IDs (even ones containing `_session_`) are not sessions.
-    let (device, remainder) = user_id.strip_prefix("user_")?.split_once("_account_")?;
-    if device.len() != 64 || !device.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return None;
-    }
-    let (account, session) = remainder.split_once("_session_")?;
-    if !account.is_empty() && !is_legacy_claude_uuid(account) {
-        return None;
-    }
-    Some(if is_legacy_claude_uuid(session) {
-        CandidateObservation::Valid {
-            value: session.to_string(),
-            source: "body:metadata.user_id.session_id".to_string(),
-        }
-    } else {
-        CandidateObservation::Invalid
-    })
-}
-
-fn is_legacy_claude_uuid(value: &str) -> bool {
-    value.len() == 36 && uuid::Uuid::try_parse(value).is_ok()
-}
-
-fn parse_bounded_json_object(value: &str) -> Option<Value> {
-    if value.len() > MAX_TURN_METADATA_BYTES {
-        return None;
-    }
-    let parsed: Value = serde_json::from_str(value).ok()?;
-    parsed.is_object().then_some(parsed)
-}
-
-fn codex_turn_metadata(
-    body: SessionFields<'_>,
-    headers: &BTreeMap<String, String>,
-) -> (Vec<EmbeddedMetadata>, bool) {
-    let mut result = Vec::new();
-    let mut malformed = false;
-    let body_value = body
-        .get("client_metadata")
-        .and_then(|metadata| metadata.get("x-codex-turn-metadata"));
-    if let Some(raw) = body_value {
-        if let Some(value) = raw.as_str().and_then(parse_bounded_json_object) {
-            result.push(EmbeddedMetadata {
-                value,
-                source: "body:client_metadata.x-codex-turn-metadata".to_string(),
-            });
-        } else {
-            malformed = true;
-        }
-    }
-    for (_, raw) in headers
-        .iter()
-        .filter(|(name, _)| name.eq_ignore_ascii_case("x-codex-turn-metadata"))
-    {
-        if let Some(value) = parse_bounded_json_object(raw.trim_matches([' ', '\t'])) {
-            result.push(EmbeddedMetadata {
-                value,
-                source: "header:x-codex-turn-metadata".to_string(),
-            });
-        } else {
-            malformed = true;
-        }
-    }
-    (result, malformed)
-}
-
-fn resolved_lineage_value(observations: Vec<CandidateObservation>) -> Option<String> {
-    let resolution = resolve_session(observations);
-    if resolution.limitation.is_none() {
-        resolution.value
-    } else {
-        None
-    }
-}
-
-fn extract_lineage(
-    body: SessionFields<'_>,
-    headers: &BTreeMap<String, String>,
-    adapter: Option<HarnessAdapter>,
-    codex_metadata: &[EmbeddedMetadata],
-) -> (Option<String>, Option<String>) {
-    match adapter {
-        Some(HarnessAdapter::ClaudeCode) => (
-            resolved_lineage_value(header_observations(
-                headers,
-                "x-claude-code-agent-id",
-                body.policy,
-            )),
-            resolved_lineage_value(header_observations(
-                headers,
-                "x-claude-code-parent-agent-id",
-                body.policy,
-            )),
-        ),
-        Some(HarnessAdapter::OpenCode) => {
-            let mut parent =
-                header_observations(headers, "x-opencode-parent-session-id", body.policy);
-            parent.extend(header_observations(
-                headers,
-                "x-parent-session-id",
-                body.policy,
-            ));
-            (None, resolved_lineage_value(parent))
-        }
-        Some(HarnessAdapter::Codex) => extract_codex_lineage(body, headers, codex_metadata),
-        Some(HarnessAdapter::Pi | HarnessAdapter::OhMyPi) | None => (None, None),
-    }
-}
-
-fn extract_codex_lineage(
-    body: SessionFields<'_>,
-    headers: &BTreeMap<String, String>,
-    metadata: &[EmbeddedMetadata],
-) -> (Option<String>, Option<String>) {
-    let mut thread = header_observations(headers, "thread-id", body.policy);
-    thread.extend(header_observations(
-        headers,
-        "x-client-request-id",
-        body.policy,
-    ));
-    thread.extend(body_observation(
-        body,
-        &["client_metadata", "thread_id"],
-        "body:client_metadata.thread_id",
-    ));
-    thread.extend(
-        metadata
-            .iter()
-            .filter_map(|value| metadata_observation(value, "thread_id", body.policy)),
-    );
-    let thread = resolve_session(thread);
-    let execution_id = if thread.limitation.is_some() {
-        None
-    } else if thread.value.is_some() {
-        thread.value
-    } else {
-        let mut turn = body_observation(
-            body,
-            &["client_metadata", "turn_id"],
-            "body:client_metadata.turn_id",
-        )
-        .into_iter()
-        .collect::<Vec<_>>();
-        turn.extend(
-            metadata
-                .iter()
-                .filter_map(|value| metadata_observation(value, "turn_id", body.policy)),
-        );
-        resolved_lineage_value(turn)
-    };
-
-    let mut parent = metadata
-        .iter()
-        .filter_map(|value| metadata_observation(value, "parent_thread_id", body.policy))
-        .collect::<Vec<_>>();
-    if parent.is_empty() {
-        parent.extend(
-            metadata.iter().filter_map(|value| {
-                metadata_observation(value, "forked_from_thread_id", body.policy)
-            }),
-        );
-    }
-    (execution_id, resolved_lineage_value(parent))
 }
 
 #[cfg(test)]

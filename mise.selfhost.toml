@@ -60,7 +60,9 @@ proxy = false
 
 [env]
 GATEWAY_CONFIG = "deploy/selfhost/gateway.yaml"
-POSTGRES_URL = "{{ env.DATABASE_URL }}"
+# The `db` daemon exports DATABASE_URL. mise also renders this while it loads tasks in other
+# config roots, where DATABASE_URL is not defined, and a failed render drops those tasks.
+POSTGRES_URL = "{{ env.DATABASE_URL | default(value=\"\") }}"
 ADMIN_UI_UPSTREAM = "http://127.0.0.1:3001"
 ADMIN_GATEWAY_ORIGIN = "http://127.0.0.1:8080"
 

@@ -15,7 +15,7 @@ Any new collection must keep the ADR's privacy rules. Raw external identifiers (
 - **Commits** ([`attribution.rs`](../../crates/gateway-core/src/attribution.rs), `AttributionCommitWrite`): repository, SHA, branch, default-branch flag, author (user id or scope-bound email hash), `ai_lines`, `human_lines`, and per-session AI lines with tool, model and session hashes. The parser ([`note.rs`](../../crates/gateway-service/src/attribution/note.rs)) reads file paths and line ranges from the note's attestation section, counts them, then drops them.
 - **Sessions** (`AttributionSessionEventWrite`): harness, session hashes, repository, branch, start and end HEAD, harness version, start and end times.
 - **Pull requests** (`AttributionPullRequestWrite`): number, title, URL, base and head ref, merge commit SHA, `merged_at` (required), author, and each commit's SHA, subject, `authored_at` and author. [`prs.rs`](../../crates/oceans-cli/src/attribution/prs.rs) asks `gh pr list --state merged` for `number,title,url,mergedAt,baseRefName,headRefName,mergeCommit,commits`.
-- **Gateway requests**: per-request facts from passive session analysis, including `message_count`, prompt bytes and tool counts ([`agent-session-analysis`](../../crates/agent-session-analysis/src/lib.rs), [`session_resolution.rs`](../../crates/gateway-service/src/agent_analysis/session_resolution.rs)), plus priced cost from `usage_cost_events`.
+- **Gateway requests**: per-request facts from passive session analysis, including `message_count`, prompt bytes and tool counts ([`agent-session-analysis`](../../crates/agent-session-analysis/src/lib.rs), [`observations/request.rs`](../../crates/agent-session-analysis/src/observations/request.rs)), plus priced cost from `usage_cost_events`.
 
 ## Summary
 

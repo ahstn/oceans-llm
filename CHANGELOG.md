@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [1.4.0](https://github.com/ahstn/oceans-llm/compare/v1.3.0...v1.4.0) - 2026-11-22
+
+### :rocket: New features
+- *(admin-ui)* Move budget increases into the spend controls Status column by @ahstn in [#703](https://github.com/ahstn/oceans-llm/pull/703)
+- *(admin-ui)* Catalog model picker, status filter and clearer skill upload field by @ahstn in [#702](https://github.com/ahstn/oceans-llm/pull/702)
+
+### :bug: Bug fixes
+- *(guardrails)* Recognise shell tools by name words and test the live policy by @ahstn in [#708](https://github.com/ahstn/oceans-llm/pull/708)
+
+### Changed
+- *(admin)* Load the model catalog for selectors in one cheap request by @ahstn in [#705](https://github.com/ahstn/oceans-llm/pull/705)
+- *(gateway)* Cut request-path auth, budget and MCP database load; keep sub-cent charges by @ahstn in [#707](https://github.com/ahstn/oceans-llm/pull/707)
+
 ## [1.3.0](https://github.com/ahstn/oceans-llm/compare/v1.2.0...v1.3.0) - 2026-11-22
 
 ### :rocket: New features

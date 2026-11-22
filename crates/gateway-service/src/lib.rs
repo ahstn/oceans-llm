@@ -13,7 +13,6 @@ pub mod budget_guard;
 pub mod budget_scopes;
 mod capability_hints;
 mod catalog_fetch;
-mod client_session;
 mod credential_verification;
 pub mod effective_route_metadata;
 pub mod icon_identity;

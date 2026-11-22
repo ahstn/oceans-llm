@@ -12,8 +12,8 @@ use uuid::Uuid;
 
 use super::ingest::{entry, ingest, note, request_session, session};
 use super::{FakeStore, FakeUsers, t0, user_key, user_owner};
-use crate::agent_analysis::hash_lineage_candidate;
 use crate::attribution::{AttributionReport, RequestTally, build_attribution_report};
+use agent_session_analysis::identity::hashing::hash_lineage_candidate;
 
 const REPOSITORY: &str = "github.com/acme/widgets";
 const OTHER_REPOSITORY: &str = "github.com/acme/gadgets";

@@ -3,7 +3,9 @@
  * One row per feature area: copy on one side, a staged screenshot on the
  * other, alternating. Each stage is a wave backdrop with the main screenshot
  * bleeding off its right and bottom edges (admin pages read from the top
- * left, so that corner stays in view) and a crop floating over it.
+ * left, so that corner stays in view) and a crop floating over it. A `stack`
+ * stage instead lets two panels overflow a shorter backdrop, one above the
+ * other.
  */
 import { Image } from "astro:assets";
 import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
@@ -64,27 +66,52 @@ import { pillars } from "./content";
               </a>
             </div>
 
-            <figure data-mode="dark" class="lp-stage">
-              <Image
-                src={stage.backdrop}
-                alt=""
-                widths={[800, 1200, 1600, 2400]}
-                sizes="(min-width: 1024px) 40rem, 94vw"
-                format="webp"
-                quality={80}
-                class={cn("lp-stage-backdrop", stage.flip && "-scale-x-100")}
-              />
-              <Frame
-                kind={stage.kind}
-                title={stage.title}
-                shot={stage.main}
-                sizes="(min-width: 1024px) 54rem, 130vw"
-                class={stage.kind === "panel" ? "lp-stage-panel" : "lp-stage-window"}
-              />
-              {stage.floats.map((shot) => (
-                <Float shot={shot} sizes="(min-width: 1024px) 26rem, 50vw" />
-              ))}
-            </figure>
+            {stage.kind === "stack" ? (
+              <figure data-mode="dark" class="lp-stage lp-stage-open">
+                <div class="lp-stage-bg">
+                  <Image
+                    src={stage.backdrop}
+                    alt=""
+                    widths={[800, 1200, 1600, 2400]}
+                    sizes="(min-width: 1024px) 40rem, 94vw"
+                    format="webp"
+                    quality={80}
+                    class={cn("lp-stage-backdrop", stage.flip && "-scale-x-100")}
+                  />
+                </div>
+                <Frame
+                  kind="panel"
+                  shot={stage.main}
+                  sizes="(min-width: 1024px) 40rem, 90vw"
+                  class="lp-stage-stack-main"
+                />
+                {stage.floats.map((shot) => (
+                  <Frame kind="panel" shot={shot} sizes="(min-width: 1024px) 44rem, 100vw" class={shot.class} />
+                ))}
+              </figure>
+            ) : (
+              <figure data-mode="dark" class="lp-stage">
+                <Image
+                  src={stage.backdrop}
+                  alt=""
+                  widths={[800, 1200, 1600, 2400]}
+                  sizes="(min-width: 1024px) 40rem, 94vw"
+                  format="webp"
+                  quality={80}
+                  class={cn("lp-stage-backdrop", stage.flip && "-scale-x-100")}
+                />
+                <Frame
+                  kind={stage.kind}
+                  title={stage.title}
+                  shot={stage.main}
+                  sizes="(min-width: 1024px) 54rem, 130vw"
+                  class={stage.kind === "panel" ? "lp-stage-panel" : "lp-stage-window"}
+                />
+                {stage.floats.map((shot) => (
+                  <Float shot={shot} sizes="(min-width: 1024px) 26rem, 50vw" />
+                ))}
+              </figure>
+            )}
           </article>
         );
       })

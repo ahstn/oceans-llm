@@ -369,6 +369,47 @@
 	inset-inline: 6%;
 }
 
+/* A `stack` stage: the backdrop starts lower and the screenshots overflow it,
+   the main one past its top edge and the second past both sides. */
+.lp-stage-open {
+	overflow: visible;
+	aspect-ratio: 8 / 7;
+	background: none;
+}
+.lp-stage-open::after {
+	content: none;
+}
+.lp-stage-bg {
+	position: absolute;
+	inset: 7% 0 0;
+	overflow: hidden;
+	border-radius: 1rem;
+	background: var(--lp-deep);
+}
+.lp-stage-bg::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border-radius: inherit;
+	box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.07);
+	pointer-events: none;
+}
+.lp-stage-stack-main {
+	position: absolute;
+	top: 0;
+	left: 6%;
+	width: 88%;
+	z-index: 1;
+}
+.lp-stage-stack-second {
+	position: absolute;
+	top: 59%;
+	left: 50%;
+	width: 104%;
+	transform: translateX(-50%);
+	z-index: 2;
+}
+
 /* ---- Lifecycle and trace ---- */
 
 .lp-step {

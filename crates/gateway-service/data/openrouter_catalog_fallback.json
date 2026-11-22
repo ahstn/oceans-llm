@@ -2,8 +2,8 @@
   "metadata": {
     "source": "vendored_openrouter",
     "etag": null,
-    "fetched_at": "2026-11-22T10:24:59.089591Z",
-    "checksum": "a10f1a2f6a12abe31f2e6762713a4961a7e401590f774c3a4be3eeb7a862ef6d"
+    "fetched_at": "2026-11-22T20:03:38.332920681Z",
+    "checksum": "e8abcd388f64eab5cf5cb34a220f4aa500915041d911f4aefd303c8d41abd5af"
   },
   "providers": {
     "openrouter": {
@@ -11539,9 +11539,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1500",
-            "output": "0.6000",
-            "cache_read": "0.0150",
+            "input": "0.0750",
+            "output": "0.3000",
+            "cache_read": "0.0075",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -13629,9 +13629,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2530",
-            "output": "8.8000",
-            "cache_read": "0.1800",
+            "input": "0.2403",
+            "output": "8.4023",
+            "cache_read": "0.2000",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -19320,9 +19320,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0750",
-            "output": "0.3000",
-            "cache_read": "0.0375",
+            "input": "0.0300",
+            "output": "0.1300",
+            "cache_read": "0.0300",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -19331,7 +19331,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 65536
+            "output": 117964
           },
           "modalities": {
             "input": [
@@ -25909,9 +25909,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.8340",
-            "output": "2.5010",
-            "cache_read": "0.0420",
+            "input": "0.7506",
+            "output": "2.2509",
+            "cache_read": "0.0378",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -27831,9 +27831,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.4000",
-            "output": "1.7500",
-            "cache_read": "0.0800",
+            "input": "0.6000",
+            "output": "2.2000",
+            "cache_read": "0.1100",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -28135,8 +28135,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1500",
-            "output": "0.5000",
+            "input": "0.0399",
+            "output": "0.0784",
             "cache_read": "0.0300",
             "cache_write": null,
             "input_audio": null,
@@ -28146,7 +28146,7 @@
           "limit": {
             "context": 1048576,
             "input": null,
-            "output": 943717
+            "output": 131072
           },
           "modalities": {
             "input": [
@@ -28610,9 +28610,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0999",
+            "input": "0.1188",
             "output": "8.0000",
-            "cache_read": "0.0999",
+            "cache_read": "0.1200",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -29284,8 +29284,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0471",
-            "output": "0.0729",
+            "input": "0.0399",
+            "output": "0.0784",
             "cache_read": "0.0300",
             "cache_write": null,
             "input_audio": null,
