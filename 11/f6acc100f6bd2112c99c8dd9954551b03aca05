@@ -1,0 +1,26 @@
+crates/admin-ui/web/src/lib/model-catalog.ts
+  s_f9a2dc193f7af4::t_333ea951d31471 16-24
+crates/admin-ui/web/src/test/routes/request-logs-route.test.tsx
+  s_f9a2dc193f7af4::t_e55b303caf086d 828-841
+crates/admin-ui/web/src/routes/observability/-request-log-filter-options.ts
+  s_f9a2dc193f7af4::t_ff0c4ab41ec862 1
+  s_f9a2dc193f7af4::t_333ea951d31471 58,62-64,73,77-78,80,84
+crates/admin-ui/web/src/lib/model-catalog.test.ts
+  s_f9a2dc193f7af4::t_e55b303caf086d 49-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "11f6acc100f6bd2112c99c8dd9954551b03aca05",
+  "prompts": {},
+  "sessions": {
+    "s_f9a2dc193f7af4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f47da735-08a7-4f2b-a249-ef2ca3735b63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
