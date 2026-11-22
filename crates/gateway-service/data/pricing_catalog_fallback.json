@@ -1,9 +1,9 @@
 {
   "metadata": {
     "source": "vendored_models_dev",
-    "etag": "\"37960b584f3076053ae8f7315277e99a\"",
-    "fetched_at": "2026-11-22T10:24:58.022395Z",
-    "checksum": "0630b2806c256c0b32435cdc82113f6e53d87493aacea8b7cbe545e42ea81742"
+    "etag": "\"4fe96995535dc6490a940773570609cd\"",
+    "fetched_at": "2026-11-22T20:03:37.252758293Z",
+    "checksum": "12325c82f92019319afdbe89fd8a26385906cdba591ab4d7ba1ad413c231c3c0"
   },
   "providers": {
     "amazon-bedrock": {
@@ -34073,9 +34073,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.2530",
-            "output": "8.8000",
-            "cache_read": "0.1800",
+            "input": "0.2403",
+            "output": "8.4023",
+            "cache_read": "0.2000",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -37796,9 +37796,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0170",
-            "output": "0.0850",
-            "cache_read": "0.0085",
+            "input": "0.0300",
+            "output": "0.1300",
+            "cache_read": "0.0300",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -41509,9 +41509,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.8340",
-            "output": "2.5010",
-            "cache_read": "0.0420",
+            "input": "0.7506",
+            "output": "2.2509",
+            "cache_read": "0.0378",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -42947,9 +42947,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.4000",
-            "output": "1.7500",
-            "cache_read": "0.0800",
+            "input": "0.6000",
+            "output": "2.2000",
+            "cache_read": "0.1100",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -43115,9 +43115,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "1.1900",
-            "output": "3.7400",
-            "cache_read": "0.6000",
+            "input": "1.4000",
+            "output": "4.4000",
+            "cache_read": "0.2600",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -43758,9 +43758,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0999",
+            "input": "0.1188",
             "output": "8.0000",
-            "cache_read": "0.0999",
+            "cache_read": "0.1200",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
