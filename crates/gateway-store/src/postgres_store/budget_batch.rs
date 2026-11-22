@@ -95,7 +95,7 @@ WITH input AS (
         window_end bigint
     )
 )
-SELECT i.scope_key, COALESCE(SUM(u.computed_cost_10000), 0)::bigint AS total
+SELECT i.scope_key, COALESCE(SUM(u.computed_cost_nanos), 0)::bigint AS total
 FROM input i LEFT JOIN usage_cost_events u ON
     u.pricing_status IN ('priced', 'legacy_estimated')
     AND u.occurred_at >= i.window_start AND u.occurred_at < i.window_end
@@ -164,7 +164,7 @@ pub(super) async fn deactivate_budgets_by_source(
 pub(super) async fn sum_usage_cost_by_budget_scope(
     store: &PostgresStore,
     windows: &[BudgetScopeWindow<'_>],
-) -> Result<HashMap<String, Money4>, StoreError> {
+) -> Result<HashMap<String, Money9>, StoreError> {
     if windows.is_empty() {
         return Ok(HashMap::new());
     }
@@ -178,7 +178,7 @@ pub(super) async fn sum_usage_cost_by_budget_scope(
     for row in rows {
         totals.insert(
             row.try_get("scope_key").map_err(to_query_error)?,
-            Money4::from_scaled(row.try_get("total").map_err(to_query_error)?),
+            Money9::from_nanos(row.try_get("total").map_err(to_query_error)?),
         );
     }
     Ok(totals)

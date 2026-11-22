@@ -5,8 +5,8 @@ use futures_util::{StreamExt, stream};
 use gateway_core::{GatewayError, ProviderStream};
 use gateway_guardrails::{
     DecisionAction, DecisionRecord, EvaluationInput, EvaluationPayload, GuardPhase,
-    GuardrailEvaluation, PolicyResolver, PolicyTarget, UninspectedContent, redact_prompt_secrets,
-    uninspected_content_decision,
+    GuardrailEvaluation, PolicyResolver, PolicyTarget, UninspectedContent, is_shell_tool,
+    redact_prompt_secrets, uninspected_content_decision,
 };
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
@@ -1475,24 +1475,31 @@ fn parse_arguments(value: &Value) -> Value {
         .unwrap_or_else(|| value.clone())
 }
 
+/// The command of a shell tool call, when the call carries it in exactly one place.
+///
+/// A call with a second command field (`{"command": "echo ok", "script": "rm -rf /"}`) returns
+/// `None`, so the caller evaluates the whole tool call and the packs inspect every field. The
+/// decision must not depend on which field the tool goes on to run.
 fn shell_command(name: &str, arguments: &Value) -> Option<String> {
-    const SHELL_TOOL_NAMES: &[&str] = &[
-        "bash",
-        "shell",
-        "shell_call",
-        "local_shell_call",
-        "shell_command",
-        "terminal.exec",
-    ];
-    if !SHELL_TOOL_NAMES.contains(&name.to_ascii_lowercase().as_str()) {
+    if !is_shell_tool(name) {
         return None;
     }
-    arguments
-        .get("command")
-        .or_else(|| arguments.get("cmd"))
-        .or_else(|| arguments.get("script"))
-        .and_then(shell_action_command)
+    let nested_command = ["input", "arguments"].iter().any(|field| {
+        arguments
+            .get(field)
+            .and_then(|inner| inner.get("command"))
+            .is_some()
+    });
+    let mut commands = SHELL_COMMAND_FIELDS
+        .iter()
+        .filter_map(|field| arguments.get(field));
+    match (commands.next(), commands.next(), nested_command) {
+        (Some(command), None, false) => shell_action_command(command),
+        _ => None,
+    }
 }
+
+const SHELL_COMMAND_FIELDS: [&str; 3] = ["command", "cmd", "script"];
 
 fn transformed_tool_arguments(output: &EvaluationPayload, original: &Value) -> Option<Value> {
     match output {
@@ -1506,7 +1513,7 @@ fn transformed_tool_arguments(output: &EvaluationPayload, original: &Value) -> O
 }
 
 fn replace_shell_command(arguments: &mut Value, replacement: &str) -> bool {
-    for field in ["command", "cmd", "script"] {
+    for field in SHELL_COMMAND_FIELDS {
         if let Some(slot) = arguments.get_mut(field)
             && (slot.is_string() || slot.is_array())
         {
@@ -1746,6 +1753,38 @@ mod tests {
             shell_command(&calls[3].0, &calls[3].1).as_deref(),
             Some("kill 1")
         );
+    }
+
+    #[test]
+    fn reads_the_command_of_a_shell_tool_whatever_it_is_named() {
+        for name in [
+            "exec_command",
+            "runTerminalCmd",
+            "run_shell_command",
+            "terminal.exec",
+        ] {
+            assert_eq!(
+                shell_command(name, &json!({"command": "rm -rf /"})).as_deref(),
+                Some("rm -rf /"),
+                "{name}"
+            );
+        }
+        assert_eq!(
+            shell_command("execute_sql", &json!({"command": "SELECT 1"})),
+            None
+        );
+    }
+
+    #[test]
+    fn leaves_a_shell_tool_call_with_two_command_fields_to_the_tool_call_checks() {
+        for arguments in [
+            json!({"command": "echo ok", "script": "rm -rf /"}),
+            json!({"cmd": "echo ok", "command": "rm -rf /"}),
+            json!({"command": "echo ok", "input": {"command": "rm -rf /"}}),
+            json!({"command": ["rm -rf /"], "script": "echo ok"}),
+        ] {
+            assert_eq!(shell_command("bash", &arguments), None, "{arguments}");
+        }
     }
 
     #[test]

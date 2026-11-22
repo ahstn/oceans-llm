@@ -3,7 +3,7 @@ use serde_json::Value;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::{ContextPricingTier, Money4};
+use crate::{ContextPricingTier, Money4, Money9};
 
 pub const MAX_BATCH_PAGE_SIZE: u32 = 500;
 pub const MAX_BATCH_RESULT_PAGE_SIZE: u32 = 1_000;
@@ -387,7 +387,8 @@ pub struct ProviderBatchState {
     pub completed_count: i64,
     pub failed_count: i64,
     pub provider_usage: Option<Value>,
-    pub provider_cost_usd: Option<Money4>,
+    /// Exact provider charge; persistence rounds only the batch display cost.
+    pub provider_cost_usd: Option<Money9>,
     pub error: Option<Value>,
     pub submitted_at: Option<OffsetDateTime>,
     pub completed_at: Option<OffsetDateTime>,
@@ -408,7 +409,8 @@ pub struct ProviderBatchResult {
     pub provider_request_id: Option<String>,
     pub provider_usage: Option<Value>,
     pub completed_at: Option<OffsetDateTime>,
-    pub cost_usd: Option<Money4>,
+    /// Exact item charge; persistence rounds only the item display cost.
+    pub cost_usd: Option<Money9>,
 }
 
 #[derive(Debug, Clone)]

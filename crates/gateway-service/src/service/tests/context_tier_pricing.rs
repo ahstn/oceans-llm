@@ -1,6 +1,6 @@
 //! Catalog usage pricing with context tiers and image output rates.
 
-use gateway_core::ContextPricingTier;
+use gateway_core::{ContextPricingTier, Money9};
 use serde_json::Value;
 
 use super::*;
@@ -113,9 +113,9 @@ async fn inclusive_cache_counters_crossing_the_threshold_bill_the_whole_request_
         Some(Money4::from_scaled(1_000)),
         "an unset tier rate inherits the base rate"
     );
-    // 300 uncached at $3 ($0.0009) + 900 cached at $0.10 ($0.0001) + 100 output at $6
+    // 300 uncached at $3 ($0.0009) + 900 cached at $0.10 ($0.00009) + 100 output at $6
     // ($0.0006).
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(16));
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(1_590_000));
 }
 
 fn cache_alias_pricing_record() -> ModelPricingRecord {
@@ -127,28 +127,38 @@ fn cache_alias_pricing_record() -> ModelPricingRecord {
 #[tokio::test]
 async fn root_chat_cache_aliases_bill_reads_and_writes_without_billing_misses_as_writes() {
     for (aliases, read, write, cost) in [
-        (json!({"prompt_cache_hit_tokens": 90_000}), 90_000, 0, 1_590),
+        (
+            json!({"prompt_cache_hit_tokens": 90_000}),
+            90_000,
+            0,
+            159_000_000,
+        ),
         (
             json!({"prompt_cache_hit_tokens": 90_000, "prompt_cache_miss_tokens": 30_000}),
             90_000,
             0,
-            1_590,
+            159_000_000,
         ),
-        (json!({"cached_tokens": 90_000}), 90_000, 0, 1_590),
-        (json!({"prompt_cache_hit_tokens": 0}), 0, 0, 4_200),
+        (json!({"cached_tokens": 90_000}), 90_000, 0, 159_000_000),
+        (json!({"prompt_cache_hit_tokens": 0}), 0, 0, 420_000_000),
         (
             json!({"cached_tokens": 90_000, "cache_write_tokens": 20_000}),
             90_000,
             20_000,
-            1_240,
+            124_000_000,
         ),
-        (json!({"cache_write_tokens": 20_000}), 0, 20_000, 3_850),
+        (
+            json!({"cache_write_tokens": 20_000}),
+            0,
+            20_000,
+            385_000_000,
+        ),
         (
             json!({"cached_tokens": 0, "prompt_cache_hit_tokens": 90_000,
                 "prompt_cache_miss_tokens": -1}),
             0,
             0,
-            4_200,
+            420_000_000,
         ),
     ] {
         let mut usage = json!({"prompt_tokens": 120_000, "completion_tokens": 10_000});
@@ -170,11 +180,7 @@ async fn root_chat_cache_aliases_bill_reads_and_writes_without_billing_misses_as
         assert_eq!(event.cache_read_tokens, Some(read));
         assert_eq!(event.cache_write_tokens, Some(write));
         assert_eq!(event.pricing_tier_above_input_tokens, Some(1_000));
-        assert_eq!(
-            event.computed_cost_usd,
-            Money4::from_scaled(cost),
-            "{usage}"
-        );
+        assert_eq!(event.computed_cost_usd, Money9::from_nanos(cost), "{usage}");
         assert_eq!(event.provider_usage, usage);
     }
 }
@@ -188,7 +194,7 @@ async fn canonical_cache_fields_win_per_field_including_zero_and_partial_details
                 json!({"cached_tokens": 90_000, "cache_write_tokens": 20_000}),
                 60_000,
                 10_000,
-                2_285,
+                228_500_000,
             ),
             (
                 json!({"cached_tokens": 0, "cache_write_tokens": 0}),
@@ -196,35 +202,35 @@ async fn canonical_cache_fields_win_per_field_including_zero_and_partial_details
                     "prompt_cache_hit_tokens": 90_000, "prompt_cache_miss_tokens": 1}),
                 0,
                 0,
-                4_200,
+                420_000_000,
             ),
             (
                 json!({"cached_tokens": 60_000}),
                 json!({"cached_tokens": 90_000, "cache_write_tokens": 20_000}),
                 60_000,
                 20_000,
-                2_110,
+                211_000_000,
             ),
             (
                 json!({"cache_write_tokens": 0}),
                 json!({"cached_tokens": 90_000, "cache_write_tokens": 20_000}),
                 90_000,
                 0,
-                1_590,
+                159_000_000,
             ),
             (
                 json!({}),
                 json!({"prompt_cache_hit_tokens": 90_000, "prompt_cache_miss_tokens": 30_000}),
                 90_000,
                 0,
-                1_590,
+                159_000_000,
             ),
             (
                 json!({"cache_write_tokens": 10_000}),
                 json!({"prompt_cache_hit_tokens": 90_000}),
                 90_000,
                 10_000,
-                1_415,
+                141_500_000,
             ),
         ] {
             let mut usage = json!({"prompt_tokens": 120_000, "completion_tokens": 10_000});
@@ -244,11 +250,7 @@ async fn canonical_cache_fields_win_per_field_including_zero_and_partial_details
             assert_eq!(event.uncached_input_tokens, Some(120_000 - read - write));
             assert_eq!(event.cache_read_tokens, Some(read));
             assert_eq!(event.cache_write_tokens, Some(write));
-            assert_eq!(
-                event.computed_cost_usd,
-                Money4::from_scaled(cost),
-                "{usage}"
-            );
+            assert_eq!(event.computed_cost_usd, Money9::from_nanos(cost), "{usage}");
             assert_eq!(event.provider_usage, usage);
         }
     }
@@ -304,7 +306,7 @@ async fn invalid_cache_aliases_and_canonical_fields_keep_ledger_diagnostics_and_
         assert_eq!(event.uncached_input_tokens, None);
         assert_eq!(event.cache_read_tokens, None);
         assert_eq!(event.cache_write_tokens, None);
-        assert_eq!(event.computed_cost_usd, Money4::from_scaled(4_200));
+        assert_eq!(event.computed_cost_usd, Money9::from_nanos(420_000_000));
         assert_eq!(event.provider_usage, usage);
     }
 }
@@ -325,7 +327,7 @@ async fn provider_reported_cost_wins_over_valid_or_invalid_root_cache_aliases() 
 
         assert_eq!(event.pricing_status, UsagePricingStatus::Priced);
         assert_eq!(event.pricing_source.as_deref(), Some("provider_reported"));
-        assert_eq!(event.computed_cost_usd, Money4::from_scaled(123));
+        assert_eq!(event.computed_cost_usd, Money9::from_nanos(12_300_000));
         assert_eq!(event.cache_read_tokens, expected_read);
         assert_eq!(event.provider_usage, usage);
     }
@@ -338,20 +340,20 @@ async fn chat_root_aliases_do_not_reinterpret_responses_or_native_exclusive_inpu
             json!({"input_tokens": 120_000, "output_tokens": 10_000,
                 "prompt_cache_hit_tokens": 90_000}),
             None,
-            4_200,
+            420_000_000,
         ),
         (
             json!({"input_tokens": 30_000, "output_tokens": 10_000,
                 "cache_read_input_tokens": 90_000, "prompt_cache_hit_tokens": 1}),
             Some(90_000),
-            1_590,
+            159_000_000,
         ),
         (
             json!({"prompt_tokens": 30_000, "completion_tokens": 10_000,
                 "prompt_cache_hit_tokens": 1,
                 "provider_usage": {"input_tokens": 30_000, "cache_read_input_tokens": 90_000}}),
             Some(90_000),
-            1_590,
+            159_000_000,
         ),
     ] {
         let event = recorded_catalog_usage(
@@ -364,7 +366,7 @@ async fn chat_root_aliases_do_not_reinterpret_responses_or_native_exclusive_inpu
         assert_eq!(event.pricing_status, UsagePricingStatus::Priced);
         assert_eq!(event.prompt_tokens, Some(120_000));
         assert_eq!(event.cache_read_tokens, expected_read);
-        assert_eq!(event.computed_cost_usd, Money4::from_scaled(cost));
+        assert_eq!(event.computed_cost_usd, Money9::from_nanos(cost));
         assert_eq!(event.provider_usage, usage);
     }
 }
@@ -385,7 +387,7 @@ async fn exclusive_cache_counters_select_the_tier_from_the_normalized_prompt() {
 
     assert_eq!(event.prompt_tokens, Some(1_200));
     assert_eq!(event.pricing_tier_above_input_tokens, Some(1_000));
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(16));
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(1_590_000));
 }
 
 #[tokio::test]
@@ -399,7 +401,7 @@ async fn native_messages_cache_counters_select_and_bill_the_same_context_tier() 
     assert_eq!(event.prompt_tokens, Some(1_200));
     assert_eq!(event.cache_read_tokens, Some(900));
     assert_eq!(event.pricing_tier_above_input_tokens, Some(1_000));
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(16));
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(1_590_000));
 }
 
 #[tokio::test]
@@ -430,7 +432,7 @@ async fn mixed_ttl_usage_bills_each_write_bucket_and_keeps_provider_reported_cos
         assert_eq!(event.pricing_status, UsagePricingStatus::Priced);
         assert_eq!(event.unpriced_reason, None);
         if reported_cost.is_some() {
-            assert_eq!(event.computed_cost_usd, Money4::from_scaled(123));
+            assert_eq!(event.computed_cost_usd, Money9::from_nanos(12_300_000));
             assert_eq!(event.pricing_source.as_deref(), Some("provider_reported"));
         } else {
             assert_eq!(
@@ -438,9 +440,9 @@ async fn mixed_ttl_usage_bills_each_write_bucket_and_keeps_provider_reported_cos
                 Some(Money4::from_scaled(60_000)),
                 "1-hour writes bill at twice the context tier's $3 input rate"
             );
-            // 100 uncached at $3 + 900 reads at $0.10 + 80 5-minute writes at $1.25 + 120
-            // 1-hour writes at $6 + 20 output at $6, each rounded: 3 + 1 + 1 + 7 + 1.
-            assert_eq!(event.computed_cost_usd, Money4::from_scaled(13));
+            // $0.0003 uncached + $0.00009 reads + $0.0001 5-minute writes
+            // + $0.00072 1-hour writes + $0.00012 output.
+            assert_eq!(event.computed_cost_usd, Money9::from_nanos(1_330_000));
         }
     }
 }
@@ -463,9 +465,9 @@ async fn prompt_at_the_threshold_bills_base_rates() {
         event.input_cost_per_million_tokens,
         Some(Money4::from_scaled(10_000))
     );
-    // 100 uncached at $1 ($0.0001) + 900 cached at $0.10 ($0.0001) + 100 output at $2
+    // 100 uncached at $1 ($0.0001) + 900 cached at $0.10 ($0.00009) + 100 output at $2
     // ($0.0002).
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(4));
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(390_000));
 }
 
 #[tokio::test]
@@ -490,7 +492,7 @@ async fn route_pricing_override_ignores_catalog_tiers() {
     assert_eq!(event.pricing_source.as_deref(), Some("configured_override"));
     assert_eq!(event.pricing_tier_above_input_tokens, None);
     // 2,000 input at $1 ($0.002) + 100 output at $2 ($0.0002).
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(22));
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(2_200_000));
 }
 
 #[tokio::test]
@@ -504,7 +506,7 @@ async fn provider_reported_cost_wins_over_catalog_tiers() {
 
     assert_eq!(event.pricing_source.as_deref(), Some("provider_reported"));
     assert_eq!(event.pricing_tier_above_input_tokens, None);
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(123));
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(12_300_000));
 }
 
 #[tokio::test]
@@ -528,7 +530,7 @@ async fn image_output_tokens_are_charged_at_the_catalog_image_rate() {
         Some(Money4::from_scaled(300_000))
     );
     // 1,000 input at $1 ($0.001) + 200 text at $2 ($0.0004) + 1,000 image at $30 ($0.03).
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(314));
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(31_400_000));
 }
 
 /// A catalog schedule with $5 input and $40 image output per million but no text output
@@ -557,7 +559,7 @@ async fn image_only_completion_is_priced_without_a_text_output_rate() {
     assert_eq!(event.pricing_status, UsagePricingStatus::Priced);
     assert_eq!(event.unpriced_reason, None);
     // 1,000 input at $5 ($0.005) + 1,000 image at $40 ($0.04).
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(450));
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(45_000_000));
 }
 
 #[tokio::test]
@@ -582,7 +584,7 @@ async fn text_completion_tokens_without_a_text_output_rate_stay_unpriced() {
             event.unpriced_reason.as_deref(),
             Some("missing_output_rate")
         );
-        assert_eq!(event.computed_cost_usd, Money4::ZERO);
+        assert_eq!(event.computed_cost_usd, Money9::ZERO);
     }
 }
 
@@ -610,5 +612,5 @@ async fn image_only_completion_with_invalid_cache_counters_uses_legacy_estimate(
         event.unpriced_reason
     );
     // 1,000 input at $5 ($0.005) + 1,000 image at $40 ($0.04).
-    assert_eq!(event.computed_cost_usd, Money4::from_scaled(450));
+    assert_eq!(event.computed_cost_usd, Money9::from_nanos(45_000_000));
 }

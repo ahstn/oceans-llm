@@ -4,7 +4,7 @@ use gateway_core::{
     AuthenticatedApiKey, BatchEndpoint, BatchJobRecord, BatchPricingSnapshot, BatchPricingStatus,
     BatchRepository, BatchStatus, BatchTokenRates, BudgetAlertRepository, BudgetRepository,
     GatewayError, IdentityRepository, McpToolInvocationRepository, ModelRepository, ModelRoute,
-    Money4, NewBatchItem, NewBatchJob, PartialCapabilities, PricingCatalogRepository,
+    Money9, NewBatchItem, NewBatchJob, PartialCapabilities, PricingCatalogRepository,
     PricingResolution, ProviderCapabilities, ProviderRegistry, ProviderRepository,
     ProviderRequestContext, RequestLogRepository, RoutePlanner, SERVICE_TIER_REQUEST_FIELDS,
     ServiceTier, StoreHealth, effective_route_capabilities, enforce_reasoning_effort_value,
@@ -37,10 +37,11 @@ impl BatchPricer {
         Self { snapshot }
     }
 
+    /// Prices one item, rounding its summed discounted token charges once to USD nanos.
     pub fn price_usage(
         &self,
         provider_usage: Option<&Value>,
-    ) -> Result<Option<Money4>, GatewayError> {
+    ) -> Result<Option<Money9>, GatewayError> {
         let Some(base) = self.snapshot.rates else {
             return Ok(None);
         };
@@ -51,10 +52,11 @@ impl BatchPricer {
         compute_batch_usage_cost(&usage, self.item_rates(base, &usage), self.snapshot.policy)
     }
 
+    /// Prices the full set from unrounded numerators, not from rounded item charges.
     pub fn price_usages<'a>(
         &self,
         provider_usages: impl IntoIterator<Item = Option<&'a Value>>,
-    ) -> Result<Option<Money4>, GatewayError> {
+    ) -> Result<Option<Money9>, GatewayError> {
         let Some(base) = self.snapshot.rates else {
             return Ok(None);
         };
@@ -78,7 +80,7 @@ impl BatchPricer {
         if !seen {
             return Ok(None);
         }
-        money4_from_batch_numerator(total_numerator).map(Some)
+        money9_from_batch_numerator(total_numerator).map(Some)
     }
 
     /// The rates billing one item: `base`, or the context tier the item's own normalized
@@ -166,9 +168,9 @@ pub(crate) fn compute_batch_usage_cost(
     usage: &UsageSummary,
     rates: BatchRates,
     policy: BatchPricingPolicy,
-) -> Result<Option<Money4>, GatewayError> {
+) -> Result<Option<Money9>, GatewayError> {
     batch_usage_cost_numerator(usage, rates, policy)?
-        .map(money4_from_batch_numerator)
+        .map(money9_from_batch_numerator)
         .transpose()
 }
 
@@ -177,49 +179,56 @@ fn batch_usage_cost_numerator(
     rates: BatchRates,
     policy: BatchPricingPolicy,
 ) -> Result<Option<i128>, GatewayError> {
-    let mut components = Vec::new();
-    match &usage.cache_usage {
+    let cache_components = match &usage.cache_usage {
         CacheUsageNormalization::Valid(_) => {
             // Cache writes count both TTLs; 1-hour writes bill at their own rate.
             let cache_write_1h_tokens = usage.cache_write_1h_tokens.unwrap_or_default();
             let cache_write_1h_rate = rates
                 .cache_write_1h
                 .or_else(|| rates.input.map(fallback_cache_write_1h_rate));
-            components.push((usage.uncached_input_tokens, rates.input, true));
-            components.push((
-                usage.cache_read_tokens,
-                rates.cache_read,
-                policy == BatchPricingPolicy::HalfAllTokenRates,
-            ));
-            components.push((
-                usage
-                    .cache_write_tokens
-                    .map(|tokens| tokens - cache_write_1h_tokens),
-                rates.cache_write,
-                true,
-            ));
-            components.push((Some(cache_write_1h_tokens), cache_write_1h_rate, true));
+            [
+                (usage.uncached_input_tokens, rates.input, true),
+                (
+                    usage.cache_read_tokens,
+                    rates.cache_read,
+                    policy == BatchPricingPolicy::HalfAllTokenRates,
+                ),
+                (
+                    usage
+                        .cache_write_tokens
+                        .map(|tokens| tokens - cache_write_1h_tokens),
+                    rates.cache_write,
+                    true,
+                ),
+                (Some(cache_write_1h_tokens), cache_write_1h_rate, true),
+            ]
         }
-        CacheUsageNormalization::Unavailable | CacheUsageNormalization::Invalid(_) => {
-            components.push((usage.prompt_tokens, rates.input, true));
-        }
-    }
+        CacheUsageNormalization::Unavailable | CacheUsageNormalization::Invalid(_) => [
+            (usage.prompt_tokens, rates.input, true),
+            (None, None, true),
+            (None, None, true),
+            (None, None, true),
+        ],
+    };
     // Image tokens are part of the completion tokens; with an image rate they
     // are charged at it and the rest at the output rate, as in usage pricing.
-    match (
+    let output_components = match (
         usage.completion_tokens,
         usage.image_output_tokens,
         rates.image_output,
     ) {
-        (Some(completion), Some(image), Some(image_rate)) => {
-            components.push((Some(completion - image), rates.output, true));
-            components.push((Some(image), Some(image_rate), true));
-        }
-        _ => components.push((usage.completion_tokens, rates.output, true)),
-    }
+        (Some(completion), Some(image), Some(image_rate)) => [
+            (Some(completion - image), rates.output, true),
+            (Some(image), Some(image_rate), true),
+        ],
+        _ => [
+            (usage.completion_tokens, rates.output, true),
+            (None, None, true),
+        ],
+    };
 
     let mut total = 0_i128;
-    for (tokens, rate, discounted) in components {
+    for (tokens, rate, discounted) in cache_components.into_iter().chain(output_components) {
         let tokens = tokens.unwrap_or_default();
         if tokens == 0 {
             continue;
@@ -244,15 +253,16 @@ fn batch_usage_cost_numerator(
     Ok(Some(total))
 }
 
-fn money4_from_batch_numerator(numerator: i128) -> Result<Money4, GatewayError> {
-    const DENOMINATOR: i128 = 2_000_000;
+fn money9_from_batch_numerator(numerator: i128) -> Result<Money9, GatewayError> {
+    // Money4 rates / million tokens / two for the discount, expressed in nanos.
+    const DENOMINATOR: i128 = 20;
     let rounded = numerator
         .checked_add(DENOMINATOR / 2)
         .ok_or_else(|| GatewayError::Internal("usage cost overflow".to_string()))?
         / DENOMINATOR;
     let scaled = i64::try_from(rounded)
         .map_err(|_| GatewayError::Internal("usage cost overflow".to_string()))?;
-    Ok(Money4::from_scaled(scaled))
+    Ok(Money9::from_nanos(scaled))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -560,7 +570,7 @@ fn request_hash(input: &CreateBatchInput) -> Result<String, GatewayError> {
 
 #[cfg(test)]
 mod tests {
-    use gateway_core::{BatchPricingSnapshot, ContextPricingTier, Money4};
+    use gateway_core::{BatchPricingSnapshot, ContextPricingTier, Money4, Money9};
     use serde_json::json;
 
     use super::{
@@ -621,7 +631,7 @@ mod tests {
     }
 
     #[test]
-    fn local_batch_cost_rounds_once_after_aggregating_items() {
+    fn local_batch_cost_preserves_nanos_before_aggregating_items() {
         let usage = json!({
             "prompt_tokens": 50,
             "completion_tokens": 0,
@@ -642,13 +652,57 @@ mod tests {
 
         assert_eq!(
             pricer.price_usage(Some(&usage)).expect("item price"),
-            Some(Money4::ZERO)
+            Some(Money9::from_nanos(25_000))
         );
         assert_eq!(
             pricer
                 .price_usages((0..MAX_BATCH_ITEMS).map(|_| Some(&usage)))
                 .expect("batch price"),
+            Some(Money9::from_nanos(1_250_000_000))
+        );
+        assert_eq!(
+            pricer
+                .price_usage(Some(&usage))
+                .expect("item display price")
+                .map(Money9::round_half_up_to_money4),
+            Some(Money4::ZERO)
+        );
+        assert_eq!(
+            pricer
+                .price_usages((0..MAX_BATCH_ITEMS).map(|_| Some(&usage)))
+                .expect("batch display price")
+                .map(Money9::round_half_up_to_money4),
             Some(Money4::from_scaled(12_500))
+        );
+    }
+
+    #[test]
+    fn batch_pricing_rounds_fractional_nanos_once_across_components_and_items() {
+        let pricer = BatchPricer::from_snapshot(BatchPricingSnapshot {
+            rates: Some(BatchRates {
+                input: Some(Money4::from_scaled(1)),
+                output: Some(Money4::from_scaled(1)),
+                cache_read: None,
+                cache_write: None,
+                cache_write_1h: None,
+                image_output: None,
+            }),
+            context_tiers: Vec::new(),
+            policy: BatchPricingPolicy::HalfAllTokenRates,
+        });
+        let usage = json!({"prompt_tokens": 5, "completion_tokens": 5});
+
+        // Each component costs 0.25 nanos; the combined half nano rounds to one.
+        assert_eq!(
+            pricer.price_usage(Some(&usage)).expect("item price"),
+            Some(Money9::from_nanos(1))
+        );
+        // Two half-nano items total one nano, not two independently rounded nanos.
+        assert_eq!(
+            pricer
+                .price_usages([Some(&usage), Some(&usage)])
+                .expect("batch price"),
+            Some(Money9::from_nanos(1))
         );
     }
 
@@ -680,21 +734,21 @@ mod tests {
         // (1,000 * $1 + 100 * $2) / 1M, halved: $0.0006.
         assert_eq!(
             pricer.price_usage(Some(&at_threshold)).expect("base item"),
-            Some(Money4::from_scaled(6))
+            Some(Money9::from_nanos(600_000))
         );
-        // (1,001 * $3 + 100 * $2) / 1M, halved: $0.0016015 rounds to $0.0016.
+        // (1,001 * $3 + 100 * $2) / 1M, halved: exactly $0.0016015.
         assert_eq!(
             pricer
                 .price_usage(Some(&above_threshold))
                 .expect("tier item"),
-            Some(Money4::from_scaled(16))
+            Some(Money9::from_nanos(1_601_500))
         );
-        // ($0.0012 + $0.003203) halved is $0.0022015, rounded once: $0.0022.
+        // ($0.0012 + $0.003203) halved is exactly $0.0022015.
         assert_eq!(
             pricer
                 .price_usages([Some(&at_threshold), Some(&above_threshold)])
                 .expect("batch price"),
-            Some(Money4::from_scaled(22))
+            Some(Money9::from_nanos(2_201_500))
         );
     }
 

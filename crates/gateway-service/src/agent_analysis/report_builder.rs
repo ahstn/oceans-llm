@@ -1,4 +1,5 @@
 use super::*;
+use gateway_core::McpToolInvocationBatchQuery;
 
 pub(super) async fn generate_report<S>(
     store: &S,
@@ -239,6 +240,7 @@ struct DirectMcpEvidence {
     snapshot_digest: String,
 }
 
+/// Uses the first 2,048 rows in request ID, then newest-first order.
 async fn load_direct_mcp_evidence<S>(
     store: &S,
     session: &AgentSessionRecord,
@@ -247,67 +249,49 @@ async fn load_direct_mcp_evidence<S>(
 where
     S: McpToolInvocationRepository + Sync,
 {
-    let page_size = MAX_MCP_TOOL_INVOCATION_PAGE_SIZE;
-    let mut intervals = Vec::new();
-    let mut snapshot = Vec::new();
     let request_ids = session_requests
         .iter()
         .map(|request| request.request_id.as_str())
-        .collect::<BTreeSet<_>>();
-    let mut invocations = Vec::new();
-    for request_id in request_ids {
-        let mut page = 1;
-        while page <= MAX_DIRECT_MCP_SCAN_PAGES && invocations.len() < MAX_RELIABILITY_EVENTS {
-            let result = store
-                .list_mcp_tool_invocations(&McpToolInvocationQuery {
-                    page,
-                    page_size,
-                    request_id: Some(request_id.to_string()),
-                    user_id: session.user_id,
-                    team_id: session.team_id,
-                    occurred_at_start: Some(session.started_at),
-                    occurred_at_end: Some(session.ended_at.unwrap_or(session.input_watermark_at)),
-                    ..McpToolInvocationQuery::default()
-                })
-                .await?;
-            for invocation in &result.items {
-                if invocation.user_id != session.user_id || invocation.team_id != session.team_id {
-                    continue;
-                }
-                let latency_ms = invocation.latency_ms.unwrap_or_default().max(0);
-                let started_at = invocation.occurred_at - Duration::milliseconds(latency_ms);
-                if intervals.len() < MAX_RELIABILITY_EVENTS
-                    && let Some(interval) =
-                        ActivityInterval::new(started_at, invocation.occurred_at)
-                {
-                    intervals.push(interval);
-                }
-                if snapshot.len() < MAX_RELIABILITY_EVENTS {
-                    snapshot.push((
-                        invocation.mcp_tool_invocation_id,
-                        invocation.occurred_at.unix_timestamp_nanos(),
-                        invocation.latency_ms,
-                    ));
-                }
-                if invocations.len() < MAX_RELIABILITY_EVENTS {
-                    invocations.push(ToolInvocationFact {
-                        request_id: invocation.request_id.clone(),
-                        server_key: Some(invocation.server_display_key.clone()),
-                        tool_key: invocation.tool_display_key.clone(),
-                        status: invocation.status.as_str().to_string(),
-                        error_code: invocation.error_code.clone(),
-                        latency_ms: invocation.latency_ms,
-                        result_payload_truncated: invocation.result_payload_truncated,
-                        occurred_at_unix_ms: unix_timestamp_millis(invocation.occurred_at),
-                    });
-                }
-            }
-            if u64::from(page) * u64::from(page_size) >= result.total || result.items.is_empty() {
-                break;
-            }
-            page = page.checked_add(1).ok_or_else(|| {
-                GatewayError::Internal("MCP invocation page overflow".to_string())
-            })?;
+        .collect::<Vec<_>>();
+    let rows = store
+        .list_mcp_tool_invocations_by_request_ids(&McpToolInvocationBatchQuery {
+            request_ids: &request_ids,
+            user_id: session.user_id,
+            team_id: session.team_id,
+            occurred_at_start: session.started_at,
+            occurred_at_end: session.ended_at.unwrap_or(session.input_watermark_at),
+            limit: u32::try_from(MAX_RELIABILITY_EVENTS).unwrap_or(u32::MAX),
+        })
+        .await?;
+    let mut intervals = Vec::with_capacity(rows.len());
+    let mut snapshot = Vec::with_capacity(rows.len());
+    let mut invocations = Vec::with_capacity(rows.len());
+    for invocation in rows {
+        let latency_ms = invocation.latency_ms.unwrap_or_default().max(0);
+        let started_at = invocation.occurred_at - Duration::milliseconds(latency_ms);
+        if intervals.len() < MAX_RELIABILITY_EVENTS
+            && let Some(interval) = ActivityInterval::new(started_at, invocation.occurred_at)
+        {
+            intervals.push(interval);
+        }
+        if snapshot.len() < MAX_RELIABILITY_EVENTS {
+            snapshot.push((
+                invocation.mcp_tool_invocation_id,
+                invocation.occurred_at.unix_timestamp_nanos(),
+                invocation.latency_ms,
+            ));
+        }
+        if invocations.len() < MAX_RELIABILITY_EVENTS {
+            invocations.push(ToolInvocationFact {
+                request_id: invocation.request_id,
+                server_key: Some(invocation.server_display_key),
+                tool_key: invocation.tool_display_key,
+                status: invocation.status.as_str().to_string(),
+                error_code: invocation.error_code,
+                latency_ms: invocation.latency_ms,
+                result_payload_truncated: invocation.result_payload_truncated,
+                occurred_at_unix_ms: unix_timestamp_millis(invocation.occurred_at),
+            });
         }
     }
     snapshot.sort_unstable();
@@ -364,7 +348,7 @@ fn session_usage_fact(record: &UsageLedgerRecord) -> SessionUsageFact {
         tokens
             .zip(rate)
             .and_then(|(tokens, rate)| scaled_cost_for_tokens(tokens, rate).ok())
-            .map(Money4::as_scaled_i64)
+            .map(|cost| cost.round_half_up_to_money4().as_scaled_i64())
     };
     // Image tokens are part of the completion tokens; with an image rate they
     // are charged at it and the rest at the output rate, as in usage pricing.
@@ -411,7 +395,12 @@ fn session_usage_fact(record: &UsageLedgerRecord) -> SessionUsageFact {
         output_cost_10000,
         reasoning_cost_10000: None,
         legacy_cost_10000: None,
-        normalized_cost_10000: priced.then_some(record.computed_cost_usd.as_scaled_i64()),
+        normalized_cost_10000: priced.then_some(
+            record
+                .computed_cost_usd
+                .round_half_up_to_money4()
+                .as_scaled_i64(),
+        ),
         uncached_input_cost_10000: component_cost(
             record.prompt_tokens,
             record.input_cost_per_million_tokens,

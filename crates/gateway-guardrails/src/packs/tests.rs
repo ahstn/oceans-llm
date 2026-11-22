@@ -787,6 +787,110 @@ fn core_packs_inspect_commands_exposed_as_mcp_tools() {
 }
 
 #[test]
+fn shell_tools_are_recognized_by_the_words_of_their_name() {
+    for name in [
+        "bash",
+        "Bash",
+        "shell",
+        "sh",
+        "exec",
+        "exec_command",
+        "container.exec",
+        "local_shell_call",
+        "shell_command",
+        "terminal.exec",
+        "run_terminal_cmd",
+        "runTerminalCmd",
+        "run_shell_command",
+        "execute_bash",
+        "execute-command",
+        "computer.run_command",
+        "mcp__desktop__run_command",
+        "PowerShell",
+        "EXECCommand",
+        "runCMD",
+        "BASHTool",
+        "command",
+        "cmd",
+        "Command",
+    ] {
+        assert!(is_shell_tool(name), "{name}");
+    }
+    // A shell word inside a longer word, `run`/`execute` without a command, or `command` beside
+    // another word, is not a shell.
+    for name in [
+        "read",
+        "write_file",
+        "search_tools",
+        "execute_sql",
+        "run_query",
+        "executor_status",
+        "bashful",
+        "refresh",
+        "command_palette",
+        "slash_command",
+        "HTTPServer",
+        "naïve_tool",
+    ] {
+        assert!(!is_shell_tool(name), "{name}");
+    }
+}
+
+#[test]
+fn core_packs_inspect_every_command_field_of_a_shell_tool_call() {
+    for arguments in [
+        json!({"command": "echo ok", "script": "rm -rf /"}),
+        json!({"script": "echo ok", "cmd": "rm -rf /"}),
+        json!({"command": "echo ok", "input": {"command": "rm -rf /"}}),
+        json!({"command": ["rm -rf /"], "script": "echo ok"}),
+        json!({"command": "echo ok", "cmd": ["echo ok", "rm -rf /"]}),
+        json!({"command": ["echo ok", "rm -rf /"]}),
+    ] {
+        let matched = evaluate(
+            "core.filesystem",
+            EvaluationPayload::ToolCall {
+                name: "bash".into(),
+                arguments: arguments.clone(),
+            },
+        );
+        assert!(matched.is_some(), "{arguments}");
+    }
+}
+
+#[test]
+fn core_packs_inspect_a_shell_tool_call_whatever_the_tool_is_named() {
+    for (name, arguments) in [
+        ("exec", json!({"command": "rm -rf /"})),
+        ("command", json!({"command": "rm -rf /"})),
+        ("EXECCommand", json!({"command": "rm -rf /"})),
+        ("runTerminalCmd", json!({"command": "rm -rf /"})),
+        ("run_shell_command", json!({"cmd": "rm -rf /"})),
+        ("execute_bash", json!({"script": "rm -rf /"})),
+    ] {
+        let matched = evaluate(
+            "core.filesystem",
+            EvaluationPayload::ToolCall {
+                name: name.into(),
+                arguments,
+            },
+        )
+        .unwrap_or_else(|| panic!("{name} was not inspected"));
+        assert_eq!(matched.rule_id, "recursive-force-remove");
+    }
+    // A tool that is not a shell is not read as one, so text such as SQL with `>` is left alone.
+    assert!(
+        evaluate(
+            "core.filesystem",
+            EvaluationPayload::ToolCall {
+                name: "execute_sql".into(),
+                arguments: json!({"command": "SELECT 1 WHERE a > b"}),
+            },
+        )
+        .is_none()
+    );
+}
+
+#[test]
 fn malformed_generated_tool_arguments_fail_closed() {
     let error = BuiltInEvaluator
         .evaluate(

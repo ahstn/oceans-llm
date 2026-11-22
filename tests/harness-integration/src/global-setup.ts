@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import type { TestProject } from "vitest/node";
 import { z } from "zod";
 
+import { startCanaryProvider, type CanaryProvider } from "./canary-provider.js";
 import {
   assertSuccessful,
   fetchWithTimeout,
@@ -32,6 +33,12 @@ const PLUGIN_MODELS: GatewayRuntime["pluginModels"] = {
   textOnly: "harness-plugin-text-only",
   hidden: "harness-plugin-hidden",
 };
+// Models on the local canary provider, for the guardrail tests. The audit model's route overrides
+// the default policy's `deny` mode.
+const GUARDRAIL_MODELS = {
+  deny: "harness-guardrail-canary",
+  audit: "harness-guardrail-audit",
+} as const;
 const MANAGED_API_KEY = "gwk_harness.integration-secret";
 const MANAGED_ADMIN_EMAIL = "harness-admin@local";
 const MANAGED_ADMIN_PASSWORD = "harness-admin-password";
@@ -61,6 +68,7 @@ const PasswordActivationSchema = z.object({
 });
 
 interface ManagedGateway {
+  canary: CanaryProvider;
   process: ChildProcess;
   runtimeDir: string;
 }
@@ -79,8 +87,10 @@ export default async function setup(context: TestProject): Promise<() => Promise
   const openRouterApiKey = requiredEnvironment("OPENROUTER_API_KEY");
   const gatewayBinary = await buildGateway();
   const runtimeDir = await mkdtemp(join(tmpdir(), "oceans-harness-integration-"));
+  let canary: CanaryProvider | undefined;
   let managed: ManagedGateway | undefined;
   try {
+    canary = await startCanaryProvider();
     const port = await availablePort();
     const baseUrl = `http://127.0.0.1:${port}`;
     const configPath = join(runtimeDir, "gateway.harness.yaml");
@@ -89,7 +99,7 @@ export default async function setup(context: TestProject): Promise<() => Promise
     const bedrockRegion = managedBedrockRegion();
     await writeFile(
       configPath,
-      gatewayConfig(port, databasePath, vertexProject, bedrockRegion),
+      gatewayConfig(port, databasePath, canary.baseUrl, vertexProject, bedrockRegion),
       "utf8",
     );
 
@@ -99,6 +109,7 @@ export default async function setup(context: TestProject): Promise<() => Promise
       runtimeDir,
       openRouterApiKey,
       baseUrl,
+      canary,
     );
     managed = runningGateway;
     const runtime: GatewayRuntime = {
@@ -106,6 +117,11 @@ export default async function setup(context: TestProject): Promise<() => Promise
       adminPassword: MANAGED_ADMIN_PASSWORD,
       apiKey: MANAGED_API_KEY,
       baseUrl,
+      guardrailCanary: {
+        auditModel: GUARDRAIL_MODELS.audit,
+        capturesUrl: canary.capturesUrl,
+        denyModel: GUARDRAIL_MODELS.deny,
+      },
       pluginModels: PLUGIN_MODELS,
       providerModels: {
         ...(vertexProject ? { vertex: VERTEX_MODELS } : {}),
@@ -124,7 +140,7 @@ export default async function setup(context: TestProject): Promise<() => Promise
     if (managed) {
       await stopManagedGateway(managed);
     } else {
-      await rm(runtimeDir, { force: true, recursive: true });
+      await releaseRuntime(canary, runtimeDir).catch(() => undefined);
     }
     throw error;
   }
@@ -205,6 +221,7 @@ function startGateway(
   runtimeDir: string,
   openRouterApiKey: string,
   baseUrl: string,
+  canary: CanaryProvider,
 ): ManagedGateway {
   const gatewayProcess = spawn(gatewayBinary, [], {
     cwd: ROOT_DIR,
@@ -224,7 +241,7 @@ function startGateway(
   });
   gatewayProcess.stdout?.pipe(process.stdout);
   gatewayProcess.stderr?.pipe(process.stderr);
-  return { process: gatewayProcess, runtimeDir };
+  return { canary, process: gatewayProcess, runtimeDir };
 }
 
 async function assertGatewayReady(baseUrl: string, gatewayProcess?: ChildProcess): Promise<void> {
@@ -418,17 +435,47 @@ async function availablePort(): Promise<number> {
   return address.port;
 }
 
+/** Stops the gateway, then always closes the canary and removes the runtime directory. */
 async function stopManagedGateway(managed: ManagedGateway): Promise<void> {
-  if (!hasProcessExited(managed.process)) {
-    managed.process.kill("SIGTERM");
-    if (!(await waitForProcessExit(managed.process, 5_000))) {
-      managed.process.kill("SIGKILL");
-      if (!(await waitForProcessExit(managed.process, 5_000))) {
-        throw new Error("Managed gateway did not exit after SIGKILL");
-      }
+  // The directory holds the gateway's database, so it is removed only after the gateway stops.
+  const [stopped] = await Promise.allSettled([stopGatewayProcess(managed.process)]);
+  const [released] = await Promise.allSettled([releaseRuntime(managed.canary, managed.runtimeDir)]);
+  // A gateway that would not stop is the error to report, ahead of a cleanup failure.
+  for (const result of [stopped, released]) {
+    if (result.status === "rejected") {
+      throw result.reason;
     }
   }
-  await rm(managed.runtimeDir, { force: true, recursive: true });
+}
+
+async function stopGatewayProcess(process: ChildProcess): Promise<void> {
+  if (hasProcessExited(process)) {
+    return;
+  }
+  process.kill("SIGTERM");
+  if (await waitForProcessExit(process, 5_000)) {
+    return;
+  }
+  process.kill("SIGKILL");
+  if (!(await waitForProcessExit(process, 5_000))) {
+    throw new Error("Managed gateway did not exit after SIGKILL");
+  }
+}
+
+/** Closes the canary and removes the runtime directory. A failure of one does not skip the other. */
+async function releaseRuntime(
+  canary: CanaryProvider | undefined,
+  runtimeDir: string,
+): Promise<void> {
+  const results = await Promise.allSettled([
+    canary?.close(),
+    rm(runtimeDir, { force: true, recursive: true }),
+  ]);
+  for (const result of results) {
+    if (result.status === "rejected") {
+      throw result.reason;
+    }
+  }
 }
 
 function hasProcessExited(process: ChildProcess): boolean {
@@ -482,6 +529,7 @@ function managedBedrockRegion(): string | undefined {
 function gatewayConfig(
   port: number,
   databasePath: string,
+  canaryBaseUrl: string,
   vertexProject?: string,
   bedrockRegion?: string,
 ): string {
@@ -560,6 +608,32 @@ request_logging:
     stream_max_events: 128
     redaction_paths: []
 
+# Deny mode with redaction, so the shell hooks of every harness run get a real decision and no
+# prompt leaves the gateway with a secret that a rule detects. The audit route releases a
+# destructive tool call, which lets a test reach the harness's own hook.
+guardrails:
+  default:
+    enabled: true
+    mode: deny
+    packs:
+      - core.shell
+      - core.git
+      - core.filesystem
+      - database.postgresql
+      - secrets.aws_secrets
+      - secrets.onepassword
+      - secret_disclosure
+      - cloud.aws
+      - cloud.gcp
+      - kubernetes.kubectl
+      - kubernetes.helm
+    secret_redaction:
+      enabled: true
+      tiers: [provider_tokens, credentials]
+  model_routes:
+    ${JSON.stringify(`${GUARDRAIL_MODELS.audit}/canary/${JSON.parse(upstream.openai)}`)}:
+      mode: audit
+
 teams:
   - id: harness
     name: Harness Integration
@@ -582,7 +656,7 @@ service_accounts:
       - id: integration
         name: Harness Integration Key
         value: env.HARNESS_OCEANS_API_KEY
-        allowed_models: [${PLUGIN_MODELS.openai}, ${PLUGIN_MODELS.anthropic}, ${PLUGIN_MODELS.google}, ${PLUGIN_MODELS.textOnly}${vertexProject ? `, ${VERTEX_MODELS.google}` : ""}${bedrockRegion ? `, ${BEDROCK_MODELS.openai}, ${BEDROCK_MODELS.anthropic}` : ""}]
+        allowed_models: [${PLUGIN_MODELS.openai}, ${PLUGIN_MODELS.anthropic}, ${PLUGIN_MODELS.google}, ${PLUGIN_MODELS.textOnly}, ${GUARDRAIL_MODELS.deny}, ${GUARDRAIL_MODELS.audit}${vertexProject ? `, ${VERTEX_MODELS.google}` : ""}${bedrockRegion ? `, ${BEDROCK_MODELS.openai}, ${BEDROCK_MODELS.anthropic}` : ""}]
 
 providers:
   - id: openrouter
@@ -592,6 +666,14 @@ providers:
     auth:
       kind: bearer
       token: env.OPENROUTER_API_KEY
+
+  - id: canary
+    type: openai_compat
+    base_url: ${JSON.stringify(canaryBaseUrl)}
+    pricing_provider_id: openrouter
+    auth:
+      kind: bearer
+      token: literal.canary-provider-token
 ${vertexProvider}${bedrockProvider}
 models:
   - id: ${ALLOWLISTED_GATEWAY_MODEL}
@@ -601,6 +683,20 @@ models:
         - Allowlisted.Harness@Example.com
     routes:
       - provider: openrouter
+        upstream_model: ${upstream.openai}
+
+  # The canary routes name a real upstream model, so that generated client configs get its
+  # context and output limits. Pi rejects a models.json whose limits are 0.
+  - id: ${GUARDRAIL_MODELS.deny}
+    description: Guardrail tests on the local canary provider, default deny policy
+    routes:
+      - provider: canary
+        upstream_model: ${upstream.openai}
+
+  - id: ${GUARDRAIL_MODELS.audit}
+    description: Guardrail tests on the local canary provider, audit override
+    routes:
+      - provider: canary
         upstream_model: ${upstream.openai}
 
   - id: ${PLUGIN_MODELS.openai}

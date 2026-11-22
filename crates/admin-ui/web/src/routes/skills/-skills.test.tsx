@@ -208,6 +208,32 @@ describe('skill uploads', () => {
     expect(uploadSkill).not.toHaveBeenCalled()
   })
 
+  it('keeps the archive picker button separate from the chosen file status', () => {
+    const archive = new File(['zip'], 'code-review.zip', { type: 'application/zip' })
+    Object.defineProperty(archive, 'size', { value: 2 * 1024 * 1024 })
+    render(
+      <SkillUploadDialog
+        namespace={{ handle: 'alex', user_id: 'owner-id' }}
+        limits={limits}
+        onClose={vi.fn()}
+        onUploaded={vi.fn()}
+      />,
+    )
+    const input = screen.getByLabelText('ZIP archive')
+    const clickInput = vi.spyOn(input, 'click')
+    const chooser = screen.getByRole('button', { name: 'Choose ZIP' })
+
+    expect(input).toHaveClass('sr-only')
+    expect(chooser).toHaveAccessibleDescription('No file selected')
+    fireEvent.click(chooser)
+    expect(clickInput).toHaveBeenCalledOnce()
+
+    fireEvent.change(input, { target: { files: [archive] } })
+    expect(screen.getByRole('button', { name: 'Replace ZIP' })).toHaveAccessibleDescription(
+      'code-review.zip · 2 MiB',
+    )
+  })
+
   it('rejects oversized archives before sending them', async () => {
     const archive = new File(['zip'], 'skill.zip', { type: 'application/zip' })
     Object.defineProperty(archive, 'size', { value: 10 * 1024 * 1024 + 1 })

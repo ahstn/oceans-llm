@@ -95,7 +95,7 @@ For every test, the suite then finds the requests in the gateway's request logs 
 - the operation is the API in the cell,
 - the agent harness is the right one. See [Agent harness usage](/observability/agent-harness-usage/). Claude Code in print mode sends a `claude-cli/` user agent, so its requests show as **Claude CLI**.
 
-The shell tests run with the same pre-tool hook that the suite uses for every harness. The hook asks [gateway guardrails](/operations/gateway-guardrails/) about each shell command before it runs, and runs the command in a sandbox that can only see the workspace.
+The shell tests run with the same pre-tool hook that the suite uses for every harness. The hook asks [gateway guardrails](/operations/gateway-guardrails/) about each shell command before it runs, and runs the command in a sandbox that can only see the workspace. The test gateway's policy is in `deny` mode with secret redaction. The suite also checks that the hooks block destructive commands, and that secrets in a prompt don't reach the provider.
 
 ## Reasoning effort and fast mode
 
@@ -151,7 +151,7 @@ The suite also checks these paths outside the matrix, all on OpenRouter:
 
 | Harness | Version |
 | --- | --- |
-| OpenCode | 2.2.6 |
+| OpenCode | 2.3.0 |
 | Oceans plugin (`@ahstn/opencode-oceans`) | Packed from the same source as the gateway |
 | Pi | 0.87.1 |
 | Oh-My-Pi | 18.20.0 |

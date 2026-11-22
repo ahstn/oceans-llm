@@ -22,6 +22,18 @@ export interface GatewayRuntime {
   adminPassword: string;
   apiKey: string;
   baseUrl: string;
+  /**
+   * Models on the local canary provider, which records what the gateway sends upstream. Only the
+   * managed gateway has them, so the guardrail tests skip on an external gateway.
+   */
+  guardrailCanary?: {
+    /** A model whose route overrides the default policy with `audit` mode. */
+    auditModel: string;
+    /** The URL that returns the request bodies the canary provider received. */
+    capturesUrl: string;
+    /** A model on the default `deny` policy. */
+    denyModel: string;
+  };
   /** OpenRouter model keys, which the plugin suite also uses. */
   pluginModels: {
     openai: string;

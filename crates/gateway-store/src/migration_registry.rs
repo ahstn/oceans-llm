@@ -32,8 +32,10 @@ const READER_COMPATIBILITY: &[(u32, ReaderCompatibility)] = &[
     (82, ReaderCompatibility::RequiresReader(82)),
     // V83 only replaces indexes.
     (83, ReaderCompatibility::Additive),
-    // V84 only adds an index.
-    (84, ReaderCompatibility::Additive),
+    // V84 changes usage charges to nanodollars and requires nanos-aware readers.
+    (84, ReaderCompatibility::RequiresReader(84)),
+    // V85 only adds an index.
+    (85, ReaderCompatibility::Additive),
 ];
 
 /// libsql migrations that rebuild a table other tables reference, with that
@@ -586,10 +588,17 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 84,
+        name: "usage_cost_nanos",
+        checksum: "V84__usage_cost_nanos.sql",
+        libsql_sql: include_str!("../migrations/V84__usage_cost_nanos.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V84__usage_cost_nanos.sql"),
+    },
+    MigrationManifest {
+        version: 85,
         name: "batch_jobs_route_index",
-        checksum: "V84__batch_jobs_route_index.sql",
-        libsql_sql: include_str!("../migrations/V84__batch_jobs_route_index.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V84__batch_jobs_route_index.sql"),
+        checksum: "V85__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V85__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V85__batch_jobs_route_index.sql"),
     },
 ];
 

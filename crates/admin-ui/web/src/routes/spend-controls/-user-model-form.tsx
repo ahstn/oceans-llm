@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { BudgetScopeRequest, ModelView, SpendBudgetUserView } from '@/types/api'
+import type { BudgetScopeRequest, ModelOptionView, SpendBudgetUserView } from '@/types/api'
 
 import { BudgetSettingsFields, type BudgetEditor } from './-budget-editor'
 import { initialBudgetSettings, type BudgetSettingsForm } from './-budget-model'
@@ -24,7 +24,7 @@ type UserModelDraft = {
   settings: BudgetSettingsForm
 }
 
-function initialDraft(users: SpendBudgetUserView[], models: ModelView[]): UserModelDraft {
+function initialDraft(users: SpendBudgetUserView[], models: ModelOptionView[]): UserModelDraft {
   return {
     userId: users[0]?.user_id ?? '',
     selectorKind: 'model_id',
@@ -41,7 +41,7 @@ export function UserModelBudgetForm({
   editor,
 }: {
   users: SpendBudgetUserView[]
-  models: ModelView[]
+  models: ModelOptionView[]
   editor: BudgetEditor
 }) {
   const [draft, setDraft] = useState<UserModelDraft>(() => initialDraft(users, models))

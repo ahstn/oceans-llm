@@ -193,7 +193,8 @@ fn ledger(api_key_id: Uuid, user_id: Uuid, team_id: Uuid, cost_10000: i64) -> Us
         cache_write_1h_cost_per_million_tokens: None,
         image_output_cost_per_million_tokens: None,
         pricing_tier_above_input_tokens: None,
-        computed_cost_usd: Money4::from_scaled(cost_10000),
+        computed_cost_usd: gateway_core::Money9::from_money4(Money4::from_scaled(cost_10000))
+            .expect("test cost fits nanos"),
         occurred_at,
         requested_service_tier: None,
         served_service_tier: None,

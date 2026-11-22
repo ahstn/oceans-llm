@@ -873,7 +873,7 @@ async fn request_facts_join_usage<S: GatewayStore>(store: &S, owner: &Attributio
             request_id: request_id.to_string(),
             occurred_at: base() + Duration::seconds(offset),
             model_key: Some("resolved-model".to_string()),
-            cost_10000,
+            cost_nanos: cost_10000.map(|cost| cost * 100_000),
             pricing_status: Some(status.to_string()),
         }
     };
@@ -1174,8 +1174,8 @@ async fn request_sessions_override_native_identity<S: GatewayStore>(store: &S) {
         .expect("effective sessions");
     assert_eq!(facts.len(), 3, "each request is returned once");
     assert_eq!(
-        facts.iter().filter_map(|fact| fact.cost_10000).sum::<i64>(),
-        333
+        facts.iter().filter_map(|fact| fact.cost_nanos).sum::<i64>(),
+        33_300_000
     );
     assert!(
         facts
@@ -1186,7 +1186,7 @@ async fn request_sessions_override_native_identity<S: GatewayStore>(store: &S) {
         assert_eq!(fact.ownership_scope_key, alice.ownership_scope_key);
         if fact.request_id == native_id.to_string() {
             assert_eq!(fact.session_hash, "provider-parent-hash");
-            assert_eq!(fact.cost_10000, None, "other owner's usage cannot join");
+            assert_eq!(fact.cost_nanos, None, "other owner's usage cannot join");
         } else {
             assert_eq!(fact.session_hash, "journal-child-hash");
         }
@@ -1303,8 +1303,8 @@ async fn codex_requests_use_exact_execution<S: GatewayStore>(store: &S) {
         .expect("exact execution facts");
     assert_eq!(facts.len(), 2);
     assert_eq!(
-        facts.iter().filter_map(|fact| fact.cost_10000).sum::<i64>(),
-        333
+        facts.iter().filter_map(|fact| fact.cost_nanos).sum::<i64>(),
+        33_300_000
     );
     let notes = store.list_attribution_commits(&day()).await.expect("notes");
     for (sha, id, hash, cost) in [
@@ -1326,7 +1326,7 @@ async fn codex_requests_use_exact_execution<S: GatewayStore>(store: &S) {
             "root and child notes must not borrow each other's requests"
         );
         assert_eq!(matched[0].request_id, id.to_string());
-        assert_eq!(matched[0].cost_10000, Some(cost));
+        assert_eq!(matched[0].cost_nanos, Some(cost * 100_000));
         let single = store
             .list_attribution_request_facts(&[hash.to_string()], base())
             .await
@@ -1358,7 +1358,7 @@ async fn codex_requests_use_exact_execution<S: GatewayStore>(store: &S) {
         .expect("explicit journal");
     assert_eq!(explicit.len(), 1);
     assert_eq!(explicit[0].request_id, child_id.to_string());
-    assert_eq!(explicit[0].cost_10000, Some(222));
+    assert_eq!(explicit[0].cost_nanos, Some(22_200_000));
 
     // Without an execution id Codex still uses its normalized session. Merely naming a
     // parent execution never matches that parent's note.

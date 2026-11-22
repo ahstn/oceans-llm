@@ -1,4 +1,4 @@
-use std::{fmt, str::FromStr};
+use std::{borrow::Cow, fmt, str::FromStr};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
@@ -175,15 +175,35 @@ impl DeterministicEvaluator for BuiltInEvaluator {
             return Err(EvaluationError::MalformedToolCall);
         }
 
+        // A generated tool call is matched as an MCP call from a fixed server. The call and
+        // its shell commands are the same for every pack, so both are built once.
+        let generated_call;
+        let call = match &input.payload {
+            EvaluationPayload::ToolCall { name, arguments } => {
+                generated_call = McpCall {
+                    server: "generated_tool_call".to_string(),
+                    tool: name.clone(),
+                    arguments: arguments.clone(),
+                };
+                Some(&generated_call)
+            }
+            EvaluationPayload::McpCall { call } => Some(call),
+            _ => None,
+        };
+        let commands = call.map(shell_tool_commands).unwrap_or_default();
+
         for pack in &policy.packs {
-            let matched = match (&input.payload, pack.as_str()) {
-                (EvaluationPayload::ShellCommand { command }, pack) => {
-                    match_shell_pack(pack, command)
+            let pack = pack.as_str();
+            let matched = match (&input.payload, call) {
+                (EvaluationPayload::ShellCommand { command }, _) => match_shell_pack(pack, command),
+                // Every pack reads the commands of a generated shell tool call.
+                (EvaluationPayload::ToolCall { .. }, Some(call)) => {
+                    match_shell_commands(pack, &commands)
+                        .or_else(|| match_mcp_pack(pack, call, &[]))
                 }
-                (EvaluationPayload::ToolCall { name, arguments }, pack) => {
-                    match_tool_call_pack(pack, name, arguments)
+                (EvaluationPayload::McpCall { .. }, Some(call)) => {
+                    match_mcp_pack(pack, call, &commands)
                 }
-                (EvaluationPayload::McpCall { call }, pack) => match_mcp_pack(pack, call),
                 _ => None,
             };
             if matched.is_some() {
@@ -194,46 +214,98 @@ impl DeterministicEvaluator for BuiltInEvaluator {
     }
 }
 
-fn match_shell_tool(pack: &str, name: &str, arguments: &Value) -> Option<MatchedRule> {
-    if !is_shell_tool(name) {
-        return None;
+/// A shell command of a tool call, with the JSONPath of the argument that holds it.
+type ShellToolCommand<'a> = (&'static str, Cow<'a, str>);
+
+/// The commands that a shell tool call carries, or none when the tool is not a shell.
+fn shell_tool_commands(call: &McpCall) -> Vec<ShellToolCommand<'_>> {
+    if !is_shell_tool(&call.tool) {
+        return Vec::new();
     }
-    for path in [
+    [
         "$.command",
         "$.cmd",
+        "$.script",
         "$.input.command",
         "$.arguments.command",
-    ] {
-        if let Some(command) = first_string(arguments, path)
-            && let Some(matched) = match_shell_pack(pack, command)
-        {
-            return Some(MatchedRule {
-                matched_field: path.to_string(),
-                ..matched
-            });
+    ]
+    .into_iter()
+    .filter_map(|path| Some((path, shell_command_text(&call.arguments, path)?)))
+    .collect()
+}
+
+fn match_shell_commands(pack: &str, commands: &[ShellToolCommand<'_>]) -> Option<MatchedRule> {
+    commands.iter().find_map(|(path, command)| {
+        let matched = match_shell_pack(pack, command)?;
+        Some(MatchedRule {
+            matched_field: (*path).to_string(),
+            ..matched
+        })
+    })
+}
+
+/// Whether a tool name belongs to a tool that runs a shell command, such as `bash`,
+/// `local_shell_call`, `exec_command`, `runTerminalCmd` or `computer.run_command`.
+///
+/// Harnesses and MCP servers name their shell tools freely, so this reads the words of the
+/// name instead of matching a fixed list: a shell word anywhere, `run`/`execute` followed by
+/// `command`/`cmd`, or a name that is only `command` or `cmd`. A tool that matches is only
+/// inspected, never denied for its name.
+pub fn is_shell_tool(name: &str) -> bool {
+    const SHELL_WORDS: &[&str] = &[
+        "bash",
+        "exec",
+        "powershell",
+        "pwsh",
+        "sh",
+        "shell",
+        "terminal",
+        "zsh",
+    ];
+    const COMMAND_WORDS: &[&str] = &["command", "cmd"];
+    let mut previous_runs = false;
+    let mut only_command = false;
+    for (index, word) in identity_words(name).enumerate() {
+        let is = |candidate: &&str| word.eq_ignore_ascii_case(candidate);
+        let command = COMMAND_WORDS.iter().any(is);
+        if SHELL_WORDS.iter().any(is) || (previous_runs && command) {
+            return true;
         }
+        previous_runs = ["run", "execute"].iter().any(is);
+        only_command = index == 0 && command;
     }
-    None
+    only_command
 }
 
-fn match_tool_call_pack(pack: &str, name: &str, arguments: &Value) -> Option<MatchedRule> {
-    if let Some(matched) = match_shell_tool(pack, name, arguments) {
-        return Some(matched);
-    }
-
-    let call = McpCall {
-        server: "generated_tool_call".to_string(),
-        tool: name.to_string(),
-        arguments: arguments.clone(),
-    };
-    match_mcp_pack(pack, &call)
-}
-
-fn is_shell_tool(name: &str) -> bool {
-    matches!(
-        normalize_identity(name).as_str(),
-        "shell" | "bash" | "terminal" | "run_command" | "execute_command" | "computer.run_command"
-    )
+/// The words of a tool name, split at punctuation, at camelCase capitals, and before the last
+/// capital of an acronym that a word follows (`EXECCommand` is `EXEC`, `Command`). The words
+/// keep their case and borrow from the name, so reading them allocates nothing.
+fn identity_words(name: &str) -> impl Iterator<Item = &str> {
+    let mut rest = name;
+    std::iter::from_fn(move || {
+        rest = rest.trim_start_matches(|character: char| !character.is_ascii_alphanumeric());
+        if rest.is_empty() {
+            return None;
+        }
+        let bytes = rest.as_bytes();
+        let end = (1..bytes.len())
+            .find(|&index| {
+                let (previous, current) = (bytes[index - 1], bytes[index]);
+                let acronym_end = previous.is_ascii_uppercase()
+                    && bytes
+                        .get(index + 1)
+                        .is_some_and(|next| next.is_ascii_lowercase());
+                !current.is_ascii_alphanumeric()
+                    || (current.is_ascii_uppercase()
+                        && (previous.is_ascii_lowercase()
+                            || previous.is_ascii_digit()
+                            || acronym_end))
+            })
+            .unwrap_or(bytes.len());
+        let (word, tail) = rest.split_at(end);
+        rest = tail;
+        Some(word)
+    })
 }
 
 fn match_shell_pack(pack: &str, command: &str) -> Option<MatchedRule> {
@@ -910,9 +982,14 @@ fn gcp_exact_destructive_identity(identity: &str) -> bool {
     .any(|candidate| identity.contains(candidate))
 }
 
-fn match_mcp_pack(pack: &str, call: &McpCall) -> Option<MatchedRule> {
+/// `shell_commands` are the commands of the call when its tool is a shell.
+fn match_mcp_pack(
+    pack: &str,
+    call: &McpCall,
+    shell_commands: &[ShellToolCommand<'_>],
+) -> Option<MatchedRule> {
     if matches!(pack, "core.shell" | "core.git" | "core.filesystem")
-        && let Some(matched) = match_shell_tool(pack, &call.tool, &call.arguments)
+        && let Some(matched) = match_shell_commands(pack, shell_commands)
     {
         return Some(matched);
     }
@@ -1180,6 +1257,24 @@ fn notion_rule_id(tool: &str) -> &'static str {
         "move-object"
     } else {
         "destructive-page"
+    }
+}
+
+/// The shell command at `path`: a string, or a list of strings read as one command per line.
+fn shell_command_text<'a>(value: &'a Value, path: &str) -> Option<Cow<'a, str>> {
+    match JsonPath::parse(path)
+        .ok()?
+        .select(value)
+        .into_iter()
+        .next()?
+    {
+        Value::String(command) => Some(Cow::Borrowed(command)),
+        Value::Array(commands) => commands
+            .iter()
+            .map(Value::as_str)
+            .collect::<Option<Vec<_>>>()
+            .map(|commands| Cow::Owned(commands.join("\n"))),
+        _ => None,
     }
 }
 

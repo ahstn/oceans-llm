@@ -18,9 +18,16 @@ import {
   Leaf01Icon,
   Package01Icon,
   Search01Icon,
+  StatusIcon,
   Tag01Icon,
 } from '@hugeicons/core-free-icons'
 
+import {
+  anyTypedValue,
+  useModelFilterOptions,
+  type FilterOptionsState,
+} from '@/components/data/filter-options'
+import { FilterValuePicker } from '@/components/data/filter-value-picker'
 import { AppIcon } from '@/components/icons/app-icon'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -42,12 +49,15 @@ import {
 } from '@/components/ui/input-group'
 import type { RequestLogFiltersInput } from '@/types/api'
 
+import { customStatusCode, readyStatusCodeOptions } from './-request-log-filter-options'
+
 export type RequestLogFilterValues = Pick<
   RequestLogFiltersInput,
   | 'q'
   | 'request_id'
   | 'model_key'
   | 'provider_key'
+  | 'status_code'
   | 'service'
   | 'component'
   | 'env'
@@ -55,14 +65,25 @@ export type RequestLogFilterValues = Pick<
   | 'tag_value'
 >
 
+/**
+ * Chip drafts and URL patches. Values are kept as typed; the route turns the status code back
+ * into a number when it normalizes the search.
+ */
+export type RequestLogFilterPatch = {
+  [Param in keyof RequestLogFilterValues]?: string | number | null
+}
+
 type FilterParam = Exclude<keyof RequestLogFilterValues, 'q'>
 type FilterFieldKey = Exclude<FilterParam, 'tag_key' | 'tag_value'> | 'tag'
+type PickerFieldKey = Extract<FilterFieldKey, 'model_key' | 'status_code'>
 
 interface FilterFieldDefinition {
   key: FilterFieldKey
   label: string
   icon: IconSvgElement
   placeholder: string
+  /** Fields with a known set of values pick from a list instead of free text. */
+  picker?: { searchPlaceholder: string; customValue: (search: string) => string | null }
 }
 
 const filterFields: FilterFieldDefinition[] = [
@@ -70,13 +91,22 @@ const filterFields: FilterFieldDefinition[] = [
     key: 'model_key',
     label: 'Model',
     icon: AiChipIcon,
-    placeholder: 'gpt-4.1-mini',
+    placeholder: 'Select a model',
+    // Keys no longer in the catalog still match older logs, so any typed key is allowed.
+    picker: { searchPlaceholder: 'Search models…', customValue: anyTypedValue },
   },
   {
     key: 'provider_key',
     label: 'Provider',
     icon: CloudServerIcon,
     placeholder: 'openai',
+  },
+  {
+    key: 'status_code',
+    label: 'Status',
+    icon: StatusIcon,
+    placeholder: 'Select a status',
+    picker: { searchPlaceholder: 'Search or type a code…', customValue: customStatusCode },
   },
   {
     key: 'service',
@@ -103,7 +133,7 @@ interface RequestLogToolbarProps {
   totalCount: number
   isPending: boolean
   /** Merges `patch` into the current URL search; keys set to `undefined` are removed. */
-  onApply: (patch: RequestLogFilterValues, options?: { replace?: boolean }) => void
+  onApply: (patch: RequestLogFilterPatch, options?: { replace?: boolean }) => void
 }
 
 /**
@@ -119,16 +149,22 @@ export function RequestLogToolbar({
   isPending,
   onApply,
 }: RequestLogToolbarProps) {
-  const [drafts, setDrafts] = useState<RequestLogFilterValues>(filters)
+  const [drafts, setDrafts] = useState<RequestLogFilterPatch>(filters)
   const [addedFields, setAddedFields] = useState<FilterFieldKey[]>([])
   const [focusField, setFocusField] = useState<FilterFieldKey | null>(null)
 
   const [syncedFilters, setSyncedFilters] = useState(filters)
+  // The filters most recently sent to `onApply`. While its navigation is pending, `filters` still
+  // holds the earlier URL, so changes are compared against what was sent instead. Once nothing is
+  // pending the URL is the truth again, so a navigation that was cancelled can be retried.
+  const [appliedFilters, setAppliedFilters] = useState<RequestLogFilterPatch>(filters)
+  const submittedFilters = isPending ? appliedFilters : filters
 
   // Adopt URL-backed filter changes (navigation, Back/Forward, Clear) without discarding chip
   // edits that were typed while a previous navigation was still loading.
   if (syncedFilters !== filters) {
     setSyncedFilters(filters)
+    setAppliedFilters(filters)
     setDrafts((current) => rebaseDrafts(current, syncedFilters, filters))
   }
 
@@ -136,19 +172,47 @@ export function RequestLogToolbar({
     (field) => isFieldActive(filters, field.key) || addedFields.includes(field.key),
   )
   const activeCount = filterFields.filter((field) => isFieldActive(filters, field.key)).length
-  const hasPartialTagFilter = Boolean(drafts.tag_key?.trim()) !== Boolean(drafts.tag_value?.trim())
+  const hasPartialTagFilter = isPartialTag(drafts)
+  // The catalog loads on first use (adding the Model chip or opening its picker), so a page opened
+  // with `model_key` already in the URL does not fetch it.
+  const [modelPickerUsed, setModelPickerUsed] = useState(false)
+  const modelOptions = useModelFilterOptions(modelPickerUsed)
+  function loadModelOptions() {
+    setModelPickerUsed(true)
+    modelOptions.load?.()
+  }
+  const pickerOptions: Record<PickerFieldKey, FilterOptionsState> = {
+    model_key: { ...modelOptions, load: loadModelOptions },
+    status_code: readyStatusCodeOptions,
+  }
 
   function addField(key: FilterFieldKey) {
     setAddedFields((current) => (current.includes(key) ? current : [...current, key]))
     setFocusField(key)
+    // The new chip's picker opens itself, so this is the catalog's first use.
+    if (key === 'model_key') loadModelOptions()
   }
 
-  function commit(next: RequestLogFilterValues = drafts) {
-    const tagIsPartial = Boolean(next.tag_key?.trim()) !== Boolean(next.tag_value?.trim())
-    if (tagIsPartial || sameFilters(next, filters)) {
+  function submit(patch: RequestLogFilterPatch) {
+    setAppliedFilters({ ...submittedFilters, ...patch })
+    onApply(patch)
+  }
+
+  function commit(next: RequestLogFilterPatch = drafts) {
+    if (isPartialTag(next) || sameFilters(next, submittedFilters)) {
       return
     }
-    onApply(pickFilterParams(next))
+    submit(pickFilterParams(next))
+  }
+
+  // Picked values have no draft stage, so they apply as soon as they are chosen. Only the picked
+  // param navigates: other chips' drafts, such as a half-typed tag pair, stay local until they
+  // commit on their own.
+  function pick(param: FilterParam, value: string) {
+    setDrafts((current) => ({ ...current, [param]: value }))
+    if (normalizedParam(value) !== normalizedParam(submittedFilters[param])) {
+      submit({ [param]: normalizedParam(value) })
+    }
   }
 
   function removeField(key: FilterFieldKey) {
@@ -165,7 +229,7 @@ export function RequestLogToolbar({
     const cleared = pickFilterParams({})
     setAddedFields([])
     setDrafts((current) => ({ ...current, ...cleared }))
-    onApply(cleared)
+    submit(cleared)
   }
 
   return (
@@ -209,6 +273,8 @@ export function RequestLogToolbar({
               field={field}
               drafts={drafts}
               autoFocus={focusField === field.key}
+              pickerOptions={field.picker ? pickerOptions[field.key as PickerFieldKey] : undefined}
+              onPick={pick}
               onDraftChange={(param, value) =>
                 setDrafts((current) => ({ ...current, [param]: value }))
               }
@@ -325,13 +391,17 @@ function FilterChip({
   field,
   drafts,
   autoFocus,
+  pickerOptions,
+  onPick,
   onDraftChange,
   onCommit,
   onRemove,
 }: {
   field: FilterFieldDefinition
-  drafts: RequestLogFilterValues
+  drafts: RequestLogFilterPatch
   autoFocus: boolean
+  pickerOptions?: FilterOptionsState
+  onPick: (param: FilterParam, value: string) => void
   onDraftChange: (param: FilterParam, value: string) => void
   onCommit: () => void
   onRemove: () => void
@@ -351,7 +421,7 @@ function FilterChip({
       'data-testid': `request-log-filter-${param.replace('_', '-')}`,
       className: 'w-36 flex-none',
       placeholder,
-      value: drafts[param] ?? '',
+      value: draftText(drafts[param]),
       onChange: (event: ChangeEvent<HTMLInputElement>) => onDraftChange(param, event.target.value),
       onBlur: onCommit,
       onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => {
@@ -378,6 +448,22 @@ function FilterChip({
           />
           <InputGroupText className="border-x px-2">is</InputGroupText>
           <InputGroupInput {...inputProps('tag_value', 'Tag value', field.placeholder)} />
+        </>
+      ) : field.picker && pickerOptions ? (
+        <>
+          <InputGroupText className="border-r px-2">is</InputGroupText>
+          <FilterValuePicker
+            label={field.label}
+            value={draftText(drafts[field.key])}
+            placeholder={field.placeholder}
+            searchPlaceholder={field.picker.searchPlaceholder}
+            options={pickerOptions}
+            autoOpen={autoFocus}
+            showSelectedHint={field.key === 'status_code'}
+            testId={`request-log-filter-${field.key.replace('_', '-')}`}
+            customValue={field.picker.customValue}
+            onSelect={(value) => onPick(field.key as FilterParam, value)}
+          />
         </>
       ) : (
         <>
@@ -406,21 +492,32 @@ function fieldParams(key: FilterFieldKey): FilterParam[] {
 }
 
 function isFieldActive(filters: RequestLogFilterValues, key: FilterFieldKey) {
-  return fieldParams(key).some((param) => Boolean(filters[param]))
+  return fieldParams(key).some((param) => normalizedParam(filters[param]) !== undefined)
+}
+
+function isPartialTag(values: RequestLogFilterPatch) {
+  return (
+    (normalizedParam(values.tag_key) === undefined) !==
+    (normalizedParam(values.tag_value) === undefined)
+  )
 }
 
 const filterParams: FilterParam[] = filterFields.flatMap((field) => fieldParams(field.key))
 
-function normalizedParam(value: string | null | undefined) {
-  return value?.trim() || undefined
+function draftText(value: string | number | null | undefined) {
+  return value == null ? '' : String(value)
+}
+
+function normalizedParam(value: string | number | null | undefined) {
+  return draftText(value).trim() || undefined
 }
 
 /** The chip-owned params of `values`, with absent params set to `undefined` so they clear. */
-function pickFilterParams(values: RequestLogFilterValues): RequestLogFilterValues {
+function pickFilterParams(values: RequestLogFilterPatch): RequestLogFilterPatch {
   return Object.fromEntries(filterParams.map((param) => [param, normalizedParam(values[param])]))
 }
 
-function sameFilters(left: RequestLogFilterValues, right: RequestLogFilterValues) {
+function sameFilters(left: RequestLogFilterPatch, right: RequestLogFilterPatch) {
   return filterParams.every(
     (param) => normalizedParam(left[param]) === normalizedParam(right[param]),
   )
@@ -431,11 +528,11 @@ function sameFilters(left: RequestLogFilterValues, right: RequestLogFilterValues
  * value are clean and take the new value; params edited since then keep the in-progress edit.
  */
 function rebaseDrafts(
-  drafts: RequestLogFilterValues,
+  drafts: RequestLogFilterPatch,
   previous: RequestLogFilterValues,
   next: RequestLogFilterValues,
-): RequestLogFilterValues {
-  const rebased: RequestLogFilterValues = { ...next }
+): RequestLogFilterPatch {
+  const rebased: RequestLogFilterPatch = { ...next }
   for (const param of filterParams) {
     const isDirty = normalizedParam(drafts[param]) !== normalizedParam(previous[param])
     if (isDirty) {

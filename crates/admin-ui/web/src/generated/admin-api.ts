@@ -892,6 +892,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/models/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every model in one response, for selectors that offer the whole catalog. It reads models,
+         *     routes, and providers once and skips the pricing, benchmark, and client config work of
+         *     `list_models`, so one call costs less than one page of it.
+         */
+        get: operations["list_model_options"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/models/pricing-catalog/refresh": {
         parameters: {
             query?: never;
@@ -2300,6 +2321,24 @@ export interface components {
             model_ids: string[];
             notes: string[];
             setup: components["schemas"]["AdminModelClientConfigSetupItemView"][];
+        };
+        /** @description The whole catalog, aliases included, in one response. */
+        AdminModelOptionListView: {
+            items: components["schemas"]["AdminModelOptionView"][];
+        };
+        /**
+         * @description One model as a selector lists it. Carries no route, pricing, or allow-list detail, so every
+         *     authenticated role receives the same fields.
+         */
+        AdminModelOptionView: {
+            alias_of?: string | null;
+            /** @description The model key that requests name and request logs store. */
+            id: string;
+            /** @description The model's UUID, which model-scoped budgets store. */
+            model_id: string;
+            provider_label?: string | null;
+            /** @description The model key an alias finally resolves to; the model's own key otherwise. */
+            resolved_model_key: string;
         };
         AdminModelPageView: {
             items: components["schemas"]["AdminModelView"][];
@@ -4160,6 +4199,13 @@ export interface components {
             };
             meta: components["schemas"]["ResponseMeta"];
         };
+        Envelope_AdminModelOptionListView: {
+            /** @description The whole catalog, aliases included, in one response. */
+            data: {
+                items: components["schemas"]["AdminModelOptionView"][];
+            };
+            meta: components["schemas"]["ResponseMeta"];
+        };
         Envelope_AdminModelPageView: {
             data: {
                 items: components["schemas"]["AdminModelView"][];
@@ -5780,10 +5826,16 @@ export interface components {
             completion_tokens?: number | null;
             /**
              * Format: int64
-             * @description Computed request cost in USD scaled by 10,000. Null when no usage was recorded or the
-             *     request could not be priced.
+             * @description Computed request cost in USD scaled by 10,000, rounded half up from the ledger.
+             *     Null when no usage was recorded or the request could not be priced.
              */
             cost_usd_10000?: number | null;
+            /**
+             * Format: int64
+             * @description Computed request cost in USD nanos (one billionth of a dollar), from the ledger.
+             *     Null when no usage was recorded or the request could not be priced.
+             */
+            cost_usd_nanos?: number | null;
             error_code?: string | null;
             has_payload: boolean;
             /** Format: int64 */
@@ -8350,6 +8402,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_GenerateModelClientConfigsResponse"];
+                };
+            };
+        };
+    };
+    list_model_options: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_AdminModelOptionListView"];
                 };
             };
         };

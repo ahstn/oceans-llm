@@ -413,9 +413,9 @@ pub struct AttributionRequestFact {
     pub occurred_at: OffsetDateTime,
     /// `request_logs.resolved_model_key`, falling back to `model_key`.
     pub model_key: Option<String>,
-    /// `usage_cost_events.computed_cost_10000` when the request was priced
+    /// `usage_cost_events.computed_cost_nanos` when the request was priced
     /// (`priced` or `legacy_estimated`); `None` when unpriced or usage is missing.
-    pub cost_10000: Option<i64>,
+    pub cost_nanos: Option<i64>,
     pub pricing_status: Option<String>,
 }
 

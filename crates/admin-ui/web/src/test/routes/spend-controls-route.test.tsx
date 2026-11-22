@@ -12,6 +12,7 @@ import {
 import {
   INHERITED_BUDGET_WARNING,
   INVALID_BUDGET_AMOUNT_MESSAGE,
+  loadSpendControls,
   normalizeBudgetAmount,
 } from '@/routes/spend-controls/-budget-model'
 import { USER_PAGE_SIZE } from '@/routes/spend-controls/-user-list'
@@ -19,12 +20,14 @@ import { SpendControlsPage } from '@/routes/spend-controls'
 import type { AuthSessionView, SpendBudgetUserView, SpendBudgetsView } from '@/types/api'
 import { platformAdminSession, regularUserSession } from '@/test/auth-session'
 
-const { routeMock, saveBudgetMock, increaseBudgetMock, toastErrorMock } = vi.hoisted(() => ({
-  routeMock: { useLoaderData: vi.fn(), useRouteContext: vi.fn() },
-  saveBudgetMock: vi.fn(),
-  increaseBudgetMock: vi.fn(),
-  toastErrorMock: vi.fn(),
-}))
+const { routeMock, saveBudgetMock, increaseBudgetMock, toastErrorMock, getModelOptionsMock } =
+  vi.hoisted(() => ({
+    routeMock: { useLoaderData: vi.fn(), useRouteContext: vi.fn() },
+    getModelOptionsMock: vi.fn(),
+    saveBudgetMock: vi.fn(),
+    increaseBudgetMock: vi.fn(),
+    toastErrorMock: vi.fn(),
+  }))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -41,9 +44,9 @@ vi.mock('sonner', () => ({
 }))
 
 vi.mock('@/server/admin-data.functions', () => ({
-  getBudgetAlertHistory: vi.fn(),
-  getModels: vi.fn(),
-  getSpendBudgets: vi.fn(),
+  getBudgetAlertHistory: vi.fn(async () => ({ data: { items: [] } })),
+  getModelOptions: (...args: unknown[]) => getModelOptionsMock(...args),
+  getSpendBudgets: vi.fn(async () => ({ data: { users: [] } })),
   increaseBudget: (...args: unknown[]) => increaseBudgetMock(...args),
   removeBudget: vi.fn(),
   saveBudget: (...args: unknown[]) => saveBudgetMock(...args),
@@ -176,11 +179,7 @@ const models = [
     model_id: 'model_fast',
     resolved_model_key: 'fast',
     alias_of: null,
-    tags: [],
-    status: 'healthy' as const,
-    pricing_varies_by_route: false,
-    client_configurations: [],
-    allowlist: null,
+    provider_label: 'OpenAI',
   },
 ]
 
@@ -257,6 +256,17 @@ function modelBudgetForm() {
   return screen.getByRole('button', { name: 'Add model budget' }).closest('form')!
 }
 
+describe('loadSpendControls', () => {
+  it('loads the budget model selector from one catalog options request', async () => {
+    getModelOptionsMock.mockReset().mockResolvedValue({ data: { items: models } })
+
+    const data = await loadSpendControls(true)
+
+    expect(getModelOptionsMock).toHaveBeenCalledOnce()
+    expect(data.models).toEqual(models)
+  })
+})
+
 describe('SpendControlsPage', () => {
   beforeEach(() => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
@@ -324,17 +334,42 @@ describe('SpendControlsPage', () => {
     expect(screen.getByRole('link', { name: 'Go to previous page' })).toBeInTheDocument()
   })
 
-  it('labels inherited budgets with their source', async () => {
+  it('keeps enforcement and source out of the budget pills', async () => {
     renderPage()
 
-    expect(screen.queryByText('Manual')).not.toBeInTheDocument()
+    // Only the amount and cadence stay visible; enforcement and source move to the
+    // amount's accessible name and tooltip.
+    const janeRow = screen.getByRole('row', { name: /Jane Admin/ })
+    expect(within(janeRow).queryByText('Hard')).not.toBeInTheDocument()
+    expect(within(janeRow).getByText('Daily')).toBeInTheDocument()
+    expect(within(janeRow).getByTestId('budget-amount')).toHaveTextContent(
+      '$100.00. Hard limit: blocks requests once spent. Source: Manual.',
+    )
 
     openTab(/Service accounts/)
     expect(screen.getByText('CI Indexer')).toBeInTheDocument()
-    expect(screen.getByText('Config (service account)')).toBeInTheDocument()
+    expect(screen.queryByText('Config (service account)')).not.toBeInTheDocument()
+    expect(screen.getByTestId('budget-amount')).toHaveTextContent(
+      'Source: Config (service account)',
+    )
+    fireEvent.focus(screen.getByTestId('budget-amount'))
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'Hard limit: blocks requests once spent. Source: Config (service account)',
+    )
 
     openTab(/Model budgets/)
-    expect(screen.getByText('Config model default')).toBeInTheDocument()
+    expect(screen.queryByText('Config model default')).not.toBeInTheDocument()
+    expect(screen.queryByText('Hard')).not.toBeInTheDocument()
+  })
+
+  it('marks a soft limit in the cadence pill', () => {
+    renderPage(usersOnly([nearLimitUser(5, { budget: { ...monthlyHundred, hard_limit: false } })]))
+
+    const row = screen.getByRole('row', { name: /Near Limit 5/ })
+    expect(within(row).getByText('Monthly · soft')).toBeInTheDocument()
+    expect(within(row).getByTestId('budget-amount')).toHaveTextContent(
+      'Soft limit: alerts only, never blocks requests',
+    )
   })
 
   it('resolves model budget ids to model keys', async () => {
@@ -544,7 +579,47 @@ describe('budget increases', () => {
     )
   })
 
-  it('counts an active increase toward the limit and labels it', () => {
+  it('shows an active increase in Status in place of the status pill', async () => {
+    renderPage(
+      usersOnly([
+        nearLimitUser(4, {
+          name: 'Increased',
+          // $140 of $150: still near the limit with the increase counted.
+          current_window_spend_usd_10000: 1_400_000,
+          active_increase: {
+            budget_increase_id: 'increase_1',
+            amount_usd: '50.0000',
+            amount_usd_10000: 500_000,
+            starts_at: '2026-10-10T00:00:00Z',
+            expires_at: '2026-11-01T00:00:00Z',
+          },
+        }),
+        nearLimitUser(6, { name: 'Plain Status' }),
+      ]),
+    )
+
+    const row = screen.getByRole('row', { name: /Increased/ })
+    const cells = within(row).getAllByRole('cell')
+    const [budgetCell, usageCell, statusCell] = [cells[1], cells[2], cells[3]]
+    expect(within(budgetCell).queryByText(/until/)).not.toBeInTheDocument()
+    expect(within(usageCell).getByText('of $150.00')).toBeInTheDocument()
+
+    const pill = within(statusCell).getByTestId('budget-increase-status')
+    expect(within(pill).getByText('+$50.00 until Oct 31')).toBeInTheDocument()
+    expect(pill).toHaveTextContent('Near limit. Temporary increase: +$50.00 until Oct 31')
+    expect(within(statusCell).queryByText('Near limit')).not.toBeInTheDocument()
+    fireEvent.focus(pill)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'Near limit: 93% of $150.00 used, including a temporary $50.00 increase through Oct 31 (UTC).',
+    )
+
+    const plainRow = screen.getByRole('row', { name: /Plain Status/ })
+    const plainStatus = within(plainRow).getAllByRole('cell')[3]
+    expect(within(plainStatus).getByText('Near limit')).toBeInTheDocument()
+    expect(within(plainStatus).queryByTestId('budget-increase-status')).not.toBeInTheDocument()
+  })
+
+  it('counts an active increase toward the limit', () => {
     renderPage(
       usersOnly([
         nearLimitUser(4, {
@@ -561,7 +636,6 @@ describe('budget increases', () => {
     )
 
     const row = screen.getByRole('row', { name: /Increased/ })
-    expect(within(row).getByText('+$50.00 until Oct 31')).toBeInTheDocument()
     expect(within(row).getByText('of $150.00')).toBeInTheDocument()
     // $90 of $150 is 60%: no longer inside the increase window.
     expect(increaseButton('Increased')).toBeDisabled()

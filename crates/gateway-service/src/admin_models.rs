@@ -17,7 +17,9 @@ use gateway_core::{
 };
 use time::OffsetDateTime;
 
+mod options;
 mod routing;
+pub use options::AdminModelOption;
 pub use routing::AdminModelRouteSummary;
 use routing::summarize_routes;
 
@@ -346,14 +348,10 @@ where
         }
     }
 
-    async fn list_model_items(&self) -> Result<Vec<AdminModelItem>, GatewayError> {
-        let pricing_time = OffsetDateTime::now_utc();
+    /// Every model with its execution model, routes, and route providers, in three batched
+    /// store reads. Both the full summaries and the selector options start here.
+    async fn load_catalog_routes(&self) -> Result<CatalogRoutes, GatewayError> {
         let models = self.repo.list_models().await?;
-        let model_ids = models.iter().map(|model| model.id).collect::<Vec<_>>();
-        let allowlists_by_model = self
-            .repo
-            .list_model_allowlists_for_models(&model_ids)
-            .await?;
         let by_key = models
             .iter()
             .cloned()
@@ -368,7 +366,6 @@ where
                 )
             })
             .collect::<HashMap<_, _>>();
-        let model_keys_by_execution = group_model_keys_by_execution(&execution_models);
         let execution_model_ids = execution_models
             .values()
             .map(|model| model.id)
@@ -386,6 +383,30 @@ where
             .into_iter()
             .collect::<Vec<_>>();
         let providers_by_key = self.repo.list_providers_by_keys(&provider_keys).await?;
+        Ok(CatalogRoutes {
+            models,
+            by_key,
+            execution_models,
+            routes_by_model,
+            providers_by_key,
+        })
+    }
+
+    async fn list_model_items(&self) -> Result<Vec<AdminModelItem>, GatewayError> {
+        let pricing_time = OffsetDateTime::now_utc();
+        let CatalogRoutes {
+            models,
+            by_key,
+            execution_models,
+            routes_by_model,
+            providers_by_key,
+        } = self.load_catalog_routes().await?;
+        let model_ids = models.iter().map(|model| model.id).collect::<Vec<_>>();
+        let allowlists_by_model = self
+            .repo
+            .list_model_allowlists_for_models(&model_ids)
+            .await?;
+        let model_keys_by_execution = group_model_keys_by_execution(&execution_models);
         let mut items = Vec::with_capacity(models.len());
 
         for model in models {
@@ -566,6 +587,17 @@ where
 
         Ok(items)
     }
+}
+
+struct CatalogRoutes {
+    /// In store order, which is the order every listing returns.
+    models: Vec<GatewayModel>,
+    by_key: HashMap<String, GatewayModel>,
+    /// Keyed by model key; an alias maps to the model it finally resolves to, and a broken or
+    /// cyclic alias maps to itself.
+    execution_models: HashMap<String, GatewayModel>,
+    routes_by_model: HashMap<uuid::Uuid, Vec<ModelRoute>>,
+    providers_by_key: HashMap<String, ProviderConnection>,
 }
 
 #[derive(Debug, Clone)]
@@ -1242,6 +1274,7 @@ mod tests {
         list_model_allowlists_for_models_calls: AtomicUsize,
         get_provider_by_key_calls: AtomicUsize,
         list_providers_by_keys_calls: AtomicUsize,
+        resolve_model_pricing_at_calls: AtomicUsize,
         fail_pricing_sync: AtomicBool,
     }
 
@@ -1401,6 +1434,8 @@ mod tests {
             pricing_model_id: &str,
             _occurred_at: OffsetDateTime,
         ) -> Result<Option<ModelPricingRecord>, StoreError> {
+            self.resolve_model_pricing_at_calls
+                .fetch_add(1, Ordering::SeqCst);
             Ok(self
                 .pricing_by_key
                 .get(&(
@@ -1820,6 +1855,83 @@ mod tests {
         assert_eq!(repo.list_routes_for_model_calls.load(Ordering::SeqCst), 0);
         assert_eq!(repo.list_providers_by_keys_calls.load(Ordering::SeqCst), 1);
         assert_eq!(repo.get_provider_by_key_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn model_options_match_summaries_without_reading_pricing() {
+        let base = plain_model("base", None);
+        let base_id = base.id;
+        let repo = Arc::new(CountingRepo {
+            models: vec![
+                plain_model("friendly", Some("base")),
+                base,
+                plain_model("broken", Some("missing")),
+            ],
+            routes_by_model: HashMap::from([(
+                base_id,
+                vec![ModelRoute {
+                    model_id: base_id,
+                    ..catalog_route("base-upstream", 0, None)
+                }],
+            )]),
+            providers_by_key: HashMap::from([(
+                "openai".to_string(),
+                ProviderConnection {
+                    provider_key: "openai".to_string(),
+                    provider_type: "openai_compat".to_string(),
+                    config: json!({
+                        "display": {"label": "OpenAI"},
+                        "pricing_provider_id": "openai"
+                    }),
+                    secrets: None,
+                },
+            )]),
+            ..Default::default()
+        });
+        let service = AdminModelsService::new(repo.clone());
+
+        let options = service.list_model_options().await.expect("model options");
+
+        assert_eq!(repo.list_models_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(repo.list_routes_for_models_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(repo.list_providers_by_keys_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(repo.list_routes_for_model_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(repo.get_provider_by_key_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            repo.list_model_allowlists_for_models_calls
+                .load(Ordering::SeqCst),
+            0
+        );
+        assert_eq!(
+            repo.resolve_model_pricing_at_calls.load(Ordering::SeqCst),
+            0
+        );
+
+        let summaries = service.list_models().await.expect("admin models");
+        assert!(repo.resolve_model_pricing_at_calls.load(Ordering::SeqCst) > 0);
+        let projected = summaries
+            .into_iter()
+            .map(|summary| super::AdminModelOption {
+                id: summary.id,
+                model_id: summary.model_id,
+                resolved_model_key: summary.resolved_model_key,
+                alias_of: summary.alias_of,
+                provider_label: summary.provider_label,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(options, projected);
+
+        let keys = options
+            .iter()
+            .map(|option| option.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(keys, ["friendly", "base", "broken"]);
+        assert_eq!(options[0].alias_of.as_deref(), Some("base"));
+        assert_eq!(options[0].resolved_model_key, "base");
+        assert_eq!(options[0].provider_label.as_deref(), Some("OpenAI"));
+        assert_eq!(options[1].model_id, base_id.to_string());
+        assert_eq!(options[2].resolved_model_key, "broken");
+        assert_eq!(options[2].provider_label, None);
     }
 
     #[tokio::test]

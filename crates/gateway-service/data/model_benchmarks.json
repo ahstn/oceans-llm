@@ -5,7 +5,7 @@
     "benchmark_source_url": "https://artificialanalysis.ai",
     "retrieved_via": "openrouter",
     "source_url": "https://openrouter.ai/api/v1/models?sort=intelligence-high-to-low&limit=200",
-    "updated_at": "2026-11-16T00:00:37Z"
+    "updated_at": "2026-11-21T22:34:18Z"
   },
   "models": {
     "amazon/nova-2-lite-v1": {
@@ -352,11 +352,11 @@
       "name": "DeepSeek: DeepSeek V4.1 Flash 1017",
       "canonical_slug": "deepseek/deepseek-v4.1-flash-20261017",
       "artificial_analysis": {
-        "intelligence_index": 28.6,
+        "intelligence_index": 32.6,
         "coding_index": null,
         "agentic_index": null
       },
-      "updated_at": "2026-11-11T09:48:41Z"
+      "updated_at": "2026-11-21T22:34:18Z"
     },
     "google/gemini-2.5-flash": {
       "name": "Google: Gemini 2.5 Flash",
@@ -488,6 +488,16 @@
       },
       "updated_at": "2026-11-16T00:00:37Z"
     },
+    "google/gemini-4-neon": {
+      "name": "Google: Gemini 4 Neon",
+      "canonical_slug": "google/gemini-4-neon-20261118",
+      "artificial_analysis": {
+        "intelligence_index": 61.4,
+        "coding_index": null,
+        "agentic_index": null
+      },
+      "updated_at": "2026-11-21T22:34:18Z"
+    },
     "google/gemma-3-12b-it": {
       "name": "Google: Gemma 3 12B",
       "canonical_slug": "google/gemma-3-12b-it",
@@ -618,6 +628,16 @@
       },
       "updated_at": "2026-10-31T20:47:07Z"
     },
+    "liquid/lfm-3-1.7b": {
+      "name": "LiquidAI: LFM3-1.7B",
+      "canonical_slug": "liquid/lfm-3-1.7b-20261106",
+      "artificial_analysis": {
+        "intelligence_index": 6.0,
+        "coding_index": null,
+        "agentic_index": null
+      },
+      "updated_at": "2026-11-21T22:34:18Z"
+    },
     "meituan/longcat-2.0": {
       "name": "Meituan: LongCat 2.0",
       "canonical_slug": "meituan/longcat-2.0-20260720",
@@ -667,6 +687,16 @@
         "agentic_index": 0.5
       },
       "updated_at": "2026-10-31T20:47:07Z"
+    },
+    "meta/muse-ember": {
+      "name": "Meta: Muse Ember",
+      "canonical_slug": "meta/muse-ember-20261109",
+      "artificial_analysis": {
+        "intelligence_index": 36.0,
+        "coding_index": null,
+        "agentic_index": null
+      },
+      "updated_at": "2026-11-21T22:34:18Z"
     },
     "meta/muse-glimmer-30b": {
       "name": "Meta: Muse Glimmer 30B",
@@ -1208,6 +1238,26 @@
       },
       "updated_at": "2026-11-11T09:48:41Z"
     },
+    "openai/gpt-6.2-astra": {
+      "name": "OpenAI: GPT-6.2 Astra",
+      "canonical_slug": "openai/gpt-6.2-astra-20261117",
+      "artificial_analysis": {
+        "intelligence_index": 62.1,
+        "coding_index": null,
+        "agentic_index": null
+      },
+      "updated_at": "2026-11-21T22:34:18Z"
+    },
+    "openai/gpt-6.2-sol": {
+      "name": "OpenAI: GPT-6.2 Sol",
+      "canonical_slug": "openai/gpt-6.2-sol-20261117",
+      "artificial_analysis": {
+        "intelligence_index": 57.3,
+        "coding_index": null,
+        "agentic_index": null
+      },
+      "updated_at": "2026-11-21T22:34:18Z"
+    },
     "openai/gpt-oss-120b": {
       "name": "OpenAI: gpt-oss-120b",
       "canonical_slug": "openai/gpt-oss-120b",
@@ -1468,6 +1518,16 @@
       },
       "updated_at": "2026-10-31T20:47:07Z"
     },
+    "qwen/qwen3.8-flash": {
+      "name": "Qwen: Qwen3.8 Flash",
+      "canonical_slug": "qwen/qwen3.8-flash-20260826",
+      "artificial_analysis": {
+        "intelligence_index": 28.6,
+        "coding_index": null,
+        "agentic_index": null
+      },
+      "updated_at": "2026-11-21T22:34:18Z"
+    },
     "qwen/qwen3.8-max-0902": {
       "name": "Qwen: Qwen3.8 Max (0902)",
       "canonical_slug": "qwen/qwen3.8-max-20260902",
@@ -1477,6 +1537,16 @@
         "agentic_index": 56.0
       },
       "updated_at": "2026-11-11T09:48:41Z"
+    },
+    "qwen/qwen4-max": {
+      "name": "Qwen: Qwen4 Max",
+      "canonical_slug": "qwen/qwen4-max-20261115",
+      "artificial_analysis": {
+        "intelligence_index": 42.9,
+        "coding_index": null,
+        "agentic_index": null
+      },
+      "updated_at": "2026-11-21T22:34:18Z"
     },
     "reflection/beam-1.0-501b-a23b": {
       "name": "Reflection: Beam 1.0 501B A23B",
@@ -1548,6 +1618,16 @@
       },
       "updated_at": "2026-10-31T20:47:07Z"
     },
+    "thinkingmachines/inkling-2-mini": {
+      "name": "Thinking Machines: Inkling 2 Mini",
+      "canonical_slug": "thinkingmachines/inkling-2-mini-20261120",
+      "artificial_analysis": {
+        "intelligence_index": 20.1,
+        "coding_index": null,
+        "agentic_index": null
+      },
+      "updated_at": "2026-11-21T22:34:18Z"
+    },
     "thinkingmachines/inkling-2-small": {
       "name": "Thinking Machines: Inkling 2 Small",
       "canonical_slug": "thinkingmachines/inkling-2-small-20261107",
@@ -1592,11 +1672,11 @@
       "name": "Upstage: Solar Pro 4",
       "canonical_slug": "upstage/solar-pro4-20260810",
       "artificial_analysis": {
-        "intelligence_index": 28.2,
+        "intelligence_index": 14.2,
         "coding_index": 52.7,
         "agentic_index": null
       },
-      "updated_at": "2026-10-18T12:23:11Z"
+      "updated_at": "2026-11-21T22:34:18Z"
     },
     "x-ai/grok-4.20": {
       "name": "SpaceXAI: Grok 4.20",
@@ -1629,7 +1709,7 @@
       "updated_at": "2026-09-24T00:59:11Z"
     },
     "x-ai/grok-4.6": {
-      "name": "SpaceXAI: Grok 4.6",
+      "name": "SpaceXSI: Grok 4.6",
       "canonical_slug": "x-ai/grok-4.6-20260810",
       "artificial_analysis": {
         "intelligence_index": 31.0,
@@ -1639,7 +1719,7 @@
       "updated_at": "2026-11-11T09:48:41Z"
     },
     "x-ai/grok-4.7": {
-      "name": "SpaceXAI: Grok 4.7",
+      "name": "SpaceXSI: Grok 4.7",
       "canonical_slug": "x-ai/grok-4.7-20260916",
       "artificial_analysis": {
         "intelligence_index": 35.5,

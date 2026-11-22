@@ -1,5 +1,6 @@
 use super::*;
 use crate::shared::{parse_uuid, serialize_json, unix_to_datetime};
+use gateway_core::McpToolInvocationBatchQuery;
 
 fn normalize_query(query: &McpToolInvocationQuery) -> (i64, i64) {
     let page = query.page.max(1);
@@ -266,6 +267,52 @@ impl McpToolInvocationRepository for LibsqlStore {
             page_size: u32::try_from(page_size).unwrap_or(u32::MAX),
             total: u64::try_from(total.max(0)).unwrap_or(u64::MAX),
         })
+    }
+
+    async fn list_mcp_tool_invocations_by_request_ids(
+        &self,
+        query: &McpToolInvocationBatchQuery<'_>,
+    ) -> Result<Vec<McpToolInvocationRecord>, StoreError> {
+        if query.request_ids.is_empty() || query.limit == 0 {
+            return Ok(Vec::new());
+        }
+        let request_ids_json = serde_json::to_string(query.request_ids)
+            .map_err(|error| StoreError::Serialization(error.to_string()))?;
+        let mut rows = self
+            .connection
+            .query(
+                r#"
+                SELECT mcp_tool_invocation_id, request_log_id, request_id, api_key_id, user_id,
+                       team_id, owner_kind, server_id, server_display_key, server_display_name,
+                       tool_id, tool_display_key, tool_display_name, status, policy_result,
+                       latency_ms, error_code, has_payload, arguments_payload_truncated,
+                       result_payload_truncated, arguments_payload_redacted,
+                       result_payload_redacted, metadata_json, occurred_at, mcp_method, tool_schema_version
+                FROM mcp_tool_invocations
+                WHERE request_id IN (SELECT value FROM json_each(?1))
+                  AND user_id IS ?2
+                  AND team_id IS ?3
+                  AND occurred_at >= ?4
+                  AND occurred_at <= ?5
+                ORDER BY request_id ASC, occurred_at DESC, mcp_tool_invocation_id DESC
+                LIMIT ?6
+                "#,
+                libsql::params![
+                    request_ids_json,
+                    query.user_id.map(|value| value.to_string()),
+                    query.team_id.map(|value| value.to_string()),
+                    query.occurred_at_start.unix_timestamp(),
+                    query.occurred_at_end.unix_timestamp(),
+                    i64::from(query.limit),
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut records = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            records.push(decode_mcp_tool_invocation_row(&row)?);
+        }
+        Ok(records)
     }
 
     async fn get_mcp_tool_invocation_detail(

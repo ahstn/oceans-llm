@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use gateway_core::{
-    AuthenticatedApiKey, BudgetCadence, BudgetExceededStatus, BudgetRecord, BudgetRepository,
-    BudgetScope, GatewayError, Money4, UsageLedgerRecord, budget_window_utc,
+    AuthenticatedApiKey, BudgetExceededStatus, BudgetRecord, BudgetRepository, BudgetScope,
+    GatewayError, Money4, Money9, UsageLedgerRecord, budget_window_utc,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+use crate::budget_cache::{BudgetCache, SpendWindowKey};
 use crate::budget_scopes::{
     applicable_budget_scopes, effective_budget_limit, usage_ownership_scope_key,
 };
@@ -26,7 +27,7 @@ pub struct BudgetOverrun {
 #[derive(Debug, Clone)]
 pub struct BudgetSpend {
     pub budget: BudgetRecord,
-    pub spent_usd: Money4,
+    pub spent_usd: Money9,
 }
 
 /// What a recorded charge did to the budgets it counts toward.
@@ -37,10 +38,14 @@ pub struct BudgetSpendAfterUsage {
     pub overruns: Vec<BudgetOverrun>,
 }
 
+/// Enforces budgets and records spend. Active budgets and window spend come
+/// from a shared [`BudgetCache`], so a request reads the database for them only
+/// when the cached answer has expired.
 #[derive(Clone)]
 pub struct BudgetGuard<R> {
     repo: Arc<R>,
     exceeded_status: BudgetExceededStatus,
+    cache: Arc<BudgetCache>,
 }
 
 impl<R> BudgetGuard<R>
@@ -52,6 +57,7 @@ where
         Self {
             repo,
             exceeded_status: BudgetExceededStatus::default(),
+            cache: Arc::new(BudgetCache::default()),
         }
     }
 
@@ -59,6 +65,12 @@ where
     pub fn with_exceeded_status(mut self, status: BudgetExceededStatus) -> Self {
         self.exceeded_status = status;
         self
+    }
+
+    /// Forgets cached active budgets. Call it after this process creates,
+    /// changes or deactivates a budget, so enforcement uses it at once.
+    pub fn invalidate_cached_budgets(&self) {
+        self.cache.invalidate_budgets();
     }
 
     #[tracing::instrument(name = "gateway.budget.precheck", skip_all)]
@@ -81,7 +93,7 @@ where
         }
 
         for scope in applicable_budget_scopes(api_key, model_id, upstream_model)? {
-            let Some(budget) = self.repo.get_active_budget_by_scope(&scope).await? else {
+            let Some(budget) = self.active_budget(&scope).await? else {
                 continue;
             };
             self.reject_if_pre_provider_exceeded(&scope, &budget, occurred_at)
@@ -99,7 +111,9 @@ where
     /// `enforce_pre_provider_budget` blocks the next request.
     ///
     /// Returns `DuplicateUsageRecord` when the `(request_id, owner)` pair is
-    /// already in the ledger.
+    /// already in the ledger. A charge that counts toward spend is written
+    /// through the budget cache, which adds it to the cached totals of every
+    /// budget window of `api_key`'s scopes exactly once.
     #[tracing::instrument(
         name = "gateway.usage.ledger",
         skip_all,
@@ -107,6 +121,7 @@ where
     )]
     pub async fn record_incurred_usage(
         &self,
+        api_key: &AuthenticatedApiKey,
         ledger: &UsageLedgerRecord,
     ) -> Result<(), GatewayError> {
         if ledger.computed_cost_usd.is_negative() {
@@ -114,15 +129,44 @@ where
                 "computed_cost_usd must be >= 0".to_string(),
             ));
         }
-        if !self.repo.insert_usage_ledger_if_absent(ledger).await? {
+        let insert = || async { Ok(self.repo.insert_usage_ledger_if_absent(ledger).await?) };
+        let scopes = if ledger.pricing_status.counts_toward_spend() {
+            applicable_budget_scopes(
+                api_key,
+                ledger.model_id,
+                Some(ledger.upstream_model.as_str()),
+            )
+            .map(Some)
+        } else {
+            Ok(None)
+        };
+        let written = match scopes {
+            Ok(Some(scopes)) => {
+                let scope_keys: Vec<String> = scopes.iter().map(BudgetScope::scope_key).collect();
+                self.cache
+                    .record_charge(
+                        &scope_keys,
+                        ledger.occurred_at,
+                        ledger.computed_cost_usd,
+                        insert,
+                    )
+                    .await?
+            }
+            Ok(None) => insert().await?,
+            Err(error) => {
+                // The money is spent: keep the row even when its scopes are invalid.
+                insert().await?;
+                return Err(error.into());
+            }
+        };
+        if !written {
             return Err(duplicate_request_error(&ledger.request_id));
         }
         Ok(())
     }
 
     /// Reads the window spend of each active budget the recorded `ledger` counts
-    /// toward, once, with the charge included. Budget alerts reuse these figures:
-    /// each read adds up the whole window, so it is the costly part of recording.
+    /// toward, with the charge included. Budget alerts reuse these figures.
     #[tracing::instrument(name = "gateway.budget.spend_after_usage", skip_all)]
     pub async fn spend_after_usage(
         &self,
@@ -138,14 +182,11 @@ where
             ledger.model_id,
             Some(ledger.upstream_model.as_str()),
         )? {
-            let Some(budget) = self.repo.get_active_budget_by_scope(&scope).await? else {
+            let Some(budget) = self.active_budget(&scope).await? else {
                 continue;
             };
-            let (window_start, window_end) =
-                budget_window_bounds_utc(budget.settings.cadence, ledger.occurred_at);
             let spent_usd = self
-                .repo
-                .sum_usage_cost_for_budget_scope_in_window(&scope, window_start, window_end)
+                .window_spend(&scope, &budget, ledger.occurred_at)
                 .await?;
             if let Some(overrun) = self
                 .hard_overrun(&budget, spent_usd, ledger.occurred_at)
@@ -167,23 +208,18 @@ where
         if !budget.settings.hard_limit {
             return Ok(());
         }
-        let (window_start, window_end) =
-            budget_window_bounds_utc(budget.settings.cadence, occurred_at);
-        let spent = self
-            .repo
-            .sum_usage_cost_for_budget_scope_in_window(scope, window_start, window_end)
-            .await?;
+        let spent = self.window_spend(scope, budget, occurred_at).await?;
         // An increase only raises the limit, so it is looked up only once the base is spent.
-        if spent < budget.settings.amount_usd {
+        if i128::from(spent.as_nanos()) < budget_limit_nanos(budget.settings.amount_usd) {
             return Ok(());
         }
         let limit = effective_budget_limit(self.repo.as_ref(), budget, occurred_at).await?;
-        if spent >= limit {
+        if i128::from(spent.as_nanos()) >= budget_limit_nanos(limit) {
             return Err(GatewayError::BudgetExceeded {
                 ownership_scope: budget.scope_key.clone(),
                 scope_kind: scope.kind(),
                 cadence: budget.settings.cadence,
-                projected_cost_usd: spent,
+                projected_cost_usd: spent.round_half_up_to_money4(),
                 limit_usd: limit,
                 status: self.exceeded_status,
             });
@@ -194,33 +230,80 @@ where
     async fn hard_overrun(
         &self,
         budget: &BudgetRecord,
-        spent: Money4,
+        spent: Money9,
         occurred_at: OffsetDateTime,
     ) -> Result<Option<BudgetOverrun>, GatewayError> {
-        if !budget.settings.hard_limit || spent <= budget.settings.amount_usd {
+        if !budget.settings.hard_limit
+            || i128::from(spent.as_nanos()) <= budget_limit_nanos(budget.settings.amount_usd)
+        {
             return Ok(None);
         }
         let limit = effective_budget_limit(self.repo.as_ref(), budget, occurred_at).await?;
-        Ok((spent > limit).then(|| BudgetOverrun {
-            scope_key: budget.scope_key.clone(),
-            spent_usd: spent,
-            limit_usd: limit,
-        }))
+        Ok(
+            (i128::from(spent.as_nanos()) > budget_limit_nanos(limit)).then(|| BudgetOverrun {
+                scope_key: budget.scope_key.clone(),
+                spent_usd: spent.round_half_up_to_money4(),
+                limit_usd: limit,
+            }),
+        )
     }
+
+    async fn active_budget(
+        &self,
+        scope: &BudgetScope,
+    ) -> Result<Option<BudgetRecord>, GatewayError> {
+        self.cache
+            .active_budget(&scope.scope_key(), || async {
+                Ok(self.repo.get_active_budget_by_scope(scope).await?)
+            })
+            .await
+    }
+
+    /// Spend in the budget's window that contains `occurred_at`, up to now. The
+    /// cached total stands for the whole window so far, so a load reads through
+    /// the current time (capped at the window's end), not through `occurred_at`.
+    async fn window_spend(
+        &self,
+        scope: &BudgetScope,
+        budget: &BudgetRecord,
+        occurred_at: OffsetDateTime,
+    ) -> Result<Money9, GatewayError> {
+        let window = budget_window_utc(budget.settings.cadence, occurred_at);
+        self.cache
+            .window_spend(
+                &SpendWindowKey::containing(
+                    &budget.scope_key,
+                    budget.settings.cadence,
+                    occurred_at,
+                ),
+                || async {
+                    let observed_end = std::cmp::min(
+                        OffsetDateTime::now_utc() + time::Duration::SECOND,
+                        window.period_end,
+                    );
+                    Ok(self
+                        .repo
+                        .sum_usage_cost_for_budget_scope_in_window(
+                            scope,
+                            window.period_start,
+                            observed_end,
+                        )
+                        .await?)
+                },
+            )
+            .await
+    }
+}
+
+/// Widen limits before scaling so large, valid Money4 budgets do not overflow Money9.
+fn budget_limit_nanos(limit: Money4) -> i128 {
+    i128::from(limit.as_scaled_i64()) * i128::from(Money9::SCALE / Money4::SCALE)
 }
 
 fn duplicate_request_error(request_id: &str) -> GatewayError {
     GatewayError::DuplicateUsageRecord {
         request_id: request_id.to_string(),
     }
-}
-
-fn budget_window_bounds_utc(
-    cadence: BudgetCadence,
-    occurred_at: OffsetDateTime,
-) -> (OffsetDateTime, OffsetDateTime) {
-    let window = budget_window_utc(cadence, occurred_at);
-    (window.period_start, window.observed_end)
 }
 
 #[cfg(test)]
@@ -233,7 +316,7 @@ mod tests {
     use gateway_core::{
         ApiKeyModelGrantMode, ApiKeyOwnerKind, AuthenticatedApiKey, BudgetCadence,
         BudgetIncreaseRecord, BudgetModelSelector, BudgetRecord, BudgetRepository, BudgetScope,
-        BudgetSettings, BudgetSource, GatewayError, Money4, StoreError, UsageLedgerRecord,
+        BudgetSettings, BudgetSource, GatewayError, Money4, Money9, StoreError, UsageLedgerRecord,
         UsagePricingStatus,
     };
     use serde_json::json;
@@ -335,7 +418,7 @@ mod tests {
         async fn sum_usage_cost_by_budget_scope(
             &self,
             _windows: &[gateway_core::BudgetScopeWindow<'_>],
-        ) -> Result<std::collections::HashMap<String, Money4>, StoreError> {
+        ) -> Result<std::collections::HashMap<String, Money9>, StoreError> {
             unreachable!("batch operations are not used by this fixture")
         }
 
@@ -450,9 +533,9 @@ mod tests {
         async fn sum_usage_cost_for_budget_scope_in_window(
             &self,
             scope: &BudgetScope,
-            _window_start: OffsetDateTime,
-            _window_end: OffsetDateTime,
-        ) -> Result<Money4, StoreError> {
+            window_start: OffsetDateTime,
+            window_end: OffsetDateTime,
+        ) -> Result<Money9, StoreError> {
             let prior = self
                 .prior_spend
                 .get(&scope.scope_key())
@@ -464,12 +547,17 @@ mod tests {
                 .expect("events lock")
                 .iter()
                 .filter(|event| {
-                    event.pricing_status.counts_toward_spend() && event_matches_scope(event, scope)
+                    event.pricing_status.counts_toward_spend()
+                        && event_matches_scope(event, scope)
+                        && event.occurred_at >= window_start
+                        && event.occurred_at < window_end
                 })
-                .fold(Money4::ZERO, |sum, event| {
+                .fold(Money9::ZERO, |sum, event| {
                     sum.saturating_add(event.computed_cost_usd)
                 });
-            Ok(prior.saturating_add(recorded))
+            Ok(Money9::from_money4(prior)
+                .expect("test prior spend fits nanos")
+                .saturating_add(recorded))
         }
 
         async fn insert_usage_ledger_if_absent(
@@ -601,7 +689,8 @@ mod tests {
             cache_write_1h_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
             pricing_tier_above_input_tokens: None,
-            computed_cost_usd,
+            computed_cost_usd: Money9::from_money4(computed_cost_usd)
+                .expect("test cost fits nanos"),
             occurred_at,
             requested_service_tier: None,
             served_service_tier: None,
@@ -614,13 +703,23 @@ mod tests {
         request_id: &str,
         model_id: Uuid,
     ) -> Result<(), GatewayError> {
+        precheck_at(guard, auth, request_id, model_id, OffsetDateTime::now_utc()).await
+    }
+
+    async fn precheck_at(
+        guard: &BudgetGuard<InMemoryBudgetRepo>,
+        auth: &AuthenticatedApiKey,
+        request_id: &str,
+        model_id: Uuid,
+        occurred_at: OffsetDateTime,
+    ) -> Result<(), GatewayError> {
         guard
             .enforce_pre_provider_budget(
                 auth,
                 request_id,
                 Some(model_id),
                 Some("gpt-4o-mini"),
-                OffsetDateTime::now_utc(),
+                occurred_at,
             )
             .await
     }
@@ -631,7 +730,7 @@ mod tests {
         auth: &AuthenticatedApiKey,
         row: &UsageLedgerRecord,
     ) -> Result<Vec<BudgetOverrun>, GatewayError> {
-        guard.record_incurred_usage(row).await?;
+        guard.record_incurred_usage(auth, row).await?;
         Ok(guard.spend_after_usage(auth, row).await?.overruns)
     }
 
@@ -642,6 +741,99 @@ mod tests {
             } => assert_eq!(ownership_scope, expected_scope_key),
             other => panic!("expected budget_exceeded, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn hard_budget_compares_exact_spend_before_rounding_for_display() {
+        let user_id = Uuid::new_v4();
+        let model_id = Uuid::new_v4();
+        let scope = BudgetScope::User { user_id };
+        let repo = Arc::new(InMemoryBudgetRepo::default().with_budget(
+            budget(scope.clone(), Money4::from_scaled(1), true),
+            Money4::ZERO,
+        ));
+        let guard = BudgetGuard::new(repo);
+        let auth = user_auth(user_id);
+        let mut row = ledger(
+            &auth,
+            "below-cap",
+            Some(model_id),
+            UsagePricingStatus::Priced,
+            Money4::ZERO,
+        );
+        row.computed_cost_usd = Money9::from_nanos(99_999);
+        guard
+            .record_incurred_usage(&auth, &row)
+            .await
+            .expect("record below-cap charge");
+        precheck(&guard, &auth, "has-one-nano-left", model_id)
+            .await
+            .expect("exact spend is below the cap");
+        row.request_id = "last-nano".to_string();
+        row.usage_event_id = Uuid::new_v4();
+        row.computed_cost_usd = Money9::from_nanos(1);
+        guard
+            .record_incurred_usage(&auth, &row)
+            .await
+            .expect("record last nano-dollar");
+        let error = precheck(&guard, &auth, "cap-reached", model_id)
+            .await
+            .expect_err("exact spend reaches the cap");
+        assert_budget_exceeded(&error, &scope.scope_key());
+    }
+
+    #[tokio::test]
+    async fn a_late_completion_caches_the_whole_window_so_far() {
+        let user_id = Uuid::new_v4();
+        let model_id = Uuid::new_v4();
+        let scope = BudgetScope::User { user_id };
+        let repo = Arc::new(
+            InMemoryBudgetRepo::default()
+                .with_budget(budget(scope.clone(), usd(1), true), Money4::ZERO),
+        );
+        let guard = BudgetGuard::new(repo);
+        let auth = user_auth(user_id);
+        // A past day, so no clock read can move a check into another window.
+        let start =
+            OffsetDateTime::from_unix_timestamp(1_768_471_200).expect("2026-01-15 10:00 UTC");
+        // A slow request started first; a quick one started and finished meanwhile.
+        let mut slow = ledger(
+            &auth,
+            "slow",
+            Some(model_id),
+            UsagePricingStatus::Priced,
+            Money4::ZERO,
+        );
+        slow.occurred_at = start;
+        slow.computed_cost_usd = Money9::from_nanos(400_000_000);
+        let mut quick = ledger(
+            &auth,
+            "quick",
+            Some(model_id),
+            UsagePricingStatus::Priced,
+            Money4::ZERO,
+        );
+        quick.occurred_at = start + time::Duration::seconds(2);
+        quick.computed_cost_usd = Money9::from_nanos(700_000_000);
+        guard
+            .record_incurred_usage(&auth, &quick)
+            .await
+            .expect("record quick charge");
+
+        record(&guard, &auth, &slow)
+            .await
+            .expect("record slow charge");
+
+        let error = precheck_at(
+            &guard,
+            &auth,
+            "after-both",
+            model_id,
+            start + time::Duration::seconds(10),
+        )
+        .await
+        .expect_err("$1.10 of $1 is spent");
+        assert_budget_exceeded(&error, &scope.scope_key());
     }
 
     #[tokio::test]

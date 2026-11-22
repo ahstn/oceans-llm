@@ -8,6 +8,7 @@ import type { RequestLogView } from '@/types/api'
 import { RequestLogsPage } from '@/routes/observability/request-logs'
 
 const getObservabilityRequestLogDetailMock = vi.fn()
+const getModelOptionsMock = vi.fn()
 const navigateMock = vi.fn()
 
 // Hoisted with the mocks: the route module reads it as it loads.
@@ -36,6 +37,7 @@ vi.mock('@/server/admin-data.functions', () => ({
   getRequestLogs: vi.fn(),
   getObservabilityRequestLogDetail: (...args: unknown[]) =>
     getObservabilityRequestLogDetailMock(...args),
+  getModelOptions: (...args: unknown[]) => getModelOptionsMock(...args),
 }))
 
 const items: RequestLogView[] = [
@@ -118,6 +120,7 @@ function resetMocks() {
   routeMock.useSearch.mockReset()
   getObservabilityRequestLogDetailMock.mockReset()
   navigateMock.mockReset()
+  getModelOptionsMock.mockReset()
   routeMock.useSearch.mockReturnValue({})
   vi.stubGlobal('ResizeObserver', ResizeObserverMock)
 }
@@ -250,6 +253,26 @@ describe('RequestLogsPage table', () => {
     expect(screen.getAllByText('service account').length).toBeGreaterThan(0)
     expect(screen.queryByText('Nightly Rollup Key')).not.toBeInTheDocument()
     expect(screen.getAllByText('Unknown')).toHaveLength(1)
+  })
+
+  it('prefers nanos in the list and detail sheet for tiny request charges', async () => {
+    const tinyItem: RequestLogView = {
+      ...items[0],
+      cost_usd_10000: 0,
+      cost_usd_nanos: 2_800,
+    }
+    routeMock.useLoaderData.mockReturnValue({ data: { items: [tinyItem], total: 1 } })
+    getObservabilityRequestLogDetailMock.mockResolvedValue({
+      data: { log: tinyItem, user_agent_raw: null, payload: null, attempts: [] },
+    })
+
+    renderPage()
+    expect(screen.getAllByText('$0.0000028')).toHaveLength(2)
+    expect(screen.queryByText('$0.0000')).not.toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Inspect' })[0])
+
+    const metrics = within(await screen.findByTestId('request-log-key-metrics'))
+    expect(metrics.getByText('$0.0000028')).toBeInTheDocument()
   })
 
   it('shows a cache-hit indicator with cached token share and em dash fallbacks', async () => {
@@ -739,6 +762,217 @@ describe('RequestLogsPage filter chips', () => {
 
     expect(scope.getByTestId('request-log-filter-provider-key')).toHaveValue('openai')
     expect(scope.getByTestId('request-log-filter-env')).toHaveValue('staging')
+  })
+})
+
+describe('RequestLogsPage picker filters', () => {
+  beforeEach(resetMocks)
+
+  async function addFilter(scope: ReturnType<typeof within>, name: string) {
+    fireEvent.keyDown(scope.getByRole('button', { name: /Filters/ }), { key: 'Enter' })
+    fireEvent.click(await screen.findByRole('menuitem', { name }))
+  }
+
+  it('picks a model from the gateway catalog', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+    getModelOptionsMock.mockResolvedValue({
+      data: {
+        items: [
+          { id: 'gpt-4.1-mini', model_id: 'uuid-1', provider_label: 'OpenAI', alias_of: null },
+          { id: 'fast', model_id: 'uuid-2', provider_label: 'OpenAI', alias_of: 'gpt-4.1-mini' },
+        ],
+      },
+    })
+
+    const view = renderPage()
+    const scope = within(view.container)
+    expect(getModelOptionsMock).not.toHaveBeenCalled()
+
+    await addFilter(scope, 'Model')
+    fireEvent.click(await screen.findByRole('option', { name: /fast\s*alias of gpt-4\.1-mini/ }))
+
+    await waitForListTransition()
+    expect(getModelOptionsMock).toHaveBeenCalledOnce()
+    expect(navigatedSearch(0)).toEqual(expect.objectContaining({ model_key: 'fast' }))
+    expect(scope.getByTestId('request-log-filter-model-key')).toHaveTextContent('fast')
+  })
+
+  it('retries a failed model catalog load when the picker reopens', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+    getModelOptionsMock.mockRejectedValueOnce(new Error('session expired')).mockResolvedValueOnce({
+      data: { items: [{ id: 'gpt-4.1-mini', model_id: 'uuid-1', alias_of: null }] },
+    })
+
+    const view = renderPage()
+    const scope = within(view.container)
+    await addFilter(scope, 'Model')
+    expect(await screen.findByText(/Could not load options/)).toBeInTheDocument()
+
+    const trigger = scope.getByTestId('request-log-filter-model-key')
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Search model values' }), {
+      key: 'Escape',
+    })
+    await waitFor(() =>
+      expect(screen.queryByText(/Could not load options/)).not.toBeInTheDocument(),
+    )
+    fireEvent.click(trigger)
+
+    expect(await screen.findByRole('option', { name: 'gpt-4.1-mini' })).toBeInTheDocument()
+    expect(getModelOptionsMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('reloads a failed model catalog when the Model chip is added again', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+    getModelOptionsMock.mockRejectedValueOnce(new Error('session expired')).mockResolvedValueOnce({
+      data: { items: [{ id: 'gpt-4.1-mini', model_id: 'uuid-1', alias_of: null }] },
+    })
+
+    const view = renderPage()
+    const scope = within(view.container)
+    await addFilter(scope, 'Model')
+    expect(await screen.findByText(/Could not load options/)).toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Search model values' }), {
+      key: 'Escape',
+    })
+    fireEvent.click(scope.getByRole('button', { name: 'Remove Model filter' }))
+    await waitFor(() =>
+      expect(scope.queryByTestId('request-log-filter-model-key')).not.toBeInTheDocument(),
+    )
+
+    await addFilter(scope, 'Model')
+    expect(await screen.findByRole('option', { name: 'gpt-4.1-mini' })).toBeInTheDocument()
+    expect(getModelOptionsMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('cancels a model catalog load still running when the page unmounts', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+    getModelOptionsMock.mockImplementation(() => new Promise(() => {}))
+
+    const view = renderPage()
+    await addFilter(within(view.container), 'Model')
+    await waitFor(() => expect(getModelOptionsMock).toHaveBeenCalledOnce())
+    const [{ signal }] = getModelOptionsMock.mock.calls[0]
+    expect(signal.aborted).toBe(false)
+
+    view.unmount()
+    expect(signal.aborted).toBe(true)
+  })
+
+  it('shows a deep-linked model without loading the catalog until the picker opens', async () => {
+    routeMock.useSearch.mockReturnValue({ model_key: 'retired-model' })
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+    getModelOptionsMock.mockResolvedValue({
+      data: { items: [{ id: 'gpt-4.1-mini', model_id: 'uuid-1', alias_of: null }] },
+    })
+
+    const view = renderPage()
+    const trigger = within(view.container).getByTestId('request-log-filter-model-key')
+    expect(trigger).toHaveTextContent('retired-model')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(getModelOptionsMock).not.toHaveBeenCalled()
+
+    fireEvent.click(trigger)
+    expect(await screen.findByRole('option', { name: 'gpt-4.1-mini' })).toBeInTheDocument()
+    expect(getModelOptionsMock).toHaveBeenCalledOnce()
+  })
+
+  it('filters by a listed status code and stores it as a number', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+
+    const view = renderPage()
+    const scope = within(view.container)
+    await addFilter(scope, 'Status')
+    fireEvent.click(await screen.findByRole('option', { name: /429\s*Too Many Requests/ }))
+
+    await waitForListTransition()
+    expect(navigatedSearch(0).status_code).toBe(429)
+    expect(getModelOptionsMock).not.toHaveBeenCalled()
+  })
+
+  it('applies a picked status while a tag pair is still incomplete', async () => {
+    routeMock.useSearch.mockReturnValue({ status_code: 200 })
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+
+    const view = renderPage()
+    const scope = within(view.container)
+    await addFilter(scope, 'Tag')
+    fireEvent.change(await scope.findByTestId('request-log-filter-tag-key'), {
+      target: { value: 'feature' },
+    })
+
+    fireEvent.click(scope.getByTestId('request-log-filter-status-code'))
+    fireEvent.click(await screen.findByRole('option', { name: /429\s*Too Many Requests/ }))
+
+    await waitForListTransition()
+    const next = navigatedSearch(0, { status_code: 200 })
+    expect(next.status_code).toBe(429)
+    expect(next.tag_key).toBeUndefined()
+    // The half-typed key stays in its chip for the user to finish.
+    expect(scope.getByTestId('request-log-filter-tag-key')).toHaveValue('feature')
+  })
+
+  it('navigates with only the picked value', async () => {
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+
+    const view = renderPage()
+    const scope = within(view.container)
+    await addFilter(scope, 'Service')
+    fireEvent.change(await scope.findByTestId('request-log-filter-service'), {
+      target: { value: 'checkout' },
+    })
+    await addFilter(scope, 'Status')
+    fireEvent.click(await screen.findByRole('option', { name: /429\s*Too Many Requests/ }))
+
+    await waitForListTransition()
+    // Opening the menu blurs Service, which commits it as usual. The pick itself carries only
+    // its own param, so it can never send another chip's uncommitted draft.
+    const pickCall = navigateMock.mock.calls.length - 1
+    expect(navigatedSearch(pickCall)).toEqual(
+      expect.objectContaining({ status_code: 429, service: undefined }),
+    )
+  })
+
+  it('applies a re-picked status while the previous pick is still navigating', async () => {
+    routeMock.useSearch.mockReturnValue({ status_code: 200 })
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+    const held: Array<() => void> = []
+    navigateMock.mockImplementation(() => new Promise<void>((resolve) => held.push(resolve)))
+
+    const view = renderPage()
+    const trigger = within(view.container).getByTestId('request-log-filter-status-code')
+    fireEvent.click(trigger)
+    fireEvent.click(await screen.findByRole('option', { name: /429\s*Too Many Requests/ }))
+    expect(await screen.findByText('Loading…')).toBeInTheDocument()
+
+    // The URL still says 200 while 429 loads, so picking 200 again must still navigate.
+    fireEvent.click(trigger)
+    fireEvent.click(await screen.findByRole('option', { name: /200\s*OK/ }))
+    expect(navigateMock).toHaveBeenCalledTimes(2)
+    expect(navigatedSearch(1, { status_code: 429 }).status_code).toBe(200)
+
+    for (const release of held) release()
+    expect(await screen.findByText('Showing 1 of 1')).toBeInTheDocument()
+  })
+
+  it('accepts a typed status code only when it is a valid HTTP status', async () => {
+    routeMock.useSearch.mockReturnValue({ status_code: 429 })
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+
+    const view = renderPage()
+    const trigger = within(view.container).getByTestId('request-log-filter-status-code')
+    expect(trigger).toHaveTextContent('429Too Many Requests')
+    expect(trigger).toHaveAccessibleName('Status filter value: 429 Too Many Requests')
+
+    fireEvent.click(trigger)
+    const search = await screen.findByRole('combobox', { name: 'Search status values' })
+    fireEvent.change(search, { target: { value: '5x9' } })
+    expect(screen.queryByRole('option', { name: /Filter by/ })).not.toBeInTheDocument()
+
+    fireEvent.change(search, { target: { value: '529' } })
+    fireEvent.click(await screen.findByRole('option', { name: 'Filter by “529”' }))
+
+    await waitForListTransition()
+    expect(navigatedSearch(0, { status_code: 429 }).status_code).toBe(529)
   })
 })
 

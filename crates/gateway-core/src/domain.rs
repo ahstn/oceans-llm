@@ -115,73 +115,6 @@ impl Money4 {
         Ok(Self::from_scaled(scaled))
     }
 
-    /// Parses a provider-reported cost such as `0.000423` or `4.23e-4`,
-    /// rounding half up to four decimal places.
-    ///
-    /// Unlike [`Self::from_decimal_str`], extra fractional digits are rounded
-    /// instead of rejected. Negative costs are rejected.
-    pub fn from_reported_cost_str(value: &str) -> Result<Self, String> {
-        let invalid = || format!("cost `{value}` is not a decimal amount");
-        let text = value.trim();
-        if text.starts_with('-') {
-            return Err(format!("cost `{value}` cannot be negative"));
-        }
-        let (mantissa, exponent) = match text.split_once(['e', 'E']) {
-            Some((mantissa, exponent)) => {
-                (mantissa, exponent.parse::<i32>().map_err(|_| invalid())?)
-            }
-            None => (text, 0),
-        };
-        let (integer, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
-        let is_digits = |part: &str| part.bytes().all(|byte| byte.is_ascii_digit());
-        if integer.is_empty()
-            || !is_digits(integer)
-            || !is_digits(fraction)
-            || mantissa.ends_with('.')
-        {
-            return Err(invalid());
-        }
-        // Half-up rounding to four places reads only the fifth decimal digit after the
-        // exponent shift, so later digits are dropped before they can overflow `units`.
-        let significant = usize::try_from((5 + i64::from(exponent)).max(0)).unwrap_or(usize::MAX);
-        let fraction = fraction[..fraction.len().min(significant)].trim_end_matches('0');
-        let overflow = || format!("cost `{value}` overflowed");
-        let mut units = 0_i128;
-        for digit in integer.bytes().chain(fraction.bytes()) {
-            units = units
-                .checked_mul(10)
-                .and_then(|units| units.checked_add(i128::from(digit - b'0')))
-                .ok_or_else(overflow)?;
-        }
-        if units == 0 {
-            return Ok(Self::from_scaled(0));
-        }
-        // `units / 10^scale` is the exact amount; Money4 keeps four places.
-        let scale = fraction.len() as i64 - i64::from(exponent);
-        let scaled = if scale <= 4 {
-            u32::try_from(4 - scale)
-                .ok()
-                .and_then(|shift| 10_i128.checked_pow(shift))
-                .and_then(|factor| units.checked_mul(factor))
-                .ok_or_else(overflow)?
-        } else {
-            // A divisor beyond i128 exceeds twice any `units`, so the amount rounds to zero.
-            match u32::try_from(scale - 4)
-                .ok()
-                .and_then(|excess| 10_i128.checked_pow(excess))
-            {
-                Some(divisor) => {
-                    let remainder = units % divisor;
-                    units / divisor + i128::from(remainder >= divisor - remainder)
-                }
-                None => 0,
-            }
-        };
-        i64::try_from(scaled)
-            .map(Self::from_scaled)
-            .map_err(|_| overflow())
-    }
-
     #[must_use]
     pub const fn is_negative(self) -> bool {
         self.amount_10000 < 0
@@ -204,6 +137,158 @@ impl Money4 {
 impl std::fmt::Display for Money4 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.format_4dp())
+    }
+}
+
+/// Exact USD amount in nano-dollars ($0.000000001). Ledger charges and spend sums use it,
+/// so many sub-$0.0001 charges add up exactly; values round to `Money4` once, at the edge.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
+)]
+#[serde(transparent)]
+pub struct Money9 {
+    amount_nanos: i64,
+}
+
+impl Money9 {
+    /// Nano-dollars in one dollar.
+    pub const SCALE: i64 = 1_000_000_000;
+    pub const ZERO: Self = Self::from_nanos(0);
+    /// Nano-dollars in one four-decimal-place unit.
+    const NANOS_PER_MONEY4: i64 = Self::SCALE / Money4::SCALE;
+    /// Decimal places retained for ledger charges.
+    const PLACES: i64 = 9;
+
+    #[must_use]
+    pub const fn from_nanos(amount_nanos: i64) -> Self {
+        Self { amount_nanos }
+    }
+
+    #[must_use]
+    pub const fn as_nanos(self) -> i64 {
+        self.amount_nanos
+    }
+
+    #[must_use]
+    pub fn from_money4(value: Money4) -> Option<Self> {
+        value
+            .as_scaled_i64()
+            .checked_mul(Self::NANOS_PER_MONEY4)
+            .map(Self::from_nanos)
+    }
+
+    #[must_use]
+    pub fn round_half_up_to_money4(self) -> Money4 {
+        let divisor = Self::NANOS_PER_MONEY4;
+        let quotient = self.amount_nanos / divisor;
+        let remainder = self.amount_nanos % divisor;
+        Money4::from_scaled(
+            quotient
+                + if remainder >= divisor / 2 {
+                    1
+                } else if remainder <= -(divisor / 2) {
+                    -1
+                } else {
+                    0
+                },
+        )
+    }
+
+    #[must_use]
+    pub fn checked_add(self, other: Self) -> Option<Self> {
+        self.amount_nanos
+            .checked_add(other.amount_nanos)
+            .map(Self::from_nanos)
+    }
+
+    #[must_use]
+    pub fn checked_sub(self, other: Self) -> Option<Self> {
+        self.amount_nanos
+            .checked_sub(other.amount_nanos)
+            .map(Self::from_nanos)
+    }
+
+    #[must_use]
+    pub const fn saturating_add(self, other: Self) -> Self {
+        Self::from_nanos(self.amount_nanos.saturating_add(other.amount_nanos))
+    }
+
+    #[must_use]
+    pub const fn is_negative(self) -> bool {
+        self.amount_nanos < 0
+    }
+
+    /// Parses a non-negative provider cost, rounding half up only below one nano-dollar.
+    pub fn from_reported_cost_str(value: &str) -> Result<Self, String> {
+        let invalid = || format!("cost `{value}` is not a decimal amount");
+        let text = value.trim();
+        if text.starts_with('-') {
+            return Err(format!("cost `{value}` cannot be negative"));
+        }
+        let (mantissa, exponent) = match text.split_once(['e', 'E']) {
+            Some((mantissa, exponent)) => {
+                (mantissa, exponent.parse::<i32>().map_err(|_| invalid())?)
+            }
+            None => (text, 0),
+        };
+        let (integer, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+        let is_digits = |part: &str| part.bytes().all(|byte| byte.is_ascii_digit());
+        if integer.is_empty()
+            || !is_digits(integer)
+            || !is_digits(fraction)
+            || mantissa.ends_with('.')
+        {
+            return Err(invalid());
+        }
+        // Only the first discarded digit affects half-up rounding.
+        let significant =
+            usize::try_from((Self::PLACES + 1 + i64::from(exponent)).max(0)).unwrap_or(usize::MAX);
+        let fraction = fraction[..fraction.len().min(significant)].trim_end_matches('0');
+        let overflow = || format!("cost `{value}` overflowed");
+        let mut units = 0_i128;
+        for digit in integer.bytes().chain(fraction.bytes()) {
+            units = units
+                .checked_mul(10)
+                .and_then(|units| units.checked_add(i128::from(digit - b'0')))
+                .ok_or_else(overflow)?;
+        }
+        if units == 0 {
+            return Ok(Self::ZERO);
+        }
+        let scale = fraction.len() as i64 - i64::from(exponent);
+        let nanos = if scale <= Self::PLACES {
+            u32::try_from(Self::PLACES - scale)
+                .ok()
+                .and_then(|shift| 10_i128.checked_pow(shift))
+                .and_then(|factor| units.checked_mul(factor))
+                .ok_or_else(overflow)?
+        } else {
+            match u32::try_from(scale - Self::PLACES)
+                .ok()
+                .and_then(|excess| 10_i128.checked_pow(excess))
+            {
+                Some(divisor) => {
+                    let remainder = units % divisor;
+                    units / divisor + i128::from(remainder >= divisor - remainder)
+                }
+                None => 0,
+            }
+        };
+        i64::try_from(nanos)
+            .map(Self::from_nanos)
+            .map_err(|_| overflow())
+    }
+}
+
+impl std::fmt::Display for Money9 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let absolute = self.amount_nanos.unsigned_abs();
+        let integer = absolute / Self::SCALE as u64;
+        let fraction = absolute % Self::SCALE as u64;
+        if self.is_negative() {
+            f.write_str("-")?;
+        }
+        write!(f, "{integer}.{fraction:09}")
     }
 }
 
@@ -346,7 +431,7 @@ impl ModelAccessMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BudgetCadence {
     Daily,
@@ -985,7 +1070,8 @@ pub struct BudgetAlertHistoryPage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpendDailyAggregateRecord {
     pub day_start: OffsetDateTime,
-    pub priced_cost_usd: Money4,
+    /// Exact, so a sum over days rounds to $0.0001 only once.
+    pub priced_cost_usd: Money9,
     pub priced_request_count: i64,
     pub unpriced_request_count: i64,
     pub usage_missing_request_count: i64,
@@ -1191,7 +1277,7 @@ pub struct UsageLedgerRecord {
     /// Tier the provider reported serving; `None` when the response did not say.
     #[serde(default)]
     pub served_service_tier: Option<ServiceTier>,
-    pub computed_cost_usd: Money4,
+    pub computed_cost_usd: Money9,
     pub occurred_at: OffsetDateTime,
 }
 
@@ -2700,6 +2786,19 @@ pub struct McpToolInvocationQuery {
     pub occurred_at_start: Option<OffsetDateTime>,
     pub occurred_at_end: Option<OffsetDateTime>,
     pub mcp_method: Option<String>,
+}
+
+/// Loads a bounded batch with exact owners and inclusive whole-second time bounds.
+#[derive(Debug, Clone, Copy)]
+pub struct McpToolInvocationBatchQuery<'a> {
+    pub request_ids: &'a [&'a str],
+    /// `None` matches only rows with a NULL user.
+    pub user_id: Option<Uuid>,
+    /// `None` matches only rows with a NULL team.
+    pub team_id: Option<Uuid>,
+    pub occurred_at_start: OffsetDateTime,
+    pub occurred_at_end: OffsetDateTime,
+    pub limit: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -4231,37 +4330,69 @@ mod tests {
     }
 
     #[test]
-    fn reported_cost_rounds_half_up_to_four_places() {
-        let parse = super::Money4::from_reported_cost_str;
+    fn reported_cost_keeps_nano_dollars_and_rounds_only_at_the_edge() {
+        let parse = super::Money9::from_reported_cost_str;
         for (text, scaled) in [
-            ("0.000423", 4),
-            ("0.00005", 1),
-            ("0.000049", 0),
-            ("0.00015", 2),
-            ("1.23456789", 12_346),
-            ("0.0125", 125),
-            ("2", 20_000),
-            ("4.23e-4", 4),
-            ("5E-5", 1),
-            ("1.5e2", 1_500_000),
+            ("0.000423", 423_000),
+            ("0.0000028", 2_800),
+            ("0.00005", 50_000),
+            ("0.000049", 49_000),
+            ("0.00015", 150_000),
+            ("1.23456789", 1_234_567_890),
+            ("0.0125", 12_500_000),
+            ("2", 2_000_000_000),
+            ("4.23e-4", 423_000),
+            ("5E-5", 50_000),
+            ("1.5e2", 150_000_000_000),
             ("0e9999", 0),
             ("1e-60", 0),
-            (" 0.0042 ", 42),
-            ("0.9999999999999999999999999999999999999999", 10_000),
-            ("0.0000499999999999999999999999999999999999999", 0),
-            ("0.000049999999999999999999999999999999999999e1", 5),
+            (" 0.0042 ", 4_200_000),
+            ("0.9999999999999999999999999999999999999999", 1_000_000_000),
+            ("0.0000499999999999999999999999999999999999999", 50_000),
+            ("0.000049999999999999999999999999999999999999e1", 500_000),
+            ("0.0000000005", 1),
+            ("0.00000000049", 0),
         ] {
-            assert_eq!(
-                parse(text),
-                Ok(super::Money4::from_scaled(scaled)),
-                "{text}"
-            );
+            assert_eq!(parse(text), Ok(super::Money9::from_nanos(scaled)), "{text}");
         }
         for text in ["-0.0001", "", ".5", "1.", "abc", "1e", "1.2.3"] {
             assert!(parse(text).is_err(), "{text}");
         }
         // Config amounts stay strict about extra places.
         assert!(super::Money4::from_decimal_str("0.000423").is_err());
+    }
+
+    #[test]
+    fn nano_dollar_totals_round_half_up_once_and_check_overflow() {
+        use super::{Money4, Money9};
+        let charge = Money9::from_nanos(2_800);
+        let total = (0..1_000)
+            .try_fold(Money9::ZERO, |sum, _| sum.checked_add(charge))
+            .expect("test total fits nano-dollars");
+        assert_eq!(total.as_nanos(), 2_800_000);
+        assert_eq!(total.round_half_up_to_money4(), Money4::from_scaled(28));
+        assert_eq!(
+            Money9::from_nanos(49_999).round_half_up_to_money4(),
+            Money4::ZERO
+        );
+        assert_eq!(
+            Money9::from_nanos(50_000).round_half_up_to_money4(),
+            Money4::from_scaled(1)
+        );
+        assert_eq!(
+            Money9::from_nanos(-50_000).round_half_up_to_money4(),
+            Money4::from_scaled(-1)
+        );
+        assert_eq!(Money9::from_money4(Money4::from_scaled(28)), Some(total));
+        assert!(Money9::from_money4(Money4::from_scaled(i64::MAX)).is_none());
+        assert!(Money9::from_nanos(i64::MAX).checked_add(charge).is_none());
+        assert!(Money9::from_nanos(i64::MIN).checked_sub(charge).is_none());
+        assert_eq!(
+            Money9::from_nanos(i64::MAX)
+                .saturating_add(charge)
+                .as_nanos(),
+            i64::MAX
+        );
     }
 
     #[test]

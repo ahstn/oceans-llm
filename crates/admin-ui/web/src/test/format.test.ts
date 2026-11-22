@@ -9,6 +9,7 @@ import {
   formatUsd10000,
   formatUsd10000Precise,
   formatUsdTotal,
+  formatUsdNanos,
 } from '@/lib/format'
 
 // DESIGN.md "Numbers and time": each kind of value has one format.
@@ -54,6 +55,14 @@ describe('shared number and time formats', () => {
     expect(formatUsdTotal(-0.24)).toBe('-$0.24')
     expect(formatUsd10000(-31)).toBe('-<$0.01')
     expect(formatUsdTotal(null)).toBe('—')
+  })
+
+  it('keeps sub-Money4 request charges visible', () => {
+    expect(formatUsdNanos(2_800)).toBe('$0.0000028')
+    expect(formatUsdNanos(1)).toBe('$0.000000001')
+    expect(formatUsdNanos(45_700_000)).toBe('$0.0457')
+    expect(formatUsdNanos(0)).toBe('$0.0000')
+    expect(formatUsdNanos(-2_800)).toBe('-$0.0000028')
   })
 
   it('writes timestamps in UTC with the zone, and seconds only on request', () => {

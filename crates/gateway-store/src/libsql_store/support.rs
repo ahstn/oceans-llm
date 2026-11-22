@@ -703,7 +703,7 @@ pub(super) fn decode_usage_ledger_record(
         row.get(27).map_err(to_query_error)?;
     let cache_write_cost_per_million_tokens_10000: Option<i64> =
         row.get(28).map_err(to_query_error)?;
-    let computed_cost_10000: i64 = row.get(29).map_err(to_query_error)?;
+    let computed_cost_nanos: i64 = row.get(29).map_err(to_query_error)?;
     let occurred_at: i64 = row.get(30).map_err(to_query_error)?;
     let uncached_input_tokens: Option<i64> = row.get(31).map_err(to_query_error)?;
     let cache_read_tokens: Option<i64> = row.get(32).map_err(to_query_error)?;
@@ -766,7 +766,7 @@ pub(super) fn decode_usage_ledger_record(
         image_output_cost_per_million_tokens: image_output_cost_per_million_tokens_10000
             .map(Money4::from_scaled),
         pricing_tier_above_input_tokens,
-        computed_cost_usd: Money4::from_scaled(computed_cost_10000),
+        computed_cost_usd: Money9::from_nanos(computed_cost_nanos),
         occurred_at: unix_to_datetime(occurred_at)?,
         requested_service_tier: parse_stored_service_tier(requested_service_tier.as_deref())?,
         served_service_tier: parse_stored_service_tier(served_service_tier.as_deref())?,

@@ -459,8 +459,13 @@ impl ApiKeyRepository for LibsqlStore {
         let now = OffsetDateTime::now_utc().unix_timestamp();
         self.connection
             .execute(
-                "UPDATE api_keys SET last_used_at = ?1 WHERE id = ?2",
-                libsql::params![now, api_key_id.to_string()],
+                "UPDATE api_keys SET last_used_at = ?1 WHERE id = ?2 \
+                 AND (last_used_at IS NULL OR last_used_at <= ?3)",
+                libsql::params![
+                    now,
+                    api_key_id.to_string(),
+                    now - gateway_core::traits::API_KEY_LAST_USED_INTERVAL_SECONDS
+                ],
             )
             .await
             .map_err(|error| StoreError::Query(error.to_string()))?;

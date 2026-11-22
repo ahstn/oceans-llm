@@ -58,18 +58,7 @@ test('correlates a live agent request and exposes it through the admin session e
   expect(completionResponse.status()).toBe(200)
 
   const listUrl = `${root}/api/v1/admin/observability/agent-sessions?harness_key=opencode&requested_model_key=fast&service_account_id=${encodeURIComponent(serviceAccount?.id ?? '')}&session_source_hash=${encodeURIComponent(sessionSourceHash)}&started_after=${encodeURIComponent(startedAfter)}`
-  await expect
-    .poll(async () => {
-      const response = await request.get(listUrl, { headers: { cookie: adminCookie } })
-      if (response.status() !== 200) return -1
-      const body = (await response.json()) as { data: { total: number } }
-      return body.data.total
-    })
-    .toBe(1)
-
-  const listResponse = await request.get(listUrl, { headers: { cookie: adminCookie } })
-  expect(listResponse.status()).toBe(200)
-  const listBody = (await listResponse.json()) as {
+  type AgentSessionList = {
     data: {
       total: number
       items: Array<{
@@ -83,6 +72,22 @@ test('correlates a live agent request and exposes it through the admin session e
       }>
     }
   }
+  // Passive correlation runs after the response, and the gateway writes the
+  // session row before it links the request, so wait for the request count too.
+  let listBody: AgentSessionList | undefined
+  await expect
+    .poll(async () => {
+      const response = await request.get(listUrl, { headers: { cookie: adminCookie } })
+      if (response.status() !== 200) return { status: response.status() }
+      listBody = (await response.json()) as AgentSessionList
+      return {
+        total: listBody.data.total,
+        request_counts: listBody.data.items.map((item) => item.request_count),
+      }
+    })
+    .toEqual({ total: 1, request_counts: [1] })
+
+  if (!listBody) throw new Error('agent session list was never read')
   expect(listBody.data.total).toBe(1)
   const [session] = listBody.data.items
   expect(session.session_source_hash).toMatch(/^sha256:[0-9a-f]{64}$/)
@@ -105,7 +110,7 @@ test('correlates a live agent request and exposes it through the admin session e
       session: { session_id: string; session_source_hash: string | null }
       requests: Array<{ request_id: string }>
       observations: unknown[]
-      report: unknown
+      report: { score: number | null } | null
     }
   }
   expect(detailBody.data.session).toMatchObject({
@@ -113,15 +118,22 @@ test('correlates a live agent request and exposes it through the admin session e
     session_source_hash: session.session_source_hash,
   })
   expect(detailBody.data.requests).toHaveLength(1)
-  expect(detailBody.data.report).toBeNull()
+  // The background analyzer also reports on open sessions every few seconds, so
+  // a report may already exist. During calibration it never carries a score.
+  expect(detailBody.data.report?.score ?? null).toBeNull()
 
   await page.goto(
     `/admin/observability/agent-sessions?session_source_hash=${encodeURIComponent(session.session_source_hash ?? '')}`,
   )
   await expect(page.getByRole('heading', { name: 'Agent sessions' })).toBeVisible()
-  await expect(page.getByText('fast').first()).toBeVisible()
-  await expect(page.getByText('Open').first()).toBeVisible()
-  await page.getByText('fast').first().click()
+  // The URL filter shows as a chip, and the desktop table (not the hidden card list) shows the row.
+  await expect(page.getByTestId('agent-session-filter-session-source-hash')).toHaveValue(
+    session.session_source_hash ?? '',
+  )
+  const table = page.getByTestId('agent-session-table')
+  await expect(table.getByText('fast').first()).toBeVisible()
+  await expect(table.getByText('Open').first()).toBeVisible()
+  await table.getByText('fast').first().click()
   await expect(page.getByText('Agent session details')).toBeVisible()
   await expect(page.getByText(externalSessionId)).toHaveCount(0)
   await expect(page.getByText('Calibration data')).toBeVisible()

@@ -18,7 +18,7 @@ The suite generates tests only for `run` cells and opt-in `blocked` cells, and p
 
 | Harness | Setup | `gpt-6-luna` | `claude-haiku-5.5` | `gemini-4-hydrogen` |
 | --- | --- | --- | --- | --- |
-| OpenCode 2.2.6 | Packed `@ahstn/opencode-oceans` plugin with `litellm` discovery | `responses` | `messages` | `chat_completions` |
+| OpenCode 2.3.0 | Packed `@ahstn/opencode-oceans` plugin with `litellm` discovery | `responses` | `messages` | `chat_completions` |
 | Pi 0.87.1 | Generated `models.json` | `chat_completions` | `messages` | `chat_completions` |
 | OMP 18.20.0 | `models.yml` with `litellm` discovery | `responses` | `messages` | `chat_completions` |
 | Claude Code 2.1.323 | Generated `settings.json` | Not applicable | `messages` | Not applicable |
@@ -51,11 +51,11 @@ The three models of one harness and test run at the same time (`maxConcurrency: 
 
 The harness processes receive an Oceans API key, the gateway URL, and isolated HOME/XDG folders. They do not receive the OpenRouter key, gateway administrator credentials, or unrelated parent-process environment variables.
 
-Every shell command goes through an Oceans guardrail check (`POST /api/v1/guardrails/evaluate`) and then runs in `bwrap` on Linux or `sandbox-exec` on macOS. The sandbox sees only the workspace, mounted at `/workspace`. A failed or invalid guardrail answer blocks the command. File tools must stay in the workspace: the hooks reject `~` and `@` prefixes, URLs and internal schemes such as `xd://`, `local://`, `agent://` and `proc://`, OMP hashline headers that point outside, and paths that leave the workspace. The hooks do not resolve symbolic links.
+Every shell command goes through an Oceans guardrail check (`POST /api/v1/guardrails/evaluate`) and then runs in `bwrap` on Linux or `sandbox-exec` on macOS. The sandbox sees only the workspace, mounted at `/workspace`. A failed or invalid guardrail answer blocks the command. The managed gateway's policy is in `deny` mode, so the check stops destructive commands. See [Guardrail policy tests](#guardrail-policy-tests). File tools must stay in the workspace: the hooks reject `~` and `@` prefixes, URLs and internal schemes such as `xd://`, `local://`, `agent://` and `proc://`, OMP hashline headers that point outside, and paths that leave the workspace. The hooks do not resolve symbolic links.
 
 ### OpenCode
 
-The suite pins the native OpenCode V2 CLI and Promise client SDK to `2.2.6`. Matrix runs load the packed Oceans plugin, which finds the gateway in `gateways.yml` with `litellm` discovery. The generated-snippet run asks Oceans for the OpenCode config that the admin UI shows (`POST /api/v1/admin/models/client-configs`) and runs OpenCode with that config. Both add only harness settings: the `x-oceans-tags` request tag, a step limit, permissions, the guardrail plugin, and the Oceans MCP server for MCP runs.
+The suite pins the native OpenCode V2 CLI and Promise client SDK to `2.3.0`. Matrix runs load the packed Oceans plugin, which finds the gateway in `gateways.yml` with `litellm` discovery. The generated-snippet run asks Oceans for the OpenCode config that the admin UI shows (`POST /api/v1/admin/models/client-configs`) and runs OpenCode with that config. Both add only harness settings: the `x-oceans-tags` request tag, a step limit, permissions, the guardrail plugin, and the Oceans MCP server for MCP runs.
 
 In managed mode, the gateway starts with `GATEWAY_CLIENT_CONFIG_BASE_URL` set to its local URL, so generated configs point at it. In external mode, generated configs use the deployment's own client-config base URL.
 
@@ -77,6 +77,30 @@ Claude Code runs with the `settings.json` that Oceans generates for the model, i
 
 A `PreToolUse` command hook with `onFailure: "block"` sees every tool call. It returns `updatedInput` with the confined `Bash` command, keeps file tools in the workspace, allows the Oceans MCP tools and denies all other tools. MCP runs pass the server with `--mcp-config` and `alwaysLoad: true`. The key goes in `OCEANS_API_KEY`, because Claude Code reads its own credential variables as empty in MCP headers.
 
+## Guardrail policy tests
+
+`src/guardrails-policy.test.ts` checks the gateway's guardrails against a real policy, with no paid calls. It runs only on the managed gateway, and skips on an external one.
+
+The managed gateway's `guardrails.default` policy is on for every route, in `deny` mode, with secret redaction (`provider_tokens` and `credentials`) and these packs: `core.shell`, `core.git`, `core.filesystem`, `database.postgresql`, `secrets.aws_secrets`, `secrets.onepassword`, `secret_disclosure`, `cloud.aws`, `cloud.gcp`, `kubernetes.kubectl` and `kubernetes.helm`. The matrix and MCP runs go through the same policy.
+
+The global setup also starts a local canary provider (`src/canary-provider.ts`). It records every request body that the gateway sends it, and answers from a script: `CANARY_OK`, or a shell tool call when the prompt holds `<canary-shell>COMMAND</canary-shell>`, and `CANARY_DONE` after a tool result. Two Oceans models route to it: `harness-guardrail-canary` on the default policy, and `harness-guardrail-audit`, whose route overrides the mode with `audit`.
+
+The tests cover:
+
+- **Shell command decisions.** `POST /api/v1/guardrails/evaluate` denies a table of destructive commands, of destructive commands behind `sudo`, `bash -c`, `eval`, a pipe to `sh` or a second statement, and of commands that print stored secrets. It allows a table of safe commands. A shell tool call sent as arguments is checked under the names `Bash`, `exec`, `exec_command`, `runTerminalCmd` and `run_shell_command`. The gateway finds a shell tool by the words of its name, so a shell tool with none of those words in its name isn't checked, and these tests don't cover one. A denied command is saved as a decision that holds a content hash, not the command. A missing or unknown API key gets `401`.
+- **Harness hooks.** The generated Pi, OMP, Claude Code and OpenCode hooks call the gateway and block destructive and secret-printing commands, confine allowed ones, and block when the gateway rejects the key.
+- **Secret redaction.** One Chat Completions request, not streamed, carries fake secrets in the system prompt, user message, tool-call arguments, tool result and tool description. No secret may be in the body that the canary provider received, in the saved decisions, or in the request-log payload. Each must be replaced by `[REDACTED:<rule_id>]`. The streamed Chat Completions, Messages and Responses cases are narrower: each puts secrets in the user text only and checks only the body that the provider received. Documentation placeholders must arrive unchanged.
+- **Destructive tool calls from the model.** In `deny` mode the gateway answers `403 guardrail_policy_denied` in place of a destructive tool call, streamed or not, and also when the shell tool is named `run_terminal_cmd`. In `audit` mode it releases the call and records the match.
+- **Pi end to end.** A real Pi run with a secret in its prompt sends no secret upstream. In a second run the canary model asks Pi to run `rm -rf keep` on the audit route, the Pi hook blocks it, and the folder is still there.
+
+The fake secrets are made new in each test, in the formats of real keys, so the repository holds no string that a secret scanner would report.
+
+```sh
+npm test --prefix tests/harness-integration -- src/guardrails-policy.test.ts
+```
+
+The global setup still needs `OPENROUTER_API_KEY` to start the managed gateway, but these tests don't use it.
+
 ## Oceans discovery plugin
 
 `src/opencode-plugin.test.ts` packs `packages/opencode-oceans` with Bun and loads that archive in a real private OpenCode server. The discovery config supplies only the gateway URL and the name of the Oceans key environment variable. A provider overlay adds request tags and output limits. It does not supply static models, API overrides, or capability overrides.
@@ -89,7 +113,7 @@ Six live requests use the `low`, `high` and `fast` variants for both `openai/gpt
 
 ## Managed local gateway
 
-Managed mode is the default. The global setup builds and starts a temporary local `gateway` process with an isolated LibSQL database, registers Context7, grants its discovered tools to the harness service account, and removes the runtime directory after the suite. The service account has a hard budget of 10 USD.
+Managed mode is the default. The global setup builds and starts a temporary local `gateway` process with an isolated LibSQL database and the [guardrail policy](#guardrail-policy-tests), registers Context7, grants its discovered tools to the harness service account, and removes the runtime directory after the suite. The service account has a hard budget of 10 USD.
 
 Required environment variable:
 
@@ -175,6 +199,6 @@ The cache canary is separate from the default OpenRouter contract because it mak
 3. Configure the client with the setup from the Oceans docs, pointed at `runtime.baseUrl` and `runtime.apiKey`, for the model that `run` receives. Never point it directly at OpenRouter.
 4. Send a unique `harness_run` request tag on every model request and return it as `HarnessRun.requestTag`.
 5. Parse the final assistant response and structured tool-call inputs from the harness event stream. Do not assert against raw output that can echo the prompt. Add focused parser tests in `src/adapters/events.test.ts` for any new event format.
-6. Check every shell command with `guardShell`, confine it with `confineShell`, and check file-tool paths with `workspacePathError` from `src/adapters/sandbox.ts`. Add offline hook tests to `src/guardrails-hook.test.ts`. Restrict parent-environment inheritance.
+6. Check every shell command with `guardShell`, confine it with `confineShell`, and check file-tool paths with `workspacePathError` from `src/adapters/sandbox.ts`. Add offline hook tests to `src/guardrails-hook.test.ts`, a loader to `src/hook-loaders.ts`, and the hook to the hook tests in `src/guardrails-policy.test.ts`. Restrict parent-environment inheritance.
 7. Add a row to `MATRIX` in `src/matrix.ts` with a cell for each provider and model, and add the adapter to the adapter maps in `src/matrix.test.ts` and `src/harness-contract.test.ts`.
 8. Map `effort` and `tier` in `HarnessRunOptions` to settings that a user of the harness can change. When the harness has no such setting for a model, add a `not-applicable` entry for that test to the row's `tests`, with a reason that cites the harness source or a live run.

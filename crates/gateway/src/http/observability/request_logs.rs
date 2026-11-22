@@ -284,7 +284,15 @@ fn summary_view(
         // Unpriced and usage-missing rows store a zero cost, which would read as "free".
         cost_usd_10000: usage
             .filter(|record| record.pricing_status.counts_toward_spend())
-            .map(|record| record.computed_cost_usd.as_scaled_i64()),
+            .map(|record| {
+                record
+                    .computed_cost_usd
+                    .round_half_up_to_money4()
+                    .as_scaled_i64()
+            }),
+        cost_usd_nanos: usage
+            .filter(|record| record.pricing_status.counts_toward_spend())
+            .map(|record| record.computed_cost_usd.as_nanos()),
         service_tier: usage
             .and_then(|record| record.requested_service_tier)
             .or_else(|| metadata_service_tier(&log.metadata, "service_tier"))
@@ -682,7 +690,7 @@ mod tests {
         log.tool_cardinality.request_tool_count = Some(5);
         let other_key_usage = UsageLedgerRecord {
             api_key_id: Uuid::new_v4(),
-            computed_cost_usd: gateway_core::Money4::from_scaled(999),
+            computed_cost_usd: gateway_core::Money9::from_nanos(99_900_000),
             cache_read_tokens: Some(1),
             ..usage_ledger_record(&log)
         };
@@ -703,13 +711,16 @@ mod tests {
         };
 
         let priced = summary_with(UsagePricingStatus::Priced);
-        assert_eq!(priced.cost_usd_10000, Some(1_234));
+        assert_eq!(priced.cost_usd_10000, Some(1_235));
+        assert_eq!(priced.cost_usd_nanos, Some(123_450_001));
         assert_eq!(priced.cache_read_tokens, Some(80));
         assert_eq!(priced.tool_cardinality.request_tool_count, Some(5));
         let legacy = summary_with(UsagePricingStatus::LegacyEstimated);
-        assert_eq!(legacy.cost_usd_10000, Some(1_234));
+        assert_eq!(legacy.cost_usd_10000, Some(1_235));
+        assert_eq!(legacy.cost_usd_nanos, Some(123_450_001));
         let unpriced = summary_with(UsagePricingStatus::Unpriced);
         assert_eq!(unpriced.cost_usd_10000, None);
+        assert_eq!(unpriced.cost_usd_nanos, None);
         assert_eq!(unpriced.cache_read_tokens, Some(80));
 
         let without_usage = summary_view(
@@ -720,7 +731,26 @@ mod tests {
         )
         .unwrap_or_else(|error| panic!("summary should succeed: {}", error.0));
         assert_eq!(without_usage.cost_usd_10000, None);
+        assert_eq!(without_usage.cost_usd_nanos, None);
         assert_eq!(without_usage.cache_read_tokens, None);
+    }
+
+    #[test]
+    fn summary_view_keeps_tiny_request_cost_in_nanos() {
+        let log = request_log_record(payload_policy_metadata());
+        let mut usage = RequestUsageDirectory::default();
+        usage.by_request_id.insert(
+            log.request_id.clone(),
+            vec![UsageLedgerRecord {
+                computed_cost_usd: gateway_core::Money9::from_nanos(2_800),
+                ..usage_ledger_record(&log)
+            }],
+        );
+        let summary = summary_view(&log, None, &RequestCallerDirectory::default(), &usage)
+            .unwrap_or_else(|error| panic!("summary should succeed: {}", error.0));
+
+        assert_eq!(summary.cost_usd_10000, Some(0));
+        assert_eq!(summary.cost_usd_nanos, Some(2_800));
     }
 
     #[test]
@@ -797,7 +827,7 @@ mod tests {
             cache_write_1h_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
             pricing_tier_above_input_tokens: None,
-            computed_cost_usd: gateway_core::Money4::from_scaled(1_234),
+            computed_cost_usd: gateway_core::Money9::from_nanos(123_450_001),
             occurred_at: log.occurred_at,
             requested_service_tier: None,
             served_service_tier: None,

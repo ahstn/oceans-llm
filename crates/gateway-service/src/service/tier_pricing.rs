@@ -122,7 +122,7 @@ pub(super) fn apply_exact_pricing(
     record_catalog_provenance(record, pricing);
     let tier = billed_service_tier(record.requested_service_tier, record.served_service_tier);
     let choice = choose_catalog_rates(pricing, tier, record);
-    apply_rate_choice(record, tier, choice, cache_usage)
+    apply_rate_choice(record, tier, choice, cache_usage, 1, 1)
 }
 
 /// Route override pricing for one request. The override's rates price `route_tier`, the
@@ -141,7 +141,7 @@ pub(super) fn apply_configured_pricing(
         .flatten();
     let rates = override_rates(pricing, route_tier, tier, record);
     let choice = choose_rates(record, rates, fallback);
-    apply_rate_choice(record, tier, choice, cache_usage)
+    apply_rate_choice(record, tier, choice, cache_usage, 1, 1)
 }
 
 /// Prices a request on a Vertex Anthropic route in a location the catalog does not price
@@ -155,13 +155,12 @@ pub(super) fn apply_regional_vertex_estimate(
     cache_usage: &CacheUsageNormalization,
 ) -> Result<bool, GatewayError> {
     let tier = billed_service_tier(record.requested_service_tier, record.served_service_tier);
-    let choice = match choose_catalog_rates(global, tier, record) {
-        RateChoice::Billed(rates) => RateChoice::Billed(rates.scaled(11, 10)),
-        RateChoice::TierEstimate(rates) => RateChoice::TierEstimate(rates.scaled(11, 10)),
-        RateChoice::Unpriced(_) => return Ok(false),
-    };
+    let choice = choose_catalog_rates(global, tier, record);
+    if matches!(&choice, RateChoice::Unpriced(_)) {
+        return Ok(false);
+    }
     record_catalog_provenance(record, global);
-    apply_rate_choice(record, tier, choice, cache_usage)?;
+    apply_rate_choice(record, tier, choice, cache_usage, 11, 10)?;
     mark_estimated(
         record,
         &format!("estimated_regional_vertex_rate:{location}"),
@@ -232,11 +231,15 @@ fn apply_rate_choice(
     tier: ServiceTier,
     choice: RateChoice,
     cache_usage: &CacheUsageNormalization,
+    rate_numerator: i64,
+    rate_denominator: i64,
 ) -> Result<(), GatewayError> {
     match choice {
-        RateChoice::Billed(rates) => price_at(record, rates, cache_usage)?,
+        RateChoice::Billed(rates) => {
+            price_at(record, rates, cache_usage, rate_numerator, rate_denominator)?
+        }
         RateChoice::TierEstimate(rates) => {
-            price_at(record, rates, cache_usage)?;
+            price_at(record, rates, cache_usage, rate_numerator, rate_denominator)?;
             mark_estimated(record, &format!("estimated_service_tier:{tier}"));
         }
         RateChoice::Unpriced(gap) => leave_unpriced(record, tier, gap, cache_usage),
@@ -249,10 +252,18 @@ fn price_at(
     record: &mut UsageLedgerRecord,
     rates: BilledRates,
     cache_usage: &CacheUsageNormalization,
+    rate_numerator: i64,
+    rate_denominator: i64,
 ) -> Result<(), GatewayError> {
     rates.record_on(record);
+    // Calculate from the original rates, before provenance rounds estimated rates to Money4.
+    record.computed_cost_usd = token_cost(record, rate_numerator, rate_denominator)?;
+    if rate_numerator != rate_denominator {
+        rates
+            .scaled(rate_numerator, rate_denominator)
+            .record_on(record);
+    }
     let cache_estimate = fill_cache_rate_gaps(record);
-    record.computed_cost_usd = token_cost(record)?;
     record.pricing_status = match cache_usage {
         // Inconsistent cache counters bill every prompt token at the input rate.
         CacheUsageNormalization::Invalid(_) => UsagePricingStatus::LegacyEstimated,

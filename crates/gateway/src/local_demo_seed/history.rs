@@ -5,8 +5,8 @@ use std::collections::HashMap;
 
 use anyhow::Context;
 use gateway_core::{
-    ApiKeyRecord, BudgetRepository, Money4, RequestLogRecord, RequestLogRepository, RequestTags,
-    UsageLedgerRecord, UsagePricingStatus,
+    ApiKeyRecord, BudgetRepository, Money4, Money9, RequestLogRecord, RequestLogRepository,
+    RequestTags, UsageLedgerRecord, UsagePricingStatus,
 };
 use gateway_service::{RequestLogPayloadCaptureMode, RequestLogPayloadPolicy};
 use gateway_store::AnyStore;
@@ -330,7 +330,8 @@ pub(super) async fn insert_history_request(
         cache_write_1h_cost_per_million_tokens: None,
         image_output_cost_per_million_tokens: None,
         pricing_tier_above_input_tokens: None,
-        computed_cost_usd: Money4::from_scaled(request.cost_scaled),
+        computed_cost_usd: Money9::from_money4(Money4::from_scaled(request.cost_scaled))
+            .context("demo history cost exceeds USD nanos range")?,
         occurred_at: request.occurred_at,
         requested_service_tier: None,
         served_service_tier: None,

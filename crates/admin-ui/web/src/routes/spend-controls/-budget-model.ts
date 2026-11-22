@@ -1,8 +1,9 @@
-import { getBudgetAlertHistory, getModels, getSpendBudgets } from '@/server/admin-data.functions'
+import { loadAllModels } from '@/lib/model-catalog'
+import { getBudgetAlertHistory, getSpendBudgets } from '@/server/admin-data.functions'
 import type {
   BudgetAlertHistoryView,
   BudgetScopeRequest,
-  ModelView,
+  ModelOptionView,
   SpendBudgetServiceAccountView,
   SpendBudgetUserModelView,
   SpendBudgetUserView,
@@ -21,26 +22,7 @@ export type SpendControlsLoaderData = {
   budgets: { data: SpendBudgetsView }
   /** `null` for team admins: alert history is platform-wide. */
   alerts: { data: BudgetAlertHistoryView } | null
-  models: ModelView[]
-}
-
-/** The admin models endpoint clamps `page_size` to this. */
-const MODEL_PAGE_SIZE = 100
-
-type ModelPage = { data: { items: ModelView[]; total: number } }
-
-function getModelPage(page: number) {
-  return getModels({ data: { page, page_size: MODEL_PAGE_SIZE } }) as Promise<ModelPage>
-}
-
-/** Budgets can point at any model, so the selector needs the whole catalog, not one page. */
-async function loadAllModels(): Promise<ModelView[]> {
-  const first = await getModelPage(1)
-  const pageCount = Math.ceil(first.data.total / MODEL_PAGE_SIZE)
-  const rest = await Promise.all(
-    Array.from({ length: Math.max(0, pageCount - 1) }, (_, index) => getModelPage(index + 2)),
-  )
-  return [first, ...rest].flatMap((page) => page.data.items)
+  models: ModelOptionView[]
 }
 
 /**
@@ -231,12 +213,12 @@ export function userModelTarget(budget: SpendBudgetUserModelView, label: string)
 // ---------------------------------------------------------------------------
 
 /**
- * Human label for a model budget scope. `ModelView.model_id` is the UUID the budget
- * stores; `ModelView.id` is the model key shown in the UI. Falls back to the raw id.
+ * Human label for a model budget scope. `ModelOptionView.model_id` is the UUID the budget
+ * stores; `ModelOptionView.id` is the model key shown in the UI. Falls back to the raw id.
  */
 export function formatUserModelSelector(
   budget: SpendBudgetUserModelView,
-  models: readonly ModelView[] = [],
+  models: readonly ModelOptionView[] = [],
 ) {
   if (budget.model_id) {
     const key = models.find((model) => model.model_id === budget.model_id)?.id

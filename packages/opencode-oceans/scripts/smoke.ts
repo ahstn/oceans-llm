@@ -199,7 +199,7 @@ if (import.meta.main) {
     // Execute the upstream installer with Bun; it links the already-installed native host binary.
     await command([process.execPath, path.join(cliRoot, 'postinstall.mjs')], root, env)
     const binary = path.join(cliRoot, 'bin', 'opencode.exe')
-    assert.equal((await command([binary, '--version'], root, env)).trim(), 'opencode v2.2.6')
+    assert.equal((await command([binary, '--version'], root, env)).trim(), 'opencode v2.3.0')
     if (version) {
       await command([binary, 'plugin', 'add', `@ahstn/opencode-oceans@${version}`], root, env)
     }
@@ -234,7 +234,7 @@ if (import.meta.main) {
     if (version) await assertInstalledVersion(root, version)
     passed = true
     console.log(
-      `PASS ${version ? `published @ahstn/opencode-oceans@${version}` : 'packed source package'} loaded by OpenCode 2.2.6; no external model calls`,
+      `PASS ${version ? `published @ahstn/opencode-oceans@${version}` : 'packed source package'} loaded by OpenCode 2.3.0; no external model calls`,
     )
   } finally {
     host?.kill()

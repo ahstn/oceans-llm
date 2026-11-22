@@ -30,11 +30,11 @@ use crate::{
         HarnessUsageDailyRecord, HarnessUsageLeaderRecord, McpAccessResolution,
         McpAggregateSessionRecord, McpCatalogAccessResolution, McpGrantSubject,
         McpOauthClientRecord, McpToolGrantRecord, McpToolGrantSubjectKind, McpToolGrantTargetKind,
-        McpToolInvocationDetail, McpToolInvocationPage, McpToolInvocationPayloadRecord,
-        McpToolInvocationQuery, McpToolInvocationRecord, McpToolProjection,
-        McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetToolRecord,
+        McpToolInvocationBatchQuery, McpToolInvocationDetail, McpToolInvocationPage,
+        McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
+        McpToolProjection, McpToolTokenEstimateRecord, McpToolsetRecord, McpToolsetToolRecord,
         McpUpstreamCredentialBindingRecord, McpUpstreamCredentialOwnerScopeKind,
-        ModelAllowlistPolicy, ModelPricingRecord, ModelPricingSyncChanges, ModelRoute, Money4,
+        ModelAllowlistPolicy, ModelPricingRecord, ModelPricingSyncChanges, ModelRoute,
         NewApiKeyRecord, NewExternalMcpServerRecord, NewMcpAggregateSessionRecord,
         NewMcpToolsetRecord, NewReviewAgentRepositoryRecord, NewReviewAgentRunRecord,
         PricingCatalogCacheRecord, ProviderConnection, ProviderUserCredentialRecord,
@@ -59,6 +59,9 @@ use crate::{
     },
 };
 
+/// Minimum whole seconds between API-key last-used timestamp writes.
+pub const API_KEY_LAST_USED_INTERVAL_SECONDS: i64 = 60;
+
 #[async_trait]
 pub trait ApiKeyRepository: Send + Sync {
     async fn get_api_key_by_public_id(
@@ -66,6 +69,11 @@ pub trait ApiKeyRepository: Send + Sync {
         public_id: &str,
     ) -> Result<Option<ApiKeyRecord>, StoreError>;
 
+    /// Records use at most once per minute, with an atomic check of the stored timestamp.
+    ///
+    /// Callers should skip this call when their fetched key was used within
+    /// [`API_KEY_LAST_USED_INTERVAL_SECONDS`]. Stores recheck the interval to
+    /// avoid writing once for each concurrent request.
     async fn touch_api_key_last_used(&self, api_key_id: Uuid) -> Result<(), StoreError>;
 
     async fn get_service_account_by_id(
@@ -454,7 +462,7 @@ pub trait BudgetRepository: Send + Sync {
     async fn sum_usage_cost_by_budget_scope(
         &self,
         windows: &[crate::BudgetScopeWindow<'_>],
-    ) -> Result<std::collections::HashMap<String, Money4>, StoreError>;
+    ) -> Result<std::collections::HashMap<String, crate::Money9>, StoreError>;
 
     async fn get_active_budget_by_scope(
         &self,
@@ -598,7 +606,7 @@ pub trait BudgetRepository: Send + Sync {
         scope: &BudgetScope,
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
-    ) -> Result<Money4, StoreError>;
+    ) -> Result<crate::Money9, StoreError>;
     async fn count_active_api_keys_for_service_account(
         &self,
         service_account_id: Uuid,
@@ -1030,6 +1038,12 @@ pub trait McpToolInvocationRepository: Send + Sync {
         &self,
         query: &McpToolInvocationQuery,
     ) -> Result<McpToolInvocationPage, StoreError>;
+
+    /// Loads rows once, ordered by request ID, then newest time and invocation ID.
+    async fn list_mcp_tool_invocations_by_request_ids(
+        &self,
+        query: &McpToolInvocationBatchQuery<'_>,
+    ) -> Result<Vec<McpToolInvocationRecord>, StoreError>;
 
     async fn get_mcp_tool_invocation_detail(
         &self,

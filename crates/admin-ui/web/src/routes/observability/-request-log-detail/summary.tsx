@@ -141,7 +141,7 @@ function keyMetrics(log: RequestLogView): Metric[] {
           ? `${formatCount(log.prompt_tokens)} in · ${formatCount(log.completion_tokens)} out`
           : undefined,
     },
-    { label: 'Cost', value: formatRequestCost(log.cost_usd_10000) },
+    { label: 'Cost', value: formatRequestCost(log) },
     {
       label: 'Cache hit',
       value: cachePercent != null ? `${cachePercent}%` : cached > 0 ? formatCount(cached) : 'None',

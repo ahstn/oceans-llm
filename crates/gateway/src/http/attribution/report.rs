@@ -603,7 +603,9 @@ impl From<RequestTally> for AttributionRequestTallyView {
             priced_request_count: tally.priced_request_count,
             unpriced_request_count: tally.unpriced_request_count,
             usage_missing_request_count: tally.usage_missing_request_count,
-            priced_cost_usd_10000: tally.priced_cost_10000,
+            priced_cost_usd_10000: gateway_core::Money9::from_nanos(tally.priced_cost_nanos)
+                .round_half_up_to_money4()
+                .as_scaled_i64(),
         }
     }
 }
@@ -620,7 +622,11 @@ impl From<AttributionReportTotals> for AttributionTotalsView {
             agent_session_count: totals.agent_session_count,
             requests: totals.requests.into(),
             uncommitted_request_count: totals.uncommitted.request_count,
-            uncommitted_cost_usd_10000: totals.uncommitted.priced_cost_10000,
+            uncommitted_cost_usd_10000: gateway_core::Money9::from_nanos(
+                totals.uncommitted.priced_cost_nanos,
+            )
+            .round_half_up_to_money4()
+            .as_scaled_i64(),
             unmatched_author_commit_count: totals.unmatched_author_commit_count,
         }
     }
@@ -645,7 +651,11 @@ impl From<AttributionModelActivity> for AttributionModelView {
             requests: model.requests.into(),
             commit_count: model.commit_count,
             uncommitted_request_count: model.uncommitted.request_count,
-            uncommitted_cost_usd_10000: model.uncommitted.priced_cost_10000,
+            uncommitted_cost_usd_10000: gateway_core::Money9::from_nanos(
+                model.uncommitted.priced_cost_nanos,
+            )
+            .round_half_up_to_money4()
+            .as_scaled_i64(),
         }
     }
 }

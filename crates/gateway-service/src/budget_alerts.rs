@@ -1,11 +1,14 @@
-use std::{collections::BTreeSet, sync::Arc};
+use std::{
+    collections::{BTreeSet, HashMap},
+    sync::{Arc, Mutex},
+};
 
 use async_trait::async_trait;
 use gateway_core::{
     ApiKeyOwnerKind, BudgetAlertChannel, BudgetAlertDeliveryRecord, BudgetAlertDeliveryStatus,
     BudgetAlertDispatchTask, BudgetAlertRecord, BudgetAlertRepository, BudgetCadence, BudgetRecord,
     BudgetRepository, BudgetScope, GatewayError, IdentityRepository, MembershipRole, Money4,
-    UsageLedgerRecord, UserStatus, budget_window_utc,
+    Money9, UsageLedgerRecord, UserStatus, budget_window_utc,
 };
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tracing::{info, warn};
@@ -14,6 +17,9 @@ use uuid::Uuid;
 use crate::{budget_guard::BudgetSpend, budget_scopes::effective_budget_limit};
 
 pub const BUDGET_ALERT_THRESHOLD_BPS: i32 = 2_000;
+
+/// Entries in [`AlertedWindows`] above which ended windows are dropped.
+const ALERTED_WINDOWS_PRUNE_AT: usize = 4_096;
 
 #[derive(Debug, Clone)]
 pub struct BudgetAlertEmail {
@@ -53,6 +59,36 @@ impl BudgetAlertSender for SinkBudgetAlertSender {
 pub struct BudgetAlertService<R> {
     repo: Arc<R>,
     sender: Arc<dyn BudgetAlertSender>,
+    alerted_windows: Arc<AlertedWindows>,
+}
+
+/// Budget windows (budget, window start) for which this process already asked the
+/// store to create the threshold alert, with each window's end for pruning.
+///
+/// Spend comes from a cached total, and another replica's charges reach it only on
+/// a reload. A reload can therefore show a window already past the threshold
+/// without any charge seen here crossing it. The first charge this process sees
+/// past the threshold in a window still asks the store, which keeps one alert per
+/// window; later charges in that window skip the write.
+#[derive(Default)]
+struct AlertedWindows(Mutex<HashMap<(Uuid, OffsetDateTime), OffsetDateTime>>);
+
+impl AlertedWindows {
+    fn contains(&self, key: &(Uuid, OffsetDateTime)) -> bool {
+        self.0
+            .lock()
+            .expect("alerted windows lock poisoned")
+            .contains_key(key)
+    }
+
+    fn insert(&self, key: (Uuid, OffsetDateTime), window_end: OffsetDateTime) {
+        let mut windows = self.0.lock().expect("alerted windows lock poisoned");
+        if windows.len() >= ALERTED_WINDOWS_PRUNE_AT {
+            let now = OffsetDateTime::now_utc();
+            windows.retain(|_, end| *end > now);
+        }
+        windows.insert(key, window_end);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -71,8 +107,8 @@ struct AlertEvaluation {
     cadence: BudgetCadence,
     budget_amount: Money4,
     occurred_at: OffsetDateTime,
-    spent_before: Money4,
-    spent_after: Money4,
+    spent_before: Money9,
+    spent_after: Money9,
     immediate_on_existing_threshold: bool,
 }
 
@@ -82,7 +118,11 @@ where
 {
     #[must_use]
     pub fn new(repo: Arc<R>, sender: Arc<dyn BudgetAlertSender>) -> Self {
-        Self { repo, sender }
+        Self {
+            repo,
+            sender,
+            alerted_windows: Arc::default(),
+        }
     }
 
     /// Raises alerts for the budgets a recorded charge crossed into the threshold, from the
@@ -128,7 +168,7 @@ where
     pub async fn evaluate_after_budget_upsert(
         &self,
         budget: &BudgetRecord,
-        current_spend: Money4,
+        current_spend: Money9,
         occurred_at: OffsetDateTime,
     ) -> Result<(), GatewayError> {
         let owner = self.resolve_budget_owner(budget).await?;
@@ -217,17 +257,20 @@ where
             remaining_budget_floor_zero(evaluation.budget_amount, evaluation.spent_before);
         let remaining_after =
             remaining_budget_floor_zero(evaluation.budget_amount, evaluation.spent_after);
-
-        let crossed_threshold = is_at_or_below_threshold(remaining_after, evaluation.budget_amount)
-            && !is_at_or_below_threshold(remaining_before, evaluation.budget_amount);
-        let already_below_threshold = evaluation.immediate_on_existing_threshold
-            && is_at_or_below_threshold(remaining_after, evaluation.budget_amount);
-
-        if !crossed_threshold && !already_below_threshold {
+        if !is_at_or_below_threshold(remaining_after, evaluation.budget_amount) {
+            return Ok(());
+        }
+        let crossed_threshold =
+            !is_at_or_below_threshold(remaining_before, evaluation.budget_amount);
+        let window = budget_window_utc(evaluation.cadence, evaluation.occurred_at);
+        let window_key = (evaluation.budget_id, window.period_start);
+        if !crossed_threshold
+            && !evaluation.immediate_on_existing_threshold
+            && self.alerted_windows.contains(&window_key)
+        {
             return Ok(());
         }
 
-        let window = budget_window_utc(evaluation.cadence, evaluation.occurred_at);
         let created_at = OffsetDateTime::now_utc();
         let alert = BudgetAlertRecord {
             budget_alert_id: Uuid::new_v4(),
@@ -240,22 +283,23 @@ where
             threshold_bps: BUDGET_ALERT_THRESHOLD_BPS,
             window_start: window.period_start,
             window_end: window.period_end,
-            spend_before_usd: evaluation.spent_before,
-            spend_after_usd: evaluation.spent_after,
-            remaining_budget_usd: remaining_after,
+            spend_before_usd: evaluation.spent_before.round_half_up_to_money4(),
+            spend_after_usd: evaluation.spent_after.round_half_up_to_money4(),
+            remaining_budget_usd: evaluation
+                .budget_amount
+                .checked_sub(evaluation.spent_after.round_half_up_to_money4())
+                .filter(|remaining| !remaining.is_negative())
+                .unwrap_or(Money4::ZERO),
             created_at,
             updated_at: created_at,
         };
 
         let deliveries = build_delivery_records(&alert, &evaluation.owner.recipients, created_at);
-        let inserted = self
-            .repo
+        // The store keeps one alert per budget window, so `false` means it exists.
+        self.repo
             .create_budget_alert_with_deliveries(&alert, &deliveries)
             .await?;
-        if !inserted {
-            return Ok(());
-        }
-
+        self.alerted_windows.insert(window_key, window.period_end);
         Ok(())
     }
 
@@ -336,11 +380,10 @@ where
     }
 }
 
-fn remaining_budget_floor_zero(budget_amount: Money4, spend: Money4) -> Money4 {
-    match budget_amount.checked_sub(spend) {
-        Some(remaining) if !remaining.is_negative() => remaining,
-        Some(_) | None => Money4::ZERO,
-    }
+fn remaining_budget_floor_zero(budget_amount: Money4, spend: Money9) -> i128 {
+    (i128::from(budget_amount.as_scaled_i64()) * i128::from(Money9::SCALE / Money4::SCALE)
+        - i128::from(spend.as_nanos()))
+    .max(0)
 }
 
 fn build_delivery_records(
@@ -382,9 +425,11 @@ fn build_delivery_records(
         .collect()
 }
 
-fn is_at_or_below_threshold(remaining_budget: Money4, total_budget: Money4) -> bool {
-    i128::from(remaining_budget.as_scaled_i64()) * 10_000
-        <= i128::from(total_budget.as_scaled_i64()) * i128::from(BUDGET_ALERT_THRESHOLD_BPS)
+fn is_at_or_below_threshold(remaining_budget: i128, total_budget: Money4) -> bool {
+    remaining_budget * i128::from(Money4::SCALE)
+        <= i128::from(total_budget.as_scaled_i64())
+            * i128::from(Money9::SCALE / Money4::SCALE)
+            * i128::from(BUDGET_ALERT_THRESHOLD_BPS)
 }
 
 fn render_budget_alert_email(task: &BudgetAlertDispatchTask) -> Result<String, GatewayError> {
@@ -410,7 +455,7 @@ fn render_budget_alert_email(task: &BudgetAlertDispatchTask) -> Result<String, G
 
 /// Whether `spent` reaches the alert threshold against the base budget. An increase only
 /// raises the limit, so when this is false no alert can fire and the increase lookup is skipped.
-fn alert_possible_against_base(budget: &BudgetRecord, spent: Money4) -> bool {
+fn alert_possible_against_base(budget: &BudgetRecord, spent: Money9) -> bool {
     let base = budget.settings.amount_usd;
     is_at_or_below_threshold(remaining_budget_floor_zero(base, spent), base)
 }
@@ -419,7 +464,7 @@ fn alert_possible_against_base(budget: &BudgetRecord, spent: Money4) -> bool {
 mod tests {
     use gateway_core::{
         BudgetCadence, BudgetModelSelector, BudgetRecord, BudgetScope, BudgetSettings,
-        BudgetSource, Money4,
+        BudgetSource, Money4, Money9,
     };
     use time::OffsetDateTime;
     use uuid::Uuid;
@@ -448,15 +493,19 @@ mod tests {
         };
         assert!(!alert_possible_against_base(
             &budget,
-            Money4::from_scaled(790_000)
+            Money9::from_nanos(79_000_000_000)
+        ));
+        assert!(!alert_possible_against_base(
+            &budget,
+            Money9::from_nanos(79_999_999_999)
         ));
         assert!(alert_possible_against_base(
             &budget,
-            Money4::from_scaled(800_000)
+            Money9::from_nanos(80_000_000_000)
         ));
         assert!(alert_possible_against_base(
             &budget,
-            Money4::from_scaled(1_200_000)
+            Money9::from_nanos(120_000_000_000)
         ));
     }
 

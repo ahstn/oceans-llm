@@ -3462,6 +3462,32 @@
         ]
       }
     },
+    "/api/v1/admin/models/options": {
+      "get": {
+        "tags": [
+          "crate::http::models"
+        ],
+        "summary": "Every model in one response, for selectors that offer the whole catalog. It reads models,\nroutes, and providers once and skips the pricing, benchmark, and client config work of\n`list_models`, so one call costs less than one page of it.",
+        "operationId": "list_model_options",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_AdminModelOptionListView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/admin/models/pricing-catalog/refresh": {
       "post": {
         "tags": [
@@ -8655,6 +8681,56 @@
             "items": {
               "$ref": "#/components/schemas/AdminModelClientConfigSetupItemView"
             }
+          }
+        }
+      },
+      "AdminModelOptionListView": {
+        "type": "object",
+        "description": "The whole catalog, aliases included, in one response.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminModelOptionView"
+            }
+          }
+        }
+      },
+      "AdminModelOptionView": {
+        "type": "object",
+        "description": "One model as a selector lists it. Carries no route, pricing, or allow-list detail, so every\nauthenticated role receives the same fields.",
+        "required": [
+          "id",
+          "model_id",
+          "resolved_model_key"
+        ],
+        "properties": {
+          "alias_of": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "The model key that requests name and request logs store."
+          },
+          "model_id": {
+            "type": "string",
+            "description": "The model's UUID, which model-scoped budgets store."
+          },
+          "provider_label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resolved_model_key": {
+            "type": "string",
+            "description": "The model key an alias finally resolves to; the model's own key otherwise."
           }
         }
       },
@@ -15242,6 +15318,33 @@
           }
         }
       },
+      "Envelope_AdminModelOptionListView": {
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "The whole catalog, aliases included, in one response.",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdminModelOptionView"
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "Envelope_AdminModelPageView": {
         "type": "object",
         "required": [
@@ -21469,7 +21572,15 @@
               "null"
             ],
             "format": "int64",
-            "description": "Computed request cost in USD scaled by 10,000. Null when no usage was recorded or the\nrequest could not be priced."
+            "description": "Computed request cost in USD scaled by 10,000, rounded half up from the ledger.\nNull when no usage was recorded or the request could not be priced."
+          },
+          "cost_usd_nanos": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Computed request cost in USD nanos (one billionth of a dollar), from the ledger.\nNull when no usage was recorded or the request could not be priced."
           },
           "error_code": {
             "type": [

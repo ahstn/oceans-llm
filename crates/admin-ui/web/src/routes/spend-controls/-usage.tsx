@@ -1,12 +1,13 @@
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { CURRENCY_FORMATTER } from '@/lib/format'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { CURRENCY_FORMATTER, formatIncreaseLastDay, formatUsd10000 } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { BudgetIncreaseView } from '@/types/api'
 
 import {
   budgetSourceLabel,
-  isInheritedBudgetSource,
+  formatCadence,
   type BudgetSettings,
   type BudgetSource,
 } from './-budget-model'
@@ -127,10 +128,86 @@ export function UsageStatusBadge({ status }: { status: UsageStatus }) {
   return <Badge variant={STATUS_BADGE_VARIANT[status]}>{STATUS_LABEL[status]}</Badge>
 }
 
-/** Marks budgets that come from configuration. Renders nothing for manual budgets. */
-export function BudgetSourceBadge({ source }: { source: BudgetSource | null | undefined }) {
-  if (!isInheritedBudgetSource(source)) return null
-  return <Badge variant="outline">{budgetSourceLabel(source.kind)}</Badge>
+// Focusable tooltip triggers: keyboard users reach the detail too.
+const TOOLTIP_TRIGGER_CLASS =
+  'focus-visible:ring-ring/50 cursor-default rounded-sm outline-none focus-visible:ring-3'
+
+/**
+ * The budget amount and its cadence. Enforcement and source sit in the amount's
+ * tooltip and accessible name; only a soft limit, the exception, shows in the pill.
+ */
+export function BudgetAmount({
+  budget,
+  source,
+}: {
+  budget: BudgetSettings
+  source: BudgetSource | null | undefined
+}) {
+  const enforcement = budget.hard_limit
+    ? 'Hard limit: blocks requests once spent'
+    : 'Soft limit: alerts only, never blocks requests'
+  const detail = source ? `${enforcement}. Source: ${budgetSourceLabel(source.kind)}` : enforcement
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            tabIndex={0}
+            className={cn('font-medium tabular-nums', TOOLTIP_TRIGGER_CLASS)}
+            data-testid="budget-amount"
+          >
+            {formatUsd10000(budget.amount_usd_10000)}
+            <span className="sr-only">. {detail}.</span>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>{detail}</TooltipContent>
+      </Tooltip>
+      <Badge variant="secondary">
+        {formatCadence(budget.cadence)}
+        {budget.hard_limit ? null : ' · soft'}
+      </Badge>
+    </>
+  )
+}
+
+/**
+ * The Status cell. An active increase replaces the status pill: the increase is what
+ * needs explaining, and the usage bar already carries the status colour. The status
+ * stays in the pill's accessible name and tooltip.
+ */
+export function BudgetStatus({
+  usage,
+  increase,
+}: {
+  usage: BudgetUsage
+  increase?: Pick<BudgetIncreaseView, 'amount_usd_10000' | 'expires_at'> | null
+}) {
+  if (!increase) return <UsageStatusBadge status={usage.status} />
+  const amount = formatUsd10000(increase.amount_usd_10000)
+  const lastDay = formatIncreaseLastDay(increase.expires_at)
+  const used =
+    usage.ratio === null
+      ? ''
+      : `: ${PERCENT_FORMATTER.format(usage.ratio)} of ${CURRENCY_FORMATTER.format(usage.budgetUsd ?? 0)} used`
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge
+          variant="warning"
+          tabIndex={0}
+          className={TOOLTIP_TRIGGER_CLASS}
+          data-testid="budget-increase-status"
+        >
+          <span className="sr-only">{STATUS_LABEL[usage.status]}. Temporary increase: </span>+
+          {amount} until {lastDay}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent>
+        {STATUS_LABEL[usage.status]}
+        {used}, including a temporary {amount} increase through {lastDay} (UTC).
+      </TooltipContent>
+    </Tooltip>
+  )
 }
 
 export function UsageBar({ usage }: { usage: BudgetUsage }) {

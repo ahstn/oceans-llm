@@ -24,6 +24,8 @@ pub mod mcp_client_oauth;
 pub mod mcp_gateway;
 pub mod mcp_oauth;
 pub mod mcp_registry;
+#[cfg(test)]
+mod model_options_tests;
 pub mod models;
 pub mod observability;
 pub mod profile;
@@ -182,6 +184,7 @@ pub fn build_router(state: AppState, mut admin_ui: AdminUiConfig) -> Router {
             post(reveal_api_key_secret),
         )
         .route("/api/v1/admin/models", get(list_models))
+        .route("/api/v1/admin/models/options", get(list_model_options))
         .route(
             "/api/v1/admin/models/client-configs",
             post(generate_model_client_configs),

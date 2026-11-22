@@ -2,16 +2,19 @@ pub mod admin_api_keys;
 pub mod admin_audit;
 pub mod admin_models;
 mod agent_analysis;
+mod api_key_verification;
 pub mod attribution;
 pub mod authenticator;
 pub mod batches;
 pub mod benchmark_catalog;
 pub mod budget_alerts;
+mod budget_cache;
 pub mod budget_guard;
 pub mod budget_scopes;
 mod capability_hints;
 mod catalog_fetch;
 mod client_session;
+mod credential_verification;
 pub mod effective_route_metadata;
 pub mod icon_identity;
 pub mod mcp_access;
@@ -59,7 +62,8 @@ pub use admin_audit::{
     redact_audit_value,
 };
 pub use admin_models::{
-    AdminModelRouteSummary, AdminModelStatus, AdminModelSummary, AdminModelsService,
+    AdminModelOption, AdminModelRouteSummary, AdminModelStatus, AdminModelSummary,
+    AdminModelsService,
 };
 pub use agent_analysis::{
     desired_versions, desired_versions_for_policy, enqueue_analysis as enqueue_agent_analysis,
@@ -186,7 +190,9 @@ pub use secret_storage::{
     GATEWAY_API_KEY_SECRET_KEY_ENV, GATEWAY_API_KEY_SECRET_KEY_ID, decrypt_gateway_api_key_secret,
     encrypt_gateway_api_key_secret,
 };
-pub use service::{BatchUsageInput, GatewayService, OverriddenRoutes, RecordedChatUsage};
+pub use service::{
+    BatchUsageInput, GatewayService, OverriddenRoutes, PreV84Charge, RecordedChatUsage,
+};
 pub use usage::{UsageEstimateInput, response_text_bytes};
 
 pub use skills::SkillService;
