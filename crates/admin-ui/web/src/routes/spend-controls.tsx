@@ -14,7 +14,6 @@ import {
 import { AppIcon } from '@/components/icons/app-icon'
 import { PageHeader } from '@/components/layout/page-header'
 import { IconTile } from '@/components/reui/icon-tile'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -35,7 +34,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { CURRENCY_FORMATTER, formatIncreaseLastDay, formatUsd10000 } from '@/lib/format'
+import { CURRENCY_FORMATTER } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type {
   AuthSessionView,
@@ -51,7 +50,6 @@ import { BudgetDialog, useBudgetEditor, type BudgetEditor } from './spend-contro
 import { BudgetIncreaseDialog, IncreaseBudgetButton } from './spend-controls/-budget-increase'
 import { increaseEligibility } from './spend-controls/-budget-increase-model'
 import {
-  formatCadence,
   formatUserModelSelector,
   loadSpendControls,
   serviceAccountScope,
@@ -64,8 +62,9 @@ import {
   type SpendControlsLoaderData,
 } from './spend-controls/-budget-model'
 import {
+  BudgetAmount,
+  BudgetStatus,
   budgetUsage,
-  BudgetSourceBadge,
   summarizeUsage,
   UsageBar,
   UsageStatusBadge,
@@ -317,16 +316,12 @@ function UsersTable({
                   </div>
                 </div>
               </TableCell>
-              <BudgetCell
-                budget={user.budget}
-                source={user.budget_source}
-                increase={user.active_increase}
-              />
+              <BudgetCell budget={user.budget} source={user.budget_source} />
               <TableCell className="min-w-[12rem]">
                 <UsageBar usage={usage} />
               </TableCell>
               <TableCell>
-                <UsageStatusBadge status={usage.status} />
+                <BudgetStatus usage={usage} increase={user.active_increase} />
               </TableCell>
               <TableCell>
                 <p className="text-muted-foreground max-w-[14rem] truncate">
@@ -565,11 +560,9 @@ function UserModelBudgetsTable({
 function BudgetCell({
   budget,
   source,
-  increase,
 }: {
   budget: SpendBudgetUserView['budget']
   source: BudgetSource | null | undefined
-  increase?: SpendBudgetUserView['active_increase']
 }) {
   if (!budget) {
     return (
@@ -581,16 +574,7 @@ function BudgetCell({
   return (
     <TableCell>
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="font-medium tabular-nums">{formatUsd10000(budget.amount_usd_10000)}</span>
-        <Badge variant="secondary">{formatCadence(budget.cadence)}</Badge>
-        {budget.hard_limit ? <Badge variant="outline">Hard</Badge> : null}
-        <BudgetSourceBadge source={source} />
-        {increase ? (
-          <Badge variant="warning" title={`Temporary increase until ${increase.expires_at}`}>
-            +{formatUsd10000(increase.amount_usd_10000)} until{' '}
-            {formatIncreaseLastDay(increase.expires_at)}
-          </Badge>
-        ) : null}
+        <BudgetAmount budget={budget} source={source} />
       </div>
     </TableCell>
   )
