@@ -4,7 +4,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use async_trait::async_trait;
-use axum::{Extension, Json, extract::State, http::HeaderMap, response::Response};
+use axum::{Extension, extract::State, http::HeaderMap, response::Response};
 use gateway_core::{
     BudgetCadence, BudgetRepository, BudgetScope, BudgetSettings, CoreChatRequest,
     CoreDecisionsRequest, CoreEmbeddingsRequest, CoreResponsesRequest, DecisionsWireFormat, Money4,
@@ -17,6 +17,7 @@ use tower_http::request_id::RequestId;
 use super::{AppError, InferenceAuth, v1_decisions, v1_systemone};
 use crate::{
     http::{
+        request_body::TracedJson,
         state::AppState,
         test_support::{app_state, seed_stream_cancellation_test},
     },
@@ -154,7 +155,7 @@ async fn call(state: &AppState, path: &str, body: Value) -> Result<Response, App
                 HeaderMap::new(),
                 Default::default(),
                 auth,
-                Json(body),
+                TracedJson(body),
             )
             .await
         }
@@ -165,7 +166,7 @@ async fn call(state: &AppState, path: &str, body: Value) -> Result<Response, App
                 HeaderMap::new(),
                 Default::default(),
                 auth,
-                Json(body),
+                TracedJson(body),
             )
             .await
         }

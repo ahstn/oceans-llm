@@ -83,6 +83,7 @@ pub struct RoutingReceipt {
 impl RoutingReceipt {
     /// Call after a successful guarded response, or a clean stream completion.
     /// Persist response ownership before exposing the completed response to the caller.
+    #[tracing::instrument(name = "gateway.route.complete", skip_all)]
     pub async fn complete(
         &self,
         store: &impl RoutingRepository,

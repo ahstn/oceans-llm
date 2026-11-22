@@ -8,7 +8,7 @@ pub async fn v1_messages(
     headers: HeaderMap,
     policy: RequestPolicyContext,
     InferenceAuth(auth): InferenceAuth,
-    Json(request): Json<AnthropicMessagesRequest>,
+    TracedJson(request): TracedJson<AnthropicMessagesRequest>,
 ) -> Response {
     match v1_messages_inner(state, request_id, headers, policy, auth, request).await {
         Ok(response) => response,
@@ -193,15 +193,17 @@ async fn stream_response(
         execution.provider.as_ref(),
         Instant::now(),
     );
-    let provider_execution_span = provider_operation_span(
-        request.request_id,
-        "chat",
-        request.auth,
-        request.resolved,
-        &execution.route,
-        execution.provider.as_ref(),
-        true,
-    );
+    let provider_execution_span = stream_trace.in_scope(|| {
+        provider_operation_span(
+            request.request_id,
+            "chat",
+            request.auth,
+            request.resolved,
+            &execution.route,
+            execution.provider.as_ref(),
+            true,
+        )
+    });
     let attempt_started_at = gateway_service::offset_now();
     let response = match trace_provider_operation(provider_execution_span, async {
         if native_messages {

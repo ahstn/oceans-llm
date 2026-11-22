@@ -20,7 +20,7 @@ pub async fn v1_decisions(
     headers: HeaderMap,
     policy: RequestPolicyContext,
     InferenceAuth(auth): InferenceAuth,
-    Json(body): Json<Value>,
+    TracedJson(body): TracedJson<Value>,
 ) -> Result<Response, AppError> {
     let format = detect_decisions_format(&body).map_err(AppError)?;
     execute_decisions(
@@ -44,7 +44,7 @@ pub async fn v1_systemone(
     headers: HeaderMap,
     policy: RequestPolicyContext,
     InferenceAuth(auth): InferenceAuth,
-    Json(body): Json<Value>,
+    TracedJson(body): TracedJson<Value>,
 ) -> Result<Response, AppError> {
     if body.get("input").is_some() {
         return Err(AppError(GatewayError::InvalidRequest(

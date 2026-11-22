@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use axum::{
-    Extension, Json,
+    Extension,
     body::{Bytes, to_bytes},
     extract::State,
     http::HeaderMap,
@@ -20,6 +20,7 @@ use tower_http::request_id::RequestId;
 
 use super::{AppError, InferenceAuth};
 use crate::http::{
+    request_body::TracedJson,
     state::AppState,
     test_support::{app_state, seed_stream_cancellation_test},
 };
@@ -236,7 +237,7 @@ impl RoutingHarness {
             headers,
             Default::default(),
             self.auth().await,
-            Json(request),
+            TracedJson(request),
         )
         .await
     }
@@ -256,7 +257,7 @@ impl RoutingHarness {
             HeaderMap::new(),
             Default::default(),
             self.auth().await,
-            Json(serde_json::from_value(request).unwrap()),
+            TracedJson(serde_json::from_value(request).unwrap()),
         )
         .await
     }

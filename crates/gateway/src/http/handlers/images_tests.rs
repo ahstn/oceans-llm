@@ -8,7 +8,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use axum::{Extension, Json, body::to_bytes, extract::State, http::HeaderMap, response::Response};
+use axum::{Extension, body::to_bytes, extract::State, http::HeaderMap, response::Response};
 use gateway_core::{
     BudgetCadence, BudgetRepository, BudgetScope, BudgetSettings, CoreChatRequest,
     CoreEmbeddingsRequest, CoreResponsesRequest, ImagesRequest, Money4, ProviderCapabilities,
@@ -22,6 +22,7 @@ use tower_http::request_id::RequestId;
 use super::{AppError, InferenceAuth, v1_images};
 use crate::{
     http::{
+        request_body::TracedJson,
         state::AppState,
         test_support::{app_state, seed_stream_cancellation_test},
     },
@@ -150,7 +151,7 @@ async fn call(state: &AppState, body: Value) -> Result<Response, AppError> {
         HeaderMap::new(),
         Default::default(),
         auth,
-        Json(request),
+        TracedJson(request),
     )
     .await
 }
