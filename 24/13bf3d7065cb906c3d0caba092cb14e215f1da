@@ -1,0 +1,19 @@
+docs/src/content/docs/operations/gateway-guardrails.mdx
+  s_ceb902b5ae2ad1::t_21ad4e98ca96c6 63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2413bf3d7065cb906c3d0caba092cb14e215f1da",
+  "prompts": {},
+  "sessions": {
+    "s_ceb902b5ae2ad1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "813ff0b9-4f52-4fd3-a512-a7b14a6a9045",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
