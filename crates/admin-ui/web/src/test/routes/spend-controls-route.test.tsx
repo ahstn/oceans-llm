@@ -12,6 +12,7 @@ import {
 import {
   INHERITED_BUDGET_WARNING,
   INVALID_BUDGET_AMOUNT_MESSAGE,
+  loadSpendControls,
   normalizeBudgetAmount,
 } from '@/routes/spend-controls/-budget-model'
 import { USER_PAGE_SIZE } from '@/routes/spend-controls/-user-list'
@@ -19,12 +20,14 @@ import { SpendControlsPage } from '@/routes/spend-controls'
 import type { AuthSessionView, SpendBudgetUserView, SpendBudgetsView } from '@/types/api'
 import { platformAdminSession, regularUserSession } from '@/test/auth-session'
 
-const { routeMock, saveBudgetMock, increaseBudgetMock, toastErrorMock } = vi.hoisted(() => ({
-  routeMock: { useLoaderData: vi.fn(), useRouteContext: vi.fn() },
-  saveBudgetMock: vi.fn(),
-  increaseBudgetMock: vi.fn(),
-  toastErrorMock: vi.fn(),
-}))
+const { routeMock, saveBudgetMock, increaseBudgetMock, toastErrorMock, getModelOptionsMock } =
+  vi.hoisted(() => ({
+    routeMock: { useLoaderData: vi.fn(), useRouteContext: vi.fn() },
+    getModelOptionsMock: vi.fn(),
+    saveBudgetMock: vi.fn(),
+    increaseBudgetMock: vi.fn(),
+    toastErrorMock: vi.fn(),
+  }))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -41,9 +44,9 @@ vi.mock('sonner', () => ({
 }))
 
 vi.mock('@/server/admin-data.functions', () => ({
-  getBudgetAlertHistory: vi.fn(),
-  getModels: vi.fn(),
-  getSpendBudgets: vi.fn(),
+  getBudgetAlertHistory: vi.fn(async () => ({ data: { items: [] } })),
+  getModelOptions: (...args: unknown[]) => getModelOptionsMock(...args),
+  getSpendBudgets: vi.fn(async () => ({ data: { users: [] } })),
   increaseBudget: (...args: unknown[]) => increaseBudgetMock(...args),
   removeBudget: vi.fn(),
   saveBudget: (...args: unknown[]) => saveBudgetMock(...args),
@@ -176,11 +179,7 @@ const models = [
     model_id: 'model_fast',
     resolved_model_key: 'fast',
     alias_of: null,
-    tags: [],
-    status: 'healthy' as const,
-    pricing_varies_by_route: false,
-    client_configurations: [],
-    allowlist: null,
+    provider_label: 'OpenAI',
   },
 ]
 
@@ -256,6 +255,17 @@ function userRows() {
 function modelBudgetForm() {
   return screen.getByRole('button', { name: 'Add model budget' }).closest('form')!
 }
+
+describe('loadSpendControls', () => {
+  it('loads the budget model selector from one catalog options request', async () => {
+    getModelOptionsMock.mockReset().mockResolvedValue({ data: { items: models } })
+
+    const data = await loadSpendControls(true)
+
+    expect(getModelOptionsMock).toHaveBeenCalledOnce()
+    expect(data.models).toEqual(models)
+  })
+})
 
 describe('SpendControlsPage', () => {
   beforeEach(() => {

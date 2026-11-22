@@ -188,6 +188,14 @@ export async function fetchGatewayJson<T>(path: string, init?: RequestInit): Pro
   return (await response.json()) as T
 }
 
+/**
+ * Aborts when the browser cancels the server function call this request serves, for example
+ * when a selector unmounts mid-load. Pass it to a gateway call so the gateway stops work too.
+ */
+export function currentRequestSignal(): AbortSignal {
+  return getRequest().signal
+}
+
 export function createGatewayApiClient() {
   return createClient<GatewayPaths>({
     baseUrl: resolveGatewayOrigin(),

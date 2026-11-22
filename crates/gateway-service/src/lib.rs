@@ -59,7 +59,8 @@ pub use admin_audit::{
     redact_audit_value,
 };
 pub use admin_models::{
-    AdminModelRouteSummary, AdminModelStatus, AdminModelSummary, AdminModelsService,
+    AdminModelOption, AdminModelRouteSummary, AdminModelStatus, AdminModelSummary,
+    AdminModelsService,
 };
 pub use agent_analysis::{
     desired_versions, desired_versions_for_policy, enqueue_analysis as enqueue_agent_analysis,

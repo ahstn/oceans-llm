@@ -698,6 +698,26 @@ pub struct AdminModelPageView {
     pub total: u64,
 }
 
+/// One model as a selector lists it. Carries no route, pricing, or allow-list detail, so every
+/// authenticated role receives the same fields.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminModelOptionView {
+    /// The model key that requests name and request logs store.
+    pub id: String,
+    /// The model's UUID, which model-scoped budgets store.
+    pub model_id: String,
+    /// The model key an alias finally resolves to; the model's own key otherwise.
+    pub resolved_model_key: String,
+    pub alias_of: Option<String>,
+    pub provider_label: Option<String>,
+}
+
+/// The whole catalog, aliases included, in one response.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminModelOptionListView {
+    pub items: Vec<AdminModelOptionView>,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AuthSessionUserView {
     pub id: String,
@@ -2166,6 +2186,7 @@ pub struct AgentSessionDetailView {
         crate::http::identity::list_identity_directory_users,
         crate::http::identity::list_identity_directory_teams,
         crate::http::models::list_models,
+        crate::http::models::list_model_options,
         crate::http::models::generate_model_client_configs,
         crate::http::models::refresh_model_pricing_catalog,
         crate::http::identity::create_identity_team,

@@ -8,7 +8,7 @@ import type { RequestLogView } from '@/types/api'
 import { RequestLogsPage } from '@/routes/observability/request-logs'
 
 const getObservabilityRequestLogDetailMock = vi.fn()
-const getModelsMock = vi.fn()
+const getModelOptionsMock = vi.fn()
 const navigateMock = vi.fn()
 
 // Hoisted with the mocks: the route module reads it as it loads.
@@ -37,7 +37,7 @@ vi.mock('@/server/admin-data.functions', () => ({
   getRequestLogs: vi.fn(),
   getObservabilityRequestLogDetail: (...args: unknown[]) =>
     getObservabilityRequestLogDetailMock(...args),
-  getModels: (...args: unknown[]) => getModelsMock(...args),
+  getModelOptions: (...args: unknown[]) => getModelOptionsMock(...args),
 }))
 
 const items: RequestLogView[] = [
@@ -120,7 +120,7 @@ function resetMocks() {
   routeMock.useSearch.mockReset()
   getObservabilityRequestLogDetailMock.mockReset()
   navigateMock.mockReset()
-  getModelsMock.mockReset()
+  getModelOptionsMock.mockReset()
   routeMock.useSearch.mockReturnValue({})
   vi.stubGlobal('ResizeObserver', ResizeObserverMock)
 }
@@ -755,9 +755,8 @@ describe('RequestLogsPage picker filters', () => {
 
   it('picks a model from the gateway catalog', async () => {
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
-    getModelsMock.mockResolvedValue({
+    getModelOptionsMock.mockResolvedValue({
       data: {
-        total: 2,
         items: [
           { id: 'gpt-4.1-mini', model_id: 'uuid-1', provider_label: 'OpenAI', alias_of: null },
           { id: 'fast', model_id: 'uuid-2', provider_label: 'OpenAI', alias_of: 'gpt-4.1-mini' },
@@ -767,21 +766,21 @@ describe('RequestLogsPage picker filters', () => {
 
     const view = renderPage()
     const scope = within(view.container)
-    expect(getModelsMock).not.toHaveBeenCalled()
+    expect(getModelOptionsMock).not.toHaveBeenCalled()
 
     await addFilter(scope, 'Model')
     fireEvent.click(await screen.findByRole('option', { name: /fast\s*alias of gpt-4\.1-mini/ }))
 
     await waitForListTransition()
-    expect(getModelsMock).toHaveBeenCalledOnce()
+    expect(getModelOptionsMock).toHaveBeenCalledOnce()
     expect(navigatedSearch(0)).toEqual(expect.objectContaining({ model_key: 'fast' }))
     expect(scope.getByTestId('request-log-filter-model-key')).toHaveTextContent('fast')
   })
 
   it('retries a failed model catalog load when the picker reopens', async () => {
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
-    getModelsMock.mockRejectedValueOnce(new Error('session expired')).mockResolvedValueOnce({
-      data: { total: 1, items: [{ id: 'gpt-4.1-mini', model_id: 'uuid-1', alias_of: null }] },
+    getModelOptionsMock.mockRejectedValueOnce(new Error('session expired')).mockResolvedValueOnce({
+      data: { items: [{ id: 'gpt-4.1-mini', model_id: 'uuid-1', alias_of: null }] },
     })
 
     const view = renderPage()
@@ -799,13 +798,13 @@ describe('RequestLogsPage picker filters', () => {
     fireEvent.click(trigger)
 
     expect(await screen.findByRole('option', { name: 'gpt-4.1-mini' })).toBeInTheDocument()
-    expect(getModelsMock).toHaveBeenCalledTimes(2)
+    expect(getModelOptionsMock).toHaveBeenCalledTimes(2)
   })
 
   it('reloads a failed model catalog when the Model chip is added again', async () => {
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
-    getModelsMock.mockRejectedValueOnce(new Error('session expired')).mockResolvedValueOnce({
-      data: { total: 1, items: [{ id: 'gpt-4.1-mini', model_id: 'uuid-1', alias_of: null }] },
+    getModelOptionsMock.mockRejectedValueOnce(new Error('session expired')).mockResolvedValueOnce({
+      data: { items: [{ id: 'gpt-4.1-mini', model_id: 'uuid-1', alias_of: null }] },
     })
 
     const view = renderPage()
@@ -822,17 +821,17 @@ describe('RequestLogsPage picker filters', () => {
 
     await addFilter(scope, 'Model')
     expect(await screen.findByRole('option', { name: 'gpt-4.1-mini' })).toBeInTheDocument()
-    expect(getModelsMock).toHaveBeenCalledTimes(2)
+    expect(getModelOptionsMock).toHaveBeenCalledTimes(2)
   })
 
   it('cancels a model catalog load still running when the page unmounts', async () => {
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
-    getModelsMock.mockImplementation(() => new Promise(() => {}))
+    getModelOptionsMock.mockImplementation(() => new Promise(() => {}))
 
     const view = renderPage()
     await addFilter(within(view.container), 'Model')
-    await waitFor(() => expect(getModelsMock).toHaveBeenCalledOnce())
-    const [{ signal }] = getModelsMock.mock.calls[0]
+    await waitFor(() => expect(getModelOptionsMock).toHaveBeenCalledOnce())
+    const [{ signal }] = getModelOptionsMock.mock.calls[0]
     expect(signal.aborted).toBe(false)
 
     view.unmount()
@@ -842,19 +841,19 @@ describe('RequestLogsPage picker filters', () => {
   it('shows a deep-linked model without loading the catalog until the picker opens', async () => {
     routeMock.useSearch.mockReturnValue({ model_key: 'retired-model' })
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
-    getModelsMock.mockResolvedValue({
-      data: { total: 1, items: [{ id: 'gpt-4.1-mini', model_id: 'uuid-1', alias_of: null }] },
+    getModelOptionsMock.mockResolvedValue({
+      data: { items: [{ id: 'gpt-4.1-mini', model_id: 'uuid-1', alias_of: null }] },
     })
 
     const view = renderPage()
     const trigger = within(view.container).getByTestId('request-log-filter-model-key')
     expect(trigger).toHaveTextContent('retired-model')
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(getModelsMock).not.toHaveBeenCalled()
+    expect(getModelOptionsMock).not.toHaveBeenCalled()
 
     fireEvent.click(trigger)
     expect(await screen.findByRole('option', { name: 'gpt-4.1-mini' })).toBeInTheDocument()
-    expect(getModelsMock).toHaveBeenCalledOnce()
+    expect(getModelOptionsMock).toHaveBeenCalledOnce()
   })
 
   it('filters by a listed status code and stores it as a number', async () => {
@@ -867,7 +866,7 @@ describe('RequestLogsPage picker filters', () => {
 
     await waitForListTransition()
     expect(navigatedSearch(0).status_code).toBe(429)
-    expect(getModelsMock).not.toHaveBeenCalled()
+    expect(getModelOptionsMock).not.toHaveBeenCalled()
   })
 
   it('applies a picked status while a tag pair is still incomplete', async () => {

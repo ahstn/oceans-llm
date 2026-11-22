@@ -38,7 +38,7 @@ import { CURRENCY_FORMATTER } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type {
   AuthSessionView,
-  ModelView,
+  ModelOptionView,
   SpendBudgetServiceAccountView,
   SpendBudgetUserModelView,
   SpendBudgetUserView,
@@ -485,7 +485,7 @@ function UserModelBudgetsTable({
 }: {
   budgets: SpendBudgetUserModelView[]
   usersById: Map<string, SpendBudgetUserView>
-  models: ModelView[]
+  models: ModelOptionView[]
   editor: BudgetEditor | null
 }) {
   if (budgets.length === 0) {

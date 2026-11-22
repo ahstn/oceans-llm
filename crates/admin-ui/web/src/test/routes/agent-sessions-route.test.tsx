@@ -6,18 +6,23 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { AgentSessionsPage } from '@/routes/observability/agent-sessions'
 import type { AgentSessionDetailView, AgentSessionSummaryView } from '@/types/api'
 
-const { getAgentSessionDetailMock, getHarnessUsageMock, getModelsMock, navigateMock, routeMock } =
-  vi.hoisted(() => ({
-    getAgentSessionDetailMock: vi.fn(),
-    getHarnessUsageMock: vi.fn(),
-    getModelsMock: vi.fn(),
-    navigateMock: vi.fn(),
-    routeMock: {
-      useLoaderData: vi.fn(),
-      useRouteContext: vi.fn(),
-      useSearch: vi.fn(),
-    },
-  }))
+const {
+  getAgentSessionDetailMock,
+  getHarnessUsageMock,
+  getModelOptionsMock,
+  navigateMock,
+  routeMock,
+} = vi.hoisted(() => ({
+  getAgentSessionDetailMock: vi.fn(),
+  getHarnessUsageMock: vi.fn(),
+  getModelOptionsMock: vi.fn(),
+  navigateMock: vi.fn(),
+  routeMock: {
+    useLoaderData: vi.fn(),
+    useRouteContext: vi.fn(),
+    useSearch: vi.fn(),
+  },
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => routeMock,
@@ -49,7 +54,7 @@ vi.mock('@/server/admin-data.functions', () => ({
   getAgentSessions: vi.fn(),
   getObservabilityAgentSessionDetail: (...args: unknown[]) => getAgentSessionDetailMock(...args),
   getObservabilityHarnessUsage: (...args: unknown[]) => getHarnessUsageMock(...args),
-  getModels: (...args: unknown[]) => getModelsMock(...args),
+  getModelOptions: (...args: unknown[]) => getModelOptionsMock(...args),
 }))
 
 const session: AgentSessionSummaryView = {
@@ -843,7 +848,7 @@ describe('AgentSessionsPage filters', () => {
     routeMock.useSearch.mockReset()
     navigateMock.mockReset()
     getHarnessUsageMock.mockReset()
-    getModelsMock.mockReset()
+    getModelOptionsMock.mockReset()
     routeMock.useLoaderData.mockReturnValue({
       data: { items: [session], page: 1, page_size: 50, total: 1 },
     })
@@ -969,27 +974,25 @@ describe('AgentSessionsPage filters', () => {
   })
 
   it('picks a model from the catalog by its key and still accepts a retired key', async () => {
-    getModelsMock.mockResolvedValue({
+    getModelOptionsMock.mockResolvedValue({
       data: {
         items: [
           {
             id: 'claude-opus-4-1',
             model_id: 'uuid-1',
+            resolved_model_key: 'claude-opus-4-1',
             alias_of: null,
             provider_label: 'Anthropic',
           },
         ],
-        total: 1,
       },
     })
     render(<AgentSessionsPage />)
 
     await addFilter('Model')
     expect(await screen.findByRole('option', { name: /claude-opus-4-1/ })).toBeInTheDocument()
-    expect(getModelsMock).toHaveBeenCalledWith({
-      data: { page: 1, page_size: 100 },
-      signal: expect.any(AbortSignal),
-    })
+    expect(getModelOptionsMock).toHaveBeenCalledOnce()
+    expect(getModelOptionsMock).toHaveBeenCalledWith({ signal: expect.any(AbortSignal) })
 
     fireEvent.change(screen.getByPlaceholderText('Search models…'), {
       target: { value: 'retired-model' },

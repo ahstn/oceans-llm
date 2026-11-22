@@ -7,8 +7,8 @@ use axum::{
 };
 use gateway_core::GlobalRole;
 use gateway_service::{
-    AdminModelRouteSummary, AdminModelSummary, AdminModelsService, AuditEvent, AuditProgress,
-    CatalogSourceId, EffectiveMetadataSource, EffectiveMetadataSourceKind,
+    AdminModelOption, AdminModelRouteSummary, AdminModelSummary, AdminModelsService, AuditEvent,
+    AuditProgress, CatalogSourceId, EffectiveMetadataSource, EffectiveMetadataSourceKind,
     PricingCatalogRefreshOutcome, PricingCatalogSourceRefresh, admin_audit::actions,
 };
 
@@ -16,11 +16,12 @@ use crate::http::{
     admin_auth::{require_active_session, require_platform_admin},
     admin_contract::{
         AdminModelAllowlistView, AdminModelBenchmarkScoreView, AdminModelClientConfigView,
-        AdminModelListQuery, AdminModelPageView, AdminModelRouteView, AdminModelView,
-        EffectiveMetadataSourceKindView, EffectiveMetadataSourceView, Envelope,
-        GenerateModelClientConfigsRequest, GenerateModelClientConfigsResponse,
-        PricingCatalogRefreshOutcomeView, PricingCatalogSourceRefreshView,
-        PricingCatalogSourceView, RefreshModelPricingCatalogResponse, envelope, format_timestamp,
+        AdminModelListQuery, AdminModelOptionListView, AdminModelOptionView, AdminModelPageView,
+        AdminModelRouteView, AdminModelView, EffectiveMetadataSourceKindView,
+        EffectiveMetadataSourceView, Envelope, GenerateModelClientConfigsRequest,
+        GenerateModelClientConfigsResponse, PricingCatalogRefreshOutcomeView,
+        PricingCatalogSourceRefreshView, PricingCatalogSourceView,
+        RefreshModelPricingCatalogResponse, envelope, format_timestamp,
     },
     audit::AuditRequestMeta,
     error::AppError,
@@ -54,6 +55,40 @@ pub async fn list_models(
         query,
         include_admin_details,
     ))))
+}
+
+/// Every model in one response, for selectors that offer the whole catalog. It reads models,
+/// routes, and providers once and skips the pricing, benchmark, and client config work of
+/// `list_models`, so one call costs less than one page of it.
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/models/options",
+    responses((status = 200, body = Envelope<AdminModelOptionListView>)),
+    security(("session_cookie" = []))
+)]
+pub async fn list_model_options(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Envelope<AdminModelOptionListView>>, AppError> {
+    require_active_session(&state, &headers).await?;
+
+    let items = AdminModelsService::new(state.store.clone())
+        .list_model_options()
+        .await?
+        .into_iter()
+        .map(map_model_option)
+        .collect();
+    Ok(Json(envelope(AdminModelOptionListView { items })))
+}
+
+fn map_model_option(option: AdminModelOption) -> AdminModelOptionView {
+    AdminModelOptionView {
+        id: option.id,
+        model_id: option.model_id,
+        resolved_model_key: option.resolved_model_key,
+        alias_of: option.alias_of,
+        provider_label: option.provider_label,
+    }
 }
 
 fn model_page(
