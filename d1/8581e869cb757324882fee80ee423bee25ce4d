@@ -1,0 +1,19 @@
+Cargo.lock
+  s_bea5708eb838de::t_fd6af8e5d82050 1712,1714,5339,5341
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d18581e869cb757324882fee80ee423bee25ce4d",
+  "prompts": {},
+  "sessions": {
+    "s_bea5708eb838de": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "13a0bec7-7a0c-4c7e-bd3f-413f37de54d6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
