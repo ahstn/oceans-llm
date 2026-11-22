@@ -61,6 +61,7 @@ export function FilterValuePicker({
   }, [autoOpen])
 
   const selected = options.options.find((option) => option.value === value)
+  const selectedHint = showSelectedHint ? selected?.hint : undefined
   const custom = customValue(search)
   const showCustom = custom !== null && !options.options.some((option) => option.value === custom)
 
@@ -76,6 +77,7 @@ export function FilterValuePicker({
       onOpenChange={(next) => {
         setOpen(next)
         if (!next) setSearch('')
+        if (next) options.load?.()
       }}
     >
       <PopoverTrigger asChild>
@@ -86,11 +88,18 @@ export function FilterValuePicker({
           aria-label={`${label} filter value`}
           className="flex h-full min-w-0 flex-1 items-center gap-1.5 px-2 text-left text-sm outline-none sm:w-44 sm:flex-none"
         >
-          <span className={cn('min-w-0 flex-1 truncate', !value && 'text-muted-foreground')}>
+          {/* With a hint beside it, the value keeps its width and the hint truncates instead. */}
+          <span
+            className={cn(
+              'min-w-0 truncate',
+              selectedHint ? 'max-w-full shrink-0' : 'flex-1',
+              !value && 'text-muted-foreground',
+            )}
+          >
             {value ? (selected?.label ?? formatValue(value)) : placeholder}
           </span>
-          {showSelectedHint && selected?.hint ? (
-            <span className="text-muted-foreground shrink-0 truncate">{selected.hint}</span>
+          {selectedHint ? (
+            <span className="text-muted-foreground min-w-0 flex-1 truncate">{selectedHint}</span>
           ) : null}
           <AppIcon
             icon={ArrowDown01Icon}
@@ -109,7 +118,7 @@ export function FilterValuePicker({
               {options.status === 'loading' || options.status === 'idle'
                 ? 'Loading…'
                 : options.status === 'error'
-                  ? 'Could not load options. Type a value instead.'
+                  ? 'Could not load options. Reopen to try again, or type a value.'
                   : 'No matches.'}
             </CommandEmpty>
             {options.options.length > 0 ? (
