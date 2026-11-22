@@ -41,3 +41,7 @@ We found five causes:
 
 - A shared counter, for example Redis, if many replicas must enforce one budget more tightly than 5 seconds allows.
 - Batch the other per-session reads in agent analysis (observation sets and session lists), and coalesce rebuild requests for the same session.
+
+## Follow-up amendment (2026-11-22)
+
+The agent-session batching and coalescing follow-up is implemented by [Atomic agent-session input](./2026-11-22-atomic-agent-session-input.md) and [Generation-fenced agent-session analysis](./2026-11-22-generation-fenced-agent-session-analysis.md). The API-key verification, budget-cache, MCP-evidence and nano-dollar billing decisions above remain unchanged.
