@@ -98,7 +98,7 @@ What each field asks OpenRouter to do:
 - `preferred_max_latency`: a preference, not a hard limit. Use a number of seconds, or `p50`, `p75`, `p90` and `p99` cutoffs in seconds.
 - `max_price`: a hard price ceiling. The dimensions are `prompt`, `completion`, `request` and `image`.
 
-Provider slugs must match OpenRouter's provider names. Oceans doesn't keep a list of them, so OpenRouter validates the slugs. Oceans checks the shape: no empty or duplicate slugs, and no slug in both `only` and `ignore`. The full validation rules are in [OpenRouter profile](/configuration/models-and-routes/#openrouter-profile).
+Provider slugs must match OpenRouter's provider names. Oceans doesn't keep a list of them, so OpenRouter validates the slugs. Oceans checks the shape: no empty or duplicate slugs, and no slug in both `only` and `ignore`. The full validation rules are in [OpenRouter profile](/configuration/models-and-routes/#openrouter-profile). For the headquarters and published audits of the providers behind one model, see [OpenRouter provider check](/providers/openrouter-provider-check/).
 
 Oceans sends the block as the upstream `provider` object on Messages, Chat Completions, Responses and Images requests. It replaces any `provider` object the caller sends.
 
