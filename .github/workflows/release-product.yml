@@ -185,6 +185,7 @@ jobs:
           IMAGE: ghcr.io/ahstn/${{ matrix.image }}
           PLATFORMS: ${{ matrix.platforms }}
           METADATA: ${{ steps.meta.outputs.json }}
+          RELEASE_TAG: ${{ fromJSON(inputs.plan).announcement_tag }}
         working-directory: ${{ runner.temp }}/digests
         run: |
           set -euo pipefail
@@ -198,13 +199,19 @@ jobs:
             fi
             sources+=("$IMAGE@$(<"$arch")")
           done
+          # Read the digest back through the release tag, the one tag no other release shares (two
+          # releases of one commit share `sha-` and `latest`). metadata-action publishes it with
+          # characters outside [A-Za-z0-9._-] replaced, so `v1.2.1+build.1` becomes `v1.2.1-build.1`.
+          release_ref="$IMAGE:$(sed -E 's/[^A-Za-z0-9._-]+/-/g' <<< "$RELEASE_TAG")"
+          if ! jq -e --arg ref "$release_ref" '.tags | index($ref)' <<< "$METADATA" > /dev/null; then
+            echo "::error::$release_ref is not among the tags to publish"
+            exit 1
+          fi
           tags=()
           while IFS= read -r tag; do tags+=(--tag "$tag"); done < <(jq -r '.tags[]' <<< "$METADATA")
           docker buildx imagetools create "${tags[@]}" "${sources[@]}"
-          # The `sha-` tag is always present and always a valid reference; a release tag such as
-          # `v1.2.1+build.1` is not, until metadata-action normalizes it.
-          docker buildx imagetools inspect "$IMAGE:sha-$GITHUB_SHA"
-          digest="$(docker buildx imagetools inspect "$IMAGE:sha-$GITHUB_SHA" --format '{{json .Manifest}}' | jq -r .digest)"
+          docker buildx imagetools inspect "$release_ref"
+          digest="$(docker buildx imagetools inspect "$release_ref" --format '{{json .Manifest}}' | jq -r .digest)"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Attest image provenance
