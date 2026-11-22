@@ -114,10 +114,11 @@ jobs:
 
       - name: Record the image digest
         env:
+          ARCH: ${{ matrix.arch }}
           DIGEST: ${{ steps.push.outputs.digest }}
         run: |
           mkdir -p "$RUNNER_TEMP/digests"
-          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+          echo "$DIGEST" > "$RUNNER_TEMP/digests/$ARCH"
 
       - name: Upload the image digest
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -125,7 +126,8 @@ jobs:
           name: digests-${{ matrix.image }}-${{ matrix.arch }}
           path: ${{ runner.temp }}/digests/*
           if-no-files-found: error
-          retention-days: 1
+          # Long enough for a partial rerun to merge against digests from the original attempt.
+          retention-days: 7
 
   merge-images:
     runs-on: ubuntu-latest
@@ -139,9 +141,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image:
-          - oceans-llm-gateway
-          - oceans-llm-admin-ui
+        include:
+          # Keep these platform lists in step with the build-images matrix.
+          - image: oceans-llm-gateway
+            platforms: amd64
+          - image: oceans-llm-admin-ui
+            platforms: amd64 arm64
 
     steps:
       - name: Download the platform image digests
@@ -175,15 +180,24 @@ jobs:
         id: index
         env:
           IMAGE: ghcr.io/ahstn/${{ matrix.image }}
+          PLATFORMS: ${{ matrix.platforms }}
           RELEASE_TAG: ${{ fromJSON(inputs.plan).announcement_tag }}
         working-directory: ${{ runner.temp }}/digests
         run: |
           set -euo pipefail
+          # A partial rerun can find only some digests, such as after artifacts expire. Refuse to
+          # tag an index that is missing a platform.
+          sources=()
+          for arch in $PLATFORMS; do
+            if [[ ! -s "$arch" ]]; then
+              echo "::error::No $arch digest for $IMAGE; rerun all jobs to rebuild every platform"
+              exit 1
+            fi
+            sources+=("$IMAGE@$(<"$arch")")
+          done
           tags=()
           while IFS= read -r tag; do tags+=(--tag "$tag"); done \
             < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
-          sources=()
-          for digest in *; do sources+=("$IMAGE@sha256:$digest"); done
           docker buildx imagetools create "${tags[@]}" "${sources[@]}"
           docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG"
           digest="$(docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG" --format '{{json .Manifest}}' | jq -r .digest)"
