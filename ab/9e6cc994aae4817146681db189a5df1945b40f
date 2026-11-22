@@ -1,0 +1,25 @@
+crates/gateway/src/http/inference_guardrails.rs
+  s_ceb902b5ae2ad1::t_4b15d42cf5c199 1784
+crates/gateway-guardrails/src/packs/tests.rs
+  s_ceb902b5ae2ad1::t_4b15d42cf5c199 845-847
+crates/gateway-guardrails/src/packs.rs
+  s_ceb902b5ae2ad1::t_177a8f37e89b76 1,1246-1251
+  s_ceb902b5ae2ad1::t_4b15d42cf5c199 208-209,1244-1245,1252-1258
+  s_ceb902b5ae2ad1::t_51eaed032806f6 1259-1261
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ab9e6cc994aae4817146681db189a5df1945b40f",
+  "prompts": {},
+  "sessions": {
+    "s_ceb902b5ae2ad1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "813ff0b9-4f52-4fd3-a512-a7b14a6a9045",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
