@@ -17,11 +17,14 @@ import type { AgentSessionSummaryView } from '@/types/api'
 import { EMPTY_VALUE, formatDuration, formatTimestamp, formatUsdTotal } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
-import type { SessionColumnKey, VisibleSessionColumns } from './session-columns'
+import {
+  sessionColumnIds,
+  sessionColumnLabel,
+  type SessionColumnId,
+  type VisibleSessionColumns,
+} from './session-columns'
 
-interface SessionColumn {
-  key: SessionColumnKey | 'started'
-  label: string
+interface SessionColumnRenderer {
   /** Numeric columns are right-aligned (DESIGN.md "Numbers and time"); their cells match. */
   numeric?: boolean
   /** The column's share of the table's minimum width, so hidden columns give width back. */
@@ -29,22 +32,17 @@ interface SessionColumn {
   cell: (session: AgentSessionSummaryView, showScore: boolean) => ReactNode
 }
 
-const sessionColumns: SessionColumn[] = [
-  {
-    key: 'started',
-    label: 'Started',
+// A `Record` over every column ID, so adding a column to `session-columns.ts` requires a renderer.
+const sessionColumnRenderers: Record<SessionColumnId, SessionColumnRenderer> = {
+  started: {
     minWidthRem: 10,
     cell: (session) => formatTimestamp(session.started_at),
   },
-  {
-    key: 'harness',
-    label: 'Harness',
+  harness: {
     minWidthRem: 7,
     cell: (session) => <HarnessLabel session={session} />,
   },
-  {
-    key: 'model',
-    label: 'Model',
+  model: {
     minWidthRem: 11,
     cell: (session) => (
       <>
@@ -55,61 +53,51 @@ const sessionColumns: SessionColumn[] = [
       </>
     ),
   },
-  {
-    key: 'state',
-    label: 'State',
+  state: {
     minWidthRem: 5,
     cell: (session) => <StateBadge value={session.lifecycle} />,
   },
-  {
-    key: 'score',
-    label: 'Score',
+  score: {
     numeric: true,
     minWidthRem: 7,
     cell: (session, showScore) => <ScoreValue session={session} showScore={showScore} />,
   },
-  {
-    key: 'cost',
-    label: 'Cost',
+  cost: {
     numeric: true,
     minWidthRem: 4,
     cell: (session) => formatUsdTotal(session.normalized_cost_usd),
   },
-  {
-    key: 'activeTime',
-    label: 'Active time',
+  activeTime: {
     numeric: true,
     minWidthRem: 5,
     cell: (session) => formatDuration(session.active_time_ms),
   },
-  {
-    key: 'requests',
-    label: 'Requests',
+  requests: {
     numeric: true,
     minWidthRem: 4,
     cell: (session) => <CompactCount value={session.request_count} unit="requests" />,
   },
-  {
-    key: 'toolCalls',
-    label: 'Tool calls',
+  toolCalls: {
     numeric: true,
     minWidthRem: 4,
     cell: (session) => <CompactCount value={session.tool_call_count} unit="tool calls" />,
   },
-  {
-    key: 'mcpCalls',
-    label: 'MCP calls',
+  mcpCalls: {
     numeric: true,
     minWidthRem: 4,
     cell: (session) => <CompactCount value={session.mcp_call_count} unit="MCP calls" />,
   },
-  {
-    key: 'dataQuality',
-    label: 'Data quality',
+  dataQuality: {
     minWidthRem: 6,
     cell: (session) => <DataQuality session={session} />,
   },
-]
+}
+
+const sessionColumns = sessionColumnIds.map((key) => ({
+  key,
+  label: sessionColumnLabel(key),
+  ...sessionColumnRenderers[key],
+}))
 
 interface SessionTableProps {
   items: AgentSessionSummaryView[]
