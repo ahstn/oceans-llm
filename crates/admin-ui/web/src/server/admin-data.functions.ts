@@ -104,7 +104,7 @@ import {
   disableMcpToolset,
   revokeMcpGrant,
 } from '@/server/admin-data.server'
-import { resolveBrowserGatewayOrigin } from '@/server/gateway-client.server'
+import { currentRequestSignal, resolveBrowserGatewayOrigin } from '@/server/gateway-client.server'
 
 type AgentSessionFilters = NonNullable<Parameters<typeof listAgentSessions>[0]>
 type AttributionReportInput = Parameters<typeof getAttributionReport>[0]
@@ -402,7 +402,8 @@ export const getModels = createServerFn({ method: 'GET' })
   })
 
 export const getModelOptions = createServerFn({ method: 'GET' }).handler(async () => {
-  return listModelOptions()
+  // The handler context has no signal; the request's own signal aborts when the browser cancels.
+  return listModelOptions(currentRequestSignal())
 })
 
 export const getModelClientConfigs = createServerFn({ method: 'POST' })

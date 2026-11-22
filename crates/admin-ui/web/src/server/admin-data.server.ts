@@ -230,10 +230,15 @@ export async function listModels(params?: {
   )
 }
 
-/** Every model, aliases included, with only the fields selectors show. */
-export async function listModelOptions(): Promise<ApiEnvelope<ModelOptionListView>> {
+/**
+ * Every model, aliases included, with only the fields selectors show. Aborting `signal` cancels
+ * the gateway request, so a load the browser abandons stops reading the catalog.
+ */
+export async function listModelOptions(
+  signal?: AbortSignal,
+): Promise<ApiEnvelope<ModelOptionListView>> {
   const client = createGatewayApiClient()
-  return unwrapGatewayResponse(await client.GET('/api/v1/admin/models/options'))
+  return unwrapGatewayResponse(await client.GET('/api/v1/admin/models/options', { signal }))
 }
 
 export async function generateModelClientConfigs(

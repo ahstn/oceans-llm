@@ -17,7 +17,7 @@ Add `GET /api/v1/admin/models/options`. It returns every model, aliases included
 - `AdminModelsService::list_model_options()` loads models, routes, and route providers in three batched store reads (`load_catalog_routes`). It then picks each model's display route with the same `select_display_route` and `resolve_provider_display` the full summary uses. It skips pricing, allow-lists, benchmarks, and client configs.
 - `list_model_items` now starts from the same `load_catalog_routes`, so the two listings cannot drift on alias resolution or the provider label.
 - The handler requires an active session, like `list_models`. Every field in the view is already public in the full listing for non-admins, and the view has no route, routing, or allow-list field. So each role gets the same response, and nothing admin-only can leak through it.
-- `loadAllModels(signal)` makes one `getModelOptions({ signal })` call and returns `ModelOptionView[]`. The page worker pool, concurrency cap, and abort-on-failure logic are gone. The caller's `AbortSignal` goes straight to the request, so the request log and agent session filter toolbars still cancel the load when they unmount.
+- `loadAllModels(signal)` makes one `getModelOptions({ signal })` call and returns `ModelOptionView[]`. The page worker pool, concurrency cap, and abort-on-failure logic are gone. The caller's `AbortSignal` goes to the server function call. Its handler passes the server request's own signal (`currentRequestSignal()`) to the gateway `GET`, so when a request log or agent session filter toolbar unmounts, the gateway request is cancelled too instead of finishing an unused catalog read.
 
 ## Alternatives considered
 
@@ -33,7 +33,7 @@ Add `GET /api/v1/admin/models/options`. It returns every model, aliases included
 
 - `gateway-service`: `model_options_match_summaries_without_reading_pricing` checks that the options make three batched reads and no pricing reads, and match a projection of `list_models`. It covers an alias and a broken alias.
 - `gateway` router tests (`http/model_options_tests.rs`): the endpoint returns 401 without a session. For both a member and a platform admin, it returns all 121 seeded models (more than one page) with exactly the five public fields, and it matches the paginated listing row for row.
-- Vitest: `model-catalog.test.ts` (one request, signal passed through, rejection), `spend-controls-route.test.tsx` (the loader uses one options request), and the existing request log and agent session Model filter tests, now against `getModelOptions`.
+- Vitest: `model-catalog.test.ts` (one request, signal passed through, rejection), `model-options.server.test.ts` (aborting the browser request aborts the gateway request, through the real server wrapper and gateway fetch), `spend-controls-route.test.tsx` (the loader uses one options request), and the existing request log and agent session Model filter tests, now against `getModelOptions`.
 
 ## Follow-up
 
