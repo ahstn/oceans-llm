@@ -942,6 +942,7 @@ describe('RequestLogsPage picker filters', () => {
     const view = renderPage()
     const trigger = within(view.container).getByTestId('request-log-filter-status-code')
     expect(trigger).toHaveTextContent('429Too Many Requests')
+    expect(trigger).toHaveAccessibleName('Status filter value: 429 Too Many Requests')
 
     fireEvent.click(trigger)
     const search = await screen.findByRole('combobox', { name: 'Search status values' })
