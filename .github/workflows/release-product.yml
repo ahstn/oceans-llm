@@ -17,8 +17,38 @@ env:
 jobs:
   # Each platform builds on a runner of its own architecture, so no build runs under QEMU.
   # Emulated arm64 builds of the admin UI hung in `vite build` and timed out the release.
-  # Each job pushes its image by digest; merge-images then tags one multi-platform index.
+  # Each build pushes its image by digest; merge-images then tags one multi-platform index.
+  # This job holds the one list of release images and expands it into both matrices, so an image
+  # cannot be built without also being merged and tagged.
+  image-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      builds: ${{ steps.matrix.outputs.builds }}
+      images: ${{ steps.matrix.outputs.images }}
+    steps:
+      - name: Expand the image inventory
+        id: matrix
+        run: |
+          set -euo pipefail
+          inventory='[
+            {"image": "oceans-llm-gateway", "title": "Oceans LLM Gateway",
+             "description": "Oceans LLM gateway service", "dockerfile": "crates/gateway/Dockerfile",
+             "timeout": 60, "arches": ["amd64"]},
+            {"image": "oceans-llm-admin-ui", "title": "Oceans LLM Admin UI",
+             "description": "Oceans LLM admin UI service", "dockerfile": "crates/admin-ui/web/Dockerfile",
+             "timeout": 30, "arches": ["amd64", "arm64"]}
+          ]'
+          runners='{"amd64": "ubuntu-latest", "arm64": "ubuntu-24.04-arm"}'
+          {
+            echo "builds=$(jq -c --argjson runners "$runners" '[.[] | . as $image | .arches[]
+              | $image + {arch: ., platform: "linux/\(.)", runner: $runners[.]} | del(.arches)]' <<< "$inventory")"
+            echo "images=$(jq -c '[.[] | {image, platforms: (.arches | join(" "))}]' <<< "$inventory")"
+          } >> "$GITHUB_OUTPUT"
+
   build-images:
+    needs: image-matrix
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.timeout }}
     permissions:
@@ -27,31 +57,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - image: oceans-llm-gateway
-            title: Oceans LLM Gateway
-            description: Oceans LLM gateway service
-            dockerfile: crates/gateway/Dockerfile
-            platform: linux/amd64
-            arch: amd64
-            runner: ubuntu-latest
-            timeout: 60
-          - image: oceans-llm-admin-ui
-            title: Oceans LLM Admin UI
-            description: Oceans LLM admin UI service
-            dockerfile: crates/admin-ui/web/Dockerfile
-            platform: linux/amd64
-            arch: amd64
-            runner: ubuntu-latest
-            timeout: 30
-          - image: oceans-llm-admin-ui
-            title: Oceans LLM Admin UI
-            description: Oceans LLM admin UI service
-            dockerfile: crates/admin-ui/web/Dockerfile
-            platform: linux/arm64
-            arch: arm64
-            runner: ubuntu-24.04-arm
-            timeout: 30
+        include: ${{ fromJSON(needs.image-matrix.outputs.builds) }}
 
     steps:
       - name: Checkout
@@ -132,7 +138,7 @@ jobs:
   merge-images:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: build-images
+    needs: [image-matrix, build-images]
     permissions:
       contents: read
       packages: write
@@ -141,12 +147,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # Keep these platform lists in step with the build-images matrix.
-          - image: oceans-llm-gateway
-            platforms: amd64
-          - image: oceans-llm-admin-ui
-            platforms: amd64 arm64
+        include: ${{ fromJSON(needs.image-matrix.outputs.images) }}
 
     steps:
       - name: Download the platform image digests
