@@ -510,6 +510,8 @@ compatibility:
       max_price:
         prompt: 1.0
         completion: 2.0
+      sort: throughput
+      data_collection: deny
 ```
 
 The gateway sends the block as `provider` in the upstream request body:
@@ -517,6 +519,8 @@ The gateway sends the block as `provider` in the upstream request body:
 - `zdr` limits routing to zero-data-retention endpoints.
 - `preferred_max_latency` is a preference. It takes a number, or `p50`, `p75`, `p90` and `p99` cutoffs in seconds.
 - `max_price` is a hard ceiling with `prompt`, `completion`, `request` and `image` dimensions.
+- `sort` ranks providers by `price`, `throughput` or `latency`. The object form adds `partition` (`model` or `none`).
+- `data_collection: deny` skips providers that may store prompts.
 
 OpenRouter validates provider slugs. The gateway checks the shape, empty values, duplicate slugs, slugs in both `only` and `ignore`, and a conflicting `extra_body.provider` (you can't set both). The provider's `base_url` must point at OpenRouter.
 

@@ -87,6 +87,8 @@ models:
               max_price:
                 prompt: 1.0
                 completion: 2.0
+              sort: throughput
+              data_collection: deny
 ```
 
 What each field asks OpenRouter to do:
@@ -97,6 +99,8 @@ What each field asks OpenRouter to do:
 - `order`: try these provider slugs in this order.
 - `preferred_max_latency`: a preference, not a hard limit. Use a number of seconds, or `p50`, `p75`, `p90` and `p99` cutoffs in seconds.
 - `max_price`: a hard price ceiling. The dimensions are `prompt`, `completion`, `request` and `image`.
+- `sort`: rank providers by `price`, `throughput` or `latency` instead of OpenRouter's default load balancing. Use the object form `{by: price, partition: none}` to rank endpoints across all models in a fallback list rather than within each model. `partition` defaults to `model`.
+- `data_collection`: `deny` skips providers that may store or train on prompts. OpenRouter defaults to `allow`.
 
 Provider slugs must match OpenRouter's provider names. Oceans doesn't keep a list of them, so OpenRouter validates the slugs. Oceans checks the shape: no empty or duplicate slugs, and no slug in both `only` and `ignore`. The full validation rules are in [OpenRouter profile](/configuration/models-and-routes/#openrouter-profile).
 

@@ -3401,6 +3401,10 @@ pub struct OpenRouterProviderRouting {
     pub preferred_max_latency: Option<OpenRouterPercentilePreference>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_price: Option<OpenRouterMaxPrice>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort: Option<OpenRouterSort>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_collection: Option<OpenRouterDataCollection>,
 }
 
 impl OpenRouterProviderRouting {
@@ -3412,7 +3416,69 @@ impl OpenRouterProviderRouting {
             && self.order.is_empty()
             && self.preferred_max_latency.is_none()
             && self.max_price.is_none()
+            && self.sort.is_none()
+            && self.data_collection.is_none()
     }
+}
+
+/// OpenRouter `provider.sort`: a bare sort key, or an object that also sets the partition.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum OpenRouterSort {
+    By(OpenRouterSortBy),
+    Options(OpenRouterSortOptions),
+}
+
+impl<'de> Deserialize<'de> for OpenRouterSort {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            By(OpenRouterSortBy),
+            Options(OpenRouterSortOptions),
+        }
+        // serde's untagged error names no accepted values, so replace it with one that does.
+        match Raw::deserialize(deserializer) {
+            Ok(Raw::By(by)) => Ok(Self::By(by)),
+            Ok(Raw::Options(options)) => Ok(Self::Options(options)),
+            Err(_) => Err(serde::de::Error::custom(
+                "expected `price`, `throughput`, `latency`, or an object with `by` \
+                 (`price`, `throughput`, `latency`) and optional `partition` (`model`, `none`)",
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenRouterSortBy {
+    Price,
+    Throughput,
+    Latency,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct OpenRouterSortOptions {
+    pub by: OpenRouterSortBy,
+    /// OpenRouter defaults to `model` when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partition: Option<OpenRouterSortPartition>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenRouterSortPartition {
+    Model,
+    None,
+}
+
+/// OpenRouter `provider.data_collection`. OpenRouter defaults to `allow` when unset.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenRouterDataCollection {
+    Allow,
+    Deny,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -4120,6 +4186,32 @@ mod tests {
         is_supported_vertex_google_chat_upstream_model,
         vertex_route_capabilities_for_upstream_model,
     };
+
+    #[test]
+    fn openrouter_sort_round_trips_both_wire_shapes() {
+        use super::{OpenRouterSort, OpenRouterSortBy, OpenRouterSortOptions};
+        use serde_json::json;
+
+        for (wire, sort) in [
+            (
+                json!("throughput"),
+                OpenRouterSort::By(OpenRouterSortBy::Throughput),
+            ),
+            (
+                json!({"by": "latency"}),
+                OpenRouterSort::Options(OpenRouterSortOptions {
+                    by: OpenRouterSortBy::Latency,
+                    partition: None,
+                }),
+            ),
+        ] {
+            assert_eq!(
+                serde_json::from_value::<OpenRouterSort>(wire.clone()).unwrap(),
+                sort
+            );
+            assert_eq!(serde_json::to_value(sort).unwrap(), wire);
+        }
+    }
 
     #[test]
     fn reported_cost_keeps_nano_dollars_and_rounds_only_at_the_edge() {
