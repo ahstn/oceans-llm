@@ -1030,7 +1030,7 @@ describe('AgentSessionsPage filters', () => {
 
     await addFilter('Harness')
     expect(
-      await screen.findByText('Could not load options. Type a value instead.'),
+      await screen.findByText('Could not load options. Reopen to try again, or type a value.'),
     ).toBeInTheDocument()
     fireEvent.change(screen.getByPlaceholderText('Search or type a harness key…'), {
       target: { value: 'gemini_cli' },

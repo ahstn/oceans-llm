@@ -22,6 +22,12 @@ import {
   Tag01Icon,
 } from '@hugeicons/core-free-icons'
 
+import {
+  anyTypedValue,
+  useModelFilterOptions,
+  type FilterOptionsState,
+} from '@/components/data/filter-options'
+import { FilterValuePicker } from '@/components/data/filter-value-picker'
 import { AppIcon } from '@/components/icons/app-icon'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -43,14 +49,7 @@ import {
 } from '@/components/ui/input-group'
 import type { RequestLogFiltersInput } from '@/types/api'
 
-import {
-  customModelKey,
-  customStatusCode,
-  readyStatusCodeOptions,
-  useModelFilterOptions,
-  type FilterOptionsState,
-} from './-request-log-filter-options'
-import { FilterValuePicker } from './-request-log-filter-picker'
+import { customStatusCode, readyStatusCodeOptions } from './-request-log-filter-options'
 
 export type RequestLogFilterValues = Pick<
   RequestLogFiltersInput,
@@ -93,7 +92,8 @@ const filterFields: FilterFieldDefinition[] = [
     label: 'Model',
     icon: AiChipIcon,
     placeholder: 'Select a model',
-    picker: { searchPlaceholder: 'Search models…', customValue: customModelKey },
+    // Keys no longer in the catalog still match older logs, so any typed key is allowed.
+    picker: { searchPlaceholder: 'Search models…', customValue: anyTypedValue },
   },
   {
     key: 'provider_key',
@@ -167,9 +167,16 @@ export function RequestLogToolbar({
   )
   const activeCount = filterFields.filter((field) => isFieldActive(filters, field.key)).length
   const hasPartialTagFilter = isPartialTag(drafts)
-  const modelOptions = useModelFilterOptions()
+  // The catalog loads on first use (adding the Model chip or opening its picker), so a page opened
+  // with `model_key` already in the URL does not fetch it.
+  const [modelPickerUsed, setModelPickerUsed] = useState(false)
+  const modelOptions = useModelFilterOptions(modelPickerUsed)
+  function loadModelOptions() {
+    setModelPickerUsed(true)
+    modelOptions.load?.()
+  }
   const pickerOptions: Record<PickerFieldKey, FilterOptionsState> = {
-    model_key: modelOptions,
+    model_key: { ...modelOptions, load: loadModelOptions },
     status_code: readyStatusCodeOptions,
   }
 
@@ -177,7 +184,7 @@ export function RequestLogToolbar({
     setAddedFields((current) => (current.includes(key) ? current : [...current, key]))
     setFocusField(key)
     // The new chip's picker opens itself, so this is the catalog's first use.
-    if (key === 'model_key') modelOptions.load?.()
+    if (key === 'model_key') loadModelOptions()
   }
 
   function commit(next: RequestLogFilterPatch = drafts) {
