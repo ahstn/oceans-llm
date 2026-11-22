@@ -305,6 +305,8 @@ Where motion appears:
 - **Style:** badges are compact pills (`h-5`, `rounded-4xl`, `0.75rem` text) with variants for success, warning, destructive, outline and secondary.
 - **State:** badge colour communicates state, not decoration. Status badges take a status variant, never the default lilac, and must stay readable at table density.
 - **Tags:** an entity's `key:value` tags render with `EntityTagChips` (`src/routes/identity/-entity-tags.tsx`). Each tag is one mono pill, with the key muted on a faint wash and the value in ink. Rows show two, then a `+N` pill whose popover lists every tag, so a row stays one line however many tags it carries. A chip that filters by its tag is a button and takes the lilac action hover; an inert chip has none. Chips shrink and truncate rather than overflow, and the full pair stays in the title and accessible name. Teams is the reference.
+- **Defaults stay quiet:** a table row pills only what an operator scans for. A setting that is usually the default, or the provenance of a value (hard enforcement, `Config (user)`), moves to the value's tooltip and accessible name, which must be keyboard-reachable. Only the exception shows, folded into an existing pill (`Weekly · soft`). Spend Controls' Budget column is the reference.
+- **One status pill per cell:** a temporary state that explains the status replaces the status pill rather than sitting beside it, and keeps its own tone. The replaced status stays in the pill's accessible name and tooltip. The amber `+$X until <date>` increase pill in Spend Controls' Status column is the reference.
 
 ### Cards / Containers
 
