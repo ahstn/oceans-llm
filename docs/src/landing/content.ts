@@ -20,6 +20,8 @@ import cropHarnessChart from "@/assets/landing/crop-harness-chart.webp";
 import cropSessionsRows from "@/assets/landing/crop-sessions-rows.webp";
 import cropMcpTools from "@/assets/landing/crop-mcp-tools.webp";
 import cropMcpGrant from "@/assets/landing/crop-mcp-grant.webp";
+import shotAttribution from "@/assets/landing/shot-attribution.webp";
+import cropAttributionPr from "@/assets/landing/crop-attribution-pr.webp";
 import stageBands from "@/assets/landing/stage-bands.webp";
 import stageCurl from "@/assets/landing/stage-curl.webp";
 
@@ -75,7 +77,7 @@ export const hero = {
     floats: [
       {
         src: cropSpendRows,
-        alt: "Two budget rows: one user over a $200 monthly hard limit, another near a $150 limit",
+        alt: "Three budget rows: one user over a $200 monthly budget, and two near their $150 limits, one of them a soft budget",
         class: "left-[2%] bottom-[9%] w-[41%] xl:-left-[4%]",
       },
       {
@@ -183,8 +185,12 @@ export interface Pillar {
     backdrop: ImageMetadata;
     /** Mirror the backdrop so neighbouring stages don't repeat. */
     flip?: boolean;
-    /** `window` gets app chrome and bleeds off the stage; `panel` sits inside it. */
-    kind: "window" | "panel";
+    /**
+     * `window` gets app chrome and bleeds off the stage; `panel` sits inside it.
+     * `stack` puts `main` above the backdrop's top edge and each float below
+     * it as a full panel, placed by its `class` (see `.lp-stage-stack-*`).
+     */
+    kind: "window" | "panel" | "stack";
     title?: string;
     main: Shot;
     floats: FloatShot[];
@@ -256,6 +262,38 @@ export const pillars: Pillar[] = [
     },
   },
   {
+    id: "attribution",
+    icon: "ph:git-commit",
+    eyebrow: "Git AI attribution",
+    title: "See what AI wrote, and what it cost to ship.",
+    body: [
+      { text: "Git AI records which lines of each commit an agent wrote. The " },
+      { text: "oceans hook", code: true },
+      { text: " commands send those notes, agent sessions and merged pull requests to the gateway, which joins them to the requests and cost behind each commit." },
+    ],
+    points: [
+      "AI share of merged code, cost per merged pull request and spend that shipped",
+      "Delivery and review flow from merged pull requests, marked as a proxy where Oceans sees merges rather than deploys",
+      "Git AI runs on each machine, so Oceans doesn't need its hosted service",
+    ],
+    link: { label: "Git AI attribution", href: "/harnesses/git-ai-attribution/" },
+    stage: {
+      backdrop: stageBands,
+      kind: "stack",
+      main: {
+        src: shotAttribution,
+        alt: "Attribution Impact tab: AI share of merged code, cost per merged pull request, merged pull requests and spend that shipped, above charts of who wrote the code and spend against output",
+      },
+      floats: [
+        {
+          src: cropAttributionPr,
+          alt: "Merged pull request row expanded to show its commit, the agent that wrote it, review wait and cost",
+          class: "lp-stage-stack-second",
+        },
+      ],
+    },
+  },
+  {
     id: "spend",
     icon: "ph:coins",
     eyebrow: "Spend",
@@ -270,7 +308,7 @@ export const pillars: Pillar[] = [
     ],
     link: { label: "Budgets", href: "/spend/budgets/" },
     stage: {
-      backdrop: stageBands,
+      backdrop: stageCurl,
       flip: true,
       kind: "window",
       title: "Spend controls",
@@ -302,7 +340,8 @@ export const pillars: Pillar[] = [
     ],
     link: { label: "Request logs", href: "/observability/request-logs/" },
     stage: {
-      backdrop: stageCurl,
+      backdrop: stageBands,
+      flip: true,
       kind: "panel",
       main: {
         src: cropHarnessChart,
@@ -340,7 +379,7 @@ export const pillars: Pillar[] = [
     ],
     link: { label: "MCP servers", href: "/extensions/mcp-servers/" },
     stage: {
-      backdrop: stageBands,
+      backdrop: stageCurl,
       kind: "window",
       title: "MCP servers",
       main: {
