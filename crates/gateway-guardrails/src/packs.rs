@@ -175,15 +175,35 @@ impl DeterministicEvaluator for BuiltInEvaluator {
             return Err(EvaluationError::MalformedToolCall);
         }
 
+        // A generated tool call is matched as an MCP call from a fixed server. The call and
+        // its shell commands are the same for every pack, so both are built once.
+        let generated_call;
+        let call = match &input.payload {
+            EvaluationPayload::ToolCall { name, arguments } => {
+                generated_call = McpCall {
+                    server: "generated_tool_call".to_string(),
+                    tool: name.clone(),
+                    arguments: arguments.clone(),
+                };
+                Some(&generated_call)
+            }
+            EvaluationPayload::McpCall { call } => Some(call),
+            _ => None,
+        };
+        let commands = call.map(shell_tool_commands).unwrap_or_default();
+
         for pack in &policy.packs {
-            let matched = match (&input.payload, pack.as_str()) {
-                (EvaluationPayload::ShellCommand { command }, pack) => {
-                    match_shell_pack(pack, command)
+            let pack = pack.as_str();
+            let matched = match (&input.payload, call) {
+                (EvaluationPayload::ShellCommand { command }, _) => match_shell_pack(pack, command),
+                // Every pack reads the commands of a generated shell tool call.
+                (EvaluationPayload::ToolCall { .. }, Some(call)) => {
+                    match_shell_commands(pack, &commands)
+                        .or_else(|| match_mcp_pack(pack, call, &[]))
                 }
-                (EvaluationPayload::ToolCall { name, arguments }, pack) => {
-                    match_tool_call_pack(pack, name, arguments)
+                (EvaluationPayload::McpCall { .. }, Some(call)) => {
+                    match_mcp_pack(pack, call, &commands)
                 }
-                (EvaluationPayload::McpCall { call }, pack) => match_mcp_pack(pack, call),
                 _ => None,
             };
             if matched.is_some() {
@@ -194,40 +214,34 @@ impl DeterministicEvaluator for BuiltInEvaluator {
     }
 }
 
-fn match_shell_tool(pack: &str, name: &str, arguments: &Value) -> Option<MatchedRule> {
-    if !is_shell_tool(name) {
-        return None;
+/// A shell command of a tool call, with the JSONPath of the argument that holds it.
+type ShellToolCommand<'a> = (&'static str, Cow<'a, str>);
+
+/// The commands that a shell tool call carries, or none when the tool is not a shell.
+fn shell_tool_commands(call: &McpCall) -> Vec<ShellToolCommand<'_>> {
+    if !is_shell_tool(&call.tool) {
+        return Vec::new();
     }
-    for path in [
+    [
         "$.command",
         "$.cmd",
         "$.script",
         "$.input.command",
         "$.arguments.command",
-    ] {
-        if let Some(command) = shell_command_text(arguments, path)
-            && let Some(matched) = match_shell_pack(pack, &command)
-        {
-            return Some(MatchedRule {
-                matched_field: path.to_string(),
-                ..matched
-            });
-        }
-    }
-    None
+    ]
+    .into_iter()
+    .filter_map(|path| Some((path, shell_command_text(&call.arguments, path)?)))
+    .collect()
 }
 
-fn match_tool_call_pack(pack: &str, name: &str, arguments: &Value) -> Option<MatchedRule> {
-    if let Some(matched) = match_shell_tool(pack, name, arguments) {
-        return Some(matched);
-    }
-
-    let call = McpCall {
-        server: "generated_tool_call".to_string(),
-        tool: name.to_string(),
-        arguments: arguments.clone(),
-    };
-    match_mcp_pack(pack, &call)
+fn match_shell_commands(pack: &str, commands: &[ShellToolCommand<'_>]) -> Option<MatchedRule> {
+    commands.iter().find_map(|(path, command)| {
+        let matched = match_shell_pack(pack, command)?;
+        Some(MatchedRule {
+            matched_field: (*path).to_string(),
+            ..matched
+        })
+    })
 }
 
 /// Whether a tool name belongs to a tool that runs a shell command, such as `bash`,
@@ -968,9 +982,14 @@ fn gcp_exact_destructive_identity(identity: &str) -> bool {
     .any(|candidate| identity.contains(candidate))
 }
 
-fn match_mcp_pack(pack: &str, call: &McpCall) -> Option<MatchedRule> {
+/// `shell_commands` are the commands of the call when its tool is a shell.
+fn match_mcp_pack(
+    pack: &str,
+    call: &McpCall,
+    shell_commands: &[ShellToolCommand<'_>],
+) -> Option<MatchedRule> {
     if matches!(pack, "core.shell" | "core.git" | "core.filesystem")
-        && let Some(matched) = match_shell_tool(pack, &call.tool, &call.arguments)
+        && let Some(matched) = match_shell_commands(pack, shell_commands)
     {
         return Some(matched);
     }
