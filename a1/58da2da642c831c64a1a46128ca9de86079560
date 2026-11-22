@@ -1,0 +1,23 @@
+crates/gateway-guardrails/src/packs/tests.rs
+  s_ceb902b5ae2ad1::t_9bd6e05e96d4d0 810-815,819-820,831-833,843-844
+crates/gateway-guardrails/src/packs.rs
+  s_ceb902b5ae2ad1::t_9bd6e05e96d4d0 237-239,251,253-254,256-257,261,263,266-268,276-288,290
+docs/src/content/docs/operations/gateway-guardrails.mdx
+  s_ceb902b5ae2ad1::t_656d018543d9a1 63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a158da2da642c831c64a1a46128ca9de86079560",
+  "prompts": {},
+  "sessions": {
+    "s_ceb902b5ae2ad1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "813ff0b9-4f52-4fd3-a512-a7b14a6a9045",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
