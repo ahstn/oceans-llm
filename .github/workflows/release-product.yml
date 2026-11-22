@@ -132,7 +132,9 @@ jobs:
           name: digests-${{ matrix.image }}-${{ matrix.arch }}
           path: ${{ runner.temp }}/digests/*
           if-no-files-found: error
-          # Long enough for a partial rerun to merge against digests from the original attempt.
+          # A rerun of this job replaces the digest from its earlier attempt; artifacts are otherwise
+          # immutable. Seven days lets a partial rerun merge against digests from the first attempt.
+          overwrite: true
           retention-days: 7
 
   merge-images:
@@ -182,7 +184,7 @@ jobs:
         env:
           IMAGE: ghcr.io/ahstn/${{ matrix.image }}
           PLATFORMS: ${{ matrix.platforms }}
-          RELEASE_TAG: ${{ fromJSON(inputs.plan).announcement_tag }}
+          METADATA: ${{ steps.meta.outputs.json }}
         working-directory: ${{ runner.temp }}/digests
         run: |
           set -euo pipefail
@@ -197,11 +199,12 @@ jobs:
             sources+=("$IMAGE@$(<"$arch")")
           done
           tags=()
-          while IFS= read -r tag; do tags+=(--tag "$tag"); done \
-            < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          while IFS= read -r tag; do tags+=(--tag "$tag"); done < <(jq -r '.tags[]' <<< "$METADATA")
           docker buildx imagetools create "${tags[@]}" "${sources[@]}"
-          docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG"
-          digest="$(docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG" --format '{{json .Manifest}}' | jq -r .digest)"
+          # The `sha-` tag is always present and always a valid reference; a release tag such as
+          # `v1.2.1+build.1` is not, until metadata-action normalizes it.
+          docker buildx imagetools inspect "$IMAGE:sha-$GITHUB_SHA"
+          digest="$(docker buildx imagetools inspect "$IMAGE:sha-$GITHUB_SHA" --format '{{json .Manifest}}' | jq -r .digest)"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Attest image provenance
