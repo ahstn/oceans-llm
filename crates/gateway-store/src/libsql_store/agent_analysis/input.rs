@@ -1,4 +1,5 @@
 use super::*;
+use crate::agent_session_input::SessionWriteState;
 
 impl LibsqlStore {
     pub(super) async fn append_session_input(
@@ -21,6 +22,9 @@ impl LibsqlStore {
             match append_request(&transaction, &prepared.session_id, request, &state).await {
                 Ok(inserted) => result.request_inserted = inserted,
                 Err(error @ StoreError::AgentSessionWindowClosed(_)) => {
+                    if state.lifecycle == SessionLifecycleState::Open {
+                        schedule_changed(&transaction, &prepared).await?;
+                    }
                     transaction.commit().await.map_err(to_query_error)?;
                     return Err(error);
                 }
@@ -32,7 +36,7 @@ impl LibsqlStore {
             if let Some(existing) = load_set(&transaction, &observations.full.id).await? {
                 result.nested_facts_truncated = observations.replay_kind(&existing)?;
             } else {
-                let (selected, truncated) = observations.select(state.3)?;
+                let (selected, truncated) = observations.select(state.nested_fact_count)?;
                 let (full, fallback) = writes.take().ok_or_else(|| {
                     StoreError::Unexpected("observation writes were not prepared".to_string())
                 })?;
@@ -55,16 +59,29 @@ impl LibsqlStore {
                 nested_delta,
             )
             .await?;
+            schedule_changed(&transaction, &prepared).await?;
         }
         transaction.commit().await.map_err(to_query_error)?;
         Ok(result)
     }
 }
 
+async fn schedule_changed(
+    transaction: &libsql::Transaction,
+    prepared: &PreparedInput<'_>,
+) -> Result<(), StoreError> {
+    if let Some(analysis) = &prepared.analysis {
+        super::queue::enqueue_on(transaction, analysis).await?;
+    } else {
+        super::queue::wake_on(transaction, &prepared.session_id, prepared.wake_at).await?;
+    }
+    Ok(())
+}
+
 async fn load_state(
     transaction: &libsql::Transaction,
     session_id: &str,
-) -> Result<(String, i64, i64, i64), StoreError> {
+) -> Result<SessionWriteState, StoreError> {
     let mut rows = transaction.query(
         "SELECT lifecycle, request_count, next_ordinal, nested_fact_count FROM agent_sessions WHERE agent_session_id = ?1", [session_id],
     ).await.map_err(to_query_error)?;
@@ -73,26 +90,29 @@ async fn load_state(
         .await
         .map_err(to_query_error)?
         .ok_or_else(|| StoreError::NotFound("agent session not found".to_string()))?;
-    Ok((
-        row.get(0).map_err(to_query_error)?,
-        row.get(1).map_err(to_query_error)?,
-        row.get(2).map_err(to_query_error)?,
-        row.get(3).map_err(to_query_error)?,
-    ))
+    let lifecycle: String = row.get(0).map_err(to_query_error)?;
+    Ok(SessionWriteState {
+        lifecycle: SessionLifecycleState::try_from(lifecycle.as_str())
+            .map_err(|error| StoreError::Serialization(error.to_string()))?,
+        request_count: row.get(1).map_err(to_query_error)?,
+        next_ordinal: row.get(2).map_err(to_query_error)?,
+        nested_fact_count: row.get(3).map_err(to_query_error)?,
+    })
 }
 
 async fn append_request(
     transaction: &libsql::Transaction,
     session_id: &str,
     request: &PreparedRequest<'_>,
-    state: &(String, i64, i64, i64),
+    state: &SessionWriteState,
 ) -> Result<bool, StoreError> {
     let link = request.record;
-    let can_append = state.0 == "open"
-        && state.1 < i64::try_from(gateway_core::MAX_AGENT_SESSION_REQUESTS).unwrap_or(i64::MAX);
+    let can_append = state.lifecycle == SessionLifecycleState::Open
+        && state.request_count
+            < i64::try_from(gateway_core::MAX_AGENT_SESSION_REQUESTS).unwrap_or(i64::MAX);
     if can_append {
         let inserted = transaction.execute("INSERT INTO agent_session_requests (agent_session_id, request_id, request_log_id, usage_event_id, ordinal, execution_id, parent_execution_id, normalized_session_id, correlation_confidence, limitation_codes_json, occurred_at, completed_at, terminal_success) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) ON CONFLICT (agent_session_id, request_id) DO NOTHING",
-            libsql::params![session_id, link.request_id.as_str(), request.log_id.as_deref(), request.usage_id.as_deref(), state.2,
+            libsql::params![session_id, link.request_id.as_str(), request.log_id.as_deref(), request.usage_id.as_deref(), state.next_ordinal,
                 link.execution_id.as_deref(), link.parent_execution_id.as_deref(), link.normalized_session_id.as_deref(),
                 request.confidence.as_str(), request.limitations.as_str(), request.occurred_at, request.completed_at, link.terminal_success.map(i64::from)],
         ).await.map_err(to_query_error)?;
@@ -129,7 +149,7 @@ async fn append_request(
             "conflicting session request disappeared".to_string(),
         ));
     }
-    if state.0 == "open" {
+    if state.lifecycle == SessionLifecycleState::Open {
         transaction.execute("UPDATE agent_sessions SET lifecycle = 'finalized', ended_at = input_watermark_at / 1000, finalized_reason = 'request_limit', input_generation = input_generation + 1, updated_at = MAX(updated_at, ?2) WHERE agent_session_id = ?1",
             libsql::params![session_id, request.activity_at / 1000]).await.map_err(to_query_error)?;
     }

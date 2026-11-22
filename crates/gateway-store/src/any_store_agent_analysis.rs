@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use gateway_core::{
-    AgentAnalysisQueueRecord, AgentAnalysisQueueRepository, AgentRequestLogLinkRecord,
-    AgentSessionAnalysisRecord, AgentSessionInput, AgentSessionInputAppendResult,
-    AgentSessionListPage, AgentSessionListQuery, AgentSessionRecord, AgentSessionReportRepository,
-    AgentSessionSourceRecord, AgentSessionTraceRecord, AgentSessionTraceRepository,
-    RequestAttemptRecord, StoreError,
+    AgentAnalysisLease, AgentAnalysisQueueRecord, AgentAnalysisQueueRepository,
+    AgentRequestLogLinkRecord, AgentSessionAnalysisRecord, AgentSessionInput,
+    AgentSessionInputAppendResult, AgentSessionListPage, AgentSessionListQuery, AgentSessionRecord,
+    AgentSessionReportRepository, AgentSessionSourceRecord, AgentSessionTraceRecord,
+    AgentSessionTraceRepository, RequestAttemptRecord, StoreError,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -68,16 +68,25 @@ impl AgentSessionTraceRepository for AnyStore {
         &self,
         session: &AgentSessionRecord,
         expected_input_watermark_at: OffsetDateTime,
+        analysis: Option<&AgentAnalysisQueueRecord>,
     ) -> Result<bool, StoreError> {
         match self {
             Self::Libsql(store) => {
                 store
-                    .finalize_agent_session_if_unchanged(session, expected_input_watermark_at)
+                    .finalize_agent_session_if_unchanged(
+                        session,
+                        expected_input_watermark_at,
+                        analysis,
+                    )
                     .await
             }
             Self::Postgres(store) => {
                 store
-                    .finalize_agent_session_if_unchanged(session, expected_input_watermark_at)
+                    .finalize_agent_session_if_unchanged(
+                        session,
+                        expected_input_watermark_at,
+                        analysis,
+                    )
                     .await
             }
         }
@@ -92,6 +101,17 @@ impl AgentSessionTraceRepository for AnyStore {
             Self::Postgres(store) => store.append_agent_session_input(input).await,
         }
     }
+    async fn list_idle_agent_sessions(
+        &self,
+        cutoff: OffsetDateTime,
+        limit: u32,
+    ) -> Result<Vec<AgentSessionRecord>, StoreError> {
+        match self {
+            Self::Libsql(store) => store.list_idle_agent_sessions(cutoff, limit).await,
+            Self::Postgres(store) => store.list_idle_agent_sessions(cutoff, limit).await,
+        }
+    }
+
     async fn list_agent_session_request_attempts(
         &self,
         session_id: Uuid,
@@ -147,10 +167,11 @@ impl AgentSessionReportRepository for AnyStore {
     async fn append_agent_session_analysis(
         &self,
         analysis: &AgentSessionAnalysisRecord,
+        lease: Option<AgentAnalysisLease<'_>>,
     ) -> Result<bool, StoreError> {
         match self {
-            Self::Libsql(store) => store.append_agent_session_analysis(analysis).await,
-            Self::Postgres(store) => store.append_agent_session_analysis(analysis).await,
+            Self::Libsql(store) => store.append_agent_session_analysis(analysis, lease).await,
+            Self::Postgres(store) => store.append_agent_session_analysis(analysis, lease).await,
         }
     }
 
@@ -161,25 +182,6 @@ impl AgentSessionReportRepository for AnyStore {
         match self {
             Self::Libsql(store) => store.list_agent_sessions(query).await,
             Self::Postgres(store) => store.list_agent_sessions(query).await,
-        }
-    }
-
-    async fn mark_agent_session_analyses_stale(
-        &self,
-        session_id: Uuid,
-        superseded_by: Option<Uuid>,
-    ) -> Result<u64, StoreError> {
-        match self {
-            Self::Libsql(store) => {
-                store
-                    .mark_agent_session_analyses_stale(session_id, superseded_by)
-                    .await
-            }
-            Self::Postgres(store) => {
-                store
-                    .mark_agent_session_analyses_stale(session_id, superseded_by)
-                    .await
-            }
         }
     }
 }
@@ -210,20 +212,19 @@ impl AgentAnalysisQueueRepository for AnyStore {
 
     async fn renew_agent_analysis_lease(
         &self,
-        item_id: Uuid,
-        owner: &str,
+        lease: AgentAnalysisLease<'_>,
         updated_at: OffsetDateTime,
         expires_at: OffsetDateTime,
     ) -> Result<bool, StoreError> {
         match self {
             Self::Libsql(store) => {
                 store
-                    .renew_agent_analysis_lease(item_id, owner, updated_at, expires_at)
+                    .renew_agent_analysis_lease(lease, updated_at, expires_at)
                     .await
             }
             Self::Postgres(store) => {
                 store
-                    .renew_agent_analysis_lease(item_id, owner, updated_at, expires_at)
+                    .renew_agent_analysis_lease(lease, updated_at, expires_at)
                     .await
             }
         }
@@ -231,28 +232,18 @@ impl AgentAnalysisQueueRepository for AnyStore {
 
     async fn complete_agent_analysis(
         &self,
-        item_id: Uuid,
-        owner: &str,
+        lease: AgentAnalysisLease<'_>,
         completed_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
         match self {
-            Self::Libsql(store) => {
-                store
-                    .complete_agent_analysis(item_id, owner, completed_at)
-                    .await
-            }
-            Self::Postgres(store) => {
-                store
-                    .complete_agent_analysis(item_id, owner, completed_at)
-                    .await
-            }
+            Self::Libsql(store) => store.complete_agent_analysis(lease, completed_at).await,
+            Self::Postgres(store) => store.complete_agent_analysis(lease, completed_at).await,
         }
     }
 
     async fn fail_agent_analysis(
         &self,
-        item_id: Uuid,
-        owner: &str,
+        lease: AgentAnalysisLease<'_>,
         error: &str,
         retry_at: Option<OffsetDateTime>,
         updated_at: OffsetDateTime,
@@ -260,12 +251,12 @@ impl AgentAnalysisQueueRepository for AnyStore {
         match self {
             Self::Libsql(store) => {
                 store
-                    .fail_agent_analysis(item_id, owner, error, retry_at, updated_at)
+                    .fail_agent_analysis(lease, error, retry_at, updated_at)
                     .await
             }
             Self::Postgres(store) => {
                 store
-                    .fail_agent_analysis(item_id, owner, error, retry_at, updated_at)
+                    .fail_agent_analysis(lease, error, retry_at, updated_at)
                     .await
             }
         }

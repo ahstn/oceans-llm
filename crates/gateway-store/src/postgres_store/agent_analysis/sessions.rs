@@ -144,9 +144,45 @@ impl AgentSessionTraceRepository for PostgresStore {
         &self,
         session: &AgentSessionRecord,
         expected_input_watermark_at: OffsetDateTime,
+        analysis: Option<&AgentAnalysisQueueRecord>,
     ) -> Result<bool, StoreError> {
-        let result = sqlx::query("UPDATE agent_sessions SET lifecycle = 'finalized', boundary_confidence = $2, ended_at = $3, input_watermark_at = GREATEST(input_watermark_at, $4), finalized_reason = $5, updated_at = GREATEST(updated_at, $6), input_generation = input_generation + 1 WHERE agent_session_id = $1 AND lifecycle = 'open' AND input_watermark_at = $7")
-            .bind(session.agent_session_id.to_string()).bind(enum_name(session.boundary_confidence)?).bind(session.ended_at.map(OffsetDateTime::unix_timestamp)).bind(datetime_to_unix_millis(session.input_watermark_at)?).bind(session.finalized_reason.as_deref()).bind(session.updated_at.unix_timestamp()).bind(datetime_to_unix_millis(expected_input_watermark_at)?).execute(&self.pool).await.map_err(to_query_error)?;
+        let session_id = session.agent_session_id.to_string();
+        let confidence = enum_name(session.boundary_confidence)?;
+        let watermark = datetime_to_unix_millis(session.input_watermark_at)?;
+        let expected = datetime_to_unix_millis(expected_input_watermark_at)?;
+        let analysis = analysis
+            .map(|item| {
+                crate::agent_session_jobs::PreparedAnalysis::for_session(
+                    item,
+                    session.agent_session_id,
+                )
+            })
+            .transpose()?;
+        let mut transaction = self.pool.begin().await.map_err(to_query_error)?;
+        let result = sqlx::query(FINALIZE_SESSION_SQL)
+            .bind(&session_id)
+            .bind(confidence)
+            .bind(session.ended_at.map(OffsetDateTime::unix_timestamp))
+            .bind(watermark)
+            .bind(session.finalized_reason.as_deref())
+            .bind(session.updated_at.unix_timestamp())
+            .bind(expected)
+            .execute(&mut *transaction)
+            .await
+            .map_err(to_query_error)?;
+        if result.rows_affected() > 0 {
+            if let Some(analysis) = analysis {
+                super::queue::enqueue_on(&mut transaction, &analysis).await?;
+            } else {
+                super::queue::wake_on(
+                    &mut transaction,
+                    &session_id,
+                    session.updated_at.unix_timestamp(),
+                )
+                .await?;
+            }
+        }
+        transaction.commit().await.map_err(to_query_error)?;
         Ok(result.rows_affected() > 0)
     }
 
@@ -156,6 +192,24 @@ impl AgentSessionTraceRepository for PostgresStore {
     ) -> Result<AgentSessionInputAppendResult, StoreError> {
         self.append_session_input(input).await
     }
+    async fn list_idle_agent_sessions(
+        &self,
+        cutoff: OffsetDateTime,
+        limit: u32,
+    ) -> Result<Vec<AgentSessionRecord>, StoreError> {
+        let sql = format!(
+            "SELECT {SESSION_COLUMNS} FROM agent_sessions WHERE lifecycle = 'open' AND started_at < $1 AND input_watermark_at < $2 ORDER BY input_watermark_at, agent_session_id LIMIT $3"
+        );
+        let rows = sqlx::query(&sql)
+            .bind(cutoff.unix_timestamp())
+            .bind(datetime_to_unix_millis(cutoff)?)
+            .bind(i64::from(limit.clamp(1, MAX_AGENT_SESSION_PAGE_SIZE)))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_query_error)?;
+        rows.iter().map(decode_session).collect()
+    }
+
     async fn list_agent_session_request_attempts(
         &self,
         agent_session_id: Uuid,
@@ -189,22 +243,7 @@ impl AgentSessionTraceRepository for PostgresStore {
         &self,
         agent_session_id: Uuid,
     ) -> Result<Vec<AgentObservationSetRecord>, StoreError> {
-        let rows = sqlx::query(
-            "SELECT observation_set_id FROM agent_inferred_observation_sets WHERE agent_session_id = $1 ORDER BY source_watermark_at, created_at, observation_set_id LIMIT 1001",
-        )
-        .bind(agent_session_id.to_string())
-        .fetch_all(&self.pool)
-        .await
-        .map_err(to_query_error)?;
-        let mut sets = Vec::with_capacity(rows.len());
-        for row in rows {
-            let id = parse_uuid(&row.try_get::<String, _>(0).map_err(to_query_error)?)?;
-            let set = self.query_observation_set_by_id(id).await?.ok_or_else(|| {
-                StoreError::Unexpected("agent observation set disappeared".to_string())
-            })?;
-            sets.push(set);
-        }
-        Ok(sets)
+        self.load_session_observation_sets(agent_session_id).await
     }
 
     async fn link_request_log_to_agent_session(
@@ -232,8 +271,9 @@ impl AgentSessionTraceRepository for PostgresStore {
         &self,
         agent_session_id: Uuid,
     ) -> Result<Option<AgentSessionTraceRecord>, StoreError> {
-        let session_sql =
-            format!("SELECT {SESSION_COLUMNS} FROM agent_sessions WHERE agent_session_id = $1");
+        let session_sql = format!(
+            "SELECT {SESSION_COLUMNS}, input_generation FROM agent_sessions WHERE agent_session_id = $1"
+        );
         let session_row = sqlx::query(&session_sql)
             .bind(agent_session_id.to_string())
             .fetch_optional(&self.pool)
@@ -243,6 +283,7 @@ impl AgentSessionTraceRepository for PostgresStore {
             return Ok(None);
         };
         let session = decode_session(&session_row)?;
+        let input_generation = session_row.try_get(23).map_err(to_query_error)?;
         let session_source = if let Some(session_source_id) = session.agent_session_source_id {
             let sql = format!(
                 "SELECT {SESSION_SOURCE_COLUMNS} FROM agent_session_sources WHERE agent_session_source_id = $1"
@@ -272,7 +313,7 @@ impl AgentSessionTraceRepository for PostgresStore {
             .collect::<Result<Vec<_>, _>>()?;
         let latest_observation_set = self.load_observation_set(agent_session_id).await?;
         let analysis_sql = format!(
-            "SELECT {ANALYSIS_COLUMNS} FROM agent_session_analyses WHERE agent_session_id = $1 AND stale = 0 ORDER BY analyzed_at DESC LIMIT 1"
+            "SELECT {ANALYSIS_COLUMNS} FROM agent_session_analyses WHERE agent_session_id = $1 AND stale = 0 AND input_generation = (SELECT input_generation FROM agent_sessions WHERE agent_session_id = $1) ORDER BY analyzed_at DESC, analysis_id DESC LIMIT 1"
         );
         let latest_analysis = sqlx::query(&analysis_sql)
             .bind(agent_session_id.to_string())
@@ -284,6 +325,7 @@ impl AgentSessionTraceRepository for PostgresStore {
             .transpose()?;
         Ok(Some(AgentSessionTraceRecord {
             session,
+            input_generation,
             session_source,
             requests,
             latest_observation_set,
@@ -291,3 +333,11 @@ impl AgentSessionTraceRepository for PostgresStore {
         }))
     }
 }
+
+const FINALIZE_SESSION_SQL: &str = r"
+UPDATE agent_sessions
+SET lifecycle = 'finalized', boundary_confidence = $2, ended_at = $3,
+    input_watermark_at = GREATEST(input_watermark_at, $4), finalized_reason = $5,
+    updated_at = GREATEST(updated_at, $6), input_generation = input_generation + 1
+WHERE agent_session_id = $1 AND lifecycle = 'open' AND input_watermark_at = $7
+";

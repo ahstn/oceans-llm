@@ -3,16 +3,28 @@ use std::collections::HashSet;
 
 use gateway_core::{
     AgentObservationSetRecord, AgentSessionInput, AgentSessionRequestLinkRecord,
-    MAX_AGENT_SESSION_NESTED_FACTS, StoreError,
+    MAX_AGENT_SESSION_NESTED_FACTS, SessionLifecycleState, StoreError,
 };
 use serde::Serialize;
 
 use crate::shared::{datetime_to_unix_millis, serialize_json};
 
+#[derive(sqlx::FromRow)]
+pub(crate) struct SessionWriteState {
+    // FromRow supplies 'a for the row borrow; the enum conversion retains no borrow.
+    #[sqlx(try_from = "&'a str")]
+    pub lifecycle: SessionLifecycleState,
+    pub request_count: i64,
+    pub next_ordinal: i64,
+    pub nested_fact_count: i64,
+}
+
 pub(crate) struct PreparedInput<'a> {
     pub session_id: String,
     pub request: Option<PreparedRequest<'a>>,
     pub observations: Option<PreparedObservations<'a>>,
+    pub analysis: Option<crate::agent_session_jobs::PreparedAnalysis<'a>>,
+    pub wake_at: i64,
 }
 
 pub(crate) struct PreparedRequest<'a> {
@@ -85,10 +97,24 @@ impl<'a> PreparedInput<'a> {
                 })
             })
             .transpose()?;
+        let analysis = input
+            .analysis
+            .map(|item| crate::agent_session_jobs::PreparedAnalysis::for_session(item, session_id))
+            .transpose()?;
+        let wake_at = input.observations.map_or_else(
+            || {
+                request
+                    .as_ref()
+                    .map_or(0, |request| request.activity_at / 1000)
+            },
+            |sets| sets.set.created_at.unix_timestamp(),
+        );
         Ok(Self {
             session_id: session_id.to_string(),
             request,
             observations,
+            analysis,
+            wake_at,
         })
     }
 }

@@ -195,7 +195,7 @@ pub(super) async fn seed_demo_agent_session(
     finalized_session.finalized_reason = Some("local_demo_seed".to_string());
     finalized_session.updated_at = ended_at;
     if !store
-        .finalize_agent_session_if_unchanged(&finalized_session, expected_input_watermark_at)
+        .finalize_agent_session_if_unchanged(&finalized_session, expected_input_watermark_at, None)
         .await
         .context("failed finalizing demo agent session")?
     {

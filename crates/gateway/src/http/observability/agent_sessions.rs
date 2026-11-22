@@ -149,7 +149,16 @@ pub async fn list_agent_sessions(
         items: page
             .items
             .iter()
-            .map(|trace| agent_session_summary(trace, access.score_visible))
+            .map(|summary| {
+                agent_session_summary(
+                    &summary.session,
+                    summary.session_source_hash.as_deref(),
+                    summary.harness_label.as_deref(),
+                    summary.request_count,
+                    summary.latest_analysis.as_ref(),
+                    access.score_visible,
+                )
+            })
             .collect(),
         page: page.page,
         page_size: page.page_size,
@@ -349,7 +358,20 @@ pub async fn get_agent_session_detail(
         });
     let session_source = trace.session_source.as_ref().map(agent_session_source_view);
     Ok(Json(envelope(AgentSessionDetailView {
-        session: agent_session_summary(&trace, access.score_visible),
+        session: agent_session_summary(
+            &trace.session,
+            trace
+                .session_source
+                .as_ref()
+                .map(|source| source.normalized_session_id.as_str()),
+            trace
+                .session_source
+                .as_ref()
+                .map(|source| source.harness_label.as_str()),
+            u64::try_from(trace.requests.len()).unwrap_or(u64::MAX),
+            trace.latest_analysis.as_ref(),
+            access.score_visible,
+        ),
         session_source,
         requests,
         request_history_truncated: trace.requests.len()

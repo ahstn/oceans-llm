@@ -16,6 +16,8 @@ use crate::tests::{create_postgres_test_database, drop_postgres_test_database};
 use crate::{LibsqlStore, PostgresStore, StoreConnectionOptions};
 
 mod contracts;
+mod generation;
+mod hydration;
 #[tokio::test]
 #[serial]
 async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
@@ -450,6 +452,9 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         configuration_version: report.configuration_version.clone(),
         boundary_policy_version: session.boundary_policy_version.clone(),
         input_watermark_at: session.input_watermark_at,
+        input_generation: contracts::CounterStore::counters(&store, session.agent_session_id)
+            .await
+            .3,
         observation_set_id: third_observation_set.observation_set_id,
         observation_parser_version: third_observation_set.parser_version.clone(),
         pricing_policy_version: "cache-aware-v1".to_string(),
@@ -469,26 +474,32 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     };
     assert!(
         store
-            .append_agent_session_analysis(&analysis)
+            .append_agent_session_analysis(&analysis, None)
             .await
             .expect("analysis")
     );
     assert!(
         !store
-            .append_agent_session_analysis(&AgentSessionAnalysisRecord {
-                analysis_id: Uuid::new_v4(),
-                ..analysis.clone()
-            })
+            .append_agent_session_analysis(
+                &AgentSessionAnalysisRecord {
+                    analysis_id: Uuid::new_v4(),
+                    ..analysis.clone()
+                },
+                None
+            )
             .await
             .expect("duplicate analysis")
     );
     assert!(
         !store
-            .append_agent_session_analysis(&AgentSessionAnalysisRecord {
-                analyzed_at: analysis.analyzed_at + Duration::seconds(1),
-                expires_at: analysis.expires_at + Duration::seconds(1),
-                ..analysis.clone()
-            })
+            .append_agent_session_analysis(
+                &AgentSessionAnalysisRecord {
+                    analyzed_at: analysis.analyzed_at + Duration::seconds(1),
+                    expires_at: analysis.expires_at + Duration::seconds(1),
+                    ..analysis.clone()
+                },
+                None
+            )
             .await
             .expect("retry analysis")
     );
@@ -496,13 +507,16 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     reconfigured_report.configuration_version = "config-v2".to_string();
     assert!(
         store
-            .append_agent_session_analysis(&AgentSessionAnalysisRecord {
-                analysis_id: Uuid::new_v4(),
-                configuration_version: reconfigured_report.configuration_version.clone(),
-                report: reconfigured_report,
-                stale: true,
-                ..analysis.clone()
-            })
+            .append_agent_session_analysis(
+                &AgentSessionAnalysisRecord {
+                    analysis_id: Uuid::new_v4(),
+                    configuration_version: reconfigured_report.configuration_version.clone(),
+                    report: reconfigured_report,
+                    stale: true,
+                    ..analysis.clone()
+                },
+                None
+            )
             .await
             .expect("reconfigured analysis")
     );
@@ -514,28 +528,39 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     advanced_session.finalized_reason = Some("idle_gap".to_string());
     assert!(
         store
-            .finalize_agent_session_if_unchanged(&advanced_session, session.input_watermark_at)
+            .finalize_agent_session_if_unchanged(
+                &advanced_session,
+                session.input_watermark_at,
+                None
+            )
             .await
             .expect("finalize and advance session watermark")
     );
-    assert!(matches!(
-        store
-            .append_agent_session_analysis(&AgentSessionAnalysisRecord {
-                analysis_id: Uuid::new_v4(),
-                cohort_version: "late-worker-v1".to_string(),
-                ..analysis.clone()
-            })
-            .await,
-        Err(StoreError::Conflict(_))
-    ));
+    assert!(
+        !store
+            .append_agent_session_analysis(
+                &AgentSessionAnalysisRecord {
+                    analysis_id: Uuid::new_v4(),
+                    cohort_version: "late-worker-v1".to_string(),
+                    ..analysis.clone()
+                },
+                None
+            )
+            .await
+            .expect("ignore obsolete generation")
+    );
     assert!(
         store
-            .append_agent_session_analysis(&AgentSessionAnalysisRecord {
-                analysis_id: Uuid::new_v4(),
-                input_watermark_at: advanced_session.input_watermark_at,
-                analyzed_at: now + Duration::seconds(1),
-                ..analysis.clone()
-            })
+            .append_agent_session_analysis(
+                &AgentSessionAnalysisRecord {
+                    analysis_id: Uuid::new_v4(),
+                    input_watermark_at: advanced_session.input_watermark_at,
+                    input_generation: analysis.input_generation + 1,
+                    analyzed_at: now + Duration::seconds(1),
+                    ..analysis.clone()
+                },
+                None
+            )
             .await
             .expect("finalized watermark analysis")
     );
@@ -553,13 +578,17 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     assert!(
         matches!(
             store
-                .append_agent_session_analysis(&AgentSessionAnalysisRecord {
-                    analysis_id: Uuid::new_v4(),
-                    agent_session_id: foreign_session.agent_session_id,
-                    input_watermark_at: foreign_session.input_watermark_at,
-                    cohort_version: "foreign-observation-v1".to_string(),
-                    ..analysis.clone()
-                })
+                .append_agent_session_analysis(
+                    &AgentSessionAnalysisRecord {
+                        analysis_id: Uuid::new_v4(),
+                        agent_session_id: foreign_session.agent_session_id,
+                        input_watermark_at: foreign_session.input_watermark_at,
+                        input_generation: 0,
+                        cohort_version: "foreign-observation-v1".to_string(),
+                        ..analysis.clone()
+                    },
+                    None
+                )
                 .await,
             Err(StoreError::Conflict(_))
         ),
@@ -730,6 +759,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         },
         status: AgentAnalysisQueueStatus::Pending,
         lease_owner: None,
+        lease_epoch: 0,
         lease_expires_at: None,
         attempts: 0,
         max_attempts: 3,
@@ -747,11 +777,18 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .expect("queue item");
     assert_eq!(claimed.status, AgentAnalysisQueueStatus::Leased);
     assert_eq!(claimed.attempts, 1);
+    let lease = gateway_core::AgentAnalysisLease {
+        queue_item_id: claimed.queue_item_id,
+        owner: "worker",
+        epoch: claimed.lease_epoch,
+    };
     assert!(
         !store
             .renew_agent_analysis_lease(
-                queue.queue_item_id,
-                "stale-worker",
+                gateway_core::AgentAnalysisLease {
+                    owner: "stale-worker",
+                    ..lease
+                },
                 now + Duration::seconds(10),
                 now + Duration::seconds(70),
             )
@@ -761,8 +798,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     assert!(
         store
             .renew_agent_analysis_lease(
-                queue.queue_item_id,
-                "worker",
+                lease,
                 now + Duration::seconds(10),
                 now + Duration::seconds(70),
             )
@@ -772,15 +808,17 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     assert!(
         store
             .complete_agent_analysis(
-                queue.queue_item_id,
-                "stale-worker",
+                gateway_core::AgentAnalysisLease {
+                    owner: "stale-worker",
+                    ..lease
+                },
                 now + Duration::seconds(1),
             )
             .await
             .is_err()
     );
     store
-        .complete_agent_analysis(queue.queue_item_id, "worker", now + Duration::seconds(2))
+        .complete_agent_analysis(lease, now + Duration::seconds(2))
         .await
         .expect("complete");
 
@@ -889,6 +927,8 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     contracts::finalization_is_irreversible(&store, &session).await;
     contracts::atomic_input_invariants(&store, &session).await;
     contracts::concurrent_open_window(&store, &session).await;
+    generation::generation_jobs(&store, &session).await;
+    hydration::bulk_hydration(&store, &session).await;
 
     store
         .connection()
@@ -1053,6 +1093,8 @@ async fn postgres_agent_session_dimensions_round_trip_and_filter() {
     contracts::atomic_input_invariants(&store, &session).await;
     contracts::concurrent_open_window(&store, &session).await;
     contracts::postgres_input_allows_foreign_key_readers(&store, &session).await;
+    generation::generation_jobs(&store, &session).await;
+    hydration::bulk_hydration(&store, &session).await;
 
     store.pool().close().await;
     drop_postgres_test_database(&test_db).await;

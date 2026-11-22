@@ -36,6 +36,14 @@ pub enum SessionLifecycleState {
     Finalized,
 }
 
+impl TryFrom<&str> for SessionLifecycleState {
+    type Error = serde::de::value::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::deserialize(serde::de::value::StrDeserializer::new(value))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GatewayOutcomeState {

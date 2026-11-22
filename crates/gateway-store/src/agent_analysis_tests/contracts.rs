@@ -48,7 +48,7 @@ pub(super) async fn finalization_is_irreversible(
     };
     assert!(
         store
-            .finalize_agent_session_if_unchanged(&finalized, open.input_watermark_at)
+            .finalize_agent_session_if_unchanged(&finalized, open.input_watermark_at, None)
             .await
             .unwrap()
     );
@@ -61,7 +61,7 @@ pub(super) async fn finalization_is_irreversible(
     assert!(!store.insert_agent_session_if_absent(&open).await.unwrap());
     assert!(
         !store
-            .finalize_agent_session_if_unchanged(&open, open.input_watermark_at)
+            .finalize_agent_session_if_unchanged(&open, open.input_watermark_at, None)
             .await
             .unwrap()
     );
@@ -88,6 +88,7 @@ pub(super) async fn finalization_is_irreversible(
 
 pub(super) trait CounterStore: AgentSessionTraceRepository + Sync {
     async fn counters(&self, session_id: Uuid) -> (i64, i64, i64, i64);
+    async fn migration_history(&self, session_id: Uuid) -> (i64, i64, i64, i64);
     async fn fixture_sql(&self, sql: &str);
 }
 
@@ -95,6 +96,19 @@ impl CounterStore for crate::LibsqlStore {
     async fn counters(&self, session_id: Uuid) -> (i64, i64, i64, i64) {
         let mut rows = self.connection().query(
             "SELECT request_count, next_ordinal, nested_fact_count, input_generation FROM agent_sessions WHERE agent_session_id = ?1",
+            [session_id.to_string()],
+        ).await.unwrap();
+        let row = rows.next().await.unwrap().unwrap();
+        (
+            row.get(0).unwrap(),
+            row.get(1).unwrap(),
+            row.get(2).unwrap(),
+            row.get(3).unwrap(),
+        )
+    }
+    async fn migration_history(&self, session_id: Uuid) -> (i64, i64, i64, i64) {
+        let mut rows = self.connection().query(
+            "SELECT COUNT(*), COALESCE(SUM(stale), 0), COUNT(superseded_by_analysis_id), (SELECT COUNT(*) FROM agent_analysis_recompute_queue WHERE agent_session_id = ?1) FROM agent_session_analyses WHERE agent_session_id = ?1",
             [session_id.to_string()],
         ).await.unwrap();
         let row = rows.next().await.unwrap().unwrap();
@@ -115,12 +129,16 @@ impl CounterStore for crate::PostgresStore {
         sqlx::query_as("SELECT request_count, next_ordinal, nested_fact_count, input_generation FROM agent_sessions WHERE agent_session_id = $1")
             .bind(session_id.to_string()).fetch_one(self.pool()).await.unwrap()
     }
+    async fn migration_history(&self, session_id: Uuid) -> (i64, i64, i64, i64) {
+        sqlx::query_as("SELECT COUNT(*), COALESCE(SUM(stale), 0), COUNT(superseded_by_analysis_id), (SELECT COUNT(*) FROM agent_analysis_recompute_queue WHERE agent_session_id = $1) FROM agent_session_analyses WHERE agent_session_id = $1")
+            .bind(session_id.to_string()).fetch_one(self.pool()).await.unwrap()
+    }
     async fn fixture_sql(&self, sql: &str) {
         sqlx::raw_sql(sql).execute(self.pool()).await.unwrap();
     }
 }
 
-fn open_fixture(template: &AgentSessionRecord) -> AgentSessionRecord {
+pub(super) fn open_fixture(template: &AgentSessionRecord) -> AgentSessionRecord {
     AgentSessionRecord {
         agent_session_id: Uuid::new_v4(),
         boundary_group_key: Uuid::new_v4().to_string(),
@@ -131,7 +149,7 @@ fn open_fixture(template: &AgentSessionRecord) -> AgentSessionRecord {
     }
 }
 
-fn request_fixture(session: &AgentSessionRecord) -> AgentSessionRequestLinkRecord {
+pub(super) fn request_fixture(session: &AgentSessionRecord) -> AgentSessionRequestLinkRecord {
     AgentSessionRequestLinkRecord {
         agent_session_id: session.agent_session_id,
         request_id: Uuid::new_v4().to_string(),
@@ -149,7 +167,7 @@ fn request_fixture(session: &AgentSessionRecord) -> AgentSessionRequestLinkRecor
     }
 }
 
-fn observation_fixture(
+pub(super) fn observation_fixture(
     request: &AgentSessionRequestLinkRecord,
     tools: usize,
 ) -> gateway_core::AgentObservationSetRecord {
@@ -199,7 +217,7 @@ pub(super) async fn install_legacy_schema(options: &crate::StoreConnectionOption
 }
 
 pub(super) async fn counter_backfill(
-    store: &impl CounterStore,
+    store: &(impl CounterStore + gateway_core::AgentAnalysisQueueRepository),
     template: &AgentSessionRecord,
     options: &crate::StoreConnectionOptions,
 ) {
@@ -224,8 +242,23 @@ pub(super) async fn counter_backfill(
     store.fixture_sql(&format!(
         "INSERT INTO agent_inferred_observations (observation_id, observation_set_id, agent_session_id, kind, source_request_id, evidence, occurred_at, facts_json, limitation_codes_json) VALUES ('{observation_id}', '{set_id}', '{id}', 'session_metadata_classified', 'legacy-a', 'direct', {seconds}, '{{\"supplied_tools\":[{{\"name\":\"a\",\"token_estimate\":1}},{{\"name\":\"b\",\"token_estimate\":1}},{{\"name\":\"c\",\"token_estimate\":1}}]}}', '[]')"
     )).await;
+    install_legacy_history(store, &session, set_id).await;
     crate::run_migrations_with_options(options).await.unwrap();
     assert_eq!(store.counters(id).await, (2, 8, 3, 3));
+    assert_eq!(store.migration_history(id).await, (2, 2, 1, 1));
+    let migrated = store
+        .claim_agent_analysis(
+            "upgrade-worker",
+            session.input_watermark_at,
+            session.input_watermark_at + Duration::minutes(1),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(migrated.agent_session_id, id);
+    assert_eq!(migrated.desired_versions.configuration_version, "legacy-v2");
+    assert_eq!(migrated.attempts, 1);
+    assert_eq!(migrated.lease_epoch, 1);
     let request = request_fixture(&session);
     store
         .append_agent_session_input(gateway_core::AgentSessionInput::request(&request))
@@ -271,6 +304,7 @@ pub(super) async fn atomic_input_invariants(
             truncated_set: &observations,
             maximum_nested_facts: MAX_AGENT_SESSION_NESTED_FACTS,
         }),
+        analysis: None,
     };
     let result = store.append_agent_session_input(input).await.unwrap();
     assert!(result.request_inserted && result.observations_inserted);
@@ -297,6 +331,7 @@ pub(super) async fn atomic_input_invariants(
             truncated_set: &truncated,
             maximum_nested_facts: MAX_AGENT_SESSION_NESTED_FACTS,
         }),
+        analysis: None,
     };
     assert!(
         store
@@ -369,6 +404,7 @@ async fn assert_atomic_rollback(
     let input = gateway_core::AgentSessionInput {
         request: Some(&request),
         observations: gateway_core::AgentSessionInput::observations(&conflicting).observations,
+        analysis: None,
     };
     assert!(store.append_agent_session_input(input).await.is_err());
     assert_eq!(
@@ -451,4 +487,50 @@ pub(super) async fn postgres_input_allows_foreign_key_readers(
     .unwrap();
     assert!(result.request_inserted);
     foreign_key_reader.commit().await.unwrap();
+}
+
+async fn install_legacy_history(
+    store: &impl CounterStore,
+    session: &AgentSessionRecord,
+    set_id: Uuid,
+) {
+    let id = session.agent_session_id;
+    let seconds = session.started_at.unix_timestamp();
+    let watermark =
+        i64::try_from(session.input_watermark_at.unix_timestamp_nanos() / 1_000_000).unwrap();
+    let report = agent_session_analysis::analyze_session(
+        &agent_session_analysis::SessionTrace {
+            requests: vec![],
+            activity_intervals: vec![],
+            observations: vec![],
+            lifecycle: session.lifecycle,
+            boundary_confidence: session.boundary_confidence,
+            evidence: agent_session_analysis::TraceEvidence::default(),
+        },
+        &agent_session_analysis::AnalysisPolicy::default(),
+        None,
+    )
+    .unwrap();
+    let json = serde_json::to_string(&report).unwrap().replace('\'', "''");
+    let report_ids = [Uuid::new_v4(), Uuid::new_v4()];
+    for (index, analysis_id) in report_ids.iter().enumerate() {
+        store.fixture_sql(&format!(
+            "INSERT INTO agent_session_analyses (analysis_id, agent_session_id, report_schema_version, boundary_policy_version, input_watermark_at, observation_set_id, observation_parser_version, analyzer_version, score_policy_version, pricing_policy_version, cohort_version, cohort_fallback_level, cohort_sample_size, cohort_snapshot_digest, direct_mcp_snapshot_digest, analyzed_at, report_json, stale, expires_at, ownership_scope_key, configuration_version) VALUES ('{analysis_id}', '{id}', 'legacy', 'legacy', {watermark}, '{set_id}', 'contract', 'legacy', 'legacy', 'legacy', 'legacy-{index}', 7, 0, 'none', 'none', {seconds}, '{json}', 0, {seconds}, '{}', '')",
+            session.ownership_scope_key,
+        )).await;
+    }
+    store.fixture_sql(&format!("UPDATE agent_session_analyses SET superseded_by_analysis_id = '{}' WHERE analysis_id = '{}'", report_ids[1], report_ids[0])).await;
+    for (index, status) in [(1, "leased"), (2, "completed")] {
+        let queue_id = Uuid::new_v4();
+        let versions = serde_json::json!({
+            "report_schema_version": "legacy", "boundary_policy_version": "legacy",
+            "observation_parser_version": "contract", "analyzer_version": "legacy",
+            "score_policy_version": "legacy", "pricing_policy_version": "legacy", "cohort_version": "legacy",
+            "configuration_version": format!("legacy-v{index}"),
+        }).to_string();
+        let updated = seconds + index;
+        store.fixture_sql(&format!(
+            "INSERT INTO agent_analysis_recompute_queue (queue_item_id, agent_session_id, reason, desired_versions_json, status, lease_owner, lease_expires_at, attempts, max_attempts, available_at, created_at, updated_at) VALUES ('{queue_id}', '{id}', 'new_input', '{versions}', '{status}', 'legacy-worker', {updated}, 3, 3, {seconds}, {seconds}, {updated})"
+        )).await;
+    }
 }

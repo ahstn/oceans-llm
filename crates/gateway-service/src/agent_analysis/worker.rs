@@ -33,34 +33,46 @@ pub async fn enqueue_analysis_with_versions<S>(
 where
     S: AgentSessionAnalysisRepository + Sync,
 {
+    let item = analysis_request(agent_session_id, reason, dedupe_key, now, desired_versions);
     store
-        .enqueue_agent_analysis(&AgentAnalysisQueueRecord {
-            queue_item_id: stable_uuid(
-                QUEUE_ID_NAMESPACE,
-                &json!({
-                    "session": agent_session_id,
-                    "reason": reason,
-                    "versions": desired_versions,
-                    "dedupe_key": dedupe_key,
-                })
-                .to_string(),
-            ),
-            agent_session_id,
-            reason: reason.to_string(),
-            desired_versions: desired_versions.clone(),
-            status: AgentAnalysisQueueStatus::Pending,
-            lease_owner: None,
-            lease_expires_at: None,
-            attempts: 0,
-            max_attempts: 5,
-            last_error: None,
-            available_at: now,
-            created_at: now,
-            updated_at: now,
-            completed_at: None,
-        })
+        .enqueue_agent_analysis(&item)
         .await
         .map_err(Into::into)
+}
+
+pub(super) fn analysis_request(
+    agent_session_id: Uuid,
+    reason: &str,
+    dedupe_key: &str,
+    now: OffsetDateTime,
+    desired_versions: &AgentAnalysisDesiredVersions,
+) -> AgentAnalysisQueueRecord {
+    AgentAnalysisQueueRecord {
+        queue_item_id: stable_uuid(
+            QUEUE_ID_NAMESPACE,
+            &json!({
+                "session": agent_session_id,
+                "reason": reason,
+                "versions": desired_versions,
+                "dedupe_key": dedupe_key,
+            })
+            .to_string(),
+        ),
+        agent_session_id,
+        reason: reason.to_string(),
+        desired_versions: desired_versions.clone(),
+        status: AgentAnalysisQueueStatus::Pending,
+        lease_owner: None,
+        lease_epoch: 0,
+        lease_expires_at: None,
+        attempts: 0,
+        max_attempts: 5,
+        last_error: None,
+        available_at: now,
+        created_at: now,
+        updated_at: now,
+        completed_at: None,
+    }
 }
 
 pub async fn finalize_idle_sessions<S>(
@@ -74,17 +86,10 @@ where
     let cutoff = now - SESSION_IDLE_GAP;
     let mut finalized = 0_u64;
     for _ in 0..MAX_IDLE_FINALIZATION_PAGES {
-        let page = store
-            .list_agent_sessions(&AgentSessionListQuery {
-                page: 1,
-                page_size: gateway_core::MAX_AGENT_SESSION_PAGE_SIZE,
-                lifecycle: Some(SessionLifecycleState::Open),
-                started_before: Some(cutoff),
-                input_watermark_before: Some(cutoff),
-                ..Default::default()
-            })
+        let candidates = store
+            .list_idle_agent_sessions(cutoff, gateway_core::MAX_AGENT_SESSION_PAGE_SIZE)
             .await?;
-        let candidates: Vec<_> = page.items.into_iter().map(|trace| trace.session).collect();
+        let candidate_count = candidates.len();
         if candidates.is_empty() {
             break;
         }
@@ -96,27 +101,24 @@ where
             session.input_watermark_at = now;
             session.finalized_reason = Some("idle_gap".to_string());
             session.updated_at = now;
-            if !store
-                .finalize_agent_session_if_unchanged(&session, last_activity_at)
-                .await?
-            {
-                continue;
-            }
-            store
-                .mark_agent_session_analyses_stale(session.agent_session_id, None)
-                .await?;
-            enqueue_analysis_with_versions(
-                store,
+            let analysis = analysis_request(
                 session.agent_session_id,
                 "session_finalized",
                 &last_activity_at.unix_timestamp_nanos().to_string(),
                 now,
                 desired_versions,
-            )
-            .await?;
+            );
+            if !store
+                .finalize_agent_session_if_unchanged(&session, last_activity_at, Some(&analysis))
+                .await?
+            {
+                continue;
+            }
             finalized = finalized.saturating_add(1);
         }
-        if page.total <= u64::from(gateway_core::MAX_AGENT_SESSION_PAGE_SIZE) {
+        if candidate_count
+            < usize::try_from(gateway_core::MAX_AGENT_SESSION_PAGE_SIZE).unwrap_or(usize::MAX)
+        {
             break;
         }
         if finalized == finalized_before_page {
@@ -146,6 +148,11 @@ where
     else {
         return Ok(false);
     };
+    let lease = gateway_core::AgentAnalysisLease {
+        queue_item_id: queue.queue_item_id,
+        owner: lease_owner,
+        epoch: queue.lease_epoch,
+    };
     let current_versions = desired_versions_for_policy(policy);
     if queue.desired_versions.configuration_version != current_versions.configuration_version {
         enqueue_analysis_with_versions(
@@ -157,19 +164,10 @@ where
             &current_versions,
         )
         .await?;
-        store
-            .complete_agent_analysis(queue.queue_item_id, lease_owner, now)
-            .await?;
+        store.complete_agent_analysis(lease, now).await?;
         return Ok(true);
     }
-    let report = generate_report(
-        store,
-        queue.agent_session_id,
-        &queue.desired_versions,
-        now,
-        report_retention,
-        policy,
-    );
+    let report = generate_report(store, &queue, now, report_retention, policy);
     tokio::pin!(report);
     let lease_interval = std::time::Duration::from_secs(20);
     let mut heartbeat =
@@ -181,8 +179,7 @@ where
                 let renewed_at = OffsetDateTime::now_utc();
                 if !store
                     .renew_agent_analysis_lease(
-                        queue.queue_item_id,
-                        lease_owner,
+                        lease,
                         renewed_at,
                         renewed_at + Duration::minutes(1),
                     )
@@ -198,11 +195,7 @@ where
     match result {
         Ok(()) => {
             store
-                .complete_agent_analysis(
-                    queue.queue_item_id,
-                    lease_owner,
-                    OffsetDateTime::now_utc(),
-                )
+                .complete_agent_analysis(lease, OffsetDateTime::now_utc())
                 .await?;
             Ok(true)
         }
@@ -210,13 +203,7 @@ where
             let retry_at = (queue.attempts < queue.max_attempts)
                 .then_some(now + Duration::seconds(i64::from(queue.attempts.max(1)) * 5));
             store
-                .fail_agent_analysis(
-                    queue.queue_item_id,
-                    lease_owner,
-                    &error.to_string(),
-                    retry_at,
-                    now,
-                )
+                .fail_agent_analysis(lease, &error.to_string(), retry_at, now)
                 .await?;
             Err(error)
         }

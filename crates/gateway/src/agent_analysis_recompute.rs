@@ -2,7 +2,7 @@ use anyhow::{Context, bail};
 use gateway::{cli::RecomputeAgentAnalysisArgs, config::GatewayConfig};
 use gateway_core::{
     AgentAnalysisDesiredVersions, AgentSessionListQuery, AgentSessionReportRepository,
-    AgentSessionTraceRecord, AgentSessionTraceRepository, SessionLifecycleState,
+    AgentSessionSummaryRecord, AgentSessionTraceRepository, SessionLifecycleState,
 };
 use gateway_service::{desired_versions_for_policy, enqueue_agent_analysis_with_versions};
 use gateway_store::AnyStore;
@@ -72,7 +72,7 @@ pub async fn run_command(
         let dedupe_key = format!(
             "{}:{}",
             session.agent_session_id,
-            session.input_watermark_at.unix_timestamp_nanos()
+            now.unix_timestamp_nanos()
         );
         if enqueue_agent_analysis_with_versions(
             &store,
@@ -95,13 +95,14 @@ pub async fn run_command(
 }
 
 fn analysis_is_current(
-    trace: &AgentSessionTraceRecord,
+    trace: &AgentSessionSummaryRecord,
     desired: &AgentAnalysisDesiredVersions,
 ) -> bool {
     let Some(analysis) = trace.latest_analysis.as_ref() else {
         return false;
     };
     !analysis.stale
+        && analysis.input_generation == trace.input_generation
         && analysis.input_watermark_at == trace.session.input_watermark_at
         && analysis.boundary_policy_version == desired.boundary_policy_version
         && analysis.observation_parser_version == desired.observation_parser_version

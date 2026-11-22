@@ -3,8 +3,7 @@ use gateway_core::McpToolInvocationBatchQuery;
 
 pub(super) async fn generate_report<S>(
     store: &S,
-    agent_session_id: Uuid,
-    versions: &AgentAnalysisDesiredVersions,
+    queue: &AgentAnalysisQueueRecord,
     now: OffsetDateTime,
     report_retention: Duration,
     configured_policy: &AnalysisPolicy,
@@ -16,6 +15,16 @@ where
         + RequestLogRepository
         + Sync,
 {
+    let agent_session_id = queue.agent_session_id;
+    let versions = &queue.desired_versions;
+    let lease = gateway_core::AgentAnalysisLease {
+        queue_item_id: queue.queue_item_id,
+        owner: queue
+            .lease_owner
+            .as_deref()
+            .ok_or_else(|| GatewayError::Internal("analysis job has no lease owner".to_string()))?,
+        epoch: queue.lease_epoch,
+    };
     ensure_supported_versions(versions)?;
     let trace = store
         .load_agent_session_trace(agent_session_id)
@@ -188,6 +197,7 @@ where
             &json!({
                 "session": agent_session_id,
                 "watermark": trace.session.input_watermark_at.unix_timestamp_nanos(),
+                "generation": trace.input_generation,
                 "observation_set": observation_set.observation_set_id,
                 "versions": versions,
                 "cohort_snapshot": cohort.as_ref().map(|value| &value.snapshot_digest),
@@ -199,6 +209,7 @@ where
         configuration_version: versions.configuration_version.clone(),
         boundary_policy_version: versions.boundary_policy_version.clone(),
         input_watermark_at: trace.session.input_watermark_at,
+        input_generation: trace.input_generation,
         observation_set_id: observation_set.observation_set_id,
         observation_parser_version: versions.observation_parser_version.clone(),
         pricing_policy_version: versions.pricing_policy_version.clone(),
@@ -226,11 +237,9 @@ where
         user_id: trace.session.user_id,
         service_account_id: trace.session.service_account_id,
     };
-    if store.append_agent_session_analysis(&analysis).await? {
-        store
-            .mark_agent_session_analyses_stale(agent_session_id, Some(analysis.analysis_id))
-            .await?;
-    }
+    store
+        .append_agent_session_analysis(&analysis, Some(lease))
+        .await?;
     Ok(())
 }
 

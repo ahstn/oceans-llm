@@ -104,6 +104,7 @@ pub struct AgentSessionAnalysisRecord {
     pub configuration_version: String,
     pub boundary_policy_version: String,
     pub input_watermark_at: OffsetDateTime,
+    pub input_generation: i64,
     pub observation_set_id: ObservationSetId,
     pub observation_parser_version: String,
     pub pricing_policy_version: String,
@@ -125,9 +126,21 @@ pub struct AgentSessionAnalysisRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentSessionTraceRecord {
     pub session: AgentSessionRecord,
+    pub input_generation: i64,
     pub session_source: Option<AgentSessionSourceRecord>,
     pub requests: Vec<AgentSessionRequestLinkRecord>,
     pub latest_observation_set: Option<AgentObservationSetRecord>,
+    pub latest_analysis: Option<AgentSessionAnalysisRecord>,
+}
+
+/// Listing data deliberately excludes request rows and observation facts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentSessionSummaryRecord {
+    pub session: AgentSessionRecord,
+    pub input_generation: i64,
+    pub request_count: u64,
+    pub session_source_hash: Option<String>,
+    pub harness_label: Option<String>,
     pub latest_analysis: Option<AgentSessionAnalysisRecord>,
 }
 
@@ -188,6 +201,7 @@ pub struct AgentAnalysisQueueRecord {
     pub desired_versions: AgentAnalysisDesiredVersions,
     pub status: AgentAnalysisQueueStatus,
     pub lease_owner: Option<String>,
+    pub lease_epoch: i64,
     pub lease_expires_at: Option<OffsetDateTime>,
     pub attempts: u32,
     pub max_attempts: u32,
@@ -196,6 +210,14 @@ pub struct AgentAnalysisQueueRecord {
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
     pub completed_at: Option<OffsetDateTime>,
+}
+
+/// A fencing identity: a reclaimed lease is distinct even for the same worker.
+#[derive(Debug, Clone, Copy)]
+pub struct AgentAnalysisLease<'a> {
+    pub queue_item_id: Uuid,
+    pub owner: &'a str,
+    pub epoch: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -226,7 +248,7 @@ pub struct AgentSessionListQuery {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentSessionListPage {
-    pub items: Vec<AgentSessionTraceRecord>,
+    pub items: Vec<AgentSessionSummaryRecord>,
     pub page: u32,
     pub page_size: u32,
     pub total: u64,
@@ -241,6 +263,7 @@ pub const MAX_AGENT_SESSION_NESTED_FACTS: usize = 2_048;
 pub struct AgentSessionInput<'a> {
     pub request: Option<&'a AgentSessionRequestLinkRecord>,
     pub observations: Option<AgentSessionObservationInput<'a>>,
+    pub analysis: Option<&'a AgentAnalysisQueueRecord>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -256,6 +279,7 @@ impl<'a> AgentSessionInput<'a> {
         Self {
             request: Some(request),
             observations: None,
+            analysis: None,
         }
     }
 
@@ -277,6 +301,7 @@ impl<'a> AgentSessionInput<'a> {
                 truncated_set,
                 maximum_nested_facts,
             }),
+            analysis: None,
         }
     }
 }
@@ -317,6 +342,7 @@ pub trait AgentSessionTraceRepository {
         &self,
         session: &AgentSessionRecord,
         expected_input_watermark_at: OffsetDateTime,
+        analysis: Option<&AgentAnalysisQueueRecord>,
     ) -> Result<bool, StoreError>;
 
     /// Atomically appends a request and its observations under one session-writer lock.
@@ -326,6 +352,13 @@ pub trait AgentSessionTraceRepository {
         &self,
         input: AgentSessionInput<'_>,
     ) -> Result<AgentSessionInputAppendResult, StoreError>;
+
+    async fn list_idle_agent_sessions(
+        &self,
+        cutoff: OffsetDateTime,
+        limit: u32,
+    ) -> Result<Vec<AgentSessionRecord>, StoreError>;
+
     async fn list_agent_session_request_attempts(
         &self,
         agent_session_id: AgentSessionId,
@@ -350,25 +383,22 @@ pub trait AgentSessionTraceRepository {
 
 #[async_trait]
 pub trait AgentSessionReportRepository {
+    /// Publishes current fenced work; returns false for replays or superseded work.
     async fn append_agent_session_analysis(
         &self,
         analysis: &AgentSessionAnalysisRecord,
+        lease: Option<AgentAnalysisLease<'_>>,
     ) -> Result<bool, StoreError>;
 
     async fn list_agent_sessions(
         &self,
         query: &AgentSessionListQuery,
     ) -> Result<AgentSessionListPage, StoreError>;
-
-    async fn mark_agent_session_analyses_stale(
-        &self,
-        agent_session_id: AgentSessionId,
-        superseded_by: Option<AnalysisId>,
-    ) -> Result<u64, StoreError>;
 }
 
 #[async_trait]
 pub trait AgentAnalysisQueueRepository {
+    /// Coalesces requests per session. IDs deduplicate requests; lease/status fields are store-owned.
     async fn enqueue_agent_analysis(
         &self,
         item: &AgentAnalysisQueueRecord,
@@ -383,23 +413,20 @@ pub trait AgentAnalysisQueueRepository {
 
     async fn renew_agent_analysis_lease(
         &self,
-        queue_item_id: Uuid,
-        lease_owner: &str,
+        lease: AgentAnalysisLease<'_>,
         updated_at: OffsetDateTime,
         lease_expires_at: OffsetDateTime,
     ) -> Result<bool, StoreError>;
 
     async fn complete_agent_analysis(
         &self,
-        queue_item_id: Uuid,
-        lease_owner: &str,
+        lease: AgentAnalysisLease<'_>,
         completed_at: OffsetDateTime,
     ) -> Result<(), StoreError>;
 
     async fn fail_agent_analysis(
         &self,
-        queue_item_id: Uuid,
-        lease_owner: &str,
+        lease: AgentAnalysisLease<'_>,
         error: &str,
         retry_at: Option<OffsetDateTime>,
         updated_at: OffsetDateTime,

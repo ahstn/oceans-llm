@@ -4,6 +4,7 @@
 //! backend integration test module into domain-focused files under
 //! `tests/` or private test submodules as store domains continue to grow.
 mod agent_session_input;
+mod agent_session_jobs;
 mod any_store_agent_analysis;
 mod any_store_attribution;
 mod any_store_audit_logs;

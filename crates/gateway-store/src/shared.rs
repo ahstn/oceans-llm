@@ -441,6 +441,7 @@ pub(crate) fn agent_session_analysis_matches(
     candidate: &AgentSessionAnalysisRecord,
 ) -> bool {
     stored.agent_session_id == candidate.agent_session_id
+        && stored.input_generation == candidate.input_generation
         && stored.configuration_version == candidate.configuration_version
         && stored.boundary_policy_version == candidate.boundary_policy_version
         && same_timestamp_millis(stored.input_watermark_at, candidate.input_watermark_at)

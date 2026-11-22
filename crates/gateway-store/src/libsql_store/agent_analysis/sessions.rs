@@ -131,11 +131,44 @@ impl AgentSessionTraceRepository for LibsqlStore {
         &self,
         session: &AgentSessionRecord,
         expected_input_watermark_at: OffsetDateTime,
+        analysis: Option<&AgentAnalysisQueueRecord>,
     ) -> Result<bool, StoreError> {
-        let updated = self.connection.execute(
+        let session_id = session.agent_session_id.to_string();
+        let values = libsql::params![
+            session_id.as_str(),
+            enum_name(session.boundary_confidence)?,
+            session.ended_at.map(OffsetDateTime::unix_timestamp),
+            datetime_to_unix_millis(session.input_watermark_at)?,
+            session.finalized_reason.as_deref(),
+            session.updated_at.unix_timestamp(),
+            datetime_to_unix_millis(expected_input_watermark_at)?
+        ];
+        let analysis = analysis
+            .map(|item| {
+                crate::agent_session_jobs::PreparedAnalysis::for_session(
+                    item,
+                    session.agent_session_id,
+                )
+            })
+            .transpose()?;
+        let transaction = self.begin_transaction().await?;
+        let updated = transaction.execute(
             "UPDATE agent_sessions SET lifecycle = 'finalized', boundary_confidence = ?2, ended_at = ?3, input_watermark_at = MAX(input_watermark_at, ?4), finalized_reason = ?5, updated_at = MAX(updated_at, ?6), input_generation = input_generation + 1 WHERE agent_session_id = ?1 AND lifecycle = 'open' AND input_watermark_at = ?7",
-            libsql::params![session.agent_session_id.to_string(), enum_name(session.boundary_confidence)?, session.ended_at.map(OffsetDateTime::unix_timestamp), datetime_to_unix_millis(session.input_watermark_at)?, session.finalized_reason.as_deref(), session.updated_at.unix_timestamp(), datetime_to_unix_millis(expected_input_watermark_at)?],
+            values,
         ).await.map_err(to_query_error)?;
+        if updated > 0 {
+            if let Some(analysis) = analysis {
+                super::queue::enqueue_on(&transaction, &analysis).await?;
+            } else {
+                super::queue::wake_on(
+                    &transaction,
+                    &session_id,
+                    session.updated_at.unix_timestamp(),
+                )
+                .await?;
+            }
+        }
+        transaction.commit().await.map_err(to_query_error)?;
         Ok(updated > 0)
     }
 
@@ -145,6 +178,33 @@ impl AgentSessionTraceRepository for LibsqlStore {
     ) -> Result<AgentSessionInputAppendResult, StoreError> {
         self.append_session_input(input).await
     }
+    async fn list_idle_agent_sessions(
+        &self,
+        cutoff: OffsetDateTime,
+        limit: u32,
+    ) -> Result<Vec<AgentSessionRecord>, StoreError> {
+        let sql = format!(
+            "SELECT {SESSION_COLUMNS} FROM agent_sessions WHERE lifecycle = 'open' AND started_at < ?1 AND input_watermark_at < ?2 ORDER BY input_watermark_at, agent_session_id LIMIT ?3"
+        );
+        let mut rows = self
+            .connection
+            .query(
+                &sql,
+                libsql::params![
+                    cutoff.unix_timestamp(),
+                    datetime_to_unix_millis(cutoff)?,
+                    i64::from(limit.clamp(1, MAX_AGENT_SESSION_PAGE_SIZE)),
+                ],
+            )
+            .await
+            .map_err(to_query_error)?;
+        let mut sessions = Vec::new();
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            sessions.push(decode_session(&row)?);
+        }
+        Ok(sessions)
+    }
+
     async fn list_agent_session_request_attempts(
         &self,
         agent_session_id: Uuid,
@@ -180,26 +240,7 @@ impl AgentSessionTraceRepository for LibsqlStore {
         &self,
         agent_session_id: Uuid,
     ) -> Result<Vec<AgentObservationSetRecord>, StoreError> {
-        let mut rows = self
-            .connection
-            .query(
-                "SELECT observation_set_id FROM agent_inferred_observation_sets WHERE agent_session_id = ?1 ORDER BY source_watermark_at, created_at, observation_set_id LIMIT 1001",
-                [agent_session_id.to_string()],
-            )
-            .await
-            .map_err(to_query_error)?;
-        let mut ids = Vec::new();
-        while let Some(row) = rows.next().await.map_err(to_query_error)? {
-            ids.push(parse_uuid(&row.get::<String>(0).map_err(to_query_error)?)?);
-        }
-        let mut sets = Vec::with_capacity(ids.len());
-        for id in ids {
-            let set = self.query_observation_set_by_id(id).await?.ok_or_else(|| {
-                StoreError::Unexpected("agent observation set disappeared".to_string())
-            })?;
-            sets.push(set);
-        }
-        Ok(sets)
+        self.load_session_observation_sets(agent_session_id).await
     }
 
     async fn link_request_log_to_agent_session(
@@ -220,8 +261,9 @@ impl AgentSessionTraceRepository for LibsqlStore {
         &self,
         agent_session_id: Uuid,
     ) -> Result<Option<AgentSessionTraceRecord>, StoreError> {
-        let session_sql =
-            format!("SELECT {SESSION_COLUMNS} FROM agent_sessions WHERE agent_session_id = ?1");
+        let session_sql = format!(
+            "SELECT {SESSION_COLUMNS}, input_generation FROM agent_sessions WHERE agent_session_id = ?1"
+        );
         let mut session_rows = self
             .connection
             .query(&session_sql, [agent_session_id.to_string()])
@@ -231,6 +273,8 @@ impl AgentSessionTraceRepository for LibsqlStore {
             return Ok(None);
         };
         let session = decode_session(&session_row)?;
+        let input_generation = session_row.get(23).map_err(to_query_error)?;
+        drop(session_rows);
         let session_source = if let Some(session_source_id) = session.agent_session_source_id {
             let sql = format!(
                 "SELECT {SESSION_SOURCE_COLUMNS} FROM agent_session_sources WHERE agent_session_source_id = ?1"
@@ -261,9 +305,10 @@ impl AgentSessionTraceRepository for LibsqlStore {
         while let Some(row) = request_rows.next().await.map_err(to_query_error)? {
             requests.push(decode_request_link(&row)?);
         }
+        drop(request_rows);
         let latest_observation_set = self.load_observation_set(agent_session_id).await?;
         let analysis_sql = format!(
-            "SELECT {ANALYSIS_COLUMNS} FROM agent_session_analyses WHERE agent_session_id = ?1 AND stale = 0 ORDER BY analyzed_at DESC LIMIT 1"
+            "SELECT {ANALYSIS_COLUMNS} FROM agent_session_analyses WHERE agent_session_id = ?1 AND stale = 0 AND input_generation = (SELECT input_generation FROM agent_sessions WHERE agent_session_id = ?1) ORDER BY analyzed_at DESC, analysis_id DESC LIMIT 1"
         );
         let mut analysis_rows = self
             .connection
@@ -279,6 +324,7 @@ impl AgentSessionTraceRepository for LibsqlStore {
             .transpose()?;
         Ok(Some(AgentSessionTraceRecord {
             session,
+            input_generation,
             session_source,
             requests,
             latest_observation_set,

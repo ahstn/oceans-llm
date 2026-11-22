@@ -172,24 +172,23 @@ where
         finalized_session.input_watermark_at = input.completed_at;
         finalized_session.finalized_reason = Some("idle_gap".to_string());
         finalized_session.updated_at = input.completed_at;
+        let analysis = super::worker::analysis_request(
+            finalized_session.agent_session_id,
+            "session_finalized",
+            &expected_input_watermark_at
+                .unix_timestamp_nanos()
+                .to_string(),
+            input.completed_at,
+            desired_versions,
+        );
         if store
-            .finalize_agent_session_if_unchanged(&finalized_session, expected_input_watermark_at)
+            .finalize_agent_session_if_unchanged(
+                &finalized_session,
+                expected_input_watermark_at,
+                Some(&analysis),
+            )
             .await?
         {
-            store
-                .mark_agent_session_analyses_stale(finalized_session.agent_session_id, None)
-                .await?;
-            enqueue_analysis_with_versions(
-                store,
-                finalized_session.agent_session_id,
-                "session_finalized",
-                &expected_input_watermark_at
-                    .unix_timestamp_nanos()
-                    .to_string(),
-                input.completed_at,
-                desired_versions,
-            )
-            .await?;
             open_session = None;
         } else {
             open_session = store
@@ -351,6 +350,13 @@ where
     };
     let mut append_attempts = 0_usize;
     let append_result = loop {
+        let analysis = super::worker::analysis_request(
+            session.agent_session_id,
+            "new_input",
+            &input.request_id,
+            input.completed_at,
+            desired_versions,
+        );
         let session_input = gateway_core::AgentSessionInput {
             request: Some(&request_link),
             observations: Some(gateway_core::AgentSessionObservationInput {
@@ -358,6 +364,7 @@ where
                 truncated_set: &truncated_observation_set,
                 maximum_nested_facts: MAX_AGENT_SESSION_NESTED_FACTS,
             }),
+            analysis: Some(&analysis),
         };
         match store.append_agent_session_input(session_input).await {
             Ok(result) => break result,
@@ -366,21 +373,6 @@ where
                     && append_attempts < MAX_SESSION_WINDOW_CAS_ATTEMPTS =>
             {
                 append_attempts = append_attempts.saturating_add(1);
-                store
-                    .mark_agent_session_analyses_stale(session.agent_session_id, None)
-                    .await?;
-                enqueue_analysis_with_versions(
-                    store,
-                    session.agent_session_id,
-                    "session_finalized",
-                    &session
-                        .input_watermark_at
-                        .unix_timestamp_nanos()
-                        .to_string(),
-                    input.completed_at,
-                    desired_versions,
-                )
-                .await?;
                 session = if let Some(open_session) = store
                     .get_open_agent_session(
                         &ownership_scope_key,
@@ -444,18 +436,6 @@ where
             })
             .await?;
     }
-    store
-        .mark_agent_session_analyses_stale(session.agent_session_id, None)
-        .await?;
-    enqueue_analysis_with_versions(
-        store,
-        session.agent_session_id,
-        "new_input",
-        &input.request_id,
-        input.completed_at,
-        desired_versions,
-    )
-    .await?;
     Ok(session.agent_session_id)
 }
 
