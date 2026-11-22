@@ -107,6 +107,7 @@ fn routing_preserves_recognized_harness_namespaces() {
         ("pi", "session_id", "pi"),
         ("oh_my_pi", "session_id", "oh_my_pi"),
         ("oh_my_pi", "x-claude-code-session-id", "oh_my_pi"),
+        ("oh_my_pi", "x-litellm-session-id", "oh_my_pi"),
     ];
     for (harness, header, namespace) in cases {
         let session = routing_session(json!({}), &[(header, "session-a")], harness)
@@ -737,6 +738,7 @@ fn explicit_harness_headers_reject_invalid_and_oversized_ids() {
         ("opencode", "x-opencode-session-id"),
         ("pi", "session-id"),
         ("pi", "x-session-id"),
+        ("oh_my_pi", "x-litellm-session-id"),
     ] {
         for value in ["", "bad/session", "☃", oversized.as_str()] {
             assert_adapter_limitation(
@@ -747,4 +749,80 @@ fn explicit_harness_headers_reject_invalid_and_oversized_ids() {
             );
         }
     }
+}
+
+#[test]
+fn omp_litellm_conversation_aliases_must_agree() {
+    let header = ("x-litellm-session-id", "omp-child");
+    assert_adapter_session(
+        json!({"prompt_cache_key": "shared-family"}),
+        &[header],
+        "oh_my_pi",
+        Some("omp-child"),
+    );
+    for alias in [
+        "session_id",
+        "x-claude-code-session-id",
+        "x-oceans-session-id",
+    ] {
+        assert_adapter_session(
+            json!({}),
+            &[header, (alias, "omp-child")],
+            "oh_my_pi",
+            Some("omp-child"),
+        );
+        assert_adapter_limitation(
+            json!({}),
+            &[header, (alias, "other-session")],
+            "oh_my_pi",
+            SessionCorrelationLimitation::ConflictingAliases,
+        );
+    }
+    assert_adapter_session(json!({}), &[header], "unknown", None);
+}
+
+#[test]
+fn codex_parent_thread_headers_and_metadata_are_lineage_only() {
+    let cases = [
+        (json!({}), vec![("X-Codex-Parent-Thread-Id", "parent")]),
+        (
+            json!({"client_metadata": {"x-codex-parent-thread-id": "parent"}}),
+            vec![],
+        ),
+        (
+            json!({"client_metadata": {
+                "x-codex-parent-thread-id": "parent",
+                "x-codex-turn-metadata": "{\"parent_thread_id\":\"parent\"}"
+            }}),
+            vec![("x-codex-parent-thread-id", "parent")],
+        ),
+    ];
+    for (body, headers) in cases {
+        assert_adapter_session(body.clone(), &headers, "codex", None);
+        let passive = passive_session(body, &headers, "codex");
+        assert_eq!(passive.parent_execution_id.as_deref(), Some("parent"));
+        assert_eq!(passive.execution_id, None);
+    }
+}
+
+#[test]
+fn codex_parent_alias_conflicts_and_invalid_ids_do_not_fall_back() {
+    for parent in [json!("other"), json!("bad/parent"), json!(42)] {
+        let body = json!({"client_metadata": {
+            "session_id": "session",
+            "x-codex-parent-thread-id": parent,
+            "x-codex-turn-metadata": "{\"forked_from_thread_id\":\"fallback\"}"
+        }});
+        let passive = passive_session(body, &[("x-codex-parent-thread-id", "parent")], "codex");
+        assert_eq!(passive.session.value.as_deref(), Some("session"));
+        assert_eq!(passive.parent_execution_id, None);
+    }
+    let passive = passive_session(
+        json!({"client_metadata": {
+            "x-codex-turn-metadata": "{\"parent_thread_id\":\"other\"}"
+        }}),
+        &[("x-codex-parent-thread-id", "parent")],
+        "codex",
+    );
+    assert_eq!(passive.parent_execution_id, None);
 }

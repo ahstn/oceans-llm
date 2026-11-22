@@ -17,6 +17,7 @@ use crate::{
     LibsqlStore, PostgresStore, StoreConnectionOptions, run_migrations, run_migrations_with_options,
 };
 
+mod contracts;
 #[tokio::test]
 #[serial]
 async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
@@ -480,10 +481,15 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     let mut advanced_session = session.clone();
     advanced_session.input_watermark_at += Duration::seconds(1);
     advanced_session.updated_at += Duration::seconds(1);
-    store
-        .update_agent_session_window(&advanced_session)
-        .await
-        .expect("advance session watermark");
+    advanced_session.lifecycle = SessionLifecycleState::Finalized;
+    advanced_session.ended_at = Some(session.input_watermark_at);
+    advanced_session.finalized_reason = Some("idle_gap".to_string());
+    assert!(
+        store
+            .finalize_agent_session_if_unchanged(&advanced_session, session.input_watermark_at)
+            .await
+            .expect("finalize and advance session watermark")
+    );
     assert!(matches!(
         store
             .append_agent_session_analysis(&AgentSessionAnalysisRecord {
@@ -811,14 +817,6 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         Some("request_limit")
     );
 
-    let mut finalized_session = advanced_session.clone();
-    finalized_session.lifecycle = SessionLifecycleState::Finalized;
-    finalized_session.ended_at = Some(finalized_session.input_watermark_at);
-    finalized_session.finalized_reason = Some("idle_gap".to_string());
-    store
-        .update_agent_session_window(&finalized_session)
-        .await
-        .expect("finalize session before retention purge");
     let purged = store
         .purge_agent_analysis_before(now + Duration::seconds(3))
         .await
@@ -846,12 +844,14 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .expect("retained report row")
         .expect("retained report");
     assert_eq!(retained_report.get::<i64>(0).expect("report count"), 0);
+    drop((retained_report, retained_report_rows));
 
     let expired = store
         .purge_expired_agent_analysis(now + Duration::days(91), now + Duration::seconds(3))
         .await
         .expect("purge expired reports and queue");
     assert!(expired >= 1);
+    contracts::finalization_is_irreversible(&store, &session).await;
 
     store
         .connection()
@@ -1013,6 +1013,7 @@ async fn postgres_agent_session_dimensions_round_trip_and_filter() {
         .expect("list sessions");
     assert_eq!(page.total, 1);
     assert_eq!(page.items[0].session, session);
+    contracts::finalization_is_irreversible(&store, &session).await;
 
     store.pool().close().await;
     drop_postgres_test_database(&test_db).await;

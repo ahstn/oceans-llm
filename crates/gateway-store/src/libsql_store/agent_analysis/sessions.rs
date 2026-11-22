@@ -127,22 +127,6 @@ impl AgentSessionTraceRepository for LibsqlStore {
         }
     }
 
-    async fn update_agent_session_window(
-        &self,
-        session: &AgentSessionRecord,
-    ) -> Result<(), StoreError> {
-        let updated = self.connection.execute(
-            "UPDATE agent_sessions SET lifecycle = ?2, boundary_confidence = ?3, ended_at = ?4, input_watermark_at = MAX(input_watermark_at, ?5), finalized_reason = ?6, updated_at = MAX(updated_at, ?7) WHERE agent_session_id = ?1",
-            libsql::params![session.agent_session_id.to_string(), enum_name(session.lifecycle)?, enum_name(session.boundary_confidence)?, session.ended_at.map(OffsetDateTime::unix_timestamp), datetime_to_unix_millis(session.input_watermark_at)?, session.finalized_reason.as_deref(), session.updated_at.unix_timestamp()],
-        ).await.map_err(to_query_error)?;
-        if updated == 0 {
-            return Err(StoreError::NotFound(
-                "agent session window not found".to_string(),
-            ));
-        }
-        Ok(())
-    }
-
     async fn finalize_agent_session_if_unchanged(
         &self,
         session: &AgentSessionRecord,

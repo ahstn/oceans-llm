@@ -526,6 +526,11 @@ fn extract_oh_my_pi_session(
 ) -> SessionResolution {
     let mut observations = header_observations(headers, "x-claude-code-session-id", body.policy);
     observations.extend(header_observations(headers, "session_id", body.policy));
+    observations.extend(header_observations(
+        headers,
+        "x-litellm-session-id",
+        body.policy,
+    ));
     observations.extend(body_observation(body, &["session_id"], "body:session_id"));
     observations.extend(claude_metadata_session(body));
     resolve_session(observations)
@@ -711,10 +716,17 @@ fn extract_codex_lineage(
         resolved_lineage_value(turn)
     };
 
-    let mut parent = metadata
-        .iter()
-        .filter_map(|value| metadata_observation(value, "parent_thread_id", body.policy))
-        .collect::<Vec<_>>();
+    let mut parent = header_observations(headers, "x-codex-parent-thread-id", body.policy);
+    parent.extend(body_observation(
+        body,
+        &["client_metadata", "x-codex-parent-thread-id"],
+        "body:client_metadata.x-codex-parent-thread-id",
+    ));
+    parent.extend(
+        metadata
+            .iter()
+            .filter_map(|value| metadata_observation(value, "parent_thread_id", body.policy)),
+    );
     if parent.is_empty() {
         parent.extend(
             metadata.iter().filter_map(|value| {

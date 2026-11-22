@@ -140,20 +140,6 @@ impl AgentSessionTraceRepository for PostgresStore {
         }
     }
 
-    async fn update_agent_session_window(
-        &self,
-        session: &AgentSessionRecord,
-    ) -> Result<(), StoreError> {
-        let result = sqlx::query("UPDATE agent_sessions SET lifecycle = $2, boundary_confidence = $3, ended_at = $4, input_watermark_at = GREATEST(input_watermark_at, $5), finalized_reason = $6, updated_at = GREATEST(updated_at, $7) WHERE agent_session_id = $1")
-            .bind(session.agent_session_id.to_string()).bind(enum_name(session.lifecycle)?).bind(enum_name(session.boundary_confidence)?).bind(session.ended_at.map(OffsetDateTime::unix_timestamp)).bind(datetime_to_unix_millis(session.input_watermark_at)?).bind(session.finalized_reason.as_deref()).bind(session.updated_at.unix_timestamp()).execute(&self.pool).await.map_err(to_query_error)?;
-        if result.rows_affected() == 0 {
-            return Err(StoreError::NotFound(
-                "agent session window not found".to_string(),
-            ));
-        }
-        Ok(())
-    }
-
     async fn finalize_agent_session_if_unchanged(
         &self,
         session: &AgentSessionRecord,

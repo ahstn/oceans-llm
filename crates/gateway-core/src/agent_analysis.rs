@@ -267,10 +267,6 @@ pub trait AgentSessionTraceRepository {
         session: &AgentSessionRecord,
     ) -> Result<bool, StoreError>;
 
-    async fn update_agent_session_window(
-        &self,
-        session: &AgentSessionRecord,
-    ) -> Result<(), StoreError>;
     async fn finalize_agent_session_if_unchanged(
         &self,
         session: &AgentSessionRecord,

@@ -193,6 +193,7 @@ fn validate_session_headers(headers: &HeaderMap) -> Result<(), GatewayError> {
         "x-opencode-session-id",
         "x-client-request-id",
         "x-codex-turn-metadata",
+        "x-litellm-session-id",
     ] {
         let mut values = headers.get_all(name).iter();
         let Some(value) = values.next() else {

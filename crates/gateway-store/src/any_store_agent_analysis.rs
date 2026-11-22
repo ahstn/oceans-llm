@@ -64,16 +64,6 @@ impl AgentSessionTraceRepository for AnyStore {
         }
     }
 
-    async fn update_agent_session_window(
-        &self,
-        session: &AgentSessionRecord,
-    ) -> Result<(), StoreError> {
-        match self {
-            Self::Libsql(store) => store.update_agent_session_window(session).await,
-            Self::Postgres(store) => store.update_agent_session_window(session).await,
-        }
-    }
-
     async fn finalize_agent_session_if_unchanged(
         &self,
         session: &AgentSessionRecord,

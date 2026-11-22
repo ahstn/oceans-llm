@@ -350,9 +350,9 @@ where
         terminal_success,
     };
     let mut append_attempts = 0_usize;
-    let request_inserted = loop {
+    loop {
         match store.append_agent_session_request(&request_link).await {
-            Ok(inserted) => break inserted,
+            Ok(_) => break,
             Err(StoreError::AgentSessionWindowClosed(closed_session_id))
                 if closed_session_id == session.agent_session_id.to_string()
                     && append_attempts < MAX_SESSION_WINDOW_CAS_ATTEMPTS =>
@@ -408,11 +408,6 @@ where
             }
             Err(error) => return Err(error.into()),
         }
-    };
-    if request_inserted && input.completed_at > session.input_watermark_at {
-        session.input_watermark_at = input.completed_at;
-        session.updated_at = input.completed_at;
-        store.update_agent_session_window(&session).await?;
     }
 
     let session_correlation = if input.metadata.external_session_id.is_some() {
