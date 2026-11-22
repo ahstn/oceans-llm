@@ -1,0 +1,23 @@
+crates/admin-ui/web/src/components/data/filter-options.ts
+  s_bea5708eb838de::t_62580c50e1937f 4,80
+crates/admin-ui/web/src/test/routes/agent-sessions-route.test.tsx
+  s_bea5708eb838de::t_62580c50e1937f 9-25,57,851,977,983,994-995
+docs/adr/2026-11-22-admin-model-options-listing.md
+  s_bea5708eb838de::t_62580c50e1937f 7,20,36,40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7ce4903dfe4fdc19538248724bfe35788566ffc0",
+  "prompts": {},
+  "sessions": {
+    "s_bea5708eb838de": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "13a0bec7-7a0c-4c7e-bd3f-413f37de54d6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
