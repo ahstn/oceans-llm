@@ -1,4 +1,7 @@
-import { useState, useTransition } from 'react'
+import { useRef, useState, useTransition } from 'react'
+import { FileZipIcon } from '@hugeicons/core-free-icons'
+
+import { AppIcon } from '@/components/icons/app-icon'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -13,6 +16,7 @@ import {
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
+import { cn } from '@/lib/utils'
 import { saveSkillNamespace, uploadSkill } from '@/server/skills-data.functions'
 import type {
   SkillUploadResponse,
@@ -40,6 +44,7 @@ export function SkillUploadDialog({
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const needsNamespace = !claimedNamespace && !skill
+  const copy = dialogCopy(needsNamespace, skill, claimedNamespace)
 
   function submit() {
     setError(null)
@@ -82,20 +87,8 @@ export function SkillUploadDialog({
           className="flex min-w-0 flex-col gap-5"
         >
           <DialogHeader>
-            <DialogTitle>
-              {needsNamespace
-                ? 'Choose your skill namespace'
-                : skill
-                  ? 'Upload a new version'
-                  : 'Upload a skill'}
-            </DialogTitle>
-            <DialogDescription>
-              {needsNamespace
-                ? 'Your namespace identifies your skills, such as alex/code-review. You cannot change it after it is claimed.'
-                : skill
-                  ? `Add an immutable version of ${skill.namespace}/${skill.name}. The default version will stay unchanged.`
-                  : `Your skill will be stored under ${claimedNamespace?.handle}. All authenticated users can read it.`}
-            </DialogDescription>
+            <DialogTitle>{copy.title}</DialogTitle>
+            <DialogDescription>{copy.description}</DialogDescription>
           </DialogHeader>
           <FieldGroup>
             {needsNamespace ? (
@@ -115,7 +108,12 @@ export function SkillUploadDialog({
                 </FieldDescription>
               </Field>
             ) : (
-              <ArchiveField pending={pending} limits={limits} onChange={setArchive} />
+              <ArchiveField
+                pending={pending}
+                archive={archive}
+                limits={limits}
+                onChange={setArchive}
+              />
             )}
           </FieldGroup>
           {error ? (
@@ -143,24 +141,66 @@ export function SkillUploadDialog({
 
 function ArchiveField({
   pending,
+  archive,
   onChange,
   limits,
 }: {
   pending: boolean
+  archive: File | null
   limits: SkillLimits
   onChange: (file: File | null) => void
 }) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
   return (
     <Field>
       <FieldLabel htmlFor="skill-archive">ZIP archive</FieldLabel>
-      <Input
+      {/* The native control reads as one box, so a button and a status line stand in for it. */}
+      <input
+        ref={inputRef}
         id="skill-archive"
+        aria-label="ZIP archive"
         type="file"
         accept=".zip,application/zip"
+        className="sr-only"
+        tabIndex={-1}
         onChange={(event) => onChange(event.target.files?.[0] ?? null)}
         disabled={pending}
         required
       />
+      <div className="flex min-w-0 items-center gap-3" data-testid="skill-archive-picker">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          disabled={pending}
+          aria-describedby="skill-archive-status"
+          onClick={() => inputRef.current?.click()}
+        >
+          <AppIcon icon={FileZipIcon} data-icon="inline-start" aria-hidden />
+          {archive ? 'Replace ZIP' : 'Choose ZIP'}
+        </Button>
+        <span
+          id="skill-archive-status"
+          aria-live="polite"
+          className={cn(
+            'flex min-w-0 gap-1.5 text-sm',
+            archive ? 'text-foreground' : 'text-muted-foreground',
+          )}
+          title={archive?.name}
+        >
+          {archive ? (
+            <>
+              {/* Only the name truncates, so the size stays readable. */}
+              <span className="min-w-0 truncate">{archive.name}</span>{' '}
+              <span className="text-muted-foreground shrink-0">· {formatBytes(archive.size)}</span>
+            </>
+          ) : (
+            'No file selected'
+          )}
+        </span>
+      </div>
       <FieldDescription>
         Include SKILL.md and any scripts, references, or assets. Limits:{' '}
         {formatBytes(limits.max_archive_bytes)} ZIP, {formatBytes(limits.max_expanded_bytes)}{' '}
@@ -169,6 +209,28 @@ function ArchiveField({
       </FieldDescription>
     </Field>
   )
+}
+
+function dialogCopy(
+  needsNamespace: boolean,
+  skill: SkillSummary | undefined,
+  namespace: SkillNamespace | null,
+) {
+  if (needsNamespace)
+    return {
+      title: 'Choose your skill namespace',
+      description:
+        'Your namespace identifies your skills, such as alex/code-review. You cannot change it after it is claimed.',
+    }
+  if (skill)
+    return {
+      title: 'Upload a new version',
+      description: `Add an immutable version of ${skill.namespace}/${skill.name}. The default version will stay unchanged.`,
+    }
+  return {
+    title: 'Upload a skill',
+    description: `Your skill will be stored under ${namespace?.handle}. All authenticated users can read it.`,
+  }
 }
 
 function formatBytes(bytes: number) {

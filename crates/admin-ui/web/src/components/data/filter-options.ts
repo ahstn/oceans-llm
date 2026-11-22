@@ -15,6 +15,8 @@ export interface FilterOption {
 export interface FilterOptionsState {
   status: 'idle' | 'loading' | 'ready' | 'error'
   options: FilterOption[]
+  /** Tries a failed load again; the picker calls it each time it opens. */
+  load?: () => void
 }
 
 /** Options that are known up front, such as an enum's values. */
@@ -29,14 +31,16 @@ export function anyTypedValue(search: string) {
 
 /**
  * Loads a filter's options the first time `enabled` is true, so a list page does not fetch them
- * on every filter navigation or before the filter is shown. A load still running when the
- * component unmounts is cancelled through the signal `load` receives.
+ * on every filter navigation or before the filter is shown. A failed load is tried again when the
+ * picker next opens. A load still running when the component unmounts is cancelled through the
+ * signal `load` receives.
  */
 export function useLoadedFilterOptions(
   enabled: boolean,
   load: (signal: AbortSignal) => Promise<FilterOption[]>,
 ): FilterOptionsState {
   const [state, setState] = useState<FilterOptionsState>({ status: 'idle', options: [] })
+  const [attempt, setAttempt] = useState(0)
   const requested = useRef(false)
   const latestLoad = useRef(load)
 
@@ -54,7 +58,10 @@ export function useLoadedFilterOptions(
       .current(controller.signal)
       .then((options) => setState({ status: 'ready', options }))
       .catch(() => {
-        if (!controller.signal.aborted) setState({ status: 'error', options: [] })
+        if (controller.signal.aborted) return
+        // Leave the next attempt to `retry`, so a failing endpoint is not called in a loop.
+        requested.current = false
+        setState({ status: 'error', options: [] })
       })
       .finally(() => {
         settled = true
@@ -65,9 +72,13 @@ export function useLoadedFilterOptions(
       controller.abort()
       requested.current = false
     }
-  }, [enabled])
+  }, [enabled, attempt])
 
-  return state
+  function retry() {
+    if (state.status === 'error') setAttempt((current) => current + 1)
+  }
+
+  return { ...state, load: retry }
 }
 
 /** The gateway model catalog as filter options, loaded once the model filter is shown. */

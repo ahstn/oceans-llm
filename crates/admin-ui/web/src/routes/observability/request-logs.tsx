@@ -28,7 +28,7 @@ import {
   statusCodeBadgeVariant,
 } from './-request-log-detail/format'
 import { RequestLogDetail } from './-request-log-detail/request-log-detail'
-import { RequestLogToolbar, type RequestLogFilterValues } from './-request-log-filters'
+import { RequestLogToolbar, type RequestLogFilterPatch } from './-request-log-filters'
 
 export const Route = createFileRoute('/observability/request-logs')({
   validateSearch: (search: Record<string, unknown>) => normalizeFilterSearch(search),
@@ -54,7 +54,7 @@ export function RequestLogsPage() {
 
   // Patches merge into the latest location so a debounced search and a chip commit that land
   // close together cannot overwrite each other with stale filter values.
-  function applyFilters(patch: RequestLogFilterValues, options?: { replace?: boolean }) {
+  function applyFilters(patch: RequestLogFilterPatch, options?: { replace?: boolean }) {
     startListTransition(async () => {
       await router.navigate({
         to: '/observability/request-logs',
@@ -459,12 +459,21 @@ function normalizeFilterSearch(search: Record<string, unknown>): RequestLogFilte
     request_id: searchParamValue(search.request_id),
     model_key: searchParamValue(search.model_key),
     provider_key: searchParamValue(search.provider_key),
+    status_code: statusCodeParam(search.status_code),
     service: searchParamValue(search.service),
     component: searchParamValue(search.component),
     env: searchParamValue(search.env),
     tag_key: searchParamValue(search.tag_key),
     tag_value: searchParamValue(search.tag_value),
   }
+}
+
+/** Status codes arrive as numbers from the URL and as strings from the filter picker. */
+function statusCodeParam(value: unknown): number | undefined {
+  const code = typeof value === 'string' ? Number(value.trim()) : value
+  return typeof code === 'number' && Number.isInteger(code) && code >= 100 && code <= 599
+    ? code
+    : undefined
 }
 
 function searchParamValue(value: unknown): string | undefined {

@@ -37,7 +37,7 @@ Preconditions:
 
 ## Gotchas
 
-- Picker chips open their list as soon as they are added. Pick by role `option`; the picker trigger's accessible name is `<Field> filter value`.
+- Picker chips open their list as soon as they are added. Pick by role `option`; the picker trigger's accessible name is `<Field> filter value: <shown value>`, such as `Model filter value: Select a model`.
 - Days are UTC. `Started after` sends the start of the day and `Started before` the end of it (`T23:59:59.999Z`).
 - There is no search box: the agent sessions API has no free-text search.
 - Scores can be hidden until calibration is complete. `Score not shown` is a valid configured state.
