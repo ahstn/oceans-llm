@@ -247,35 +247,40 @@ pub fn is_shell_tool(name: &str) -> bool {
         "terminal",
         "zsh",
     ];
-    let words = identity_words(name);
-    words
-        .iter()
-        .any(|word| SHELL_WORDS.contains(&word.as_str()))
-        || words.windows(2).any(|pair| {
-            matches!(pair[0].as_str(), "run" | "execute")
-                && matches!(pair[1].as_str(), "command" | "cmd")
-        })
+    let mut previous_runs = false;
+    for word in identity_words(name) {
+        let is = |candidate: &&str| word.eq_ignore_ascii_case(candidate);
+        if SHELL_WORDS.iter().any(is) || (previous_runs && ["command", "cmd"].iter().any(is)) {
+            return true;
+        }
+        previous_runs = ["run", "execute"].iter().any(is);
+    }
+    false
 }
 
-/// The lowercase words of a tool name, split at punctuation and at camelCase capitals.
-fn identity_words(name: &str) -> Vec<String> {
-    let mut words = vec![String::new()];
-    let mut previous_lowercase = false;
-    for character in name.chars() {
-        if !character.is_ascii_alphanumeric() {
-            words.push(String::new());
-        } else {
-            if character.is_ascii_uppercase() && previous_lowercase {
-                words.push(String::new());
-            }
-            if let Some(word) = words.last_mut() {
-                word.push(character.to_ascii_lowercase());
-            }
+/// The words of a tool name, split at punctuation and at camelCase capitals. The words keep
+/// their case and borrow from the name, so reading them allocates nothing.
+fn identity_words(name: &str) -> impl Iterator<Item = &str> {
+    let mut rest = name;
+    std::iter::from_fn(move || {
+        rest = rest.trim_start_matches(|character: char| !character.is_ascii_alphanumeric());
+        if rest.is_empty() {
+            return None;
         }
-        previous_lowercase = character.is_ascii_lowercase() || character.is_ascii_digit();
-    }
-    words.retain(|word| !word.is_empty());
-    words
+        let mut previous_lowercase = false;
+        let end = rest
+            .char_indices()
+            .find(|&(_, character)| {
+                let boundary = !character.is_ascii_alphanumeric()
+                    || (character.is_ascii_uppercase() && previous_lowercase);
+                previous_lowercase = character.is_ascii_lowercase() || character.is_ascii_digit();
+                boundary
+            })
+            .map_or(rest.len(), |(index, _)| index);
+        let (word, tail) = rest.split_at(end);
+        rest = tail;
+        Some(word)
+    })
 }
 
 fn match_shell_pack(pack: &str, command: &str) -> Option<MatchedRule> {
