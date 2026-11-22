@@ -4,7 +4,7 @@ Status: Accepted
 
 ## Context
 
-Two admin UI selectors offer every gateway model: the request log Model filter picker and the spend controls model budget selector. Both called `loadAllModels`, which paged through `GET /api/v1/admin/models` 100 models at a time, with up to four pages in flight.
+Three admin UI selectors offer every gateway model: the request log Model filter picker, the agent sessions Model filter, and the spend controls model budget selector. All three called `loadAllModels`, which paged through `GET /api/v1/admin/models` 100 models at a time, with up to four pages in flight.
 
 Each page request ran `AdminModelsService::list_models()` over the whole catalog, then filtered and sliced one page. That build reads effective pricing for every eligible route, matches benchmarks, and renders client configs for each model. A catalog of N×100 models therefore paid for N full builds to fill one dropdown.
 
@@ -17,7 +17,7 @@ Add `GET /api/v1/admin/models/options`. It returns every model, aliases included
 - `AdminModelsService::list_model_options()` loads models, routes, and route providers in three batched store reads (`load_catalog_routes`). It then picks each model's display route with the same `select_display_route` and `resolve_provider_display` the full summary uses. It skips pricing, allow-lists, benchmarks, and client configs.
 - `list_model_items` now starts from the same `load_catalog_routes`, so the two listings cannot drift on alias resolution or the provider label.
 - The handler requires an active session, like `list_models`. Every field in the view is already public in the full listing for non-admins, and the view has no route, routing, or allow-list field. So each role gets the same response, and nothing admin-only can leak through it.
-- `loadAllModels(signal)` makes one `getModelOptions({ signal })` call and returns `ModelOptionView[]`. The page worker pool, concurrency cap, and abort-on-failure logic are gone. The caller's `AbortSignal` goes straight to the request, so the request log toolbar still cancels the load when it unmounts.
+- `loadAllModels(signal)` makes one `getModelOptions({ signal })` call and returns `ModelOptionView[]`. The page worker pool, concurrency cap, and abort-on-failure logic are gone. The caller's `AbortSignal` goes straight to the request, so the request log and agent session filter toolbars still cancel the load when they unmount.
 
 ## Alternatives considered
 
@@ -33,8 +33,8 @@ Add `GET /api/v1/admin/models/options`. It returns every model, aliases included
 
 - `gateway-service`: `model_options_match_summaries_without_reading_pricing` checks that the options make three batched reads and no pricing reads, and match a projection of `list_models`. It covers an alias and a broken alias.
 - `gateway` router tests (`http/model_options_tests.rs`): the endpoint returns 401 without a session. For both a member and a platform admin, it returns all 121 seeded models (more than one page) with exactly the five public fields, and it matches the paginated listing row for row.
-- Vitest: `model-catalog.test.ts` (one request, signal passed through, rejection), `spend-controls-route.test.tsx` (the loader uses one options request), and the existing request log picker tests, now against `getModelOptions`.
+- Vitest: `model-catalog.test.ts` (one request, signal passed through, rejection), `spend-controls-route.test.tsx` (the loader uses one options request), and the existing request log and agent session Model filter tests, now against `getModelOptions`.
 
 ## Follow-up
 
-- `/models` still pages the full summary for its table, which is the listing it needs. Nothing else calls `loadAllModels` or pages the catalog.
+- `/models` still pages the full summary for its table, which is the listing it needs. Nothing else pages the catalog.
