@@ -402,6 +402,21 @@ function navigatedSearch(callIndex: number, previous: Record<string, unknown> = 
   return search(previous)
 }
 
+/**
+ * Keeps filter navigations pending until the test ends. React 19 entangles async transitions, so
+ * a navigation that never settles would leave later tests' transitions pending too.
+ */
+const heldNavigations: Array<() => void> = []
+function holdNavigations() {
+  navigateMock.mockImplementation(
+    () => new Promise<void>((resolve) => heldNavigations.push(resolve)),
+  )
+}
+
+afterEach(() => {
+  for (const release of heldNavigations.splice(0)) release()
+})
+
 function openFilterMenu() {
   fireEvent.keyDown(
     within(screen.getByTestId('agent-session-toolbar')).getByRole('button', { name: /^Filters/ }),
@@ -1128,12 +1143,13 @@ describe('AgentSessionsPage filters', () => {
   })
 
   it('removes a chip whose value is still being applied', async () => {
+    holdNavigations()
     render(<AgentSessionsPage />)
 
     await addFilter('User ID')
     const userId = await screen.findByTestId('agent-session-filter-user-id')
     fireEvent.change(userId, { target: { value: 'user_1' } })
-    // Blur applies the value; the mocked navigation never settles, so the URL keeps no user ID.
+    // Blur applies the value; the navigation never settles, so the URL keeps no user ID.
     fireEvent.blur(userId)
     await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
     fireEvent.click(screen.getByRole('button', { name: 'Remove User ID filter' }))
@@ -1143,8 +1159,24 @@ describe('AgentSessionsPage filters', () => {
     expect(screen.queryByTestId('agent-session-filter-chip-user_id')).not.toBeInTheDocument()
   })
 
+  it('retries a filter whose navigation ended without changing the URL', async () => {
+    render(<AgentSessionsPage />)
+
+    await addFilter('User ID')
+    const userId = await screen.findByTestId('agent-session-filter-user-id')
+    fireEvent.change(userId, { target: { value: 'user_1' } })
+    fireEvent.keyDown(userId, { key: 'Enter' })
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
+    // The navigation settles but the URL still has no user ID, as after Back or a cancel.
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Showing'))
+
+    fireEvent.keyDown(userId, { key: 'Enter' })
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(2))
+    expect(navigatedSearch(1)).toEqual(expect.objectContaining({ user_id: 'user_1' }))
+  })
+
   it('clears filters while a blur commit is still navigating', async () => {
-    navigateMock.mockImplementation(() => new Promise(() => {}))
+    holdNavigations()
     render(<AgentSessionsPage />)
 
     await addFilter('User ID')

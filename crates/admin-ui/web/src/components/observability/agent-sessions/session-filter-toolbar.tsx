@@ -87,9 +87,11 @@ export function SessionFilterToolbar({
   const [addedFields, setAddedFields] = useState<SessionFilterFieldKey[]>([])
   const [focusField, setFocusField] = useState<SessionFilterFieldKey | null>(null)
   const [syncedFilters, setSyncedFilters] = useState(filters)
-  // The filters most recently sent to `onApply`. Until its navigation settles, `filters` still
-  // holds the earlier URL, so changes are compared against what was sent instead.
+  // The filters most recently sent to `onApply`. While its navigation is pending, `filters` still
+  // holds the earlier URL, so changes are compared against what was sent instead. Once nothing is
+  // pending the URL is the truth again, so a navigation that was cancelled can be retried.
   const [appliedFilters, setAppliedFilters] = useState<SessionFilterPatch>(filters)
+  const submittedFilters = isPending ? appliedFilters : filters
 
   // Adopt URL-backed filter changes (navigation, Back/Forward, Clear) without discarding chip
   // edits that were typed while a previous navigation was still loading.
@@ -120,8 +122,8 @@ export function SessionFilterToolbar({
       delete patch.request_tag_key
       delete patch.request_tag_value
     }
-    const nextApplied = { ...appliedFilters, ...patch }
-    if (!sameFilters(nextApplied, appliedFilters)) {
+    const nextApplied = { ...submittedFilters, ...patch }
+    if (!sameFilters(nextApplied, submittedFilters)) {
       setAppliedFilters(nextApplied)
       onApply(patch)
     }
@@ -148,7 +150,7 @@ export function SessionFilterToolbar({
     const cleared = pickFilterParams({})
     setAddedFields([])
     setDrafts((current) => ({ ...current, ...cleared }))
-    setAppliedFilters((current) => ({ ...current, ...cleared }))
+    setAppliedFilters({ ...submittedFilters, ...cleared })
     onApply(cleared)
   }
 
