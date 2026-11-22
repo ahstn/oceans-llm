@@ -154,11 +154,17 @@ export function RequestLogToolbar({
   const [focusField, setFocusField] = useState<FilterFieldKey | null>(null)
 
   const [syncedFilters, setSyncedFilters] = useState(filters)
+  // The filters most recently sent to `onApply`. While its navigation is pending, `filters` still
+  // holds the earlier URL, so changes are compared against what was sent instead. Once nothing is
+  // pending the URL is the truth again, so a navigation that was cancelled can be retried.
+  const [appliedFilters, setAppliedFilters] = useState<RequestLogFilterPatch>(filters)
+  const submittedFilters = isPending ? appliedFilters : filters
 
   // Adopt URL-backed filter changes (navigation, Back/Forward, Clear) without discarding chip
   // edits that were typed while a previous navigation was still loading.
   if (syncedFilters !== filters) {
     setSyncedFilters(filters)
+    setAppliedFilters(filters)
     setDrafts((current) => rebaseDrafts(current, syncedFilters, filters))
   }
 
@@ -187,11 +193,16 @@ export function RequestLogToolbar({
     if (key === 'model_key') loadModelOptions()
   }
 
+  function submit(patch: RequestLogFilterPatch) {
+    setAppliedFilters({ ...submittedFilters, ...patch })
+    onApply(patch)
+  }
+
   function commit(next: RequestLogFilterPatch = drafts) {
-    if (isPartialTag(next) || sameFilters(next, filters)) {
+    if (isPartialTag(next) || sameFilters(next, submittedFilters)) {
       return
     }
-    onApply(pickFilterParams(next))
+    submit(pickFilterParams(next))
   }
 
   // Picked values have no draft stage, so they apply as soon as they are chosen. Only the picked
@@ -199,8 +210,8 @@ export function RequestLogToolbar({
   // commit on their own.
   function pick(param: FilterParam, value: string) {
     setDrafts((current) => ({ ...current, [param]: value }))
-    if (normalizedParam(value) !== normalizedParam(filters[param])) {
-      onApply({ [param]: normalizedParam(value) })
+    if (normalizedParam(value) !== normalizedParam(submittedFilters[param])) {
+      submit({ [param]: normalizedParam(value) })
     }
   }
 
@@ -218,7 +229,7 @@ export function RequestLogToolbar({
     const cleared = pickFilterParams({})
     setAddedFields([])
     setDrafts((current) => ({ ...current, ...cleared }))
-    onApply(cleared)
+    submit(cleared)
   }
 
   return (

@@ -913,6 +913,28 @@ describe('RequestLogsPage picker filters', () => {
     )
   })
 
+  it('applies a re-picked status while the previous pick is still navigating', async () => {
+    routeMock.useSearch.mockReturnValue({ status_code: 200 })
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+    const held: Array<() => void> = []
+    navigateMock.mockImplementation(() => new Promise<void>((resolve) => held.push(resolve)))
+
+    const view = renderPage()
+    const trigger = within(view.container).getByTestId('request-log-filter-status-code')
+    fireEvent.click(trigger)
+    fireEvent.click(await screen.findByRole('option', { name: /429\s*Too Many Requests/ }))
+    expect(await screen.findByText('Loading…')).toBeInTheDocument()
+
+    // The URL still says 200 while 429 loads, so picking 200 again must still navigate.
+    fireEvent.click(trigger)
+    fireEvent.click(await screen.findByRole('option', { name: /200\s*OK/ }))
+    expect(navigateMock).toHaveBeenCalledTimes(2)
+    expect(navigatedSearch(1, { status_code: 429 }).status_code).toBe(200)
+
+    for (const release of held) release()
+    expect(await screen.findByText('Showing 1 of 1')).toBeInTheDocument()
+  })
+
   it('accepts a typed status code only when it is a valid HTTP status', async () => {
     routeMock.useSearch.mockReturnValue({ status_code: 429 })
     routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
