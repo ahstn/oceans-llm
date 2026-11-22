@@ -3,7 +3,6 @@ import { createFileRoute, useLocation, useRouter, useRouterState } from '@tansta
 import {
   BadgeInfoIcon,
   CodeIcon,
-  ColumnsThreeCogIcon,
   Copy01Icon,
   HomeIcon,
   RefreshIcon,
@@ -20,6 +19,10 @@ import {
   CodeBlockHeader,
   CodeBlockTitle,
 } from '@/components/reui/code-block/code-block'
+import {
+  ColumnVisibilityPopover,
+  type ToggleableColumn,
+} from '@/components/data/column-visibility-popover'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/layout/page-header'
@@ -32,7 +35,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { AdminTableHead, AdminTableHeader } from '@/components/shared/admin-table-header'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -285,67 +287,14 @@ export function ModelsPage() {
                 >
                   Clear
                 </Button>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button type="button" variant="outline" size="sm" className="gap-2">
-                      <AppIcon
-                        icon={ColumnsThreeCogIcon}
-                        size={14}
-                        stroke={1.5}
-                        data-icon="inline-start"
-                      />
-                      Columns
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" className="w-64 gap-3 p-3">
-                    <div className="flex flex-col gap-1">
-                      <h2 className="text-foreground text-sm font-medium">Table columns</h2>
-                      <p className="text-subtle-foreground text-xs">
-                        Show secondary model details in the desktop table.
-                      </p>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <label className="hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md px-1 py-1.5 text-sm">
-                        <ModelCheckbox
-                          className="mt-0.5"
-                          checked={visibleColumns.contextWindow}
-                          onChange={(event) => {
-                            const checked = event.currentTarget.checked
-                            setVisibleColumns((current) => ({
-                              ...current,
-                              contextWindow: checked,
-                            }))
-                          }}
-                        />
-                        <span className="flex min-w-0 flex-col gap-0.5">
-                          <span className="text-foreground font-medium">Context window</span>
-                          <span className="text-subtle-foreground text-xs">
-                            Input and output token limits.
-                          </span>
-                        </span>
-                      </label>
-                      <label className="hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md px-1 py-1.5 text-sm">
-                        <ModelCheckbox
-                          className="mt-0.5"
-                          checked={visibleColumns.capabilities}
-                          onChange={(event) => {
-                            const checked = event.currentTarget.checked
-                            setVisibleColumns((current) => ({
-                              ...current,
-                              capabilities: checked,
-                            }))
-                          }}
-                        />
-                        <span className="flex min-w-0 flex-col gap-0.5">
-                          <span className="text-foreground font-medium">Capabilities</span>
-                          <span className="text-subtle-foreground text-xs">
-                            Streaming, vision, tools, and attachment support.
-                          </span>
-                        </span>
-                      </label>
-                    </div>
-                  </PopoverContent>
-                </Popover>
+                <ColumnVisibilityPopover
+                  description="Show secondary model details in the desktop table."
+                  columns={optionalModelColumns}
+                  visible={visibleColumns}
+                  onVisibleChange={(key, visible) =>
+                    setVisibleColumns((current) => ({ ...current, [key]: visible }))
+                  }
+                />
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -602,6 +551,15 @@ type VisibleModelColumns = {
   contextWindow: boolean
   capabilities: boolean
 }
+
+const optionalModelColumns = [
+  { key: 'contextWindow', label: 'Context window', description: 'Input and output token limits.' },
+  {
+    key: 'capabilities',
+    label: 'Capabilities',
+    description: 'Streaming, vision, tools, and attachment support.',
+  },
+] as const satisfies ReadonlyArray<ToggleableColumn<keyof VisibleModelColumns>>
 
 function modelTableColumns(isPlatformAdmin: boolean, visibleColumns: VisibleModelColumns) {
   // Names share the remaining space; controls and metrics keep compact widths.

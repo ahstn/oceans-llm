@@ -18,7 +18,7 @@ The suite generates tests only for `run` cells and opt-in `blocked` cells, and p
 
 | Harness | Setup | `gpt-6-luna` | `claude-haiku-5.5` | `gemini-4-hydrogen` |
 | --- | --- | --- | --- | --- |
-| OpenCode 2.2.6 | Packed `@ahstn/opencode-oceans` plugin with `litellm` discovery | `responses` | `messages` | `chat_completions` |
+| OpenCode 2.3.0 | Packed `@ahstn/opencode-oceans` plugin with `litellm` discovery | `responses` | `messages` | `chat_completions` |
 | Pi 0.87.1 | Generated `models.json` | `chat_completions` | `messages` | `chat_completions` |
 | OMP 18.20.0 | `models.yml` with `litellm` discovery | `responses` | `messages` | `chat_completions` |
 | Claude Code 2.1.323 | Generated `settings.json` | Not applicable | `messages` | Not applicable |
@@ -55,7 +55,7 @@ Every shell command goes through an Oceans guardrail check (`POST /api/v1/guardr
 
 ### OpenCode
 
-The suite pins the native OpenCode V2 CLI and Promise client SDK to `2.2.6`. Matrix runs load the packed Oceans plugin, which finds the gateway in `gateways.yml` with `litellm` discovery. The generated-snippet run asks Oceans for the OpenCode config that the admin UI shows (`POST /api/v1/admin/models/client-configs`) and runs OpenCode with that config. Both add only harness settings: the `x-oceans-tags` request tag, a step limit, permissions, the guardrail plugin, and the Oceans MCP server for MCP runs.
+The suite pins the native OpenCode V2 CLI and Promise client SDK to `2.3.0`. Matrix runs load the packed Oceans plugin, which finds the gateway in `gateways.yml` with `litellm` discovery. The generated-snippet run asks Oceans for the OpenCode config that the admin UI shows (`POST /api/v1/admin/models/client-configs`) and runs OpenCode with that config. Both add only harness settings: the `x-oceans-tags` request tag, a step limit, permissions, the guardrail plugin, and the Oceans MCP server for MCP runs.
 
 In managed mode, the gateway starts with `GATEWAY_CLIENT_CONFIG_BASE_URL` set to its local URL, so generated configs point at it. In external mode, generated configs use the deployment's own client-config base URL.
 
