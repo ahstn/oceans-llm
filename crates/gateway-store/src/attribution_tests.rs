@@ -818,8 +818,9 @@ async fn link_request<S: GatewayStore>(
         terminal_success: None,
     };
     store
-        .append_agent_session_request(&link)
+        .append_agent_session_input(gateway_core::AgentSessionInput::request(&link))
         .await
+        .map(|result| result.request_inserted)
         .expect("request link");
 }
 

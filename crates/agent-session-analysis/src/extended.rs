@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
+use crate::math::{coverage_percent, ratio_basis_points};
 use crate::{
     GatewayOutcomeState, InferredObservation, SessionRequestFact, SessionUsageFact, TraceEvidence,
 };
@@ -61,10 +62,44 @@ pub struct BoundedSkillFact {
     pub abandoned: Option<bool>,
 }
 
+/// Operations accepted by bounded file instrumentation and stored as snake-case strings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileOperation {
+    Read,
+    Search,
+    Create,
+    Edit,
+    Overwrite,
+    Verify,
+}
+
+impl FileOperation {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Read => "read",
+            Self::Search => "search",
+            Self::Create => "create",
+            Self::Edit => "edit",
+            Self::Overwrite => "overwrite",
+            Self::Verify => "verify",
+        }
+    }
+}
+
+impl TryFrom<&str> for FileOperation {
+    type Error = serde::de::value::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::deserialize(serde::de::value::StrDeserializer::new(value))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BoundedFileInteractionFact {
     pub opaque_file_id: String,
-    pub operation: String,
+    pub operation: FileOperation,
     pub tool_name: Option<String>,
     pub succeeded: Option<bool>,
     pub error_signature: Option<String>,
@@ -305,6 +340,8 @@ pub(crate) fn reasoning_config_switches(observations: &[InferredObservation]) ->
         .filter_map(|observation| {
             Some((
                 observation.occurred_at,
+                observation.source_request_id.as_str(),
+                observation.observation_id,
                 observation.facts.reasoning_config_hash.as_deref()?,
             ))
         })
@@ -312,11 +349,12 @@ pub(crate) fn reasoning_config_switches(observations: &[InferredObservation]) ->
     if values.is_empty() {
         return None;
     }
-    values.sort_unstable_by_key(|(occurred_at, _)| *occurred_at);
+    values
+        .sort_unstable_by(|left, right| (left.0, left.1, left.2).cmp(&(right.0, right.1, right.2)));
     Some(
         values
             .windows(2)
-            .filter(|pair| pair[0].1 != pair[1].1)
+            .filter(|pair| pair[0].3 != pair[1].3)
             .count()
             .try_into()
             .unwrap_or(u32::MAX),
@@ -549,7 +587,7 @@ pub(crate) fn reliability_diagnostics(
     }
     let tools = tools.into_values().collect::<Vec<_>>();
     ReliabilityDiagnostics {
-        attempt_coverage_percent: percent(requests_with_attempts, requests.len()),
+        attempt_coverage_percent: coverage_percent(requests_with_attempts, requests.len()),
         total_attempts: attempts.len().try_into().unwrap_or(u32::MAX),
         wasted_attempts: wasted_attempts.len().try_into().unwrap_or(u32::MAX),
         wasted_attempt_latency_ms: wasted_attempts.iter().fold(0_i64, |total, attempt| {
@@ -703,7 +741,7 @@ pub(crate) fn outcome_diagnostics(
         .unwrap_or(usize::MAX)
         .max(instrumented_file_requests.len())
         .min(requests.len());
-    let file_signal_coverage_percent = percent(file_signal_count, requests.len());
+    let file_signal_coverage_percent = coverage_percent(file_signal_count, requests.len());
     let fully_measured = !requests.is_empty() && file_signal_coverage_percent == 100;
     let mut per_file = BTreeMap::<&str, (u32, u32)>::new();
     let mut failed_file_interactions = 0_u32;
@@ -869,23 +907,6 @@ fn sum_optional_i64(left: Option<i64>, right: Option<i64>) -> Option<i64> {
         (Some(value), None) | (None, Some(value)) => Some(value),
         (None, None) => None,
     }
-}
-
-fn ratio_basis_points(numerator: i64, denominator: i64) -> Option<i32> {
-    if denominator <= 0 {
-        return None;
-    }
-    let ratio = i128::from(numerator) * 10_000 / i128::from(denominator);
-    Some(ratio.clamp(i128::from(i32::MIN), i128::from(i32::MAX)) as i32)
-}
-
-fn percent(observed: usize, total: usize) -> u8 {
-    if total == 0 {
-        return 0;
-    }
-    u8::try_from((observed.saturating_mul(100) + total / 2) / total)
-        .unwrap_or(100)
-        .min(100)
 }
 
 fn is_length_reason(reason: &str) -> bool {

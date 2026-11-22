@@ -6,7 +6,6 @@ use time::Duration;
 use uuid::Uuid;
 
 use super::{FakeStore, FakeUsers, service_account_key, t0, user_key};
-use crate::agent_analysis::hash_lineage_candidate;
 use crate::attribution::note::MAX_NOTE_BYTES;
 use crate::attribution::{
     AttributionBatchInput, AttributionBatchOutcome, AttributionEntryCandidate,
@@ -15,6 +14,7 @@ use crate::attribution::{
     AttributionRejectReason, AttributionRequestSessionInput, AttributionSessionInput,
     ingest_attribution_batch,
 };
+use agent_session_analysis::identity::hashing::hash_lineage_candidate;
 
 const INSTALLATION: &str = "0b8e3e6c-8f6f-4d55-9d7a-2a3c1b1e9f10";
 const REPOSITORY: &str = "github.com/acme/widgets";

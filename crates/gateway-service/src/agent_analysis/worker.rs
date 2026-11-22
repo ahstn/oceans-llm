@@ -1,4 +1,24 @@
 use super::*;
+use agent_session_analysis::{
+    cohort::COHORT_VERSION,
+    versions::{AnalysisVersions, VersionCompatibility},
+};
+
+pub(super) fn analysis_versions(versions: &AgentAnalysisDesiredVersions) -> AnalysisVersions<'_> {
+    AnalysisVersions {
+        report_schema_version: &versions.report_schema_version,
+        boundary_policy_version: &versions.boundary_policy_version,
+        observation_parser_version: &versions.observation_parser_version,
+        report_observation_parser_version: &versions.observation_parser_version,
+        analyzer_version: &versions.analyzer_version,
+        score_policy_version: &versions.score_policy_version,
+        pricing_policy_version: &versions.pricing_policy_version,
+        cohort_version: &versions.cohort_version,
+        configuration_version: &versions.configuration_version,
+        score_maturity: versions.score_maturity,
+        calibration_approval_id: versions.calibration_approval_id.as_deref(),
+    }
+}
 
 pub async fn enqueue_analysis<S>(
     store: &S,
@@ -33,34 +53,46 @@ pub async fn enqueue_analysis_with_versions<S>(
 where
     S: AgentSessionAnalysisRepository + Sync,
 {
+    let item = analysis_request(agent_session_id, reason, dedupe_key, now, desired_versions);
     store
-        .enqueue_agent_analysis(&AgentAnalysisQueueRecord {
-            queue_item_id: stable_uuid(
-                QUEUE_ID_NAMESPACE,
-                &json!({
-                    "session": agent_session_id,
-                    "reason": reason,
-                    "versions": desired_versions,
-                    "dedupe_key": dedupe_key,
-                })
-                .to_string(),
-            ),
-            agent_session_id,
-            reason: reason.to_string(),
-            desired_versions: desired_versions.clone(),
-            status: AgentAnalysisQueueStatus::Pending,
-            lease_owner: None,
-            lease_expires_at: None,
-            attempts: 0,
-            max_attempts: 5,
-            last_error: None,
-            available_at: now,
-            created_at: now,
-            updated_at: now,
-            completed_at: None,
-        })
+        .enqueue_agent_analysis(&item)
         .await
         .map_err(Into::into)
+}
+
+pub(super) fn analysis_request(
+    agent_session_id: Uuid,
+    reason: &str,
+    dedupe_key: &str,
+    now: OffsetDateTime,
+    desired_versions: &AgentAnalysisDesiredVersions,
+) -> AgentAnalysisQueueRecord {
+    AgentAnalysisQueueRecord {
+        queue_item_id: stable_uuid(
+            QUEUE_ID_NAMESPACE,
+            &json!({
+                "session": agent_session_id,
+                "reason": reason,
+                "versions": desired_versions,
+                "dedupe_key": dedupe_key,
+            })
+            .to_string(),
+        ),
+        agent_session_id,
+        reason: reason.to_string(),
+        desired_versions: desired_versions.clone(),
+        status: AgentAnalysisQueueStatus::Pending,
+        lease_owner: None,
+        lease_epoch: 0,
+        lease_expires_at: None,
+        attempts: 0,
+        max_attempts: 5,
+        last_error: None,
+        available_at: now,
+        created_at: now,
+        updated_at: now,
+        completed_at: None,
+    }
 }
 
 pub async fn finalize_idle_sessions<S>(
@@ -74,17 +106,10 @@ where
     let cutoff = now - SESSION_IDLE_GAP;
     let mut finalized = 0_u64;
     for _ in 0..MAX_IDLE_FINALIZATION_PAGES {
-        let page = store
-            .list_agent_sessions(&AgentSessionListQuery {
-                page: 1,
-                page_size: gateway_core::MAX_AGENT_SESSION_PAGE_SIZE,
-                lifecycle: Some(SessionLifecycleState::Open),
-                started_before: Some(cutoff),
-                input_watermark_before: Some(cutoff),
-                ..Default::default()
-            })
+        let candidates = store
+            .list_idle_agent_sessions(cutoff, gateway_core::MAX_AGENT_SESSION_PAGE_SIZE)
             .await?;
-        let candidates: Vec<_> = page.items.into_iter().map(|trace| trace.session).collect();
+        let candidate_count = candidates.len();
         if candidates.is_empty() {
             break;
         }
@@ -96,27 +121,24 @@ where
             session.input_watermark_at = now;
             session.finalized_reason = Some("idle_gap".to_string());
             session.updated_at = now;
-            if !store
-                .finalize_agent_session_if_unchanged(&session, last_activity_at)
-                .await?
-            {
-                continue;
-            }
-            store
-                .mark_agent_session_analyses_stale(session.agent_session_id, None)
-                .await?;
-            enqueue_analysis_with_versions(
-                store,
+            let analysis = analysis_request(
                 session.agent_session_id,
                 "session_finalized",
                 &last_activity_at.unix_timestamp_nanos().to_string(),
                 now,
                 desired_versions,
-            )
-            .await?;
+            );
+            if !store
+                .finalize_agent_session_if_unchanged(&session, last_activity_at, Some(&analysis))
+                .await?
+            {
+                continue;
+            }
             finalized = finalized.saturating_add(1);
         }
-        if page.total <= u64::from(gateway_core::MAX_AGENT_SESSION_PAGE_SIZE) {
+        if candidate_count
+            < usize::try_from(gateway_core::MAX_AGENT_SESSION_PAGE_SIZE).unwrap_or(usize::MAX)
+        {
             break;
         }
         if finalized == finalized_before_page {
@@ -146,6 +168,11 @@ where
     else {
         return Ok(false);
     };
+    let lease = gateway_core::AgentAnalysisLease {
+        queue_item_id: queue.queue_item_id,
+        owner: lease_owner,
+        epoch: queue.lease_epoch,
+    };
     let current_versions = desired_versions_for_policy(policy);
     if queue.desired_versions.configuration_version != current_versions.configuration_version {
         enqueue_analysis_with_versions(
@@ -157,52 +184,35 @@ where
             &current_versions,
         )
         .await?;
-        store
-            .complete_agent_analysis(queue.queue_item_id, lease_owner, now)
-            .await?;
+        store.complete_agent_analysis(lease, now).await?;
         return Ok(true);
     }
-    let report = generate_report(
-        store,
-        queue.agent_session_id,
-        &queue.desired_versions,
-        now,
-        report_retention,
-        policy,
-    );
-    tokio::pin!(report);
-    let lease_interval = std::time::Duration::from_secs(20);
-    let mut heartbeat =
-        tokio::time::interval_at(tokio::time::Instant::now() + lease_interval, lease_interval);
-    let result = loop {
-        tokio::select! {
-            result = &mut report => break result,
-            _ = heartbeat.tick() => {
-                let renewed_at = OffsetDateTime::now_utc();
-                if !store
-                    .renew_agent_analysis_lease(
-                        queue.queue_item_id,
-                        lease_owner,
-                        renewed_at,
-                        renewed_at + Duration::minutes(1),
-                    )
-                    .await?
-                {
-                    break Err(GatewayError::Internal(
-                        "agent analysis lease was lost during report generation".to_string(),
-                    ));
-                }
+    // Renewal storage errors propagate directly; report errors and lease loss fail the job.
+    let report = async {
+        Ok::<_, GatewayError>(generate_report(store, &queue, now, report_retention, policy).await)
+    };
+    let heartbeat = async {
+        let lease_interval = std::time::Duration::from_secs(20);
+        let mut heartbeat =
+            tokio::time::interval_at(tokio::time::Instant::now() + lease_interval, lease_interval);
+        loop {
+            heartbeat.tick().await;
+            let renewed_at = OffsetDateTime::now_utc();
+            if !store
+                .renew_agent_analysis_lease(lease, renewed_at, renewed_at + Duration::minutes(1))
+                .await?
+            {
+                return Ok(Err(GatewayError::Internal(
+                    "agent analysis lease was lost during report generation".to_string(),
+                )));
             }
         }
     };
+    let result = run_report_with_heartbeat(report, heartbeat).await?;
     match result {
         Ok(()) => {
             store
-                .complete_agent_analysis(
-                    queue.queue_item_id,
-                    lease_owner,
-                    OffsetDateTime::now_utc(),
-                )
+                .complete_agent_analysis(lease, OffsetDateTime::now_utc())
                 .await?;
             Ok(true)
         }
@@ -210,41 +220,47 @@ where
             let retry_at = (queue.attempts < queue.max_attempts)
                 .then_some(now + Duration::seconds(i64::from(queue.attempts.max(1)) * 5));
             store
-                .fail_agent_analysis(
-                    queue.queue_item_id,
-                    lease_owner,
-                    &error.to_string(),
-                    retry_at,
-                    now,
-                )
+                .fail_agent_analysis(lease, &error.to_string(), retry_at, now)
                 .await?;
             Err(error)
         }
     }
 }
 
+async fn run_report_with_heartbeat<T>(
+    report: impl Future<Output = T>,
+    heartbeat: impl Future<Output = T>,
+) -> T {
+    // Publication can hold the queue lock renewal needs. Poll both until either finishes,
+    // then drop both owned futures before the caller performs any other queue writes.
+    tokio::select! {
+        biased;
+        result = heartbeat => result,
+        result = report => result,
+    }
+}
+
+#[cfg(test)]
+mod tests;
+
 pub(super) fn ensure_supported_versions(
     requested: &AgentAnalysisDesiredVersions,
 ) -> Result<(), GatewayError> {
-    let mut supported_base = desired_versions();
-    supported_base.score_maturity = agent_session_analysis::ScoreMaturity::Experimental;
-    supported_base.calibration_approval_id = None;
-    supported_base.configuration_version.clear();
-    let mut requested_base = requested.clone();
-    requested_base.score_maturity = agent_session_analysis::ScoreMaturity::Experimental;
-    requested_base.calibration_approval_id = None;
-    requested_base.configuration_version.clear();
-    if requested_base != supported_base {
+    let supported = desired_versions();
+    let requested_versions = analysis_versions(requested);
+    if !requested_versions.is_compatible_with(
+        analysis_versions(&supported),
+        VersionCompatibility::Supported,
+    ) {
+        let mut supported_base = supported;
+        supported_base.score_maturity = agent_session_analysis::ScoreMaturity::Experimental;
+        supported_base.calibration_approval_id = None;
+        supported_base.configuration_version.clear();
         return Err(GatewayError::Internal(format!(
             "unsupported agent analysis version tuple: requested {requested:?}, supported {supported_base:?}"
         )));
     }
-    if requested.score_maturity == agent_session_analysis::ScoreMaturity::Calibrated
-        && requested
-            .calibration_approval_id
-            .as_deref()
-            .is_none_or(str::is_empty)
-    {
+    if !requested_versions.has_required_calibration_approval() {
         return Err(GatewayError::Internal(
             "calibrated agent analysis requires an approval identity".to_string(),
         ));
@@ -276,13 +292,8 @@ pub fn desired_versions() -> AgentAnalysisDesiredVersions {
 
 #[must_use]
 pub fn desired_versions_for_policy(policy: &AnalysisPolicy) -> AgentAnalysisDesiredVersions {
-    let configuration_version = if policy.configuration_version.is_empty() {
-        hash_identifier(
-            &serde_json::to_string(policy).expect("analysis policy serialization is infallible"),
-        )
-    } else {
-        policy.configuration_version.clone()
-    };
+    let configuration_version = agent_session_analysis::versions::configuration_version(policy)
+        .expect("analysis policy serialization is infallible");
     AgentAnalysisDesiredVersions {
         report_schema_version: agent_session_analysis::REPORT_SCHEMA_VERSION.to_string(),
         boundary_policy_version: SESSION_BOUNDARY_POLICY_VERSION.to_string(),

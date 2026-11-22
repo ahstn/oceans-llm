@@ -34,6 +34,8 @@ const READER_COMPATIBILITY: &[(u32, ReaderCompatibility)] = &[
     (82, ReaderCompatibility::RequiresReader(82)),
     (83, ReaderCompatibility::Additive),
     (84, ReaderCompatibility::RequiresReader(84)),
+    (85, ReaderCompatibility::RequiresReader(85)),
+    (86, ReaderCompatibility::RequiresReader(86)),
 ];
 
 /// libsql migrations that rebuild a table other tables reference, with that
@@ -590,6 +592,20 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         checksum: "V84__usage_cost_nanos.sql",
         libsql_sql: include_str!("../migrations/V84__usage_cost_nanos.sql"),
         postgres_sql: include_str!("../migrations/postgres/V84__usage_cost_nanos.sql"),
+    },
+    MigrationManifest {
+        version: 85,
+        name: "agent_session_input_counters",
+        checksum: "V85__agent_session_input_counters.sql",
+        libsql_sql: include_str!("../migrations/V85__agent_session_input_counters.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V85__agent_session_input_counters.sql"),
+    },
+    MigrationManifest {
+        version: 86,
+        name: "agent_session_generation_jobs",
+        checksum: "V86__agent_session_generation_jobs.sql",
+        libsql_sql: include_str!("../migrations/V86__agent_session_generation_jobs.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V86__agent_session_generation_jobs.sql"),
     },
 ];
 

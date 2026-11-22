@@ -10,15 +10,15 @@ use axum::{
     http::HeaderMap,
 };
 use gateway_core::{
-    AdminApiKeyRepository, AgentSessionListQuery, AgentSessionSourceRecord,
-    AgentSessionTraceRecord, AuthError, BudgetRepository, Confidence, GatewayError,
-    GatewayOutcomeState, GlobalRole, IdentityRepository, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE,
-    MAX_REQUEST_LOG_PAGE_SIZE, McpTokenOverheadRepository, McpToolInvocationDetail,
-    McpToolInvocationPayloadRecord, McpToolInvocationQuery, McpToolInvocationRecord,
-    McpToolInvocationStatus, McpToolPolicyResult, ProviderConnection, ProviderRepository,
-    RequestAttemptRecord, RequestLogDetail, RequestLogPayloadRecord, RequestLogQuery,
-    RequestLogRecord, RequestLogRepository, RequestMcpTokenOverheadRecord, RequestTag, RequestTags,
-    ScoreMaturity, SessionLifecycleState, UsageLedgerRecord,
+    AdminApiKeyRepository, AgentSessionListQuery, AgentSessionSourceRecord, AuthError,
+    BudgetRepository, Confidence, GatewayError, GatewayOutcomeState, GlobalRole,
+    IdentityRepository, MAX_MCP_TOOL_INVOCATION_PAGE_SIZE, MAX_REQUEST_LOG_PAGE_SIZE,
+    McpTokenOverheadRepository, McpToolInvocationDetail, McpToolInvocationPayloadRecord,
+    McpToolInvocationQuery, McpToolInvocationRecord, McpToolInvocationStatus, McpToolPolicyResult,
+    ProviderConnection, ProviderRepository, RequestAttemptRecord, RequestLogDetail,
+    RequestLogPayloadRecord, RequestLogQuery, RequestLogRecord, RequestLogRepository,
+    RequestMcpTokenOverheadRecord, RequestTag, RequestTags, ScoreMaturity, SessionLifecycleState,
+    UsageLedgerRecord,
 };
 use gateway_service::{
     model_icon_key_from_metadata, provider_icon_key_from_metadata, resolve_model_icon_key,

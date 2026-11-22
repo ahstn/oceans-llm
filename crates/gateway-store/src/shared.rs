@@ -410,6 +410,10 @@ pub(crate) fn agent_observation_set_matches(
     stored: &AgentObservationSetRecord,
     candidate: &AgentObservationSetRecord,
 ) -> bool {
+    let mut stored_observations = stored.observations.iter().collect::<Vec<_>>();
+    let mut candidate_observations = candidate.observations.iter().collect::<Vec<_>>();
+    stored_observations.sort_unstable_by_key(|observation| observation.observation_id);
+    candidate_observations.sort_unstable_by_key(|observation| observation.observation_id);
     stored.observation_set_id == candidate.observation_set_id
         && stored.agent_session_id == candidate.agent_session_id
         && stored.parser_version == candidate.parser_version
@@ -417,10 +421,9 @@ pub(crate) fn agent_observation_set_matches(
         && stored.coverage == candidate.coverage
         && same_timestamp(stored.created_at, candidate.created_at)
         && stored.observations.len() == candidate.observations.len()
-        && stored
-            .observations
-            .iter()
-            .zip(&candidate.observations)
+        && stored_observations
+            .into_iter()
+            .zip(candidate_observations)
             .all(|(stored, candidate)| {
                 stored.observation_id == candidate.observation_id
                     && stored.kind == candidate.kind
@@ -438,6 +441,7 @@ pub(crate) fn agent_session_analysis_matches(
     candidate: &AgentSessionAnalysisRecord,
 ) -> bool {
     stored.agent_session_id == candidate.agent_session_id
+        && stored.input_generation == candidate.input_generation
         && stored.configuration_version == candidate.configuration_version
         && stored.boundary_policy_version == candidate.boundary_policy_version
         && same_timestamp_millis(stored.input_watermark_at, candidate.input_watermark_at)

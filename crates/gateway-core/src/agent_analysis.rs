@@ -104,6 +104,7 @@ pub struct AgentSessionAnalysisRecord {
     pub configuration_version: String,
     pub boundary_policy_version: String,
     pub input_watermark_at: OffsetDateTime,
+    pub input_generation: i64,
     pub observation_set_id: ObservationSetId,
     pub observation_parser_version: String,
     pub pricing_policy_version: String,
@@ -125,9 +126,21 @@ pub struct AgentSessionAnalysisRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentSessionTraceRecord {
     pub session: AgentSessionRecord,
+    pub input_generation: i64,
     pub session_source: Option<AgentSessionSourceRecord>,
     pub requests: Vec<AgentSessionRequestLinkRecord>,
     pub latest_observation_set: Option<AgentObservationSetRecord>,
+    pub latest_analysis: Option<AgentSessionAnalysisRecord>,
+}
+
+/// Listing data deliberately excludes request rows and observation facts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentSessionSummaryRecord {
+    pub session: AgentSessionRecord,
+    pub input_generation: i64,
+    pub request_count: u64,
+    pub session_source_hash: Option<String>,
+    pub harness_label: Option<String>,
     pub latest_analysis: Option<AgentSessionAnalysisRecord>,
 }
 
@@ -188,6 +201,7 @@ pub struct AgentAnalysisQueueRecord {
     pub desired_versions: AgentAnalysisDesiredVersions,
     pub status: AgentAnalysisQueueStatus,
     pub lease_owner: Option<String>,
+    pub lease_epoch: i64,
     pub lease_expires_at: Option<OffsetDateTime>,
     pub attempts: u32,
     pub max_attempts: u32,
@@ -196,6 +210,14 @@ pub struct AgentAnalysisQueueRecord {
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
     pub completed_at: Option<OffsetDateTime>,
+}
+
+/// A fencing identity: a reclaimed lease is distinct even for the same worker.
+#[derive(Debug, Clone, Copy)]
+pub struct AgentAnalysisLease<'a> {
+    pub queue_item_id: Uuid,
+    pub owner: &'a str,
+    pub epoch: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -226,7 +248,7 @@ pub struct AgentSessionListQuery {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentSessionListPage {
-    pub items: Vec<AgentSessionTraceRecord>,
+    pub items: Vec<AgentSessionSummaryRecord>,
     pub page: u32,
     pub page_size: u32,
     pub total: u64,
@@ -236,9 +258,58 @@ pub const MAX_AGENT_SESSION_PAGE_SIZE: u32 = 200;
 pub const MAX_AGENT_SESSION_REQUESTS: u64 = 1_000;
 pub const MAX_AGENT_SESSION_NESTED_FACTS: usize = 2_048;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AgentObservationSetAppendResult {
-    pub inserted: bool,
+/// One atomic session input. Observation-only input supports parser recomputation.
+#[derive(Debug, Clone, Copy)]
+pub struct AgentSessionInput<'a> {
+    pub request: Option<&'a AgentSessionRequestLinkRecord>,
+    pub observations: Option<AgentSessionObservationInput<'a>>,
+    pub analysis: Option<&'a AgentAnalysisQueueRecord>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AgentSessionObservationInput<'a> {
+    pub set: &'a AgentObservationSetRecord,
+    pub truncated_set: &'a AgentObservationSetRecord,
+    pub maximum_nested_facts: usize,
+}
+
+impl<'a> AgentSessionInput<'a> {
+    #[must_use]
+    pub const fn request(request: &'a AgentSessionRequestLinkRecord) -> Self {
+        Self {
+            request: Some(request),
+            observations: None,
+            analysis: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn observations(set: &'a AgentObservationSetRecord) -> Self {
+        Self::bounded_observations(set, set, MAX_AGENT_SESSION_NESTED_FACTS)
+    }
+
+    #[must_use]
+    pub const fn bounded_observations(
+        set: &'a AgentObservationSetRecord,
+        truncated_set: &'a AgentObservationSetRecord,
+        maximum_nested_facts: usize,
+    ) -> Self {
+        Self {
+            request: None,
+            observations: Some(AgentSessionObservationInput {
+                set,
+                truncated_set,
+                maximum_nested_facts,
+            }),
+            analysis: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AgentSessionInputAppendResult {
+    pub request_inserted: bool,
+    pub observations_inserted: bool,
     pub nested_facts_truncated: bool,
 }
 
@@ -267,53 +338,44 @@ pub trait AgentSessionTraceRepository {
         session: &AgentSessionRecord,
     ) -> Result<bool, StoreError>;
 
-    async fn update_agent_session_window(
-        &self,
-        session: &AgentSessionRecord,
-    ) -> Result<(), StoreError>;
     async fn finalize_agent_session_if_unchanged(
         &self,
         session: &AgentSessionRecord,
         expected_input_watermark_at: OffsetDateTime,
+        analysis: Option<&AgentAnalysisQueueRecord>,
     ) -> Result<bool, StoreError>;
 
-    /// Persists the link with the next session-local ordinal under a database lock.
+    /// Atomically appends a request and its observations under one session-writer lock.
     ///
-    /// `link.ordinal` is an output field and is ignored on append.
-    async fn append_agent_session_request(
+    /// Request ordinals are assigned by the repository; duplicates consume no counters.
+    async fn append_agent_session_input(
         &self,
-        link: &AgentSessionRequestLinkRecord,
-    ) -> Result<bool, StoreError>;
+        input: AgentSessionInput<'_>,
+    ) -> Result<AgentSessionInputAppendResult, StoreError>;
 
-    async fn count_agent_session_requests(
+    async fn list_idle_agent_sessions(
         &self,
-        agent_session_id: AgentSessionId,
-    ) -> Result<u64, StoreError>;
+        cutoff: OffsetDateTime,
+        limit: u32,
+    ) -> Result<Vec<AgentSessionRecord>, StoreError>;
+
     async fn list_agent_session_request_attempts(
         &self,
         agent_session_id: AgentSessionId,
         limit: u32,
     ) -> Result<Vec<RequestAttemptRecord>, StoreError>;
 
-    async fn append_agent_observation_set(
-        &self,
-        set: &AgentObservationSetRecord,
-    ) -> Result<bool, StoreError>;
-
-    /// Appends one of two equivalent sets while holding a session-scoped lock.
-    ///
-    /// The store selects `truncated_set` when `set` would exceed the session's combined nested
-    /// fact limit. Both values must describe the same request and use the same observation-set ID.
-    async fn append_bounded_agent_observation_set(
-        &self,
-        set: &AgentObservationSetRecord,
-        truncated_set: &AgentObservationSetRecord,
-        maximum_nested_facts: usize,
-    ) -> Result<AgentObservationSetAppendResult, StoreError>;
-
     async fn load_agent_observation_sets(
         &self,
         agent_session_id: AgentSessionId,
+    ) -> Result<Vec<AgentObservationSetRecord>, StoreError>;
+
+    /// Loads only the requested parser's sets and child observations, filtering before the
+    /// 1,001-set overflow sentinel limit. Historical parser versions do not consume that limit.
+    async fn load_agent_observation_sets_for_parser(
+        &self,
+        agent_session_id: AgentSessionId,
+        parser_version: &str,
     ) -> Result<Vec<AgentObservationSetRecord>, StoreError>;
 
     async fn link_request_log_to_agent_session(
@@ -329,25 +391,22 @@ pub trait AgentSessionTraceRepository {
 
 #[async_trait]
 pub trait AgentSessionReportRepository {
+    /// Publishes current fenced work; returns false for replays or superseded work.
     async fn append_agent_session_analysis(
         &self,
         analysis: &AgentSessionAnalysisRecord,
+        lease: Option<AgentAnalysisLease<'_>>,
     ) -> Result<bool, StoreError>;
 
     async fn list_agent_sessions(
         &self,
         query: &AgentSessionListQuery,
     ) -> Result<AgentSessionListPage, StoreError>;
-
-    async fn mark_agent_session_analyses_stale(
-        &self,
-        agent_session_id: AgentSessionId,
-        superseded_by: Option<AnalysisId>,
-    ) -> Result<u64, StoreError>;
 }
 
 #[async_trait]
 pub trait AgentAnalysisQueueRepository {
+    /// Coalesces requests per session. IDs deduplicate requests; lease/status fields are store-owned.
     async fn enqueue_agent_analysis(
         &self,
         item: &AgentAnalysisQueueRecord,
@@ -362,23 +421,20 @@ pub trait AgentAnalysisQueueRepository {
 
     async fn renew_agent_analysis_lease(
         &self,
-        queue_item_id: Uuid,
-        lease_owner: &str,
+        lease: AgentAnalysisLease<'_>,
         updated_at: OffsetDateTime,
         lease_expires_at: OffsetDateTime,
     ) -> Result<bool, StoreError>;
 
     async fn complete_agent_analysis(
         &self,
-        queue_item_id: Uuid,
-        lease_owner: &str,
+        lease: AgentAnalysisLease<'_>,
         completed_at: OffsetDateTime,
     ) -> Result<(), StoreError>;
 
     async fn fail_agent_analysis(
         &self,
-        queue_item_id: Uuid,
-        lease_owner: &str,
+        lease: AgentAnalysisLease<'_>,
         error: &str,
         retry_at: Option<OffsetDateTime>,
         updated_at: OffsetDateTime,

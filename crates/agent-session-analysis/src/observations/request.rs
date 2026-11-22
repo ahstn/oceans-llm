@@ -1,25 +1,45 @@
-use super::*;
+use std::{
+    collections::BTreeMap,
+    io::{self, Write},
+};
+
+use serde::Serialize;
+use serde_json::Value;
+
+use super::MAX_TOOL_NAME_CHARS;
+use crate::{
+    BoundedFileInteractionFact, BoundedSkillFact, BoundedToolDefinitionFact, FileOperation,
+    identity::{
+        SessionCorrelationLimitation, extract_client_session,
+        hashing::{hash_identifier, hash_lineage_candidate},
+    },
+    tool_calls::tool_server_key,
+};
+
+const MAX_SUPPLIED_TOOL_FACTS: usize = 256;
+const MAX_SKILL_FACTS: usize = 256;
+const MAX_FILE_INTERACTION_FACTS: usize = 256;
 
 fn serialized_json_bytes<T>(value: &T) -> Option<u64>
 where
     T: serde::Serialize + ?Sized,
 {
-    crate::payload_bounding::serialized_size(value)
+    serialized_size(value)
         .ok()
         .and_then(|bytes| u64::try_from(bytes).ok())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PassiveRequestMetadata {
+pub struct PassiveRequestMetadata {
     pub external_session_id: Option<String>,
-    /// Namespace `external_session_id` is hashed under; see `ClientSessionMetadata`.
+    /// Namespace `external_session_id` is hashed under; see [`crate::identity::ClientSessionMetadata`].
     pub session_namespace: Option<&'static str>,
     pub session_source: Option<String>,
     pub session_limitation: Option<SessionCorrelationLimitation>,
     pub execution_id: Option<String>,
     pub body_inspected: bool,
     pub parent_execution_id: Option<String>,
-    /// Namespace the lineage IDs are hashed under; see `ClientSessionMetadata`.
+    /// Namespace the lineage IDs are hashed under; see [`crate::identity::ClientSessionMetadata`].
     pub lineage_namespace: Option<&'static str>,
     pub message_count: Option<u32>,
     pub prompt_bytes: Option<u64>,
@@ -37,7 +57,7 @@ impl PassiveRequestMetadata {
     /// The owner-scoped hash stored for `external_session_id`. It uses the session's namespace
     /// rather than the harness key, so every harness that reads the same session ID in the same
     /// namespace stores the same hash.
-    pub(super) fn normalized_session_id(&self, ownership_scope_key: &str) -> Option<String> {
+    pub fn normalized_session_id(&self, ownership_scope_key: &str) -> Option<String> {
         let (value, namespace) = self
             .external_session_id
             .as_deref()
@@ -50,10 +70,7 @@ impl PassiveRequestMetadata {
     }
 
     /// The owner-scoped hashes stored for `execution_id` and `parent_execution_id`.
-    pub(super) fn hashed_lineage(
-        &self,
-        ownership_scope_key: &str,
-    ) -> (Option<String>, Option<String>) {
+    pub fn hashed_lineage(&self, ownership_scope_key: &str) -> (Option<String>, Option<String>) {
         let hash = |value: Option<&str>| {
             let (value, namespace) = value.zip(self.lineage_namespace)?;
             Some(hash_lineage_candidate(
@@ -69,14 +86,14 @@ impl PassiveRequestMetadata {
     }
 }
 
-pub(crate) fn extract_request_metadata(
+pub fn extract_request_metadata(
     body: &Value,
     headers: &BTreeMap<String, String>,
     inspect_body: bool,
     harness_key: &str,
 ) -> PassiveRequestMetadata {
     let body = if inspect_body { body } else { &Value::Null };
-    let client = crate::client_session::extract_client_session(body, headers, harness_key);
+    let client = extract_client_session(body, headers, harness_key);
     let message_count = body
         .get("messages")
         .and_then(Value::as_array)
@@ -101,10 +118,10 @@ pub(crate) fn extract_request_metadata(
     let cache_requested = cache_control_requested(body);
 
     PassiveRequestMetadata {
-        external_session_id: client.session.value,
+        external_session_id: client.session_value,
         session_namespace: client.session_namespace,
-        session_source: client.session.source,
-        session_limitation: client.session.limitation,
+        session_source: client.session_source,
+        session_limitation: client.session_limitation,
         body_inspected: inspect_body,
         execution_id: client.execution_id,
         parent_execution_id: client.parent_execution_id,
@@ -122,32 +139,7 @@ pub(crate) fn extract_request_metadata(
     }
 }
 
-pub(super) fn stable_uuid(namespace: Uuid, canonical: &str) -> Uuid {
-    Uuid::new_v5(&namespace, canonical.as_bytes())
-}
-
-pub(super) fn hash_identifier(value: &str) -> String {
-    let digest = Sha256::digest(value.as_bytes());
-    format!("sha256:{digest:x}")
-}
-
-pub(crate) fn hash_lineage_candidate(
-    ownership_scope_key: &str,
-    adapter_namespace: &str,
-    value: &str,
-) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(ownership_scope_key.as_bytes());
-    hasher.update([0]);
-    hasher.update(adapter_namespace.as_bytes());
-    hasher.update([0]);
-    hasher.update(b"lineage-v1");
-    hasher.update([0]);
-    hasher.update(value.as_bytes());
-    format!("sha256:{:x}", hasher.finalize())
-}
-
-pub(crate) fn serialized_request_prompt_bytes(body: &Value) -> Option<u64> {
+pub fn serialized_request_prompt_bytes(body: &Value) -> Option<u64> {
     let primary_prompt = body.get("messages").or_else(|| body.get("input"));
     let mut total = 0_u64;
     let mut found = false;
@@ -236,12 +228,8 @@ fn bounded_file_interactions(values: &[Value]) -> Vec<BoundedFileInteractionFact
                 .chars()
                 .take(32)
                 .collect::<String>();
-            if opaque_file_id.is_empty()
-                || !matches!(
-                    operation.as_str(),
-                    "read" | "search" | "create" | "edit" | "overwrite" | "verify"
-                )
-            {
+            let operation = FileOperation::try_from(operation.as_str()).ok()?;
+            if opaque_file_id.is_empty() {
                 return None;
             }
             Some(BoundedFileInteractionFact {
@@ -303,3 +291,30 @@ fn contains_cache_control(value: &Value, depth: usize, remaining: &mut usize) ->
         _ => false,
     }
 }
+#[derive(Default)]
+struct CountingWriter {
+    bytes: usize,
+}
+
+impl Write for CountingWriter {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.bytes = self.bytes.saturating_add(buffer.len());
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+/// Measures compact JSON without allocating the serialized document.
+pub fn serialized_size<T>(value: &T) -> Result<usize, serde_json::Error>
+where
+    T: Serialize + ?Sized,
+{
+    let mut writer = CountingWriter::default();
+    serde_json::to_writer(&mut writer, value)?;
+    Ok(writer.bytes)
+}
+
+#[cfg(test)]
+mod tests;

@@ -209,10 +209,10 @@ The **Agent Harnesses** page shows, for each harness and model, the gateway cost
   | Agent | Session id the gateway reads |
   | --- | --- |
   | Claude Code | `x-claude-code-session-id`, or the explicit session component of `metadata.user_id` when payload policy permits. Account and device IDs are not session IDs. |
-  | Codex | An exact request execution/thread hash attested by the same owner's notes; otherwise the native session ID from `session-id` or `x-codex-turn-metadata`. Parent thread IDs are not aliases. |
+  | Codex | An exact request execution/thread hash attested by the same owner's notes; otherwise the native session ID from `session-id` or `x-codex-turn-metadata`. Parent lineage comes from `x-codex-parent-thread-id` (header or flat `client_metadata`), or embedded turn metadata. Parent IDs are not session aliases and must agree when supplied together. |
   | OpenCode | `x-opencode-session-id`; older clients use `x-session-id`, `x-session-affinity` or `x-opencode-session`. Cache affinity is not substituted for an explicit conversation ID. |
   | Pi | `session-id` on Responses, `x-session-id` on OpenRouter, and the older `session_id`. A client can omit these fields. |
-  | OMP | The extension maps each gateway request to its journal. Native Messages requests also carry `x-claude-code-session-id`, which can differ from the journal. |
+  | OMP | The extension maps each gateway request to its journal. LiteLLM discovery sends `x-litellm-session-id`; Messages requests carry `x-claude-code-session-id`. Native session aliases must agree when supplied together, and can differ from the journal. |
   | Any client | `x-oceans-session-id` |
 
   A Claude Code subagent or Codex thread joins only when its note ID has an exact match or an explicit request mapping. A shared parent session, model or timestamp alone does not prove the match.

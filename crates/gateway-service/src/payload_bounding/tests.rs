@@ -1,8 +1,9 @@
+use agent_session_analysis::observations::request::serialized_size;
 use serde_json::{Value, json};
 
 use super::{
     MAX_ORDINARY_MESSAGE_BYTES, MAX_SOLITARY_MESSAGE_BYTES, MAX_TOTAL_CONTENT_BYTES,
-    bound_request_payload, bound_request_payload_after_known_fields, serialized_size,
+    bound_request_payload, bound_request_payload_after_known_fields,
 };
 use crate::redaction::MAX_INLINE_REQUEST_BYTES;
 

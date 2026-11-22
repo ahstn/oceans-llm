@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 
+use agent_session_analysis::identity::harness::classify_agent_harness;
 use axum::http::HeaderMap;
 
 use gateway_core::{
@@ -14,7 +15,6 @@ use gateway_core::{
 
 use gateway_service::{
     ResolvedGatewayRequest,
-    request_logging::classify_agent_harness,
     routing::{RoutingEndpoint, RoutingReceipt, RoutingRequest, select_route},
 };
 use serde_json::Value;
@@ -182,18 +182,7 @@ async fn filter_credential_routes(
 }
 
 fn validate_session_headers(headers: &HeaderMap) -> Result<(), GatewayError> {
-    for name in [
-        "x-oceans-session-id",
-        "session-id",
-        "session_id",
-        "x-claude-code-session-id",
-        "x-session-id",
-        "x-session-affinity",
-        "x-opencode-session",
-        "x-opencode-session-id",
-        "x-client-request-id",
-        "x-codex-turn-metadata",
-    ] {
+    for &name in agent_session_analysis::identity::ROUTING_SESSION_HEADERS {
         let mut values = headers.get_all(name).iter();
         let Some(value) = values.next() else {
             continue;

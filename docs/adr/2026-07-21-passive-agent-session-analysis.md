@@ -93,3 +93,7 @@ Rejected because no deployment has supplied the calibration data required to est
 - Review normalized-versus-legacy provider cost discrepancies and approve a dated authoritative pricing cutover.
 - Enable calibrated and team-admin capabilities only after those reviews are recorded.
 - Add the separately gated aggregate endpoint and accessible admin monitoring only after list/detail calibration.
+
+## Supersession note (2026-11-22)
+
+The ingestion transaction, recomputation queue and hydration details above are superseded by [Atomic agent-session input](./2026-11-22-atomic-agent-session-input.md) and [Generation-fenced agent-session analysis](./2026-11-22-generation-fenced-agent-session-analysis.md). The ownership, privacy, pure-analysis and immutable-report boundaries recorded here remain unchanged.

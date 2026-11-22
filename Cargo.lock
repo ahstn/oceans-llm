@@ -59,6 +59,7 @@ version = "1.4.0"
 dependencies = [
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "time",
  "uuid",
 ]
@@ -1847,6 +1848,7 @@ name = "gateway"
 version = "1.4.0"
 dependencies = [
  "admin-ui",
+ "agent-session-analysis",
  "anyhow",
  "async-stream",
  "async-trait",

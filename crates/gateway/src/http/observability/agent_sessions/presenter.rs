@@ -301,10 +301,13 @@ pub(super) fn agent_session_source_view(
 }
 
 pub(super) fn agent_session_summary(
-    trace: &AgentSessionTraceRecord,
+    session: &gateway_core::AgentSessionRecord,
+    session_source_hash: Option<&str>,
+    harness_label: Option<&str>,
+    request_count: u64,
+    analysis: Option<&gateway_core::AgentSessionAnalysisRecord>,
     calibrated_score_visible: bool,
 ) -> AgentSessionSummaryView {
-    let analysis = trace.latest_analysis.as_ref();
     let report = analysis.map(|analysis| &analysis.report);
     let score_visible = report.is_some_and(|report| {
         calibrated_score_visible
@@ -315,36 +318,26 @@ pub(super) fn agent_session_summary(
                 .is_some_and(|value| !value.is_empty())
     });
     AgentSessionSummaryView {
-        session_id: trace.session.agent_session_id.to_string(),
-        session_source_id: trace
-            .session
+        session_id: session.agent_session_id.to_string(),
+        session_source_id: session
             .agent_session_source_id
             .map(|value| value.to_string()),
-        session_source_hash: trace
-            .session_source
-            .as_ref()
-            .map(|source| source.normalized_session_id.clone()),
-        ownership_scope_key: trace.session.ownership_scope_key.clone(),
-        user_id: trace.session.user_id.map(|value| value.to_string()),
-        team_id: trace.session.team_id.map(|value| value.to_string()),
-        service_account_id: trace
-            .session
-            .service_account_id
-            .map(|value| value.to_string()),
-        harness_key: Some(trace.session.harness_key.clone()),
-        harness_label: trace.session_source.as_ref().map_or_else(
-            || Some(trace.session.harness_key.clone()),
-            |source| Some(source.harness_label.clone()),
-        ),
-        requested_model_key: trace.session.requested_model_key.clone(),
-        operation: trace.session.operation.clone(),
-        caller_class: trace.session.caller_class.clone(),
-        session_source_observed: trace.session.agent_session_source_id.is_some(),
-        lifecycle: enum_name(trace.session.lifecycle),
-        boundary_confidence: enum_name(trace.session.boundary_confidence),
-        started_at: format_timestamp(trace.session.started_at),
-        ended_at: trace.session.ended_at.map(format_timestamp),
-        request_count: u64::try_from(trace.requests.len()).unwrap_or(u64::MAX),
+        session_source_hash: session_source_hash.map(str::to_owned),
+        ownership_scope_key: session.ownership_scope_key.clone(),
+        user_id: session.user_id.map(|value| value.to_string()),
+        team_id: session.team_id.map(|value| value.to_string()),
+        service_account_id: session.service_account_id.map(|value| value.to_string()),
+        harness_key: Some(session.harness_key.clone()),
+        harness_label: Some(harness_label.unwrap_or(&session.harness_key).to_owned()),
+        requested_model_key: session.requested_model_key.clone(),
+        operation: session.operation.clone(),
+        caller_class: session.caller_class.clone(),
+        session_source_observed: session.agent_session_source_id.is_some(),
+        lifecycle: enum_name(session.lifecycle),
+        boundary_confidence: enum_name(session.boundary_confidence),
+        started_at: format_timestamp(session.started_at),
+        ended_at: session.ended_at.map(format_timestamp),
+        request_count,
         tool_call_count: report
             .map(|report| report.diagnostics.tools_and_changes.observed_tool_calls),
         mcp_call_count: report.map(|report| report.diagnostics.tools_and_changes.direct_mcp_calls),

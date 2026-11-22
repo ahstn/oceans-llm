@@ -1,14 +1,20 @@
 pub mod calibration;
+pub mod cohort;
 mod extended;
+pub mod identity;
+mod math;
+pub mod observations;
 pub mod tool_calls;
+pub mod versions;
 
 pub use extended::{
     AnalysisMetricPolicy, BoundedFileInteractionFact, BoundedSkillFact, CacheProfileRule, CacheTtl,
-    FinishReasonDiagnostics, FinishReasonItem, OutcomeDiagnostics, ReliabilityDiagnostics,
-    RequestAttemptFact, SkillDiagnosticItem, SkillDiagnostics, ToolInvocationFact,
-    ToolReliabilityItem, ToolServerDiagnostics,
+    FileOperation, FinishReasonDiagnostics, FinishReasonItem, OutcomeDiagnostics,
+    ReliabilityDiagnostics, RequestAttemptFact, SkillDiagnosticItem, SkillDiagnostics,
+    ToolInvocationFact, ToolReliabilityItem, ToolServerDiagnostics,
 };
 
+use math::{coverage_percent, percentile, ratio_basis_points};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -34,6 +40,14 @@ pub type ObservationSetId = Uuid;
 pub enum SessionLifecycleState {
     Open,
     Finalized,
+}
+
+impl TryFrom<&str> for SessionLifecycleState {
+    type Error = serde::de::value::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::deserialize(serde::de::value::StrDeserializer::new(value))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -687,6 +701,9 @@ fn validate_trace(trace: &SessionTrace) -> Result<(), AnalysisError> {
                 usage.output_tokens,
                 usage.reasoning_tokens,
                 usage.provider_total_tokens,
+                usage.cache_creation_5m_tokens,
+                usage.cache_creation_30m_tokens,
+                usage.cache_creation_1h_tokens,
                 usage.fresh_input_cost_10000,
                 usage.cache_read_cost_10000,
                 usage.cache_creation_cost_10000,
@@ -731,59 +748,46 @@ fn sum_usage(
         })
 }
 
-fn ratio_basis_points(numerator: i64, denominator: i64) -> Option<i32> {
-    if denominator <= 0 {
-        return None;
-    }
-    let ratio = i128::from(numerator) * 10_000 / i128::from(denominator);
-    Some(ratio.clamp(i128::from(i32::MIN), i128::from(i32::MAX)) as i32)
-}
-
-fn coverage_percent(observed: usize, total: usize) -> u8 {
-    if total == 0 {
-        return 0;
-    }
-    u8::try_from((observed.saturating_mul(100) + total / 2) / total)
-        .unwrap_or(100)
-        .min(100)
-}
-
-fn percentile(values: &[i64], numerator: usize, denominator: usize) -> Option<i64> {
-    if values.is_empty() || denominator == 0 {
-        return None;
-    }
-    let mut ordered = values.to_vec();
-    ordered.sort_unstable();
-    let index = ((ordered.len() - 1) * numerator).div_ceil(denominator);
-    ordered.get(index).copied()
-}
-
 fn context_diagnostics(
     requests: &[SessionRequestFact],
     active_time_ms: i64,
     observations: &[InferredObservation],
     policy: &AnalysisPolicy,
 ) -> ContextDiagnostics {
+    let has_persisted_ordinals = requests.iter().any(|request| request.ordinal != 0);
     let mut prompt_samples = requests
         .iter()
-        .filter_map(|request| {
+        .enumerate()
+        .filter_map(|(input_index, request)| {
             let prompt_tokens = request
                 .usage
                 .as_ref()
                 .and_then(extended::total_input_tokens)?;
-            Some((request.occurred_at, prompt_tokens))
+            let ordinal = if has_persisted_ordinals {
+                request.ordinal
+            } else {
+                i64::try_from(input_index).unwrap_or(i64::MAX)
+            };
+            Some((
+                request.occurred_at,
+                ordinal,
+                request.request_id.as_str(),
+                prompt_tokens,
+            ))
         })
         .collect::<Vec<_>>();
-    prompt_samples.sort_unstable_by_key(|(occurred_at, _)| *occurred_at);
-    let prompt_tokens = prompt_samples
+    prompt_samples
+        .sort_unstable_by(|left, right| (left.0, left.1, left.2).cmp(&(right.0, right.1, right.2)));
+    let mut prompt_tokens = prompt_samples
         .into_iter()
-        .map(|(_, prompt_tokens)| prompt_tokens)
+        .map(|(_, _, _, prompt_tokens)| prompt_tokens)
         .collect::<Vec<_>>();
     let first = prompt_tokens.first().copied();
     let last = prompt_tokens.last().copied();
     let prompt_growth = first
         .zip(last)
         .and_then(|(first, last)| last.checked_sub(first));
+    prompt_tokens.sort_unstable();
     let requests_over_input_boundary = prompt_tokens
         .iter()
         .filter(|tokens| **tokens > policy.context_input_boundary_tokens)
@@ -861,23 +865,20 @@ fn tool_and_change_diagnostics(
         }
         for interaction in &observation.facts.file_interactions {
             opaque_files.insert(interaction.opaque_file_id.as_str());
-            let index = match interaction.operation.as_str() {
-                "read" => Some(0),
-                "search" => Some(1),
-                "create" => Some(2),
-                "edit" => Some(3),
-                "overwrite" => Some(4),
-                "verify" => Some(5),
-                _ => None,
+            let index = match interaction.operation {
+                FileOperation::Read => 0,
+                FileOperation::Search => 1,
+                FileOperation::Create => 2,
+                FileOperation::Edit => 3,
+                FileOperation::Overwrite => 4,
+                FileOperation::Verify => 5,
             };
-            if let Some(index) = index {
-                counts[index] = counts[index].saturating_add(1);
-                if matches!(index, 2..=4) {
-                    file_write_counts
-                        .entry(interaction.opaque_file_id.as_str())
-                        .and_modify(|count| *count = count.saturating_add(1))
-                        .or_insert(1);
-                }
+            counts[index] = counts[index].saturating_add(1);
+            if matches!(index, 2..=4) {
+                file_write_counts
+                    .entry(interaction.opaque_file_id.as_str())
+                    .and_modify(|count| *count = count.saturating_add(1))
+                    .or_insert(1);
             }
         }
         if observation.facts.file_interactions.is_empty() {

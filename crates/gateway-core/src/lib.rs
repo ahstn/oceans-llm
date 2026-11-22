@@ -24,13 +24,14 @@ pub mod streaming;
 pub mod traits;
 
 pub use agent_analysis::{
-    AgentAnalysisDesiredVersions, AgentAnalysisQueueRecord, AgentAnalysisQueueRepository,
-    AgentAnalysisQueueStatus, AgentObservationSetAppendResult, AgentObservationSetRecord,
+    AgentAnalysisDesiredVersions, AgentAnalysisLease, AgentAnalysisQueueRecord,
+    AgentAnalysisQueueRepository, AgentAnalysisQueueStatus, AgentObservationSetRecord,
     AgentRequestLogLinkRecord, AgentSessionAnalysisRecord, AgentSessionAnalysisRepository,
-    AgentSessionListPage, AgentSessionListQuery, AgentSessionRecord, AgentSessionReportRepository,
-    AgentSessionRequestLinkRecord, AgentSessionSourceRecord, AgentSessionTraceRecord,
-    AgentSessionTraceRepository, MAX_AGENT_SESSION_NESTED_FACTS, MAX_AGENT_SESSION_PAGE_SIZE,
-    MAX_AGENT_SESSION_REQUESTS,
+    AgentSessionInput, AgentSessionInputAppendResult, AgentSessionListPage, AgentSessionListQuery,
+    AgentSessionObservationInput, AgentSessionRecord, AgentSessionReportRepository,
+    AgentSessionRequestLinkRecord, AgentSessionSourceRecord, AgentSessionSummaryRecord,
+    AgentSessionTraceRecord, AgentSessionTraceRepository, MAX_AGENT_SESSION_NESTED_FACTS,
+    MAX_AGENT_SESSION_PAGE_SIZE, MAX_AGENT_SESSION_REQUESTS,
 };
 pub use agent_session_analysis::{
     ActivityInterval, AgentSessionId, AgentSessionSourceId, AnalysisId, AnalysisMetricPolicy,
