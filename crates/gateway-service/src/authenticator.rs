@@ -4,16 +4,20 @@ use argon2::{
     Argon2,
     password_hash::{PasswordHash, PasswordVerifier},
 };
+use gateway_core::traits::API_KEY_LAST_USED_INTERVAL_SECONDS;
 use gateway_core::{
     ApiKeyOwnerKind, ApiKeyRecord, ApiKeyRepository, AuthError, AuthenticatedApiKey,
     BudgetRepository, BudgetScope, GatewayError, ServiceAccountStatus, extract_bearer_token,
     parse_gateway_api_key,
 };
+use time::OffsetDateTime;
+
+use crate::api_key_verification::ApiKeyVerification;
 
 #[derive(Clone)]
 pub struct Authenticator<R> {
     repo: Arc<R>,
-    argon2: Argon2<'static>,
+    verification: Arc<ApiKeyVerification>,
 }
 
 impl<R> Authenticator<R>
@@ -24,7 +28,7 @@ where
     pub fn new(repo: Arc<R>) -> Self {
         Self {
             repo,
-            argon2: Argon2::default(),
+            verification: Arc::new(ApiKeyVerification::default()),
         }
     }
 
@@ -52,17 +56,23 @@ where
 
         ensure_api_key_usable(self.repo.as_ref(), &record).await?;
 
-        let password_hash = PasswordHash::new(&record.secret_hash)
-            .map_err(|error| AuthError::HashVerification(error.to_string()))?;
+        self.verification
+            .verify(&parsed.secret, &record.secret_hash)
+            .await?;
 
-        self.argon2
-            .verify_password(parsed.secret.as_bytes(), &password_hash)
-            .map_err(|_| AuthError::ApiKeySecretMismatch)?;
-
-        self.repo.touch_api_key_last_used(record.id).await?;
+        let now = OffsetDateTime::now_utc().unix_timestamp();
+        if last_used_needs_update(record.last_used_at, now) {
+            self.repo.touch_api_key_last_used(record.id).await?;
+        }
 
         Ok(AuthenticatedApiKey::from(record))
     }
+}
+
+fn last_used_needs_update(last_used_at: Option<OffsetDateTime>, now: i64) -> bool {
+    last_used_at.is_none_or(|last_used_at| {
+        last_used_at.unix_timestamp() <= now - API_KEY_LAST_USED_INTERVAL_SECONDS
+    })
 }
 
 /// Checks everything that lets an API key authenticate apart from its
@@ -121,4 +131,23 @@ pub fn verify_gateway_key_secret(secret: &str, expected_hash: &str) -> anyhow::R
     Ok(Argon2::default()
         .verify_password(secret.as_bytes(), &password_hash)
         .is_ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn last_used_writes_only_when_missing_or_at_least_a_minute_old() {
+        let now = 1_000;
+        let at = |seconds| {
+            Some(OffsetDateTime::from_unix_timestamp(seconds).expect("valid test timestamp"))
+        };
+        assert!(last_used_needs_update(None, now));
+        assert!(last_used_needs_update(at(now - 60), now));
+        assert!(last_used_needs_update(at(now - 61), now));
+        assert!(!last_used_needs_update(at(now - 59), now));
+        assert!(!last_used_needs_update(at(now), now));
+        assert!(!last_used_needs_update(at(now + 1), now));
+    }
 }

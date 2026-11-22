@@ -92,7 +92,7 @@ WITH input AS (
            json_extract(value, '$.window_end') AS window_end
     FROM json_each(?1)
 )
-SELECT i.scope_key, COALESCE(SUM(u.computed_cost_10000), 0) AS total
+SELECT i.scope_key, COALESCE(SUM(u.computed_cost_nanos), 0) AS total
 FROM input i LEFT JOIN usage_cost_events u ON
     u.pricing_status IN ('priced', 'legacy_estimated')
     AND u.occurred_at >= i.window_start AND u.occurred_at < i.window_end
@@ -167,7 +167,7 @@ pub(super) async fn deactivate_budgets_by_source(
 pub(super) async fn sum_usage_cost_by_budget_scope(
     store: &LibsqlStore,
     windows: &[BudgetScopeWindow<'_>],
-) -> Result<HashMap<String, Money4>, StoreError> {
+) -> Result<HashMap<String, Money9>, StoreError> {
     if windows.is_empty() {
         return Ok(HashMap::new());
     }
@@ -181,7 +181,7 @@ pub(super) async fn sum_usage_cost_by_budget_scope(
     while let Some(row) = rows.next().await.map_err(to_query_error)? {
         totals.insert(
             row.get(0).map_err(to_query_error)?,
-            Money4::from_scaled(row.get(1).map_err(to_query_error)?),
+            Money9::from_nanos(row.get(1).map_err(to_query_error)?),
         );
     }
     Ok(totals)

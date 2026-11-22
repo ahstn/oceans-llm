@@ -7,7 +7,7 @@
 use axum::{Json, extract::State, http::HeaderMap};
 use gateway_core::{
     AuthError, BudgetIncreaseBasis, BudgetIncreaseRecord, BudgetRecord, BudgetRepository,
-    BudgetScope, GatewayError, IdentityRepository, Money4,
+    BudgetScope, GatewayError, IdentityRepository, Money4, Money9,
 };
 use gateway_service::{AuditEvent, admin_audit::actions, budget_scopes::limit_with_increase};
 use time::{Date, Duration, Month, OffsetDateTime, Time};
@@ -114,7 +114,7 @@ pub async fn create_budget_increase(
             .amount_usd
             .saturating_add(amount_usd)
             .as_scaled_i64(),
-        current_window_spend_usd_10000: spent.as_scaled_i64(),
+        current_window_spend_usd_10000: spent.round_half_up_to_money4().as_scaled_i64(),
         increase: budget_increase_to_view(&increase),
     })))
 }
@@ -141,9 +141,9 @@ fn validate_increase_amount(budget: &BudgetRecord, amount_usd: Money4) -> Result
 }
 
 /// Spend at or above the threshold share of `limit`. Over-limit spend qualifies.
-fn within_increase_threshold(spent: Money4, limit: Money4) -> bool {
-    i128::from(spent.as_scaled_i64()) * 100
-        >= i128::from(limit.as_scaled_i64()) * INCREASE_THRESHOLD_PERCENT
+fn within_increase_threshold(spent: Money9, limit: Money4) -> bool {
+    i128::from(spent.as_nanos()) * 100
+        >= i128::from(limit.as_scaled_i64()) * 100_000 * INCREASE_THRESHOLD_PERCENT
 }
 
 fn increase_expires_at(period: BudgetIncreasePeriod, now: OffsetDateTime) -> OffsetDateTime {
@@ -207,15 +207,15 @@ mod tests {
     fn threshold_starts_at_eighty_five_percent_of_the_limit() {
         let limit = Money4::from_scaled(1_000_000);
         assert!(!within_increase_threshold(
-            Money4::from_scaled(849_999),
+            Money9::from_nanos(84_999_999_999),
             limit
         ));
         assert!(within_increase_threshold(
-            Money4::from_scaled(850_000),
+            Money9::from_nanos(85_000_000_000),
             limit
         ));
         assert!(within_increase_threshold(
-            Money4::from_scaled(1_200_000),
+            Money9::from_nanos(120_000_000_000),
             limit
         ));
     }

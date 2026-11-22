@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 use gateway_core::{
     BudgetContact, BudgetIncreaseRecord, BudgetRecord, BudgetScope, BudgetScopeWindow,
-    IdentityUserRecord, Money4, ServiceAccountRecord, TeamRecord,
+    IdentityUserRecord, Money9, ServiceAccountRecord, TeamRecord,
 };
 use gateway_store::GatewayStore;
 use time::OffsetDateTime;
@@ -94,7 +94,7 @@ struct BudgetListingIndex<'a> {
     budgets: HashMap<&'a str, &'a BudgetRecord>,
     emails: HashMap<Uuid, &'a str>,
     recipients: HashMap<Uuid, Vec<&'a str>>,
-    spend: &'a HashMap<String, Money4>,
+    spend: &'a HashMap<String, Money9>,
     increases: HashMap<Uuid, &'a BudgetIncreaseRecord>,
 }
 
@@ -102,7 +102,7 @@ impl<'a> BudgetListingIndex<'a> {
     fn new(
         budgets: &'a [BudgetRecord],
         contacts: &'a [BudgetContact],
-        spend: &'a HashMap<String, Money4>,
+        spend: &'a HashMap<String, Money9>,
         increases: &'a [BudgetIncreaseRecord],
     ) -> Self {
         let mut recipients: HashMap<Uuid, Vec<&str>> = HashMap::new();
@@ -137,7 +137,8 @@ impl<'a> BudgetListingIndex<'a> {
         self.spend
             .get(scope_key)
             .copied()
-            .unwrap_or(Money4::ZERO)
+            .unwrap_or(Money9::ZERO)
+            .round_half_up_to_money4()
             .as_scaled_i64()
     }
 
@@ -226,9 +227,22 @@ mod tests {
     use super::*;
     use gateway_core::{
         AuthMode, BudgetCadence, BudgetModelSelector, BudgetRepository, BudgetSettings, GlobalRole,
-        MembershipRole, UserStatus,
+        MembershipRole, Money4, UserStatus,
     };
     use gateway_store::{LibsqlStore, run_migrations};
+
+    #[test]
+    fn budget_listing_rounds_aggregated_nanos_for_existing_money4_contract() {
+        let spend = HashMap::from([
+            ("combined".to_string(), Money9::from_nanos(60_000)),
+            ("tiny".to_string(), Money9::from_nanos(2_800)),
+        ]);
+        let index = BudgetListingIndex::new(&[], &[], &spend, &[]);
+
+        assert_eq!(index.spend("combined"), 1);
+        assert_eq!(index.spend("tiny"), 0);
+        assert_eq!(index.spend("missing"), 0);
+    }
 
     #[tokio::test]
     async fn budget_listing_preserves_contacts_sources_and_unbudgeted_users() -> anyhow::Result<()>

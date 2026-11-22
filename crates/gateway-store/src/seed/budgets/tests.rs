@@ -41,7 +41,7 @@ impl BudgetRepository for CountingRepository {
     async fn sum_usage_cost_by_budget_scope(
         &self,
         _windows: &[gateway_core::BudgetScopeWindow<'_>],
-    ) -> Result<std::collections::HashMap<String, Money4>, StoreError> {
+    ) -> Result<std::collections::HashMap<String, gateway_core::Money9>, StoreError> {
         panic!("unexpected per-scope repository call")
     }
     async fn get_active_budget_by_scope(
@@ -134,7 +134,7 @@ impl BudgetRepository for CountingRepository {
         _scope: &BudgetScope,
         _window_start: OffsetDateTime,
         _window_end: OffsetDateTime,
-    ) -> Result<Money4, StoreError> {
+    ) -> Result<gateway_core::Money9, StoreError> {
         panic!("unexpected per-scope repository call")
     }
     async fn insert_usage_ledger_if_absent(

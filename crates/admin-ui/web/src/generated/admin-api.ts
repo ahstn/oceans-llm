@@ -5826,10 +5826,16 @@ export interface components {
             completion_tokens?: number | null;
             /**
              * Format: int64
-             * @description Computed request cost in USD scaled by 10,000. Null when no usage was recorded or the
-             *     request could not be priced.
+             * @description Computed request cost in USD scaled by 10,000, rounded half up from the ledger.
+             *     Null when no usage was recorded or the request could not be priced.
              */
             cost_usd_10000?: number | null;
+            /**
+             * Format: int64
+             * @description Computed request cost in USD nanos (one billionth of a dollar), from the ledger.
+             *     Null when no usage was recorded or the request could not be priced.
+             */
+            cost_usd_nanos?: number | null;
             error_code?: string | null;
             has_payload: boolean;
             /** Format: int64 */

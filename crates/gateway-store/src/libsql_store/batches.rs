@@ -425,7 +425,7 @@ impl BatchRepository for LibsqlStore {
         state: &ProviderBatchState,
         next_poll_at: OffsetDateTime,
     ) -> Result<(), StoreError> {
-        let changed = self.connection.execute("UPDATE batch_jobs SET status = ?1, provider_batch_id = ?2, request_count = CASE WHEN ?3 > 0 THEN ?3 ELSE request_count END, completed_count = ?4, failed_count = ?5, cost_usd_10000 = ?6, pricing_status = ?7, provider_usage_json = ?8, error_json = ?9, submitted_at = COALESCE(?10, submitted_at), completed_at = ?11, updated_at = ?12, next_poll_at = ?13, lease_owner = NULL, lease_expires_at = NULL WHERE batch_id = ?14 AND lease_owner = ?15 AND status = 'submitting'", libsql::params![state.status.as_str(), state.provider_batch_id.as_str(), state.request_count, state.completed_count, state.failed_count, state.provider_cost_usd.map(Money4::as_scaled_i64), if state.provider_cost_usd.is_some() { BatchPricingStatus::ProviderReported } else { BatchPricingStatus::Pending }.as_str(), serialize_optional_json(state.provider_usage.as_ref())?, serialize_optional_json(state.error.as_ref())?, state.submitted_at.map(|time| time.unix_timestamp()), state.completed_at.map(|time| time.unix_timestamp()), OffsetDateTime::now_utc().unix_timestamp(), next_poll_at.unix_timestamp(), batch_id.to_string(), worker_id]).await.map_err(to_query_error)?;
+        let changed = self.connection.execute("UPDATE batch_jobs SET status = ?1, provider_batch_id = ?2, request_count = CASE WHEN ?3 > 0 THEN ?3 ELSE request_count END, completed_count = ?4, failed_count = ?5, cost_usd_10000 = ?6, pricing_status = ?7, provider_usage_json = ?8, error_json = ?9, submitted_at = COALESCE(?10, submitted_at), completed_at = ?11, updated_at = ?12, next_poll_at = ?13, lease_owner = NULL, lease_expires_at = NULL WHERE batch_id = ?14 AND lease_owner = ?15 AND status = 'submitting'", libsql::params![state.status.as_str(), state.provider_batch_id.as_str(), state.request_count, state.completed_count, state.failed_count, state.provider_cost_usd.map(|cost| cost.round_half_up_to_money4().as_scaled_i64()), if state.provider_cost_usd.is_some() { BatchPricingStatus::ProviderReported } else { BatchPricingStatus::Pending }.as_str(), serialize_optional_json(state.provider_usage.as_ref())?, serialize_optional_json(state.error.as_ref())?, state.submitted_at.map(|time| time.unix_timestamp()), state.completed_at.map(|time| time.unix_timestamp()), OffsetDateTime::now_utc().unix_timestamp(), next_poll_at.unix_timestamp(), batch_id.to_string(), worker_id]).await.map_err(to_query_error)?;
         if changed == 0 {
             return Err(StoreError::Conflict(format!(
                 "batch `{batch_id}` lease was lost"
@@ -459,14 +459,14 @@ impl BatchRepository for LibsqlStore {
     ) -> Result<(), StoreError> {
         let tx = self.begin_transaction().await?;
         let state = &update.state;
-        let changed = tx.execute("UPDATE batch_jobs SET status = ?1, completed_count = ?2, failed_count = ?3, cost_usd_10000 = ?4, pricing_status = ?5, provider_usage_json = ?6, error_json = ?7, submitted_at = COALESCE(?8, submitted_at), completed_at = ?9, updated_at = ?10, next_poll_at = ?11, lease_owner = NULL, lease_expires_at = NULL WHERE batch_id = ?12 AND lease_owner = ?13", libsql::params![state.status.as_str(), state.completed_count, state.failed_count, state.provider_cost_usd.map(Money4::as_scaled_i64), update.pricing_status.unwrap_or(if state.provider_cost_usd.is_some() { BatchPricingStatus::ProviderReported } else { BatchPricingStatus::Pending }).as_str(), serialize_optional_json(state.provider_usage.as_ref())?, serialize_optional_json(state.error.as_ref())?, state.submitted_at.map(|time| time.unix_timestamp()), state.completed_at.map(|time| time.unix_timestamp()), OffsetDateTime::now_utc().unix_timestamp(), update.next_poll_at.map(|time| time.unix_timestamp()), batch_id.to_string(), worker_id]).await.map_err(to_query_error)?;
+        let changed = tx.execute("UPDATE batch_jobs SET status = ?1, completed_count = ?2, failed_count = ?3, cost_usd_10000 = ?4, pricing_status = ?5, provider_usage_json = ?6, error_json = ?7, submitted_at = COALESCE(?8, submitted_at), completed_at = ?9, updated_at = ?10, next_poll_at = ?11, lease_owner = NULL, lease_expires_at = NULL WHERE batch_id = ?12 AND lease_owner = ?13", libsql::params![state.status.as_str(), state.completed_count, state.failed_count, state.provider_cost_usd.map(|cost| cost.round_half_up_to_money4().as_scaled_i64()), update.pricing_status.unwrap_or(if state.provider_cost_usd.is_some() { BatchPricingStatus::ProviderReported } else { BatchPricingStatus::Pending }).as_str(), serialize_optional_json(state.provider_usage.as_ref())?, serialize_optional_json(state.error.as_ref())?, state.submitted_at.map(|time| time.unix_timestamp()), state.completed_at.map(|time| time.unix_timestamp()), OffsetDateTime::now_utc().unix_timestamp(), update.next_poll_at.map(|time| time.unix_timestamp()), batch_id.to_string(), worker_id]).await.map_err(to_query_error)?;
         if changed == 0 {
             return Err(StoreError::Conflict(format!(
                 "batch `{batch_id}` lease was lost"
             )));
         }
         for result in &update.results {
-            tx.execute("UPDATE batch_items SET status = ?1, response_body_json = ?2, error_json = ?3, provider_request_id = ?4, provider_usage_json = ?5, completed_at = ?6, updated_at = ?7, cost_usd_10000 = ?10 WHERE batch_id = ?8 AND custom_id = ?9", libsql::params![if result.error.is_some() { "failed" } else { "succeeded" }, serialize_optional_json(result.response_body.as_ref())?, serialize_optional_json(result.error.as_ref())?, result.provider_request_id.as_deref(), serialize_optional_json(result.provider_usage.as_ref())?, result.completed_at.map(|time| time.unix_timestamp()), OffsetDateTime::now_utc().unix_timestamp(), batch_id.to_string(), result.custom_id.as_str(), result.cost_usd.map(Money4::as_scaled_i64)]).await.map_err(to_query_error)?;
+            tx.execute("UPDATE batch_items SET status = ?1, response_body_json = ?2, error_json = ?3, provider_request_id = ?4, provider_usage_json = ?5, completed_at = ?6, updated_at = ?7, cost_usd_10000 = ?10 WHERE batch_id = ?8 AND custom_id = ?9", libsql::params![if result.error.is_some() { "failed" } else { "succeeded" }, serialize_optional_json(result.response_body.as_ref())?, serialize_optional_json(result.error.as_ref())?, result.provider_request_id.as_deref(), serialize_optional_json(result.provider_usage.as_ref())?, result.completed_at.map(|time| time.unix_timestamp()), OffsetDateTime::now_utc().unix_timestamp(), batch_id.to_string(), result.custom_id.as_str(), result.cost_usd.map(|cost| cost.round_half_up_to_money4().as_scaled_i64())]).await.map_err(to_query_error)?;
         }
         tx.commit().await.map_err(to_query_error)?;
         Ok(())
@@ -571,8 +571,9 @@ mod tests {
     use gateway_core::{
         BatchAccessScope, BatchEndpoint, BatchItemQuery, BatchJobRecord, BatchPollUpdate,
         BatchPricingPolicy, BatchPricingSnapshot, BatchPricingStatus, BatchQuery, BatchRepository,
-        BatchStatus, BatchTokenRates, Money4, NewBatchItem, NewBatchJob, ProviderBatchResult,
-        ProviderBatchState, ProviderRequestContext, RouteCompatibility, StoreError,
+        BatchStatus, BatchTokenRates, Money4, Money9, NewBatchItem, NewBatchJob,
+        ProviderBatchResult, ProviderBatchState, ProviderRequestContext, RouteCompatibility,
+        StoreError,
     };
     use serde_json::{Map, json};
     use tempfile::tempdir;
@@ -793,7 +794,7 @@ mod tests {
                 completed_count: 1,
                 failed_count: 0,
                 provider_usage: Some(json!({"input_tokens": 10, "output_tokens": 2})),
-                provider_cost_usd: Some(Money4::from_scaled(25)),
+                provider_cost_usd: Some(Money9::from_nanos(2_500_000)),
                 error: None,
                 submitted_at: Some(now),
                 completed_at: Some(now + Duration::seconds(1)),
@@ -805,7 +806,7 @@ mod tests {
                 provider_request_id: Some("request-1".to_string()),
                 provider_usage: Some(json!({"input_tokens": 10, "output_tokens": 2})),
                 completed_at: Some(now + Duration::seconds(1)),
-                cost_usd: Some(Money4::from_scaled(25)),
+                cost_usd: Some(Money9::from_nanos(2_500_000)),
             }],
             next_poll_at: None,
             pricing_status: Some(BatchPricingStatus::ProviderReported),

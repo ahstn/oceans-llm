@@ -66,17 +66,17 @@ pub struct RequestTally {
     pub priced_request_count: i64,
     pub unpriced_request_count: i64,
     pub usage_missing_request_count: i64,
-    /// Cost of the priced requests in 1/10000 USD.
-    pub priced_cost_10000: i64,
+    /// Cost of the priced requests in USD nanos, summed before display rounding.
+    pub priced_cost_nanos: i64,
 }
 
 impl RequestTally {
     fn add(&mut self, fact: &AttributionRequestFact) {
         self.request_count += 1;
-        match (fact.cost_10000, fact.pricing_status.as_deref()) {
+        match (fact.cost_nanos, fact.pricing_status.as_deref()) {
             (Some(cost), _) => {
                 self.priced_request_count += 1;
-                self.priced_cost_10000 += cost;
+                self.priced_cost_nanos += cost;
             }
             (None, Some("unpriced")) => self.unpriced_request_count += 1,
             (None, _) => self.usage_missing_request_count += 1,
@@ -96,7 +96,7 @@ impl RequestTally {
             unpriced_request_count: self.unpriced_request_count + other.unpriced_request_count,
             usage_missing_request_count: self.usage_missing_request_count
                 + other.usage_missing_request_count,
-            priced_cost_10000: self.priced_cost_10000 + other.priced_cost_10000,
+            priced_cost_nanos: self.priced_cost_nanos + other.priced_cost_nanos,
         }
     }
 }
@@ -812,8 +812,8 @@ impl<'a> ReportInputs<'a> {
         rows.sort_by(|left, right| {
             right
                 .requests
-                .priced_cost_10000
-                .cmp(&left.requests.priced_cost_10000)
+                .priced_cost_nanos
+                .cmp(&left.requests.priced_cost_nanos)
                 .then(right.ai_lines.cmp(&left.ai_lines))
                 .then(left.user_id.cmp(&right.user_id))
         });

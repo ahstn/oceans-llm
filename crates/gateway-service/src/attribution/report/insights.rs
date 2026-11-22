@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet, hash_map::Entry};
 
-use gateway_core::{AttributionCommitRecord, AttributionRequestFact};
+use gateway_core::{AttributionCommitRecord, AttributionRequestFact, Money9};
 use time::{Date, Duration, OffsetDateTime};
 
 use super::{
@@ -70,8 +70,8 @@ pub struct AttributionHarnessModelActivity {
     pub priced_session_count: i64,
     /// AI lines of the fully priced sessions.
     pub priced_ai_lines: i64,
-    /// Priced cost of the fully priced sessions, in 1/10000 USD.
-    pub priced_cost_10000: i64,
+    /// Priced cost of the fully priced sessions, in USD nanos.
+    pub priced_cost_nanos: i64,
 }
 
 /// Headline figures for a window, so the UI can compare a window with the one before it.
@@ -338,7 +338,7 @@ impl ReportInputs<'_> {
                     requests: RequestTally::default(),
                     priced_session_count: 0,
                     priced_ai_lines: 0,
-                    priced_cost_10000: 0,
+                    priced_cost_nanos: 0,
                 });
             row.session_count += 1;
             row.shipped_session_count += i64::from(matches!(
@@ -351,7 +351,7 @@ impl ReportInputs<'_> {
             {
                 row.priced_session_count += 1;
                 row.priced_ai_lines += session.ai_lines;
-                row.priced_cost_10000 += requests.priced_cost_10000;
+                row.priced_cost_nanos += requests.priced_cost_nanos;
             }
         }
         let outcomes = outcomes
@@ -426,7 +426,7 @@ impl AttributionReport {
             .pull_requests
             .iter()
             .filter(|activity| activity.requests.priced_request_count > 0)
-            .map(|activity| activity.requests.priced_cost_10000)
+            .map(|activity| activity.requests.priced_cost_nanos)
             .collect::<Vec<_>>();
         let mut lead_times = self
             .pull_requests
@@ -443,8 +443,8 @@ impl AttributionReport {
                     AttributionSessionOutcome::Merged | AttributionSessionOutcome::DefaultBranch
                 )
             })
-            .map(|tally| tally.requests.priced_cost_10000)
-            .sum();
+            .map(|tally| tally.requests.priced_cost_nanos)
+            .sum::<i64>();
         AttributionPeriodSummary {
             commit_count: self.totals.commit_count,
             merged_pull_request_count: self.totals.pull_request_count,
@@ -452,10 +452,19 @@ impl AttributionReport {
             human_lines: self.totals.human_lines,
             merged_ai_lines: self.pull_requests.iter().map(|pr| pr.ai_lines).sum(),
             merged_human_lines: self.pull_requests.iter().map(|pr| pr.human_lines).sum(),
-            priced_cost_10000: self.totals.requests.priced_cost_10000
-                + self.totals.uncommitted.priced_cost_10000,
-            shipped_cost_10000: shipped,
-            median_pull_request_cost_10000: median(&mut costs),
+            priced_cost_10000: Money9::from_nanos(
+                self.totals.requests.priced_cost_nanos + self.totals.uncommitted.priced_cost_nanos,
+            )
+            .round_half_up_to_money4()
+            .as_scaled_i64(),
+            shipped_cost_10000: Money9::from_nanos(shipped)
+                .round_half_up_to_money4()
+                .as_scaled_i64(),
+            median_pull_request_cost_10000: median(&mut costs).map(|cost| {
+                Money9::from_nanos(cost)
+                    .round_half_up_to_money4()
+                    .as_scaled_i64()
+            }),
             median_lead_time_seconds: median(&mut lead_times),
             reverted_pull_request_count: count(
                 self.pull_requests

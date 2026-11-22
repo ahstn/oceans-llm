@@ -78,6 +78,7 @@ mod skills_tests;
 
 #[cfg(test)]
 pub(crate) mod tests {
+    mod api_key_last_used;
     mod mcp_access;
     mod mcp_discovery_commits;
     mod mcp_tag_rules;
@@ -107,7 +108,7 @@ pub(crate) mod tests {
         McpToolInvocationRepository, McpToolInvocationStatus, McpToolPolicyResult,
         McpUpstreamCredentialMaterialKind, McpUpstreamCredentialOwnerScopeKind,
         McpUpstreamCredentialRepository, McpUpstreamSecretStorageKind, MembershipRole,
-        ModelPricingRecord, ModelRepository, Money4, NewBatchItem, NewBatchJob,
+        ModelPricingRecord, ModelRepository, Money4, Money9, NewBatchItem, NewBatchJob,
         NewExternalMcpServerRecord, NewReviewAgentRepositoryRecord, NewReviewAgentRunRecord,
         OauthJitPolicy, OidcLoginStateRecord, OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools,
         OpenAiCompatMaxTokensField, OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility,
@@ -755,7 +756,7 @@ pub(crate) mod tests {
         model_id: Option<Uuid>,
         upstream_model: &str,
         pricing_status: UsagePricingStatus,
-        computed_cost_10000: i64,
+        cost_10000: i64,
         occurred_at: OffsetDateTime,
     ) -> UsageLedgerRecord {
         let unpriced_reason = match pricing_status {
@@ -808,7 +809,8 @@ pub(crate) mod tests {
             cache_write_1h_cost_per_million_tokens: Some(Money4::from_scaled(2_500)),
             image_output_cost_per_million_tokens: Some(Money4::from_scaled(300_000)),
             pricing_tier_above_input_tokens: None,
-            computed_cost_usd: Money4::from_scaled(computed_cost_10000),
+            computed_cost_usd: Money9::from_money4(Money4::from_scaled(cost_10000))
+                .expect("fixture cost fits nanos"),
             occurred_at,
             requested_service_tier: None,
             served_service_tier: None,
@@ -1601,6 +1603,123 @@ pub(crate) mod tests {
             detail.payload.expect("payload").arguments_json["token"],
             "[REDACTED]"
         );
+
+        exercise_mcp_tool_invocation_batch_query(store).await;
+    }
+
+    async fn exercise_mcp_tool_invocation_batch_query<S>(store: &S)
+    where
+        S: GatewayStore + McpToolInvocationRepository + Sync,
+    {
+        use gateway_core::McpToolInvocationBatchQuery;
+
+        let user = store
+            .create_identity_user(
+                "MCP owner",
+                "mcp-owner@example.com",
+                "mcp-owner@example.com",
+                GlobalRole::User,
+                AuthMode::Password,
+                UserStatus::Active,
+            )
+            .await
+            .expect("create MCP batch owner");
+        let team = store
+            .create_team("mcp-batch-owner", "MCP batch owner")
+            .await
+            .expect("create MCP batch team");
+        let start = OffsetDateTime::UNIX_EPOCH + Duration::days(1);
+        let end = start + Duration::seconds(10);
+        let owners = [
+            (None, None),
+            (Some(user.user_id), None),
+            (None, Some(team.team_id)),
+            (Some(user.user_id), Some(team.team_id)),
+        ];
+        for (owner_index, (user_id, team_id)) in owners.into_iter().enumerate() {
+            let id_base = u128::try_from(owner_index).expect("small owner index") * 100;
+            let id = |offset| Uuid::from_u128(id_base + offset);
+            let fixtures = [
+                ("batch-a", start, id(1)),
+                ("batch-a", end, id(2)),
+                ("batch-a", end, id(3)),
+                ("batch-b", end, id(4)),
+                ("batch-unrequested", end, id(5)),
+                ("batch-a", start - Duration::seconds(1), id(6)),
+                ("batch-a", end + Duration::seconds(1), id(7)),
+            ];
+            for (request_id, occurred_at, invocation_id) in fixtures.into_iter().rev() {
+                let mut invocation =
+                    build_mcp_tool_invocation(request_id, None, user_id, team_id, occurred_at);
+                invocation.mcp_tool_invocation_id = invocation_id;
+                invocation.has_payload = false;
+                store
+                    .insert_mcp_tool_invocation(&invocation, None)
+                    .await
+                    .expect("insert MCP batch fixture");
+            }
+        }
+        for (owner_index, (user_id, team_id)) in owners.into_iter().enumerate() {
+            let id_base = u128::try_from(owner_index).expect("small owner index") * 100;
+            let id = |offset| Uuid::from_u128(id_base + offset);
+            let query = McpToolInvocationBatchQuery {
+                request_ids: &["batch-b", "batch-a", "batch-a"],
+                user_id,
+                team_id,
+                // Both stores compare whole seconds, including both boundary seconds.
+                occurred_at_start: start + Duration::milliseconds(900),
+                occurred_at_end: end + Duration::milliseconds(100),
+                limit: 10,
+            };
+            let rows = store
+                .list_mcp_tool_invocations_by_request_ids(&query)
+                .await
+                .expect("load ordered exact-owner batch");
+            assert_eq!(
+                rows.iter()
+                    .map(|row| row.mcp_tool_invocation_id)
+                    .collect::<Vec<_>>(),
+                vec![id(3), id(2), id(1), id(4)],
+                "batch order, request filter, owner and time bounds for owner {owner_index}",
+            );
+            assert!(
+                rows.iter()
+                    .all(|row| row.user_id == user_id && row.team_id == team_id),
+                "NULL owner fields must not act as wildcards",
+            );
+
+            let limited = store
+                .list_mcp_tool_invocations_by_request_ids(&McpToolInvocationBatchQuery {
+                    limit: 2,
+                    ..query
+                })
+                .await
+                .expect("load capped batch");
+            assert_eq!(
+                limited
+                    .iter()
+                    .map(|row| row.mcp_tool_invocation_id)
+                    .collect::<Vec<_>>(),
+                vec![id(3), id(2)],
+                "limit must apply after ordering and owner filtering",
+            );
+            let empty = store
+                .list_mcp_tool_invocations_by_request_ids(&McpToolInvocationBatchQuery {
+                    request_ids: &[],
+                    ..query
+                })
+                .await
+                .expect("load empty request set");
+            assert!(empty.is_empty());
+            let zero_limit = store
+                .list_mcp_tool_invocations_by_request_ids(&McpToolInvocationBatchQuery {
+                    limit: 0,
+                    ..query
+                })
+                .await
+                .expect("load zero-limit batch");
+            assert!(zero_limit.is_empty());
+        }
     }
 
     /// Ownership survives create, settings saves and transfers, and a write that
@@ -10184,7 +10303,11 @@ pub(crate) mod tests {
             .expect("grouped sums");
         assert_eq!(totals.len(), scopes.len());
         for (scope, expected) in scopes.iter().zip([7_000, 0, 2_000, 8_000, 0]) {
-            assert_eq!(totals[&scope.scope_key()], Money4::from_scaled(expected));
+            assert_eq!(
+                totals[&scope.scope_key()],
+                Money9::from_money4(Money4::from_scaled(expected))
+                    .expect("fixture cost fits nanos")
+            );
         }
 
         let sum = |scope: BudgetScope| async move {
@@ -10199,7 +10322,7 @@ pub(crate) mod tests {
         };
         assert_eq!(
             sum(gateway_scope(user_id)).await,
-            Money4::from_scaled(1_000)
+            Money9::from_money4(Money4::from_scaled(1_000)).expect("fixture cost fits nanos")
         );
         assert_eq!(
             sum(BudgetScope::UserModel {
@@ -10209,16 +10332,79 @@ pub(crate) mod tests {
                 },
             })
             .await,
-            Money4::from_scaled(2_000)
+            Money9::from_money4(Money4::from_scaled(2_000)).expect("fixture cost fits nanos")
         );
         assert_eq!(
             sum(BudgetScope::User { user_id }).await,
-            Money4::from_scaled(7_000)
+            Money9::from_money4(Money4::from_scaled(7_000)).expect("fixture cost fits nanos")
         );
         assert_eq!(
             sum(gateway_scope(other_user_id)).await,
-            Money4::from_scaled(8_000)
+            Money9::from_money4(Money4::from_scaled(8_000)).expect("fixture cost fits nanos")
         );
+
+        // Each charge is below Money4 precision; round only the summed report value.
+        let nanos_start = window_end + Duration::days(1);
+        let nanos_end = nanos_start + Duration::hours(1);
+        let nanos_scope = BudgetScope::User { user_id };
+        for index in 0..1_000 {
+            let mut event = build_usage_ledger_record(
+                &format!("nanos-{index}"),
+                format!("user:{user_id}"),
+                api_key.id,
+                Some(user_id),
+                None,
+                None,
+                Some(model.id),
+                "gpt-4o-mini",
+                UsagePricingStatus::Priced,
+                0,
+                nanos_start,
+            );
+            event.computed_cost_usd = Money9::from_nanos(2_800);
+            assert!(
+                store
+                    .insert_usage_ledger_if_absent(&event)
+                    .await
+                    .expect("insert nanos charge")
+            );
+        }
+        assert_eq!(
+            store
+                .sum_usage_cost_for_budget_scope_in_window(&nanos_scope, nanos_start, nanos_end)
+                .await
+                .expect("exact nanos window"),
+            Money9::from_nanos(2_800_000),
+        );
+        let nanos_totals = store
+            .sum_usage_cost_by_budget_scope(&[gateway_core::BudgetScopeWindow {
+                scope: &nanos_scope,
+                window_start: nanos_start,
+                window_end: nanos_end,
+            }])
+            .await
+            .expect("exact grouped nanos window");
+        assert_eq!(
+            nanos_totals[&nanos_scope.scope_key()],
+            Money9::from_nanos(2_800_000)
+        );
+        let stored = store
+            .get_usage_ledger_by_request_and_scope("nanos-0", &format!("user:{user_id}"))
+            .await
+            .expect("read nanos charge")
+            .expect("stored charge");
+        assert_eq!(stored.computed_cost_usd, Money9::from_nanos(2_800));
+        let daily = store
+            .list_usage_daily_aggregates(
+                nanos_start,
+                nanos_end,
+                Some(ApiKeyOwnerKind::User),
+                Some(user_id),
+            )
+            .await
+            .expect("nanos spend report");
+        assert_eq!(daily.len(), 1);
+        assert_eq!(daily[0].priced_cost_usd, Money9::from_nanos(2_800_000));
     }
 
     #[tokio::test]
@@ -11422,7 +11608,10 @@ pub(crate) mod tests {
             )
             .await
             .expect("service account sum");
-        assert_eq!(service_account_sum, Money4::from_scaled(22_000));
+        assert_eq!(
+            service_account_sum,
+            Money9::from_money4(Money4::from_scaled(22_000)).expect("fixture cost fits nanos")
+        );
 
         let cache_usage = store
             .get_cache_usage_aggregate(window_start, window_end, None, None)
@@ -11462,7 +11651,7 @@ pub(crate) mod tests {
             .iter()
             .find(|row| row.day_start.unix_timestamp() == day_one_bucket)
             .expect("day one aggregate");
-        assert_eq!(first.priced_cost_usd, Money4::from_scaled(11_000));
+        assert_eq!(first.priced_cost_usd, Money9::from_nanos(1_100_000_000));
         assert_eq!(first.priced_request_count, 1);
         assert_eq!(first.unpriced_request_count, 1);
         assert_eq!(first.usage_missing_request_count, 1);
@@ -11470,7 +11659,7 @@ pub(crate) mod tests {
             .iter()
             .find(|row| row.day_start.unix_timestamp() == day_two_bucket)
             .expect("day two aggregate");
-        assert_eq!(second.priced_cost_usd, Money4::from_scaled(22_000));
+        assert_eq!(second.priced_cost_usd, Money9::from_nanos(2_200_000_000));
         assert_eq!(second.priced_request_count, 1);
         assert_eq!(second.unpriced_request_count, 1);
         assert_eq!(second.usage_missing_request_count, 1);
@@ -11534,7 +11723,10 @@ pub(crate) mod tests {
             .await
             .expect("user daily aggregates");
         assert_eq!(user_daily.len(), 1);
-        assert_eq!(user_daily[0].priced_cost_usd, Money4::from_scaled(11_000));
+        assert_eq!(
+            user_daily[0].priced_cost_usd,
+            Money9::from_nanos(1_100_000_000)
+        );
         let user_owners = store
             .list_usage_owner_aggregates(
                 window_start,
@@ -12001,7 +12193,8 @@ pub(crate) mod tests {
             cache_write_1h_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
             pricing_tier_above_input_tokens: None,
-            computed_cost_usd: Money4::from_scaled(25),
+            computed_cost_usd: Money9::from_money4(Money4::from_scaled(25))
+                .expect("fixture cost fits nanos"),
             occurred_at: pricing_time,
             requested_service_tier: None,
             served_service_tier: None,
@@ -12044,7 +12237,7 @@ pub(crate) mod tests {
             cache_write_1h_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
             pricing_tier_above_input_tokens: None,
-            computed_cost_usd: Money4::ZERO,
+            computed_cost_usd: Money9::ZERO,
             occurred_at: pricing_time,
             requested_service_tier: None,
             served_service_tier: None,
@@ -12088,7 +12281,7 @@ pub(crate) mod tests {
                 )
                 .await
                 .expect("sum usage cost"),
-            Money4::from_scaled(25)
+            Money9::from_money4(Money4::from_scaled(25)).expect("fixture cost fits nanos")
         );
 
         let log = RequestLogRecord {
@@ -12642,7 +12835,10 @@ pub(crate) mod tests {
             )
             .await
             .expect("service account sum");
-        assert_eq!(service_account_sum, Money4::from_scaled(22_000));
+        assert_eq!(
+            service_account_sum,
+            Money9::from_money4(Money4::from_scaled(22_000)).expect("fixture cost fits nanos")
+        );
 
         let cache_usage = store
             .get_cache_usage_aggregate(window_start, window_end, None, None)
@@ -12682,7 +12878,7 @@ pub(crate) mod tests {
             .iter()
             .find(|row| row.day_start.unix_timestamp() == day_one_bucket)
             .expect("day one aggregate");
-        assert_eq!(first.priced_cost_usd, Money4::from_scaled(11_000));
+        assert_eq!(first.priced_cost_usd, Money9::from_nanos(1_100_000_000));
         assert_eq!(first.priced_request_count, 1);
         assert_eq!(first.unpriced_request_count, 1);
         assert_eq!(first.usage_missing_request_count, 1);
@@ -12690,7 +12886,7 @@ pub(crate) mod tests {
             .iter()
             .find(|row| row.day_start.unix_timestamp() == day_two_bucket)
             .expect("day two aggregate");
-        assert_eq!(second.priced_cost_usd, Money4::from_scaled(22_000));
+        assert_eq!(second.priced_cost_usd, Money9::from_nanos(2_200_000_000));
         assert_eq!(second.priced_request_count, 1);
         assert_eq!(second.unpriced_request_count, 1);
         assert_eq!(second.usage_missing_request_count, 1);
@@ -12754,7 +12950,10 @@ pub(crate) mod tests {
             .await
             .expect("user daily aggregates");
         assert_eq!(user_daily.len(), 1);
-        assert_eq!(user_daily[0].priced_cost_usd, Money4::from_scaled(11_000));
+        assert_eq!(
+            user_daily[0].priced_cost_usd,
+            Money9::from_nanos(1_100_000_000)
+        );
         let user_owners = store
             .list_usage_owner_aggregates(
                 window_start,
@@ -13675,5 +13874,97 @@ pub(crate) mod tests {
         .await
         .expect("drop test database");
         admin_pool.close().await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn libsql_usage_cost_nanos_migration_preserves_totals_and_indexes() {
+        let tmp = tempdir().expect("tempdir");
+        let db = libsql::Builder::new_local(tmp.path().join("gateway.db"))
+            .build()
+            .await
+            .expect("db");
+        let conn = db.connect().expect("connection");
+        conn.execute_batch("CREATE TABLE usage_cost_events (computed_cost_10000 INTEGER NOT NULL);
+            CREATE INDEX usage_budget_spend_migration_test ON usage_cost_events(computed_cost_10000);
+            INSERT INTO usage_cost_events VALUES (0), (1), (12345);")
+            .await.expect("legacy charges");
+        let migration = MIGRATION_REGISTRY
+            .iter()
+            .find(|migration| migration.version == 84)
+            .expect("nanos migration");
+        conn.execute_batch(migration.sql_for(MigrationBackend::Libsql))
+            .await
+            .expect("migrate charges");
+        let mut rows = conn
+            .query(
+                "SELECT SUM(computed_cost_nanos), COUNT(*) FROM usage_cost_events
+            INDEXED BY usage_budget_spend_migration_test",
+                (),
+            )
+            .await
+            .expect("migrated totals");
+        let row = rows.next().await.expect("row").expect("totals");
+        assert_eq!(row.get::<i64>(0).expect("nanos"), 1_234_600_000);
+        assert_eq!(row.get::<i64>(1).expect("count"), 3);
+        assert_eq!(
+            Money9::from_nanos(row.get(0).expect("nanos")).round_half_up_to_money4(),
+            Money4::from_scaled(12_346)
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn postgres_usage_cost_nanos_migration_preserves_totals_and_indexes() {
+        let Some(test_db) = create_postgres_test_database().await else {
+            eprintln!(
+                "skipping postgres nanos migration test because TEST_POSTGRES_URL is not set"
+            );
+            return;
+        };
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&test_db.database_url)
+            .await
+            .expect("postgres pool");
+        sqlx::raw_sql("CREATE TABLE usage_cost_events (computed_cost_10000 BIGINT NOT NULL);
+            CREATE INDEX usage_budget_spend_migration_test ON usage_cost_events(computed_cost_10000);
+            INSERT INTO usage_cost_events VALUES (0), (1), (12345);")
+            .execute(&pool).await.expect("legacy charges");
+        let migration = MIGRATION_REGISTRY
+            .iter()
+            .find(|migration| migration.version == 84)
+            .expect("nanos migration");
+        let mut tx = pool.begin().await.expect("migration transaction");
+        sqlx::raw_sql(migration.sql_for(MigrationBackend::Postgres))
+            .execute(&mut *tx)
+            .await
+            .expect("migrate charges");
+        tx.commit().await.expect("commit migration");
+        let row =
+            sqlx::query("SELECT SUM(computed_cost_nanos)::BIGINT, COUNT(*) FROM usage_cost_events")
+                .fetch_one(&pool)
+                .await
+                .expect("migrated totals");
+        assert_eq!(row.try_get::<i64, _>(0).expect("nanos"), 1_234_600_000);
+        assert_eq!(row.try_get::<i64, _>(1).expect("count"), 3);
+        assert_eq!(
+            Money9::from_nanos(row.try_get(0).expect("nanos")).round_half_up_to_money4(),
+            Money4::from_scaled(12_346)
+        );
+        let index = sqlx::query(
+            "SELECT indexdef FROM pg_indexes WHERE indexname = 'usage_budget_spend_migration_test'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("preserved index");
+        assert!(
+            index
+                .try_get::<String, _>(0)
+                .expect("index definition")
+                .contains("computed_cost_nanos")
+        );
+        pool.close().await;
+        drop_postgres_test_database(&test_db).await;
     }
 }

@@ -234,7 +234,9 @@ impl From<AttributionHarnessModelActivity> for AttributionHarnessModelView {
             requests: row.requests.into(),
             fully_priced_session_count: row.priced_session_count,
             fully_priced_ai_lines: row.priced_ai_lines,
-            fully_priced_cost_usd_10000: row.priced_cost_10000,
+            fully_priced_cost_usd_10000: gateway_core::Money9::from_nanos(row.priced_cost_nanos)
+                .round_half_up_to_money4()
+                .as_scaled_i64(),
         }
     }
 }

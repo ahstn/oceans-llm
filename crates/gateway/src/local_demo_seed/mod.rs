@@ -2,10 +2,10 @@ use anyhow::Context;
 use gateway_core::{
     AdminApiKeyRepository, ApiKeyModelGrantMode, ApiKeyOwnerKind, ApiKeyRepository, ApiKeyStatus,
     BudgetRepository, IdentityRepository, McpTokenEstimateConfidence, McpTokenEstimateSource,
-    McpTokenOverheadRepository, ModelRepository, Money4, NewApiKeyRecord, RequestAttemptRecord,
-    RequestAttemptStatus, RequestLogPayloadRecord, RequestLogRecord, RequestLogRepository,
-    RequestMcpTokenOverheadRecord, RequestTag, RequestTags, UsageLedgerRecord, UsagePricingStatus,
-    UserStatus,
+    McpTokenOverheadRepository, ModelRepository, Money4, Money9, NewApiKeyRecord,
+    RequestAttemptRecord, RequestAttemptStatus, RequestLogPayloadRecord, RequestLogRecord,
+    RequestLogRepository, RequestMcpTokenOverheadRecord, RequestTag, RequestTags,
+    UsageLedgerRecord, UsagePricingStatus, UserStatus,
 };
 use gateway_service::{
     RequestLogPayloadCaptureMode, RequestLogPayloadPolicy, hash_gateway_key_secret,
@@ -487,7 +487,8 @@ pub async fn seed_local_demo_data(store: &AnyStore) -> anyhow::Result<Vec<(&'sta
             cache_write_1h_cost_per_million_tokens: None,
             image_output_cost_per_million_tokens: None,
             pricing_tier_above_input_tokens: None,
-            computed_cost_usd: Money4::from_scaled(fixture.cost_scaled),
+            computed_cost_usd: Money9::from_money4(Money4::from_scaled(fixture.cost_scaled))
+                .context("demo fixture cost exceeds USD nanos range")?,
             occurred_at,
             requested_service_tier: service_tiers.requested,
             served_service_tier: service_tiers.served,
@@ -1191,8 +1192,8 @@ mod tests {
                 .await
                 .expect("sum spend");
             assert_eq!(
-                spent.as_scaled_i64(),
-                1_500_000 * target.percent_of_limit / 100,
+                spent.as_nanos(),
+                150_000_000_000 * target.percent_of_limit / 100,
                 "{}",
                 target.email
             );

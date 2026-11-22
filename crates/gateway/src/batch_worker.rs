@@ -7,10 +7,10 @@ use std::{
 use futures_util::{StreamExt, stream};
 use gateway_core::{
     AdminApiKeyRepository, AuthenticatedApiKey, BatchPollUpdate, BatchPricingStatus,
-    BatchRepository, BatchStatus, ModelRepository, Money4, ProviderBatchRequest,
+    BatchRepository, BatchStatus, ModelRepository, Money9, ProviderBatchRequest,
     ProviderBatchRequestItem, ProviderBatchResult, ProviderBatchSubmission, ProviderError,
 };
-use gateway_service::{BatchPricer, BatchPricingPolicy, BatchUsageInput};
+use gateway_service::{BatchPricer, BatchPricingPolicy, BatchUsageInput, PreV84Charge};
 use serde_json::json;
 use time::OffsetDateTime;
 use tracing::{error, info, warn};
@@ -432,24 +432,22 @@ async fn apply_state(
         }
     }
     if complete || !results.is_empty() || state.provider_cost_usd.is_some() {
-        pricing_status = Some(
-            price_results(
-                service,
-                provider.provider_type(),
-                job,
-                &mut state,
-                &mut results,
-            )
-            .await?,
-        );
+        let charge = price_results(
+            service,
+            provider.provider_type(),
+            job,
+            &mut state,
+            &mut results,
+        )
+        .await?;
+        pricing_status = Some(charge.status);
         guard_batch_results(app_state, job, &mut results).await?;
         record_batch_usage(
             service,
             job,
             &results,
             state.provider_usage.as_ref(),
-            pricing_status.expect("terminal batch pricing status"),
-            state.provider_cost_usd,
+            charge,
             state.completed_at.unwrap_or_else(OffsetDateTime::now_utc),
         )
         .await?;
@@ -520,8 +518,7 @@ async fn record_batch_usage(
     job: &gateway_core::BatchJobRecord,
     results: &[ProviderBatchResult],
     provider_usage: Option<&serde_json::Value>,
-    pricing_status: BatchPricingStatus,
-    cost_usd: Option<Money4>,
+    charge: BatchCharge,
     occurred_at: OffsetDateTime,
 ) -> Result<(), gateway_core::GatewayError> {
     let key = service
@@ -553,8 +550,9 @@ async fn record_batch_usage(
             BatchUsageInput {
                 results,
                 provider_usage,
-                pricing_status,
-                cost_usd,
+                pricing_status: charge.status,
+                cost_usd: charge.cost_usd,
+                pre_v84_cost_usd: charge.pre_v84_cost_usd,
                 occurred_at,
             },
         )
@@ -627,19 +625,39 @@ fn validate_result_custom_ids(
     Ok(())
 }
 
+/// The charge of a priced batch result set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BatchCharge {
+    status: BatchPricingStatus,
+    cost_usd: Option<Money9>,
+    /// What a gateway before V84 may have stored for the same results, so a retry
+    /// after the upgrade accepts that ledger row. That gateway rounded each part
+    /// half-up to $0.0001: each reported cost, or the batch-level reported cost,
+    /// and the local total once.
+    pre_v84_cost_usd: Option<PreV84Charge>,
+}
+
 async fn price_results(
     service: &Arc<AppGatewayService>,
     provider_type: &str,
     job: &gateway_core::BatchJobRecord,
     state: &mut gateway_core::ProviderBatchState,
     results: &mut [ProviderBatchResult],
-) -> Result<BatchPricingStatus, gateway_core::GatewayError> {
+) -> Result<BatchCharge, gateway_core::GatewayError> {
     if state.provider_cost_usd.is_some() || results.iter().all(|result| result.cost_usd.is_some()) {
+        let pre_v84_cost_usd = match state.provider_cost_usd {
+            Some(batch_cost) => PreV84Charge::of_parts([batch_cost])?,
+            None => PreV84Charge::of_parts(results.iter().filter_map(|result| result.cost_usd))?,
+        };
         if state.provider_cost_usd.is_none() {
             state.provider_cost_usd =
                 sum_costs(results.iter().filter_map(|result| result.cost_usd))?;
         }
-        return Ok(BatchPricingStatus::ProviderReported);
+        return Ok(BatchCharge {
+            status: BatchPricingStatus::ProviderReported,
+            cost_usd: state.provider_cost_usd,
+            pre_v84_cost_usd,
+        });
     }
     let pricer = if let Some(snapshot) = job.pricing_snapshot.clone() {
         BatchPricer::from_snapshot(snapshot)
@@ -684,33 +702,43 @@ async fn price_results(
             }
         }
     }
-    let reported_cost = sum_costs(results.iter().zip(&locally_priced).filter_map(
-        |(result, locally_priced)| {
-            if *locally_priced {
-                None
-            } else {
-                result.cost_usd
-            }
-        },
-    ))?;
+    let reported_costs = || {
+        results
+            .iter()
+            .zip(&locally_priced)
+            .filter_map(|(result, locally_priced)| {
+                if *locally_priced {
+                    None
+                } else {
+                    result.cost_usd
+                }
+            })
+    };
+    let reported_cost = sum_costs(reported_costs())?;
     let local_cost = pricer.price_usages(results.iter().zip(&locally_priced).filter_map(
         |(result, locally_priced)| locally_priced.then_some(result.provider_usage.as_ref()),
     ))?;
+    let pre_v84_cost_usd = PreV84Charge::of_parts(reported_costs().chain(local_cost))?;
     state.provider_cost_usd = sum_costs([reported_cost, local_cost].into_iter().flatten())?;
-    Ok(if successful > 0 && priced == successful {
+    let status = if successful > 0 && priced == successful {
         BatchPricingStatus::Priced
     } else if priced == 0 {
         BatchPricingStatus::Unpriced
     } else {
         BatchPricingStatus::PartiallyPriced
+    };
+    Ok(BatchCharge {
+        status,
+        cost_usd: state.provider_cost_usd,
+        pre_v84_cost_usd,
     })
 }
 
 fn sum_costs(
-    costs: impl Iterator<Item = Money4>,
-) -> Result<Option<Money4>, gateway_core::GatewayError> {
+    costs: impl Iterator<Item = Money9>,
+) -> Result<Option<Money9>, gateway_core::GatewayError> {
     let mut seen = false;
-    let mut total = Money4::ZERO;
+    let mut total = Money9::ZERO;
     for cost in costs {
         seen = true;
         total = total.checked_add(cost).ok_or_else(|| {
@@ -777,11 +805,11 @@ mod tests {
 
     use async_trait::async_trait;
     use gateway_core::{
-        BatchAccessScope, BatchEndpoint, BatchJobRecord, BatchPricingStatus, BatchRepository,
-        BatchStatus, CoreChatRequest, CoreEmbeddingsRequest, CoreResponsesRequest, NewBatchItem,
-        NewBatchJob, ProviderBatchRequest, ProviderBatchResult, ProviderBatchState,
-        ProviderBatchSubmission, ProviderCapabilities, ProviderClient, ProviderError,
-        ProviderRequestContext, ProviderStream,
+        BatchAccessScope, BatchEndpoint, BatchJobRecord, BatchPricingSnapshot, BatchPricingStatus,
+        BatchRepository, BatchStatus, BatchTokenRates, CoreChatRequest, CoreEmbeddingsRequest,
+        CoreResponsesRequest, Money4, Money9, NewBatchItem, NewBatchJob, ProviderBatchRequest,
+        ProviderBatchResult, ProviderBatchState, ProviderBatchSubmission, ProviderCapabilities,
+        ProviderClient, ProviderError, ProviderRequestContext, ProviderStream,
     };
     use gateway_guardrails::{
         FailureDisposition, GuardPhase, GuardrailEngine, ManagedCheckConfig, ManagedCheckKind,
@@ -793,8 +821,8 @@ mod tests {
     use uuid::Uuid;
 
     use super::{
-        prepare_submitted_state, process_job, redact_unsubmitted_batch, run_once, submit_job,
-        validate_result_custom_ids,
+        BatchCharge, BatchPricingPolicy, prepare_submitted_state, price_results, process_job,
+        redact_unsubmitted_batch, run_once, submit_job, sum_costs, validate_result_custom_ids,
     };
     use crate::http::{
         state::AppState,
@@ -818,6 +846,127 @@ mod tests {
             .into_iter()
             .map(str::to_string)
             .collect()
+    }
+
+    #[test]
+    fn batch_cost_sums_preserve_nanos_and_reject_overflow() {
+        assert_eq!(
+            sum_costs([Money9::from_nanos(42_000), Money9::from_nanos(42_000)].into_iter())
+                .expect("exact total"),
+            Some(Money9::from_nanos(84_000))
+        );
+        assert_eq!(sum_costs(std::iter::empty()).expect("empty total"), None);
+        assert!(
+            sum_costs([Money9::from_nanos(i64::MAX), Money9::from_nanos(1)].into_iter()).is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn batch_pricing_combines_reported_nanos_with_once_rounded_local_total() {
+        let (_directory, state) = app_state().await;
+        seed_stream_cancellation_test(&state.store).await;
+        let (mut job, _) = queued_batch(&state, "not-a-secret").await;
+        job.request_count = 3;
+        job.pricing_snapshot = Some(BatchPricingSnapshot {
+            rates: Some(BatchTokenRates {
+                input: Some(Money4::from_scaled(1)),
+                output: Some(Money4::from_scaled(1)),
+                cache_read: None,
+                cache_write: None,
+                cache_write_1h: None,
+                image_output: None,
+            }),
+            context_tiers: Vec::new(),
+            policy: BatchPricingPolicy::HalfAllTokenRates,
+        });
+        let mut provider_state = completed_provider_state(3);
+        let mut reported = result("reported");
+        reported.cost_usd = Some(Money9::from_nanos(42_000));
+        let mut local = result("local-1");
+        local.provider_usage = Some(json!({"prompt_tokens": 5, "completion_tokens": 5}));
+        let mut second_local = local.clone();
+        second_local.custom_id = "local-2".to_string();
+        let mut results = [reported, local, second_local];
+
+        let charge = price_results(
+            &state.service,
+            "openai_compat",
+            &job,
+            &mut provider_state,
+            &mut results,
+        )
+        .await
+        .expect("mixed batch pricing");
+        assert_eq!(charge.status, BatchPricingStatus::Priced);
+        assert_eq!(results[1].cost_usd, Some(Money9::from_nanos(1)));
+        assert_eq!(results[2].cost_usd, Some(Money9::from_nanos(1)));
+        assert_eq!(
+            provider_state.provider_cost_usd,
+            Some(Money9::from_nanos(42_001))
+        );
+        assert_eq!(charge.cost_usd, provider_state.provider_cost_usd);
+    }
+
+    fn completed_provider_state(request_count: i64) -> ProviderBatchState {
+        ProviderBatchState {
+            provider_batch_id: "provider-batch".to_string(),
+            status: BatchStatus::Completed,
+            request_count,
+            completed_count: request_count,
+            failed_count: 0,
+            provider_usage: None,
+            provider_cost_usd: None,
+            error: None,
+            submitted_at: None,
+            completed_at: Some(OffsetDateTime::now_utc()),
+        }
+    }
+
+    #[tokio::test]
+    async fn batch_retry_accepts_a_charge_stored_per_part_before_v84() {
+        let (_directory, state) = app_state().await;
+        seed_stream_cancellation_test(&state.store).await;
+        let (job, _) = queued_batch(&state, "not-a-secret").await;
+        let mut results = [result("one"), result("two")];
+        for result in &mut results {
+            result.cost_usd = Some(Money9::from_nanos(60_000));
+        }
+        let charge = price_results(
+            &state.service,
+            "openai_compat",
+            &job,
+            &mut completed_provider_state(2),
+            &mut results,
+        )
+        .await
+        .expect("reported batch pricing");
+        assert_eq!(charge.cost_usd, Some(Money9::from_nanos(120_000)));
+        // A gateway before V84 rounded each $0.00006 part to $0.0001 on its own.
+        let record = |charge: BatchCharge| {
+            super::record_batch_usage(
+                &state.service,
+                &job,
+                &results,
+                None,
+                charge,
+                OffsetDateTime::now_utc(),
+            )
+        };
+        let stored = |nanos: i64| BatchCharge {
+            status: BatchPricingStatus::ProviderReported,
+            cost_usd: Some(Money9::from_nanos(nanos)),
+            pre_v84_cost_usd: None,
+        };
+        // A gateway before V84 stored $0.0002, and V84 scaled it to nanos.
+        record(stored(200_000)).await.expect("first finalization");
+
+        record(charge)
+            .await
+            .expect("a retry after V84 accepts the pre-V84 row");
+        assert!(matches!(
+            record(stored(250_000)).await,
+            Err(gateway_core::GatewayError::BatchUsageConflict { .. })
+        ));
     }
 
     #[test]

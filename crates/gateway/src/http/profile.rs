@@ -185,7 +185,7 @@ async fn load_budget(
         source: budget_source_to_view(&budget.source),
         period_start: format_timestamp(window.period_start),
         period_end: format_timestamp(window.period_end),
-        spent_usd_10000: spent.as_scaled_i64(),
+        spent_usd_10000: spent.round_half_up_to_money4().as_scaled_i64(),
         active_increase: active_increase.as_ref().map(budget_increase_to_view),
     }))
 }
@@ -212,7 +212,10 @@ fn build_day_views(
     let mut days: BTreeMap<OffsetDateTime, MyProfileDayView> = BTreeMap::new();
     for row in daily {
         let day = days.entry(row.day_start).or_default();
-        day.cost_usd_10000 += row.priced_cost_usd.as_scaled_i64();
+        day.cost_usd_10000 += row
+            .priced_cost_usd
+            .round_half_up_to_money4()
+            .as_scaled_i64();
         day.unpriced_request_count += row.unpriced_request_count;
         day.usage_missing_request_count += row.usage_missing_request_count;
     }
@@ -323,7 +326,7 @@ fn harness_day_view(row: &HarnessUsageDailyRecord) -> MyProfileHarnessDayView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gateway_core::{Money4, TokenUsageBuckets};
+    use gateway_core::{Money9, TokenUsageBuckets};
     use time::macros::datetime;
 
     fn tokens(request_count: i64, input: i64, output: i64, cache_read: i64) -> TokenUsageBuckets {
@@ -350,7 +353,7 @@ mod tests {
         let other_day = datetime!(2026-09-25 00:00 UTC);
         let daily = vec![SpendDailyAggregateRecord {
             day_start: day,
-            priced_cost_usd: Money4::from_scaled(12_500),
+            priced_cost_usd: Money9::from_nanos(1_250_000_000),
             priced_request_count: 1,
             unpriced_request_count: 1,
             usage_missing_request_count: 1,

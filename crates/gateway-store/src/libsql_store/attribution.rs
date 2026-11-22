@@ -541,7 +541,7 @@ impl AttributionRepository for LibsqlStore {
                 request_id: string(&row, 2)?,
                 occurred_at: time_at(&row, 3)?,
                 model_key: optional_string(&row, 4)?,
-                cost_10000: optional_integer(&row, 5)?,
+                cost_nanos: optional_integer(&row, 5)?,
                 pricing_status: optional_string(&row, 6)?,
             });
         }

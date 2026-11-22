@@ -40,8 +40,10 @@ export const Route = createFileRoute('/observability/request-logs')({
 const requestLogRowEstimatePx = 56
 const requestLogDesktopPreviewRows = 12
 const requestLogDesktopTableHeightPx = requestLogRowEstimatePx * requestLogDesktopPreviewRows
+// Cost fits nano-dollar values up to `$99.999999999` (88px in 14px Geist) plus px-3. Larger
+// values truncate, with the exact value on hover.
 const requestLogGridColumns =
-  'grid grid-cols-[minmax(13.5rem,0.8fr)_minmax(12rem,1.3fr)_minmax(11rem,1.1fr)_76px_96px_92px_96px_160px_104px]'
+  'grid grid-cols-[minmax(13.5rem,0.8fr)_minmax(12rem,1.3fr)_minmax(11rem,1.1fr)_76px_112px_92px_96px_160px_104px]'
 // The Inspect column stays pinned to the right edge so it is never scrolled out of view.
 const requestLogActionCell = 'bg-card shadow-sticky-edge-end sticky right-0 z-10 px-3'
 
@@ -202,7 +204,7 @@ function RequestLogMobileList({
                 </span>
               </MobileField>
               <MobileField label="Caller">{callerPrimary(item) ?? 'Unknown'}</MobileField>
-              <MobileField label="Cost">{formatRequestCost(item.cost_usd_10000)}</MobileField>
+              <MobileField label="Cost">{formatRequestCost(item)}</MobileField>
               <MobileField label="Latency">{formatDuration(item.latency_ms)}</MobileField>
               <MobileField label="Tokens">
                 <TokensWithCache item={item} />
@@ -308,6 +310,7 @@ function RequestLogDesktopRow({
 }) {
   const primaryCaller = callerPrimary(item) ?? 'Unknown'
   const secondaryCaller = callerSecondary(item)
+  const cost = formatRequestCost(item)
 
   return (
     <div
@@ -347,8 +350,11 @@ function RequestLogDesktopRow({
           {item.status_code ?? EMPTY_VALUE}
         </Badge>
       </span>
-      <span className="text-subtle-foreground px-3 text-right tabular-nums">
-        {formatRequestCost(item.cost_usd_10000)}
+      <span
+        className="text-subtle-foreground truncate px-3 text-right whitespace-nowrap tabular-nums"
+        title={cost}
+      >
+        {cost}
       </span>
       <span className="text-subtle-foreground px-3 text-right whitespace-nowrap tabular-nums">
         {formatDuration(item.latency_ms)}

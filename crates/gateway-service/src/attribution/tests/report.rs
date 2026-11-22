@@ -92,7 +92,7 @@ fn request(
         request_id: request_id.to_string(),
         occurred_at: at,
         model_key: Some("claude-sonnet".to_string()),
-        cost_10000: Some(100),
+        cost_nanos: Some(10_000_000),
         pricing_status: Some("priced".to_string()),
     }
 }
@@ -601,13 +601,13 @@ async fn aggregates_users_models_pull_requests_and_pricing() {
     store.facts = vec![
         request(&owner, "h1", "r1", minutes(5)),
         AttributionRequestFact {
-            cost_10000: None,
+            cost_nanos: None,
             pricing_status: Some("unpriced".to_string()),
             model_key: gpt.clone(),
             ..request(&owner, "h1", "r2", minutes(6))
         },
         AttributionRequestFact {
-            cost_10000: None,
+            cost_nanos: None,
             pricing_status: None,
             model_key: None,
             ..request(&owner, "h2", "r3", minutes(35))
@@ -651,22 +651,22 @@ async fn aggregates_users_models_pull_requests_and_pricing() {
         priced_request_count: 1,
         unpriced_request_count: 1,
         usage_missing_request_count: 1,
-        priced_cost_10000: 100,
+        priced_cost_nanos: 10_000_000,
     };
     assert_eq!(totals.requests, allocated);
     assert_eq!(
         (
             totals.uncommitted.request_count,
-            totals.uncommitted.priced_cost_10000
+            totals.uncommitted.priced_cost_nanos
         ),
-        (1, 100)
+        (1, 10_000_000)
     );
     assert_eq!(
         (
             report.coverage.requests.priced_request_count,
-            report.coverage.requests.priced_cost_10000
+            report.coverage.requests.priced_cost_nanos
         ),
-        (2, 200)
+        (2, 20_000_000)
     );
 
     let users = report
@@ -691,9 +691,9 @@ async fn aggregates_users_models_pull_requests_and_pricing() {
     assert_eq!(
         (
             dev_row.requests.request_count,
-            dev_row.requests.priced_cost_10000
+            dev_row.requests.priced_cost_nanos
         ),
-        (2, 100)
+        (2, 10_000_000)
     );
     assert_eq!(dev_row.models, ["claude-sonnet", "gpt-5"]);
     assert_eq!(dev_row.last_activity_at, Some(minutes(70)));
@@ -1257,6 +1257,36 @@ async fn shipped_and_total_spend_share_requests_from_before_the_window() {
 }
 
 #[tokio::test]
+async fn tiny_request_costs_are_summed_before_rounding_attribution_totals() {
+    let dev = user_owner(Uuid::new_v4());
+    let mut store = FakeStore::with_commits(vec![commit(
+        1,
+        &dev,
+        REPOSITORY,
+        minutes(30),
+        vec![note_session("s_aa", &["h1"])],
+    )]);
+    store.facts = vec![
+        AttributionRequestFact {
+            cost_nanos: Some(30_000),
+            ..request(&dev, "h1", "committed", minutes(10))
+        },
+        AttributionRequestFact {
+            cost_nanos: Some(30_000),
+            ..request(&dev, "h1", "uncommitted", minutes(40))
+        },
+    ];
+    let report = report(&store, &query()).await;
+
+    assert_eq!(report.totals.requests.priced_cost_nanos, 30_000);
+    assert_eq!(report.totals.uncommitted.priced_cost_nanos, 30_000);
+    assert_eq!(report.coverage.requests.priced_cost_nanos, 60_000);
+    assert_eq!(report.harness_models[0].priced_cost_nanos, 60_000);
+    assert_eq!(report.summary().priced_cost_10000, 1);
+    assert_eq!(report.summary().shipped_cost_10000, 1);
+}
+
+#[tokio::test]
 async fn a_commit_before_the_window_does_not_set_a_sessions_outcome() {
     use crate::attribution::AttributionSessionOutcome;
 
@@ -1293,7 +1323,7 @@ async fn harness_cost_per_line_counts_only_fully_priced_sessions() {
         vec![note_session("s_aa", &["h1"]), note_session("s_bb", &["h2"])],
     )]);
     let mut unpriced = request(&dev, "h2", "unpriced", minutes(20));
-    unpriced.cost_10000 = None;
+    unpriced.cost_nanos = None;
     unpriced.pricing_status = Some("unpriced".to_string());
     store.facts = vec![request(&dev, "h1", "priced", minutes(10)), unpriced];
     let report = report(&store, &query()).await;
@@ -1308,9 +1338,9 @@ async fn harness_cost_per_line_counts_only_fully_priced_sessions() {
         (
             row.priced_session_count,
             row.priced_ai_lines,
-            row.priced_cost_10000
+            row.priced_cost_nanos
         ),
-        (1, 10, 100),
+        (1, 10, 10_000_000),
         "the unpriced session's lines never read as free output"
     );
 }
@@ -1592,16 +1622,16 @@ async fn explicit_journals_override_provider_parents_and_count_requests_and_cost
         );
         assert_eq!(change_requests(&output, 2), 2);
         assert_eq!(output.totals.requests.request_count, 3);
-        assert_eq!(output.totals.requests.priced_cost_10000, 300);
+        assert_eq!(output.totals.requests.priced_cost_nanos, 30_000_000);
         assert_eq!(output.coverage.requests.request_count, 3);
-        assert_eq!(output.coverage.requests.priced_cost_10000, 300);
+        assert_eq!(output.coverage.requests.priced_cost_nanos, 30_000_000);
         assert_eq!(output.totals.uncommitted.request_count, 0);
         let child_change = output
             .changes
             .iter()
             .find(|change| change.commit.commit_sha == sha(2))
             .expect("child change");
-        assert_eq!(child_change.requests.priced_cost_10000, 200);
+        assert_eq!(child_change.requests.priced_cost_nanos, 20_000_000);
         assert_eq!(
             output
                 .models

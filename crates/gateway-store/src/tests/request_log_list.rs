@@ -294,7 +294,7 @@ async fn exercise_request_log_list_search<S: GatewayStore + Sync>(store: &S) {
         .iter()
         .find(|record| record.pricing_status == UsagePricingStatus::Priced)
         .expect("priced usage row");
-    assert_eq!(priced.computed_cost_usd.as_scaled_i64(), 1_234);
+    assert_eq!(priced.computed_cost_usd.as_nanos(), 123_400_000);
     assert_eq!(priced.cache_read_tokens, Some(80));
     assert!(
         store

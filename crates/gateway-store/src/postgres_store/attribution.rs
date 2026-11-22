@@ -453,7 +453,7 @@ impl AttributionRepository for PostgresStore {
                     request_id: get(row, 2)?,
                     occurred_at: time_at(row, 3)?,
                     model_key: get(row, 4)?,
-                    cost_10000: get(row, 5)?,
+                    cost_nanos: get(row, 5)?,
                     pricing_status: get(row, 6)?,
                 })
             })

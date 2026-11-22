@@ -257,7 +257,7 @@ pub(crate) fn list_agent_sessions(
 
 /// Gateway requests linked to explicit journals, note-attested Codex executions, or native sessions,
 /// at or before `until`, oldest first, as
-/// `(ownership_scope_key, session_hash, request_id, occurred_at, model_key, cost_10000,
+/// `(ownership_scope_key, session_hash, request_id, occurred_at, model_key, cost_nanos,
 /// pricing_status)`. Usage joins on the request and the session's scope, so usage recorded
 /// after the request was linked still counts. `None` when there are no hashes to look up.
 pub(crate) fn list_request_facts(
@@ -283,7 +283,7 @@ pub(crate) fn list_request_facts(
         "SELECT r.ownership_scope_key, r.session_hash, r.request_id, r.occurred_at, \
          COALESCE(l.resolved_model_key, l.model_key), \
          CASE WHEN u.pricing_status IN ('priced', 'legacy_estimated') \
-         THEN u.computed_cost_10000 END, \
+         THEN u.computed_cost_nanos END, \
          u.pricing_status \
          FROM (\
              SELECT s.ownership_scope_key, m.session_hash, r.request_id, r.occurred_at, \

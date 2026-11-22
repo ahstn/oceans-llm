@@ -1587,9 +1587,12 @@ pub struct RequestLogSummaryView {
     pub total_tokens: Option<i64>,
     /// Prompt tokens served from the provider cache, from the usage ledger.
     pub cache_read_tokens: Option<i64>,
-    /// Computed request cost in USD scaled by 10,000. Null when no usage was recorded or the
-    /// request could not be priced.
+    /// Computed request cost in USD scaled by 10,000, rounded half up from the ledger.
+    /// Null when no usage was recorded or the request could not be priced.
     pub cost_usd_10000: Option<i64>,
+    /// Computed request cost in USD nanos (one billionth of a dollar), from the ledger.
+    /// Null when no usage was recorded or the request could not be priced.
+    pub cost_usd_nanos: Option<i64>,
     /// The effective tier the request asked for: the route's forced tier, else the
     /// caller's. Null when neither set one.
     pub service_tier: Option<ServiceTierView>,

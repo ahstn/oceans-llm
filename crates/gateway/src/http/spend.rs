@@ -8,8 +8,8 @@ use gateway_core::{
     ApiKeyOwnerKind, BudgetAlertChannel, BudgetAlertDeliveryStatus, BudgetAlertHistoryQuery,
     BudgetAlertRepository, BudgetCadence, BudgetModelSelector, BudgetRecord, BudgetRepository,
     BudgetScope, BudgetSettings, BudgetSource, GatewayError, GlobalRole, IdentityRepository,
-    ModelRepository, Money4, SpendModelTokenDailyRecord, SpendOwnerTokenDailyRecord,
-    TokenUsageBuckets, UserStatus, budget_window_utc,
+    ModelRepository, Money4, Money9, SpendDailyAggregateRecord, SpendModelTokenDailyRecord,
+    SpendOwnerTokenDailyRecord, TokenUsageBuckets, UserStatus, budget_window_utc,
 };
 use gateway_service::{AuditEvent, admin_audit::actions};
 use time::{Date, Duration, Month, OffsetDateTime, UtcOffset};
@@ -96,53 +96,7 @@ pub async fn get_spend_report(
         .collect();
     let owner_token_series = build_owner_token_series(owner_token_rows, &window_day_starts);
     let model_token_series = build_model_token_series(model_token_rows, &window_day_starts);
-    let mut daily_map = std::collections::BTreeMap::new();
-    for row in daily_rows {
-        daily_map.insert(row.day_start.unix_timestamp(), row);
-    }
-
-    let mut totals = SpendTotalsView {
-        priced_cost_usd_10000: 0,
-        priced_request_count: 0,
-        unpriced_request_count: 0,
-        usage_missing_request_count: 0,
-        uncached_input_tokens: Some(0),
-        cache_read_tokens: Some(0),
-        cache_write_tokens: Some(0),
-    };
-
-    let mut daily = Vec::with_capacity(window_days as usize);
-    for day_offset in 0..window_days {
-        let day_start = window_start + Duration::days(i64::from(day_offset));
-        if let Some(row) = daily_map.remove(&day_start.unix_timestamp()) {
-            totals.uncached_input_tokens =
-                add_optional_total(totals.uncached_input_tokens, row.uncached_input_tokens);
-            totals.cache_read_tokens =
-                add_optional_total(totals.cache_read_tokens, row.cache_read_tokens);
-            totals.cache_write_tokens =
-                add_optional_total(totals.cache_write_tokens, row.cache_write_tokens);
-            let priced_cost = row.priced_cost_usd.as_scaled_i64();
-            totals.priced_cost_usd_10000 += priced_cost;
-            totals.priced_request_count += row.priced_request_count;
-            totals.unpriced_request_count += row.unpriced_request_count;
-            totals.usage_missing_request_count += row.usage_missing_request_count;
-            daily.push(SpendDailyPointView {
-                day_start: format_timestamp(row.day_start),
-                priced_cost_usd_10000: priced_cost,
-                priced_request_count: row.priced_request_count,
-                unpriced_request_count: row.unpriced_request_count,
-                usage_missing_request_count: row.usage_missing_request_count,
-            });
-        } else {
-            daily.push(SpendDailyPointView {
-                day_start: format_timestamp(day_start),
-                priced_cost_usd_10000: 0,
-                priced_request_count: 0,
-                unpriced_request_count: 0,
-                usage_missing_request_count: 0,
-            });
-        }
-    }
+    let (daily, totals) = daily_points(daily_rows, &window_day_starts);
 
     let owners = owner_rows
         .into_iter()
@@ -183,6 +137,63 @@ pub async fn get_spend_report(
         owner_token_series,
         model_token_series,
     })))
+}
+
+/// One point per window day, zero-filled, and the window totals. Days add exactly; the total
+/// and each day round to $0.0001 on their own.
+fn daily_points(
+    rows: Vec<SpendDailyAggregateRecord>,
+    window_day_starts: &[OffsetDateTime],
+) -> (Vec<SpendDailyPointView>, SpendTotalsView) {
+    let mut by_day: std::collections::BTreeMap<_, _> = rows
+        .into_iter()
+        .map(|row| (row.day_start.unix_timestamp(), row))
+        .collect();
+    let mut totals = SpendTotalsView {
+        priced_cost_usd_10000: 0,
+        priced_request_count: 0,
+        unpriced_request_count: 0,
+        usage_missing_request_count: 0,
+        uncached_input_tokens: Some(0),
+        cache_read_tokens: Some(0),
+        cache_write_tokens: Some(0),
+    };
+    let mut total_priced_cost = Money9::ZERO;
+    let mut daily = Vec::with_capacity(window_day_starts.len());
+    for day_start in window_day_starts {
+        let Some(row) = by_day.remove(&day_start.unix_timestamp()) else {
+            daily.push(SpendDailyPointView {
+                day_start: format_timestamp(*day_start),
+                priced_cost_usd_10000: 0,
+                priced_request_count: 0,
+                unpriced_request_count: 0,
+                usage_missing_request_count: 0,
+            });
+            continue;
+        };
+        totals.uncached_input_tokens =
+            add_optional_total(totals.uncached_input_tokens, row.uncached_input_tokens);
+        totals.cache_read_tokens =
+            add_optional_total(totals.cache_read_tokens, row.cache_read_tokens);
+        totals.cache_write_tokens =
+            add_optional_total(totals.cache_write_tokens, row.cache_write_tokens);
+        total_priced_cost = total_priced_cost.saturating_add(row.priced_cost_usd);
+        totals.priced_request_count += row.priced_request_count;
+        totals.unpriced_request_count += row.unpriced_request_count;
+        totals.usage_missing_request_count += row.usage_missing_request_count;
+        daily.push(SpendDailyPointView {
+            day_start: format_timestamp(row.day_start),
+            priced_cost_usd_10000: row
+                .priced_cost_usd
+                .round_half_up_to_money4()
+                .as_scaled_i64(),
+            priced_request_count: row.priced_request_count,
+            unpriced_request_count: row.unpriced_request_count,
+            usage_missing_request_count: row.usage_missing_request_count,
+        });
+    }
+    totals.priced_cost_usd_10000 = total_priced_cost.round_half_up_to_money4().as_scaled_i64();
+    (daily, totals)
 }
 
 /// Token buckets keyed by UTC day start (unix seconds).
@@ -470,6 +481,7 @@ pub async fn upsert_budget(
         .store
         .set_manual_budget(&scope, &settings, now)
         .await?;
+    state.service.invalidate_budget_cache();
     let budget = save.budget;
     if save.changed {
         state
@@ -496,7 +508,9 @@ pub async fn upsert_budget(
         scope_key: budget.scope_key.clone(),
         budget: budget_to_settings_view(&budget),
         budget_source: budget_source_to_view(&budget.source),
-        current_window_spend_usd_10000: current_window_spend.as_scaled_i64(),
+        current_window_spend_usd_10000: current_window_spend
+            .round_half_up_to_money4()
+            .as_scaled_i64(),
     })))
 }
 
@@ -535,6 +549,7 @@ pub async fn deactivate_budget(
         .store
         .deactivate_active_budget_returning(&scope, OffsetDateTime::now_utc())
         .await?;
+    state.service.invalidate_budget_cache();
     if let Some(budget) = &deactivated {
         state
             .audit()
@@ -714,7 +729,7 @@ pub(super) async fn current_window_spend(
     state: &AppState,
     budget: &BudgetRecord,
     now: OffsetDateTime,
-) -> Result<Money4, AppError> {
+) -> Result<Money9, AppError> {
     let (window_start, window_end) = budget_window_bounds_utc(budget.settings.cadence, now);
     Ok(state
         .store
@@ -1041,6 +1056,39 @@ mod tests {
             cache_read_tokens,
             cache_write_tokens: 0,
         }
+    }
+
+    #[test]
+    fn report_total_rounds_the_exact_sum_of_days_once() {
+        let first = OffsetDateTime::from_unix_timestamp(1_795_305_600).expect("day start");
+        let days = [first, first + Duration::days(1), first + Duration::days(2)];
+        let row = |day_start| SpendDailyAggregateRecord {
+            day_start,
+            priced_cost_usd: Money9::from_nanos(30_000),
+            priced_request_count: 1,
+            unpriced_request_count: 0,
+            usage_missing_request_count: 0,
+            uncached_input_tokens: Some(10),
+            cache_read_tokens: Some(0),
+            cache_write_tokens: Some(0),
+        };
+
+        let (daily, totals) = daily_points(vec![row(days[0]), row(days[2])], &days);
+
+        assert_eq!(
+            daily
+                .iter()
+                .map(|day| day.priced_cost_usd_10000)
+                .collect::<Vec<_>>(),
+            [0, 0, 0],
+            "each $0.00003 day rounds to $0.0000"
+        );
+        assert_eq!(
+            totals.priced_cost_usd_10000, 1,
+            "$0.00006 rounds to $0.0001"
+        );
+        assert_eq!(totals.priced_request_count, 2);
+        assert_eq!(totals.uncached_input_tokens, Some(20));
     }
 
     fn window(days: i64) -> Vec<OffsetDateTime> {

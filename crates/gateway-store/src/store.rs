@@ -8,7 +8,7 @@ use gateway_core::{
     IdentityRepository, IdentityUserRecord, McpAccessRepository, McpAggregateSessionRepository,
     McpOauthStateRecord, McpRegistryRepository, McpTokenOverheadRepository,
     McpToolInvocationRepository, McpUpstreamCredentialRepository, MembershipRole, ModelRepository,
-    Money4, OauthLoginStateRecord, OauthProviderRecord, OidcLoginStateRecord, OidcProviderRecord,
+    OauthLoginStateRecord, OauthProviderRecord, OidcLoginStateRecord, OidcProviderRecord,
     PasswordInvitationRecord, PricingCatalogRepository, ProviderRepository,
     ProviderUserCredentialRepository, RateLimitRepository, RequestLogRepository, RequestTag,
     ReviewAgentRepository, RoutingRepository, SeedApiKey, SeedHumanBudgetDefaults, SeedModel,
@@ -824,7 +824,7 @@ impl BudgetRepository for AnyStore {
     async fn sum_usage_cost_by_budget_scope(
         &self,
         windows: &[gateway_core::BudgetScopeWindow<'_>],
-    ) -> Result<std::collections::HashMap<String, Money4>, StoreError> {
+    ) -> Result<std::collections::HashMap<String, gateway_core::Money9>, StoreError> {
         dispatch_store!(self, sum_usage_cost_by_budget_scope(windows))
     }
 
@@ -985,7 +985,7 @@ impl BudgetRepository for AnyStore {
         scope: &gateway_core::BudgetScope,
         window_start: OffsetDateTime,
         window_end: OffsetDateTime,
-    ) -> Result<gateway_core::Money4, StoreError> {
+    ) -> Result<gateway_core::Money9, StoreError> {
         dispatch_store!(
             self,
             sum_usage_cost_for_budget_scope_in_window(scope, window_start, window_end)
@@ -1328,6 +1328,13 @@ impl gateway_core::McpToolInvocationRepository for AnyStore {
         query: &gateway_core::McpToolInvocationQuery,
     ) -> Result<gateway_core::McpToolInvocationPage, StoreError> {
         dispatch_store!(self, list_mcp_tool_invocations(query))
+    }
+
+    async fn list_mcp_tool_invocations_by_request_ids(
+        &self,
+        query: &gateway_core::McpToolInvocationBatchQuery<'_>,
+    ) -> Result<Vec<gateway_core::McpToolInvocationRecord>, StoreError> {
+        dispatch_store!(self, list_mcp_tool_invocations_by_request_ids(query))
     }
 
     async fn get_mcp_tool_invocation_detail(

@@ -1,5 +1,6 @@
 use super::*;
 use crate::shared::{parse_uuid, serialize_json, unix_to_datetime};
+use gateway_core::McpToolInvocationBatchQuery;
 
 fn normalize_query(query: &McpToolInvocationQuery) -> (i64, i64) {
     let page = query.page.max(1);
@@ -258,6 +259,43 @@ impl McpToolInvocationRepository for PostgresStore {
             page_size: u32::try_from(page_size).unwrap_or(u32::MAX),
             total: u64::try_from(total.max(0)).unwrap_or(u64::MAX),
         })
+    }
+
+    async fn list_mcp_tool_invocations_by_request_ids(
+        &self,
+        query: &McpToolInvocationBatchQuery<'_>,
+    ) -> Result<Vec<McpToolInvocationRecord>, StoreError> {
+        if query.request_ids.is_empty() || query.limit == 0 {
+            return Ok(Vec::new());
+        }
+        let rows = sqlx::query(
+            r#"
+            SELECT mcp_tool_invocation_id, request_log_id, request_id, api_key_id, user_id,
+                   team_id, owner_kind, server_id, server_display_key, server_display_name,
+                   tool_id, tool_display_key, tool_display_name, status, policy_result,
+                   latency_ms, error_code, has_payload, arguments_payload_truncated,
+                   result_payload_truncated, arguments_payload_redacted,
+                   result_payload_redacted, metadata_json, occurred_at, mcp_method, tool_schema_version
+            FROM mcp_tool_invocations
+            WHERE request_id = ANY($1)
+              AND user_id IS NOT DISTINCT FROM $2::text
+              AND team_id IS NOT DISTINCT FROM $3::text
+              AND occurred_at >= $4
+              AND occurred_at <= $5
+            ORDER BY request_id COLLATE "C" ASC, occurred_at DESC, mcp_tool_invocation_id DESC
+            LIMIT $6
+            "#,
+        )
+        .bind(query.request_ids)
+        .bind(query.user_id.map(|value| value.to_string()))
+        .bind(query.team_id.map(|value| value.to_string()))
+        .bind(query.occurred_at_start.unix_timestamp())
+        .bind(query.occurred_at_end.unix_timestamp())
+        .bind(i64::from(query.limit))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(to_query_error)?;
+        rows.iter().map(decode_mcp_tool_invocation_row).collect()
     }
 
     async fn get_mcp_tool_invocation_detail(

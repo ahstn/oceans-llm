@@ -854,6 +854,40 @@ async fn scopes_can_be_narrowed_widened_and_restored_after_creation() {
 }
 
 #[tokio::test]
+async fn warm_key_verification_does_not_cache_access_or_accept_another_secret() {
+    let harness = Harness::new().await;
+    let (api_key_id, key) = harness.create_key(json!(["inference"]), Value::Null).await;
+    for _ in 0..2 {
+        let reply = harness.get("/v1/models", &key).await;
+        assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+    }
+
+    let (public_id, secret) = key.split_once('.').expect("generated key has a secret");
+    let replacement = if secret.starts_with('0') { '1' } else { '0' };
+    let wrong_key = format!("{public_id}.{replacement}{}", &secret[1..]);
+    let wrong = harness.get("/v1/models", &wrong_key).await;
+    assert_eq!(wrong.status, StatusCode::UNAUTHORIZED, "{}", wrong.body);
+    assert_eq!(wrong.body["error"]["code"], "api_key_secret_mismatch");
+
+    let revoked = harness
+        .admin(
+            Method::POST,
+            &format!("{API_KEYS}/{api_key_id}/revoke"),
+            None,
+        )
+        .await;
+    assert_eq!(revoked.status, StatusCode::OK, "{}", revoked.body);
+    let after_revoke = harness.get("/v1/models", &key).await;
+    assert_eq!(
+        after_revoke.status,
+        StatusCode::UNAUTHORIZED,
+        "{}",
+        after_revoke.body
+    );
+    assert_eq!(after_revoke.body["error"]["code"], "api_key_revoked");
+}
+
+#[tokio::test]
 async fn invalid_scope_edits_are_rejected() {
     let harness = Harness::new().await;
     let (api_key_id, _) = harness.create_key(json!(["mcp:proxy"]), Value::Null).await;

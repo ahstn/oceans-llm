@@ -29,9 +29,11 @@ const LAST_STRICT_VERSION: u32 = 81;
 // its compatibility here; never infer compatibility from its SQL.
 // V82 permits unmerged pull requests with no merge time; older readers require it.
 // V83 only replaces indexes.
+// V84 changes usage charges to nanodollars and requires nanos-aware readers.
 const READER_COMPATIBILITY: &[(u32, ReaderCompatibility)] = &[
     (82, ReaderCompatibility::RequiresReader(82)),
     (83, ReaderCompatibility::Additive),
+    (84, ReaderCompatibility::RequiresReader(84)),
 ];
 
 /// libsql migrations that rebuild a table other tables reference, with that
@@ -581,6 +583,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         checksum: "V83__usage_budget_spend_indexes.sql",
         libsql_sql: include_str!("../migrations/V83__usage_budget_spend_indexes.sql"),
         postgres_sql: include_str!("../migrations/postgres/V83__usage_budget_spend_indexes.sql"),
+    },
+    MigrationManifest {
+        version: 84,
+        name: "usage_cost_nanos",
+        checksum: "V84__usage_cost_nanos.sql",
+        libsql_sql: include_str!("../migrations/V84__usage_cost_nanos.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V84__usage_cost_nanos.sql"),
     },
 ];
 
