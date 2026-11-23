@@ -1,0 +1,35 @@
+crates/gateway-client-config/src/templates/opencode.rs
+  s_b4b688b89ce947::t_811eba1e72c1f1 186-193,230-232
+crates/gateway-client-config/src/tests.rs
+  s_b4b688b89ce947::t_556d7ba90fe49f 535,1708,1714-1737
+crates/gateway-client-config/src/types.rs
+  s_b4b688b89ce947::t_ca8b61de498d36 160-163,274
+crates/gateway-service/src/admin_models.rs
+  s_b4b688b89ce947::t_a4c346764590d2 491-493,618-619,701,1615,1674,2955
+crates/gateway-service/src/capability_hints.rs
+  s_b4b688b89ce947::t_755b57c71a99ca 11-12,15,18-30,115-125
+crates/gateway-service/src/model_metadata/listing.rs
+  s_b4b688b89ce947::t_d6feadfab0e16e 7-8,29,201-203,286,319,371-385,519
+crates/gateway-service/src/model_metadata/tests/service_tiers.rs
+  s_b4b688b89ce947::t_32236a0d327105 345-378
+crates/gateway-service/src/pricing_catalog/metadata.rs
+  s_b4b688b89ce947::t_f87a53bb36916e 21-38,50,54-76
+docs/src/content/docs/harnesses/opencode.mdx
+  s_b4b688b89ce947::t_9c050ceb8d0995 229,231
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "b280fe7b36418b150d7baf977bb95f16991ca820",
+  "prompts": {},
+  "sessions": {
+    "s_b4b688b89ce947": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "62f4a73f-c4f3-4737-8222-eeea3a0a2665",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

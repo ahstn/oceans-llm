@@ -1,0 +1,22 @@
+crates/gateway-client-config/src/templates/opencode.rs
+  h_2f452a9c375069 150,184-188,222-227
+crates/gateway-client-config/src/tests.rs
+  h_2f452a9c375069 1659-1713
+crates/gateway-service/src/model_metadata/tests/service_tiers.rs
+  h_2f452a9c375069 208-222,245,263,273,295
+docs/src/content/docs/harnesses/opencode.mdx
+  h_2f452a9c375069 231
+packages/opencode-oceans/tests/models.test.ts
+  h_2f452a9c375069 338-364
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "99038ef92f5be7961b4de20a18596c6d287a178b",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
