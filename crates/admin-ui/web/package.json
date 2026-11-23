@@ -67,7 +67,7 @@
     "openapi-typescript": "^7.13.0",
     "oxfmt": "0.79.0",
     "oxlint": "1.94.0",
-    "oxlint-tsgolint": "7.0.2007",
+    "oxlint-tsgolint": "7.0.2008",
     "playwright": "1.65.1",
     "postcss": "8.5.33",
     "tailwindcss": "4.3.5",
