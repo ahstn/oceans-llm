@@ -18,8 +18,8 @@
     "@earendil-works/pi-ai": "1.5.2",
     "@earendil-works/pi-coding-agent": "1.5.2",
     "pi-intercom": "0.18.1",
-    "pi-subagents": "0.88.1",
-    "pi-web-access": "0.47.0",
+    "pi-subagents": "0.89.1",
+    "pi-web-access": "0.48.0",
     "tsx": "4.23.15",
     "typebox": "1.4.7"
   },
