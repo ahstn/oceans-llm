@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "admin-ui"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "axum",
  "futures-util",
@@ -55,7 +55,7 @@ dependencies = [
 
 [[package]]
 name = "agent-session-analysis"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1845,7 +1845,7 @@ dependencies = [
 
 [[package]]
 name = "gateway"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "admin-ui",
  "agent-session-analysis",
@@ -1904,7 +1904,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-client-config"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "gateway-core",
  "serde",
@@ -1914,7 +1914,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-client-ip"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "hmac 0.12.1",
  "http",
@@ -1924,7 +1924,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-core"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "aes-gcm",
  "agent-session-analysis",
@@ -1944,7 +1944,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-guardrails"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "aho-corasick",
  "async-trait",
@@ -1965,7 +1965,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-mcp"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "axum",
  "futures-util",
@@ -1980,7 +1980,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-providers"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2017,7 +2017,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-service"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "agent-session-analysis",
  "anyhow",
@@ -2049,7 +2049,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-skills"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "cap-fs-ext",
  "cap-std",
@@ -2068,7 +2068,7 @@ dependencies = [
 
 [[package]]
 name = "gateway-store"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "agent-session-analysis",
  "anyhow",
@@ -3138,7 +3138,7 @@ dependencies = [
 
 [[package]]
 name = "oceans-cli"
-version = "1.4.0"
+version = "1.5.0"
 dependencies = [
  "anyhow",
  "axum",
