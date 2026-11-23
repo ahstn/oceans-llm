@@ -32,6 +32,10 @@ models:
                 completion: 2.0
                 request: 0.01
                 image: 0.05
+              sort:
+                by: throughput
+                partition: none
+              data_collection: deny
 "#,
     );
 
@@ -65,6 +69,110 @@ models:
     assert_eq!(max_price.completion, Some(2.0));
     assert_eq!(max_price.request, Some(0.01));
     assert_eq!(max_price.image, Some(0.05));
+    assert_eq!(
+        routing.sort,
+        Some(OpenRouterSort::Options(OpenRouterSortOptions {
+            by: OpenRouterSortBy::Throughput,
+            partition: Some(OpenRouterSortPartition::None),
+        }))
+    );
+    assert_eq!(
+        routing.data_collection,
+        Some(OpenRouterDataCollection::Deny)
+    );
+}
+
+fn openrouter_policy_config(provider_policy: &str) -> String {
+    format!(
+        r#"
+providers:
+  - id: openrouter
+    type: openai_compat
+    base_url: https://openrouter.ai/api/v1
+    pricing_provider_id: openai
+models:
+  - id: fast
+    routes:
+      - provider: openrouter
+        upstream_model: openai/gpt-4o-mini
+        compatibility:
+          openrouter:
+            provider:
+{provider_policy}
+"#
+    )
+}
+
+#[test]
+fn accepts_sort_or_data_collection_as_the_only_openrouter_policy_field() {
+    for (policy, expected_sort, expected_data_collection) in [
+        (
+            "              sort: price",
+            Some(OpenRouterSort::By(OpenRouterSortBy::Price)),
+            None,
+        ),
+        (
+            "              sort:\n                by: latency",
+            Some(OpenRouterSort::Options(OpenRouterSortOptions {
+                by: OpenRouterSortBy::Latency,
+                partition: None,
+            })),
+            None,
+        ),
+        (
+            "              data_collection: allow",
+            None,
+            Some(OpenRouterDataCollection::Allow),
+        ),
+    ] {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(&config_path, &openrouter_policy_config(policy));
+
+        let config = GatewayConfig::from_path(&config_path).expect("config should parse");
+        let models = config.seed_models().expect("seed models");
+        let routing = &models[0].routes[0]
+            .compatibility
+            .openrouter
+            .as_ref()
+            .expect("openrouter policy")
+            .provider;
+        assert_eq!(routing.sort, expected_sort, "{policy}");
+        assert_eq!(
+            routing.data_collection, expected_data_collection,
+            "{policy}"
+        );
+    }
+}
+
+#[test]
+fn rejects_invalid_openrouter_sort_and_data_collection_values() {
+    for (policy, expected) in [
+        (
+            "              sort: cheapest",
+            "expected `price`, `throughput`, `latency`",
+        ),
+        (
+            "              sort:\n                partition: model",
+            "expected `price`, `throughput`, `latency`",
+        ),
+        (
+            "              sort:\n                by: price\n                partition: provider",
+            "expected `price`, `throughput`, `latency`",
+        ),
+        (
+            "              data_collection: maybe",
+            "unknown variant `maybe`",
+        ),
+    ] {
+        let tmp = tempdir().expect("tempdir");
+        let config_path = tmp.path().join("gateway.yaml");
+        write_config(&config_path, &openrouter_policy_config(policy));
+
+        let error = GatewayConfig::from_path(&config_path).expect_err("config should fail");
+        let error_text = format!("{error:#}");
+        assert!(error_text.contains(expected), "{policy}: {error_text}");
+    }
 }
 
 #[test]

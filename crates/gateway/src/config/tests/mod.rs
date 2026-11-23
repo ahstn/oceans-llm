@@ -4,8 +4,9 @@ use gateway_core::{
     AuthMode, AwsBedrockApiStyle, BudgetCadence, GitHubCopilotChatApi, GlobalRole,
     ManagedApiKeySource, MembershipRole, Money4, OpenAiCompatDecisionsApi,
     OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField,
-    OpenAiCompatReasoningEffort, OpenRouterPercentilePreference, ReasoningEffort,
-    RequestLogRetentionWindow,
+    OpenAiCompatReasoningEffort, OpenRouterDataCollection, OpenRouterPercentilePreference,
+    OpenRouterSort, OpenRouterSortBy, OpenRouterSortOptions, OpenRouterSortPartition,
+    ReasoningEffort, RequestLogRetentionWindow,
 };
 use gateway_providers::{
     BearerAuthHeader, BedrockAuthConfig, CopilotAuthConfig, OpenAiBatchDialect,
