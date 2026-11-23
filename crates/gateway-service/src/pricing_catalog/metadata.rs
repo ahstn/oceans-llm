@@ -18,6 +18,24 @@ pub struct CatalogModelMetadata {
     pub api_endpoints: Option<CatalogApiEndpoints>,
 }
 
+impl CatalogModelMetadata {
+    /// The values of the catalog's `effort` reasoning option, or `None` when the catalog
+    /// lists no effort option for the model.
+    #[must_use]
+    pub fn effort_values(&self) -> Option<Vec<&str>> {
+        self.reasoning_options
+            .iter()
+            .find(|option| option.get("type").and_then(Value::as_str) == Some("effort"))
+            .map(|option| {
+                option
+                    .get("values")
+                    .and_then(Value::as_array)
+                    .map(|values| values.iter().filter_map(Value::as_str).collect())
+                    .unwrap_or_default()
+            })
+    }
+}
+
 /// API surfaces a catalog source lists for a model.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CatalogApiEndpoints {
@@ -29,8 +47,32 @@ pub struct CatalogApiEndpoints {
 
 #[cfg(test)]
 mod tests {
+    use super::CatalogModelMetadata;
     use crate::pricing_catalog::sources::models_dev;
     use serde_json::json;
+
+    #[test]
+    fn effort_values_read_only_the_effort_option() {
+        let metadata = |options: serde_json::Value| CatalogModelMetadata {
+            reasoning_options: serde_json::from_value(options).unwrap(),
+            ..CatalogModelMetadata::default()
+        };
+        assert_eq!(
+            metadata(json!([{"type": "toggle"}, {"type": "effort", "values": ["high"]}]))
+                .effort_values(),
+            Some(vec!["high"])
+        );
+        assert_eq!(
+            metadata(json!([{"type": "budget_tokens"}])).effort_values(),
+            None
+        );
+        assert_eq!(metadata(json!([])).effort_values(), None);
+        // An effort option without values says the model takes no effort level.
+        assert_eq!(
+            metadata(json!([{"type": "effort"}])).effort_values(),
+            Some(Vec::new())
+        );
+    }
 
     #[test]
     fn projection_preserves_unknown_false_reasoning_options_and_conditional_rates() {

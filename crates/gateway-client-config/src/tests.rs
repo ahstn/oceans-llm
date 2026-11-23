@@ -532,6 +532,7 @@ fn pi_fable_5_1_config_matches_expected_shape() {
         },
         thinking_policy: Some(ThinkingPolicy::AnthropicSafeEffort),
         reasoning: false,
+        reasoning_efforts: None,
         codex_reasoning_effort: None,
         native_api_format: None,
         max_reasoning_effort: None,
@@ -1704,10 +1705,34 @@ fn opencode_offers_the_reasoning_effort_ladder_for_reasoning_models_without_a_po
     // The gateway ceiling drops efforts above it rather than clamping them.
     deepseek.max_reasoning_effort = Some(ReasoningLevel::Medium);
     let mut capped: Vec<Value> = ["low", "medium"].map(effort).to_vec();
-    capped.extend(tiers);
+    capped.extend(tiers.clone());
     let hints = client_hints(&deepseek).expect("hints");
     assert_eq!(
         hints.harnesses.opencode.variants,
         Some(Value::Array(capped))
     );
+
+    // The catalog's effort list narrows the ladder and never widens it.
+    deepseek.max_reasoning_effort = None;
+    for (listed, offered) in [
+        (vec![ReasoningLevel::High], vec!["high"]),
+        (
+            vec![
+                ReasoningLevel::Low,
+                ReasoningLevel::High,
+                ReasoningLevel::Max,
+            ],
+            vec!["low", "high"],
+        ),
+        (vec![ReasoningLevel::None, ReasoningLevel::XHigh], vec![]),
+    ] {
+        deepseek.reasoning_efforts = Some(listed);
+        let mut expected: Vec<Value> = offered.into_iter().map(effort).collect();
+        expected.extend(tiers.clone());
+        let hints = client_hints(&deepseek).expect("hints");
+        assert_eq!(
+            hints.harnesses.opencode.variants,
+            Some(Value::Array(expected))
+        );
+    }
 }

@@ -342,3 +342,37 @@ fn forced_tier_routes_report_that_tiers_catalog_schedule() {
     assert!(unpriced.pricing.is_none());
     assert_eq!(unpriced.pricing_source, None);
 }
+
+/// The OpenCode effort variants, in order.
+fn effort_variant_ids(card: &serde_json::Value) -> Vec<String> {
+    card["client_hints"]["harnesses"]["opencode"]["variants"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|variant| variant["settings"].get("reasoningEffort").is_some())
+        .map(|variant| variant["id"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[tokio::test]
+async fn effort_variants_follow_the_catalog_efforts_of_every_chat_route() {
+    let openrouter = openrouter();
+    let on = |upstream: &str| ModelRoute {
+        upstream_model: upstream.into(),
+        ..route_on(&openrouter, None)
+    };
+    for (upstreams, expected) in [
+        // The catalog lists minimal, low, medium and high.
+        (vec!["openai/gpt-5"], vec!["low", "medium", "high"]),
+        // GPT-5 Pro takes only `high`.
+        (vec!["openai/gpt-5-pro"], vec!["high"]),
+        // DeepSeek V4.1 Flash takes none, low, high and max.
+        (vec!["deepseek/deepseek-v4.1-flash"], vec!["low", "high"]),
+        // A request can land on either route, so only levels both accept are offered.
+        (vec!["openai/gpt-5", "openai/gpt-5-pro"], vec!["high"]),
+    ] {
+        let routes = upstreams.iter().map(|upstream| on(upstream)).collect();
+        let (card, _, _) = listings(tiered_model(None), routes, openrouter.clone()).await;
+        assert_eq!(effort_variant_ids(&card), expected, "{upstreams:?}");
+    }
+}
