@@ -8,10 +8,25 @@ use std::sync::Arc;
 
 use gateway_core::{ModelRoute, PartialCapabilities, ProviderConnection};
 
+use gateway_client_config::ReasoningLevel;
+
 use crate::pricing_catalog::{
     PricingCatalogModelDocument, PricingCatalogSnapshot, catalog_metadata_target_for_route,
-    catalog_model_id_fallback,
+    catalog_model_id_fallback, metadata::CatalogModelMetadata,
 };
+
+/// The effort levels a catalog entry lists for its model, or `None` when it lists none.
+/// Values outside the harness scale are dropped.
+pub(crate) fn catalog_effort_levels(
+    metadata: &CatalogModelMetadata,
+) -> Option<Vec<ReasoningLevel>> {
+    metadata.effort_values().map(|values| {
+        values
+            .into_iter()
+            .filter_map(ReasoningLevel::parse)
+            .collect()
+    })
+}
 
 /// The capability fields a catalog entry states. Streaming, developer-role, and
 /// decisions support are adapter facts no catalog source describes, so they stay unset.
@@ -96,6 +111,17 @@ impl CatalogCapabilityHints {
         provider
             .and_then(|provider| catalog_model_for_route(&self.snapshot, provider, route))
             .is_some_and(|model| model.metadata.reasoning == Some(true))
+    }
+
+    /// The effort levels the catalog lists for the route's model, or `None` when it lists none.
+    pub(crate) fn route_effort_levels(
+        &self,
+        provider: Option<&ProviderConnection>,
+        route: &ModelRoute,
+    ) -> Option<Vec<ReasoningLevel>> {
+        provider
+            .and_then(|provider| catalog_model_for_route(&self.snapshot, provider, route))
+            .and_then(|model| catalog_effort_levels(&model.metadata))
     }
 }
 

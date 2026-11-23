@@ -355,6 +355,7 @@ impl InferenceExecution<'_> {
         let route = &self.route;
         let guard_context = &self.guard_context;
         let icon_metadata = &self.icon_metadata;
+        // Stream guardrails buffer the upstream stream, so their work belongs to the stream span.
         let stream = enforce_guarded_stream_after_provider(
             state,
             auth,
@@ -368,6 +369,7 @@ impl InferenceExecution<'_> {
             guard_context,
             stream,
         )
+        .instrument(stream_trace.span())
         .await?;
         let requires_message_stop = matches!(format, InferenceResponseFormat::NativeMessages(_));
         let (stream, upstream_headers) = match format {
@@ -408,6 +410,7 @@ impl InferenceExecution<'_> {
                 requires_message_stop,
                 collector: state.service.new_stream_response_collector(),
                 stream_trace,
+                request_span: Span::current(),
                 #[cfg(test)]
                 test_gate: None,
             }),

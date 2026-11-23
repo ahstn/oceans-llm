@@ -31,6 +31,7 @@ pub(super) struct SelectedProviderRoute {
 
 /// Chooses the route for a request that asks for `service_tier`. Returns the number of
 /// eligible routes and the chosen route, or the 400 that explains why none qualified.
+#[tracing::instrument(name = "gateway.route.select", skip_all)]
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn select_provider_route(
     state: &AppState,

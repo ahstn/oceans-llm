@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use axum::{Extension, Json, body::to_bytes, extract::State, http::HeaderMap, response::Response};
+use axum::{Extension, body::to_bytes, extract::State, http::HeaderMap, response::Response};
 use gateway_core::{
     BudgetCadence, BudgetRepository, BudgetScope, BudgetSettings, CoreChatRequest,
     CoreEmbeddingsRequest, CoreResponsesRequest, ImagesRequest, Money4, ProviderCapabilities,
@@ -16,6 +16,7 @@ use super::{
     v1_images, v1_responses,
 };
 use crate::http::{
+    request_body::TracedJson,
     state::AppState,
     test_support::{app_state, seed_stream_cancellation_test},
 };
@@ -58,7 +59,7 @@ impl Endpoint {
                     headers,
                     Default::default(),
                     auth,
-                    Json(request),
+                    TracedJson(request),
                 )
                 .await
             }
@@ -73,7 +74,7 @@ impl Endpoint {
                     headers,
                     Default::default(),
                     auth,
-                    Json(request),
+                    TracedJson(request),
                 )
                 .await
             }
@@ -104,7 +105,7 @@ impl Endpoint {
                     headers,
                     Default::default(),
                     auth,
-                    Json(request),
+                    TracedJson(request),
                 )
                 .await
             }
@@ -119,7 +120,7 @@ impl Endpoint {
                     headers,
                     Default::default(),
                     auth,
-                    Json(request),
+                    TracedJson(request),
                 )
                 .await
             }
@@ -135,7 +136,7 @@ impl Endpoint {
                     headers,
                     Default::default(),
                     auth,
-                    Json(request),
+                    TracedJson(request),
                 )
                 .await
             }

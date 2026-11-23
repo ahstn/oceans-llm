@@ -157,6 +157,10 @@ pub struct ClientConfigInput {
     /// when no thinking policy names the model family, such as an OpenAI GPT model.
     #[serde(default)]
     pub reasoning: bool,
+    /// The effort levels the catalog lists for the model, when it lists any. A reasoning model
+    /// with no family thinking policy offers only the default effort levels found here.
+    #[serde(default)]
+    pub reasoning_efforts: Option<Vec<ReasoningLevel>>,
     /// An explicit Codex default. A gateway maximum is a ceiling and must not populate this field.
     pub codex_reasoning_effort: Option<CodexReasoningEffort>,
     /// The format the primary route's provider speaks natively, when the provider type makes
@@ -267,6 +271,7 @@ impl Default for ClientConfigInput {
             capabilities: ClientModelCapabilities::default(),
             thinking_policy: None,
             reasoning: false,
+            reasoning_efforts: None,
             codex_reasoning_effort: None,
             native_api_format: None,
             max_reasoning_effort: None,

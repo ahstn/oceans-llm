@@ -5,7 +5,7 @@ use std::{
 
 use async_trait::async_trait;
 use axum::{
-    Extension, Json,
+    Extension,
     body::{Bytes, to_bytes},
     extract::State,
     http::HeaderMap,
@@ -26,6 +26,7 @@ use super::{
     v1_images, v1_responses,
 };
 use crate::http::{
+    request_body::TracedJson,
     state::AppState,
     test_support::{app_state, seed_test_models, test_model},
 };
@@ -88,7 +89,7 @@ impl Endpoint {
                     headers,
                     Default::default(),
                     super::InferenceAuth(auth),
-                    Json(serde_json::from_value(body).unwrap()),
+                    TracedJson(serde_json::from_value(body).unwrap()),
                 )
                 .await
             }
@@ -99,7 +100,7 @@ impl Endpoint {
                     headers,
                     Default::default(),
                     super::InferenceAuth(auth),
-                    Json(serde_json::from_value(body).unwrap()),
+                    TracedJson(serde_json::from_value(body).unwrap()),
                 )
                 .await
             }
@@ -121,7 +122,7 @@ impl Endpoint {
                     headers,
                     Default::default(),
                     super::InferenceAuth(auth),
-                    Json(serde_json::from_value(body).unwrap()),
+                    TracedJson(serde_json::from_value(body).unwrap()),
                 )
                 .await
             }
@@ -132,7 +133,7 @@ impl Endpoint {
                     headers,
                     Default::default(),
                     super::InferenceAuth(auth),
-                    Json(serde_json::from_value(body).unwrap()),
+                    TracedJson(serde_json::from_value(body).unwrap()),
                 )
                 .await
             }
@@ -143,7 +144,7 @@ impl Endpoint {
                     headers,
                     Default::default(),
                     super::InferenceAuth(auth),
-                    Json(body),
+                    TracedJson(body),
                 )
                 .await
             }

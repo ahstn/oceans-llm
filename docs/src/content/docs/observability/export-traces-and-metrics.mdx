@@ -135,7 +135,11 @@ Search for the service name `oceans-llm-gateway`. Confirm that there's a trace a
 </Step>
 </Steps>
 
-For a streaming model request, the trace contains `http.server.request`, `gateway.provider.operation`, `http.client.request` and `gateway.provider.stream`. The stream span records time to first chunk, time to first output, chunk and byte totals, whether a terminal event arrived, and a termination reason such as `client_cancelled` or `stream_transport_error`. Model access, routing, budget, usage, ledger and request-log spans appear when the request reaches those steps.
+For a streaming model request, `gateway.provider.stream` is the parent of `gateway.provider.operation`, which is the parent of the upstream `http.client.request` span. The client span stays open until the upstream body ends. The stream span records time to first chunk, time to first output, chunk and byte totals, whether a terminal event arrived, and a termination reason such as `client_cancelled` or `stream_transport_error`. After the stream ends, `gateway.stream.finalize` holds usage accounting, the routing update and the request-log write.
+
+Each wait has one owner span. A backend that splits time between spans, such as Datadog's execution-time breakdown, therefore gives the upstream time to the provider and only the gateway's own work to `oceans-llm-gateway`.
+
+Other spans appear when the request reaches their step: body read and decode (`gateway.request.read_body`, `gateway.request.decode`), rate limits (`gateway.rate_limit.check`), route selection (`gateway.route.select`), guardrails (`gateway.guardrails.*`), model access, budget, usage, ledger and request logs.
 
 Trace attributes don't contain prompts, message content, tool arguments, credentials, full request headers or URL query values. To see captured payloads, use [Request logs](/observability/request-logs/), which follow the request-log [payload policy](/observability/request-logs/#payload-policy).
 

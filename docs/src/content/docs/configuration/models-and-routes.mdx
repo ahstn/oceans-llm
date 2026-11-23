@@ -339,6 +339,8 @@ The other fields are Chat Completions transforms. `/v1/responses` is a separate 
 | `provider.order` | `[]` | OpenRouter provider slugs in preferred order |
 | `provider.preferred_max_latency` | unset | A positive number, or an object with at least one positive `p50`, `p75`, `p90`, `p99` (seconds) |
 | `provider.max_price` | unset | An object with at least one non-negative `prompt`, `completion`, `request`, `image` |
+| `provider.sort` | unset | `price`, `throughput`, `latency`, or an object with `by` (one of those) and optional `partition` (`model`, `none`) |
+| `provider.data_collection` | unset | `allow`, `deny` |
 
 Validation:
 
@@ -456,6 +458,8 @@ models:
               max_price:
                 prompt: 1.0
                 completion: 2.0
+              sort: throughput
+              data_collection: deny
 ```
 
 An OpenRouter Decisions route needs no `capabilities` block:

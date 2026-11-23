@@ -79,6 +79,7 @@ use crate::http::{
         GuardStreamError, InferenceGuardContext, guard_model_response, guard_prompt, guard_stream,
         model_route_key, redact_prompt,
     },
+    request_body::TracedJson,
     request_policy::{RequestPolicyContext, enforce_rate_limits},
     request_tags::extract_request_tags,
     request_tracing::{StreamTrace, provider_operation_span, trace_provider_operation},
@@ -86,6 +87,7 @@ use crate::http::{
 };
 use crate::observability::{ChatMetricLabels, ChatRequestMetric};
 
+#[tracing::instrument(name = "gateway.guardrails.prompt", skip_all)]
 async fn guard_typed_request<T>(
     state: &AppState,
     request_id: &str,
@@ -112,6 +114,7 @@ where
 }
 
 /// Redacts prompt secrets in a typed request without running the other prompt evaluators.
+#[tracing::instrument(name = "gateway.guardrails.redact", skip_all)]
 async fn redact_typed_request<T>(
     state: &AppState,
     request_id: &str,
@@ -246,7 +249,7 @@ pub async fn v1_chat_completions(
     headers: HeaderMap,
     policy: RequestPolicyContext,
     InferenceAuth(auth): InferenceAuth,
-    Json(mut request): Json<ChatCompletionsRequest>,
+    TracedJson(mut request): TracedJson<ChatCompletionsRequest>,
 ) -> Result<Response, AppError> {
     let request_started_at = Instant::now();
     let request_id = canonical_request_id(request_id)?;
@@ -344,15 +347,17 @@ pub async fn v1_chat_completions(
             provider.as_ref(),
             stream_started_at,
         );
-        let provider_execution_span = provider_operation_span(
-            &request_id,
-            "chat",
-            &auth,
-            &resolved,
-            route,
-            provider.as_ref(),
-            true,
-        );
+        let provider_execution_span = stream_trace.in_scope(|| {
+            provider_operation_span(
+                &request_id,
+                "chat",
+                &auth,
+                &resolved,
+                route,
+                provider.as_ref(),
+                true,
+            )
+        });
         let attempt_started_at = gateway_service::offset_now();
         let stream = match trace_provider_operation(
             provider_execution_span,
@@ -437,7 +442,7 @@ pub async fn v1_responses(
     headers: HeaderMap,
     policy: RequestPolicyContext,
     InferenceAuth(auth): InferenceAuth,
-    Json(mut request): Json<ResponsesRequest>,
+    TracedJson(mut request): TracedJson<ResponsesRequest>,
 ) -> Result<Response, AppError> {
     let request_started_at = Instant::now();
     let request_id = canonical_request_id(request_id)?;
@@ -535,15 +540,17 @@ pub async fn v1_responses(
             provider.as_ref(),
             stream_started_at,
         );
-        let provider_execution_span = provider_operation_span(
-            &request_id,
-            "responses",
-            &auth,
-            &resolved,
-            route,
-            provider.as_ref(),
-            true,
-        );
+        let provider_execution_span = stream_trace.in_scope(|| {
+            provider_operation_span(
+                &request_id,
+                "responses",
+                &auth,
+                &resolved,
+                route,
+                provider.as_ref(),
+                true,
+            )
+        });
         let attempt_started_at = gateway_service::offset_now();
         let stream = match trace_provider_operation(
             provider_execution_span,
@@ -843,6 +850,8 @@ struct StreamFinalization {
     requires_message_stop: bool,
     collector: gateway_service::StreamResponseCollector,
     stream_trace: StreamTrace,
+    /// Parent of the finalize span. The body can be dropped outside the request span.
+    request_span: Span,
     #[cfg(test)]
     test_gate: Option<StreamFinalizationTestGate>,
 }
@@ -906,7 +915,7 @@ impl Drop for LoggingBodyStreamState {
             None
         };
         self.shutdown.tasks().spawn_on(
-            finalize_stream(finalization, termination, charge).in_current_span(),
+            traced_finalize_stream(finalization, termination, charge),
             &runtime,
         );
     }
@@ -1244,10 +1253,10 @@ impl LoggingBodyStreamState {
         let finalization = self.finalization.take().expect("stream finalized once");
         // Dropping the join handle detaches, rather than cancels, this bounded
         // persistence task. No body-owned future can interrupt billing or logging.
-        let task = self
-            .shutdown
-            .tasks()
-            .spawn(finalize_stream(finalization, termination, None).in_current_span());
+        let task =
+            self.shutdown
+                .tasks()
+                .spawn(traced_finalize_stream(finalization, termination, None));
         async move {
             task.await.map_err(|error| {
                 GatewayError::Internal(format!("stream finalization task failed: {error}"))
@@ -1256,16 +1265,29 @@ impl LoggingBodyStreamState {
     }
 }
 
+/// [`finalize_stream`] in a `gateway.stream.finalize` span under the request span.
+/// The request span is stored because a dropped body has no current span.
+fn traced_finalize_stream(
+    state: StreamFinalization,
+    termination: StreamTermination,
+    charge: Option<tokio::task::JoinHandle<()>>,
+) -> impl Future<Output = Result<(), GatewayError>> + use<> {
+    let span = tracing::info_span!(
+        parent: &state.request_span,
+        "gateway.stream.finalize",
+        request_id = %state.request_log_context.request_id,
+        gateway.stream.termination_reason = tracing::field::Empty,
+        error.type = tracing::field::Empty,
+        otel.status_code = tracing::field::Empty,
+    );
+    finalize_stream(state, termination, charge).instrument(span)
+}
+
 async fn finalize_stream(
     mut state: StreamFinalization,
     termination: StreamTermination,
     charge: Option<tokio::task::JoinHandle<()>>,
 ) -> Result<(), GatewayError> {
-    if let Some(charge) = charge
-        && let Err(error) = charge.await
-    {
-        tracing::warn!(%error, "cancelled stream token charge task failed");
-    }
     state.collector.finish();
     let cancelled = matches!(termination, StreamTermination::ClientCancelled);
     let shut_down = matches!(termination, StreamTermination::ServerShutdown);
@@ -1311,6 +1333,28 @@ async fn finalize_stream(
             error_code: error.error_code().to_string(),
         });
     }
+    // The stream span ends with the upstream stream. Accounting, routing and
+    // logging below belong to the finalize span.
+    let stream_termination = if cancelled {
+        "client_cancelled"
+    } else if shut_down {
+        SERVER_SHUTDOWN
+    } else if transport.is_some() {
+        "stream_transport_error"
+    } else if failure.is_some() {
+        "stream_error_event"
+    } else {
+        "complete"
+    };
+    state.stream_trace.finish(
+        stream_termination,
+        failure.as_ref().map(|_| stream_termination),
+    );
+    if let Some(charge) = charge
+        && let Err(error) = charge.await
+    {
+        tracing::warn!(%error, "cancelled stream token charge task failed");
+    }
     #[cfg(test)]
     pause_stream_finalization(&mut state.test_gate, false).await;
     // Cancelled partial streams keep their existing no-ledger semantics. Failed
@@ -1341,28 +1385,20 @@ async fn finalize_stream(
     if let Some(error) = &routing_error {
         tracing::error!(request_id = %state.request_log_context.request_id,
             error_code = %error.error_code(), "failed to persist successful route binding");
+        let span = Span::current();
+        span.record("error.type", "routing_state_error");
+        span.record("otel.status_code", "ERROR");
         failure = Some(gateway_service::StreamFailureSummary {
             status_code: error.http_status_code().into(),
             error_code: error.error_code().to_string(),
         });
     }
-    let termination_reason = if cancelled {
-        "client_cancelled"
-    } else if shut_down {
-        SERVER_SHUTDOWN
-    } else if transport.is_some() {
-        "stream_transport_error"
-    } else if routing_error.is_some() {
+    let termination_reason = if routing_error.is_some() {
         "routing_state_error"
-    } else if failure.is_some() {
-        "stream_error_event"
     } else {
-        "complete"
+        stream_termination
     };
-    state.stream_trace.finish(
-        termination_reason,
-        failure.as_ref().map(|_| termination_reason),
-    );
+    Span::current().record("gateway.stream.termination_reason", termination_reason);
     tracing::info!(
         request_id = %state.request_log_context.request_id,
         provider_key = %state.provider_key,
@@ -2335,6 +2371,7 @@ mod tests {
                         &self.provider,
                         Instant::now(),
                     ),
+                    request_span: tracing::Span::none(),
                     test_gate: None,
                 }),
                 shutdown: self.shutdown.clone(),

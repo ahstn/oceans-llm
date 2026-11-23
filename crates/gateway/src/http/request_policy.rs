@@ -116,6 +116,11 @@ pub async fn check_rate_limits(
 
 /// [`check_rate_limits`], also returning the user's team as the check
 /// resolved it, for the request's token charge.
+#[tracing::instrument(
+    name = "gateway.rate_limit.check",
+    skip_all,
+    fields(gateway.rate_limit.operation = subject.operation.as_str())
+)]
 async fn check_rate_limits_with_team(
     state: &AppState,
     context: &RequestPolicyContext,

@@ -1,0 +1,89 @@
+---
+title: OpenRouter provider check
+description: Headquarters, published compliance audits, data-handling incidents and output drift for the upstream providers that serve DeepSeek V4.1 Flash 1017 on OpenRouter.
+sidebar:
+  label: OpenRouter provider check
+  order: 1
+---
+
+This page is a point-in-time check of the upstream providers behind one OpenRouter model, `deepseek/deepseek-v4.1-flash-1017`. It lists each provider's headquarters and the compliance audits it publishes. Admins can use it to choose provider slugs for a route's [OpenRouter provider routing](/providers/openrouter/#set-openrouter-provider-routing) policy.
+
+## Scope and method
+
+- Checked on 2026-11-22. OpenRouter listed 40 providers across 50 endpoints for the model.
+- Headquarters comes from OpenRouter's `/api/v1/providers` data, checked against each company's own pages and filings.
+- Audit claims come from each company's trust center, blog and legal pages, plus the third-party trackers linked below. Each trust center keeps its audit reports behind a request, and this check didn't open any of them.
+- The table lists US-headquartered providers that publish a SOC 2 Type II audit or claim one.
+  - **Tier 1**: SOC 2 Type II, plus ISO certification and/or HIPAA coverage.
+  - **Tier 2**: SOC 2 Type II only, or a Type II claim without a date or a posted report.
+
+## US-headquartered providers with audits
+
+A missing PrivacyWatch or InferCheck link means that tracker has no page for the provider.
+
+| Tier | Provider | OpenRouter slug | HQ | Published audits | References |
+|---|---|---|---|---|---|
+| 1 | Cloudflare (Workers AI) | `cloudflare` | San Francisco, CA | SOC 2 Type II (annual since 2019); ISO 27001, 27017, 27018, 27701; HIPAA attestation, BAA on Enterprise. Its FedRAMP High (Aug 2026) and PCI DSS scopes don't include Workers AI. | [Trust Hub](https://www.cloudflare.com/trust-hub/compliance-resources/) · [PrivacyWatch](https://privacywatch.wyrdwerk.com/p/cloudflare-r2) · [InferCheck](https://infercheck.eu/en/provider/cloudflare-workers-ai) |
+| 1 | Fireworks AI | `fireworks` | Redwood City, CA | SOC 2 Type II (2025 report); ISO 27001, 27701, 42001 (Nov 2025); HIPAA with BAA | [Trust center](https://trust.fireworks.ai) · [PrivacyWatch](https://privacywatch.wyrdwerk.com/p/fireworks-ai) · [InferCheck](https://infercheck.eu/en/provider/fireworks-ai) |
+| 1 | Crusoe | `crusoe` | Denver, CO and San Francisco, CA | SOC 2 Type II (covers Managed Inference); ISO 27001 and 42001 (Feb 2026); no HIPAA attestation | [Trust center](https://trust.crusoe.ai) · [PrivacyWatch](https://privacywatch.wyrdwerk.com/p/crusoe) |
+| 1 | Together AI\* | `together` | San Francisco, CA | SOC 2 Type II (2025, updated 2026); ISO 27001 (Jun 2026). Claims HIPAA and BAAs in marketing; its trust center doesn't list HIPAA. | [Trust center](https://trust.together.ai) · [PrivacyWatch](https://privacywatch.wyrdwerk.com/p/together-ai) · [InferCheck](https://infercheck.eu/en/provider/together-ai) |
+| 1 | Baseten | `baseten` | San Francisco, CA | SOC 2 Type II (Jun 2024 to May 2025); SOC 3; HIPAA with BAA. Its trust center also shows ISO 27001, PCI DSS and CSA STAR badges with no dates. | [Trust center](https://trust.baseten.co) · [PrivacyWatch](https://privacywatch.wyrdwerk.com/p/baseten) · [InferCheck](https://infercheck.eu/en/provider/baseten) |
+| 1 | DigitalOcean | `digitalocean` | Broomfield, CO | SOC 2 Type II and SOC 3; HIPAA attestation with BAA. Its trust pages don't say whether the audit covers its AI inference product. | [Trust](https://www.digitalocean.com/trust) · [PrivacyWatch](https://privacywatch.wyrdwerk.com/p/digitalocean-genai) |
+| 1 | CoreWeave | `coreweave` | Livingston, NJ | SOC 2 Type II; ISO 27001, 27701, 22301; HIPAA reports. No dates published. | [Trust center](https://trust.coreweave.com) · [PrivacyWatch](https://privacywatch.wyrdwerk.com/p/coreweave) |
+| 2 | Modal | `modal` | New York, NY | SOC 2 Type II (Jan 2025, annual); HIPAA BAA on Enterprise | [Trust center](https://trust.modal.com) · [PrivacyWatch](https://privacywatch.wyrdwerk.com/p/modal) |
+| 2 | Sail Research | `sail-research` | San Francisco, CA | SOC 2 Type II (effective Aug 2026); HIPAA BAA for Enterprise | [Trust center](https://trust.sailresearch.com) · [PrivacyWatch](https://privacywatch.wyrdwerk.com/p/sail-research) |
+| 2 | ModelRun (Modular) | `modelrun` | Los Altos, CA | SOC 2 Type II (2026 report). Its terms prohibit protected health information. | [Trust center](https://trust.modular.com) · [PrivacyWatch](https://privacywatch.wyrdwerk.com/p/modelrun-modular) |
+| 2 | Inference.net | `inference-net` | San Francisco, CA | SOC 2 Type I and Type II (2025 report) | [Trust center](https://trust.inference.net) · [PrivacyWatch](https://privacywatch.wyrdwerk.com/p/inference-net) · [InferCheck](https://infercheck.eu/en/provider/inference) |
+| 2 | Parasail | `parasail` | San Mateo, CA | SOC 2 Type I (Feb 2026); SOC 2 Type II, Security criteria only, no date | [Trust](https://www.parasail.io/trust) · [PrivacyWatch](https://privacywatch.wyrdwerk.com/p/parasail) |
+| 2 | Reka AI | `reka` | Sunnyvale, CA | SOC 2 Type I (Jun 2025); its trust center claims Type II, with no date | [Trust center](https://trust.reka.ai) · [PrivacyWatch](https://privacywatch.wyrdwerk.com/p/reka-ai) |
+| 2 | Prime Intellect | `primeintellect` | San Francisco, CA | Its trust center lists SOC 2 Type I and Type II, posts only the Type I report, and gives no dates | [Trust center](https://trust.primeintellect.ai) |
+| 2 | Makora | `makora` | New York, NY | Its DPA claims SOC 2 Type II (Security criteria) without naming an auditor or period. Not HIPAA-eligible. | [Trust center](https://trust.makora.com) |
+
+\* Together AI [disclosed on 2026-11-21](https://www.together.ai/blog/security-event-prompt-leakage-for-requests-in-june-and-july-of-2026) that an unauthorized party downloaded stored prompt samples from June and July 2026 requests to MiniMax M3, GLM-5.2 and Kimi K2.6. An AI coding agent had committed a credential for the private repository that held them to a public repository. Together now enables Zero Data Retention by default for new accounts.
+
+## Providers to avoid
+
+OpenRouter and the providers disclosed these data-handling incidents in November 2026. They involve other models on these providers, not DeepSeek V4.1 Flash 1017. OpenRouter's [incident summary](https://openrouter.ai/blog/announcements/data-processing-incidents-on-inference-providers/) says it off-boarded three providers, removed 125 endpoints from Zero Data Retention eligibility and notified affected customers.
+
+| Provider | What happened | Sources |
+|---|---|---|
+| AtlasCloud | Told OpenRouter it forwarded OpenRouter requests for MiniMax models to MiniMax. A researcher's test URLs in MiniMax-model prompts were opened 40 to 130 hours after the requests. | [OpenRouter](https://openrouter.ai/blog/announcements/data-processing-incidents-on-inference-providers/) · [Customer notice on X](https://x.com/michael_chomsky/status/2124008002571428224) |
+| Novita AI | Forwarded MiniMax-model requests to MiniMax's API. Novita says a routing configuration issue applied the forwarding path more broadly than intended, from 2026-05-28 to 2026-11-11. | [Novita notice](https://novita.ai/blog/minimax-requests-privacy-notice/) · [Customer notice on X](https://x.com/michael_chomsky/status/2124008002571428224) |
+| StreamLake | Told OpenRouter it forwarded OpenRouter requests for MiniMax models to MiniMax. | [Customer notice on X](https://x.com/michael_chomsky/status/2124008002571428224) |
+| GMI Cloud | A separate incident: an attacker used two compromised credentials to reach an internal GMI Cloud system that kept about three days of request content, on October 21 and 22 and again from October 27. A researcher's AWS test keys planted in prompts were later used. OpenRouter disabled all GMI Cloud endpoints on 2026-11-20. | [RuntimeWire](https://runtimewire.com/article/openrouter-cuts-off-gmi-cloud-after-attacker-searched-stored-prompts-for) · [LAVA](https://lava.security/blog/ai-inference-canary-research-prompts-exposed) |
+
+## Providers to consider avoiding
+
+Users may want to avoid OpenInference, Nebius and Baidu for this model. In a [bugbunny.ai test](https://x.com/Zaddyzaddy/status/2123810047163539875) on 2026-11-19, their endpoints drifted furthest from DeepSeek's own API: 20.4%, 13.2% and 11.8%. All other endpoints measured under 10%, and none reached the test's 50% threshold for a different model. OpenInference and Nebius declare fp4 quantization on OpenRouter, and Baidu declares fp8.
+
+The test sent 40 one-word prompts in four languages, 65 samples per endpoint, and measured Jensen-Shannon distance from DeepSeek's API, scaled so DeepSeek V4-Pro equals 100%. The method follows [One Token Is Enough](https://arxiv.org/abs/2607.10252).
+
+## Providers not in the table
+
+- **Listed under [Providers to avoid](#providers-to-avoid)**: Novita AI.
+
+- **US-headquartered, no verified SOC 2 Type II**:
+  - DeepInfra has SOC 2 Type I and ISO 27001.
+  - NEAR AI has ISO 27001 and an engagement letter for SOC 2.
+  - Morph's SOC 2 came through Delve, whose reports face public questions.
+  - Relace claims SOC 2, but its trust center returns 404.
+  - Particle AI, PrimaLabs, River, Ionstream, Wafer, Open Inference, Ambient and Venice publish no completed audit.
+- **Headquartered outside the US**: Cohere (Toronto, though OpenRouter lists US), SiliconFlow (Beijing), Mistral, Pearl Research, DekaLLM, Baidu, DeepSeek, StreamLake, Inceptron, Nebius, Alibaba and Ant Digital.
+
+## Use the slugs in a route
+
+The OpenRouter slug column matches the slugs that `compatibility.openrouter.provider.only` accepts:
+
+```yaml title="gateway.yaml"
+models:
+  - id: deepseek-v4.1-flash
+    routes:
+      - provider: openrouter
+        upstream_model: deepseek/deepseek-v4.1-flash-1017
+        compatibility:
+          openrouter:
+            provider:
+              only: [fireworks, crusoe, together, baseten]
+```
+
+Provider audits and OpenRouter's provider list change over time. Check a provider's trust center before relying on an entry here.

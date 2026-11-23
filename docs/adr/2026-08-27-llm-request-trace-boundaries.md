@@ -81,3 +81,20 @@ Rejected because stream setup, request mapping, and the actual HTTP exchange hav
 ### Export request and response content in trace attributes
 
 Rejected because trace backends are not the approved payload store. Request logs apply the configured redaction, bounding, access, and retention rules.
+
+## Amendment: one owner span for each wait
+
+On 2026-11-22, the stream span became the parent of the provider operation, and three timing gaps were closed:
+
+- The `http.client.request` span is entered on every body poll, so it ends when the upstream body ends. Since tracing-opentelemetry 0.32, a span ends when it is last exited, not when it is dropped. Before this change, a streaming client span ended when the response headers arrived.
+- `gateway.provider.operation` is created inside `gateway.provider.stream`. A backend that divides time between concurrent sibling spans, such as Datadog's execution-time breakdown, then gives upstream time to the client span and not to the gateway's stream span.
+- The stream span now ends when the upstream stream ends. Usage accounting, the routing update and the request-log write run in a `gateway.stream.finalize` span that is a child of the request span. A routing-state failure is recorded on that span, not on the stream span. The `inference stream terminated` log still reports `routing_state_error`.
+
+These spans were added for steps that had no span:
+
+- `gateway.request.read_body` and `gateway.request.decode` for the inference endpoints' JSON bodies, which separate the client's upload time from decoding
+- `gateway.rate_limit.check`
+- `gateway.route.select` for credential filtering and session-affinity lookup, and `gateway.route.complete` for the response-origin and affinity writes
+- `gateway.guardrails.prompt`, `gateway.guardrails.redact` and `gateway.guardrails.response`, and `gateway.guardrails.stream` for the evaluation of a buffered stream
+
+`gateway.guardrails.stream` covers only the evaluation. The time spent buffering the upstream stream belongs to the client span.

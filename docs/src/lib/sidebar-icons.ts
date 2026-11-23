@@ -23,6 +23,7 @@ const sidebarIcons: Record<string, string> = {
   "/harnesses/oceans-cli": "ph:command",
   "/harnesses/git-ai-attribution": "ph:git-commit",
   "/providers/openrouter": "ph:shuffle",
+  "/providers/openrouter-provider-check": "ph:shield-check",
   "/providers/typesafe": "ph:list-checks",
   "/providers/opencode-zen": "ph:code-block",
   "/providers/aws-bedrock": "ph:cloud",

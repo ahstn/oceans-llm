@@ -226,9 +226,9 @@ Each model states its `capabilities`, so OpenCode doesn't apply its own defaults
 
 - `tools` comes from the route's tool-calling support.
 - `input` is `text`, plus `image` for vision routes, plus `pdf` for vision routes whose catalog input includes PDF. OpenCode sends only images and PDFs as file media, and the gateway accepts file parts only on vision routes.
-- `reasoning.supported` is `false` for models without a thinking policy.
+- `reasoning.supported` is `true` for models with a thinking policy or that the model catalog marks as reasoning, and `false` otherwise.
 
-Reasoning models also get explicit effort `variants`. Anthropic Messages variants set `effort` with adaptive thinking. OpenAI-compatible variants set `reasoningEffort`. Claude models with adaptive effort get `high` and `max` variants, and the `max` variant sends effort `xhigh`. Gemini models get the levels they support from `minimal`, `low`, `medium` and `high`. Variants above the model's reasoning ceiling are left out.
+Reasoning models also get explicit effort `variants`. Anthropic Messages variants set `effort` with adaptive thinking. OpenAI-compatible variants set `reasoningEffort`. Claude models with adaptive effort get `high` and `max` variants, and the `max` variant sends effort `xhigh`. Gemini models get the levels they support from `minimal`, `low`, `medium` and `high`. Other reasoning models, such as GPT and DeepSeek, get the levels from `low`, `medium` and `high` that the model catalog lists for them, or all three when it lists none. GPT-5 Pro gets only `high`. Variants above the model's reasoning ceiling are left out.
 
 Models that can serve more than one service tier also get `fast`, `flex` and `ultrafast` variants for the tiers they serve and callers may request. Anthropic Messages `fast` sends `speed: "fast"`. Other variants send `serviceTier`, which OpenCode sends as `service_tier`.
 

@@ -203,6 +203,19 @@ impl StreamTrace {
         }
     }
 
+    /// A handle to the stream span, or a disabled span once the stream has finished.
+    pub fn span(&self) -> Span {
+        self.span.clone().unwrap_or_else(Span::none)
+    }
+
+    /// Runs `f` inside the stream span, so spans it creates become the stream's children.
+    pub fn in_scope<T>(&self, f: impl FnOnce() -> T) -> T {
+        match &self.span {
+            Some(span) => span.in_scope(f),
+            None => f(),
+        }
+    }
+
     pub fn observe_chunk(&mut self, byte_count: usize, observation: StreamChunkObservation) {
         let Some(span) = self.span.as_ref() else {
             return;
