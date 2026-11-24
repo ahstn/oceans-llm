@@ -69,6 +69,12 @@ const session: AgentSessionSummaryView = {
   harness_key: 'opencode',
   harness_label: 'Opencode',
   requested_model_key: 'claude-opus-4-1',
+  model_icon_key: 'claude',
+  provider_key: 'anthropic-prod',
+  provider_icon_key: 'anthropic',
+  user_name: 'Ada Lovelace',
+  user_email: 'ada@example.com',
+  service_account_name: null,
   operation: 'chat',
   caller_class: 'user',
   lifecycle: 'finalized',
@@ -88,6 +94,8 @@ const session: AgentSessionSummaryView = {
   cohort_sample_size: 16,
   calibration_approval_id: 'calibration_1',
   normalized_cost_usd: 0.0123,
+  cost_usd_nanos: 34_400_000,
+  unpriced_request_count: 0,
   active_time_ms: 42_000,
   wall_time_ms: 60_000,
   limitations: [],
@@ -481,7 +489,7 @@ describe('AgentSessionsPage', () => {
     })
   })
 
-  it('shows calibration data without showing the session score', () => {
+  it('shows the caller and provider like request logs, and hides state and score by default', () => {
     render(<AgentSessionsPage />)
 
     expect(screen.getByRole('heading', { name: 'Agent sessions' })).toBeInTheDocument()
@@ -493,7 +501,16 @@ describe('AgentSessionsPage', () => {
         .getByTestId('agent-session-table')
         .querySelector('[data-agent-harness-icon="opencode"]'),
     ).toBeInTheDocument()
-    expect(table.getByText('Score not shown')).toBeInTheDocument()
+    expect(table.getByText('Ada Lovelace')).toBeInTheDocument()
+    expect(table.getByText('ada@example.com')).toBeInTheDocument()
+    expect(table.getByText('claude-opus-4-1')).toBeInTheDocument()
+    expect(table.getByText('anthropic-prod')).toBeInTheDocument()
+    // Cost is the ledger spend so far, not the analysis report's normalised cost.
+    expect(table.getByText('$0.03')).toBeInTheDocument()
+    expect(table.getAllByRole('columnheader').map((header) => header.textContent)).not.toEqual(
+      expect.arrayContaining(['State', 'Score']),
+    )
+    expect(table.queryByText('Score not shown')).not.toBeInTheDocument()
     expect(screen.queryByText('82')).not.toBeInTheDocument()
     const sessionRow = screen.getByRole('row', { name: /Opencode/ })
     expect(sessionRow).toHaveTextContent('8')
@@ -529,7 +546,6 @@ describe('AgentSessionsPage', () => {
     const rightAligned = (element: HTMLElement) => element.classList.contains('text-right')
 
     expect(headers.filter(rightAligned).map((header) => header.textContent)).toEqual([
-      'Score',
       'Cost',
       'Active time',
       'Requests',
@@ -572,7 +588,7 @@ describe('AgentSessionsPage', () => {
       })
     })
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Go to page 1' })).toHaveAttribute(
+      expect(screen.getByRole('link', { name: 'Go to page 1' })).toHaveAttribute(
         'aria-current',
         'page',
       )
@@ -600,6 +616,10 @@ describe('AgentSessionsPage', () => {
   })
 
   it('clears active filters through route search and keeps the page size', async () => {
+    // Enough sessions that page 3 exists, so the pager does not correct it.
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [session], page: 1, page_size: 50, total: 500 },
+    })
     routeMock.useSearch.mockReturnValue({
       page: 3,
       page_size: 25,
@@ -626,7 +646,7 @@ describe('AgentSessionsPage', () => {
     })
 
     render(<AgentSessionsPage />)
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Go to next page' }))
 
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith({
@@ -945,6 +965,9 @@ describe('AgentSessionsPage filters', () => {
   })
 
   it('applies a picked state at once and returns to the first page', async () => {
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [session], page: 1, page_size: 50, total: 500 },
+    })
     routeMock.useSearch.mockReturnValue({ page: 3, page_size: 25 })
     render(<AgentSessionsPage />)
 
@@ -1132,6 +1155,9 @@ describe('AgentSessionsPage filters', () => {
 
   it('removes one chip and keeps the other filters', async () => {
     const search = { page: 2, page_size: 25, harness_key: 'opencode', team_id: 'team_1' }
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [session], page: 1, page_size: 50, total: 500 },
+    })
     routeMock.useSearch.mockReturnValue(search)
     render(<AgentSessionsPage />)
 
@@ -1235,7 +1261,18 @@ describe('AgentSessionsPage filters', () => {
 
     const table = within(screen.getByTestId('agent-session-table'))
     const headers = () => table.getAllByRole('columnheader').map((header) => header.textContent)
-    expect(headers()).toHaveLength(11)
+    expect(headers()).toEqual([
+      'Started',
+      'Model',
+      'Caller',
+      'Harness',
+      'Cost',
+      'Active time',
+      'Requests',
+      'Tool calls',
+      'MCP calls',
+      'Data quality',
+    ])
 
     fireEvent.click(screen.getByRole('button', { name: 'Columns' }))
     expect(await screen.findByRole('heading', { name: 'Table columns' })).toBeInTheDocument()
@@ -1246,11 +1283,145 @@ describe('AgentSessionsPage filters', () => {
     expect(headers()).not.toContain('MCP calls')
     expect(headers()).not.toContain('Data quality')
     const cells = within(table.getByRole('row', { name: /Opencode/ })).getAllByRole('cell')
-    expect(cells).toHaveLength(9)
+    expect(cells).toHaveLength(8)
     expect(navigateMock).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'MCP calls' }))
     expect(headers()).toContain('MCP calls')
+    // State and score start hidden and can be turned back on.
+    expect(screen.getByRole('checkbox', { name: 'Score' })).not.toBeChecked()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Score' }))
+    expect(table.getByText('Score not shown')).toBeInTheDocument()
+  })
+
+  it('searches by model or user through route search and returns to the first page', async () => {
+    vi.useFakeTimers()
+    try {
+      routeMock.useSearch.mockReturnValue({ page: 4, page_size: 50 })
+      routeMock.useLoaderData.mockReturnValue({
+        data: { items: [session], page: 4, page_size: 50, total: 500 },
+      })
+      render(<AgentSessionsPage />)
+
+      fireEvent.change(
+        screen.getByRole('searchbox', { name: 'Search agent sessions by model or user' }),
+        { target: { value: ' ada ' } },
+      )
+      expect(navigateMock).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(300)
+    } finally {
+      vi.useRealTimers()
+    }
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
+    expect(navigateMock.mock.calls[0][0]).toMatchObject({ replace: true })
+    expect(navigatedSearch(0, { page: 4, page_size: 50 })).toEqual({
+      page: 1,
+      page_size: 50,
+      q: 'ada',
+    })
+  })
+
+  it('sends a cleared search while the earlier search is still loading', async () => {
+    vi.useFakeTimers()
+    try {
+      holdNavigations()
+      routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50 })
+      const view = render(<AgentSessionsPage />)
+      const search = () =>
+        screen.getByRole('searchbox', { name: 'Search agent sessions by model or user' })
+
+      fireEvent.change(search(), { target: { value: 'ada' } })
+      await vi.advanceTimersByTimeAsync(300)
+      expect(navigateMock).toHaveBeenCalledTimes(1)
+
+      // The URL still has no `q`: the first navigation has not landed when the box is cleared.
+      fireEvent.change(search(), { target: { value: '' } })
+      await vi.advanceTimersByTimeAsync(300)
+      expect(navigateMock).toHaveBeenCalledTimes(2)
+      expect(navigatedSearch(1, { page: 1, page_size: 50, q: 'ada' })).toEqual({
+        page: 1,
+        page_size: 50,
+      })
+
+      // The first navigation lands late; the cleared box stays cleared.
+      routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50, q: 'ada' })
+      view.rerender(<AgentSessionsPage />)
+      expect(search()).toHaveValue('')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('follows the URL again when a search navigation ends without reaching it', async () => {
+    vi.useFakeTimers()
+    try {
+      holdNavigations()
+      routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50, q: 'old' })
+      const view = render(<AgentSessionsPage />)
+      const search = () =>
+        screen.getByRole('searchbox', { name: 'Search agent sessions by model or user' })
+
+      fireEvent.change(search(), { target: { value: 'ada' } })
+      await vi.advanceTimersByTimeAsync(300)
+      expect(navigateMock).toHaveBeenCalledTimes(1)
+
+      // Back cancels the search: its navigation ends while the URL keeps `q=old`.
+      for (const release of heldNavigations.splice(0)) release()
+      await vi.advanceTimersByTimeAsync(0)
+      view.rerender(<AgentSessionsPage />)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(search()).toHaveValue('old')
+
+      // The cancelled search no longer counts as sent, so searching for it again navigates.
+      fireEvent.change(search(), { target: { value: 'ada' } })
+      await vi.advanceTimersByTimeAsync(300)
+      expect(navigateMock).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps page links working when the URL points past the last page', async () => {
+    routeMock.useSearch.mockReturnValue({ page: 4, page_size: 50 })
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [], page: 4, page_size: 50, total: 60 },
+    })
+    render(<AgentSessionsPage />)
+
+    // The loader redirects such a URL; until then, the clamped page 1 link still navigates.
+    fireEvent.click(screen.getByRole('link', { name: 'Go to page 1' }))
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/observability/agent-sessions',
+        search: { page: 1, page_size: 50 },
+      })
+    })
+  })
+
+  it('notes requests without a price beside the session cost', () => {
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        items: [{ ...session, cost_usd_nanos: 2_500_000_000, unpriced_request_count: 3 }],
+        page: 1,
+        page_size: 50,
+        total: 1,
+      },
+    })
+    render(
+      <TooltipProvider>
+        <AgentSessionsPage />
+      </TooltipProvider>,
+    )
+
+    const cost = within(screen.getByTestId('agent-session-table')).getByTestId(
+      'agent-session-cost-unpriced',
+    )
+    expect(cost).toHaveTextContent('$2.50')
+    expect(cost).toHaveAccessibleName(
+      '$2.50. 3 requests have no price, so the total leaves them out.',
+    )
+    expect(cost).toHaveAttribute('tabindex', '0')
   })
 
   it('renders sessions as cards below md that open details from a button', async () => {

@@ -300,6 +300,36 @@ pub(super) fn agent_session_source_view(
     }
 }
 
+/// A page of sessions' listing facts from the store, plus the provider connections their
+/// latest requests used, so each provider's icon is resolved once per page.
+#[derive(Debug, Default)]
+pub(super) struct SessionListingDirectory {
+    pub listings: HashMap<Uuid, gateway_core::AgentSessionListingRecord>,
+    pub providers: HashMap<String, ProviderConnection>,
+}
+
+impl SessionListingDirectory {
+    pub(super) async fn load(
+        state: &AppState,
+        listings: HashMap<Uuid, gateway_core::AgentSessionListingRecord>,
+    ) -> Result<Self, AppError> {
+        let provider_keys = listings
+            .values()
+            .filter_map(|listing| listing.latest_provider_key.clone())
+            .collect::<HashSet<_>>();
+        let mut providers = HashMap::with_capacity(provider_keys.len());
+        for provider_key in provider_keys {
+            if let Some(provider) = state.store.get_provider_by_key(&provider_key).await? {
+                providers.insert(provider_key, provider);
+            }
+        }
+        Ok(Self {
+            listings,
+            providers,
+        })
+    }
+}
+
 pub(super) fn agent_session_summary(
     session: &gateway_core::AgentSessionRecord,
     session_source_hash: Option<&str>,
@@ -307,7 +337,15 @@ pub(super) fn agent_session_summary(
     request_count: u64,
     analysis: Option<&gateway_core::AgentSessionAnalysisRecord>,
     calibrated_score_visible: bool,
+    directory: &SessionListingDirectory,
 ) -> AgentSessionSummaryView {
+    let listing = directory.listings.get(&session.agent_session_id);
+    let provider_key = listing.and_then(|listing| listing.latest_provider_key.clone());
+    let provider_icon_key = provider_key.as_deref().map(|key| {
+        resolve_provider_display(key, directory.providers.get(key))
+            .icon_key
+            .into()
+    });
     let report = analysis.map(|analysis| &analysis.report);
     let score_visible = report.is_some_and(|report| {
         calibrated_score_visible
@@ -330,6 +368,13 @@ pub(super) fn agent_session_summary(
         harness_key: Some(session.harness_key.clone()),
         harness_label: Some(harness_label.unwrap_or(&session.harness_key).to_owned()),
         requested_model_key: session.requested_model_key.clone(),
+        model_icon_key: resolve_model_icon_key([session.requested_model_key.as_str()])
+            .map(Into::into),
+        provider_key,
+        provider_icon_key,
+        user_name: listing.and_then(|listing| listing.user_name.clone()),
+        user_email: listing.and_then(|listing| listing.user_email.clone()),
+        service_account_name: listing.and_then(|listing| listing.service_account_name.clone()),
         operation: session.operation.clone(),
         caller_class: session.caller_class.clone(),
         session_source_observed: session.agent_session_source_id.is_some(),
@@ -355,6 +400,10 @@ pub(super) fn agent_session_summary(
         normalized_cost_usd: report
             .and_then(|report| report.components.actual_cost_10000)
             .map(|value| value as f64 / 10_000.0),
+        cost_usd_nanos: listing
+            .and_then(|listing| listing.priced_cost)
+            .map(gateway_core::Money9::as_nanos),
+        unpriced_request_count: listing.map_or(0, |listing| listing.unpriced_request_count),
         active_time_ms: report
             .and_then(|report| u64::try_from(report.components.active_time_ms).ok()),
         wall_time_ms: report.and_then(|report| u64::try_from(report.components.wall_time_ms).ok()),

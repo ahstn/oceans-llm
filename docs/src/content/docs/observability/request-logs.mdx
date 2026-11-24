@@ -47,9 +47,9 @@ The **Request Logs** page shows in the navigation for groups that have the `requ
 
 ## Find a request
 
-An admin opens **Request Logs** in the **Observability** section of the navigation (`/admin/observability/request-logs`). The page shows the 100 newest requests that match the search and filters.
+An admin opens **Request Logs** in the **Observability** section of the navigation (`/admin/observability/request-logs`). The page lists the requests that match the search and filters, newest first, 100 to a page. The pager below the list shows which requests are on screen, such as `101–200 of 1,051`, moves between pages, and sets **Rows per page** to 50, 100 or 200.
 
-![Request Logs page with the request list, a search box, the Filters button, and columns for time, model, caller, status, cost, latency, tokens and tools](/images/request-logs-page.png)
+![Request Logs page filtered to requests costing more than $0.40, with the Cost chip, the request list, and the pager below it](/images/request-logs-page.png)
 
 Each row shows:
 
@@ -67,11 +67,12 @@ Each row shows:
 To narrow the list:
 
 1. Type in **Search by model or user**. The search matches the requested or resolved model key, or the user's name or email. It isn't case-sensitive.
-2. Select **Filters**, then pick **Model**, **Provider**, **Service**, **Component**, **Environment**, **Tag** or **Request ID**. Each filter adds a chip with its own value box.
+2. Select **Filters**, then pick **Model**, **Provider**, **Status**, **Service**, **Component**, **Environment**, **Tag**, **Cost** or **Request ID**. Each filter adds a chip with its own value box.
 3. For **Tag**, enter both the tag key and the tag value. The page warns you if one is missing. [Tagging](/observability/tagging/) explains caller tags.
-4. Select **Clear** to remove every filter.
+4. For **Cost**, enter a dollar amount with up to four decimals. The list keeps requests whose cost is above it: `2` shows requests that cost more than $2. Requests without a price never match.
+5. Select **Clear** to remove every filter.
 
-The filters are in the page URL, so you can share a filtered view. Other pages link here with a filter already set. For example, **Agent Sessions** opens a request with `?request_id=<request_id>`.
+Changing the search or a filter returns to the first page. The filters and the page are in the page URL, so you can share a filtered view. Other pages link here with a filter already set. For example, **Agent Sessions** opens a request with `?request_id=<request_id>`.
 
 To open a request, select **Inspect** on its row.
 
@@ -277,5 +278,6 @@ The list endpoint accepts these query parameters:
 | `user_id`, `team_id`, `service_account_id` | Owner filters. For users who aren't platform admins, the gateway always limits results to their own user ID. |
 | `service`, `component`, `env` | Caller tag filters |
 | `tag_key`, `tag_value` | One custom tag pair. Send both, or neither. |
+| `min_cost_usd` | Requests whose priced cost is above this dollar amount, such as `2` or `0.05`. Up to four decimals. Unpriced requests never match. |
 
 Tag keys and values follow the rules in [Tagging](/observability/tagging/#validation-rules).

@@ -250,8 +250,18 @@ export const sessionFilterGroups: SessionFilterGroup[] = [
   {
     label: 'Owner',
     fields: [
-      { key: 'user_id', label: 'User ID', icon: UserIcon, placeholder: 'user ID' },
-      { key: 'team_id', label: 'Team ID', icon: UserGroupIcon, placeholder: 'team ID' },
+      {
+        key: 'user_id',
+        label: 'User ID',
+        icon: UserIcon,
+        placeholder: 'user ID',
+      },
+      {
+        key: 'team_id',
+        label: 'Team ID',
+        icon: UserGroupIcon,
+        placeholder: 'team ID',
+      },
       {
         key: 'service_account_id',
         label: 'Service account ID',
@@ -275,7 +285,12 @@ export const sessionFilterGroups: SessionFilterGroup[] = [
         icon: FingerPrintIcon,
         placeholder: 'sha256:…',
       },
-      { key: 'request_tag', label: 'Request tag', icon: Tag01Icon, placeholder: 'value' },
+      {
+        key: 'request_tag',
+        label: 'Request tag',
+        icon: Tag01Icon,
+        placeholder: 'value',
+      },
     ],
   },
   {
@@ -311,12 +326,12 @@ export const sessionFilterParams: SessionFilterParam[] = sessionFilterFields.fla
   fieldParams(field.key),
 )
 
-/** A URL patch that removes every filter and keeps paging. */
+/** A URL patch that removes every filter, including the search, and keeps paging. */
 export const clearedSessionFilters: Partial<Record<SessionFilterParam, undefined>> =
-  Object.fromEntries(sessionFilterParams.map((param) => [param, undefined]))
+  Object.fromEntries([...sessionFilterParams, 'q'].map((param) => [param, undefined]))
 
 export function hasSessionFilters(values: SessionFilterValues) {
-  return sessionFilterParams.some((param) => {
+  return [...sessionFilterParams, 'q' as const].some((param) => {
     const value = values[param]
     return value !== undefined && value !== null && String(value).trim() !== ''
   })

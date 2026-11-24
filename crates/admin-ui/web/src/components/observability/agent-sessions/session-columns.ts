@@ -6,11 +6,21 @@ import type { ToggleableColumn } from '@/components/data/column-visibility-popov
  */
 const sessionColumnLabels = {
   started: { label: 'Started' },
+  model: {
+    label: 'Model',
+    description: 'Requested model and the provider that served it.',
+  },
+  caller: {
+    label: 'Caller',
+    description: 'The user or service account that owns the session.',
+  },
   harness: { label: 'Harness' },
-  model: { label: 'Model', description: 'Model, operation, and caller class.' },
   state: { label: 'State' },
   score: { label: 'Score', description: 'Score and its confidence.' },
-  cost: { label: 'Cost' },
+  cost: {
+    label: 'Cost',
+    description: 'Priced spend so far, from the usage ledger.',
+  },
   activeTime: { label: 'Active time' },
   requests: { label: 'Requests' },
   toolCalls: { label: 'Tool calls' },
@@ -34,6 +44,9 @@ export const toggleableSessionColumns: ReadonlyArray<ToggleableColumn<SessionCol
     .filter((key): key is SessionColumnKey => key !== 'started')
     .map((key) => ({ key, ...sessionColumnLabels[key] }))
 
+/** State and score rarely change what an operator scans for, so they start hidden. */
+const hiddenByDefault: ReadonlySet<SessionColumnKey> = new Set(['state', 'score'])
+
 export const defaultVisibleSessionColumns = Object.fromEntries(
-  toggleableSessionColumns.map((column) => [column.key, true]),
+  toggleableSessionColumns.map((column) => [column.key, !hiddenByDefault.has(column.key)]),
 ) as VisibleSessionColumns

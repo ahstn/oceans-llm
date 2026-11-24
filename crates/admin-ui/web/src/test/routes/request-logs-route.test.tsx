@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { regularUserSession } from '@/test/auth-session'
 import type { RequestLogView } from '@/types/api'
+import { costParam } from '@/routes/observability/-request-log-filter-options'
 import { RequestLogsPage } from '@/routes/observability/request-logs'
 
 const getObservabilityRequestLogDetailMock = vi.fn()
@@ -762,6 +763,67 @@ describe('RequestLogsPage filter chips', () => {
 
     expect(scope.getByTestId('request-log-filter-provider-key')).toHaveValue('openai')
     expect(scope.getByTestId('request-log-filter-env')).toHaveValue('staging')
+  })
+})
+
+describe('RequestLogsPage pagination and cost filter', () => {
+  beforeEach(resetMocks)
+
+  it('shows the page range and pages through route search, keeping filters', async () => {
+    routeMock.useSearch.mockReturnValue({ q: 'ada', page: 2 })
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 250 } })
+
+    const view = renderPage()
+    const pager = within(view.getByTestId('table-pagination'))
+
+    expect(pager.getByText('101–200 of 250')).toBeInTheDocument()
+    expect(pager.getByRole('link', { name: 'Go to page 2' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    expect(pager.getByRole('link', { name: 'Go to page 3' })).toBeInTheDocument()
+    fireEvent.click(pager.getByRole('link', { name: 'Go to next page' }))
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
+    expect(navigatedSearch(0, { q: 'ada', page: 2 })).toEqual({ q: 'ada', page: 3 })
+    // Page 1 and the default page size stay out of the URL.
+    expect(navigatedSearch(0, { q: 'ada', page: 0 })).toEqual({ q: 'ada', page: 3 })
+  })
+
+  it('applies a cost threshold only once it is a dollar amount, returning to page 1', async () => {
+    routeMock.useSearch.mockReturnValue({ page: 3 })
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1_000 } })
+
+    const view = renderPage()
+    const scope = within(view.container)
+
+    fireEvent.keyDown(scope.getByRole('button', { name: /Filters/ }), { key: 'Enter' })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Cost' }))
+
+    const costInput = await scope.findByTestId('request-log-filter-min-cost-usd')
+    expect(costInput).toHaveAccessibleName('Cost above value')
+    expect(scope.getByTestId('request-log-filter-chip-min_cost_usd')).toHaveTextContent('above$')
+
+    fireEvent.change(costInput, { target: { value: '-2' } })
+    fireEvent.keyDown(costInput, { key: 'Enter' })
+    expect(scope.getByText('Invalid cost filter')).toBeInTheDocument()
+    expect(costInput).toHaveAttribute('aria-invalid', 'true')
+    expect(navigateMock).not.toHaveBeenCalled()
+
+    fireEvent.change(costInput, { target: { value: ' 2 ' } })
+    fireEvent.keyDown(costInput, { key: 'Enter' })
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
+    expect(navigatedSearch(0, { page: 3 })).toEqual({ min_cost_usd: '2' })
+  })
+
+  it('drops a malformed cost from the URL instead of sending it to the gateway', () => {
+    expect(costParam('2')).toBe('2')
+    expect(costParam(' 0.0005 ')).toBe('0.0005')
+    expect(costParam(2.5)).toBe('2.5')
+    expect(costParam('0.00001')).toBeUndefined()
+    expect(costParam('-1')).toBeUndefined()
+    expect(costParam('$2')).toBeUndefined()
   })
 })
 
