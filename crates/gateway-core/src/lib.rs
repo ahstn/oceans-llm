@@ -29,9 +29,9 @@ pub use agent_analysis::{
     AgentRequestLogLinkRecord, AgentSessionAnalysisRecord, AgentSessionAnalysisRepository,
     AgentSessionInput, AgentSessionInputAppendResult, AgentSessionListPage, AgentSessionListQuery,
     AgentSessionObservationInput, AgentSessionRecord, AgentSessionReportRepository,
-    AgentSessionRequestLinkRecord, AgentSessionSourceRecord, AgentSessionSummaryRecord,
-    AgentSessionTraceRecord, AgentSessionTraceRepository, MAX_AGENT_SESSION_NESTED_FACTS,
-    MAX_AGENT_SESSION_PAGE_SIZE, MAX_AGENT_SESSION_REQUESTS,
+    AgentSessionRequestLinkRecord, AgentSessionSourceRecord, AgentSessionSpendRecord,
+    AgentSessionSummaryRecord, AgentSessionTraceRecord, AgentSessionTraceRepository,
+    MAX_AGENT_SESSION_NESTED_FACTS, MAX_AGENT_SESSION_PAGE_SIZE, MAX_AGENT_SESSION_REQUESTS,
 };
 pub use agent_session_analysis::{
     ActivityInterval, AgentSessionId, AgentSessionSourceId, AnalysisId, AnalysisMetricPolicy,

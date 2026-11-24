@@ -43,6 +43,7 @@ pub async fn list_request_logs(
         tag_key: None,
         tag_value: None,
         q: empty_to_none(query.q),
+        min_cost_usd_nanos: parse_min_cost_usd(query.min_cost_usd.as_deref())?,
     };
     let (tag_key, tag_value) = parse_optional_tag_filter(query.tag_key, query.tag_value)?;
     let query = RequestLogQuery {
@@ -112,6 +113,23 @@ pub async fn get_request_log_detail(
         &usage,
         mcp_token_overhead,
     )?)))
+}
+
+/// Parses the `min_cost_usd` filter, a non-negative dollar amount with up to four decimals.
+fn parse_min_cost_usd(value: Option<&str>) -> Result<Option<i64>, AppError> {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let amount = gateway_core::Money4::from_decimal_str(value)
+        .ok()
+        .filter(|amount| !amount.is_negative())
+        .and_then(gateway_core::Money9::from_money4)
+        .ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(format!(
+                "min_cost_usd must be a non-negative dollar amount with up to four decimals, got `{value}`"
+            )))
+        })?;
+    Ok(Some(amount.as_nanos()))
 }
 
 async fn provider_connections_by_key(
@@ -733,6 +751,26 @@ mod tests {
         assert_eq!(without_usage.cost_usd_10000, None);
         assert_eq!(without_usage.cost_usd_nanos, None);
         assert_eq!(without_usage.cache_read_tokens, None);
+    }
+
+    #[test]
+    fn min_cost_filter_parses_dollars_into_nanos() {
+        assert_eq!(parse_min_cost_usd(None).ok(), Some(None));
+        assert_eq!(parse_min_cost_usd(Some("  ")).ok(), Some(None));
+        assert_eq!(
+            parse_min_cost_usd(Some("2")).ok(),
+            Some(Some(2_000_000_000))
+        );
+        assert_eq!(
+            parse_min_cost_usd(Some(" 0.0005 ")).ok(),
+            Some(Some(500_000))
+        );
+        for invalid in ["-1", "abc", "0.00001"] {
+            assert!(
+                parse_min_cost_usd(Some(invalid)).is_err(),
+                "`{invalid}` should be rejected"
+            );
+        }
     }
 
     #[test]

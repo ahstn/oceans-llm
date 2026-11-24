@@ -9,7 +9,7 @@ use serde_json::Value;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::{RequestAttemptRecord, StoreError};
+use crate::{Money9, RequestAttemptRecord, StoreError};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentSessionSourceRecord {
@@ -142,6 +142,21 @@ pub struct AgentSessionSummaryRecord {
     pub session_source_hash: Option<String>,
     pub harness_label: Option<String>,
     pub latest_analysis: Option<AgentSessionAnalysisRecord>,
+    #[serde(default)]
+    pub spend: AgentSessionSpendRecord,
+}
+
+/// Usage ledger figures for a session's linked requests, read when the session is listed.
+/// Unlike the analysis report's cost, they are live while the session is still open, and an
+/// unpriced request is counted rather than voiding the whole total.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentSessionSpendRecord {
+    /// Sum of priced usage cost; `None` when no linked request has priced usage.
+    pub priced_cost: Option<Money9>,
+    /// Linked requests without priced usage: unpriced, failed before usage, or usage missing.
+    pub unpriced_request_count: u64,
+    /// Provider of the most recent linked request that has a request log.
+    pub latest_provider_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -244,6 +259,9 @@ pub struct AgentSessionListQuery {
     pub started_before: Option<OffsetDateTime>,
     pub input_watermark_before: Option<OffsetDateTime>,
     pub score_confidence: Option<Confidence>,
+    /// Case-insensitive substring match on the requested model key or the owner's name/email.
+    #[serde(default)]
+    pub q: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -12,6 +12,8 @@ const REQUEST_LOG_PURGE_BATCH_SIZE: i64 = 1_000;
 
 /// Shared FROM/WHERE for the request log list count and page queries. `?13` is the free-text
 /// search, matched case-insensitively against model keys and the caller's user name/email.
+/// `?14` keeps logs whose priced usage cost is above that many nano-dollars, matching usage on
+/// `(request_id, api_key_id)` as the list's cost column does.
 const REQUEST_LOG_LIST_FROM_WHERE: &str = r#"
                 FROM request_logs
                 LEFT JOIN users ON users.user_id = request_logs.user_id
@@ -41,6 +43,17 @@ const REQUEST_LOG_LIST_FROM_WHERE: &str = r#"
                     OR instr(lower(request_logs.resolved_model_key), lower(?13)) > 0
                     OR instr(lower(users.name), lower(?13)) > 0
                     OR instr(lower(users.email), lower(?13)) > 0
+                  )
+                  AND (
+                    ?14 IS NULL
+                    OR EXISTS (
+                      SELECT 1
+                      FROM usage_cost_events AS ledger
+                      WHERE ledger.request_id = request_logs.request_id
+                        AND ledger.api_key_id = request_logs.api_key_id
+                        AND ledger.pricing_status IN ('priced', 'legacy_estimated')
+                        AND ledger.computed_cost_nanos > ?14
+                    )
                   )
 "#;
 
@@ -390,7 +403,8 @@ impl RequestLogRepository for LibsqlStore {
                     env,
                     tag_key,
                     tag_value,
-                    search
+                    search,
+                    query.min_cost_usd_nanos
                 ],
             )
             .await
@@ -426,7 +440,7 @@ impl RequestLogRepository for LibsqlStore {
                        request_logs.invoked_mcp_tool_count
                 {REQUEST_LOG_LIST_FROM_WHERE}
                 ORDER BY request_logs.occurred_at DESC, request_logs.request_log_id DESC
-                LIMIT ?14 OFFSET ?15
+                LIMIT ?15 OFFSET ?16
                 "#
                 ),
                 libsql::params![
@@ -443,6 +457,7 @@ impl RequestLogRepository for LibsqlStore {
                     tag_key,
                     tag_value,
                     search,
+                    query.min_cost_usd_nanos,
                     page_size,
                     offset
                 ],

@@ -1,20 +1,22 @@
 import type { ReactNode } from 'react'
 
 import { CompactCount } from '@/components/data/compact-count'
+import { CallerCell, callerPrimary, ModelCell } from '@/components/data/request-identity'
+import { TablePagination } from '@/components/data/table-pagination'
 import { AgentHarnessLabel } from '@/components/icons/agent-harness-icon'
 import { AdminTableHead, AdminTableHeader } from '@/components/shared/admin-table-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { AgentSessionSummaryView } from '@/types/api'
-import { EMPTY_VALUE, formatDuration, formatTimestamp, formatUsdTotal } from '@/lib/format'
+import {
+  EMPTY_VALUE,
+  formatCount,
+  formatDuration,
+  formatTimestamp,
+  formatUsdTotal,
+} from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import {
@@ -40,20 +42,30 @@ const sessionColumnRenderers: Record<SessionColumnId, SessionColumnRenderer> = {
     minWidthRem: 10,
     cell: (session) => formatTimestamp(session.started_at),
   },
-  harness: {
-    minWidthRem: 7,
-    cell: (session) => <HarnessLabel session={session} />,
-  },
   model: {
     minWidthRem: 11,
     cell: (session) => (
-      <>
-        <p>{session.requested_model_key}</p>
-        <p className="text-muted-foreground text-xs">
-          {session.operation} · {humanize(session.caller_class)}
-        </p>
-      </>
+      <div className="max-w-60">
+        <ModelCell
+          modelKey={session.requested_model_key}
+          modelIconKey={session.model_icon_key}
+          providerKey={session.provider_key}
+          providerIconKey={session.provider_icon_key}
+        />
+      </div>
     ),
+  },
+  caller: {
+    minWidthRem: 10,
+    cell: (session) => (
+      <div className="max-w-56">
+        <CallerCell caller={session} />
+      </div>
+    ),
+  },
+  harness: {
+    minWidthRem: 7,
+    cell: (session) => <HarnessLabel session={session} />,
   },
   state: {
     minWidthRem: 5,
@@ -68,8 +80,8 @@ const sessionColumnRenderers: Record<SessionColumnId, SessionColumnRenderer> = {
   cost: {
     cardFact: true,
     numeric: true,
-    minWidthRem: 4,
-    cell: (session) => formatUsdTotal(session.normalized_cost_usd),
+    minWidthRem: 5,
+    cell: (session) => <SessionCost session={session} />,
   },
   activeTime: {
     cardFact: true,
@@ -107,6 +119,8 @@ const sessionColumns = sessionColumnIds.map((key) => ({
 }))
 
 const sessionCardFacts = sessionColumns.filter((column) => column.cardFact)
+
+export const sessionPageSizes = [25, 50, 100] as const
 
 interface SessionTableProps {
   items: AgentSessionSummaryView[]
@@ -181,7 +195,6 @@ export function SessionTable({
                     className={cn(
                       'px-2 py-2',
                       column.numeric && 'text-right tabular-nums',
-                      column.key === 'model' && 'whitespace-normal',
                       column.key === 'started' && 'tabular-nums',
                     )}
                   >
@@ -194,7 +207,13 @@ export function SessionTable({
         </Table>
         {items.length === 0 ? <EmptySessions action={emptyAction} /> : null}
       </div>
-      <SessionPager total={total} page={page} pageSize={pageSize} onPageChange={onPageChange} />
+      <TablePagination
+        total={total}
+        page={page}
+        pageSize={pageSize}
+        pageSizes={sessionPageSizes}
+        onPageChange={onPageChange}
+      />
     </div>
   )
 }
@@ -223,6 +242,9 @@ function SessionCards({
             <div className="flex min-w-0 flex-col gap-0.5">
               {sessionColumnRenderers.harness.cell(session, showScore)}
               <p className="min-w-0 truncate text-sm">{session.requested_model_key}</p>
+              <p className="text-muted-foreground min-w-0 truncate text-xs">
+                {callerPrimary(session) ?? 'Unknown'}
+              </p>
               <p className="text-muted-foreground text-xs whitespace-nowrap tabular-nums">
                 {formatTimestamp(session.started_at)}
               </p>
@@ -276,79 +298,6 @@ function EmptySessions({ action }: { action?: ReactNode }) {
   )
 }
 
-function SessionPager({
-  total,
-  page,
-  pageSize,
-  onPageChange,
-}: {
-  total: number
-  page: number
-  pageSize: number
-  onPageChange: (page: number, pageSize: number) => void
-}) {
-  const pageCount = Math.max(1, Math.ceil(total / pageSize))
-  const visiblePages = getVisiblePages(page, pageCount)
-  const first = total === 0 ? 0 : (page - 1) * pageSize + 1
-  const last = Math.min(page * pageSize, total)
-
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-      <span className="text-muted-foreground tabular-nums">
-        {first} - {last} of {total}
-      </span>
-      <div className="flex flex-wrap items-center gap-2">
-        <Select value={String(pageSize)} onValueChange={(value) => onPageChange(1, Number(value))}>
-          <SelectTrigger size="sm" aria-label="Rows per page">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {[25, 50, 100].map((size) => (
-              <SelectItem key={size} value={String(size)}>
-                {size}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={page <= 1}
-          onClick={() => onPageChange(page - 1, pageSize)}
-        >
-          Previous
-        </Button>
-        {visiblePages.map((pageNumber) => (
-          <Button
-            key={pageNumber}
-            variant={pageNumber === page ? 'secondary' : 'ghost'}
-            size="sm"
-            aria-label={`Go to page ${pageNumber}`}
-            aria-current={pageNumber === page ? 'page' : undefined}
-            onClick={() => onPageChange(pageNumber, pageSize)}
-          >
-            {pageNumber}
-          </Button>
-        ))}
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={page >= pageCount}
-          onClick={() => onPageChange(page + 1, pageSize)}
-        >
-          Next
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-function getVisiblePages(page: number, pageCount: number) {
-  const firstPage = Math.max(1, Math.min(page - 2, pageCount - 4))
-  const lastPage = Math.min(pageCount, firstPage + 4)
-  return Array.from({ length: lastPage - firstPage + 1 }, (_, index) => firstPage + index)
-}
-
 function HarnessLabel({ session }: { session: AgentSessionSummaryView }) {
   return (
     <AgentHarnessLabel harnessKey={session.harness_key ?? session.harness_label ?? ''}>
@@ -373,6 +322,39 @@ function ScoreValue({
         {humanize(session.score_confidence)} confidence
       </p>
     </>
+  )
+}
+
+/**
+ * Ledger spend so far. When some requests have no price, the total leaves them out; that
+ * exception lives in a tooltip (keyboard-reachable) and the accessible name.
+ */
+function SessionCost({ session }: { session: AgentSessionSummaryView }) {
+  const amount = session.cost_usd_nanos == null ? null : session.cost_usd_nanos / 1_000_000_000
+  const total = formatUsdTotal(amount)
+  const unpriced = session.unpriced_request_count
+  if (!unpriced) {
+    return <>{total}</>
+  }
+
+  const note =
+    unpriced === 1
+      ? '1 request has no price, so the total leaves it out.'
+      : `${formatCount(unpriced)} requests have no price, so the total leaves them out.`
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          tabIndex={0}
+          aria-label={`${total}. ${note}`}
+          className="focus-visible:ring-ring/50 decoration-muted-foreground cursor-default rounded-sm underline decoration-dotted underline-offset-4 outline-none focus-visible:ring-3"
+          data-testid="agent-session-cost-unpriced"
+        >
+          {total}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{note}</TooltipContent>
+    </Tooltip>
   )
 }
 

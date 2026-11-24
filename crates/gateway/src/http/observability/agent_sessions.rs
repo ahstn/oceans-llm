@@ -143,8 +143,17 @@ pub async fn list_agent_sessions(
                     ))));
                 }
             },
+            q: normalized_filter(query.q),
         })
         .await?;
+    let directory = SessionListingDirectory::load(
+        &state,
+        page.items
+            .iter()
+            .map(|summary| (&summary.session, summary.spend.clone()))
+            .collect(),
+    )
+    .await?;
     Ok(Json(envelope(AgentSessionPageView {
         items: page
             .items
@@ -157,6 +166,7 @@ pub async fn list_agent_sessions(
                     summary.request_count,
                     summary.latest_analysis.as_ref(),
                     access.score_visible,
+                    &directory,
                 )
             })
             .collect(),
@@ -357,6 +367,8 @@ pub async fn get_agent_session_detail(
                 .any(|set| coverage_flag(&set.coverage, "response_payload_truncated")),
         });
     let session_source = trace.session_source.as_ref().map(agent_session_source_view);
+    let spend = trace_spend(&state, &trace).await?;
+    let directory = SessionListingDirectory::load(&state, vec![(&trace.session, spend)]).await?;
     Ok(Json(envelope(AgentSessionDetailView {
         session: agent_session_summary(
             &trace.session,
@@ -371,6 +383,7 @@ pub async fn get_agent_session_detail(
             u64::try_from(trace.requests.len()).unwrap_or(u64::MAX),
             trace.latest_analysis.as_ref(),
             access.score_visible,
+            &directory,
         ),
         session_source,
         requests,
@@ -427,4 +440,56 @@ fn agent_analysis_access(
         AdminDataScope::Platform => state.agent_analysis.access_for(true, false),
         AdminDataScope::Team(_) => state.agent_analysis.access_for(false, true),
     }
+}
+
+/// The detail view's ledger spend, read the way the list reads it: usage matched on
+/// `(request_id, ownership_scope_key)`, with unpriced requests counted rather than summed.
+async fn trace_spend(
+    state: &AppState,
+    trace: &gateway_core::AgentSessionTraceRecord,
+) -> Result<gateway_core::AgentSessionSpendRecord, AppError> {
+    let request_ids = trace
+        .requests
+        .iter()
+        .map(|request| request.request_id.clone())
+        .collect::<Vec<_>>();
+    let usage = state
+        .store
+        .get_usage_ledgers_by_request_ids_and_scope(
+            &request_ids,
+            &trace.session.ownership_scope_key,
+        )
+        .await?;
+    let priced = usage
+        .iter()
+        .filter(|record| record.pricing_status.counts_toward_spend())
+        .collect::<Vec<_>>();
+    let priced_cost = priced
+        .iter()
+        .map(|record| record.computed_cost_usd)
+        .reduce(gateway_core::Money9::saturating_add);
+    // A link's `request_log_id` is cleared when its log is replaced or purged, so the latest
+    // request's log is matched on `(request_id, api_key_id)`, as the list query matches it.
+    let latest_provider_key = match trace.requests.last() {
+        Some(latest) => state
+            .service
+            .list_request_logs(&RequestLogQuery {
+                page: 1,
+                page_size: MAX_REQUEST_LOG_PAGE_SIZE,
+                request_id: Some(latest.request_id.clone()),
+                ..RequestLogQuery::default()
+            })
+            .await?
+            .items
+            .into_iter()
+            .find(|log| log.api_key_id == trace.session.api_key_id)
+            .map(|log| log.provider_key),
+        None => None,
+    };
+    Ok(gateway_core::AgentSessionSpendRecord {
+        priced_cost,
+        unpriced_request_count: u64::try_from(request_ids.len().saturating_sub(priced.len()))
+            .unwrap_or(u64::MAX),
+        latest_provider_key,
+    })
 }

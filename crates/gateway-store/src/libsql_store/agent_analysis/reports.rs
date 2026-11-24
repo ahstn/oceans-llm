@@ -117,7 +117,11 @@ impl AgentSessionReportRepository for LibsqlStore {
             " OR EXISTS (SELECT 1 FROM json_each(json_extract(t.request_tags_json, '$.bespoke')) tag",
             " WHERE json_extract(tag.value, '$.key') = ?19",
             " AND (?20 IS NULL OR json_extract(tag.value, '$.value') = ?20)))))",
+            " AND (?21 IS NULL OR instr(lower(t.requested_model_key), lower(?21)) > 0",
+            " OR EXISTS (SELECT 1 FROM users u WHERE u.user_id = t.user_id",
+            " AND (instr(lower(u.name), lower(?21)) > 0 OR instr(lower(u.email), lower(?21)) > 0)))",
         );
+        let search = query.q.as_deref().map(str::trim).filter(|q| !q.is_empty());
         let count_sql = format!("SELECT COUNT(*) FROM {from_sql} WHERE {where_sql}");
         let mut count_rows = self
             .connection
@@ -147,6 +151,7 @@ impl AgentSessionReportRepository for LibsqlStore {
                     query.normalized_session_id.as_deref(),
                     query.request_tag_key.as_deref(),
                     query.request_tag_value.as_deref(),
+                    search,
                 ],
             )
             .await
@@ -176,7 +181,7 @@ impl AgentSessionReportRepository for LibsqlStore {
         list_sql.push_str(from_sql);
         list_sql.push_str(" WHERE ");
         list_sql.push_str(where_sql);
-        list_sql.push_str(" ORDER BY t.started_at DESC, t.agent_session_id LIMIT ?21 OFFSET ?22");
+        list_sql.push_str(" ORDER BY t.started_at DESC, t.agent_session_id LIMIT ?22 OFFSET ?23");
         let rows = self
             .connection
             .query(
@@ -205,6 +210,7 @@ impl AgentSessionReportRepository for LibsqlStore {
                     query.normalized_session_id.as_deref(),
                     query.request_tag_key.as_deref(),
                     query.request_tag_value.as_deref(),
+                    search,
                     i64::from(page_size),
                     offset,
                 ],

@@ -38,7 +38,9 @@ import type {
   AgentSessionSummaryView,
 } from '@/types/api'
 
-type AgentSessionRouteSearch = AgentSessionFiltersInput & { session_id?: string }
+type AgentSessionRouteSearch = AgentSessionFiltersInput & {
+  session_id?: string
+}
 
 export const Route = createFileRoute('/observability/agent-sessions')({
   validateSearch: (search: Record<string, unknown>) => normalizeSearch(search),
@@ -79,7 +81,9 @@ export function AgentSessionsPage() {
     setSelectedDetail(null)
     setDetailPending(true)
     setDetailError(null)
-    void getObservabilityAgentSessionDetail({ data: { sessionId: selectedSessionId } })
+    void getObservabilityAgentSessionDetail({
+      data: { sessionId: selectedSessionId },
+    })
       .then((response) => {
         if (!cancelled) setSelectedDetail(response.data)
       })
@@ -107,12 +111,17 @@ export function AgentSessionsPage() {
 
   // Patches merge into the latest location so two chip commits that land close together cannot
   // overwrite each other with stale filter values. Any filter change returns to the first page.
-  function applyFilters(patch: SessionFilterPatch) {
+  function applyFilters(patch: SessionFilterPatch, options?: { replace?: boolean }) {
     startListTransition(async () => {
       await router.navigate({
         to: '/observability/agent-sessions',
         search: (previous) =>
-          normalizeSearch({ ...(previous as Record<string, unknown>), ...patch, page: 1 }),
+          normalizeSearch({
+            ...(previous as Record<string, unknown>),
+            ...patch,
+            page: 1,
+          }),
+        replace: options?.replace,
         resetScroll: false,
       })
     })
@@ -146,8 +155,8 @@ export function AgentSessionsPage() {
           </Badge>
         </div>
         <p className="text-muted-foreground max-w-3xl text-sm">
-          Review the outcome, cost, active time, and data quality for each agent session. The system
-          does not show scores until calibration is complete.
+          Review who ran each agent session, its model, cost so far, active time, and data quality.
+          The system does not show scores until calibration is complete.
         </p>
       </header>
 
@@ -166,6 +175,7 @@ export function AgentSessionsPage() {
             totalCount={sessionPage.total}
             isPending={isListPending}
             onApply={applyFilters}
+            onSearch={(q) => applyFilters({ q }, { replace: true })}
             actions={
               <div className="hidden md:block">
                 <ColumnVisibilityPopover
@@ -173,7 +183,10 @@ export function AgentSessionsPage() {
                   columns={toggleableSessionColumns}
                   visible={visibleColumns}
                   onVisibleChange={(key, visible) =>
-                    setVisibleColumns((current) => ({ ...current, [key]: visible }))
+                    setVisibleColumns((current) => ({
+                      ...current,
+                      [key]: visible,
+                    }))
                   }
                 />
               </div>
@@ -274,6 +287,8 @@ function normalizeSearch(search: Record<string, unknown>): AgentSessionRouteSear
     const value = trimmedText(search[param])
     if (value) result[param] = value
   }
+  const query = trimmedText(search.q)
+  if (query) result.q = query
   const sessionId = trimmedText(search.session_id)
   if (sessionId) result.session_id = sessionId
   return result

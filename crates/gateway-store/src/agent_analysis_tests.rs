@@ -3,9 +3,10 @@ use gateway_core::{
     AgentAnalysisQueueStatus, AgentObservationSetRecord, AgentRequestLogLinkRecord,
     AgentSessionAnalysisRecord, AgentSessionListQuery, AgentSessionRecord,
     AgentSessionReportRepository, AgentSessionRequestLinkRecord, AgentSessionSourceRecord,
-    AgentSessionTraceRepository, AuthMode, BoundedObservationFacts, BoundedToolDefinitionFact,
-    Confidence, EvidenceQuality, GlobalRole, InferredObservation, InferredObservationKind,
-    LimitationCode, ScoreMaturity, SessionLifecycleState, StoreError, UserStatus,
+    AgentSessionSpendRecord, AgentSessionTraceRepository, AuthMode, BoundedObservationFacts,
+    BoundedToolDefinitionFact, BudgetRepository, Confidence, EvidenceQuality, GlobalRole,
+    InferredObservation, InferredObservationKind, LimitationCode, Money9, ScoreMaturity,
+    SessionLifecycleState, StoreError, UsagePricingStatus, UserStatus,
 };
 use serial_test::serial;
 use tempfile::tempdir;
@@ -624,7 +625,7 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
     assert_eq!(observations[0].parser_version, latest_parser_version);
     let page = store
         .list_agent_sessions(&AgentSessionListQuery {
-            ownership_scope_key: Some(scope),
+            ownership_scope_key: Some(scope.clone()),
             ..Default::default()
         })
         .await
@@ -634,6 +635,78 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         page.items[0].session.agent_session_id,
         session.agent_session_id
     );
+    // Without usage the request counts as unpriced. The provider comes from the request's log,
+    // matched on request and API key, so it survives the link losing its `request_log_id` when
+    // the log is replaced or purged.
+    store
+        .connection()
+        .execute(
+            "UPDATE agent_session_requests SET request_log_id = NULL WHERE request_id = 'request-1'",
+            (),
+        )
+        .await
+        .expect("clear request log link");
+    let page = store
+        .list_agent_sessions(&AgentSessionListQuery {
+            ownership_scope_key: Some(scope.clone()),
+            ..Default::default()
+        })
+        .await
+        .expect("session page without request log link");
+    assert_eq!(
+        page.items[0].spend,
+        AgentSessionSpendRecord {
+            priced_cost: None,
+            unpriced_request_count: 1,
+            latest_provider_key: Some("test-provider".to_string()),
+        }
+    );
+    // Spend is read from the ledger, so it shows before any analysis report exists.
+    let usage = crate::tests::build_usage_ledger_record(
+        "request-1",
+        scope.clone(),
+        api_key_id,
+        Some(user.user_id),
+        None,
+        None,
+        None,
+        "test-model",
+        UsagePricingStatus::Priced,
+        12_345,
+        now,
+    );
+    store
+        .insert_usage_ledger_if_absent(&usage)
+        .await
+        .expect("usage event");
+    let priced_page = store
+        .list_agent_sessions(&AgentSessionListQuery {
+            ownership_scope_key: Some(scope),
+            ..Default::default()
+        })
+        .await
+        .expect("priced session page");
+    assert_eq!(
+        priced_page.items[0].spend.priced_cost,
+        Some(Money9::from_nanos(1_234_500_000))
+    );
+    assert_eq!(priced_page.items[0].spend.unpriced_request_count, 0);
+    // Search matches the requested model key and the owner's name or email, ignoring case.
+    for (q, expected) in [
+        ("GPT-5", 1),
+        ("analyst@EXAMPLE", 1),
+        ("analyst", 1),
+        ("no-such-session", 0),
+    ] {
+        let search_page = store
+            .list_agent_sessions(&AgentSessionListQuery {
+                q: Some(q.to_string()),
+                ..Default::default()
+            })
+            .await
+            .expect("session search page");
+        assert_eq!(search_page.total, expected, "search `{q}`");
+    }
     let session_page = store
         .list_agent_sessions(&AgentSessionListQuery {
             agent_session_source_id: Some(session_source.agent_session_source_id),
@@ -1093,6 +1166,23 @@ async fn postgres_agent_session_dimensions_round_trip_and_filter() {
         .expect("list sessions");
     assert_eq!(page.total, 1);
     assert_eq!(page.items[0].session, session);
+    // No requests are linked yet, so the session has no ledger spend.
+    assert_eq!(page.items[0].spend, AgentSessionSpendRecord::default());
+    for (q, expected) in [
+        ("OPUS-4", 1),
+        ("postgres analyst", 1),
+        ("ANALYST@example.com", 1),
+        ("no-such-session", 0),
+    ] {
+        let search_page = store
+            .list_agent_sessions(&AgentSessionListQuery {
+                q: Some(q.to_string()),
+                ..AgentSessionListQuery::default()
+            })
+            .await
+            .expect("session search page");
+        assert_eq!(search_page.total, expected, "search `{q}`");
+    }
     contracts::finalization_is_irreversible(&store, &session).await;
     contracts::atomic_input_invariants(&store, &session).await;
     contracts::concurrent_open_window(&store, &session).await;

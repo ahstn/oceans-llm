@@ -5,6 +5,8 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { DatabaseLightningIcon } from '@hugeicons/core-free-icons'
 
 import { CompactCount } from '@/components/data/compact-count'
+import { CallerCell, ModelCell } from '@/components/data/request-identity'
+import { TablePagination } from '@/components/data/table-pagination'
 import { AppIcon } from '@/components/icons/app-icon'
 import { BrandIcon } from '@/components/icons/brand-icon'
 import { canAccessPage } from '@/components/layout/admin-nav'
@@ -22,7 +24,6 @@ import type { RequestLogDetailView, RequestLogFiltersInput, RequestLogView } fro
 import {
   cacheHitLabel,
   callerPrimary,
-  callerSecondary,
   formatOccurredAt,
   formatRequestCost,
   statusCodeBadgeVariant,
@@ -37,6 +38,9 @@ export const Route = createFileRoute('/observability/request-logs')({
   component: RequestLogsPage,
 })
 
+/** The gateway's default page size, so a URL without `page_size` shows the same rows. */
+export const defaultRequestLogPageSize = 100
+const requestLogPageSizes = [50, 100, 200] as const
 const requestLogRowEstimatePx = 56
 const requestLogDesktopPreviewRows = 12
 const requestLogDesktopTableHeightPx = requestLogRowEstimatePx * requestLogDesktopPreviewRows
@@ -54,14 +58,33 @@ export function RequestLogsPage() {
   const detail = useRequestLogDetail()
   const [isListPending, startListTransition] = useTransition()
 
+  const page = search.page ?? 1
+  const pageSize = search.page_size ?? defaultRequestLogPageSize
+
   // Patches merge into the latest location so a debounced search and a chip commit that land
-  // close together cannot overwrite each other with stale filter values.
+  // close together cannot overwrite each other with stale filter values. Any filter change
+  // returns to the first page.
   function applyFilters(patch: RequestLogFilterPatch, options?: { replace?: boolean }) {
     startListTransition(async () => {
       await router.navigate({
         to: '/observability/request-logs',
-        search: (previous) => normalizeFilterSearch({ ...previous, ...patch }),
+        search: (previous) => normalizeFilterSearch({ ...previous, ...patch, page: undefined }),
         replace: options?.replace,
+        resetScroll: false,
+      })
+    })
+  }
+
+  function changePage(nextPage: number, nextPageSize: number) {
+    startListTransition(async () => {
+      await router.navigate({
+        to: '/observability/request-logs',
+        search: (previous) =>
+          normalizeFilterSearch({
+            ...previous,
+            page: nextPage,
+            page_size: nextPageSize,
+          }),
         resetScroll: false,
       })
     })
@@ -92,8 +115,25 @@ export function RequestLogsPage() {
             isPending={isListPending}
             onApply={applyFilters}
           />
-          <RequestLogMobileList items={logPage.items} onInspect={detail.open} />
-          <RequestLogDesktopTable items={logPage.items} onInspect={detail.open} />
+          {/* Keyed by page so each page opens scrolled to its first row. */}
+          <RequestLogMobileList
+            key={`mobile-${page}`}
+            items={logPage.items}
+            onInspect={detail.open}
+          />
+          <RequestLogDesktopTable
+            key={`desktop-${page}`}
+            items={logPage.items}
+            onInspect={detail.open}
+          />
+          <TablePagination
+            total={logPage.total}
+            page={page}
+            pageSize={pageSize}
+            pageSizes={requestLogPageSizes}
+            pending={isListPending}
+            onPageChange={changePage}
+          />
         </CardContent>
       </Card>
 
@@ -308,8 +348,6 @@ function RequestLogDesktopRow({
   start: number
   onInspect: (requestLogId: string) => void
 }) {
-  const primaryCaller = callerPrimary(item) ?? 'Unknown'
-  const secondaryCaller = callerSecondary(item)
   const cost = formatRequestCost(item)
 
   return (
@@ -327,23 +365,15 @@ function RequestLogDesktopRow({
         {formatOccurredAt(item.occurred_at)}
       </span>
       <div className="min-w-0 px-3">
-        <div className="text-foreground flex items-center gap-2 truncate">
-          <BrandIcon iconKey={item.model_icon_key} size={16} />
-          <span className="truncate">{item.model_key}</span>
-        </div>
-        <div className="text-muted-foreground mt-0.5 flex items-center gap-2 truncate text-xs">
-          <BrandIcon iconKey={item.provider_icon_key} size={12} />
-          <span className="truncate">{item.provider_key}</span>
-        </div>
+        <ModelCell
+          modelKey={item.model_key}
+          modelIconKey={item.model_icon_key}
+          providerKey={item.provider_key}
+          providerIconKey={item.provider_icon_key}
+        />
       </div>
-      <div
-        className="min-w-0 px-3"
-        title={secondaryCaller ? `${primaryCaller} · ${secondaryCaller}` : primaryCaller}
-      >
-        <div className="text-foreground truncate">{primaryCaller}</div>
-        {secondaryCaller ? (
-          <div className="text-muted-foreground truncate text-xs">{secondaryCaller}</div>
-        ) : null}
+      <div className="min-w-0 px-3">
+        <CallerCell caller={item} />
       </div>
       <span className="px-3">
         <Badge variant={statusCodeBadgeVariant(item.status_code)}>
@@ -460,7 +490,14 @@ function ToolUsage({ item }: { item: RequestLogView }) {
 }
 
 function normalizeFilterSearch(search: Record<string, unknown>): RequestLogFiltersInput {
+  const pageSize = positiveInteger(search.page_size, 200)
   return {
+    // Defaults stay out of the URL, so a plain link and the first page read the same.
+    page: omitDefault(positiveInteger(search.page), 1),
+    page_size: requestLogPageSizes.some((size) => size === pageSize)
+      ? omitDefault(pageSize, defaultRequestLogPageSize)
+      : undefined,
+    min_cost_usd: costParam(search.min_cost_usd),
     q: searchParamValue(search.q),
     request_id: searchParamValue(search.request_id),
     model_key: searchParamValue(search.model_key),
@@ -480,6 +517,21 @@ function statusCodeParam(value: unknown): number | undefined {
   return typeof code === 'number' && Number.isInteger(code) && code >= 100 && code <= 599
     ? code
     : undefined
+}
+
+/** A dollar threshold the gateway accepts: non-negative, at most four decimals. */
+export function costParam(value: unknown): string | undefined {
+  const text = typeof value === 'number' ? String(value) : searchParamValue(value)
+  return text !== undefined && /^\d+(\.\d{1,4})?$/.test(text) ? text : undefined
+}
+
+function positiveInteger(value: unknown, maximum = Number.MAX_SAFE_INTEGER) {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isInteger(parsed) && parsed > 0 && parsed <= maximum ? parsed : undefined
+}
+
+function omitDefault<T>(value: T | undefined, fallback: T) {
+  return value === fallback ? undefined : value
 }
 
 function searchParamValue(value: unknown): string | undefined {
