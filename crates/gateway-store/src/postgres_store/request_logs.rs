@@ -14,7 +14,8 @@ const REQUEST_LOG_PURGE_BATCH_SIZE: i64 = 1_000;
 /// search, matched case-insensitively against model keys and the caller's user name/email.
 /// C collation matches SQLite's ASCII-only lowercasing, independent of the database locale.
 /// `$14` keeps logs whose priced usage cost is above that many nano-dollars, matching usage on
-/// `(request_id, api_key_id)` as the list's cost column does.
+/// `(request_id, api_key_id)` as the list's cost column does. A pair shared by several logs is
+/// ambiguous, so, as in the usage lookup, none of those logs match.
 const REQUEST_LOG_LIST_FROM_WHERE: &str = r#"
             FROM request_logs
             LEFT JOIN users ON users.user_id = request_logs.user_id
@@ -57,6 +58,12 @@ const REQUEST_LOG_LIST_FROM_WHERE: &str = r#"
                     AND ledger.api_key_id = request_logs.api_key_id
                     AND ledger.pricing_status IN ('priced', 'legacy_estimated')
                     AND ledger.computed_cost_nanos > $14
+                    AND (
+                      SELECT COUNT(*)
+                      FROM request_logs AS same_key
+                      WHERE same_key.request_id = request_logs.request_id
+                        AND same_key.api_key_id = request_logs.api_key_id
+                    ) = 1
                 )
               )
 "#;

@@ -1,7 +1,7 @@
 use super::*;
 use std::collections::HashMap;
 
-use gateway_core::{AgentSessionSpendRecord, Money9};
+use gateway_core::{AgentSessionListingRecord, Money9};
 
 impl LibsqlStore {
     pub(super) async fn hydrate_session_summaries(
@@ -22,11 +22,20 @@ impl LibsqlStore {
                 session_source_hash: row.get(25).map_err(to_query_error)?,
                 harness_label: row.get(26).map_err(to_query_error)?,
                 latest_analysis: None,
-                spend: AgentSessionSpendRecord::default(),
+                listing: AgentSessionListingRecord::default(),
             });
         }
         drop(rows);
-        self.hydrate_session_spend(&mut items).await?;
+        let ids = items
+            .iter()
+            .map(|item| item.session.agent_session_id)
+            .collect::<Vec<_>>();
+        let mut listings = self.session_listings(&ids).await?;
+        for item in &mut items {
+            if let Some(listing) = listings.remove(&item.session.agent_session_id) {
+                item.listing = listing;
+            }
+        }
         if analysis_ids.is_empty() {
             return Ok(items);
         }
@@ -57,71 +66,73 @@ impl LibsqlStore {
         Ok(items)
     }
 
-    /// Ledger spend and the latest provider for a page of sessions. Usage is matched on
+    /// Listing facts for a page of sessions in one query. Usage is matched on
     /// `(request_id, ownership_scope_key)`, as the analysis report builder matches it. The
-    /// provider comes from the latest request's log, matched on `(request_id, api_key_id)`
-    /// because a link's `request_log_id` is cleared when its log is replaced or purged.
-    async fn hydrate_session_spend(
+    /// provider comes from the latest request that still has a log, matched on
+    /// `(request_id, api_key_id)` because a link's `request_log_id` is cleared when its log is
+    /// replaced or purged. Owner names come from the same query, so a page needs no per-owner
+    /// lookups.
+    pub(super) async fn session_listings(
         &self,
-        items: &mut [AgentSessionSummaryRecord],
-    ) -> Result<(), StoreError> {
-        if items.is_empty() {
-            return Ok(());
+        session_ids: &[Uuid],
+    ) -> Result<HashMap<Uuid, AgentSessionListingRecord>, StoreError> {
+        if session_ids.is_empty() {
+            return Ok(HashMap::new());
         }
-        let session_ids = items
-            .iter()
-            .map(|item| item.session.agent_session_id.to_string())
-            .collect::<Vec<_>>();
-        let session_ids_json = serde_json::to_string(&session_ids)
-            .map_err(|error| StoreError::Serialization(error.to_string()))?;
+        let session_ids_json =
+            serde_json::to_string(&session_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
+                .map_err(|error| StoreError::Serialization(error.to_string()))?;
         let mut rows = self
             .connection
-            .query(SESSION_SPEND_SQL, libsql::params![session_ids_json])
+            .query(SESSION_LISTING_SQL, libsql::params![session_ids_json])
             .await
             .map_err(to_query_error)?;
-        let mut spend = HashMap::new();
+        let mut listings = HashMap::with_capacity(session_ids.len());
         while let Some(row) = rows.next().await.map_err(to_query_error)? {
             let session_id: String = row.get(0).map_err(to_query_error)?;
             let priced_cost: Option<i64> = row.get(1).map_err(to_query_error)?;
             let unpriced_request_count: i64 = row.get(2).map_err(to_query_error)?;
-            spend.insert(
-                session_id,
-                AgentSessionSpendRecord {
+            listings.insert(
+                Uuid::parse_str(&session_id)
+                    .map_err(|error| StoreError::Serialization(error.to_string()))?,
+                AgentSessionListingRecord {
                     priced_cost: priced_cost.map(Money9::from_nanos),
                     unpriced_request_count: u64::try_from(unpriced_request_count)
                         .map_err(|error| StoreError::Serialization(error.to_string()))?,
                     latest_provider_key: row.get(3).map_err(to_query_error)?,
+                    user_name: row.get(4).map_err(to_query_error)?,
+                    user_email: row.get(5).map_err(to_query_error)?,
+                    service_account_name: row.get(6).map_err(to_query_error)?,
                 },
             );
         }
-        for item in items {
-            if let Some(found) = spend.remove(&item.session.agent_session_id.to_string()) {
-                item.spend = found;
-            }
-        }
-        Ok(())
+        Ok(listings)
     }
 }
 
-const SESSION_SPEND_SQL: &str = r#"
-SELECT r.agent_session_id,
+const SESSION_LISTING_SQL: &str = r#"
+SELECT t.agent_session_id,
        SUM(CASE WHEN ledger.pricing_status IN ('priced', 'legacy_estimated')
                 THEN ledger.computed_cost_nanos END),
-       SUM(CASE WHEN ledger.pricing_status IN ('priced', 'legacy_estimated') THEN 0 ELSE 1 END),
+       SUM(CASE WHEN r.request_id IS NULL
+                  OR ledger.pricing_status IN ('priced', 'legacy_estimated')
+                THEN 0 ELSE 1 END),
        (SELECT log.provider_key
           FROM agent_session_requests latest
-          JOIN agent_sessions owner ON owner.agent_session_id = latest.agent_session_id
           JOIN request_logs log
             ON log.request_id = latest.request_id
-           AND log.api_key_id = owner.api_key_id
-         WHERE latest.agent_session_id = r.agent_session_id
+           AND log.api_key_id = t.api_key_id
+         WHERE latest.agent_session_id = t.agent_session_id
          ORDER BY latest.ordinal DESC, log.occurred_at DESC
-         LIMIT 1)
-  FROM agent_session_requests r
-  JOIN agent_sessions t ON t.agent_session_id = r.agent_session_id
+         LIMIT 1),
+       u.name, u.email, sa.service_account_name
+  FROM agent_sessions t
+  LEFT JOIN agent_session_requests r ON r.agent_session_id = t.agent_session_id
   LEFT JOIN usage_cost_events ledger
     ON ledger.request_id = r.request_id
    AND ledger.ownership_scope_key = t.ownership_scope_key
- WHERE r.agent_session_id IN (SELECT value FROM json_each(?1))
- GROUP BY r.agent_session_id
+  LEFT JOIN users u ON u.user_id = t.user_id
+  LEFT JOIN service_accounts sa ON sa.service_account_id = t.service_account_id
+ WHERE t.agent_session_id IN (SELECT value FROM json_each(?1))
+ GROUP BY t.agent_session_id, t.api_key_id, u.name, u.email, sa.service_account_name
 "#;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { pageSlots } from '@/components/data/table-pagination'
+import { pageSlots } from '@/lib/pagination'
 
 describe('pageSlots', () => {
   it('lists every page when they fit', () => {

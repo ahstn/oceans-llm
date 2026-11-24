@@ -100,11 +100,12 @@ export function AgentSessionsPage() {
     }
   }, [selectedSessionId, detailRetry])
 
-  function updateRouteSearch(next: AgentSessionRouteSearch) {
+  function updateRouteSearch(next: AgentSessionRouteSearch, options?: { replace?: boolean }) {
     startListTransition(async () => {
       await router.navigate({
         to: '/observability/agent-sessions',
         search: normalizeSearch(next as Record<string, unknown>),
+        ...(options?.replace ? { replace: true } : {}),
       })
     })
   }
@@ -220,8 +221,8 @@ export function AgentSessionsPage() {
               ) : null
             }
             onOpen={openDetail}
-            onPageChange={(page, pageSize) =>
-              updateRouteSearch({ ...search, page, page_size: pageSize })
+            onPageChange={(page, pageSize, options) =>
+              updateRouteSearch({ ...search, page, page_size: pageSize }, options)
             }
           />
         </CardContent>

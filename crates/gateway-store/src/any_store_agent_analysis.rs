@@ -203,6 +203,17 @@ impl AgentSessionReportRepository for AnyStore {
             Self::Postgres(store) => store.list_agent_sessions(query).await,
         }
     }
+
+    async fn load_agent_session_listings(
+        &self,
+        session_ids: &[Uuid],
+    ) -> Result<std::collections::HashMap<Uuid, gateway_core::AgentSessionListingRecord>, StoreError>
+    {
+        match self {
+            Self::Libsql(store) => store.load_agent_session_listings(session_ids).await,
+            Self::Postgres(store) => store.load_agent_session_listings(session_ids).await,
+        }
+    }
 }
 
 #[async_trait]

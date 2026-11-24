@@ -24,12 +24,20 @@ export function DebouncedSearch({ value, label, placeholder, onSearch }: Debounc
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // The debounce timer outlives the render that scheduled it, so read the latest props from refs.
   const latest = useRef({ value, onSearch })
+  // The search last sent to `onSearch` whose navigation has not reached `value` yet. Typing is
+  // compared with it rather than the URL, so clearing a search that is still loading is sent too.
+  const submitted = useRef<string | null>(null)
 
   useEffect(() => {
     latest.current = { value, onSearch }
   })
 
   useEffect(() => {
+    // A URL from an earlier search that landed after a newer one was sent is stale: keep the box.
+    if (submitted.current !== null && submitted.current !== value) {
+      return
+    }
+    submitted.current = null
     // Only adopt URL changes (Back/Forward, Clear) when no keystrokes are waiting to be sent.
     if (timer.current === null) {
       setQuery(value)
@@ -43,7 +51,9 @@ export function DebouncedSearch({ value, label, placeholder, onSearch }: Debounc
     clearTimeout(timer.current ?? undefined)
     timer.current = setTimeout(() => {
       timer.current = null
-      if (next.trim() !== latest.current.value) {
+      const search = next.trim()
+      if (search !== (submitted.current ?? latest.current.value)) {
+        submitted.current = search
         latest.current.onSearch(next)
       }
     }, searchDebounceMs)

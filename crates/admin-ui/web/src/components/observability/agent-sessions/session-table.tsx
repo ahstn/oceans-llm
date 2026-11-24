@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 
 import { CompactCount } from '@/components/data/compact-count'
-import { CallerCell, callerPrimary, ModelCell } from '@/components/data/request-identity'
+import { CallerCell, ModelCell } from '@/components/data/request-identity'
 import { TablePagination } from '@/components/data/table-pagination'
 import { AgentHarnessLabel } from '@/components/icons/agent-harness-icon'
 import { AdminTableHead, AdminTableHeader } from '@/components/shared/admin-table-header'
@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { callerPrimary } from '@/lib/caller'
 import type { AgentSessionSummaryView } from '@/types/api'
 import {
   EMPTY_VALUE,
@@ -120,7 +121,7 @@ const sessionColumns = sessionColumnIds.map((key) => ({
 
 const sessionCardFacts = sessionColumns.filter((column) => column.cardFact)
 
-export const sessionPageSizes = [25, 50, 100] as const
+const sessionPageSizes = [25, 50, 100] as const
 
 interface SessionTableProps {
   items: AgentSessionSummaryView[]
@@ -133,7 +134,7 @@ interface SessionTableProps {
   /** Offered beside the empty state, such as a button that clears the filters. */
   emptyAction?: ReactNode
   onOpen: (session: AgentSessionSummaryView) => void
-  onPageChange: (page: number, pageSize: number) => void
+  onPageChange: (page: number, pageSize: number, options?: { replace?: boolean }) => void
 }
 
 /** Sessions as cards below `md` and as a table from `md` up, with their shared pager. */

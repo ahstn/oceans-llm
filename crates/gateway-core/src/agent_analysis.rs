@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use agent_session_analysis::{
     AgentSessionId, AgentSessionSourceId, AnalysisId, Confidence, GatewayOutcomeState,
     InferredObservation, LimitationCode, ObservationSetId, ScoreMaturity, SessionEfficiencyReport,
@@ -143,20 +145,24 @@ pub struct AgentSessionSummaryRecord {
     pub harness_label: Option<String>,
     pub latest_analysis: Option<AgentSessionAnalysisRecord>,
     #[serde(default)]
-    pub spend: AgentSessionSpendRecord,
+    pub listing: AgentSessionListingRecord,
 }
 
-/// Usage ledger figures for a session's linked requests, read when the session is listed.
-/// Unlike the analysis report's cost, they are live while the session is still open, and an
-/// unpriced request is counted rather than voiding the whole total.
+/// What a session listing shows beyond the session row, read in one query per page: usage
+/// ledger spend, the provider of the latest request, and the owner's display names. Unlike the
+/// analysis report's cost, the spend is live while the session is still open, and an unpriced
+/// request is counted rather than voiding the whole total.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AgentSessionSpendRecord {
+pub struct AgentSessionListingRecord {
     /// Sum of priced usage cost; `None` when no linked request has priced usage.
     pub priced_cost: Option<Money9>,
     /// Linked requests without priced usage: unpriced, failed before usage, or usage missing.
     pub unpriced_request_count: u64,
     /// Provider of the most recent linked request that has a request log.
     pub latest_provider_key: Option<String>,
+    pub user_name: Option<String>,
+    pub user_email: Option<String>,
+    pub service_account_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -420,6 +426,13 @@ pub trait AgentSessionReportRepository {
         &self,
         query: &AgentSessionListQuery,
     ) -> Result<AgentSessionListPage, StoreError>;
+
+    /// The listing facts for these sessions, keyed by session ID, as `list_agent_sessions`
+    /// returns them. Unknown IDs are absent.
+    async fn load_agent_session_listings(
+        &self,
+        session_ids: &[AgentSessionId],
+    ) -> Result<HashMap<AgentSessionId, AgentSessionListingRecord>, StoreError>;
 }
 
 #[async_trait]

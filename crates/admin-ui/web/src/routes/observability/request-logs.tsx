@@ -29,6 +29,7 @@ import {
   statusCodeBadgeVariant,
 } from './-request-log-detail/format'
 import { RequestLogDetail } from './-request-log-detail/request-log-detail'
+import { costParam } from './-request-log-filter-options'
 import { RequestLogToolbar, type RequestLogFilterPatch } from './-request-log-filters'
 
 export const Route = createFileRoute('/observability/request-logs')({
@@ -39,7 +40,7 @@ export const Route = createFileRoute('/observability/request-logs')({
 })
 
 /** The gateway's default page size, so a URL without `page_size` shows the same rows. */
-export const defaultRequestLogPageSize = 100
+const defaultRequestLogPageSize = 100
 const requestLogPageSizes = [50, 100, 200] as const
 const requestLogRowEstimatePx = 56
 const requestLogDesktopPreviewRows = 12
@@ -75,7 +76,7 @@ export function RequestLogsPage() {
     })
   }
 
-  function changePage(nextPage: number, nextPageSize: number) {
+  function changePage(nextPage: number, nextPageSize: number, options?: { replace?: boolean }) {
     startListTransition(async () => {
       await router.navigate({
         to: '/observability/request-logs',
@@ -85,6 +86,7 @@ export function RequestLogsPage() {
             page: nextPage,
             page_size: nextPageSize,
           }),
+        replace: options?.replace,
         resetScroll: false,
       })
     })
@@ -517,12 +519,6 @@ function statusCodeParam(value: unknown): number | undefined {
   return typeof code === 'number' && Number.isInteger(code) && code >= 100 && code <= 599
     ? code
     : undefined
-}
-
-/** A dollar threshold the gateway accepts: non-negative, at most four decimals. */
-export function costParam(value: unknown): string | undefined {
-  const text = typeof value === 'number' ? String(value) : searchParamValue(value)
-  return text !== undefined && /^\d+(\.\d{1,4})?$/.test(text) ? text : undefined
 }
 
 function positiveInteger(value: unknown, maximum = Number.MAX_SAFE_INTEGER) {

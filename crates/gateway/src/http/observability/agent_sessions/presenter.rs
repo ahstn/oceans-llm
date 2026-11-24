@@ -300,58 +300,33 @@ pub(super) fn agent_session_source_view(
     }
 }
 
-/// Who owns a session, what it has cost so far, and the provider that served it, resolved once
-/// per page of sessions.
+/// A page of sessions' listing facts from the store, plus the provider connections their
+/// latest requests used, so each provider's icon is resolved once per page.
 #[derive(Debug, Default)]
 pub(super) struct SessionListingDirectory {
-    pub spend: HashMap<Uuid, gateway_core::AgentSessionSpendRecord>,
-    pub users: HashMap<Uuid, (String, String)>,
-    pub service_account_names: HashMap<Uuid, String>,
+    pub listings: HashMap<Uuid, gateway_core::AgentSessionListingRecord>,
     pub providers: HashMap<String, ProviderConnection>,
 }
 
 impl SessionListingDirectory {
     pub(super) async fn load(
         state: &AppState,
-        sessions: Vec<(
-            &gateway_core::AgentSessionRecord,
-            gateway_core::AgentSessionSpendRecord,
-        )>,
+        listings: HashMap<Uuid, gateway_core::AgentSessionListingRecord>,
     ) -> Result<Self, AppError> {
-        let mut directory = Self::default();
-        for (session, spend) in sessions {
-            if let Some(user_id) = session.user_id
-                && !directory.users.contains_key(&user_id)
-                && let Some(identity) = state.store.get_identity_user(user_id).await?
-            {
-                directory
-                    .users
-                    .insert(user_id, (identity.user.name, identity.user.email));
+        let provider_keys = listings
+            .values()
+            .filter_map(|listing| listing.latest_provider_key.clone())
+            .collect::<HashSet<_>>();
+        let mut providers = HashMap::with_capacity(provider_keys.len());
+        for provider_key in provider_keys {
+            if let Some(provider) = state.store.get_provider_by_key(&provider_key).await? {
+                providers.insert(provider_key, provider);
             }
-            if let Some(service_account_id) = session.service_account_id
-                && !directory
-                    .service_account_names
-                    .contains_key(&service_account_id)
-                && let Some(account) = state
-                    .store
-                    .get_service_account_by_id(service_account_id)
-                    .await?
-            {
-                directory
-                    .service_account_names
-                    .insert(service_account_id, account.service_account_name);
-            }
-            if let Some(provider_key) = spend.latest_provider_key.as_deref()
-                && !directory.providers.contains_key(provider_key)
-                && let Some(provider) = state.store.get_provider_by_key(provider_key).await?
-            {
-                directory
-                    .providers
-                    .insert(provider_key.to_owned(), provider);
-            }
-            directory.spend.insert(session.agent_session_id, spend);
         }
-        Ok(directory)
+        Ok(Self {
+            listings,
+            providers,
+        })
     }
 }
 
@@ -364,14 +339,13 @@ pub(super) fn agent_session_summary(
     calibrated_score_visible: bool,
     directory: &SessionListingDirectory,
 ) -> AgentSessionSummaryView {
-    let spend = directory.spend.get(&session.agent_session_id);
-    let provider_key = spend.and_then(|spend| spend.latest_provider_key.clone());
+    let listing = directory.listings.get(&session.agent_session_id);
+    let provider_key = listing.and_then(|listing| listing.latest_provider_key.clone());
     let provider_icon_key = provider_key.as_deref().map(|key| {
         resolve_provider_display(key, directory.providers.get(key))
             .icon_key
             .into()
     });
-    let user = session.user_id.and_then(|id| directory.users.get(&id));
     let report = analysis.map(|analysis| &analysis.report);
     let score_visible = report.is_some_and(|report| {
         calibrated_score_visible
@@ -398,11 +372,9 @@ pub(super) fn agent_session_summary(
             .map(Into::into),
         provider_key,
         provider_icon_key,
-        user_name: user.map(|(name, _)| name.clone()),
-        user_email: user.map(|(_, email)| email.clone()),
-        service_account_name: session
-            .service_account_id
-            .and_then(|id| directory.service_account_names.get(&id).cloned()),
+        user_name: listing.and_then(|listing| listing.user_name.clone()),
+        user_email: listing.and_then(|listing| listing.user_email.clone()),
+        service_account_name: listing.and_then(|listing| listing.service_account_name.clone()),
         operation: session.operation.clone(),
         caller_class: session.caller_class.clone(),
         session_source_observed: session.agent_session_source_id.is_some(),
@@ -428,10 +400,10 @@ pub(super) fn agent_session_summary(
         normalized_cost_usd: report
             .and_then(|report| report.components.actual_cost_10000)
             .map(|value| value as f64 / 10_000.0),
-        cost_usd_nanos: spend
-            .and_then(|spend| spend.priced_cost)
+        cost_usd_nanos: listing
+            .and_then(|listing| listing.priced_cost)
             .map(gateway_core::Money9::as_nanos),
-        unpriced_request_count: spend.map_or(0, |spend| spend.unpriced_request_count),
+        unpriced_request_count: listing.map_or(0, |listing| listing.unpriced_request_count),
         active_time_ms: report
             .and_then(|report| u64::try_from(report.components.active_time_ms).ok()),
         wall_time_ms: report.and_then(|report| u64::try_from(report.components.wall_time_ms).ok()),

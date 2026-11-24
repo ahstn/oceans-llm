@@ -5,7 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { regularUserSession } from '@/test/auth-session'
 import type { RequestLogView } from '@/types/api'
-import { costParam, RequestLogsPage } from '@/routes/observability/request-logs'
+import { costParam } from '@/routes/observability/-request-log-filter-options'
+import { RequestLogsPage } from '@/routes/observability/request-logs'
 
 const getObservabilityRequestLogDetailMock = vi.fn()
 const getModelOptionsMock = vi.fn()
@@ -791,7 +792,7 @@ describe('RequestLogsPage pagination and cost filter', () => {
 
   it('applies a cost threshold only once it is a dollar amount, returning to page 1', async () => {
     routeMock.useSearch.mockReturnValue({ page: 3 })
-    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1_000 } })
 
     const view = renderPage()
     const scope = within(view.container)

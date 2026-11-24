@@ -5,10 +5,10 @@ import {
   formatUsd10000Precise,
   formatUsdNanos,
 } from '@/lib/format'
-import { callerPrimary, callerSecondary } from '@/components/data/request-identity'
+import { callerPrimary, callerSecondary } from '@/lib/caller'
 import type { RequestLogView } from '@/types/api'
 
-export { callerPrimary, callerSecondary } from '@/components/data/request-identity'
+export { callerPrimary, callerSecondary } from '@/lib/caller'
 
 export function callerLabel(item: RequestLogView): string {
   const primary = callerPrimary(item)

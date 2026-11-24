@@ -336,7 +336,9 @@
         "crates/gateway-store/src/postgres_store/agent_analysis/**",
         "crates/admin-ui/web/src/components/data/table-pagination.tsx",
         "crates/admin-ui/web/src/components/data/debounced-search.tsx",
-        "crates/admin-ui/web/src/components/data/request-identity.tsx"
+        "crates/admin-ui/web/src/components/data/request-identity.tsx",
+        "crates/admin-ui/web/src/lib/caller.ts",
+        "crates/admin-ui/web/src/lib/pagination.ts"
       ]
     },
     {
@@ -365,6 +367,8 @@
         "crates/admin-ui/web/src/components/data/table-pagination.tsx",
         "crates/admin-ui/web/src/components/data/debounced-search.tsx",
         "crates/admin-ui/web/src/components/data/request-identity.tsx",
+        "crates/admin-ui/web/src/lib/caller.ts",
+        "crates/admin-ui/web/src/lib/pagination.ts",
         "crates/gateway-store/src/postgres_store/request_logs.rs",
         "crates/admin-ui/web/src/components/data/filter-*.{ts,tsx}",
         "crates/admin-ui/web/src/lib/model-catalog.ts",

@@ -380,6 +380,11 @@ async fn exercise_request_log_list_search<S: GatewayStore + Sync>(store: &S) {
             .expect("ambiguous grace usage")
             .is_empty()
     );
+    // The cost filter applies the same ambiguity rule, so neither Grace log matches.
+    assert_eq!(
+        search_request_ids(store, min_cost(0)).await,
+        (1, vec!["req-ada".to_string()])
+    );
 }
 
 #[tokio::test]

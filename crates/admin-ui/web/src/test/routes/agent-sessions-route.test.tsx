@@ -616,6 +616,10 @@ describe('AgentSessionsPage', () => {
   })
 
   it('clears active filters through route search and keeps the page size', async () => {
+    // Enough sessions that page 3 exists, so the pager does not correct it.
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [session], page: 1, page_size: 50, total: 500 },
+    })
     routeMock.useSearch.mockReturnValue({
       page: 3,
       page_size: 25,
@@ -961,6 +965,9 @@ describe('AgentSessionsPage filters', () => {
   })
 
   it('applies a picked state at once and returns to the first page', async () => {
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [session], page: 1, page_size: 50, total: 500 },
+    })
     routeMock.useSearch.mockReturnValue({ page: 3, page_size: 25 })
     render(<AgentSessionsPage />)
 
@@ -1148,6 +1155,9 @@ describe('AgentSessionsPage filters', () => {
 
   it('removes one chip and keeps the other filters', async () => {
     const search = { page: 2, page_size: 25, harness_key: 'opencode', team_id: 'team_1' }
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [session], page: 1, page_size: 50, total: 500 },
+    })
     routeMock.useSearch.mockReturnValue(search)
     render(<AgentSessionsPage />)
 
@@ -1288,6 +1298,9 @@ describe('AgentSessionsPage filters', () => {
     vi.useFakeTimers()
     try {
       routeMock.useSearch.mockReturnValue({ page: 4, page_size: 50 })
+      routeMock.useLoaderData.mockReturnValue({
+        data: { items: [session], page: 4, page_size: 50, total: 500 },
+      })
       render(<AgentSessionsPage />)
 
       fireEvent.change(
@@ -1306,6 +1319,61 @@ describe('AgentSessionsPage filters', () => {
       page: 1,
       page_size: 50,
       q: 'ada',
+    })
+  })
+
+  it('sends a cleared search while the earlier search is still loading', async () => {
+    vi.useFakeTimers()
+    try {
+      routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50 })
+      const view = render(<AgentSessionsPage />)
+      const search = () =>
+        screen.getByRole('searchbox', { name: 'Search agent sessions by model or user' })
+
+      fireEvent.change(search(), { target: { value: 'ada' } })
+      await vi.advanceTimersByTimeAsync(300)
+      expect(navigateMock).toHaveBeenCalledTimes(1)
+
+      // The URL still has no `q`: the first navigation has not landed when the box is cleared.
+      fireEvent.change(search(), { target: { value: '' } })
+      await vi.advanceTimersByTimeAsync(300)
+      expect(navigateMock).toHaveBeenCalledTimes(2)
+      expect(navigatedSearch(1, { page: 1, page_size: 50, q: 'ada' })).toEqual({
+        page: 1,
+        page_size: 50,
+      })
+
+      // The first navigation lands late; the cleared box stays cleared.
+      routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50, q: 'ada' })
+      view.rerender(<AgentSessionsPage />)
+      expect(search()).toHaveValue('')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('moves a page past the end to the last page, replacing the history entry', async () => {
+    routeMock.useSearch.mockReturnValue({ page: 4, page_size: 50 })
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [], page: 4, page_size: 50, total: 60 },
+    })
+    render(<AgentSessionsPage />)
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/observability/agent-sessions',
+        search: { page: 2, page_size: 50 },
+        replace: true,
+      })
+    })
+    // Until the URL catches up, page 1 is still a working link.
+    navigateMock.mockClear()
+    fireEvent.click(screen.getByRole('link', { name: 'Go to page 1' }))
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/observability/agent-sessions',
+        search: { page: 1, page_size: 50 },
+      })
     })
   })
 

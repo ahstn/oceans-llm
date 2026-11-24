@@ -2,6 +2,14 @@ use super::*;
 
 #[async_trait]
 impl AgentSessionReportRepository for PostgresStore {
+    async fn load_agent_session_listings(
+        &self,
+        session_ids: &[Uuid],
+    ) -> Result<std::collections::HashMap<Uuid, gateway_core::AgentSessionListingRecord>, StoreError>
+    {
+        self.session_listings(session_ids).await
+    }
+
     async fn append_agent_session_analysis(
         &self,
         analysis: &AgentSessionAnalysisRecord,

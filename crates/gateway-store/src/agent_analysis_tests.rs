@@ -1,9 +1,9 @@
 use gateway_core::{
     AgentAnalysisDesiredVersions, AgentAnalysisQueueRecord, AgentAnalysisQueueRepository,
     AgentAnalysisQueueStatus, AgentObservationSetRecord, AgentRequestLogLinkRecord,
-    AgentSessionAnalysisRecord, AgentSessionListQuery, AgentSessionRecord,
-    AgentSessionReportRepository, AgentSessionRequestLinkRecord, AgentSessionSourceRecord,
-    AgentSessionSpendRecord, AgentSessionTraceRepository, AuthMode, BoundedObservationFacts,
+    AgentSessionAnalysisRecord, AgentSessionListQuery, AgentSessionListingRecord,
+    AgentSessionRecord, AgentSessionReportRepository, AgentSessionRequestLinkRecord,
+    AgentSessionSourceRecord, AgentSessionTraceRepository, AuthMode, BoundedObservationFacts,
     BoundedToolDefinitionFact, BudgetRepository, Confidence, EvidenceQuality, GlobalRole,
     InferredObservation, InferredObservationKind, LimitationCode, Money9, ScoreMaturity,
     SessionLifecycleState, StoreError, UsagePricingStatus, UserStatus,
@@ -654,11 +654,14 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .await
         .expect("session page without request log link");
     assert_eq!(
-        page.items[0].spend,
-        AgentSessionSpendRecord {
+        page.items[0].listing,
+        AgentSessionListingRecord {
             priced_cost: None,
             unpriced_request_count: 1,
             latest_provider_key: Some("test-provider".to_string()),
+            user_name: Some("Analyst".to_string()),
+            user_email: Some("analyst@example.com".to_string()),
+            service_account_name: None,
         }
     );
     // Spend is read from the ledger, so it shows before any analysis report exists.
@@ -687,10 +690,20 @@ async fn libsql_agent_analysis_repository_round_trips_and_cascades() {
         .await
         .expect("priced session page");
     assert_eq!(
-        priced_page.items[0].spend.priced_cost,
+        priced_page.items[0].listing.priced_cost,
         Some(Money9::from_nanos(1_234_500_000))
     );
-    assert_eq!(priced_page.items[0].spend.unpriced_request_count, 0);
+    assert_eq!(priced_page.items[0].listing.unpriced_request_count, 0);
+    // The detail view reads the same facts by session ID.
+    let listings = store
+        .load_agent_session_listings(&[session.agent_session_id, Uuid::new_v4()])
+        .await
+        .expect("session listings");
+    assert_eq!(listings.len(), 1);
+    assert_eq!(
+        listings.get(&session.agent_session_id),
+        Some(&priced_page.items[0].listing)
+    );
     // Search matches the requested model key and the owner's name or email, ignoring case.
     for (q, expected) in [
         ("GPT-5", 1),
@@ -1166,8 +1179,15 @@ async fn postgres_agent_session_dimensions_round_trip_and_filter() {
         .expect("list sessions");
     assert_eq!(page.total, 1);
     assert_eq!(page.items[0].session, session);
-    // No requests are linked yet, so the session has no ledger spend.
-    assert_eq!(page.items[0].spend, AgentSessionSpendRecord::default());
+    // No requests are linked yet, so the session has no ledger spend, but its owner is named.
+    assert_eq!(
+        page.items[0].listing,
+        AgentSessionListingRecord {
+            user_name: Some("Postgres Analyst".to_string()),
+            user_email: Some("postgres-analyst@example.com".to_string()),
+            ..AgentSessionListingRecord::default()
+        }
+    );
     for (q, expected) in [
         ("OPUS-4", 1),
         ("postgres analyst", 1),
