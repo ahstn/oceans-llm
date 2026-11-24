@@ -9,6 +9,8 @@ const searchDebounceMs = 250
 interface DebouncedSearchProps {
   /** The applied search, usually from the URL. */
   value: string
+  /** True while a list navigation, such as an earlier search, is still loading. */
+  pending: boolean
   label: string
   placeholder: string
   /** Called with the typed text once typing pauses, and only when it differs from `value`. */
@@ -19,13 +21,19 @@ interface DebouncedSearchProps {
  * A toolbar search box that applies its text after a short pause, so each keystroke does not
  * navigate. Request logs and agent sessions share it for their model or user search.
  */
-export function DebouncedSearch({ value, label, placeholder, onSearch }: DebouncedSearchProps) {
+export function DebouncedSearch({
+  value,
+  pending,
+  label,
+  placeholder,
+  onSearch,
+}: DebouncedSearchProps) {
   const [query, setQuery] = useState(value)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // The debounce timer outlives the render that scheduled it, so read the latest props from refs.
   const latest = useRef({ value, onSearch })
-  // The search last sent to `onSearch` whose navigation has not reached `value` yet. Typing is
-  // compared with it rather than the URL, so clearing a search that is still loading is sent too.
+  // The search last sent to `onSearch` while its navigation is pending. Typing is compared with it
+  // rather than the URL, so clearing a search that is still loading is sent too.
   const submitted = useRef<string | null>(null)
 
   useEffect(() => {
@@ -33,8 +41,10 @@ export function DebouncedSearch({ value, label, placeholder, onSearch }: Debounc
   })
 
   useEffect(() => {
-    // A URL from an earlier search that landed after a newer one was sent is stale: keep the box.
-    if (submitted.current !== null && submitted.current !== value) {
+    // While a navigation is in flight, the URL may still hold a search that a newer one replaced,
+    // so keep the box. Once nothing is pending, the URL is the truth again, whether the search
+    // landed or was cancelled (for example by Back), so the marker clears and the box follows it.
+    if (pending) {
       return
     }
     submitted.current = null
@@ -42,7 +52,7 @@ export function DebouncedSearch({ value, label, placeholder, onSearch }: Debounc
     if (timer.current === null) {
       setQuery(value)
     }
-  }, [value])
+  }, [value, pending])
 
   useEffect(() => () => clearTimeout(timer.current ?? undefined), [])
 

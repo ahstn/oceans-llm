@@ -163,6 +163,7 @@ export function SessionFilterToolbar({
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
         <DebouncedSearch
           value={filters.q ?? ''}
+          pending={isPending}
           label="Search agent sessions by model or user"
           placeholder="Search by model or user…"
           onSearch={onSearch}

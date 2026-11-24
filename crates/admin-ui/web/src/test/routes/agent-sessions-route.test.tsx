@@ -1325,6 +1325,7 @@ describe('AgentSessionsPage filters', () => {
   it('sends a cleared search while the earlier search is still loading', async () => {
     vi.useFakeTimers()
     try {
+      holdNavigations()
       routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50 })
       const view = render(<AgentSessionsPage />)
       const search = () =>
@@ -1347,6 +1348,35 @@ describe('AgentSessionsPage filters', () => {
       routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50, q: 'ada' })
       view.rerender(<AgentSessionsPage />)
       expect(search()).toHaveValue('')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('follows the URL again when a search navigation ends without reaching it', async () => {
+    vi.useFakeTimers()
+    try {
+      holdNavigations()
+      routeMock.useSearch.mockReturnValue({ page: 1, page_size: 50, q: 'old' })
+      const view = render(<AgentSessionsPage />)
+      const search = () =>
+        screen.getByRole('searchbox', { name: 'Search agent sessions by model or user' })
+
+      fireEvent.change(search(), { target: { value: 'ada' } })
+      await vi.advanceTimersByTimeAsync(300)
+      expect(navigateMock).toHaveBeenCalledTimes(1)
+
+      // Back cancels the search: its navigation ends while the URL keeps `q=old`.
+      for (const release of heldNavigations.splice(0)) release()
+      await vi.advanceTimersByTimeAsync(0)
+      view.rerender(<AgentSessionsPage />)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(search()).toHaveValue('old')
+
+      // The cancelled search no longer counts as sent, so searching for it again navigates.
+      fireEvent.change(search(), { target: { value: 'ada' } })
+      await vi.advanceTimersByTimeAsync(300)
+      expect(navigateMock).toHaveBeenCalledTimes(2)
     } finally {
       vi.useRealTimers()
     }
