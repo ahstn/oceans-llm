@@ -1,4 +1,4 @@
-import { useEffect, useRef, type MouseEvent } from 'react'
+import type { MouseEvent } from 'react'
 
 import {
   Pagination,
@@ -27,8 +27,7 @@ interface TablePaginationProps {
   pageSizes: readonly number[]
   /** Dims the pager while the next page loads. */
   pending?: boolean
-  /** `replace` is set when the pager corrects a page past the end, so Back skips it. */
-  onPageChange: (page: number, pageSize: number, options?: { replace?: boolean }) => void
+  onPageChange: (page: number, pageSize: number) => void
   className?: string
 }
 
@@ -51,20 +50,8 @@ export function TablePagination({
   const first = total === 0 ? 0 : (currentPage - 1) * pageSize + 1
   const last = Math.min(currentPage * pageSize, total)
 
-  // A saved URL can point past the last page, for example after retention removed rows. Move it to
-  // the last page, replacing the history entry so Back does not return to the empty page.
-  const latestPageChange = useRef(onPageChange)
-  useEffect(() => {
-    latestPageChange.current = onPageChange
-  })
-  useEffect(() => {
-    if (!pending && total > 0 && page > pageCount) {
-      latestPageChange.current(pageCount, pageSize, { replace: true })
-    }
-  }, [page, pageCount, pageSize, pending, total])
-
-  // Compared with the requested page, not the clamped one, so a link still works while the URL
-  // points past the end.
+  // Compared with the requested page, not the clamped one, so a link still works if the URL points
+  // past the end. The route loaders redirect such a URL to the last page before it renders.
   function go(nextPage: number) {
     return (event: MouseEvent<HTMLAnchorElement>) => {
       event.preventDefault()

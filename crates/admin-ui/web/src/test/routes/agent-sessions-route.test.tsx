@@ -1352,22 +1352,14 @@ describe('AgentSessionsPage filters', () => {
     }
   })
 
-  it('moves a page past the end to the last page, replacing the history entry', async () => {
+  it('keeps page links working when the URL points past the last page', async () => {
     routeMock.useSearch.mockReturnValue({ page: 4, page_size: 50 })
     routeMock.useLoaderData.mockReturnValue({
       data: { items: [], page: 4, page_size: 50, total: 60 },
     })
     render(<AgentSessionsPage />)
 
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith({
-        to: '/observability/agent-sessions',
-        search: { page: 2, page_size: 50 },
-        replace: true,
-      })
-    })
-    // Until the URL catches up, page 1 is still a working link.
-    navigateMock.mockClear()
+    // The loader redirects such a URL; until then, the clamped page 1 link still navigates.
     fireEvent.click(screen.getByRole('link', { name: 'Go to page 1' }))
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith({

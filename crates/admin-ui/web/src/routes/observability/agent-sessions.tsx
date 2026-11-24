@@ -1,5 +1,5 @@
 import { useEffect, useState, useTransition } from 'react'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
 
 import { ColumnVisibilityPopover } from '@/components/data/column-visibility-popover'
 import {
@@ -31,6 +31,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
+import { pageBeyondLast } from '@/lib/pagination'
 import { getAgentSessions, getObservabilityAgentSessionDetail } from '@/server/admin-data.functions'
 import type {
   AgentSessionDetailView,
@@ -45,9 +46,19 @@ type AgentSessionRouteSearch = AgentSessionFiltersInput & {
 export const Route = createFileRoute('/observability/agent-sessions')({
   validateSearch: (search: Record<string, unknown>) => normalizeSearch(search),
   loaderDeps: ({ search }) => search,
-  loader: ({ deps }) => {
+  loader: async ({ deps }) => {
     const { session_id: _sessionId, ...filters } = deps
-    return getAgentSessions({ data: filters })
+    const sessionPage = await getAgentSessions({ data: filters })
+    // A saved page past the end (sessions aged out, or a smaller page size) moves to the last page.
+    const lastPage = pageBeyondLast(deps.page, deps.page_size ?? 50, sessionPage.data.total)
+    if (lastPage !== null) {
+      throw redirect({
+        to: '/observability/agent-sessions',
+        search: normalizeSearch({ ...deps, page: lastPage }),
+        replace: true,
+      })
+    }
+    return sessionPage
   },
   component: AgentSessionsPage,
 })
@@ -100,12 +111,11 @@ export function AgentSessionsPage() {
     }
   }, [selectedSessionId, detailRetry])
 
-  function updateRouteSearch(next: AgentSessionRouteSearch, options?: { replace?: boolean }) {
+  function updateRouteSearch(next: AgentSessionRouteSearch) {
     startListTransition(async () => {
       await router.navigate({
         to: '/observability/agent-sessions',
         search: normalizeSearch(next as Record<string, unknown>),
-        ...(options?.replace ? { replace: true } : {}),
       })
     })
   }
@@ -221,8 +231,8 @@ export function AgentSessionsPage() {
               ) : null
             }
             onOpen={openDetail}
-            onPageChange={(page, pageSize, options) =>
-              updateRouteSearch({ ...search, page, page_size: pageSize }, options)
+            onPageChange={(page, pageSize) =>
+              updateRouteSearch({ ...search, page, page_size: pageSize })
             }
           />
         </CardContent>

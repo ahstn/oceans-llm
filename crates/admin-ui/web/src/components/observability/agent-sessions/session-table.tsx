@@ -134,7 +134,7 @@ interface SessionTableProps {
   /** Offered beside the empty state, such as a button that clears the filters. */
   emptyAction?: ReactNode
   onOpen: (session: AgentSessionSummaryView) => void
-  onPageChange: (page: number, pageSize: number, options?: { replace?: boolean }) => void
+  onPageChange: (page: number, pageSize: number) => void
 }
 
 /** Sessions as cards below `md` and as a table from `md` up, with their shared pager. */

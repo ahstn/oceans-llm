@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { pageSlots } from '@/lib/pagination'
+import { pageBeyondLast, pageSlots } from '@/lib/pagination'
 
 describe('pageSlots', () => {
   it('lists every page when they fit', () => {
@@ -21,5 +21,19 @@ describe('pageSlots', () => {
       expect(pageSlots(page, 40)).toHaveLength(7)
       expect(pageSlots(page, 40)).toContain(page)
     }
+  })
+})
+
+describe('pageBeyondLast', () => {
+  it('returns the last page only for a page past the end', () => {
+    expect(pageBeyondLast(99, 100, 1_051)).toBe(11)
+    expect(pageBeyondLast(9, 25, 44)).toBe(2)
+    expect(pageBeyondLast(11, 100, 1_051)).toBeNull()
+    expect(pageBeyondLast(undefined, 100, 1_051)).toBeNull()
+  })
+
+  it('sends any later page of an empty list to page 1', () => {
+    expect(pageBeyondLast(3, 50, 0)).toBe(1)
+    expect(pageBeyondLast(1, 50, 0)).toBeNull()
   })
 })

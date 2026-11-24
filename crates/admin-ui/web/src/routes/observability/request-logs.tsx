@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useTransition, type ReactNode } from 'react'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
 import { DatabaseLightningIcon } from '@hugeicons/core-free-icons'
@@ -17,6 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { EMPTY_VALUE, formatCount, formatDuration } from '@/lib/format'
+import { pageBeyondLast } from '@/lib/pagination'
 import { cn } from '@/lib/utils'
 import { getObservabilityRequestLogDetail, getRequestLogs } from '@/server/admin-data.functions'
 import type { RequestLogDetailView, RequestLogFiltersInput, RequestLogView } from '@/types/api'
@@ -35,7 +36,23 @@ import { RequestLogToolbar, type RequestLogFilterPatch } from './-request-log-fi
 export const Route = createFileRoute('/observability/request-logs')({
   validateSearch: (search: Record<string, unknown>) => normalizeFilterSearch(search),
   loaderDeps: ({ search }) => search,
-  loader: ({ deps }) => getRequestLogs({ data: deps }),
+  loader: async ({ deps }) => {
+    const logPage = await getRequestLogs({ data: deps })
+    // A saved page past the end (rows aged out, or a smaller page size) moves to the last page.
+    const lastPage = pageBeyondLast(
+      deps.page ?? undefined,
+      deps.page_size ?? defaultRequestLogPageSize,
+      logPage.data.total,
+    )
+    if (lastPage !== null) {
+      throw redirect({
+        to: '/observability/request-logs',
+        search: normalizeFilterSearch({ ...deps, page: lastPage }),
+        replace: true,
+      })
+    }
+    return logPage
+  },
   component: RequestLogsPage,
 })
 
@@ -76,7 +93,7 @@ export function RequestLogsPage() {
     })
   }
 
-  function changePage(nextPage: number, nextPageSize: number, options?: { replace?: boolean }) {
+  function changePage(nextPage: number, nextPageSize: number) {
     startListTransition(async () => {
       await router.navigate({
         to: '/observability/request-logs',
@@ -86,7 +103,6 @@ export function RequestLogsPage() {
             page: nextPage,
             page_size: nextPageSize,
           }),
-        replace: options?.replace,
         resetScroll: false,
       })
     })

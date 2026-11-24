@@ -37,3 +37,12 @@ export function pageSlots(page: number, pageCount: number): PageSlot[] {
 function range(start: number, end: number) {
   return Array.from({ length: end - start + 1 }, (_, index) => start + index)
 }
+
+/**
+ * The last page when `page` is past it, so a route loader can redirect there; otherwise `null`. A
+ * saved URL can point past the end, for example after retention removed rows.
+ */
+export function pageBeyondLast(page: number | undefined, pageSize: number, total: number) {
+  const lastPage = Math.max(1, Math.ceil(total / pageSize))
+  return (page ?? 1) > lastPage ? lastPage : null
+}
