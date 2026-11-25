@@ -7,6 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import type { Subprocess } from 'bun'
 import { OpenCode, type OpenCodeClient } from '@opencode/client'
 import { Schema } from 'effect'
+import { peerDependencies } from '../package.json'
 import { record } from '../src/config'
 import { gateway, modelIDs, png, type CapturedRequest } from './gateway'
 
@@ -126,6 +127,13 @@ export function publishedVersion(args: string[]): string | undefined {
   return args[1]
 }
 
+export function assertPublishedPeers(value: unknown) {
+  const installed = record(value)
+  for (const [name, expected] of Object.entries(peerDependencies)) {
+    assert.equal(installed[name], expected, `Unexpected published peer ${name}`)
+  }
+}
+
 async function assertInstalledVersion(root: string, version: string) {
   const manifests = new Bun.Glob('**/node_modules/@ahstn/opencode-oceans/package.json')
   let installed = 0
@@ -133,6 +141,7 @@ async function assertInstalledVersion(root: string, version: string) {
     const metadata = await Bun.file(path.join(root, manifest)).json()
     assert.equal(metadata.name, '@ahstn/opencode-oceans')
     assert.equal(metadata.version, version, `Unexpected installed plugin at ${manifest}`)
+    assertPublishedPeers(metadata.peerDependencies)
     installed++
   }
   assert.ok(installed > 0, 'OpenCode did not install the requested npm plugin')

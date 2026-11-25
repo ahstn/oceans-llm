@@ -476,7 +476,7 @@ wire_api = "responses"`,
   {
     id: "opencode",
     label: "OpenCode",
-    note: "The plugin reads the model list from the gateway and keeps it current.",
+    note: "The plugin keeps the model list current. See the guide for tested OpenCode versions and a setup without a plugin.",
     link: { label: "OpenCode", href: "/harnesses/opencode/" },
     files: [
       {
