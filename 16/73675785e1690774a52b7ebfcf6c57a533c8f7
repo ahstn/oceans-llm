@@ -1,0 +1,27 @@
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/durability-tab.tsx
+  s_0a4447f1aa57dd::t_6e4aac2bd56984 2-4
+crates/gateway-core/src/attribution.rs
+  s_0a4447f1aa57dd::t_c47726d3f5b2d4 452-454
+crates/gateway-service/src/attribution/tests.rs
+  s_0a4447f1aa57dd::t_9b932961d25719 13-16,327-332
+crates/gateway-store/src/attribution/pull_requests.rs
+  s_0a4447f1aa57dd::t_140d923cfc43b8 232-233,254
+crates/gateway-store/src/attribution_tests.rs
+  s_0a4447f1aa57dd::t_ea3ca09d1c4c86 536-537,551
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1673675785e1690774a52b7ebfcf6c57a533c8f7",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

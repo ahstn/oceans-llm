@@ -1,0 +1,23 @@
+crates/admin-ui/web/src/routes/observability/-agent-harnesses/harness-attribution.tsx
+  s_0a4447f1aa57dd::t_d019c245a29ce0 1-278
+crates/admin-ui/web/src/routes/observability/agent-harnesses.tsx
+  s_0a4447f1aa57dd::t_6db882a866ad2d 25,31,35-42,125,128-129
+crates/admin-ui/web/src/test/routes/agent-harnesses-route.test.tsx
+  s_0a4447f1aa57dd::t_2264f7c59a11b2 4,53,253-318
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2ac1ec32ff84317e761984f5d49ac84e0df5d031",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

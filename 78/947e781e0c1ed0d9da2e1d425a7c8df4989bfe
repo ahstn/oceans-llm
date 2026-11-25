@@ -1,0 +1,19 @@
+crates/admin-ui/web/src/routes/profile/-components/profile-data.ts
+  s_70a1a5a7a1bcd3::t_1197f18bf52b02 276-277,280-281,308
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "78947e781e0c1ed0d9da2e1d425a7c8df4989bfe",
+  "prompts": {},
+  "sessions": {
+    "s_70a1a5a7a1bcd3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1491e-d836-70f2-8c45-b23398e21490",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

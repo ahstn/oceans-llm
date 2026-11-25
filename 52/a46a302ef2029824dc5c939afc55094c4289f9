@@ -1,0 +1,63 @@
+.github/workflows/opencode-oceans.yml
+  s_1182c76e376f21::t_18cf8842561dbc 1-112
+mise.toml
+  s_1182c76e376f21::t_5cd3b3d8f2e2f2 22,34,255-257,271
+packages/opencode-oceans/.gitignore
+  s_1182c76e376f21::t_d13ff4cef70c99 1-4
+packages/opencode-oceans/.oxfmtrc.json
+  s_1182c76e376f21::t_5abbeaae5362e5 1-8
+packages/opencode-oceans/.oxlintrc.json
+  s_1182c76e376f21::t_d3c6d84c398375 1-8
+packages/opencode-oceans/LICENSE
+  s_50e99e02064736::t_5925ceef9d58e0 1-661
+packages/opencode-oceans/README.md
+  s_1182c76e376f21::t_578b0b9c484b01 1-217
+packages/opencode-oceans/bun.lock
+  s_1182c76e376f21::t_bb0b4582301718 1-757
+packages/opencode-oceans/mise.toml
+  s_1182c76e376f21::t_ece5fee4f60709 1-51
+packages/opencode-oceans/package.json
+  s_1182c76e376f21::t_0239b2f42279bc 1-58
+packages/opencode-oceans/scripts/gateway.ts
+  s_1182c76e376f21::t_eaa1e1429c7149 1-251
+packages/opencode-oceans/scripts/smoke.ts
+  s_1182c76e376f21::t_e6a73e42e38d12 1-179
+packages/opencode-oceans/src/config.ts
+  s_1182c76e376f21::t_928d3044c44b74 1-129
+packages/opencode-oceans/src/discovery.ts
+  s_1182c76e376f21::t_85823789815311 1-110
+packages/opencode-oceans/src/index.ts
+  s_1182c76e376f21::t_bc96aa394e9071 1-112
+packages/opencode-oceans/src/models.ts
+  s_1182c76e376f21::t_0c94eb34bd45e3 1-319
+packages/opencode-oceans/tests/discovery.test.ts
+  s_1182c76e376f21::t_312258519d1021 1-123
+packages/opencode-oceans/tests/models.test.ts
+  s_1182c76e376f21::t_25d515375d485b 1-205
+packages/opencode-oceans/tsconfig.json
+  s_1182c76e376f21::t_733986fe3c63c2 1-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "52a46a302ef2029824dc5c939afc55094c4289f9",
+  "prompts": {},
+  "sessions": {
+    "s_1182c76e376f21": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1b5e8-949a-70b6-96f0-1d6c0049857c",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_50e99e02064736": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1b5f4-fc52-74cc-9d88-8ec5502bc06f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

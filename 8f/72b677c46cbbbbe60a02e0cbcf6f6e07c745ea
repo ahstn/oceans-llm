@@ -1,0 +1,18 @@
+crates/admin-ui/web/src/routes/-model-info-dialog.tsx
+  h_2f452a9c375069 421,470-477,488-491,495-498,502-505,509-512
+crates/admin-ui/web/src/routes/models.tsx
+  h_2f452a9c375069 78-88
+crates/admin-ui/web/src/test/routes/model-info-dialog.test.tsx
+  h_2f452a9c375069 354-384
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8f72b677c46cbbbbe60a02e0cbcf6f6e07c745ea",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

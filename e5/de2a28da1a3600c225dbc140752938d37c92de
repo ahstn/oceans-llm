@@ -1,0 +1,81 @@
+.agents/skills/verify-oceans-admin/features/agent-sessions.md
+  s_dc3b523da70752::t_943cf85e216622 7-8,10,20,32-33,36-37,44
+.agents/skills/verify-oceans-admin/features/request-logs.md
+  s_dc3b523da70752::t_02cdb60ee09eaa 8-10,34-35,55-56
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_dc3b523da70752::t_6da9058bb2e605 335-339,365-368
+DESIGN.md
+  s_dc3b523da70752::t_d7514acf03b051 361-362
+crates/admin-ui/web/src/components/data/debounced-search.tsx
+  s_dc3b523da70752::t_535b717102ac1f 1-66
+crates/admin-ui/web/src/components/data/request-identity.tsx
+  s_dc3b523da70752::t_d20ea4b1b33973 1-66
+crates/admin-ui/web/src/components/data/table-pagination.tsx
+  s_dc3b523da70752::t_fe7b9f45687e32 1-177
+crates/admin-ui/web/src/components/observability/agent-sessions/session-columns.ts
+  s_dc3b523da70752::t_1d72eae68c9ba0 9-16,20-23,47-49,51
+crates/admin-ui/web/src/components/observability/agent-sessions/session-filter-fields.ts
+  s_dc3b523da70752::t_06f574ec4c038d 253-264,288-293,329,331,334
+crates/admin-ui/web/src/components/observability/agent-sessions/session-filter-toolbar.tsx
+  s_dc3b523da70752::t_d0e03a08959814 12,71-72,76,88,163-194,258-261
+crates/admin-ui/web/src/components/observability/agent-sessions/session-table.tsx
+  s_dc3b523da70752::t_e5ee5b5bcfcffa 4-5,11,13-19,48-55,58-69,83-84,123-124,210-216,245-247,328-360
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_dc3b523da70752::t_ec704a77849b28 2873-2879,2890,2896-2898,2907,2918-2923,2925,8489-8493,8712-8716
+crates/admin-ui/web/src/routes/observability/-request-log-detail/format.ts
+  s_dc3b523da70752::t_154d980964510c 8,11
+crates/admin-ui/web/src/routes/observability/-request-log-filters.tsx
+  s_dc3b523da70752::t_ef2ed2a873dbd8 16,25-26,52,69,89-92,94-97,120-123,134-141,196,223-227,263,265-266,270-273,305,326-334,387,397-398,417-418,460,467-470,473-480,505-510
+crates/admin-ui/web/src/routes/observability/agent-sessions.tsx
+  s_dc3b523da70752::t_fd67b9da4a1e10 41-43,84-86,114,119-124,158-159,178,186-189,290-291
+crates/admin-ui/web/src/routes/observability/request-logs.tsx
+  s_dc3b523da70752::t_f957481f454aee 8-9,41-43,61-63,65-66,71,78-92,118-136,368-373,375-376,493,495-500,522-536
+crates/admin-ui/web/src/test/components/table-pagination.test.ts
+  s_dc3b523da70752::t_16228f1797e77a 1-25
+crates/admin-ui/web/src/test/routes/agent-sessions-route.test.tsx
+  s_dc3b523da70752::t_4504b1bdc1dc6d 72-77,97-98,492,504-513,591,645,1254-1265,1276,1281-1334
+crates/admin-ui/web/src/test/routes/request-logs-route.test.tsx
+  s_dc3b523da70752::t_edd500a3bb5cfc 8,768-828
+crates/gateway-core/src/agent_analysis.rs
+  s_dc3b523da70752::t_a50e08db4149e9 12,145-159,262-264
+crates/gateway-core/src/domain.rs
+  s_dc3b523da70752::t_ef083fa17532d5 1579-1581
+crates/gateway-core/src/lib.rs
+  s_dc3b523da70752::t_e825de872ee20f 32-34
+crates/gateway-store/src/lib.rs
+  s_dc3b523da70752::t_db2ca129bfde71 7385
+crates/gateway-store/src/libsql_store/agent_analysis/reports.rs
+  s_dc3b523da70752::t_8c9a5d761c85d8 120-122,124,154,184,213
+crates/gateway-store/src/libsql_store/request_logs.rs
+  s_dc3b523da70752::t_13fd93a83e2da4 15-16,47-57,406-407,443,460
+crates/gateway-store/src/postgres_store/agent_analysis/reports.rs
+  s_dc3b523da70752::t_b77c99292365c6 126-130,132,160,180,207
+crates/gateway-store/src/postgres_store/request_logs.rs
+  s_dc3b523da70752::t_0b906e2778a429 16-17,51-61,400,427,443
+crates/gateway-store/src/tests/request_log_list.rs
+  s_dc3b523da70752::t_9a306f02ec2a55 336-366
+crates/gateway/openapi/admin-api.json
+  s_dc3b523da70752::t_6899fe9bf5aa7b 3688-3696,4305-4316,10845,10896-10903,10953-10962,10982-10998,11037-11042,11086-11097,11104-11109
+crates/gateway/src/http/admin_contract.rs
+  s_dc3b523da70752::t_f2c09f0b3f84b2 1482-1484,1757-1759,1787-1793,1814-1819
+crates/gateway/src/http/observability/agent_sessions/presenter.rs
+  s_dc3b523da70752::t_9ef2347e69c1a9 303-357,365,367-374,397-405,431-434
+crates/gateway/src/http/observability/request_logs.rs
+  s_dc3b523da70752::t_9a5018d18def4b 46,118-134,756-775
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "e5de2a28da1a3600c225dbc140752938d37c92de",
+  "prompts": {},
+  "sessions": {
+    "s_dc3b523da70752": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "af541614-74d7-43c2-98a1-d65acc10f2b7",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

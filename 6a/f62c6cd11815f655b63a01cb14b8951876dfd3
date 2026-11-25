@@ -1,0 +1,33 @@
+crates/gateway-core/src/domain.rs
+  s_b4b688b89ce947::t_ed4c9cb58e8cb9 3404-3407,3419-3448,3452-3483,4190-4215
+crates/gateway-core/src/lib.rs
+  s_b4b688b89ce947::t_c4c65288da8319 116-134
+crates/gateway-providers/src/openai_compat.rs
+  s_b4b688b89ce947::t_78bdcf9c6c7c5f 1046-1050,1676-1680,1701-1703
+crates/gateway/src/config/tests/mod.rs
+  s_b4b688b89ce947::t_0d5ba96f9b8bb1 7-9
+crates/gateway/src/config/tests/openrouter.rs
+  s_b4b688b89ce947::t_ade903810215cb 35-38,72-175
+docs/src/content/docs/configuration/models-and-routes.mdx
+  s_b4b688b89ce947::t_09e1c84c18ff4d 337-338,456-457
+docs/src/content/docs/providers/openrouter.mdx
+  s_b4b688b89ce947::t_279611fb9a98da 90-91,102-103
+docs/src/content/docs/reference/provider-api-compatibility.mdx
+  s_b4b688b89ce947::t_c858e5e9b9d4d8 513-514,522-523
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "6af62c6cd11815f655b63a01cb14b8951876dfd3",
+  "prompts": {},
+  "sessions": {
+    "s_b4b688b89ce947": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "62f4a73f-c4f3-4737-8222-eeea3a0a2665",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

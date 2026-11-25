@@ -1,0 +1,27 @@
+crates/gateway/src/http/mcp_gateway/governance.rs
+  s_b8e52ffc321bb1::t_541d4230c5c4d7 203-206,219
+crates/gateway/src/http/mcp_gateway/guardrails.rs
+  s_b8e52ffc321bb1::t_a074f3cb645d1d 23,131,136
+crates/gateway/src/http/mcp_gateway/json_rpc.rs
+  s_b8e52ffc321bb1::t_508d77ab9d0e95 270-279,286-300
+crates/gateway/src/http/mcp_gateway/rate_limits.rs
+  s_b8e52ffc321bb1::t_ae73c2248db8ad 16,52,69-75
+crates/gateway/src/http/mcp_gateway/tests.rs
+  s_b8e52ffc321bb1::t_e54f66c7559de6 1762-1787
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "30342c9a624f809305db53397237bfd8bd62c3f8",
+  "prompts": {},
+  "sessions": {
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

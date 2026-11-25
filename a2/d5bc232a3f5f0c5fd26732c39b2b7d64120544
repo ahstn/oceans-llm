@@ -1,0 +1,23 @@
+crates/gateway-service/src/attribution/report.rs
+  s_9379a6359d74c1::t_16dfb1e7790e1f 306,311-318
+crates/gateway-service/src/attribution/tests/report.rs
+  s_9379a6359d74c1::t_94e1b98efd3831 1746-1767
+crates/oceans-cli/src/attribution/reverts.rs
+  s_9379a6359d74c1::t_7870d51c5b1118 347-349,354,361-362,365-370,532-549
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a2d5bc232a3f5f0c5fd26732c39b2b7d64120544",
+  "prompts": {},
+  "sessions": {
+    "s_9379a6359d74c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "24386ac1-62a3-474e-9c88-ccc4d428ec6d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

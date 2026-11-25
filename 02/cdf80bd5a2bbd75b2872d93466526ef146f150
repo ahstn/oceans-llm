@@ -1,0 +1,70 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  h_2f452a9c375069 48
+CHANGELOG.md
+  h_2f452a9c375069 9-36
+Cargo.lock
+  h_2f452a9c375069 7,57,1844,1896,1905,1915,1934,1955,1970,2001,2033,2052,3363
+cliff.toml
+  h_2f452a9c375069 9-12,15-20,22-25,30-33,44,49-52,54,56-63,65-66,71-73
+crates/admin-ui/Cargo.toml
+  h_2f452a9c375069 3
+crates/agent-session-analysis/Cargo.toml
+  h_2f452a9c375069 3
+crates/gateway-client-config/Cargo.toml
+  h_2f452a9c375069 3
+crates/gateway-client-ip/Cargo.toml
+  h_2f452a9c375069 3
+crates/gateway-core/Cargo.toml
+  h_2f452a9c375069 3
+crates/gateway-guardrails/Cargo.toml
+  h_2f452a9c375069 3
+crates/gateway-mcp/Cargo.toml
+  h_2f452a9c375069 3
+crates/gateway-providers/Cargo.toml
+  h_2f452a9c375069 3
+crates/gateway-service/Cargo.toml
+  h_2f452a9c375069 3
+crates/gateway-service/data/model_benchmarks.json
+  h_2f452a9c375069 8,15,19,51-90,95,99,171-180,211-220,231-240,255,259-269,275-277,279,291-300,324-333,339-349,361-370,395,399,425-426,429,441-450,471-490,501-520,541-550,561-570,591-630,681-690,721-760,831-860,865,869-949,1025,1029,1035,1039-1049,1071-1110,1121-1150,1185-1186,1189-1209,1215,1219-1229,1251-1260,1311-1340,1361-1380,1391-1410,1451-1470,1481-1490,1501-1560,1600-1609
+crates/gateway-service/data/pricing_catalog_fallback.json
+  h_2f452a9c375069 4-5,16209-16256,24293-24294,24303,24527-24529,24537,24661-24663,24755-24757,24802-24804,24812,24849-24851,24871-24918,24961-25003,26293,26372-26374,27334-27336,27344,27409-27410,27419,29390,30165-30167,34566,35141,36066-36113,37415-37452,38375-38415,38644-38646,38901,38946-38948,39346-39348,39394-39396,39404,39441-39443,39608-39610,39975-39977,39983,40088-40090,40136,40138,40160
+crates/gateway-service/src/pricing_catalog.rs
+  h_2f452a9c375069 548-552
+crates/gateway-service/src/pricing_catalog/tests/refresh.rs
+  h_2f452a9c375069 14-26
+crates/gateway-service/src/pricing_catalog/tests/support.rs
+  h_2f452a9c375069 34-38
+crates/gateway-skills/Cargo.toml
+  h_2f452a9c375069 3
+crates/gateway-store/Cargo.toml
+  h_2f452a9c375069 3
+crates/gateway/Cargo.toml
+  h_2f452a9c375069 3
+crates/oceans-cli/Cargo.toml
+  h_2f452a9c375069 3
+docs/adr/2026-03-06-release-versioning-and-ghcr-publishing.md
+  h_2f452a9c375069 6
+docs/adr/2026-10-05-cli-binary-distribution-with-cargo-dist.md
+  h_2f452a9c375069 6
+docs/adr/2026-10-18-git-cliff-release-versioning-and-pull-request-changelog.md
+  h_2f452a9c375069 1-52
+docs/contributing/reference/release-process.md
+  h_2f452a9c375069 3,22-23,32,34-40,44-45,48,57,70-77,94,112,149
+mise.lock
+  h_2f452a9c375069 198,202-204,207-209,212-214,217-219,222-224
+mise.toml
+  h_2f452a9c375069 44,226-227,230-231,245
+scripts/release.sh
+  h_2f452a9c375069 1-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "02cdf80bd5a2bbd75b2872d93466526ef146f150",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

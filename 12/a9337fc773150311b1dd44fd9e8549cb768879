@@ -1,0 +1,70 @@
+crates/gateway-core/src/mcp_tool_policy.rs
+  h_2f452a9c375069 220-226,231,237,690
+crates/gateway-service/src/mcp_client_oauth/metadata_document.rs
+  h_2f452a9c375069 223-232,246-272
+crates/gateway-service/src/mcp_oauth_discovery.rs
+  h_2f452a9c375069 333-335
+crates/gateway-service/src/mcp_oauth_discovery/tests.rs
+  h_2f452a9c375069 180-182
+crates/gateway-service/src/mcp_tool_policy.rs
+  h_2f452a9c375069 204-223,267-277
+crates/gateway-service/src/rate_limits.rs
+  h_2f452a9c375069 458-460,509,574-597,600-604
+crates/gateway-service/src/rate_limits/tests.rs
+  h_2f452a9c375069 1419-1461
+crates/gateway-store/migrations/V72__mcp_discovery_run_started_ms.sql
+  h_2f452a9c375069 2-4,6-12
+crates/gateway-store/migrations/postgres/V72__mcp_discovery_run_started_ms.sql
+  h_2f452a9c375069 2-4,6-12
+crates/gateway-store/src/libsql_store/mcp_access/resolution.rs
+  h_2f452a9c375069 141-144,461-494
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  h_2f452a9c375069 350-353,1008,1127-1128,1135-1138,1145-1146,1349-1429
+crates/gateway-store/src/postgres_store/mcp_access/resolution.rs
+  h_2f452a9c375069 115-118,384-417
+crates/gateway-store/src/postgres_store/mcp_registry.rs
+  h_2f452a9c375069 928,1059-1062,1069-1070
+crates/gateway-store/src/tests/mcp_discovery_commits.rs
+  h_2f452a9c375069 180-215
+crates/gateway-store/src/tests/mcp_tag_rules.rs
+  h_2f452a9c375069 240-241,263-277
+crates/gateway-store/src/tests/mcp_tool_versions.rs
+  h_2f452a9c375069 234-235,237-257,500-501,504
+crates/gateway/src/http/handlers.rs
+  h_2f452a9c375069 1880-1886,1900-1901,1936-1942,1952
+crates/gateway/src/http/mcp_client_oauth/metadata_document_tests.rs
+  h_2f452a9c375069 21,316-338
+crates/gateway/src/http/mcp_gateway/sse.rs
+  h_2f452a9c375069 23-28,61,81-84,91,341-349
+crates/gateway/src/http/mcp_gateway/tests.rs
+  h_2f452a9c375069 755-761,789,807,847-848,878-902
+crates/gateway/src/http/mcp_oauth.rs
+  h_2f452a9c375069 761-762,771
+crates/gateway/src/http/mcp_oauth/tests/generic.rs
+  h_2f452a9c375069 562-577
+docs/adr/2026-06-09-mcp-tool-grants-and-token-overhead.md
+  h_2f452a9c375069 33
+docs/adr/2026-10-13-govern-every-mcp-method.md
+  h_2f452a9c375069 65,75-76,82
+docs/adr/2026-10-15-generic-upstream-mcp-oauth.md
+  h_2f452a9c375069 86
+docs/adr/2026-10-15-mcp-client-oauth-authorization.md
+  h_2f452a9c375069 270
+docs/adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md
+  h_2f452a9c375069 83,86,88,114
+docs/configuration/configuration-reference.md
+  h_2f452a9c375069 670
+docs/mcp/mcp-tool-access.md
+  h_2f452a9c375069 142-144,174-179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "12a9337fc773150311b1dd44fd9e8549cb768879",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

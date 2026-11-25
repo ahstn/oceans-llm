@@ -1,0 +1,33 @@
+Cargo.lock
+  s_e88dc7cf2999d1::t_02ab970e6d08e3 2014
+Cargo.toml
+  s_4394d7bb181c63::t_17aa3b9fd9f18d 77
+crates/gateway-service/Cargo.toml
+  s_4394d7bb181c63::t_8e83fc5fb0e902 17
+crates/gateway-service/src/mcp_client_oauth.rs
+  s_4394d7bb181c63::t_9344e0a230273e 76,82-84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8621953d5add3184ab43297811720639acf091be",
+  "prompts": {},
+  "sessions": {
+    "s_4394d7bb181c63": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5fe6d420-4e7e-4885-8f8a-07723d2ed05e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+docs/src/landing/Pillars.astro
+  s_8c5a479352ef88::t_98533d75e32161 6-8,69-114
+docs/src/landing/content.ts
+  s_8c5a479352ef88::t_8421973a9febca 188-193,282,285,291
+docs/src/landing/landing.css
+  s_389376e6fb6ddf::t_7d329080722cc4 372-412
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "97011b1090bd4411c93db97ec387e29dc3675eb9",
+  "prompts": {},
+  "sessions": {
+    "s_389376e6fb6ddf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f5eb7b27-394d-48d6-9162-5cb6d3756f70",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_8c5a479352ef88": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a204dc-ae1c-70d2-9d3a-9402df727933",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

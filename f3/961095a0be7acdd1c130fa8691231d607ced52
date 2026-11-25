@@ -1,0 +1,49 @@
+crates/gateway-core/src/domain.rs
+  s_7a5811202bdfd5::t_50a14dd9a96564 1737-1739
+crates/gateway-core/src/traits.rs
+  s_7a5811202bdfd5::t_69f92546b30380 1069-1102
+crates/gateway-service/src/lib.rs
+  s_7a5811202bdfd5::t_a752507c1a11a0 118
+crates/gateway-service/src/mcp_ownership.rs
+  s_7a5811202bdfd5::t_cfa9f8befe4d4d 7-10,19,348-350,353-354,357-360,362-365,367-368,484-485,487,489-493,496-500,587-674
+crates/gateway-service/src/mcp_ownership_tests.rs
+  s_7a5811202bdfd5::t_57d804b908c8c2 112-143
+crates/gateway-service/src/mcp_registry.rs
+  s_7a5811202bdfd5::t_64cfac55ed675c 80-82,254
+crates/gateway-store/src/any_store_mcp_registry.rs
+  s_7a5811202bdfd5::t_b98c88d75b55ff 4,94-131
+crates/gateway-store/src/lib.rs
+  s_7a5811202bdfd5::t_b4e5a605aa89a0 1444,1488,1526-1533,1611-1690,1735,1858
+crates/gateway-store/src/libsql_store/mcp_access.rs
+  s_7a5811202bdfd5::t_13560b975b6802 50
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_7a5811202bdfd5::t_c6161eef59e0bc 131-137,190-191,304-307,437-500
+crates/gateway-store/src/libsql_store/transaction_tests.rs
+  s_7a5811202bdfd5::t_515bb2e3a717fa 89
+crates/gateway-store/src/postgres_store/mcp_access.rs
+  s_7a5811202bdfd5::t_42c82ef6d91f1c 44
+crates/gateway-store/src/postgres_store/mcp_registry.rs
+  s_7a5811202bdfd5::t_32ee4f02c67359 20-21,148-154,294-297,439-491
+crates/gateway/src/http/mcp_registry.rs
+  s_7a5811202bdfd5::t_5c69bb00dde297 27,152-155,223-227,251-253,450-451,508-510,827
+crates/gateway/src/http/mcp_registry/ownership_tests.rs
+  s_7a5811202bdfd5::t_6bd3c84a91f63e 1129-1130,1145-1217
+crates/gateway/src/http/mcp_registry/views.rs
+  s_7a5811202bdfd5::t_6a7d9278d54236 393-401,461-464,469
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f3961095a0be7acdd1c130fa8691231d607ced52",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

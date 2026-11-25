@@ -1,0 +1,45 @@
+crates/gateway-core/src/lib.rs
+  s_56409892e094a0::t_e3edc5d03a9176 161-164
+crates/gateway-core/src/rate_limits.rs
+  s_56409892e094a0::t_17b723b2cd4339 170-174
+crates/gateway-service/src/rate_limits.rs
+  s_56409892e094a0::t_966be55af3cb93 14,20-23,354-355,359-383,396-399,439-440,466,604-666,847,861,891-927
+crates/gateway-service/src/rate_limits/tests.rs
+  s_56409892e094a0::t_d9bd1c871183b4 23,26-27,37-42,144-146,864-941
+crates/gateway/src/config/rate_limits.rs
+  s_56409892e094a0::t_5c237183dbec24 5-6,86-98
+crates/gateway/src/config/tests/rate_limits.rs
+  s_af4ccbd37c05c0::t_76287916b003b4 166-183
+crates/gateway/src/http/handlers.rs
+  s_56409892e094a0::t_6a236bc680f151 1084-1093,2053-2056,2068,2083,2091,2535-2538
+docs/adr/2026-10-15-gateway-rate-limits-and-quotas.md
+  s_56409892e094a0::t_74169491728541 37
+docs/configuration/configuration-reference.md
+  s_56409892e094a0::t_545bb99b0f8690 781
+docs/configuration/rate-limits.md
+  s_56409892e094a0::t_68adca92e68e97 38,73,115-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bf81df0ff9874cae20ca6591ad6793608c95a781",
+  "prompts": {},
+  "sessions": {
+    "s_56409892e094a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a7dde59-323d-48bd-9209-17a8bd106b80",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

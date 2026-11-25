@@ -1,0 +1,16 @@
+crates/gateway-store/src/libsql_store/mcp_access/resolution.rs
+  h_2f452a9c375069 144,461-494
+crates/gateway-store/src/postgres_store/mcp_access/resolution.rs
+  h_2f452a9c375069 118,384-417
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c1e6558171922409360742ade6b9d8c7ef375a9a",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

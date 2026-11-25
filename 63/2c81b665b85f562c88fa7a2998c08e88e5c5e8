@@ -1,0 +1,33 @@
+crates/gateway-core/src/mcp_client_oauth.rs
+  s_4743c3bdc4d116::t_cd2961925115db 473-476,480,498-502
+crates/gateway-service/src/mcp_client_oauth/authorized_clients.rs
+  s_4743c3bdc4d116::t_e574f83ebb8d86 33-34,44
+crates/gateway-store/src/any_store_gateway_oauth.rs
+  s_4743c3bdc4d116::t_2dd9bea8efba13 152,158
+crates/gateway-store/src/gateway_oauth_tests.rs
+  s_4743c3bdc4d116::t_863149a0f593f0 18-19,480-510,547-556,618-642,645,663,684,696,707,718,798-826
+crates/gateway-store/src/libsql_store/gateway_oauth.rs
+  s_4743c3bdc4d116::t_0d3e8d95e656c4 497,514-515,532-537,581-587,595-601
+crates/gateway-store/src/postgres_store/gateway_oauth.rs
+  s_4743c3bdc4d116::t_081087e7dabcb2 476,491-492,513,548-568
+crates/gateway/src/http/mcp_client_oauth/authorized_clients_tests.rs
+  s_4743c3bdc4d116::t_b1244ebbab26e5 340-345
+docs/adr/2026-10-15-mcp-client-oauth-authorization.md
+  s_4743c3bdc4d116::t_c8f468341c44ac 205,207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "632c81b665b85f562c88fa7a2998c08e88e5c5e8",
+  "prompts": {},
+  "sessions": {
+    "s_4743c3bdc4d116": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a047a7f-d4a7-4209-858b-e18a0d0d4346",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

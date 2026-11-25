@@ -1,0 +1,125 @@
+crates/gateway-core/src/audit.rs
+  s_24d514c38befdd::t_ff2caf5bac592e 15-38
+crates/gateway-core/src/domain.rs
+  s_af4ccbd37c05c0::t_cd441223e6d05a 457-463
+crates/gateway-core/src/lib.rs
+  s_af4ccbd37c05c0::t_81be805d4df559 39,58-66
+crates/gateway-core/src/rate_limits.rs
+  s_4743c3bdc4d116::t_ad34ca5a639dd5 167-183
+crates/gateway-core/src/traits.rs
+  s_af4ccbd37c05c0::t_e387d4639522a9 135-137,143,187,191,1029,1033,1079,1083,1091,1097,1430-1431,1435
+crates/gateway-service/src/admin_api_keys.rs
+  s_af4ccbd37c05c0::t_8b24c93bf9d85b 99-108,522,552-553,556-572,577-586
+crates/gateway-service/src/lib.rs
+  s_6ff66569c6a522::t_45e48fba97209b 44
+crates/gateway-service/src/mcp_gateway.rs
+  s_af4ccbd37c05c0::t_42be7c98ecc1cb 215
+crates/gateway-service/src/mcp_registry.rs
+  s_af4ccbd37c05c0::t_854d34e7073bb6 201-202,207,801
+crates/gateway-service/src/rate_limits.rs
+  s_af4ccbd37c05c0::t_6405a5291e0da5 23,989,992,996-997,1002-1004,1006
+crates/gateway-service/src/rate_limits/tests.rs
+  s_4743c3bdc4d116::t_a66582e90a1acf 79,85,87-94
+crates/gateway-service/src/review_agent.rs
+  s_af4ccbd37c05c0::t_501721c5d9d8de 89
+crates/gateway-store/src/any_store_mcp_access.rs
+  s_af4ccbd37c05c0::t_441c51f652aa91 48,71
+crates/gateway-store/src/any_store_mcp_registry.rs
+  s_af4ccbd37c05c0::t_6db1493f129c48 57
+crates/gateway-store/src/any_store_rate_limits.rs
+  s_4743c3bdc4d116::t_ebfa65ddc5ff78 51
+crates/gateway-store/src/any_store_review_agent.rs
+  s_4743c3bdc4d116::t_cca1de5334d693 111
+crates/gateway-store/src/change_report_tests.rs
+  s_6ff66569c6a522::t_76c6c0552b3e1b 1-227
+crates/gateway-store/src/lib.rs
+  s_af4ccbd37c05c0::t_abe55a409fdd47 54-56,1466-1467,1586-1587
+crates/gateway-store/src/libsql_store/api_keys.rs
+  s_af4ccbd37c05c0::t_c035aad1bbaabd 2-3,231-233,236,238,240-279,311
+crates/gateway-store/src/libsql_store/identity.rs
+  s_6ff66569c6a522::t_9f29881d299bf1 406-408,415,417,419-423,425-429,431,434-442,446-449,451-467,930-932,939,945,953,955-956,963,969,1037,1089-1091,1097,1099-1107,1109,1117,1119-1120,1127,1133,1392-1394,1402,1413,1886-1888,1896,1906,1909-1911,1918,2008-2010,2018,2028,2031-2033,2040,2043-2045,2052
+crates/gateway-store/src/libsql_store/mcp_access.rs
+  s_6ff66569c6a522::t_703bfe073d5c2a 8,195-213,270-271,273,276-288,290-309,338,341,343-348,374-377,384,799-807
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_6ff66569c6a522::t_47fec165b90aec 3,121-131,253,255-256,259,261-267,316-319
+crates/gateway-store/src/libsql_store/mod.rs
+  s_4743c3bdc4d116::t_edbd1eb82e984e 264,372,381,412,421,482,662,666,710,714,718
+crates/gateway-store/src/libsql_store/rate_limits.rs
+  s_6ff66569c6a522::t_2f10cd4f016fbc 10,170-173,175-204,209-230
+crates/gateway-store/src/libsql_store/review_agent.rs
+  s_6ff66569c6a522::t_b870653c5ac87a 3,339,341,343-352,363-389
+crates/gateway-store/src/postgres_store/api_keys.rs
+  s_6ff66569c6a522::t_148596d89fdc65 2-3,194,197-232,261
+crates/gateway-store/src/postgres_store/identity.rs
+  s_4743c3bdc4d116::t_d620600a6e2754 355-357,364,366-388,392,399,401-403,807-808,814,823,831,833,839,848,917,963,970,981,989,991,997,1006,1244-1245,1252,1262,1692-1693,1700,1709,1712-1713,1718,1798-1799,1806,1815,1818-1819,1824,1827-1828,1833
+crates/gateway-store/src/postgres_store/mcp_access.rs
+  s_6ff66569c6a522::t_d23dd3a37aef08 8,156-169,226-250,254,261,264-268,297,299-313,337-340,348,710-718
+crates/gateway-store/src/postgres_store/mcp_registry.rs
+  s_6ff66569c6a522::t_b733370d129b22 3,135-145,241,244-261,309-312
+crates/gateway-store/src/postgres_store/mod.rs
+  s_4743c3bdc4d116::t_2da633841fc225 239,347,356,387,396,457,637,641,685,689,693
+crates/gateway-store/src/postgres_store/rate_limits.rs
+  s_4743c3bdc4d116::t_3e9e312aceeb28 11,124-145,164,167-171
+crates/gateway-store/src/postgres_store/review_agent.rs
+  s_6ff66569c6a522::t_c057c59e44487e 3,298,300-322,352,355-359
+crates/gateway-store/src/rate_limit_tests.rs
+  s_4743c3bdc4d116::t_2b8d4b1b671bc0 238-255,285,289
+crates/gateway-store/src/shared.rs
+  s_af4ccbd37c05c0::t_fafccdb5cbce8e 212-238
+crates/gateway-store/src/store.rs
+  s_af4ccbd37c05c0::t_c384566f7c5360 126,178,184,200,206,245,355-356,380-382,572,1529,1538,1610,1661,1673,1736,1919,1926,1968,1975,1979
+crates/gateway/src/http/api_keys.rs
+  s_af4ccbd37c05c0::t_46a080eebb7529 8,269,275-287,296
+crates/gateway/src/http/identity.rs
+  s_af4ccbd37c05c0::t_6afffa7477b429 417-419,421-423,426-427,430-436,625-626,628-638,640,646-648,650-651,1193-1194,1196-1225,1233-1235,1237-1238,3206,3212-3213,3221,3243,3251,3256,3345,3351,3353,3358,3363,3365-3368,3372-3373,3375-3377,3389,3439,3447-3448,3450-3451,3459,3468,3476-3477,3485-3486,3496-3497,3503
+crates/gateway/src/http/mcp_registry.rs
+  s_af4ccbd37c05c0::t_678a0c152ce3ff 189,202-206,212,508-511,517-518,608,612-616,980-985
+crates/gateway/src/http/rate_limit_policies.rs
+  s_af4ccbd37c05c0::t_bb8f56de72436d 235-239,245-246
+crates/gateway/src/http/review_agent.rs
+  s_af4ccbd37c05c0::t_4a8dcc6cf42204 411,415,428-440,446-447
+crates/gateway/src/http/test_support.rs
+  s_af4ccbd37c05c0::t_4edf934a955f96 195-198
+docs/adr/2026-10-15-admin-audit-log.md
+  s_6ff66569c6a522::t_888a84696d61c8 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "16ea4a6cdc7892823a93126d6c14b71e4e8f75d1",
+  "prompts": {},
+  "sessions": {
+    "s_24d514c38befdd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad1917b4c7707bcfb",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_4743c3bdc4d116": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a047a7f-d4a7-4209-858b-e18a0d0d4346",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_6ff66569c6a522": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "479d58ab-d231-4ad8-a31b-aa2339af3a24",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

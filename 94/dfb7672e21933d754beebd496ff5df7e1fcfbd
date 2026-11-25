@@ -1,0 +1,21 @@
+crates/admin-ui/web/src/routes/api-keys/-use-api-keys-page.ts
+  s_7a5811202bdfd5::t_b8cb4e8fa461c6 310,323,334-340
+crates/admin-ui/web/src/test/routes/api-keys-route.test.tsx
+  s_7a5811202bdfd5::t_21eab9252e3ba2 391-418
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "94dfb7672e21933d754beebd496ff5df7e1fcfbd",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

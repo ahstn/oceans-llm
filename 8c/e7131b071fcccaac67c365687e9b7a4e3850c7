@@ -1,0 +1,83 @@
+.agents/skills/verify-oceans-admin/features/request-logs.md
+  s_b8e52ffc321bb1::t_b2f5b3e678995e 32
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_b8e52ffc321bb1::t_4f84c314bd072d 5111-5116
+crates/admin-ui/web/src/routes/observability/request-logs.tsx
+  s_b8e52ffc321bb1::t_8f7ca8329646f0 636,644-647
+crates/admin-ui/web/src/test/routes/request-logs-route.test.tsx
+  s_b8e52ffc321bb1::t_6e66b4685a5154 87,348
+crates/agent-session-analysis/src/lib.rs
+  s_b8e52ffc321bb1::t_03a48da05c5fab 3,20
+crates/agent-session-analysis/src/tool_calls.rs
+  s_b8e52ffc321bb1::t_2e0051db532734 1-375
+crates/agent-session-analysis/src/tool_calls/tests.rs
+  s_b8e52ffc321bb1::t_cc0ea1f349b788 1-242
+crates/gateway-core/src/domain.rs
+  s_b8e52ffc321bb1::t_f55ca78d8a7aa1 1307-1309
+crates/gateway-service/src/agent_analysis.rs
+  s_b8e52ffc321bb1::t_aaf221c9195290 8,84-85
+crates/gateway-service/src/agent_analysis/ingestion.rs
+  s_b8e52ffc321bb1::t_12d3ca1fb27498 550-552,602,667-673,692-693,702
+crates/gateway-service/src/agent_analysis/tests.rs
+  s_b8e52ffc321bb1::t_3af3c33f00f85e 11,838-841,877,887-960,962-998,1000-1004,1007,1009-1024
+crates/gateway-service/src/request_logging.rs
+  s_b8e52ffc321bb1::t_c0522f184134d7 45,94,104,114,125,135,312,443-446,497,523,540-541,549,654-656
+crates/gateway-service/src/request_logging/stream.rs
+  s_b8e52ffc321bb1::t_2c1efe01749886 1,12,40,174-177,179
+crates/gateway-service/src/request_logging/tests/persistence.rs
+  s_b8e52ffc321bb1::t_af9ef6c0dee2f2 165,210,212,798-799,836-842
+crates/gateway-service/src/request_logging/tests/stream.rs
+  s_b8e52ffc321bb1::t_20fbfe41d07653 433-455
+crates/gateway-service/src/request_logging/tool_cardinality.rs
+  s_b8e52ffc321bb1::t_7c1e3dae4b3d07 1,4-9,12-17,20-25,46,51
+crates/gateway-store/migrations/V71__request_log_invoked_mcp_tool_count.sql
+  s_b8e52ffc321bb1::t_ad74cca9484de9 1-2
+crates/gateway-store/migrations/postgres/V71__request_log_invoked_mcp_tool_count.sql
+  s_b8e52ffc321bb1::t_656c29dc421f00 1-2
+crates/gateway-store/src/lib.rs
+  s_b8e52ffc321bb1::t_23544e8365aa3a 4988,5023,6758
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_b8e52ffc321bb1::t_003837496670ab 1423,1442-1443,1462
+crates/gateway-store/src/libsql_store/request_logs.rs
+  s_b8e52ffc321bb1::t_a060cabbbb2e10 98,271-272,306-307,425-426,665,688-689
+crates/gateway-store/src/migration_registry.rs
+  s_b8e52ffc321bb1::t_805bbe475dd1ba 440-445,449-455,457-459
+crates/gateway-store/src/postgres_store/request_logs.rs
+  s_b8e52ffc321bb1::t_b5927d83ade082 102,268-269,312,409-410,606,630-631
+crates/gateway-store/src/shared.rs
+  s_b8e52ffc321bb1::t_fdcd9ac26e2aa3 51
+crates/gateway-store/src/tests/request_log_list.rs
+  s_b8e52ffc321bb1::t_9bff8ca2bb9143 120,247
+crates/gateway/openapi/admin-api.json
+  s_b8e52ffc321bb1::t_27019f37aad354 19465-19472
+crates/gateway/src/http/admin_contract.rs
+  s_b8e52ffc321bb1::t_7fb915fd41a7dc 1435-1437
+crates/gateway/src/http/identity_views.rs
+  s_b8e52ffc321bb1::t_925341a131687b 1-3,97,164-171,175-179,184-234,239-243,245-249,275-565
+crates/gateway/src/http/observability/request_logs.rs
+  s_b8e52ffc321bb1::t_76df714634270a 301
+crates/gateway/src/local_demo_seed/usage.rs
+  s_b8e52ffc321bb1::t_3fd6f302704080 1193,1205,1217,1227,1238,1248,1257
+docs/adr/2026-10-15-generic-upstream-mcp-oauth.md
+  s_b8e52ffc321bb1::t_8d0fbd4eb81110 85
+docs/adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md
+  s_b8e52ffc321bb1::t_2717c8c600f5e1 114
+docs/contributing/reference/agent-session-analysis.md
+  s_b8e52ffc321bb1::t_affa998cf8f7f4 48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8ce7131b071fcccaac67c365687e9b7a4e3850c7",
+  "prompts": {},
+  "sessions": {
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

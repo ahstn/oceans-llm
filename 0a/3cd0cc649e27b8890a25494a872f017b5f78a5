@@ -1,0 +1,51 @@
+CHANGELOG.md
+  s_c12b95ba4434ae::t_d26ea194d3ebba 9-21
+Cargo.lock
+  s_c12b95ba4434ae::t_c3aaf472a20012 7,58,1847,1904,1914,1924,1944,1965,1980,2014,2046,2065,3135
+crates/admin-ui/Cargo.toml
+  s_c12b95ba4434ae::t_8e2711e341c3e5 5
+crates/agent-session-analysis/Cargo.toml
+  s_c12b95ba4434ae::t_22a53938dd5368 5
+crates/gateway-client-config/Cargo.toml
+  s_c12b95ba4434ae::t_bd3d4cdb9aaa1c 5
+crates/gateway-client-ip/Cargo.toml
+  s_c12b95ba4434ae::t_cfa31be9a144fc 5
+crates/gateway-core/Cargo.toml
+  s_c12b95ba4434ae::t_726e1959d4f0ee 5
+crates/gateway-guardrails/Cargo.toml
+  s_c12b95ba4434ae::t_61215fbe7f3c9b 5
+crates/gateway-mcp/Cargo.toml
+  s_c12b95ba4434ae::t_1fecab7c6e907a 5
+crates/gateway-providers/Cargo.toml
+  s_c12b95ba4434ae::t_1dc3f1567a1fbb 5
+crates/gateway-service/Cargo.toml
+  s_c12b95ba4434ae::t_44b06333f60e1c 5
+crates/gateway-service/data/openrouter_catalog_fallback.json
+  s_c12b95ba4434ae::t_b5753114745856 5-6,11542-11544,13632-13634,19323-19325,19334,25912-25914,27834-27836,28138-28139,28149,28613,28615,29287-29288
+crates/gateway-service/data/pricing_catalog_fallback.json
+  s_c12b95ba4434ae::t_b09fa38265eca4 4-6,34076-34078,37799-37801,41512-41514,42950-42952,43118-43120,43761,43763
+crates/gateway-skills/Cargo.toml
+  s_c12b95ba4434ae::t_1f0d7b449a3f6d 5
+crates/gateway-store/Cargo.toml
+  s_c12b95ba4434ae::t_80609a35aaf366 5
+crates/gateway/Cargo.toml
+  s_c12b95ba4434ae::t_af0c4732dbddd9 5
+crates/oceans-cli/Cargo.toml
+  s_c12b95ba4434ae::t_2c8b1972b33c1a 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "0a3cd0cc649e27b8890a25494a872f017b5f78a5",
+  "prompts": {},
+  "sessions": {
+    "s_c12b95ba4434ae": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a204cb-2911-700c-9eba-2eed33ad7aad",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

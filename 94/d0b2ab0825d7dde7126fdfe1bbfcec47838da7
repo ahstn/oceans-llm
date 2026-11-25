@@ -1,0 +1,47 @@
+crates/gateway-core/src/domain.rs
+  s_7a5811202bdfd5::t_7d42daf227fd43 1702-1715,1848-1851
+crates/gateway-service/src/mcp_registry.rs
+  s_7a5811202bdfd5::t_18d639a37bc4aa 90-91,297
+crates/gateway-store/src/lib.rs
+  s_7a5811202bdfd5::t_d0f929e40bbf68 1580,2022,2131-2179,2186-2192,2381-2457,2791,2919
+crates/gateway-store/src/libsql_store/identity.rs
+  s_7a5811202bdfd5::t_02d7c576c35ef3 821-832
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_7a5811202bdfd5::t_2f36ba0fd226c5 471-476,571-578
+crates/gateway-store/src/libsql_store/mod.rs
+  s_7a5811202bdfd5::t_4cad12b62c9b41 426-429
+crates/gateway-store/src/libsql_store/transaction_tests.rs
+  s_7a5811202bdfd5::t_2abc398b6daa91 92
+crates/gateway-store/src/postgres_store/identity.rs
+  s_7a5811202bdfd5::t_55ef46cdcb02bb 707-717
+crates/gateway-store/src/postgres_store/mcp_registry.rs
+  s_7a5811202bdfd5::t_d664622726acbe 442-447,535-541
+crates/gateway-store/src/postgres_store/mod.rs
+  s_7a5811202bdfd5::t_3a1071e454560d 328-331
+crates/gateway-store/src/shared.rs
+  s_7a5811202bdfd5::t_9c1057b2375a0c 44-45
+crates/gateway-store/src/store.rs
+  s_7a5811202bdfd5::t_ba7c439cf6702f 167-170,1522-1525
+crates/gateway/src/http/mcp_oauth.rs
+  s_7a5811202bdfd5::t_af7382c67b267f 365,392-409,447-458
+crates/gateway/src/http/mcp_registry.rs
+  s_7a5811202bdfd5::t_216874e5e6fa6b 357-362,1220-1239
+docs/adr/2026-10-17-delegated-mcp-server-ownership.md
+  s_7a5811202bdfd5::t_db7433d631e76e 84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "94d0b2ab0825d7dde7126fdfe1bbfcec47838da7",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

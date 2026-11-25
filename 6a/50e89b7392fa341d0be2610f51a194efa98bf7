@@ -1,0 +1,64 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  h_2f452a9c375069 50
+CHANGELOG.md
+  h_2f452a9c375069 9-22
+Cargo.lock
+  h_2f452a9c375069 7,58,1746,1803,1813,1823,1843,1864,1879,1911,1943,1962,3031
+crates/admin-ui/Cargo.toml
+  h_2f452a9c375069 5
+crates/agent-session-analysis/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-client-config/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-client-ip/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-core/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-guardrails/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-mcp/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-providers/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-service/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-service/data/litellm_catalog_fallback.json
+  h_2f452a9c375069 4-6,36579-36612
+crates/gateway-service/data/openrouter_catalog_fallback.json
+  h_2f452a9c375069 5-6,4667-4669,4678,4858-4860,4869,4897-4899,4908,4936-4937,7942-7944,8431-8432,8471-8472,11243-11245,11254,13410-13411,13450-13452,17071-17074,21749-21751,21760,21789-21791,22568-22607,25198-25236,27060-27062,27443-27445,27481-27482,27492,27917-27919,27928
+crates/gateway-service/data/pricing_catalog_fallback.json
+  h_2f452a9c375069 4-6,23350-23396,27810-27811,27821,28149-28151,28160,28341-28343,28352,28390-28392,28401,30372,30563-30605,31051-31052,31062,31753-31755,31764,33117-33118,33832,33842,36600-36602,36611,36982,37896,38325-38327,38336,38369-38371,38976,39188-39237,40243-40285,41626-41628,41797-41799,41976,42059-42061,42559
+crates/gateway-skills/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-store/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-store/src/migration_registry.rs
+  h_2f452a9c375069 31,33
+crates/gateway/Cargo.toml
+  h_2f452a9c375069 5
+crates/oceans-cli/Cargo.toml
+  h_2f452a9c375069 5
+docs/contributing/reference/release-process.md
+  h_2f452a9c375069 75-76,152-154
+docs/src/content/docs/operations/admin-runbooks.mdx
+  h_2f452a9c375069 196-197
+mise.lock
+  h_2f452a9c375069 169,173-175,179-181,185-187,191-193,197-199,203-205,209-211,295-297,301-303,381,383-384,387,389-390,458-459,462-463,613,615-616,619,621-622,761-763,767-769,805-816,851-852,854-855,857-858,860-861
+mise.toml
+  h_2f452a9c375069 48,395,398
+scripts/release.sh
+  h_2f452a9c375069 33,41-47,49
+scripts/release.test.sh
+  h_2f452a9c375069 1-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6a50e89b7392fa341d0be2610f51a194efa98bf7",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

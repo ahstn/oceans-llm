@@ -1,0 +1,23 @@
+crates/admin-ui/web/src/routes/observability/-usage-costs/controls.tsx
+  s_d9c6dc2d946db9::t_dcfeb8e0d38470 4,82,96-98,102-103,125-126
+crates/admin-ui/web/src/styles/globals.css
+  s_d9c6dc2d946db9::t_b9fad6beb6595e 266-273
+crates/admin-ui/web/src/test/routes/usage-costs-route.test.tsx
+  s_d9c6dc2d946db9::t_c2eb004725b19e 238-249
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f7b3b941728796652ca79ceb83cc14034f707c5c",
+  "prompts": {},
+  "sessions": {
+    "s_d9c6dc2d946db9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6d7b04b1-8d92-4f8a-8229-415093963209",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

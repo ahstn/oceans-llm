@@ -1,0 +1,39 @@
+crates/gateway-store/src/lib.rs
+  s_7a5811202bdfd5::t_f5c642a990b5a1 2938-2962
+crates/gateway-store/src/shared.rs
+  s_7a5811202bdfd5::t_10ae677acf61c6 15-17,63-78,87-88,134
+crates/gateway/src/http/mcp_registry.rs
+  s_eaf7116ccea134::t_0dac7108c6088e 228,329-333,1904-1918
+crates/gateway/src/http/mcp_registry/ownership_tests.rs
+  s_7a5811202bdfd5::t_411825bdf335e6 2348-2419
+crates/gateway/src/http/mcp_registry/tool_policy.rs
+  s_eaf7116ccea134::t_c69e8eb6c15dc6 10-11,13,310-336
+docs/adr/2026-10-17-delegated-mcp-server-ownership.md
+  s_7a5811202bdfd5::t_bf82d911bf5a8e 114-121,124
+docs/mcp/mcp-tool-access.md
+  s_7a5811202bdfd5::t_402da5d9e1e447 116-121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3ec5b363a9d515d4dc53466fbf865ff92c73718b",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

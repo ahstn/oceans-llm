@@ -1,0 +1,122 @@
+.github/dependabot.yml
+  h_2f452a9c375069 91-93
+crates/admin-ui/web/src/components/icons/brand-icon.test.tsx
+  h_2f452a9c375069 36-43
+crates/admin-ui/web/src/components/icons/brand-icon.tsx
+  h_2f452a9c375069 22,33-35,45
+crates/admin-ui/web/src/generated/admin-api.ts
+  h_2f452a9c375069 1630,3497,3519
+crates/admin-ui/web/src/routes/models.tsx
+  h_2f452a9c375069 13,1342
+crates/admin-ui/web/src/routes/observability/request-logs.tsx
+  h_2f452a9c375069 946-947
+crates/admin-ui/web/src/test/routes/models-route.test.tsx
+  h_2f452a9c375069 135,162,257,511-533
+crates/admin-ui/web/src/test/routes/request-logs-route.test.tsx
+  h_2f452a9c375069 262-294
+crates/gateway-core/src/domain.rs
+  h_2f452a9c375069 2449-2450,2469,2505,2525,2540,2555,2602,2647,2710,2712-2730,2750-2761
+crates/gateway-core/src/lib.rs
+  h_2f452a9c375069 78-106,118-121,125-126,132-134
+crates/gateway-core/src/protocol/core.rs
+  h_2f452a9c375069 12,35-37,100,203,240,264-385,487,644-723
+crates/gateway-core/src/protocol/openai.rs
+  h_2f452a9c375069 72-164
+crates/gateway-core/src/protocol/translate.rs
+  h_2f452a9c375069 141-230,239-242,245-247,375-404
+crates/gateway-core/src/traits.rs
+  h_2f452a9c375069 53,1272-1283
+crates/gateway-providers/src/anthropic_compat.rs
+  h_2f452a9c375069 144
+crates/gateway-providers/src/bedrock/mod.rs
+  h_2f452a9c375069 627
+crates/gateway-providers/src/decisions.rs
+  h_2f452a9c375069 1-298
+crates/gateway-providers/src/http.rs
+  h_2f452a9c375069 9,134-155
+crates/gateway-providers/src/lib.rs
+  h_2f452a9c375069 5,12,30
+crates/gateway-providers/src/openai_compat.rs
+  h_2f452a9c375069 5-11,15-17,22,80-82,98,447,451,634,641-643,819-840,888,915-918,944,1182,1253,1412,1856,1923,2003,2071,2143,2214,2285,2351,2422,2489,2556,2623
+crates/gateway-providers/src/openai_compat/decisions.rs
+  h_2f452a9c375069 1-343
+crates/gateway-providers/src/typesafe.rs
+  h_2f452a9c375069 1-333
+crates/gateway-service/data/pricing_catalog_fallback.json
+  h_2f452a9c375069 31371-31407
+crates/gateway-service/src/admin_models.rs
+  h_2f452a9c375069 73,369,432-437,1011-1062,1265,1810,1834
+crates/gateway-service/src/effective_route_metadata.rs
+  h_2f452a9c375069 203-213,220,237,243-253
+crates/gateway-service/src/icon_identity.rs
+  h_2f452a9c375069 15,27,39,52,68,83,98,182-184,218-220,230-232,253-254,342-348,369-382
+crates/gateway-service/src/pricing_catalog/target.rs
+  h_2f452a9c375069 76-80
+crates/gateway-service/src/request_logging.rs
+  h_2f452a9c375069 4-8,249-269
+crates/gateway-service/src/route_planner.rs
+  h_2f452a9c375069 6-7,18-21
+crates/gateway-service/src/service.rs
+  h_2f452a9c375069 8,382-401
+crates/gateway/openapi/admin-api.json
+  h_2f452a9c375069 6105-6110,13775,13865
+crates/gateway/src/config/mod.rs
+  h_2f452a9c375069 79
+crates/gateway/src/config/providers.rs
+  h_2f452a9c375069 23-24,36,79-100,348,369-377,471-527,923-934
+crates/gateway/src/config/routes.rs
+  h_2f452a9c375069 102,195-196,214,230,359,363-415,426,447
+crates/gateway/src/config/runtime.rs
+  h_2f452a9c375069 105-106,112-143
+crates/gateway/src/config/seeding.rs
+  h_2f452a9c375069 93-121
+crates/gateway/src/config/tests/openrouter.rs
+  h_2f452a9c375069 239-420
+crates/gateway/src/config/tests/providers.rs
+  h_2f452a9c375069 698-901
+crates/gateway/src/http/admin_contract.rs
+  h_2f452a9c375069 274,285,301,315,373
+crates/gateway/src/http/handlers.rs
+  h_2f452a9c375069 25,30-31,955-1140,1206-1216,1379
+crates/gateway/src/http/mod.rs
+  h_2f452a9c375069 61
+crates/gateway/src/http/models.rs
+  h_2f452a9c375069 165
+crates/gateway/src/main.rs
+  h_2f452a9c375069 16,469-474
+docs/.vitepress/config.mts
+  h_2f452a9c375069 50
+docs/adr/2026-09-21-system-one-decisions-api.md
+  h_2f452a9c375069 1-64
+docs/configuration/client-harness-configuration.md
+  h_2f452a9c375069 37-39
+docs/configuration/configuration-reference.md
+  h_2f452a9c375069 762-763,769,802,811-835,1101-1103,1165-1187,1248,1256
+docs/configuration/model-routing-and-api-behavior.md
+  h_2f452a9c375069 17,209,218-219,286-293
+docs/configuration/pricing-catalog-and-accounting.md
+  h_2f452a9c375069 80,108-113
+docs/operations/gateway-guardrails.md
+  h_2f452a9c375069 20-21
+docs/operations/observability-and-request-logs.md
+  h_2f452a9c375069 98,104-105
+docs/providers/openrouter.md
+  h_2f452a9c375069 5,9,63-99
+docs/providers/typesafe.md
+  h_2f452a9c375069 1-104
+docs/reference/provider-api-compatibility.md
+  h_2f452a9c375069 18,21,30,40-47,105-119
+gateway.yaml
+  h_2f452a9c375069 406-427
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0cb61421642ecc066c7ed99f0d7b1e5d4e190e67",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

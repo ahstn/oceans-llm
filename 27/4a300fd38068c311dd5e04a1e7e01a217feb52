@@ -1,0 +1,27 @@
+.agents/skills/verify-oceans-admin/SKILL.md
+  s_a1d1a900c88650::t_9d18442ecab0d2 170-171,176
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin
+  s_a1d1a900c88650::t_840a07e49b4cf7 315-320,322,335
+crates/admin-ui/web/src/components/layout/page-header.tsx
+  s_a1d1a900c88650::t_2be36b12d6dc08 36-37,54
+crates/admin-ui/web/src/routes/api-keys.tsx
+  s_a1d1a900c88650::t_1163df3453ff6e 14,17
+crates/admin-ui/web/src/test/api-keys-search.test.ts
+  s_a1d1a900c88650::t_945272a1af319f 1-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "274a300fd38068c311dd5e04a1e7e01a217feb52",
+  "prompts": {},
+  "sessions": {
+    "s_a1d1a900c88650": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8dcd7694-4d09-4ee2-9f4c-af8095b9a53e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

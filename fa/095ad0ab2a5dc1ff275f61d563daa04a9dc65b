@@ -1,0 +1,73 @@
+crates/admin-ui/web/e2e/gateway-contract.e2e.ts
+  s_9cb90ef0550904::t_3101ac15fbc57d 93-116,118-125,127
+crates/gateway-client-config/src/api_style.rs
+  s_9cb90ef0550904::t_a4eb974e2c29bf 3,6-20,27-30,41-43,45,47,49,53,55-57,61,63-65,74,77
+crates/gateway-client-config/src/hints.rs
+  s_9cb90ef0550904::t_0caa9c49424e0c 1-95
+crates/gateway-client-config/src/lib.rs
+  s_9cb90ef0550904::t_3dab5660707c29 4,10-13,21
+crates/gateway-client-config/src/templates/claude_code.rs
+  s_9cb90ef0550904::t_a183aee8dc2103 197
+crates/gateway-client-config/src/templates/codex.rs
+  s_9cb90ef0550904::t_ef28894629d9b0 14
+crates/gateway-client-config/src/templates/mod.rs
+  s_9cb90ef0550904::t_1a342ab6beb33d 1-2,4-5
+crates/gateway-client-config/src/templates/opencode.rs
+  s_9cb90ef0550904::t_92399a0e0c2413 6,104,106,109,115-116,164,205,213-215,221,229-231
+crates/gateway-client-config/src/templates/pi.rs
+  s_9cb90ef0550904::t_5fad382fe6c317 7,109,111,114,129-131,136,140,142-143,145,192
+crates/gateway-client-config/src/tests.rs
+  s_e88e6cbbab1de0::t_06cffa068ac73f 5,7,490,1214-1272
+crates/gateway-client-config/src/types.rs
+  s_9cb90ef0550904::t_f4989511780841 15-25,110-113,199
+crates/gateway-core/src/lib.rs
+  s_e88e6cbbab1de0::t_0c79a517d2e866 126-127
+crates/gateway-service/src/admin_models.rs
+  s_e88e6cbbab1de0::t_f57f2fdc29c488 8-9,20,400-406,468,472-494,563,584
+crates/gateway-service/src/effective_route_metadata.rs
+  s_e88e6cbbab1de0::t_c600a52637d4fb 1,3-5,259-286
+crates/gateway-service/src/model_metadata.rs
+  s_e88e6cbbab1de0::t_fdee8d2e6ef876 3,5-9,17,62-65,76-125,133,152-155,235-236
+crates/gateway-service/src/model_metadata/catalog.rs
+  s_9cb90ef0550904::t_a1783d53b9f63b 64-65,102-103
+crates/gateway-service/src/model_metadata/listing.rs
+  s_e88e6cbbab1de0::t_2395188572bf1b 1-444
+crates/gateway-service/src/model_metadata/tests.rs
+  s_9cb90ef0550904::t_290a170cd650d0 288-481
+crates/gateway-service/src/service.rs
+  s_9cb90ef0550904::t_5a1c66ce3b7b11 256-265
+crates/gateway/src/http/handlers.rs
+  s_e88e6cbbab1de0::t_16fb7d88878fd9 25,31,114,119
+crates/gateway/src/http/handlers/model_metadata_tests.rs
+  s_9cb90ef0550904::t_32e06a6b1b588c 64-125
+docs/adr/2026-09-08-model-metadata-discovery.md
+  s_9cb90ef0550904::t_056ac30fa1b03e 36-39
+docs/adr/2026-09-24-models-list-client-hints.md
+  s_9cb90ef0550904::t_fe8613ffe3753e 1-29
+docs/configuration/model-routing-and-api-behavior.md
+  s_9cb90ef0550904::t_e8ad2293573473 13,262,270-302
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fa095ad0ab2a5dc1ff275f61d563daa04a9dc65b",
+  "prompts": {},
+  "sessions": {
+    "s_9cb90ef0550904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "accf8405-3895-4f10-b03f-d1ae693d2897",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e88e6cbbab1de0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "44088f38-237f-4fc3-bd0d-c2f82321db92",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

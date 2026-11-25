@@ -1,0 +1,28 @@
+.agents/skills/verify-oceans-admin/features/agent-harnesses.md
+  h_2f452a9c375069 37
+.agents/skills/verify-oceans-admin/features/leaderboard.md
+  h_2f452a9c375069 34
+.agents/skills/verify-oceans-admin/features/routing.json
+  h_2f452a9c375069 232,247
+crates/admin-ui/web/src/routes/observability/-bucket-axis.ts
+  h_2f452a9c375069 1-21
+crates/admin-ui/web/src/routes/observability/agent-harnesses.tsx
+  h_2f452a9c375069 29,36-37,95,178,182,189
+crates/admin-ui/web/src/routes/observability/leaderboard.tsx
+  h_2f452a9c375069 22,29-30,81,145-150,307,312,335,339,346
+crates/admin-ui/web/src/test/routes/agent-harnesses-route.test.tsx
+  h_2f452a9c375069 2,20-45,228-258
+crates/admin-ui/web/src/test/routes/leaderboard-route.test.tsx
+  h_2f452a9c375069 2,20-45,221-251
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "927e4a72c97f05608e17062f26c191a3e1199e22",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/concept-pull-requests.tsx
+  s_0a4447f1aa57dd::t_10afab7088d85e 9,126-140,148,203-218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5679f7d4e5aedf3c7c88c59c17ce8a70726a9caf",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+crates/gateway-providers/src/bedrock/request/inference.rs
+  h_2f452a9c375069 495-502
+crates/gateway-providers/src/bedrock/tests/request_tools.rs
+  h_2f452a9c375069 750-758
+crates/gateway-providers/src/openai_compat.rs
+  h_2f452a9c375069 588-589,595-606,608-610,617-620,628,1248-1257
+crates/gateway-providers/src/streaming.rs
+  h_2f452a9c375069 80-81,95-96,121-122,132-133,146-147,181-186,192,210-211,285-296,320-332,860-901
+crates/gateway-service/src/service.rs
+  h_2f452a9c375069 1208-1209,3281,3296-3298
+crates/gateway-service/src/service/tests/cache_ttl_and_estimates.rs
+  h_2f452a9c375069 207-228
+crates/gateway-service/src/usage.rs
+  h_2f452a9c375069 344-345,347
+docs/src/content/docs/reference/request-lifecycle.mdx
+  h_2f452a9c375069 49-50,101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "d08e5a15775e956d6e813970ea19167ef434c60a",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,77 @@
+.agents/skills/verify-oceans-admin/features/models.md
+  s_e88e6cbbab1de0::t_2de94343850888 27
+.agents/skills/verify-oceans-admin/scripts/drive-models.mjs
+  s_e88e6cbbab1de0::t_0e374fff418db6 72,115
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_e88e6cbbab1de0::t_e172fe3f099218 1572,1577
+crates/admin-ui/web/src/routes/-model-benchmarks.tsx
+  s_e88e6cbbab1de0::t_7f669458b54adf 6,11,15,23-48,72,80,87,93-96
+crates/admin-ui/web/src/routes/models.tsx
+  s_e88e6cbbab1de0::t_6d50ca0b8febce 60-64,437-440,621-623
+crates/admin-ui/web/src/server/admin-preview-data.server.ts
+  s_e88e6cbbab1de0::t_17bd7792fcd2db 42-45
+crates/admin-ui/web/src/test/routes/models-route.test.tsx
+  s_e88e6cbbab1de0::t_98741e1a7a1275 141-144,564-567,574-592
+crates/gateway-core/src/lib.rs
+  s_e88e6cbbab1de0::t_0a72608453b62f 50-56,70-75,139-145
+crates/gateway-core/src/traits.rs
+  s_e88e6cbbab1de0::t_225fde749bbda9 24-35
+crates/gateway-service/src/admin_models.rs
+  s_e88e6cbbab1de0::t_34942c9b6be984 12-14,22-24,84,89,96,100-109,218-240,407-411,663-664
+crates/gateway-service/src/benchmark_catalog.rs
+  s_e88e6cbbab1de0::t_35863e4c3429ff 1-5,7-10,12-13,15,18-40,43-51,54-74,77-78,80-82,86-93,95-97,99,101,103-107,109-114,117,119-129,131-144,146-182,184-227,229,232-240,242,244-268,272-286,288,291-312,314-334,337-353,356-386,390-403,406-411,413-442,446-447,451,453-456,460-462
+crates/gateway-service/src/benchmark_catalog/tests.rs
+  s_e88e6cbbab1de0::t_e63099b688fba4 1,3-5,8-17,20-25,27,29-32,34-43,45,47-101,103,105-107,110-117,119-120,123-127,129-137,139-147,149-152,154-157,159-161,164-174,177-184,187-204,206-211,215-236,239-274
+crates/gateway-service/src/lib.rs
+  s_e88e6cbbab1de0::t_a078d4bd9b3871 52-54
+crates/gateway-service/src/service.rs
+  s_e88e6cbbab1de0::t_af1e9daf24094d 7-9,23-26
+crates/gateway-store/src/libsql_store/mod.rs
+  s_e88e6cbbab1de0::t_b8ad296d8e494f 34-40,53-77
+crates/gateway-store/src/postgres_store/mod.rs
+  s_e88e6cbbab1de0::t_fb7dba1b36348d 32-38,51-75
+crates/gateway-store/src/store.rs
+  s_e88e6cbbab1de0::t_41c492a023908a 6-7
+crates/gateway/openapi/admin-api.json
+  s_e88e6cbbab1de0::t_274b7990d1a68e 5830-5831,5834,5837,5852
+crates/gateway/src/bin/sync_model_benchmarks.rs
+  s_e88e6cbbab1de0::t_cc6c53a4cbf626 1,3-8,10,12-31,33-36,38-46,48-56
+crates/gateway/src/config/mod.rs
+  s_e88e6cbbab1de0::t_ecd7d374612ad4 1-5,191-201
+crates/gateway/src/config/models.rs
+  s_e88e6cbbab1de0::t_74cd5d31116888 69-70,72,88-98,105-111
+crates/gateway/src/config/tests/models.rs
+  s_e88e6cbbab1de0::t_d28b8514937398 396-447
+crates/gateway/src/http/admin_contract.rs
+  s_e88e6cbbab1de0::t_c7b319c4d571aa 381-382
+crates/gateway/src/http/models.rs
+  s_e88e6cbbab1de0::t_31a6138c8d3896 17,114-115,169-170,172,175-176
+crates/gateway/src/http/state.rs
+  s_e88e6cbbab1de0::t_e8ae95e0cfc588 1,34
+crates/gateway/src/http/test_support.rs
+  s_e88e6cbbab1de0::t_6f87c1c2f44a58 39
+crates/gateway/src/main.rs
+  s_e88e6cbbab1de0::t_9a956c34d15077 19,307,637-647
+docs/adr/2026-09-21-artificial-analysis-benchmark-catalogue.md
+  s_e88e6cbbab1de0::t_4e25a51de7a82c 4,9,11,13,15,17,19,21,23,25,27,29,31,33,35,37,39,45-48,52-54
+docs/configuration/configuration-reference.md
+  s_e88e6cbbab1de0::t_811cf60cba2b8d 85,87,89,92,94-95,98,100
+mise.toml
+  s_e88e6cbbab1de0::t_25e622cd8741d7 245-248
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7176dbbc6511830982e96e0fccc87e818e084b4b",
+  "prompts": {},
+  "sessions": {
+    "s_e88e6cbbab1de0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "44088f38-237f-4fc3-bd0d-c2f82321db92",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

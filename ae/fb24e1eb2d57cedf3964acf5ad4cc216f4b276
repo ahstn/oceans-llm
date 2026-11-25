@@ -1,0 +1,22 @@
+crates/gateway/src/config/tests/environment.rs
+  s_e412b318dfe40b::t_5d34583737a976 4-5,88,103-107
+  s_e412b318dfe40b::t_0c7c8e5dc21a50 3,6-7,30-87,89-102,108-114
+crates/gateway/src/config/references.rs
+  s_e412b318dfe40b::t_5d34583737a976 10-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aefb24e1eb2d57cedf3964acf5ad4cc216f4b276",
+  "prompts": {},
+  "sessions": {
+    "s_e412b318dfe40b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a108f2-0ead-7660-83d8-98c25f886c99",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

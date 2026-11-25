@@ -1,0 +1,21 @@
+crates/gateway/src/http/mcp_registry.rs
+  s_7a5811202bdfd5::t_396604d9091b6c 1423-1425,1437-1439
+crates/gateway/src/http/mcp_registry/ownership_tests.rs
+  s_7a5811202bdfd5::t_64f16fe21a8927 1664-1673
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "88a96884720ecfae0026f1af0f698d6314805077",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

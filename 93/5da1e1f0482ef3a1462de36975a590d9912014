@@ -1,0 +1,19 @@
+crates/admin-ui/web/src/routes/identity/-team-form.ts
+  s_d114fbd07d53eb::t_e8d10c60c78ab6 2,103-105,112,114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "935da1e1f0482ef3a1462de36975a590d9912014",
+  "prompts": {},
+  "sessions": {
+    "s_d114fbd07d53eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7bfd404e-9647-4e85-ba04-b57a37f6eef0",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,36 @@
+.agents/skills/verify-oceans-admin/features/harness-integration.md
+  h_2f452a9c375069 7,29,43-44
+docs/src/content/docs/harnesses/omp.mdx
+  h_2f452a9c375069 133,135-152
+docs/src/content/docs/harnesses/verification.mdx
+  h_2f452a9c375069 79,86-87,100-139,166
+tests/harness-integration/README.md
+  h_2f452a9c375069 9,15-17,30,35-38,40,42,135,145,163,178
+tests/harness-integration/src/adapters/claude-code.ts
+  h_2f452a9c375069 69-73,145
+tests/harness-integration/src/adapters/omp.ts
+  h_2f452a9c375069 68-76,84-95,137
+tests/harness-integration/src/adapters/opencode-plugin.ts
+  h_2f452a9c375069 83,85,96-108
+tests/harness-integration/src/adapters/pi.ts
+  h_2f452a9c375069 80-83,151
+tests/harness-integration/src/matrix.test.ts
+  h_2f452a9c375069 13,18,22-30,53-54,56-57,59,61,110,112-115,158,160-166
+tests/harness-integration/src/matrix.ts
+  h_2f452a9c375069 33-39,47-52,55-57,72-80,131,146-152,170-176,190-203
+tests/harness-integration/src/run-checks.ts
+  h_2f452a9c375069 4,70-151,154,156-161,168
+tests/harness-integration/src/types.ts
+  h_2f452a9c375069 55-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "d44651902611aaf514ab7ea4f1018da984f29c92",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

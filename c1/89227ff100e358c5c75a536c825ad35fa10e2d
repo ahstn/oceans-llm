@@ -1,0 +1,55 @@
+crates/gateway-core/src/traits.rs
+  s_7a5811202bdfd5::t_83064b83ad897b 1374-1393,1467-1479
+crates/gateway-service/src/mcp_access.rs
+  s_7a5811202bdfd5::t_f17f2e798f30da 52-67
+crates/gateway-service/src/mcp_tool_policy.rs
+  s_7a5811202bdfd5::t_ed2af9dc156318 172-192
+crates/gateway-store/src/any_store_mcp_access.rs
+  s_7a5811202bdfd5::t_1cc0a7930f6f0f 215-233,392-422
+crates/gateway-store/src/lib.rs
+  s_7a5811202bdfd5::t_ed6d828a5f7adc 2251-2254,2272-2277,2941-3000,3038-3072,3074-3079
+crates/gateway-store/src/libsql_store/mcp_access.rs
+  s_7a5811202bdfd5::t_2d8dd109e3021d 269-309,686-716,976-1000
+crates/gateway-store/src/postgres_store/mcp_access.rs
+  s_7a5811202bdfd5::t_29ba4376d47e6c 251-282,635-653,880-906
+crates/gateway-store/src/shared.rs
+  s_7a5811202bdfd5::t_2225055634cf67 21-22,65-67,73,148
+crates/gateway/src/http/mcp_gateway.rs
+  s_7a5811202bdfd5::t_b3aff4a712f057 187-191,375-379
+crates/gateway/src/http/mcp_gateway/methods.rs
+  s_e383333b16cafa::t_d3ebbe2d4b272c 195-196
+crates/gateway/src/http/mcp_gateway/stream_reach.rs
+  s_7a5811202bdfd5::t_96d56aba4d7339 21-24,236-241,268-277
+crates/gateway/src/http/mcp_gateway/tests.rs
+  s_7a5811202bdfd5::t_4dcca0b52829d5 546-581
+crates/gateway/src/http/mcp_registry/ownership_tests.rs
+  s_7a5811202bdfd5::t_2a537b4c19cc15 2420-2504
+crates/gateway/src/http/mcp_registry/tool_policy.rs
+  s_7a5811202bdfd5::t_212b8a3f0ac000 311-350,352,354-355
+docs/adr/2026-10-17-delegated-mcp-server-ownership.md
+  s_7a5811202bdfd5::t_1c904b71762ec9 110,118-119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c189227ff100e358c5c75a536c825ad35fa10e2d",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e383333b16cafa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8774bcf7-be6d-4ada-b0a8-edf8570bb728",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+crates/gateway-store/src/tests/mcp_tag_rules.rs
+  s_b8e52ffc321bb1::t_09a335c8b01f3d 163-225,640,715
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e876e8d6b7aafd51b87551a6a94bb939f462f443",
+  "prompts": {},
+  "sessions": {
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

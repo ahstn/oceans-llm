@@ -1,0 +1,287 @@
+crates/gateway-core/src/provider.rs
+  s_c8a419ecddf609::t_72378626f450b3 88,90,92,94-96,99-102,104,115,117,127,129,132-133,138-139,141,144,146,148-151,154-160,162-223,225-228,231-237,239,241,252-253,259,292,312-313,341,353,365,368,375,386,397,408,454,468,480,495,497,499-500,510,526,528,533,535,540,542,545,547,550
+  s_c8a419ecddf609::t_976614b530f7ca 85-87
+  s_c8a419ecddf609::t_be74740b4d8abc 89
+  s_c8a419ecddf609::t_29fa68dd566058 91
+  s_c8a419ecddf609::t_8ad00bd5393fa5 93
+  s_c8a419ecddf609::t_b27312f259052b 97-98
+  s_c8a419ecddf609::t_903ad396d81bfb 103
+  s_c8a419ecddf609::t_9eda07906cd409 105-107,112-114
+  s_c8a419ecddf609::t_fd5bd6fbb157a3 116
+  s_c8a419ecddf609::t_d36a0174fdb2ef 118-120,124-126
+  s_c8a419ecddf609::t_8b80cbd09b8d7f 128
+  s_c8a419ecddf609::t_d6567d3e18fa52 130-131
+  s_c8a419ecddf609::t_98975f3e5cf881 134-137
+  s_c8a419ecddf609::t_ee67d49d77df52 140
+  s_c8a419ecddf609::t_4a8e25abca0ebb 142-143
+  s_c8a419ecddf609::t_31e4879f45fbfb 145
+  s_c8a419ecddf609::t_04269aba340cb0 147
+  s_c8a419ecddf609::t_6d1132f6043a24 152-153
+  s_c8a419ecddf609::t_7b1629b6c246f3 161
+  s_c8a419ecddf609::t_5160c19e2753af 224
+  s_c8a419ecddf609::t_41805cdec272b2 229-230
+  s_c8a419ecddf609::t_ebd009c920f2cd 238
+  s_c8a419ecddf609::t_e2892e9f50a332 240
+  s_c8a419ecddf609::t_0b09b3c143168a 242-244,249-251
+  s_c8a419ecddf609::t_dab441666045d4 254-258
+  s_c8a419ecddf609::t_3e6271459c73d4 260-262,289-291
+  s_c8a419ecddf609::t_d804fc13ce659c 293-295,309-311
+  s_c8a419ecddf609::t_2020f9aa1294ad 314-316,338-340
+  s_c8a419ecddf609::t_02f80e3405e4b8 342-344,350-352
+  s_c8a419ecddf609::t_9cdab15bbb51d9 354-356,362-364
+  s_c8a419ecddf609::t_15dc4994e10ba5 366-367
+  s_c8a419ecddf609::t_3721dfab81f630 369-374
+  s_c8a419ecddf609::t_bced33f74a15b7 376-378,383-385
+  s_c8a419ecddf609::t_f92e158690167b 387-389,394-396
+  s_c8a419ecddf609::t_d71171ced3ed8a 398-400,405-407
+  s_c8a419ecddf609::t_07851814de38de 409-411,451-453
+  s_c8a419ecddf609::t_36997df2f7a777 455-457,465-467
+  s_c8a419ecddf609::t_14695940f853b1 469-471,477-479
+  s_c8a419ecddf609::t_76aa0e14c7c196 481-483,492-494
+  s_c8a419ecddf609::t_c7c93147ba3420 496
+  s_c8a419ecddf609::t_0ae350d1c372e6 498
+  s_c8a419ecddf609::t_0e2aa640cd4f2c 501-503,507-509
+  s_c8a419ecddf609::t_90f7ba8e3abcfc 511-513,523-525
+  s_c8a419ecddf609::t_be295bb8fa5d06 527
+  s_c8a419ecddf609::t_ebda326310f2d3 529-532
+  s_c8a419ecddf609::t_919e56e9791a90 534
+  s_c8a419ecddf609::t_c4ab94b30ee963 536-539
+  s_c8a419ecddf609::t_b6c2f11435d10e 541
+  s_c8a419ecddf609::t_ff4a72b70e7420 543-544
+  s_c8a419ecddf609::t_d11f3df83e8a3f 546
+  s_c8a419ecddf609::t_2db026e6b8fc8c 548-549
+  s_c8a419ecddf609::t_1d9f51521061ce 551
+  s_c8a419ecddf609::t_80fd53cb3f8105 1-84,108-111,121-123,245-248,263-288,296-308,317-337,345-349,357-361,379-382,390-393,401-404,412-450,458-464,472-476,484-491,504-506,514-522
+.agents/skills/verify-oceans-admin/SKILL.md
+  s_c8a419ecddf609::t_a02c4a4754fd49 132
+.agents/skills/verify-oceans-admin/features/anthropic-messages.md
+  s_c8a419ecddf609::t_3284c21a0336a6 15-20,37,53,56,59-78,88-89,127-128
+.agents/skills/verify-oceans-admin/features/live-llm-requests.md
+  s_c8a419ecddf609::t_96e41d2f8d4637 56
+.agents/skills/verify-oceans-admin/features/rate-limits.md
+  s_c8a419ecddf609::t_f06abf7a894b92 27-28
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_c8a419ecddf609::t_94e725346004d6 178,181,217,335,363,372,403,405,407-410,413-415,419,558,604,607
+.agents/skills/verify-oceans-admin/scripts/check-messages.mjs
+  s_c8a419ecddf609::t_7977a92c3e12cc 27,38
+.agents/skills/verify-oceans-admin/scripts/messages-regressions.mjs
+  s_c8a419ecddf609::t_221761e5b8212f 10-113,123-124
+.agents/skills/verify-oceans-admin/scripts/plan-verification.test.mjs
+  s_c8a419ecddf609::t_de3a4d46a6b3eb 80-81,93-97
+.github/workflows/ci.yml
+  s_c8a419ecddf609::t_ac1f5262894a22 55
+.github/workflows/cli-ci.yml
+  s_c8a419ecddf609::t_db0b02a452d77f 58
+.github/workflows/docs-ci.yml
+  s_c8a419ecddf609::t_cd9df090a550c6 36
+.github/workflows/helm-ci.yml
+  s_c8a419ecddf609::t_3ee3a6fb1cc0ba 41
+.github/workflows/oceans-review-agent.yml
+  s_c8a419ecddf609::t_9ae9d3292e388a 84
+.github/workflows/release-product.yml
+  s_c8a419ecddf609::t_c3cdc9edae0087 51,74,136
+.github/workflows/repo-lint.yml
+  s_c8a419ecddf609::t_f964414d293158 49
+.github/workflows/review-agent-ci.yml
+  s_c8a419ecddf609::t_e765719bdd2a99 36
+.github/workflows/review-agent-self-hosted-smoke.yml
+  s_c8a419ecddf609::t_09e5eb946704cd 44
+.github/workflows/ui-ci.yml
+  s_c8a419ecddf609::t_58c941faa9a463 36
+Cargo.lock
+  s_c8a419ecddf609::t_b4990abbe85fa5 1531,1824,1877,2932,3545,3923,3992,4678,5861,5863
+crates/admin-ui/web/bun.lock
+  s_c8a419ecddf609::t_1b50c51eee4864 12,17-18,23,36,43,49,58,189,503,505,507,509,511,513,515,517,553,555,557,559,561,563,565,567,569,571,573,575,577,579,581,587,589,591,593,611,637,701,953,1323,1381
+crates/admin-ui/web/package.json
+  s_c8a419ecddf609::t_1a44ad1c585dae 27,32-33,38,51,58,64,73
+crates/gateway-client-config/src/tests.rs
+  s_c8a419ecddf609::t_2b7f677e0d4b40 869-882
+crates/gateway-client-config/src/thinking.rs
+  s_c8a419ecddf609::t_899f03e4b3f727 3,53-56
+crates/gateway-core/Cargo.toml
+  s_c8a419ecddf609::t_2d6e6c34a35d13 22
+crates/gateway-core/src/claude_models.rs
+  s_c8a419ecddf609::t_dcf26f006b50b8 37-38,46-115,229-314
+crates/gateway-core/src/error.rs
+  s_c8a419ecddf609::t_72ee8345b8cfa0 6,188-189,195-198,287-289,295-297
+crates/gateway-core/src/lib.rs
+  s_c8a419ecddf609::t_89a898d5c6d918 15,74-78,105-120,134,197-201,232-234
+crates/gateway-core/src/protocol/anthropic.rs
+  s_c8a419ecddf609::t_c832c6edf6ac55 47-78,109-110,112-160,162-166,168-171,373-444
+crates/gateway-core/src/protocol/translate.rs
+  s_c8a419ecddf609::t_7f2acbe9a95282 16-20,212-213
+crates/gateway-core/src/route_capabilities.rs
+  s_c8a419ecddf609::t_eee669aec8281d 1,143-163
+crates/gateway-core/src/streaming.rs
+  s_c8a419ecddf609::t_d1ee4467d4733a 135-137,148-150
+crates/gateway-core/src/traits.rs
+  s_c8a419ecddf609::t_2c6c3c9672573d 6,15-17,40-47,55
+crates/gateway-providers/Cargo.toml
+  s_c8a419ecddf609::t_0f9a655f013d25 18
+crates/gateway-providers/src/anthropic/beta_transport_tests.rs
+  s_c8a419ecddf609::t_c4fe13b057b9af 68,111
+crates/gateway-providers/src/anthropic/compat_stream.rs
+  s_c8a419ecddf609::t_4f0def63430a89 1-474
+crates/gateway-providers/src/anthropic/error.rs
+  s_c8a419ecddf609::t_365f977e1dd64e 18-21
+crates/gateway-providers/src/anthropic/mod.rs
+  s_c8a419ecddf609::t_707864ca7a7cd7 4,8,11-15,25
+crates/gateway-providers/src/anthropic/native.rs
+  s_c8a419ecddf609::t_b908b1358bde20 1-103
+crates/gateway-providers/src/anthropic/native_metadata_tests.rs
+  s_c8a419ecddf609::t_88868f9de723c9 9-12,15,34-195
+crates/gateway-providers/src/anthropic/native_transport_tests.rs
+  s_c8a419ecddf609::t_97dc315eabf950 1-444
+crates/gateway-providers/src/anthropic/replay.rs
+  s_c8a419ecddf609::t_85cf1fcde13a4d 1-246
+crates/gateway-providers/src/anthropic/replay_tests.rs
+  s_c8a419ecddf609::t_03e4ea19cf911b 1-1078
+crates/gateway-providers/src/anthropic/request.rs
+  s_c8a419ecddf609::t_c098488d1266f7 19-20,30,63-68,74,84-89,122-124,129-155,158,172,179,250,252-272,337-456,483-484,498,512,516-517,521-527,530-534,536,560,563,566-571,743-745,747,750,754,757-759
+crates/gateway-providers/src/anthropic/request_tests.rs
+  s_c8a419ecddf609::t_c09a442ffd286e 45-280,412-451,649-691
+crates/gateway-providers/src/anthropic/response.rs
+  s_c8a419ecddf609::t_1865717e4e13c7 83-85,93-96,105-109,115-157,224,269-275
+crates/gateway-providers/src/anthropic/streaming.rs
+  s_c8a419ecddf609::t_7203638753274a 9,11-12,34,36-38,65,76-81,88-134,150,165,194,205-207,229,242-243,276,278-281,283-286,290-301,319-323,341,349-353,371-377,389-393,500-504,539-589
+crates/gateway-providers/src/anthropic/tests.rs
+  s_c8a419ecddf609::t_8ca342347092ed 1084
+crates/gateway-providers/src/anthropic/thinking.rs
+  s_c8a419ecddf609::t_17fe06825933d5 8,81-101
+crates/gateway-providers/src/anthropic_compat.rs
+  s_c8a419ecddf609::t_6ba1acccd691ae 141,163-215,238,284,330
+crates/gateway-providers/src/bedrock/converse_replay.rs
+  s_c8a419ecddf609::t_48150767227bac 1-442
+crates/gateway-providers/src/bedrock/converse_stream.rs
+  s_c8a419ecddf609::t_fc68ed33659d30 1-434
+crates/gateway-providers/src/bedrock/eventstream.rs
+  s_c8a419ecddf609::t_e11d646887425d 1-4,14-19,23,31-39,44-56,58-63,65-86,88,91-94,96-120,123-128,188-212
+crates/gateway-providers/src/bedrock/mod.rs
+  s_c8a419ecddf609::t_61d00c2eb18c42 15,23-26,30,487-489,505,507-511,514,744-783,825,952-953,959,964
+crates/gateway-providers/src/bedrock/request/mod.rs
+  s_c8a419ecddf609::t_2a5a720bf451b4 1,9,27-30,46-48,55-68,94,429-432,464-468
+crates/gateway-providers/src/bedrock/request/native.rs
+  s_c8a419ecddf609::t_5fe17e4e24b4aa 1-67
+crates/gateway-providers/src/bedrock/response.rs
+  s_c8a419ecddf609::t_94871111b788ef 1-6,11-21,60-71,101
+crates/gateway-providers/src/bedrock/tests/eventstream.rs
+  s_c8a419ecddf609::t_6b75efb4651abe 3-569,596-603,687,697-711
+crates/gateway-providers/src/bedrock/tests/mod.rs
+  s_c8a419ecddf609::t_f54c54efe549c9 13,15-16,19,21,27,184-199,204-205,207
+crates/gateway-providers/src/bedrock/tests/provider_requests.rs
+  s_c8a419ecddf609::t_108e15303a3fa5 982-986,1002-1013,1039-1050
+crates/gateway-providers/src/bedrock/tests/replay.rs
+  s_c8a419ecddf609::t_6641f7c9b0d249 1-682
+crates/gateway-providers/src/bedrock/tests/request_tools.rs
+  s_c8a419ecddf609::t_04e016f25b705e 310,315,327
+crates/gateway-providers/src/bedrock/tests/response.rs
+  s_c8a419ecddf609::t_a77d031674d218 3-164,186-188,192-194,198-200,220-226,236,274-276,280-282,330-331,388-389,442-443
+crates/gateway-providers/src/copilot/mod.rs
+  s_c8a419ecddf609::t_30353035b57f04 13,16,293,298-307,312-316,319-326,545-597
+crates/gateway-providers/src/http.rs
+  s_c8a419ecddf609::t_936f13a5a11946 91-107
+crates/gateway-providers/src/openai_compat.rs
+  s_c8a419ecddf609::t_1bc4c827a5e5cf 24,282-284,305-307,706-745,801-811,824-835
+crates/gateway-providers/src/openai_compat/anthropic_messages.rs
+  s_c8a419ecddf609::t_a972bf976d7583 19-24,61,69,73,76-78,370-395
+crates/gateway-providers/src/openai_compat/native_messages.rs
+  s_c8a419ecddf609::t_6ce7be465377be 1-454
+crates/gateway-providers/src/vertex/anthropic.rs
+  s_c8a419ecddf609::t_08793a3bf88f6d 17-54,70
+crates/gateway-providers/src/vertex/batch.rs
+  s_c8a419ecddf609::t_ed221b4ba7f44a 11-14,522-530,800-805,1062,1078-1085
+crates/gateway-providers/src/vertex/error.rs
+  s_c8a419ecddf609::t_9fc6a19a7fa75c 136-143,150-153,164-165
+crates/gateway-providers/src/vertex/google_content.rs
+  s_c8a419ecddf609::t_c8d1b618e6810f 1-384
+crates/gateway-providers/src/vertex/google_conversation.rs
+  s_c8a419ecddf609::t_1a716430a5e751 1-214
+crates/gateway-providers/src/vertex/google_replay.rs
+  s_c8a419ecddf609::t_d248e0fe26e5af 1-202
+crates/gateway-providers/src/vertex/google_request.rs
+  s_c8a419ecddf609::t_942e754754b2bb 1,7-9,24,231-237
+crates/gateway-providers/src/vertex/google_response.rs
+  s_c8a419ecddf609::t_aeb02a43335a26 6-9,11-20,22-24,32,35-46,49-78,87,131-133,135,137-138,141-150,166,168,173,177-181,185-188,192-196
+crates/gateway-providers/src/vertex/google_stream.rs
+  s_c8a419ecddf609::t_516096a50eab5b 9,11-12,19,34-39,52-57,62,66-74,81,83-95,100,109,112,116-129,131,139-142,146-150,159-161,166-200,242,249,260,264-265,271,277-282
+crates/gateway-providers/src/vertex/google_tools.rs
+  s_c8a419ecddf609::t_70206b0cba28fa 3,5-8,10-11,13,19-20
+crates/gateway-providers/src/vertex/mod.rs
+  s_c8a419ecddf609::t_8feb12545bcc6e 29-31,129,132-140,149,151-153,185,187,232-288,346-352,362,391,415-417,471
+crates/gateway-providers/src/vertex/tests/google_request.rs
+  s_c8a419ecddf609::t_06d1cbc4a20ff4 949,960-981
+crates/gateway-providers/src/vertex/tests/google_tools.rs
+  s_c8a419ecddf609::t_4eb80bbb8e6f4b 717-987
+crates/gateway-providers/src/vertex/tests/provider.rs
+  s_c8a419ecddf609::t_a54fe2c22beb4f 234-281,501-502,504-508,554-570,572-573,575-576
+crates/gateway-providers/src/vertex/tests/response.rs
+  s_c8a419ecddf609::t_c93c964df4d8c3 149-150,164,222,239,310-311,321-429
+crates/gateway-providers/src/vertex/tests/streaming.rs
+  s_c8a419ecddf609::t_585a46790f4e68 426-428,435,450,453-454,457-458,480,503-738
+crates/gateway-service/src/batches.rs
+  s_c8a419ecddf609::t_4fe00de8f74397 21-22,192
+crates/gateway-service/src/effective_route_metadata.rs
+  s_c8a419ecddf609::t_d38b1baa86eb0d 239-240,246-257,293-355
+crates/gateway-service/src/lib.rs
+  s_c8a419ecddf609::t_3633c60fb49e1b 46
+crates/gateway-service/src/request_logging.rs
+  s_c8a419ecddf609::t_7a8bf7bc3603cf 720-730,742
+crates/gateway-service/src/request_logging/tests/stream.rs
+  s_c8a419ecddf609::t_8a70cb493d748a 29-157,194-196,198
+crates/gateway-service/src/service.rs
+  s_c8a419ecddf609::t_3e6fa6d7dea752 38,1449,1647-1649,1652-1653,3264-3272,3274-3303,3305-3322
+crates/gateway-service/src/service/tests/context_tier_pricing.rs
+  s_c8a419ecddf609::t_2eda498eb1311a 118-368,388-436
+crates/gateway-service/src/usage.rs
+  s_c8a419ecddf609::t_2668fee6a65895 1-398
+crates/gateway/Cargo.toml
+  s_c8a419ecddf609::t_b0736faa3fa8b1 42
+crates/gateway/src/http/handlers.rs
+  s_c8a419ecddf609::t_fffb084b7786c2 16,21,34,197-199,289,367,395-401,478,556,584-590,605-608,613-617,637-652,802,1260-1274,1369,2238
+crates/gateway/src/http/handlers/inference.rs
+  s_c8a419ecddf609::t_2f9ad57c65866d 1,4-9,19,34-40,68-74,209,244-250,293-295,312,340-357,376,381,390-397,405,430,438-442,482-504,506-508
+crates/gateway/src/http/handlers/inference_tests.rs
+  s_c8a419ecddf609::t_123a8c0c39abdf 15-16,150-151,156-211,298-470,576,580-585,603-646
+crates/gateway/src/http/handlers/messages.rs
+  s_c8a419ecddf609::t_546eaa848e151d 1-257
+crates/gateway/src/http/handlers/native_messages.rs
+  s_c8a419ecddf609::t_358c053e6cf2b1 1-373
+crates/gateway/src/http/inference_guardrails.rs
+  s_c8a419ecddf609::t_c8234ae6e5d614 29,73,150-151,161-163,167-200,315,317,319-336,338-367,369,371-379,447,457-466,469,477-490,492-506,580,584-588,626-658,681-694,710-713,724,731-741,747,755-792,794-801,807-850,854-856,975-989,1166,1179,1217-1220,1227,1229,1256,1261-1262,1265,1516-1518,1574-1577,2089,2099-2101,2705,2708-2709,2712-2713,2716-2724,2740,2752,2755-2756,2759-2767,2776
+crates/gateway/src/http/inference_guardrails_regression_tests.rs
+  s_c8a419ecddf609::t_1af4b4ad4515e4 1-1199
+crates/gateway/src/http/rate_limit_tests.rs
+  s_c8a419ecddf609::t_cd9a454a679b53 12,35,58-100,168-175,519-547
+crates/gateway/src/http/request_tracing.rs
+  s_c8a419ecddf609::t_886bf30aadeeb7 145-147
+docs/adr/2026-09-03-anthropic-compatible-provider-and-opencode-zen.md
+  s_c8a419ecddf609::t_2caa6bd622862f 47-50
+docs/adr/2026-11-03-native-anthropic-messages-transport.md
+  s_c8a419ecddf609::t_cb77432177907a 1-86
+docs/configuration/pricing-catalog-and-accounting.md
+  s_c8a419ecddf609::t_c44e5be281773c 222,239
+docs/internal/2026-11-05-provider-harness-comparison.md
+  s_c8a419ecddf609::t_96e53baabeb414 1-294
+docs/providers/openrouter.md
+  s_c8a419ecddf609::t_0d5ceb3d2ed33e 9-15,70
+crates/gateway-core/src/domain.rs
+  s_c8a419ecddf609::t_e8c03219d3e059 10
+docs/reference/provider-api-compatibility.md
+  s_c8a419ecddf609::t_8cf66610b28894 39,61-76,83,246,248,261,265-272,322,354-355,360,402,408,411,470,472-476,482-501,506,512-515
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "74dd764522b5c664d6a850fea1d727559d3d7f3b",
+  "prompts": {},
+  "sessions": {
+    "s_c8a419ecddf609": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1b81d-8cc2-76be-9760-b4bfaf6ef671",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

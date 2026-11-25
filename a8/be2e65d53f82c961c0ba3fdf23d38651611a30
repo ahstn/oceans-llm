@@ -1,0 +1,19 @@
+.github/workflows/release-product.yml
+  s_f9a2dc193f7af4::t_5e79eb38b77071 188,202-209,213-214
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a8be2e65d53f82c961c0ba3fdf23d38651611a30",
+  "prompts": {},
+  "sessions": {
+    "s_f9a2dc193f7af4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f47da735-08a7-4f2b-a249-ef2ca3735b63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

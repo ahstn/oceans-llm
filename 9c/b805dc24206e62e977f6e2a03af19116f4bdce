@@ -1,0 +1,188 @@
+.agents/skills/verify-oceans-admin/features/README.md
+  h_2f452a9c375069 73
+.agents/skills/verify-oceans-admin/features/rate-limits.md
+  h_2f452a9c375069 1-43
+.agents/skills/verify-oceans-admin/features/routing.json
+  h_2f452a9c375069 430-431,475-506
+.github/dependabot.yml
+  h_2f452a9c375069 205-209
+Cargo.lock
+  h_2f452a9c375069 1868
+Cargo.toml
+  h_2f452a9c375069 51
+crates/admin-ui/web/src/components/layout/admin-nav.ts
+  h_2f452a9c375069 3,68-75
+crates/admin-ui/web/src/generated/admin-api.ts
+  h_2f452a9c375069 796-827,2062,3580-3608,4306-4365,6639-6728
+crates/admin-ui/web/src/routeTree.gen.ts
+  h_2f452a9c375069 22,96-100,228,263,299,336,371,406,442,539-545,714
+crates/admin-ui/web/src/routes/rate-limits.tsx
+  h_2f452a9c375069 1-299
+crates/admin-ui/web/src/routes/rate-limits/-policy-dialog.tsx
+  h_2f452a9c375069 1-343
+crates/admin-ui/web/src/routes/rate-limits/-policy-model.ts
+  h_2f452a9c375069 1-142
+crates/admin-ui/web/src/server/admin-data.functions.ts
+  h_2f452a9c375069 14-17,970-1052
+crates/admin-ui/web/src/server/admin-data.server.ts
+  h_2f452a9c375069 20-22,1037-1072
+crates/admin-ui/web/src/test/routes/rate-limits-route.test.tsx
+  h_2f452a9c375069 1-271
+crates/admin-ui/web/src/types/live-api.ts
+  h_2f452a9c375069 61-67
+crates/gateway-core/Cargo.toml
+  h_2f452a9c375069 20-22
+crates/gateway-core/src/lib.rs
+  h_2f452a9c375069 10,165-170,193
+crates/gateway-core/src/rate_limits.rs
+  h_2f452a9c375069 1-525
+crates/gateway-core/src/traits.rs
+  h_2f452a9c375069 62-65,1360-1416
+crates/gateway-service/src/lib.rs
+  h_2f452a9c375069 30,130-133
+crates/gateway-service/src/rate_limits.rs
+  h_2f452a9c375069 1-1137
+crates/gateway-service/src/rate_limits/tests.rs
+  h_2f452a9c375069 1-1288
+crates/gateway-service/src/service.rs
+  h_2f452a9c375069 23-25,108,186,205-216
+crates/gateway-store/migrations/V60__rate_limits.sql
+  h_2f452a9c375069 1-42
+crates/gateway-store/migrations/postgres/V60__rate_limits.sql
+  h_2f452a9c375069 1-42
+crates/gateway-store/src/any_store_rate_limits.rs
+  h_2f452a9c375069 1-95
+crates/gateway-store/src/lib.rs
+  h_2f452a9c375069 16,28,57-59
+crates/gateway-store/src/libsql_store/mod.rs
+  h_2f452a9c375069 21
+crates/gateway-store/src/libsql_store/rate_limits.rs
+  h_2f452a9c375069 1-333
+crates/gateway-store/src/libsql_store/routing.rs
+  h_2f452a9c375069 16-21
+crates/gateway-store/src/migration_registry.rs
+  h_2f452a9c375069 347-353,355-357
+crates/gateway-store/src/postgres_store/mod.rs
+  h_2f452a9c375069 21
+crates/gateway-store/src/postgres_store/rate_limits.rs
+  h_2f452a9c375069 1-278
+crates/gateway-store/src/rate_limit_tests.rs
+  h_2f452a9c375069 1-410
+crates/gateway-store/src/rate_limits.rs
+  h_2f452a9c375069 1-69
+crates/gateway-store/src/store.rs
+  h_2f452a9c375069 13-17,68
+crates/gateway/Cargo.toml
+  h_2f452a9c375069 28
+crates/gateway/openapi/admin-api.json
+  h_2f452a9c375069 3235-3372,7677,13745-13866,16602-16797
+crates/gateway/src/config/mod.rs
+  h_2f452a9c375069 25,58,108-109,180
+crates/gateway/src/config/permissions.rs
+  h_2f452a9c375069 19,61,230,277
+crates/gateway/src/config/rate_limits.rs
+  h_2f452a9c375069 1-173
+crates/gateway/src/config/server.rs
+  h_2f452a9c375069 1-3,22-25,37,53,57-74
+crates/gateway/src/config/tests/mod.rs
+  h_2f452a9c375069 40
+crates/gateway/src/config/tests/rate_limits.rs
+  h_2f452a9c375069 1-183
+crates/gateway/src/http/admin_contract.rs
+  h_2f452a9c375069 2049-2052
+crates/gateway/src/http/client_ip.rs
+  h_2f452a9c375069 1-151
+crates/gateway/src/http/handlers.rs
+  h_2f452a9c375069 43-47,50-52,67,166,170,180,193-201,378-395,517,529-537,697,709-717,1086,1090-1129,2075-2085,2112-2138,2157-2204,2521-2570
+crates/gateway/src/http/handlers/count_tokens.rs
+  h_2f452a9c375069 99,109,129,150-157
+crates/gateway/src/http/handlers/decisions.rs
+  h_2f452a9c375069 20,29,44,59,189,204-205,207,209-210,212-231
+crates/gateway/src/http/handlers/decisions_tests.rs
+  h_2f452a9c375069 151-159,162-170
+crates/gateway/src/http/handlers/embeddings.rs
+  h_2f452a9c375069 14,25-26,28,30-31,33-51
+crates/gateway/src/http/handlers/embeddings_tests.rs
+  h_2f452a9c375069 127
+crates/gateway/src/http/handlers/inference.rs
+  h_2f452a9c375069 167-168,177-194
+crates/gateway/src/http/handlers/inference_tests.rs
+  h_2f452a9c375069 53-61,68-76,84-92,99-107,115-123
+crates/gateway/src/http/handlers/routing_tests.rs
+  h_2f452a9c375069 232,252
+crates/gateway/src/http/mcp_gateway.rs
+  h_2f452a9c375069 6,43,72-76,116,138,141,231-232,320,369-412
+crates/gateway/src/http/mcp_gateway/aggregate.rs
+  h_2f452a9c375069 33,89-93,169,352,408
+crates/gateway/src/http/mcp_gateway/aggregate/execution.rs
+  h_2f452a9c375069 18-20,25-35,44,90,109-111,118,137-144,323-345
+crates/gateway/src/http/mcp_gateway/aggregate/tests.rs
+  h_2f452a9c375069 84,158,232,500,582,730-847
+crates/gateway/src/http/mcp_gateway/credentials/tests.rs
+  h_2f452a9c375069 159
+crates/gateway/src/http/mcp_gateway/rate_limits.rs
+  h_2f452a9c375069 1-100
+crates/gateway/src/http/mcp_gateway/tests.rs
+  h_2f452a9c375069 267-268,368-369,498,848-979
+crates/gateway/src/http/mod.rs
+  h_2f452a9c375069 11,29-31,33,106-128,300-309,478
+crates/gateway/src/http/rate_limit_policies.rs
+  h_2f452a9c375069 1-489
+crates/gateway/src/http/rate_limit_policies/handler_tests.rs
+  h_2f452a9c375069 1-297
+crates/gateway/src/http/rate_limit_tests.rs
+  h_2f452a9c375069 1-588
+crates/gateway/src/http/request_policy.rs
+  h_2f452a9c375069 1-152
+crates/gateway/src/http/state.rs
+  h_2f452a9c375069 10,45
+crates/gateway/src/http/test_support.rs
+  h_2f452a9c375069 57,129-242
+crates/gateway/src/main.rs
+  h_2f452a9c375069 12,28-29,235-239,251-258,337,348,721-724,733
+crates/gateway/src/observability.rs
+  h_2f452a9c375069 44,242-245,390-401
+deploy/config/gateway.local.yaml
+  h_2f452a9c375069 81
+deploy/config/gateway.yaml
+  h_2f452a9c375069 81
+dist-workspace.toml
+  h_2f452a9c375069 53-54
+docs/.vitepress/config.mts
+  h_2f452a9c375069 38
+docs/adr/2026-10-05-cli-binary-distribution-with-cargo-dist.md
+  h_2f452a9c375069 32-33
+docs/adr/2026-10-15-admin-audit-log.md
+  h_2f452a9c375069 43
+docs/adr/2026-10-15-gateway-rate-limits-and-quotas.md
+  h_2f452a9c375069 1-141
+docs/configuration/configuration-reference.md
+  h_2f452a9c375069 32,364,383,387,405,735-785
+docs/configuration/mcp-servers.md
+  h_2f452a9c375069 412-413
+docs/configuration/model-routing-and-api-behavior.md
+  h_2f452a9c375069 419
+docs/configuration/rate-limits.md
+  h_2f452a9c375069 1-166
+docs/contributing/reference/release-process.md
+  h_2f452a9c375069 115
+docs/mcp/mcp-invocations.md
+  h_2f452a9c375069 84-85
+docs/reference/request-lifecycle-and-failure-modes.md
+  h_2f452a9c375069 31,190-196
+gateway.prod.yaml
+  h_2f452a9c375069 44
+gateway.yaml
+  h_2f452a9c375069 44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9cb805dc24206e62e977f6e2a03af19116f4bdce",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

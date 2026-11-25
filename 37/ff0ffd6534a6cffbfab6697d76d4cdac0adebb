@@ -1,0 +1,57 @@
+crates/admin-ui/web/src/routes/identity/-add-members-dialog.tsx
+  s_d114fbd07d53eb::t_365e95dcd21127 1-274
+crates/admin-ui/web/src/routes/identity/-membership-change-dialogs.tsx
+  s_d114fbd07d53eb::t_da8f126c3bfa5e 1-212
+crates/admin-ui/web/src/routes/identity/-status-badge.ts
+  s_d114fbd07d53eb::t_2339b3cd01c04a 7-11
+crates/admin-ui/web/src/routes/identity/-team-editor-dialog.tsx
+  s_d114fbd07d53eb::t_3674c03f3156b9 1-99
+crates/admin-ui/web/src/routes/identity/-team-form.ts
+  s_d114fbd07d53eb::t_e6798033caa124 1-141
+crates/admin-ui/web/src/routes/identity/-teams-list.tsx
+  s_d114fbd07d53eb::t_5eb6d25212adb1 1-438
+crates/admin-ui/web/src/routes/identity/-use-add-members.ts
+  s_4394d7bb181c63::t_22f2068d87a8f7 1-113
+crates/admin-ui/web/src/routes/identity/-use-membership-change.ts
+  s_d114fbd07d53eb::t_4fdf9e0f66c29c 1-105
+crates/admin-ui/web/src/routes/identity/-use-team-editor.ts
+  s_d114fbd07d53eb::t_42252dc551c428 1-80
+crates/admin-ui/web/src/routes/identity/-use-users-transition.ts
+  s_d114fbd07d53eb::t_1d8c019318662c 9-10
+crates/admin-ui/web/src/routes/identity/-user-multi-select-field.tsx
+  s_d114fbd07d53eb::t_611fa66a19752d 1-149
+crates/admin-ui/web/src/routes/identity/teams.tsx
+  s_411362aa0b79d6::t_1cd2d1dae124ac 1-2,18-19,21-23,25-31,44-50,56-57,66-72,74-89,101,119,125-133,138-151,156-157,159-162
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "37ff0ffd6534a6cffbfab6697d76d4cdac0adebb",
+  "prompts": {},
+  "sessions": {
+    "s_411362aa0b79d6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c6fd65f6-a3c0-4f10-8432-e594fb458726",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_4394d7bb181c63": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5fe6d420-4e7e-4885-8f8a-07723d2ed05e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_d114fbd07d53eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7bfd404e-9647-4e85-ba04-b57a37f6eef0",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

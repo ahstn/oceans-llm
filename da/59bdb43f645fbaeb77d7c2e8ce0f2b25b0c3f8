@@ -1,0 +1,21 @@
+.agents/skills/verify-oceans-admin/features/request-logs.md
+  s_bea5708eb838de::t_620e9c07aae02e 8
+.agents/skills/verify-oceans-admin/features/agent-sessions.md
+  s_bea5708eb838de::t_620e9c07aae02e 30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "da59bdb43f645fbaeb77d7c2e8ce0f2b25b0c3f8",
+  "prompts": {},
+  "sessions": {
+    "s_bea5708eb838de": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "13a0bec7-7a0c-4c7e-bd3f-413f37de54d6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

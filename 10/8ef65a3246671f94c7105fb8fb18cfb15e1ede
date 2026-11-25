@@ -1,0 +1,41 @@
+crates/gateway-service/src/effective_route_metadata.rs
+  s_b0945ce15ae8f2::t_3197a0694ef035 12,90-102,104-108
+crates/gateway-service/src/model_metadata/catalog.rs
+  s_1f9f91df052d6c::t_1ed71e724a5960 9,80-85
+crates/gateway-service/src/model_metadata/tests.rs
+  s_1f9f91df052d6c::t_86b8f0f53d8cf9 87-105
+crates/gateway-service/src/pricing_catalog.rs
+  s_b0945ce15ae8f2::t_19d7aca324b0e5 37-38,41-44,249-255,472-497
+crates/gateway-service/src/pricing_catalog/target.rs
+  s_b0945ce15ae8f2::t_9523587d2c16f1 141,145-151,154-156
+crates/gateway-service/src/pricing_catalog/tests/resolution.rs
+  s_b0945ce15ae8f2::t_c31bf83b94dcef 253,255-256,259-260,263-264,267-268,271-272,274-284,286-338
+crates/gateway-service/src/pricing_catalog/tests/support.rs
+  s_1f9f91df052d6c::t_274aa1ab97f019 36-38
+docs/configuration/pricing-catalog-and-accounting.md
+  s_1f9f91df052d6c::t_3c62000b10a44b 88-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "108ef65a3246671f94c7105fb8fb18cfb15e1ede",
+  "prompts": {},
+  "sessions": {
+    "s_1f9f91df052d6c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9424644d-27c2-45b8-ad4b-a7bdfe08346d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_b0945ce15ae8f2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a39ab5f9170f38bec",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+docs/adr/2026-10-12-tailscale-service-ingress.md
+  h_2f452a9c375069 1-24
+docs/setup/self-hosting-mise-daemons.md
+  h_2f452a9c375069 10,22,101,127,173-175,179,181
+mise.selfhost.toml
+  h_2f452a9c375069 90,94-101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f31f487ba63e198f6aaa2ba538ca583882f4b203",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

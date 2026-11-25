@@ -1,0 +1,68 @@
+.agents/skills/verify-oceans-admin/SKILL.md
+  h_2f452a9c375069 118
+.agents/skills/verify-oceans-admin/features/harness-integration.md
+  h_2f452a9c375069 3,7-9,11,17-18,28-29
+.agents/skills/verify-oceans-admin/scripts/drive-harness-integration.mjs
+  h_2f452a9c375069 1-2,5-6,26,28-30,34,61-62,65-66,68,78-100,102,107
+tests/harness-integration/README.md
+  h_2f452a9c375069 3,7,9,11-13,15-32,34,36,38,40-42,44,46,48-56,60-74,78-90,92-93,95,97-102,104,106,120-121,124,127,129,139-140,145,147,153,157-158,165,167-171
+tests/harness-integration/mise.toml
+  h_2f452a9c375069 8-12,20,24-28
+tests/harness-integration/package-lock.json
+  h_2f452a9c375069 11,13,25-163,508-540,550-562,2634-2950,3128-3356,3358-3362,3364-3370,3373-3383,3385-3389,3392-3396,3398-3406,3409-3414,3416-3443,3534-3561,4137-4160,4171-4179,4321-4376,4540-4545,4581-4586,4633-4641,4931-4939,5560-5574,5652-5666,6004-6020,6065-6085,6270-6275,6460-6490,6609-6614,6830-6835,6868-6901,6944-6978
+tests/harness-integration/package.json
+  h_2f452a9c375069 11,13
+tests/harness-integration/src/adapters/claude-code.ts
+  h_2f452a9c375069 1-250
+tests/harness-integration/src/adapters/events.test.ts
+  h_2f452a9c375069 125-197
+tests/harness-integration/src/adapters/events.ts
+  h_2f452a9c375069 15-16,56-82,85,95,100,113-137,175-183
+tests/harness-integration/src/adapters/isolation.ts
+  h_2f452a9c375069 4-6
+tests/harness-integration/src/adapters/omp.ts
+  h_2f452a9c375069 1-183
+tests/harness-integration/src/adapters/opencode-plugin.ts
+  h_2f452a9c375069 1-94
+tests/harness-integration/src/adapters/opencode.test.ts
+  h_2f452a9c375069 7,11-12
+tests/harness-integration/src/adapters/opencode.ts
+  h_2f452a9c375069 11,13-18,20-26,44,51,58,66-74,76,78,80,86-91,95-102,104,114,118,122-126,129,135-246,311,324
+tests/harness-integration/src/adapters/pi.ts
+  h_2f452a9c375069 6-8,10,12-13,19-62,64,66,68,74-79,81-91,95-96,101-103,109-123,125-130,142,144,146,152,159,170-172,176,180,182,189,193-197
+tests/harness-integration/src/adapters/sandbox.ts
+  h_2f452a9c375069 1-107
+tests/harness-integration/src/gateway-client.ts
+  h_2f452a9c375069 7-8,26,43,45,56-61,63-64,68-70,72,76,79,115,118-122,131-153,171,178-180
+tests/harness-integration/src/global-setup.ts
+  h_2f452a9c375069 21-28,31,88-94,110-113,146,150-152,464-540,578,585,595,604,607,610,613,617-623,630,639-640
+tests/harness-integration/src/guardrails-hook.test.ts
+  h_2f452a9c375069 7-8,10-11,13-14,184-393,396,398-412,421,436-456,462
+tests/harness-integration/src/harness-contract.test.ts
+  h_2f452a9c375069 1-12,15-86,88-111,114-117,121-124,127,130-138,140-142,144,146-148
+tests/harness-integration/src/matrix.test.ts
+  h_2f452a9c375069 1-151
+tests/harness-integration/src/matrix.ts
+  h_2f452a9c375069 1-164
+tests/harness-integration/src/opencode-plugin.test.ts
+  h_2f452a9c375069 4,10,12,44,61,64-70,86-98,138,183,226-227,257-261,263-268,270-271
+tests/harness-integration/src/prompt-cache-canary.test.ts
+  h_2f452a9c375069 18-19,43-44,100-101
+tests/harness-integration/src/run-checks.ts
+  h_2f452a9c375069 1-82
+tests/harness-integration/src/types.ts
+  h_2f452a9c375069 1-15,25,29,33-34,49-64,66,68-74
+tests/harness-integration/vitest.config.ts
+  h_2f452a9c375069 8-9,11-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "d0cd1954809552551f269903836c845a10df5789",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

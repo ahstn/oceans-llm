@@ -1,0 +1,33 @@
+crates/gateway-providers/src/anthropic_compat.rs
+  s_13e300ce4bf1eb::t_d99f04a257aabe 17,273,279
+crates/gateway-providers/src/bedrock/mod.rs
+  s_13e300ce4bf1eb::t_9cd6a3b31742a2 29-31,760,766
+crates/gateway/src/http/handlers/count_tokens.rs
+  s_13e300ce4bf1eb::t_e4d5b926447072 10-26,50,88-90,96-97,128,142-165,183-230
+crates/gateway/src/http/handlers/route_tests.rs
+  s_13e300ce4bf1eb::t_8e7db7b88743b9 3-6,19-23,127-135,143-149,152,195,197-198,285-339
+crates/gateway/src/http/request_body.rs
+  s_13e300ce4bf1eb::t_bbd81cd88a4fe2 74-78
+crates/gateway/src/http/request_body/tests.rs
+  s_13e300ce4bf1eb::t_ebb99b6c8e7d71 23-30,40,45
+docs/configuration/model-routing-and-api-behavior.md
+  s_13e300ce4bf1eb::t_5c2bb150cc69b4 407,418
+docs/operations/gateway-guardrails.md
+  s_13e300ce4bf1eb::t_c250de65539e97 20-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8f01e78e7b016669654c25da8407b2ec8868e39a",
+  "prompts": {},
+  "sessions": {
+    "s_13e300ce4bf1eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cb0560cd-180f-4e10-b195-fa36950af50e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

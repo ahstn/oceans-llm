@@ -1,0 +1,41 @@
+.agents/skills/verify-oceans-admin/features/design-system.md
+  s_eaf7116ccea134::t_b5fb173f202288 24,27-28
+DESIGN.md
+  s_eaf7116ccea134::t_b78e3e8b36f624 133
+crates/admin-ui/web/doctor.config.json
+  s_eaf7116ccea134::t_43524be4431add 4
+crates/admin-ui/web/src/lib/chart-motion.ts
+  s_eaf7116ccea134::t_512a3c6234adc1 4-10,12-16
+crates/admin-ui/web/src/routes/identity/users.tsx
+  s_eaf7116ccea134::t_b87702154f9445 140-143,1484
+crates/admin-ui/web/src/test/design-system-coverage.test.ts
+  s_eaf7116ccea134::t_bacd47d497ab97 1-33
+docs/adr/2026-10-16-admin-ui-design-system-dark-only.md
+  s_eaf7116ccea134::t_8f20157ce0e670 1-78
+docs/public/r/oceans-theme.json
+  s_eaf7116ccea134::t_710aed058ef5f0 10-22,30-63,67-73
+docs/public/r/registry.json
+  s_eaf7116ccea134::t_78fa3f87946a3d 16-28,36-69,73-79
+mise.toml
+  s_eaf7116ccea134::t_7277b32faf3e30 133
+registry.json
+  s_eaf7116ccea134::t_588e9c7853f264 16-28,36-69,73-79
+scripts/build-shadcn-theme.mjs
+  s_eaf7116ccea134::t_f8c4092c13f354 7-8,30,58-66,71-72,150-212,219-223
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "47e0a29b70e857d0758d4e13b322f3f52276245a",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

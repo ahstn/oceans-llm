@@ -1,0 +1,21 @@
+crates/gateway-store/migrations/V60__rate_limits.sql
+  s_56409892e094a0::t_9934f29305b792 26-30
+crates/gateway-store/migrations/postgres/V60__rate_limits.sql
+  s_56409892e094a0::t_083611645719fa 26-30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "53444c1e700ec51975b9fce79a9cdf8f69d6cf2b",
+  "prompts": {},
+  "sessions": {
+    "s_56409892e094a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a7dde59-323d-48bd-9209-17a8bd106b80",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

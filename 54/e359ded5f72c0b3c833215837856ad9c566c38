@@ -1,0 +1,19 @@
+crates/gateway/src/http/review_agent.rs
+  s_56409892e094a0::t_e3e3b71f147b97 367,732-733,739-745,1181-1205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "54e359ded5f72c0b3c833215837856ad9c566c38",
+  "prompts": {},
+  "sessions": {
+    "s_56409892e094a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a7dde59-323d-48bd-9209-17a8bd106b80",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

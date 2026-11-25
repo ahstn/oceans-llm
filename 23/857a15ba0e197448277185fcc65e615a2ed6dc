@@ -1,0 +1,47 @@
+crates/gateway-client-config/src/api_style.rs
+  s_9cb90ef0550904::t_7fb029426e4348 44-45
+crates/gateway-client-config/src/hints.rs
+  s_9cb90ef0550904::t_169847946563d0 80,85
+crates/gateway-client-config/src/lib.rs
+  s_9cb90ef0550904::t_ad559ac8874ea4 23-24
+crates/gateway-client-config/src/templates/opencode.rs
+  s_9cb90ef0550904::t_e6046b4efa312a 12,157,164-181
+crates/gateway-client-config/src/templates/pi.rs
+  s_9cb90ef0550904::t_18c06f3ef17920 15,185,192-210
+crates/gateway-client-config/src/tests.rs
+  s_9cb90ef0550904::t_fd1a5644f3ad19 7-8,491,1274-1316
+crates/gateway-client-config/src/types.rs
+  s_9cb90ef0550904::t_21e8a5dbf76abd 26-66,155-158,245
+crates/gateway-service/src/admin_models.rs
+  s_9cb90ef0550904::t_efd7efd3c0bc6f 8-10,15,22,314-317,395,476,480-490,1076,1926
+crates/gateway-service/src/effective_route_metadata.rs
+  s_9cb90ef0550904::t_47b29a73e0efa9 3-6,261-262,284-292,387-449
+crates/gateway-service/src/model_metadata.rs
+  s_9cb90ef0550904::t_500cca18bc8273 12-14,16-17,105-106,140-143,163
+crates/gateway-service/src/model_metadata/listing.rs
+  s_9cb90ef0550904::t_74d3fd930262cc 19-21,194,215-216,227,279-284,301,345-346,348
+crates/gateway-service/src/model_metadata/tests.rs
+  s_9cb90ef0550904::t_d7f2886f5d7df5 537-644
+crates/gateway-service/src/model_resolution.rs
+  s_9cb90ef0550904::t_b62e742061a92f 64-87
+docs/adr/2026-09-24-models-list-client-hints.md
+  s_9cb90ef0550904::t_ad16fb3c600501 19,38-43
+docs/configuration/model-routing-and-api-behavior.md
+  s_9cb90ef0550904::t_278524b914dc27 285,301
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "23857a15ba0e197448277185fcc65e615a2ed6dc",
+  "prompts": {},
+  "sessions": {
+    "s_9cb90ef0550904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "accf8405-3895-4f10-b03f-d1ae693d2897",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

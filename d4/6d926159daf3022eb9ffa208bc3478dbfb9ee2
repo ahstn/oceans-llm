@@ -1,0 +1,14 @@
+docs/src/content/docs/reference/provider-api-compatibility.mdx
+  h_2f452a9c375069 517
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "d46d926159daf3022eb9ffa208bc3478dbfb9ee2",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,57 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_eaf7116ccea134::t_120e72ea6b8685 555-557
+crates/admin-ui/web/src/routes/identity/-teams/add-members-dialog.tsx
+  s_eaf7116ccea134::t_fcd1997b9ca43d 16-17,20
+crates/admin-ui/web/src/routes/identity/-teams/membership-change-dialogs.tsx
+  s_eaf7116ccea134::t_993953164db43d 20-21
+crates/admin-ui/web/src/routes/identity/-teams/team-editor-dialog.tsx
+  s_eaf7116ccea134::t_05c08304ae6045 15-17
+crates/admin-ui/web/src/routes/identity/-teams/team-form.ts
+  s_eaf7116ccea134::t_d786925b0216ad 3
+crates/admin-ui/web/src/routes/identity/-teams/use-add-members.ts
+  s_eaf7116ccea134::t_79af620b3ed734 5-6,30,75,95
+crates/admin-ui/web/src/routes/identity/-teams/use-membership-change.ts
+  s_eaf7116ccea134::t_ba4e430c027f38 5-6,31,67,88
+crates/admin-ui/web/src/routes/identity/-teams/use-team-editor.ts
+  s_eaf7116ccea134::t_1dc12af0a21919 5-6,22,64
+crates/admin-ui/web/src/routes/identity/-use-identity-transition.ts
+  s_eaf7116ccea134::t_7c2fae7aa39646 5,8-10,12,30,34
+crates/admin-ui/web/src/routes/identity/-users/create-user-dialog.tsx
+  s_eaf7116ccea134::t_0fac4a674d5c5a 16-17,40
+crates/admin-ui/web/src/routes/identity/-users/use-create-user.ts
+  s_eaf7116ccea134::t_8c0ef1fcdb8221 10,23,43
+crates/admin-ui/web/src/routes/identity/-users/use-onboarding-reset.ts
+  s_eaf7116ccea134::t_11c5af5052d957 5-8,29,54,58
+crates/admin-ui/web/src/routes/identity/-users/use-provider-credentials.ts
+  s_eaf7116ccea134::t_4142d0b6225594 8,18,53,66
+crates/admin-ui/web/src/routes/identity/-users/use-user-details.ts
+  s_eaf7116ccea134::t_05b5fec2e5948d 10-11,18,37,81
+crates/admin-ui/web/src/routes/identity/-users/user-auth-section.tsx
+  s_eaf7116ccea134::t_6f3dd4d94152cd 5-6
+crates/admin-ui/web/src/routes/identity/-users/user-details-dialog.tsx
+  s_eaf7116ccea134::t_aa70f1f799d500 27,29-33,38,40,56,255
+crates/admin-ui/web/src/routes/identity/teams.tsx
+  s_eaf7116ccea134::t_4302e6fa20cebb 19,23,25-30,85
+crates/admin-ui/web/src/routes/identity/users.tsx
+  s_eaf7116ccea134::t_3333840ae25e03 19,21-24,80
+crates/admin-ui/web/src/test/routes/teams-hooks.test.ts
+  s_eaf7116ccea134::t_50c18c060da7f0 15-19,221,304,425
+crates/admin-ui/web/src/test/routes/users-hooks.test.ts
+  s_eaf7116ccea134::t_acb6e63563b2b1 5-9,90,93,103,117,133,203,282,374
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f4ad1b48959870debc0268e6689e53d2961bcb7d",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

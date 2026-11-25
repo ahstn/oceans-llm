@@ -1,0 +1,23 @@
+.agents/skills/verify-oceans-admin/features/audit-log.md
+  s_af4ccbd37c05c0::t_213929205967a0 28,43
+docs/access/admin-audit-log.md
+  s_af4ccbd37c05c0::t_87f86a7d7814f5 39-41,72
+docs/adr/2026-10-15-admin-audit-log.md
+  s_af4ccbd37c05c0::t_ad89078a8cfb48 25-26,62-70,107,120,126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a8cb1860c602dd97b867218b5e46d98e92a1fa34",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

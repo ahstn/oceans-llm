@@ -1,0 +1,27 @@
+.github/workflows/release-product.yml
+  s_85219a7516ce76::t_dc778b9a1c5e67 58-62,104
+compose.local.yaml
+  s_85219a7516ce76::t_961c782fb0fa3f 8-9
+crates/gateway/Dockerfile
+  s_85219a7516ce76::t_861933a0f8c772 3-4
+docs/access/oidc-and-sso-status.md
+  s_85219a7516ce76::t_69bc67fd4b7fa3 87,145
+docs/contributing/development/authentication-testing.md
+  s_85219a7516ce76::t_2ebba9c4a9ad54 12,61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5b6d857a2abe27bf96fc133a65befb6fa27bb8b0",
+  "prompts": {},
+  "sessions": {
+    "s_85219a7516ce76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd4f065d-f5e0-4db2-a846-89e3c6902774",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

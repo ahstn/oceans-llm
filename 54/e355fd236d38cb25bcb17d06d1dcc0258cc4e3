@@ -1,0 +1,35 @@
+docs-nimbus/src/components/Logo.astro
+  s_397b5a20224eaa::t_7887143763c2ab 2-4,6,9-10,12-15
+  s_397b5a20224eaa::t_c2f768f6b59ffd 5
+docs-nimbus/AGENT.md
+  s_397b5a20224eaa::t_17348586c013e2 15,75-76
+docs-nimbus/astro.config.ts
+  s_397b5a20224eaa::t_edbe40411bf1be 29
+docs-nimbus/src/content/docs/providers/opencode-zen.mdx
+  s_397b5a20224eaa::t_770ad821d79142 12-16
+  s_397b5a20224eaa::t_056839edc94931 3,8,10,18-33,37-48,50,56,60-61,63-88,93-97,99,101,103-108,110,112,114,116-117,119,121,123-124,126
+docs-nimbus/src/pages/og/_card.ts
+  s_397b5a20224eaa::t_a4082b60f0834d 3,11-12,14,53-60,66
+docs-nimbus/src/content/docs/configuration/providers.mdx
+  s_397b5a20224eaa::t_7b146785e021d4 147,149,157,161
+docs-nimbus/src/components/Header.astro
+  s_397b5a20224eaa::t_c2f768f6b59ffd 67-69
+docs-nimbus/src/layouts/DocsLayout.astro
+  s_397b5a20224eaa::t_9a89742c258a47 295-297
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "54e355fd236d38cb25bcb17d06d1dcc0258cc4e3",
+  "prompts": {},
+  "sessions": {
+    "s_397b5a20224eaa": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1aae3-a475-75cb-9430-4462f4b0f4ad",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

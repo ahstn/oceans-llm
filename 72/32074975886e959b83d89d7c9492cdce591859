@@ -1,0 +1,21 @@
+crates/gateway/src/http/inference_guardrails.rs
+  s_ee057229033589::t_e9496b204c80a3 372,381,391,661-662,665,699-701,712,813,816,849,2002-2081
+docs/adr/2026-08-22-gateway-guardrails-domain-and-composition.md
+  s_ee057229033589::t_69269fa962e101 27,39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7232074975886e959b83d89d7c9492cdce591859",
+  "prompts": {},
+  "sessions": {
+    "s_ee057229033589": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "250131c4-1d2c-4d6b-a98c-87c1d612ba06",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

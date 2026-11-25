@@ -1,0 +1,14 @@
+crates/admin-ui/web/src/test/routes/request-logs-route.test.tsx
+  h_2f452a9c375069 286,289-290
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "90309bedb846ea11b0ad4d1b9b680ab462dc7114",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

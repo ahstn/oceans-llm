@@ -1,0 +1,31 @@
+crates/gateway-service/src/admin_audit.rs
+  s_af4ccbd37c05c0::t_da6c49e81ab7c2 356-375,741-755
+crates/gateway/src/http/audit_tests.rs
+  s_af4ccbd37c05c0::t_de55cce2385c58 346-354
+crates/gateway/src/http/identity.rs
+  s_af4ccbd37c05c0::t_48099e385e9db3 480,485
+crates/gateway/src/http/mcp_oauth.rs
+  s_af4ccbd37c05c0::t_78a02f0f7c6b9c 464
+crates/gateway/src/http/mcp_registry.rs
+  s_af4ccbd37c05c0::t_66085c8fcafe5d 734,859,862
+crates/gateway/src/http/provider_credentials.rs
+  s_af4ccbd37c05c0::t_aac5596abb9dae 221,224
+crates/gateway/src/http/spend.rs
+  s_af4ccbd37c05c0::t_e0b00524045e01 540,545
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a51b4ea525fb3b96093d41c49a309d9e70204809",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

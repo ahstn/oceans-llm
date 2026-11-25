@@ -1,0 +1,108 @@
+.agents/skills/verify-oceans-admin/SKILL.md
+  h_2f452a9c375069 107,208-209
+.agents/skills/verify-oceans-admin/features/mcp.md
+  h_2f452a9c375069 9,59,64,74
+.agents/skills/verify-oceans-admin/scripts/drive-mcp.mjs
+  h_2f452a9c375069 7,59-66,159-172
+.agents/skills/verify-oceans-admin/scripts/mcp-browser.mjs
+  h_2f452a9c375069 42-146,171
+DESIGN.md
+  h_2f452a9c375069 208,217-218
+crates/admin-ui/web/src/components/mcp/server-discovery.test.ts
+  h_2f452a9c375069 1-147
+crates/admin-ui/web/src/components/mcp/server-discovery.ts
+  h_2f452a9c375069 28-166
+crates/admin-ui/web/src/components/mcp/server-registry.tsx
+  h_2f452a9c375069 6
+crates/admin-ui/web/src/generated/admin-api.ts
+  h_2f452a9c375069 588-607,3766-3777,4364-4375,6777-6823
+crates/admin-ui/web/src/routes/mcp/-components.tsx
+  h_2f452a9c375069 1-13,17-22,28,35-40,54,65,88-218,221-224,227-230,234-241,271-320
+crates/admin-ui/web/src/routes/mcp/-servers-tab.tsx
+  h_2f452a9c375069 2-9,21-25,50,69,127,136-138,141-146,320-332,338-344,347,349,352-356,359,361,367-380,480-482,494,522-523,531,554,625-632,683-684,695,706-709
+crates/admin-ui/web/src/server/admin-data.functions.ts
+  h_2f452a9c375069 23,701,703-723,725-729,731-733
+crates/admin-ui/web/src/server/admin-data.server.ts
+  h_2f452a9c375069 557-565
+crates/admin-ui/web/src/styles/globals.css
+  h_2f452a9c375069 296-297
+crates/admin-ui/web/src/test/routes/mcp-servers-route.test.tsx
+  h_2f452a9c375069 3,16,48,223,227-228,237-239,464,473-477,493-497,502-595,739,742-746,755-784,1042
+crates/gateway-core/src/domain.rs
+  h_2f452a9c375069 1903-1908
+crates/gateway-core/src/traits.rs
+  h_2f452a9c375069 1059-1074
+crates/gateway-service/src/admin_audit.rs
+  h_2f452a9c375069 147,236
+crates/gateway-service/src/mcp_gateway.rs
+  h_2f452a9c375069 276-290
+crates/gateway-service/src/mcp_registry.rs
+  h_2f452a9c375069 19,83-85,89-95,254-256,263-274,302-308,314-321,331-339,356-366,402,427,435-448,536,539-546,549,558,574,580-589,607-638,640,643-647,868-944,1054-1068
+crates/gateway-store/migrations/V70__external_mcp_server_status_revision.sql
+  h_2f452a9c375069 1-6
+crates/gateway-store/migrations/postgres/V70__external_mcp_server_status_revision.sql
+  h_2f452a9c375069 1-6
+crates/gateway-store/src/any_store_mcp_registry.rs
+  h_2f452a9c375069 83-119
+crates/gateway-store/src/lib.rs
+  h_2f452a9c375069 1497,1550,1628,1653-1656,1680-1821,1872
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  h_2f452a9c375069 209-245,431-432,448-484,518-519,589-590
+crates/gateway-store/src/migration_registry.rs
+  h_2f452a9c375069 431-439
+crates/gateway-store/src/postgres_store/mcp_registry.rs
+  h_2f452a9c375069 204-232,411-412,428-470,495,582
+crates/gateway-store/src/tests/mcp_access.rs
+  h_2f452a9c375069 46
+crates/gateway-store/src/tests/mcp_tag_rules.rs
+  h_2f452a9c375069 72
+crates/gateway-store/src/tests/mcp_tool_versions.rs
+  h_2f452a9c375069 74
+crates/gateway/openapi/admin-api.json
+  h_2f452a9c375069 2076-2142,14402-14417,14422-14423,16827-16842,16847-16848
+crates/gateway/src/http/admin_contract.rs
+  h_2f452a9c375069 2093,2286
+crates/gateway/src/http/audit_tests.rs
+  h_2f452a9c375069 597-612
+crates/gateway/src/http/audit_tests/mcp_tool_policy.rs
+  h_2f452a9c375069 38,267
+crates/gateway/src/http/mcp_client_oauth/mcp_route_tests.rs
+  h_2f452a9c375069 114
+crates/gateway/src/http/mcp_gateway/aggregate/tests.rs
+  h_2f452a9c375069 792
+crates/gateway/src/http/mcp_gateway/credentials/tests.rs
+  h_2f452a9c375069 106
+crates/gateway/src/http/mcp_gateway/tests.rs
+  h_2f452a9c375069 398,798-823
+crates/gateway/src/http/mcp_registry.rs
+  h_2f452a9c375069 265-304,399-400
+crates/gateway/src/http/mcp_registry/tests.rs
+  h_2f452a9c375069 363
+crates/gateway/src/http/mcp_registry/views.rs
+  h_2f452a9c375069 180,182-187,636-637
+crates/gateway/src/http/mod.rs
+  h_2f452a9c375069 390-393
+crates/gateway/src/http/scoped_api_key_tests.rs
+  h_2f452a9c375069 331
+docs/access/admin-audit-log.md
+  h_2f452a9c375069 32,51
+docs/adr/2026-05-26-external-mcp-registry-and-discovery.md
+  h_2f452a9c375069 53-54
+docs/configuration/mcp-servers.md
+  h_2f452a9c375069 51-52,57-61
+docs/contributing/mcp/mcp-registry-and-discovery.md
+  h_2f452a9c375069 20,50,63-64
+docs/contributing/reference/data-relationships.md
+  h_2f452a9c375069 163-164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "48e6a0ff0ed171f1346da6d74c62605a6834c164",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

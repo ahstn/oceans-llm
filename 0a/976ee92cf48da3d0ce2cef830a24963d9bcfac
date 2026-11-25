@@ -1,0 +1,19 @@
+crates/admin-ui/web/src/test/routes/teams-route.test.tsx
+  s_f9a2dc193f7af4::t_ea4521821e7f1f 471-473
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0a976ee92cf48da3d0ce2cef830a24963d9bcfac",
+  "prompts": {},
+  "sessions": {
+    "s_f9a2dc193f7af4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f47da735-08a7-4f2b-a249-ef2ca3735b63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

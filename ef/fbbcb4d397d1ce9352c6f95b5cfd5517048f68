@@ -1,0 +1,100 @@
+.agents/skills/verify-oceans-admin/scripts/messages-regressions.mjs
+  s_583c88036df9d8::t_775a1d83df4431 15,32-35
+  s_583c88036df9d8::t_29560e8a4db4e7 24-25
+docs/adr/2026-11-03-native-anthropic-messages-transport.md
+  s_583c88036df9d8::t_0af585edcf438b 11,27
+crates/gateway-providers/src/anthropic/request.rs
+  s_583c88036df9d8::t_445ab318f77201 743-745,747,750,754,757-758
+  s_224d75ee42a736::t_0708408886e225 759
+crates/gateway-providers/src/bedrock/tests/eventstream.rs
+  s_dad8a90082677b::t_1e8e7ebc191f20 18-21,24-34,37-80
+  s_dad8a90082677b::t_85b314c2e17bbf 22-23,35-36,81-132
+crates/gateway-providers/src/bedrock/eventstream.rs
+  s_583c88036df9d8::t_002b36e3bef07d 282,560,582-587,617-618
+  s_583c88036df9d8::t_707c12dcbf085d 686
+  s_dad8a90082677b::t_67abd15f030a75 311-316,368-371,425,447,453-466,471-472,521,526-533,537-543,545,547-551,553-559,561-565,569-581,588-605,608-610,616,651-680,684,687-695,827-830
+  s_583c88036df9d8::t_145dc68fb9d648 534-536,566-568,619,681-683,685,696-711
+  s_583c88036df9d8::t_736745cb5106d5 620
+.agents/skills/verify-oceans-admin/features/anthropic-messages.md
+  s_583c88036df9d8::t_29560e8a4db4e7 19,74
+  s_583c88036df9d8::t_775a1d83df4431 65-66
+docs/internal/2026-11-05-provider-harness-comparison.md
+  s_583c88036df9d8::t_59e8e80085afbc 177,198,205-207,219
+  s_583c88036df9d8::t_5a66bdbb800482 179,204
+  s_583c88036df9d8::t_ff5b9369c82fb9 140,157-160,175-176,184-185,194-196
+  s_583c88036df9d8::t_9bb471a9ba10a9 143-145,161-168,186-187
+  s_583c88036df9d8::t_a020e3aa6bfa0f 197
+crates/gateway-providers/src/bedrock/tests/replay.rs
+  s_dad8a90082677b::t_85b314c2e17bbf 388-452,456-485
+  s_583c88036df9d8::t_002b36e3bef07d 453-455
+  s_583c88036df9d8::t_f13baf7711bd4c 387
+crates/gateway-service/src/effective_route_metadata.rs
+  s_583c88036df9d8::t_0af585edcf438b 287
+crates/gateway-providers/src/vertex/google_request.rs
+  s_583c88036df9d8::t_002b36e3bef07d 249,257-265
+  s_5e1c38f8ee0e29::t_0c1325b560071a 1,243,251-256,266-268
+crates/gateway-core/src/route_capabilities.rs
+  s_583c88036df9d8::t_0af585edcf438b 1,143-161
+  s_583c88036df9d8::t_7b608e93c6e787 162-163
+crates/gateway-providers/src/anthropic/request_tests.rs
+  s_224d75ee42a736::t_3c935e16e4823a 611-614,621-627,633-651
+  s_224d75ee42a736::t_fdca0ae0102670 610,628-632
+  s_583c88036df9d8::t_a1285887c5db74 615-620
+  s_583c88036df9d8::t_f2c323cef0ee1c 609
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_583c88036df9d8::t_0af585edcf438b 216,362,406
+crates/gateway-providers/src/openai_compat/native_messages.rs
+  s_583c88036df9d8::t_0af585edcf438b 8
+crates/gateway-providers/src/vertex/tests/google_tools.rs
+  s_583c88036df9d8::t_c56a6981171070 743,745-746
+  s_5e1c38f8ee0e29::t_f0edb12f88f08f 739-742,744,747-755
+  s_5e1c38f8ee0e29::t_56d7862d32912b 736-738
+docs/reference/provider-api-compatibility.md
+  s_583c88036df9d8::t_9bb471a9ba10a9 269,472,476
+  s_583c88036df9d8::t_29560e8a4db4e7 67-68
+crates/gateway-providers/src/openai_compat/anthropic_messages.rs
+  s_583c88036df9d8::t_be70b03a4b9f21 371-395
+  s_583c88036df9d8::t_445ab318f77201 61,69,73
+  s_583c88036df9d8::t_d67781abb336bb 76-78
+  s_583c88036df9d8::t_f41659bcdf2f28 370
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "effbbcb4d397d1ce9352c6f95b5cfd5517048f68",
+  "prompts": {},
+  "sessions": {
+    "s_224d75ee42a736": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1ae49-89a3-754f-91ef-89b37efae680",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_583c88036df9d8": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1aac9-1166-77b3-9da2-1112c2a986fe",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_5e1c38f8ee0e29": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1ae68-b4c7-7043-b2e7-5a1f6cae4b13",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_dad8a90082677b": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1ae68-b4cb-745a-91f1-b1eed347cd56",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

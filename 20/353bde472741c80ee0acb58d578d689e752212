@@ -1,0 +1,21 @@
+crates/gateway-store/src/libsql_store/review_agent.rs
+  s_af4ccbd37c05c0::t_a5e0de60b959ef 391-392,394-397,402-410
+crates/gateway-store/src/postgres_store/review_agent.rs
+  s_af4ccbd37c05c0::t_88d7905969b6ed 347-363
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "20353bde472741c80ee0acb58d578d689e752212",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

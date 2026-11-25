@@ -1,0 +1,33 @@
+crates/gateway/src/http/audit.rs
+  s_b8e52ffc321bb1::t_96ce705a31807d 125-133
+crates/gateway/src/http/mcp_gateway.rs
+  s_b8e52ffc321bb1::t_fd0b2cf05e6a5e 189-190
+crates/gateway/src/http/mcp_gateway/session.rs
+  s_6be340fbf0a8f5::t_9c18f938e359e7 5-6,30,37,41,45,203,206,210,214,218,222
+crates/gateway/src/http/mcp_gateway/tests.rs
+  s_6be340fbf0a8f5::t_bf4fe287477ee0 2023-2038
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f133cc52d86b7d61ef77a35fe01d6281644e1eb5",
+  "prompts": {},
+  "sessions": {
+    "s_6be340fbf0a8f5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fb1509e8-43e8-4d55-a2e5-9312c36ee993",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

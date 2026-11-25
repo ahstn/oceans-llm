@@ -1,0 +1,46 @@
+docs/src/content/docs/setup/kubernetes-and-helm.mdx
+  s_397b5a20224eaa::t_284b302b53061e 64
+docs/src/components/ui/api-layout/auth.ts
+  s_397b5a20224eaa::t_4f5d612be2f991 28-30,45-51,62
+docs/src/content/docs/setup/self-hosting.mdx
+  s_397b5a20224eaa::t_284b302b53061e 218
+docs/src/content/docs/spend/pricing-and-accounting.mdx
+  s_397b5a20224eaa::t_284b302b53061e 21-22,28
+docs/src/content/docs/configuration/index.mdx
+  s_397b5a20224eaa::t_4da53487cc297f 167-168
+docs/src/content/docs/operations/admin-runbooks.mdx
+  s_397b5a20224eaa::t_284b302b53061e 70,177,308
+docs/src/components/ui/sidebar/sidebar.client.ts
+  s_397b5a20224eaa::t_4f5d612be2f991 114
+.github/workflows/docs-ci.yml
+  s_397b5a20224eaa::t_5ff347cd8248fc 7
+docs/src/components/ui/api-layout/ApiEndpointCard.astro
+  s_397b5a20224eaa::t_4f5d612be2f991 31
+docs/src/content/docs/setup/first-access.mdx
+  s_397b5a20224eaa::t_284b302b53061e 34
+docs/nimbus.json
+  s_397b5a20224eaa::t_5ff347cd8248fc 11
+docs/src/content/docs/operations/gateway-guardrails.mdx
+  s_397b5a20224eaa::t_284b302b53061e 366
+docs/AGENT.md
+  s_397b5a20224eaa::t_a47b75eaab2a64 140
+  s_397b5a20224eaa::t_5ff347cd8248fc 138
+docs/astro.config.ts
+  s_397b5a20224eaa::t_284b302b53061e 45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b04fbb6038ab23b8f0ea31c5fe2fabdb97e824c9",
+  "prompts": {},
+  "sessions": {
+    "s_397b5a20224eaa": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1aae3-a475-75cb-9430-4462f4b0f4ad",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

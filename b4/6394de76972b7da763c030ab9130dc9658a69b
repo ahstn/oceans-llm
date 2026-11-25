@@ -1,0 +1,21 @@
+DESIGN.md
+  s_70a1a5a7a1bcd3::t_4dd6f2e6020289 34-35,181,319-329,336-337
+docs/adr/2026-10-16-admin-ui-design-system-dark-only.md
+  s_70a1a5a7a1bcd3::t_1f6b4bcb989b9c 49,57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b46394de76972b7da763c030ab9130dc9658a69b",
+  "prompts": {},
+  "sessions": {
+    "s_70a1a5a7a1bcd3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1491e-d836-70f2-8c45-b23398e21490",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

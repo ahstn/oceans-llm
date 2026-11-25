@@ -1,0 +1,73 @@
+.agents/skills/verify-oceans-admin/SKILL.md
+  s_481a97bf7114e6::t_ec0f0663319176 49-53,107,209
+.agents/skills/verify-oceans-admin/features/guardrails.md
+  s_481a97bf7114e6::t_12e8f53b18c803 11,17
+.agents/skills/verify-oceans-admin/features/mcp.md
+  s_481a97bf7114e6::t_adebcf59ee9551 30-32,59
+.agents/skills/verify-oceans-admin/features/request-logs.md
+  s_481a97bf7114e6::t_c9518c6679dbf3 9,44
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_481a97bf7114e6::t_9521ccc167db80 401-402
+.agents/skills/verify-oceans-admin/scripts/control-oceans-admin
+  s_481a97bf7114e6::t_0921c5a80c34ea 60,310,322-334,390-392,524
+.agents/skills/verify-oceans-admin/scripts/drive-mcp.mjs
+  s_481a97bf7114e6::t_3e75f41d9f4042 7,32-35,37,45,63,65-66
+.agents/skills/verify-oceans-admin/scripts/mcp-browser.mjs
+  s_481a97bf7114e6::t_f5567cc779fd71 2-3,6-40,42-45,89,148,176,182-183,230-233
+.agents/skills/verify-oceans-admin/scripts/mcp-verification.test.mjs
+  s_481a97bf7114e6::t_558a35656e67d1 10,115-155
+crates/admin-ui/web/e2e/gateway-contract.e2e.ts
+  s_481a97bf7114e6::t_35fb35a299458d 333,336,340
+crates/gateway-core/src/budgets.rs
+  s_481a97bf7114e6::t_7023aecdfbeaed 34-90,455,509-521
+crates/gateway-core/src/error.rs
+  s_481a97bf7114e6::t_e61d7c82d60162 4-7,120-121,123-125,129-130,133,182,314-362
+crates/gateway-core/src/lib.rs
+  s_481a97bf7114e6::t_ac9b532a39cd0d 46-48
+crates/gateway-service/src/budget_guard.rs
+  s_481a97bf7114e6::t_fb0f372a14107f 4-5,27,36-45,157-158,161,230,680-717
+crates/gateway-service/src/service.rs
+  s_481a97bf7114e6::t_d681512bac3596 7-9,195-201
+crates/gateway/src/config/budgets.rs
+  s_481a97bf7114e6::t_c42c6e831f55b4 4,23-25
+crates/gateway/src/config/tests/budgets.rs
+  s_481a97bf7114e6::t_c91dd45a47555f 170-232
+crates/gateway/src/http/budget_status_tests.rs
+  s_481a97bf7114e6::t_de3fb0625523cd 1-243
+crates/gateway/src/http/handlers/inference_tests.rs
+  s_481a97bf7114e6::t_e4d23cec372b13 307
+crates/gateway/src/http/mod.rs
+  s_481a97bf7114e6::t_8ca66ee3200e4c 6-7
+crates/gateway/src/main.rs
+  s_481a97bf7114e6::t_b097e18c2abe6b 707
+docs/access/budgets.md
+  s_481a97bf7114e6::t_1fc113b20f0f4e 47,51-57
+docs/adr/2026-03-31-chat-observability-hardening-and-stream-parse-contract.md
+  s_481a97bf7114e6::t_9315502a5225ac 48-50
+docs/adr/2026-10-14-budget-exceeded-status-code.md
+  s_481a97bf7114e6::t_83400b07f2c57c 1-85
+docs/configuration/configuration-reference.md
+  s_481a97bf7114e6::t_682b86ee60f80f 316,659,663,681,688
+docs/contributing/operations/budgets-and-spending.md
+  s_481a97bf7114e6::t_d06a8ff9fed200 108
+docs/reference/request-lifecycle-and-failure-modes.md
+  s_481a97bf7114e6::t_a8bbdfdee4cdf6 41,182-185
+mise.rustfs.toml
+  s_481a97bf7114e6::t_f91762035d4251 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "03263fd9ca96ae62a259e4526beeb3311a9a6b25",
+  "prompts": {},
+  "sessions": {
+    "s_481a97bf7114e6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7080efcb-45cc-454b-94f3-8e9a952844fd",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

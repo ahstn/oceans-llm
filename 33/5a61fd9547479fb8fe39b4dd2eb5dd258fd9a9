@@ -1,0 +1,60 @@
+crates/gateway-core/src/domain.rs
+  h_2f452a9c375069 119-182,3377-3379,3396,3994-4020
+crates/gateway-providers/src/anthropic/compat_stream.rs
+  h_2f452a9c375069 191-197
+crates/gateway-providers/src/anthropic/controls.rs
+  h_2f452a9c375069 48-49
+crates/gateway-providers/src/anthropic/mod.rs
+  h_2f452a9c375069 29
+crates/gateway-providers/src/anthropic/replay.rs
+  h_2f452a9c375069 210-213
+crates/gateway-providers/src/anthropic/replay_tests.rs
+  h_2f452a9c375069 391-447
+crates/gateway-providers/src/anthropic/request.rs
+  h_2f452a9c375069 661-664
+crates/gateway-providers/src/anthropic/streaming.rs
+  h_2f452a9c375069 203-204,210-211
+crates/gateway-providers/src/bedrock/request/inference.rs
+  h_2f452a9c375069 429-436,438-447,458-499,501,504-524
+crates/gateway-providers/src/bedrock/request/mod.rs
+  h_2f452a9c375069 123,139,517-519,521,538
+crates/gateway-providers/src/bedrock/tests/request_content.rs
+  h_2f452a9c375069 824-920
+crates/gateway-providers/src/bedrock/tests/request_tools.rs
+  h_2f452a9c375069 650-731
+crates/gateway-providers/src/copilot/mod.rs
+  h_2f452a9c375069 128-153,336,379-384
+crates/gateway-providers/src/copilot/tests.rs
+  h_2f452a9c375069 1111-1182
+crates/gateway-providers/src/openai_compat.rs
+  h_2f452a9c375069 18-20,362-376,489,491-492,497,506,576-635,912,928-931,1229-1277,1380-1463,1698-1730,2370
+crates/gateway-providers/src/openai_compat/batch.rs
+  h_2f452a9c375069 561-567,838-872
+crates/gateway-providers/src/streaming.rs
+  h_2f452a9c375069 45-58,70-71,78-80,93-95,119-121,130-132,144-146,165-180,191-194,254-288,749-813
+crates/gateway/src/config/routes.rs
+  h_2f452a9c375069 361
+crates/gateway/src/config/tests/routes.rs
+  h_2f452a9c375069 27,50,57-91
+crates/gateway/src/http/mod.rs
+  h_2f452a9c375069 111-112
+docs/src/content/docs/configuration/model-routing.mdx
+  h_2f452a9c375069 24,450
+docs/src/content/docs/configuration/models-and-routes.mdx
+  h_2f452a9c375069 307,427-428
+docs/src/content/docs/reference/provider-api-compatibility.mdx
+  h_2f452a9c375069 209,212,222-223,416-418,434-435
+docs/src/content/docs/spend/pricing-and-accounting.mdx
+  h_2f452a9c375069 267
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "335a61fd9547479fb8fe39b4dd2eb5dd258fd9a9",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

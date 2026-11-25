@@ -1,0 +1,18 @@
+deploy/selfhost/gateway.yaml
+  h_2f452a9c375069 48,50-51,54,56,58-59,61-74
+docs/setup/self-hosting-mise-daemons.md
+  h_2f452a9c375069 57,61,76
+mise.selfhost.toml
+  h_2f452a9c375069 11,58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7ec147f491374294def6d9ed4fc790f977113a39",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

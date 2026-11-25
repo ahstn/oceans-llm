@@ -1,0 +1,19 @@
+crates/gateway/src/http/identity.rs
+  s_af4ccbd37c05c0::t_bde7a4713426fe 1425-1430,1433-1436,1475-1477
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b134fc299bad7dbf6de693a4532705311075045e",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

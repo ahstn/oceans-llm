@@ -1,0 +1,20 @@
+crates/gateway-core/src/lib.rs
+  h_2f452a9c375069 31-32,115-123,189
+crates/gateway-providers/src/anthropic/mod.rs
+  h_2f452a9c375069 37,43-44
+crates/gateway-providers/src/anthropic/thinking.rs
+  h_2f452a9c375069 8
+crates/gateway-service/src/service.rs
+  h_2f452a9c375069 12-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "545792cc6678a2b5c004cdbb7040a43fd65db9a6",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

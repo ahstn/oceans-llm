@@ -1,0 +1,25 @@
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/pull-requests-tab.tsx
+  s_0a4447f1aa57dd::t_46f0578bc500a9 390-394
+crates/gateway-service/src/attribution/report.rs
+  s_0a4447f1aa57dd::t_3a50ce7a1ccb4f 47-49,165-166,728-729,755-766
+crates/gateway-service/src/attribution/tests/report.rs
+  s_0a4447f1aa57dd::t_41c53b1dc2bd68 1206-1252
+crates/gateway/src/http/attribution/report.rs
+  s_0a4447f1aa57dd::t_5c599fff6e138a 174-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d3d4593c9b87dab0c6063086fdf18e8100ed3217",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

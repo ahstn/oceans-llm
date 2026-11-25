@@ -1,0 +1,19 @@
+.github/dist-build-setup.yml
+  s_945fb39c9a6adc::t_c1500a12582e53 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "19eded345e9b0862063637287776dc13958476fd",
+  "prompts": {},
+  "sessions": {
+    "s_945fb39c9a6adc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c8c5ea47-24b1-4f15-8bef-26a4962acdc2",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

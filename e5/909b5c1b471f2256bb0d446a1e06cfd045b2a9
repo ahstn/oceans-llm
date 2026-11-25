@@ -1,0 +1,19 @@
+crates/gateway-service/src/mcp_registry.rs
+  s_1864c803a90a0e::t_0de5779653c24a 254-257,264,269-270,825-848,960,963
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e5909b5c1b471f2256bb0d446a1e06cfd045b2a9",
+  "prompts": {},
+  "sessions": {
+    "s_1864c803a90a0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5822bc90-e33d-49af-9d44-474de0500040",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

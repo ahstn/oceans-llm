@@ -1,0 +1,21 @@
+dist-workspace.toml
+  s_4394d7bb181c63::t_21a5f80eebd406 53-54
+docs/contributing/reference/release-process.md
+  s_4394d7bb181c63::t_7c7d9c17d7421b 117-118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dfbe21e0b84679d5c642fee0d27feb8a14089e9f",
+  "prompts": {},
+  "sessions": {
+    "s_4394d7bb181c63": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5fe6d420-4e7e-4885-8f8a-07723d2ed05e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

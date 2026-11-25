@@ -1,0 +1,74 @@
+.agents/skills/verify-oceans-admin/features/models.md
+  h_2f452a9c375069 34
+.agents/skills/verify-oceans-admin/features/routing.json
+  h_2f452a9c375069 84-87
+.github/workflows/opencode-plugin-ci.yml
+  h_2f452a9c375069 1-41
+.gitignore
+  h_2f452a9c375069 21
+crates/admin-ui/web/src/components/icons/agent-harness-icon.tsx
+  h_2f452a9c375069 16-17
+crates/gateway-client-config/src/api_style.rs
+  h_2f452a9c375069 62
+crates/gateway-client-config/src/lib.rs
+  h_2f452a9c375069 16-18
+crates/gateway-client-config/src/templates/mod.rs
+  h_2f452a9c375069 5,11,29
+crates/gateway-client-config/src/templates/opencode.rs
+  h_2f452a9c375069 61,179-185,191-199
+crates/gateway-client-config/src/templates/opencode_plugin.rs
+  h_2f452a9c375069 1-125
+crates/gateway-client-config/src/tests.rs
+  h_2f452a9c375069 7-9,389-439,1063,1338,1348-1351
+crates/gateway-service/src/admin_models.rs
+  h_2f452a9c375069 1535,1794,1947,2041,2066-2068,2074,2079,2083-2084,2086,2092,2097,2115,2137,2162-2163,2165,2170,2175
+docs/adr/2026-10-28-opencode-plugin-package.md
+  h_2f452a9c375069 1-45
+docs/configuration/client-harness-configuration.md
+  h_2f452a9c375069 15,35,45,55-67,121
+mise.toml
+  h_2f452a9c375069 22,34,255-256,270
+plugins/.oxfmtrc.json
+  h_2f452a9c375069 1-8
+plugins/.oxlintrc.json
+  h_2f452a9c375069 1-44
+plugins/opencode/README.md
+  h_2f452a9c375069 1-106
+plugins/opencode/bun.lock
+  h_2f452a9c375069 1-715
+plugins/opencode/mise.toml
+  h_2f452a9c375069 1-30
+plugins/opencode/package.json
+  h_2f452a9c375069 1-47
+plugins/opencode/src/config.ts
+  h_2f452a9c375069 1-135
+plugins/opencode/src/discovery.ts
+  h_2f452a9c375069 1-90
+plugins/opencode/src/entry.ts
+  h_2f452a9c375069 1-29
+plugins/opencode/src/index.ts
+  h_2f452a9c375069 1-122
+plugins/opencode/src/models.ts
+  h_2f452a9c375069 1-187
+plugins/opencode/test/config.test.ts
+  h_2f452a9c375069 1-98
+plugins/opencode/test/discovery.test.ts
+  h_2f452a9c375069 1-80
+plugins/opencode/test/models.test.ts
+  h_2f452a9c375069 1-161
+plugins/opencode/tsconfig.json
+  h_2f452a9c375069 1-13
+scripts/release.sh
+  h_2f452a9c375069 3-4,41-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "a0c553b7e1005c63761700e8ca9719ac6bfea4b2",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

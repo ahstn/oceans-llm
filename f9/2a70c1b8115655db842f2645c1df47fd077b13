@@ -1,0 +1,21 @@
+crates/gateway-service/src/mcp_token_overhead.rs
+  s_b8e52ffc321bb1::t_1fb3cce7e78b66 23-25,337
+crates/gateway/src/http/handlers.rs
+  s_b8e52ffc321bb1::t_648c86a2e6930d 1892,1974
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f92a70c1b8115655db842f2645c1df47fd077b13",
+  "prompts": {},
+  "sessions": {
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

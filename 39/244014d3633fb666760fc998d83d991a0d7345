@@ -1,0 +1,176 @@
+crates/gateway-providers/src/bedrock/tests/mod.rs
+  s_99bf3218dac1ab::t_ffa8e51019d60a 13
+  s_583c88036df9d8::t_411e63d7e05864 15-16,19,21
+crates/gateway-service/src/request_logging.rs
+  s_e0cdd517c6a6f1::t_2dabdbea7602d2 723
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_583c88036df9d8::t_364e981adaa2cd 178,181,405,407,410,415,558,604,607
+crates/gateway-service/src/batches.rs
+  s_e0cdd517c6a6f1::t_2dabdbea7602d2 21-22
+crates/gateway-core/src/domain.rs
+  s_ad1943fb6f3788::t_a9fdea96241a70 10
+crates/gateway-providers/src/vertex/google_content.rs
+  s_1869e0306e00ef::t_086ae2f3811af4 1-239,241-258,260-384
+  s_1869e0306e00ef::t_4c2153ad431d68 240,259
+crates/gateway-providers/src/vertex/google_stream.rs
+  s_1869e0306e00ef::t_5fd82cc6693a58 9,11-12,62,69,73,85,95,131,264-265
+crates/gateway-service/src/lib.rs
+  s_e0cdd517c6a6f1::t_2dabdbea7602d2 46
+crates/gateway-providers/src/bedrock/tests/response.rs
+  s_583c88036df9d8::t_36712f4cd018e0 220-226
+crates/gateway/src/http/handlers/inference.rs
+  s_583c88036df9d8::t_100dc6f06aaf8c 1,4-9,19,34-40,56-58,210,245-251,288-290,313,341-358,377,382,391-398,406,431,439-442,483-505,507-509
+  s_583c88036df9d8::t_411e63d7e05864 443
+crates/gateway-providers/src/vertex/tests/streaming.rs
+  s_1869e0306e00ef::t_4c2153ad431d68 435
+  s_583c88036df9d8::t_411e63d7e05864 426-428,453-454,457-458,480
+crates/gateway-providers/src/bedrock/request/mod.rs
+  s_99bf3218dac1ab::t_ffa8e51019d60a 46
+  s_583c88036df9d8::t_411e63d7e05864 1
+crates/gateway-providers/src/vertex/google_response.rs
+  s_1869e0306e00ef::t_086ae2f3811af4 6-9
+crates/gateway-service/src/usage.rs
+  s_e0cdd517c6a6f1::t_83e75ef98bad39 1-392
+crates/gateway-providers/src/bedrock/tests/eventstream.rs
+  s_583c88036df9d8::t_411e63d7e05864 197,479-485
+  s_99bf3218dac1ab::t_09e3740b10f362 194-196,198,274,326-327,486
+docs/internal/2026-11-05-provider-harness-comparison.md
+  s_583c88036df9d8::t_5ab4446517b049 231-240
+  s_583c88036df9d8::t_a469c47600dea6 218
+  s_583c88036df9d8::t_ed5da0545afb26 188,210-217,219-229
+  s_583c88036df9d8::t_7ac5587959c3cd 230
+crates/gateway-core/src/error.rs
+  s_ad1943fb6f3788::t_a9fdea96241a70 6
+crates/gateway-core/src/lib.rs
+  s_ad1943fb6f3788::t_a9fdea96241a70 15,133,196,200
+  s_583c88036df9d8::t_411e63d7e05864 74-78,105-120,197-199,231-233
+crates/gateway/src/http/handlers.rs
+  s_583c88036df9d8::t_a5799997c91b52 16,34,289,367,395-401,478,556,584-590
+crates/gateway-providers/src/copilot/mod.rs
+  s_99bf3218dac1ab::t_ab8afcfdf3204b 13,16
+crates/gateway-providers/src/anthropic/compat_stream.rs
+  s_99bf3218dac1ab::t_e8deaefa956cac 1-100,102-119,204-310,312-458
+  s_99bf3218dac1ab::t_d6160dd6145a7d 101,311
+  s_583c88036df9d8::t_3c5e97f0342be5 120-203
+crates/gateway-providers/src/bedrock/response.rs
+  s_99bf3218dac1ab::t_ffa8e51019d60a 6
+  s_99bf3218dac1ab::t_99a676451ca453 1-5
+crates/gateway-providers/src/anthropic/streaming.rs
+  s_99bf3218dac1ab::t_d6160dd6145a7d 9,107,390
+  s_583c88036df9d8::t_07a465fe8d71e3 150,194,229,276,283,286,295,299,371-376
+  s_583c88036df9d8::t_e1c96f81786944 377
+crates/gateway-providers/src/vertex/google_conversation.rs
+  s_1869e0306e00ef::t_086ae2f3811af4 1-214
+crates/gateway-providers/src/anthropic/replay.rs
+  s_99bf3218dac1ab::t_6596be42135800 18-47,51-69,76-79,83-87,90,98,111,115,117,126,128,133,145,148,153,161,168,174,179,184,187,191,206,208,212,215,225,231,238
+  s_583c88036df9d8::t_411e63d7e05864 48-50,70-75,80-82,165,198
+crates/gateway-providers/src/bedrock/eventstream.rs
+  s_99bf3218dac1ab::t_6ff44cc162f361 14-19,36-38,52-55,59-62,124
+  s_583c88036df9d8::t_411e63d7e05864 31-34
+  s_99bf3218dac1ab::t_78a29b3d711815 1-4
+crates/gateway-providers/src/bedrock/converse_stream.rs
+  s_583c88036df9d8::t_411e63d7e05864 237-239
+  s_99bf3218dac1ab::t_78a29b3d711815 1-236,240-341,344-353,355-384,386-434
+  s_99bf3218dac1ab::t_6ff44cc162f361 342-343,354,385
+crates/gateway-core/src/traits.rs
+  s_ad1943fb6f3788::t_a9fdea96241a70 6,40,55
+  s_583c88036df9d8::t_411e63d7e05864 15-17,41-47
+docs/adr/2026-11-03-native-anthropic-messages-transport.md
+  s_583c88036df9d8::t_ac3d0a904b3f8c 58-76
+crates/gateway-providers/src/anthropic/replay_tests.rs
+  s_99bf3218dac1ab::t_ab8afcfdf3204b 467
+crates/gateway-providers/src/vertex/mod.rs
+  s_1869e0306e00ef::t_5fd82cc6693a58 29-31
+  s_1869e0306e00ef::t_eec1d47fdd999a 129,132-137,149,151-153,185,187,242,250,268,276,346,362,391,471
+  s_583c88036df9d8::t_411e63d7e05864 138-140,415-417
+crates/gateway-providers/src/vertex/google_replay.rs
+  s_1869e0306e00ef::t_086ae2f3811af4 1-202
+crates/gateway/src/http/handlers/inference_tests.rs
+  s_583c88036df9d8::t_df76103808b3dd 15-16
+crates/gateway-core/src/provider.rs
+  s_ad1943fb6f3788::t_a9fdea96241a70 1-490
+crates/gateway-providers/src/bedrock/mod.rs
+  s_99bf3218dac1ab::t_99a676451ca453 15
+  s_99bf3218dac1ab::t_ab8afcfdf3204b 23,26,975
+  s_583c88036df9d8::t_411e63d7e05864 24-25,30
+  s_99bf3218dac1ab::t_ffa8e51019d60a 963-964,970
+crates/gateway-providers/src/anthropic/native_metadata_tests.rs
+  s_99bf3218dac1ab::t_14495c1610e106 9-12
+  s_99bf3218dac1ab::t_ab8afcfdf3204b 15
+crates/gateway-service/src/service.rs
+  s_e0cdd517c6a6f1::t_2dabdbea7602d2 38,1713-1715,1718
+  s_e0cdd517c6a6f1::t_bf90f0e787cc27 1719
+crates/gateway-providers/src/vertex/google_tools.rs
+  s_1869e0306e00ef::t_086ae2f3811af4 3
+crates/gateway-providers/src/anthropic/mod.rs
+  s_99bf3218dac1ab::t_ab8afcfdf3204b 4,13
+  s_583c88036df9d8::t_411e63d7e05864 25
+crates/gateway/src/http/handlers/messages.rs
+  s_583c88036df9d8::t_df76103808b3dd 19
+  s_583c88036df9d8::t_411e63d7e05864 3,205-208
+  s_583c88036df9d8::t_3ec40e789fc751 1-2,4-18,20-204,209-257
+crates/gateway-providers/src/vertex/anthropic.rs
+  s_583c88036df9d8::t_411e63d7e05864 23
+  s_1869e0306e00ef::t_eec1d47fdd999a 17-22,24-54
+crates/gateway-providers/src/bedrock/converse_replay.rs
+  s_99bf3218dac1ab::t_af9177f046beb0 142-155,157-162,164,167,172-186
+  s_99bf3218dac1ab::t_44acc93e8c5f53 141,156,188
+  s_583c88036df9d8::t_411e63d7e05864 35-39,165-166
+  s_99bf3218dac1ab::t_78a29b3d711815 1-34,40-140,163,168-171,187,189-335
+docs/reference/provider-api-compatibility.md
+  s_583c88036df9d8::t_a469c47600dea6 472
+crates/gateway-providers/src/vertex/google_request.rs
+  s_583c88036df9d8::t_411e63d7e05864 1
+  s_1869e0306e00ef::t_086ae2f3811af4 7-9
+crates/gateway-providers/src/vertex/batch.rs
+  s_1869e0306e00ef::t_eec1d47fdd999a 11-14,526-530
+  s_1869e0306e00ef::t_e15bfc675e4a61 522-525
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "39244014d3633fb666760fc998d83d991a0d7345",
+  "prompts": {},
+  "sessions": {
+    "s_1869e0306e00ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1b258-aafd-7059-bd77-e51370f9faa3",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_583c88036df9d8": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1aac9-1166-77b3-9da2-1112c2a986fe",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_99bf3218dac1ab": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1b258-aae4-7397-b69d-bf400489a555",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_ad1943fb6f3788": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1b258-ab23-7266-a8dd-afe4bbddb8c0",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e0cdd517c6a6f1": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1b258-ab0e-71b3-a035-ef669f816033",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

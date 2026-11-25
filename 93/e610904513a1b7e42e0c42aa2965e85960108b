@@ -1,0 +1,45 @@
+crates/admin-ui/web/src/routes/mcp/-tool-diff.ts
+  s_7a5811202bdfd5::t_760df6873b2415 107-117
+crates/admin-ui/web/src/routes/mcp/-tool-reviews.tsx
+  s_e88dc7cf2999d1::t_defa40e9c9d48d 15,108-113,134,136-139,211-218,224-273,296,303,321-325
+crates/admin-ui/web/src/test/routes/mcp-tool-reviews.test.tsx
+  s_7a5811202bdfd5::t_a817faf31c1988 4-9,88-97,204-232
+crates/gateway-store/src/tests/mcp_tool_versions.rs
+  s_4394d7bb181c63::t_baf244a569afb0 571-679
+docs/adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md
+  s_e88dc7cf2999d1::t_07c7527cc8d3c3 108
+docs/mcp/mcp-tool-access.md
+  s_e88dc7cf2999d1::t_20c85e4b9f5918 187-188
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "93e610904513a1b7e42e0c42aa2965e85960108b",
+  "prompts": {},
+  "sessions": {
+    "s_4394d7bb181c63": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5fe6d420-4e7e-4885-8f8a-07723d2ed05e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

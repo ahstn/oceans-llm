@@ -1,0 +1,37 @@
+crates/gateway-core/src/mcp_client_oauth.rs
+  s_4743c3bdc4d116::t_98fdf2e4328330 497-498,505
+crates/gateway-service/src/admin_audit.rs
+  s_4743c3bdc4d116::t_28e323757ff65f 157-159,220,245,263
+crates/gateway-store/src/any_store_gateway_oauth.rs
+  s_4743c3bdc4d116::t_f9921d09db4d30 176
+crates/gateway-store/src/gateway_oauth_tests.rs
+  s_4743c3bdc4d116::t_dd21f84c902fa7 722,726,733-734
+crates/gateway-store/src/libsql_store/gateway_oauth.rs
+  s_4743c3bdc4d116::t_a1f2ae44edd0b3 127-144,613-628,680-681
+crates/gateway-store/src/postgres_store/gateway_oauth.rs
+  s_4743c3bdc4d116::t_0231bfd6dab910 127-144,579-580,583-584,590,593,647-648
+crates/gateway/src/http/mcp_client_oauth/authorized_clients.rs
+  s_4743c3bdc4d116::t_20586e33074a24 9-10,12,22,24,112,115,119,123,128-129,171,174,179-180,188-193,195,198-212,218-252
+crates/gateway/src/http/mcp_client_oauth/authorized_clients_tests.rs
+  s_4743c3bdc4d116::t_de08b6d551bb6f 19-37,167-178,275-283
+docs/adr/2026-10-15-admin-audit-log.md
+  s_4743c3bdc4d116::t_1e4513a138db67 115
+docs/adr/2026-10-15-mcp-client-oauth-authorization.md
+  s_4743c3bdc4d116::t_cac0657b2a134e 211-212
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "75f056771cca052b104001d8c0758089418d14b0",
+  "prompts": {},
+  "sessions": {
+    "s_4743c3bdc4d116": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a047a7f-d4a7-4209-858b-e18a0d0d4346",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

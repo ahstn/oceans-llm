@@ -1,0 +1,23 @@
+packages/opencode-oceans/README.md
+  s_1182c76e376f21::t_d03b8421e8ad8d 62
+packages/opencode-oceans/gateways.example.yml
+  s_1182c76e376f21::t_aea9183bfb6f34 1-28
+packages/opencode-oceans/package.json
+  s_1182c76e376f21::t_d03b8421e8ad8d 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5820c09e6fded77b8ee95327ca60ad9427fb2dce",
+  "prompts": {},
+  "sessions": {
+    "s_1182c76e376f21": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1b5e8-949a-70b6-96f0-1d6c0049857c",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

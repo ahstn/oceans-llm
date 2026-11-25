@@ -1,0 +1,67 @@
+.agents/skills/verify-oceans-admin/features/mcp-ownership.md
+  s_7a5811202bdfd5::t_77c50119a2bef8 18,41
+crates/admin-ui/web/e2e/admin-page-permissions.e2e.ts
+  s_e88dc7cf2999d1::t_ba5b2d029af456 10,21-22
+crates/admin-ui/web/src/components/mcp/server-registry.tsx
+  s_7a5811202bdfd5::t_04a0bb91e8b870 54-56,93-95,98-108,179,189-191,199,203
+crates/admin-ui/web/src/routes/mcp/-navigation.tsx
+  s_7a5811202bdfd5::t_9232adf1d4e913 7,12-13,37-47
+crates/admin-ui/web/src/routes/mcp/-scope.ts
+  s_7a5811202bdfd5::t_e8401a708ea1e4 16-17,25
+crates/admin-ui/web/src/routes/mcp/-servers-tab.tsx
+  s_7a5811202bdfd5::t_11d5eda08c6cef 427-428
+crates/admin-ui/web/src/routes/mcp/index.tsx
+  s_7a5811202bdfd5::t_c93d9d6e282910 37-54,66,93,95-96,107,125,146,148,150
+crates/admin-ui/web/src/test/routes/mcp-access-route.test.tsx
+  s_7a5811202bdfd5::t_85277efc81daa6 169-175
+crates/admin-ui/web/src/test/routes/mcp-servers-route.test.tsx
+  s_7a5811202bdfd5::t_519b74e5f90a4c 159,859,879,899-911
+crates/gateway/src/config/permissions.rs
+  s_7a5811202bdfd5::t_12e21c08c28265 244-246,275-277
+crates/gateway/src/config/tests/permissions.rs
+  s_7a5811202bdfd5::t_07734214434620 20
+crates/gateway/src/http/admin_auth.rs
+  s_7a5811202bdfd5::t_1602fc65dfe419 102-144
+crates/gateway/src/http/mcp_registry.rs
+  s_7a5811202bdfd5::t_331ab9d7b1cd7e 35-37,59,124-129,503,505-528,534-538,1384-1452
+crates/gateway/src/http/mcp_registry/ownership_tests.rs
+  s_7a5811202bdfd5::t_0fb9c65d5632c2 403,405-411,419-420,422-424,426-481
+deploy/config/gateway.local.yaml
+  s_7a5811202bdfd5::t_1c30f6a2a5615e 64
+deploy/config/gateway.yaml
+  s_7a5811202bdfd5::t_0c9b6d8bd95d34 64
+docs/adr/2026-10-17-delegated-mcp-server-ownership.md
+  s_7a5811202bdfd5::t_8640bddde200c0 63
+docs/configuration/configuration-reference.md
+  s_7a5811202bdfd5::t_52e728bbb7be87 320-321,339,388
+docs/configuration/mcp-servers.md
+  s_7a5811202bdfd5::t_17811daa5e11b3 103-105
+gateway.prod.yaml
+  s_7a5811202bdfd5::t_6d6b84540102c5 21
+gateway.yaml
+  s_7a5811202bdfd5::t_30819aab1adec4 20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e1ca45909078081619ffc0c2aff1798e4b45c706",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

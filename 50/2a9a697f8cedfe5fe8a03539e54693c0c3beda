@@ -1,0 +1,25 @@
+.github/zizmor.yml
+  s_3909cf4958a3af::t_81ea815d3f5fbe 5-8,12,15-22,25-26,29-30
+docs/adr/2026-10-21-repository-lint-and-dependency-scanning.md
+  s_3909cf4958a3af::t_482db344521b13 34
+mise.lock
+  s_3909cf4958a3af::t_b5b31d7107200b 493,498,503,508
+mise.toml
+  s_3909cf4958a3af::t_537ce307ac3bab 173
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "502a9a697f8cedfe5fe8a03539e54693c0c3beda",
+  "prompts": {},
+  "sessions": {
+    "s_3909cf4958a3af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9eabb320-c558-4ce9-b844-b21792d51207",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

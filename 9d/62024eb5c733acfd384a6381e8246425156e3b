@@ -1,0 +1,39 @@
+crates/admin-ui/web/src/routes/mcp/-tag-rules.tsx
+  s_e88dc7cf2999d1::t_8a4eac9581bebd 46-52,81-83,125,131,156
+crates/admin-ui/web/src/routes/mcp/-tool-policy.tsx
+  s_e88dc7cf2999d1::t_f4c813473ed41a 120-121,186-187
+crates/admin-ui/web/src/test/routes/mcp-access-route.test.tsx
+  s_e88dc7cf2999d1::t_e415d878d27a4d 1,202-255
+crates/admin-ui/web/src/test/routes/mcp-tool-policy.test.tsx
+  s_e88dc7cf2999d1::t_6ea51b259743f4 1,8-9,11,86-102
+crates/gateway-core/src/traits.rs
+  s_e88dc7cf2999d1::t_348374ebf7bb11 1192-1195,1199-1200
+crates/gateway-store/src/any_store_mcp_access.rs
+  s_e88dc7cf2999d1::t_1addf209c2e993 224-225,228-237
+crates/gateway-store/src/libsql_store/mcp_access.rs
+  s_e88dc7cf2999d1::t_ddfc7b5947eca8 505-526,534-539,541-550,558-564,630-631,634,636,641-646,784-785,791,827,839,844,854-887,955-956,960-970,973-974,978-988,991-992,995,997-1016,1018,1021-1028
+crates/gateway-store/src/postgres_store/mcp_access.rs
+  s_e88dc7cf2999d1::t_9915f432046509 461-482,490-494,496-505,513-519,578-579,581,583,586-588,699-700,706,742,754,770-785,827-828,832-837,839-840,844-847,850-860,862-863,867-870,873-874,877,879-883,885-886,890-893
+crates/gateway/src/http/audit_tests/mcp_tool_policy.rs
+  s_e88dc7cf2999d1::t_d9969a0cdad88b 319-332
+crates/gateway/src/http/mcp_registry.rs
+  s_e88dc7cf2999d1::t_1fd8572af0b40f 923-931
+docs/mcp/mcp-tool-access.md
+  s_e88dc7cf2999d1::t_1e34e12a34b259 67-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9d62024eb5c733acfd384a6381e8246425156e3b",
+  "prompts": {},
+  "sessions": {
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

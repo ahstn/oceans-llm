@@ -1,0 +1,19 @@
+docs/adr/2026-11-01-git-ai-attribution-via-oceans-hooks.md
+  s_2a5e14138e0dc3::t_5fe5731aa32d87 42,44-47,55,103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c0ef0fca04e31344f4829a6a8616b7762c7f3a0d",
+  "prompts": {},
+  "sessions": {
+    "s_2a5e14138e0dc3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "500754e7-afe9-476a-89e9-7cc0f1a733ac",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,26 @@
+.agents/skills/verify-oceans-admin/features/skills.md
+  s_3364883fc2ce42::t_d21f74c007e966 22
+crates/admin-ui/web/src/routes/skills/index.tsx
+  s_3364883fc2ce42::t_2bdfc62cf6bb34 60,66,172
+crates/admin-ui/web/src/routes/skills/$id.tsx
+  s_3364883fc2ce42::t_2bdfc62cf6bb34 3-4,29-34,104-109
+  s_3364883fc2ce42::t_6d774c0bf47a85 139-143,159-209
+.agents/skills/verify-oceans-admin/scripts/drive-skills.mjs
+  s_3364883fc2ce42::t_d21f74c007e966 125,287-295,320
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d486b6bff64d22a14f6ad4dea379e1493d3c11d0",
+  "prompts": {},
+  "sessions": {
+    "s_3364883fc2ce42": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1030b-a73e-7ee0-ba99-c3e2b528cb13",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

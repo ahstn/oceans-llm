@@ -1,0 +1,39 @@
+.agents/skills/verify-oceans-admin/features/mcp.md
+  s_e88dc7cf2999d1::t_f4f4fda12c5e60 12
+crates/admin-ui/web/src/routes/mcp/-servers-tab.tsx
+  s_e88dc7cf2999d1::t_d1c279cbb15fe8 731-739
+crates/admin-ui/web/src/routes/mcp/-tool-reviews.tsx
+  s_e88dc7cf2999d1::t_1f1275432b889b 1-2,5,9,17-21,33-35,40-41,46-47,50,61-109,121,126-133,135,165-171,180,184-212,231-252
+crates/admin-ui/web/src/test/routes/mcp-tool-reviews.test.tsx
+  s_e88dc7cf2999d1::t_0be14475deb6d2 117-125,128-130,156-157,164-188
+crates/gateway-store/src/migration_registry.rs
+  s_e88dc7cf2999d1::t_5fe390f02911f6 397,399-401
+crates/gateway/src/http/mcp_gateway.rs
+  s_e88dc7cf2999d1::t_1b956ff6089e7a 190-220,634-646,698-701
+crates/gateway/src/http/mcp_gateway/tests.rs
+  s_e88dc7cf2999d1::t_7352f36203126f 671-688,729-731,1188-1248
+crates/gateway/src/http/scoped_api_key_tests.rs
+  s_e88dc7cf2999d1::t_a70c8e2aa525de 324
+docs/adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md
+  s_e88dc7cf2999d1::t_183d7b5371254b 113,117
+docs/mcp/mcp-invocations.md
+  s_e88dc7cf2999d1::t_39cc3b11cb83c1 77
+docs/mcp/mcp-tool-access.md
+  s_e88dc7cf2999d1::t_e52db65776387c 193-195,198-200,210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "814ecc44a45581114fb03be9b0ced4db4aba29ee",
+  "prompts": {},
+  "sessions": {
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

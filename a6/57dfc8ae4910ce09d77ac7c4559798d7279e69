@@ -1,0 +1,29 @@
+crates/admin-ui/web/src/routes/identity/-user-form.ts
+  s_eaf7116ccea134::t_cc3ad42d00268e 8-10,30,41,110,150,185,189-190,192,195
+crates/admin-ui/web/src/routes/identity/-users/use-onboarding-reset.ts
+  s_eaf7116ccea134::t_a51f88efbca020 9-14,30
+crates/admin-ui/web/src/routes/identity/-users/use-user-details.ts
+  s_eaf7116ccea134::t_13dd686320c848 17,20,41
+crates/admin-ui/web/src/routes/identity/-users/user-details-sections.tsx
+  s_eaf7116ccea134::t_e2a134eed77aa7 6,8,36-37
+crates/admin-ui/web/src/test/routes/mcp-servers-route.test.tsx
+  s_eaf7116ccea134::t_ecdab296eda48a 1,3,599
+crates/admin-ui/web/src/test/routes/users-hooks.test.ts
+  s_eaf7116ccea134::t_2df39b6e50d0b7 10-15,284,291
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a657dfc8ae4910ce09d77ac7c4559798d7279e69",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

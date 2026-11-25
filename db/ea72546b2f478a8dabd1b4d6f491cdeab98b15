@@ -1,0 +1,23 @@
+.agents/skills/verify-oceans-admin/features/password-sign-in.md
+  s_411362aa0b79d6::t_702b3b1db45902 30,45
+crates/admin-ui/src/proxy.rs
+  s_411362aa0b79d6::t_945340f1d86f0d 64-73,86-92,97-98,633,650-681,683
+crates/admin-ui/web/e2e/admin-static-assets.e2e.ts
+  s_411362aa0b79d6::t_101eb416bb6019 10-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dbea72546b2f478a8dabd1b4d6f491cdeab98b15",
+  "prompts": {},
+  "sessions": {
+    "s_411362aa0b79d6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c6fd65f6-a3c0-4f10-8432-e594fb458726",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

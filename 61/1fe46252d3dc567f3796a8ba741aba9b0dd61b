@@ -1,0 +1,183 @@
+.agents/skills/verify-oceans-admin/features/api-keys.md
+  s_e88dc7cf2999d1::t_53b4e9ae69026e 3,11,33-35,50-52
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_e88dc7cf2999d1::t_b9b51d89cf79c2 272,274-275,436
+crates/admin-ui/web/bun.lock
+  s_e88dc7cf2999d1::t_08061bdc6f7ec5 34,206,514,1478,1800-1801,1858-1861
+crates/admin-ui/web/package.json
+  s_e88dc7cf2999d1::t_b059a8d13e73e0 48
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_e88dc7cf2999d1::t_1be5c42a5ae41b 55-70,2040-2043,2067-2068,2082-2083,2087-2088,2090-2091,3185-3186,3194-3195,3359-3360,3362-3363,4015-4020,5309-5319,5516-5541
+crates/admin-ui/web/src/lib/api-key-scopes.ts
+  s_e88dc7cf2999d1::t_100a60924bdf5e 1-89
+crates/admin-ui/web/src/routes/api-keys.tsx
+  s_e88dc7cf2999d1::t_147fa6d448c793 24,74,77,90,98,101,105,114
+crates/admin-ui/web/src/routes/api-keys/-components.tsx
+  s_e88dc7cf2999d1::t_d5f448bd0a1166 47,64-67,201-204,232,254,287,290,303,306,309,322,435-443,462,465,469,478,482,485,489,498,507-508,513-537,539-545,547-574,576-582,584-591,593-601,603-622,624-829
+crates/admin-ui/web/src/routes/api-keys/-scope-fields.tsx
+  s_e88dc7cf2999d1::t_8bc0078383f8f6 1-186
+crates/admin-ui/web/src/routes/api-keys/-use-api-keys-page.ts
+  s_e88dc7cf2999d1::t_9a7633eeccfc31 10,20-28,52-53,74,78,84-90,92-96,101-102,131,150-151,174,183,241-244,289,312,314-322,324-331,336-342,405,423,425
+crates/admin-ui/web/src/server/admin-data.functions.ts
+  s_e88dc7cf2999d1::t_a95717a36a6d5c 89,339-370
+crates/admin-ui/web/src/server/admin-data.server.ts
+  s_e88dc7cf2999d1::t_f8a436fdc18dee 25-26,196-208
+crates/admin-ui/web/src/test/routes/api-keys-route.test.tsx
+  s_e88dc7cf2999d1::t_6040072d940892 26,47,110-114,148,235-236,300-301,306-464
+crates/admin-ui/web/src/types/live-api.ts
+  s_e88dc7cf2999d1::t_9eb4ca0687ef80 15,22-23
+crates/gateway-core/src/auth.rs
+  s_e88dc7cf2999d1::t_2c2bdcc6bd8a96 4,45-47,72-118
+crates/gateway-core/src/credential_scopes.rs
+  s_e88dc7cf2999d1::t_363dfa9836392c 1-210
+crates/gateway-core/src/domain.rs
+  s_e88dc7cf2999d1::t_7a8944a4b577a0 8,496,512
+crates/gateway-core/src/error.rs
+  s_e88dc7cf2999d1::t_5dc40b0932838a 47-52,199-203,298-302
+crates/gateway-core/src/lib.rs
+  s_e88dc7cf2999d1::t_bc2aa12a40a2ab 6,61-63,140
+crates/gateway-core/src/mcp_client_oauth.rs
+  s_e88dc7cf2999d1::t_e120ffd6aa5798 10-14,19-20,92
+crates/gateway-core/src/traits.rs
+  s_e88dc7cf2999d1::t_097774a4b2ac37 145-153
+crates/gateway-service/src/admin_api_keys.rs
+  s_e88dc7cf2999d1::t_f6ba0df7c1a7d0 7-11,21-26,40-41,60,100-103,149,204,338,397-399,424,735,986
+crates/gateway-service/src/admin_api_keys/scopes.rs
+  s_e88dc7cf2999d1::t_d48eca4ee87850 1-129
+crates/gateway-service/src/admin_audit.rs
+  s_e88dc7cf2999d1::t_f2a86cf17cdbe2 108-109,200
+crates/gateway-service/src/agent_analysis/tests.rs
+  s_e88dc7cf2999d1::t_15dd9506293cec 850
+crates/gateway-service/src/authenticator.rs
+  s_e88dc7cf2999d1::t_3266835e33af2c 116
+crates/gateway-service/src/budget_guard.rs
+  s_e88dc7cf2999d1::t_a9249e5a452321 492,507
+crates/gateway-service/src/budget_scopes.rs
+  s_e88dc7cf2999d1::t_b3d2f2c4ce8cb6 117
+crates/gateway-service/src/lib.rs
+  s_e88dc7cf2999d1::t_cb944e4a4fd103 43-47
+crates/gateway-service/src/mcp_access.rs
+  s_e88dc7cf2999d1::t_292a0a730293a5 125
+crates/gateway-service/src/mcp_catalog.rs
+  s_e88dc7cf2999d1::t_831aa7c2a42700 211-215,221-223,226-248
+crates/gateway-service/src/mcp_client_oauth/validation.rs
+  s_e88dc7cf2999d1::t_d426a9c3a25c79 46,56,65-68
+crates/gateway-service/src/mcp_credentials.rs
+  s_e88dc7cf2999d1::t_611fc591e8e5c9 771,835,882,918,960
+crates/gateway-service/src/model_access.rs
+  s_e88dc7cf2999d1::t_2edde953a8d2e4 663,1084,1103
+crates/gateway-service/src/request_logging/tests/mod.rs
+  s_e88dc7cf2999d1::t_5b2c5020519e9f 211,226
+crates/gateway-service/src/request_logging/tests/persistence.rs
+  s_e88dc7cf2999d1::t_68c9d0e0a73989 120,777
+crates/gateway-service/src/routing/tests.rs
+  s_e88dc7cf2999d1::t_efb90aa4056457 175
+crates/gateway-service/src/service.rs
+  s_e88dc7cf2999d1::t_de1f746eb6665f 251-253,258-259,261-275,278,283-284,286-300,1234-1246,2635
+crates/gateway-store/migrations/V65__api_key_scopes.sql
+  s_e88dc7cf2999d1::t_bb70ee4d843c13 1-5
+crates/gateway-store/migrations/postgres/V65__api_key_scopes.sql
+  s_e88dc7cf2999d1::t_f18d552cb93974 1-5
+crates/gateway-store/src/api_key_scope_tests.rs
+  s_e88dc7cf2999d1::t_b96ff5fb60557a 1-139
+crates/gateway-store/src/lib.rs
+  s_e88dc7cf2999d1::t_d0161b44744a96 59-60
+crates/gateway-store/src/libsql_store/api_keys.rs
+  s_e88dc7cf2999d1::t_2eed8aba988ae4 3-8,16-18,21-22,48-50,55-56,80-82,86-87,112-123,137-138,328-369,403-405,409-410
+crates/gateway-store/src/libsql_store/support.rs
+  s_e88dc7cf2999d1::t_14488a49ddd7bb 39-40,67-70
+crates/gateway-store/src/migration_registry.rs
+  s_e88dc7cf2999d1::t_1d99f66cc000a5 384-390,392-394
+crates/gateway-store/src/postgres_store/api_keys.rs
+  s_e88dc7cf2999d1::t_67b5e2b4356085 3-8,13,15,18-19,32,34,39-40,54,56,60-61,75,80-84,99-100,264-299,330,332,336-337
+crates/gateway-store/src/postgres_store/support.rs
+  s_e88dc7cf2999d1::t_fe7bca9d1bdffd 31-32,59-62
+crates/gateway-store/src/store.rs
+  s_e88dc7cf2999d1::t_ecf2a908e23a63 580-587
+crates/gateway/openapi/admin-api.json
+  s_e88dc7cf2999d1::t_979579395f3226 152-197,7429-7443,7549-7558,7619-7628,7640-7642,7645-7651,7658-7664,11972-11981,12014-12023,12660-12662,12665-12671,12678-12684,15412-15434,20236-20274
+crates/gateway/src/batch_worker.rs
+  s_e88dc7cf2999d1::t_d49ca93c69688a 546
+crates/gateway/src/http/admin_contract.rs
+  s_e88dc7cf2999d1::t_03dc193c463eed 1987
+crates/gateway/src/http/api_keys.rs
+  s_e88dc7cf2999d1::t_1996bf3fb8186c 7-8,11-15,21-27,45-48,67-70,93-98,116-121,226-227,239-240,666-681,716-717
+crates/gateway/src/http/api_keys/scopes.rs
+  s_e88dc7cf2999d1::t_cc5acaf3a13409 1-111
+crates/gateway/src/http/batches.rs
+  s_e88dc7cf2999d1::t_256a0f611bd958 481,484
+crates/gateway/src/http/guardrails.rs
+  s_e88dc7cf2999d1::t_5c838ca09396d1 82-86
+crates/gateway/src/http/handlers.rs
+  s_e88dc7cf2999d1::t_1f271a70c7f14a 146-149,160-163,1888-1893,1909-1919,1968-2003,2780
+crates/gateway/src/http/handlers/auth.rs
+  s_e88dc7cf2999d1::t_ab5ca2333bd360 7-8,35
+crates/gateway/src/http/mcp_client_oauth.rs
+  s_e88dc7cf2999d1::t_201110fdbc683a 86
+crates/gateway/src/http/mcp_client_oauth/mcp_route_tests.rs
+  s_e88dc7cf2999d1::t_1f7bacd2a45208 91
+crates/gateway/src/http/mcp_client_oauth/tests.rs
+  s_e88dc7cf2999d1::t_19dd8598832bbc 224
+crates/gateway/src/http/mcp_gateway.rs
+  s_e88dc7cf2999d1::t_f3a2cf9acbbc84 25,56-57,86-92,683,688,692-695,766-773,780-799
+crates/gateway/src/http/mcp_gateway/aggregate.rs
+  s_e88dc7cf2999d1::t_0dbe5e765c07ac 14,63-64
+crates/gateway/src/http/mcp_gateway/aggregate/tests.rs
+  s_e88dc7cf2999d1::t_8bde077965617b 768,832
+crates/gateway/src/http/mcp_gateway/credentials/tests.rs
+  s_e88dc7cf2999d1::t_4cc2d30278eaec 83,147
+crates/gateway/src/http/mcp_gateway/tests.rs
+  s_e88dc7cf2999d1::t_12f2feabac2328 375,441
+crates/gateway/src/http/mod.rs
+  s_e88dc7cf2999d1::t_092df1d6f1e575 39-40,155-158
+crates/gateway/src/http/profile.rs
+  s_e88dc7cf2999d1::t_2bc0df5cc5f342 472
+crates/gateway/src/http/provider_credentials/tests.rs
+  s_e88dc7cf2999d1::t_ddd05e890b891c 129
+crates/gateway/src/http/rate_limit_policies/handler_tests.rs
+  s_e88dc7cf2999d1::t_8c21a71dcf7a03 153
+crates/gateway/src/http/rate_limit_tests.rs
+  s_e88dc7cf2999d1::t_6bd9265d6fee95 146,161,218-264
+crates/gateway/src/http/request_body/tests.rs
+  s_e88dc7cf2999d1::t_07909292a48e79 250
+crates/gateway/src/http/scoped_api_key_tests.rs
+  s_e88dc7cf2999d1::t_33607e495b44b3 1-882
+crates/gateway/src/http/skills/tests.rs
+  s_e88dc7cf2999d1::t_edbf17280dbdc8 208
+crates/gateway/src/http/spend_budget_increases/handler_tests.rs
+  s_e88dc7cf2999d1::t_fc2513ccb87462 118
+crates/gateway/src/local_demo_seed/mod.rs
+  s_e88dc7cf2999d1::t_6849a69a1e7a0e 226
+docs/access/admin-audit-log.md
+  s_e88dc7cf2999d1::t_511e26cf036e26 26
+docs/access/identity-and-access.md
+  s_e88dc7cf2999d1::t_11f38e8a0c0870 177-202
+docs/adr/2026-10-15-mcp-client-oauth-authorization.md
+  s_e88dc7cf2999d1::t_0cd6463b04ae48 232
+docs/adr/2026-10-17-scoped-api-keys.md
+  s_e88dc7cf2999d1::t_d412309d5d15c0 1-114
+docs/contributing/reference/data-relationships.md
+  s_e88dc7cf2999d1::t_6274061bf86c63 27,125,127
+docs/mcp/mcp-client-setup.md
+  s_e88dc7cf2999d1::t_30c24775ae695a 85-114,136
+docs/package-lock.json
+  s_e88dc7cf2999d1::t_6274d03d13a852 10,775-777
+docs/package.json
+  s_e88dc7cf2999d1::t_72e2928af99de0 11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "611fe46252d3dc567f3796a8ba741aba9b0dd61b",
+  "prompts": {},
+  "sessions": {
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

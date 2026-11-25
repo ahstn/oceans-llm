@@ -1,0 +1,59 @@
+crates/gateway-core/src/domain.rs
+  s_e383333b16cafa::t_e97f72a1554519 1903-1906,1908
+crates/gateway-core/src/traits.rs
+  s_e383333b16cafa::t_bd70dd0ee3457b 1068-1074
+crates/gateway-service/src/mcp_gateway.rs
+  s_e383333b16cafa::t_2eea3a89e5e548 284-290
+crates/gateway-service/src/mcp_registry.rs
+  s_e383333b16cafa::t_9a20bbbddb500e 306-311,318,335,360,405,439,543,552,585,980-986
+crates/gateway-store/migrations/V70__external_mcp_server_status_revision.sql
+  s_e383333b16cafa::t_2796ff180c1e3b 1-6
+crates/gateway-store/migrations/postgres/V70__external_mcp_server_status_revision.sql
+  s_e383333b16cafa::t_73edcea52dafd8 1-6
+crates/gateway-store/src/any_store_mcp_registry.rs
+  s_e383333b16cafa::t_5b1961097eb06f 102-119
+crates/gateway-store/src/lib.rs
+  s_e383333b16cafa::t_1fab8669f488b1 1497,1550,1628,1653-1656,1681-1689,1691,1755,1779-1817,1872
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_e383333b16cafa::t_748145a738caac 214,217,222-223,227-245,431-432,462,478-484
+crates/gateway-store/src/migration_registry.rs
+  s_e383333b16cafa::t_d58ecff9f3a6f2 431-439
+crates/gateway-store/src/postgres_store/mcp_registry.rs
+  s_e383333b16cafa::t_18d4dc73d4a0c8 210,213-214,220-221,224-229,411-412,439,455-470
+crates/gateway-store/src/tests/mcp_access.rs
+  s_e383333b16cafa::t_f568751fe755de 46
+crates/gateway-store/src/tests/mcp_tag_rules.rs
+  s_e383333b16cafa::t_051e17d3eee845 72
+crates/gateway-store/src/tests/mcp_tool_versions.rs
+  s_e383333b16cafa::t_1be156ea7a9b50 74
+crates/gateway/src/http/audit_tests/mcp_tool_policy.rs
+  s_e383333b16cafa::t_c5a5726d6461f9 38,267
+crates/gateway/src/http/mcp_client_oauth/mcp_route_tests.rs
+  s_e383333b16cafa::t_b836391c25138b 114
+crates/gateway/src/http/mcp_gateway/aggregate/tests.rs
+  s_e383333b16cafa::t_e41b9ea2b6d8a5 792
+crates/gateway/src/http/mcp_gateway/credentials/tests.rs
+  s_e383333b16cafa::t_dcc180f459d844 106
+crates/gateway/src/http/mcp_gateway/tests.rs
+  s_e383333b16cafa::t_697dadd6167cbf 398
+crates/gateway/src/http/mcp_registry/tests.rs
+  s_e383333b16cafa::t_753e5c244dc325 363
+crates/gateway/src/http/scoped_api_key_tests.rs
+  s_e383333b16cafa::t_1fe33a24df2a62 331
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "60c6ea462fe74ea4ae3059344726e7e95275cb10",
+  "prompts": {},
+  "sessions": {
+    "s_e383333b16cafa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8774bcf7-be6d-4ada-b0a8-edf8570bb728",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

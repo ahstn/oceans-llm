@@ -1,0 +1,193 @@
+.agents/skills/verify-oceans-admin/features/README.md
+  s_56409892e094a0::t_85a15066d2975c 73
+.agents/skills/verify-oceans-admin/features/rate-limits.md
+  s_56409892e094a0::t_6ce3ab093eae07 1-43
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_56409892e094a0::t_b4e1d5bc9fe3c5 451-473
+Cargo.lock
+  s_4743c3bdc4d116::t_0fa0d02445f900 1866
+Cargo.toml
+  s_56409892e094a0::t_24d2864b667287 51
+crates/admin-ui/web/src/components/layout/admin-nav.ts
+  s_56409892e094a0::t_7900dfaa95027a 2,67-74
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_56409892e094a0::t_0c456bafc4cb5a 743-774,1968,3371-3399,4063-4122,6310-6399
+crates/admin-ui/web/src/routeTree.gen.ts
+  s_4743c3bdc4d116::t_8d5f1f9d353c8c 22,95-99,222,256,291,327,361,395,430,526-532,694
+crates/admin-ui/web/src/routes/rate-limits.tsx
+  s_56409892e094a0::t_724a5050d92a05 1-280
+crates/admin-ui/web/src/routes/rate-limits/-policy-dialog.tsx
+  s_56409892e094a0::t_fc3220fd9b2e77 1-326
+crates/admin-ui/web/src/routes/rate-limits/-policy-model.ts
+  s_56409892e094a0::t_2c8de3794da5ad 1-135
+crates/admin-ui/web/src/server/admin-data.functions.ts
+  s_56409892e094a0::t_549b3b3e3a3d06 14-17,914-939
+crates/admin-ui/web/src/server/admin-data.server.ts
+  s_56409892e094a0::t_413183ae65e1c1 20-22,1002-1037
+crates/admin-ui/web/src/test/routes/rate-limits-route.test.tsx
+  s_56409892e094a0::t_74e943712b76d3 1-250
+crates/admin-ui/web/src/types/live-api.ts
+  s_56409892e094a0::t_2e4eef392e1100 61-67
+crates/gateway-core/Cargo.toml
+  s_56409892e094a0::t_ecc006b29ad38e 20-22
+crates/gateway-core/src/lib.rs
+  s_4743c3bdc4d116::t_218156ba432fd3 9,160-165,188
+crates/gateway-core/src/rate_limits.rs
+  s_4743c3bdc4d116::t_d4d41d497d4200 1-498
+crates/gateway-core/src/traits.rs
+  s_4743c3bdc4d116::t_4cf09a3fb5df62 62-65,1316-1362
+crates/gateway-service/src/lib.rs
+  s_4743c3bdc4d116::t_16f02041f15b97 28,115-118
+crates/gateway-service/src/rate_limits.rs
+  s_4743c3bdc4d116::t_64e71686477066 1-724
+crates/gateway-service/src/rate_limits/tests.rs
+  s_56409892e094a0::t_44785d0f1ad2b9 1-542
+crates/gateway-service/src/service.rs
+  s_4743c3bdc4d116::t_2e99e4fb944ec4 23-25,107,185,204-215
+crates/gateway-store/migrations/V59__rate_limits.sql
+  s_56409892e094a0::t_9661a2a0bcf746 1-37
+crates/gateway-store/migrations/postgres/V59__rate_limits.sql
+  s_56409892e094a0::t_828d09db4288ce 1-37
+crates/gateway-store/src/any_store_rate_limits.rs
+  s_56409892e094a0::t_82ab105d0899bb 1-86
+crates/gateway-store/src/lib.rs
+  s_56409892e094a0::t_9691c6d5b55d31 15,26,55-57
+crates/gateway-store/src/libsql_store/mod.rs
+  s_56409892e094a0::t_f77b68cc4315c3 20
+crates/gateway-store/src/libsql_store/rate_limits.rs
+  s_56409892e094a0::t_1a886002e8dc3e 1-295
+crates/gateway-store/src/libsql_store/routing.rs
+  s_4743c3bdc4d116::t_d890d87516694d 16-21
+crates/gateway-store/src/migration_registry.rs
+  s_56409892e094a0::t_441dd078568dc9 338-344
+crates/gateway-store/src/postgres_store/mod.rs
+  s_56409892e094a0::t_435d652cfb8292 20
+crates/gateway-store/src/postgres_store/rate_limits.rs
+  s_4743c3bdc4d116::t_6cc52225221084 1-236
+crates/gateway-store/src/rate_limit_tests.rs
+  s_4743c3bdc4d116::t_1713b94be82d2f 1-305
+crates/gateway-store/src/rate_limits.rs
+  s_56409892e094a0::t_dfa2415b11f163 1-69
+crates/gateway-store/src/store.rs
+  s_4743c3bdc4d116::t_59ad43cd642702 13-17,67
+crates/gateway/Cargo.toml
+  s_4743c3bdc4d116::t_33c2106f6d5fae 28
+crates/gateway/openapi/admin-api.json
+  s_56409892e094a0::t_eb61dc0c762dc0 3031-3168,7387,13011-13132,15739-15934
+crates/gateway/src/config/mod.rs
+  s_56409892e094a0::t_21305c17a38e4d 25,58,108-109,180
+crates/gateway/src/config/permissions.rs
+  s_56409892e094a0::t_1daa4c141c4d05 19,61,230,277
+crates/gateway/src/config/rate_limits.rs
+  s_56409892e094a0::t_cbdd8a7c004e74 1-159
+crates/gateway/src/config/server.rs
+  s_56409892e094a0::t_fe25bc62210c55 1-3,22-25,37,53,57-74
+crates/gateway/src/config/tests/mod.rs
+  s_4743c3bdc4d116::t_f704a9d7e35e52 40
+crates/gateway/src/config/tests/rate_limits.rs
+  s_56409892e094a0::t_af4c8ea373624c 1-165
+crates/gateway/src/http/admin_contract.rs
+  s_56409892e094a0::t_b15c2f7c7d5093 2049-2052
+crates/gateway/src/http/client_ip.rs
+  s_56409892e094a0::t_a5b443ebfbeff8 1-151
+crates/gateway/src/http/handlers.rs
+  s_56409892e094a0::t_d1a119fe3a41c6 39-40,47-49,64,163,167,177,190-197,495,507-514,674,686-693,853,866-873,2265-2268,2285-2306,2323-2340
+crates/gateway/src/http/handlers/count_tokens.rs
+  s_56409892e094a0::t_426b5d86f3d5e1 99,109,129,150-157
+crates/gateway/src/http/handlers/decisions.rs
+  s_56409892e094a0::t_d6f9f3a948a9b4 20,29,44,59,189,200-207
+crates/gateway/src/http/handlers/decisions_tests.rs
+  s_56409892e094a0::t_4109664726d614 151-159,162-170
+crates/gateway/src/http/handlers/inference_tests.rs
+  s_56409892e094a0::t_f7589eb562c17b 53-61,68-76,84-92,99-107,115-123
+crates/gateway/src/http/handlers/routing_tests.rs
+  s_56409892e094a0::t_189a31ff21d0d3 232,252
+crates/gateway/src/http/mcp_gateway.rs
+  s_56409892e094a0::t_c1747cd89da99c 6,43,72-76,116,138,141,231-232,320,369-392
+crates/gateway/src/http/mcp_gateway/aggregate.rs
+  s_dd118f467446e0::t_185f8b52a0e03a 33,89-93,169,352,408
+crates/gateway/src/http/mcp_gateway/aggregate/execution.rs
+  s_56409892e094a0::t_3b861af8f33eef 18-20,25-34,43,89,108,115,134-141,319-328
+crates/gateway/src/http/mcp_gateway/aggregate/tests.rs
+  s_56409892e094a0::t_bb46dd64e556dc 84,154,228,496,578,726-809
+crates/gateway/src/http/mcp_gateway/credentials/tests.rs
+  s_56409892e094a0::t_c305955c7feafe 155
+crates/gateway/src/http/mcp_gateway/rate_limits.rs
+  s_56409892e094a0::t_84075af80545a2 1-77
+crates/gateway/src/http/mcp_gateway/tests.rs
+  s_56409892e094a0::t_d0aa0cb142b821 267-268,368-369,498,848-960
+crates/gateway/src/http/mod.rs
+  s_56409892e094a0::t_8038acb2cdf3ce 8,25-27,29,86-108,280-289,444
+crates/gateway/src/http/rate_limit_policies.rs
+  s_4743c3bdc4d116::t_18ea000ed10662 1-395
+crates/gateway/src/http/rate_limit_policies/handler_tests.rs
+  s_4743c3bdc4d116::t_691cb0e040bbcf 1-295
+crates/gateway/src/http/rate_limit_tests.rs
+  s_4743c3bdc4d116::t_4555aefb39f70f 1-475
+crates/gateway/src/http/request_policy.rs
+  s_4743c3bdc4d116::t_d9ab42514a30c3 1-152
+crates/gateway/src/http/state.rs
+  s_56409892e094a0::t_a3a570094e8adb 10,45
+crates/gateway/src/http/test_support.rs
+  s_4743c3bdc4d116::t_1c2c007ceafb14 57,129-168
+crates/gateway/src/main.rs
+  s_4743c3bdc4d116::t_d14f4a6e20fdb7 12,28-29,246-253,332,343-349,716-719,728
+crates/gateway/src/observability.rs
+  s_56409892e094a0::t_73d2ca69447616 42,208-211,326-337
+deploy/config/gateway.local.yaml
+  s_4743c3bdc4d116::t_a96d3a4d1da809 81
+deploy/config/gateway.yaml
+  s_4743c3bdc4d116::t_448b4eca16162b 81
+docs/.vitepress/config.mts
+  s_56409892e094a0::t_4cdc2f31d4950b 38
+docs/adr/2026-10-15-gateway-rate-limits-and-quotas.md
+  s_56409892e094a0::t_f89a2849ad1788 1-139
+docs/configuration/configuration-reference.md
+  s_56409892e094a0::t_1f8c947fcd4bd5 32,364,383,387,405,735-784
+docs/configuration/mcp-servers.md
+  s_56409892e094a0::t_293fb9bda0f7e7 259-260
+docs/configuration/model-routing-and-api-behavior.md
+  s_56409892e094a0::t_aa3e452dfbde5e 419
+docs/configuration/rate-limits.md
+  s_56409892e094a0::t_b3b112715011ba 1-160
+docs/mcp/mcp-invocations.md
+  s_56409892e094a0::t_63cacb5828e914 84-85
+docs/reference/request-lifecycle-and-failure-modes.md
+  s_56409892e094a0::t_ead34557c2342d 31,190-196
+gateway.prod.yaml
+  s_4743c3bdc4d116::t_00aceaea759d90 44
+gateway.yaml
+  s_4743c3bdc4d116::t_86f6c6404a3548 44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "23f93ad27887a2e3ba2ae5c81fe94f0cbad48b0e",
+  "prompts": {},
+  "sessions": {
+    "s_4743c3bdc4d116": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a047a7f-d4a7-4209-858b-e18a0d0d4346",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_56409892e094a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a7dde59-323d-48bd-9209-17a8bd106b80",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,29 @@
+.zed/settings.json
+  s_e85f34d07f9d04::t_fe2e352a5dc921 1-14
+CONTRIBUTING.md
+  s_e85f34d07f9d04::t_5600006d1ca9c6 57
+  s_e85f34d07f9d04::t_d3acc99a6097bb 58
+crates/admin-ui/web/AGENTS.md
+  s_e85f34d07f9d04::t_d3acc99a6097bb 7
+docs/adr/2026-10-24-admin-ui-type-checking-with-tsrs.md
+  s_e85f34d07f9d04::t_a9b649a64b7f10 60
+  s_e85f34d07f9d04::t_d3acc99a6097bb 51
+crates/admin-ui/web/.zed/settings.json
+  s_e85f34d07f9d04::t_b32852aaaf1953 1-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "2504c1432f467fb3027510fcc3885bf24c3ff867",
+  "prompts": {},
+  "sessions": {
+    "s_e85f34d07f9d04": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1d9b6-88c4-7342-8ce5-1379e0d509ab",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

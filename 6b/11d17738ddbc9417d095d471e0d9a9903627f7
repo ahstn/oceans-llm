@@ -1,0 +1,25 @@
+crates/gateway-service/src/admin_audit.rs
+  s_dd118f467446e0::t_729e0213a48ebe 9-15,284-312,344-375,551-593
+crates/gateway-service/src/lib.rs
+  s_dd118f467446e0::t_af282ef7eac00e 44
+crates/gateway/src/http/identity.rs
+  s_dd118f467446e0::t_5fde4537b61044 17,58-59,538-543,546,561-571,618-623,626,633-649,716,723,729-744,927-939,942,944-950,952,1017-1019,1021-1028,1030-1031,1034,1036-1053,1056-1060,1062-1068,1070,1072-1087,1089,1172-1187,1189-1192,1195,1197-1216,1218,1247-1259,1262,1264-1278,1280,1363-1409,1411-1428,1650-1665,1667-1678,1681-1691,1872,1901,2127,2156,3541-3557
+crates/gateway/src/http/identity_audit.rs
+  s_dd118f467446e0::t_cfbe84bc45ed20 7,10,57-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6b11d17738ddbc9417d095d471e0d9a9903627f7",
+  "prompts": {},
+  "sessions": {
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+crates/admin-ui/web/src/test/routes/batches-route.test.tsx
+  s_b8e52ffc321bb1::t_7b36acd0814e15 4-7,16-17,21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a73ae5b55ee26cd136ed9894a12b70c625021222",
+  "prompts": {},
+  "sessions": {
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

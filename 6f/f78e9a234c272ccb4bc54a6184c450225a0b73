@@ -1,0 +1,47 @@
+crates/admin-ui/web/src/routes/api-keys.tsx
+  s_ed44ca1188a34f::t_700f33377f6e82 39-40,97
+crates/admin-ui/web/src/routes/batches/-components.tsx
+  s_ed44ca1188a34f::t_c1840e1b34ba16 148-150,240-242
+crates/admin-ui/web/src/routes/identity/-entity-tag-utils.ts
+  s_ed44ca1188a34f::t_0a79668a69dfec 6,8
+crates/admin-ui/web/src/routes/identity/-read-only-directory.tsx
+  s_ed44ca1188a34f::t_e028c5118a072c 125
+crates/admin-ui/web/src/routes/identity/service-accounts.tsx
+  s_ed44ca1188a34f::t_1b3a7136911d39 285
+crates/admin-ui/web/src/routes/identity/teams.tsx
+  s_ed44ca1188a34f::t_ff752ad8f3799a 723
+crates/admin-ui/web/src/routes/identity/users.tsx
+  s_ed44ca1188a34f::t_2b8dccc25e159b 769,1187,1212,1579-1580,1582,1585
+crates/admin-ui/web/src/routes/observability/agent-sessions.tsx
+  s_ed44ca1188a34f::t_37bd0557add635 75,225
+crates/admin-ui/web/src/routes/observability/leaderboard.tsx
+  s_ed44ca1188a34f::t_3f53534832b1fb 105
+crates/admin-ui/web/src/routes/observability/mcp-invocations.tsx
+  s_ed44ca1188a34f::t_684b1b26bb9253 632-633
+crates/admin-ui/web/src/routes/observability/request-logs.tsx
+  s_ed44ca1188a34f::t_f2ee3eca4b0abe 862-863,874-875,878-879,895-896
+crates/admin-ui/web/src/routes/skills/-skills.test.tsx
+  s_ed44ca1188a34f::t_2317c7788fbc58 153-163
+crates/admin-ui/web/src/server/admin-data.server.ts
+  s_ed44ca1188a34f::t_cc852882596f62 411,416-418
+crates/admin-ui/web/src/server/admin-preview-data.server.ts
+  s_ed44ca1188a34f::t_374eb3932ea8ee 18-20,59-61,92-94
+crates/admin-ui/web/src/types/live-api.ts
+  s_ed44ca1188a34f::t_223f5e925a8794 46,102-103,152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6ff78e9a234c272ccb4bc54a6184c450225a0b73",
+  "prompts": {},
+  "sessions": {
+    "s_ed44ca1188a34f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "06942484-d87f-4383-a654-eae5a0385298",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

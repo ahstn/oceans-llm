@@ -1,0 +1,45 @@
+crates/gateway-core/src/traits.rs
+  s_b8e52ffc321bb1::t_2557dc458e6a5f 1181-1195
+crates/gateway-service/src/mcp_registry.rs
+  s_eaf7116ccea134::t_8475b7664e6ab4 434-451
+crates/gateway-store/src/any_store_mcp_registry.rs
+  s_b8e52ffc321bb1::t_b32f7950781ea2 189-216
+crates/gateway-store/src/lib.rs
+  s_eaf7116ccea134::t_36a33897a94b08 2163-2230
+crates/gateway-store/src/libsql_store/mcp_registry.rs
+  s_eaf7116ccea134::t_b9450df15a8a63 1011-1050
+crates/gateway-store/src/postgres_store/mcp_registry.rs
+  s_eaf7116ccea134::t_1ba5970d8908e2 922-954
+crates/gateway/src/http/mcp_registry.rs
+  s_eaf7116ccea134::t_9b9b6fe92ad8f4 463-465,505-506,514-516,526,528-529,531-534,542-546,550
+crates/gateway/src/http/mcp_registry/ownership_tests.rs
+  s_eaf7116ccea134::t_5b01932b579467 283-296,698-701,711-714,766-781
+docs/adr/2026-10-17-delegated-mcp-server-ownership.md
+  s_eaf7116ccea134::t_d9349bfbc3a101 128-131
+docs/configuration/mcp-servers.md
+  s_eaf7116ccea134::t_2ca7f9c5e2cacf 121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "36438503ea9ebb6738c9b83c28772002738c6b51",
+  "prompts": {},
+  "sessions": {
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

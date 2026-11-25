@@ -1,0 +1,35 @@
+crates/admin-ui/web/doctor.config.json
+  s_e88e6cbbab1de0::t_a87aaa6ada5230 2-5
+crates/admin-ui/web/src/routes/models.tsx
+  s_e88e6cbbab1de0::t_e1d6f6f3eebed0 130,439-445,615-690
+crates/gateway-service/src/benchmark_catalog.rs
+  s_e88e6cbbab1de0::t_cd1ea9e1377f0c 466-468
+crates/gateway-service/src/benchmark_catalog/tests.rs
+  s_e88e6cbbab1de0::t_322bd678cb9257 121-127
+docs/.vitepress/config.mts
+  s_e88e6cbbab1de0::t_eaabfe1f3313d5 166-169
+docs/adr/2026-09-24-openrouter-benchmark-snapshot.md
+  s_e88e6cbbab1de0::t_c906054e80b668 11,35
+docs/configuration/configuration-reference.md
+  s_e88e6cbbab1de0::t_f148942465f0b9 97,99
+docs/contributing/index.md
+  s_e88e6cbbab1de0::t_fa0ad7d713afb5 19-20
+docs/contributing/reference/model-benchmark-snapshot.md
+  s_e88e6cbbab1de0::t_1a37117e6efb7b 1-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ec4d651ffdb0ee6593ab14e7f554c2c5feb701e0",
+  "prompts": {},
+  "sessions": {
+    "s_e88e6cbbab1de0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "44088f38-237f-4fc3-bd0d-c2f82321db92",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

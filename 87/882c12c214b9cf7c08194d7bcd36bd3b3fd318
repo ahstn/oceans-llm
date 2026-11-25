@@ -1,0 +1,104 @@
+.agents/skills/verify-oceans-admin/features/mcp-client-oauth.md
+  h_2f452a9c375069 14,42,53
+.agents/skills/verify-oceans-admin/features/routing.json
+  h_2f452a9c375069 584
+.agents/skills/verify-oceans-admin/features/workspace-connections.md
+  h_2f452a9c375069 15-16,36-37
+crates/admin-ui/web/src/generated/admin-api.ts
+  h_2f452a9c375069 359-390,1461-1492,2167-2175,2822-2853,4835-4838,5848-5924,8015-8079
+crates/admin-ui/web/src/routes/account/-authorized-mcp-clients.tsx
+  h_2f452a9c375069 1-207
+crates/admin-ui/web/src/routes/account/connections.tsx
+  h_2f452a9c375069 12,17-18,41-47,54,201-202
+crates/admin-ui/web/src/server/admin-data.functions.ts
+  h_2f452a9c375069 81-82,568-590
+crates/admin-ui/web/src/server/admin-data.server.test.ts
+  h_2f452a9c375069 29,780-795
+crates/admin-ui/web/src/server/admin-data.server.ts
+  h_2f452a9c375069 55-56,734-749
+crates/admin-ui/web/src/test/routes/account-connections-route.test.tsx
+  h_2f452a9c375069 12-16,30-31,34-40,57,59-74,77,79-81,87-89,101,103-105,114,127-133,154,169-173,176-180,196,202-213,215-217,225-227
+crates/admin-ui/web/src/test/routes/authorized-mcp-clients.test.tsx
+  h_2f452a9c375069 1-177
+crates/admin-ui/web/src/types/live-api.ts
+  h_2f452a9c375069 204-207
+crates/gateway-core/src/lib.rs
+  h_2f452a9c375069 132-136
+crates/gateway-core/src/mcp_client_oauth.rs
+  h_2f452a9c375069 342-368,431-434,438,485-530
+crates/gateway-service/src/admin_audit.rs
+  h_2f452a9c375069 157-165,226-228,253,271
+crates/gateway-service/src/lib.rs
+  h_2f452a9c375069 93-96
+crates/gateway-service/src/mcp_client_oauth.rs
+  h_2f452a9c375069 6,18,23-24
+crates/gateway-service/src/mcp_client_oauth/authorization.rs
+  h_2f452a9c375069 128-129,132-151
+crates/gateway-service/src/mcp_client_oauth/authorized_clients.rs
+  h_2f452a9c375069 1-76
+crates/gateway-service/src/mcp_client_oauth/settings.rs
+  h_2f452a9c375069 11-12,25,44-47,73,77-94,215-232
+crates/gateway-service/src/mcp_client_oauth/token.rs
+  h_2f452a9c375069 230-233
+crates/gateway-store/migrations/V64__gateway_oauth_cleanup_indexes.sql
+  h_2f452a9c375069 1-57
+crates/gateway-store/migrations/postgres/V64__gateway_oauth_cleanup_indexes.sql
+  h_2f452a9c375069 1-57
+crates/gateway-store/src/any_store_gateway_oauth.rs
+  h_2f452a9c375069 4-6,89,156-193
+crates/gateway-store/src/gateway_oauth_tests.rs
+  h_2f452a9c375069 10-12,19-20,354-355,357,366-370,380-391,397,405-826,829-843,846-997
+crates/gateway-store/src/libsql_store/gateway_oauth.rs
+  h_2f452a9c375069 7-9,127-144,160-174,373-377,381-385,401,558-679,681-737
+crates/gateway-store/src/libsql_store/identity.rs
+  h_2f452a9c375069 1784-1795,1817-1828
+crates/gateway-store/src/migration_registry.rs
+  h_2f452a9c375069 377-383,385-387
+crates/gateway-store/src/postgres_store/gateway_oauth.rs
+  h_2f452a9c375069 7-9,127-144,160-174,351-354,357-362,377,532-648,650-733
+crates/gateway-store/src/postgres_store/identity.rs
+  h_2f452a9c375069 1607-1619,1637-1649
+crates/gateway/openapi/admin-api.json
+  h_2f452a9c375069 1222-1333,5343-5433,8068-8087,10627-10715,18494-18506
+crates/gateway/src/config/mcp_client_oauth.rs
+  h_2f452a9c375069 24-27,38,51-54,93-95
+crates/gateway/src/config/tests/mcp_client_oauth.rs
+  h_2f452a9c375069 32,44,201-218
+crates/gateway/src/http/admin_contract.rs
+  h_2f452a9c375069 2113-2117
+crates/gateway/src/http/identity.rs
+  h_2f452a9c375069 1295-1296,1301
+crates/gateway/src/http/mcp_client_oauth.rs
+  h_2f452a9c375069 5,14-15,18,20-22,25-32,51-64,110-111
+crates/gateway/src/http/mcp_client_oauth/authorized_clients.rs
+  h_2f452a9c375069 1-344
+crates/gateway/src/http/mcp_client_oauth/authorized_clients_tests.rs
+  h_2f452a9c375069 1-445
+crates/gateway/src/http/mcp_client_oauth/consent.rs
+  h_2f452a9c375069 7,9,15,18,113,117,120-122,124,126-146,150-159,220
+crates/gateway/src/http/mcp_client_oauth/flow_tests.rs
+  h_2f452a9c375069 187-205,283-292,583-593
+crates/gateway/src/http/mod.rs
+  h_2f452a9c375069 517-532
+crates/gateway/src/main.rs
+  h_2f452a9c375069 385,742-773
+docs/adr/2026-10-15-admin-audit-log.md
+  h_2f452a9c375069 115
+docs/adr/2026-10-15-mcp-client-oauth-authorization.md
+  h_2f452a9c375069 191,195-208,212-215,221,228
+docs/configuration/configuration-reference.md
+  h_2f452a9c375069 699,707
+docs/mcp/mcp-client-setup.md
+  h_2f452a9c375069 112-113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "87882c12c214b9cf7c08194d7bcd36bd3b3fd318",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

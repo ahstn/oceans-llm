@@ -1,0 +1,53 @@
+crates/admin-ui/web/src/routes/design-system/-components/color-roles.ts
+  s_eaf7116ccea134::t_4ef3f7dfb429f6 1-35
+crates/admin-ui/web/src/routes/design-system/-components/foundations.tsx
+  s_70a1a5a7a1bcd3::t_b0ca2fb1b93d5c 18,225,231-237
+  s_70a1a5a7a1bcd3::t_9a6d172a45a5d9 238-240
+  s_8378144fcf7abb::t_e3651563faa9ca 241
+registry.json
+  s_70a1a5a7a1bcd3::t_68d1d2dd66143e 140-141
+docs/public/r/registry.json
+  s_70a1a5a7a1bcd3::t_6ed9db3ea0e70f 140-141
+crates/admin-ui/web/src/styles/globals.css
+  s_70a1a5a7a1bcd3::t_7e5f30e7659453 103-104,113-114
+crates/admin-ui/web/src/test/design-contrast.test.ts
+  s_eaf7116ccea134::t_f68fa2f0343228 1-53
+docs/public/r/oceans-theme.json
+  s_70a1a5a7a1bcd3::t_26305d2f8e9984 134-135
+.agents/skills/verify-oceans-admin/features/design-system.md
+  s_70a1a5a7a1bcd3::t_0a163773b8502d 23,29
+crates/admin-ui/web/src/routes/design-system/-components/showcase.tsx
+  s_70a1a5a7a1bcd3::t_14ad9fe1f0e37b 6-7,153-161,166,171,199-203,206,209-210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fa6464b4a87793779374024d88127dfa804dab9b",
+  "prompts": {},
+  "sessions": {
+    "s_70a1a5a7a1bcd3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1491e-d836-70f2-8c45-b23398e21490",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_8378144fcf7abb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bc33843-0f12-492f-9887-85f13a43d9f1",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

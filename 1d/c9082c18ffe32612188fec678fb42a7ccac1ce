@@ -1,0 +1,19 @@
+crates/admin-ui/web/src/server/admin-data.functions.ts
+  s_e383333b16cafa::t_c1dff032c6c275 716-721,723-730
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1dc9082c18ffe32612188fec678fb42a7ccac1ce",
+  "prompts": {},
+  "sessions": {
+    "s_e383333b16cafa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8774bcf7-be6d-4ada-b0a8-edf8570bb728",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

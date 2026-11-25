@@ -1,0 +1,19 @@
+crates/gateway/src/http/audit_tests.rs
+  s_af4ccbd37c05c0::t_1f9026d7e394b8 494
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2b62d80b7b5ba61959383baffa4e3aed65b39734",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

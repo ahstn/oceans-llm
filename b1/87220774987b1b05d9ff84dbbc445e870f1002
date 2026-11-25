@@ -1,0 +1,18 @@
+crates/admin-ui/web/src/components/attribution/dora-tile.tsx
+  h_2f452a9c375069 1-74
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/concept-delivery.tsx
+  h_2f452a9c375069 8,13,27
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/delivery-tab.tsx
+  h_2f452a9c375069 6-8,13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b187220774987b1b05d9ff84dbbc445e870f1002",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

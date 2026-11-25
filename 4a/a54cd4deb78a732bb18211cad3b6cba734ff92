@@ -1,0 +1,19 @@
+.github/workflows/cli-ci.yml
+  s_80be2f6b7622ec::t_27e6323ba62b44 77-79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4aa54cd4deb78a732bb18211cad3b6cba734ff92",
+  "prompts": {},
+  "sessions": {
+    "s_80be2f6b7622ec": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fd50a3-7260-4e1c-bdf2-41488101b953",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

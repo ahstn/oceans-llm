@@ -1,0 +1,33 @@
+crates/gateway-service/src/service.rs
+  s_dd118f467446e0::t_6b796491b5da6b 845-851
+crates/gateway/src/config/loader.rs
+  s_1864c803a90a0e::t_34126ca92ac870 84-85,161-169,181-182,184,210,234-237
+crates/gateway/src/config/tests/fragments.rs
+  s_dd118f467446e0::t_2368ea659fa34d 330-360
+crates/gateway/src/main.rs
+  s_dd118f467446e0::t_92f840eb3cb6e8 264
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7ae27c18d82a184748c73025a5afa3c8f66757f9",
+  "prompts": {},
+  "sessions": {
+    "s_1864c803a90a0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5822bc90-e33d-49af-9d44-474de0500040",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

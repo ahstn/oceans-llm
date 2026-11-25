@@ -1,0 +1,47 @@
+CHANGELOG.md
+  s_9379a6359d74c1::t_a8f6d736d0547e 9-44
+Cargo.lock
+  s_9379a6359d74c1::t_ea634a616e5fbb 7,58,1746,1799,1809,1819,1839,1860,1875,1907,1939,1958,3027
+crates/admin-ui/Cargo.toml
+  s_9379a6359d74c1::t_0417bf608a9aad 5
+crates/agent-session-analysis/Cargo.toml
+  s_9379a6359d74c1::t_059b8153f262e7 5
+crates/gateway-client-config/Cargo.toml
+  s_9379a6359d74c1::t_70add0e6406c38 5
+crates/gateway-client-ip/Cargo.toml
+  s_9379a6359d74c1::t_261f78c22ff903 5
+crates/gateway-core/Cargo.toml
+  s_9379a6359d74c1::t_9f3befdf33aba9 5
+crates/gateway-guardrails/Cargo.toml
+  s_9379a6359d74c1::t_3d9d7e0b6d928c 5
+crates/gateway-mcp/Cargo.toml
+  s_9379a6359d74c1::t_c885dff27f39d8 5
+crates/gateway-providers/Cargo.toml
+  s_9379a6359d74c1::t_42bc59b0db981b 5
+crates/gateway-service/Cargo.toml
+  s_9379a6359d74c1::t_482e36249bc090 5
+crates/gateway-skills/Cargo.toml
+  s_9379a6359d74c1::t_a202d8bc86d077 5
+crates/gateway-store/Cargo.toml
+  s_9379a6359d74c1::t_adeb29ce735e13 5
+crates/gateway/Cargo.toml
+  s_9379a6359d74c1::t_cc4511a01d8e42 5
+crates/oceans-cli/Cargo.toml
+  s_9379a6359d74c1::t_95cdc329729daa 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9a92dedb2e9d971240503ca08761165a19868f2f",
+  "prompts": {},
+  "sessions": {
+    "s_9379a6359d74c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "24386ac1-62a3-474e-9c88-ccc4d428ec6d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

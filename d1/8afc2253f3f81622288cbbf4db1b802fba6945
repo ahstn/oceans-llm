@@ -1,0 +1,18 @@
+crates/gateway-store/mise.toml
+  h_2f452a9c375069 25,27-31
+docs/setup/self-hosting-mise-daemons.md
+  h_2f452a9c375069 85-93,101-103,117,151,153
+mise.selfhost.toml
+  h_2f452a9c375069 106-110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d18afc2253f3f81622288cbbf4db1b802fba6945",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

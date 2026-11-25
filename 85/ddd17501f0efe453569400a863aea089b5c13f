@@ -1,0 +1,43 @@
+.agents/skills/verify-oceans-admin/SKILL.md
+  s_4743c3bdc4d116::t_ea0cb2f0386d1b 98,123
+.agents/skills/verify-oceans-admin/features/README.md
+  s_4743c3bdc4d116::t_8fd08ca64e2261 70
+.agents/skills/verify-oceans-admin/features/backend-gateway.md
+  s_63939a3786d9af::t_1b32ac3202fba6 7,15,17,29,31-32,38
+.agents/skills/verify-oceans-admin/features/live-llm-requests.md
+  s_4743c3bdc4d116::t_d4e547e6e74519 8,18-19,22,31,36-39,42,49-50
+.agents/skills/verify-oceans-admin/scripts/drive-backend-gateway.mjs
+  s_63939a3786d9af::t_6a1783c8a6ef71 19-20,140-142
+.agents/skills/verify-oceans-admin/scripts/mcp-browser.mjs
+  s_63939a3786d9af::t_d30e62a546a8d5 180
+gateway.yaml
+  s_63939a3786d9af::t_05b1c8c9a07d29 424,426-437
+tests/harness-integration/README.md
+  s_63939a3786d9af::t_491c44db6b375e 17
+tests/harness-integration/src/global-setup.ts
+  s_63939a3786d9af::t_282365cb6d2971 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "85ddd17501f0efe453569400a863aea089b5c13f",
+  "prompts": {},
+  "sessions": {
+    "s_4743c3bdc4d116": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a047a7f-d4a7-4209-858b-e18a0d0d4346",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_63939a3786d9af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "78263e42-f835-4433-bb7a-18fc7105602d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

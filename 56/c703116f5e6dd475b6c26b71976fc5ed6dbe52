@@ -1,0 +1,27 @@
+crates/gateway/src/http/handlers.rs
+  s_56409892e094a0::t_ee6877770d2599 378-395
+crates/gateway/src/http/handlers/inference.rs
+  s_56409892e094a0::t_43167e57dc5f8f 167-168,177-194
+crates/gateway-service/src/rate_limits.rs
+  s_56409892e094a0::t_9a907f6d858ac8 481,514-519,664-666,668,681,683-684,687
+crates/gateway-service/src/rate_limits/tests.rs
+  s_56409892e094a0::t_57c60a1d5ee415 999-1031
+crates/gateway/src/http/rate_limit_tests.rs
+  s_56409892e094a0::t_df97a11fe8ce0f 35-36,63-70,544-588
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "56c703116f5e6dd475b6c26b71976fc5ed6dbe52",
+  "prompts": {},
+  "sessions": {
+    "s_56409892e094a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a7dde59-323d-48bd-9209-17a8bd106b80",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

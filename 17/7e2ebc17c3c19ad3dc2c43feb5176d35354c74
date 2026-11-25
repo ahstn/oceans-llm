@@ -1,0 +1,53 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_411362aa0b79d6::t_d5c34ff25163cb 477-479
+crates/admin-ui/web/src/routes/identity/-onboarding-result.tsx
+  s_411362aa0b79d6::t_17efaffea037a6 1-56
+crates/admin-ui/web/src/routes/identity/-read-only-directory.tsx
+  s_411362aa0b79d6::t_ba2fe646d1cb09 4
+crates/admin-ui/web/src/routes/identity/-status-badge.ts
+  s_411362aa0b79d6::t_0589a83182cec2 1-6
+crates/admin-ui/web/src/routes/identity/-use-create-user.ts
+  s_411362aa0b79d6::t_1072664cc7d6ae 1-57
+crates/admin-ui/web/src/routes/identity/-use-onboarding-reset.ts
+  s_411362aa0b79d6::t_b292bceb173872 1-67
+crates/admin-ui/web/src/routes/identity/-use-provider-credentials.ts
+  s_411362aa0b79d6::t_043127db3be007 1-75
+crates/admin-ui/web/src/routes/identity/-use-users-transition.ts
+  s_411362aa0b79d6::t_d6dcbe06c6933c 1-42
+crates/admin-ui/web/src/routes/identity/-user-auth-section.tsx
+  s_411362aa0b79d6::t_0c6f514d9d13e9 1-158
+crates/admin-ui/web/src/routes/identity/-user-details-sections.tsx
+  s_411362aa0b79d6::t_0ec3f3fed74992 1-121
+crates/admin-ui/web/src/routes/identity/-user-form-fields.tsx
+  s_411362aa0b79d6::t_5358ee99249532 1-182
+crates/admin-ui/web/src/routes/identity/-users-list.tsx
+  s_411362aa0b79d6::t_1d9d7c4b3f8831 1-116
+crates/admin-ui/web/src/routes/identity/-users-search.ts
+  s_411362aa0b79d6::t_90df998000af2a 1-33
+crates/admin-ui/web/src/routes/identity/users.tsx
+  s_411362aa0b79d6::t_8cd85562643061 1-2,18-19,21-25,40-46,53-54,63-69,71-85,87,90,105-112,129,135,140-148,153-154,156-160
+crates/admin-ui/web/src/routes/identity/-create-user-dialog.tsx
+  s_411362aa0b79d6::t_d96979f01a8c74 1-211
+crates/admin-ui/web/src/routes/identity/-use-user-details.ts
+  s_411362aa0b79d6::t_e37ada374a2ee9 1-125
+crates/admin-ui/web/src/routes/identity/-user-details-dialog.tsx
+  s_411362aa0b79d6::t_3c33c434145811 1-312
+crates/admin-ui/web/src/routes/identity/-user-form.ts
+  s_411362aa0b79d6::t_8762645af70560 1-144,149-150,180-193
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "177e2ebc17c3c19ad3dc2c43feb5176d35354c74",
+  "prompts": {},
+  "sessions": {
+    "s_411362aa0b79d6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c6fd65f6-a3c0-4f10-8432-e594fb458726",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

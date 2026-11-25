@@ -1,0 +1,75 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_b4d833500a8bf7::t_0fc590a1070977 102,220,230,368,385
+docs/adr/2026-09-08-model-metadata-discovery.md
+  s_71f00c2d46fb62::t_4f9a9126b0d5c0 5-6
+docs/configuration/pricing-catalog-and-accounting.md
+  s_71f00c2d46fb62::t_829880ec545899 179
+  s_71f00c2d46fb62::t_7b940db49d88ef 25,27-35,37,39-43,51-52,57-76,78,122,130,134-135,230,234
+.agents/skills/verify-oceans-admin/features/models.md
+  s_b4d833500a8bf7::t_1743e23c05c7bb 8-9,33,44
+docs/providers/openrouter.md
+  s_71f00c2d46fb62::t_d30e334d928d02 89,100
+.agents/skills/verify-oceans-admin/features/image-generation.md
+  s_b4d833500a8bf7::t_50077548108ea0 45
+gateway.yaml
+  s_b4d833500a8bf7::t_1145ab82d114ef 335
+docs/adr/2026-03-06-hybrid-pricing-catalog.md
+  s_71f00c2d46fb62::t_4f9a9126b0d5c0 6-7,129
+docs/configuration/configuration-reference.md
+  s_71f00c2d46fb62::t_c1c150850b34a6 1279,1285-1287,1399,1401,1403-1405,1407,1439
+  s_71f00c2d46fb62::t_c7309b378788bf 216-218,303,1010,1124
+docs/adr/2026-09-21-artificial-analysis-benchmark-catalogue.md
+  s_71f00c2d46fb62::t_4f9a9126b0d5c0 40
+docs/contributing/reference/data-relationships.md
+  s_71f00c2d46fb62::t_c23e112cec54a4 62,187,189-190,217-218,220,222
+docs/reference/request-lifecycle-and-failure-modes.md
+  s_71f00c2d46fb62::t_45a4700d181239 150
+docs/providers/github-copilot.md
+  s_71f00c2d46fb62::t_c7b06bdf970ca2 25,30
+  s_71f00c2d46fb62::t_0fbee9cc5507ce 31
+docs/reference/provider-api-compatibility.md
+  s_71f00c2d46fb62::t_c23e112cec54a4 12,134
+docs/providers/typesafe.md
+  s_71f00c2d46fb62::t_057556b082680c 38-40
+docs/providers/aws-bedrock.md
+  s_71f00c2d46fb62::t_c7b06bdf970ca2 27
+docs/adr/2026-10-26-image-generation-models.md
+  s_71f00c2d46fb62::t_d01d02ca6d6375 72
+docs/contributing/reference/release-process.md
+  s_71f00c2d46fb62::t_c23e112cec54a4 70-71
+docs/adr/2026-10-31-multi-source-model-catalog.md
+  s_71f00c2d46fb62::t_b02194753e68e6 1-99,101-116,118-152,154-179
+  s_71f00c2d46fb62::t_8bb8913f130253 100,117
+  s_71f00c2d46fb62::t_f8066a9402bd48 153
+docs/configuration/model-routing-and-api-behavior.md
+  s_71f00c2d46fb62::t_04e7cc89f1eae0 436
+  s_71f00c2d46fb62::t_154fb0dc1ce24b 79
+  s_71f00c2d46fb62::t_5e9a62200d1598 291-325,329-333,347
+  s_71f00c2d46fb62::t_14041bbf347586 327
+  s_71f00c2d46fb62::t_d57ae348982691 387,596
+  s_71f00c2d46fb62::t_d5bf2baea5fee7 80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c34eabb1b997f922d8ba734bd4ca51e8a101bbb2",
+  "prompts": {},
+  "sessions": {
+    "s_71f00c2d46fb62": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1943a-425d-7547-ad1c-8810479fd4af",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_b4d833500a8bf7": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1943a-4262-7108-a7b8-18e472cf9bdf",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

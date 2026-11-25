@@ -1,0 +1,55 @@
+crates/gateway-providers/src/anthropic/error.rs
+  s_85d247d457311f::t_53a4fced348abe 55
+crates/gateway-providers/src/anthropic/mod.rs
+  s_85d247d457311f::t_7c025d05aa457c 27-29
+crates/gateway-providers/src/anthropic/model.rs
+  s_85d247d457311f::t_0a9e8e78d90769 34-44,46-71,88-90,153-182
+crates/gateway-providers/src/anthropic/tests.rs
+  s_85d247d457311f::t_015677f5abfeb1 324-350,352-353,360-396,398-399,404-418
+crates/gateway-providers/src/anthropic/thinking.rs
+  s_85d247d457311f::t_f4c76d262fdf2d 6-7,424
+crates/gateway-providers/src/bedrock/request/mod.rs
+  s_4d987d523b3505::t_4ff786d96b73e9 2,87-89,466-468
+crates/gateway-providers/src/bedrock/tests/request_tools.rs
+  s_cd9d806c1e358d::t_6861728c360cdf 533-574
+docs/adr/2026-09-03-anthropic-compatible-provider-and-opencode-zen.md
+  s_4d987d523b3505::t_92f329371d678f 43-46
+docs/providers/aws-bedrock.md
+  s_85d247d457311f::t_582c921bc1375e 237-238
+docs/providers/opencode-zen.md
+  s_4d987d523b3505::t_a8e635459ff20d 59
+docs/reference/provider-api-compatibility.md
+  s_4d987d523b3505::t_e5c148a7fd17ca 219-229,291
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2be71efc80edd45f4812a5598665e22663b1ea32",
+  "prompts": {},
+  "sessions": {
+    "s_4d987d523b3505": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a0243d3-512b-432f-8684-c8bc67831543",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_85d247d457311f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8e98248b-b97b-4ff9-bd80-a393a4d7adfa",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_cd9d806c1e358d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d07410f0-3795-44b0-89cc-2a0af6501c56",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,37 @@
+.github/workflows/ci.yml
+  s_d3c80b90c1cc6d::t_e5e9d995a6f9b6 5-6,21
+.github/workflows/cli-ci.yml
+  s_d3c80b90c1cc6d::t_f45fe6473e4ac1 35,65-66
+.github/workflows/docs-ci.yml
+  s_d3c80b90c1cc6d::t_c818881ddb5b86 22
+.github/workflows/helm-ci.yml
+  s_d3c80b90c1cc6d::t_0436b06d9183c9 29
+.github/workflows/oceans-review-agent.yml
+  s_d3c80b90c1cc6d::t_eed7fd4312810b 20
+.github/workflows/release-product.yml
+  s_d3c80b90c1cc6d::t_f95c95e47f6695 12
+.github/workflows/review-agent-ci.yml
+  s_d3c80b90c1cc6d::t_ce882f75523d2d 22
+.github/workflows/review-agent-self-hosted-smoke.yml
+  s_d3c80b90c1cc6d::t_d5918cb67b902b 21
+.github/workflows/ui-ci.yml
+  s_d3c80b90c1cc6d::t_56eef06cec3ece 22
+docs/contributing/reference/release-process.md
+  s_d3c80b90c1cc6d::t_fa6494e0bcf9dc 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "93765cd0defdc63f662385a4a5ff003d507d44ca",
+  "prompts": {},
+  "sessions": {
+    "s_d3c80b90c1cc6d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1dc1b72e-7118-4e96-b7d7-4f5e3c42a100",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

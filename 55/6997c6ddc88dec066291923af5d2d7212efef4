@@ -1,0 +1,19 @@
+docs/adr/2026-10-13-govern-every-mcp-method.md
+  s_b8e52ffc321bb1::t_fb528e48177d4d 65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "556997c6ddc88dec066291923af5d2d7212efef4",
+  "prompts": {},
+  "sessions": {
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,49 @@
+crates/gateway-service/src/mcp_client_oauth/metadata_document.rs
+  s_e88dc7cf2999d1::t_58dbeaaf4a5a68 23,58-60,64-65,69,84,92,132-134,168,201-213,239-245,390-414,460,463-464,567-574,607,725-764,769-779,806-812
+crates/gateway-service/src/mcp_client_oauth/metadata_document/tests.rs
+  s_e88dc7cf2999d1::t_da0467a088d939 137-138,167-172,180-181,183,187,191-196,199,202,206,210,214,219,223-233,237,242,246-250,356-361,363,365,369-418
+crates/gateway-service/src/mcp_oauth.rs
+  s_4394d7bb181c63::t_968e483cfed34b 98-100,382,404,429,451,479,500,507,516,547,622,719,732
+crates/gateway-service/src/mcp_oauth/tests.rs
+  s_4394d7bb181c63::t_f60190d6eb62c8 75-76,111-136
+crates/gateway/src/http/mcp_client_oauth/metadata_document_tests.rs
+  s_4394d7bb181c63::t_72c39fc7b12fda 47,58,85,91-98,408-432
+crates/gateway/src/http/mcp_oauth.rs
+  s_4394d7bb181c63::t_b49a0111060022 229,394
+docs/adr/2026-10-15-mcp-client-oauth-authorization.md
+  s_33d90a19d63897::t_bf24926868380f 177,183,190
+docs/adr/2026-10-17-ssrf-safe-outbound-fetch.md
+  s_33d90a19d63897::t_ad4333a4505a12 65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "335ba0fce564eaae9116118fcbf30ff5e981b7f9",
+  "prompts": {},
+  "sessions": {
+    "s_33d90a19d63897": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ed06c798-8802-41c0-9291-c5fd2a3c7dfa",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_4394d7bb181c63": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5fe6d420-4e7e-4885-8f8a-07723d2ed05e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

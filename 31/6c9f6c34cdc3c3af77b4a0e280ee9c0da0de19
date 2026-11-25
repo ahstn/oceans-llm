@@ -1,0 +1,23 @@
+.agents/skills/verify-oceans-admin/features/live-llm-requests.md
+  s_13e300ce4bf1eb::t_4023fa754c11d8 46
+docs/configuration/configuration-reference.md
+  s_13e300ce4bf1eb::t_2f9f501bebba04 97
+gateway.yaml
+  s_13e300ce4bf1eb::t_e012afa1bdf09d 488
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "316c9f6c34cdc3c3af77b4a0e280ee9c0da0de19",
+  "prompts": {},
+  "sessions": {
+    "s_13e300ce4bf1eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cb0560cd-180f-4e10-b195-fa36950af50e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

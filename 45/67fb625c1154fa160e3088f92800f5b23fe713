@@ -1,0 +1,73 @@
+docs/src/content/docs/access/access-settings.mdx
+  s_b8dff9c971c29b::t_7d5b03c1b83b85 283
+crates/gateway/src/http/state.rs
+  s_b8dff9c971c29b::t_2b2f26c9e03e33 54-55
+crates/admin-ui/web/src/routes/observability/attribution.tsx
+  s_b8dff9c971c29b::t_2b2c3fe6a456b4 172-173
+  s_b8dff9c971c29b::t_35fd2335ef316d 30
+crates/gateway-store/migrations/postgres/V80__attribution_note_key_owner_authors.sql
+  s_b8dff9c971c29b::t_f0c9f390aa1c49 1-18
+crates/gateway/src/main.rs
+  s_b8dff9c971c29b::t_2b2f26c9e03e33 347
+crates/gateway/src/http/attribution/ingest.rs
+  s_b8dff9c971c29b::t_3dd77154811448 5,263-264,276-278,282
+  s_b8dff9c971c29b::t_2b2f26c9e03e33 262,265,274-275,279,287-288,291-295,299
+  s_b8dff9c971c29b::t_16917ad9e492fc 296-298,300
+crates/gateway/src/local_demo_seed/attribution.rs
+  s_b8dff9c971c29b::t_a54478a4fbb9c0 4-7,57-59,88,110,132,153,217,292,303,307,314-315,328,379,453
+crates/gateway/src/http/test_support.rs
+  s_b8dff9c971c29b::t_2b2f26c9e03e33 59
+crates/gateway-store/migrations/V80__attribution_note_key_owner_authors.sql
+  s_b8dff9c971c29b::t_f0c9f390aa1c49 1-19
+crates/admin-ui/web/src/test/routes/attribution-route.test.tsx
+  s_b8dff9c971c29b::t_a40a4ea6a7ffdd 286-289
+docs/src/content/docs/harnesses/git-ai-attribution.mdx
+  s_b8dff9c971c29b::t_7d5b03c1b83b85 167-181
+crates/gateway/src/http/attribution/tests.rs
+  s_b8dff9c971c29b::t_f9bb127aee6815 4-5,43-48,50-55,297-344
+crates/gateway-service/src/attribution.rs
+  s_b8dff9c971c29b::t_fc189eca534961 29
+crates/gateway-service/src/attribution/ingest.rs
+  s_b8dff9c971c29b::t_fc189eca534961 265-268,297-300,321-329
+  s_b8dff9c971c29b::t_022a1c24c70ab6 330-331
+crates/gateway-store/src/migration_registry.rs
+  s_b8dff9c971c29b::t_f0c9f390aa1c49 505-513
+crates/gateway/src/config/tests/identity.rs
+  s_b8dff9c971c29b::t_15e637e61caf87 289-345
+  s_b8dff9c971c29b::t_41858d1fd8dead 346-347
+crates/gateway/src/config/identity.rs
+  s_b8dff9c971c29b::t_4cb98cc04610ac 1,8,17-30,283
+  s_b8dff9c971c29b::t_44266521c88707 126-127,230,243-247,272-282
+  s_b8dff9c971c29b::t_0576d288c4de62 123-125
+  s_b8dff9c971c29b::t_373708610ae5af 31
+crates/admin-ui/web/src/routes/observability/-attribution/cells.tsx
+  s_b8dff9c971c29b::t_8e9438876f6f23 33
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_b8dff9c971c29b::t_75cb3615cbd59e 560,570
+crates/gateway-service/src/attribution/tests/ingest.rs
+  s_b8dff9c971c29b::t_6cbe4697eefa93 484,499,501,503,508-517,521,523-528,537-540,554,558-571,573
+  s_b8dff9c971c29b::t_276320d4dfe1e0 572,581
+crates/admin-ui/web/src/routes/observability/-attribution/kpis.tsx
+  s_b8dff9c971c29b::t_54663f15e11fff 2,6,8,16,19
+docs/adr/2026-11-01-git-ai-attribution-via-oceans-hooks.md
+  s_b8dff9c971c29b::t_75cb3615cbd59e 34,47,85-86,179-180
+.agents/skills/verify-oceans-admin/features/attribution.md
+  s_b8dff9c971c29b::t_a67b40d611b9c2 47
+  s_b8dff9c971c29b::t_12c4e59a205b2b 3,7,27,31,35-36,38,50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "4567fb625c1154fa160e3088f92800f5b23fe713",
+  "prompts": {},
+  "sessions": {
+    "s_b8dff9c971c29b": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1d99a-fd02-77aa-b538-ce6ca82d1386",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

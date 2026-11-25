@@ -1,0 +1,24 @@
+crates/admin-ui/web/src/routes/mcp/-tag-rules.tsx
+  s_e88dc7cf2999d1::t_eef30723f471cb 23,77-81
+crates/admin-ui/web/src/routes/mcp/-tool-policy.tsx
+  s_e88dc7cf2999d1::t_415d0a03fc3908 17-25
+  s_e88dc7cf2999d1::t_dbc4ccecf6dba4 26
+crates/admin-ui/web/src/routes/mcp/-tool-tags.ts
+  s_e88dc7cf2999d1::t_8fae6e15478007 1-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f7ddd4d3da3084da85915c187da6609929a490a9",
+  "prompts": {},
+  "sessions": {
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

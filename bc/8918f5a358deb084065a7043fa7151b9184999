@@ -1,0 +1,29 @@
+crates/gateway-service/src/rate_limits/tests.rs
+  s_327fe9b27426f4::t_21e5d0ce575277 1452-1479
+crates/gateway-service/src/rate_limits.rs
+  s_b8e52ffc321bb1::t_885959d41d6abf 727-736
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bc8918f5a358deb084065a7043fa7151b9184999",
+  "prompts": {},
+  "sessions": {
+    "s_327fe9b27426f4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14258-b3f9-7a50-9987-4a60f71f58c8",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

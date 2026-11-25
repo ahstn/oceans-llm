@@ -1,0 +1,27 @@
+crates/admin-ui/web/src/routes/observability/-agent-harnesses/harness-attribution.tsx
+  s_0a4447f1aa57dd::t_920cbbefa05878 5,19,78-102
+crates/admin-ui/web/src/routes/observability/agent-harnesses.tsx
+  s_0a4447f1aa57dd::t_4ed085df39f072 1,31-34,44-53,140-143
+crates/admin-ui/web/src/test/routes/agent-harnesses-route.test.tsx
+  s_0a4447f1aa57dd::t_168436243bf2e6 1,116-120,260,309-315,317-322,324-325,347,349-374,376-381,383-384,411-417,419-424,426-427,435,450-460,462-474,476-481,483-484
+crates/gateway-service/src/attribution/report.rs
+  s_0a4447f1aa57dd::t_d894f8ee055080 235-236,251,280,461-464,517,556-560,570-578,774
+docs/adr/2026-11-01-git-ai-attribution-via-oceans-hooks.md
+  s_0a4447f1aa57dd::t_ccf024be1fde15 273
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "48854ded361c4fb472e080c94cce44027bcd3be3",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

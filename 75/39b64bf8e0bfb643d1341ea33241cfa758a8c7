@@ -1,0 +1,19 @@
+crates/gateway-providers/src/anthropic/count_tokens.rs
+  s_692b37aa3a1300::t_650e6f30674965 124-131,139,171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7539b64bf8e0bfb643d1341ea33241cfa758a8c7",
+  "prompts": {},
+  "sessions": {
+    "s_692b37aa3a1300": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a6a9eec01e2130cb2",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+crates/admin-ui/web/src/components/attribution/data-gaps.ts
+  s_9379a6359d74c1::t_ee9cdda7646576 21-22,24,34-37,39-46
+crates/admin-ui/web/src/routes/observability/-attribution/insights.ts
+  s_9379a6359d74c1::t_5b32cc8c9b91b7 237-238,243-268,281-285
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/delivery-tab.tsx
+  s_9379a6359d74c1::t_038f41bfb34586 6-12,34-35,57,91-95,97,101-106,117-118,230-233,245-284
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/durability-tab.tsx
+  s_9379a6359d74c1::t_70ddc590b7dccc 53
+crates/admin-ui/web/src/routes/observability/-attribution/tabs/pull-requests-tab.tsx
+  s_9379a6359d74c1::t_3b175fc74ed744 32-39,239,402-406,408-420,494-523
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "16a7e0afad0740fa01a142427cc8b6bc9df640d1",
+  "prompts": {},
+  "sessions": {
+    "s_9379a6359d74c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "24386ac1-62a3-474e-9c88-ccc4d428ec6d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+deny.toml
+  s_e0810ecc789e8a::t_34bfc2126e275f 34-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c1216b30fbd6547e00aaacf02635d583a02d2879",
+  "prompts": {},
+  "sessions": {
+    "s_e0810ecc789e8a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a2dfbd6-2d57-41f1-b4eb-ca1372ddd7cc",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

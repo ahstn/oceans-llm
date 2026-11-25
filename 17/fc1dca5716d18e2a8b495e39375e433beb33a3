@@ -1,0 +1,33 @@
+crates/admin-ui/web/src/routes/change-password.tsx
+  s_10a82e9e623548::t_d29d10cd9d9e28 2,14
+crates/admin-ui/web/src/routes/identity/users.tsx
+  s_ed66ec77873ef1::t_d32419d210e370 10,94-96
+crates/admin-ui/web/src/routes/login.tsx
+  s_10a82e9e623548::t_6426aabb51ee74 5,27
+crates/admin-ui/web/src/routes/review-agent.tsx
+  s_ed66ec77873ef1::t_178d02f1f0ac44 17,92-94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "17fc1dca5716d18e2a8b495e39375e433beb33a3",
+  "prompts": {},
+  "sessions": {
+    "s_10a82e9e623548": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f37a6951-df40-4639-9d01-c99da63e8d84",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_ed66ec77873ef1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5677dbea-fe6a-4c7e-8813-6d123638daa1",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

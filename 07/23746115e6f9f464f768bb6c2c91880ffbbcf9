@@ -1,0 +1,43 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_535c406270f54a::t_4a89030d772203 162
+crates/gateway/src/http/handlers.rs
+  s_535c406270f54a::t_afa6bced9328f8 5-7,19,38-42
+crates/gateway/src/http/handlers/embeddings.rs
+  s_535c406270f54a::t_ce6aa13dda91bc 1-322
+crates/gateway/src/http/handlers/embeddings_tests.rs
+  s_535c406270f54a::t_e5b1f28eaf0349 1-223
+crates/gateway/src/http/handlers/inference_tests.rs
+  s_535c406270f54a::t_757e98a46bcbcd 310-340
+crates/gateway/src/observability.rs
+  s_535c406270f54a::t_6738774872f761 31-32,89-101,124,133,146-153,183-191,307-332,488-493
+docs/adr/2026-10-14-decisions-request-metrics.md
+  s_535c406270f54a::t_9ff0b8933433a6 39-47
+docs/operations/observability-and-request-logs.md
+  s_13e300ce4bf1eb::t_de5bd03b38bfce 81-97
+docs/operations/observability/export-traces-and-metrics.md
+  s_13e300ce4bf1eb::t_aed841e6dbe4b5 140-141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0723746115e6f9f464f768bb6c2c91880ffbbcf9",
+  "prompts": {},
+  "sessions": {
+    "s_13e300ce4bf1eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cb0560cd-180f-4e10-b195-fa36950af50e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_535c406270f54a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b4ef8af-857d-413a-9316-bcb26801577e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

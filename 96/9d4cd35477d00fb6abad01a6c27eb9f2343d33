@@ -1,0 +1,33 @@
+.github/workflows/repo-lint.yml
+  s_3909cf4958a3af::t_a351afdb7e79f2 51,61
+.squawk.toml
+  s_3909cf4958a3af::t_a6277e770b6fe3 1-2
+crates/gateway-store/mise.toml
+  s_3909cf4958a3af::t_6f2f59514f88f3 67-68,74-75,79-80,83-84,87
+deploy/helm/mise.toml
+  s_3909cf4958a3af::t_8ba4dc7945c1ff 45-50,53-54
+docs/adr/2026-10-21-repository-lint-and-dependency-scanning.md
+  s_3909cf4958a3af::t_f1bfb18bee12f0 40,53
+docs/contributing/reference/migration-authoring.md
+  s_3909cf4958a3af::t_b8b174aae9393c 53,56,59
+docs/providers/github-copilot.md
+  s_3909cf4958a3af::t_e583a1ec044e27 130
+mise.toml
+  s_3909cf4958a3af::t_13b48fb5948800 57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "969d4cd35477d00fb6abad01a6c27eb9f2343d33",
+  "prompts": {},
+  "sessions": {
+    "s_3909cf4958a3af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9eabb320-c558-4ce9-b844-b21792d51207",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

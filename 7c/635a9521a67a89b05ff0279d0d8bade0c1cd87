@@ -1,0 +1,27 @@
+crates/gateway-service/Cargo.toml
+  s_af4ccbd37c05c0::t_f339111b0ad572 13
+docs/access/admin-audit-log.md
+  s_af4ccbd37c05c0::t_ed40065e86f130 58
+docs/adr/2026-10-15-admin-audit-log.md
+  s_af4ccbd37c05c0::t_47e8d7fc6d8bf8 79
+Cargo.lock
+  s_af4ccbd37c05c0::t_02daf6b11ba19f 2011
+crates/gateway-service/src/admin_audit.rs
+  s_af4ccbd37c05c0::t_be7dd0dae12bfd 12,18,796,806,815-834,836-837,1268-1289
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7c635a9521a67a89b05ff0279d0d8bade0c1cd87",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

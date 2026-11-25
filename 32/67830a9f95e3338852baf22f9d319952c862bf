@@ -1,0 +1,44 @@
+crates/admin-ui/web/src/routes/-model-presentation.tsx
+  s_25801eaca752ce::t_e47a85f8fa87de 55,79,88-107
+  s_25801eaca752ce::t_71e7b0cfd35bcf 108-111
+crates/admin-ui/web/src/test/routes/models-route.test.tsx
+  s_25801eaca752ce::t_e1435f46e9a024 90-95,97,112,131,338-339,356-365,371,373
+  s_25801eaca752ce::t_8fb8d28d6a4523 1,96,98,111,116-117,121-125,136-137,336-337,352
+  s_25801eaca752ce::t_019ea8ead4bfc3 367,369-370,372,374-376,1140-1142,1144-1154,1156-1158,1160-1163,1165,1213-1227,1229-1243,1245-1279,1281-1282
+  s_25801eaca752ce::t_a7c0e4a9917ca5 457,482-484
+  s_25801eaca752ce::t_c35238999a60f7 1094-1095,1106,1109,1111,1113,1120,1129-1130,1132,1343,1370-1371,1380,1396,1412,1414
+  s_25801eaca752ce::t_804a7cdc849d68 120,1107,1110,1112,1131,1155,1159,1164,1228,1244,1280,1372,1411
+  s_25801eaca752ce::t_14976e33e90005 126-130,132-135
+  s_25801eaca752ce::t_3ff08d6840a012 368,1181
+  s_25801eaca752ce::t_895293c4f7a9cf 1143,1166-1180,1182-1212
+  s_25801eaca752ce::t_68ecbffd388f63 366,377,1283
+crates/admin-ui/web/src/routes/-model-formatting.ts
+  s_25801eaca752ce::t_e47a85f8fa87de 1-40
+crates/admin-ui/web/src/routes/models.tsx
+  s_25801eaca752ce::t_55d269ba78b5f2 1074,1080-1087
+  s_25801eaca752ce::t_d05664c261f420 1,61,87,523,1068-1069,1072-1073,1077-1079,1088-1090,1093-1103,1105-1117
+  s_25801eaca752ce::t_6dd4cbf6c4ee69 1092
+  s_25801eaca752ce::t_a7c0e4a9917ca5 479-481,577,616-617
+  s_25801eaca752ce::t_d7454b14231529 1118-1119
+  s_25801eaca752ce::t_7ac30f855bded9 1070-1071,1075-1076,1091,1104
+  s_25801eaca752ce::t_62217db867d877 618
+crates/admin-ui/web/src/routes/-model-info-dialog.tsx
+  s_25801eaca752ce::t_e47a85f8fa87de 21,51-65,291
+  s_25801eaca752ce::t_921c0c1d0f6c38 22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3267830a9f95e3338852baf22f9d319952c862bf",
+  "prompts": {},
+  "sessions": {
+    "s_25801eaca752ce": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1062a-3e70-7ff1-9e79-38cfc8f28d45",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

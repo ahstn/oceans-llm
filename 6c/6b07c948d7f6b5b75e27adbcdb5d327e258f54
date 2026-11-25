@@ -1,0 +1,23 @@
+crates/admin-ui/web/src/lib/model-catalog.test.ts
+  s_f9a2dc193f7af4::t_48f25a15ee6e6c 1-8,12-32
+  s_f9a2dc193f7af4::t_9c683c4b27facd 9-11
+crates/admin-ui/web/src/lib/model-catalog.ts
+  s_f9a2dc193f7af4::t_8b24651aa83101 20-27,29-30
+  s_f9a2dc193f7af4::t_48f25a15ee6e6c 13-15,28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6c6b07c948d7f6b5b75e27adbcdb5d327e258f54",
+  "prompts": {},
+  "sessions": {
+    "s_f9a2dc193f7af4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f47da735-08a7-4f2b-a249-ef2ca3735b63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

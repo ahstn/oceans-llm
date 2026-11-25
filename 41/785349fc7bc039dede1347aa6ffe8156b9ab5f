@@ -1,0 +1,109 @@
+crates/gateway-service/src/effective_route_metadata.rs
+  s_009ff6129e63cc::t_546b3508c423ec 206
+docs/configuration/model-routing-and-api-behavior.md
+  s_13e300ce4bf1eb::t_73be5abe4a0c97 17-18,290,299,406,408,410-448
+crates/gateway-core/src/protocol/core.rs
+  s_6d03b8bf1a1feb::t_4de378a976e503 365
+crates/gateway-service/src/service.rs
+  s_9afcd1aad99ea7::t_7fc0abcf379a32 1772-1779,3039-3095
+  s_9afcd1aad99ea7::t_5ee67bc620a7c8 8,398
+docs/adr/2026-09-21-system-one-decisions-api.md
+  s_009ff6129e63cc::t_13ee4fb22f6fd8 65-110
+docs/reference/provider-api-compatibility.md
+  s_13e300ce4bf1eb::t_bab47142d71d7d 19,31,43,108-117,121-134,136,138
+crates/gateway-store/src/lib.rs
+  s_9afcd1aad99ea7::t_a963734fa9e7bf 3969
+.agents/skills/verify-oceans-admin/features/backend-gateway.md
+  s_13e300ce4bf1eb::t_0588b7dd35708f 42
+crates/gateway/src/http/handlers/routing.rs
+  s_009ff6129e63cc::t_72b58eadd8da71 252
+docs/providers/typesafe.md
+  s_13e300ce4bf1eb::t_148b1c49517b0a 5,100
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_13e300ce4bf1eb::t_ae22a419e49e04 161,356
+docs/configuration/pricing-catalog-and-accounting.md
+  s_13e300ce4bf1eb::t_577a8296ca2a24 110-121
+crates/gateway-core/src/domain.rs
+  s_9afcd1aad99ea7::t_c36537228b8817 2924-2927,2939,2944-2949
+  s_009ff6129e63cc::t_8fd57ffbb6719e 2726-2741
+crates/gateway-providers/src/typesafe.rs
+  s_9afcd1aad99ea7::t_d4ad99f694e336 6-7,13,62,175,184,221,273-277,297,310,314-315
+crates/gateway/src/config/tests/mod.rs
+  s_9afcd1aad99ea7::t_1795a71b145957 5-8
+.agents/skills/verify-oceans-admin/features/request-logs.md
+  s_13e300ce4bf1eb::t_96fe1c6b10bec0 38
+.agents/skills/verify-oceans-admin/features/live-llm-requests.md
+  s_13e300ce4bf1eb::t_e80ef6838d08ea 9,18,34,44-45
+crates/gateway-core/src/protocol/mod.rs
+  s_6d03b8bf1a1feb::t_5cc1e68f929b40 3
+crates/gateway-core/src/traits.rs
+  s_6d03b8bf1a1feb::t_0ec94bd756e230 57-60,1396
+crates/gateway-providers/src/openai_compat.rs
+  s_9afcd1aad99ea7::t_042891e1402181 9-10,827-828,833-834
+crates/gateway-core/src/lib.rs
+  s_9afcd1aad99ea7::t_60981e2db0442d 79-85,123,126-148,150,155-156
+crates/gateway-core/src/protocol/decisions/mod.rs
+  s_9afcd1aad99ea7::t_a1fed83174b149 1-607
+crates/gateway-core/src/protocol/decisions/openai.rs
+  s_9afcd1aad99ea7::t_d54e346fbd5fd7 1-1073
+crates/gateway-core/src/protocol/decisions/system_one.rs
+  s_9afcd1aad99ea7::t_baf12d106b65d5 1-683
+crates/gateway-core/src/protocol/translate.rs
+  s_9afcd1aad99ea7::t_fb7ce9dba39ae7 149,152-153
+crates/gateway-providers/src/decisions.rs
+  s_9afcd1aad99ea7::t_9588d81f39001d 3-7,12-13,17-20,22,26-33,49-52,90-95,97-106,108-120,122-125,128-130,133-151,153-171,174-177,179-185,187-190,193-194,199-200,203-207,209-211
+crates/gateway-providers/src/openai_compat/decisions.rs
+  s_9afcd1aad99ea7::t_ba0b2bcddddedc 1-4,10,17,20-22,25,27,32-33,37,42,53-73,75,79-82,86-91,94-99,124-125,134,179-180,195-196,259,263-264,355-532
+crates/gateway-service/src/request_logging.rs
+  s_9afcd1aad99ea7::t_4b6c86ffae24aa 4-8,261
+crates/gateway/src/config/routes.rs
+  s_9afcd1aad99ea7::t_7eb395a6e2d05d 6-10,312-313,325,389-393,396-415,431,433
+crates/gateway/src/config/tests/routes.rs
+  s_9afcd1aad99ea7::t_360e0e5aee6702 425-549
+crates/gateway/src/http/handlers.rs
+  s_9afcd1aad99ea7::t_88aa9d8e1675c3 2,13,32-36,3010,3013,3016,3023-3025,3027,3030
+crates/gateway/src/http/handlers/decisions.rs
+  s_9afcd1aad99ea7::t_825b1b3e8bc9c1 1-466
+crates/gateway/src/http/mod.rs
+  s_9afcd1aad99ea7::t_87b199eacbf5b5 70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "41785349fc7bc039dede1347aa6ffe8156b9ab5f",
+  "prompts": {},
+  "sessions": {
+    "s_009ff6129e63cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dfe89d20-f559-4155-8143-a8e88732a4b1",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_13e300ce4bf1eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cb0560cd-180f-4e10-b195-fa36950af50e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_6d03b8bf1a1feb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0d578d36-3c7a-4481-9004-636e22b39a01",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_9afcd1aad99ea7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6922d2fa-a044-4097-b696-4f2796d370eb",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,45 @@
+.agents/skills/verify-oceans-admin/features/identity.md
+  s_f9a2dc193f7af4::t_4029c4959ceaea 9,30,32,34,43,45,47
+  s_f9a2dc193f7af4::t_a2ee4444f347aa 31
+crates/admin-ui/web/src/routes/identity/-teams/teams-list.tsx
+  s_f9a2dc193f7af4::t_cfa0224afcd2a2 29,305
+  s_f9a2dc193f7af4::t_e6ebfd37697491 1-10,13,16-23,25-28,30-31,33,35-52,54,58,69-70,72,84-91,93-94,96-112,117-118,124-165,167-170,174-185,187-195,197-262,264-280,284-290,292-296,299-304,306,308-316,320,322-325,329-332,335,337-350,352,354-360,363-386
+  s_f9a2dc193f7af4::t_fc095285377a08 57
+crates/admin-ui/web/src/test/team-filters.test.ts
+  s_f9a2dc193f7af4::t_23671acb75a761 1-88
+crates/admin-ui/web/src/routes/identity/-teams/team-filters.ts
+  s_f9a2dc193f7af4::t_4adcfab1e01ed4 1-86
+crates/admin-ui/web/src/routes/identity/teams.tsx
+  s_f9a2dc193f7af4::t_cfa0224afcd2a2 99-101
+crates/admin-ui/web/src/test/routes/teams-route.test.tsx
+  s_f9a2dc193f7af4::t_d4edccb23ab9f9 136-140,263-268,270,272-275,279-286,318,351-352,378-380,412-413
+  s_f9a2dc193f7af4::t_23671acb75a761 2,440-504,509-516
+  s_f9a2dc193f7af4::t_2c83b30a4c5ddd 276-277
+  s_f9a2dc193f7af4::t_a2ee4444f347aa 505-506
+  s_f9a2dc193f7af4::t_769d26765cad6c 507-508
+  s_f9a2dc193f7af4::t_7064832ceb96d6 517
+crates/admin-ui/web/src/routes/identity/-teams/team-rows.tsx
+  s_f9a2dc193f7af4::t_f53e48eea6e86b 1-12,14-44,54-127,129-166,168-307,309-465
+  s_f9a2dc193f7af4::t_3dd486a15c552f 128
+  s_f9a2dc193f7af4::t_9c0381cfd71af0 13,45-53,167,308
+crates/admin-ui/web/src/routes/identity/-entity-tags.tsx
+  s_f9a2dc193f7af4::t_7064832ceb96d6 155,193-195
+  s_f9a2dc193f7af4::t_3dd486a15c552f 130-131,140
+  s_f9a2dc193f7af4::t_d12f46c8bcd2d9 1-2,7-9,84-129,132-139,141-154,156-192
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3c11a5aa29f1b912beb842d2ad50981dd28ded85",
+  "prompts": {},
+  "sessions": {
+    "s_f9a2dc193f7af4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f47da735-08a7-4f2b-a249-ef2ca3735b63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

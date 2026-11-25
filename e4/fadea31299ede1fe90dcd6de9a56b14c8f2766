@@ -1,0 +1,42 @@
+crates/admin-ui/web/src/routes/api-keys/-components.tsx
+  s_7a4bb25ea2fe49::t_b2f890c406f0db 603-611,619,784,789
+  s_7a4bb25ea2fe49::t_df3a57184c0892 612-614,616-618
+  s_7a4bb25ea2fe49::t_4dede6220fce82 620-622
+  s_7a4bb25ea2fe49::t_21107f04adebd9 781-783
+  s_7a4bb25ea2fe49::t_7da8bf8a304022 785-788
+  s_7a4bb25ea2fe49::t_f72cc6393edcd4 790-792
+crates/admin-ui/web/src/routes/api-keys/-use-api-keys-page.ts
+  s_7a4bb25ea2fe49::t_84067067a3e66c 26
+crates/admin-ui/web/src/lib/api-key-scopes.ts
+  s_4394d7bb181c63::t_716037d9e8e854 1-77
+docs/package-lock.json
+  s_4394d7bb181c63::t_f76f4471a6bece 10,775-777
+crates/admin-ui/web/src/routes/api-keys/-scope-fields.tsx
+  s_7a4bb25ea2fe49::t_79b621942fd77e 13-20,38,85,88,133-139,170,172
+crates/admin-ui/web/src/server/admin-data.functions.ts
+  s_7a4bb25ea2fe49::t_1d79ee6f072f6c 339-367,369
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e4fadea31299ede1fe90dcd6de9a56b14c8f2766",
+  "prompts": {},
+  "sessions": {
+    "s_4394d7bb181c63": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5fe6d420-4e7e-4885-8f8a-07723d2ed05e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_7a4bb25ea2fe49": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab2457af-0345-474d-8ba0-be4b2bb49200",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

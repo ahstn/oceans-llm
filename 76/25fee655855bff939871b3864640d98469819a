@@ -1,0 +1,19 @@
+docs/adr/2026-09-26-profile-landing-page.md
+  s_a1d1a900c88650::t_878c9efb4cf51d 20-21,51,57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7625fee655855bff939871b3864640d98469819a",
+  "prompts": {},
+  "sessions": {
+    "s_a1d1a900c88650": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8dcd7694-4d09-4ee2-9f4c-af8095b9a53e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

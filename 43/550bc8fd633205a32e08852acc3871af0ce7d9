@@ -1,0 +1,932 @@
+.agents/skills/verify-oceans-admin/SKILL.md
+  h_2f452a9c375069 132
+.agents/skills/verify-oceans-admin/features/anthropic-messages.md
+  h_2f452a9c375069 15-20,33,37,53,56,59-78,88-89,127-128
+.agents/skills/verify-oceans-admin/features/live-llm-requests.md
+  h_2f452a9c375069 56
+.agents/skills/verify-oceans-admin/features/rate-limits.md
+  h_2f452a9c375069 27-28
+.agents/skills/verify-oceans-admin/features/routing.json
+  h_2f452a9c375069 178,181,217,335,363,372,403,405,407-410,413-415,419,558,604,607
+.agents/skills/verify-oceans-admin/scripts/check-messages.mjs
+  h_2f452a9c375069 27,38
+.agents/skills/verify-oceans-admin/scripts/messages-regressions.mjs
+  h_2f452a9c375069 10-113,123-124
+.agents/skills/verify-oceans-admin/scripts/plan-verification.test.mjs
+  h_2f452a9c375069 80-81,93-97
+.github/workflows/docs-ci.yml
+  h_2f452a9c375069 7,36,39,41-44
+.github/workflows/opencode-oceans.yml
+  h_2f452a9c375069 1-112
+.gitignore
+  h_2f452a9c375069 21
+CONTRIBUTING.md
+  h_2f452a9c375069 4,41,104-105,107,136,155,174,184,186,188,190,192,194,198,200
+Cargo.lock
+  h_2f452a9c375069 1531,1824,1877,2932,3545,3923,3992,4678,5861,5863
+DESIGN.md
+  h_2f452a9c375069 359-360
+README.md
+  h_2f452a9c375069 30-40,119,121,123,125,127,129,131,133,135-136,138,140,143,146,152,155
+_typos.toml
+  h_2f452a9c375069 9-10,30-31
+bundled-skills/README.md
+  h_2f452a9c375069 5
+crates/admin-ui/web/src/components/guardrails/settings/model.ts
+  h_2f452a9c375069 85,90
+crates/admin-ui/web/src/routes/models.tsx
+  h_2f452a9c375069 65
+crates/admin-ui/web/src/styles/globals.css
+  h_2f452a9c375069 297-301
+crates/admin-ui/web/src/test/routes/models-route.test.tsx
+  h_2f452a9c375069 946
+crates/gateway-client-config/src/tests.rs
+  h_2f452a9c375069 869-882
+crates/gateway-client-config/src/thinking.rs
+  h_2f452a9c375069 3,53-56
+crates/gateway-core/Cargo.toml
+  h_2f452a9c375069 22
+crates/gateway-core/src/claude_models.rs
+  h_2f452a9c375069 37-38,46-115,229-314
+crates/gateway-core/src/domain.rs
+  h_2f452a9c375069 10
+crates/gateway-core/src/error.rs
+  h_2f452a9c375069 6,188-189,195-198,287-289,295-297
+crates/gateway-core/src/lib.rs
+  h_2f452a9c375069 15,74-78,105-120,133,196-200,231-233
+crates/gateway-core/src/protocol/anthropic.rs
+  h_2f452a9c375069 47-78,109-110,112-160,162-166,168-171,373-444
+crates/gateway-core/src/protocol/translate.rs
+  h_2f452a9c375069 16-20,212-213
+crates/gateway-core/src/provider.rs
+  h_2f452a9c375069 1-490
+crates/gateway-core/src/route_capabilities.rs
+  h_2f452a9c375069 1,143-163
+crates/gateway-core/src/streaming.rs
+  h_2f452a9c375069 135-137,148-150
+crates/gateway-core/src/traits.rs
+  h_2f452a9c375069 6,15-17,40-47,55
+crates/gateway-providers/Cargo.toml
+  h_2f452a9c375069 18
+crates/gateway-providers/src/anthropic/beta_transport_tests.rs
+  h_2f452a9c375069 68,111
+crates/gateway-providers/src/anthropic/compat_stream.rs
+  h_2f452a9c375069 1-474
+crates/gateway-providers/src/anthropic/error.rs
+  h_2f452a9c375069 18-21
+crates/gateway-providers/src/anthropic/mod.rs
+  h_2f452a9c375069 4,8,11-15,25
+crates/gateway-providers/src/anthropic/native.rs
+  h_2f452a9c375069 1-103
+crates/gateway-providers/src/anthropic/native_metadata_tests.rs
+  h_2f452a9c375069 9-12,15,34-195
+crates/gateway-providers/src/anthropic/native_transport_tests.rs
+  h_2f452a9c375069 1-444
+crates/gateway-providers/src/anthropic/replay.rs
+  h_2f452a9c375069 1-246
+crates/gateway-providers/src/anthropic/replay_tests.rs
+  h_2f452a9c375069 1-1078
+crates/gateway-providers/src/anthropic/request.rs
+  h_2f452a9c375069 19-20,30,63-68,74,84-89,122-124,129-155,158,172,179,250,252-272,337-456,483-484,498,512,516-517,521-527,530-534,536,560,563,566-571,743-745,747,750,754,757-759
+crates/gateway-providers/src/anthropic/request_tests.rs
+  h_2f452a9c375069 45-280,412-451,649-691
+crates/gateway-providers/src/anthropic/response.rs
+  h_2f452a9c375069 83-85,93-96,105-109,115-157,224,269-275
+crates/gateway-providers/src/anthropic/streaming.rs
+  h_2f452a9c375069 9,11-12,34,36-38,65,76-81,88-134,150,165,194,205-207,229,242-243,276,278-281,283-286,290-301,319-323,341,349-353,371-377,389-393,500-504,539-589
+crates/gateway-providers/src/anthropic/tests.rs
+  h_2f452a9c375069 1084
+crates/gateway-providers/src/anthropic/thinking.rs
+  h_2f452a9c375069 8,81-101
+crates/gateway-providers/src/anthropic_compat.rs
+  h_2f452a9c375069 141,163-215,249,295,341
+crates/gateway-providers/src/bedrock/converse_replay.rs
+  h_2f452a9c375069 1-442
+crates/gateway-providers/src/bedrock/converse_stream.rs
+  h_2f452a9c375069 1-434
+crates/gateway-providers/src/bedrock/eventstream.rs
+  h_2f452a9c375069 1-4,14-19,23,31-39,44-56,58-63,65-86,88,91-94,96-120,123-128,188-212
+crates/gateway-providers/src/bedrock/mod.rs
+  h_2f452a9c375069 15,23-26,30,487-489,505,507-511,514,744-783,836,963-964,970,975
+crates/gateway-providers/src/bedrock/request/mod.rs
+  h_2f452a9c375069 1,9,27-30,46-48,55-68,94,429-432,464-468
+crates/gateway-providers/src/bedrock/request/native.rs
+  h_2f452a9c375069 1-67
+crates/gateway-providers/src/bedrock/response.rs
+  h_2f452a9c375069 1-6,11-21,60-71,101
+crates/gateway-providers/src/bedrock/tests/eventstream.rs
+  h_2f452a9c375069 3-569,596-603,687,697-711
+crates/gateway-providers/src/bedrock/tests/mod.rs
+  h_2f452a9c375069 13,15-16,19,21,27,184-199,204-205,207
+crates/gateway-providers/src/bedrock/tests/provider_requests.rs
+  h_2f452a9c375069 982-986,1002-1013,1039-1050
+crates/gateway-providers/src/bedrock/tests/replay.rs
+  h_2f452a9c375069 1-682
+crates/gateway-providers/src/bedrock/tests/request_tools.rs
+  h_2f452a9c375069 310,315,327
+crates/gateway-providers/src/bedrock/tests/response.rs
+  h_2f452a9c375069 3-164,186-188,192-194,198-200,220-226,236,274-276,280-282,330-331,388-389,442-443
+crates/gateway-providers/src/copilot/mod.rs
+  h_2f452a9c375069 13,16,293,298-307,312-316,319-326,545-597
+crates/gateway-providers/src/http.rs
+  h_2f452a9c375069 91-107
+crates/gateway-providers/src/openai_compat.rs
+  h_2f452a9c375069 24,282-284,305-307,706-745,801-811,824-835
+crates/gateway-providers/src/openai_compat/anthropic_messages.rs
+  h_2f452a9c375069 19-24,61,69,73,76-78,370-395
+crates/gateway-providers/src/openai_compat/native_messages.rs
+  h_2f452a9c375069 1-454
+crates/gateway-providers/src/vertex/anthropic.rs
+  h_2f452a9c375069 17-54,70
+crates/gateway-providers/src/vertex/batch.rs
+  h_2f452a9c375069 11-14,522-530,800-805,1062,1078-1085
+crates/gateway-providers/src/vertex/error.rs
+  h_2f452a9c375069 136-143,150-153,164-165
+crates/gateway-providers/src/vertex/google_content.rs
+  h_2f452a9c375069 1-39,42-117,120-124,127-133,136-141,145-185,188,191-196,198-199,201-202,204-235,237-293,296-307,309,311-320,322-323,325-328,330-379,381-383
+crates/gateway-providers/src/vertex/google_conversation.rs
+  h_2f452a9c375069 1-214
+crates/gateway-providers/src/vertex/google_replay.rs
+  h_2f452a9c375069 1-202
+crates/gateway-providers/src/vertex/google_request.rs
+  h_2f452a9c375069 1,7-9,24,231-237
+crates/gateway-providers/src/vertex/google_response.rs
+  h_2f452a9c375069 6-9,11-20,22-24,32,35-46,49-78,87,131-133,135,137-138,141-150,166,168,173,177-181,185-188,192-196
+crates/gateway-providers/src/vertex/google_stream.rs
+  h_2f452a9c375069 9,11-12,19,34-39,52-57,62,66-74,81,83-95,100,109,112,116-129,131,139-142,146-150,159-161,166-200,242,249,260,264-265,271,277-282
+crates/gateway-providers/src/vertex/google_tools.rs
+  h_2f452a9c375069 3,5-8,10-11,13,19-20
+crates/gateway-providers/src/vertex/mod.rs
+  h_2f452a9c375069 29-31,129,132-140,149,151-153,185,187,232-288,346-352,362,391,415-417,471
+crates/gateway-providers/src/vertex/tests/google_request.rs
+  h_2f452a9c375069 949,960-981
+crates/gateway-providers/src/vertex/tests/google_tools.rs
+  h_2f452a9c375069 717-987
+crates/gateway-providers/src/vertex/tests/provider.rs
+  h_2f452a9c375069 234-281,501-502,504-508,554-570,572-573,575-576
+crates/gateway-providers/src/vertex/tests/response.rs
+  h_2f452a9c375069 149-150,164,222,239,310-311,321-429
+crates/gateway-providers/src/vertex/tests/streaming.rs
+  h_2f452a9c375069 426-428,435,450,453-454,457-458,480,503-738
+crates/gateway-service/src/batches.rs
+  h_2f452a9c375069 21-22,192
+crates/gateway-service/src/effective_route_metadata.rs
+  h_2f452a9c375069 279-280,286-297,333-395
+crates/gateway-service/src/lib.rs
+  h_2f452a9c375069 46
+crates/gateway-service/src/request_logging.rs
+  h_2f452a9c375069 720-730,742
+crates/gateway-service/src/request_logging/tests/stream.rs
+  h_2f452a9c375069 29-157,194-196,198
+crates/gateway-service/src/service.rs
+  h_2f452a9c375069 38,1515,1713-1715,1718-1719,3199-3207,3209-3238,3240-3257
+crates/gateway-service/src/service/tests/context_tier_pricing.rs
+  h_2f452a9c375069 118-368,388-436
+crates/gateway-service/src/usage.rs
+  h_2f452a9c375069 1-398
+crates/gateway/Cargo.toml
+  h_2f452a9c375069 42
+crates/gateway/src/http/handlers.rs
+  h_2f452a9c375069 16,21,34,197-199,289,367,395-401,478,556,584-590,605-608,613-617,637-652,802,1260-1274,1369,2238
+crates/gateway/src/http/handlers/inference.rs
+  h_2f452a9c375069 1,4-9,19,34-40,68-74,209,244-250,293-295,312,340-357,376,381,390-397,405,430,438-442,482-504,506-508
+crates/gateway/src/http/handlers/inference_tests.rs
+  h_2f452a9c375069 15-16,150-151,156-211,298-470,576,580-585,603-646
+crates/gateway/src/http/handlers/messages.rs
+  h_2f452a9c375069 1-257
+crates/gateway/src/http/handlers/native_messages.rs
+  h_2f452a9c375069 1-373
+crates/gateway/src/http/inference_guardrails.rs
+  h_2f452a9c375069 29,73,150-151,161-163,167-200,315,317,319-336,338-367,369,371-379,447,457-466,469,477-490,492-506,580,584-588,626-658,681-694,710-713,724,731-741,747,755-792,794-801,807-850,854-856,975-989,1166,1179,1217-1220,1227,1229,1256,1261-1262,1265,1516-1518,1574-1577,2089,2099-2101,2705,2708-2709,2712-2713,2716-2724,2740,2752,2755-2756,2759-2767,2776
+crates/gateway/src/http/inference_guardrails_regression_tests.rs
+  h_2f452a9c375069 1-1199
+crates/gateway/src/http/rate_limit_tests.rs
+  h_2f452a9c375069 12,35,58-100,168-175,519-547
+crates/gateway/src/http/request_tracing.rs
+  h_2f452a9c375069 145-147
+deploy/README.md
+  h_2f452a9c375069 4-5,48,129,131,133,135,137,139
+deploy/config/gateway.yaml
+  h_2f452a9c375069 184
+deploy/helm/oceans-llm/README.md
+  h_2f452a9c375069 17,61
+deploy/selfhost/gateway.yaml
+  h_2f452a9c375069 3,70-71
+docs/.gitignore
+  h_2f452a9c375069 1-22
+docs/AGENT.md
+  h_2f452a9c375069 1-200
+docs/AGENTS.md
+  h_2f452a9c375069 1-2,16-21
+docs/CLAUDE.md
+  h_2f452a9c375069 1-5
+docs/README.md
+  h_2f452a9c375069 3,5-8,10-12,14,26-28,30,34-38
+docs/adr/2026-03-05-identity-foundation.md
+  h_2f452a9c375069 10,12,16-17
+docs/adr/2026-03-05-vertex-first-provider-foundation.md
+  h_2f452a9c375069 8-10
+docs/adr/2026-03-06-hybrid-pricing-catalog.md
+  h_2f452a9c375069 10,12,18,118
+docs/adr/2026-03-06-release-versioning-and-ghcr-publishing.md
+  h_2f452a9c375069 11,18
+docs/adr/2026-03-08-admin-team-management-flow.md
+  h_2f452a9c375069 9-10,14-15
+docs/adr/2026-03-09-runtime-database-policy.md
+  h_2f452a9c375069 8-9
+docs/adr/2026-03-10-model-aliases-and-provider-route-config.md
+  h_2f452a9c375069 9,14-16
+docs/adr/2026-03-12-durable-usage-ledger-accounting.md
+  h_2f452a9c375069 8
+docs/adr/2026-03-13-capability-aware-route-gating.md
+  h_2f452a9c375069 9,13-14
+docs/adr/2026-03-13-protocol-neutral-core-request-boundary.md
+  h_2f452a9c375069 8-9
+docs/adr/2026-03-15-openai-compat-streaming-and-embeddings-runtime-parity.md
+  h_2f452a9c375069 8-10
+docs/adr/2026-03-15-otlp-observability-and-request-log-payloads.md
+  h_2f452a9c375069 9-10,14-15
+docs/adr/2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md
+  h_2f452a9c375069 11,16
+docs/adr/2026-03-15-v1-runtime-simplification.md
+  h_2f452a9c375069 9-10,14-15
+docs/adr/2026-03-17-migration-atomicity-and-local-postgres-ops-hardening.md
+  h_2f452a9c375069 8-10
+docs/adr/2026-03-17-post-success-accounting-and-strict-request-log-lookups.md
+  h_2f452a9c375069 8-9
+docs/adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md
+  h_2f452a9c375069 14-15,212-213
+docs/adr/2026-03-26-request-log-caller-tags.md
+  h_2f452a9c375069 12
+docs/adr/2026-03-28-generated-admin-api-contract-and-typed-same-origin-client.md
+  h_2f452a9c375069 17,151-152
+docs/adr/2026-03-29-live-admin-api-key-management-and-contract-coverage.md
+  h_2f452a9c375069 15,282,284
+docs/adr/2026-03-31-chat-observability-hardening-and-stream-parse-contract.md
+  h_2f452a9c375069 15-16,152-153
+docs/adr/2026-03-31-declarative-config-seeded-identity-and-budget-reconciliation.md
+  h_2f452a9c375069 19-20,22,194-195,197-198
+docs/adr/2026-03-31-pre-v1-migration-rebaseline.md
+  h_2f452a9c375069 16-17
+docs/adr/2026-04-21-observability-usage-leaderboard.md
+  h_2f452a9c375069 16-17
+docs/adr/2026-04-23-admin-current-session-logout.md
+  h_2f452a9c375069 24-25
+docs/adr/2026-04-27-cloudflare-pages-docs-hosting.md
+  h_2f452a9c375069 6
+docs/adr/2026-05-15-local-sso-compose-fixture-and-browser-origin.md
+  h_2f452a9c375069 11
+docs/adr/2026-06-14-cloud-run-openai-compatible-provider.md
+  h_2f452a9c375069 44
+docs/adr/2026-07-02-service-account-config-and-managed-api-key-secrets.md
+  h_2f452a9c375069 3
+docs/adr/2026-07-16-route-level-effective-model-metadata-overrides.md
+  h_2f452a9c375069 8-11
+docs/adr/2026-08-05-configurable-admin-page-permissions.md
+  h_2f452a9c375069 8-10
+docs/adr/2026-08-14-github-copilot-provider.md
+  h_2f452a9c375069 9
+docs/adr/2026-08-16-github-copilot-compatibility-and-acceptance.md
+  h_2f452a9c375069 5,38
+docs/adr/2026-08-22-gateway-guardrails-domain-and-composition.md
+  h_2f452a9c375069 9,65
+docs/adr/2026-09-03-anthropic-compatible-provider-and-opencode-zen.md
+  h_2f452a9c375069 37,46-50
+docs/adr/2026-09-03-vertex-gemini-3-thinking-and-adapter-restructure.md
+  h_2f452a9c375069 34,44,59
+docs/adr/2026-09-26-profile-landing-page.md
+  h_2f452a9c375069 8-9
+docs/adr/2026-10-01-self-hosting-with-mise-daemons.md
+  h_2f452a9c375069 9
+docs/adr/2026-10-03-authenticated-agent-skills.md
+  h_2f452a9c375069 8-9
+docs/adr/2026-10-04-copilot-token-cli.md
+  h_2f452a9c375069 36
+docs/adr/2026-10-04-shared-model-routing-and-session-affinity.md
+  h_2f452a9c375069 82
+docs/adr/2026-10-12-temporary-budget-increases.md
+  h_2f452a9c375069 8-9
+docs/adr/2026-10-13-govern-every-mcp-method.md
+  h_2f452a9c375069 8
+docs/adr/2026-10-13-mcp-credential-connect-url.md
+  h_2f452a9c375069 8
+docs/adr/2026-10-13-mcp-tool-metadata-and-schema-hash.md
+  h_2f452a9c375069 8-9
+docs/adr/2026-10-14-budget-exceeded-status-code.md
+  h_2f452a9c375069 9-11
+docs/adr/2026-10-14-decisions-request-metrics.md
+  h_2f452a9c375069 8-9,39
+docs/adr/2026-10-15-admin-audit-log.md
+  h_2f452a9c375069 9
+docs/adr/2026-10-15-gateway-rate-limits-and-quotas.md
+  h_2f452a9c375069 8-10
+docs/adr/2026-10-15-generic-upstream-mcp-oauth.md
+  h_2f452a9c375069 10-11
+docs/adr/2026-10-15-mcp-client-oauth-authorization.md
+  h_2f452a9c375069 10-11
+docs/adr/2026-10-17-delegated-mcp-server-ownership.md
+  h_2f452a9c375069 10-11
+docs/adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md
+  h_2f452a9c375069 9-10
+docs/adr/2026-10-17-scoped-api-keys.md
+  h_2f452a9c375069 9-10
+docs/adr/2026-10-17-ssrf-safe-outbound-fetch.md
+  h_2f452a9c375069 9-10
+docs/adr/2026-10-21-litellm-model-group-info.md
+  h_2f452a9c375069 9-10
+docs/adr/2026-10-26-image-generation-models.md
+  h_2f452a9c375069 9-11
+docs/adr/2026-10-31-multi-source-model-catalog.md
+  h_2f452a9c375069 10-13
+docs/adr/2026-11-03-native-anthropic-messages-transport.md
+  h_2f452a9c375069 1-86
+docs/adr/2026-11-08-nimbus-docs-site-at-oceans-llm-com.md
+  h_2f452a9c375069 1-46
+docs/astro.config.ts
+  h_2f452a9c375069 1-98
+docs/bun.lock
+  h_2f452a9c375069 2-4,7-8,11-20,22-29,32-1259
+docs/contributing/development/authentication-testing.md
+  h_2f452a9c375069 3
+docs/contributing/implementation-plans/2026-08-05-configurable-admin-page-permissions.md
+  h_2f452a9c375069 3,47,349-351
+docs/contributing/implementation-plans/2026-09-22-guardrail-secret-redaction.md
+  h_2f452a9c375069 3,6,22,232
+docs/contributing/implementation-plans/issue-206-service-account-config.md
+  h_2f452a9c375069 3
+docs/contributing/interviews/2026-04-24-request-id-and-request-attempt-observability.md
+  h_2f452a9c375069 3
+docs/contributing/interviews/2026-05-27-mcp-gateway-auth-alignment.md
+  h_2f452a9c375069 3
+docs/contributing/mcp/mcp-registry-and-discovery.md
+  h_2f452a9c375069 3,7,162
+docs/contributing/operations/budgets-and-spending.md
+  h_2f452a9c375069 3,5
+docs/contributing/reference/admin-api-contract-workflow.md
+  h_2f452a9c375069 3,109,117
+docs/contributing/reference/agent-session-analysis.md
+  h_2f452a9c375069 3,5
+docs/contributing/reference/data-relationships.md
+  h_2f452a9c375069 3,241,254,263
+docs/contributing/reference/e2e-contract-tests.md
+  h_2f452a9c375069 3
+docs/contributing/reference/migration-authoring.md
+  h_2f452a9c375069 3,78,85
+docs/contributing/reference/model-benchmark-snapshot.md
+  h_2f452a9c375069 3
+docs/contributing/reference/release-process.md
+  h_2f452a9c375069 3
+docs/contributing/reference/screenshots.md
+  h_2f452a9c375069 3
+docs/contributing/superpowers/specs/2026-04-24-request-id-and-request-attempt-observability-design.md
+  h_2f452a9c375069 3
+docs/internal/2026-10-04-multi-provider-routing-research.md
+  h_2f452a9c375069 22
+docs/internal/2026-11-05-provider-harness-comparison.md
+  h_2f452a9c375069 1-294
+docs/internal/anthropic-thinking-compatibility.md
+  h_2f452a9c375069 3,64
+docs/internal/github-oauth-direct-sso-plan.md
+  h_2f452a9c375069 256
+docs/interviews/2026-07-16-route-pricing-and-context-overrides.md
+  h_2f452a9c375069 3
+docs/interviews/2026-07-20-agent-task-analysis-and-efficiency.md
+  h_2f452a9c375069 3,521
+docs/mise.toml
+  h_2f452a9c375069 3-5,8-9,12,14,17,19,21-22,24,26-27,29,31-33,35
+docs/nimbus.json
+  h_2f452a9c375069 1-112
+docs/package.json
+  h_2f452a9c375069 3,5,7-14,16-17,20-41
+docs/plans/2026-07-05-issue-213-model-allowlists.md
+  h_2f452a9c375069 3,245-251
+docs/plans/2026-07-05-vertex-gemini-embeddings.md
+  h_2f452a9c375069 3,29,69,281,418,465,472,478,483,487,492,501,503,507,510
+docs/plans/2026-07-06-issue-227-budget-default-policies.md
+  h_2f452a9c375069 3,353,362
+docs/plans/2026-07-20-agent-session-analysis-and-efficiency.md
+  h_2f452a9c375069 3,986,997-1002,1017-1018
+docs/public/_headers
+  h_2f452a9c375069 1-4
+docs/public/_redirects
+  h_2f452a9c375069 1-129
+docs/public/r/registry.json
+  h_2f452a9c375069 4
+docs/src/components.ts
+  h_2f452a9c375069 1-25
+docs/src/components/AgentDirective.astro
+  h_2f452a9c375069 1-27
+docs/src/components/ConnectMcp.astro
+  h_2f452a9c375069 1-28
+docs/src/components/Header.astro
+  h_2f452a9c375069 1-144
+docs/src/components/Logo.astro
+  h_2f452a9c375069 1-15
+docs/src/components/Render.astro
+  h_2f452a9c375069 1-107
+docs/src/components/WebMCP.astro
+  h_2f452a9c375069 1-24
+docs/src/components/connect-mcp.client.ts
+  h_2f452a9c375069 1-38
+docs/src/components/ui/api-code-rail/ApiCodeRail.astro
+  h_2f452a9c375069 1-173
+docs/src/components/ui/api-code-rail/code-rail.client.ts
+  h_2f452a9c375069 1-104
+docs/src/components/ui/api-code-rail/code-rail.css
+  h_2f452a9c375069 1-259
+docs/src/components/ui/api-code-rail/index.ts
+  h_2f452a9c375069 1
+docs/src/components/ui/api-field-row/ApiFieldList.astro
+  h_2f452a9c375069 1-94
+docs/src/components/ui/api-field-row/ApiFieldRow.astro
+  h_2f452a9c375069 1-117
+docs/src/components/ui/api-field-row/ApiUnionExplorer.astro
+  h_2f452a9c375069 1-83
+docs/src/components/ui/api-field-row/api-field-row.client.ts
+  h_2f452a9c375069 1-45
+docs/src/components/ui/api-field-row/field-list.css
+  h_2f452a9c375069 1-362
+docs/src/components/ui/api-field-row/index.ts
+  h_2f452a9c375069 1-6
+docs/src/components/ui/api-field-row/type-display.ts
+  h_2f452a9c375069 1-128
+docs/src/components/ui/api-layout/ApiBody.astro
+  h_2f452a9c375069 1-422
+docs/src/components/ui/api-layout/ApiEndpointCard.astro
+  h_2f452a9c375069 1-108
+docs/src/components/ui/api-layout/ApiHome.astro
+  h_2f452a9c375069 1-388
+docs/src/components/ui/api-layout/ApiHomeChunk.astro
+  h_2f452a9c375069 1-143
+docs/src/components/ui/api-layout/ApiLayout.astro
+  h_2f452a9c375069 1-350
+docs/src/components/ui/api-layout/ApiOperationList.astro
+  h_2f452a9c375069 1-35
+docs/src/components/ui/api-layout/auth.ts
+  h_2f452a9c375069 1-87
+docs/src/components/ui/api-layout/home.ts
+  h_2f452a9c375069 1-5
+docs/src/components/ui/api-layout/index.ts
+  h_2f452a9c375069 1-3
+docs/src/components/ui/api-layout/request-examples.client.ts
+  h_2f452a9c375069 1-12
+docs/src/components/ui/api-layout/responses.client.ts
+  h_2f452a9c375069 1-9
+docs/src/components/ui/api-sidebar/ApiMethodChip.astro
+  h_2f452a9c375069 1-141
+docs/src/components/ui/api-sidebar/ApiSidebar.astro
+  h_2f452a9c375069 1-38
+docs/src/components/ui/api-sidebar/ApiSidebarItem.astro
+  h_2f452a9c375069 1-68
+docs/src/components/ui/api-sidebar/api-nav-filter.client.ts
+  h_2f452a9c375069 1-102
+docs/src/components/ui/api-sidebar/index.ts
+  h_2f452a9c375069 1-3
+docs/src/components/ui/api-sidebar/method.ts
+  h_2f452a9c375069 1-27
+docs/src/components/ui/aside/Aside.astro
+  h_2f452a9c375069 1-96
+docs/src/components/ui/aside/index.ts
+  h_2f452a9c375069 1
+docs/src/components/ui/badge/Badge.astro
+  h_2f452a9c375069 1-42
+docs/src/components/ui/badge/index.ts
+  h_2f452a9c375069 1
+docs/src/components/ui/banner/Banner.astro
+  h_2f452a9c375069 1-78
+docs/src/components/ui/banner/banner.client.ts
+  h_2f452a9c375069 1-49
+docs/src/components/ui/banner/index.ts
+  h_2f452a9c375069 1
+docs/src/components/ui/breadcrumbs/Breadcrumbs.astro
+  h_2f452a9c375069 1-93
+docs/src/components/ui/breadcrumbs/index.ts
+  h_2f452a9c375069 1
+docs/src/components/ui/button/Button.astro
+  h_2f452a9c375069 1-71
+docs/src/components/ui/button/index.ts
+  h_2f452a9c375069 1-13
+docs/src/components/ui/button/variants.ts
+  h_2f452a9c375069 1-10,12-20,22-37,40-46,48-54,56-61,63-66,69-90
+docs/src/components/ui/card-grid/CardGrid.astro
+  h_2f452a9c375069 1-16
+docs/src/components/ui/card-grid/index.ts
+  h_2f452a9c375069 1
+docs/src/components/ui/card/Card.astro
+  h_2f452a9c375069 1-55
+docs/src/components/ui/card/index.ts
+  h_2f452a9c375069 1
+docs/src/components/ui/code/Code.astro
+  h_2f452a9c375069 1-36
+docs/src/components/ui/code/index.ts
+  h_2f452a9c375069 1
+docs/src/components/ui/collapsible/Collapsible.astro
+  h_2f452a9c375069 1-27
+docs/src/components/ui/collapsible/CollapsibleContent.astro
+  h_2f452a9c375069 1-31
+docs/src/components/ui/collapsible/CollapsibleTrigger.astro
+  h_2f452a9c375069 1-23
+docs/src/components/ui/collapsible/collapsible.client.ts
+  h_2f452a9c375069 1-22
+docs/src/components/ui/collapsible/index.ts
+  h_2f452a9c375069 1-3
+docs/src/components/ui/dialog/Dialog.astro
+  h_2f452a9c375069 1-35
+docs/src/components/ui/dialog/DialogClose.astro
+  h_2f452a9c375069 1-27
+docs/src/components/ui/dialog/DialogContent.astro
+  h_2f452a9c375069 1-22
+docs/src/components/ui/dialog/dialog-close.client.ts
+  h_2f452a9c375069 1-7
+docs/src/components/ui/dialog/dialog.client.ts
+  h_2f452a9c375069 1-22
+docs/src/components/ui/dialog/index.ts
+  h_2f452a9c375069 1-3
+docs/src/components/ui/image-zoom/ImageZoom.astro
+  h_2f452a9c375069 1-103
+docs/src/components/ui/image-zoom/image-zoom.client.ts
+  h_2f452a9c375069 1-118
+docs/src/components/ui/image-zoom/index.ts
+  h_2f452a9c375069 1
+docs/src/components/ui/layer-card/LayerCard.astro
+  h_2f452a9c375069 1-36
+docs/src/components/ui/layer-card/LayerCardContent.astro
+  h_2f452a9c375069 1-22
+docs/src/components/ui/layer-card/LayerCardHeader.astro
+  h_2f452a9c375069 1-22
+docs/src/components/ui/layer-card/index.ts
+  h_2f452a9c375069 1-3
+docs/src/components/ui/link-button/LinkButton.astro
+  h_2f452a9c375069 1-78
+docs/src/components/ui/link-button/index.ts
+  h_2f452a9c375069 1
+docs/src/components/ui/package-managers/PackageManagers.astro
+  h_2f452a9c375069 1-140
+docs/src/components/ui/package-managers/index.ts
+  h_2f452a9c375069 1
+docs/src/components/ui/package-managers/package-managers.client.ts
+  h_2f452a9c375069 1-59
+docs/src/components/ui/page-actions/PageActions.astro
+  h_2f452a9c375069 1-83
+docs/src/components/ui/page-actions/index.ts
+  h_2f452a9c375069 1
+docs/src/components/ui/page-actions/page-actions.client.ts
+  h_2f452a9c375069 1-59
+docs/src/components/ui/pagination/Pagination.astro
+  h_2f452a9c375069 1-113
+docs/src/components/ui/pagination/PaginationKey.astro
+  h_2f452a9c375069 1-52
+docs/src/components/ui/pagination/PaginationLink.astro
+  h_2f452a9c375069 1-77
+docs/src/components/ui/pagination/index.ts
+  h_2f452a9c375069 1-3
+docs/src/components/ui/pagination/pagination.client.ts
+  h_2f452a9c375069 1-92
+docs/src/components/ui/popover/Popover.astro
+  h_2f452a9c375069 1-34
+docs/src/components/ui/popover/PopoverContent.astro
+  h_2f452a9c375069 1-46
+docs/src/components/ui/popover/PopoverTrigger.astro
+  h_2f452a9c375069 1-23
+docs/src/components/ui/popover/index.ts
+  h_2f452a9c375069 1-3
+docs/src/components/ui/popover/popover.client.ts
+  h_2f452a9c375069 1-89
+docs/src/components/ui/search/SearchDialog.astro
+  h_2f452a9c375069 1-50
+docs/src/components/ui/search/SearchTrigger.astro
+  h_2f452a9c375069 1-22
+docs/src/components/ui/search/index.ts
+  h_2f452a9c375069 1-2
+docs/src/components/ui/search/providers/pagefind.ts
+  h_2f452a9c375069 1-93
+docs/src/components/ui/search/search-trigger.client.ts
+  h_2f452a9c375069 1-17
+docs/src/components/ui/search/search.client.ts
+  h_2f452a9c375069 1-279
+docs/src/components/ui/sidebar/Sidebar.astro
+  h_2f452a9c375069 1-67
+docs/src/components/ui/sidebar/SidebarFilter.astro
+  h_2f452a9c375069 1-32
+docs/src/components/ui/sidebar/SidebarGroup.astro
+  h_2f452a9c375069 1-103
+docs/src/components/ui/sidebar/SidebarGroupHeader.astro
+  h_2f452a9c375069 1-37
+docs/src/components/ui/sidebar/SidebarLink.astro
+  h_2f452a9c375069 1-51
+docs/src/components/ui/sidebar/index.ts
+  h_2f452a9c375069 1-5
+docs/src/components/ui/sidebar/sidebar.client.ts
+  h_2f452a9c375069 1-261
+docs/src/components/ui/steps/Step.astro
+  h_2f452a9c375069 1-26
+docs/src/components/ui/steps/Steps.astro
+  h_2f452a9c375069 1-114
+docs/src/components/ui/steps/index.ts
+  h_2f452a9c375069 1-2
+docs/src/components/ui/steps/steps.client.ts
+  h_2f452a9c375069 1-30
+docs/src/components/ui/tabs/TabItem.astro
+  h_2f452a9c375069 1-31
+docs/src/components/ui/tabs/Tabs.astro
+  h_2f452a9c375069 1-51
+docs/src/components/ui/tabs/TabsContent.astro
+  h_2f452a9c375069 1-25
+docs/src/components/ui/tabs/TabsList.astro
+  h_2f452a9c375069 1-57
+docs/src/components/ui/tabs/TabsTrigger.astro
+  h_2f452a9c375069 1-32
+docs/src/components/ui/tabs/index.ts
+  h_2f452a9c375069 1-5
+docs/src/components/ui/tabs/tabs.client.ts
+  h_2f452a9c375069 1-142
+docs/src/components/ui/theme-toggle/ThemeToggle.astro
+  h_2f452a9c375069 1-35
+docs/src/components/ui/theme-toggle/index.ts
+  h_2f452a9c375069 1
+docs/src/components/ui/theme-toggle/theme-toggle.client.ts
+  h_2f452a9c375069 1-39
+docs/src/components/ui/toc/MobileTOC.astro
+  h_2f452a9c375069 1-61
+docs/src/components/ui/toc/TOC.astro
+  h_2f452a9c375069 1-96
+docs/src/components/ui/toc/index.ts
+  h_2f452a9c375069 1-2
+docs/src/components/ui/toc/mobile-toc.client.ts
+  h_2f452a9c375069 1-136
+docs/src/components/ui/toc/toc.client.ts
+  h_2f452a9c375069 1-357
+docs/src/components/ui/version-switcher/README.md
+  h_2f452a9c375069 1-96
+docs/src/components/ui/version-switcher/VersionSwitcher.astro
+  h_2f452a9c375069 1-226
+docs/src/components/ui/version-switcher/index.ts
+  h_2f452a9c375069 1
+docs/src/content.config.ts
+  h_2f452a9c375069 1-24
+docs/src/content/docs/access/access-settings.mdx
+  h_2f452a9c375069 1-314
+docs/src/content/docs/access/admin-audit-log.mdx
+  h_2f452a9c375069 1-6,8,12-15,17-23,25-27,32,38,45,48-50,52,54-59,61,63,66-68,72,74-79,83-91,93,95-97,106-108,112
+docs/src/content/docs/access/admin-control-plane.mdx
+  h_2f452a9c375069 1-6,8,10,12,14,16-20,22,24,26,28,30,32-35,37,39,41,43-50,52,54-58,60,62-66,68-161
+docs/src/content/docs/access/identity-and-access.mdx
+  h_2f452a9c375069 1-6,8,10,12-17,19,21-23,25,27,29,31,33,35-39,41,43,45,47,49-51,53,55-58,60-62,64,66,68,70,72-75,77,79,81,83-86,88,90,92-95,97,99,101,103,105,107-111,113,115,117-119,121,123,125,127,129,131,133-139,141,143,145,147-151,153,155,157,159,161,163,165-169,171,173,175,177,179,181,183,185-187,189,191,193,195-196,198,200,202,204,206,208-210,212,214,216,218,220,222,224-228,230,232,234-238,240
+docs/src/content/docs/access/service-accounts.mdx
+  h_2f452a9c375069 1-6,8,10,12-17,19,21,23-25,27-28,30-36,38-40,42,44,46-52,54,56,58,60,62-64,66,68,70,72,74,76,78,80,82,84,86-88,90,92,94,96,105-114
+docs/src/content/docs/access/sso/github.mdx
+  h_2f452a9c375069 1-6,8,10,12,14-18,20,22,24,26,34,36,38-40,63-75,77,79-83,85,87,89,91-92,94,96,98,100,102-106
+docs/src/content/docs/access/sso/google.mdx
+  h_2f452a9c375069 1-6,8,10,12,16-19,21,27,29,31,33-34,36-38,40,44,46,48-61,63,65,67,69,71,75-77,79,81,83,85,92,94,96,100,121-126,128,130,132-135,137,139,141-145,151,153,155,157,159,161-163,165,167,169,171,173,175-180
+docs/src/content/docs/access/sso/index.mdx
+  h_2f452a9c375069 1-51,57,59,61-63,70,72-76,78,80,82,84,86,88-92,94,96,98,100,102,104-113,115,117,119-122,124,126,128,130,132-134,136,138,140
+docs/src/content/docs/configuration/index.mdx
+  h_2f452a9c375069 1-350
+docs/src/content/docs/configuration/model-routing.mdx
+  h_2f452a9c375069 1-6,8,10,14,19,21-27,30,32,34-41,45,61,63,65,69,72,74,76,78,80,82,84,86,88-90,92,94,96-100,102,104,106,108,110,112,114,116,118,120,122,126-128,130,132,134,136,138,140,142,144,146,148,150,152,154-156,158,160,162,164,166,168,170,172,174,176,178,180,182,184-186,190-192,197,199-202,204,206,210-212,214,217,221,224,227,229,231,233,235,237,239,241,243,246,248,250,252,254,256,260-261,263,265,267,271,275-278,280-287,289-292,294,296-300,302,304,306,308,310,312-314,316-326,328,330,334,336,338,340,342-343,345,347,351,353,355,357,359,361,365-368,370,372,374,376,378-380,385-387,389,391,393,397,399,401,403,407,411,413-417,419,427-431,433,437-459
+docs/src/content/docs/configuration/models-and-routes.mdx
+  h_2f452a9c375069 1-6,8,10,12,14-25,27,31-34,36-37,40,42,44,46-50,52,54,58-62,64-73,76,78,80,82,84,88-90,92-93,96,98,100,102,104,106,108,110-116,118-119,122,124-131,133,135,137-139,141,143-154,156,158,160,162,164,168,170-172,174-177,180,182,184-186,188,190,192,194-195,197,199,201,203-204,206,208,210-215,217,219,221-229,231,233-235,237,239,241,245-251,253,255-258,260,262,264-268,270-278,280,282,284,286-294,296,298,302,304-315,318,320,324,326-327,330,334,348,370,383,395-407,410,428,441-457,472,474-486,488,490-498,500-513
+docs/src/content/docs/configuration/providers.mdx
+  h_2f452a9c375069 1-293
+docs/src/content/docs/extensions/mcp-client-setup.mdx
+  h_2f452a9c375069 1-6,8,14,16-18,20,22,24,26-29,31,33,35,37,39,41,43,45,47,49-51,53-68,70-92,94-113,119,125,127,129,131,135-137,139,141,155,157,159,161,163-171,174-185,187,189,191,193-195,197-199,201-240,244,247-249,251,253,255,257,259,261,263,265,267-271,273,277-280,285,287,289,291,293,295-298,300,302,304,306,308-309,311,313,315,317-320,322,324-326,328,330,336-338,340,350,357-358
+docs/src/content/docs/extensions/mcp-invocations.mdx
+  h_2f452a9c375069 1-146
+docs/src/content/docs/extensions/mcp-servers.mdx
+  h_2f452a9c375069 1-6,8,10,12-14,16,18,22,25,27,29,31,33,35,37,39-45,47,49,51,56,59,61-62,64,66,72-78,82,84,88-96,98,100,102,104-107,109,111,113,115-118,120,122,124,126,128,130-134,136,138,140,142,144,146,148,151,153,155,157,159-165,167,169,171,173,175-180,182-187,189,200-208,210,212,214,216,219,221-223,225,227,229,231,237,245-260,281-282,284-286,288,290,294,296,298,300-302,304-314,316,318,320,350,352-357,362,365-366,368,370,372,374,376,378-379,386-388,397-398,405-406,414-415,417,419-421,423-424,426,428,430,432,434,436-438,441,443,448,452,454-455,458,460,462,464,468,470,472
+docs/src/content/docs/extensions/mcp-tool-access.mdx
+  h_2f452a9c375069 1-6,8,10,12,14-16,18,20,22-26,28-32,34,36,38,40,42-64,68-72,74,76,78,80,82-85,87,89-91,93,95-96,98,100,102,104,106-108,110-119,123,127-145,149,151,154,156-167,171,174-194,198-199,201-202,204-214,218,220,222,224,226,228,230,232-239,241,243,245,247,249,251-258,260,262,264-266,268-270,272,274-275,277,279,281,283,285,287,289-293,303-350,352,354,356-358,360,362,364,366,368
+docs/src/content/docs/extensions/skills.mdx
+  h_2f452a9c375069 1-6,8,10,12,14,16,18,20,22-23,26-28,30,32,34,47,49,51,53-55,68-70,72,74,76-86,88,90,92,94-96,98,100-102,107-113,115,117,119,121,123,129,131,135,145,158-160,162,164,166,168,170,172,174-176,180,182,186,188,190,199-203,205,207,209,213,215,220,222,224,228,232-233,235,237-242,244-246,248,250,252,254,256,258,260,262,264
+docs/src/content/docs/features.mdx
+  h_2f452a9c375069 1-6,8,10,12-14,16,18-20,22,24,26-28,30,32,34,36-40,42,44,46,48,50,52,54,56-58,60,62-65,67,69-72,74,76-78,80,82-84
+docs/src/content/docs/harnesses/index.mdx
+  h_2f452a9c375069 1-50,52,54,56,58,60,62,64,67,73,75,77,79,81-83,85,87,89,91-93,95,97,99,101,103,107-109,111,113-123,127,129-131,133,137-151,153-154,156-158,160,162,164,166,168,170
+docs/src/content/docs/harnesses/omp.mdx
+  h_2f452a9c375069 1-147
+docs/src/content/docs/harnesses/opencode.mdx
+  h_2f452a9c375069 1-13,15,17,19,21-24,26,28,30-32,34-36,38-41,43-49,51-56,58-61,63-71,73-79,81-83,85,87-90,92-94,96-98,100,102,104,106-108,110,112,114,116-117,119,121-123,125,127,129-133,135,137,139,141-157,159-161,163,165,167,169,171-180,182,184,186,188,190-197,199,201,203-211,213-215,217-222,224,226,228,230,232-234,236,238
+docs/src/content/docs/introduction.mdx
+  h_2f452a9c375069 1-46
+docs/src/content/docs/observability/agent-harness-usage.mdx
+  h_2f452a9c375069 1-81
+docs/src/content/docs/observability/agent-session-analysis.mdx
+  h_2f452a9c375069 1-25,27-29,31,33,35-37,39,41,43,45,47-52,54,56,58,60,62-65,67,69,71,73,75-84,86-90,92,94-98,100,102-104,108-113,115,117,119,123-125,127,129,131,135,137,139,141-142,144,146-147,150,152-154,156,158,160-163,165-167,169,171-176
+docs/src/content/docs/observability/export-traces-and-metrics.mdx
+  h_2f452a9c375069 1-6,8,10,12,14,16,23,25-28,30,32,34,36-38,40-42,44,46,48,56-61,63,65,67,69,71,73,75,77,87,89,91,93,108,110,112,114,118,120,122,124,126-136,138,140,142,144,146,148
+docs/src/content/docs/observability/index.mdx
+  h_2f452a9c375069 1-127
+docs/src/content/docs/observability/request-logs.mdx
+  h_2f452a9c375069 1-6,8,10,12,14-21,23,25,27-29,31,33,35,37-38,40,42,44,46,48,50,52,54,56-65,67,69-72,74,76,78,80,82,84-88,90,92,94,96-104,106,108,110,112,114,116,118-121,123,125,127,129-133,135,137,139,155,157,159,161-163,165,167-171,173,175,177,179,181-185,187,189,191,193-196,198,200-203,205,207,209,211,213,215,217,219,221,223,225,227-230,232,234,236,238,240-246,248,250,252,254-255,257,259,261,263,265-266,268,270,272-279,281
+docs/src/content/docs/observability/tagging.mdx
+  h_2f452a9c375069 1-6,8,10,12,14-17,19,21,29,31-34,36,38,40,42-46,48,50,52,54-59,61-63,67,69,71,73,75,77,79,81-84,86,88,90,92,94-96,98
+docs/src/content/docs/operations/admin-runbooks.mdx
+  h_2f452a9c375069 1-88,90,92-148,150,152-153,155-159,161,163-168,170-171,173-175,177,179,181,183-184,187,189,193-196,199,201,203,205,207,209-214,216,218,220,222-226,228,230,232,234,236-240,242,244,246,248-250,252,254-256,258,260,262,264-267,269,271,273,275-294,296-298,300,302,304,306-308,310,312,314,316-321,324,326,328,330,332,334,336,338-340,342,346,348,350-352,354,356
+docs/src/content/docs/operations/gateway-guardrails.mdx
+  h_2f452a9c375069 1-6,8,10,12,14,16,18-25,27,29-30,32,34,36-40,44-63,65,67,69,71,73,97-109,111-116,124,135-167,171-173,175,186,190-192,194,196,198,200,202,204-206,208,210-256,279,281,283-285,298,300,302,304,320,328-330,332,334,340,344-354,356,358-360,362,364,366,368,370,372,374,376,378-496
+docs/src/content/docs/providers/aws-bedrock/index.mdx
+  h_2f452a9c375069 1-10,12,14,16,18-21,23,25-32,34,36,38,40,42-44,51,54,56-59,61,66-68,70-75,86-88,90-100,104,106,108,118,120,122,124,126-146,148-150,152-157,159,161,163,165,167,180-182,184,186,188-194,209-211,213,215,217,219,221,223,225,227-231,256-258,260,262-267,269,271,273,275-277,279,281,283,285,304,306,308,310,312,314,316,318,320
+docs/src/content/docs/providers/aws-bedrock/openai.mdx
+  h_2f452a9c375069 1-7,9,11,13,15-19,21,23,25-42,68-70,72,74,76,84,86-92,97,101,103,105,107,121-127,129-130,132,134,136,138,140,142,144,146-153,156,158
+docs/src/content/docs/providers/gcp-cloud-run.mdx
+  h_2f452a9c375069 1-6,8,10,12-16,18,20-25,27,39-48,50,52-54,56-60,71-79,81,83-85,87,89-91,95-97,102-104,109-112,114,116-118,120,122-128,139-141,143-148,150-154,172,174,176,178
+docs/src/content/docs/providers/gcp-vertex.mdx
+  h_2f452a9c375069 1-6,8,10-14,16,18,20-28,30,34,42-67,69,71,73-87,91,99,106,108-111,113,115,117,119,121,123-124,126,128,130,132-152,154,156-165,180,182,184,186,188,190,192,194,201,205,209-213,217,219-222,224,226-228,230,232,234,236,238-242,244-245,249,255,257,259-264,266,268-270,272-275,277,279,281,283,285-291,293,295,297-298,300,302,304,306-308,310,312-333,335,337-354,372,382,386,397,401,403-416,418,420,422-423,425-427,431-436,438-453,455,457-459,461,463,465
+docs/src/content/docs/providers/github-copilot.mdx
+  h_2f452a9c375069 1-6,8,10-14,16,18-20,24-25,28,30,37-38,41,43,46,49-50,53,55-57,64,70,76-83,85,87,89,93,95-100,102-107,109,111,113,115-143,145,149,151-155,157-161,165-174,176,192-198,200
+docs/src/content/docs/providers/opencode-zen.mdx
+  h_2f452a9c375069 1-6,8,10,12-16,18,20-35,37-48,50,56,60-61,63-64,68-74,76-82,84-88,91-126
+docs/src/content/docs/providers/openrouter.mdx
+  h_2f452a9c375069 1-6,8,10,12,14,16,30,32,34-61,81-125,127,129,131,135,137,139,151,153,155,157,159,161,163-174,177-183
+docs/src/content/docs/providers/typesafe.mdx
+  h_2f452a9c375069 1-6,8,10,12,14-17,19,21-25,49-57,59,61,63-65,99-109,111,113-116,118,120,122-127
+docs/src/content/docs/reference/provider-api-compatibility.mdx
+  h_2f452a9c375069 1-6,8,10,12,14,16-29,31,33,35,37-53,55-87,89,91,93,95,97-99,101,103,105,107,109-110,112,114-159,163-165,168-170,172,174,176,178,180-185,187,203,205,207-215,217,219-221,223,225,227-229,231,233-238,240,242,244,246,248-251,253,255,257-261,263,265,267-271,273,275-278,280,282,284,286,288-294,296,298,300,302-304,306,308,310,312,314,316,318-322,324,326,328,330,337,339,350,352-360,362,364,366,368-375,377,379-381,383,385-397,399,401,403,405,407-413,415,417,419,421,423-425,427,429,431,433,435,437,439,441,443,445-451,453,455,457,459,461,463-466,468,470,472,474,489-493,495,497,499,501,503-506,508,510,512-545,547,549,551,553,555,557,559,561,563,565-567,569,571-572,574,576,578-583
+docs/src/content/docs/reference/request-lifecycle.mdx
+  h_2f452a9c375069 1-161
+docs/src/content/docs/setup/deploy-and-operations.mdx
+  h_2f452a9c375069 1-60
+docs/src/content/docs/setup/first-access.mdx
+  h_2f452a9c375069 1-7,9,11-12,14,16,18,20-24,26,28,30,32,34,36-38,40,42,44,46-49,51,53,55,57,59-62,64,66,68,70,72,74,76,78-80,82,84,86-93,95,97,99-219
+docs/src/content/docs/setup/index.mdx
+  h_2f452a9c375069 1-31
+docs/src/content/docs/setup/kubernetes-and-helm.mdx
+  h_2f452a9c375069 1-6,8,10,12-15,18,20,22-26,28,30,32,34,36,41,45,47,49-52,54,56,58-67,69,71,73,75,79,81-85,87,89-91,93,95-97,99,101,103,105,107,109,111,113-116,118,120,129,131,133,135,137,139-146
+docs/src/content/docs/setup/self-hosting.mdx
+  h_2f452a9c375069 1-6,8,10,12,15-24,27-28,30,32,34,36-37,43-45,47,57,59,61,68,76,78,80-82,86-91,93,95,97-101,104-106,109,111,114,117,119,122,125,127,129,131-133,135-137,145,147,149,156,160,164,167-175,177,179,185,189,193-195,204-249,251-256
+docs/src/content/docs/spend/budget-settings.mdx
+  h_2f452a9c375069 1-110
+docs/src/content/docs/spend/budgets.mdx
+  h_2f452a9c375069 1-6,8,10,12,14,16-20,22,24,26,28,30,32-35,37,39-41,43,45,47,49,51,53,55,57,59-80,82-84,86,88,90-96,98,100,102,104-107,109,111-114,116,118,120,122,124,126,128-134,136,138,140-150,152,154,156,158-188,197,199,217,219-226,229-230,232-237,240-241,243,245,260,262,264-268,270,272-282,284,286,288,301-305,307,309,311,313,315-318,320,322,324,326,328-331,333
+docs/src/content/docs/spend/pricing-and-accounting.mdx
+  h_2f452a9c375069 1-6,8,10,12,14-19,21,23,25-26,28,30,32,34-36,38,40,42-44,46,48,50,52-56,58,60,62,64,66-69,71,73,75,77,79,81,83,85-90,92,94,96-99,101,103,105,107,109-115,128-136,138-140,142,144,146-148,157,159,161,163,165,167,169-170,172,174,176,178-183,185,187,189,191,193,195,197-198,200,202,204,206,208,210,212-222,224,226,228,230-234,236,238,240,242,244,246,248,250,252,254-263,265-272,274,276,278-279,281,283,285
+docs/src/content/docs/spend/rate-limits.mdx
+  h_2f452a9c375069 1-6,8,10,14-17,21-25,29-39,41-50,54,56,60-61,65-83,85-116,118-125,127,129-148,158,160-161,164,178-194,196-203,205,207,209-211,216,220,222,224,226-229,231,233,235,239-241,245,247,254,256,259-260
+docs/src/landing/Bento.astro
+  h_2f452a9c375069 1-149
+docs/src/landing/Closing.astro
+  h_2f452a9c375069 1-45
+docs/src/landing/Deploy.astro
+  h_2f452a9c375069 1-41
+docs/src/landing/Faq.astro
+  h_2f452a9c375069 1-34
+docs/src/landing/Float.astro
+  h_2f452a9c375069 1-30
+docs/src/landing/Footer.astro
+  h_2f452a9c375069 1-43
+docs/src/landing/Frame.astro
+  h_2f452a9c375069 1-47
+docs/src/landing/Harnesses.astro
+  h_2f452a9c375069 1-11,13-25,27-37,39-68
+docs/src/landing/Hero.astro
+  h_2f452a9c375069 1-67
+docs/src/landing/Lifecycle.astro
+  h_2f452a9c375069 1-100
+docs/src/landing/Pillars.astro
+  h_2f452a9c375069 1-93
+docs/src/landing/RichText.astro
+  h_2f452a9c375069 1-31
+docs/src/landing/SectionHeading.astro
+  h_2f452a9c375069 1-23
+docs/src/landing/Statement.astro
+  h_2f452a9c375069 1-33
+docs/src/landing/content.ts
+  h_2f452a9c375069 1-8,10-104,106-107,109-112,116-117,119-122,125-194,196-215,217-232,234-256,259-279,281-301,303-318,321-339,341-357,359-394,396-400,402-412,414-421,423-433,435-442,444-449,452-460,465-469,471-484,489-493,495-503,509-526,528-532,535-623,627-633,637-641,645-669,674-690,692-699,702-710
+docs/src/landing/landing.client.ts
+  h_2f452a9c375069 1-23
+docs/src/landing/landing.css
+  h_2f452a9c375069 1-742
+docs/src/layouts/BaseLayout.astro
+  h_2f452a9c375069 1,4-154
+docs/src/layouts/DocsLayout.astro
+  h_2f452a9c375069 1-437
+docs/src/lib/cn.ts
+  h_2f452a9c375069 1-7
+docs/src/lib/sidebar-icons.ts
+  h_2f452a9c375069 1-61
+docs/src/lib/variants.ts
+  h_2f452a9c375069 1-44
+docs/src/pages/404.astro
+  h_2f452a9c375069 1-35
+docs/src/pages/[...section]/llms.txt.ts
+  h_2f452a9c375069 1-3
+docs/src/pages/[...slug].astro
+  h_2f452a9c375069 1-71
+docs/src/pages/[...slug]/index.md.ts
+  h_2f452a9c375069 1-3
+docs/src/pages/[...slug]/index.mdx.ts
+  h_2f452a9c375069 1-3
+docs/src/pages/api/[...slug].astro
+  h_2f452a9c375069 1-40
+docs/src/pages/index.astro
+  h_2f452a9c375069 1-49
+docs/src/pages/index.md.ts
+  h_2f452a9c375069 1-69
+docs/src/pages/llms-full.txt.ts
+  h_2f452a9c375069 1-3
+docs/src/pages/llms.txt.ts
+  h_2f452a9c375069 1-3
+docs/src/pages/nimbus-api/coordinates.json.ts
+  h_2f452a9c375069 1-19
+docs/src/pages/og.png.ts
+  h_2f452a9c375069 1-12
+docs/src/pages/og/[...slug].ts
+  h_2f452a9c375069 1-19
+docs/src/pages/og/_card.ts
+  h_2f452a9c375069 1-83
+docs/src/pages/robots.txt.ts
+  h_2f452a9c375069 1-22
+docs/src/styles/globals.css
+  h_2f452a9c375069 1-836
+docs/src/styles/prose.css
+  h_2f452a9c375069 1-403
+docs/tsconfig.json
+  h_2f452a9c375069 1-10
+docs/wrangler.jsonc
+  h_2f452a9c375069 1-10
+gateway.yaml
+  h_2f452a9c375069 78
+lychee.toml
+  h_2f452a9c375069 7-15,18-19
+mise.lock
+  h_2f452a9c375069 125,129-131,135-137,141-143,147-149,153-155,461,465-467,471-473,477-479,483-485,489-491,531,535-537,541-543,547-549,553-555,559-561,565,569-571,574-577,580-583,586-589,592-595,598,602-604,608-610,614-616,620-622,626-628
+mise.rustfs.lock
+  h_2f452a9c375069 6,8,11-12,15-16,19-20,23,25,28-31,34-37,40-43
+mise.rustfs.toml
+  h_2f452a9c375069 8-9
+mise.selfhost.toml
+  h_2f452a9c375069 6
+mise.toml
+  h_2f452a9c375069 22,34,48,53-54,56,255-257,271
+packages/opencode-oceans/.gitignore
+  h_2f452a9c375069 1-4
+packages/opencode-oceans/.oxfmtrc.json
+  h_2f452a9c375069 1-8
+packages/opencode-oceans/.oxlintrc.json
+  h_2f452a9c375069 1-8
+packages/opencode-oceans/LICENSE
+  h_2f452a9c375069 1-661
+packages/opencode-oceans/README.md
+  h_2f452a9c375069 1-204
+packages/opencode-oceans/bun.lock
+  h_2f452a9c375069 1-757
+packages/opencode-oceans/gateways.example.yml
+  h_2f452a9c375069 1-28
+packages/opencode-oceans/mise.toml
+  h_2f452a9c375069 1-51
+packages/opencode-oceans/package.json
+  h_2f452a9c375069 1-59
+packages/opencode-oceans/scripts/gateway.ts
+  h_2f452a9c375069 1-251
+packages/opencode-oceans/scripts/smoke.ts
+  h_2f452a9c375069 1-191
+packages/opencode-oceans/src/config.ts
+  h_2f452a9c375069 1-129
+packages/opencode-oceans/src/discovery.ts
+  h_2f452a9c375069 1-111
+packages/opencode-oceans/src/index.ts
+  h_2f452a9c375069 1-112
+packages/opencode-oceans/src/models.ts
+  h_2f452a9c375069 1-331
+packages/opencode-oceans/tests/discovery.test.ts
+  h_2f452a9c375069 1-221
+packages/opencode-oceans/tests/models.test.ts
+  h_2f452a9c375069 1-262
+packages/opencode-oceans/tests/smoke.test.ts
+  h_2f452a9c375069 1-32
+packages/opencode-oceans/tsconfig.json
+  h_2f452a9c375069 1-22
+registry.json
+  h_2f452a9c375069 4
+scripts/build-shadcn-theme.mjs
+  h_2f452a9c375069 11,42-44,117,166-170,172-189,191-195,209,232-234
+tests/harness-integration/README.md
+  h_2f452a9c375069 23,31-45,59-61,67-68,77-78,81-91
+tests/harness-integration/mise.toml
+  h_2f452a9c375069 8,19-23
+tests/harness-integration/package-lock.json
+  h_2f452a9c375069 12-13,2448-2450,2467-2478,2482-2484,2495-2497,2508-2510,2521-2523,2534-2536,2547-2549,2560-2562,2573-2575,2586-2588,2599-2601,2612-2614,2625-2627,2637-2678,3685-3690
+tests/harness-integration/package.json
+  h_2f452a9c375069 12-13
+tests/harness-integration/src/adapters/opencode.ts
+  h_2f452a9c375069 164,175
+tests/harness-integration/src/gateway-client.ts
+  h_2f452a9c375069 11-13,75-82,145
+tests/harness-integration/src/global-setup.ts
+  h_2f452a9c375069 23-28,99,130-135,201,328-329,490,516-544
+tests/harness-integration/src/opencode-plugin.test.ts
+  h_2f452a9c375069 1-342
+tests/harness-integration/src/types.ts
+  h_2f452a9c375069 11-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "43550bc8fd633205a32e08852acc3871af0ce7d9",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,29 @@
+docs/src/content/docs/providers/openrouter.mdx
+  s_78219ae0b914b5::t_78c339e74753f7 101
+docs/src/content/docs/providers/openrouter-provider-check.mdx
+  s_78219ae0b914b5::t_3b175135709620 29
+  s_78219ae0b914b5::t_f3a19ca75210fc 1-2,4-21,23-27,30,36,41,61,64-89
+  s_78219ae0b914b5::t_acca17d8e049b7 3
+  s_78219ae0b914b5::t_24b0aede6134a9 22,28,31-35,37-40
+  s_78219ae0b914b5::t_33172651493e2e 42-60,62-63
+docs/src/lib/sidebar-icons.ts
+  s_78219ae0b914b5::t_dad08713788665 26
+_typos.toml
+  s_78219ae0b914b5::t_2616212b85e943 51-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ff9c77defb2f05a494376c107ea103665d991a20",
+  "prompts": {},
+  "sessions": {
+    "s_78219ae0b914b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1ea56f97-02a8-4353-8620-852ca9c3d734",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,41 @@
+.github/actions/rust-cache/action.yml
+  s_d3c80b90c1cc6d::t_99fe671fdc32d4 21-22
+.github/workflows/ci.yml
+  s_d3c80b90c1cc6d::t_00b11eb733f7f9 1,5-6,22-24,26,29-30,42,49,52,63-65,75-87
+.github/workflows/docs-ci.yml
+  s_d3c80b90c1cc6d::t_37da482743c6b2 5-9
+.github/workflows/react-doctor.yml
+  s_d3c80b90c1cc6d::t_7b728e864b743b 6-8
+.github/workflows/release-product.yml
+  s_d3c80b90c1cc6d::t_eb6b2f6d17f303 135-137,140-141,145
+.github/workflows/review-agent-ci.yml
+  s_d3c80b90c1cc6d::t_af80fd4f12d97b 5-9
+.github/workflows/review-agent-self-hosted-smoke.yml
+  s_d3c80b90c1cc6d::t_d317a0d0da50b4 20,42-45,47-48,50-51,54-56
+.github/workflows/ui-ci.yml
+  s_d3c80b90c1cc6d::t_4296e09ad7c07f 5-9
+actions/review-agent/scripts/smoke-action.ts
+  s_d3c80b90c1cc6d::t_17e5d71e5538b1 1-142
+dist-workspace.toml
+  s_d3c80b90c1cc6d::t_8891807ce81da0 22-23,39
+docs/adr/2026-03-28-generated-admin-api-contract-and-typed-same-origin-client.md
+  s_d3c80b90c1cc6d::t_ecbad50ddf4945 142
+scripts/check-cli-release.sh
+  s_d3c80b90c1cc6d::t_544d74628a1db3 9-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "03637bf0b3232c2e8b03840a114469b2b3e626ec",
+  "prompts": {},
+  "sessions": {
+    "s_d3c80b90c1cc6d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1dc1b72e-7118-4e96-b7d7-4f5e3c42a100",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

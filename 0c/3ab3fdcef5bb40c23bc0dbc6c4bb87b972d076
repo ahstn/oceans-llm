@@ -1,0 +1,21 @@
+crates/gateway-store/src/libsql_store/mod.rs
+  s_ee057229033589::t_10f0fe61887423 132-136
+crates/gateway-store/src/libsql_store/transaction_tests.rs
+  s_ee057229033589::t_f939709391d85a 4-7,12,105-141,152,154-158,160-173
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0c3ab3fdcef5bb40c23bc0dbc6c4bb87b972d076",
+  "prompts": {},
+  "sessions": {
+    "s_ee057229033589": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "250131c4-1d2c-4d6b-a98c-87c1d612ba06",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

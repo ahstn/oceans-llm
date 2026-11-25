@@ -1,0 +1,19 @@
+crates/oceans-cli/src/attribution/prs.rs
+  s_0a4447f1aa57dd::t_489b9269eb7c3e 783-785,795,797-806
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1f3d5af4813c695cfa96a8f5d03ce32709765698",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

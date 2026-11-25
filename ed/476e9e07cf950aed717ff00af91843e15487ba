@@ -1,0 +1,73 @@
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_a1d1a900c88650::t_aed60c4aaeb28f 2974-2975,3582-3583
+crates/admin-ui/web/src/lib/api-key-format.ts
+  s_a1d1a900c88650::t_c8e390d560942b 1-45
+crates/admin-ui/web/src/routes/api-keys/-components.tsx
+  s_a1d1a900c88650::t_5c0c1408c00e57 56-62
+crates/admin-ui/web/src/routes/api-keys/-use-api-keys-page.ts
+  s_2e6a28b40f9c3e::t_a3343819ff89ee 13,34-66,85-90,109-110,116-117,119
+crates/admin-ui/web/src/routes/profile/-components/profile-api-keys.tsx
+  s_a1d1a900c88650::t_c70ecde58c2a0f 24,108
+crates/admin-ui/web/src/routes/profile/-components/profile-budget.tsx
+  s_9560ab2179eebe::t_7dede557f14de8 9,27
+crates/admin-ui/web/src/routes/profile/-components/profile-data.ts
+  s_2e6a28b40f9c3e::t_7b62ae6cc044c3 4,171-208,250-254,338-340
+crates/admin-ui/web/src/routes/profile/-components/profile-headlines.tsx
+  s_9560ab2179eebe::t_5a7603749ec88a 20
+crates/admin-ui/web/src/routes/profile/-components/profile-page.ts
+  s_a1d1a900c88650::t_d3eb66c4abda6a 2-3,12,14-15,31
+crates/admin-ui/web/src/routes/profile/index.tsx
+  s_a1d1a900c88650::t_f1deadcb086e4b 22,27
+crates/admin-ui/web/src/test/profile-data.test.ts
+  s_9560ab2179eebe::t_bd0e76b2e7d2bb 4,9
+crates/admin-ui/web/src/test/profile-fixtures.ts
+  s_a1d1a900c88650::t_3f3a65f101061b 1,26
+crates/admin-ui/web/src/test/routes/profile-route.test.tsx
+  s_a1d1a900c88650::t_ba10577b7aff4a 6,76,125,137,167
+crates/gateway-store/src/lib.rs
+  s_a1d1a900c88650::t_4a5548a669cf9e 4281-4306,4310,4315-4327,4329-4333
+crates/gateway/openapi/admin-api.json
+  s_a1d1a900c88650::t_bea957619c88fb 11552,11558-11564,14027,14033-14039
+crates/gateway/src/http/api_keys.rs
+  s_2e6a28b40f9c3e::t_7efe8f9c0cb5a0 514
+crates/gateway/src/http/profile.rs
+  s_a1d1a900c88650::t_23d3c14a3f4bfb 1-2,11,20,34-35,106-122,128
+docs/access/identity-and-access.md
+  s_2e6a28b40f9c3e::t_75acc30de1d034 72
+docs/adr/2026-09-26-profile-landing-page.md
+  s_2e6a28b40f9c3e::t_3919bff141ac00 1-57
+docs/configuration/configuration-reference.md
+  s_2e6a28b40f9c3e::t_bbc9fd4ea07572 362
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ed476e9e07cf950aed717ff00af91843e15487ba",
+  "prompts": {},
+  "sessions": {
+    "s_2e6a28b40f9c3e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a3ccb0fb5ff94c48e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_9560ab2179eebe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a8d7a915f04554b7e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_a1d1a900c88650": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8dcd7694-4d09-4ee2-9f4c-af8095b9a53e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

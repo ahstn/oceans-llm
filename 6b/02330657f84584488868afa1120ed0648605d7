@@ -1,0 +1,33 @@
+.agents/skills/verify-oceans-admin/SKILL.md
+  s_3909cf4958a3af::t_8b31764f90c5f0 53
+.github/workflows/ci.yml
+  s_3909cf4958a3af::t_3f01ed55816aea 22-23
+.github/workflows/cli-ci.yml
+  s_3909cf4958a3af::t_27bc87c6114da4 36-37
+.github/workflows/oceans-review-agent.yml
+  s_3909cf4958a3af::t_80668053231c71 21-22
+AGENTS.md
+  s_3909cf4958a3af::t_2bb657c03e6c67 10
+Cargo.toml
+  s_3909cf4958a3af::t_2fb76ddda1c557 110-113,115-117
+mise.toml
+  s_3909cf4958a3af::t_f6fe8dbc4107b6 64-68,103-105,108-109
+rust-analyzer.toml
+  s_3909cf4958a3af::t_33b6acc584d9a5 2-5,9-10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6b02330657f84584488868afa1120ed0648605d7",
+  "prompts": {},
+  "sessions": {
+    "s_3909cf4958a3af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9eabb320-c558-4ce9-b844-b21792d51207",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

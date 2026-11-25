@@ -1,0 +1,259 @@
+docs-nimbus/src/content/docs/providers/typesafe.mdx
+  s_39e41c7e9b701c::t_26b849501e6c0b 116
+  s_39e41c7e9b701c::t_452b325c1f7479 19
+  s_39e41c7e9b701c::t_9ca1d1de5064b7 1-18,20-113,115,117-127
+  s_39e41c7e9b701c::t_a2655733976375 114
+docs-nimbus/src/lib/sidebar-icons.ts
+  s_397b5a20224eaa::t_6260035fa1b6f6 19-33,35-38,40-42,44-51
+docs-nimbus/src/content/docs/access/admin-control-plane.mdx
+  s_a480d70e0cd85f::t_963452fc8ae9c0 1-76,78-161
+  s_a480d70e0cd85f::t_291cf53b057661 77
+docs-nimbus/src/content/docs/providers/aws-bedrock-openai.mdx
+  s_635e2774433a4a::t_2b6527a1cf1ebf 1-157
+docs-nimbus/src/content/docs/configuration/providers.mdx
+  s_397b5a20224eaa::t_2d7d1894b30542 110-111
+  s_397b5a20224eaa::t_a0820bccc251b9 46,115,130,161,190,208,237,265,273
+docs-nimbus/src/content/docs/spend/budgets.mdx
+  s_86000dfa4041af::t_9babc2ffdfe45e 1-220,222-227,229-230,232-238,240-333
+  s_86000dfa4041af::t_1893b5c4fef402 221,228,231,239
+docs-nimbus/src/content/docs/access/sso/github.mdx
+  s_fc1779d9dc1a14::t_13bc5b25737494 1-11,13-91,93-106
+  s_fc1779d9dc1a14::t_f489b7e18d7a1d 12,92
+docs-nimbus/src/content/docs/observability/index.mdx
+  s_c3476fb207214b::t_ce3f245168587c 49-50
+  s_c3476fb207214b::t_9240f079483a73 28
+  s_c3476fb207214b::t_81296682ff4650 1-27,29-48,51-84,86-111,113-127
+  s_c3476fb207214b::t_36831b5fc2918c 85
+  s_c3476fb207214b::t_f7a065b11657bf 112
+docs-nimbus/src/content/docs/access/admin-audit-log.mdx
+  s_a480d70e0cd85f::t_59863a22d064ba 1-111
+  s_a480d70e0cd85f::t_51499416b7969c 112
+docs-nimbus/src/content/docs/providers/gcp-vertex.mdx
+  s_7fc493a306411c::t_69bce7902b4e63 16
+  s_7fc493a306411c::t_6793306cb6df65 1-15,17-137,139-243,246-465
+  s_7fc493a306411c::t_eb305be0ee13d3 138,244-245
+docs-nimbus/src/content/docs/observability/export-traces-and-metrics.mdx
+  s_50af6dc5fb3577::t_c66b58363315f4 1-148
+docs-nimbus/src/content/docs/access/sso/index.mdx
+  s_fc1779d9dc1a14::t_cb30c225fff842 1-29,31-74,76-78,80-96,98-106,108-113,115-139
+  s_fc1779d9dc1a14::t_dbca93c7a63477 30,75,107,114
+  s_fc1779d9dc1a14::t_f489b7e18d7a1d 79,97
+docs-nimbus/src/content/docs/extensions/mcp-tool-access.mdx
+  s_a73aaa0f0568f9::t_404921b0fd74c2 53,64
+  s_a73aaa0f0568f9::t_5b844c023898fe 1-52,54-63,65-368
+docs-nimbus/src/content/docs/observability/request-logs.mdx
+  s_c3476fb207214b::t_0955626a2e7019 1-7,9-39,41-49,51-57,59-85,87-216,218-254,256-275,277-280
+  s_c3476fb207214b::t_7c537b1952de74 8,58,217,276,281
+  s_c3476fb207214b::t_d56be8e95c114e 40,50,255
+  s_c3476fb207214b::t_ce3f245168587c 86
+docs-nimbus/src/content/docs/access/identity-and-access.mdx
+  s_e785830ac03ec7::t_0b3c8de45b0a04 1-40,42-60,62-89,91-140,142-240
+  s_e785830ac03ec7::t_cbb29ae4404071 61,141
+  s_e785830ac03ec7::t_4c3ae5d775d7c6 41,90
+docs-nimbus/src/content/docs/providers/github-copilot.mdx
+  s_39e41c7e9b701c::t_c3345d43dfc6d3 1-121,123-195,197-200
+  s_39e41c7e9b701c::t_63f381c3ab01ca 122,196
+docs-nimbus/src/content/docs/providers/gcp-cloud-run.mdx
+  s_7fc493a306411c::t_439de4df77e3ff 1-88,91-93,98-100,105-108,111-178
+  s_7fc493a306411c::t_ac9645a26be012 89-90,94-97,101-104,109-110
+docs-nimbus/src/content/docs/configuration/index.mdx
+  s_397b5a20224eaa::t_41265f773fddfe 138,187,201,203,238
+  s_397b5a20224eaa::t_205394e511e2e1 47
+  s_397b5a20224eaa::t_36145b49d0bd81 42-44,49,256,310,339
+docs-nimbus/src/content/docs/setup/first-access.mdx
+  s_397b5a20224eaa::t_859000aa64addb 111
+  s_397b5a20224eaa::t_14a24cbfcc39d5 40,213
+docs-nimbus/astro.config.ts
+  s_397b5a20224eaa::t_76587c4ad4f8d0 21-22,28-30,32-33
+docs-nimbus/src/content/docs/providers/opencode-zen.mdx
+  s_39e41c7e9b701c::t_f265bcdfeaefa1 1-111,113-119
+  s_39e41c7e9b701c::t_fa8f2643032eea 112
+docs-nimbus/src/content/docs/extensions/skills.mdx
+  s_397b5a20224eaa::t_76587c4ad4f8d0 5
+docs-nimbus/AGENT.md
+  s_397b5a20224eaa::t_1892afc53b0215 103
+docs-nimbus/src/content/docs/access/service-accounts.mdx
+  s_e785830ac03ec7::t_ba518a519efedd 33
+  s_e785830ac03ec7::t_41c9a4d1e1215e 1-32,34-114
+docs-nimbus/src/content/docs/observability/agent-harness-usage.mdx
+  s_50af6dc5fb3577::t_bc1d38d64f5e16 1-46,48-55,58-67,69-81
+  s_50af6dc5fb3577::t_91e73c1ef8d5d4 68
+  s_50af6dc5fb3577::t_8422a62742d4d3 47
+  s_397b5a20224eaa::t_eb1c40103e05b0 56-57
+docs-nimbus/src/content/docs/observability/tagging.mdx
+  s_50af6dc5fb3577::t_dd061ff895ad66 94
+  s_50af6dc5fb3577::t_bedb2571bbf3d0 1-93,95-98
+docs-nimbus/src/content/docs/access/sso/google.mdx
+  s_fc1779d9dc1a14::t_f489b7e18d7a1d 71,126
+  s_fc1779d9dc1a14::t_b09a4b8d2c8856 1-70,72-125,127-180
+docs-nimbus/src/content/docs/providers/openrouter.mdx
+  s_39e41c7e9b701c::t_c39f76e0f4dc90 30,168
+  s_39e41c7e9b701c::t_452b325c1f7479 120
+  s_39e41c7e9b701c::t_56c45e1f4336f1 1-29,31-119,121-167,169-170
+docs-nimbus/src/content/docs/providers/aws-bedrock.mdx
+  s_635e2774433a4a::t_11ec6a0459334d 189
+  s_635e2774433a4a::t_fdfff1499c1400 1-188,190-316
+docs-nimbus/src/content/docs/operations/gateway-guardrails.mdx
+  s_3d8056f5103254::t_f059920acbc025 1-154,158-161,164-229,231-349,352,354-429,432-496
+  s_3d8056f5103254::t_87bd33127f2be8 230
+  s_397b5a20224eaa::t_eb1c40103e05b0 430-431
+  s_397b5a20224eaa::t_556c7862f0422d 162-163
+  s_3d8056f5103254::t_2ed9c6e701a91b 350-351,353
+  s_3d8056f5103254::t_701b04dde6db6e 157
+  s_3d8056f5103254::t_334bbe7b4bef8b 155-156
+docs-nimbus/src/content/docs/operations/admin-runbooks.mdx
+  s_3d8056f5103254::t_fd806752d9720f 16,26,28-29,246
+  s_3d8056f5103254::t_50270740a7d313 27,184,346
+  s_3d8056f5103254::t_d32aca9da25a9f 1-15,17-25,30-183,185-245,247-345,347-356
+docs-nimbus/src/content/docs/access/access-settings.mdx
+  s_397b5a20224eaa::t_205394e511e2e1 127
+  s_397b5a20224eaa::t_4c8507ee88880c 5,8,67,111,133,269,278,285,303,309,314
+docs-nimbus/src/content/docs/spend/budget-settings.mdx
+  s_397b5a20224eaa::t_b9b0496c2fe9f1 10
+  s_397b5a20224eaa::t_47351213cee6ce 8,68
+docs-nimbus/src/content/docs/extensions/mcp-invocations.mdx
+  s_a73aaa0f0568f9::t_f7eea794926297 93
+  s_a73aaa0f0568f9::t_571bbbfd750017 1-92,94-146
+docs-nimbus/src/content/docs/observability/agent-session-analysis.mdx
+  s_50af6dc5fb3577::t_8422a62742d4d3 43,166
+  s_397b5a20224eaa::t_eb1c40103e05b0 58-59
+  s_50af6dc5fb3577::t_b9e2fa0725e973 1-42,44-57,60-165,167-176
+docs-nimbus/src/content/docs/extensions/mcp-client-setup.mdx
+  s_5aeee5926fbab9::t_483b5db7596aa4 1-358
+docs-nimbus/src/content/docs/configuration/client-harnesses.mdx
+  s_397b5a20224eaa::t_5ac676e6974e1b 82,167,171
+docs-nimbus/src/content/docs/configuration/model-routing.mdx
+  s_397b5a20224eaa::t_4dca0872a9dffd 201,406,411,421,423,435
+docs-nimbus/src/content/docs/configuration/models-and-routes.mdx
+  s_397b5a20224eaa::t_3add9ed1cc13a9 188,284
+docs-nimbus/src/content/docs/extensions/mcp-servers.mdx
+  s_397b5a20224eaa::t_216950d9a168a4 13-14,29,120,464,470,472
+docs-nimbus/src/content/docs/features.mdx
+  s_397b5a20224eaa::t_3248083f248f55 12-14,20,30,36,38-40,62,64,69,72,76,78,82-84
+docs-nimbus/src/content/docs/index.mdx
+  s_397b5a20224eaa::t_5b1cba97c4d211 26,42,44-46
+docs-nimbus/src/content/docs/reference/provider-api-compatibility.mdx
+  s_397b5a20224eaa::t_c1f074c2677019 143,495
+docs-nimbus/src/content/docs/reference/request-lifecycle.mdx
+  s_397b5a20224eaa::t_9b2c7896669de6 19,21,25-26,53,75,83,87,114,158,161
+docs-nimbus/src/content/docs/setup/deploy-and-operations.mdx
+  s_397b5a20224eaa::t_81b3bcb3c40061 8,45
+docs-nimbus/src/content/docs/setup/kubernetes-and-helm.mdx
+  s_397b5a20224eaa::t_cea7c4b80b3338 129
+docs-nimbus/src/content/docs/spend/pricing-and-accounting.mdx
+  s_397b5a20224eaa::t_d9dd8464b2de93 26
+docs-nimbus/src/content/docs/spend/rate-limits.mdx
+  s_397b5a20224eaa::t_7adbfa46c57a71 8,122,235,240,254
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "14b2342388699bada9139c65961cee431c2031b1",
+  "prompts": {},
+  "sessions": {
+    "s_397b5a20224eaa": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1aae3-a475-75cb-9430-4462f4b0f4ad",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_39e41c7e9b701c": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1ae1a-1b94-71a4-b02d-220bc7e83b7f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_3d8056f5103254": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1ae1a-1b1f-7593-abb1-8252f94bf4a1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_50af6dc5fb3577": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1ae1a-1ada-7222-9040-befa86e440cf",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_5aeee5926fbab9": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1ae1a-1b6c-77da-8518-827ca315ccc3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_635e2774433a4a": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1ae1a-1ad2-73d3-b7eb-79d4631a2e0e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_7fc493a306411c": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1ae1a-1aed-72c1-846e-b4b0d4036bcb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_86000dfa4041af": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1ae1a-1b24-74cd-b1a1-6330e39d9970",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_a480d70e0cd85f": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1ae1a-1b59-7357-ad25-9fb1696b6859",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_a73aaa0f0568f9": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1ae1a-1b71-70af-8983-bab479d300d1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_c3476fb207214b": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1ae1a-1ae9-7704-8ec8-0a5301b1220e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e785830ac03ec7": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1ae1a-1adf-73b8-801c-00aaf726c344",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_fc1779d9dc1a14": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1ae1a-1ae4-70ca-b133-940967e5b1b6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

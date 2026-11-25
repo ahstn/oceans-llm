@@ -1,0 +1,61 @@
+crates/admin-ui/web/e2e/gateway-contract.e2e.ts
+  s_6d03b8bf1a1feb::t_acca759d1b9701 333,336,340
+crates/gateway-core/src/budgets.rs
+  s_6d03b8bf1a1feb::t_5cf63852a461da 34-90,455,509-521
+crates/gateway-core/src/error.rs
+  s_6d03b8bf1a1feb::t_1a8296febe83de 4-7,120-121,123-125,129-130,133,182,314-362
+crates/gateway-core/src/lib.rs
+  s_6d03b8bf1a1feb::t_e7a69f9d0d8dec 46-48
+crates/gateway-service/src/budget_guard.rs
+  s_6d03b8bf1a1feb::t_a18d058b61f476 4-5,27,36-45,157-158,161,230,680-717
+crates/gateway-service/src/service.rs
+  s_9afcd1aad99ea7::t_a6dbbe9947755a 7-8,195-201
+crates/gateway/src/config/budgets.rs
+  s_6d03b8bf1a1feb::t_c4b412281cb8e4 4,23-25
+crates/gateway/src/config/tests/budgets.rs
+  s_6d03b8bf1a1feb::t_be26cc277ef3b0 170-232
+crates/gateway/src/http/budget_status_tests.rs
+  s_6d03b8bf1a1feb::t_22ff45d35aef9b 1-243
+crates/gateway/src/http/handlers/inference_tests.rs
+  s_6d03b8bf1a1feb::t_a0af88f6b64fd8 265
+crates/gateway/src/http/mod.rs
+  s_6d03b8bf1a1feb::t_fe0d40ab8b5049 6-7
+crates/gateway/src/main.rs
+  s_6d03b8bf1a1feb::t_ec4a925c8e7bd9 707
+docs/access/budgets.md
+  s_6d03b8bf1a1feb::t_f7f97e4de70eff 47,51-57
+docs/adr/2026-03-31-chat-observability-hardening-and-stream-parse-contract.md
+  s_6d03b8bf1a1feb::t_a4a50820654004 48-50
+docs/adr/2026-10-14-budget-exceeded-status-code.md
+  s_6d03b8bf1a1feb::t_5595282e9871c1 1-85
+docs/configuration/configuration-reference.md
+  s_6d03b8bf1a1feb::t_9b69e5111bffa8 316,659,663,681,688
+docs/contributing/operations/budgets-and-spending.md
+  s_6d03b8bf1a1feb::t_70cc1178b422d0 108
+docs/reference/request-lifecycle-and-failure-modes.md
+  s_6d03b8bf1a1feb::t_becc07176ebe38 41,181-184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "62d60064809b63c68b91846ce1930939764df6f6",
+  "prompts": {},
+  "sessions": {
+    "s_6d03b8bf1a1feb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0d578d36-3c7a-4481-9004-636e22b39a01",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_9afcd1aad99ea7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6922d2fa-a044-4097-b696-4f2796d370eb",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

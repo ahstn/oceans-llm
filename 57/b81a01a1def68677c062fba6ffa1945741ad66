@@ -1,0 +1,21 @@
+docs/adr/2026-10-15-gateway-rate-limits-and-quotas.md
+  s_56409892e094a0::t_54bb4d4d135402 136
+docs/configuration/rate-limits.md
+  s_56409892e094a0::t_4ec95f54948e89 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "57b81a01a1def68677c062fba6ffa1945741ad66",
+  "prompts": {},
+  "sessions": {
+    "s_56409892e094a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a7dde59-323d-48bd-9209-17a8bd106b80",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

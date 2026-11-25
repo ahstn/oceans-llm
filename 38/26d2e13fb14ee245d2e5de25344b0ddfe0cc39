@@ -1,0 +1,23 @@
+crates/gateway-core/src/protocol/decisions/openai.rs
+  s_9afcd1aad99ea7::t_8dc612c0de126f 506-512,547-552,1120-1126,1139-1140
+docs/configuration/configuration-reference.md
+  s_9afcd1aad99ea7::t_0ff8d47562b15f 1178,1316,1334-1336
+docs/adr/2026-09-21-system-one-decisions-api.md
+  s_9afcd1aad99ea7::t_514ab0eb978af6 94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3826d2e13fb14ee245d2e5de25344b0ddfe0cc39",
+  "prompts": {},
+  "sessions": {
+    "s_9afcd1aad99ea7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6922d2fa-a044-4097-b696-4f2796d370eb",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

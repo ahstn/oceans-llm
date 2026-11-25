@@ -1,0 +1,83 @@
+docs-nimbus/src/landing/Float.astro
+  s_397b5a20224eaa::t_1da3ae77a37382 1-30
+docs-nimbus/src/landing/Faq.astro
+  s_397b5a20224eaa::t_c4123eb6424160 1-34
+docs-nimbus/src/landing/Statement.astro
+  s_397b5a20224eaa::t_7bb575be69a801 1-33
+docs-nimbus/src/landing/RichText.astro
+  s_397b5a20224eaa::t_40e8ad1bd548a4 1-31
+docs-nimbus/src/landing/SectionHeading.astro
+  s_397b5a20224eaa::t_3fed520f85ce3e 1-23
+docs-nimbus/AGENT.md
+  s_397b5a20224eaa::t_d0aced797da7a1 14,21,25-26,47-53
+  s_397b5a20224eaa::t_14cc7e7bcbc652 54
+docs-nimbus/src/landing/Lifecycle.astro
+  s_397b5a20224eaa::t_4f241c283a538c 1-100
+docs-nimbus/src/landing/landing.css
+  s_397b5a20224eaa::t_3ea8b59a679ce9 33,362-364,368-369,659-662
+  s_397b5a20224eaa::t_2447ad345a8775 1-32,34-361,365-367,370-652,654,658,663-728,730-742
+  s_397b5a20224eaa::t_6c32f98ab38583 653,655-657
+  s_397b5a20224eaa::t_2d32292d1c00db 729
+docs-nimbus/src/styles/globals.css
+  s_397b5a20224eaa::t_1f83110c96fe72 219-253
+docs-nimbus/astro.config.ts
+  s_397b5a20224eaa::t_090a75e19ca726 26
+docs-nimbus/src/landing/content.ts
+  s_397b5a20224eaa::t_812aea9f22c8c3 391
+  s_397b5a20224eaa::t_d9b9db8ae46cb6 63
+  s_397b5a20224eaa::t_85dceb0f4369aa 1-62,64-78,80-83,85-252,254-390,392-710
+  s_397b5a20224eaa::t_021b5568699820 79,84
+  s_397b5a20224eaa::t_d5b9df8a0575c2 253
+docs-nimbus/src/lib/sidebar-icons.ts
+  s_397b5a20224eaa::t_090a75e19ca726 7
+docs-nimbus/src/landing/landing.client.ts
+  s_397b5a20224eaa::t_c3705e4a6d5cab 1-23
+docs-nimbus/src/pages/index.astro
+  s_397b5a20224eaa::t_5b11ebd0466071 1-19,21-43,45-49
+  s_397b5a20224eaa::t_2a1b0624d6090f 20,44
+docs-nimbus/src/landing/Hero.astro
+  s_397b5a20224eaa::t_205806dbf2deee 1-79
+docs-nimbus/src/landing/Harnesses.astro
+  s_397b5a20224eaa::t_0759be996fb859 1-68
+docs-nimbus/src/landing/Closing.astro
+  s_397b5a20224eaa::t_90c8942bf92a8c 1-9,11-45
+  s_397b5a20224eaa::t_a32858e7dec92c 10
+docs-nimbus/src/landing/Footer.astro
+  s_397b5a20224eaa::t_6c32f98ab38583 16
+  s_397b5a20224eaa::t_055ee743bc7808 12
+  s_397b5a20224eaa::t_dcaea0f0c510ed 1-11,13-15,17-43
+docs-nimbus/src/landing/Frame.astro
+  s_397b5a20224eaa::t_953033be0911d4 1-47
+docs-nimbus/src/landing/Bento.astro
+  s_397b5a20224eaa::t_385d8a37ae6923 46-58
+  s_397b5a20224eaa::t_e0d95f148ca5ac 1-12,16-45,59-74,79,82-87,95,99,112-114,116,119-121,125-149
+  s_397b5a20224eaa::t_3ea8b59a679ce9 13-15,75-78,80-81,88-94,96-98,100-111,115,117-118,122-124
+docs-nimbus/src/pages/index.md.ts
+  s_397b5a20224eaa::t_586d5d841e114b 1-70
+docs-nimbus/src/content/docs/spend/rate-limits.mdx
+  s_397b5a20224eaa::t_e5ef1e0ddc4911 120
+docs-nimbus/src/landing/Pillars.astro
+  s_397b5a20224eaa::t_1bb76caae7f751 1-4,7-34,41,43-71,73-80,83-84,86-93
+  s_397b5a20224eaa::t_dfa67c6b2fb9e8 5-6,82
+  s_397b5a20224eaa::t_3ea8b59a679ce9 35-40,42,72,81,85
+docs-nimbus/src/components/Header.astro
+  s_397b5a20224eaa::t_090a75e19ca726 50-51
+docs-nimbus/src/landing/Deploy.astro
+  s_397b5a20224eaa::t_40578398fa2a9f 1-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d8df0314ef928caee443b5efa7e0a9fb8d25e5a7",
+  "prompts": {},
+  "sessions": {
+    "s_397b5a20224eaa": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1aae3-a475-75cb-9430-4462f4b0f4ad",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

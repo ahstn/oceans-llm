@@ -1,0 +1,20 @@
+crates/gateway-service/src/mcp_credentials.rs
+  s_3364883fc2ce42::t_457e997b0b5d75 772-776,782-786
+  s_3364883fc2ce42::t_46341a213a2ea7 720,724,727-728,790,831,835,867
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9cd4726fdce1049000d4e587f26c481917c70878",
+  "prompts": {},
+  "sessions": {
+    "s_3364883fc2ce42": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1030b-a73e-7ee0-ba99-c3e2b528cb13",
+        "model": "gpt-6-astra"
+      },
+      "human_author": null
+    }
+  }
+}

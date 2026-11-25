@@ -1,0 +1,37 @@
+crates/gateway-service/src/service.rs
+  s_dd118f467446e0::t_040765723bc273 69-74,3444,3449-3453
+crates/gateway-store/src/lib.rs
+  s_dd118f467446e0::t_508d56b9c05f23 404,418-426
+crates/gateway-store/src/libsql_store/seed.rs
+  s_dd118f467446e0::t_6d96094193252e 352-372,374-380
+crates/gateway-store/src/postgres_store/seed.rs
+  s_dd118f467446e0::t_a0d0988b73ebb6 347-364,366-371
+crates/gateway/src/config/loader.rs
+  s_dd118f467446e0::t_a6ac8b97474d17 8,155-156,165-176,188,194-197,315-318
+crates/gateway/src/config/tests/fragments.rs
+  s_dd118f467446e0::t_2260edb988b7f5 198-218
+deploy/helm/oceans-llm/examples/config-fragments-values.yaml
+  s_dd118f467446e0::t_4498d593a4dfac 6,9-11
+docs/adr/2026-10-14-team-scoped-identity-config-fragments.md
+  s_dd118f467446e0::t_c6c92059641b56 174
+docs/configuration/configuration-reference.md
+  s_dd118f467446e0::t_9e1488bb444a2d 898,1235,1350,1352,1354-1356,1358
+docs/setup/kubernetes-and-helm.md
+  s_dd118f467446e0::t_d8f13d35c31579 72-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c454a59aa7d0cc09cbcafce27b4439fc94d917ab",
+  "prompts": {},
+  "sessions": {
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

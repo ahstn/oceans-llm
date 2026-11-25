@@ -1,0 +1,21 @@
+crates/admin-ui/web/mise.toml
+  s_10a82e9e623548::t_d20e94b36dfa53 32-36,43,46
+crates/admin-ui/web/package.json
+  s_10a82e9e623548::t_0df29c42658f83 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "99f30c4e6054b72f29d84626af0aca2588867ec8",
+  "prompts": {},
+  "sessions": {
+    "s_10a82e9e623548": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f37a6951-df40-4639-9d01-c99da63e8d84",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

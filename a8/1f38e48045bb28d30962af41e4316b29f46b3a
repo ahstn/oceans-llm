@@ -1,0 +1,25 @@
+.agents/skills/verify-oceans-admin/features/live-llm-requests.md
+  s_13e300ce4bf1eb::t_2b45f7531b092f 51
+crates/gateway-providers/src/bedrock/mod.rs
+  s_13e300ce4bf1eb::t_baa7b29d7e0d20 677-681,683-696,699
+crates/gateway-providers/src/bedrock/tests/count_tokens.rs
+  s_13e300ce4bf1eb::t_3b8b3b5b0d56b0 135-146
+docs/providers/aws-bedrock.md
+  s_13e300ce4bf1eb::t_f65585cc609386 92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a81f38e48045bb28d30962af41e4316b29f46b3a",
+  "prompts": {},
+  "sessions": {
+    "s_13e300ce4bf1eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cb0560cd-180f-4e10-b195-fa36950af50e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

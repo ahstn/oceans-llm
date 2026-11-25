@@ -1,0 +1,59 @@
+.agents/skills/verify-oceans-admin/features/attribution.md
+  s_0a4447f1aa57dd::t_8fcdd0a24205a0 40
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_0a4447f1aa57dd::t_bcfdee2db38ed5 560-562
+DESIGN.md
+  s_0a4447f1aa57dd::t_a9a7d96ef62c65 355-365
+crates/admin-ui/web/src/routeTree.gen.ts
+  s_0a4447f1aa57dd::t_6af7ea4b731582 48,236-241,280,319,359,400,439,478,518,775-781,822
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/charts.tsx
+  s_0a4447f1aa57dd::t_b0af8e72b2b28f 1-540
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/concept-agents.tsx
+  s_0a4447f1aa57dd::t_6e4821e16ce015 1-164
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/concept-delivery.tsx
+  s_0a4447f1aa57dd::t_84fc9bd8b810ff 1-358
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/concept-durability.tsx
+  s_0a4447f1aa57dd::t_1f52ef1140e2f0 1-279
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/concept-impact.tsx
+  s_0a4447f1aa57dd::t_ba92fdd2f4c3e6 1-296
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/concept-my-work.tsx
+  s_0a4447f1aa57dd::t_405eb1d84de472 1-267
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/concept-outcomes.tsx
+  s_0a4447f1aa57dd::t_c508214b463c83 1-314
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/concept-pull-requests.tsx
+  s_0a4447f1aa57dd::t_5fe504a348acb2 1-392
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/concept-repositories.tsx
+  s_0a4447f1aa57dd::t_84205ac9dd33ef 1-350
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/fixtures.ts
+  s_0a4447f1aa57dd::t_1c0e1915e33687 1-594
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/flow-chart.tsx
+  s_0a4447f1aa57dd::t_c98afd3b938323 1-236
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/heatmaps.tsx
+  s_0a4447f1aa57dd::t_ec86d8b5a700af 1-256
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/metrics.ts
+  s_0a4447f1aa57dd::t_3e87bfb5138ec1 1-530
+crates/admin-ui/web/src/routes/observability/-attribution-concepts/parts.tsx
+  s_0a4447f1aa57dd::t_5b9cd48b4c0d29 1-461
+crates/admin-ui/web/src/routes/observability/attribution_.concepts.tsx
+  s_0a4447f1aa57dd::t_21e1e7ccb98f64 1-197
+crates/admin-ui/web/src/test/attribution-concepts.test.ts
+  s_0a4447f1aa57dd::t_fce451b3516ff0 1-59
+docs/design-proposals/attribution/README.md
+  s_0a4447f1aa57dd::t_7e9044bec44cbf 1-113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9a6502805286013c44b58a6321bd43c88d3cd405",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

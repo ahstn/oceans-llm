@@ -1,0 +1,21 @@
+.agents/skills/verify-oceans-admin/features/design-system.md
+  s_eaf7116ccea134::t_3ebd9972de8ec1 1-34
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_eaf7116ccea134::t_1d105e4e170cda 59-62,561-572
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "53d8d09b59c89f400097ab714b45fd2c841c17c2",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,30 @@
+docs/adr/2026-10-17-delegated-mcp-server-ownership.md
+  s_1864c803a90a0e::t_0c2f51ad860e53 1-116
+  s_1864c803a90a0e::t_b3fe4a6aba22c2 117
+.agents/skills/verify-oceans-admin/features/mcp-ownership.md
+  s_7a4bb25ea2fe49::t_83cecb57b5b47c 1-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8b6cc63f129f06379935dc5a10c16a0615b15c20",
+  "prompts": {},
+  "sessions": {
+    "s_1864c803a90a0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5822bc90-e33d-49af-9d44-474de0500040",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_7a4bb25ea2fe49": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab2457af-0345-474d-8ba0-be4b2bb49200",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

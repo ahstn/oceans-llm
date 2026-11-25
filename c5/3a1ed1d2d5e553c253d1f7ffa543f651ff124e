@@ -1,0 +1,53 @@
+tests/harness-integration/src/hook-loaders.ts
+  s_ceb902b5ae2ad1::t_0eb5302b0d3a2d 1-139
+.agents/skills/verify-oceans-admin/features/harness-integration.md
+  s_ceb902b5ae2ad1::t_293f84ae19e2d2 15,48
+crates/gateway-guardrails/src/lib.rs
+  s_ceb902b5ae2ad1::t_d5eac01630aef3 29-31
+crates/gateway-guardrails/src/packs.rs
+  s_ceb902b5ae2ad1::t_07ea0c65fdbcc2 204,233-278
+crates/gateway-guardrails/src/packs/tests.rs
+  s_ceb902b5ae2ad1::t_aa57d296ae0b84 789-859
+crates/gateway/src/http/inference_guardrails.rs
+  s_ceb902b5ae2ad1::t_e24c0ae45d90a0 8-9,1479,1743-1762
+docs/src/content/docs/harnesses/verification.mdx
+  s_ceb902b5ae2ad1::t_37e14223e6b4e9 98
+docs/src/content/docs/operations/gateway-guardrails.mdx
+  s_ceb902b5ae2ad1::t_e1f1439d4b3dda 63
+mise.toml
+  s_ceb902b5ae2ad1::t_d1be725828c0a7 325
+tests/harness-integration/README.md
+  s_ceb902b5ae2ad1::t_acf27e44f36752 54,80-103,116,202
+tests/harness-integration/src/adapters/claude-code.ts
+  s_ceb902b5ae2ad1::t_ba9288080aa426 203,248-254
+tests/harness-integration/src/canary-provider.ts
+  s_ceb902b5ae2ad1::t_7e27c80064e404 1-221
+tests/harness-integration/src/gateway-client.ts
+  s_ceb902b5ae2ad1::t_00177858197995 43-58,173-190
+tests/harness-integration/src/global-setup.ts
+  s_ceb902b5ae2ad1::t_c464925d26bbb5 10,36-41,71,90,101,111,119-123,142,224,244,448,503,582-607,630,640-647,659-672
+tests/harness-integration/src/guardrails-hook.test.ts
+  s_ceb902b5ae2ad1::t_a90a1a6fc80b3d 7,13-20,31
+tests/harness-integration/src/guardrails-policy.test.ts
+  s_ceb902b5ae2ad1::t_9018e7c1b1308e 1-651
+tests/harness-integration/src/types.ts
+  s_ceb902b5ae2ad1::t_f96c72d4c61447 25-36
+tests/harness-integration/src/adapters/sandbox.ts
+  s_ceb902b5ae2ad1::t_514d2ce21ce28e 71-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c53a1ed1d2d5e553c253d1f7ffa543f651ff124e",
+  "prompts": {},
+  "sessions": {
+    "s_ceb902b5ae2ad1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "813ff0b9-4f52-4fd3-a512-a7b14a6a9045",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

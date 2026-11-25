@@ -1,0 +1,19 @@
+crates/oceans-cli/src/attribution/reverts.rs
+  s_9379a6359d74c1::t_5d7240873373d3 378-380,553-573
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f46078f5511f4cf2b2c1027194b60614811b6d21",
+  "prompts": {},
+  "sessions": {
+    "s_9379a6359d74c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "24386ac1-62a3-474e-9c88-ccc4d428ec6d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

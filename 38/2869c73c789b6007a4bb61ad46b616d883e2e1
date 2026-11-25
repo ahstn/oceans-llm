@@ -1,0 +1,31 @@
+crates/admin-ui/web/src/components/data/table-pagination.tsx
+  s_dc3b523da70752::t_362c4152c2e023 1,30,53-54
+crates/admin-ui/web/src/components/observability/agent-sessions/session-table.tsx
+  s_dc3b523da70752::t_1e19c2b001a0ad 137
+crates/admin-ui/web/src/lib/pagination.ts
+  s_dc3b523da70752::t_9fad13c789fc78 40-48
+crates/admin-ui/web/src/routes/observability/agent-sessions.tsx
+  s_dc3b523da70752::t_548157b869b911 2,34,49,51-61,114,234-235
+crates/admin-ui/web/src/routes/observability/request-logs.tsx
+  s_dc3b523da70752::t_801e00a8473b9c 2,20,39-55,96
+crates/admin-ui/web/src/test/components/table-pagination.test.ts
+  s_dc3b523da70752::t_f72c512636ff9c 3,26-39
+crates/admin-ui/web/src/test/routes/agent-sessions-route.test.tsx
+  s_dc3b523da70752::t_eaabdef6b22465 1355,1362
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "382869c73c789b6007a4bb61ad46b616d883e2e1",
+  "prompts": {},
+  "sessions": {
+    "s_dc3b523da70752": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "af541614-74d7-43c2-98a1-d65acc10f2b7",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

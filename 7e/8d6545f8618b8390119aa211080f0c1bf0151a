@@ -1,0 +1,25 @@
+crates/admin-ui/web/src/test/routes/mcp-tool-policy.test.tsx
+  s_e88dc7cf2999d1::t_a21a847b2c87dd 1-69
+crates/admin-ui/web/src/routes/mcp/-components.tsx
+  s_e88dc7cf2999d1::t_831946e5746e0e 44,322
+crates/admin-ui/web/src/routes/mcp/-tool-tags.ts
+  s_e88dc7cf2999d1::t_8970d4c649ac80 1,58-69
+crates/gateway-service/src/mcp_tool_policy.rs
+  s_e88dc7cf2999d1::t_8dd8d385d7aecb 159,165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7e8d6545f8618b8390119aa211080f0c1bf0151a",
+  "prompts": {},
+  "sessions": {
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

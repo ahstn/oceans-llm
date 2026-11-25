@@ -1,0 +1,21 @@
+docs/adr/2026-10-15-model-and-provider-config-fragments.md
+  s_dd118f467446e0::t_63b69ff06af78d 66,72,79,88-89,149
+docs/configuration/configuration-reference.md
+  s_dd118f467446e0::t_7186a208e80542 1349
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "92132b918f5d107ae31fc9f94dd463bdfbfce198",
+  "prompts": {},
+  "sessions": {
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

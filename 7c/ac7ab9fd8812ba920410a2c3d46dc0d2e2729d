@@ -1,0 +1,31 @@
+crates/gateway-store/migrations/postgres/V82__attribution_pull_request_lifecycle.sql
+  s_0a4447f1aa57dd::t_aeb431f3342248 6-11,18-21,23
+crates/oceans-cli/src/attribution/prs.rs
+  s_9379a6359d74c1::t_83dea4ca14fb19 47,65-66,133-135,380-386,403-406,749-763
+crates/oceans-cli/src/attribution/reverts.rs
+  s_9379a6359d74c1::t_a058d8dce8da7e 219,231-235,240,245,252-256,260,264-269,385-407
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7cac7ab9fd8812ba920410a2c3d46dc0d2e2729d",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_9379a6359d74c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "24386ac1-62a3-474e-9c88-ccc4d428ec6d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

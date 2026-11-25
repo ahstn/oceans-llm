@@ -1,0 +1,19 @@
+crates/gateway-service/src/admin_audit.rs
+  s_af4ccbd37c05c0::t_8decc4c7469f4a 509-511,513-515,521-538,681-699,1020-1021,1038,1069-1070,1087,1150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "07da953bb2ef8300791042d3008ce96f373cd51c",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

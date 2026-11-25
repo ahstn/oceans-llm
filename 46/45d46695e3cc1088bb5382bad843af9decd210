@@ -1,0 +1,48 @@
+CHANGELOG.md
+  h_2f452a9c375069 9-16
+Cargo.lock
+  h_2f452a9c375069 7,58,1847,1904,1914,1924,1944,1965,1980,2014,2046,2065,3135
+crates/admin-ui/Cargo.toml
+  h_2f452a9c375069 5
+crates/agent-session-analysis/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-client-config/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-client-ip/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-core/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-guardrails/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-mcp/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-providers/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-service/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-service/data/litellm_catalog_fallback.json
+  h_2f452a9c375069 4-6,56808-56814,56854-56860,57321-57327
+crates/gateway-service/data/openrouter_catalog_fallback.json
+  h_2f452a9c375069 5-6,8027-8029,8038,8423-8425,8434,11542-11544,19323-19325,19334,20338,22327-22328,22338,22961-22963,22972,25796-25798,25807,25912-25914,28138-28139,28149,28852,29287-29288
+crates/gateway-service/data/pricing_catalog_fallback.json
+  h_2f452a9c375069 4-6,31032-31034,31043,31327-31329,31338,38183,39436-39437,39447,40166-40168,40177,41374-41376,41385,41512-41514,43118-43120,43974
+crates/gateway-skills/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-store/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway/Cargo.toml
+  h_2f452a9c375069 5
+crates/oceans-cli/Cargo.toml
+  h_2f452a9c375069 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4645d46695e3cc1088bb5382bad843af9decd210",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

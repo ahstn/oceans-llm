@@ -1,0 +1,33 @@
+crates/admin-ui/web/e2e/gateway-contract.e2e.ts
+  s_014b27f5de2de2::t_40c25936f195d4 723
+.agents/skills/verify-oceans-admin/features/api-keys.md
+  s_014b27f5de2de2::t_b1fdb61fff1542 30-31,38-39
+crates/admin-ui/web/src/routes/api-keys/-scope-fields.tsx
+  s_014b27f5de2de2::t_85a417b42da5c7 48-51,147-150
+crates/admin-ui/web/src/routes/api-keys/-components.tsx
+  s_014b27f5de2de2::t_234b3bde2ba194 2
+  s_014b27f5de2de2::t_51e742286ba364 620,734,740,745-748,752,754-757,760,764-766,768-807,810-813,878-879,881,883,885-887,891-894,896-901
+  s_014b27f5de2de2::t_be9e504698f1d4 880,882,895
+  s_014b27f5de2de2::t_8b01997860058a 375-401
+crates/admin-ui/web/src/test/routes/api-keys-route.test.tsx
+  s_014b27f5de2de2::t_be9e504698f1d4 719-720
+  s_014b27f5de2de2::t_9317b1bbafd202 308,774
+  s_014b27f5de2de2::t_0617d2e2861179 274,299-307,309-332,670-674,691-699,718,721,723,725-727,729,773,775
+  s_014b27f5de2de2::t_7aed1863e323e2 739-740
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "276039ee85881bcd8cde91a2ebaafa24725c15f5",
+  "prompts": {},
+  "sessions": {
+    "s_014b27f5de2de2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "091a9787-f7b8-441c-b00d-e8c35cef2c67",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}

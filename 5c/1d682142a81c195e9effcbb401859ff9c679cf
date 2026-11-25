@@ -1,0 +1,387 @@
+crates/gateway-providers/src/bedrock/tests/request_tools.rs
+  s_397b5a20224eaa::t_6a59848877eaef 310,315,327
+crates/gateway-providers/src/copilot/mod.rs
+  s_397b5a20224eaa::t_6a59848877eaef 13,16,293,298-307,312-316,319-326,545-597
+docs/src/content/docs/providers/aws-bedrock/index.mdx
+  s_397b5a20224eaa::t_44da822167295b 217,219
+packages/opencode-oceans/package.json
+  s_1182c76e376f21::t_668feb6332448d 40-41
+  s_50e99e02064736::t_496a605b57f008 1-12,20-27,30,34-39,42-59
+  s_1182c76e376f21::t_62c0bea8d95642 28-29,31-33
+  s_397b5a20224eaa::t_6a59848877eaef 15
+  s_397b5a20224eaa::t_1d6f70be3807a4 13-14,16-19
+crates/gateway/src/http/handlers.rs
+  s_397b5a20224eaa::t_6a59848877eaef 16,21,34,197-199,289,367,395-401,478,556,584-590,605-608,613-617,637-652,802,1260-1274,1369,2238
+crates/gateway-providers/src/bedrock/tests/provider_requests.rs
+  s_397b5a20224eaa::t_6a59848877eaef 982-986,1002-1013,1039-1050
+crates/gateway/src/http/handlers/messages.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1-257
+crates/gateway-core/src/protocol/translate.rs
+  s_397b5a20224eaa::t_6a59848877eaef 16-20,212-213
+crates/gateway-service/src/request_logging/tests/stream.rs
+  s_397b5a20224eaa::t_6a59848877eaef 29-157,194-196,198
+crates/gateway-providers/src/vertex/tests/google_request.rs
+  s_397b5a20224eaa::t_6a59848877eaef 949,960-979
+  s_397b5a20224eaa::t_92453083afe883 980-981
+crates/gateway-core/src/domain.rs
+  s_397b5a20224eaa::t_6a59848877eaef 10
+packages/opencode-oceans/.oxlintrc.json
+  s_50e99e02064736::t_72539287c2a261 1-2,4-8
+  s_397b5a20224eaa::t_6a59848877eaef 3
+tests/harness-integration/package.json
+  s_397b5a20224eaa::t_6a59848877eaef 12-13
+.agents/skills/verify-oceans-admin/scripts/check-messages.mjs
+  s_397b5a20224eaa::t_6a59848877eaef 27,38
+crates/admin-ui/web/package.json
+  s_397b5a20224eaa::t_6a59848877eaef 27,32-33,38,51,58,64,73
+crates/gateway-service/src/effective_route_metadata.rs
+  s_397b5a20224eaa::t_6a59848877eaef 279-280,286-297,333-394
+  s_397b5a20224eaa::t_54a156c00cfc10 395
+mise.rustfs.toml
+  s_397b5a20224eaa::t_6a59848877eaef 8-9
+packages/opencode-oceans/.gitignore
+  s_50e99e02064736::t_23ab1cc38fc4d7 1-4
+.agents/skills/verify-oceans-admin/scripts/plan-verification.test.mjs
+  s_397b5a20224eaa::t_6a59848877eaef 80-81,93-97
+crates/gateway-providers/src/anthropic/native.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1-103
+crates/gateway-providers/src/bedrock/eventstream.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1-4,14-19,23,31-39,44-56,58-63,65-86,88,91-94,96-120,123-128,188-212
+crates/gateway-providers/src/anthropic/compat_stream.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1-474
+tests/harness-integration/src/opencode-plugin.test.ts
+  s_397b5a20224eaa::t_6a59848877eaef 1-342
+crates/gateway-core/src/lib.rs
+  s_397b5a20224eaa::t_6a59848877eaef 15,74-78,105-120,133,196-200,231-233
+crates/gateway/src/http/inference_guardrails_regression_tests.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1-1199
+crates/gateway-providers/src/vertex/anthropic.rs
+  s_397b5a20224eaa::t_6a59848877eaef 17-54,70
+tests/harness-integration/src/types.ts
+  s_397b5a20224eaa::t_6a59848877eaef 11-16
+docs/src/content/docs/spend/pricing-and-accounting.mdx
+  s_397b5a20224eaa::t_c746c65a76b678 202-204
+docs/adr/2026-11-03-native-anthropic-messages-transport.md
+  s_397b5a20224eaa::t_6a59848877eaef 1-54,56-86
+  s_397b5a20224eaa::t_44c3a3ba343414 55
+packages/opencode-oceans/tests/models.test.ts
+  s_1182c76e376f21::t_72c3e8be15eb1c 161,231
+  s_1182c76e376f21::t_446e42f0584518 5,7,13-14,28,36-37,65,67,101,139-141,164-165,174-177,208-209,220-222,232,261-262
+  s_397b5a20224eaa::t_6a59848877eaef 1-4,6,8-12,15-27,29-35,38-64,66,68-100,102-138,142-160,162-163,166-173,178-207,210-219,223-230,233-260
+crates/gateway-providers/src/anthropic/replay.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1-246
+crates/gateway-providers/src/vertex/error.rs
+  s_397b5a20224eaa::t_6a59848877eaef 136-143,150-153,164-165
+crates/gateway-providers/src/anthropic/tests.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1084
+crates/gateway-providers/src/vertex/batch.rs
+  s_397b5a20224eaa::t_6a59848877eaef 11-14,522-530,800-805,1062,1078-1085
+.agents/skills/verify-oceans-admin/features/live-llm-requests.md
+  s_397b5a20224eaa::t_6a59848877eaef 56
+packages/opencode-oceans/mise.toml
+  s_50e99e02064736::t_0eff5b6ee594a3 1-51
+crates/gateway-providers/src/anthropic_compat.rs
+  s_397b5a20224eaa::t_6a59848877eaef 141,163-215,249,295,341
+docs/src/content/docs/providers/openrouter.mdx
+  s_397b5a20224eaa::t_80525d1c45d446 8,47
+  s_397b5a20224eaa::t_4cf3a3cb02e64e 42-46,48-54,92
+.agents/skills/verify-oceans-admin/features/anthropic-messages.md
+  s_397b5a20224eaa::t_6a59848877eaef 15-20,37,53,56,59-78,88-89,127-128
+.github/workflows/ci.yml
+  s_397b5a20224eaa::t_6a59848877eaef 55
+crates/gateway-providers/src/anthropic/mod.rs
+  s_397b5a20224eaa::t_6a59848877eaef 4,8,11-15,25
+crates/gateway-providers/src/anthropic/streaming.rs
+  s_397b5a20224eaa::t_6a59848877eaef 9,11-12,34,36-38,65,76-81,88-134,150,165,194,205-207,229,242-243,276,278-281,283-286,290-301,319-323,341,349-353,371-377,389-393,500-504,539-587
+  s_397b5a20224eaa::t_75e3465fd381c8 588-589
+packages/opencode-oceans/scripts/smoke.ts
+  s_1182c76e376f21::t_10010ffe915e26 69-75
+  s_1182c76e376f21::t_228cc255fb6be5 37-68,76-103
+  s_397b5a20224eaa::t_6a59848877eaef 106-112,114-190
+  s_1182c76e376f21::t_27116f34aee354 12-27,29-36,104-105,113,191
+  s_1182c76e376f21::t_da6d6a1d774ba3 28
+  s_397b5a20224eaa::t_3a3bd76d875657 1-11
+.github/workflows/repo-lint.yml
+  s_397b5a20224eaa::t_6a59848877eaef 49
+crates/gateway/src/http/handlers/inference.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1,4-9,19,34-40,68-74,209,244-250,293-295,312,340-357,376,381,390-397,405,430,438-442,482-504,506-508
+crates/gateway-providers/src/vertex/tests/streaming.rs
+  s_397b5a20224eaa::t_6a59848877eaef 426-428,435,450,453-454,457-458,480,503-738
+crates/gateway-service/src/service.rs
+  s_397b5a20224eaa::t_6a59848877eaef 38,1515,1713-1715,1718-1719,3199-3207,3209-3238,3240-3257
+crates/gateway-providers/src/openai_compat/anthropic_messages.rs
+  s_397b5a20224eaa::t_6a59848877eaef 19-24,61,69,73,76-78,370-394
+  s_397b5a20224eaa::t_3c92245e09fd59 395
+crates/gateway-core/src/provider.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1-490
+crates/gateway/src/http/handlers/inference_tests.rs
+  s_397b5a20224eaa::t_6a59848877eaef 15-16,150-151,156-211,298-470,576,580-585,603-646
+crates/gateway-providers/src/anthropic/replay_tests.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1-1078
+crates/gateway-providers/src/bedrock/converse_replay.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1-442
+crates/gateway-providers/src/vertex/tests/response.rs
+  s_397b5a20224eaa::t_6a59848877eaef 149-150,164,222,239,310-311,321-429
+crates/gateway/src/http/request_tracing.rs
+  s_397b5a20224eaa::t_6a59848877eaef 145-147
+crates/gateway-providers/src/openai_compat.rs
+  s_397b5a20224eaa::t_6a59848877eaef 24,282-284,305-307,706-745,801-811,824-835
+crates/gateway-providers/src/anthropic/response.rs
+  s_397b5a20224eaa::t_6a59848877eaef 83-85,93-96,105-109,115-157,224,269-275
+crates/gateway-core/src/streaming.rs
+  s_397b5a20224eaa::t_6a59848877eaef 135-137,148-150
+crates/gateway-providers/src/anthropic/beta_transport_tests.rs
+  s_397b5a20224eaa::t_6a59848877eaef 68,111
+crates/gateway-providers/src/bedrock/converse_stream.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1-434
+crates/gateway-providers/src/http.rs
+  s_397b5a20224eaa::t_6a59848877eaef 91-107
+crates/gateway-providers/src/bedrock/tests/replay.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1-682
+crates/gateway-providers/src/vertex/google_request.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1,7-9,24,231-237
+crates/gateway-providers/src/bedrock/request/mod.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1,9,27-30,46-48,55-68,94,429-432,464-468
+packages/opencode-oceans/tsconfig.json
+  s_50e99e02064736::t_f1f3a8d2fcf22a 1-3,5-8,10-20,22
+  s_50e99e02064736::t_1e0701a8c83552 4
+  s_397b5a20224eaa::t_6a59848877eaef 9,21
+crates/gateway-providers/src/bedrock/tests/mod.rs
+  s_397b5a20224eaa::t_6a59848877eaef 13,15-16,19,21,27,184-199,204-205,207
+packages/opencode-oceans/src/config.ts
+  s_397b5a20224eaa::t_6a59848877eaef 1-3,5,7,11,18,39,41,43,48,55,57,65,72,79,82,85,88,91,94-96,106,114-115
+  s_1182c76e376f21::t_3413d4aecfecf9 45-47
+  s_1182c76e376f21::t_0e7790be58826c 4,6,8-10,12-17,19-38,40,42,44,49-54,56,58-64,66-71,73-78,80-81,83-84,86-87,89-90,92-93,97-105,107-113,116,122-129
+  s_1182c76e376f21::t_86b169d8d98d5e 117-121
+packages/opencode-oceans/src/index.ts
+  s_1182c76e376f21::t_3413d4aecfecf9 10,23-24,27,43-45,48,81
+  s_397b5a20224eaa::t_6a59848877eaef 1-6,8,14,17,20,25-26,34,39,52-53,56-57,79,85-87,93,97,99-100,103-104,108-109
+  s_1182c76e376f21::t_0308fe0f05527b 63,65,69
+  s_1182c76e376f21::t_61389f5bf84783 7,9,11-13,15-16,18-19,21-22,28-33,35-38,40-42,46-47,49-51,54-55,58-62,64,66-68,70-78,80,82-84,88-92,94-96,98,101-102,105-107,110-112
+packages/opencode-oceans/LICENSE
+  s_50e99e02064736::t_9877155fa8ae1d 1-661
+packages/opencode-oceans/tests/discovery.test.ts
+  s_397b5a20224eaa::t_6a59848877eaef 1-7,9-10,12-16,18-28,31,33-60,62-78,81,83-88,91,94-97,100-220
+  s_1182c76e376f21::t_47570f567d56c8 8,11,17,29-30,32,61,79-80,82,89-90,92-93,98-99,221
+packages/opencode-oceans/README.md
+  s_1182c76e376f21::t_75a17a181c31a3 69-70,88-89,114-116,135-136,156,193-196
+  s_50e99e02064736::t_b124fc947d385c 1-61,63-68,71-87,92-113,117-121,124-132,137-155,157-181,184-192,197-204
+  s_397b5a20224eaa::t_6a59848877eaef 62,90-91,122-123,133-134,182-183
+crates/gateway-providers/src/anthropic/thinking.rs
+  s_397b5a20224eaa::t_6a59848877eaef 8,81-101
+crates/gateway-providers/src/bedrock/mod.rs
+  s_397b5a20224eaa::t_6a59848877eaef 15,23-26,30,487-489,505,507-511,514,744-783,836,963-964,970,975
+crates/gateway-providers/src/openai_compat/native_messages.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1-454
+docs/src/content/docs/providers/gcp-vertex.mdx
+  s_397b5a20224eaa::t_0a45f5f064b74b 228
+crates/gateway-core/src/route_capabilities.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1,143-161
+  s_397b5a20224eaa::t_1cebcab98533cc 162-163
+crates/gateway-providers/Cargo.toml
+  s_397b5a20224eaa::t_6a59848877eaef 18
+crates/gateway-providers/src/vertex/google_replay.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1-202
+crates/gateway-client-config/src/tests.rs
+  s_397b5a20224eaa::t_6a59848877eaef 870-882
+  s_397b5a20224eaa::t_8993888bcd8b78 869
+crates/gateway-providers/src/vertex/google_stream.rs
+  s_397b5a20224eaa::t_6a59848877eaef 9,11-12,19,34-39,52-57,62,66-74,81,83-95,100,109,112,116-129,131,139-142,146-150,159-161,166-200,242,249,260,264-265,271,277-282
+crates/gateway-providers/src/bedrock/tests/response.rs
+  s_397b5a20224eaa::t_6a59848877eaef 3-164,186-188,192-194,198-200,220-226,236,274-276,280-282,330-331,388-389,442-443
+crates/gateway/Cargo.toml
+  s_397b5a20224eaa::t_6a59848877eaef 42
+crates/gateway-core/src/claude_models.rs
+  s_397b5a20224eaa::t_6a59848877eaef 37-38,46-115,229-313
+  s_397b5a20224eaa::t_96367c6376208e 314
+packages/opencode-oceans/gateways.example.yml
+  s_397b5a20224eaa::t_6a59848877eaef 1-28
+crates/gateway-service/src/request_logging.rs
+  s_397b5a20224eaa::t_6a59848877eaef 720-730,742
+.agents/skills/verify-oceans-admin/features/rate-limits.md
+  s_397b5a20224eaa::t_6a59848877eaef 27-28
+.agents/skills/verify-oceans-admin/scripts/messages-regressions.mjs
+  s_397b5a20224eaa::t_6a59848877eaef 10-113,123-124
+docs/internal/2026-11-05-provider-harness-comparison.md
+  s_397b5a20224eaa::t_6a59848877eaef 1-294
+packages/opencode-oceans/src/discovery.ts
+  s_397b5a20224eaa::t_6a59848877eaef 14-19,63-67,78,80-82,99
+  s_1182c76e376f21::t_15c38ec75205e1 3-13,20-21,26-52,59-61,72-77,79,83-84,86-98,101-104,109-111
+  s_1182c76e376f21::t_3413d4aecfecf9 22-24,56-58,105-108
+  s_1182c76e376f21::t_a4f37351d1c9ea 62,68-71,85
+  s_397b5a20224eaa::t_9af45ac6b72158 1-2,25,53-55,100
+tests/harness-integration/src/adapters/opencode.ts
+  s_397b5a20224eaa::t_6a59848877eaef 164,175
+docs/src/content/docs/reference/provider-api-compatibility.mdx
+  s_f210c8514ba591::t_21b324014da26c 44,95-121,124,137,140,227,229,239,242,308-310,312,316-329,407,433-434,441-442,514-515,520-522,525-527,539-558,565-571
+  s_f210c8514ba591::t_6ee034372f9242 572
+crates/gateway-client-config/src/thinking.rs
+  s_397b5a20224eaa::t_6a59848877eaef 3,53-56
+crates/gateway-providers/src/bedrock/request/native.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1-67
+crates/gateway-core/Cargo.toml
+  s_397b5a20224eaa::t_6a59848877eaef 22
+crates/gateway-service/src/usage.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1-398
+.github/workflows/docs-ci.yml
+  s_397b5a20224eaa::t_6a59848877eaef 36
+docs/adr/2026-09-03-anthropic-compatible-provider-and-opencode-zen.md
+  s_397b5a20224eaa::t_6a59848877eaef 47-50
+packages/opencode-oceans/.oxfmtrc.json
+  s_50e99e02064736::t_e5b62e1320f864 1-6,8
+  s_397b5a20224eaa::t_6a59848877eaef 7
+.github/workflows/cli-ci.yml
+  s_397b5a20224eaa::t_6a59848877eaef 58
+crates/gateway/src/http/handlers/native_messages.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1-373
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_397b5a20224eaa::t_6a59848877eaef 178,181,217,335,363,372,403,405,407-410,413-415,419,558,604,607
+crates/gateway-core/src/traits.rs
+  s_397b5a20224eaa::t_6a59848877eaef 6,15-17,40-47,55
+crates/gateway-core/src/error.rs
+  s_397b5a20224eaa::t_6a59848877eaef 6,188-189,195-198,287-289,295-297
+crates/gateway-service/src/service/tests/context_tier_pricing.rs
+  s_397b5a20224eaa::t_6a59848877eaef 118-368,388-435
+  s_397b5a20224eaa::t_44ceb8cf797d42 436
+mise.toml
+  s_397b5a20224eaa::t_6a59848877eaef 22,34,48,53-54,56,255-257,271
+tests/harness-integration/README.md
+  s_397b5a20224eaa::t_6a59848877eaef 23,31-45,59-61,67-68,77-78,81-91
+.github/workflows/review-agent-self-hosted-smoke.yml
+  s_397b5a20224eaa::t_6a59848877eaef 44
+.github/workflows/ui-ci.yml
+  s_397b5a20224eaa::t_6a59848877eaef 36
+crates/gateway-providers/src/vertex/google_conversation.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1-214
+packages/opencode-oceans/tests/smoke.test.ts
+  s_397b5a20224eaa::t_6a59848877eaef 1-32
+packages/opencode-oceans/scripts/gateway.ts
+  s_1182c76e376f21::t_f49ce6096a09ef 3,13,19,22-23,29,34,68,195,199,248-251
+  s_1182c76e376f21::t_10010ffe915e26 6-12
+  s_1182c76e376f21::t_62c0bea8d95642 18,20,221
+  s_1182c76e376f21::t_5c4218c5684204 4
+  s_1182c76e376f21::t_a4f37351d1c9ea 21
+  s_397b5a20224eaa::t_6a59848877eaef 1-2,5,14-17,27-28
+  s_1182c76e376f21::t_da6d6a1d774ba3 30-33
+  s_1182c76e376f21::t_228cc255fb6be5 24-26,36-49,52-67,69-82,87-118,122-184,189-194,196-198,200-220,222-224
+  s_1182c76e376f21::t_0308fe0f05527b 35,50-51,83-86,119-121,185-188,225-247
+crates/gateway-providers/src/bedrock/tests/eventstream.rs
+  s_397b5a20224eaa::t_6a59848877eaef 3-569,596-603,687,697-711
+.agents/skills/verify-oceans-admin/SKILL.md
+  s_397b5a20224eaa::t_6a59848877eaef 132
+.github/workflows/opencode-oceans.yml
+  s_1182c76e376f21::t_b58b39039622a4 71
+  s_397b5a20224eaa::t_6a59848877eaef 49
+  s_50e99e02064736::t_b574d23304f39c 1-48,50-51,53-54,56-70,72-112
+  s_1182c76e376f21::t_62c0bea8d95642 52,55
+tests/harness-integration/mise.toml
+  s_397b5a20224eaa::t_6a59848877eaef 8,19-23
+crates/gateway/src/http/rate_limit_tests.rs
+  s_397b5a20224eaa::t_6a59848877eaef 12,35,58-100,168-175,519-546
+  s_397b5a20224eaa::t_eef967fe4e3c9d 547
+crates/gateway-providers/src/anthropic/request_tests.rs
+  s_397b5a20224eaa::t_6a59848877eaef 45-280,412-451,649-690
+  s_397b5a20224eaa::t_021cf09a3db771 691
+crates/gateway-service/src/lib.rs
+  s_397b5a20224eaa::t_6a59848877eaef 46
+.github/workflows/oceans-review-agent.yml
+  s_397b5a20224eaa::t_6a59848877eaef 84
+crates/gateway-providers/src/vertex/google_response.rs
+  s_397b5a20224eaa::t_6a59848877eaef 6-9,11-20,22-24,32,35-46,49-78,87,131-133,135,137-138,141-150,166,168,173,177-181,185-188,192-196
+tests/harness-integration/src/global-setup.ts
+  s_397b5a20224eaa::t_6a59848877eaef 23-28,99,130-135,201,328-329,490,516-544
+.github/workflows/release-product.yml
+  s_397b5a20224eaa::t_6a59848877eaef 51,74,136
+crates/gateway-providers/src/anthropic/request.rs
+  s_397b5a20224eaa::t_6a59848877eaef 19-20,30,63-68,74,84-89,122-124,129-155,158,172,179,250,252-272,337-456,483-484,498,512,516-517,521-527,530-534,536,560,563,566-571,743-745,747,750,754,757-759
+crates/gateway-providers/src/vertex/google_tools.rs
+  s_397b5a20224eaa::t_6a59848877eaef 3,5-8,10-11,13,19-20
+crates/gateway-providers/src/vertex/tests/provider.rs
+  s_397b5a20224eaa::t_6a59848877eaef 235-281,501-502,504-508,554-570,572-573,575-576
+  s_397b5a20224eaa::t_05d203d02b019a 234
+packages/opencode-oceans/src/models.ts
+  s_397b5a20224eaa::t_6a59848877eaef 89-94,178-191,290-296
+  s_1182c76e376f21::t_a4f37351d1c9ea 214-215,217-218,221,264-289,297-302,311
+  s_1182c76e376f21::t_b9cbc729b9aae3 5-87,95-177,192-213,216,219-220,222-228,262,303-310,312-319,323-331
+  s_1182c76e376f21::t_8546d71c3a6092 229-261,263,321-322
+  s_397b5a20224eaa::t_a43b280c0b610d 1-4,88,320
+crates/gateway/src/http/inference_guardrails.rs
+  s_397b5a20224eaa::t_6a59848877eaef 29,73,150-151,161-163,167-200,315,317,319-336,338-367,369,371-379,447,457-466,469,477-490,492-506,580,584-588,626-658,681-694,710-713,724,731-741,747,755-792,794-801,807-850,854-856,975-989,1166,1179,1217-1220,1227,1229,1256,1261-1262,1265,1516-1518,1574-1577,2089,2099-2101,2705,2708-2709,2712-2713,2716-2724,2740,2752,2755-2756,2759-2767,2776
+crates/gateway-providers/src/vertex/tests/google_tools.rs
+  s_397b5a20224eaa::t_6a59848877eaef 717-987
+crates/gateway-service/src/batches.rs
+  s_397b5a20224eaa::t_6a59848877eaef 21-22,192
+crates/gateway-core/src/protocol/anthropic.rs
+  s_397b5a20224eaa::t_6a59848877eaef 47-78,109-110,112-160,162-166,168-171,373-444
+crates/gateway-providers/src/anthropic/error.rs
+  s_397b5a20224eaa::t_6a59848877eaef 18-21
+crates/gateway-providers/src/bedrock/response.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1-6,11-21,60-71,101
+crates/gateway-providers/src/vertex/mod.rs
+  s_397b5a20224eaa::t_6a59848877eaef 29-31,129,132-140,149,151-153,185,187,232-288,346-352,362,391,415-417,471
+crates/gateway-providers/src/anthropic/native_transport_tests.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1-444
+.github/workflows/review-agent-ci.yml
+  s_397b5a20224eaa::t_6a59848877eaef 36
+crates/gateway-providers/src/vertex/google_content.rs
+  s_397b5a20224eaa::t_6a59848877eaef 1-384
+.github/workflows/helm-ci.yml
+  s_397b5a20224eaa::t_6a59848877eaef 41
+crates/gateway-providers/src/anthropic/native_metadata_tests.rs
+  s_397b5a20224eaa::t_6a59848877eaef 9-12,15,34-194
+  s_397b5a20224eaa::t_a639b8d3686d0a 195
+tests/harness-integration/src/gateway-client.ts
+  s_397b5a20224eaa::t_6a59848877eaef 11-13,75-82,145
+Cargo.lock
+  s_397b5a20224eaa::t_1089816a2cc380 1531,1824,1877,2932,3545,3923,3992,4678,5861,5863
+crates/admin-ui/web/bun.lock
+  s_397b5a20224eaa::t_a80cbf7df2cd41 12,17-18,23,36,43,49,58,189,503,505,507,509,511,513,515,517,553,555,557,559,561,563,565,567,569,571,573,575,577,579,581,587,589,591,593,611,637,701,953,1323,1381
+mise.lock
+  s_397b5a20224eaa::t_d5cef7bcb741ab 125,129-131,135-137,141-143,147-149,153-155,461,465-467,471-473,477-479,483-485,489-491,531,535-537,541-543,547-549,553-555,559-561,565,569-571,574-577,580-583,586-589,592-595,598,602-604,608-610,614-616,620-622,626-628
+mise.rustfs.lock
+  s_397b5a20224eaa::t_09f65c02497d5e 6,8,11-12,15-16,19-20,23,25,28-31,34-37,40-43
+packages/opencode-oceans/bun.lock
+  s_397b5a20224eaa::t_d213602aefe462 1-757
+tests/harness-integration/package-lock.json
+  s_397b5a20224eaa::t_361423c54b7554 12-13,2448-2450,2467-2478,2482-2484,2495-2497,2508-2510,2521-2523,2534-2536,2547-2549,2560-2562,2573-2575,2586-2588,2599-2601,2612-2614,2625-2627,2637-2678,3685-3690
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5c1d682142a81c195e9effcbb401859ff9c679cf",
+  "prompts": {},
+  "sessions": {
+    "s_1182c76e376f21": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1b5e8-949a-70b6-96f0-1d6c0049857c",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_397b5a20224eaa": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1aae3-a475-75cb-9430-4462f4b0f4ad",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_50e99e02064736": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1b5f4-fc52-74cc-9d88-8ec5502bc06f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_f210c8514ba591": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1bf8d-87ad-777d-8946-76eb39240fa0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

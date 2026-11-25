@@ -1,0 +1,23 @@
+crates/admin-ui/web/src/routes/design-system/-components/color-roles.ts
+  s_eaf7116ccea134::t_e1d87153bc9591 2-4,36-50
+crates/admin-ui/web/src/routes/design-system/-components/showcase.tsx
+  s_eaf7116ccea134::t_fc8475d9fd3bd8 6
+crates/admin-ui/web/src/test/design-contrast.test.ts
+  s_eaf7116ccea134::t_41c0a7cb629a31 9,23,26,29,31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b44ecb6201e9f9360a016bb277834fd28e3ab078",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

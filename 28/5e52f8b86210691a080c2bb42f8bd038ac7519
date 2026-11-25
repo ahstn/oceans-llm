@@ -1,0 +1,19 @@
+README.md
+  s_785b313d06fa8f::t_b6b14fb5409e98 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "285e52f8b86210691a080c2bb42f8bd038ac7519",
+  "prompts": {},
+  "sessions": {
+    "s_785b313d06fa8f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13737-f3bd-7752-9fbf-6411f5912554",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

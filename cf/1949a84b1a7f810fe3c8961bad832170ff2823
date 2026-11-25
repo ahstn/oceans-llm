@@ -1,0 +1,28 @@
+.agents/skills/verify-oceans-admin/features/skills.md
+  s_f9a2dc193f7af4::t_9f27fb62fadc96 51
+crates/admin-ui/web/src/routes/skills/-upload-dialog.tsx
+  s_f9a2dc193f7af4::t_7ac955ea1b17dd 47,90-91,213-232
+  s_f9a2dc193f7af4::t_813e6eb5165b7e 1-4,19,111-116,144,149,153-154,158-160,164-165,170-180,182-186,188-191,201-202
+  s_f9a2dc193f7af4::t_9f27fb62fadc96 181,187,192-194,196-200
+  s_f9a2dc193f7af4::t_9526db94e86fe5 195
+  s_f9a2dc193f7af4::t_4282f5a7354cd8 233-234
+crates/admin-ui/web/src/routes/skills/-skills.test.tsx
+  s_f9a2dc193f7af4::t_9f27fb62fadc96 232
+  s_f9a2dc193f7af4::t_4ffe42fa8e0b58 211-231,233-236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cf1949a84b1a7f810fe3c8961bad832170ff2823",
+  "prompts": {},
+  "sessions": {
+    "s_f9a2dc193f7af4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f47da735-08a7-4f2b-a249-ef2ca3735b63",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

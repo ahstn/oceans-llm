@@ -1,0 +1,21 @@
+crates/admin-ui/web/src/routes/account/-authorized-mcp-clients.tsx
+  s_4743c3bdc4d116::t_7a118664c4e544 84-87,111,123
+crates/admin-ui/web/src/test/routes/authorized-mcp-clients.test.tsx
+  s_4743c3bdc4d116::t_7022188a61373f 86-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b44fb2e854e0fd843cd2fa114c1f9090b2afcbfb",
+  "prompts": {},
+  "sessions": {
+    "s_4743c3bdc4d116": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a047a7f-d4a7-4209-858b-e18a0d0d4346",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

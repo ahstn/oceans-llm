@@ -1,0 +1,25 @@
+.agents/skills/verify-oceans-admin/features/agent-harnesses.md
+  s_ed87a1a70db62c::t_e625813c495473 27
+.agents/skills/verify-oceans-admin/features/models.md
+  s_ed87a1a70db62c::t_aa4ad0ef3162f3 29
+.agents/skills/verify-oceans-admin/scripts/drive-models.mjs
+  s_ed87a1a70db62c::t_03fd9dca292031 79-83,85-90,100,132-133,136-139,145-147,159
+.agents/skills/verify-oceans-admin/scripts/drive-observability.mjs
+  s_ed87a1a70db62c::t_96dbbbe8c2107a 309-315,317
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "166255bb5464e6863852716173e231e185f3fae5",
+  "prompts": {},
+  "sessions": {
+    "s_ed87a1a70db62c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "399a3de3-f55b-4e4a-b0fa-a1cc519ea4ad",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

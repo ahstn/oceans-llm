@@ -1,0 +1,45 @@
+crates/gateway-core/src/auth.rs
+  s_e88dc7cf2999d1::t_6d69ce047850f8 5,51-69
+crates/gateway-core/src/domain.rs
+  s_e88dc7cf2999d1::t_3256b8f9d8d110 502-509,2065-2067
+crates/gateway-service/src/mcp_access.rs
+  s_e88dc7cf2999d1::t_a0e976b7a9c57d 117-124
+crates/gateway/src/http/audit_tests/mcp_tool_policy.rs
+  s_e88dc7cf2999d1::t_7fb8af04c7ea50 476-512
+crates/gateway/src/http/mcp_gateway/tests.rs
+  s_7a5811202bdfd5::t_96b0f8255e820c 706-707,718-722
+crates/gateway/src/http/mcp_gateway/upstream.rs
+  s_e88dc7cf2999d1::t_ccd65332174bf0 201-224,400
+crates/gateway/src/http/mcp_gateway/upstream/tests.rs
+  s_e88dc7cf2999d1::t_7099f3880ca9a9 57-98
+crates/gateway/src/http/mcp_registry/tool_policy.rs
+  s_e88dc7cf2999d1::t_46b84ac16c87be 388-389
+docs/adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md
+  s_e88dc7cf2999d1::t_8df82bd7ed68f6 120
+docs/mcp/mcp-tool-access.md
+  s_7a5811202bdfd5::t_b875cc1a31bd49 241
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a0abe9ea314ce8f6d3eb52ae1d2339eb36457ce9",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

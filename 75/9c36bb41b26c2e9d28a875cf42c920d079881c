@@ -1,0 +1,19 @@
+docs/overview-features.md
+  s_d6dce43e6d4e7f::t_74acce70de2377 83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "759c36bb41b26c2e9d28a875cf42c920d079881c",
+  "prompts": {},
+  "sessions": {
+    "s_d6dce43e6d4e7f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eba63a36-9d2a-46eb-888e-80606ea1818c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

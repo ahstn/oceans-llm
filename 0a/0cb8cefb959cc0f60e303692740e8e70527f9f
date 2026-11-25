@@ -1,0 +1,19 @@
+crates/gateway-store/src/seed.rs
+  s_dd118f467446e0::t_e8b1822af7fa14 55-56,70-73,80-82,97,99-102,139-156,1126-1146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0a0cb8cefb959cc0f60e303692740e8e70527f9f",
+  "prompts": {},
+  "sessions": {
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_56409892e094a0::t_1adf3628ac59c8 431
+docs/access/admin-audit-log.md
+  s_56409892e094a0::t_aeae0a9e3925a9 63-64
+docs/adr/2026-10-15-admin-audit-log.md
+  s_56409892e094a0::t_b1212ecb6a29e5 79-80,90,98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e29323643c2251928c5b4f32510f9de4579575e5",
+  "prompts": {},
+  "sessions": {
+    "s_56409892e094a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a7dde59-323d-48bd-9209-17a8bd106b80",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

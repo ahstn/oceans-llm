@@ -1,0 +1,21 @@
+crates/gateway-store/migrations/V61__admin_audit_log.sql
+  s_af4ccbd37c05c0::t_225f1510643afa 15-21
+crates/gateway-store/migrations/postgres/V61__admin_audit_log.sql
+  s_af4ccbd37c05c0::t_ed75365c0e0ec3 15-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c6e2007907480ca976d451b6ab4033ab59bc77da",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

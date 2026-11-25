@@ -1,0 +1,59 @@
+.agents/skills/shadcn/SKILL.md
+  s_009ff6129e63cc::t_19574d39bf6a61 1-295
+.agents/skills/shadcn/agents/openai.yml
+  s_009ff6129e63cc::t_4d1955a42fed20 1-5
+.agents/skills/shadcn/assets/showcase/color-pair.tsx
+  s_009ff6129e63cc::t_e45ebec2b1b097 1-126
+.agents/skills/shadcn/assets/showcase/preview-states.css
+  s_009ff6129e63cc::t_1b54a3dab35124 1-14
+.agents/skills/shadcn/assets/showcase/state-matrix.tsx
+  s_009ff6129e63cc::t_ca8d3526d64716 1-72
+.agents/skills/shadcn/cli.md
+  s_009ff6129e63cc::t_6038e7a3c3960e 1-290
+.agents/skills/shadcn/customization.md
+  s_009ff6129e63cc::t_d39f2c01ed7efd 1-211
+.agents/skills/shadcn/design-system-page.md
+  s_009ff6129e63cc::t_2c90881f38656d 1-268
+.agents/skills/shadcn/design-system.md
+  s_009ff6129e63cc::t_1e7da73717492c 1-386
+.agents/skills/shadcn/evals/evals.json
+  s_009ff6129e63cc::t_0fe4d89e1a0aa6 1-126
+.agents/skills/shadcn/mcp.md
+  s_009ff6129e63cc::t_ad751734d50ebf 1-105
+.agents/skills/shadcn/registry.md
+  s_009ff6129e63cc::t_c5dfc911cec4fb 1-277
+.agents/skills/shadcn/rules/base-vs-radix.md
+  s_009ff6129e63cc::t_d807a23c8ad332 1-306
+.agents/skills/shadcn/rules/chat.md
+  s_009ff6129e63cc::t_b3b0e50dd94f13 1-250
+.agents/skills/shadcn/rules/composition.md
+  s_009ff6129e63cc::t_1dff80e8252598 1-213
+.agents/skills/shadcn/rules/forms.md
+  s_009ff6129e63cc::t_bbf28d686d7742 1-192
+.agents/skills/shadcn/rules/icons.md
+  s_009ff6129e63cc::t_8327ee2dde51dd 1-101
+.agents/skills/shadcn/rules/styling.md
+  s_009ff6129e63cc::t_27b42c667319b0 1-185
+.agents/skills/shadcn/scripts/showcase-coverage.mjs
+  s_009ff6129e63cc::t_48dae34934f280 1-53
+.claude/skills/shadcn
+  s_009ff6129e63cc::t_e7acff5eac333c 1
+.gitignore
+  s_009ff6129e63cc::t_ebcb27cbbc1198 31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c90902b0b592db9b759e18eaabbbce012416540c",
+  "prompts": {},
+  "sessions": {
+    "s_009ff6129e63cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dfe89d20-f559-4155-8143-a8e88732a4b1",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

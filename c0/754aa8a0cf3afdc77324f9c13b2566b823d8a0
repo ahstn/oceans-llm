@@ -1,0 +1,19 @@
+crates/gateway-service/src/attribution/report/lifecycle.rs
+  s_9379a6359d74c1::t_26151193bdf3bd 10,172-173,178-185,201-203,205-206
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c0754aa8a0cf3afdc77324f9c13b2566b823d8a0",
+  "prompts": {},
+  "sessions": {
+    "s_9379a6359d74c1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "24386ac1-62a3-474e-9c88-ccc4d428ec6d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

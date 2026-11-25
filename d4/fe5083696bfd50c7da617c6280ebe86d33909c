@@ -1,0 +1,21 @@
+crates/admin-ui/web/src/test/routes/agent-sessions-route.test.tsx
+  s_8378144fcf7abb::t_f367c6af62b60e 556-558
+crates/admin-ui/web/src/test/routes/mcp-servers-route.test.tsx
+  s_8378144fcf7abb::t_0e8f57089e6eba 499-501
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d4fe5083696bfd50c7da617c6280ebe86d33909c",
+  "prompts": {},
+  "sessions": {
+    "s_8378144fcf7abb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bc33843-0f12-492f-9887-85f13a43d9f1",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

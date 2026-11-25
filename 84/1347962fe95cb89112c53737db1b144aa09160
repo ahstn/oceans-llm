@@ -1,0 +1,27 @@
+crates/gateway-providers/src/anthropic/model.rs
+  s_cd9d806c1e358d::t_428fae904a2fb1 40
+crates/gateway-providers/src/anthropic/tests.rs
+  s_cd9d806c1e358d::t_b0fd5b6756cb2c 15,438-440,458-508
+crates/gateway-providers/src/anthropic/thinking.rs
+  s_cd9d806c1e358d::t_762010540d0108 4,81-100,102-117,124,128-134,327-333,344-345,504-507
+crates/gateway-providers/src/bedrock/request/thinking.rs
+  s_cd9d806c1e358d::t_fadb31bab1aeba 3-4,24,26,33,89,95-100,218-225
+crates/gateway-providers/src/bedrock/tests/request_thinking.rs
+  s_cd9d806c1e358d::t_adeb291dcc4be4 137-160,169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "841347962fe95cb89112c53737db1b144aa09160",
+  "prompts": {},
+  "sessions": {
+    "s_cd9d806c1e358d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d07410f0-3795-44b0-89cc-2a0af6501c56",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

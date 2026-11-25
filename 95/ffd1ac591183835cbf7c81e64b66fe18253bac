@@ -1,0 +1,14 @@
+mise.selfhost.toml
+  h_2f452a9c375069 104
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "95ffd1ac591183835cbf7c81e64b66fe18253bac",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

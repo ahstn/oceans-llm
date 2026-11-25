@@ -1,0 +1,49 @@
+crates/gateway-service/src/lib.rs
+  s_e88dc7cf2999d1::t_3d247b01341f49 87
+crates/gateway-store/src/any_store_mcp_access.rs
+  s_e88dc7cf2999d1::t_f73cc7c5aacca4 221-230
+crates/gateway-service/src/mcp_tool_policy.rs
+  s_7a5811202bdfd5::t_96e38e9c97c46c 8-10,149-153,155-162,164-167
+crates/gateway-core/src/traits.rs
+  s_e88dc7cf2999d1::t_a4af4d71951401 1192-1198
+crates/gateway-store/src/postgres_store/mcp_access.rs
+  s_e88dc7cf2999d1::t_ab72ef7a43992b 555-570
+crates/gateway/src/http/mcp_registry.rs
+  s_e88dc7cf2999d1::t_6662ddc8c72eb0 925,928,930-934,936-959
+crates/gateway-store/src/libsql_store/mcp_access.rs
+  s_7a5811202bdfd5::t_565be71b0f8033 606-627
+crates/admin-ui/web/src/routes/mcp/-components.tsx
+  s_e88dc7cf2999d1::t_5367b4265aa3dc 321
+crates/admin-ui/web/src/routes/mcp/-tool-policy.tsx
+  s_e88dc7cf2999d1::t_b85f8109984a46 21,25,55-75,105-156,172-188
+crates/admin-ui/web/src/routes/mcp/-tool-tags.ts
+  s_e88dc7cf2999d1::t_37a44dc1589b2b 59-66
+crates/admin-ui/web/src/test/routes/mcp-tool-policy.test.tsx
+  s_e88dc7cf2999d1::t_2b0ae0c51e18a3 45,66-81
+crates/gateway-service/src/mcp_access.rs
+  s_e88dc7cf2999d1::t_69ace9b7dc5834 4,6,103,105,129,171-194,258-292
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "08b86a5aa9e88df1ed28f0158d24e8ff22631380",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

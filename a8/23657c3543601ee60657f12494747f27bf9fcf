@@ -1,0 +1,22 @@
+docs/public/images/oceans-mcp-personas.prompt.txt
+  s_b4a33db298552c::t_ddb17697546645 1-14
+docs/configuration/mcp-servers.md
+  s_b4a33db298552c::t_a4772b95917e24 5-8,10-15
+  s_b4a33db298552c::t_fc634209064b26 9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a823657c3543601ee60657f12494747f27bf9fcf",
+  "prompts": {},
+  "sessions": {
+    "s_b4a33db298552c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a13233-2055-7ad1-b556-79e2360585f1",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

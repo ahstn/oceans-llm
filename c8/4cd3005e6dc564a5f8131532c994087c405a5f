@@ -1,0 +1,47 @@
+.agents/skills/verify-oceans-admin/SKILL.md
+  s_e0810ecc789e8a::t_5a492337822221 37-38,111
+.agents/skills/verify-oceans-admin/features/backend-gateway.md
+  s_e0810ecc789e8a::t_8843e4d2718d11 25
+.agents/skills/verify-oceans-admin/features/live-llm-requests.md
+  s_e0810ecc789e8a::t_cc06a102161561 33
+.agents/skills/verify-oceans-admin/features/mcp.md
+  s_e0810ecc789e8a::t_ecd9b13b0a3922 35,40-41
+.agents/skills/verify-oceans-admin/features/rate-limits.md
+  s_e0810ecc789e8a::t_af4f6d077cb4c2 25
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_e0810ecc789e8a::t_72f6ca7f032b92 153
+.agents/skills/verify-oceans-admin/features/skills.md
+  s_e0810ecc789e8a::t_1b97b4375657ae 34
+.agents/skills/verify-oceans-admin/scripts/drive-mcp.mjs
+  s_e0810ecc789e8a::t_ebe64c81fdca49 75
+.gitignore
+  s_e0810ecc789e8a::t_ce4ad46a0ae4f3 5-6
+.mcp.json
+  s_e0810ecc789e8a::t_3a8032a58e298b 6
+.worktreeinclude
+  s_e0810ecc789e8a::t_1928f835fb3e1f 1-5
+docs/adr/2026-10-24-local-secrets-with-fnox.md
+  s_e0810ecc789e8a::t_15e663feceae58 1-43
+fnox.toml
+  s_e0810ecc789e8a::t_30bf048059eb0c 1-26
+mise.toml
+  s_e0810ecc789e8a::t_178d6b8632856f 6,10,70-73,216-221,295-296,311-312
+tombi.toml
+  s_e0810ecc789e8a::t_5c6803a4a178ac 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c84cd3005e6dc564a5f8131532c994087c405a5f",
+  "prompts": {},
+  "sessions": {
+    "s_e0810ecc789e8a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a2dfbd6-2d57-41f1-b4eb-ca1372ddd7cc",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

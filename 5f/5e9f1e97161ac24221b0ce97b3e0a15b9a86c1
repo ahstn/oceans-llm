@@ -1,0 +1,16 @@
+crates/gateway-service/src/rate_limits.rs
+  h_2f452a9c375069 458-460,509,574-597,600-604
+crates/gateway-service/src/rate_limits/tests.rs
+  h_2f452a9c375069 1419-1461
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5f5e9f1e97161ac24221b0ce97b3e0a15b9a86c1",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

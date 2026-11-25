@@ -1,0 +1,23 @@
+crates/admin-ui/web/src/routes/observability/-attribution/insights.ts
+  s_0a4447f1aa57dd::t_676d778e45619b 58-61,63
+crates/admin-ui/web/src/routes/observability/attribution.tsx
+  s_0a4447f1aa57dd::t_f285dc1906fa03 31,61
+crates/admin-ui/web/src/test/attribution-insights.test.ts
+  s_0a4447f1aa57dd::t_142ab5115db347 10,79,85-86,88-93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f64e42a35f7d5536d104d644e7d033e199f84b3a",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

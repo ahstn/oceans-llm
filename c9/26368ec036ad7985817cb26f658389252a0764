@@ -1,0 +1,33 @@
+crates/admin-ui/web/doctor.config.json
+  s_eaf7116ccea134::t_120743e2f3cb9e 4-10
+crates/admin-ui/web/src/lib/chart-motion.ts
+  s_eaf7116ccea134::t_99efda93ca6833 2-6
+crates/admin-ui/web/src/routes/design-system/-components/actions-inputs.tsx
+  s_eaf7116ccea134::t_40799e1215e285 49-50
+crates/admin-ui/web/src/routes/design-system/-components/foundations.tsx
+  s_eaf7116ccea134::t_a4ef751f02d513 10-11,219-224,301-320,327-338,342,344,348,350-351,390-399
+crates/admin-ui/web/src/routes/design-system/-components/preview-state.ts
+  s_eaf7116ccea134::t_58563d7e279ac3 1-11
+crates/admin-ui/web/src/routes/design-system/-components/showcase.tsx
+  s_eaf7116ccea134::t_e71bc9ff25941e 139,144
+crates/admin-ui/web/src/test/chart-motion.test.ts
+  s_eaf7116ccea134::t_f39b30e1c33be1 1-18
+scripts/build-shadcn-theme.mjs
+  s_eaf7116ccea134::t_e896e9a5793f5a 7,19,115-148,151-156,159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c926368ec036ad7985817cb26f658389252a0764",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

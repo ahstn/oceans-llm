@@ -1,0 +1,31 @@
+DESIGN.md
+  s_eaf7116ccea134::t_6f1d070d1c6103 324
+crates/admin-ui/web/src/lib/format.ts
+  s_1864c803a90a0e::t_02f7da8282a5ee 15-16,22-27
+crates/admin-ui/web/src/test/format.test.ts
+  s_1864c803a90a0e::t_ac193bc4fad17b 45-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6ce9fa195f1a766288049e7c6989ec56f06a9e93",
+  "prompts": {},
+  "sessions": {
+    "s_1864c803a90a0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5822bc90-e33d-49af-9d44-474de0500040",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

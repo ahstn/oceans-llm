@@ -1,0 +1,25 @@
+crates/gateway-store/src/lib.rs
+  s_af4ccbd37c05c0::t_bb5d3b8ebdd6c6 434-445
+crates/gateway-store/src/libsql_store/api_keys.rs
+  s_af4ccbd37c05c0::t_06fd22b3bf43d4 2,245,255,257
+crates/gateway-store/src/postgres_store/api_keys.rs
+  s_af4ccbd37c05c0::t_8c099be9d32103 2,199,208-209
+crates/gateway-store/src/shared.rs
+  s_af4ccbd37c05c0::t_0984fcc776ad6f 239-250
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0fb572577e1304ffe0453380d8c5e77fba05d7f5",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

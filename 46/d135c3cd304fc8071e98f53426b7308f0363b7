@@ -1,0 +1,36 @@
+crates/admin-ui/web/e2e/guardrails.e2e.ts
+  h_2f452a9c375069 18-33,56-103,252-267,302,315,455-540
+crates/gateway-guardrails/src/evaluation.rs
+  h_2f452a9c375069 157-175,192,194-202,218,305,345,408-413,540-638
+crates/gateway/src/http/guardrail_events.rs
+  h_2f452a9c375069 6-7,9,30-55
+crates/gateway/src/http/inference_guardrails.rs
+  h_2f452a9c375069 8,13-16,189-192,217-243,249-259,293-306,793-794,796-797,808-809,1659-1947
+crates/gateway/src/http/mcp_gateway/guardrails.rs
+  h_2f452a9c375069 4,7-10,12-13,16,23-26,44,75,149-171,173-175,179,183-185,195,197-198,201,203-212,214-248,250-291,293-349,351-355,357-403
+crates/gateway/src/http/mcp_gateway/guardrails/tests.rs
+  h_2f452a9c375069 2-3,5-6,32,75,196-417
+docs/adr/2026-08-22-gateway-guardrails-domain-and-composition.md
+  h_2f452a9c375069 27,39
+docs/operations/gateway-guardrails.md
+  h_2f452a9c375069 26-28,210-212,235-236,246
+scripts/mock-openai-upstream.mjs
+  h_2f452a9c375069 50-87,195-197
+scripts/register-e2e-mcp-server.mjs
+  h_2f452a9c375069 1-23
+scripts/start-e2e-stack.sh
+  h_2f452a9c375069 173-177,306-316
+scripts/start-e2e-stack.test.mjs
+  h_2f452a9c375069 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "46d135c3cd304fc8071e98f53426b7308f0363b7",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

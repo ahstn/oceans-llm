@@ -1,0 +1,43 @@
+crates/gateway-core/src/traits.rs
+  s_b8e52ffc321bb1::t_266dd1544ed243 1442-1443,1445,1447
+crates/gateway-service/src/mcp_token_overhead.rs
+  s_b8e52ffc321bb1::t_31ab7d53e37fd5 61-84,268-356
+crates/gateway-store/src/any_store_mcp_token_overhead.rs
+  s_b8e52ffc321bb1::t_f26bea8df3f723 12,14,16,18-19
+crates/gateway-store/src/lib.rs
+  s_b8e52ffc321bb1::t_fbf387ccd9fb19 78
+crates/gateway-store/src/libsql_store/mcp_token_overhead.rs
+  s_b8e52ffc321bb1::t_a75cc4920f5e79 68,70,72-97
+crates/gateway-store/src/postgres_store/mcp_token_overhead.rs
+  s_b8e52ffc321bb1::t_c557caae83c00f 66,68,70-73,75,77-78,80,83
+crates/gateway-store/src/tests/mcp_token_overhead.rs
+  s_b8e52ffc321bb1::t_138317b19ccd30 1-152
+crates/gateway/src/http/handlers.rs
+  s_b8e52ffc321bb1::t_acb86cb19f3e64 58,1876-1893,1912-1913,1923-1936,1938-1940,1942-1964,1966-1973,1977,1983,1995,1997,1999,2002,2010,2027-2034
+crates/gateway/src/http/response_cache.rs
+  s_b8e52ffc321bb1::t_82bc1fa7d665e0 16-18,73-87
+crates/gateway/src/http/scoped_api_key_tests.rs
+  s_b8e52ffc321bb1::t_7976a8b76698a4 884-921
+crates/gateway/src/http/state.rs
+  s_b8e52ffc321bb1::t_5f543c34251ebb 13,52-54
+crates/gateway/src/http/test_support.rs
+  s_b8e52ffc321bb1::t_99d88d51d7b55f 61
+crates/gateway/src/main.rs
+  s_b8e52ffc321bb1::t_ca90ad0c8bb856 345-347
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "368695c39c86dbd58682de37d326e8d44769a27e",
+  "prompts": {},
+  "sessions": {
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

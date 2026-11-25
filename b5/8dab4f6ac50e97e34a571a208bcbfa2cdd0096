@@ -1,0 +1,29 @@
+crates/admin-ui/web/src/components/layout/app-shell.test.tsx
+  s_7a5811202bdfd5::t_bfd31721ccb1c3 11-12,16-17,34,124-145
+crates/admin-ui/web/src/components/layout/app-shell.tsx
+  s_eaf7116ccea134::t_60962c8e642954 2,33-35,92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b58dab4f6ac50e97e34a571a208bcbfa2cdd0096",
+  "prompts": {},
+  "sessions": {
+    "s_7a5811202bdfd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56ac1e64-5d85-45cc-b9cf-c388b2ba0655",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

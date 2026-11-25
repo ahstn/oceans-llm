@@ -1,0 +1,21 @@
+crates/gateway-providers/src/bedrock/request/mod.rs
+  s_cd9d806c1e358d::t_369c08a482d338 2-4,108,477-480,514-533
+crates/gateway-providers/src/bedrock/tests/request_tools.rs
+  s_cd9d806c1e358d::t_ea3478d834422b 575-620
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "77fb85bce02236c015ba003608411bebcb2b7f32",
+  "prompts": {},
+  "sessions": {
+    "s_cd9d806c1e358d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d07410f0-3795-44b0-89cc-2a0af6501c56",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

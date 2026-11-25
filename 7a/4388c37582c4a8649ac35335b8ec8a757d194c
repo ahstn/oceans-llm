@@ -1,0 +1,19 @@
+.github/SECURITY.md
+  s_3de4f945cfd627::t_0556933127b1db 1-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "7a4388c37582c4a8649ac35335b8ec8a757d194c",
+  "prompts": {},
+  "sessions": {
+    "s_3de4f945cfd627": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1dc99-dc5c-7f22-a624-a9b71f5736e4",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

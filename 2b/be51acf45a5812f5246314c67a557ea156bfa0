@@ -1,0 +1,31 @@
+crates/gateway-client-config/src/tests.rs
+  s_cd9d806c1e358d::t_66802adb2129d7 1091,1118
+crates/gateway-client-config/src/thinking.rs
+  s_cd9d806c1e358d::t_b6d9dffd4235af 14-19,92,100
+crates/gateway-providers/src/anthropic/model.rs
+  s_cd9d806c1e358d::t_d242f5a89b2a93 35,76,161-162,268-269
+crates/gateway-providers/src/bedrock/request/thinking.rs
+  s_cd9d806c1e358d::t_ef1a8176c728be 421,463,485,539-541,547-550,555,560-614,653-657
+crates/gateway-providers/src/bedrock/tests/request_thinking.rs
+  s_cd9d806c1e358d::t_14aeefea44965d 315-336,343,348-351,356,361,366-369,375,608-609,639-640,700-702,752
+docs/configuration/model-routing-and-api-behavior.md
+  s_cd9d806c1e358d::t_5c721f4b3503ba 406
+docs/reference/provider-api-compatibility.md
+  s_cd9d806c1e358d::t_abfe08ad67af23 307
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2bbe51acf45a5812f5246314c67a557ea156bfa0",
+  "prompts": {},
+  "sessions": {
+    "s_cd9d806c1e358d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d07410f0-3795-44b0-89cc-2a0af6501c56",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

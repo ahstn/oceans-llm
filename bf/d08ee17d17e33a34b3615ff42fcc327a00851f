@@ -1,0 +1,39 @@
+crates/gateway/src/http/mcp_gateway/upstream.rs
+  s_b8e52ffc321bb1::t_6f25040aa1c101 58,71-94,107
+crates/gateway/src/http/mcp_gateway/upstream/tests.rs
+  s_dd118f467446e0::t_932785bdcb5cd3 497-503,534-537,558-617
+docs/adr/2026-10-13-govern-every-mcp-method.md
+  s_62fa2e8ede3ddb::t_13a6a663fccfb0 61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bfd08ee17d17e33a34b3615ff42fcc327a00851f",
+  "prompts": {},
+  "sessions": {
+    "s_62fa2e8ede3ddb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad3c80f2ff3e91388",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_b8e52ffc321bb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d82b52b-392a-41f2-a3de-d52aed5a5d21",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

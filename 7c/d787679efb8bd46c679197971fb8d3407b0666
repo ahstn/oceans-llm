@@ -1,0 +1,63 @@
+docs/adr/2026-11-03-native-anthropic-messages-transport.md
+  s_583c88036df9d8::t_aa970eb71b3821 51-54
+crates/gateway-providers/src/bedrock/response.rs
+  s_b343bded64f9bb::t_fcd6cd75b9ed03 261-262,297,500,552,564-566,568
+  s_b343bded64f9bb::t_d0509d28840fcd 591,595
+.agents/skills/verify-oceans-admin/features/anthropic-messages.md
+  s_583c88036df9d8::t_aa970eb71b3821 18,55
+crates/gateway-providers/src/anthropic/replay.rs
+  s_583c88036df9d8::t_6a69fd2ba1d79a 118-137
+  s_583c88036df9d8::t_92e92eaf37bdf0 181-182,185
+crates/gateway-providers/src/anthropic/streaming.rs
+  s_b343bded64f9bb::t_fcd6cd75b9ed03 92-93,323,325,353,355
+  s_b343bded64f9bb::t_d0509d28840fcd 11-12
+docs/internal/2026-11-05-provider-harness-comparison.md
+  s_583c88036df9d8::t_082f710a962dec 149,157-159,165,170-172,176,189
+  s_583c88036df9d8::t_03b0e8a4edbd31 140-141,150-152,188
+crates/gateway-providers/src/bedrock/eventstream.rs
+  s_b343bded64f9bb::t_fcd6cd75b9ed03 441,443-444,446,462-464,466-470,472-473,475
+  s_b343bded64f9bb::t_d0509d28840fcd 465,474,580,588,591-593
+.agents/skills/verify-oceans-admin/scripts/messages-regressions.mjs
+  s_583c88036df9d8::t_aa970eb71b3821 24-26
+crates/gateway-providers/src/anthropic/replay_tests.rs
+  s_63d5bc4c43d7e4::t_b01ae9c3fd776d 499-503,521-525,560-563,592,671-675,688-697
+  s_63d5bc4c43d7e4::t_6521dd9be75206 460-498,504-520,526-559,564-581,583-591,593-670,676-687,698-712
+  s_63d5bc4c43d7e4::t_c91d9a629129ff 582
+crates/gateway-providers/src/anthropic/response.rs
+  s_b343bded64f9bb::t_fcd6cd75b9ed03 129-132,134-135,153-159
+  s_583c88036df9d8::t_aadfa1e41eb514 83-84,93,133,136-152
+docs/reference/provider-api-compatibility.md
+  s_583c88036df9d8::t_aa970eb71b3821 494-497
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7cd787679efb8bd46c679197971fb8d3407b0666",
+  "prompts": {},
+  "sessions": {
+    "s_583c88036df9d8": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1aac9-1166-77b3-9da2-1112c2a986fe",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_63d5bc4c43d7e4": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1ae2d-0986-7314-a61a-6ed6b455de32",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_b343bded64f9bb": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1ae2d-0989-7116-ab60-11732e5bd9cf",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

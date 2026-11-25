@@ -1,0 +1,48 @@
+docs-nimbus/src/content/docs/providers/aws-bedrock/openai.mdx
+  s_397b5a20224eaa::t_135a4355785eff 1-4,7-158
+  s_397b5a20224eaa::t_339dccd5a320d4 5-6
+docs-nimbus/src/styles/prose.css
+  s_397b5a20224eaa::t_6b15120f84c0a9 273-274
+  s_397b5a20224eaa::t_6d99498b94e5c4 270-272
+  s_397b5a20224eaa::t_5dfb825ae2bd9d 275-277
+  s_397b5a20224eaa::t_df6fe97c67a2bc 1-269,278-403
+docs-nimbus/astro.config.ts
+  s_397b5a20224eaa::t_497d3c3bdecbdc 21-23,28-36
+docs-nimbus/AGENT.md
+  s_397b5a20224eaa::t_cb5c5606335ce9 103
+  s_397b5a20224eaa::t_482817e8d6ed6f 105
+docs-nimbus/src/content/docs/access/sso/index.mdx
+  s_397b5a20224eaa::t_482817e8d6ed6f 9
+docs-nimbus/src/lib/sidebar-icons.ts
+  s_397b5a20224eaa::t_339dccd5a320d4 23
+docs-nimbus/src/styles/globals.css
+  s_397b5a20224eaa::t_5ef40a742cc3d3 7-216
+  s_397b5a20224eaa::t_a117d3ec49e2ae 1-6,217-798
+docs-nimbus/src/components/Header.astro
+  s_397b5a20224eaa::t_73127f1d60538b 75
+.gitignore
+  s_397b5a20224eaa::t_dae6a29ed77389 23
+docs-nimbus/src/components/ui/aside/Aside.astro
+  s_397b5a20224eaa::t_6b15120f84c0a9 78
+docs-nimbus/src/content/docs/providers/aws-bedrock/index.mdx
+  s_397b5a20224eaa::t_482817e8d6ed6f 9
+  s_397b5a20224eaa::t_339dccd5a320d4 5,7-8
+  s_397b5a20224eaa::t_135a4355785eff 1-4,6,10-11,13-320
+  s_397b5a20224eaa::t_071a020a008219 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b1c4340687877baa53693a8c5cbd95d6d3d544dc",
+  "prompts": {},
+  "sessions": {
+    "s_397b5a20224eaa": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1aae3-a475-75cb-9430-4462f4b0f4ad",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

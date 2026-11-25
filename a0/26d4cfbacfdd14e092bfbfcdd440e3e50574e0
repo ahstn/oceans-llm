@@ -1,0 +1,34 @@
+crates/gateway-core/src/domain.rs
+  h_2f452a9c375069 2800-2803
+crates/gateway-core/src/traits.rs
+  h_2f452a9c375069 1854-1859
+crates/gateway-service/src/pricing_catalog.rs
+  h_2f452a9c375069 413
+crates/gateway-service/src/pricing_catalog/reconcile.rs
+  h_2f452a9c375069 3-7,14,16,20-22,31-33,42-43,67,93-95,99-143,147,160,201,204,229,245-246
+crates/gateway-service/src/pricing_catalog/tests/reconciliation.rs
+  h_2f452a9c375069 30,32-40,42,44-49,51-64,66-76,81-163
+crates/gateway-service/src/pricing_catalog/tests/support.rs
+  h_2f452a9c375069 51,207-221,225,240,242-243,249,251-253
+crates/gateway-store/src/lib.rs
+  h_2f452a9c375069 869-870,877,902
+crates/gateway-store/src/libsql_store/pricing_catalog.rs
+  h_2f452a9c375069 213-214,410-481
+crates/gateway-store/src/postgres_store/pricing_catalog.rs
+  h_2f452a9c375069 210-211,411-481
+crates/gateway-store/src/pricing_sync.rs
+  h_2f452a9c375069 11-13,16-30,34,36-50,52-55,58,76-79,99,360-380,390-391,393-394,401,403,407-411,414-421,426-446,448,455-459,461-462,468,476-479,485-502,544-645,667-668,710-711
+docs/adr/2026-10-31-multi-source-model-catalog.md
+  h_2f452a9c375069 36,45,68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a026d4cfbacfdd14e092bfbfcdd440e3e50574e0",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

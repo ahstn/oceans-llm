@@ -1,0 +1,51 @@
+.agents/skills/verify-oceans-admin/features/request-logs.md
+  s_481a97bf7114e6::t_10f21443da203d 11,32,46
+crates/admin-ui/web/src/routes/observability/request-logs.tsx
+  s_481a97bf7114e6::t_3da9fafd637a84 451-455
+crates/admin-ui/web/src/test/routes/request-logs-route.test.tsx
+  s_13e300ce4bf1eb::t_5286170099fe0a 400-438
+crates/gateway/src/http/handlers.rs
+  s_7334f6fed281d0::t_dd031884c31bca 293-303,919,928-942,1143,1152-1166,1554-1555
+crates/gateway/src/http/handlers/inference.rs
+  s_481a97bf7114e6::t_5bd418bda241f3 122-132
+crates/gateway/src/http/handlers/inference_tests.rs
+  s_481a97bf7114e6::t_e722db71d50a81 14-16,26-28,62-84,268-274,298-303,315-326
+docs/operations/observability-and-request-logs.md
+  s_13e300ce4bf1eb::t_a098b72ab32ba0 61,304
+docs/operations/observability/request-logs.md
+  s_13e300ce4bf1eb::t_718e3e6cec31a2 60-62
+docs/reference/request-lifecycle-and-failure-modes.md
+  s_13e300ce4bf1eb::t_3e5d8faca31594 43,184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b7c896aa3dded7bb703cd7b655b07c10e856daa8",
+  "prompts": {},
+  "sessions": {
+    "s_13e300ce4bf1eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cb0560cd-180f-4e10-b195-fa36950af50e",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_481a97bf7114e6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7080efcb-45cc-454b-94f3-8e9a952844fd",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_7334f6fed281d0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4f11e804-9fa0-4aa6-9c92-53590c872573",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

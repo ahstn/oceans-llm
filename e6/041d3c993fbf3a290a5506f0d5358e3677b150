@@ -1,0 +1,21 @@
+crates/admin-ui/web/src/routes/identity/-teams/use-team-editor.ts
+  s_eaf7116ccea134::t_d3e587fafdde4f 52-54,57
+crates/admin-ui/web/src/test/routes/teams-hooks.test.ts
+  s_eaf7116ccea134::t_d55f8be8b493ce 289-311
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e6041d3c993fbf3a290a5506f0d5358e3677b150",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7116ccea134": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d1945021-c72c-49d1-8b6d-9f99e3c4d39d",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

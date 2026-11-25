@@ -1,0 +1,16 @@
+.worktreeinclude
+  h_2f452a9c375069 2-4
+mise.toml
+  h_2f452a9c375069 226-227,232-256
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "fefbf9f7f4f31ed6ecbbced92240f37c733cb56a",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

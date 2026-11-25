@@ -1,0 +1,80 @@
+docs-nimbus/AGENT.md
+  s_397b5a20224eaa::t_287d89abcb1c52 103-106
+docs-nimbus/src/lib/sidebar-icons.ts
+  s_397b5a20224eaa::t_8744d96f0c473f 1-32
+docs-nimbus/src/content/docs/configuration/client-harnesses.mdx
+  s_397b5a20224eaa::t_d58efc172f53b5 19-21
+  s_397b5a20224eaa::t_228940f09f904b 5,47,82,171
+docs-nimbus/src/content/docs/features.mdx
+  s_397b5a20224eaa::t_d58efc172f53b5 22-23,32-33,36,42
+  s_397b5a20224eaa::t_71929f0d5f9789 43
+  s_397b5a20224eaa::t_fc1ded732cac35 56,65,71,82
+docs-nimbus/src/content/docs/access/budget-settings.mdx
+  s_397b5a20224eaa::t_d58efc172f53b5 10-13
+  s_397b5a20224eaa::t_f67d7f8feff6ef 5
+docs-nimbus/src/content/docs/configuration/index.mdx
+  s_397b5a20224eaa::t_d58efc172f53b5 316
+  s_397b5a20224eaa::t_4433d5844fa9d4 5
+  s_397b5a20224eaa::t_9914ba0a8a632a 39-44,47-48,187,201,310,339
+docs-nimbus/src/content/docs/access/access-settings.mdx
+  s_397b5a20224eaa::t_d58efc172f53b5 272-275
+  s_397b5a20224eaa::t_0458b37b183b4f 5,127,198,269,285,309
+docs-nimbus/src/content/docs/setup/deploy-and-operations.mdx
+  s_397b5a20224eaa::t_d58efc172f53b5 47-48
+docs-nimbus/src/components/ui/sidebar/SidebarGroup.astro
+  s_397b5a20224eaa::t_6c963da4d7d07f 15,76,98
+docs-nimbus/src/content/docs/setup/index.mdx
+  s_397b5a20224eaa::t_4433d5844fa9d4 6
+  s_397b5a20224eaa::t_d19276f77a3962 29
+docs-nimbus/astro.config.ts
+  s_397b5a20224eaa::t_3eb4e4c7d34b91 18-19,21-29
+docs-nimbus/src/components/ui/sidebar/Sidebar.astro
+  s_397b5a20224eaa::t_6c963da4d7d07f 11,54
+docs-nimbus/src/components/ui/sidebar/SidebarLink.astro
+  s_397b5a20224eaa::t_6c963da4d7d07f 7-8,11,21,24,27,41
+docs-nimbus/src/content/docs/setup/first-access.mdx
+  s_397b5a20224eaa::t_d58efc172f53b5 53-54,66-69,95
+  s_397b5a20224eaa::t_27f7926e2da52b 96
+docs-nimbus/public/images/oceans-mcp-personas.prompt.txt
+  s_397b5a20224eaa::t_e128365758c95d 1-14
+docs-nimbus/src/content/docs/access/pricing-and-accounting.mdx
+  s_397b5a20224eaa::t_eb475a41145012 5
+docs-nimbus/src/content/docs/access/rate-limits.mdx
+  s_397b5a20224eaa::t_cea6426666a272 5
+docs-nimbus/src/content/docs/configuration/model-routing.mdx
+  s_397b5a20224eaa::t_29fe1741501e19 201,411
+docs-nimbus/src/content/docs/configuration/models-and-routes.mdx
+  s_397b5a20224eaa::t_04393e9f473a56 188
+docs-nimbus/src/content/docs/configuration/providers.mdx
+  s_397b5a20224eaa::t_8f8631a1a05a16 46
+docs-nimbus/src/content/docs/extensions/mcp-servers.mdx
+  s_397b5a20224eaa::t_4899377365843c 5,82,472
+docs-nimbus/src/content/docs/extensions/skills.mdx
+  s_397b5a20224eaa::t_e4ddae0cb3e90d 5
+docs-nimbus/src/content/docs/index.mdx
+  s_397b5a20224eaa::t_1779d0271c568c 44-46
+docs-nimbus/src/content/docs/reference/provider-api-compatibility.mdx
+  s_397b5a20224eaa::t_2ed9c22ef6b484 495
+docs-nimbus/src/content/docs/reference/request-lifecycle.mdx
+  s_397b5a20224eaa::t_3dfac558a69a5e 21,83,87,114
+docs-nimbus/src/content/docs/setup/kubernetes-and-helm.mdx
+  s_397b5a20224eaa::t_1d40f7c4300f19 133
+docs-nimbus/src/content/docs/setup/self-hosting.mdx
+  s_397b5a20224eaa::t_e7b34a28cb87aa 206,218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a96db27187688f400cf103a3122d3d53efcf296f",
+  "prompts": {},
+  "sessions": {
+    "s_397b5a20224eaa": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1aae3-a475-75cb-9430-4462f4b0f4ad",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

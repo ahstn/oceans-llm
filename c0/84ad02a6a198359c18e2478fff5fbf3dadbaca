@@ -1,0 +1,14 @@
+crates/gateway-store/src/lib.rs
+  h_2f452a9c375069 1440-1603,5058-5071,10546-10571
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c084ad02a6a198359c18e2478fff5fbf3dadbaca",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

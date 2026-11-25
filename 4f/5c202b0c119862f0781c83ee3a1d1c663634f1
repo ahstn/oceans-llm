@@ -1,0 +1,28 @@
+crates/gateway/src/http/handlers.rs
+  h_2f452a9c375069 3-4
+crates/gateway/src/http/handlers/decisions.rs
+  h_2f452a9c375069 14,179-180,190-191,195-264,267-269,279,282,310,323-324,345,350,376,385,402,404,427,450,452,464
+crates/gateway/src/http/handlers/decisions_tests.rs
+  h_2f452a9c375069 1-292
+crates/gateway/src/observability.rs
+  h_2f452a9c375069 29-30,70-86,108,116-126,149-157,244-272,422-427
+docs/adr/2026-10-14-decisions-request-metrics.md
+  h_2f452a9c375069 1-39
+docs/configuration/model-routing-and-api-behavior.md
+  h_2f452a9c375069 446
+docs/operations/observability-and-request-logs.md
+  h_2f452a9c375069 65-80
+docs/operations/observability/export-traces-and-metrics.md
+  h_2f452a9c375069 138-139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4f5c202b0c119862f0781c83ee3a1d1c663634f1",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

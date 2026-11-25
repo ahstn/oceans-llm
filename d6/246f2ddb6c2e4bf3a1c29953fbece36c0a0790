@@ -1,0 +1,69 @@
+.agents/skills/verify-oceans-admin/scripts/messages-regressions.mjs
+  s_583c88036df9d8::t_04de2f3c166231 10-16
+  s_583c88036df9d8::t_cbb775a7acd090 17-18
+crates/gateway/src/http/handlers/native_messages.rs
+  s_583c88036df9d8::t_cbb775a7acd090 52-53
+  s_583c88036df9d8::t_27287123da408e 278-304
+  s_583c88036df9d8::t_31af175305c5d7 277
+crates/gateway/src/http/inference_guardrails.rs
+  s_583c88036df9d8::t_968ecd118e1ee2 681-694
+docs/adr/2026-11-03-native-anthropic-messages-transport.md
+  s_583c88036df9d8::t_6ed1ca7a777d86 82-83
+  s_583c88036df9d8::t_04de2f3c166231 29,80
+  s_583c88036df9d8::t_c84d005e49f2bd 81
+docs/internal/2026-11-05-provider-harness-comparison.md
+  s_583c88036df9d8::t_04de2f3c166231 266-275,281
+  s_583c88036df9d8::t_64673ea9ef2018 282-285
+  s_583c88036df9d8::t_6ed1ca7a777d86 276-280
+crates/gateway-core/src/streaming.rs
+  s_583c88036df9d8::t_cbb775a7acd090 135-137
+  s_583c88036df9d8::t_27287123da408e 148-150
+crates/gateway-core/src/claude_models.rs
+  s_583c88036df9d8::t_968ecd118e1ee2 93-100
+  s_4602c34eb36c13::t_ce5dd9eec7b3fe 262-314
+crates/gateway/src/http/inference_guardrails_regression_tests.rs
+  s_5e617c76e9a22e::t_d6a4e55de20283 629-717,719-720,722-758,761-770
+  s_5e617c76e9a22e::t_bb316b524020fb 718,721,759-760
+crates/gateway/src/http/handlers/inference_tests.rs
+  s_583c88036df9d8::t_7a7377320b0fbd 620-625,631-639
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_583c88036df9d8::t_cbb775a7acd090 407
+crates/gateway-providers/src/anthropic/request_tests.rs
+  s_4602c34eb36c13::t_ce5dd9eec7b3fe 413-451
+  s_4602c34eb36c13::t_1eb91e90b802c2 412
+.agents/skills/verify-oceans-admin/features/anthropic-messages.md
+  s_583c88036df9d8::t_04de2f3c166231 68,78
+  s_583c88036df9d8::t_6ed1ca7a777d86 61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d6246f2ddb6c2e4bf3a1c29953fbece36c0a0790",
+  "prompts": {},
+  "sessions": {
+    "s_4602c34eb36c13": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1b30f-47f4-7298-b45f-6dd01fc1164c",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_583c88036df9d8": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1aac9-1166-77b3-9da2-1112c2a986fe",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    },
+    "s_5e617c76e9a22e": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1b30f-47dd-762f-b4ac-ddf54b0df361",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

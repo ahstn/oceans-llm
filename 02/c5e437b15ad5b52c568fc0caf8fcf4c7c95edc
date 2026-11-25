@@ -1,0 +1,21 @@
+.github/workflows/oceans-review-agent.yml
+  s_dd3457bd143758::t_b079e7860c8fef 156-157,183-185,192
+docs/adr/2026-09-06-source-review-action-with-pi-sdk.md
+  s_dd3457bd143758::t_ee4db15e02e7e2 5-6,15,17,23,30-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "02c5e437b15ad5b52c568fc0caf8fcf4c7c95edc",
+  "prompts": {},
+  "sessions": {
+    "s_dd3457bd143758": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b1dac3e8-0815-44ae-81c2-df39b3787e65",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+crates/gateway/src/http/response_cache.rs
+  s_327fe9b27426f4::t_b0369a2e038364 16-18,77,80-87,151-162
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e6ecb07f79ae98738ab01cd74c1bd2fb06ec2a9c",
+  "prompts": {},
+  "sessions": {
+    "s_327fe9b27426f4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14258-b3f9-7a50-9987-4a60f71f58c8",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

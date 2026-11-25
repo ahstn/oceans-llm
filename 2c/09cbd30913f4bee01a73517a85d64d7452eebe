@@ -1,0 +1,21 @@
+crates/admin-ui/web/src/components/observability/agent-sessions/session-filter-toolbar.tsx
+  s_58af86ccab2b62::t_1daf237e997ad9 209
+crates/admin-ui/web/src/test/routes/agent-sessions-route.test.tsx
+  s_58af86ccab2b62::t_1daf237e997ad9 1146-1164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2c09cbd30913f4bee01a73517a85d64d7452eebe",
+  "prompts": {},
+  "sessions": {
+    "s_58af86ccab2b62": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7d3661c3-b312-4ff2-91f6-bf3d3fbea446",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

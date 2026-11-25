@@ -1,0 +1,20 @@
+crates/gateway-guardrails/src/packs.rs
+  s_ceb902b5ae2ad1::t_9ce322126c4bbe 196
+  s_ceb902b5ae2ad1::t_da8ddfc4cf899b 178-194,197-202,204-205,217-223,225,231-244,985-990,992
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d2d5ceb853d9ba57cd710b6fa0970c01c2a11056",
+  "prompts": {},
+  "sessions": {
+    "s_ceb902b5ae2ad1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "813ff0b9-4f52-4fd3-a512-a7b14a6a9045",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

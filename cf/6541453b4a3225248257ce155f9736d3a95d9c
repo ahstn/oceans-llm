@@ -1,0 +1,16 @@
+.agents/skills/verify-oceans-admin/features/image-generation.md
+  h_2f452a9c375069 45
+gateway.yaml
+  h_2f452a9c375069 429-433
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cf6541453b4a3225248257ce155f9736d3a95d9c",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

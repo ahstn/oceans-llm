@@ -1,0 +1,168 @@
+.agents/skills/shadcn/SKILL.md
+  h_2f452a9c375069 85,148,288
+.agents/skills/shadcn/rules/chat.md
+  h_2f452a9c375069 6,18-19,198-452
+.agents/skills/verify-oceans-admin/features/harness-integration.md
+  h_2f452a9c375069 5-6
+.github/SECURITY.md
+  h_2f452a9c375069 23,34
+.github/dependabot.yml
+  h_2f452a9c375069 166-186
+.github/workflows/docs-ci.yml
+  h_2f452a9c375069 9,37,40,42
+.github/workflows/opencode-oceans-published.yml
+  h_2f452a9c375069 1-53
+.github/workflows/opencode-oceans.yml
+  h_2f452a9c375069 24,45-46,53-64,79-92,98-99,101-109,111-122,127,130,138,141,143-149,152-159
+.gitignore
+  h_2f452a9c375069 23-29
+.vale.ini
+  h_2f452a9c375069 1
+CHANGELOG.md
+  h_2f452a9c375069 9-44
+Cargo.lock
+  h_2f452a9c375069 7,58,1746,1799,1809,1819,1839,1860,1875,1907,1939,1958,3027
+cliff.toml
+  h_2f452a9c375069 29
+crates/admin-ui/Cargo.toml
+  h_2f452a9c375069 5
+crates/agent-session-analysis/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-client-config/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-client-ip/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-core/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-guardrails/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-mcp/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-providers/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-service/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-service/data/litellm_catalog_fallback.json
+  h_2f452a9c375069 4-6,199,1299,1340,1381,1422,1463,1504,1545,1555-1556,1632,1673,1714,1834,1875,1916,1957,1998,2039,2129,2139-2140,2180,2221,2262,2579,2660,2670-2671,2711,2751,2792,2833,2874,2964,3005,3046,3087,3128,3169,3179-3180,3220,3260,3301,3342,3383,3424,3465,3475-3476,3516,3557,3598,3707,3717-3718,4597,4638,4679,4720,4761,4771-4772,4812,4933,4974,5015,5056,5097,5138,5228,5238-5239,5279,5320,5361,5417,5720,5761,5802,5843,5884,5894-5895,5935,5976,6017,6058,6099,6140,6181,6222,6312,6322-6323,6363,6404,6445,8114,8155,8165-8166,8206,8247,8288,8329,8370,8380-8381,8421,8462,8503,13411,13421-13422,13462,13503,14464,14505,14546,14556-14557,14597,14638,14679,14720,14761,14771-14772,14812,14853,15708,15749,15790,15831,15872,15882-15883,15923,15964,16005,16046,16166,16207,16248,16289,16330,16371,16461,16471-16472,16512,16553,16594,16732,20023-20067,22188-22223,23971,24377-24431,27848,27889,27898-27899,27939,27980,28021,28062,28072-28073,28113,28122-28123,28163,28204,28245,28286,28327,28336-28337,28377,28386-28387,28427,28436-28437,28477,28487-28488,28528,28538-28539,28579,28620,28661
+crates/gateway-service/data/model_benchmarks.json
+  h_2f452a9c375069 8,325,329,481-490,605,609,1551-1560
+crates/gateway-service/data/openrouter_catalog_fallback.json
+  h_2f452a9c375069 5-6,3254-3298,3634,4363-4364,4374,4782-4784,4793,4897-4899,4908,4936-4938,7321-7404,7942-7944,7953,8399-8476,8649,8824-8862,9278,9740,9863-9864,9874,10437,11242-11243,11250,11252,13251-13253,13262,13432-13471,13710,14153,14155,14646,14656,17147-17150,18857-18859,18868,19816-19818,19870,19893-19931,20052-20054,20068,20091-20093,20107,20116,20118,20122-20123,20126,20130-20132,20146,20155,20157,20161-20162,20165,20169-20247,20942-20943,20953,21276,21561,21865-21867,21876,22388,23138-23225,23850-23852,24759-24761,24765-24766,24775-24776,24784,24786,24793,25075-25118,25502-25540,25857-25895,26858-26860,26869,27212-27214,27364-27366,27375,27440-27442,27518-27520,27529,27550,27914-27916,27925,28029-28030,28032,28040,28044,28046-28048,28470
+crates/gateway-service/data/pricing_catalog_fallback.json
+  h_2f452a9c375069 4-6,3914,3974,4034,4161,4221,4348,4974,5017,5034,5077,6571,6622,6683,6744,6873,6934,7063,9240,9300,9360,9487,9547,9674,11196-11245,11514,11574,11635,11696,11817,11878,11999,12298,13473,13750,13799,13901,14406-14457,14522,15146,16348-16350,17409-17414,17628,17662-17667,17760,17829,17864-17869,17904,17939-17944,17979,18014-18019,18088-18093,18134,18169-18174,18209,18244-18249,18318-18323,18364,18399-18404,18439,18597-18599,18637-18639,21231-21282,22486,22595,22656,22717,22838,22899,23300,23392,23726,28198-28200,28209,28294-28296,28343,28345,29649-29702,30025-30027,30036,30599,30838,31540,31664-31665,31672,31674,32846-32848,32857,33134,36915-36966,37540-37541,37551,38318-38320,38329,39398-39400,40435-40484,40489,40626-40664,41343-41345,41354,41901-41903,41995-41997,42074,42495,42497,42632-42633,42640,42642-42643,42645-42646,42653,42657,42659-42661
+crates/gateway-skills/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway-store/Cargo.toml
+  h_2f452a9c375069 5
+crates/gateway/Cargo.toml
+  h_2f452a9c375069 5
+crates/oceans-cli/Cargo.toml
+  h_2f452a9c375069 5
+docs/adr/2026-10-21-repository-lint-and-dependency-scanning.md
+  h_2f452a9c375069 14,25,32
+docs/contributing/reference/release-process.md
+  h_2f452a9c375069 11-12,160-194
+docs/mise.toml
+  h_2f452a9c375069 22-23,26-34
+docs/src/content/docs/access/admin-audit-log.mdx
+  h_2f452a9c375069 25
+docs/src/content/docs/access/admin-control-plane.mdx
+  h_2f452a9c375069 32,102
+docs/src/content/docs/access/identity-and-access.mdx
+  h_2f452a9c375069 156,239
+docs/src/content/docs/access/service-accounts.mdx
+  h_2f452a9c375069 66
+docs/src/content/docs/configuration/index.mdx
+  h_2f452a9c375069 64,170
+docs/src/content/docs/configuration/model-routing.mdx
+  h_2f452a9c375069 177
+docs/src/content/docs/configuration/providers.mdx
+  h_2f452a9c375069 44,206,222
+docs/src/content/docs/extensions/mcp-servers.mdx
+  h_2f452a9c375069 8,460
+docs/src/content/docs/extensions/mcp-tool-access.mdx
+  h_2f452a9c375069 98,123,160,323,335,355,369
+docs/src/content/docs/extensions/skills.mdx
+  h_2f452a9c375069 14,115
+docs/src/content/docs/harnesses/index.mdx
+  h_2f452a9c375069 79
+docs/src/content/docs/harnesses/opencode.mdx
+  h_2f452a9c375069 3,28,187
+docs/src/content/docs/harnesses/verification.mdx
+  h_2f452a9c375069 89,162-163
+docs/src/content/docs/observability/agent-harness-usage.mdx
+  h_2f452a9c375069 20,33,53
+docs/src/content/docs/observability/agent-session-analysis.mdx
+  h_2f452a9c375069 23,58,67,129,166
+docs/src/content/docs/observability/export-traces-and-metrics.mdx
+  h_2f452a9c375069 10,59
+docs/src/content/docs/observability/index.mdx
+  h_2f452a9c375069 37
+docs/src/content/docs/operations/admin-runbooks.mdx
+  h_2f452a9c375069 187
+docs/src/content/docs/operations/gateway-guardrails.mdx
+  h_2f452a9c375069 192,230,238,393
+docs/src/content/docs/providers/aws-bedrock/index.mdx
+  h_2f452a9c375069 106,320
+docs/src/content/docs/providers/gcp-vertex.mdx
+  h_2f452a9c375069 51,128,323
+docs/src/content/docs/reference/provider-api-compatibility.mdx
+  h_2f452a9c375069 122,195,461
+docs/src/content/docs/setup/deploy-and-operations.mdx
+  h_2f452a9c375069 18
+docs/src/content/docs/setup/first-access.mdx
+  h_2f452a9c375069 34
+docs/src/content/docs/setup/self-hosting.mdx
+  h_2f452a9c375069 102
+docs/src/content/docs/spend/budget-settings.mdx
+  h_2f452a9c375069 68
+docs/src/content/docs/spend/budgets.mdx
+  h_2f452a9c375069 14,24,57,80,270
+docs/src/content/docs/spend/rate-limits.mdx
+  h_2f452a9c375069 122,231
+docs/vale/styles/Oceans/Names.yml
+  h_2f452a9c375069 1-16
+docs/vale/styles/Oceans/VersionNames.yml
+  h_2f452a9c375069 1-9
+docs/vale/styles/config/vocabularies/Oceans/accept.txt
+  h_2f452a9c375069 1-22
+docs/vale/styles/personal-readability/FleschKincaid.yml
+  h_2f452a9c375069 1-8
+docs/vale/styles/personal-readability/SMOG.yml
+  h_2f452a9c375069 1-8
+mise.lock
+  h_2f452a9c375069 261,265-267,271-273,277-279,283-285,289-291,348,352-354,357,359-360,363,365-366,369,371-372,375-378,434,438-439,442-443,446-447,450-451,454-455,580,584-586,589-592,595-598,601-604,607-610,679,727,731-733,737-739,743-745,749-751,755-757,773,777-779,782,784-785,788,790-791,794,796-797,800-834,836-837
+mise.rustfs.lock
+  h_2f452a9c375069 23,25,28,30-31,34-36,39,41-42
+mise.rustfs.toml
+  h_2f452a9c375069 8
+mise.toml
+  h_2f452a9c375069 40,54,56-58,62
+packages/opencode-oceans/README.md
+  h_2f452a9c375069 13,24-26,155,173,175,188-189
+packages/opencode-oceans/mise.toml
+  h_2f452a9c375069 43-48
+packages/opencode-oceans/package.json
+  h_2f452a9c375069 25
+packages/opencode-oceans/scripts/smoke.ts
+  h_2f452a9c375069 17-18,117-140,142,146-147,166-169,179-184,188-216,234-238,242
+packages/opencode-oceans/tests/smoke.test.ts
+  h_2f452a9c375069 3,33-54
+scripts/check-ci-trust-boundaries.sh
+  h_2f452a9c375069 2-3,62-125
+skills-lock.json
+  h_2f452a9c375069 2,8,14-26,32
+tests/harness-integration/README.md
+  h_2f452a9c375069 84-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0de93c2db357ce584fbc4ceb5e56793c7041c2b0",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

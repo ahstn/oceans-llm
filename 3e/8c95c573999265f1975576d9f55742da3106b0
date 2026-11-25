@@ -1,0 +1,37 @@
+crates/admin-ui/web/e2e/guardrails.e2e.ts
+  s_ee057229033589::t_322af83058f2ce 18-33,56-103,302,315,455-540
+crates/gateway/src/http/guardrail_events.rs
+  s_ee057229033589::t_9e0d3f7041d5df 6-7,9,30-55
+crates/gateway/src/http/inference_guardrails.rs
+  s_ee057229033589::t_9186c328596aed 7-8,13-16,231-236
+crates/gateway/src/http/mcp_gateway/guardrails.rs
+  s_ee057229033589::t_63afb4f7a08b7a 4,7-10,12-13,16,23-26,44,75,149-171,173-175,179,183-185,195,197-198,201,203-212,214-248,250-291,293-349,351-355,357-403
+crates/gateway/src/http/mcp_gateway/guardrails/tests.rs
+  s_ee057229033589::t_46b8ec409e3783 2-3,5-6,32,75,196-417
+docs/operations/gateway-guardrails.md
+  s_ee057229033589::t_94788d3b2dc61f 28,236
+scripts/mock-openai-upstream.mjs
+  s_ee057229033589::t_688f94cf6f28e4 50-87,195-197
+scripts/register-e2e-mcp-server.mjs
+  s_ee057229033589::t_787f644970902b 1-23
+scripts/start-e2e-stack.sh
+  s_ee057229033589::t_e4d8f35408fd61 173-177,306-316
+scripts/start-e2e-stack.test.mjs
+  s_ee057229033589::t_119c869124cb60 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3e8c95c573999265f1975576d9f55742da3106b0",
+  "prompts": {},
+  "sessions": {
+    "s_ee057229033589": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "250131c4-1d2c-4d6b-a98c-87c1d612ba06",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

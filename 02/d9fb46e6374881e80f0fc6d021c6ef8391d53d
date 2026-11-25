@@ -1,0 +1,118 @@
+crates/gateway-providers/Cargo.toml
+  s_dd118f467446e0::t_8c233000b8e002 36-37,42
+docs/src/content/docs/reference/provider-api-compatibility.mdx
+  s_dd118f467446e0::t_8c233000b8e002 513-514,517
+crates/gateway/src/http/handlers/count_tokens.rs
+  s_dd118f467446e0::t_8c233000b8e002 100,105
+docs/src/lib/sidebar-icons.ts
+  s_dd118f467446e0::t_8c233000b8e002 26
+docs/src/content/docs/harnesses/opencode.mdx
+  s_dd118f467446e0::t_8c233000b8e002 229,231
+crates/gateway/src/http/handlers/routing.rs
+  s_dd118f467446e0::t_8c233000b8e002 34
+crates/gateway-client-config/src/types.rs
+  s_dd118f467446e0::t_8c233000b8e002 160-163,274
+crates/gateway/src/http/handlers/embeddings.rs
+  s_dd118f467446e0::t_8c233000b8e002 15
+docs/src/content/docs/configuration/models-and-routes.mdx
+  s_dd118f467446e0::t_8c233000b8e002 342-343,461-462
+crates/gateway/src/http/request_policy.rs
+  s_dd118f467446e0::t_8c233000b8e002 119-123
+packages/opencode-oceans/tests/models.test.ts
+  s_dd118f467446e0::t_8c233000b8e002 338-364
+crates/gateway-providers/src/http.rs
+  s_dd118f467446e0::t_8c233000b8e002 120-127
+crates/gateway/src/config/tests/openrouter.rs
+  s_dd118f467446e0::t_8c233000b8e002 35-38,72-175
+crates/gateway-client-config/src/tests.rs
+  s_dd118f467446e0::t_8c233000b8e002 535,1660-1736
+  s_dd118f467446e0::t_a784caf8f603dd 1737-1738
+docs/adr/2026-08-27-llm-request-trace-boundaries.md
+  s_dd118f467446e0::t_8c233000b8e002 84-100
+crates/gateway/src/http/inference_guardrails.rs
+  s_dd118f467446e0::t_8c233000b8e002 13,146,263,265-268
+crates/gateway/src/http/handlers/decisions_tests.rs
+  s_dd118f467446e0::t_8c233000b8e002 7,20,158,169
+crates/gateway/src/http/handlers/inference_tests.rs
+  s_dd118f467446e0::t_8c233000b8e002 4,19,62,77,108,123,139
+crates/gateway/src/http/handlers/inference.rs
+  s_dd118f467446e0::t_8c233000b8e002 358,372,413
+crates/gateway-providers/tests/upstream_span_timing.rs
+  s_dd118f467446e0::t_8c233000b8e002 1-94
+crates/gateway-service/src/model_metadata/listing.rs
+  s_dd118f467446e0::t_8c233000b8e002 7-8,29,201-203,286,319,371-385,519
+docs/src/content/docs/observability/export-traces-and-metrics.mdx
+  s_dd118f467446e0::t_8c233000b8e002 138-142
+docs/src/content/docs/providers/openrouter.mdx
+  s_dd118f467446e0::t_8c233000b8e002 90-91,102-103,105
+crates/gateway-service/src/admin_models.rs
+  s_dd118f467446e0::t_8c233000b8e002 491-493,618-619,701,1617,1676,2957
+_typos.toml
+  s_dd118f467446e0::t_8c233000b8e002 51-52
+crates/gateway/src/http/handlers/service_tier_tests.rs
+  s_dd118f467446e0::t_8c233000b8e002 8,29,92,103,125,136,147
+crates/gateway-service/src/capability_hints.rs
+  s_dd118f467446e0::t_8c233000b8e002 11-12,15,18-30,115-124
+  s_dd118f467446e0::t_8133938405b364 125
+crates/gateway-service/src/model_metadata/tests/service_tiers.rs
+  s_dd118f467446e0::t_8c233000b8e002 208-222,245,263,273,295,345-378
+crates/gateway-service/src/pricing_catalog/metadata.rs
+  s_dd118f467446e0::t_8c233000b8e002 21-38,50,54-75
+  s_dd118f467446e0::t_15378c95bbdd99 76
+crates/gateway-client-config/src/templates/opencode.rs
+  s_dd118f467446e0::t_8c233000b8e002 150,184-195,229-234
+  s_dd118f467446e0::t_6f5ea4e766619a 235
+crates/gateway/src/http/handlers/images.rs
+  s_dd118f467446e0::t_8c233000b8e002 16
+crates/gateway/src/http/handlers/decisions.rs
+  s_dd118f467446e0::t_8c233000b8e002 23,47
+crates/gateway-core/src/domain.rs
+  s_dd118f467446e0::t_e3a9b9b994d3b9 4398
+  s_dd118f467446e0::t_8c233000b8e002 3484-3487,3499-3500,3504-3562,4399-4421
+  s_dd118f467446e0::t_952acb53a5e1e5 3563,4422-4423
+crates/gateway/src/http/handlers.rs
+  s_dd118f467446e0::t_8c233000b8e002 82,90,117,252,350-360,445,543-553,853-854,918,1256-1259,1268-1285,1336-1357,1388-1390,1396,1399,1401,2374
+crates/gateway-providers/src/openai_compat.rs
+  s_dd118f467446e0::t_8c233000b8e002 1046-1050,1676-1680,1701-1703
+crates/gateway/src/http/handlers/images_tests.rs
+  s_dd118f467446e0::t_8c233000b8e002 11,25,154
+crates/gateway/src/http/request_body.rs
+  s_dd118f467446e0::t_8c233000b8e002 13-16,21,23-24,28-65
+  s_dd118f467446e0::t_5cae531b47f399 66
+crates/gateway-core/src/lib.rs
+  s_dd118f467446e0::t_8c233000b8e002 117-135
+crates/gateway/Cargo.toml
+  s_dd118f467446e0::t_8c233000b8e002 38
+crates/gateway/src/http/handlers/messages.rs
+  s_dd118f467446e0::t_8c233000b8e002 11,196-206
+crates/gateway-service/src/routing.rs
+  s_dd118f467446e0::t_8c233000b8e002 87
+crates/gateway/src/http/request_tracing.rs
+  s_dd118f467446e0::t_8c233000b8e002 206-218
+crates/gateway/src/http/handlers/routing_tests.rs
+  s_dd118f467446e0::t_8c233000b8e002 5,23,240,260
+crates/gateway/src/http/handlers/embeddings_tests.rs
+  s_dd118f467446e0::t_8c233000b8e002 7,19,130
+crates/gateway/src/config/tests/mod.rs
+  s_dd118f467446e0::t_8c233000b8e002 7-9
+docs/src/content/docs/providers/openrouter-provider-check.mdx
+  s_dd118f467446e0::t_8c233000b8e002 1-89
+Cargo.lock
+  s_dd118f467446e0::t_63bfb3cacb80e2 1879,1999-2000,2012
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "02d9fb46e6374881e80f0fc6d021c6ef8391d53d",
+  "prompts": {},
+  "sessions": {
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

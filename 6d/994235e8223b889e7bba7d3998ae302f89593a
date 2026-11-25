@@ -1,0 +1,19 @@
+crates/gateway/src/http/audit_tests/mcp_tool_policy.rs
+  s_e88dc7cf2999d1::t_1e138882c0c87a 490,527-528
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6d994235e8223b889e7bba7d3998ae302f89593a",
+  "prompts": {},
+  "sessions": {
+    "s_e88dc7cf2999d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab3a00cd-adb5-4e76-bca3-3df868a9d415",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+crates/gateway-providers/src/http.rs
+  s_d9c6dc2d946db9::t_bad5f5a6254c09 353,356-362,370-371,378,382,385-393,401-409,411-412,414-416
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "907ecfed9b5786383c255df4d9201db9896250cc",
+  "prompts": {},
+  "sessions": {
+    "s_d9c6dc2d946db9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6d7b04b1-8d92-4f8a-8229-415093963209",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

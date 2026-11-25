@@ -1,0 +1,19 @@
+crates/gateway/src/local_demo_seed/history.rs
+  s_ae1604a44e2b1a::t_b85dd9f2af549f 11,252-270
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d21036a2368a49f7aeeb5c86ba760c852ffc098a",
+  "prompts": {},
+  "sessions": {
+    "s_ae1604a44e2b1a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "33c1a7e4-971a-4028-aceb-69bf987f7f82",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

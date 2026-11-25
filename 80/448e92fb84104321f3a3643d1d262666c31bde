@@ -1,0 +1,25 @@
+crates/gateway-service/src/attribution/report/lifecycle.rs
+  s_0a4447f1aa57dd::t_a188ea21ca6aaa 18,258-261,263-271
+crates/gateway-service/src/attribution/tests/report.rs
+  s_0a4447f1aa57dd::t_deaaa6e7585d05 1094-1099
+crates/oceans-cli/src/attribution/reverts.rs
+  s_0a4447f1aa57dd::t_2800c6f8dedb7a 235-236
+docs/adr/2026-11-01-git-ai-attribution-via-oceans-hooks.md
+  s_0a4447f1aa57dd::t_54cd0a78b31270 276,312
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "80448e92fb84104321f3a3643d1d262666c31bde",
+  "prompts": {},
+  "sessions": {
+    "s_0a4447f1aa57dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e5ea71de-3fa7-4b87-9311-2fcfc1df794c",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

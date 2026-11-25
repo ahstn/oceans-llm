@@ -1,0 +1,23 @@
+crates/admin-ui/web/e2e/guardrails.e2e.ts
+  s_ee057229033589::t_ee4625a502cc6f 515-535
+crates/gateway/src/http/mcp_gateway/guardrails.rs
+  s_ee057229033589::t_142632b97879ea 24-26,166,228,326,351-365
+crates/gateway/src/http/mcp_gateway/guardrails/tests.rs
+  s_ee057229033589::t_197d99140c55db 213-242
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "571cddcef0489a41b779c1b31d52816967a1cb1a",
+  "prompts": {},
+  "sessions": {
+    "s_ee057229033589": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "250131c4-1d2c-4d6b-a98c-87c1d612ba06",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

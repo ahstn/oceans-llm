@@ -1,0 +1,57 @@
+crates/admin-ui/web/src/components/audit/audit-entry-sheet.tsx
+  s_af4ccbd37c05c0::t_e36d68957fefe0 1-3,13-15,26-29,34,80,88-122
+crates/admin-ui/web/src/components/audit/audit-log-table.tsx
+  s_af4ccbd37c05c0::t_0c1d28c778d6f4 33,55,174-175,178,237,273
+crates/admin-ui/web/src/components/audit/audit-meta.ts
+  s_af4ccbd37c05c0::t_1df4c8f330f745 1,47
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_af4ccbd37c05c0::t_66eee3a884e5dd 87-102,2616-2617,2625-2636,2640-2645,2647-2649,3169-3170,3180-3203,5042-5063
+crates/admin-ui/web/src/routes/observability/audit-log.tsx
+  s_af4ccbd37c05c0::t_21017d4adcf11f 57-58
+crates/admin-ui/web/src/server/admin-data.functions.ts
+  s_af4ccbd37c05c0::t_4b8a4631d73af4 39,514-524
+crates/admin-ui/web/src/server/admin-data.server.ts
+  s_af4ccbd37c05c0::t_61b1bdb4c49cf9 43,444-452
+crates/admin-ui/web/src/test/routes/audit-log-route.test.tsx
+  s_af4ccbd37c05c0::t_eba170e30e80c4 1,16-17,20,33-38,63-64,69-74,156-157,184-193
+crates/admin-ui/web/src/types/live-api.ts
+  s_af4ccbd37c05c0::t_00c5f3dd160d04 148
+crates/gateway-core/src/audit.rs
+  s_af4ccbd37c05c0::t_cb65119ee11f4a 172-173,175-176
+crates/gateway-store/src/any_store_audit_logs.rs
+  s_af4ccbd37c05c0::t_24212f7ba9a231 3,23-29
+crates/gateway-store/src/audit_logs.rs
+  s_af4ccbd37c05c0::t_59a3fa937b5fba 147,154-159,235-243,252-259
+crates/gateway-store/src/libsql_store/audit_logs.rs
+  s_af4ccbd37c05c0::t_d43f3408d618a5 9-10,104-119
+crates/gateway-store/src/postgres_store/audit_logs.rs
+  s_af4ccbd37c05c0::t_1736257b438bdf 10-11,98-110
+crates/gateway/openapi/admin-api.json
+  s_af4ccbd37c05c0::t_4e288c74e4152d 310-345,9852-9854,9877-9927,9930,9950-9951,9957-9958,9964-9965,12059-12061,12089-12171
+crates/gateway/src/http/admin_contract.rs
+  s_af4ccbd37c05c0::t_b86b0c6daa68a4 2079
+crates/gateway/src/http/audit.rs
+  s_af4ccbd37c05c0::t_edc4acaf9c8fe2 16,21,26,188-189,197-210,220-225,273,280-330,335,340-342,348-356
+crates/gateway/src/http/audit_tests.rs
+  s_af4ccbd37c05c0::t_6fcb5bfc8932a1 130-131,137-147,190,197,625-628
+crates/gateway/src/http/mod.rs
+  s_af4ccbd37c05c0::t_6d61ff6fdc0d13 55-71,310-313
+crates/gateway-service/src/admin_audit.rs
+  s_af4ccbd37c05c0::t_55b06403b5a5d8 290,508-518,523-531,572,598-601,722-724,747-749,782-800
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fa791fb0642e1725d81db969af73d690623aa314",
+  "prompts": {},
+  "sessions": {
+    "s_af4ccbd37c05c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e43a21e5-a24a-41e6-998e-1154978c7141",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,731 @@
+.agents/skills/verify-oceans-admin/features/anthropic-messages.md
+  s_dd118f467446e0::t_20cce2f73fac40 33
+.github/workflows/docs-ci.yml
+  s_dd118f467446e0::t_2955a70a494541 7,36,39,41-44
+.github/workflows/opencode-oceans.yml
+  s_dd118f467446e0::t_e58d7a1db92865 1-112
+.gitignore
+  s_dd118f467446e0::t_c4dbc45c6a9546 21
+CONTRIBUTING.md
+  s_dd118f467446e0::t_2ef242c91bcade 4,41,95-96,98,127,146,165,175,177,179,181,183,185,189,191
+DESIGN.md
+  s_dd118f467446e0::t_1912ceb97d8143 359-360
+README.md
+  s_dd118f467446e0::t_1717bcb9401c90 30-40,119,121,123,125,127,129,131,133,135-136,138,140,143,146,152,155
+_typos.toml
+  s_dd118f467446e0::t_f091605056fd22 9-10,30-31
+bundled-skills/README.md
+  s_dd118f467446e0::t_291ce39a0f3c79 5
+crates/admin-ui/web/src/components/guardrails/settings/model.ts
+  s_dd118f467446e0::t_014becad9ddf1e 85,90
+crates/admin-ui/web/src/routes/models.tsx
+  s_dd118f467446e0::t_0d57642075555a 65
+crates/admin-ui/web/src/styles/globals.css
+  s_dd118f467446e0::t_2432fc92185f59 297-301
+crates/admin-ui/web/src/test/routes/models-route.test.tsx
+  s_dd118f467446e0::t_ede504502d89d2 946
+deploy/README.md
+  s_dd118f467446e0::t_48c981603864b9 4-5,48,129,131,133,135,137,139
+deploy/config/gateway.yaml
+  s_dd118f467446e0::t_4352bd0c5744e6 182
+deploy/selfhost/gateway.yaml
+  s_dd118f467446e0::t_60273c3d07caa1 3,70-71
+docs/.gitignore
+  s_dd118f467446e0::t_e291575d0561ef 1-22
+docs/AGENT.md
+  s_dd118f467446e0::t_9c9cf02832b359 1-200
+docs/AGENTS.md
+  s_dd118f467446e0::t_8cb6628069d05f 1-2,16-21
+docs/CLAUDE.md
+  s_dd118f467446e0::t_d5742146464fa5 1-5
+docs/README.md
+  s_dd118f467446e0::t_b47830f5f39de0 3,5-8,10-12,14,26-28,30,34-38
+docs/adr/2026-03-05-identity-foundation.md
+  s_dd118f467446e0::t_37178ea77fa123 10,12,16-17
+docs/adr/2026-03-05-vertex-first-provider-foundation.md
+  s_dd118f467446e0::t_825134ff1b669d 8-10
+docs/adr/2026-03-06-hybrid-pricing-catalog.md
+  s_dd118f467446e0::t_2fd4e8856538b3 10,12,18,118
+docs/adr/2026-03-06-release-versioning-and-ghcr-publishing.md
+  s_dd118f467446e0::t_2d93e29ad6980e 11,18
+docs/adr/2026-03-08-admin-team-management-flow.md
+  s_dd118f467446e0::t_74dfc98f1017b6 9-10,14-15
+docs/adr/2026-03-09-runtime-database-policy.md
+  s_dd118f467446e0::t_b2162b3927efb7 8-9
+docs/adr/2026-03-10-model-aliases-and-provider-route-config.md
+  s_dd118f467446e0::t_8d8d5c44cae080 9,14-16
+docs/adr/2026-03-12-durable-usage-ledger-accounting.md
+  s_dd118f467446e0::t_83908793ae4bcc 8
+docs/adr/2026-03-13-capability-aware-route-gating.md
+  s_dd118f467446e0::t_58f8d4aa7e6ca6 9,13-14
+docs/adr/2026-03-13-protocol-neutral-core-request-boundary.md
+  s_dd118f467446e0::t_3d199f10ee8519 8-9
+docs/adr/2026-03-15-openai-compat-streaming-and-embeddings-runtime-parity.md
+  s_dd118f467446e0::t_88542b8e7422d0 8-10
+docs/adr/2026-03-15-otlp-observability-and-request-log-payloads.md
+  s_dd118f467446e0::t_d5ec69d75f547b 9-10,14-15
+docs/adr/2026-03-15-spend-control-plane-reporting-and-team-hard-limits.md
+  s_dd118f467446e0::t_5cbf9b884b6e41 11,16
+docs/adr/2026-03-15-v1-runtime-simplification.md
+  s_dd118f467446e0::t_a0addcb6a6107d 9-10,14-15
+docs/adr/2026-03-17-migration-atomicity-and-local-postgres-ops-hardening.md
+  s_dd118f467446e0::t_d3fb4c125bcef4 8-10
+docs/adr/2026-03-17-post-success-accounting-and-strict-request-log-lookups.md
+  s_dd118f467446e0::t_3b7320572794b1 8-9
+docs/adr/2026-03-26-admin-identity-lifecycle-and-team-member-workflows.md
+  s_dd118f467446e0::t_cbcb3a5ed94168 14-15,212-213
+docs/adr/2026-03-26-request-log-caller-tags.md
+  s_dd118f467446e0::t_e3542244b7e7fe 12
+docs/adr/2026-03-28-generated-admin-api-contract-and-typed-same-origin-client.md
+  s_dd118f467446e0::t_c0232d954c9fd2 17,151-152
+docs/adr/2026-03-29-live-admin-api-key-management-and-contract-coverage.md
+  s_dd118f467446e0::t_319cf8b92078e1 15,282,284
+docs/adr/2026-03-31-chat-observability-hardening-and-stream-parse-contract.md
+  s_dd118f467446e0::t_955b0ffc076f3a 15-16,152-153
+docs/adr/2026-03-31-declarative-config-seeded-identity-and-budget-reconciliation.md
+  s_dd118f467446e0::t_f15f17e0017c8d 19-20,22,194-195,197-198
+docs/adr/2026-03-31-pre-v1-migration-rebaseline.md
+  s_dd118f467446e0::t_8a53842b03314d 16-17
+docs/adr/2026-04-21-observability-usage-leaderboard.md
+  s_dd118f467446e0::t_ac25ebf6969300 16-17
+docs/adr/2026-04-23-admin-current-session-logout.md
+  s_dd118f467446e0::t_3a085df42e00b0 24-25
+docs/adr/2026-04-27-cloudflare-pages-docs-hosting.md
+  s_dd118f467446e0::t_6e41ae6a41a752 6
+docs/adr/2026-05-15-local-sso-compose-fixture-and-browser-origin.md
+  s_dd118f467446e0::t_e77bf59d50a8bc 11
+docs/adr/2026-06-14-cloud-run-openai-compatible-provider.md
+  s_dd118f467446e0::t_6d3721f898041e 44
+docs/adr/2026-07-02-service-account-config-and-managed-api-key-secrets.md
+  s_dd118f467446e0::t_9dc544e3ca635e 3
+docs/adr/2026-07-16-route-level-effective-model-metadata-overrides.md
+  s_dd118f467446e0::t_f54f7f91bed1fb 8-11
+docs/adr/2026-08-05-configurable-admin-page-permissions.md
+  s_dd118f467446e0::t_4dc81c4363a5a2 8-10
+docs/adr/2026-08-14-github-copilot-provider.md
+  s_dd118f467446e0::t_3c5b13b015d988 9
+docs/adr/2026-08-16-github-copilot-compatibility-and-acceptance.md
+  s_dd118f467446e0::t_52836181fe59c0 5,38
+docs/adr/2026-08-22-gateway-guardrails-domain-and-composition.md
+  s_dd118f467446e0::t_b0b99db2949d5e 9,65
+docs/adr/2026-09-03-anthropic-compatible-provider-and-opencode-zen.md
+  s_dd118f467446e0::t_c582bd121eaed3 37,46
+docs/adr/2026-09-03-vertex-gemini-3-thinking-and-adapter-restructure.md
+  s_dd118f467446e0::t_704da458003f34 34,44,59
+docs/adr/2026-09-26-profile-landing-page.md
+  s_dd118f467446e0::t_e78b40ae911a61 8-9
+docs/adr/2026-10-01-self-hosting-with-mise-daemons.md
+  s_dd118f467446e0::t_18d6e942e550be 9
+docs/adr/2026-10-03-authenticated-agent-skills.md
+  s_dd118f467446e0::t_dd178bf297a002 8-9
+docs/adr/2026-10-04-copilot-token-cli.md
+  s_dd118f467446e0::t_63c297bc1b087f 36
+docs/adr/2026-10-04-shared-model-routing-and-session-affinity.md
+  s_dd118f467446e0::t_a02153062033fb 82
+docs/adr/2026-10-12-temporary-budget-increases.md
+  s_dd118f467446e0::t_9dd061288f508e 8-9
+docs/adr/2026-10-13-govern-every-mcp-method.md
+  s_dd118f467446e0::t_a21fe01eb6f903 8
+docs/adr/2026-10-13-mcp-credential-connect-url.md
+  s_dd118f467446e0::t_97c60a6d24f244 8
+docs/adr/2026-10-13-mcp-tool-metadata-and-schema-hash.md
+  s_dd118f467446e0::t_43ce289078e7f2 8-9
+docs/adr/2026-10-14-budget-exceeded-status-code.md
+  s_dd118f467446e0::t_3748bf2c3c6ba4 9-11
+docs/adr/2026-10-14-decisions-request-metrics.md
+  s_dd118f467446e0::t_421c1478c6c4cf 8-9,39
+docs/adr/2026-10-15-admin-audit-log.md
+  s_dd118f467446e0::t_7b8da5ad7e9145 9
+docs/adr/2026-10-15-gateway-rate-limits-and-quotas.md
+  s_dd118f467446e0::t_05dc44f8665455 8-10
+docs/adr/2026-10-15-generic-upstream-mcp-oauth.md
+  s_dd118f467446e0::t_e9f2048e652edf 10-11
+docs/adr/2026-10-15-mcp-client-oauth-authorization.md
+  s_dd118f467446e0::t_c27c164cdcd1a8 10-11
+docs/adr/2026-10-17-delegated-mcp-server-ownership.md
+  s_dd118f467446e0::t_b3bd976f55dbf9 10-11
+docs/adr/2026-10-17-mcp-tag-grants-and-tool-versioning.md
+  s_dd118f467446e0::t_a045eba400763d 9-10
+docs/adr/2026-10-17-scoped-api-keys.md
+  s_dd118f467446e0::t_af2ab3384ecccb 9-10
+docs/adr/2026-10-17-ssrf-safe-outbound-fetch.md
+  s_dd118f467446e0::t_b4045d05319356 9-10
+docs/adr/2026-10-21-litellm-model-group-info.md
+  s_dd118f467446e0::t_4d8d82734c76f4 9-10
+docs/adr/2026-10-26-image-generation-models.md
+  s_dd118f467446e0::t_bdc8c9eb51e591 9-11
+docs/adr/2026-10-31-multi-source-model-catalog.md
+  s_dd118f467446e0::t_d4b92d31260f5a 10-13
+docs/adr/2026-11-03-native-anthropic-messages-transport.md
+  s_dd118f467446e0::t_8a35849b790fa6 55
+docs/adr/2026-11-08-nimbus-docs-site-at-oceans-llm-com.md
+  s_dd118f467446e0::t_7d6719ccac8d43 1-46
+docs/astro.config.ts
+  s_dd118f467446e0::t_fccd9bebc57868 1-98
+docs/bun.lock
+  s_dd118f467446e0::t_8b7e7efcb185b2 2-4,7-8,11-20,22-29,32-1259
+docs/contributing/development/authentication-testing.md
+  s_dd118f467446e0::t_5fa1bfa13ea70c 3
+docs/contributing/implementation-plans/2026-08-05-configurable-admin-page-permissions.md
+  s_dd118f467446e0::t_79cf7309f1a0bf 3,47,349-351
+docs/contributing/implementation-plans/2026-09-22-guardrail-secret-redaction.md
+  s_dd118f467446e0::t_abc4d595e56a8a 3,6,22,232
+docs/contributing/implementation-plans/issue-206-service-account-config.md
+  s_dd118f467446e0::t_46d73d3204eca9 3
+docs/contributing/interviews/2026-04-24-request-id-and-request-attempt-observability.md
+  s_dd118f467446e0::t_28674126815d34 3
+docs/contributing/interviews/2026-05-27-mcp-gateway-auth-alignment.md
+  s_dd118f467446e0::t_1858788c09c9ae 3
+docs/contributing/mcp/mcp-registry-and-discovery.md
+  s_dd118f467446e0::t_55c50659afaeb0 3,7,162
+docs/contributing/operations/budgets-and-spending.md
+  s_dd118f467446e0::t_07066009530312 3,5
+docs/contributing/reference/admin-api-contract-workflow.md
+  s_dd118f467446e0::t_31d82a6357eed3 3,109,117
+docs/contributing/reference/agent-session-analysis.md
+  s_dd118f467446e0::t_b5054416f9d01a 3,5
+docs/contributing/reference/data-relationships.md
+  s_dd118f467446e0::t_5ae7074d0ecb50 3,241,254,263
+docs/contributing/reference/e2e-contract-tests.md
+  s_dd118f467446e0::t_0352fdfd4f3de9 3
+docs/contributing/reference/migration-authoring.md
+  s_dd118f467446e0::t_2e5aa828c1abc4 3,78,85
+docs/contributing/reference/model-benchmark-snapshot.md
+  s_dd118f467446e0::t_9463604d57931a 3
+docs/contributing/reference/release-process.md
+  s_dd118f467446e0::t_24c60e11475b3d 3
+docs/contributing/reference/screenshots.md
+  s_dd118f467446e0::t_2a97f6464b8c4c 3
+docs/contributing/superpowers/specs/2026-04-24-request-id-and-request-attempt-observability-design.md
+  s_dd118f467446e0::t_d2b619ad5b73d3 3
+docs/internal/2026-10-04-multi-provider-routing-research.md
+  s_dd118f467446e0::t_da88542883065b 22
+docs/internal/anthropic-thinking-compatibility.md
+  s_dd118f467446e0::t_9028f9595ac11c 3,64
+docs/internal/github-oauth-direct-sso-plan.md
+  s_dd118f467446e0::t_c78e5f52d77ec1 256
+docs/interviews/2026-07-16-route-pricing-and-context-overrides.md
+  s_dd118f467446e0::t_5c268bd2eebc72 3
+docs/interviews/2026-07-20-agent-task-analysis-and-efficiency.md
+  s_dd118f467446e0::t_bc2f279add9da4 3,521
+docs/mise.toml
+  s_dd118f467446e0::t_8f11479065a194 3-5,8-9,12,14,17,19,21-22,24,26-27,29,31-33,35
+docs/nimbus.json
+  s_dd118f467446e0::t_70dcc93549006e 1-112
+docs/package.json
+  s_dd118f467446e0::t_fd9a31fb15973c 3,5,7-14,16-17,20-41
+docs/plans/2026-07-05-issue-213-model-allowlists.md
+  s_dd118f467446e0::t_55bd550b59afee 3,245-251
+docs/plans/2026-07-05-vertex-gemini-embeddings.md
+  s_dd118f467446e0::t_88e5bf4ac8772a 3,29,69,281,418,465,472,478,483,487,492,501,503,507,510
+docs/plans/2026-07-06-issue-227-budget-default-policies.md
+  s_dd118f467446e0::t_e045dc9d410977 3,353,362
+docs/plans/2026-07-20-agent-session-analysis-and-efficiency.md
+  s_dd118f467446e0::t_0f7579f1d008d6 3,986,997-1002,1017-1018
+docs/public/_headers
+  s_dd118f467446e0::t_27d4428c431082 1-4
+docs/public/_redirects
+  s_dd118f467446e0::t_204a5a99a84326 1-129
+docs/public/r/registry.json
+  s_dd118f467446e0::t_848dbbd8ff08d8 4
+docs/src/components.ts
+  s_dd118f467446e0::t_39948c99ffebc5 1-25
+docs/src/components/AgentDirective.astro
+  s_dd118f467446e0::t_167260bc6163b2 1-27
+docs/src/components/ConnectMcp.astro
+  s_dd118f467446e0::t_fc5a9d95fc1ca0 1-28
+docs/src/components/Header.astro
+  s_dd118f467446e0::t_11972719268854 1-144
+docs/src/components/Logo.astro
+  s_dd118f467446e0::t_3bc68b14458281 1-15
+docs/src/components/Render.astro
+  s_dd118f467446e0::t_ddcf67c5263d17 1-107
+docs/src/components/WebMCP.astro
+  s_dd118f467446e0::t_13a3d56bcb5c77 1-24
+docs/src/components/connect-mcp.client.ts
+  s_dd118f467446e0::t_f73b77cb083e7d 1-38
+docs/src/components/ui/api-code-rail/ApiCodeRail.astro
+  s_dd118f467446e0::t_730c974a00f1fb 1-173
+docs/src/components/ui/api-code-rail/code-rail.client.ts
+  s_dd118f467446e0::t_b80c552a6282d8 1-104
+docs/src/components/ui/api-code-rail/code-rail.css
+  s_dd118f467446e0::t_f6109ea15bdbf3 1-259
+docs/src/components/ui/api-code-rail/index.ts
+  s_dd118f467446e0::t_f6138d09b7b470 1
+docs/src/components/ui/api-field-row/ApiFieldList.astro
+  s_dd118f467446e0::t_ccd3ac349fa4f0 1-94
+docs/src/components/ui/api-field-row/ApiFieldRow.astro
+  s_dd118f467446e0::t_e82028011a328d 1-117
+docs/src/components/ui/api-field-row/ApiUnionExplorer.astro
+  s_dd118f467446e0::t_a62c05b78005e5 1-83
+docs/src/components/ui/api-field-row/api-field-row.client.ts
+  s_dd118f467446e0::t_c58baac2f37cd7 1-45
+docs/src/components/ui/api-field-row/field-list.css
+  s_dd118f467446e0::t_c638ed728e3132 1-362
+docs/src/components/ui/api-field-row/index.ts
+  s_dd118f467446e0::t_aee7edf5af2d1f 1-6
+docs/src/components/ui/api-field-row/type-display.ts
+  s_dd118f467446e0::t_08615e2c2c6e9a 1-128
+docs/src/components/ui/api-layout/ApiBody.astro
+  s_dd118f467446e0::t_ec0e431b63eff9 1-422
+docs/src/components/ui/api-layout/ApiEndpointCard.astro
+  s_dd118f467446e0::t_1fbe01171f1b7e 1-108
+docs/src/components/ui/api-layout/ApiHome.astro
+  s_dd118f467446e0::t_6ce810c31b99bb 1-388
+docs/src/components/ui/api-layout/ApiHomeChunk.astro
+  s_dd118f467446e0::t_f920ac21470dd3 1-143
+docs/src/components/ui/api-layout/ApiLayout.astro
+  s_dd118f467446e0::t_329eb20915deef 1-350
+docs/src/components/ui/api-layout/ApiOperationList.astro
+  s_dd118f467446e0::t_c67784cd31f7bb 1-35
+docs/src/components/ui/api-layout/auth.ts
+  s_dd118f467446e0::t_5e126c8a66931e 1-87
+docs/src/components/ui/api-layout/home.ts
+  s_dd118f467446e0::t_43d50162d2a2bd 1-5
+docs/src/components/ui/api-layout/index.ts
+  s_dd118f467446e0::t_c54bc7760224ce 1-3
+docs/src/components/ui/api-layout/request-examples.client.ts
+  s_dd118f467446e0::t_b4362c301433ab 1-12
+docs/src/components/ui/api-layout/responses.client.ts
+  s_dd118f467446e0::t_d7d405e633935d 1-9
+docs/src/components/ui/api-sidebar/ApiMethodChip.astro
+  s_dd118f467446e0::t_d90ebe347b1c79 1-141
+docs/src/components/ui/api-sidebar/ApiSidebar.astro
+  s_dd118f467446e0::t_88f17cbfc1e94b 1-38
+docs/src/components/ui/api-sidebar/ApiSidebarItem.astro
+  s_dd118f467446e0::t_5f08fd236e4304 1-68
+docs/src/components/ui/api-sidebar/api-nav-filter.client.ts
+  s_dd118f467446e0::t_0d85c92e93b371 1-102
+docs/src/components/ui/api-sidebar/index.ts
+  s_dd118f467446e0::t_74b9f7530b7772 1-3
+docs/src/components/ui/api-sidebar/method.ts
+  s_dd118f467446e0::t_b345f39bb7fbd7 1-27
+docs/src/components/ui/aside/Aside.astro
+  s_dd118f467446e0::t_e3567216b27fb9 1-96
+docs/src/components/ui/aside/index.ts
+  s_dd118f467446e0::t_eb0fc9f4fa375f 1
+docs/src/components/ui/badge/Badge.astro
+  s_dd118f467446e0::t_65e8b0df25ce7a 1-42
+docs/src/components/ui/badge/index.ts
+  s_dd118f467446e0::t_7ad4700298c1e8 1
+docs/src/components/ui/banner/Banner.astro
+  s_dd118f467446e0::t_88d63342e625d3 1-78
+docs/src/components/ui/banner/banner.client.ts
+  s_dd118f467446e0::t_a76bdcbd25ec77 1-49
+docs/src/components/ui/banner/index.ts
+  s_dd118f467446e0::t_b3b1ff349b81c2 1
+docs/src/components/ui/breadcrumbs/Breadcrumbs.astro
+  s_dd118f467446e0::t_f01f46e83d8c35 1-93
+docs/src/components/ui/breadcrumbs/index.ts
+  s_dd118f467446e0::t_3c752c2c2b1285 1
+docs/src/components/ui/button/Button.astro
+  s_dd118f467446e0::t_87fc5f3acb96c3 1-71
+docs/src/components/ui/button/index.ts
+  s_dd118f467446e0::t_850f466e717572 1-13
+docs/src/components/ui/button/variants.ts
+  s_dd118f467446e0::t_0b9d53d84dc863 1-10,12-20,22-37,40-46,48-54,56-61,63-66,69-90
+docs/src/components/ui/card-grid/CardGrid.astro
+  s_dd118f467446e0::t_c3905dfad479a2 1-16
+docs/src/components/ui/card-grid/index.ts
+  s_dd118f467446e0::t_8ca4c94cf37195 1
+docs/src/components/ui/card/Card.astro
+  s_dd118f467446e0::t_2f3f88f8ff8eb5 1-55
+docs/src/components/ui/card/index.ts
+  s_dd118f467446e0::t_47e0a2fef37d16 1
+docs/src/components/ui/code/Code.astro
+  s_dd118f467446e0::t_7470f8359f1238 1-36
+docs/src/components/ui/code/index.ts
+  s_dd118f467446e0::t_e08d4762828bd6 1
+docs/src/components/ui/collapsible/Collapsible.astro
+  s_dd118f467446e0::t_00b430401a9a6e 1-27
+docs/src/components/ui/collapsible/CollapsibleContent.astro
+  s_dd118f467446e0::t_0be7fd2e896be1 1-31
+docs/src/components/ui/collapsible/CollapsibleTrigger.astro
+  s_dd118f467446e0::t_b13b47c665e33a 1-23
+docs/src/components/ui/collapsible/collapsible.client.ts
+  s_dd118f467446e0::t_0064c72b43c90e 1-22
+docs/src/components/ui/collapsible/index.ts
+  s_dd118f467446e0::t_e93ae166be9506 1-3
+docs/src/components/ui/dialog/Dialog.astro
+  s_dd118f467446e0::t_b4f2f1c2a38aed 1-35
+docs/src/components/ui/dialog/DialogClose.astro
+  s_dd118f467446e0::t_609686d482326d 1-27
+docs/src/components/ui/dialog/DialogContent.astro
+  s_dd118f467446e0::t_8bb472384b5589 1-22
+docs/src/components/ui/dialog/dialog-close.client.ts
+  s_dd118f467446e0::t_d14dfc022e8683 1-7
+docs/src/components/ui/dialog/dialog.client.ts
+  s_dd118f467446e0::t_2d924214cb3bb0 1-22
+docs/src/components/ui/dialog/index.ts
+  s_dd118f467446e0::t_6ef45799f19ff2 1-3
+docs/src/components/ui/image-zoom/ImageZoom.astro
+  s_dd118f467446e0::t_b5b1477d6d9907 1-103
+docs/src/components/ui/image-zoom/image-zoom.client.ts
+  s_dd118f467446e0::t_d69ec3fda41a27 1-118
+docs/src/components/ui/image-zoom/index.ts
+  s_dd118f467446e0::t_d3f587d48fe77f 1
+docs/src/components/ui/layer-card/LayerCard.astro
+  s_dd118f467446e0::t_e58be24b0824e2 1-36
+docs/src/components/ui/layer-card/LayerCardContent.astro
+  s_dd118f467446e0::t_28a416f93686d4 1-22
+docs/src/components/ui/layer-card/LayerCardHeader.astro
+  s_dd118f467446e0::t_3934cb84c6f19d 1-22
+docs/src/components/ui/layer-card/index.ts
+  s_dd118f467446e0::t_9fb2619e416dba 1-3
+docs/src/components/ui/link-button/LinkButton.astro
+  s_dd118f467446e0::t_85fac83c72171d 1-78
+docs/src/components/ui/link-button/index.ts
+  s_dd118f467446e0::t_ffcff0a134b57c 1
+docs/src/components/ui/package-managers/PackageManagers.astro
+  s_dd118f467446e0::t_c494df059fae33 1-140
+docs/src/components/ui/package-managers/index.ts
+  s_dd118f467446e0::t_5bf688d5f70c78 1
+docs/src/components/ui/package-managers/package-managers.client.ts
+  s_dd118f467446e0::t_cfe2f858b62c41 1-59
+docs/src/components/ui/page-actions/PageActions.astro
+  s_dd118f467446e0::t_29e674b97512b4 1-83
+docs/src/components/ui/page-actions/index.ts
+  s_dd118f467446e0::t_a61367e453bf73 1
+docs/src/components/ui/page-actions/page-actions.client.ts
+  s_dd118f467446e0::t_0a78c355cca6bb 1-59
+docs/src/components/ui/pagination/Pagination.astro
+  s_dd118f467446e0::t_bb45e765f4cecb 1-113
+docs/src/components/ui/pagination/PaginationKey.astro
+  s_dd118f467446e0::t_6ef3755b5e5928 1-52
+docs/src/components/ui/pagination/PaginationLink.astro
+  s_dd118f467446e0::t_d489565b074fa1 1-77
+docs/src/components/ui/pagination/index.ts
+  s_dd118f467446e0::t_d4e98c647e7fa9 1-3
+docs/src/components/ui/pagination/pagination.client.ts
+  s_dd118f467446e0::t_e6fb3093ad19f0 1-92
+docs/src/components/ui/popover/Popover.astro
+  s_dd118f467446e0::t_46938599d4df47 1-34
+docs/src/components/ui/popover/PopoverContent.astro
+  s_dd118f467446e0::t_321c018f065975 1-46
+docs/src/components/ui/popover/PopoverTrigger.astro
+  s_dd118f467446e0::t_b09e3b8a1a42d4 1-23
+docs/src/components/ui/popover/index.ts
+  s_dd118f467446e0::t_a8e27f14fc7f15 1-3
+docs/src/components/ui/popover/popover.client.ts
+  s_dd118f467446e0::t_57f18a477f83bf 1-89
+docs/src/components/ui/search/SearchDialog.astro
+  s_dd118f467446e0::t_3b8822c7d4b36b 1-50
+docs/src/components/ui/search/SearchTrigger.astro
+  s_dd118f467446e0::t_0e5e3003203745 1-22
+docs/src/components/ui/search/index.ts
+  s_dd118f467446e0::t_3729c8b12503b0 1-2
+docs/src/components/ui/search/providers/pagefind.ts
+  s_dd118f467446e0::t_8c47f2b167ec32 1-93
+docs/src/components/ui/search/search-trigger.client.ts
+  s_dd118f467446e0::t_677fa2ceb7b89f 1-17
+docs/src/components/ui/search/search.client.ts
+  s_dd118f467446e0::t_685fe67bd93db8 1-279
+docs/src/components/ui/sidebar/Sidebar.astro
+  s_dd118f467446e0::t_296d621873995d 1-67
+docs/src/components/ui/sidebar/SidebarFilter.astro
+  s_dd118f467446e0::t_c4a82c6f55f295 1-32
+docs/src/components/ui/sidebar/SidebarGroup.astro
+  s_dd118f467446e0::t_df23164c3cc948 1-103
+docs/src/components/ui/sidebar/SidebarGroupHeader.astro
+  s_dd118f467446e0::t_dcea27b5d84734 1-37
+docs/src/components/ui/sidebar/SidebarLink.astro
+  s_dd118f467446e0::t_d8a7f1dd60daf4 1-51
+docs/src/components/ui/sidebar/index.ts
+  s_dd118f467446e0::t_da089b7950225e 1-5
+docs/src/components/ui/sidebar/sidebar.client.ts
+  s_dd118f467446e0::t_22b36e007ec3db 1-7,9,11,13-16,19-22,25-27,29-30,32-35,37,40-42,44-50,52-56,58-65,67-125,127-128,131-134,137-139,141-146,148-153,155-177,179-248,250-261
+docs/src/components/ui/steps/Step.astro
+  s_dd118f467446e0::t_de4e85f5580f40 1-26
+docs/src/components/ui/steps/Steps.astro
+  s_dd118f467446e0::t_749e82ce452fad 1-114
+docs/src/components/ui/steps/index.ts
+  s_dd118f467446e0::t_ed8d3b9fcb517c 1-2
+docs/src/components/ui/steps/steps.client.ts
+  s_dd118f467446e0::t_dc03355bdfa1aa 1-30
+docs/src/components/ui/tabs/TabItem.astro
+  s_dd118f467446e0::t_affe9f3a89dbb2 1-31
+docs/src/components/ui/tabs/Tabs.astro
+  s_dd118f467446e0::t_bb919ca9e4c9be 1-51
+docs/src/components/ui/tabs/TabsContent.astro
+  s_dd118f467446e0::t_4f7d852b9b53e5 1-25
+docs/src/components/ui/tabs/TabsList.astro
+  s_dd118f467446e0::t_d001f9b9c7af7f 1-57
+docs/src/components/ui/tabs/TabsTrigger.astro
+  s_dd118f467446e0::t_96c5a9be4f29d3 1-32
+docs/src/components/ui/tabs/index.ts
+  s_dd118f467446e0::t_dcdaab3e96eca4 1-5
+docs/src/components/ui/tabs/tabs.client.ts
+  s_dd118f467446e0::t_364da86455a94a 1-142
+docs/src/components/ui/theme-toggle/ThemeToggle.astro
+  s_dd118f467446e0::t_ad22ac3b2f71d2 1-35
+docs/src/components/ui/theme-toggle/index.ts
+  s_dd118f467446e0::t_c8baf657f3c71c 1
+docs/src/components/ui/theme-toggle/theme-toggle.client.ts
+  s_dd118f467446e0::t_b032c0bddaf34a 1-39
+docs/src/components/ui/toc/MobileTOC.astro
+  s_dd118f467446e0::t_9608e27bc0c23c 1-61
+docs/src/components/ui/toc/TOC.astro
+  s_dd118f467446e0::t_4d20f65d8ce400 1-96
+docs/src/components/ui/toc/index.ts
+  s_dd118f467446e0::t_e492eb048da150 1-2
+docs/src/components/ui/toc/mobile-toc.client.ts
+  s_dd118f467446e0::t_a2ac948b4ca6df 1-136
+docs/src/components/ui/toc/toc.client.ts
+  s_dd118f467446e0::t_1d05610113931f 1-357
+docs/src/components/ui/version-switcher/README.md
+  s_dd118f467446e0::t_775c2cecef361e 1-96
+docs/src/components/ui/version-switcher/VersionSwitcher.astro
+  s_dd118f467446e0::t_fca23b2628a338 1-226
+docs/src/components/ui/version-switcher/index.ts
+  s_dd118f467446e0::t_d5bbe718065965 1
+docs/src/content.config.ts
+  s_dd118f467446e0::t_6dab59a3e399c2 1-24
+docs/src/content/docs/access/access-settings.mdx
+  s_dd118f467446e0::t_8cf33d702f4b2d 1-314
+docs/src/content/docs/access/admin-audit-log.mdx
+  s_dd118f467446e0::t_0fb0a517e4f1ae 1-6,8,12-15,17-23,25-27,32,38,45,48-50,52,54-59,61,63,66-68,72,74-79,83-91,93,95-97,106-108,112
+docs/src/content/docs/access/admin-control-plane.mdx
+  s_dd118f467446e0::t_724cedb9748723 1-6,8,10,12,14,16-20,22,24,26,28,30,32-35,37,39,41,43-50,52,54-58,60,62-66,68-161
+docs/src/content/docs/access/identity-and-access.mdx
+  s_dd118f467446e0::t_1269c278420c6e 1-6,8,10,12-17,19,21-23,25,27,29,31,33,35-39,41,43,45,47,49-51,53,55-58,60-62,64,66,68,70,72-75,77,79,81,83-86,88,90,92-95,97,99,101,103,105,107-111,113,115,117-119,121,123,125,127,129,131,133-139,141,143,145,147-151,153,155,157,159,161,163,165-169,171,173,175,177,179,181,183,185-187,189,191,193,195-196,198,200,202,204,206,208-210,212,214,216,218,220,222,224-228,230,232,234-238,240
+docs/src/content/docs/access/service-accounts.mdx
+  s_dd118f467446e0::t_92852b65069610 1-6,8,10,12-17,19,21,23-25,27-28,30-36,38-40,42,44,46-52,54,56,58,60,62-64,66,68,70,72,74,76,78,80,82,84,86-88,90,92,94,96,105-114
+docs/src/content/docs/access/sso/github.mdx
+  s_dd118f467446e0::t_de89abb8f4723c 1-6,8,10,12,14-18,20,22,24,26,34,36,38-40,63-75,77,79-83,85,87,89,91-92,94,96,98,100,102-106
+docs/src/content/docs/access/sso/google.mdx
+  s_dd118f467446e0::t_1ee1f79bdb9326 1-6,8,10,12,16-19,21,27,29,31,33-34,36-38,40,44,46,48-61,63,65,67,69,71,75-77,79,81,83,85,92,94,96,100,121-126,128,130,132-135,137,139,141-145,151,153,155,157,159,161-163,165,167,169,171,173,175-180
+docs/src/content/docs/access/sso/index.mdx
+  s_dd118f467446e0::t_b717a16787e29c 1-51,57,59,61-63,70,72-76,78,80,82,84,86,88-92,94,96,98,100,102,104-113,115,117,119-122,124,126,128,130,132-134,136,138,140
+docs/src/content/docs/extensions/mcp-client-setup.mdx
+  s_dd118f467446e0::t_42753662d30fea 1-6,8,14,16-18,20,22,24,26-29,31,33,35,37,39,41,43,45,47,49-51,53-68,70-92,94-113,119,125,127,129,131,135-137,139,141,155,157,159,161,163-171,174-185,187,189,191,193-195,197-199,201-240,244,247-249,251,253,255,257,259,261,263,265,267-271,273,277-280,285,287,289,291,293,295-298,300,302,304,306,308-309,311,313,315,317-320,322,324-326,328,330,336-338,340,350,357-358
+docs/src/content/docs/extensions/mcp-invocations.mdx
+  s_dd118f467446e0::t_ad408a435e0d70 1-146
+docs/src/content/docs/extensions/mcp-servers.mdx
+  s_dd118f467446e0::t_d7a4d924c704de 1-6,8,10,12-14,16,18,22,25,27,29,31,33,35,37,39-45,47,49,51,56,59,61-62,64,66,72-78,82,84,88-96,98,100,102,104-107,109,111,113,115-118,120,122,124,126,128,130-134,136,138,140,142,144,146,148,151,153,155,157,159-165,167,169,171,173,175-180,182-187,189,200-208,210,212,214,216,219,221-223,225,227,229,231,237,245-260,281-282,284-286,288,290,294,296,298,300-302,304-314,316,318,320,350,352-357,362,365-366,368,370,372,374,376,378-379,386-388,397-398,405-406,414-415,417,419-421,423-424,426,428,430,432,434,436-438,441,443,448,452,454-455,458,460,462,464,468,470,472
+docs/src/content/docs/extensions/mcp-tool-access.mdx
+  s_dd118f467446e0::t_7016c5a2d93bf7 1-6,8,10,12,14-16,18,20,22-26,28-32,34,36,38,40,42-64,68-72,74,76,78,80,82-85,87,89-91,93,95-96,98,100,102,104,106-108,110-119,123,127-145,149,151,154,156-167,171,174-194,198-199,201-202,204-214,218,220,222,224,226,228,230,232-239,241,243,245,247,249,251-258,260,262,264-266,268-270,272,274-275,277,279,281,283,285,287,289-293,303-350,352,354,356-358,360,362,364,366,368
+docs/src/content/docs/extensions/skills.mdx
+  s_dd118f467446e0::t_b452d0863f0f61 1-6,8,10,12,14,16,18,20,22-23,26-28,30,32,34,47,49,51,53-55,68-70,72,74,76-86,88,90,92,94-96,98,100-102,107-113,115,117,119,121,123,129,131,135,145,158-160,162,164,166,168,170,172,174-176,180,182,186,188,190,199-203,205,207,209,213,215,220,222,224,228,232-233,235,237-242,244-246,248,250,252,254,256,258,260,262,264
+docs/src/content/docs/features.mdx
+  s_dd118f467446e0::t_33c40013b78869 1-6,8,10,12-14,16,18-20,22,24,26-28,30,32,34,36-40,42,44,46,48,50,52,54,56-58,60,62-65,67,69-72,74,76-78,80,82-84
+docs/src/content/docs/harnesses/index.mdx
+  s_dd118f467446e0::t_e1bcd1f4173370 1-50,52,54,56,58,60,62,64,67,73,75,77,79,81-83,85,87,89,91-93,95,97,99,101,103,107-109,111,113-123,127,129-131,133,137-151,153-154,156-158,160,162,164,166,168,170
+docs/src/content/docs/harnesses/omp.mdx
+  s_dd118f467446e0::t_37222256cd3b95 1-147
+docs/src/content/docs/harnesses/opencode.mdx
+  s_dd118f467446e0::t_f2c5dce1a3c0d7 1-13,15,17,19,21-24,26,28,30-32,34-36,38-41,43-49,51-56,58-61,63-71,73-79,81-83,85,87-90,92-94,96-98,100,102,104,106-108,110,112,114,116-117,119,121-123,125,127,129-133,135,137,139,141-157,159-161,163,165,167,169,171-180,182,184,186,188,190-197,199,201,203-211,213-215,217-222,224,226,228,230,232-234,236,238
+docs/src/content/docs/introduction.mdx
+  s_dd118f467446e0::t_6cb18b9b1747b8 1-46
+docs/src/content/docs/observability/agent-harness-usage.mdx
+  s_dd118f467446e0::t_5a0d87bb279a42 1-81
+docs/src/content/docs/observability/agent-session-analysis.mdx
+  s_dd118f467446e0::t_4ba4b73e202b67 1-25,27-29,31,33,35-37,39,41,43,45,47-52,54,56,58,60,62-65,67,69,71,73,75-84,86-90,92,94-98,100,102-104,108-113,115,117,119,123-125,127,129,131,135,137,139,141-142,144,146-147,150,152-154,156,158,160-163,165-167,169,171-176
+docs/src/content/docs/observability/export-traces-and-metrics.mdx
+  s_dd118f467446e0::t_bf9c08e353d693 1-6,8,10,12,14,16,23,25-28,30,32,34,36-38,40-42,44,46,48,56-61,63,65,67,69,71,73,75,77,87,89,91,93,108,110,112,114,118,120,122,124,126-136,138,140,142,144,146,148
+docs/src/content/docs/observability/index.mdx
+  s_dd118f467446e0::t_e79751400ea45c 1-127
+docs/src/content/docs/observability/request-logs.mdx
+  s_dd118f467446e0::t_5c8e5b5aad75dd 1-6,8,10,12,14-21,23,25,27-29,31,33,35,37-38,40,42,44,46,48,50,52,54,56-65,67,69-72,74,76,78,80,82,84-88,90,92,94,96-104,106,108,110,112,114,116,118-121,123,125,127,129-133,135,137,139,155,157,159,161-163,165,167-171,173,175,177,179,181-185,187,189,191,193-196,198,200-203,205,207,209,211,213,215,217,219,221,223,225,227-230,232,234,236,238,240-246,248,250,252,254-255,257,259,261,263,265-266,268,270,272-279,281
+docs/src/content/docs/observability/tagging.mdx
+  s_dd118f467446e0::t_3ce3db9211fef9 1-6,8,10,12,14-17,19,21,29,31-34,36,38,40,42-46,48,50,52,54-59,61-63,67,69,71,73,75,77,79,81-84,86,88,90,92,94-96,98
+docs/src/content/docs/operations/gateway-guardrails.mdx
+  s_dd118f467446e0::t_aadcff97c83cd4 1-6,8,10,12,14,16,18-25,27,29-30,32,34,36-40,44-63,65,67,69,71,73,97-109,111-116,124,135-167,171-173,175,186,190-192,194,196,198,200,202,204-206,208,210-256,279,281,283-285,298,300,302,304,320,328-330,332,334,340,344-354,356,358-360,362,364,366,368,370,372,374,376,378-496
+docs/src/content/docs/providers/gcp-cloud-run.mdx
+  s_dd118f467446e0::t_a1bcbcf9936968 1-6,8,10,12-16,18,20-25,27,39-48,50,52-54,56-60,71-79,81,83-85,87,89-91,95-97,102-104,109-112,114,116-118,120,122-128,139-141,143-148,150-154,172,174,176,178
+docs/src/content/docs/providers/gcp-vertex.mdx
+  s_dd118f467446e0::t_be59b66d3e3dce 1-6,8,10-14,16,18,20-28,30,34,42-67,69,71,73-87,91,99,106,108-111,113,115,117,119,121,123-124,126,128,130,132-152,154,156-165,180,182,184,186,188,190,192,194,201,205,209-213,217,219-222,224,226-228,230,232,234,236,238-242,244-245,249,255,257,259-264,266,268-270,272-275,277,279,281,283,285-291,293,295,297-298,300,302,304,306-308,310,312-333,335,337-354,372,382,386,397,401,403-416,418,420,422-423,425-427,431-436,438-453,455,457-459,461,463,465
+docs/src/content/docs/providers/github-copilot.mdx
+  s_dd118f467446e0::t_6de043011d2ccb 1-6,8,10-14,16,18-20,24-25,28,30,37-38,41,43,46,49-50,53,55-57,64,70,76-83,85,87,89,93,95-100,102-107,109,111,113,115-143,145,149,151-155,157-161,165-174,176,192-198,200
+docs/src/content/docs/providers/opencode-zen.mdx
+  s_dd118f467446e0::t_537082407e33de 1-6,8,10,12-16,18,20-35,37-48,50,56,60-61,63-64,68-74,76-82,84-88,91-126
+docs/src/content/docs/providers/openrouter.mdx
+  s_dd118f467446e0::t_534d75df41a50c 1-6,8,10,12,14,16,30-57,59,61,81,83-88,90,92-131,135,137,139,151,153,155,157,159,161,163-174,177-183
+docs/src/content/docs/providers/typesafe.mdx
+  s_dd118f467446e0::t_189fc1154fbe87 1-6,8,10,12,14-17,19,21-25,49-57,59,61,63-65,99-109,111,113-116,118,120,122-127
+docs/src/content/docs/reference/request-lifecycle.mdx
+  s_dd118f467446e0::t_3de94cf061ad44 1-161
+docs/src/content/docs/setup/deploy-and-operations.mdx
+  s_dd118f467446e0::t_bc96a691414b37 1-60
+docs/src/content/docs/setup/index.mdx
+  s_dd118f467446e0::t_dbba1285f25260 1-31
+docs/src/content/docs/setup/self-hosting.mdx
+  s_dd118f467446e0::t_f71a69d26d5415 1-6,8,10,12,15-24,27-28,30,32,34,36-37,43-45,47,57,59,61,68,76,78,80-82,86-91,93,95,97-101,104-106,109,111,114,117,119,122,125,127,129,131-133,135-137,145,147,149,156,160,164,167-175,177,179,185,189,193-195,204-249,251-256
+docs/src/content/docs/spend/budget-settings.mdx
+  s_dd118f467446e0::t_42fcd840f3cfc4 1-110
+docs/src/content/docs/spend/budgets.mdx
+  s_dd118f467446e0::t_f1f5ff00489491 1-6,8,10,12,14,16-20,22,24,26,28,30,32-35,37,39-41,43,45,47,49,51,53,55,57,59-80,82-84,86,88,90-96,98,100,102,104-107,109,111-114,116,118,120,122,124,126,128-134,136,138,140-150,152,154,156,158-188,197,199,217,219-226,229-230,232-237,240-241,243,245,260,262,264-268,270,272-282,284,286,288,301-305,307,309,311,313,315-318,320,322,324,326,328-331,333
+docs/src/content/docs/spend/pricing-and-accounting.mdx
+  s_dd118f467446e0::t_1a40bcfe44d4f0 1-6,8,10,12,14-19,21,23,25-26,28,30,32,34-36,38,40,42-44,46,48,50,52-56,58,60,62,64,66-69,71,73,75,77,79,81,83,85-90,92,94,96-99,101,103,105,107,109-115,128-136,138-140,142,144,146-148,157,159,161,163,165,167,169-170,172,174,176,178-183,185,187,189,191,193,195,197-198,200,202,204,206,208,210,212-222,224,226,228,230-234,236,238,240,242,244,246,248,250,252,254-263,265-272,274,276,278-279,281,283,285
+docs/src/content/docs/spend/rate-limits.mdx
+  s_dd118f467446e0::t_4f15a8463dd28e 1-6,8,10,14-17,21-25,29-39,41-50,54,56,60-61,65-83,85-116,118-125,127,129-148,158,160-161,164,178-194,196-203,205,207,209-211,216,220,222,224,226-229,231,233,235,239-241,245,247,254,256,259-260
+docs/src/landing/Bento.astro
+  s_dd118f467446e0::t_76f95f70558780 1-149
+docs/src/landing/Closing.astro
+  s_dd118f467446e0::t_ebb9b10a85467d 1-45
+docs/src/landing/Deploy.astro
+  s_dd118f467446e0::t_8175f89475e35d 1-41
+docs/src/landing/Faq.astro
+  s_dd118f467446e0::t_4b87645abd1834 1-34
+docs/src/landing/Float.astro
+  s_dd118f467446e0::t_98b097edd2beb4 1-30
+docs/src/landing/Footer.astro
+  s_dd118f467446e0::t_4c4e8190f7395c 1-43
+docs/src/landing/Frame.astro
+  s_dd118f467446e0::t_5093b5f8ba7f47 1-47
+docs/src/landing/Harnesses.astro
+  s_dd118f467446e0::t_b167ff81bdf374 1-11,13-25,27-37,39-68
+docs/src/landing/Hero.astro
+  s_dd118f467446e0::t_796da36b70f013 1-67
+docs/src/landing/Lifecycle.astro
+  s_dd118f467446e0::t_6eb8687cac3070 1-100
+docs/src/landing/Pillars.astro
+  s_dd118f467446e0::t_bf9c9558a197b9 1-93
+docs/src/landing/RichText.astro
+  s_dd118f467446e0::t_19d3f286b6e0fe 1-31
+docs/src/landing/SectionHeading.astro
+  s_dd118f467446e0::t_ae788df68a30f0 1-23
+docs/src/landing/Statement.astro
+  s_dd118f467446e0::t_84a99f13ee65e1 1-33
+docs/src/landing/content.ts
+  s_dd118f467446e0::t_59bc67763af810 1-8,10-104,106-107,109-112,116-117,119-122,125-194,196-215,217-232,234-256,259-279,281-301,303-318,321-339,341-357,359-394,396-400,402-412,414-421,423-433,435-442,444-449,452-460,465-469,471-484,489-493,495-503,509-526,528-532,535-623,627-633,637-641,645-669,674-690,692-699,702-710
+docs/src/landing/landing.client.ts
+  s_dd118f467446e0::t_840a55c58e35e5 1-23
+docs/src/landing/landing.css
+  s_dd118f467446e0::t_f4c873538c409f 1-742
+docs/src/layouts/BaseLayout.astro
+  s_dd118f467446e0::t_dd9e58b081c850 1,4-154
+docs/src/layouts/DocsLayout.astro
+  s_dd118f467446e0::t_ccbaffbee09f61 1-437
+docs/src/lib/cn.ts
+  s_dd118f467446e0::t_6dbd10cc20964b 1-7
+docs/src/lib/sidebar-icons.ts
+  s_dd118f467446e0::t_3ce26f05317f7f 1-61
+docs/src/lib/variants.ts
+  s_dd118f467446e0::t_68bc4ae52d9039 1-44
+docs/src/pages/404.astro
+  s_dd118f467446e0::t_f1fb61243ec5aa 1-35
+docs/src/pages/[...section]/llms.txt.ts
+  s_dd118f467446e0::t_a696e572cfbd1a 1-3
+docs/src/pages/[...slug].astro
+  s_dd118f467446e0::t_0bdb70f1b6b23d 1-71
+docs/src/pages/[...slug]/index.md.ts
+  s_dd118f467446e0::t_42e9d891aa0205 1-3
+docs/src/pages/[...slug]/index.mdx.ts
+  s_dd118f467446e0::t_73a1a51446fa53 1-3
+docs/src/pages/api/[...slug].astro
+  s_dd118f467446e0::t_404d9e006b5f7c 1-40
+docs/src/pages/index.astro
+  s_dd118f467446e0::t_848b333288f971 1-49
+docs/src/pages/index.md.ts
+  s_dd118f467446e0::t_d63313176165c7 1-69
+docs/src/pages/llms-full.txt.ts
+  s_dd118f467446e0::t_ec96855ea70820 1-3
+docs/src/pages/llms.txt.ts
+  s_dd118f467446e0::t_97042f49dc4b54 1-3
+docs/src/pages/nimbus-api/coordinates.json.ts
+  s_dd118f467446e0::t_1b2ce5f9596809 1-19
+docs/src/pages/og.png.ts
+  s_dd118f467446e0::t_4eaa90ad7a50de 1-12
+docs/src/pages/og/[...slug].ts
+  s_dd118f467446e0::t_a10c7d58629e24 1-19
+docs/src/pages/og/_card.ts
+  s_dd118f467446e0::t_f15ec73bcf4a51 1-83
+docs/src/pages/robots.txt.ts
+  s_dd118f467446e0::t_3097d4ec9ae94b 1-22
+docs/src/styles/globals.css
+  s_dd118f467446e0::t_b33b829079b6a2 1-836
+docs/src/styles/prose.css
+  s_dd118f467446e0::t_21bb353ef36aa8 1-403
+docs/tsconfig.json
+  s_dd118f467446e0::t_092340753e07f2 1-10
+docs/wrangler.jsonc
+  s_dd118f467446e0::t_f739a973c7a362 1-10
+lychee.toml
+  s_dd118f467446e0::t_d9ef6619fe97d3 7-15,18-19
+mise.lock
+  s_dd118f467446e0::t_5f20173020f98a 125,129-131,135-137,141-143,147-149,153-155,461,465-467,471-473,477-479,483-485,489-491,531,535-537,541-543,547-549,553-555,559-561,565,569-571,574-577,580-583,586-589,592-595,598,602-604,608-610,614-616,620-622,626-628
+mise.rustfs.lock
+  s_dd118f467446e0::t_5e73a77edaed68 6,8,11-12,15-16,19-20,23,25,28-31,34-37,40-43
+mise.rustfs.toml
+  s_dd118f467446e0::t_b8f51a41f66a5a 8-9
+mise.selfhost.toml
+  s_dd118f467446e0::t_75927a0c0a105b 6
+mise.toml
+  s_dd118f467446e0::t_13a815f66c38c4 22,34,48,53-54,56,255-257,271
+packages/opencode-oceans/.gitignore
+  s_dd118f467446e0::t_09ebeb5f5e6111 1-4
+packages/opencode-oceans/.oxfmtrc.json
+  s_dd118f467446e0::t_eb9a7b10b620c4 1-8
+packages/opencode-oceans/.oxlintrc.json
+  s_dd118f467446e0::t_3ebd6b6a72a55f 1-8
+packages/opencode-oceans/LICENSE
+  s_dd118f467446e0::t_dd897491512aab 1-661
+packages/opencode-oceans/README.md
+  s_dd118f467446e0::t_b3289400ae2e82 1-204
+packages/opencode-oceans/bun.lock
+  s_dd118f467446e0::t_951ef34ad5c074 1-757
+packages/opencode-oceans/gateways.example.yml
+  s_dd118f467446e0::t_960985bdf650c2 1-28
+packages/opencode-oceans/mise.toml
+  s_dd118f467446e0::t_5b059d65657059 1-51
+packages/opencode-oceans/package.json
+  s_dd118f467446e0::t_56bf9676bc5988 1-59
+packages/opencode-oceans/scripts/gateway.ts
+  s_dd118f467446e0::t_3dd709b2f6fe47 1-251
+packages/opencode-oceans/scripts/smoke.ts
+  s_dd118f467446e0::t_fd9568a660c7ea 1-191
+packages/opencode-oceans/src/config.ts
+  s_dd118f467446e0::t_ffc4d142964119 1-129
+packages/opencode-oceans/src/discovery.ts
+  s_dd118f467446e0::t_865bb6f16e95b5 1-111
+packages/opencode-oceans/src/index.ts
+  s_dd118f467446e0::t_c0cb669099690e 1-112
+packages/opencode-oceans/src/models.ts
+  s_dd118f467446e0::t_e7d5ccbcae3f15 1-331
+packages/opencode-oceans/tests/discovery.test.ts
+  s_dd118f467446e0::t_88e787321552fb 1-221
+packages/opencode-oceans/tests/models.test.ts
+  s_dd118f467446e0::t_cc6e69880b3091 1-262
+packages/opencode-oceans/tests/smoke.test.ts
+  s_dd118f467446e0::t_06f4c619ef58ce 1-32
+packages/opencode-oceans/tsconfig.json
+  s_dd118f467446e0::t_ce1fc070d6f5a5 1-22
+registry.json
+  s_dd118f467446e0::t_e62ee6ea780583 4
+scripts/build-shadcn-theme.mjs
+  s_dd118f467446e0::t_a7aa62005f6186 11,42-44,117,166-170,172-189,191-195,209,232-234
+tests/harness-integration/README.md
+  s_dd118f467446e0::t_f70d62b1395205 23,31-45,59-61,67-68,77-78,81-91
+tests/harness-integration/mise.toml
+  s_dd118f467446e0::t_9f95dceb377a65 8,19-23
+tests/harness-integration/package-lock.json
+  s_dd118f467446e0::t_c24601a77ba06a 12-13,2448-2450,2467-2478,2482-2484,2495-2497,2508-2510,2521-2523,2534-2536,2547-2549,2560-2562,2573-2575,2586-2588,2599-2601,2612-2614,2625-2627,2637-2678,3685-3690
+tests/harness-integration/package.json
+  s_dd118f467446e0::t_6aa238484a78b7 12-13
+tests/harness-integration/src/adapters/opencode.ts
+  s_dd118f467446e0::t_1911874af216b9 164,175
+tests/harness-integration/src/gateway-client.ts
+  s_dd118f467446e0::t_1143b56d9be9db 11-13,75-82,145
+tests/harness-integration/src/global-setup.ts
+  s_dd118f467446e0::t_e89b05e9e21bc8 23-28,99,130-135,201,328-329,490,516-544
+tests/harness-integration/src/opencode-plugin.test.ts
+  s_dd118f467446e0::t_730446b105cd11 1-342
+tests/harness-integration/src/types.ts
+  s_dd118f467446e0::t_84be5b6dc9aed9 11-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ec344c55f5d26ec458b23ec8607ae42c0319c303",
+  "prompts": {},
+  "sessions": {
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

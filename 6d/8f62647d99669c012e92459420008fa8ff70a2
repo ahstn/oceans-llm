@@ -1,0 +1,187 @@
+.agents/skills/verify-oceans-admin/features/anthropic-messages.md
+  s_dd118f467446e0::t_edc5470b3460e4 98,104,110,129
+.agents/skills/verify-oceans-admin/features/password-sign-in.md
+  s_dd118f467446e0::t_fa36691c2ae275 9-10,41-49,61-62
+.agents/skills/verify-oceans-admin/features/request-logs.md
+  s_dd118f467446e0::t_9197d2d59e7bee 33
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_dd118f467446e0::t_548a1397a4c945 281,696
+.github/workflows/oceans-review-agent.yml
+  s_dd118f467446e0::t_7dbb6e4ae938d1 3-4,6,36,39
+.github/workflows/release-cli-check.yml
+  s_dd118f467446e0::t_9dd0cb0377d9b4 28
+.github/workflows/release-plan.yml
+  s_dd118f467446e0::t_dca8edcdbb9152 1-30
+.github/workflows/release-product.yml
+  s_dd118f467446e0::t_e1b50280fa6a2c 49,87,93,135,150,155,160
+.github/workflows/release.yml
+  s_dd118f467446e0::t_a4a595797927fd 44,47-99,102-103,107-109,116,134-135,137,179,244,307,374
+.github/zizmor.yml
+  s_dd118f467446e0::t_bb347310598160 3-6,8,10-14,20-26,29-30,33-34
+Cargo.lock
+  s_dd118f467446e0::t_1e11d0ccf22579 10,1542,2943,3556,3851,3853,3934,4003,4686,4689,5455,5872,5874
+actions/review-agent/README.md
+  s_dd118f467446e0::t_b876f2ca5ff525 13,18,28-34,37,42,143
+actions/review-agent/scripts/ci-gateway.ts
+  s_dd118f467446e0::t_4606fc430bf5b8 132
+actions/review-agent/scripts/smoke-sdk.ts
+  s_dd118f467446e0::t_5cfa00b5a580e4 41,47,88,208,272,307-308
+actions/review-agent/src/github-context.test.ts
+  s_dd118f467446e0::t_0aebfd21d69960 1-50
+actions/review-agent/src/pi-session.ts
+  s_dd118f467446e0::t_6ed0441b854c5e 16-17,117,168,182
+actions/review-agent/src/pi-worker.ts
+  s_dd118f467446e0::t_362e926d0f100a 4,36
+actions/review-agent/src/pi.ts
+  s_dd118f467446e0::t_577f99917a5fec 7-12,36-39,80-81,86-94,111
+actions/review-agent/src/redaction.test.ts
+  s_dd118f467446e0::t_bb4e7cfd22b8ec 1-24
+actions/review-agent/src/redaction.ts
+  s_dd118f467446e0::t_f6f987af4fe210 1-2,9-15,26-37
+actions/review-agent/src/review-diff.test.ts
+  s_dd118f467446e0::t_bba714eb90699e 6-12,55-59,93-106
+actions/review-agent/src/review-diff.ts
+  s_dd118f467446e0::t_bcb1b7daa5c2b4 1-2,5,8-9,17-75,80,88,102-104,110,113-119
+actions/review-agent/src/run-lifecycle.ts
+  s_dd118f467446e0::t_2347a65c436519 84-95
+actions/review-agent/src/worker-sandbox.test.ts
+  s_dd118f467446e0::t_8230826e060520 1-55
+actions/review-agent/src/worker-sandbox.ts
+  s_dd118f467446e0::t_6842fd48c5e055 1-2,13-27,54-63,78
+compose.local.yaml
+  s_dd118f467446e0::t_8478a7d9db461c 22-23,32
+crates/admin-ui/Cargo.toml
+  s_dd118f467446e0::t_f1bcc0798b4b64 19
+crates/admin-ui/src/lib.rs
+  s_dd118f467446e0::t_e1d090100135be 11
+crates/admin-ui/src/proxy.rs
+  s_dd118f467446e0::t_94848e70f513b8 9,26-27,49-50,116-127,132,137-144,223-230,308-315,318-322,326,331,575-670
+crates/admin-ui/web/src/routes/observability/-request-log-detail/format.ts
+  s_dd118f467446e0::t_e9e9dd426481b0 85-86
+crates/gateway-service/src/lib.rs
+  s_dd118f467446e0::t_3dc3f122a01b5d 34,151
+crates/gateway-service/src/password_auth.rs
+  s_dd118f467446e0::t_067e8c10491645 1-818
+crates/gateway-service/src/request_logging.rs
+  s_dd118f467446e0::t_46442c775150d9 224-244
+crates/gateway-service/src/review_agent.rs
+  s_dd118f467446e0::t_7455ea00941f6a 966,970,1023-1026,1028
+crates/gateway-service/src/service.rs
+  s_dd118f467446e0::t_0cd1c5a18928a0 453-472
+crates/gateway-store/mise.toml
+  s_dd118f467446e0::t_47e4206f2ce1b4 55-57
+crates/gateway/src/cli.rs
+  s_dd118f467446e0::t_2e2984e382de26 10,84,216-225
+crates/gateway/src/config/auth.rs
+  s_dd118f467446e0::t_d79d4f778a420c 11-14,118,126-130,546,556,562-603
+crates/gateway/src/config/loader.rs
+  s_dd118f467446e0::t_448bc715adf2d3 27,68-69,87,136,138,142-145,148,155,160,171-175,307-309
+crates/gateway/src/config/mod.rs
+  s_dd118f467446e0::t_d9c8eefa0dfe70 134
+crates/gateway/src/config/server.rs
+  s_dd118f467446e0::t_fbefe7e22e1fb1 96,115-123
+crates/gateway/src/config/tests/auth.rs
+  s_dd118f467446e0::t_ec9291e89cfeae 8-9,16-19,29-203
+crates/gateway/src/config/tests/fragments.rs
+  s_dd118f467446e0::t_e8a49297542da0 131,135,138-142
+crates/gateway/src/config/tests/infrastructure.rs
+  s_dd118f467446e0::t_b052ecb091f50c 267-273
+crates/gateway/src/http/audit_tests.rs
+  s_dd118f467446e0::t_648b3082b14700 881-1076
+crates/gateway/src/http/handlers/inference_tests.rs
+  s_dd118f467446e0::t_17b88cf4e16cf0 362
+crates/gateway/src/http/handlers/messages.rs
+  s_dd118f467446e0::t_2a55e2d6a4f132 57
+crates/gateway/src/http/identity.rs
+  s_dd118f467446e0::t_3a35eacfc6a6ba 804-816,819-863,865-867,979-983,989-993,1789-1793
+crates/gateway/src/http/state.rs
+  s_dd118f467446e0::t_77e08b03206390 6-7,46-47
+crates/gateway/src/http/test_support.rs
+  s_dd118f467446e0::t_2749b0645a722a 8-10,52
+crates/gateway/src/main.rs
+  s_dd118f467446e0::t_913e90e11ea8ea 31-32,99,340,877-878,884,893-895,897-899,901-904
+crates/gateway/src/observability.rs
+  s_dd118f467446e0::t_ad9f2df43113f5 47,269-272,447-451
+deploy/.env.example
+  s_dd118f467446e0::t_19ce3547f81dfb 10
+deploy/README.md
+  s_dd118f467446e0::t_319613032742e4 72
+deploy/compose.yaml
+  s_dd118f467446e0::t_4ad38dc13b6f95 16-17
+deploy/selfhost/gateway.yaml
+  s_dd118f467446e0::t_dea1420126f05f 3-4
+dist-workspace.toml
+  s_dd118f467446e0::t_3dc536c9c1c33a 7-10,27-29
+docs/adr/2026-10-01-self-hosting-with-mise-daemons.md
+  s_dd118f467446e0::t_03ff66e179461c 4
+docs/adr/2026-10-14-team-scoped-identity-config-fragments.md
+  s_dd118f467446e0::t_c14fe6ad1a6054 134
+docs/adr/2026-10-15-model-and-provider-config-fragments.md
+  s_dd118f467446e0::t_4b76a96de8c1a5 92-93
+docs/adr/2026-11-11-fail-closed-bootstrap-admin.md
+  s_dd118f467446e0::t_2ea33f9075eab0 1-29
+docs/adr/2026-11-11-privileged-pr-workflow-trust-boundaries.md
+  s_dd118f467446e0::t_02ebcacb4727d3 1-37
+docs/adr/2026-11-11-self-host-secrets-with-fnox.md
+  s_dd118f467446e0::t_0a31f40324ee0f 1-33
+docs/contributing/development/authentication-testing.md
+  s_dd118f467446e0::t_6c9a6c0a897820 9-14,53,60,64,83-84,147
+docs/contributing/reference/release-process.md
+  s_dd118f467446e0::t_6157f86050ae81 83,85,101
+docs/src/content/docs/access/access-settings.mdx
+  s_dd118f467446e0::t_94e34f24dab978 27,29-30,33,36-46
+docs/src/content/docs/access/sso/index.mdx
+  s_dd118f467446e0::t_e71b0fdf0002ff 130,133
+docs/src/content/docs/configuration/index.mdx
+  s_dd118f467446e0::t_f8e864ad1fe7fd 19,28,30-31,133,135-136,169,229,232,239,247
+docs/src/content/docs/observability/request-logs.mdx
+  s_dd118f467446e0::t_fb18342cb0a263 17,23
+docs/src/content/docs/operations/admin-runbooks.mdx
+  s_dd118f467446e0::t_bbc5a3dc511845 27
+docs/src/content/docs/setup/deploy-and-operations.mdx
+  s_dd118f467446e0::t_529f37bf3f5b1d 20-27
+docs/src/content/docs/setup/first-access.mdx
+  s_dd118f467446e0::t_b81c45e0938254 20,22-24,26,101,107,126
+docs/src/content/docs/setup/index.mdx
+  s_dd118f467446e0::t_dc4cdad1e42cf0 16
+docs/src/content/docs/setup/self-hosting.mdx
+  s_dd118f467446e0::t_e00f67e4669304 59,61-65,69-81,84,86,88-98,100,102,114,119,122,266
+gateway.prod.yaml
+  s_dd118f467446e0::t_b8ffbd1688652d 13
+gateway.yaml
+  s_dd118f467446e0::t_e68d90ef341fe7 2
+mise.selfhost-rustfs.toml
+  s_dd118f467446e0::t_66779ab3b54b19 31-44
+mise.selfhost.toml
+  s_dd118f467446e0::t_87166afbf5b426 5-6,40-53,71-88,101
+mise.toml
+  s_dd118f467446e0::t_a488b136a55b91 91-92,97-98,189-192,359,364,368-370
+scripts/check-ci-trust-boundaries.sh
+  s_dd118f467446e0::t_c91cb16cb32ed8 1-60
+scripts/check-release-provenance.test.sh
+  s_dd118f467446e0::t_0adc640594af6d 1-97
+scripts/check-release-workflow.sh
+  s_dd118f467446e0::t_fde723a170c916 1-113
+scripts/start-e2e-stack.sh
+  s_dd118f467446e0::t_3f8a8fc0c06a9a 308
+scripts/workflow-checkouts.sh
+  s_dd118f467446e0::t_9bd2fdc7ae0eca 1-30
+tests/harness-integration/src/global-setup.ts
+  s_dd118f467446e0::t_3ef9412a19dc2e 199-200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6d8f62647d99669c012e92459420008fa8ff70a2",
+  "prompts": {},
+  "sessions": {
+    "s_dd118f467446e0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "21c0d3cf-b22c-4ceb-ad0e-bc8cc68b4a60",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
