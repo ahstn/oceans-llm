@@ -1,0 +1,26 @@
+docs/contributing/reference/release-process.md
+  h_2f452a9c375069 193,195
+docs/src/content/docs/harnesses/opencode.mdx
+  h_2f452a9c375069 12-13,21,28
+docs/src/landing/content.ts
+  h_2f452a9c375069 479
+packages/opencode-oceans/README.md
+  h_2f452a9c375069 9-12,18,23,27,37,158,178
+packages/opencode-oceans/package.json
+  h_2f452a9c375069 3
+packages/opencode-oceans/scripts/smoke.ts
+  h_2f452a9c375069 10,130-136,144
+packages/opencode-oceans/tests/smoke.test.ts
+  h_2f452a9c375069 3-4,35-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ff6324146791b83d8170d976ac61142467a7fa8b",
+  "prompts": {},
+  "humans": {
+    "h_2f452a9c375069": {
+      "author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
