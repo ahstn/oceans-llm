@@ -71,7 +71,7 @@ jobs:
           ref: ${{ github.sha }}
 
       - name: Setup mise
-        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
           install: false
           cache: false
@@ -237,7 +237,7 @@ jobs:
           ref: ${{ github.sha }}
 
       - name: Setup mise, Helm, and kubeconform
-        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
           install_args: helm kubeconform
           cache: false
