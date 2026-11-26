@@ -9,8 +9,8 @@ OpenCode can reach Oceans in two ways:
 
 | Way | How the model list stays current | Use it when |
 | --- | --- | --- |
-| [The Oceans plugin](#set-up-the-plugin) | The plugin asks the gateway for your models when OpenCode starts, then every 60 seconds. | You want new models, prices and limits to appear without editing config. This is the recommended way. |
-| [A generated snippet](#use-a-generated-snippet) | You copy a fixed model list from the admin UI. You generate it again when models change. | You can't install the plugin, or you use an OpenCode version other than 2.3.0. |
+| [The Oceans plugin](#set-up-the-plugin) | The plugin asks the gateway for your models when OpenCode starts, then every 60 seconds. | You use the OpenCode version supported by the published plugin and want the model list to update automatically. |
+| [A generated snippet](#use-a-generated-snippet) | You copy a fixed model list from the admin UI. You generate it again when models change. | You use an OpenCode version without a verified public plugin, or you prefer a setup without a plugin. |
 
 Both ways send requests straight from OpenCode to the gateway. The plugin only builds the model list. It doesn't proxy requests.
 
@@ -18,14 +18,14 @@ Both ways send requests straight from OpenCode to the gateway. The plugin only b
 
 You need:
 
-- **OpenCode 2.3.0.** The plugin is built and tested for this version. The generated snippet needs OpenCode 2 or later.
+- **OpenCode 2.3.0** for the plugin setup below. The public 0.1.0 package passed a clean install and gateway smoke test on 2.3.0, although it declares a 2.2.6 plugin API peer. If your installer rejects that peer pin, use the [generated snippet](#use-a-generated-snippet). The snippet works with OpenCode 2 or later.
 - **Bun 1.4.4 or later**, for the plugin. The plugin ships as TypeScript source, so Node.js alone can't load it.
 - **An Oceans API key.** Create one on the **API Keys** page (`/admin/api-keys`). If you limit the key's scopes, tick **Inference**. That scope covers model requests and the model list routes the plugin reads. See [API key scopes](/access/identity-and-access/#api-key-scopes).
 - **The gateway URL**, for example `https://api.oceans-llm.com`. Ask your admin if you don't know it.
 
 ## Set up the plugin
 
-The plugin is [`@ahstn/opencode-oceans`](https://www.npmjs.com/package/@ahstn/opencode-oceans) on the public npm registry. You don't need an npm account, a GitHub token or a registry login to install it.
+These steps use [`@ahstn/opencode-oceans@0.1.0`](https://www.npmjs.com/package/@ahstn/opencode-oceans/v/0.1.0) from public npm. You don't need an npm account, a GitHub token or a registry login to install it.
 
 <Steps>
 <Step title="Add the plugin to OpenCode">

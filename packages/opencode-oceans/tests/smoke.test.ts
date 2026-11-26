@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import assert from 'node:assert/strict'
-import { publishedVersion, readReadyLine } from '../scripts/smoke'
+import { peerDependencies } from '../package.json'
+import { assertPublishedPeers, publishedVersion, readReadyLine } from '../scripts/smoke'
 
 test('readiness waits for a full UTF-8 line across byte chunks and ignores later records', async () => {
   const expected = JSON.stringify({ url: 'http://localhost:1234', label: 'café' })
@@ -29,6 +30,16 @@ test('readiness rejects an incomplete record when the host closes stdout', async
   })
   await assert.rejects(readReadyLine(stream), Error)
   expect(stream.locked).toBe(false)
+})
+
+test('published smoke rejects missing or mismatched runtime peers', () => {
+  expect(() => assertPublishedPeers(peerDependencies)).not.toThrow()
+  expect(() => assertPublishedPeers({ ...peerDependencies, '@opencode/plugin': '0.0.0' })).toThrow(
+    'Unexpected published peer @opencode/plugin',
+  )
+  expect(() =>
+    assertPublishedPeers({ '@opencode/plugin': peerDependencies['@opencode/plugin'] }),
+  ).toThrow('Unexpected published peer effect')
 })
 
 test('published smoke requires an explicit exact stable version', () => {

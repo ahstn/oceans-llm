@@ -1,6 +1,6 @@
 {
   "name": "@ahstn/opencode-oceans",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Discover Oceans and LiteLLM gateway models in OpenCode",
   "homepage": "https://github.com/ahstn/oceans-llm/tree/main/packages/opencode-oceans",
   "bugs": "https://github.com/ahstn/oceans-llm/issues",

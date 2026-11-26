@@ -6,22 +6,25 @@ OpenCode's native provider adapters and catalog; it does not proxy inference req
 
 ## Install
 
-Requires Bun **1.4.4 or newer**, OpenCode **2.3.0**, and its supplied Effect **4.1.0** runtime.
+Requires Bun **1.4.4 or newer** and the OpenCode and Effect versions listed in the chosen
+package's peer dependencies. This source tree targets OpenCode **2.3.0** and Effect **4.1.0**.
+Check the [OpenCode guide](https://oceans-llm.com/harnesses/opencode/) for the verified public
+pairing or use its generated snippet.
 `@opencode/plugin` and `effect` are peers, not bundled dependencies. Node.js alone cannot load this
 source-only package.
 
 Install from the [public npm registry](https://www.npmjs.com/package/@ahstn/opencode-oceans). No npm account, GitHub token or registry login is needed.
 
-Configure `~/.config/opencode/opencode.jsonc`:
+Configure `~/.config/opencode/opencode.jsonc`. Replace `X.Y.Z` with the exact public version that matches your OpenCode runtime:
 
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": ["@ahstn/opencode-oceans@0.1.0"],
+  "plugins": ["@ahstn/opencode-oceans@X.Y.Z"],
 }
 ```
 
-OpenCode installs configured packages. You can alternatively run `opencode plugin add @ahstn/opencode-oceans@0.1.0`. Use an exact version for reproducibility. Your gateway API key is still required for model discovery and inference, not package downloads.
+OpenCode installs configured packages. You can alternatively run `opencode plugin add @ahstn/opencode-oceans@X.Y.Z`. Use an exact version for reproducibility. Your gateway API key is still required for model discovery and inference, not package downloads.
 
 If installation fails, check the exact version, Bun and OpenCode versions, and whether your registry or mirror can reach the public npm package. Package downloads need no registry login; discovery and inference still need your gateway API key.
 
@@ -31,7 +34,7 @@ To use another gateway configuration directory, replace the plugin string with a
 {
   "plugins": [
     {
-      "package": "@ahstn/opencode-oceans@0.1.0",
+      "package": "@ahstn/opencode-oceans@X.Y.Z",
       "options": { "configDir": "/absolute/path/to/opencode-config" },
     },
   ],
@@ -152,7 +155,7 @@ mise run //opencode:fmt
 mise run //opencode:smoke         # packed plugin in OpenCode 2.3.0; local fixture, no paid calls
 mise run //opencode:check
 mise run //opencode:pack          # checks, then source tarball in dist/
-mise run //opencode:smoke-published -- 0.1.0  # anonymous npm install and local fixture
+mise run //opencode:smoke-published -- X.Y.Z  # anonymous npm install and local fixture
 ```
 
 TypeScript 7.0.2 and `@effect/tsgo` 0.67.4 follow Effect's current TS7 recommendation. `tsconfig.json`
@@ -172,7 +175,7 @@ formatter options match `actions/.oxfmtrc.json` (oxfmt has no `extends` configur
 
 The plugin has its own versions and `opencode-oceans-vX.Y.Z` tags, separate from Oceans product releases. Maintainers stage releases with npm trusted publishing and review them before human 2FA approval. See the [plugin release runbook](https://github.com/ahstn/oceans-llm/blob/main/docs/contributing/reference/release-process.md#opencode-plugin-releases) for the full procedure and recovery steps.
 
-The source smoke in `//opencode:check` packs this checkout and runs it against a local fixture. The separate `//opencode:smoke-published` command installs an exact version anonymously from public npm and uses a local fixture without paid requests. It checks the distribution after approval, not the source package before release.
+The source smoke in `//opencode:check` packs this checkout and runs it against a local fixture. The separate `//opencode:smoke-published` command installs an exact version anonymously from public npm and uses a local fixture without paid requests. It checks that the installed package declares the same runtime peers as this checkout and exercises that public distribution after approval. It does not replace the pre-release source smoke.
 
 ## References
 
