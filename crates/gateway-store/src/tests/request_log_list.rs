@@ -333,6 +333,37 @@ async fn exercise_request_log_list_search<S: GatewayStore + Sync>(store: &S) {
             .len(),
         1
     );
+    // The cost filter keeps logs whose priced usage is strictly above the threshold. Ada's log is
+    // $0.1234 and Grace's $0.0042; the anonymous log has no usage, and an unpriced row never
+    // matches, even at a zero threshold.
+    let min_cost = |nanos: i64| RequestLogQuery {
+        min_cost_usd_nanos: Some(nanos),
+        ..RequestLogQuery::default()
+    };
+    assert_eq!(
+        search_request_ids(store, min_cost(10_000_000)).await,
+        (1, vec!["req-ada".to_string()])
+    );
+    assert_eq!(
+        search_request_ids(store, min_cost(0)).await,
+        (2, vec!["req-ada".to_string(), "req-grace".to_string()])
+    );
+    assert_eq!(
+        search_request_ids(store, min_cost(123_400_000)).await,
+        (0, Vec::new())
+    );
+    assert_eq!(
+        search_request_ids(
+            store,
+            RequestLogQuery {
+                q: Some("hopper".to_string()),
+                ..min_cost(0)
+            }
+        )
+        .await,
+        (1, vec!["req-grace".to_string()])
+    );
+
     let reused_request_id_log = RequestLogRecord {
         request_log_id: Uuid::new_v4(),
         occurred_at: logs.grace_log.occurred_at + Duration::milliseconds(10),
@@ -348,6 +379,11 @@ async fn exercise_request_log_list_search<S: GatewayStore + Sync>(store: &S) {
             .await
             .expect("ambiguous grace usage")
             .is_empty()
+    );
+    // The cost filter applies the same ambiguity rule, so neither Grace log matches.
+    assert_eq!(
+        search_request_ids(store, min_cost(0)).await,
+        (1, vec!["req-ada".to_string()])
     );
 }
 

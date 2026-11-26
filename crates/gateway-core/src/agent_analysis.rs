@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use agent_session_analysis::{
     AgentSessionId, AgentSessionSourceId, AnalysisId, Confidence, GatewayOutcomeState,
     InferredObservation, LimitationCode, ObservationSetId, ScoreMaturity, SessionEfficiencyReport,
@@ -9,7 +11,7 @@ use serde_json::Value;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::{RequestAttemptRecord, StoreError};
+use crate::{Money9, RequestAttemptRecord, StoreError};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentSessionSourceRecord {
@@ -142,6 +144,25 @@ pub struct AgentSessionSummaryRecord {
     pub session_source_hash: Option<String>,
     pub harness_label: Option<String>,
     pub latest_analysis: Option<AgentSessionAnalysisRecord>,
+    #[serde(default)]
+    pub listing: AgentSessionListingRecord,
+}
+
+/// What a session listing shows beyond the session row, read in one query per page: usage
+/// ledger spend, the provider of the latest request, and the owner's display names. Unlike the
+/// analysis report's cost, the spend is live while the session is still open, and an unpriced
+/// request is counted rather than voiding the whole total.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentSessionListingRecord {
+    /// Sum of priced usage cost; `None` when no linked request has priced usage.
+    pub priced_cost: Option<Money9>,
+    /// Linked requests without priced usage: unpriced, failed before usage, or usage missing.
+    pub unpriced_request_count: u64,
+    /// Provider of the most recent linked request that has a request log.
+    pub latest_provider_key: Option<String>,
+    pub user_name: Option<String>,
+    pub user_email: Option<String>,
+    pub service_account_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -244,6 +265,9 @@ pub struct AgentSessionListQuery {
     pub started_before: Option<OffsetDateTime>,
     pub input_watermark_before: Option<OffsetDateTime>,
     pub score_confidence: Option<Confidence>,
+    /// Case-insensitive substring match on the requested model key or the owner's name/email.
+    #[serde(default)]
+    pub q: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -402,6 +426,13 @@ pub trait AgentSessionReportRepository {
         &self,
         query: &AgentSessionListQuery,
     ) -> Result<AgentSessionListPage, StoreError>;
+
+    /// The listing facts for these sessions, keyed by session ID, as `list_agent_sessions`
+    /// returns them. Unknown IDs are absent.
+    async fn load_agent_session_listings(
+        &self,
+        session_ids: &[AgentSessionId],
+    ) -> Result<HashMap<AgentSessionId, AgentSessionListingRecord>, StoreError>;
 }
 
 #[async_trait]

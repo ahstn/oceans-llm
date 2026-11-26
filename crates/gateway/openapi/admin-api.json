@@ -3685,6 +3685,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Trimmed, case-insensitive substring search across the requested model key and the\nsession owner's user name or email.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -4286,6 +4295,18 @@
             "name": "q",
             "in": "query",
             "description": "Trimmed, case-insensitive substring search across the requested or resolved model key and\nthe caller's user name or email.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "min_cost_usd",
+            "in": "query",
+            "description": "Only requests whose priced cost is strictly above this amount in US dollars, such as `2`\nor `0.05`. Unpriced requests never match.",
             "required": false,
             "schema": {
               "type": [
@@ -10821,6 +10842,7 @@
           "boundary_confidence",
           "started_at",
           "request_count",
+          "unpriced_request_count",
           "limitations"
         ],
         "properties": {
@@ -10871,6 +10893,14 @@
               "null"
             ]
           },
+          "cost_usd_nanos": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Priced usage cost across the session's requests, in nano-dollars, read from the usage\nledger. Unlike `normalized_cost_usd` it is live while the session is open, and leaves out\nunpriced requests rather than voiding the total. Null when no request is priced."
+          },
           "efficiency_score": {
             "type": [
               "integer",
@@ -10920,6 +10950,16 @@
             "format": "int32",
             "minimum": 0
           },
+          "model_icon_key": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ModelIconKeyView"
+              }
+            ]
+          },
           "normalized_cost_usd": {
             "type": [
               "number",
@@ -10938,6 +10978,23 @@
               "string",
               "null"
             ]
+          },
+          "provider_icon_key": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProviderIconKeyView"
+              }
+            ]
+          },
+          "provider_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Provider of the session's most recent request that has a request log."
           },
           "report_schema_version": {
             "type": [
@@ -10972,6 +11029,12 @@
             ]
           },
           "service_account_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "service_account_name": {
             "type": [
               "string",
               "null"
@@ -11020,7 +11083,25 @@
             "format": "int32",
             "minimum": 0
           },
+          "unpriced_request_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Requests the session links that have no priced usage, so `cost_usd_nanos` leaves them out.",
+            "minimum": 0
+          },
+          "user_email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "user_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user_name": {
             "type": [
               "string",
               "null"

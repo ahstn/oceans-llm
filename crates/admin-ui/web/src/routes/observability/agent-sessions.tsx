@@ -1,5 +1,5 @@
 import { useEffect, useState, useTransition } from 'react'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { createFileRoute, redirect, useRouter } from '@tanstack/react-router'
 
 import { ColumnVisibilityPopover } from '@/components/data/column-visibility-popover'
 import {
@@ -31,6 +31,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
+import { pageBeyondLast } from '@/lib/pagination'
 import { getAgentSessions, getObservabilityAgentSessionDetail } from '@/server/admin-data.functions'
 import type {
   AgentSessionDetailView,
@@ -38,14 +39,28 @@ import type {
   AgentSessionSummaryView,
 } from '@/types/api'
 
-type AgentSessionRouteSearch = AgentSessionFiltersInput & { session_id?: string }
+type AgentSessionRouteSearch = AgentSessionFiltersInput & {
+  session_id?: string
+}
 
 export const Route = createFileRoute('/observability/agent-sessions')({
   validateSearch: (search: Record<string, unknown>) => normalizeSearch(search),
   // The open session lives in the URL but does not change the list, so it stays out of the
   // deps: opening or closing a session then reuses the loaded list instead of reading it again.
   loaderDeps: ({ search: { session_id: _sessionId, ...filters } }) => filters,
-  loader: ({ deps }) => getAgentSessions({ data: deps }),
+  loader: async ({ deps, location }) => {
+    const sessionPage = await getAgentSessions({ data: deps })
+    // A saved page past the end (sessions aged out, or a smaller page size) moves to the last page.
+    const lastPage = pageBeyondLast(deps.page, deps.page_size ?? 50, sessionPage.data.total)
+    if (lastPage !== null) {
+      throw redirect({
+        to: '/observability/agent-sessions',
+        search: normalizeSearch({ ...location.search, page: lastPage }),
+        replace: true,
+      })
+    }
+    return sessionPage
+  },
   component: AgentSessionsPage,
 })
 
@@ -78,7 +93,9 @@ export function AgentSessionsPage() {
     setSelectedDetail(null)
     setDetailPending(true)
     setDetailError(null)
-    void getObservabilityAgentSessionDetail({ data: { sessionId: selectedSessionId } })
+    void getObservabilityAgentSessionDetail({
+      data: { sessionId: selectedSessionId },
+    })
       .then((response) => {
         if (!cancelled) setSelectedDetail(response.data)
       })
@@ -106,12 +123,17 @@ export function AgentSessionsPage() {
 
   // Patches merge into the latest location so two chip commits that land close together cannot
   // overwrite each other with stale filter values. Any filter change returns to the first page.
-  function applyFilters(patch: SessionFilterPatch) {
+  function applyFilters(patch: SessionFilterPatch, options?: { replace?: boolean }) {
     startListTransition(async () => {
       await router.navigate({
         to: '/observability/agent-sessions',
         search: (previous) =>
-          normalizeSearch({ ...(previous as Record<string, unknown>), ...patch, page: 1 }),
+          normalizeSearch({
+            ...(previous as Record<string, unknown>),
+            ...patch,
+            page: 1,
+          }),
+        replace: options?.replace,
         resetScroll: false,
       })
     })
@@ -145,8 +167,8 @@ export function AgentSessionsPage() {
           </Badge>
         </div>
         <p className="text-muted-foreground max-w-3xl text-sm">
-          Review the outcome, cost, active time, and data quality for each agent session. The system
-          does not show scores until calibration is complete.
+          Review who ran each agent session, its model, cost so far, active time, and data quality.
+          The system does not show scores until calibration is complete.
         </p>
       </header>
 
@@ -165,6 +187,7 @@ export function AgentSessionsPage() {
             totalCount={sessionPage.total}
             isPending={isListPending}
             onApply={applyFilters}
+            onSearch={(q) => applyFilters({ q }, { replace: true })}
             actions={
               <div className="hidden md:block">
                 <ColumnVisibilityPopover
@@ -172,7 +195,10 @@ export function AgentSessionsPage() {
                   columns={toggleableSessionColumns}
                   visible={visibleColumns}
                   onVisibleChange={(key, visible) =>
-                    setVisibleColumns((current) => ({ ...current, [key]: visible }))
+                    setVisibleColumns((current) => ({
+                      ...current,
+                      [key]: visible,
+                    }))
                   }
                 />
               </div>
@@ -273,6 +299,8 @@ function normalizeSearch(search: Record<string, unknown>): AgentSessionRouteSear
     const value = trimmedText(search[param])
     if (value) result[param] = value
   }
+  const query = trimmedText(search.q)
+  if (query) result.q = query
   const sessionId = trimmedText(search.session_id)
   if (sessionId) result.session_id = sessionId
   return result

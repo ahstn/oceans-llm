@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { Add01Icon, Cancel01Icon, FilterHorizontalIcon } from '@hugeicons/core-free-icons'
 
+import { DebouncedSearch } from '@/components/data/debounced-search'
 import {
   readyFilterOptions,
   useLoadedFilterOptions,
@@ -67,10 +68,12 @@ interface SessionFilterToolbarProps {
   actions?: ReactNode
   /** Merges `patch` into the current URL search; keys set to `undefined` are removed. */
   onApply: (patch: SessionFilterPatch) => void
+  /** Applies the model or user search, replacing the history entry while the user types. */
+  onSearch: (q: string) => void
 }
 
 /**
- * The agent session toolbar: a `Filters` menu that adds removable `[field | is | value | ×]`
+ * The agent session toolbar: the request logs' debounced model or user search, then a `Filters` menu that adds removable `[field | is | value | ×]`
  * chips. Pickers apply as soon as a value is chosen; ID and tag chips apply on Enter or blur.
  */
 // Chip drafts, pickers, and the add-filter menus share one URL-backed filter state.
@@ -82,6 +85,7 @@ export function SessionFilterToolbar({
   isPending,
   actions,
   onApply,
+  onSearch,
 }: SessionFilterToolbarProps) {
   const [drafts, setDrafts] = useState<SessionFilterPatch>(filters)
   const [addedFields, setAddedFields] = useState<SessionFilterFieldKey[]>([])
@@ -156,30 +160,39 @@ export function SessionFilterToolbar({
 
   return (
     <div className="flex min-w-0 flex-col gap-3" data-testid="agent-session-toolbar">
-      <div className="flex min-w-0 flex-wrap items-center justify-end gap-3">
-        <span className="text-muted-foreground text-sm tabular-nums" role="status">
-          {isPending
-            ? 'Loading…'
-            : `Showing ${formatCount(shownCount)} of ${formatCount(totalCount)}`}
-        </span>
-        <div className="flex items-center gap-2">
-          <FilterFieldMenu visibleFields={visibleFields} onSelect={addField}>
-            <Button type="button" variant="outline" size="sm" className="gap-2">
-              <AppIcon
-                icon={FilterHorizontalIcon}
-                size={14}
-                stroke={1.5}
-                data-icon="inline-start"
-              />
-              Filters
-              {activeCount > 0 ? (
-                <Badge variant="secondary" className="tabular-nums">
-                  {activeCount}
-                </Badge>
-              ) : null}
-            </Button>
-          </FilterFieldMenu>
-          {actions}
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+        <DebouncedSearch
+          value={filters.q ?? ''}
+          pending={isPending}
+          label="Search agent sessions by model or user"
+          placeholder="Search by model or user…"
+          onSearch={onSearch}
+        />
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-muted-foreground text-sm tabular-nums" role="status">
+            {isPending
+              ? 'Loading…'
+              : `Showing ${formatCount(shownCount)} of ${formatCount(totalCount)}`}
+          </span>
+          <div className="flex items-center gap-2">
+            <FilterFieldMenu visibleFields={visibleFields} onSelect={addField}>
+              <Button type="button" variant="outline" size="sm" className="gap-2">
+                <AppIcon
+                  icon={FilterHorizontalIcon}
+                  size={14}
+                  stroke={1.5}
+                  data-icon="inline-start"
+                />
+                Filters
+                {activeCount > 0 ? (
+                  <Badge variant="secondary" className="tabular-nums">
+                    {activeCount}
+                  </Badge>
+                ) : null}
+              </Button>
+            </FilterFieldMenu>
+            {actions}
+          </div>
         </div>
       </div>
 
@@ -243,7 +256,10 @@ function usePickerOptions(visibleFields: SessionFilterField[]) {
 
 /** Harnesses that sent traffic in the last 31 days; older keys can still be typed. */
 async function loadHarnessOptions(signal: AbortSignal): Promise<FilterOption[]> {
-  const usage = await getObservabilityHarnessUsage({ data: { range: '31d' }, signal })
+  const usage = await getObservabilityHarnessUsage({
+    data: { range: '31d' },
+    signal,
+  })
   return usage.data.leaders
     .map((leader) => ({
       value: leader.agent_harness_key,

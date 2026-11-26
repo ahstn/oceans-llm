@@ -143,8 +143,17 @@ pub async fn list_agent_sessions(
                     ))));
                 }
             },
+            q: normalized_filter(query.q),
         })
         .await?;
+    let directory = SessionListingDirectory::load(
+        &state,
+        page.items
+            .iter()
+            .map(|summary| (summary.session.agent_session_id, summary.listing.clone()))
+            .collect(),
+    )
+    .await?;
     Ok(Json(envelope(AgentSessionPageView {
         items: page
             .items
@@ -157,6 +166,7 @@ pub async fn list_agent_sessions(
                     summary.request_count,
                     summary.latest_analysis.as_ref(),
                     access.score_visible,
+                    &directory,
                 )
             })
             .collect(),
@@ -357,6 +367,12 @@ pub async fn get_agent_session_detail(
                 .any(|set| coverage_flag(&set.coverage, "response_payload_truncated")),
         });
     let session_source = trace.session_source.as_ref().map(agent_session_source_view);
+    // The same store query as the list, so the detail's cost, provider and caller match the row.
+    let listings = state
+        .store
+        .load_agent_session_listings(&[session_id])
+        .await?;
+    let directory = SessionListingDirectory::load(&state, listings).await?;
     Ok(Json(envelope(AgentSessionDetailView {
         session: agent_session_summary(
             &trace.session,
@@ -371,6 +387,7 @@ pub async fn get_agent_session_detail(
             u64::try_from(trace.requests.len()).unwrap_or(u64::MAX),
             trace.latest_analysis.as_ref(),
             access.score_visible,
+            &directory,
         ),
         session_source,
         requests,
