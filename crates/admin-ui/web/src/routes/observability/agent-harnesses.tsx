@@ -1,19 +1,11 @@
-import { Suspense, useState, useTransition } from 'react'
+import { Suspense, lazy, useState, useTransition } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
-import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts'
 import { toast } from 'sonner'
 
 import { AgentHarnessLabel } from '@/components/icons/agent-harness-icon'
 import { PageHeader } from '@/components/layout/page-header'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from '@/components/ui/chart'
+import type { ChartConfig } from '@/components/ui/chart'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Skeleton } from '@/components/ui/skeleton'
 import { AdminTableHeader } from '@/components/shared/admin-table-header'
@@ -176,68 +168,14 @@ export function AgentHarnessesPage() {
           ) : chartSeries.length === 0 ? (
             <HarnessEmptyState />
           ) : (
-            <ChartContainer config={chartConfig} className="h-[24rem] w-full">
-              <AreaChart accessibilityLayer data={chartData} margin={{ left: 12, right: 12 }}>
-                <defs>
-                  {chartSeries.map((harness) => (
-                    <linearGradient
-                      key={harness.gradientId}
-                      id={harness.gradientId}
-                      x1="0"
-                      y1="0"
-                      x2="0"
-                      y2="1"
-                    >
-                      <stop offset="5%" stopColor={harness.color} stopOpacity={0.35} />
-                      <stop offset="95%" stopColor={harness.color} stopOpacity={0.04} />
-                    </linearGradient>
-                  ))}
-                </defs>
-                <CartesianGrid vertical={false} />
-                <XAxis
-                  dataKey="bucket_start"
-                  ticks={dayTicks}
-                  tickLine={false}
-                  axisLine={false}
-                  minTickGap={24}
-                  tickFormatter={formatBucketDay}
-                />
-                <ChartTooltip
-                  cursor={false}
-                  content={
-                    <ChartTooltipContent
-                      labelFormatter={(_, payload) =>
-                        formatTimestamp(String(payload?.[0]?.payload?.bucket_start ?? ''))
-                      }
-                      formatter={(value, name) => (
-                        <>
-                          <span className="text-muted-foreground">
-                            {chartConfig[String(name)]?.label ?? String(name)}
-                          </span>
-                          <span className="font-mono font-medium tabular-nums">
-                            {NUMBER_FORMATTER.format(Number(value))} requests
-                          </span>
-                        </>
-                      )}
-                    />
-                  }
-                />
-                <ChartLegend content={<ChartLegendContent />} />
-                {chartSeries.map((harness) => (
-                  <Area
-                    {...chartAnimation}
-                    key={harness.agent_harness_key}
-                    dataKey={harness.key}
-                    type="monotone"
-                    stroke={harness.color}
-                    fill={`url(#${harness.gradientId})`}
-                    fillOpacity={1}
-                    strokeWidth={2}
-                    stackId={undefined}
-                  />
-                ))}
-              </AreaChart>
-            </ChartContainer>
+            <Suspense fallback={<HarnessChartSkeleton />}>
+              <HarnessChart
+                series={chartSeries}
+                config={chartConfig}
+                data={chartData}
+                dayTicks={dayTicks}
+              />
+            </Suspense>
           )}
         </CardContent>
       </Card>
@@ -400,3 +338,98 @@ function getErrorMessage(error: unknown) {
 function toHarnessUsageRange(value: string): HarnessUsageRange {
   return value === '31d' ? '31d' : '7d'
 }
+
+type HarnessChartSeries = {
+  agent_harness_key: string
+  key: string
+  color: string
+  gradientId: string
+}
+
+// Recharts stays out of the route chunk and the shared entry, and loads on first render like the
+// leaderboard and usage cost charts.
+const HarnessChart = lazy(async () => {
+  const [
+    { Area, AreaChart, CartesianGrid, XAxis },
+    { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent },
+  ] = await Promise.all([import('recharts'), import('@/components/ui/chart')])
+
+  function HarnessChartComponent({
+    series,
+    config,
+    data,
+    dayTicks,
+  }: {
+    series: HarnessChartSeries[]
+    config: ChartConfig
+    data: Record<string, number | string>[]
+    dayTicks: string[]
+  }) {
+    return (
+      <ChartContainer config={config} className="h-[24rem] w-full">
+        <AreaChart accessibilityLayer data={data} margin={{ left: 12, right: 12 }}>
+          <defs>
+            {series.map((harness) => (
+              <linearGradient
+                key={harness.gradientId}
+                id={harness.gradientId}
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="1"
+              >
+                <stop offset="5%" stopColor={harness.color} stopOpacity={0.35} />
+                <stop offset="95%" stopColor={harness.color} stopOpacity={0.04} />
+              </linearGradient>
+            ))}
+          </defs>
+          <CartesianGrid vertical={false} />
+          <XAxis
+            dataKey="bucket_start"
+            ticks={dayTicks}
+            tickLine={false}
+            axisLine={false}
+            minTickGap={24}
+            tickFormatter={formatBucketDay}
+          />
+          <ChartTooltip
+            cursor={false}
+            content={
+              <ChartTooltipContent
+                labelFormatter={(_, payload) =>
+                  formatTimestamp(String(payload?.[0]?.payload?.bucket_start ?? ''))
+                }
+                formatter={(value, name) => (
+                  <>
+                    <span className="text-muted-foreground">
+                      {config[String(name)]?.label ?? String(name)}
+                    </span>
+                    <span className="font-mono font-medium tabular-nums">
+                      {NUMBER_FORMATTER.format(Number(value))} requests
+                    </span>
+                  </>
+                )}
+              />
+            }
+          />
+          <ChartLegend content={<ChartLegendContent />} />
+          {series.map((harness) => (
+            <Area
+              {...chartAnimation}
+              key={harness.agent_harness_key}
+              dataKey={harness.key}
+              type="monotone"
+              stroke={harness.color}
+              fill={`url(#${harness.gradientId})`}
+              fillOpacity={1}
+              strokeWidth={2}
+              stackId={undefined}
+            />
+          ))}
+        </AreaChart>
+      </ChartContainer>
+    )
+  }
+
+  return { default: HarnessChartComponent }
+})

@@ -30,6 +30,12 @@ export interface AdminNavItem {
   label: string
   to: string
   icon: IconSvgElement
+  /**
+   * `false` for pages whose loader aggregates the request or usage history. Hover preloading
+   * would start that work for every link the pointer crosses, competing with the page the
+   * user opens, so these load only on click.
+   */
+  preload?: false
 }
 
 export interface AdminNavSection {
@@ -95,6 +101,7 @@ export const adminNavSections: AdminNavSection[] = [
         requiredPage: 'usage_costs',
         label: 'Usage Costs',
         to: '/observability/usage-costs',
+        preload: false,
         icon: SaveMoneyDollarIcon,
       },
       {
@@ -102,6 +109,7 @@ export const adminNavSections: AdminNavSection[] = [
         requiredPage: 'spend_controls',
         label: 'Spend Controls',
         to: '/spend-controls',
+        preload: false,
         icon: Notification03Icon,
       },
       {
@@ -109,6 +117,7 @@ export const adminNavSections: AdminNavSection[] = [
         requiredPage: 'leaderboard',
         label: 'Leaderboard',
         to: '/observability/leaderboard',
+        preload: false,
         icon: WaterfallUp02Icon,
       },
     ],
@@ -122,6 +131,7 @@ export const adminNavSections: AdminNavSection[] = [
         requiredPage: 'agent_harnesses',
         label: 'Agent Harnesses',
         to: '/observability/agent-harnesses',
+        preload: false,
         icon: RoboticIcon,
       },
       {
@@ -129,6 +139,7 @@ export const adminNavSections: AdminNavSection[] = [
         requiredPage: 'agent_sessions',
         label: 'Agent Sessions',
         to: '/observability/agent-sessions',
+        preload: false,
         icon: RoboticIcon,
       },
       // Shares Usage Costs' page: platform admins see everyone, other users only their own work.
@@ -136,6 +147,7 @@ export const adminNavSections: AdminNavSection[] = [
         requiredPage: 'usage_costs',
         label: 'Attribution',
         to: '/observability/attribution',
+        preload: false,
         icon: GitCommitIcon,
       },
       {
@@ -143,6 +155,7 @@ export const adminNavSections: AdminNavSection[] = [
         requiredPage: 'request_logs',
         label: 'Request Logs',
         to: '/observability/request-logs',
+        preload: false,
         icon: SearchIcon,
       },
       {

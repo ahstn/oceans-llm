@@ -2,8 +2,8 @@
   "metadata": {
     "source": "vendored_openrouter",
     "etag": null,
-    "fetched_at": "2026-11-22T20:03:38.332920681Z",
-    "checksum": "e8abcd388f64eab5cf5cb34a220f4aa500915041d911f4aefd303c8d41abd5af"
+    "fetched_at": "2026-11-23T01:01:37.766684772Z",
+    "checksum": "dab856f3f485593b88c6aeb47d3fdf7c5f5c6afceaf5640ce0d2cef9c41aac10"
   },
   "providers": {
     "openrouter": {
@@ -7986,8 +7986,8 @@
           "cost": {
             "conditions": {},
             "input": "0.0800",
-            "output": "0.4500",
-            "cache_read": "0.0400",
+            "output": "0.1600",
+            "cache_read": null,
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -7996,7 +7996,7 @@
           "limit": {
             "context": 131072,
             "input": null,
-            "output": 117964
+            "output": 16384
           },
           "modalities": {
             "input": [
@@ -19244,9 +19244,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.0900",
-            "output": "0.3600",
-            "cache_read": null,
+            "input": "0.0500",
+            "output": "0.2500",
+            "cache_read": "0.0500",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -22644,8 +22644,8 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.1000",
-            "output": "0.9000",
+            "input": "0.0500",
+            "output": "0.7000",
             "cache_read": "0.0250",
             "cache_write": null,
             "input_audio": null,
@@ -25909,9 +25909,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "0.7506",
-            "output": "2.2509",
-            "cache_read": "0.0378",
+            "input": "0.8340",
+            "output": "2.5010",
+            "cache_read": "0.0420",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -27983,9 +27983,9 @@
           },
           "cost": {
             "conditions": {},
-            "input": "1.4000",
-            "output": "4.4000",
-            "cache_read": "0.2600",
+            "input": "1.1900",
+            "output": "3.7400",
+            "cache_read": "0.6000",
             "cache_write": null,
             "input_audio": null,
             "output_audio": null,
@@ -28611,7 +28611,7 @@
           "cost": {
             "conditions": {},
             "input": "0.1188",
-            "output": "8.0000",
+            "output": "5.0000",
             "cache_read": "0.1200",
             "cache_write": null,
             "input_audio": null,

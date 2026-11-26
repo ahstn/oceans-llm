@@ -96,7 +96,7 @@ export function AppSidebar({
                         isActive={active}
                         className="h-8 rounded-lg px-2 text-sm font-normal"
                       >
-                        <Link to={item.to}>
+                        <Link to={item.to} preload={item.preload}>
                           <AppIcon icon={item.icon} size={18} stroke={1.5} />
                           <span>{item.label}</span>
                         </Link>

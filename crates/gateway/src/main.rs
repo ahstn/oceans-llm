@@ -380,6 +380,7 @@ async fn run_serve_with_store(
         mcp_organisation_publishing: config.mcp.registry.organisation_publishing,
         leaderboard_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
         harness_usage_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
+        spend_report_cache: Arc::new(ResponseCache::new(ADMIN_VIEW_CACHE_TTL)),
         mcp_telemetry_cache: Arc::new(ResponseCache::new(
             gateway::http::handlers::MCP_TELEMETRY_CACHE_TTL,
         )),

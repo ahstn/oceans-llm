@@ -5,18 +5,10 @@ import {
   formatUsd10000Precise,
   formatUsdNanos,
 } from '@/lib/format'
+import { callerPrimary, callerSecondary } from '@/lib/caller'
 import type { RequestLogView } from '@/types/api'
 
-export function callerPrimary(item: RequestLogView): string | null {
-  return item.user_name ?? item.service_account_name ?? null
-}
-
-export function callerSecondary(item: RequestLogView): string | null {
-  if (item.user_name) {
-    return item.user_email ?? null
-  }
-  return item.service_account_name ? 'service account' : null
-}
+export { callerPrimary, callerSecondary } from '@/lib/caller'
 
 export function callerLabel(item: RequestLogView): string {
   const primary = callerPrimary(item)

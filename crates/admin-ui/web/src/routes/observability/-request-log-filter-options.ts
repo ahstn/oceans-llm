@@ -24,3 +24,14 @@ export function customStatusCode(search: string) {
   const code = search.trim()
   return /^[1-5]\d\d$/.test(code) ? code : null
 }
+
+/** A dollar threshold the gateway accepts: non-negative, at most four decimals. */
+export function costParam(value: unknown): string | undefined {
+  const text =
+    typeof value === 'number'
+      ? String(value)
+      : typeof value === 'string'
+        ? value.trim() || undefined
+        : undefined
+  return text !== undefined && /^\d+(\.\d{1,4})?$/.test(text) ? text : undefined
+}

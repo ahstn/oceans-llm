@@ -27,17 +27,19 @@ const LAST_STRICT_VERSION: u32 = 81;
 
 // Every migration after the strict legacy registry must explicitly declare
 // its compatibility here; never infer compatibility from its SQL.
+// V82 permits unmerged pull requests with no merge time; older readers require it.
+// V83 only replaces indexes.
+// V84 changes usage charges to nanodollars and requires nanos-aware readers.
+// V87 only adds and replaces indexes.
+// V88 only adds an index.
 const READER_COMPATIBILITY: &[(u32, ReaderCompatibility)] = &[
-    // V82 permits unmerged pull requests with no merge time; older readers require it.
     (82, ReaderCompatibility::RequiresReader(82)),
-    // V83 only replaces indexes.
     (83, ReaderCompatibility::Additive),
-    // V84 changes usage charges to nanodollars and requires nanos-aware readers.
     (84, ReaderCompatibility::RequiresReader(84)),
     (85, ReaderCompatibility::RequiresReader(85)),
     (86, ReaderCompatibility::RequiresReader(86)),
-    // V87 only adds an index.
     (87, ReaderCompatibility::Additive),
+    (88, ReaderCompatibility::Additive),
 ];
 
 /// libsql migrations that rebuild a table other tables reference, with that
@@ -611,10 +613,17 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
     },
     MigrationManifest {
         version: 87,
+        name: "request_log_list_order_index",
+        checksum: "V87__request_log_list_order_index.sql",
+        libsql_sql: include_str!("../migrations/V87__request_log_list_order_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V87__request_log_list_order_index.sql"),
+    },
+    MigrationManifest {
+        version: 88,
         name: "batch_jobs_route_index",
-        checksum: "V87__batch_jobs_route_index.sql",
-        libsql_sql: include_str!("../migrations/V87__batch_jobs_route_index.sql"),
-        postgres_sql: include_str!("../migrations/postgres/V87__batch_jobs_route_index.sql"),
+        checksum: "V88__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V88__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V88__batch_jobs_route_index.sql"),
     },
 ];
 

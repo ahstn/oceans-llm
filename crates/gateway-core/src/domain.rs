@@ -1576,6 +1576,9 @@ pub struct RequestLogQuery {
     pub tag_value: Option<String>,
     /// Case-insensitive substring match on model keys or user name/email.
     pub q: Option<String>,
+    /// Only logs whose priced usage cost is strictly above this many nano-dollars.
+    #[serde(default)]
+    pub min_cost_usd_nanos: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

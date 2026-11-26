@@ -35,17 +35,35 @@ const loadAuthSession = createIsomorphicFn()
   })
   .client(() => getAuthSession())
 
+// The gateway version only changes on deploy, and a full page load reads it again on the
+// server, so the browser asks for it once per page load instead of on every navigation.
+let clientOceansVersion: Promise<string | null> | null = null
+
 const loadOceansVersion = createIsomorphicFn()
   .server(async () => {
     const { getGatewayVersion } = await import('@/server/admin-data.server')
     return getGatewayVersion()
   })
-  .client(() => getOceansVersion())
+  .client(() => {
+    clientOceansVersion ??= getOceansVersion().then(
+      (version) => {
+        if (version === null) clientOceansVersion = null
+        return version
+      },
+      (error: unknown) => {
+        clientOceansVersion = null
+        throw error
+      },
+    )
+    return clientOceansVersion
+  })
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   beforeLoad: async ({ location }) => {
     const currentPath = normalizeAdminPath(location.pathname)
     const isPublicRoute = isPublicAdminRoute(currentPath)
+    // Start the version read alongside the session check so neither waits on the other.
+    const oceansVersionRequest = isPublicRoute ? null : loadOceansVersion().catch(() => null)
     const { data: session } = await loadAuthSession()
 
     if (isPublicRoute) {
@@ -82,7 +100,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       throw redirect({ to: defaultSignedInPath(session) })
     }
 
-    const oceansVersion = await loadOceansVersion().catch(() => null)
+    const oceansVersion = await oceansVersionRequest
     return { session, oceansVersion }
   },
   errorComponent: RootErrorComponent,

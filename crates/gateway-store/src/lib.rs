@@ -7977,6 +7977,7 @@ pub(crate) mod tests {
                 tag_key: None,
                 tag_value: None,
                 q: None,
+                min_cost_usd_nanos: None,
             })
             .await
             .expect("list request logs");

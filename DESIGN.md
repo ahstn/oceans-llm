@@ -358,6 +358,8 @@ The helpers live in `src/lib/format.ts` (`formatCount`, `formatDuration`, `forma
 
 **Column toggles.** A table with optional or secondary columns puts a `Columns` button beside its other toolbar buttons. It opens a `Table columns` popover with one checkbox per column (`ColumnVisibilityPopover` in `src/components/data/`). The column that identifies a row, such as Started, never hides. The button shows from `md` up, because narrow screens show cards instead of the table. Models and Agent Sessions are the references.
 
+**Pagination.** A server-paged table ends with `TablePagination` (`src/components/data/`), after ReUI's `c-pagination-15`: the `first–last of total` range on the left, then Previous, numbered pages with an ellipsis for each hidden stretch, Next, and `Rows per page`. The first and last page stay one click away and the page row keeps one width as you page. `page` and `page_size` live in the URL, and any filter or search change returns to page 1. Request logs and Agent Sessions are the references.
+
 **Expandable rows.** When a row holds more than fits on one line, it expands in place rather than opening a dialog. The merged pull requests table on Attribution and the Teams list are the references.
 
 - Clicking anywhere on the row toggles it, and a chevron button carries `aria-expanded`. Controls inside the row (chips, links, the actions menu) stop the click, so using them never toggles the row.
