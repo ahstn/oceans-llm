@@ -266,7 +266,7 @@ fn resolves_default_and_postgres_database_options() -> anyhow::Result<()> {
     let missing_path = tmp.path().join("missing.yaml");
     let error = GatewayConfig::from_path(&missing_path).expect_err("missing config must fail");
     assert!(
-        format!("{error:#}").contains("failed reading config file"),
+        format!("{error:#}").contains("does not exist"),
         "unexpected error: {error:#}"
     );
 

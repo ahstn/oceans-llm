@@ -637,7 +637,10 @@ providers:
             ),
         );
         let error = GatewayConfig::from_path(&path).expect_err("duplicate provider");
-        assert!(format!("{error:#}").contains("duplicate provider id `upstream`"));
+        assert!(
+            format!("{error:#}").contains("provider `upstream` is defined twice in"),
+            "unexpected error: {error:#}"
+        );
     }
 }
 
@@ -933,5 +936,163 @@ models:
     assert!(
         format!("{error:#}").contains("cannot disable capabilities.decisions"),
         "unexpected error: {error:#}"
+    );
+}
+
+#[test]
+fn rejects_unknown_provider_fields_and_non_bearer_openai_auth() {
+    let tmp = tempdir().expect("tempdir");
+    let path = tmp.path().join("gateway.yaml");
+    for (provider_yaml, expected) in [
+        (
+            "    base_url: https://api.openai.com/v1\n    pricing_provider: openai\n",
+            "unknown field `pricing_provider`",
+        ),
+        (
+            "    base_url: https://api.openai.com/v1\n    auth: { kind: basic, token: literal.test }\n",
+            "unknown variant `basic`, expected `bearer`",
+        ),
+    ] {
+        write_config(
+            &path,
+            &format!("providers:\n  openai:\n    type: openai_compat\n{provider_yaml}"),
+        );
+        let error = GatewayConfig::from_path(&path).expect_err("config should fail");
+        assert!(
+            format!("{error:#}").contains(expected),
+            "expected `{expected}`, got: {error:#}"
+        );
+    }
+}
+
+#[test]
+fn every_provider_type_has_a_core_capability_baseline() {
+    let tmp = tempdir().expect("tempdir");
+    let path = tmp.path().join("gateway.yaml");
+    write_config(
+        &path,
+        r#"
+providers:
+  openai:
+    type: openai_compat
+    base_url: https://api.openai.com/v1
+  cloud-run:
+    type: gcp_cloud_run_openai_compat
+    base_url: https://example.com/v1
+    pricing_provider_id: google-vertex
+    auth: { mode: adc }
+  zen:
+    type: anthropic_compat
+    base_url: https://opencode.ai/zen
+  vertex:
+    type: gcp_vertex
+    project_id: project
+    auth: { mode: adc }
+  bedrock:
+    type: aws_bedrock
+    region: us-east-1
+    endpoint_kind: bedrock_runtime
+  copilot:
+    type: github_copilot
+    auth: { mode: github_user }
+  typesafe:
+    type: typesafe
+    pricing_provider_id: openrouter
+"#,
+    );
+
+    let config = GatewayConfig::from_path(&path).expect("config should parse");
+    let provider_types = config
+        .providers
+        .iter()
+        .map(|provider| provider.provider_type())
+        .collect::<std::collections::BTreeSet<_>>();
+    // One entry per ProviderConfig variant; extend the YAML when a provider type is added.
+    assert_eq!(provider_types.len(), 7);
+    for provider_type in provider_types {
+        // gateway-core falls back to every capability for unknown types, so a type missing
+        // from its table would silently gain capabilities it cannot serve.
+        assert_ne!(
+            gateway_core::ProviderCapabilities::for_provider_type(provider_type),
+            gateway_core::ProviderCapabilities::all_enabled(),
+            "`{provider_type}` has no baseline in ProviderCapabilities::for_provider_type"
+        );
+    }
+}
+
+#[test]
+fn every_provider_type_has_a_capability_baseline_and_route_policy() {
+    // `TYPES` must list exactly the provider types serde accepts, read from its error for an
+    // unknown type, so a new `ProviderConfig` variant fails this test until it is given a
+    // baseline and a route policy here.
+    use crate::config::ProviderConfig;
+
+    /// Whether `narrow_for_route_profile` has a rule for the type. A type without one serves
+    /// its baseline on every route.
+    #[derive(Clone, Copy, PartialEq)]
+    enum RoutePolicy {
+        Baseline,
+        NarrowsPerRoute,
+    }
+    use RoutePolicy::{Baseline, NarrowsPerRoute};
+    const TYPES: [(&str, RoutePolicy); 7] = [
+        // Decisions profiles narrow to Decisions only.
+        ("openai_compat", NarrowsPerRoute),
+        ("gcp_cloud_run_openai_compat", Baseline),
+        ("anthropic_compat", Baseline),
+        // Capabilities follow the upstream model family.
+        ("gcp_vertex", NarrowsPerRoute),
+        // `api_style` selects the API surface.
+        ("aws_bedrock", NarrowsPerRoute),
+        // The compatibility profile selects the chat API; the baseline is empty.
+        ("github_copilot", NarrowsPerRoute),
+        ("typesafe", Baseline),
+    ];
+
+    let error = serde_yaml::from_str::<ProviderConfig>("type: not_a_provider")
+        .expect_err("unknown provider type")
+        .to_string();
+    let (_, expected) = error
+        .split_once("expected one of ")
+        .unwrap_or_else(|| panic!("serde lists the provider types: {error}"));
+    let mut accepted = expected
+        .split(',')
+        .filter_map(|name| name.trim().split('`').nth(1))
+        .collect::<Vec<_>>();
+    accepted.sort_unstable();
+    let mut listed = TYPES.map(|(provider_type, _)| provider_type);
+    listed.sort_unstable();
+    assert_eq!(
+        accepted, listed,
+        "`TYPES` must list every provider type, with its route policy"
+    );
+
+    let none = gateway_core::ProviderCapabilities::none();
+    let compatibility = gateway_core::RouteCompatibility::default();
+    for (provider_type, policy) in TYPES {
+        let baseline = gateway_core::ProviderCapabilities::for_provider_type(provider_type);
+        if provider_type != "github_copilot" {
+            assert_ne!(
+                baseline, none,
+                "`{provider_type}` has no capability baseline"
+            );
+        }
+        if policy == Baseline {
+            for upstream_model in ["gpt-5-mini", "claude-sonnet-4-5", "unknown-model"] {
+                assert_eq!(
+                    gateway_core::route_capability_ceiling(
+                        provider_type,
+                        upstream_model,
+                        &compatibility
+                    ),
+                    baseline,
+                    "`{provider_type}` narrows per route; mark it `NarrowsPerRoute`"
+                );
+            }
+        }
+    }
+    assert_eq!(
+        gateway_core::ProviderCapabilities::for_provider_type("not_a_provider"),
+        none
     );
 }

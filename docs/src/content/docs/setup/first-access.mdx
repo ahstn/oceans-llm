@@ -25,6 +25,8 @@ Because they're separate, a new environment can have API access but no admin sig
 
 Migrations and config seeding are on by default; bootstrap is an explicit opt-in. `gateway seed-config` and `gateway bootstrap-admin` apply migrations first, whatever the startup toggles say.
 
+Every command reads the main config from `--config` or `GATEWAY_CONFIG`, plus any fragments under `--config-dir` or `GATEWAY_CONFIG_DIR` ([Config files and fragments](/configuration/#config-files-and-fragments)). Seeding creates and updates config-backed objects. It never removes providers or models deleted from config, and their routes stay enabled.
+
 Two more commands help before a start or an upgrade. `gateway config validate` checks the config file, and `gateway migrate --check` reports whether the database schema is current; `--status` lists every migration.
 
 ## The bootstrap admin

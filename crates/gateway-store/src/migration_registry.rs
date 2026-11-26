@@ -31,6 +31,7 @@ const LAST_STRICT_VERSION: u32 = 81;
 // V83 only replaces indexes.
 // V84 changes usage charges to nanodollars and requires nanos-aware readers.
 // V87 only adds and replaces indexes.
+// V88 only adds an index.
 const READER_COMPATIBILITY: &[(u32, ReaderCompatibility)] = &[
     (82, ReaderCompatibility::RequiresReader(82)),
     (83, ReaderCompatibility::Additive),
@@ -38,6 +39,7 @@ const READER_COMPATIBILITY: &[(u32, ReaderCompatibility)] = &[
     (85, ReaderCompatibility::RequiresReader(85)),
     (86, ReaderCompatibility::RequiresReader(86)),
     (87, ReaderCompatibility::Additive),
+    (88, ReaderCompatibility::Additive),
 ];
 
 /// libsql migrations that rebuild a table other tables reference, with that
@@ -615,6 +617,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         checksum: "V87__request_log_list_order_index.sql",
         libsql_sql: include_str!("../migrations/V87__request_log_list_order_index.sql"),
         postgres_sql: include_str!("../migrations/postgres/V87__request_log_list_order_index.sql"),
+    },
+    MigrationManifest {
+        version: 88,
+        name: "batch_jobs_route_index",
+        checksum: "V88__batch_jobs_route_index.sql",
+        libsql_sql: include_str!("../migrations/V88__batch_jobs_route_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V88__batch_jobs_route_index.sql"),
     },
 ];
 

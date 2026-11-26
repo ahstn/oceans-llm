@@ -189,7 +189,9 @@ pub use secret_storage::{
     GATEWAY_API_KEY_SECRET_KEY_ENV, GATEWAY_API_KEY_SECRET_KEY_ID, decrypt_gateway_api_key_secret,
     encrypt_gateway_api_key_secret,
 };
-pub use service::{BatchUsageInput, GatewayService, PreV84Charge, RecordedChatUsage};
+pub use service::{
+    BatchUsageInput, GatewayService, OverriddenRoutes, PreV84Charge, RecordedChatUsage,
+};
 pub use usage::{UsageEstimateInput, response_text_bytes};
 
 pub use skills::SkillService;

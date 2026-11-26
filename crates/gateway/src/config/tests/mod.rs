@@ -31,6 +31,7 @@ mod batch;
 mod bedrock;
 mod budgets;
 mod environment;
+mod fragments;
 mod github_copilot;
 mod identity;
 mod infrastructure;
