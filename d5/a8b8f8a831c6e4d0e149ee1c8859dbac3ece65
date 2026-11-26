@@ -1,0 +1,69 @@
+crates/admin-ui/web/src/components/data/debounced-search.tsx
+  s_dc3b523da70752::t_0a561d4bcd5f06 27-29,36-40,54-56
+crates/admin-ui/web/src/components/data/request-identity.tsx
+  s_dc3b523da70752::t_7c584ccb2135be 2
+crates/admin-ui/web/src/components/data/table-pagination.tsx
+  s_dc3b523da70752::t_61bda8706685ef 1,20,30-31,54-67,71
+crates/admin-ui/web/src/components/observability/agent-sessions/session-table.tsx
+  s_dc3b523da70752::t_68b22604a7038f 4,12,124,137
+crates/admin-ui/web/src/lib/caller.ts
+  s_dc3b523da70752::t_9361fae42cf966 1-17
+crates/admin-ui/web/src/lib/pagination.ts
+  s_dc3b523da70752::t_577376f7336212 1-39
+crates/admin-ui/web/src/routes/observability/-request-log-detail/format.ts
+  s_dc3b523da70752::t_e8492670018d2e 8,11
+crates/admin-ui/web/src/routes/observability/-request-log-filter-options.ts
+  s_dc3b523da70752::t_0f88fe0fe281ed 27-37
+crates/admin-ui/web/src/routes/observability/agent-sessions.tsx
+  s_dc3b523da70752::t_20f610b981de35 103,108,224-225
+crates/admin-ui/web/src/routes/observability/request-logs.tsx
+  s_dc3b523da70752::t_4b1f874bb86e77 32,43,79,89
+crates/admin-ui/web/src/test/components/table-pagination.test.ts
+  s_dc3b523da70752::t_c5f559517889ec 3
+crates/admin-ui/web/src/test/routes/agent-sessions-route.test.tsx
+  s_dc3b523da70752::t_38576f826a0960 619-622,968-970,1158-1160,1301-1303,1325-1379
+crates/admin-ui/web/src/test/routes/request-logs-route.test.tsx
+  s_dc3b523da70752::t_a59b4f285d296b 8-9,795
+crates/gateway-core/src/agent_analysis.rs
+  s_dc3b523da70752::t_823f4c0838695b 1-2,148,151-154,156,163-165,429-435
+crates/gateway-core/src/lib.rs
+  s_dc3b523da70752::t_0a2536ba165b90 31-32
+crates/gateway-store/src/agent_analysis_tests.rs
+  s_dc3b523da70752::t_ea4be422219923 4-6,657-658,662-664,693,696-706,1182-1190
+crates/gateway-store/src/any_store_agent_analysis.rs
+  s_dc3b523da70752::t_b12e63c8833cd3 206-216
+crates/gateway-store/src/libsql_store/agent_analysis/reports.rs
+  s_dc3b523da70752::t_096d99a90e17e9 5-12
+crates/gateway-store/src/libsql_store/agent_analysis/summaries.rs
+  s_dc3b523da70752::t_5b0ecbe6ff2b4f 4,25,29-38,69,71-75,77-80,82-84,87,90,95-98,103-105,109,113-114,117-119,124-125,127-130,134-137
+crates/gateway-store/src/libsql_store/request_logs.rs
+  s_dc3b523da70752::t_092a23cefc1625 16-17,57-62
+crates/gateway-store/src/postgres_store/agent_analysis/reports.rs
+  s_dc3b523da70752::t_5f2b9c0ca2ce2e 5-12
+crates/gateway-store/src/postgres_store/agent_analysis/summaries.rs
+  s_dc3b523da70752::t_313def1205e8ca 4,28,31-40,63,65-69,71-74,76-78,82,87-90,95-97,101,105-106,109,117-118,120-123,127-130
+crates/gateway-store/src/postgres_store/request_logs.rs
+  s_dc3b523da70752::t_5a2f0e349a52ab 17-18,61-66
+crates/gateway-store/src/tests/request_log_list.rs
+  s_dc3b523da70752::t_86d01af21d8458 383-387
+crates/gateway/src/http/observability/agent_sessions.rs
+  s_dc3b523da70752::t_19606845f27e9b 153,370-375
+crates/gateway/src/http/observability/agent_sessions/presenter.rs
+  s_dc3b523da70752::t_e80b4add366fed 303-304,307,314,316-323,326-329,342-343,375-377,403-404,406
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "d5a8b8f8a831c6e4d0e149ee1c8859dbac3ece65",
+  "prompts": {},
+  "sessions": {
+    "s_dc3b523da70752": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "af541614-74d7-43c2-98a1-d65acc10f2b7",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}

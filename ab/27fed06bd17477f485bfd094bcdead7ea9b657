@@ -1,0 +1,57 @@
+Cargo.lock
+  s_28c17968f873ea::t_07b76b21e56983 5-10,24,83-97,235-246,952-972,1214-1231,1763-1764,3082-3091,4645-4650,5239,5242,5247-5248
+crates/admin-ui/Cargo.toml
+  s_28c17968f873ea::t_1d8b52fe40f25a 16
+crates/admin-ui/src/proxy.rs
+  s_28c17968f873ea::t_149a6fd4b720a7 15,66-71,73-82,850-892,940-941,950-957
+crates/admin-ui/web/src/components/app-sidebar.tsx
+  s_28c17968f873ea::t_c28a431c97c745 99
+crates/admin-ui/web/src/components/layout/admin-nav.ts
+  s_28c17968f873ea::t_3632625b6d0953 33-38,104,112,120,134,142,150,158
+crates/admin-ui/web/src/routes/__root.tsx
+  s_28c17968f873ea::t_7f1b318011c978 38-41,47-59,65-66,103
+crates/admin-ui/web/src/routes/observability/agent-harnesses.tsx
+  s_28c17968f873ea::t_625b70dcffcf07 1,8,171-178,341-435
+crates/admin-ui/web/src/routes/observability/agent-sessions.tsx
+  s_28c17968f873ea::t_be6d94e579f4ca 45-48
+crates/admin-ui/web/src/routes/observability/request-logs.tsx
+  s_28c17968f873ea::t_584f3ed2ac9df1 55,96-98,108-129
+crates/admin-ui/web/src/test/routes/request-logs-route.test.tsx
+  s_28c17968f873ea::t_2685e871d1d749 192-219
+crates/gateway-store/migrations/V87__request_log_list_order_index.sql
+  s_28c17968f873ea::t_0f7fc4a9be5015 1-8
+crates/gateway-store/migrations/postgres/V87__request_log_list_order_index.sql
+  s_28c17968f873ea::t_609c03c8d409ff 1-17
+crates/gateway-store/src/migration_registry.rs
+  s_28c17968f873ea::t_53e3b835647cdf 33,40,612-618
+crates/gateway/src/http/admin_contract.rs
+  s_28c17968f873ea::t_e7ecbc421f3966 1031,1042,1051,1062,1071,1100,1108
+crates/gateway/src/http/observability.rs
+  s_28c17968f873ea::t_27e2f12311102e 336-338
+crates/gateway/src/http/observability/request_logs.rs
+  s_28c17968f873ea::t_7711a49bcb6733 55-59,123,127-128,130-131,134-138,177-179
+crates/gateway/src/http/spend.rs
+  s_28c17968f873ea::t_24770c746cb556 37,61-85,151,165
+crates/gateway/src/http/state.rs
+  s_28c17968f873ea::t_6da315255a3bc3 12,66
+crates/gateway/src/http/test_support.rs
+  s_28c17968f873ea::t_12e2ba7cf55705 71
+crates/gateway/src/main.rs
+  s_28c17968f873ea::t_dd2dde84c5a287 368
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "ab27fed06bd17477f485bfd094bcdead7ea9b657",
+  "prompts": {},
+  "sessions": {
+    "s_28c17968f873ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "17b5ff36-5901-43ce-8537-921bce83f8d5",
+        "model": "unknown"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
