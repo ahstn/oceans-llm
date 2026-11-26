@@ -52,6 +52,7 @@ export function RequestLogsPage() {
   const search = Route.useSearch()
   const router = useRouter()
   const detail = useRequestLogDetail()
+  const isNarrowLayout = useNarrowLayout()
   const [isListPending, startListTransition] = useTransition()
 
   // Patches merge into the latest location so a debounced search and a chip commit that land
@@ -92,7 +93,9 @@ export function RequestLogsPage() {
             isPending={isListPending}
             onApply={applyFilters}
           />
-          <RequestLogMobileList items={logPage.items} onInspect={detail.open} />
+          {isNarrowLayout ? (
+            <RequestLogMobileList items={logPage.items} onInspect={detail.open} />
+          ) : null}
           <RequestLogDesktopTable items={logPage.items} onInspect={detail.open} />
         </CardContent>
       </Card>
@@ -100,6 +103,28 @@ export function RequestLogsPage() {
       <RequestLogDetailSheet detail={detail} />
     </div>
   )
+}
+
+/** Tailwind's `lg` breakpoint, where the desktop table replaces the mobile cards. */
+const DESKTOP_LAYOUT_QUERY = '(min-width: 64rem)'
+
+/**
+ * Whether the viewport is below `lg`. The mobile list renders every row as a card, so it mounts
+ * only on narrow screens instead of sitting hidden in the DOM beside the table. The server and
+ * first client render assume a wide screen so hydration matches, then correct on mount.
+ */
+function useNarrowLayout() {
+  const [isNarrow, setIsNarrow] = useState(false)
+
+  useEffect(() => {
+    const query = window.matchMedia(DESKTOP_LAYOUT_QUERY)
+    const update = () => setIsNarrow(!query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+
+  return isNarrow
 }
 
 type RequestLogDetailState = ReturnType<typeof useRequestLogDetail>

@@ -42,11 +42,10 @@ type AgentSessionRouteSearch = AgentSessionFiltersInput & { session_id?: string 
 
 export const Route = createFileRoute('/observability/agent-sessions')({
   validateSearch: (search: Record<string, unknown>) => normalizeSearch(search),
-  loaderDeps: ({ search }) => search,
-  loader: ({ deps }) => {
-    const { session_id: _sessionId, ...filters } = deps
-    return getAgentSessions({ data: filters })
-  },
+  // The open session lives in the URL but does not change the list, so it stays out of the
+  // deps: opening or closing a session then reuses the loaded list instead of reading it again.
+  loaderDeps: ({ search: { session_id: _sessionId, ...filters } }) => filters,
+  loader: ({ deps }) => getAgentSessions({ data: deps }),
   component: AgentSessionsPage,
 })
 

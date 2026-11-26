@@ -30,12 +30,14 @@ const LAST_STRICT_VERSION: u32 = 81;
 // V82 permits unmerged pull requests with no merge time; older readers require it.
 // V83 only replaces indexes.
 // V84 changes usage charges to nanodollars and requires nanos-aware readers.
+// V87 only adds and replaces indexes.
 const READER_COMPATIBILITY: &[(u32, ReaderCompatibility)] = &[
     (82, ReaderCompatibility::RequiresReader(82)),
     (83, ReaderCompatibility::Additive),
     (84, ReaderCompatibility::RequiresReader(84)),
     (85, ReaderCompatibility::RequiresReader(85)),
     (86, ReaderCompatibility::RequiresReader(86)),
+    (87, ReaderCompatibility::Additive),
 ];
 
 /// libsql migrations that rebuild a table other tables reference, with that
@@ -606,6 +608,13 @@ pub(crate) const MIGRATION_REGISTRY: &[MigrationManifest] = &[
         checksum: "V86__agent_session_generation_jobs.sql",
         libsql_sql: include_str!("../migrations/V86__agent_session_generation_jobs.sql"),
         postgres_sql: include_str!("../migrations/postgres/V86__agent_session_generation_jobs.sql"),
+    },
+    MigrationManifest {
+        version: 87,
+        name: "request_log_list_order_index",
+        checksum: "V87__request_log_list_order_index.sql",
+        libsql_sql: include_str!("../migrations/V87__request_log_list_order_index.sql"),
+        postgres_sql: include_str!("../migrations/postgres/V87__request_log_list_order_index.sql"),
     },
 ];
 

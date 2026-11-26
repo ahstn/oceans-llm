@@ -12,6 +12,7 @@ use axum::{
     routing::{any, get},
 };
 use serde_json::json;
+use tower_http::{CompressionLevel, compression::CompressionLayer};
 use tracing::warn;
 
 use gateway_client_ip::{CLIENT_IP_HEADER, TrustedProxies, resolve_client_ip, sign_client_ip};
@@ -62,8 +63,23 @@ pub fn mount_admin_ui(router: Router, config: AdminUiConfig) -> Router {
         format!("{base_path}/{{*path}}")
     };
 
+    let assets_path = if base_path == "/" {
+        "/assets/{*path}".to_string()
+    } else {
+        format!("{base_path}/assets/{{*path}}")
+    };
+
     let state = ProxyState::new(&config);
-    let mut admin_ui_router = Router::new().route(&wildcard_path, any(proxy_request));
+    // The UI server sends its hashed JS and CSS bundles uncompressed, and the entry chunk alone
+    // is over a megabyte. Only this route compresses: an encoder buffers its output, which
+    // would hold back the streamed SSR pages and server function responses on other paths.
+    // Level 5 keeps per-request CPU low; browsers cache these immutable files for a year.
+    let mut admin_ui_router = Router::new()
+        .route(
+            &assets_path,
+            any(proxy_request).layer(CompressionLayer::new().quality(CompressionLevel::Precise(5))),
+        )
+        .route(&wildcard_path, any(proxy_request));
     if base_path == "/" {
         admin_ui_router = admin_ui_router.route(&base_path, any(proxy_request));
     } else {
@@ -831,6 +847,49 @@ mod tests {
         assert_eq!(captured[0].path_and_query, "/");
     }
 
+    #[tokio::test]
+    async fn proxy_compresses_bundled_assets_but_not_pages() {
+        let captured = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
+        let upstream = start_upstream(captured.clone()).await;
+        let app = mount_admin_ui(
+            Router::new(),
+            AdminUiConfig {
+                upstream,
+                ..AdminUiConfig::default()
+            },
+        );
+        let get = |uri: &str| {
+            Request::builder()
+                .uri(uri)
+                .header("accept-encoding", "gzip")
+                .body(Body::empty())
+                .expect("request must build")
+        };
+
+        let asset = app
+            .clone()
+            .oneshot(get("/admin/assets/index-abc123.js"))
+            .await
+            .expect("proxy response");
+        assert_eq!(asset.status(), StatusCode::OK);
+        assert_eq!(
+            asset.headers().get("content-encoding"),
+            Some(&HeaderValue::from_static("gzip"))
+        );
+        let compressed = to_bytes(asset.into_body(), usize::MAX)
+            .await
+            .expect("asset body");
+        assert!(compressed.len() < "export const value = 1;\n".len() * 400 / 4);
+
+        // Pages stream from the SSR server, so they pass through without an encoder.
+        let page = app
+            .oneshot(get("/admin/large-page"))
+            .await
+            .expect("proxy response");
+        assert_eq!(page.status(), StatusCode::OK);
+        assert_eq!(page.headers().get("content-encoding"), None);
+    }
+
     async fn start_upstream(captured: Arc<Mutex<Vec<CapturedRequest>>>) -> String {
         let app = Router::new().fallback(any(move |request: Request<Body>| {
             let captured = captured.clone();
@@ -878,6 +937,8 @@ mod tests {
             .collect::<Vec<_>>();
 
         let redirects_to_login = path_and_query == "/admin/redirect-to-login";
+        let serves_asset =
+            path_and_query.starts_with("/admin/assets/") || path_and_query == "/admin/large-page";
         captured
             .lock()
             .expect("capture lock")
@@ -885,6 +946,14 @@ mod tests {
                 path_and_query,
                 headers,
             });
+
+        if serves_asset {
+            return Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "text/javascript")
+                .body(Body::from("export const value = 1;\n".repeat(400)))
+                .expect("asset response should build");
+        }
 
         if redirects_to_login {
             return Response::builder()
