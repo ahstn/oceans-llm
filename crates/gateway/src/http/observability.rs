@@ -24,7 +24,6 @@ use gateway_service::{
     model_icon_key_from_metadata, provider_icon_key_from_metadata, resolve_model_icon_key,
     resolve_provider_display,
 };
-use gateway_store::GatewayStore;
 use serde::Serialize;
 use serde_json::{Map, Value};
 use time::{Duration, OffsetDateTime, UtcOffset, format_description::well_known::Rfc3339};
@@ -334,7 +333,9 @@ async fn build_harness_usage(
     })
 }
 
-async fn load_cached_admin_view<V, F, Fut>(
+/// Serves an admin view from a short-lived per-process cache, loading it once for all
+/// concurrent requests with the same key.
+pub(super) async fn load_cached_admin_view<V, F, Fut>(
     state: &AppState,
     cache: &ResponseCache<String, V>,
     cache_key: String,

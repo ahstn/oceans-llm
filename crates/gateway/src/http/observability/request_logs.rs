@@ -53,9 +53,11 @@ pub async fn list_request_logs(
     };
 
     let page = state.service.list_request_logs(&query).await?;
-    let providers = provider_connections_by_key(&state, &page.items).await?;
-    let callers = request_caller_directory(&state, &page.items).await?;
-    let usage = request_usage_directory(&state, &page.items).await?;
+    let (providers, callers, usage) = tokio::try_join!(
+        provider_connections_by_key(&state, &page.items),
+        request_caller_directory(&state, &page.items),
+        request_usage_directory(&state, &page.items),
+    )?;
     let items = page
         .items
         .iter()
@@ -136,20 +138,22 @@ async fn provider_connections_by_key(
     state: &AppState,
     logs: &[RequestLogRecord],
 ) -> Result<HashMap<String, ProviderConnection>, AppError> {
-    let provider_keys: HashSet<_> = logs
+    let provider_keys: Vec<String> = logs
         .iter()
         .filter(|log| provider_icon_key_from_metadata(&log.metadata).is_none())
         .map(|log| log.provider_key.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
         .collect();
-
-    let mut providers = HashMap::new();
-    for provider_key in provider_keys {
-        if let Some(provider) = provider_connection(state, provider_key.as_str()).await? {
-            providers.insert(provider_key, provider);
-        }
+    if provider_keys.is_empty() {
+        return Ok(HashMap::new());
     }
 
-    Ok(providers)
+    state
+        .store
+        .list_providers_by_keys(&provider_keys)
+        .await
+        .map_err(|error| AppError(error.into()))
 }
 
 async fn provider_connection(
@@ -188,10 +192,9 @@ async fn request_caller_directory(
 
     let user_ids: HashSet<Uuid> = logs.iter().filter_map(|log| log.user_id).collect();
     for user_id in user_ids {
-        if let Some(identity_user) = state.store.get_identity_user(user_id).await? {
-            directory
-                .users
-                .insert(user_id, (identity_user.user.name, identity_user.user.email));
+        // Only the name and email are shown, so skip the identity view's team and auth joins.
+        if let Some(user) = state.store.get_user_by_id(user_id).await? {
+            directory.users.insert(user_id, (user.name, user.email));
         }
     }
 

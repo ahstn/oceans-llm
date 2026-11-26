@@ -45,16 +45,17 @@ type AgentSessionRouteSearch = AgentSessionFiltersInput & {
 
 export const Route = createFileRoute('/observability/agent-sessions')({
   validateSearch: (search: Record<string, unknown>) => normalizeSearch(search),
-  loaderDeps: ({ search }) => search,
-  loader: async ({ deps }) => {
-    const { session_id: _sessionId, ...filters } = deps
-    const sessionPage = await getAgentSessions({ data: filters })
+  // The open session lives in the URL but does not change the list, so it stays out of the
+  // deps: opening or closing a session then reuses the loaded list instead of reading it again.
+  loaderDeps: ({ search: { session_id: _sessionId, ...filters } }) => filters,
+  loader: async ({ deps, location }) => {
+    const sessionPage = await getAgentSessions({ data: deps })
     // A saved page past the end (sessions aged out, or a smaller page size) moves to the last page.
     const lastPage = pageBeyondLast(deps.page, deps.page_size ?? 50, sessionPage.data.total)
     if (lastPage !== null) {
       throw redirect({
         to: '/observability/agent-sessions',
-        search: normalizeSearch({ ...deps, page: lastPage }),
+        search: normalizeSearch({ ...location.search, page: lastPage }),
         replace: true,
       })
     }

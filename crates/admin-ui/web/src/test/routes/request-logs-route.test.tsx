@@ -190,6 +190,34 @@ describe('RequestLogsPage table', () => {
     expect(screen.queryByText('payload')).not.toBeInTheDocument()
   })
 
+  it('mounts only the desktop table on wide screens', () => {
+    // The setup file's matchMedia is a shared mock, so swap it rather than spy on it: restoring
+    // a spy on a mock clears its implementation for the tests that follow.
+    const originalMatchMedia = window.matchMedia
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: query === '(min-width: 64rem)',
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }))
+    routeMock.useLoaderData.mockReturnValue({ data: { items, total: 1 } })
+
+    try {
+      renderPage()
+
+      // Every row as a hidden card would add hundreds of nodes beside the virtualized table.
+      expect(screen.queryByTestId('request-log-mobile-list')).not.toBeInTheDocument()
+      expect(screen.getByTestId('request-log-desktop-table')).toBeInTheDocument()
+      expect(screen.getAllByText('gpt-4.1-mini')).toHaveLength(1)
+    } finally {
+      window.matchMedia = originalMatchMedia
+    }
+  })
+
   it('counts distinct tools used and falls back to call counts for older logs', () => {
     const repeatedToolItem: RequestLogView = {
       ...items[0],

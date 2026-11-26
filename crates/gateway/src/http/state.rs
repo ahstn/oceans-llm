@@ -9,7 +9,7 @@ use gateway_service::{
 use gateway_store::AnyStore;
 
 use crate::http::{
-    admin_contract::{HarnessUsageView, LeaderboardView},
+    admin_contract::{HarnessUsageView, LeaderboardView, SpendReportView},
     client_ip::TrustedProxies,
     handlers::{CountTokensLimiter, McpTelemetrySnapshot},
     mcp_client_oauth::OauthStreamWatcher,
@@ -63,6 +63,7 @@ pub struct AppState {
     pub mcp_organisation_publishing: gateway_service::McpOrganisationPublishing,
     pub leaderboard_cache: Arc<ResponseCache<String, LeaderboardView>>,
     pub harness_usage_cache: Arc<ResponseCache<String, HarnessUsageView>>,
+    pub spend_report_cache: Arc<ResponseCache<String, SpendReportView>>,
     pub count_tokens_limiter: Arc<CountTokensLimiter>,
     /// Each credential's MCP tool set for inference request telemetry, by
     /// API key or OAuth grant id, kept briefly so requests skip re-resolving it.

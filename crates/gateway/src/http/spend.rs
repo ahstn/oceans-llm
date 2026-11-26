@@ -34,6 +34,7 @@ use crate::http::{
     audit::AuditRequestMeta,
     error::AppError,
     focus_export::{FocusCsvExport, build_focus_csv_export},
+    observability::load_cached_admin_view,
     state::AppState,
 };
 
@@ -57,6 +58,31 @@ pub async fn get_spend_report(
         current_user.global_role,
         query.owner_kind.as_deref(),
     )?;
+    // Every load aggregates the whole window from the usage ledger in several queries, so
+    // concurrent dashboards share one load per scope and window for a few seconds.
+    let cache_key = format!(
+        "{window_days}:{}:{}",
+        owner_kind.map(ApiKeyOwnerKind::as_str).unwrap_or("all"),
+        owner_user_id.map(|id| id.to_string()).unwrap_or_default(),
+    );
+    let view = load_cached_admin_view(
+        &state,
+        &state.spend_report_cache,
+        cache_key,
+        "spend_report",
+        || build_spend_report(&state, window_days, owner_kind, owner_user_id),
+    )
+    .await?;
+
+    Ok(Json(envelope(view)))
+}
+
+async fn build_spend_report(
+    state: &AppState,
+    window_days: u16,
+    owner_kind: Option<ApiKeyOwnerKind>,
+    owner_user_id: Option<Uuid>,
+) -> Result<SpendReportView, AppError> {
     let (window_start, window_end) = report_window_bounds_utc(window_days)?;
 
     let (daily_rows, owner_rows, model_rows, owner_token_rows, model_token_rows) = tokio::try_join!(
@@ -122,7 +148,7 @@ pub async fn get_spend_report(
         })
         .collect();
 
-    Ok(Json(envelope(SpendReportView {
+    Ok(SpendReportView {
         window_days,
         owner_kind: owner_kind
             .map(ApiKeyOwnerKind::as_str)
@@ -136,7 +162,7 @@ pub async fn get_spend_report(
         models,
         owner_token_series,
         model_token_series,
-    })))
+    })
 }
 
 /// One point per window day, zero-filled, and the window totals. Days add exactly; the total

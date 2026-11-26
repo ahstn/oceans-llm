@@ -1028,7 +1028,7 @@ pub struct BudgetAlertHistoryRequestQuery {
     pub status: Option<String>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SpendTotalsView {
     pub priced_cost_usd_10000: i64,
     pub priced_request_count: i64,
@@ -1039,7 +1039,7 @@ pub struct SpendTotalsView {
     pub cache_write_tokens: Option<i64>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SpendDailyPointView {
     pub day_start: String,
     pub priced_cost_usd_10000: i64,
@@ -1048,7 +1048,7 @@ pub struct SpendDailyPointView {
     pub usage_missing_request_count: i64,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SpendOwnerBreakdownView {
     pub owner_kind: String,
     pub owner_id: String,
@@ -1059,7 +1059,7 @@ pub struct SpendOwnerBreakdownView {
     pub usage_missing_request_count: i64,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SpendModelBreakdownView {
     pub model_key: String,
     pub priced_cost_usd_10000: i64,
@@ -1068,7 +1068,7 @@ pub struct SpendModelBreakdownView {
     pub usage_missing_request_count: i64,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SpendReportView {
     pub window_days: u16,
     pub owner_kind: String,
@@ -1097,7 +1097,7 @@ pub struct SpendTokenPointView {
     pub cache_write_tokens: i64,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SpendOwnerTokenSeriesView {
     pub owner_kind: String,
     pub owner_id: String,
@@ -1105,7 +1105,7 @@ pub struct SpendOwnerTokenSeriesView {
     pub points: Vec<SpendTokenPointView>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SpendModelTokenSeriesView {
     pub model_key: String,
     pub is_other: bool,
