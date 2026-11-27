@@ -653,7 +653,14 @@ const OWNER_KIND_LABELS: Record<string, string> = {
 
 /** The owner kind and its ID, shortened; every owner ID stays in the title and accessible name. */
 function OwnerLabel({ item }: { item: McpInvocationView }) {
-  const ownerId = item.team_id ?? item.user_id ?? item.api_key_id
+  const ownerId =
+    item.owner_kind === 'user'
+      ? item.user_id
+      : item.owner_kind === 'team'
+        ? item.team_id
+        : item.owner_kind === 'api_key'
+          ? item.api_key_id
+          : (item.team_id ?? item.user_id ?? item.api_key_id)
   const kind = OWNER_KIND_LABELS[item.owner_kind] ?? formatEnum(item.owner_kind)
   const allIds = [
     item.api_key_id ? `API key ${item.api_key_id}` : null,

@@ -41,9 +41,13 @@ export function UserActivityTable({
     )
   }
   return (
-    // Fits its card at 1440 px; narrower screens scroll rather than clip the last column.
+    // Fits its 1094 px card at 1440 px: headers and names wrap when space runs short.
+    // Narrower screens scroll rather than clip the last column.
     <div className="border-border overflow-x-auto rounded-md border">
-      <Table aria-label="User activity" className="min-w-[60rem] text-left">
+      <Table
+        aria-label="User activity"
+        className="min-w-[60rem] text-left [&_td:first-child]:min-w-32 [&_td:first-child]:whitespace-normal [&_th]:whitespace-normal"
+      >
         <AdminTableHeader columns={COLUMNS} />
         <TableBody>
           {users.map((row) => (
@@ -107,7 +111,7 @@ function UserActivityRow({
         pricedRequests={row.priced_request_count}
         gaps={row.unpriced_request_count + row.usage_missing_request_count}
       />
-      <ModelsCell models={row.models} />
+      <ModelsCell models={row.models} className="max-w-48" />
       <TimestampCell value={row.last_activity_at} />
     </TableRow>
   )

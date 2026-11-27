@@ -89,6 +89,22 @@ describe('McpInvocationsPage', () => {
     expect(table.getByText('Allowed')).toBeInTheDocument()
     expect(table.getByText('120 ms')).toBeInTheDocument()
     expect(table.getByText('result truncated')).toBeInTheDocument()
+    expect(table.getByText('Team')).toBeInTheDocument()
+    expect(table.getByText('team_1')).toBeInTheDocument()
+  })
+
+  it('shows the ID that matches the owner kind', () => {
+    const userOwned = { ...item, owner_kind: 'user', user_id: 'user_1', team_id: 'team_1' }
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [userOwned], page: 1, page_size: 25, total: 1 },
+    })
+
+    render(<McpInvocationsPage />)
+
+    const table = within(screen.getByTestId('mcp-invocations-table'))
+    expect(table.getByText('User')).toBeInTheDocument()
+    expect(table.getByText('user_1')).toBeInTheDocument()
+    expect(table.queryByText('team_1')).not.toBeInTheDocument()
     expect(screen.queryByText(/n\/a/)).not.toBeInTheDocument()
   })
 

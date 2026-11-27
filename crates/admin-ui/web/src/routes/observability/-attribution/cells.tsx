@@ -4,6 +4,7 @@ import { CompactCount } from '@/components/data/compact-count'
 import { Badge } from '@/components/ui/badge'
 import { TableCell } from '@/components/ui/table'
 import { EMPTY_VALUE, formatCount, formatTimestamp } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import type { AttributionUserRefView } from '@/types/api'
 
 import { formatAttributedCost, pullRequestLabel } from './shared'
@@ -64,18 +65,27 @@ export function CostCell({
 }
 
 /** Model keys on one line, with the full list on hover. */
-export function ModelsCell({ models, muted }: { models: string[]; muted?: boolean }) {
+export function ModelsCell({
+  models,
+  muted,
+  className,
+}: {
+  models: string[]
+  muted?: boolean
+  /** Overrides the list's `max-w-56`, for a table that needs a narrower column. */
+  className?: string
+}) {
   return (
     <TableCell className={CELL}>
       {models.length === 0 ? (
         <span className="text-muted-foreground">{EMPTY_VALUE}</span>
       ) : (
         <span
-          className={
-            muted
-              ? 'text-muted-foreground block max-w-56 truncate font-mono text-xs'
-              : 'block max-w-56 truncate font-mono text-xs'
-          }
+          className={cn(
+            'block max-w-56 truncate font-mono text-xs',
+            muted && 'text-muted-foreground',
+            className,
+          )}
           title={models.join(', ')}
         >
           {models.join(', ')}
