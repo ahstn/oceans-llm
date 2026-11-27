@@ -446,7 +446,7 @@ function InvocationRow({
       </TableCell>
       <TableCell>
         {/* Capped so a long server key truncates instead of pushing Latency out of the card. */}
-        <div className="flex max-w-48 min-w-0 flex-col">
+        <div className="flex max-w-44 min-w-0 flex-col">
           <span className="truncate" title={item.server_display_name}>
             {item.server_display_name}
           </span>
@@ -459,7 +459,7 @@ function InvocationRow({
         </div>
       </TableCell>
       <TableCell>
-        <div className="flex max-w-48 min-w-0 flex-col">
+        <div className="flex max-w-44 min-w-0 flex-col">
           <span className="truncate font-mono text-sm" title={item.tool_display_key}>
             {item.tool_display_key}
           </span>
@@ -470,10 +470,15 @@ function InvocationRow({
         <OwnerLabel item={item} />
       </TableCell>
       <TableCell>
-        <div className="flex flex-col gap-1">
+        <div className="flex max-w-32 min-w-0 flex-col gap-1">
           <Badge variant={statusBadgeVariant(item.status)}>{formatEnum(item.status)}</Badge>
           {item.error_code ? (
-            <span className="text-muted-foreground font-mono text-xs">{item.error_code}</span>
+            <span
+              className="text-muted-foreground truncate font-mono text-xs"
+              title={item.error_code}
+            >
+              {item.error_code}
+            </span>
           ) : null}
         </div>
       </TableCell>

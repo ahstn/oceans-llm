@@ -123,7 +123,26 @@ describe('McpInvocationsPage', () => {
 
     const key = within(screen.getByTestId('mcp-invocations-table')).getByTitle(serverKey)
     expect(key).toHaveClass('truncate')
-    expect(key.parentElement).toHaveClass('max-w-48')
+    expect(key.parentElement).toHaveClass('max-w-44')
+  })
+
+  it('truncates a long error code so the status column stays narrow', () => {
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        items: [{ ...item, status: 'denied', error_code: 'mcp_tool_not_granted' }],
+        page: 1,
+        page_size: 25,
+        total: 1,
+      },
+    })
+
+    render(<McpInvocationsPage />)
+
+    const code = within(screen.getByTestId('mcp-invocations-table')).getByTitle(
+      'mcp_tool_not_granted',
+    )
+    expect(code).toHaveClass('truncate')
+    expect(code.parentElement).toHaveClass('max-w-32')
   })
 
   it('shows URL filters as chips and removes one without touching the others', async () => {
