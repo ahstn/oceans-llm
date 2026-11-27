@@ -108,6 +108,24 @@ describe('McpInvocationsPage', () => {
     expect(screen.queryByText(/n\/a/)).not.toBeInTheDocument()
   })
 
+  it('truncates long server keys and keeps the full key in a tooltip', () => {
+    const serverKey = 'verify-20261127t191841z-design2-d88e1-context7'
+    routeMock.useLoaderData.mockReturnValue({
+      data: {
+        items: [{ ...item, server_display_key: serverKey }],
+        page: 1,
+        page_size: 25,
+        total: 1,
+      },
+    })
+
+    render(<McpInvocationsPage />)
+
+    const key = within(screen.getByTestId('mcp-invocations-table')).getByTitle(serverKey)
+    expect(key).toHaveClass('truncate')
+    expect(key.parentElement).toHaveClass('max-w-48')
+  })
+
   it('shows URL filters as chips and removes one without touching the others', async () => {
     routeMock.useLoaderData.mockReturnValue({
       data: { items: [item], page: 1, page_size: 25, total: 1 },

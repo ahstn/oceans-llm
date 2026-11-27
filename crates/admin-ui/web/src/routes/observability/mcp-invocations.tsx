@@ -401,76 +401,94 @@ function InvocationTable({
         </TableHeader>
         <TableBody>
           {items.map((item) => (
-            <TableRow
-              key={item.mcp_tool_invocation_id}
-              data-invocation-id={item.mcp_tool_invocation_id}
-              tabIndex={0}
-              aria-label={`Inspect ${item.tool_display_key} on ${item.server_display_key}`}
-              className="cursor-pointer"
-              onClick={() => onInspect(item.mcp_tool_invocation_id)}
-              onKeyDown={(event: KeyboardEvent<HTMLTableRowElement>) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault()
-                  onInspect(item.mcp_tool_invocation_id)
-                }
-              }}
-            >
-              <TableCell>
-                <div className="flex min-w-0 flex-col">
-                  <span className="whitespace-nowrap tabular-nums">
-                    {formatTimestamp(item.occurred_at, { seconds: true })}
-                  </span>
-                  <span
-                    className="text-muted-foreground max-w-48 truncate font-mono text-xs"
-                    title={item.request_id ?? undefined}
-                  >
-                    {item.request_id ?? EMPTY_VALUE}
-                  </span>
-                </div>
-              </TableCell>
-              <TableCell>
-                <div className="flex min-w-0 flex-col">
-                  <span className="truncate">{item.server_display_name}</span>
-                  <span className="text-muted-foreground truncate font-mono text-xs">
-                    {item.server_display_key}
-                  </span>
-                </div>
-              </TableCell>
-              <TableCell>
-                <div className="flex min-w-0 flex-col">
-                  <span className="truncate font-mono text-sm">{item.tool_display_key}</span>
-                  <span className="text-muted-foreground font-mono text-xs">{item.mcp_method}</span>
-                </div>
-              </TableCell>
-              <TableCell>
-                <OwnerLabel item={item} />
-              </TableCell>
-              <TableCell>
-                <div className="flex flex-col gap-1">
-                  <Badge variant={statusBadgeVariant(item.status)}>{formatEnum(item.status)}</Badge>
-                  {item.error_code ? (
-                    <span className="text-muted-foreground font-mono text-xs">
-                      {item.error_code}
-                    </span>
-                  ) : null}
-                </div>
-              </TableCell>
-              <TableCell>
-                <Badge variant={policyBadgeVariant(item.policy_result)}>
-                  {formatEnum(item.policy_result)}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-right whitespace-nowrap tabular-nums">
-                {formatDuration(item.latency_ms)}
-              </TableCell>
-              <TableCell>
-                <PayloadBadges item={item} />
-              </TableCell>
-            </TableRow>
+            <InvocationRow key={item.mcp_tool_invocation_id} item={item} onInspect={onInspect} />
           ))}
         </TableBody>
       </Table>
     </div>
+  )
+}
+
+/** One invocation; the whole row opens the detail on click, Enter or Space. */
+function InvocationRow({
+  item,
+  onInspect,
+}: {
+  item: McpInvocationView
+  onInspect: (invocationId: string) => void
+}) {
+  return (
+    <TableRow
+      data-invocation-id={item.mcp_tool_invocation_id}
+      tabIndex={0}
+      aria-label={`Inspect ${item.tool_display_key} on ${item.server_display_key}`}
+      className="cursor-pointer"
+      onClick={() => onInspect(item.mcp_tool_invocation_id)}
+      onKeyDown={(event: KeyboardEvent<HTMLTableRowElement>) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onInspect(item.mcp_tool_invocation_id)
+        }
+      }}
+    >
+      <TableCell>
+        <div className="flex min-w-0 flex-col">
+          <span className="whitespace-nowrap tabular-nums">
+            {formatTimestamp(item.occurred_at, { seconds: true })}
+          </span>
+          <span
+            className="text-muted-foreground max-w-48 truncate font-mono text-xs"
+            title={item.request_id ?? undefined}
+          >
+            {item.request_id ?? EMPTY_VALUE}
+          </span>
+        </div>
+      </TableCell>
+      <TableCell>
+        {/* Capped so a long server key truncates instead of pushing Latency out of the card. */}
+        <div className="flex max-w-48 min-w-0 flex-col">
+          <span className="truncate" title={item.server_display_name}>
+            {item.server_display_name}
+          </span>
+          <span
+            className="text-muted-foreground truncate font-mono text-xs"
+            title={item.server_display_key}
+          >
+            {item.server_display_key}
+          </span>
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="flex max-w-48 min-w-0 flex-col">
+          <span className="truncate font-mono text-sm" title={item.tool_display_key}>
+            {item.tool_display_key}
+          </span>
+          <span className="text-muted-foreground font-mono text-xs">{item.mcp_method}</span>
+        </div>
+      </TableCell>
+      <TableCell>
+        <OwnerLabel item={item} />
+      </TableCell>
+      <TableCell>
+        <div className="flex flex-col gap-1">
+          <Badge variant={statusBadgeVariant(item.status)}>{formatEnum(item.status)}</Badge>
+          {item.error_code ? (
+            <span className="text-muted-foreground font-mono text-xs">{item.error_code}</span>
+          ) : null}
+        </div>
+      </TableCell>
+      <TableCell>
+        <Badge variant={policyBadgeVariant(item.policy_result)}>
+          {formatEnum(item.policy_result)}
+        </Badge>
+      </TableCell>
+      <TableCell className="text-right whitespace-nowrap tabular-nums">
+        {formatDuration(item.latency_ms)}
+      </TableCell>
+      <TableCell>
+        <PayloadBadges item={item} />
+      </TableCell>
+    </TableRow>
   )
 }
 
