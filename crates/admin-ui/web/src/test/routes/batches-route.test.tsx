@@ -173,6 +173,7 @@ describe('BatchesPage', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: 'Batch requests' })).toBeInTheDocument()
     expect(screen.getByTestId('batch-mobile-list')).toBeInTheDocument()
+    expect(screen.getByTestId('batch-mobile-list')).toHaveClass('grid-cols-1')
     expect(screen.getByTestId('batch-desktop-table')).toHaveClass('overflow-x-auto')
     expect(screen.getAllByText('Alice Platform Lead').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Local CI Runner').length).toBeGreaterThan(0)
