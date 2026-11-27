@@ -116,17 +116,31 @@ export function dayOptions(now: Date): FilterOption[] {
   })
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** The UTC day `days` away from `day`, both as `YYYY-MM-DD`. */
+function shiftDay(day: string, days: number) {
+  return new Date(Date.parse(`${day}T00:00:00.000Z`) + days * DAY_MS).toISOString().slice(0, 10)
+}
+
 /**
- * A UTC day picker. A `start` boundary includes the whole day it names, and so does an `end`
- * boundary, so `after 3 Nov` and `before 3 Nov` both keep 3 Nov.
+ * A UTC day picker. Every boundary keeps the whole day it names, so `after 3 Nov` and
+ * `before 3 Nov` both include 3 Nov. `end` sends the day's last millisecond for stores that
+ * compare with `<=`; `end-exclusive` sends the next midnight for stores that compare with `<`
+ * on whole seconds, such as batches, where `23:59:59.999` would drop the day's last second.
  */
-export function dayPicker(boundary: 'start' | 'end'): FilterPicker {
+export function dayPicker(boundary: 'start' | 'end' | 'end-exclusive'): FilterPicker {
   return {
     source: 'dates',
     searchPlaceholder: 'Search or type YYYY-MM-DD…',
     customValue: customDay,
     formatValue: (day) => formatUtcDate(`${day}T00:00:00.000Z`),
-    fromParam: (timestamp) => timestamp.slice(0, 10),
-    toParam: (day) => `${day}${boundary === 'start' ? 'T00:00:00.000Z' : 'T23:59:59.999Z'}`,
+    fromParam: (timestamp) =>
+      boundary === 'end-exclusive' ? shiftDay(timestamp.slice(0, 10), -1) : timestamp.slice(0, 10),
+    toParam: (day) => {
+      if (boundary === 'start') return `${day}T00:00:00.000Z`
+      if (boundary === 'end') return `${day}T23:59:59.999Z`
+      return `${shiftDay(day, 1)}T00:00:00.000Z`
+    },
   }
 }

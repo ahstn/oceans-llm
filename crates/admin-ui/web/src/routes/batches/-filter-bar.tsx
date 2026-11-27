@@ -71,7 +71,8 @@ const dateGroup: FilterGroup<BatchFilterParam> = {
       label: 'Created before',
       icon: Calendar04Icon,
       placeholder: 'Select a day',
-      picker: dayPicker('end'),
+      // Batch stores compare `created_at < end` on whole seconds, so send the next midnight.
+      picker: dayPicker('end-exclusive'),
     },
   ],
 }
