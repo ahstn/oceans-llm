@@ -2870,6 +2870,13 @@ export interface components {
             cohort_fallback_level?: number | null;
             cohort_sample_size?: number | null;
             cohort_version?: string | null;
+            /**
+             * Format: int64
+             * @description Priced usage cost across the session's requests, in nano-dollars, read from the usage
+             *     ledger. Unlike `normalized_cost_usd` it is live while the session is open, and leaves out
+             *     unpriced requests rather than voiding the total. Null when no request is priced.
+             */
+            cost_usd_nanos?: number | null;
             /** Format: int32 */
             efficiency_score?: number | null;
             ended_at?: string | null;
@@ -2880,11 +2887,15 @@ export interface components {
             limitations: string[];
             /** Format: int32 */
             mcp_call_count?: number | null;
+            model_icon_key?: null | components["schemas"]["ModelIconKeyView"];
             /** Format: double */
             normalized_cost_usd?: number | null;
             operation: string;
             ownership_scope_key: string;
             pricing_policy_version?: string | null;
+            provider_icon_key?: null | components["schemas"]["ProviderIconKeyView"];
+            /** @description Provider of the session's most recent request that has a request log. */
+            provider_key?: string | null;
             report_schema_version?: string | null;
             /** Format: int64 */
             request_count: number;
@@ -2893,6 +2904,7 @@ export interface components {
             score_maturity?: string | null;
             score_policy_version?: string | null;
             service_account_id?: string | null;
+            service_account_name?: string | null;
             session_id: string;
             session_source_hash?: string | null;
             session_source_id?: string | null;
@@ -2903,7 +2915,14 @@ export interface components {
             telemetry_coverage_percent?: number | null;
             /** Format: int32 */
             tool_call_count?: number | null;
+            /**
+             * Format: int64
+             * @description Requests the session links that have no priced usage, so `cost_usd_nanos` leaves them out.
+             */
+            unpriced_request_count: number;
+            user_email?: string | null;
             user_id?: string | null;
+            user_name?: string | null;
             /** Format: int64 */
             wall_time_ms?: number | null;
         };
@@ -8467,6 +8486,11 @@ export interface operations {
                 started_after?: string;
                 started_before?: string;
                 score_confidence?: string;
+                /**
+                 * @description Trimmed, case-insensitive substring search across the requested model key and the
+                 *     session owner's user name or email.
+                 */
+                q?: string;
             };
             header?: never;
             path?: never;
@@ -8685,6 +8709,11 @@ export interface operations {
                  *     the caller's user name or email.
                  */
                 q?: string | null;
+                /**
+                 * @description Only requests whose priced cost is strictly above this amount in US dollars, such as `2`
+                 *     or `0.05`. Unpriced requests never match.
+                 */
+                min_cost_usd?: string | null;
             };
             header?: never;
             path?: never;

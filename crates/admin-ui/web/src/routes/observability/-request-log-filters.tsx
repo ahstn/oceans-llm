@@ -13,14 +13,16 @@ import {
   Cancel01Icon,
   CloudServerIcon,
   CubeIcon,
+  DollarCircleIcon,
   FilterHorizontalIcon,
   HashIcon,
   Leaf01Icon,
   Package01Icon,
-  Search01Icon,
   StatusIcon,
   Tag01Icon,
 } from '@hugeicons/core-free-icons'
+
+import { DebouncedSearch } from '@/components/data/debounced-search'
 
 import {
   anyTypedValue,
@@ -64,6 +66,7 @@ export type RequestLogFilterValues = Pick<
   | 'env'
   | 'tag_key'
   | 'tag_value'
+  | 'min_cost_usd'
 >
 
 /**
@@ -83,8 +86,15 @@ interface FilterFieldDefinition {
   label: string
   icon: IconSvgElement
   placeholder: string
+  /** The chip's operator word; `is` unless the field compares, as cost does. */
+  operator?: string
+  /** Text fixed before the value, such as `$`. */
+  prefix?: string
   /** Fields with a known set of values pick from a list instead of free text. */
-  picker?: { searchPlaceholder: string; customValue: (search: string) => string | null }
+  picker?: {
+    searchPlaceholder: string
+    customValue: (search: string) => string | null
+  }
 }
 
 const filterFields: FilterFieldDefinition[] = [
@@ -107,7 +117,10 @@ const filterFields: FilterFieldDefinition[] = [
     label: 'Status',
     icon: StatusIcon,
     placeholder: 'Select a status',
-    picker: { searchPlaceholder: 'Search or type a code…', customValue: customStatusCode },
+    picker: {
+      searchPlaceholder: 'Search or type a code…',
+      customValue: customStatusCode,
+    },
   },
   {
     key: 'service',
@@ -119,14 +132,20 @@ const filterFields: FilterFieldDefinition[] = [
   { key: 'env', label: 'Environment', icon: Leaf01Icon, placeholder: 'prod' },
   { key: 'tag', label: 'Tag', icon: Tag01Icon, placeholder: 'value' },
   {
+    key: 'min_cost_usd',
+    label: 'Cost',
+    icon: DollarCircleIcon,
+    placeholder: '2.00',
+    operator: 'above',
+    prefix: '$',
+  },
+  {
     key: 'request_id',
     label: 'Request ID',
     icon: HashIcon,
     placeholder: 'req_…',
   },
 ]
-
-const searchDebounceMs = 250
 
 interface RequestLogToolbarProps {
   filters: RequestLogFilterValues
@@ -174,6 +193,7 @@ export function RequestLogToolbar({
   )
   const activeCount = filterFields.filter((field) => isFieldActive(filters, field.key)).length
   const hasPartialTagFilter = isPartialTag(drafts)
+  const hasInvalidCost = !isValidCost(drafts.min_cost_usd)
   // The catalog loads on first use (adding the Model chip or opening its picker), so a page opened
   // with `model_key` already in the URL does not fetch it.
   const [modelPickerUsed, setModelPickerUsed] = useState(false)
@@ -200,7 +220,11 @@ export function RequestLogToolbar({
   }
 
   function commit(next: RequestLogFilterPatch = drafts) {
-    if (isPartialTag(next) || sameFilters(next, submittedFilters)) {
+    if (
+      isPartialTag(next) ||
+      !isValidCost(next.min_cost_usd) ||
+      sameFilters(next, submittedFilters)
+    ) {
       return
     }
     submit(pickFilterParams(next))
@@ -236,12 +260,15 @@ export function RequestLogToolbar({
   return (
     <div className="flex min-w-0 flex-col gap-3" data-testid="request-log-toolbar">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
-        <RequestLogSearch
+        <DebouncedSearch
           value={filters.q ?? ''}
+          pending={isPending}
+          label="Search request logs by model or user"
+          placeholder="Search by model or user…"
           onSearch={(q) => onApply({ q }, { replace: true })}
         />
         <div className="flex items-center gap-3">
-          <span className="text-muted-foreground text-sm tabular-nums">
+          <span className="text-muted-foreground text-sm tabular-nums" role="status">
             {isPending
               ? 'Loading…'
               : `Showing ${formatCount(shownCount)} of ${formatCount(totalCount)}`}
@@ -276,6 +303,7 @@ export function RequestLogToolbar({
               field={field}
               drafts={drafts}
               autoFocus={focusField === field.key}
+              invalid={field.key === 'min_cost_usd' && hasInvalidCost}
               pickerOptions={field.picker ? pickerOptions[field.key as PickerFieldKey] : undefined}
               onPick={pick}
               onDraftChange={(param, value) =>
@@ -296,6 +324,15 @@ export function RequestLogToolbar({
         </div>
       ) : null}
 
+      {hasInvalidCost ? (
+        <Alert>
+          <AlertTitle>Invalid cost filter</AlertTitle>
+          <AlertDescription>
+            Enter a dollar amount with up to four decimals, such as 2 or 0.05.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       {hasPartialTagFilter ? (
         <Alert>
           <AlertTitle>Incomplete tag filter</AlertTitle>
@@ -305,52 +342,6 @@ export function RequestLogToolbar({
         </Alert>
       ) : null}
     </div>
-  )
-}
-
-function RequestLogSearch({ value, onSearch }: { value: string; onSearch: (q: string) => void }) {
-  const [query, setQuery] = useState(value)
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // The debounce timer outlives the render that scheduled it, so read the latest props from refs.
-  const latest = useRef({ value, onSearch })
-
-  useEffect(() => {
-    latest.current = { value, onSearch }
-  })
-
-  useEffect(() => {
-    // Only adopt URL changes (Back/Forward, Clear) when no keystrokes are waiting to be sent.
-    if (timer.current === null) {
-      setQuery(value)
-    }
-  }, [value])
-
-  useEffect(() => () => clearTimeout(timer.current ?? undefined), [])
-
-  function updateQuery(next: string) {
-    setQuery(next)
-    clearTimeout(timer.current ?? undefined)
-    timer.current = setTimeout(() => {
-      timer.current = null
-      if (next.trim() !== latest.current.value) {
-        latest.current.onSearch(next)
-      }
-    }, searchDebounceMs)
-  }
-
-  return (
-    <InputGroup className="w-full sm:max-w-xs">
-      <InputGroupInput
-        type="search"
-        aria-label="Search request logs by model or user"
-        placeholder="Search by model or user…"
-        value={query}
-        onChange={(event) => updateQuery(event.target.value)}
-      />
-      <InputGroupAddon>
-        <AppIcon icon={Search01Icon} aria-hidden />
-      </InputGroupAddon>
-    </InputGroup>
   )
 }
 
@@ -394,6 +385,7 @@ function FilterChip({
   field,
   drafts,
   autoFocus,
+  invalid,
   pickerOptions,
   onPick,
   onDraftChange,
@@ -403,6 +395,8 @@ function FilterChip({
   field: FilterFieldDefinition
   drafts: RequestLogFilterPatch
   autoFocus: boolean
+  /** Marks the value input invalid, such as a cost that is not a dollar amount. */
+  invalid: boolean
   pickerOptions?: FilterOptionsState
   onPick: (param: FilterParam, value: string) => void
   onDraftChange: (param: FilterParam, value: string) => void
@@ -421,7 +415,8 @@ function FilterChip({
   function inputProps(param: FilterParam, label: string, placeholder: string) {
     return {
       'aria-label': label,
-      'data-testid': `request-log-filter-${param.replace('_', '-')}`,
+      'aria-invalid': invalid || undefined,
+      'data-testid': `request-log-filter-${param.replaceAll('_', '-')}`,
       className: 'w-36 flex-none',
       placeholder,
       value: draftText(drafts[param]),
@@ -463,17 +458,27 @@ function FilterChip({
             options={pickerOptions}
             autoOpen={autoFocus}
             showSelectedHint={field.key === 'status_code'}
-            testId={`request-log-filter-${field.key.replace('_', '-')}`}
+            testId={`request-log-filter-${field.key.replaceAll('_', '-')}`}
             customValue={field.picker.customValue}
             onSelect={(value) => onPick(field.key as FilterParam, value)}
           />
         </>
       ) : (
         <>
-          <InputGroupText className="border-r px-2">is</InputGroupText>
+          <InputGroupText className="border-r px-2">{field.operator ?? 'is'}</InputGroupText>
+          {field.prefix ? (
+            <InputGroupText className="pr-0 pl-2">{field.prefix}</InputGroupText>
+          ) : null}
           <InputGroupInput
             ref={firstInputRef}
-            {...inputProps(field.key, `${field.label} filter value`, field.placeholder)}
+            {...inputProps(
+              field.key,
+              field.operator
+                ? `${field.label} ${field.operator} value`
+                : `${field.label} filter value`,
+              field.placeholder,
+            )}
+            {...(field.key === 'min_cost_usd' ? { inputMode: 'decimal' as const } : {})}
           />
         </>
       )}
@@ -496,6 +501,12 @@ function fieldParams(key: FilterFieldKey): FilterParam[] {
 
 function isFieldActive(filters: RequestLogFilterValues, key: FilterFieldKey) {
   return fieldParams(key).some((param) => normalizedParam(filters[param]) !== undefined)
+}
+
+/** Empty is valid (no filter); anything else must be a non-negative amount the gateway accepts. */
+function isValidCost(value: string | number | null | undefined) {
+  const text = normalizedParam(value)
+  return text === undefined || /^\d+(\.\d{1,4})?$/.test(text)
 }
 
 function isPartialTag(values: RequestLogFilterPatch) {

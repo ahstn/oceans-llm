@@ -1028,7 +1028,7 @@ pub struct BudgetAlertHistoryRequestQuery {
     pub status: Option<String>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SpendTotalsView {
     pub priced_cost_usd_10000: i64,
     pub priced_request_count: i64,
@@ -1039,7 +1039,7 @@ pub struct SpendTotalsView {
     pub cache_write_tokens: Option<i64>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SpendDailyPointView {
     pub day_start: String,
     pub priced_cost_usd_10000: i64,
@@ -1048,7 +1048,7 @@ pub struct SpendDailyPointView {
     pub usage_missing_request_count: i64,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SpendOwnerBreakdownView {
     pub owner_kind: String,
     pub owner_id: String,
@@ -1059,7 +1059,7 @@ pub struct SpendOwnerBreakdownView {
     pub usage_missing_request_count: i64,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SpendModelBreakdownView {
     pub model_key: String,
     pub priced_cost_usd_10000: i64,
@@ -1068,7 +1068,7 @@ pub struct SpendModelBreakdownView {
     pub usage_missing_request_count: i64,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SpendReportView {
     pub window_days: u16,
     pub owner_kind: String,
@@ -1097,7 +1097,7 @@ pub struct SpendTokenPointView {
     pub cache_write_tokens: i64,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SpendOwnerTokenSeriesView {
     pub owner_kind: String,
     pub owner_id: String,
@@ -1105,7 +1105,7 @@ pub struct SpendOwnerTokenSeriesView {
     pub points: Vec<SpendTokenPointView>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct SpendModelTokenSeriesView {
     pub model_key: String,
     pub is_other: bool,
@@ -1479,6 +1479,9 @@ pub struct RequestLogListQuery {
     /// Trimmed, case-insensitive substring search across the requested or resolved model key and
     /// the caller's user name or email.
     pub q: Option<String>,
+    /// Only requests whose priced cost is strictly above this amount in US dollars, such as `2`
+    /// or `0.05`. Unpriced requests never match.
+    pub min_cost_usd: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default, IntoParams)]
@@ -1751,6 +1754,9 @@ pub struct AgentSessionListRequestQuery {
     pub started_after: Option<String>,
     pub started_before: Option<String>,
     pub score_confidence: Option<String>,
+    /// Trimmed, case-insensitive substring search across the requested model key and the
+    /// session owner's user name or email.
+    pub q: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -1778,6 +1784,13 @@ pub struct AgentSessionSummaryView {
     pub harness_key: Option<String>,
     pub harness_label: Option<String>,
     pub requested_model_key: String,
+    pub model_icon_key: Option<ModelIconKeyView>,
+    /// Provider of the session's most recent request that has a request log.
+    pub provider_key: Option<String>,
+    pub provider_icon_key: Option<ProviderIconKeyView>,
+    pub user_name: Option<String>,
+    pub user_email: Option<String>,
+    pub service_account_name: Option<String>,
     pub operation: String,
     pub caller_class: String,
     pub session_source_observed: bool,
@@ -1798,6 +1811,12 @@ pub struct AgentSessionSummaryView {
     pub cohort_sample_size: Option<usize>,
     pub calibration_approval_id: Option<String>,
     pub normalized_cost_usd: Option<f64>,
+    /// Priced usage cost across the session's requests, in nano-dollars, read from the usage
+    /// ledger. Unlike `normalized_cost_usd` it is live while the session is open, and leaves out
+    /// unpriced requests rather than voiding the total. Null when no request is priced.
+    pub cost_usd_nanos: Option<i64>,
+    /// Requests the session links that have no priced usage, so `cost_usd_nanos` leaves them out.
+    pub unpriced_request_count: u64,
     pub active_time_ms: Option<u64>,
     pub wall_time_ms: Option<u64>,
     pub report_schema_version: Option<String>,

@@ -4,8 +4,8 @@
 use std::collections::BTreeSet;
 
 use gateway_client_config::{
-    ApiFormat, ClientConfigInput, ClientHints, ClientModelCapabilities, ThinkingPolicy,
-    client_hints,
+    ApiFormat, ClientConfigInput, ClientHints, ClientModelCapabilities, ReasoningLevel,
+    ThinkingPolicy, client_hints,
 };
 use gateway_core::{
     GatewayError, GatewayModel, ModelRepository, ModelRoute, ProviderCapabilities,
@@ -26,7 +26,7 @@ use crate::{
     admin_models::{
         reasoning_level, route_is_eligible, route_thinking_policy, select_display_route,
     },
-    capability_hints::hints_for_route,
+    capability_hints::{catalog_effort_levels, hints_for_route},
     effective_route_metadata::{effective_provider_route_capabilities, native_api_format},
     pricing_catalog::PricingCatalogSnapshot,
     resolve_provider_display,
@@ -198,6 +198,9 @@ pub(super) struct ModelView<'a> {
     pub(super) thinking_policy: Option<ThinkingPolicy>,
     /// Reasoning that every chat-capable route honours.
     pub(super) chat_reasoning: ChatReasoning,
+    /// The effort levels every chat-capable route's catalog entry lists, ignoring routes
+    /// whose entry lists none; `None` when no route's entry lists any.
+    pub(super) catalog_efforts: Option<Vec<ReasoningLevel>>,
     /// Request features a chat request can rely on, after routing filters on them.
     pub(super) chat_features: ChatFeatures,
     /// Limits, capabilities, and servable tiers summarised across the enabled routes.
@@ -280,6 +283,7 @@ impl<'a> ModelView<'a> {
             let display = resolve_provider_display(&route.provider_key, Some(provider));
             route_thinking_policy(model, execution, route, provider, Some(&display))
         });
+        let catalog_efforts = common_catalog_efforts(&chat_routes);
         let chat_features = chat_features(&chat_routes);
         let allowed = allowed_service_tiers(model, execution);
         let service_tiers = servable_service_tiers(
@@ -312,6 +316,7 @@ impl<'a> ModelView<'a> {
             primary,
             thinking_policy,
             chat_reasoning,
+            catalog_efforts,
             chat_features,
             summary: summarize(model.model_key.clone(), details, service_tiers),
         }
@@ -361,6 +366,21 @@ fn chat_reasoning(
                 .collect(),
         })
         .unwrap_or_default()
+}
+
+/// A request can land on any chat-capable route, so a level is offered only when every
+/// route whose catalog entry lists efforts lists it.
+fn common_catalog_efforts(chat_routes: &[ChatRoute<'_, '_>]) -> Option<Vec<ReasoningLevel>> {
+    chat_routes
+        .iter()
+        .filter_map(|(_, detail)| detail.and_then(|detail| detail.catalog_metadata.as_ref()))
+        .filter_map(catalog_effort_levels)
+        .reduce(|common, next| {
+            common
+                .into_iter()
+                .filter(|level| next.contains(level))
+                .collect()
+        })
 }
 
 fn chat_features(chat_routes: &[ChatRoute<'_, '_>]) -> ChatFeatures {
@@ -496,6 +516,7 @@ fn model_card(view: &ModelView<'_>) -> ModelCard {
         },
         thinking_policy,
         reasoning: view.can_reason(),
+        reasoning_efforts: view.catalog_efforts.clone(),
         native_api_format: primary.and_then(|(route, provider)| native_api_format(provider, route)),
         max_reasoning_effort: reasoning_ceiling.map(reasoning_level),
         service_tiers: selectable_service_tiers(&summary.service_tiers, view.allowed_service_tiers),

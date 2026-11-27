@@ -1043,10 +1043,11 @@ mod tests {
     use gateway_core::{
         CoreChatMessage, CoreChatRequest, CoreResponsesRequest, ImagesRequest,
         OpenAiCompatDeveloperRole, OpenAiCompatEmptyTools, OpenAiCompatMaxTokensField,
-        OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility, OpenRouterMaxPrice,
-        OpenRouterPercentileCutoffs, OpenRouterPercentilePreference, OpenRouterProviderRouting,
-        OpenRouterRouteCompatibility, ProviderClient, ProviderError, ProviderRequestContext,
-        RouteCompatibility,
+        OpenAiCompatReasoningEffort, OpenAiCompatRouteCompatibility, OpenRouterDataCollection,
+        OpenRouterMaxPrice, OpenRouterPercentileCutoffs, OpenRouterPercentilePreference,
+        OpenRouterProviderRouting, OpenRouterRouteCompatibility, OpenRouterSort, OpenRouterSortBy,
+        OpenRouterSortOptions, OpenRouterSortPartition, ProviderClient, ProviderError,
+        ProviderRequestContext, RouteCompatibility,
     };
     use serde_json::{Map, Value, json};
     use tokio::net::TcpListener;
@@ -1672,6 +1673,11 @@ mod tests {
                 request: Some(0.01),
                 image: Some(0.05),
             }),
+            sort: Some(OpenRouterSort::Options(OpenRouterSortOptions {
+                by: OpenRouterSortBy::Price,
+                partition: Some(OpenRouterSortPartition::Model),
+            })),
+            data_collection: Some(OpenRouterDataCollection::Deny),
         });
 
         let built = provider
@@ -1692,7 +1698,9 @@ mod tests {
                     "completion": 2.0,
                     "request": 0.01,
                     "image": 0.05
-                }
+                },
+                "sort": {"by": "price", "partition": "model"},
+                "data_collection": "deny"
             })
         );
     }

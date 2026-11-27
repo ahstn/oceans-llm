@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 
+import { DebouncedSearch } from '@/components/data/debounced-search'
 import type { FilterPatch } from '@/components/data/filter-fields'
 import {
   useLoadedFilterOptions,
@@ -28,16 +29,30 @@ interface SessionFilterToolbarProps {
   actions?: ReactNode
   /** Merges `patch` into the current URL search; keys set to `undefined` are removed. */
   onApply: (patch: SessionFilterPatch) => void
+  /** Applies the model or user search, replacing the history entry while the user types. */
+  onSearch: (q: string) => void
 }
 
-/** The agent session toolbar: the shared filter toolbar over the session fields. */
-export function SessionFilterToolbar({ filters, ...props }: SessionFilterToolbarProps) {
+/**
+ * The agent session toolbar: the request logs' debounced model or user search, then the shared
+ * filter toolbar over the session fields.
+ */
+export function SessionFilterToolbar({ filters, onSearch, ...props }: SessionFilterToolbarProps) {
   return (
     <FilterToolbar
       groups={sessionFilterGroups}
       filters={filters as SessionFilterPatch}
       testIdPrefix="agent-session"
       useCatalogOptions={useSessionCatalogOptions}
+      search={
+        <DebouncedSearch
+          value={filters.q ?? ''}
+          pending={props.isPending}
+          label="Search agent sessions by model or user"
+          placeholder="Search by model or user…"
+          onSearch={onSearch}
+        />
+      }
       {...props}
     />
   )

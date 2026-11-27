@@ -42,6 +42,8 @@ The signed-in session response tells the admin UI which access the gateway allow
 
 An admin opens **Observability** → **Agent Sessions** (`/admin/observability/agent-sessions`). The list is paged on the server. It shows 50 sessions per page by default, and the admin can choose 25, 50 or 100.
 
+Type in **Search by model or user** to find sessions by the requested model key, or the owner's name or email. The search isn't case-sensitive.
+
 Open **Filters** to narrow the list by:
 
 - **Session state** (open or finalised), **Outcome**, **Score maturity** and **Score confidence**.
@@ -51,11 +53,16 @@ Open **Filters** to narrow the list by:
 - **Request tag key** and **Request tag value**. A value needs a key.
 - **Minimum coverage**, **Started after** and **Started before**.
 
-The URL stores the filters and the selected `session_id`, so a refresh, the browser history or a shared link opens the same view.
+The URL stores the search, the filters and the selected `session_id`, so a refresh, the browser history or a shared link opens the same view. Changing the search or a filter returns to the first page.
 
-The table shows **Started**, **Harness**, **Model**, **State**, **Score** with its confidence, **Cost**, **Active time**, **Requests**, **Tool calls**, **MCP calls** and **Data quality**. **Data quality** says **Complete** or gives the number of data limits.
+The table shows **Started**, **Model**, **Caller**, **Harness**, **Cost**, **Active time**, **Requests**, **Tool calls**, **MCP calls** and **Data quality**. **State** and **Score**, with its confidence, start hidden: turn them on from **Columns**.
 
-![Agent Sessions page with the Session explorer table of finalised OpenCode and Codex sessions, each showing Score not shown, cost, active time, request and tool counts, and its data limits](/images/agent-sessions-page.png)
+- **Model** is the requested model, with the provider of the session's latest request below it, as on [Request logs](/observability/request-logs/).
+- **Caller** is the user that owns the session, with their email, or the service account.
+- **Cost** is the priced spend so far from the usage ledger, so it fills in while the session is still open. Requests without a price are left out, and the cost tooltip says how many. This can differ from the report's **Normalised cost**, which exists only once the session is analysed.
+- **Data quality** says **Complete** or gives the number of data limits.
+
+![Agent Sessions page searched for one user, with the Model, Caller, Harness, Cost and Data quality columns and the pager below the table](/images/agent-sessions-page.png)
 
 Select a row to open the detail sheet. It shows the session score, normalised cost and total time, then any data limits. Below that are these sections:
 

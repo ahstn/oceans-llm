@@ -335,4 +335,31 @@ describe('service tiers', () => {
       ['low', 'high', 'fast'],
     )
   })
+  test('gateway effort ladder reaches namespaced ids with no catalog match', () => {
+    // An OpenRouter DeepSeek route: chat only, reasoning, and every optional tier.
+    const model = toModel(
+      provider,
+      'deepseek/deepseek-v4.1-flash-1017',
+      {
+        providers: ['deepseek'],
+        supports_reasoning: true,
+        supported_openai_params: ['tools', 'reasoning_effort', 'service_tier'],
+      },
+      undefined,
+      undefined,
+      undefined,
+      hints('openai-chat-completions', [
+        ...['low', 'medium', 'high'].map((id) => ({ id, settings: { reasoningEffort: id } })),
+        { id: 'flex', settings: { serviceTier: 'flex' } },
+        { id: 'fast', settings: { serviceTier: 'priority' } },
+      ]),
+    )
+    assert.deepEqual(model.variants, [
+      { id: 'low', settings: { reasoningEffort: 'low' } },
+      { id: 'medium', settings: { reasoningEffort: 'medium' } },
+      { id: 'high', settings: { reasoningEffort: 'high' } },
+      { id: 'flex', settings: { serviceTier: 'flex' } },
+      { id: 'fast', settings: { serviceTier: 'priority' } },
+    ])
+  })
 })

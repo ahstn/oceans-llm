@@ -238,9 +238,12 @@ export const sessionFilterGroups: FilterGroup<SessionFilterParam>[] = [
 
 export const sessionFilterParams: SessionFilterParam[] = groupParams(sessionFilterGroups)
 
-/** A URL patch that removes every filter and keeps paging. */
-export const clearedSessionFilters = clearedFilters(sessionFilterGroups)
+/** A URL patch that removes every filter, including the search, and keeps paging. */
+export const clearedSessionFilters: Partial<Record<SessionFilterParam, undefined>> = {
+  ...clearedFilters(sessionFilterGroups),
+  q: undefined,
+}
 
 export function hasSessionFilters(values: SessionFilterValues) {
-  return hasFilters(sessionFilterGroups, values)
+  return hasFilters(sessionFilterGroups, values) || Boolean(values.q?.trim())
 }

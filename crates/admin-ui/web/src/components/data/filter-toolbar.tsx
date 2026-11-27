@@ -30,6 +30,7 @@ import {
   InputGroupText,
 } from '@/components/ui/input-group'
 import { formatCount } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 import {
   dayOptions,
@@ -62,6 +63,8 @@ interface FilterToolbarProps<Param extends string> {
   /** Prefixes the toolbar's test ids, such as `agent-session` for `agent-session-filter-chips`. */
   testIdPrefix: string
   useCatalogOptions?: CatalogOptionsHook
+  /** A search box at the start of the row, such as the debounced model or user search. */
+  search?: ReactNode
   /** Controls that sit beside `Filters`, such as the column toggle. */
   actions?: ReactNode
   /** Merges `patch` into the current URL search; keys set to `undefined` are removed. */
@@ -82,6 +85,7 @@ export function FilterToolbar<Param extends string>({
   isPending,
   testIdPrefix,
   useCatalogOptions = noCatalogOptions,
+  search,
   actions,
   onApply,
 }: FilterToolbarProps<Param>) {
@@ -169,30 +173,38 @@ export function FilterToolbar<Param extends string>({
 
   return (
     <div className="flex min-w-0 flex-col gap-3" data-testid={`${testIdPrefix}-toolbar`}>
-      <div className="flex min-w-0 flex-wrap items-center justify-end gap-3">
-        <span className="text-muted-foreground text-sm tabular-nums" role="status">
-          {isPending
-            ? 'Loading…'
-            : `Showing ${formatCount(shownCount)} of ${formatCount(totalCount)}`}
-        </span>
-        <div className="flex items-center gap-2">
-          <FilterFieldMenu groups={groups} visibleFields={visibleFields} onSelect={addField}>
-            <Button type="button" variant="outline" size="sm" className="gap-2">
-              <AppIcon
-                icon={FilterHorizontalIcon}
-                size={14}
-                stroke={1.5}
-                data-icon="inline-start"
-              />
-              Filters
-              {activeCount > 0 ? (
-                <Badge variant="secondary" className="tabular-nums">
-                  {activeCount}
-                </Badge>
-              ) : null}
-            </Button>
-          </FilterFieldMenu>
-          {actions}
+      <div
+        className={cn(
+          'flex min-w-0 flex-wrap items-center gap-3',
+          search ? 'justify-between' : 'justify-end',
+        )}
+      >
+        {search}
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-muted-foreground text-sm tabular-nums" role="status">
+            {isPending
+              ? 'Loading…'
+              : `Showing ${formatCount(shownCount)} of ${formatCount(totalCount)}`}
+          </span>
+          <div className="flex items-center gap-2">
+            <FilterFieldMenu groups={groups} visibleFields={visibleFields} onSelect={addField}>
+              <Button type="button" variant="outline" size="sm" className="gap-2">
+                <AppIcon
+                  icon={FilterHorizontalIcon}
+                  size={14}
+                  stroke={1.5}
+                  data-icon="inline-start"
+                />
+                Filters
+                {activeCount > 0 ? (
+                  <Badge variant="secondary" className="tabular-nums">
+                    {activeCount}
+                  </Badge>
+                ) : null}
+              </Button>
+            </FilterFieldMenu>
+            {actions}
+          </div>
         </div>
       </div>
 

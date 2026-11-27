@@ -1,6 +1,8 @@
 use super::*;
 use std::collections::HashMap;
 
+use gateway_core::{AgentSessionListingRecord, Money9};
+
 impl LibsqlStore {
     pub(super) async fn hydrate_session_summaries(
         &self,
@@ -20,9 +22,20 @@ impl LibsqlStore {
                 session_source_hash: row.get(25).map_err(to_query_error)?,
                 harness_label: row.get(26).map_err(to_query_error)?,
                 latest_analysis: None,
+                listing: AgentSessionListingRecord::default(),
             });
         }
         drop(rows);
+        let ids = items
+            .iter()
+            .map(|item| item.session.agent_session_id)
+            .collect::<Vec<_>>();
+        let mut listings = self.session_listings(&ids).await?;
+        for item in &mut items {
+            if let Some(listing) = listings.remove(&item.session.agent_session_id) {
+                item.listing = listing;
+            }
+        }
         if analysis_ids.is_empty() {
             return Ok(items);
         }
@@ -52,4 +65,74 @@ impl LibsqlStore {
         }
         Ok(items)
     }
+
+    /// Listing facts for a page of sessions in one query. Usage is matched on
+    /// `(request_id, ownership_scope_key)`, as the analysis report builder matches it. The
+    /// provider comes from the latest request that still has a log, matched on
+    /// `(request_id, api_key_id)` because a link's `request_log_id` is cleared when its log is
+    /// replaced or purged. Owner names come from the same query, so a page needs no per-owner
+    /// lookups.
+    pub(super) async fn session_listings(
+        &self,
+        session_ids: &[Uuid],
+    ) -> Result<HashMap<Uuid, AgentSessionListingRecord>, StoreError> {
+        if session_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let session_ids_json =
+            serde_json::to_string(&session_ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
+                .map_err(|error| StoreError::Serialization(error.to_string()))?;
+        let mut rows = self
+            .connection
+            .query(SESSION_LISTING_SQL, libsql::params![session_ids_json])
+            .await
+            .map_err(to_query_error)?;
+        let mut listings = HashMap::with_capacity(session_ids.len());
+        while let Some(row) = rows.next().await.map_err(to_query_error)? {
+            let session_id: String = row.get(0).map_err(to_query_error)?;
+            let priced_cost: Option<i64> = row.get(1).map_err(to_query_error)?;
+            let unpriced_request_count: i64 = row.get(2).map_err(to_query_error)?;
+            listings.insert(
+                Uuid::parse_str(&session_id)
+                    .map_err(|error| StoreError::Serialization(error.to_string()))?,
+                AgentSessionListingRecord {
+                    priced_cost: priced_cost.map(Money9::from_nanos),
+                    unpriced_request_count: u64::try_from(unpriced_request_count)
+                        .map_err(|error| StoreError::Serialization(error.to_string()))?,
+                    latest_provider_key: row.get(3).map_err(to_query_error)?,
+                    user_name: row.get(4).map_err(to_query_error)?,
+                    user_email: row.get(5).map_err(to_query_error)?,
+                    service_account_name: row.get(6).map_err(to_query_error)?,
+                },
+            );
+        }
+        Ok(listings)
+    }
 }
+
+const SESSION_LISTING_SQL: &str = r#"
+SELECT t.agent_session_id,
+       SUM(CASE WHEN ledger.pricing_status IN ('priced', 'legacy_estimated')
+                THEN ledger.computed_cost_nanos END),
+       SUM(CASE WHEN r.request_id IS NULL
+                  OR ledger.pricing_status IN ('priced', 'legacy_estimated')
+                THEN 0 ELSE 1 END),
+       (SELECT log.provider_key
+          FROM agent_session_requests latest
+          JOIN request_logs log
+            ON log.request_id = latest.request_id
+           AND log.api_key_id = t.api_key_id
+         WHERE latest.agent_session_id = t.agent_session_id
+         ORDER BY latest.ordinal DESC, log.occurred_at DESC
+         LIMIT 1),
+       u.name, u.email, sa.service_account_name
+  FROM agent_sessions t
+  LEFT JOIN agent_session_requests r ON r.agent_session_id = t.agent_session_id
+  LEFT JOIN usage_cost_events ledger
+    ON ledger.request_id = r.request_id
+   AND ledger.ownership_scope_key = t.ownership_scope_key
+  LEFT JOIN users u ON u.user_id = t.user_id
+  LEFT JOIN service_accounts sa ON sa.service_account_id = t.service_account_id
+ WHERE t.agent_session_id IN (SELECT value FROM json_each(?1))
+ GROUP BY t.agent_session_id, t.api_key_id, u.name, u.email, sa.service_account_name
+"#;

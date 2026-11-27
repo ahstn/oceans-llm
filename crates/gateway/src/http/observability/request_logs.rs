@@ -43,6 +43,7 @@ pub async fn list_request_logs(
         tag_key: None,
         tag_value: None,
         q: empty_to_none(query.q),
+        min_cost_usd_nanos: parse_min_cost_usd(query.min_cost_usd.as_deref())?,
     };
     let (tag_key, tag_value) = parse_optional_tag_filter(query.tag_key, query.tag_value)?;
     let query = RequestLogQuery {
@@ -52,9 +53,11 @@ pub async fn list_request_logs(
     };
 
     let page = state.service.list_request_logs(&query).await?;
-    let providers = provider_connections_by_key(&state, &page.items).await?;
-    let callers = request_caller_directory(&state, &page.items).await?;
-    let usage = request_usage_directory(&state, &page.items).await?;
+    let (providers, callers, usage) = tokio::try_join!(
+        provider_connections_by_key(&state, &page.items),
+        request_caller_directory(&state, &page.items),
+        request_usage_directory(&state, &page.items),
+    )?;
     let items = page
         .items
         .iter()
@@ -114,24 +117,43 @@ pub async fn get_request_log_detail(
     )?)))
 }
 
+/// Parses the `min_cost_usd` filter, a non-negative dollar amount with up to four decimals.
+fn parse_min_cost_usd(value: Option<&str>) -> Result<Option<i64>, AppError> {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let amount = gateway_core::Money4::from_decimal_str(value)
+        .ok()
+        .filter(|amount| !amount.is_negative())
+        .and_then(gateway_core::Money9::from_money4)
+        .ok_or_else(|| {
+            AppError(GatewayError::InvalidRequest(format!(
+                "min_cost_usd must be a non-negative dollar amount with up to four decimals, got `{value}`"
+            )))
+        })?;
+    Ok(Some(amount.as_nanos()))
+}
+
 async fn provider_connections_by_key(
     state: &AppState,
     logs: &[RequestLogRecord],
 ) -> Result<HashMap<String, ProviderConnection>, AppError> {
-    let provider_keys: HashSet<_> = logs
+    let provider_keys: Vec<String> = logs
         .iter()
         .filter(|log| provider_icon_key_from_metadata(&log.metadata).is_none())
         .map(|log| log.provider_key.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
         .collect();
-
-    let mut providers = HashMap::new();
-    for provider_key in provider_keys {
-        if let Some(provider) = provider_connection(state, provider_key.as_str()).await? {
-            providers.insert(provider_key, provider);
-        }
+    if provider_keys.is_empty() {
+        return Ok(HashMap::new());
     }
 
-    Ok(providers)
+    state
+        .store
+        .list_providers_by_keys(&provider_keys)
+        .await
+        .map_err(|error| AppError(error.into()))
 }
 
 async fn provider_connection(
@@ -170,10 +192,9 @@ async fn request_caller_directory(
 
     let user_ids: HashSet<Uuid> = logs.iter().filter_map(|log| log.user_id).collect();
     for user_id in user_ids {
-        if let Some(identity_user) = state.store.get_identity_user(user_id).await? {
-            directory
-                .users
-                .insert(user_id, (identity_user.user.name, identity_user.user.email));
+        // Only the name and email are shown, so skip the identity view's team and auth joins.
+        if let Some(user) = state.store.get_user_by_id(user_id).await? {
+            directory.users.insert(user_id, (user.name, user.email));
         }
     }
 
@@ -733,6 +754,26 @@ mod tests {
         assert_eq!(without_usage.cost_usd_10000, None);
         assert_eq!(without_usage.cost_usd_nanos, None);
         assert_eq!(without_usage.cache_read_tokens, None);
+    }
+
+    #[test]
+    fn min_cost_filter_parses_dollars_into_nanos() {
+        assert_eq!(parse_min_cost_usd(None).ok(), Some(None));
+        assert_eq!(parse_min_cost_usd(Some("  ")).ok(), Some(None));
+        assert_eq!(
+            parse_min_cost_usd(Some("2")).ok(),
+            Some(Some(2_000_000_000))
+        );
+        assert_eq!(
+            parse_min_cost_usd(Some(" 0.0005 ")).ok(),
+            Some(Some(500_000))
+        );
+        for invalid in ["-1", "abc", "0.00001"] {
+            assert!(
+                parse_min_cost_usd(Some(invalid)).is_err(),
+                "`{invalid}` should be rejected"
+            );
+        }
     }
 
     #[test]

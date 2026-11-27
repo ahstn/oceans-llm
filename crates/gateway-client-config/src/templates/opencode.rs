@@ -147,7 +147,7 @@ fn opencode_model(input: &ClientConfigInput, style: ApiFormat) -> Map<String, Va
                 "tools": input.capabilities.tool_calling,
                 "input": opencode_input_media(input),
                 "output": ["text"],
-                "reasoning": {"supported": input.thinking_policy.is_some()},
+                "reasoning": {"supported": input.thinking_policy.is_some() || input.reasoning},
             }),
         ),
         (
@@ -181,10 +181,18 @@ fn opencode_input_media(input: &ClientConfigInput) -> Vec<&'static str> {
 /// then one variant per optional service tier, spelled in the settings the style's OpenCode
 /// package reads. A tier variant keeps the model's default effort.
 pub(crate) fn opencode_variants(input: &ClientConfigInput, style: ApiFormat) -> Option<Value> {
-    let efforts = input
-        .thinking_policy
-        .map(policy_efforts)
-        .unwrap_or_default();
+    let efforts = match input.thinking_policy {
+        Some(policy) => policy_efforts(policy),
+        None if input.reasoning => REASONING_EFFORT_LADDER
+            .into_iter()
+            .filter(|(_, effort)| {
+                input.reasoning_efforts.as_ref().is_none_or(|levels| {
+                    ReasoningLevel::parse(effort).is_some_and(|level| levels.contains(&level))
+                })
+            })
+            .collect(),
+        None => Vec::new(),
+    };
     let variants: Vec<Value> = efforts
         .iter()
         .filter(|(_, effort)| {
@@ -217,6 +225,13 @@ fn service_tier_settings(style: ApiFormat, tier: ServiceTier) -> Value {
         _ => json!({"serviceTier": tier.as_str()}),
     }
 }
+
+/// A reasoning model with no family policy, such as an OpenAI GPT or an OpenRouter DeepSeek
+/// route, takes `reasoning_effort` directly. Like Pi's level map, it offers at most these
+/// common efforts, narrowed to the levels the catalog lists for the model when it lists any:
+/// GPT-5 Pro accepts only `high`.
+const REASONING_EFFORT_LADDER: [(&str, &str); 3] =
+    [("low", "low"), ("medium", "medium"), ("high", "high")];
 
 /// `(variant id, effort level)` pairs offered for a thinking policy.
 fn policy_efforts(policy: ThinkingPolicy) -> Vec<(&'static str, &'static str)> {

@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/2.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [1.5.0](https://github.com/ahstn/oceans-llm/compare/v1.4.0...v1.5.0) - 2026-11-23
+
+### :rocket: New features
+- *(gateway)* OpenRouter sort/data_collection routing and OpenCode effort variants by @ahstn in [#713](https://github.com/ahstn/oceans-llm/pull/713)
+
+### :bug: Bug fixes
+- *(tracing)* Ensure each streaming process has an owner span by @ahstn in [#711](https://github.com/ahstn/oceans-llm/pull/711)
+
+### Changed
+- *(landing)* Refresh screenshots and add Git AI attribution section by @ahstn in [#710](https://github.com/ahstn/oceans-llm/pull/710)
+- *(agent-sessions)* Atomic session ingestion, fenced analysis jobs, and crate-owned identity by @ahstn in [#709](https://github.com/ahstn/oceans-llm/pull/709)
+- *(providers)* Add OpenRouter provider check for DeepSeek V4.1 Flash by @ahstn in [#712](https://github.com/ahstn/oceans-llm/pull/712)
+
 ## [1.4.0](https://github.com/ahstn/oceans-llm/compare/v1.3.0...v1.4.0) - 2026-11-22
 
 ### :rocket: New features

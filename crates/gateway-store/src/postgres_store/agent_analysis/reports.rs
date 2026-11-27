@@ -2,6 +2,14 @@ use super::*;
 
 #[async_trait]
 impl AgentSessionReportRepository for PostgresStore {
+    async fn load_agent_session_listings(
+        &self,
+        session_ids: &[Uuid],
+    ) -> Result<std::collections::HashMap<Uuid, gateway_core::AgentSessionListingRecord>, StoreError>
+    {
+        self.session_listings(session_ids).await
+    }
+
     async fn append_agent_session_analysis(
         &self,
         analysis: &AgentSessionAnalysisRecord,
@@ -123,7 +131,13 @@ impl AgentSessionReportRepository for PostgresStore {
             " AND ($20::text IS NULL OR t.request_tags_json::jsonb ->> $19 = $20))",
             " OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(t.request_tags_json::jsonb -> 'bespoke', '[]'::jsonb)) tag",
             " WHERE tag ->> 'key' = $19 AND ($20::text IS NULL OR tag ->> 'value' = $20)))))",
+            // C collation matches SQLite's ASCII-only lowercasing, as in the request log search.
+            " AND ($21::text IS NULL OR strpos(lower(t.requested_model_key COLLATE \"C\"), lower($21 COLLATE \"C\")) > 0",
+            " OR EXISTS (SELECT 1 FROM users u WHERE u.user_id = t.user_id",
+            " AND (strpos(lower(u.name COLLATE \"C\"), lower($21 COLLATE \"C\")) > 0",
+            " OR strpos(lower(u.email COLLATE \"C\"), lower($21 COLLATE \"C\")) > 0)))",
         );
+        let search = query.q.as_deref().map(str::trim).filter(|q| !q.is_empty());
         let count_sql = format!("SELECT COUNT(*) FROM {from_sql} WHERE {where_sql}");
         let count_row = sqlx::query(&count_sql)
             .bind(query.ownership_scope_key.as_deref())
@@ -151,6 +165,7 @@ impl AgentSessionReportRepository for PostgresStore {
             .bind(query.normalized_session_id.as_deref())
             .bind(query.request_tag_key.as_deref())
             .bind(query.request_tag_value.as_deref())
+            .bind(search)
             .fetch_one(&self.pool)
             .await
             .map_err(to_query_error)?;
@@ -170,7 +185,7 @@ impl AgentSessionReportRepository for PostgresStore {
         list_sql.push_str(from_sql);
         list_sql.push_str(" WHERE ");
         list_sql.push_str(where_sql);
-        list_sql.push_str(" ORDER BY t.started_at DESC, t.agent_session_id LIMIT $21 OFFSET $22");
+        list_sql.push_str(" ORDER BY t.started_at DESC, t.agent_session_id LIMIT $22 OFFSET $23");
         let rows = sqlx::query(&list_sql)
             .bind(query.ownership_scope_key.as_deref())
             .bind(query.user_id.map(|value| value.to_string()))
@@ -197,6 +212,7 @@ impl AgentSessionReportRepository for PostgresStore {
             .bind(query.normalized_session_id.as_deref())
             .bind(query.request_tag_key.as_deref())
             .bind(query.request_tag_value.as_deref())
+            .bind(search)
             .bind(i64::from(page_size))
             .bind(offset)
             .fetch_all(&self.pool)
