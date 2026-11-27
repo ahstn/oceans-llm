@@ -1,4 +1,3 @@
-import type { IconSvgElement } from '@hugeicons/react'
 import {
   AiChipIcon,
   ApiIcon,
@@ -19,54 +18,30 @@ import {
   UserSquareIcon,
 } from '@hugeicons/core-free-icons'
 
+import {
+  clearedFilters,
+  dayPicker,
+  enumOptions,
+  groupParams,
+  hasFilters,
+  strictValue,
+  type FilterField,
+  type FilterGroup,
+} from '@/components/data/filter-fields'
 import { anyTypedValue, type FilterOption } from '@/components/data/filter-options'
-import { formatUtcDate } from '@/lib/format'
 import type { AgentSessionFiltersInput } from '@/types/api'
 
 /** Every agent session filter the URL search carries; paging stays with the table. */
 export type SessionFilterValues = Omit<AgentSessionFiltersInput, 'page' | 'page_size'>
 export type SessionFilterParam = keyof SessionFilterValues
-/** Chips own one param each, except the request tag chip, which owns its key and value. */
-export type SessionFilterFieldKey =
-  | Exclude<SessionFilterParam, 'request_tag_key' | 'request_tag_value'>
-  | 'request_tag'
+type SessionFilterField = FilterField<SessionFilterParam>
 
-/** Where a picker's options come from: a fixed list, or a catalog loaded once the chip shows. */
-export type PickerSource = FilterOption[] | 'harnesses' | 'models' | 'dates'
-
-export interface SessionFilterPicker {
-  source: PickerSource
-  searchPlaceholder: string
-  /** Turns typed text into a value the list lacks, or `null` when only listed values apply. */
-  customValue: (search: string) => string | null
-  /** Renders a value that is not in the list. */
-  formatValue?: (value: string) => string
-  /** Turns a URL value into a picker value, such as a timestamp into its UTC day. */
-  fromParam?: (value: string) => string
-  /** Turns a picked value into its URL value. */
-  toParam?: (value: string) => string
-}
-
-export interface SessionFilterField {
-  key: SessionFilterFieldKey
-  label: string
-  icon: IconSvgElement
-  placeholder: string
-  /** Fields with a known set of values pick from a list instead of free text. */
-  picker?: SessionFilterPicker
-}
-
-export interface SessionFilterGroup {
-  label: string
-  fields: SessionFilterField[]
-}
-
-function humanize(value: string) {
-  return value.replaceAll('_', ' ').replace(/^\w/, (character) => character.toUpperCase())
-}
-
-function enumOptions(values: string[]): FilterOption[] {
-  return values.map((value) => ({ value, label: humanize(value) }))
+/** One chip per param, except the request tag chip, which owns its key and value. */
+function field(
+  key: Exclude<SessionFilterParam, 'request_tag_key' | 'request_tag_value'>,
+  rest: Omit<SessionFilterField, 'key' | 'params'>,
+): SessionFilterField {
+  return { key, params: [key], ...rest }
 }
 
 /** Values the gateway writes today; older or newer data can hold others, so typing is allowed. */
@@ -98,50 +73,11 @@ export function customCoveragePercent(search: string) {
   return percent <= 100 ? String(percent) : null
 }
 
-/** A typed `YYYY-MM-DD` day that exists on the calendar. */
-export function customDay(search: string) {
-  const day = search.trim()
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null
-  const date = new Date(`${day}T00:00:00.000Z`)
-  return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(day) ? day : null
-}
-
-const dayPresets: Array<{ daysAgo: number; hint: string }> = [
-  { daysAgo: 0, hint: 'Today' },
-  { daysAgo: 1, hint: 'Yesterday' },
-  { daysAgo: 7, hint: '7 days ago' },
-  { daysAgo: 30, hint: '30 days ago' },
-  { daysAgo: 90, hint: '90 days ago' },
-]
-
-/** Recent UTC days to start from; any other day can be typed as `YYYY-MM-DD`. */
-export function dayOptions(now: Date): FilterOption[] {
-  return dayPresets.map(({ daysAgo, hint }) => {
-    const day = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-    return { value: day, label: formatUtcDate(`${day}T00:00:00.000Z`), hint }
-  })
-}
-
-function dayPicker(boundary: 'start' | 'end'): SessionFilterPicker {
-  return {
-    source: 'dates',
-    searchPlaceholder: 'Search or type YYYY-MM-DD…',
-    customValue: customDay,
-    formatValue: (day) => formatUtcDate(`${day}T00:00:00.000Z`),
-    fromParam: (timestamp) => timestamp.slice(0, 10),
-    // `Started after` includes the whole day it names, and so does `Started before`.
-    toParam: (day) => `${day}${boundary === 'start' ? 'T00:00:00.000Z' : 'T23:59:59.999Z'}`,
-  }
-}
-
-const strictValue = () => null
-
-export const sessionFilterGroups: SessionFilterGroup[] = [
+export const sessionFilterGroups: FilterGroup<SessionFilterParam>[] = [
   {
     label: 'Session',
     fields: [
-      {
-        key: 'lifecycle',
+      field('lifecycle', {
         label: 'State',
         icon: StatusIcon,
         placeholder: 'Select a state',
@@ -150,9 +86,8 @@ export const sessionFilterGroups: SessionFilterGroup[] = [
           searchPlaceholder: 'Search states…',
           customValue: strictValue,
         },
-      },
-      {
-        key: 'gateway_outcome',
+      }),
+      field('gateway_outcome', {
         label: 'Outcome',
         icon: Flag02Icon,
         placeholder: 'Select an outcome',
@@ -161,9 +96,8 @@ export const sessionFilterGroups: SessionFilterGroup[] = [
           searchPlaceholder: 'Search outcomes…',
           customValue: strictValue,
         },
-      },
-      {
-        key: 'harness_key',
+      }),
+      field('harness_key', {
         label: 'Harness',
         icon: Robot01Icon,
         placeholder: 'Select a harness',
@@ -172,9 +106,8 @@ export const sessionFilterGroups: SessionFilterGroup[] = [
           searchPlaceholder: 'Search or type a harness key…',
           customValue: anyTypedValue,
         },
-      },
-      {
-        key: 'requested_model_key',
+      }),
+      field('requested_model_key', {
         label: 'Model',
         icon: AiChipIcon,
         placeholder: 'Select a model',
@@ -183,9 +116,8 @@ export const sessionFilterGroups: SessionFilterGroup[] = [
           searchPlaceholder: 'Search models…',
           customValue: anyTypedValue,
         },
-      },
-      {
-        key: 'operation',
+      }),
+      field('operation', {
         label: 'Operation',
         icon: ApiIcon,
         placeholder: 'Select an operation',
@@ -194,9 +126,8 @@ export const sessionFilterGroups: SessionFilterGroup[] = [
           searchPlaceholder: 'Search or type an operation…',
           customValue: anyTypedValue,
         },
-      },
-      {
-        key: 'caller_class',
+      }),
+      field('caller_class', {
         label: 'Caller class',
         icon: UserSquareIcon,
         placeholder: 'Select a caller class',
@@ -205,14 +136,13 @@ export const sessionFilterGroups: SessionFilterGroup[] = [
           searchPlaceholder: 'Search caller classes…',
           customValue: anyTypedValue,
         },
-      },
+      }),
     ],
   },
   {
     label: 'Score',
     fields: [
-      {
-        key: 'score_maturity',
+      field('score_maturity', {
         label: 'Score maturity',
         icon: Target02Icon,
         placeholder: 'Select a maturity',
@@ -221,9 +151,8 @@ export const sessionFilterGroups: SessionFilterGroup[] = [
           searchPlaceholder: 'Search maturities…',
           customValue: strictValue,
         },
-      },
-      {
-        key: 'score_confidence',
+      }),
+      field('score_confidence', {
         label: 'Score confidence',
         icon: CheckListIcon,
         placeholder: 'Select a confidence',
@@ -232,9 +161,8 @@ export const sessionFilterGroups: SessionFilterGroup[] = [
           searchPlaceholder: 'Search confidence levels…',
           customValue: strictValue,
         },
-      },
-      {
-        key: 'minimum_coverage_percent',
+      }),
+      field('minimum_coverage_percent', {
         label: 'Minimum coverage',
         icon: DashboardSpeed01Icon,
         placeholder: 'Select a coverage',
@@ -244,80 +172,75 @@ export const sessionFilterGroups: SessionFilterGroup[] = [
           customValue: customCoveragePercent,
           formatValue: (percent) => `${percent}%`,
         },
-      },
+      }),
     ],
   },
   {
     label: 'Owner',
     fields: [
-      { key: 'user_id', label: 'User ID', icon: UserIcon, placeholder: 'user ID' },
-      { key: 'team_id', label: 'Team ID', icon: UserGroupIcon, placeholder: 'team ID' },
-      {
-        key: 'service_account_id',
+      field('user_id', { label: 'User ID', icon: UserIcon, placeholder: 'user ID' }),
+      field('team_id', { label: 'Team ID', icon: UserGroupIcon, placeholder: 'team ID' }),
+      field('service_account_id', {
         label: 'Service account ID',
         icon: UserAccountIcon,
         placeholder: 'service account ID',
-      },
+      }),
     ],
   },
   {
     label: 'Source',
     fields: [
-      {
-        key: 'session_source_id',
+      field('session_source_id', {
         label: 'Session source ID',
         icon: HashIcon,
         placeholder: 'source ID',
-      },
-      {
-        key: 'session_source_hash',
+      }),
+      field('session_source_hash', {
         label: 'Session source hash',
         icon: FingerPrintIcon,
         placeholder: 'sha256:…',
+      }),
+      {
+        key: 'request_tag',
+        label: 'Request tag',
+        icon: Tag01Icon,
+        placeholder: 'value',
+        params: ['request_tag_key', 'request_tag_value'],
+        pair: {
+          keyLabel: 'Request tag key',
+          keyPlaceholder: 'key',
+          valueLabel: 'Request tag value',
+          incompleteTitle: 'Incomplete tag filter',
+          incompleteDescription:
+            'Provide both a tag key and tag value to filter sessions by a request tag.',
+        },
       },
-      { key: 'request_tag', label: 'Request tag', icon: Tag01Icon, placeholder: 'value' },
     ],
   },
   {
     label: 'Start date',
     fields: [
-      {
-        key: 'started_after',
+      field('started_after', {
         label: 'Started after',
         icon: CalendarAdd01Icon,
         placeholder: 'Select a day',
         picker: dayPicker('start'),
-      },
-      {
-        key: 'started_before',
+      }),
+      field('started_before', {
         label: 'Started before',
         icon: Calendar04Icon,
         placeholder: 'Select a day',
         picker: dayPicker('end'),
-      },
+      }),
     ],
   },
 ]
 
-export const sessionFilterFields: SessionFilterField[] = sessionFilterGroups.flatMap(
-  (group) => group.fields,
-)
-
-export function fieldParams(key: SessionFilterFieldKey): SessionFilterParam[] {
-  return key === 'request_tag' ? ['request_tag_key', 'request_tag_value'] : [key]
-}
-
-export const sessionFilterParams: SessionFilterParam[] = sessionFilterFields.flatMap((field) =>
-  fieldParams(field.key),
-)
+export const sessionFilterParams: SessionFilterParam[] = groupParams(sessionFilterGroups)
 
 /** A URL patch that removes every filter and keeps paging. */
-export const clearedSessionFilters: Partial<Record<SessionFilterParam, undefined>> =
-  Object.fromEntries(sessionFilterParams.map((param) => [param, undefined]))
+export const clearedSessionFilters = clearedFilters(sessionFilterGroups)
 
 export function hasSessionFilters(values: SessionFilterValues) {
-  return sessionFilterParams.some((param) => {
-    const value = values[param]
-    return value !== undefined && value !== null && String(value).trim() !== ''
-  })
+  return hasFilters(sessionFilterGroups, values)
 }

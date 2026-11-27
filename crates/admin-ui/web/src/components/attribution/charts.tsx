@@ -6,7 +6,7 @@ import { lazy, Suspense, type ComponentProps } from 'react'
 import type { ChartConfig } from '@/components/ui/chart'
 import { Skeleton } from '@/components/ui/skeleton'
 import { chartAnimation } from '@/lib/chart-motion'
-import { formatCount, formatUsdTotal } from '@/lib/format'
+import { formatCount, formatUsdAxis, formatUsdTotal } from '@/lib/format'
 
 import { AI_TONE, HUMAN_TONE, SHIPPED_TONE, UNSHIPPED_TONE } from './parts'
 import { PERCENT, formatDay, formatHours } from './format'
@@ -171,7 +171,7 @@ const LazySpendOutputChart = lazy(async () => {
             tickLine={false}
             axisLine={false}
             width={52}
-            tickFormatter={(value: number) => `$${formatCount(value)}`}
+            tickFormatter={(value: number) => formatUsdAxis(value)}
           />
           <YAxis
             yAxisId="prs"

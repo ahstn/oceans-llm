@@ -79,11 +79,11 @@ describe('AuditLogPage', () => {
     renderPage()
 
     expect(screen.getByRole('heading', { level: 1, name: 'Audit Log' })).toBeInTheDocument()
-    expect(screen.getByText('tickets')).toBeInTheDocument()
-    expect(screen.getByText('Updated')).toBeInTheDocument()
-    expect(screen.getByText('admin@example.test')).toBeInTheDocument()
-    expect(screen.getByText('203.0.113.9')).toBeInTheDocument()
-    expect(screen.getByText('MCP server')).toBeInTheDocument()
+    expect(grid().getByText('tickets')).toBeInTheDocument()
+    expect(grid().getByText('Updated')).toBeInTheDocument()
+    expect(grid().getByText('admin@example.test')).toBeInTheDocument()
+    expect(grid().getByText('203.0.113.9')).toBeInTheDocument()
+    expect(grid().getByText('MCP server')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /save|delete|revoke/i })).not.toBeInTheDocument()
   })
 
@@ -106,7 +106,7 @@ describe('AuditLogPage', () => {
   it('filters by actor from a row without opening the detail sheet', async () => {
     renderPage()
 
-    fireEvent.click(screen.getByRole('button', { name: 'admin@example.test' }))
+    fireEvent.click(grid().getByRole('button', { name: 'admin@example.test' }))
 
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith({
@@ -150,7 +150,7 @@ describe('AuditLogPage', () => {
   it('opens a contained detail sheet with before and after summaries', async () => {
     renderPage()
 
-    fireEvent.click(screen.getByText('tickets'))
+    fireEvent.click(grid().getByText('tickets'))
 
     const sheet = await screen.findByTestId('audit-entry-sheet')
     expect(within(sheet).getByText('Browser/1.0')).toBeInTheDocument()
@@ -175,7 +175,7 @@ describe('AuditLogPage', () => {
     routeMock.useLoaderData.mockReturnValue(loaderData({ items: [keyEntry] }))
     renderPage()
 
-    fireEvent.click(screen.getByText('tickets'))
+    fireEvent.click(grid().getByText('tickets'))
 
     const sheet = await screen.findByTestId('audit-entry-sheet')
     expect(within(sheet).getByText('API key')).toBeInTheDocument()
@@ -186,7 +186,7 @@ describe('AuditLogPage', () => {
     getAuditLogEntry.mockRejectedValue(new Error('audit log entry `7` not found'))
     renderPage()
 
-    fireEvent.click(screen.getByText('tickets'))
+    fireEvent.click(grid().getByText('tickets'))
 
     const sheet = await screen.findByTestId('audit-entry-sheet')
     expect(await within(sheet).findByText(/not found/)).toBeInTheDocument()
@@ -198,4 +198,22 @@ describe('AuditLogPage', () => {
 
     expect(screen.getByText('No audit entries')).toBeInTheDocument()
   })
+
+  it('lists one card per entry below md, each opening the entry', async () => {
+    renderPage()
+
+    const cards = within(screen.getByTestId('audit-log-cards'))
+    expect(screen.getByTestId('audit-log-cards')).toHaveClass('md:hidden')
+    expect(screen.getByTestId('audit-log-grid')).toHaveClass('hidden', 'md:block')
+    expect(cards.getByText('tickets')).toBeInTheDocument()
+    expect(cards.getByText('Updated')).toBeInTheDocument()
+
+    fireEvent.click(cards.getAllByRole('button', { name: 'View details' })[0])
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+  })
 })
+
+/** The desktop grid; the mobile cards repeat each entry's text below `md`. */
+function grid() {
+  return within(screen.getByTestId('audit-log-grid'))
+}

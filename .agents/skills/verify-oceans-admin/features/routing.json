@@ -512,6 +512,7 @@
         "crates/admin-ui/web/src/routes/mcp/**",
         "crates/admin-ui/web/src/components/mcp/**",
         "crates/admin-ui/web/src/routes/observability/mcp-invocations.tsx",
+        "crates/admin-ui/web/src/components/data/filter-*.{ts,tsx}",
         "crates/gateway/src/http/mcp_*.rs",
         "crates/gateway/src/http/mcp_*/**",
         "crates/gateway-mcp/**",
@@ -652,6 +653,7 @@
       "paths": [
         "crates/admin-ui/web/src/routes/batches.tsx",
         "crates/admin-ui/web/src/routes/batches/**",
+        "crates/admin-ui/web/src/components/data/filter-*.{ts,tsx}",
         "crates/gateway/src/http/batches.rs",
         "crates/gateway/src/batch_worker.rs",
         "crates/gateway-service/src/batches.rs",

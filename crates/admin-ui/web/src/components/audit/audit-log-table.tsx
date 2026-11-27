@@ -29,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { EMPTY_VALUE } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { AuditLogFiltersInput, AuditLogPageView, AuditLogSummaryView } from '@/types/api'
 
@@ -62,6 +63,9 @@ export function AuditLogTable({ page, search, pending, onSearch }: AuditLogTable
     onSearch(next)
   }
   const hasFilters = Object.keys(filters).some((key) => key !== 'limit')
+  const selectActor = (actor_user_id: string) => {
+    if (!pending) update({ actor_user_id })
+  }
 
   return (
     <Frame spacing="default" className="min-w-0">
@@ -118,12 +122,13 @@ export function AuditLogTable({ page, search, pending, onSearch }: AuditLogTable
         </div>
       </FrameHeader>
       <FramePanel className={cn(INNER_PANEL, 'min-w-0 p-0')}>
-        <AuditGrid
+        <AuditEntries
           items={page.items}
+          canClear={hasFilters}
+          pending={pending}
+          onClear={() => onSearch({})}
           onSelect={setSelected}
-          onActor={(actor_user_id) => {
-            if (!pending) update({ actor_user_id })
-          }}
+          onActor={selectActor}
         />
       </FramePanel>
       <FrameFooter>
@@ -158,6 +163,48 @@ export function AuditLogTable({ page, search, pending, onSearch }: AuditLogTable
       </FrameFooter>
       <AuditEntrySheet entry={selected} onOpenChange={(open) => !open && setSelected(null)} />
     </Frame>
+  )
+}
+
+/** The entries as cards below `md` and as a grid from `md` up, or an empty state. */
+function AuditEntries({
+  items,
+  canClear,
+  pending,
+  onClear,
+  onSelect,
+  onActor,
+}: {
+  items: AuditLogSummaryView[]
+  canClear: boolean
+  pending: boolean
+  onClear: () => void
+  onSelect: (entry: AuditLogSummaryView) => void
+  onActor: (actorUserId: string) => void
+}) {
+  if (items.length === 0) {
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyTitle>No audit entries</EmptyTitle>
+          <EmptyDescription>No control-plane changes match the current filters.</EmptyDescription>
+        </EmptyHeader>
+        {canClear ? (
+          <Button variant="outline" size="sm" disabled={pending} onClick={onClear}>
+            Clear filters
+          </Button>
+        ) : null}
+      </Empty>
+    )
+  }
+  return (
+    <>
+      {/* Both layouts stay in the DOM, so the server markup never depends on the viewport. */}
+      <AuditCards items={items} onSelect={onSelect} onActor={onActor} />
+      <div className="hidden md:block" data-testid="audit-log-grid">
+        <AuditGrid items={items} onSelect={onSelect} onActor={onActor} />
+      </div>
+    </>
   )
 }
 
@@ -240,16 +287,6 @@ function AuditGrid({
     manualPagination: true,
   })
 
-  if (items.length === 0) {
-    return (
-      <Empty>
-        <EmptyHeader>
-          <EmptyTitle>No audit entries</EmptyTitle>
-          <EmptyDescription>No control-plane changes match the current filters.</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    )
-  }
   return (
     <DataGrid
       table={table}
@@ -263,6 +300,53 @@ function AuditGrid({
         </div>
       </DataGridContainer>
     </DataGrid>
+  )
+}
+
+/** Below `md`, one card per entry. A foot button opens the entry, so the actor link stays usable. */
+function AuditCards({
+  items,
+  onSelect,
+  onActor,
+}: {
+  items: AuditLogSummaryView[]
+  onSelect: (entry: AuditLogSummaryView) => void
+  onActor: (actorUserId: string) => void
+}) {
+  return (
+    <ul className="grid grid-cols-1 md:hidden" data-testid="audit-log-cards">
+      {items.map((entry) => (
+        <li key={entry.id} className="flex min-w-0 flex-col gap-3 border-b p-4 last:border-b-0">
+          <div className="flex min-w-0 items-start justify-between gap-3">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="truncate font-medium">{targetTypeLabel(entry.target_type)}</span>
+              <Badge variant={actionVariant(entry.action)}>{actionVerbLabel(entry.action)}</Badge>
+            </span>
+            <span className="text-muted-foreground shrink-0 text-xs whitespace-nowrap tabular-nums">
+              {formatAuditTimestamp(entry.occurred_at)}
+            </span>
+          </div>
+          <div className="grid min-w-0 grid-cols-2 gap-3 text-sm">
+            <div className="flex min-w-0 flex-col">
+              <span className="text-muted-foreground text-xs">Target</span>
+              <span className="truncate">{entry.target_label ?? EMPTY_VALUE}</span>
+              {entry.target_id ? (
+                <span className="text-muted-foreground truncate font-mono text-xs">
+                  {entry.target_id}
+                </span>
+              ) : null}
+            </div>
+            <div className="flex min-w-0 flex-col">
+              <span className="text-muted-foreground text-xs">Actor</span>
+              <ActorCell entry={entry} onActor={onActor} />
+            </div>
+          </div>
+          <Button variant="outline" size="sm" className="w-full" onClick={() => onSelect(entry)}>
+            View details
+          </Button>
+        </li>
+      ))}
+    </ul>
   )
 }
 

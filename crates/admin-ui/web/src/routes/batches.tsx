@@ -18,7 +18,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { isPlatformAdminSession } from '@/routes/-auth-routing'
-import { BatchFilterBar } from '@/routes/batches/-filter-bar'
+import { BatchFilterBar, type BatchFilterPatch } from '@/routes/batches/-filter-bar'
 import { BatchDetailSheet, BatchList } from '@/routes/batches/-components'
 import { isBatchActive } from '@/routes/batches/-utils'
 import {
@@ -105,11 +105,14 @@ export function BatchesPage() {
     return () => window.clearInterval(intervalId)
   }, [hasActiveBatches, router])
 
-  function applyFilters(nextFilters: BatchFiltersInput) {
+  // Patches merge into the latest location; any filter change returns to the first page.
+  function applyFilters(patch: BatchFilterPatch) {
     startListTransition(async () => {
       await router.navigate({
         to: '/batches',
-        search: nextFilters,
+        search: (previous) =>
+          normalizeBatchSearch({ ...(previous as Record<string, unknown>), ...patch, page: 1 }),
+        resetScroll: false,
       })
     })
   }
@@ -165,7 +168,7 @@ export function BatchesPage() {
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-6">
       <PageHeader
-        section="Control Plane"
+        section="Observability"
         title="Batch requests"
         description="Track long-running model jobs, inspect normalized responses, and cancel work that has not finished."
         actions={
@@ -185,30 +188,20 @@ export function BatchesPage() {
         <CardHeader>
           <CardTitle>Batch list</CardTitle>
           <CardDescription>
-            Filters are applied by the gateway. Active batches refresh every five seconds while this
-            page is visible.
+            Active batches refresh every five seconds while this page is visible.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <BatchFilterBar
-            key={filterStateKey(search)}
-            initialFilters={search}
+            filters={search}
             users={users}
             serviceAccounts={serviceAccounts}
             canFilterAcrossUsers={isPlatformAdminSession(session)}
+            shownCount={batchPage.items.length}
+            totalCount={batchPage.total}
             pending={isListPending}
             onApply={applyFilters}
           />
-          <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-3 text-sm">
-            <span>
-              {batchPage.total} {batchPage.total === 1 ? 'batch' : 'batches'} in the current scope
-            </span>
-            {isListPending ? (
-              <span role="status" aria-live="polite">
-                Updating list...
-              </span>
-            ) : null}
-          </div>
           <BatchList
             batches={batchPage.items}
             onInspect={(batch) => void inspectBatch(batch)}
@@ -321,14 +314,4 @@ function positiveInteger(value: unknown, fallback: number) {
 
 function isValidDateString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && !Number.isNaN(new Date(value).getTime())
-}
-
-function filterStateKey(search: BatchFiltersInput) {
-  return [
-    search.status,
-    search.user_id,
-    search.service_account_id,
-    search.created_at_start,
-    search.created_at_end,
-  ].join('|')
 }

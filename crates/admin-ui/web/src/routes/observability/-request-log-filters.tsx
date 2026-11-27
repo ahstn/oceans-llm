@@ -47,6 +47,7 @@ import {
   InputGroupInput,
   InputGroupText,
 } from '@/components/ui/input-group'
+import { formatCount } from '@/lib/format'
 import type { RequestLogFiltersInput } from '@/types/api'
 
 import { customStatusCode, readyStatusCodeOptions } from './-request-log-filter-options'
@@ -241,7 +242,9 @@ export function RequestLogToolbar({
         />
         <div className="flex items-center gap-3">
           <span className="text-muted-foreground text-sm tabular-nums">
-            {isPending ? 'Loading…' : `Showing ${shownCount} of ${totalCount}`}
+            {isPending
+              ? 'Loading…'
+              : `Showing ${formatCount(shownCount)} of ${formatCount(totalCount)}`}
           </span>
           <FilterFieldMenu visibleFields={visibleFields} onSelect={addField}>
             <Button type="button" variant="outline" size="sm" className="gap-2">

@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // A static import: `vi.mock` is hoisted above it, and loading the route here,
@@ -121,7 +121,10 @@ function deferred<T>() {
 }
 
 describe('BatchesPage', () => {
-  afterEach(() => cleanup())
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
 
   beforeEach(() => {
     routeMock.useLoaderData.mockReset()
@@ -132,6 +135,15 @@ describe('BatchesPage', () => {
     invalidateMock.mockReset()
     navigateMock.mockReset()
     routeMock.useSearch.mockReturnValue({ page: 1, page_size: 30 })
+    // The filter value picker's command list measures itself.
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    )
     routeMock.useRouteContext.mockReturnValue({ session: platformAdminSession() })
     routeMock.useLoaderData.mockReturnValue({
       batchPage: {
@@ -166,38 +178,55 @@ describe('BatchesPage', () => {
     expect(screen.getAllByText('Local CI Runner').length).toBeGreaterThan(0)
     expect(screen.getAllByText('2 of 2').length).toBeGreaterThan(0)
     expect(screen.getAllByText('0 of 3').length).toBeGreaterThan(0)
-    expect(screen.getByLabelText('Created from')).toBeInTheDocument()
-    expect(screen.getByLabelText('Created through')).toBeInTheDocument()
-    expect(screen.getByTestId('batch-filter-status')).toBeInTheDocument()
-    expect(screen.getByTestId('batch-filter-user')).toBeInTheDocument()
-    expect(screen.getByTestId('batch-filter-service-account')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Apply filters' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Created from')).not.toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText('Created from'), { target: { value: '2026-08-01' } })
-    fireEvent.change(screen.getByLabelText('Created through'), { target: { value: '2026-08-16' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }))
+    openFilterMenu()
+    for (const label of ['Status', 'User', 'Service account', 'Created after', 'Created before']) {
+      expect(await screen.findByRole('menuitem', { name: label })).toBeInTheDocument()
+    }
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Created after' }))
+    fireEvent.change(await screen.findByPlaceholderText('Search or type YYYY-MM-DD…'), {
+      target: { value: '2026-08-01' },
+    })
+    fireEvent.click(await screen.findByRole('option', { name: 'Filter by “1 Aug 2026”' }))
 
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith({
-        to: '/batches',
-        search: {
-          page: 1,
-          page_size: 30,
-          created_at_start: expect.any(String),
-          created_at_end: expect.any(String),
-        },
-      })
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
+    const call = navigateMock.mock.calls[0][0]
+    expect(call.to).toBe('/batches')
+    // Any filter change returns to the first page.
+    expect(call.search({ page: 3, page_size: 30 })).toEqual({
+      page: 1,
+      page_size: 30,
+      created_at_start: '2026-08-01T00:00:00.000Z',
     })
   })
 
-  it('does not offer cross-user filters to a non-platform session', () => {
+  it('shows URL filters as chips with readable values', () => {
+    routeMock.useSearch.mockReturnValue({
+      page: 1,
+      page_size: 30,
+      status: 'in_progress',
+      user_id: 'user_alice',
+    })
+
+    render(<BatchesPage />)
+
+    const chips = within(screen.getByTestId('batch-filter-chips'))
+    expect(chips.getByTestId('batch-filter-status')).toHaveTextContent('In Progress')
+    expect(chips.getByTestId('batch-filter-user-id')).toHaveTextContent('Alice Platform Lead')
+  })
+
+  it('does not offer cross-user filters to a non-platform session', async () => {
     routeMock.useRouteContext.mockReturnValue({ session: regularUserSession() })
 
     render(<BatchesPage />)
 
-    expect(screen.getByLabelText('Created from')).toBeInTheDocument()
-    expect(screen.getByTestId('batch-filter-status')).toBeInTheDocument()
-    expect(screen.queryByTestId('batch-filter-user')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('batch-filter-service-account')).not.toBeInTheDocument()
+    openFilterMenu()
+    expect(await screen.findByRole('menuitem', { name: 'Status' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Created after' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'User' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Service account' })).not.toBeInTheDocument()
   })
 
   it('loads normalized response details in the batch sheet', async () => {
@@ -290,3 +319,10 @@ describe('BatchesPage', () => {
     })
   })
 })
+
+function openFilterMenu() {
+  fireEvent.keyDown(
+    within(screen.getByTestId('batch-toolbar')).getByRole('button', { name: /^Filters/ }),
+    { key: 'Enter' },
+  )
+}

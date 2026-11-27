@@ -41,8 +41,9 @@ export function UserActivityTable({
     )
   }
   return (
-    <div className="border-border overflow-hidden rounded-md border">
-      <Table aria-label="User activity" className="min-w-[72rem] text-left">
+    // Fits its card at 1440 px; narrower screens scroll rather than clip the last column.
+    <div className="border-border overflow-x-auto rounded-md border">
+      <Table aria-label="User activity" className="min-w-[60rem] text-left">
         <AdminTableHeader columns={COLUMNS} />
         <TableBody>
           {users.map((row) => (

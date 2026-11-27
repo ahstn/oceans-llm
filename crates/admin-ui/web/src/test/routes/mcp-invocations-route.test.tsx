@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { McpInvocationView } from '@/types/api'
@@ -22,6 +22,9 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@/server/admin-data.functions', () => ({
   getMcpInvocations: vi.fn(),
+  getMcpServers: vi.fn().mockResolvedValue({
+    data: { items: [{ server_key: 'github', display_name: 'GitHub' }] },
+  }),
   getObservabilityMcpInvocationDetail: (...args: unknown[]) =>
     getObservabilityMcpInvocationDetailMock(...args),
 }))
@@ -66,7 +69,7 @@ describe('McpInvocationsPage', () => {
     routeMock.useSearch.mockReturnValue({})
   })
 
-  it('renders filters and invocation records', () => {
+  it('renders the filter toolbar and invocation records', () => {
     routeMock.useLoaderData.mockReturnValue({
       data: { items: [item], page: 1, page_size: 25, total: 1 },
     })
@@ -74,48 +77,79 @@ describe('McpInvocationsPage', () => {
     render(<McpInvocationsPage />)
 
     expect(screen.getByRole('heading', { level: 1, name: 'MCP invocations' })).toBeInTheDocument()
-    expect(screen.getByTestId('mcp-filter-request-id')).toBeInTheDocument()
-    expect(screen.getByTestId('mcp-filter-server')).toBeInTheDocument()
-    expect(screen.getByTestId('mcp-filter-tool')).toBeInTheDocument()
-    expect(screen.getByTestId('mcp-invocations-table')).toBeInTheDocument()
-    expect(screen.getByText('github')).toBeInTheDocument()
-    expect(screen.getByText('create_issue')).toBeInTheDocument()
-    expect(screen.getByText('allowed')).toBeInTheDocument()
-    expect(screen.getByText('result truncated')).toBeInTheDocument()
+    const toolbar = within(screen.getByTestId('mcp-invocation-toolbar'))
+    expect(toolbar.getByRole('button', { name: /^Filters/ })).toBeInTheDocument()
+    expect(toolbar.getByRole('status')).toHaveTextContent('Showing 1 of 1')
+    expect(screen.queryByRole('button', { name: /Apply filters/i })).not.toBeInTheDocument()
+
+    const table = within(screen.getByTestId('mcp-invocations-table'))
+    expect(table.getByText('10 Mar 2026, 11:33:00 UTC')).toBeInTheDocument()
+    expect(table.getByText('GitHub')).toBeInTheDocument()
+    expect(table.getByText('create_issue')).toBeInTheDocument()
+    expect(table.getByText('Allowed')).toBeInTheDocument()
+    expect(table.getByText('120 ms')).toBeInTheDocument()
+    expect(table.getByText('result truncated')).toBeInTheDocument()
+    expect(screen.queryByText(/n\/a/)).not.toBeInTheDocument()
   })
 
-  it('applies request, server, tool, and owner-context filters through route search params', async () => {
+  it('shows URL filters as chips and removes one without touching the others', async () => {
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [item], page: 1, page_size: 25, total: 1 },
+    })
+    routeMock.useSearch.mockReturnValue({ request_id: 'req_1', status: 'policy_denied' })
+
+    render(<McpInvocationsPage />)
+
+    const chips = within(screen.getByTestId('mcp-invocation-filter-chips'))
+    expect(chips.getByTestId('mcp-invocation-filter-request-id')).toHaveValue('req_1')
+    expect(chips.getByTestId('mcp-invocation-filter-status')).toHaveTextContent('Policy denied')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Status filter' }))
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
+    expect(navigatedSearch(0, { request_id: 'req_1', status: 'policy_denied' })).toEqual(
+      expect.objectContaining({ request_id: 'req_1', status: undefined }),
+    )
+  })
+
+  it('applies a typed owner chip on Enter', async () => {
     routeMock.useLoaderData.mockReturnValue({
       data: { items: [item], page: 1, page_size: 25, total: 1 },
     })
 
     render(<McpInvocationsPage />)
 
-    fireEvent.change(screen.getByTestId('mcp-filter-request-id'), { target: { value: 'req_1' } })
-    fireEvent.change(screen.getByTestId('mcp-filter-server'), { target: { value: 'github' } })
-    fireEvent.change(screen.getByTestId('mcp-filter-tool'), { target: { value: 'create_issue' } })
-    fireEvent.change(screen.getByTestId('mcp-filter-method'), { target: { value: 'tools/call' } })
-    fireEvent.change(screen.getByTestId('mcp-filter-api-key'), { target: { value: 'api_key_1' } })
-    fireEvent.change(screen.getByTestId('mcp-filter-team'), { target: { value: 'team_1' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Apply Filters' }))
+    fireEvent.keyDown(
+      within(screen.getByTestId('mcp-invocation-toolbar')).getByRole('button', {
+        name: /^Filters/,
+      }),
+      { key: 'Enter' },
+    )
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Team ID' }))
+    const teamId = await screen.findByTestId('mcp-invocation-filter-team-id')
+    fireEvent.change(teamId, { target: { value: ' team_1 ' } })
+    fireEvent.keyDown(teamId, { key: 'Enter' })
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1))
+    expect(navigatedSearch(0)).toEqual(expect.objectContaining({ team_id: 'team_1' }))
+  })
+
+  it('opens the detail when a row is clicked', async () => {
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [item], page: 1, page_size: 25, total: 1 },
+    })
+    getObservabilityMcpInvocationDetailMock.mockResolvedValue({
+      data: { invocation: item, payload: null },
+    })
+
+    render(<McpInvocationsPage />)
+    fireEvent.click(screen.getByRole('row', { name: 'Inspect create_issue on github' }))
 
     await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith({
-        to: '/observability/mcp-invocations',
-        search: {
-          request_id: 'req_1',
-          server_display_key: 'github',
-          tool_display_key: 'create_issue',
-          mcp_method: 'tools/call',
-          api_key_id: 'api_key_1',
-          user_id: undefined,
-          team_id: 'team_1',
-          status: undefined,
-          policy_result: undefined,
-          occurred_at_start: undefined,
-          occurred_at_end: undefined,
-        },
-      })
+      expect(screen.getByText('Payload state')).toBeInTheDocument()
+    })
+    expect(getObservabilityMcpInvocationDetailMock).toHaveBeenCalledWith({
+      data: { invocationId: 'mcpinv_1' },
     })
   })
 
@@ -134,15 +168,15 @@ describe('McpInvocationsPage', () => {
     })
 
     render(<McpInvocationsPage />)
-    fireEvent.click(screen.getByRole('button', { name: 'Inspect' }))
+    fireEvent.click(screen.getByRole('row', { name: 'Inspect create_issue on github' }))
 
     // The detail card opens before the detail request resolves, so wait for the loaded body.
     await waitFor(() => {
-      expect(screen.getByText('Payload State')).toBeInTheDocument()
+      expect(screen.getByText('Payload state')).toBeInTheDocument()
     })
 
     expect(screen.getByTestId('mcp-invocation-detail')).toBeInTheDocument()
-    expect(screen.getByText('MCP Invocation Detail')).toBeInTheDocument()
+    expect(screen.getByText('Invocation detail')).toBeInTheDocument()
     expect(screen.getByText(/"repo": "oceans-llm"/)).toBeInTheDocument()
     expect(screen.getByText(/"number": 115/)).toBeInTheDocument()
   })
@@ -162,11 +196,11 @@ describe('McpInvocationsPage', () => {
     })
 
     render(<McpInvocationsPage />)
-    fireEvent.click(screen.getByRole('button', { name: 'Inspect' }))
+    fireEvent.click(screen.getByRole('row', { name: 'Inspect create_issue on github' }))
 
     // The detail card opens before the detail request resolves, so wait for the loaded body.
     await waitFor(() => {
-      expect(screen.getByText('Payload State')).toBeInTheDocument()
+      expect(screen.getByText('Payload state')).toBeInTheDocument()
     })
 
     expect(screen.getByText('false')).toBeInTheDocument()
@@ -182,5 +216,26 @@ describe('McpInvocationsPage', () => {
     render(<McpInvocationsPage />)
 
     expect(screen.getByText('No MCP invocations found')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument()
+  })
+
+  it('offers to clear filters when nothing matches them', () => {
+    routeMock.useLoaderData.mockReturnValue({
+      data: { items: [], page: 1, page_size: 25, total: 0 },
+    })
+    routeMock.useSearch.mockReturnValue({ status: 'timeout' })
+
+    render(<McpInvocationsPage />)
+
+    expect(screen.getByText('No MCP calls match the current filters.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(navigateMock).toHaveBeenCalledTimes(1)
   })
 })
+
+function navigatedSearch(callIndex: number, previous: Record<string, unknown> = {}) {
+  const search = navigateMock.mock.calls[callIndex][0].search as (
+    previous: Record<string, unknown>,
+  ) => Record<string, unknown>
+  return search(previous)
+}
