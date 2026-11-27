@@ -77,7 +77,7 @@ const dateGroup: FilterGroup<BatchFilterParam> = {
 }
 
 /** The batch filter groups. Owner fields list the loaded users and service accounts. */
-export function batchFilterGroups(
+function batchFilterGroups(
   users: UserView[],
   serviceAccounts: ServiceAccountView[],
   canFilterAcrossUsers: boolean,
