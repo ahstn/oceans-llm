@@ -1,0 +1,95 @@
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_7fbf0743ec3e57::t_90d80d3123dee0 515,656
+crates/admin-ui/web/src/test/routes/request-logs-route.test.tsx
+  s_7fbf0743ec3e57::t_49ae2b223a955e 258,270-271,273
+.agents/skills/verify-oceans-admin/features/batch-requests.md
+  s_7fbf0743ec3e57::t_d408ea6489a793 7-8,29-31,43
+crates/admin-ui/web/src/components/audit/audit-log-table.tsx
+  s_7fbf0743ec3e57::t_5df3111f0bd7fc 125,127-129,131,169-184,187-189,191-197
+  s_7fbf0743ec3e57::t_4c52abff0ae04b 190
+  s_7fbf0743ec3e57::t_91367fb18c425e 32,66-68,306-349
+  s_7fbf0743ec3e57::t_7a4b1ecd91f5d4 198-203,205-208,350
+  s_7fbf0743ec3e57::t_af0ffd535137ed 185-186
+  s_7fbf0743ec3e57::t_240ceba85ca29b 204
+  s_7fbf0743ec3e57::t_1de80ab14862ef 209-210,351-352
+crates/admin-ui/web/src/lib/format.ts
+  s_7fbf0743ec3e57::t_49ae2b223a955e 90,93
+  s_7fbf0743ec3e57::t_745af30451ffd1 64-89,91-92,94-98
+crates/admin-ui/web/src/components/data/filter-toolbar.tsx
+  s_7fbf0743ec3e57::t_7e5aed8d8dffc3 354
+  s_7fbf0743ec3e57::t_6375a846799418 1-353,355-475
+crates/admin-ui/web/src/routes/batches/-filter-bar.tsx
+  s_7fbf0743ec3e57::t_0664505b49f796 1-8,11-16,35-118,121,123,127-128,132,136-137,139,141-143,146-154
+crates/admin-ui/web/src/routes/observability/request-logs.tsx
+  s_7fbf0743ec3e57::t_a1132a6d40fd56 27,356
+crates/admin-ui/web/src/test/routes/audit-log-route.test.tsx
+  s_7fbf0743ec3e57::t_240ceba85ca29b 82-86,109,153,178,189,201-202,204-213,215-219
+  s_7fbf0743ec3e57::t_30cf5defcd4709 203
+.agents/skills/verify-oceans-admin/scripts/mcp-canary.mjs
+  s_7fbf0743ec3e57::t_7e79f84f6fa363 250-252,254-256,261-262
+crates/admin-ui/web/src/components/attribution/charts.tsx
+  s_7fbf0743ec3e57::t_200eba5d8a71a9 9
+  s_7fbf0743ec3e57::t_a1132a6d40fd56 174
+crates/admin-ui/web/src/routes/observability/-request-log-detail/format.ts
+  s_7fbf0743ec3e57::t_745af30451ffd1 7,53,55-62
+crates/admin-ui/web/src/routes/batches.tsx
+  s_7fbf0743ec3e57::t_0664505b49f796 21,108-109,113-115,171,191,196,200-201
+crates/admin-ui/web/src/routes/observability/-request-log-filters.tsx
+  s_7fbf0743ec3e57::t_2b7b05c8fde99e 50
+  s_7fbf0743ec3e57::t_91367fb18c425e 245-247
+crates/admin-ui/web/src/routes/observability/-request-log-detail/summary.tsx
+  s_7fbf0743ec3e57::t_a1132a6d40fd56 19,144
+.agents/skills/verify-oceans-admin/features/mcp.md
+  s_7fbf0743ec3e57::t_d408ea6489a793 17,80
+.agents/skills/verify-oceans-admin/features/audit-log.md
+  s_7fbf0743ec3e57::t_1d4025095aa902 46
+crates/admin-ui/web/src/components/observability/agent-sessions/session-filter-toolbar.tsx
+  s_7fbf0743ec3e57::t_3728b661407612 1,3,10,20,33-34,36-42,46-47,51,54
+docs/plans/2026-11-27-admin-ui-design-consistency.md
+  s_7fbf0743ec3e57::t_d85c7d622a1fc5 1-48,64-73
+  s_7fbf0743ec3e57::t_ba568c962a3545 53-55,57-58
+  s_7fbf0743ec3e57::t_33c8f5d0ee085f 52,56,59-63
+  s_7fbf0743ec3e57::t_30573d4746bdf1 49-51
+docs/src/content/docs/extensions/mcp-invocations.mdx
+  s_7fbf0743ec3e57::t_d408ea6489a793 33,38,41,44,48
+crates/admin-ui/web/src/test/format.test.ts
+  s_7fbf0743ec3e57::t_49ae2b223a955e 84
+  s_7fbf0743ec3e57::t_d9679f341fae8e 12,14,16,71-83,85-88
+  s_7fbf0743ec3e57::t_14257486aeb739 89
+crates/admin-ui/web/src/components/observability/agent-sessions/session-filter-fields.ts
+  s_7fbf0743ec3e57::t_3728b661407612 22,28-29
+  s_7fbf0743ec3e57::t_3672f7e3babb9b 89,99,109,119,129,139,154,164,175,181-182,187,197,202-216,228,234,239,242,245
+  s_7fbf0743ec3e57::t_c8d4c492573b88 21,23-27,30,37-44,76,80,90,100,110,120,130,145,155,165,183,193,198,223,229
+crates/admin-ui/web/src/test/routes/mcp-invocations-route.test.tsx
+  s_7fbf0743ec3e57::t_e93782187bc8ed 1,25-27,72,80-112,115,122-146,149-152,171,175,179,199,203,219-232,235-241
+crates/admin-ui/web/src/components/data/filter-fields.ts
+  s_7fbf0743ec3e57::t_02e1ce5c415e8e 1-10,14-132
+  s_7fbf0743ec3e57::t_d184381fe475c1 11-13
+crates/admin-ui/web/src/routes/observability/-attribution/user-activity-table.tsx
+  s_7fbf0743ec3e57::t_4ddf9f319ec73e 44-46
+crates/admin-ui/web/src/routes/observability/mcp-invocations.tsx
+  s_7fbf0743ec3e57::t_7e5aed8d8dffc3 168-174,216-220,442-444,450,484,486-488,495-497,501-505,510,518,526,533,647-654,656-664,666-669,675-678,705-708
+  s_7fbf0743ec3e57::t_7e79f84f6fa363 406,419-429
+  s_7fbf0743ec3e57::t_b20181b0792e46 1,3-15,17-31,47,50,67-167,175-215,221,271-273,277-279,284-285,302-310,313-318,326,358-359,363-364,373-375,378-382,389,392,395,398,404-405,407-417,430-435,439-441,452-454,460,463-464,467
+crates/admin-ui/web/src/test/routes/batches-route.test.tsx
+  s_7fbf0743ec3e57::t_f2aaa9bacd38f2 124-127
+  s_7fbf0743ec3e57::t_8a6390405586f7 197-198
+  s_7fbf0743ec3e57::t_9532627814713f 1,181-196,199-203,205-210,212-215,217,220,225-229,322-328
+  s_7fbf0743ec3e57::t_c76f04981e07ba 138-146,216
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f2a6c4ce0ea2b8e89475b87a0d3d6b82088b7ae3",
+  "prompts": {},
+  "sessions": {
+    "s_7fbf0743ec3e57": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a8e4161f-5d72-4116-a965-35ffb5043af1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
