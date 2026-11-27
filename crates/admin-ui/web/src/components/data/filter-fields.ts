@@ -118,6 +118,12 @@ export function dayOptions(now: Date): FilterOption[] {
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
+/** The UTC day of an RFC 3339 timestamp, so an offset such as `-05:00` names the right day. */
+function utcDay(timestamp: string) {
+  const ms = Date.parse(timestamp)
+  return Number.isNaN(ms) ? timestamp.slice(0, 10) : new Date(ms).toISOString().slice(0, 10)
+}
+
 /** The UTC day `days` away from `day`, both as `YYYY-MM-DD`. */
 function shiftDay(day: string, days: number) {
   return new Date(Date.parse(`${day}T00:00:00.000Z`) + days * DAY_MS).toISOString().slice(0, 10)
@@ -136,7 +142,7 @@ export function dayPicker(boundary: 'start' | 'end' | 'end-exclusive'): FilterPi
     customValue: customDay,
     formatValue: (day) => formatUtcDate(`${day}T00:00:00.000Z`),
     fromParam: (timestamp) =>
-      boundary === 'end-exclusive' ? shiftDay(timestamp.slice(0, 10), -1) : timestamp.slice(0, 10),
+      boundary === 'end-exclusive' ? shiftDay(utcDay(timestamp), -1) : utcDay(timestamp),
     toParam: (day) => {
       if (boundary === 'start') return `${day}T00:00:00.000Z`
       if (boundary === 'end') return `${day}T23:59:59.999Z`

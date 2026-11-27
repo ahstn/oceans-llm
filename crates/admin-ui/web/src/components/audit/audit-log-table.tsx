@@ -317,8 +317,8 @@ function AuditCards({
     <ul className="grid grid-cols-1 md:hidden" data-testid="audit-log-cards">
       {items.map((entry) => (
         <li key={entry.id} className="flex min-w-0 flex-col gap-3 border-b p-4 last:border-b-0">
-          <div className="flex min-w-0 items-start justify-between gap-3">
-            <span className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
+            <span className="flex min-w-0 flex-wrap items-center gap-2">
               <span className="truncate font-medium">{targetTypeLabel(entry.target_type)}</span>
               <Badge variant={actionVariant(entry.action)}>{actionVerbLabel(entry.action)}</Badge>
             </span>

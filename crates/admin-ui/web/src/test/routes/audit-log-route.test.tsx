@@ -207,6 +207,9 @@ describe('AuditLogPage', () => {
     expect(screen.getByTestId('audit-log-grid')).toHaveClass('hidden', 'md:block')
     expect(cards.getByText('tickets')).toBeInTheDocument()
     expect(cards.getByText('Updated')).toBeInTheDocument()
+    // A long action badge wraps under the target type instead of overlapping the timestamp.
+    expect(cards.getByText('Updated').parentElement).toHaveClass('flex-wrap')
+    expect(cards.getByText('Updated').parentElement?.parentElement).toHaveClass('flex-wrap')
 
     fireEvent.click(cards.getAllByRole('button', { name: 'View details' })[0])
     expect(await screen.findByRole('dialog')).toBeInTheDocument()

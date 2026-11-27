@@ -43,9 +43,13 @@ export function UserActivityTable({
   return (
     // Fits its 1094 px card at 1440 px: headers and names wrap when space runs short.
     // Narrower screens scroll rather than clip the last column.
-    <div className="border-border overflow-x-auto rounded-md border">
+    <div
+      className="border-border overflow-x-auto rounded-md border"
+      data-testid="user-activity-scroll"
+    >
       <Table
         aria-label="User activity"
+        data-testid="user-activity-table"
         className="min-w-[60rem] text-left [&_td:first-child]:min-w-32 [&_td:first-child]:whitespace-normal [&_th]:whitespace-normal"
       >
         <AdminTableHeader columns={COLUMNS} />

@@ -7,6 +7,8 @@ describe('dayPicker', () => {
     const picker = dayPicker('start')
     expect(picker.toParam?.('2026-11-03')).toBe('2026-11-03T00:00:00.000Z')
     expect(picker.fromParam?.('2026-11-03T00:00:00.000Z')).toBe('2026-11-03')
+    // An offset timestamp from a shared URL names its UTC day.
+    expect(picker.fromParam?.('2026-11-27T23:30:00-05:00')).toBe('2026-11-28')
   })
 
   it('ends an inclusive day on its last millisecond, for stores that compare with <=', () => {

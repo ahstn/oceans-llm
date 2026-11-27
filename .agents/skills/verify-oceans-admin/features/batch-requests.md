@@ -28,7 +28,7 @@ Preconditions:
 
 - **Open.** Choose the `Batch Requests` link. The `Batch requests` heading, `Batch list` card, `Showing 2 of 2`, and `batch-desktop-table` are visible.
 - **Filter.** Open `Filters`, choose `Status`, then pick `Completed`. The URL gains `status=completed` and the count reads `Showing 1 of 1`. Choose `Clear` beside the chips to return to 2.
-- **Owner filters.** The `User` and `Service account` chips (`batch-filter-user-id`, `batch-filter-service-account-id`) list the seeded users and `Local CI Runner`. Picking `Local CI Runner` leaves only the queued row.
+- **Owner filters.** The `User` and `Service account` chips (`batch-filter-user-id`, `batch-filter-service-account-id`) list the seeded users and `Local CI Runner`. Picking `Local CI Runner` leaves only the queued row. Choose `Clear` to return to 2 before the detail check.
 - **Detail.** Choose `View` in the `Completed` row. The `Batch responses` sheet shows `Batch ID`, `Status` `Completed`, `Progress` `2 of 2`, and `Showing 1-2 of 2 responses.`, with two `Succeeded` results. Expand `Request payload` on one of them.
 - **Cancel dialog.** Choose `Cancel` in the `Queued` row. When `Cancel this batch?` opens, choose `Keep batch`. The dialog closes and the row still reads `Queued`.
 - **API parity.** With the same session, fetch `GET /api/v1/batches?page=1&page_size=30` and `GET /api/v1/batches/{batch_id}/results?page=1&page_size=100`. `total`, `status`, `request_count`, and the result `custom_id` values must match the list and sheet. These responses have no `data` envelope.
@@ -40,4 +40,4 @@ Preconditions:
 - The queued demo batch keeps the list polling every 5 s. Wait for the expected state, not for network idle.
 - Every row has its own `View` and `Cancel` buttons, so scope clicks to the row that contains the model or batch ID.
 - Below the `md` breakpoint, `batch-mobile-list` replaces the table and the button reads `View responses`.
-- Day chips pick UTC days: `Created after` starts at 00:00 UTC and `Created before` ends at 23:59:59.999 UTC on the day picked. Type any other day as `YYYY-MM-DD`.
+- Day chips pick UTC days: `Created after` starts at 00:00 UTC and `Created before` sends the next day's 00:00 UTC as an exclusive bound, so the whole day picked is kept. Type any other day as `YYYY-MM-DD`.
