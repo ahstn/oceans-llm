@@ -124,6 +124,12 @@ function utcDay(timestamp: string) {
   return Number.isNaN(ms) ? timestamp.slice(0, 10) : new Date(ms).toISOString().slice(0, 10)
 }
 
+/** Whether a timestamp falls exactly on a UTC midnight, the bound the exclusive picker writes. */
+function isUtcMidnight(timestamp: string) {
+  const ms = Date.parse(timestamp)
+  return !Number.isNaN(ms) && ms % DAY_MS === 0
+}
+
 /** The UTC day `days` away from `day`, both as `YYYY-MM-DD`. */
 function shiftDay(day: string, days: number) {
   return new Date(Date.parse(`${day}T00:00:00.000Z`) + days * DAY_MS).toISOString().slice(0, 10)
@@ -142,7 +148,9 @@ export function dayPicker(boundary: 'start' | 'end' | 'end-exclusive'): FilterPi
     customValue: customDay,
     formatValue: (day) => formatUtcDate(`${day}T00:00:00.000Z`),
     fromParam: (timestamp) =>
-      boundary === 'end-exclusive' ? shiftDay(utcDay(timestamp), -1) : utcDay(timestamp),
+      boundary === 'end-exclusive' && isUtcMidnight(timestamp)
+        ? shiftDay(utcDay(timestamp), -1)
+        : utcDay(timestamp),
     toParam: (day) => {
       if (boundary === 'start') return `${day}T00:00:00.000Z`
       if (boundary === 'end') return `${day}T23:59:59.999Z`

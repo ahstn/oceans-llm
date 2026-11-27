@@ -23,5 +23,7 @@ describe('dayPicker', () => {
     expect(picker.toParam?.('2026-12-31')).toBe('2027-01-01T00:00:00.000Z')
     // The chip shows the day the user picked, not the boundary sent to the gateway.
     expect(picker.fromParam?.('2026-11-04T00:00:00.000Z')).toBe('2026-11-03')
+    // A shared link with a mid-day bound keeps that day, since the store includes its morning.
+    expect(picker.fromParam?.('2026-11-28T12:00:00Z')).toBe('2026-11-28')
   })
 })
