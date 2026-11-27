@@ -63,10 +63,10 @@ The high-priority findings from the 27 Nov design walkthrough are fixed:
 - [x] Update route tests, e2e specs and features recipes for changed filters `#tests-update`
 - [x] Commit on fix/admin-ui-design-consistency `#commit`
 ### Test
-- [ ] Run mise run lint and the admin-ui unit tests `#lint-unit`
-- [ ] Run the affected Playwright specs `#e2e-run`
-- [ ] Verify changed pages in the browser at 1440 and 375 px with screenshots `#browser-verify`
-- [ ] Run the verify-oceans-admin plan and evidence `#verify-skill`
+- [x] Run mise run lint and the admin-ui unit tests `#lint-unit`
+- [x] Run the affected Playwright specs `#e2e-run`
+- [x] Verify changed pages in the browser at 1440 and 375 px with screenshots `#browser-verify`
+- [x] Run the verify-oceans-admin plan and evidence `#verify-skill`
 ### Review
 - [ ] Person reviews the outcome `#outcome-review`
 ### Merge review
