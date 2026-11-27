@@ -1,0 +1,32 @@
+crates/admin-ui/web/src/test/components/filter-fields.test.ts
+  s_7fbf0743ec3e57::t_cce98ca3b2e102 10-11
+crates/admin-ui/web/src/components/data/filter-fields.ts
+  s_7fbf0743ec3e57::t_072967a7b3ed08 121-126,145
+crates/admin-ui/web/src/test/routes/attribution-route.test.tsx
+  s_7fbf0743ec3e57::t_cce98ca3b2e102 386-388
+  s_7fbf0743ec3e57::t_f8f6a2dbfcab33 389-391
+crates/admin-ui/web/src/test/routes/audit-log-route.test.tsx
+  s_7fbf0743ec3e57::t_a9f9fb5110356d 210-212
+.agents/skills/verify-oceans-admin/features/batch-requests.md
+  s_7fbf0743ec3e57::t_072967a7b3ed08 31,43
+crates/admin-ui/web/src/components/audit/audit-log-table.tsx
+  s_7fbf0743ec3e57::t_072967a7b3ed08 320-321
+crates/admin-ui/web/src/routes/observability/-attribution/user-activity-table.tsx
+  s_7fbf0743ec3e57::t_072967a7b3ed08 46-49,52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9f93d00f9452e6681a6e5dd5be1da7bf2f9efc36",
+  "prompts": {},
+  "sessions": {
+    "s_7fbf0743ec3e57": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a8e4161f-5d72-4116-a965-35ffb5043af1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
