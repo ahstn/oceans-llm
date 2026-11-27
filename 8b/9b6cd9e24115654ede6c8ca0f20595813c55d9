@@ -1,0 +1,209 @@
+crates/gateway-store/src/any_store_agent_analysis.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 206-216
+crates/admin-ui/web/src/components/data/debounced-search.tsx
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 1-86
+crates/admin-ui/web/src/routes/__root.tsx
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 38-41,47-59,65-66,103
+crates/gateway/Cargo.toml
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 5
+crates/gateway-client-config/src/types.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 160-163,274
+crates/admin-ui/web/src/components/app-sidebar.tsx
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 99
+crates/gateway-mcp/Cargo.toml
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 5
+crates/gateway-store/src/libsql_store/agent_analysis/summaries.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 4-5,25,29-38,68-110,112-138
+crates/gateway/src/config/tests/openrouter.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 35-38,72-175
+crates/gateway/src/http/spend.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 37,61-85,151,165
+crates/oceans-cli/Cargo.toml
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 5
+crates/gateway/src/http/observability/agent_sessions.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 146,149-156,169,370-375,390
+docs/src/content/docs/observability/request-logs.mdx
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 50,52,70,72-73,75,281
+crates/admin-ui/web/src/components/layout/admin-nav.ts
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 33-38,104,112,120,134,142,150,158
+crates/gateway-client-config/src/templates/opencode.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 150,184-195,229-234
+  s_7fbf0743ec3e57::t_b20590e3b9b21f 235
+crates/admin-ui/web/src/components/data/filter-toolbar.tsx
+  s_7fbf0743ec3e57::t_397cbd57645347 33,184-207
+  s_7fbf0743ec3e57::t_e07f04bdd647d0 66-67,88,176-183
+crates/agent-session-analysis/Cargo.toml
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 5
+crates/gateway-service/src/model_metadata/listing.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 7-8,29,201-203,286,319,371-385,519
+.agents/skills/verify-oceans-admin/features/request-logs.md
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 8-10,34-35,55-56
+crates/admin-ui/web/src/generated/admin-api.ts
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 2873-2879,2890,2896-2898,2907,2918-2923,2925,8489-8493,8712-8716
+crates/gateway-service/Cargo.toml
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 5
+crates/gateway-client-config/Cargo.toml
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 5
+crates/admin-ui/web/src/components/observability/agent-sessions/session-table.tsx
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 4-5,11-12,14-20,49-56,59-70,84-85,124-125,211-217,246-248,329-358
+  s_7fbf0743ec3e57::t_5ff203cd8fc113 359-361
+crates/gateway-core/Cargo.toml
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 5
+crates/gateway/src/config/tests/mod.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 7-9
+crates/gateway-store/migrations/postgres/V87__request_log_list_order_index.sql
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 1-17
+crates/admin-ui/web/src/components/observability/agent-sessions/session-columns.ts
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 9-16,20-23,47-49,51
+crates/admin-ui/web/src/lib/caller.ts
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 1-17
+crates/gateway-store/src/agent_analysis_tests.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 4-9,628,638-722,1182-1205
+crates/gateway-store/src/postgres_store/request_logs.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 16-18,52-68,407,434,450
+.agents/skills/verify-oceans-admin/features/routing.json
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 335-341,367-372
+crates/admin-ui/web/src/routes/observability/-request-log-filter-options.ts
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 27-37
+crates/admin-ui/web/src/test/routes/agent-sessions-route.test.tsx
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 72-77,97-98,492,504-513,591,619-622,649,968-970,1158-1160,1264-1275,1286,1291-1424
+crates/gateway-service/src/model_metadata/tests/service_tiers.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 208-222,245,263,273,295,345-378
+crates/gateway-store/migrations/V87__request_log_list_order_index.sql
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 1-8
+crates/admin-ui/Cargo.toml
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 5,16
+crates/gateway-service/src/capability_hints.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 11-12,15,18-30,115-124
+  s_7fbf0743ec3e57::t_00c6d1ec5777a5 125
+crates/gateway-store/src/tests/request_log_list.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 336-366,383-387
+crates/gateway/src/http/observability/agent_sessions/presenter.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 303-332,340,342-348,371-377,403-406
+crates/gateway-service/data/openrouter_catalog_fallback.json
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 5-6,7989-7990,7999,19247-19249,22647-22648,25912-25914,27986-27988,28614
+docs/src/content/docs/providers/openrouter.mdx
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 90-91,102-103
+crates/admin-ui/web/src/test/routes/request-logs-route.test.tsx
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 8,193-220,799-857
+  s_7fbf0743ec3e57::t_8aabe4d6a0be79 858-859
+crates/gateway-core/src/lib.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 31-34,117-135
+crates/gateway/src/http/observability.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 336-338
+CHANGELOG.md
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 9-21
+crates/gateway-service/src/pricing_catalog/metadata.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 21-38,50,54-75
+  s_7fbf0743ec3e57::t_fc91734531763a 76
+crates/admin-ui/web/src/components/observability/agent-sessions/session-filter-toolbar.tsx
+  s_7fbf0743ec3e57::t_397cbd57645347 3,32-33,36-40,47-55
+crates/admin-ui/web/src/lib/pagination.ts
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 1-48
+crates/gateway-client-ip/Cargo.toml
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 5
+crates/admin-ui/web/src/components/observability/agent-sessions/session-filter-fields.ts
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 241
+  s_7fbf0743ec3e57::t_e07f04bdd647d0 242-245,248
+crates/admin-ui/web/src/routes/observability/-request-log-filters.tsx
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 16,25-26,69,89-92,94-97,120-123,134-141,196,223-227,263,265-267,271,306,327-335,388,398-399,418-419,461,468-471,474-481,506-509
+  s_7fbf0743ec3e57::t_90e2fca3b63b0a 510-511
+crates/gateway-core/src/agent_analysis.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 1-2,14,147-165,268-270,429-435
+crates/gateway/src/http/state.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 12,66
+DESIGN.md
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 361-362
+crates/admin-ui/web/src/routes/observability/request-logs.tsx
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 2,8-9,20,34,40-56,60-62,78,81-83,85-86,91,98-112,138-158,167-188,412-417,419-420,537,539-544,566-573
+  s_7fbf0743ec3e57::t_f219b38bf85c22 574
+crates/admin-ui/src/proxy.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 15,66-71,73-82,850-892,940-941,950-956
+  s_7fbf0743ec3e57::t_e948fa05e83ed9 957
+docs/src/content/docs/harnesses/opencode.mdx
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 229,231
+docs/src/content/docs/observability/agent-session-analysis.mdx
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 45-46,56-58,60-63,65
+docs/src/content/docs/reference/provider-api-compatibility.mdx
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 513-514,517
+crates/admin-ui/web/src/routes/observability/-request-log-detail/format.ts
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 9,12
+crates/gateway/src/http/test_support.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 71
+crates/gateway/src/http/observability/request_logs.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 46,56-60,120-136,141,145-146,148-149,152-156,195-197,759-776
+  s_7fbf0743ec3e57::t_0c148fb7a55ac5 777-778
+crates/gateway-service/src/admin_models.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 491-493,618-619,701,1615,1674,2955
+crates/admin-ui/web/src/routes/observability/agent-sessions.tsx
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 2,34,42-44,48-62,96-98,126,131-136,170-171,190,198-201,302-303
+crates/gateway-providers/Cargo.toml
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 5
+crates/gateway-store/src/libsql_store/agent_analysis/reports.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 5-12,128-130,132,162,192,221
+crates/admin-ui/web/src/routes/observability/agent-harnesses.tsx
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 1,8,171-178,341-435
+crates/gateway-client-config/src/tests.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 535,1660-1736
+  s_7fbf0743ec3e57::t_50a3eef876b122 1737-1738
+.agents/skills/verify-oceans-admin/features/agent-sessions.md
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 7-8,10,20,32-33,36-37,44
+crates/admin-ui/web/src/components/data/table-pagination.tsx
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 1-140
+crates/gateway-store/src/postgres_store/agent_analysis/reports.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 5-12,134-138,140,168,188,215
+crates/gateway-store/src/lib.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 7385
+crates/gateway-providers/src/openai_compat.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 1046-1050,1676-1680,1701-1703
+crates/gateway-store/src/libsql_store/request_logs.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 15-17,48-64,413-414,450,467
+crates/gateway-core/src/domain.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 1579-1581,3407-3410,3422-3423,3427-3486,4193-4217
+  s_7fbf0743ec3e57::t_6c0a9a049f3dfe 4218
+crates/gateway/src/http/admin_contract.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 1031,1042,1051,1062,1071,1100,1108,1482-1484,1757-1759,1787-1793,1814-1819
+crates/gateway-store/Cargo.toml
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 5
+crates/gateway-store/src/migration_registry.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 33,40,612-617
+  s_7fbf0743ec3e57::t_12cfcc64e9472c 618
+crates/admin-ui/web/src/components/data/request-identity.tsx
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 1-49
+crates/gateway-guardrails/Cargo.toml
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 5
+crates/gateway-store/src/postgres_store/agent_analysis/summaries.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 4-5,28,31-40,62-102,104-131
+docs/src/content/docs/configuration/models-and-routes.mdx
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 337-338,456-457
+packages/opencode-oceans/tests/models.test.ts
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 338-364
+crates/admin-ui/web/src/test/components/table-pagination.test.ts
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 1-39
+crates/gateway/src/main.rs
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 368
+crates/gateway-skills/Cargo.toml
+  s_7fbf0743ec3e57::t_a50dba65f5e3ce 5
+Cargo.lock
+  s_7fbf0743ec3e57::t_b786d8bcb7043b 5-10,13,24,65,83-97,235-246,952-972,1214-1231,1320,1322,1705,1763-1764,1923,1982,1992,2002,2022,2043,2058,2095,2127,2146,2417,2419,3082-3091,3140,3226,3775,4176,4245,4645-4650,4934,4937,5239,5242,5247-5248,5708,6153,6155
+crates/gateway-service/data/pricing_catalog_fallback.json
+  s_7fbf0743ec3e57::t_5532df7de37131 4-6,30994-30995,31004,37752-37754,39806-39807,41512-41514,43118-43120,43762
+crates/gateway/openapi/admin-api.json
+  s_7fbf0743ec3e57::t_44ef0d0a6674e0 3688-3696,4305-4316,10845,10896-10903,10953-10962,10982-10998,11037-11042,11086-11097,11104-11109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8b9b6cd9e24115654ede6c8ca0f20595813c55d9",
+  "prompts": {},
+  "sessions": {
+    "s_7fbf0743ec3e57": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a8e4161f-5d72-4116-a965-35ffb5043af1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Adam Houston <phazyy9@gmail.com>"
+    }
+  }
+}
