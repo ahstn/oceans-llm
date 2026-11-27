@@ -30,22 +30,22 @@ Writing a record is best effort. If the write fails, the gateway still answers t
 
 Admins open **MCP Invocations** in the **Observability** section of the admin UI, at `/admin/observability/mcp-invocations`. The page needs the `mcp_invocations` page permission (see [Auth and access settings](/access/access-settings/)). Platform admins see every record. Other users see only records for their own user.
 
-An admin sets filters, then selects **Apply Filters**. **Clear** resets them. Every filter is an exact match.
+An admin adds filters from the **Filters** menu. Each one shows as a chip and applies as soon as a value is picked, or on Enter for a typed ID. **Clear** removes them all. Every filter is an exact match.
 
 | Filter | What it matches |
 | --- | --- |
 | **Request ID** | The record's `request_id` (see [Record fields](#record-fields)). |
-| **Server** | The server key. |
+| **Server** | The server key, picked from the registered servers or typed. |
 | **Target** | The tool name, resource URI or prompt name. For a method with no named target, the method name. |
 | **Method** | The JSON-RPC method, such as `tools/call` or `resources/read`. |
-| **API Key**, **User**, **Team** | The owner IDs. |
+| **API key ID**, **User ID**, **Team ID** | The owner IDs. |
 | **Status** | One [status](#statuses-and-error-codes). |
 | **Policy** | One policy result: `allowed`, `denied` or `not_evaluated`. |
-| **From**, **To** | The time range, as RFC 3339 timestamps. Both ends are included. |
+| **Occurred after**, **Occurred before** | A UTC day, picked from recent days or typed as `YYYY-MM-DD`. Both days are included. |
 
 There's no filter for error code. To tell denials apart, read the error code under each row's status.
 
-The table has these columns: **Request**, **Owner Context**, **Server**, **Method**, **Target**, **Status** (with the error code under it), **Policy**, **Latency**, **Payload** and **Inspect**. **Inspect** opens the detail view. It shows the record's IDs, owner, target and **Tool version**, the payload state, and the stored **Arguments** and **Result**.
+The table has these columns: **Time** (with the request ID under it), **Server**, **Target** (with the method under it), **Owner**, **Status** (with the error code under it), **Policy**, **Latency** and **Payload**. Selecting a row opens the detail view. It shows the record's IDs, owner, target and **Tool version**, the payload state, and the stored **Arguments** and **Result**.
 
 ## Statuses and error codes
 

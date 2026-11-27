@@ -247,16 +247,19 @@ async function invocationProof({ page, adminJson, candidate, apiKeyId, requestId
 }
 
 async function verifyInvocationUi({ page, baseURL, proof, capture, name }) {
-  await page.goto(new URL("/admin/observability/mcp-invocations", baseURL).href, { waitUntil: "networkidle" });
+  const listUrl = new URL("/admin/observability/mcp-invocations", baseURL);
+  listUrl.searchParams.set("request_id", proof.requestId);
+  await page.goto(listUrl.href, { waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "MCP invocations", exact: true }).waitFor();
-  await page.getByTestId("mcp-filter-request-id").fill(proof.requestId);
-  await page.getByRole("button", { name: "Apply Filters", exact: true }).click();
-  const row = page.getByTestId("mcp-invocations-table").getByRole("row").filter({ hasText: proof.invocationId });
+  // The Request ID chip shows the URL filter; each row carries its invocation ID.
+  await page.getByTestId("mcp-invocation-filter-request-id").waitFor();
+  const row = page.getByTestId("mcp-invocations-table").locator(`tr[data-invocation-id="${proof.invocationId}"]`);
   await row.waitFor();
   requireCondition(await row.count() === 1, "invocation_ui_row_count");
   // The screenshot is taken before opening details, which contain tool payloads.
   await capture(page, name);
-  await row.getByRole("button", { name: "Inspect", exact: true }).click();
+  // The whole row opens the detail.
+  await row.click();
   const detail = page.getByTestId("mcp-invocation-detail");
   await detail.getByText(proof.invocationId, { exact: true }).waitFor();
   await detail.getByText(proof.requestId, { exact: true }).waitFor();

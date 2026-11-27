@@ -383,6 +383,12 @@ describe('AttributionPage', () => {
     const aliceRow = users.getByRole('row', { name: /Alice Doe/ })
     expect(within(aliceRow).getByText('$12.34')).toBeInTheDocument()
     expect(within(aliceRow).getByText('2 hooked')).toBeInTheDocument()
+    // The table fits its card at 1440 px and scrolls inside the card when narrower.
+    expect(screen.getByTestId('user-activity-scroll')).toHaveClass('overflow-x-auto')
+    expect(screen.getByTestId('user-activity-table')).toHaveClass(
+      'min-w-[60rem]',
+      '[&_th]:whitespace-normal',
+    )
     // Durability is not collected yet, so its counterweight carries the pill.
     expect(document.querySelectorAll('[data-readiness="new"]').length).toBeGreaterThan(0)
   })

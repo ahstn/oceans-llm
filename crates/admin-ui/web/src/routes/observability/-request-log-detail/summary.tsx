@@ -16,7 +16,7 @@ import {
   cacheHitPercent,
   callerLabel,
   formatOccurredAt,
-  formatRequestCost,
+  formatExactRequestCost,
   metadataBoolean,
   operationLabel,
   requestTagLabels,
@@ -141,7 +141,7 @@ function keyMetrics(log: RequestLogView): Metric[] {
           ? `${formatCount(log.prompt_tokens)} in · ${formatCount(log.completion_tokens)} out`
           : undefined,
     },
-    { label: 'Cost', value: formatRequestCost(log) },
+    { label: 'Cost', value: formatExactRequestCost(log) },
     {
       label: 'Cache hit',
       value: cachePercent != null ? `${cachePercent}%` : cached > 0 ? formatCount(cached) : 'None',

@@ -43,3 +43,4 @@ Budget, service account, MCP server, tool set, grant and credential binding entr
 - `Older` uses a keyset cursor, not page numbers; the browser's back button returns to the previous page.
 - The admin UI calls the gateway API from its own server, so the IP address comes from the address the gateway's admin proxy signs into `x-oceans-client-ip`. `X-Forwarded-For` is ignored. Locally the address is `127.0.0.1`.
 - Guardrail policies are configuration only, so there are no guardrail policy entries yet.
+- Below the `md` breakpoint the grid is hidden and `audit-log-cards` lists one card per entry. Each card's `View details` button opens the entry sheet; its actor name still filters by that actor.

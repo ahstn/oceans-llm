@@ -61,6 +61,41 @@ export function formatUsdNanos(amountUsdNanos: number) {
   return NANOS_CURRENCY_FORMATTER.format(amountUsdNanos / 1_000_000_000)
 }
 
+/**
+ * A single request's cost from USD nanos at DESIGN.md's per-request precision: four decimals
+ * (`$0.0457`). A non-zero charge too small for four decimals reads `<$0.0001` (`-<$0.0001` for a
+ * credit), never `$0.0000`; show `formatUsdNanos` beside it where the exact amount matters.
+ */
+export function formatUsdNanosPrecise(amountUsdNanos: number) {
+  if (amountUsdNanos === 0) return PRECISE_CURRENCY_FORMATTER.format(0)
+  if (Math.abs(amountUsdNanos) < 50_000) return amountUsdNanos > 0 ? '<$0.0001' : '-<$0.0001'
+  return PRECISE_CURRENCY_FORMATTER.format(amountUsdNanos / 1_000_000_000)
+}
+
+const AXIS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 3,
+})
+const COMPACT_AXIS_CURRENCY_FORMATTER = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  notation: 'compact',
+  maximumFractionDigits: 1,
+})
+
+/**
+ * A dollar tick on a chart axis. Sub-dollar ticks keep up to three decimals so neighbours stay
+ * distinct (`$0.015`, `$0.03`), zero reads `$0`, and from $1,000 up they go compact (`$1.2K`).
+ */
+export function formatUsdAxis(amountUsd: number) {
+  if (amountUsd === 0) return '$0'
+  return Math.abs(amountUsd) >= 1_000
+    ? COMPACT_AXIS_CURRENCY_FORMATTER.format(amountUsd)
+    : AXIS_CURRENCY_FORMATTER.format(amountUsd)
+}
+
 const COUNT_FORMATTER = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 })
 const COMPACT_COUNT_FORMATTER = new Intl.NumberFormat('en-US', {
   notation: 'compact',

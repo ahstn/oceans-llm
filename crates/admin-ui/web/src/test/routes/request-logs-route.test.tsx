@@ -284,7 +284,7 @@ describe('RequestLogsPage table', () => {
     expect(screen.getAllByText('Unknown')).toHaveLength(1)
   })
 
-  it('prefers nanos in the list and detail sheet for tiny request charges', async () => {
+  it('lists tiny request charges at four decimals and keeps nanos in the tooltip and detail', async () => {
     const tinyItem: RequestLogView = {
       ...items[0],
       cost_usd_10000: 0,
@@ -296,8 +296,10 @@ describe('RequestLogsPage table', () => {
     })
 
     renderPage()
-    expect(screen.getAllByText('$0.0000028')).toHaveLength(2)
+    // DESIGN.md: one precision per column, four decimals for a single request.
+    expect(screen.getAllByText('<$0.0001')).toHaveLength(2)
     expect(screen.queryByText('$0.0000')).not.toBeInTheDocument()
+    expect(screen.getByTitle('$0.0000028')).toHaveTextContent('<$0.0001')
     fireEvent.click(screen.getAllByRole('button', { name: 'Inspect' })[0])
 
     const metrics = within(await screen.findByTestId('request-log-key-metrics'))

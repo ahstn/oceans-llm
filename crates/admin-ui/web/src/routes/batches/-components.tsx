@@ -58,9 +58,10 @@ export function BatchList({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid gap-3 md:hidden" data-testid="batch-mobile-list">
+      {/* `grid-cols-1` bounds the track, so a long batch ID truncates instead of widening the card. */}
+      <div className="grid grid-cols-1 gap-3 md:hidden" data-testid="batch-mobile-list">
         {batches.map((batch) => (
-          <article key={batch.batch_id} className="bg-muted/40 rounded-lg border p-4">
+          <article key={batch.batch_id} className="bg-muted/40 min-w-0 rounded-lg border p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="truncate font-semibold">{batch.model}</p>

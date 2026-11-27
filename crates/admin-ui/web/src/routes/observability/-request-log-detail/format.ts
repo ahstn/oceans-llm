@@ -4,6 +4,7 @@ import {
   formatTimestamp,
   formatUsd10000Precise,
   formatUsdNanos,
+  formatUsdNanosPrecise,
 } from '@/lib/format'
 import { callerPrimary, callerSecondary } from '@/lib/caller'
 import type { RequestLogView } from '@/types/api'
@@ -41,7 +42,16 @@ export function statusCodeBadgeVariant(
   return statusCode >= 400 ? 'warning' : 'success'
 }
 
+/** A request's cost for a list: four decimals, so a column of costs lines up. */
 export function formatRequestCost(item: Pick<RequestLogView, 'cost_usd_10000' | 'cost_usd_nanos'>) {
+  if (item.cost_usd_nanos != null) return formatUsdNanosPrecise(item.cost_usd_nanos)
+  return item.cost_usd_10000 == null ? EMPTY_VALUE : formatUsd10000Precise(item.cost_usd_10000)
+}
+
+/** A request's exact cost, keeping sub-cent charges such as `$0.0000028` for its detail. */
+export function formatExactRequestCost(
+  item: Pick<RequestLogView, 'cost_usd_10000' | 'cost_usd_nanos'>,
+) {
   if (item.cost_usd_nanos != null) return formatUsdNanos(item.cost_usd_nanos)
   return item.cost_usd_10000 == null ? EMPTY_VALUE : formatUsd10000Precise(item.cost_usd_10000)
 }

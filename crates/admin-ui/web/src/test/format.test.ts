@@ -9,8 +9,11 @@ import {
   formatUsd10000,
   formatUsd10000Precise,
   formatUsdTotal,
+  formatUsdAxis,
   formatUsdNanos,
+  formatUsdNanosPrecise,
 } from '@/lib/format'
+import { formatRequestCost } from '@/routes/observability/-request-log-detail/format'
 
 // DESIGN.md "Numbers and time": each kind of value has one format.
 describe('shared number and time formats', () => {
@@ -63,6 +66,25 @@ describe('shared number and time formats', () => {
     expect(formatUsdNanos(45_700_000)).toBe('$0.0457')
     expect(formatUsdNanos(0)).toBe('$0.0000')
     expect(formatUsdNanos(-2_800)).toBe('-$0.0000028')
+  })
+
+  it('lists a request cost at four decimals, never $0.0000 for a real charge', () => {
+    expect(formatUsdNanosPrecise(45_700_000)).toBe('$0.0457')
+    expect(formatUsdNanosPrecise(1_000_000)).toBe('$0.0010')
+    expect(formatUsdNanosPrecise(50_000)).toBe('$0.0001')
+    expect(formatUsdNanosPrecise(3_578)).toBe('<$0.0001')
+    expect(formatUsdNanosPrecise(-2_800)).toBe('-<$0.0001')
+    expect(formatUsdNanosPrecise(0)).toBe('$0.0000')
+    expect(formatRequestCost({ cost_usd_nanos: 3_578, cost_usd_10000: 0 })).toBe('<$0.0001')
+    expect(formatRequestCost({ cost_usd_nanos: null, cost_usd_10000: 10 })).toBe('$0.0010')
+  })
+
+  it('keeps sub-dollar axis ticks distinct and goes compact from $1,000', () => {
+    const ticks = [0, 0.015, 0.03, 0.045, 0.06].map(formatUsdAxis)
+    expect(ticks).toEqual(['$0', '$0.015', '$0.03', '$0.045', '$0.06'])
+    expect(new Set(ticks).size).toBe(ticks.length)
+    expect(formatUsdAxis(3.4)).toBe('$3.40')
+    expect(formatUsdAxis(1_250)).toBe('$1.3K')
   })
 
   it('writes timestamps in UTC with the zone, and seconds only on request', () => {

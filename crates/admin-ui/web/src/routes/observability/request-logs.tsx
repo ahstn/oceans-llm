@@ -26,6 +26,7 @@ import {
   cacheHitLabel,
   callerPrimary,
   formatOccurredAt,
+  formatExactRequestCost,
   formatRequestCost,
   statusCodeBadgeVariant,
 } from './-request-log-detail/format'
@@ -425,7 +426,7 @@ function RequestLogDesktopRow({
       </span>
       <span
         className="text-subtle-foreground truncate px-3 text-right whitespace-nowrap tabular-nums"
-        title={cost}
+        title={formatExactRequestCost(item)}
       >
         {cost}
       </span>
