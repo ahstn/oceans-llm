@@ -216,7 +216,12 @@ function OwnerSearchList({
   onSelect: (ownerId: string) => void
 }) {
   const [search, setSearch] = useState('')
-  const matches = useMemo(() => matchingOwners(options, search), [options, search])
+  // Lowercase each label once per list, not on every keystroke.
+  const index = useMemo(
+    () => options.map((option) => ({ option, key: option.label.toLowerCase() })),
+    [options],
+  )
+  const matches = useMemo(() => matchingOwners(index, search), [index, search])
 
   return (
     <Command shouldFilter={false}>
@@ -245,14 +250,20 @@ function OwnerSearchList({
   )
 }
 
-function matchingOwners(options: CredentialOwnerOption[], search: string) {
+function matchingOwners(index: { option: CredentialOwnerOption; key: string }[], search: string) {
   const query = search.trim().toLowerCase()
+  if (!query) {
+    return {
+      shown: index.slice(0, OWNER_RESULT_LIMIT).map((entry) => entry.option),
+      total: index.length,
+    }
+  }
   const shown: CredentialOwnerOption[] = []
   let total = 0
-  for (const option of options) {
-    if (query && !option.label.toLowerCase().includes(query)) continue
+  for (const entry of index) {
+    if (!entry.key.includes(query)) continue
     total += 1
-    if (shown.length < OWNER_RESULT_LIMIT) shown.push(option)
+    if (shown.length < OWNER_RESULT_LIMIT) shown.push(entry.option)
   }
   return { shown, total }
 }
