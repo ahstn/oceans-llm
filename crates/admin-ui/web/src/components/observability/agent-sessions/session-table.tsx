@@ -26,6 +26,7 @@ import {
   type SessionColumnId,
   type VisibleSessionColumns,
 } from './session-columns'
+import { humanize } from './session-labels'
 import { StateBadge } from './session-state-badge'
 
 interface SessionColumnRenderer {
@@ -366,10 +367,4 @@ function DataQuality({ session }: { session: AgentSessionSummaryView }) {
   ) : (
     <Badge variant="outline">{session.limitations.length} data limits</Badge>
   )
-}
-
-function humanize(value?: string | null) {
-  return value
-    ? value.replaceAll('_', ' ').replace(/\b\w/g, (character) => character.toUpperCase())
-    : 'Unknown'
 }
