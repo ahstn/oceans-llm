@@ -634,7 +634,7 @@ function ServerDetailDialog({
   )
   const credentialOwners = useCredentialOwnerOptions(
     scope.platformAdmin && visibleSection === 'credentials',
-    scope.users ?? [],
+    scope.users,
     scope.teams,
   )
 

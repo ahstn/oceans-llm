@@ -38,7 +38,7 @@ export function toCredentialUserOptions(users: UserView[]): CredentialOwnerOptio
  */
 export function useCredentialOwnerOptions(
   enabled: boolean,
-  users: CredentialOwnerOption[],
+  users: CredentialOwnerOption[] | undefined,
   teams: AdminTeamOption[],
 ) {
   const [serviceAccounts, setServiceAccounts] = useState<CredentialServiceAccountOption[] | null>(
@@ -73,7 +73,7 @@ export function useCredentialOwnerOptions(
 
   if (!serviceAccounts) return null
   return {
-    users,
+    users: users ?? [],
     teams: teams.map((team) => ({ id: team.id, label: team.name })),
     serviceAccounts,
   } satisfies CredentialOwnerOptions
